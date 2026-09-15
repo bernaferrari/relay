@@ -2,8 +2,6 @@ import type http from "node:http";
 import {
   AppMapCombineWorldError,
   AppMapCompileError,
-  AppMapTestCompileError,
-  activeReviewedDocumentOriginsForAppMap,
   bindRegisteredWebDeploymentToProof,
   accountFixtureIdsFromListed,
   bindRequestedBrowserIdentity,
@@ -13,9 +11,7 @@ import {
   buildTargetProfiles,
   compileAppMapConnection,
   compileAppMapFlow,
-  compileAppMapTest,
   findActiveCombineCampaignForCombine,
-  frozenRawAccessibilityTargetProfiles,
   currentOperationContext,
   enqueueJob,
   listDevices,
@@ -45,10 +41,8 @@ import { applyAppMapMutation } from "./app-map-route-mutations.js";
 import { HttpError, json, matchPath, parseJsonBody } from "./http.js";
 import { parseLaneAwareTestRunBody } from "./lane-run-route.js";
 import { defaultJobRouteRuntime } from "./job-routes.js";
-import {
-  frozenTestRunTargetProfile,
-  queuedAppMapTestTargetProfile,
-} from "./app-map-test-target-profile.js";
+import { queuedAppMapTestTargetProfile } from "./app-map-test-target-profile.js";
+import { prepareAppMapCompanionTestRun } from "./app-map-test-run-prepare.js";
 import { defaultTestRunRuntime, type AppMapRunRouteContext } from "./app-map-test-run-runtime.js";
 import { assertRepeatWorkflowMutation } from "./repeat-workflow-receipt.js";
 import {
@@ -240,24 +234,33 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
               },
             }
           : {}),
+        ...(started.nativeCompanion ? { nativeCompanion: started.nativeCompanion } : {}),
       });
       return true;
     }
 
-    const targetId = body.target.targetId.trim();
-    const requestedTarget = { targetId, platform: body.target.platform };
     const targetProfileId = body.targetProfileId?.trim() || undefined;
-    const explicitlySelectedRuntimeTargetProfile = targetProfileId
-      ? frozenTestRunTargetProfile({ map, targetProfileId, target: requestedTarget })
-      : undefined;
-    const inferredRuntimeTargetProfile = explicitlySelectedRuntimeTargetProfile
-      ? undefined
-      : frozenEvidenceTargetProfileForTarget({
-          target: requestedTarget,
-          profiles: frozenRawAccessibilityTargetProfiles(map),
-        });
-    const runtimeTargetProfile =
-      explicitlySelectedRuntimeTargetProfile ?? inferredRuntimeTargetProfile;
+    const prepared = await prepareAppMapCompanionTestRun({
+      map,
+      test,
+      target: body.target,
+      ...(targetProfileId ? { targetProfileId } : {}),
+      projectId: input.scope.projectId,
+      compileOptions: {
+        forceRecaptureSurfaceScreenIds: body.surfaceCapture?.forceRecaptureScreenIds,
+        entryCheckpointScreenId:
+          body.startup?.mode === "verified-checkpoint" ? body.startup.screenId : undefined,
+        startupMode:
+          body.startup?.mode === "cold" || body.startup?.mode === "warm"
+            ? body.startup.mode
+            : "warm",
+      },
+    });
+    const compiled = prepared.compiled;
+    const runtimeTargetProfile = prepared.runtimeTargetProfile;
+    const executionTarget = prepared.executionTarget;
+    const targetId = executionTarget.targetId.trim();
+    const requestedTarget = { targetId, platform: executionTarget.platform };
     if (body.account || body.engine) {
       const savedBrowser = runtimeTargetProfile?.browserCaseProfile;
       const listed = await listBrowserAuthenticationFixtures({
@@ -275,7 +278,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
             ? { authenticationFixtureId: savedBrowser.authenticationFixtureId }
             : {}),
         },
-        platform: body.target.platform,
+        platform: executionTarget.platform,
         accountFixtureIds: accountFixtureIdsFromListed(listed),
       });
       if (bound.status === "blocked") {
@@ -285,35 +288,6 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
             "Use the exact saved account fixture revision, or capture a matching runtime profile before running.",
         });
       }
-    }
-    let compiled;
-    try {
-      const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(map);
-      compiled = compileAppMapTest(map, test, {
-        forceRecaptureSurfaceScreenIds: body.surfaceCapture?.forceRecaptureScreenIds,
-        entryCheckpointScreenId:
-          body.startup?.mode === "verified-checkpoint" ? body.startup.screenId : undefined,
-        startupMode:
-          body.startup?.mode === "cold" || body.startup?.mode === "warm"
-            ? body.startup.mode
-            : "warm",
-        reviewedDocumentOrigins,
-        runtimeTargetProfile,
-      });
-    } catch (error) {
-      if (error instanceof AppMapTestCompileError) {
-        throw new HttpError(409, error.message, {
-          code: error.code,
-          testId: error.testId,
-          stepId: error.stepId,
-          diagnostics: error.diagnostics,
-          recovery:
-            error.code === "unresolved-navigation"
-              ? "Teach or author every missing reviewed return transition, then compile the Test again."
-              : "Open the Test editor and resolve its blocking compile diagnostics.",
-        });
-      }
-      throw new HttpError(409, error instanceof Error ? error.message : String(error));
     }
     const plan = compiled.plan;
     const preflight = preflightCompiledAppMapTestOffline(
@@ -332,7 +306,10 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
           recovery: offlinePreflightProfileRecovery({
             runtimeTargetProfile,
             explicit: Boolean(targetProfileId),
-            candidates: savedAppMapTargetProfileIdsForTarget(map, requestedTarget),
+            candidates: savedAppMapTargetProfileIdsForTarget(
+              prepared.executionMap,
+              requestedTarget,
+            ),
             target: requestedTarget,
           }),
         },
@@ -371,7 +348,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     }
 
     let observedDevices: Awaited<ReturnType<typeof listDevices>> | undefined;
-    if (body.target.kind === "device") {
+    if (executionTarget.kind === "device") {
       const operation = currentOperationContext();
       const activeLease = operation
         ? (await listDeviceLeases(input.scope.projectId)).some(
@@ -435,13 +412,13 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     ).find(
       (profile) =>
         profile.targetId === targetId &&
-        profile.platform === body.target.platform &&
-        profile.source === body.target.kind,
+        profile.platform === executionTarget.platform &&
+        profile.source === executionTarget.kind,
     );
     const targetProfile = queuedAppMapTestTargetProfile({
       runtimeTargetProfile,
       observedTargetProfile,
-      target: body.target,
+      target: executionTarget,
     });
     const selectedSurface = plan.testFamily?.targetSurface;
     const isReviewedRoute = plan.testFamily?.mode === "reviewed-route-variant";
@@ -466,7 +443,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       | undefined;
     const sourceRevision = body.sourceRevision;
     const buildId = sourceRevision?.buildId;
-    if (input.proofExecutionAuthority && body.target.kind === "browser") {
+    if (input.proofExecutionAuthority && executionTarget.kind === "browser") {
       const authority = input.proofExecutionAuthority;
       if (
         !sourceRevision ||
@@ -497,7 +474,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
           buildId,
         });
       }
-      if (body.target.kind === "browser") {
+      if (executionTarget.kind === "browser") {
         try {
           const bound = bindRegisteredWebDeploymentToProof({
             build,
@@ -531,7 +508,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         try {
           buildProvenance = await runtime.prepareBuildForProof({
             build,
-            target: { kind: "device", platform: body.target.platform, serial: targetId },
+            target: { kind: "device", platform: executionTarget.platform, serial: targetId },
             targetKind,
             sourceSha: sourceRevision!.sha,
             artifactDigest: sourceRevision!.artifactDigest ?? "",
@@ -549,7 +526,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         }
       }
     }
-    if (input.proofExecutionAuthority && body.target.kind === "browser" && !webBuildBinding) {
+    if (input.proofExecutionAuthority && executionTarget.kind === "browser" && !webBuildBinding) {
       throw new HttpError(409, "Browser Proof execution requires a verified deployment binding", {
         code: "PROOF_INSUFFICIENT_EVIDENCE",
         targetId,
@@ -582,10 +559,10 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       title: recipeSnapshot.title,
       recipeSnapshot,
       recipeGraph,
-      serial: body.target.kind === "device" ? targetId : undefined,
-      platform: body.target.kind === "device" ? body.target.platform : undefined,
-      targetKind: body.target.kind,
-      browserTargetId: body.target.kind === "browser" ? targetId : undefined,
+      serial: executionTarget.kind === "device" ? targetId : undefined,
+      platform: executionTarget.kind === "device" ? executionTarget.platform : undefined,
+      targetKind: executionTarget.kind,
+      browserTargetId: executionTarget.kind === "browser" ? targetId : undefined,
       ...(targetProfile ? { targetProfile } : {}),
       ...(unsignedLaneId ? { unsignedLaneId } : {}),
       ...(queuedSourceRevision ? { sourceRevision: queuedSourceRevision } : {}),
@@ -662,7 +639,12 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       projectId: input.scope.projectId,
       ownerId: operation.actorId,
     });
-    json(input.response, 202, { planIdentity, plan, job });
+    json(input.response, 202, {
+      planIdentity,
+      plan,
+      job,
+      ...(compiled.nativeCompanion ? { nativeCompanion: compiled.nativeCompanion } : {}),
+    });
     return true;
   }
   const flowMatch = matchPath(input.pathname, "/app-maps/:appMapId/flows/:flowId/run");

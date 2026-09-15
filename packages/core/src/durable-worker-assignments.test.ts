@@ -245,7 +245,9 @@ test("restart quarantine retains the prior execution fence until a fresh reproof
     assert.throws(
       () => store.claimRunning("fresh-attempt", "server-after-restart", 7_200),
       (error: unknown) =>
-        error instanceof DurableWorkerAssignmentContentionError && error.scope === "target",
+        error instanceof DurableWorkerAssignmentContentionError &&
+        error.scope === "target" &&
+        /recovery-required fence/.test(error.message),
     );
     const released = store.releaseRecoveryFence({
       id: "interrupted",

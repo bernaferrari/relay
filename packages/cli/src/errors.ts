@@ -67,7 +67,7 @@ export function classifyError(error: unknown): CliError {
     if (error.status === 499) return new CliError(error.message, ExitCode.cancellation, error.body);
     if (/no active session|run open first/i.test(error.message)) {
       return new CliError(
-        "The app is open, but the tap session is not attached. Retry the tap once.",
+        "No XCTest session. Point taps use CoreDevice HID over the go-ios tunnel (info port 28100 or 60105) and do not need the runner. Recover only if you need the accessibility tree. Do not run target.open on a physical iPad.",
         ExitCode.server,
         error.body,
       );
@@ -75,7 +75,14 @@ export function classifyError(error: unknown): CliError {
     return new CliError(error.message, ExitCode.server, error.body);
   }
   if (error instanceof TypeError) {
-    return new CliError(error.message, ExitCode.connection);
+    const raw = error.message;
+    if (/fetch failed/i.test(raw)) {
+      return new CliError(
+        "Relay is unreachable (fetch failed). tsx watch may have restarted :8787 and dropped in-memory jobs. Do not recover-kill a live iOS runner. Do not start a new server while a Plan is live.",
+        ExitCode.connection,
+      );
+    }
+    return new CliError(raw, ExitCode.connection);
   }
   return new CliError(error instanceof Error ? error.message : String(error), ExitCode.validation);
 }

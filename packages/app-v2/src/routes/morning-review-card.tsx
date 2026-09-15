@@ -20,7 +20,8 @@ const steps = [
   {
     href: "/accounts",
     label: "Check Sign-ins",
-    detail: "Expired or signed-out accounts fail the next Plan closed as Infra.",
+    detail:
+      "Check live health. Expired or signed-out accounts fail the next Plan closed as Infra. One SuperGrok fixture is not a 3-account pack.",
   },
   {
     href: "/tests/new",

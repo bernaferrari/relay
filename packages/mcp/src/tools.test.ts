@@ -120,7 +120,9 @@ test("maps snapshot capture to a digest-by-default tool with an explicit full tr
   assert.match(snapshot.description, /controls/);
   assert.match(snapshot.description, /nodeCount/);
   assert.match(snapshot.description, /full/);
+  assert.match(snapshot.description, /visual:false/);
   assert.deepEqual(snapshot.inputSchema.parse({ serial: "device-1" }), { serial: "device-1" });
+  assert.deepEqual(snapshot.inputSchema.parse({ laneId: "grok-lab" }), { laneId: "grok-lab" });
   assert.deepEqual(snapshot.inputSchema.parse({ serial: "device-1", full: true }), {
     serial: "device-1",
     full: true,
@@ -147,7 +149,7 @@ test("maps screenshot capture to its stable Relay tool descriptor", () => {
       operationId: "target.screenshot.capture",
       title: "Capture target screenshot",
       description:
-        "Capture target screenshot. Pass operation fields directly. Project role: viewer. Target capabilities: screenshot. Lease: shared. Step 1 of a tap: capture pixels, then call interact. Do not retry snapshot in a loop if the tree is missing.",
+        "Capture target screenshot. Pass operation fields directly. Project role: viewer. Target capabilities: screenshot. Lease: shared. Happy path 1/3: capture pixels, then interact, then screenshot again. iOS 17+ pixels need go-ios tunnel, not target.open. A missing XCTest session is not a failed screenshot. Do not start with test run, survey, or recover. Do not retry snapshot in a loop if the tree is missing.",
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -166,7 +168,11 @@ test("maps screenshot capture to its stable Relay tool descriptor", () => {
 test("lets agents tap by accessibility identifier", () => {
   const interact = tool("target.interact");
   assert.match(interact.description, /Prefer identifier/);
-  assert.match(interact.description, /Step 2 of a tap/);
+  assert.match(interact.description, /Happy path 2\/3/);
+  assert.match(interact.description, /PNG image/);
+  assert.match(interact.description, /Do not start with app-map.test.run/);
+  assert.match(interact.description, /missing XCTest runner is not a reason to retry a point tap/);
+  assert.doesNotMatch(interact.description, /Retry the tap/);
   assert.deepEqual(
     interact.inputSchema.parse({
       serial: "ipad-1",
@@ -194,10 +200,17 @@ test("lets agents tap by accessibility identifier", () => {
 });
 
 test("advertises serial on recover and list tools in the control profile", () => {
-  assert.deepEqual(tool("target.recover").inputSchema.parse({ serial: "ipad-1" }), {
-    serial: "ipad-1",
-  });
+  assert.match(tool("target.recover").description, /Adopt a healthy live XCTest runner/u);
+  assert.doesNotMatch(tool("target.recover").description, /Repair the runner/u);
   assert.deepEqual(tool("target.devices.list").inputSchema.parse({}), {});
+  assert.deepEqual(tool("target.devices.list").inputSchema.parse({ phase: "android" }), {
+    phase: "android",
+  });
+  assert.deepEqual(tool("target.devices.list").inputSchema.parse({ phase: "ios" }), {
+    phase: "ios",
+  });
+  assert.match(tool("target.devices.list").description, /optional android\|ios filter/i);
+  assert.match(tool("target.devices.list").description, /iOS/);
   assert.deepEqual(tool("target.list").inputSchema.parse({}), {});
   assert.deepEqual(tool("system.doctor.get").inputSchema.parse({}), {});
   assert.deepEqual(tool("lease.list").inputSchema.parse({ status: "active" }), {
@@ -468,6 +481,8 @@ test("gives run agents one revision-pinned graph Test operation", () => {
 
 test("app-map.test.run guidance explains the one-Test versus Combine split", () => {
   const guidance = tool("app-map.test.run").description;
+  assert.match(guidance, /Not a first poke/u);
+  assert.match(guidance, /wait-for\/expect-screen/u);
   assert.match(guidance, /Without `in`/u);
   assert.match(guidance, /expectedRevision \+ target are required/u);
   assert.match(guidance, /With `in`/u);
@@ -777,7 +792,7 @@ test("a language Variable exposes one canonical Variable × Test Combine", () =>
     assert.ok(locale.has(operationId), `locale profile is missing ${operationId}`);
   }
   assert.match(tool("target.scroll-survey.capture").description, /Pass dir/u);
-  assert.match(tool("target.scroll-survey.capture").description, /Combine export/u);
+  assert.match(tool("target.scroll-survey.capture").description, /Plan export/u);
   assert.match(tool("target.scroll-survey.capture").description, /portable review folder/u);
   assert.match(tool("target.scroll-survey.capture").description, /digest without base64/u);
   assert.doesNotMatch(tool("target.scroll-survey.capture").description, /Then compare the folder/u);
@@ -789,6 +804,7 @@ test("a language Variable exposes one canonical Variable × Test Combine", () =>
 test("marks App Map Combine execution as a per-cell runtime profile contract", () => {
   assert.match(tool("job.combine.start").description, /one cell/u);
   assert.match(tool("job.combine.start").description, /executionMode all/u);
+  assert.match(tool("job.combine.start").description, /Infra columns/u);
   assert.doesNotMatch(tool("job.combine.start").description, /selectedCellIds to run more/u);
   assert.match(tool("job.combine.start").description, /app-map\.test\.run/u);
 });

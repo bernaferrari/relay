@@ -1,6 +1,7 @@
 import { ApiError } from "@relay/client";
 import { operationDefinition, VISUAL_REVIEW_ACTIONS, type OperationId } from "@relay/protocol";
 import * as z from "zod/v4";
+import { pngScreenshotRecord } from "./png-result.js";
 import { relayMcpExclusions, relayMcpTools } from "./tools.js";
 
 type OperationInvoker = {
@@ -133,7 +134,7 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_screenshot",
     "Capture screenshot",
-    'When to use: capture pixels before a tap; missing trees are fine. Example: {serial:"ipad"} returns the current PNG.',
+    'When to use: happy path 1/3 — capture pixels before a tap; missing trees are fine. Then preview/tap, then screenshot again. Do not start with relay_run. iOS 17+ needs go-ios tunnel, not target.open. Example: {serial:"RQCY104BG8X"} returns the current PNG.',
     z
       .object({
         serial: identifier,
@@ -153,7 +154,7 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_preview",
     "Preview a tap or swipe",
-    'When to use: mark a control on a PNG without committing. Example: {serial:"ipad",label:"Back"} returns the marked PNG path/image.',
+    'When to use: mark a control on a PNG without committing (returns an image, not a JSON dump). Example: {serial:"RQCY104BG8X",label:"Library"} returns the marked PNG.',
     interactTarget
       .safeExtend({ from: point.optional(), to: point.optional() })
       .superRefine((value, context) => requireTapTarget(value, context, true)),
@@ -162,7 +163,7 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_tap",
     "Tap a control",
-    'When to use: commit one tap after screenshot or preview. Prefer identifier, then label, then text, then point. Example: {serial:"ipad",label:"Back"}.',
+    'When to use: happy path 2/3 — commit one tap after screenshot or preview. Prefer identifier, then label, then text, then point. A missing XCTest runner is not a reason to retry a point tap. Example: {serial:"RQCY104BG8X",label:"Library"}.',
     interactTarget.superRefine((value, context) => requireTapTarget(value, context)),
     rw,
   ),
@@ -197,7 +198,7 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_recover",
     "Recover the runner",
-    'When to use: XCTest/session is down; never reboot the device. Example: {serial:"ipad"} remounts the runner.',
+    'When to use: XCTest/session is down; never reboot. Adopts a healthy live runner instead of killing it. Do not recover a ready iPad mid-pack. Example: {serial:"ipad"} adopts the live XCTest runner.',
     z.object({ serial: identifier }).strict(),
     rw,
   ),
@@ -222,7 +223,7 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_run",
     "Run a Test",
-    'When to use: run one saved Test; pass lane/laneId instead of assembling profileTargets. Example: {appMapId:"grok-web",testId:"logged-out-home",lane:"grok-daily"}.',
+    'When to use: run one saved Test after a live poke; not a first move. Default is one case; pass executionMode all only when asked. wait-for/expect-screen can sit on an unchanged screen. Example: {appMapId:"grok-web",testId:"logged-out-home",lane:"grok-daily"}.',
     z
       .object({
         appMapId: identifier,
@@ -242,7 +243,7 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_plan_run",
     "Run a Plan",
-    'When to use: run a saved Plan (Combine), optionally wait, print findings, and export the review pack. Example: {appMapId:"grok-web",combineId:"grok-hourly",lane:"grok-lab",findings:true,export:true}.',
+    'When to use: run a saved Plan (every selected case), optionally wait, print findings, and export the review pack. Missing extra sign-ins or devices fail closed as Infra columns, not a smaller Plan. Do not start this while tsx watch would reload :8787 mid-pack. Example: {appMapId:"grok-web",combineId:"grok-hourly",lane:"grok-lab",findings:true,export:true}.',
     z
       .object({
         appMapId: identifier,
@@ -251,7 +252,7 @@ export const relayOperatorTools = Object.freeze([
         serial: identifier.optional(),
         browserTargetId: identifier.optional(),
         targetKind: z.enum(["device", "browser"]).optional(),
-        executionMode: z.enum(["pilot", "all"]).optional(),
+        executionMode: z.enum(["all"]).optional(),
         findings: z.boolean().optional(),
         export: z.union([z.boolean(), identifier]).optional(),
       })
@@ -268,7 +269,7 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_findings",
     "Plan findings",
-    'When to use: read durable Combine findings for Confirm/Reject (never auto-accepts visuals). Example: {batchId:"camp-1"}.',
+    'When to use: read durable Plan findings for Confirm/Reject (never auto-accepts visuals). Example: {batchId:"camp-1"}.',
     z.object({ batchId: identifier }).strict(),
     ro,
   ),
@@ -571,8 +572,7 @@ async function waitForJob(
 }
 
 function pngResult(result: unknown): boolean {
-  const record = object(result);
-  return record?.mime === "image/png" && typeof record.base64 === "string";
+  return pngScreenshotRecord(result) !== undefined;
 }
 
 export function operatorResultIsPng(name: string, result: unknown): boolean {
@@ -734,7 +734,7 @@ export async function invokeRelayOperatorTool(input: {
         {
           appMapId: parsed.appMapId,
           combineId: parsed.combineId,
-          executionMode: parsed.executionMode === "pilot" ? "pilot" : "all",
+          executionMode: "all",
           ...(typeof parsed.serial === "string" ? { serial: parsed.serial } : {}),
           ...(typeof parsed.browserTargetId === "string"
             ? { browserTargetId: parsed.browserTargetId }

@@ -56,7 +56,8 @@ export function checkpointBindingCopy(step: AppMapScenarioTestStep): string | un
     if (assertion.kind === "layout") return "Checks that two controls do not overlap.";
     if (assertion.kind === "content")
       return `Checks ${assertion.input} ${assertion.match} ${assertion.expected}.`;
-    if (assertion.kind === "visual") return "A visual judge will score this screenshot.";
+    if (assertion.kind === "visual")
+      return "A visual judge will score this screenshot. Disagreement stays Needs review. Do not auto-accept.";
     if (assertion.kind === "semantic") return `A semantic judge will score ${assertion.input}.`;
     return undefined;
   }
@@ -80,7 +81,8 @@ export function checkpointBindingCopy(step: AppMapScenarioTestStep): string | un
     return recipe.name
       ? `Ignores ${recipe.name} so only chrome is compared.`
       : "Ignores a rectangle so only chrome is compared.";
-  if (recipe.kind === "evaluate-visual") return "A visual judge will score this screenshot.";
+  if (recipe.kind === "evaluate-visual")
+    return "A visual judge will score this screenshot. Disagreement stays Needs review. Do not auto-accept.";
   if (recipe.kind === "evaluate-semantic") return "A semantic judge will score the reply.";
   return undefined;
 }
@@ -276,6 +278,14 @@ export const IDENTITY_IGNORE_PRESETS = [
     label: "Heading caret",
     detail: "Blinking underline under explore?. Does not cover the Grok heading text.",
   },
+  {
+    id: "library-chrome-sandwich",
+    name: "library chrome sandwich",
+    region: "0.06,0.14,0.88,0.60",
+    label: "Library chrome sandwich",
+    detail:
+      "Infinite Library / Imagine / Conversations feed. One viewport. Top and bottom chrome stay compared. Do not survey the feed.",
+  },
 ] as const;
 
 export function emptyValidationDraft(kind: ValidationDraft["kind"]): ValidationDraft {
@@ -415,7 +425,9 @@ export function ValidationExpectationEditor({
             />
           </label>
           <p className="text-xs font-normal leading-normal text-muted-foreground">
-            Optional. Pixels or 0–1 fractions. Leave blank to judge the whole screenshot.
+            Optional. Pixels or 0–1 fractions. Leave blank to judge the whole screenshot. Judge
+            visible chrome. Do not parse LaTeX or H1–H6 size. Coffee and location replies stay
+            screenshot-only.
           </p>
           <RegionFrame region={value.region} />
           <JudgeAgreementControls
@@ -497,8 +509,7 @@ export function ValidationExpectationEditor({
             />
           </label>
           <p className="text-xs font-normal leading-normal text-muted-foreground">
-            YAML seed uses wait-response → extract → semantic judge. Name this the same as Judge
-            this text, usually <code>reply</code>.
+            YAML is not required. Wait for a reply, remember it, then add a semantic judge. Name this the same as Judge this text, usually <code>reply</code>.
           </p>
         </>
       ) : null}
@@ -544,7 +555,10 @@ export function ValidationExpectationEditor({
             Identity and visual compare skip this rectangle so only chrome is compared. Pixels or
             0–1 fractions. On logged-out grok.com, ignore the cookie banner, rotating composer
             placeholder, and heading caret. On a logged-out paywall, ignore the user bubble — a full
-            reply-body ignore can strip the Continue card.
+            reply-body ignore can strip the Continue card. On Library, Imagine, or Conversations,
+            ignore the feed with Library chrome sandwich so one viewport of top and bottom chrome is
+            compared. Do not survey the infinite feed. Ignore Enjoying Grok? chrome with a named
+            region — do not bake that prompt into a baseline.
           </p>
           <RegionFrame region={value.region} />
         </>

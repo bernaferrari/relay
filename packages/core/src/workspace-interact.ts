@@ -18,7 +18,12 @@ import {
   lastIosMutationAttemptDiagnostic,
   type IosMutationAttemptDiagnostic,
   type SnapshotNode,
+  rememberedTargetApplication,
 } from "./device.js";
+import {
+  identifierNodesViaLiveIosRunnerListener,
+  labelNodesViaLiveIosRunnerListener,
+} from "./ios-runner-listener-command.js";
 import {
   explicitPointResolution,
   resolveNamedControlOutcome,
@@ -38,6 +43,7 @@ import {
   type IosSessionOperationDiagnostic,
 } from "./workspace-ios-session.js";
 import { rawKey, rawSwipe, rawTap } from "./workspace-android-raw.js";
+import { iosPointTapRecoverError, tapIosPointViaPixels } from "./workspace-ios-raw.js";
 import { captureScreenshot, captureSnapshot, type ScreenshotPayload } from "./workspace-capture.js";
 import { invalidateTargetSemanticControl } from "./target-runtime-readiness.js";
 import { IosXCTestSessionUnavailableError, diagnoseIosRunnerError } from "./ios-device-adapter.js";
@@ -46,7 +52,7 @@ export type InteractPoint = { x: number; y: number };
 
 export type InteractInput =
   | { kind: "identifier"; identifier: string; point?: InteractPoint }
-  | { kind: "label"; label: string; point?: InteractPoint }
+  | { kind: "label"; label: string; heading?: string; point?: InteractPoint }
   | { kind: "point"; x: number; y: number }
   | { kind: "ref"; ref: string }
   | { kind: "find"; query: string; point?: InteractPoint }
@@ -166,7 +172,10 @@ function namedPreviewTarget(input: InteractInput): NamedControlTarget | undefine
     case "identifier":
       return { identifier: input.identifier };
     case "label":
-      return { label: input.label };
+      return {
+        label: input.label,
+        ...(input.heading?.trim() ? { heading: input.heading } : {}),
+      };
     case "find":
       return { label: input.query, text: input.query };
     case "text-match":
@@ -346,6 +355,40 @@ export async function previewInteract(
     } catch {
       inspectable = false;
     }
+    if (
+      input.kind === "identifier" &&
+      input.identifier.trim() &&
+      !resolveInteractPreview(nodes, input)
+    ) {
+      try {
+        const context = currentTargetContext();
+        if (context.kind === "device" && context.platform === "ios") {
+          const extra = await identifierNodesViaLiveIosRunnerListener({
+            serial: context.serial,
+            identifier: input.identifier,
+            appBundleId: await rememberedTargetApplication(context),
+          });
+          if (extra?.length) nodes = [...nodes, ...extra];
+        }
+      } catch {
+        // Preview stays unmarked when the identifier is still absent.
+      }
+    }
+    if (input.kind === "label" && input.label.trim() && !resolveInteractPreview(nodes, input)) {
+      try {
+        const context = currentTargetContext();
+        if (context.kind === "device" && context.platform === "ios") {
+          const extra = await labelNodesViaLiveIosRunnerListener({
+            serial: context.serial,
+            label: input.label,
+            appBundleId: await rememberedTargetApplication(context),
+          });
+          if (extra?.length) nodes = [...nodes, ...extra];
+        }
+      } catch {
+        // Preview stays unmarked when the label is still absent.
+      }
+    }
     const resolution = resolveInteractPreview(nodes, input);
     const fallbackPoint =
       input.kind === "point"
@@ -404,6 +447,7 @@ export async function interactOnDevice(
     case "label":
       return namedOrMiss(device, {
         label: input.label,
+        ...(input.heading?.trim() ? { heading: input.heading } : {}),
         ...optionalInteractPoint(input.point),
       });
     case "point":
@@ -508,11 +552,13 @@ export async function interact(
       // Browser locators validate uniqueness and actionability at dispatch and
       // scroll the correct ancestor into view. Device viewport-point matching
       // cannot represent a control inside a clipped DOM scroll container.
+      // A heading scopes dialog/region → named control so two Dismiss buttons
+      // in different locations never coalesce into one Playwright click.
       await withSession(
         target.device,
         async () => {
           if (input.kind === "identifier") await pressIdentifier(target.device, input.identifier);
-          else await pressLabel(target.device, input.label);
+          else await pressLabel(target.device, input.label, undefined, input.heading);
         },
         "interaction",
       );
@@ -541,31 +587,39 @@ export async function interact(
       }
     }
     if (context.kind === "device" && context.platform === "ios" && input.kind === "point") {
-      await withSession(
-        target.device,
-        () =>
-          verifyIosScreenChanged(
-            context.serial,
-            () => pressPoint(target.device, input.x, input.y),
-            {
-              repair: iosVisualRepairFor(input),
-            },
-          ),
-        "interaction",
-      );
-      return afterInput(
-        attachIosSessionLifecycle(
-          {
-            resolution: {
-              method: "point" as const,
-              point: { x: input.x, y: input.y },
-              bounds: { x: input.x, y: input.y, width: 1, height: 1 },
-            },
-          },
-          context.serial,
-          previousIosMutationSequence,
-        ),
-      );
+      // HID when the DDI advertises it; otherwise XCTest pressPoint. Neither
+      // path may surface outcome-unknown as “retry the tap”.
+      const bounds = iosLogicalBoundsForSerial(context.serial);
+      const tap = async () => {
+        try {
+          await tapIosPointViaPixels({
+            serial: context.serial,
+            x: input.x,
+            y: input.y,
+            ...(bounds ? { width: bounds.width, height: bounds.height } : {}),
+          });
+        } catch (hidError) {
+          try {
+            await pressPoint(target.device, input.x, input.y);
+          } catch (xctestError) {
+            throw iosPointTapRecoverError(hidError, xctestError);
+          }
+        }
+      };
+      if (opts?.verifyIosScreenChange === false) {
+        await tap();
+      } else {
+        await verifyIosScreenChanged(context.serial, tap, {
+          repair: iosVisualRepairFor(input),
+        });
+      }
+      return afterInput({
+        resolution: {
+          method: "point" as const,
+          point: { x: input.x, y: input.y },
+          bounds: { x: input.x, y: input.y, width: 1, height: 1 },
+        },
+      });
     }
     // Visual transition proof is now the default for named iOS taps: a
     // stale selector that leaves pixels untouched must surface as the typed

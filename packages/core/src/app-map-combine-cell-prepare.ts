@@ -7,6 +7,7 @@ import type {
   AppMapCombinePreflightIssue,
   AppMapCompiledRuntimeTargetProfile,
   AppMapCompiledTest,
+  AppMapNativeCompanionCompile,
   AppMapScenarioTest,
   ExecutionTargetRef,
 } from "@relay/protocol";
@@ -37,6 +38,7 @@ import { compileOptionsForVisualSurface } from "./combine-visual-surface.js";
 import { createAppMapTestExecutionIntent } from "./app-map-test-execution-intent.js";
 import { loadFrozenRawAccessibilityEvidence } from "./frozen-raw-accessibility.js";
 import { compileAppMapTest } from "./map-work.js";
+import { resolveCombineCellCompanion } from "./app-map-native-companion-combine.js";
 import { parseUnrecordedNativeRuntimeProfile } from "./app-map-unrecorded-runtime-profile.js";
 import { preflightCompiledAppMapTestOffline } from "./offline-test-preflight.js";
 import {
@@ -83,6 +85,7 @@ export type PreparedAppMapCombineCell = {
   /** Immutable location that this cell was explicitly bound to before queueing. */
   executionTarget: LocalExecutionTarget;
   selectedRuntimeTargetProfile: AppMapCompiledRuntimeTargetProfile;
+  nativeCompanion?: AppMapNativeCompanionCompile;
   plan: AppMapCompiledTest;
   staticInputs: CombineCellStaticInputs;
   wrapperInputs: CombineCellWrapperInputs;
@@ -550,6 +553,7 @@ async function prepareOneCell(input: {
   /** Provenance of the binding's profile id, recorded for audit. */
   targetProfileIdSource: "explicit" | "inherited";
   compileOptions: AppMapTestCompileOptions;
+  readAppMap?: (appMapId: string) => Promise<AppMap | null>;
 }): Promise<PreparedAppMapCombineCell> {
   const test = input.map.tests[input.cell.testId] as AppMapScenarioTest | undefined;
   if (!test) {
@@ -564,20 +568,39 @@ async function prepareOneCell(input: {
       [],
     );
   }
-  const selectedRuntimeTargetProfile = resolveSavedAppMapRuntimeTargetProfile({
+  const companion = await resolveCombineCellCompanion({
     map: input.map,
-    targetProfileId: input.binding.targetProfileId,
-    target: { targetId: input.target.targetId, platform: input.target.platform },
+    test,
+    requestedProfileId: input.binding.targetProfileId,
+    requestedTarget: input.target,
+    ...(input.readAppMap ? { readAppMap: input.readAppMap } : {}),
   });
+  const executionMap = companion?.map ?? input.map;
+  const executionTest = companion?.test ?? test;
+  const executionTarget = companion?.executionTarget ?? input.target;
+  const selectedRuntimeTargetProfile =
+    companion?.runtimeTargetProfile ??
+    resolveSavedAppMapRuntimeTargetProfile({
+      map: input.map,
+      targetProfileId: input.binding.targetProfileId,
+      target: { targetId: input.target.targetId, platform: input.target.platform },
+    });
+  const sameMap = executionMap.id === input.map.id;
   const effectiveTest = {
-    ...test,
-    ...(input.combine.captures?.[test.id] ? { capture: input.combine.captures[test.id] } : {}),
+    ...executionTest,
+    ...(sameMap && input.combine.captures?.[test.id]
+      ? { capture: input.combine.captures[test.id] }
+      : {}),
   };
   const compiled = compileAppMapTest(
-    input.map,
+    executionMap,
     effectiveTest,
     compileOptionsForVisualSurface(effectiveTest, {
-      ...input.compileOptions,
+      ...(sameMap
+        ? input.compileOptions
+        : input.compileOptions.startupMode
+          ? { startupMode: input.compileOptions.startupMode }
+          : {}),
       runtimeTargetProfile: selectedRuntimeTargetProfile,
     }),
   );
@@ -640,6 +663,7 @@ async function prepareOneCell(input: {
     wrapperRoot: wrapper.root,
     recipeGraph: wrapper.graph,
     staticInputs,
+    ...(companion?.nativeCompanion ? { nativeCompanion: companion.nativeCompanion } : {}),
   });
   return {
     cellId: input.cell.cellId,
@@ -650,8 +674,9 @@ async function prepareOneCell(input: {
     worldIndex: input.cell.worldIndex,
     targetProfileId: selectedRuntimeTargetProfile.id,
     targetProfileIdSource: input.targetProfileIdSource,
-    executionTarget: structuredClone(input.target),
+    executionTarget: structuredClone(executionTarget),
     selectedRuntimeTargetProfile,
+    ...(companion?.nativeCompanion ? { nativeCompanion: companion.nativeCompanion } : {}),
     plan,
     staticInputs,
     wrapperInputs,
@@ -677,6 +702,7 @@ export async function prepareAppMapCombineCells(input: {
   /** Optional explicit profile used when synthesizing missing cell bindings. */
   defaultTargetProfileId?: string;
   compileOptions?: AppMapTestCompileOptions;
+  readAppMap?: (appMapId: string) => Promise<AppMap | null>;
 }): Promise<PreparedAppMapCombine> {
   const tests = input.combine.testIds.map((id) => {
     const test = input.map.tests?.[id];
@@ -825,6 +851,7 @@ export async function prepareAppMapCombineCells(input: {
         ? "inherited"
         : "explicit",
       compileOptions: input.compileOptions ?? {},
+      ...(input.readAppMap ? { readAppMap: input.readAppMap } : {}),
     });
     prepared.push({
       ...preparedCell,

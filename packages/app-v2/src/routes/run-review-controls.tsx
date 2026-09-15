@@ -117,7 +117,7 @@ export function RunReviewControls({
                 </span>
                 <p className="text-sm text-muted-foreground">{visualIgnoreCopy(compare.data)}</p>
                 <p className="text-sm text-muted-foreground">
-                  Findings Confirm and Reject never accept a visual baseline.
+                  {visualPendingCopy(compare.data.code)}
                 </p>
                 <div
                   className="relay-report-review-actions flex flex-wrap items-center gap-2"
@@ -131,21 +131,23 @@ export function RunReviewControls({
                   >
                     Approve new baseline
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={visualDecision.isPending}
-                    onClick={() => visualDecision.mutate("keep-baseline")}
-                  >
-                    Keep baseline
-                  </Button>
+                  {canKeepVisualBaseline(compare.data.code) ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={visualDecision.isPending}
+                      onClick={() => visualDecision.mutate("keep-baseline")}
+                    >
+                      Keep baseline
+                    </Button>
+                  ) : null}
                   <Button
                     size="sm"
                     variant="ghost"
                     disabled={visualDecision.isPending}
                     onClick={() => visualDecision.mutate("retry")}
                   >
-                    Retry later
+                    {leaveVisualPendingLabel(compare.data.code)}
                   </Button>
                 </div>
               </div>
@@ -180,6 +182,21 @@ function visualComparisonLabel(code: string): string {
   return "Visual changes need review";
 }
 
+export function visualPendingCopy(code?: string): string {
+  if (code === "VISUAL_BASELINE_MISSING") {
+    return "This compare stays pending until a person approves a baseline. Findings Confirm and Reject never accept. Agents cannot approve.";
+  }
+  return "Findings Confirm and Reject never accept a visual baseline. Agents cannot approve.";
+}
+
+export function canKeepVisualBaseline(code?: string): boolean {
+  return code !== "VISUAL_BASELINE_MISSING";
+}
+
+export function leaveVisualPendingLabel(code?: string): string {
+  return code === "VISUAL_BASELINE_MISSING" ? "Leave pending" : "Retry later";
+}
+
 export function visualIgnoreCopy(comparison: {
   code?: string;
   policy?: { regions?: readonly { mode?: string; name?: string }[] };
@@ -195,5 +212,9 @@ export function visualIgnoreCopy(comparison: {
       ignored.map((region) => region.name?.trim()).filter((name): name is string => Boolean(name)),
     ),
   ];
-  return `${ignored.length} ignore region${ignored.length === 1 ? "" : "s"}${names.length ? ` (${names.join(", ")})` : ""}. Chrome stays compared.`;
+  const sandwich = names.some((name) => /library chrome sandwich/iu.test(name));
+  const chrome = sandwich
+    ? "One viewport of top and bottom chrome stays compared. Do not survey the feed."
+    : "Chrome stays compared.";
+  return `${ignored.length} ignore region${ignored.length === 1 ? "" : "s"}${names.length ? ` (${names.join(", ")})` : ""}. ${chrome}`;
 }

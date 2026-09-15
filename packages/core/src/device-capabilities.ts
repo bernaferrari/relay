@@ -99,4 +99,6 @@ export type SnapshotNode = {
   /** Scroll container forward-content hint. `true` means more content;
    * `false` is an explicit provider exhaustion receipt; omitted is unknown. */
   hiddenContentBelow?: boolean;
+  /** Listener querySelector nodes already use the logical interface space. */
+  logicalCoordinates?: boolean;
 };

@@ -101,4 +101,10 @@ test("test run and combine start accept laneId instead of a client overlay", () 
     }),
     { laneId: "shop-lab", kind: "label", label: "Back", preview: true },
   );
+  assert.deepEqual(
+    operationDefinition("target.snapshot.capture").input.parse({ laneId: "shop-lab" }),
+    {
+      laneId: "shop-lab",
+    },
+  );
 });

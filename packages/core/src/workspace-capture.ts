@@ -5,12 +5,13 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { PNG } from "pngjs";
-import type { TargetRuntimeReadiness } from "@relay/protocol";
+import { describePixelsOnlySnapshotChrome, type TargetRuntimeReadiness } from "@relay/protocol";
 import {
   isIosAccessibilityQueryInFlightError,
   bindAndroidAppSession,
   type DevicePlatform,
   base,
+  rememberedTargetApplication,
   snapshot,
   type Device,
   type SnapshotNode,
@@ -45,7 +46,7 @@ import {
   pngDimensions,
   type IosSnapshotGeometry,
 } from "./ios-geometry.js";
-import { resolveRuntimeTarget } from "./workspace-devices.js";
+import { resolveRuntimeTarget, type RuntimeTargetOverlay } from "./workspace-devices.js";
 import {
   lastIosSessionOperationDiagnostic,
   withSession,
@@ -83,6 +84,9 @@ export type SnapshotPayload = {
   source: "sdk" | "android-system" | "pixels-only";
   inspectionState?: AndroidInspectionState;
   foregroundApp?: string;
+  /** Product chrome when pixels or last launch can name the frame. */
+  app?: string;
+  header?: string;
   treeApp?: string;
   bindingState?: "matched" | "rebound" | "unavailable";
   /** Safe, actionable iOS runner state when pixels are available but AX is not. */
@@ -327,6 +331,7 @@ async function snapshotForTarget(
           ? "Relay did not observe named accessibility controls."
           : undefined));
     const semanticProbeInFlight = isIosAccessibilityQueryInFlightError(iosSnapshotError);
+    const rememberedApp = iosSerial ? await rememberedTargetApplication(target.context) : undefined;
     return {
       nodes: appleNodes,
       inspectable,
@@ -334,6 +339,7 @@ async function snapshotForTarget(
       ...(inspectable ? {} : { bindingState: "unavailable" as const }),
       ...(inspectionError ? { inspectionError } : {}),
       ...(semanticProbeInFlight ? { semanticProbeInFlight: true } : {}),
+      ...(rememberedApp ? { foregroundApp: rememberedApp } : {}),
     };
   }
 
@@ -420,11 +426,12 @@ export async function captureSnapshot(opts?: {
   interactiveOnly?: boolean;
   device?: Device;
   includeVisual?: boolean;
+  overlay?: RuntimeTargetOverlay;
   /** Preview remains a single read-only AX attempt with distinct diagnostics. */
   iosOperation?: "preview" | "snapshot";
 }): Promise<SnapshotPayload> {
   const captureStartedAt = now();
-  const target = await resolveRuntimeTarget(opts?.serial, opts?.device);
+  const target = await resolveRuntimeTarget(opts?.serial, opts?.device, opts?.overlay);
   return runWithTargetContext(target.context, async () => {
     const context = target.context;
     const readinessTarget =
@@ -448,6 +455,7 @@ export async function captureSnapshot(opts?: {
     } catch (error) {
       if (target.context.kind === "device" && target.context.platform === "ios") {
         const inspectionError = await iosInspectionErrorMessage(error, target.context.serial);
+        const rememberedApp = await rememberedTargetApplication(target.context);
         snapshot = {
           nodes: [],
           inspectable: false,
@@ -455,6 +463,7 @@ export async function captureSnapshot(opts?: {
           bindingState: "unavailable",
           ...(inspectionError ? { inspectionError } : {}),
           ...(isIosAccessibilityQueryInFlightError(error) ? { semanticProbeInFlight: true } : {}),
+          ...(rememberedApp ? { foregroundApp: rememberedApp } : {}),
         };
       } else {
         throw error;
@@ -562,6 +571,10 @@ export async function captureSnapshot(opts?: {
     const readiness = readinessTarget
       ? targetRuntimeReadiness(readinessTarget, readinessAt)
       : undefined;
+    const pixelsChrome = describePixelsOnlySnapshotChrome({
+      foregroundApp: capture.foregroundApp,
+      visualFingerprint,
+    });
     return {
       serial,
       capturedAt,
@@ -573,6 +586,8 @@ export async function captureSnapshot(opts?: {
       ...(proposedRows?.length ? { proposedRows } : {}),
       ...(readiness ? { readiness } : {}),
       ...capture,
+      ...(pixelsChrome.app ? { app: pixelsChrome.app } : {}),
+      ...(pixelsChrome.header ? { header: pixelsChrome.header } : {}),
       ...(iosSessionLifecycle ? { iosSessionLifecycle } : {}),
     };
   });
@@ -639,6 +654,23 @@ export async function attachScreenshotPayload(
   return screenshot;
 }
 
+function errorText(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error)).replace(/\s+/g, " ").trim();
+}
+
+/** Prefer the go-ios pixel failure over agent-device's browser "open first" copy. */
+export function iosPixelsUnavailableMessage(goIosError: unknown, sdkError?: unknown): string {
+  const goIos = errorText(goIosError).slice(0, 400);
+  const sdk = sdkError ? errorText(sdkError) : "";
+  if (/tunnel|ios 17|rsd|instruments/i.test(goIos)) {
+    return `iOS pixels need an active go-ios tunnel (iOS 17+). ${goIos} Do not run target.open on a physical iPad.`;
+  }
+  if (/no active session|run open first/i.test(sdk)) {
+    return `iOS screenshot failed via go-ios (${goIos}). XCTest is also down — that is not a failed screenshot. Do not run target.open on a physical iPad.`;
+  }
+  return `iOS screenshot failed via go-ios: ${goIos}`;
+}
+
 export async function captureScreenshot(opts?: {
   serial?: string;
   device?: Device;
@@ -666,10 +698,12 @@ export async function captureScreenshot(opts?: {
   const path = join(dir, "capture.png");
   return await runWithTargetContext(target.context, async () => {
     const foregroundApp =
-      target.context.kind === "device" &&
-      target.context.platform === "android" &&
-      target.context.serial
-        ? await captureAndroidForegroundApp(target.context.serial)
+      target.context.kind === "device" && target.context.serial
+        ? target.context.platform === "android"
+          ? await captureAndroidForegroundApp(target.context.serial)
+          : target.context.platform === "ios"
+            ? await rememberedTargetApplication(target.context)
+            : undefined
         : undefined;
     const context = currentTargetContext();
     const readinessTarget =
@@ -690,12 +724,16 @@ export async function captureScreenshot(opts?: {
     } else if (context.kind === "device" && context.platform === "ios" && context.serial) {
       try {
         await captureIosPngViaGoIos(context.serial, path);
-      } catch {
-        await withSession(
-          target.device,
-          () => target.device.capture.screenshot({ ...base(), path }),
-          "screenshot",
-        );
+      } catch (goIosError) {
+        try {
+          await withSession(
+            target.device,
+            () => target.device.capture.screenshot({ ...base(), path }),
+            "screenshot",
+          );
+        } catch (sdkError) {
+          throw new Error(iosPixelsUnavailableMessage(goIosError, sdkError));
+        }
       }
     } else {
       await withSession(

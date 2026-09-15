@@ -327,6 +327,22 @@ test("publishes device-control gotchas as a mandatory JSON resource", async () =
     assert.ok(
       envelope.data.rules.some(
         (rule) =>
+          rule.includes("unique chrome labels") &&
+          rule.includes("grok-compose") &&
+          rule.includes("Do not walk conversation lists"),
+      ),
+    );
+    assert.ok(
+      envelope.data.rules.some(
+        (rule) =>
+          rule.includes("laneId") && rule.includes("unsigned profile") && rule.includes("grok-com"),
+      ),
+    );
+    assert.ok(envelope.data.rules.some((rule) => rule.includes("screenshot → preview/tap")));
+    assert.ok(envelope.data.rules.some((rule) => rule.includes("wait-for/expect-screen")));
+    assert.ok(
+      envelope.data.rules.some(
+        (rule) =>
           rule.includes('lease.create is not exposed in selected MCP profile "outcome"') &&
           rule.includes("operator"),
       ),
@@ -361,6 +377,10 @@ test("operator profile publishes relay://lanes from lane.list", async () => {
     ) as { data: { rules: string[] } };
     assert.ok(gotchas.data.rules.some((rule) => rule.includes("auto-create a lease")));
     assert.ok(gotchas.data.rules.some((rule) => rule.includes("relay_recover")));
+    assert.ok(
+      gotchas.data.rules.some((rule) => rule.includes("adopts a healthy live XCTest runner")),
+    );
+    assert.ok(gotchas.data.rules.some((rule) => rule.includes("target.open")));
   } finally {
     await session.close();
   }

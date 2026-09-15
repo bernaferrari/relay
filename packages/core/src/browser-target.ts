@@ -385,10 +385,18 @@ export async function getBrowserDevice(
       },
     },
     interactions: {
-      press: async (input: { ref?: string; selector?: string; x?: number; y?: number }) =>
+      press: async (input: {
+        ref?: string;
+        selector?: string;
+        heading?: string;
+        x?: number;
+        y?: number;
+      }) =>
         mutatePrepared("Press browser target", async () => {
           const page = await activePage(session);
-          if (input.x !== undefined && input.y !== undefined) {
+          // Heading-scoped labels must click the Playwright locator. A snapshot
+          // point can land on a non-actionable overlay copy of the same label.
+          if (input.x !== undefined && input.y !== undefined && !input.heading?.trim()) {
             return async () => {
               await page.mouse.click(input.x!, input.y!);
               return { ok: true };

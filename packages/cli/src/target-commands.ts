@@ -10,9 +10,10 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
   mapped(
     "target.devices.list",
     path("target device list"),
+    path("target devices"),
     path("device list", [], undefined, {
       summary: "List connected devices",
-      examples: ["relay device list"],
+      examples: ["relay device list", "relay target device list --json"],
     }),
   ),
   mapped(
@@ -198,7 +199,17 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
           "relay device observe 00008110 --json --full",
           "relay device observe 00008110 --file tree.json",
         ],
-        note: "Read-only. --json/--ndjson stdout is the raw tree (nodes), matching HTTP /snapshot?visual=1; plain human output stays a digest (app, header, controls, nodeCount) unless --full. --file writes a review tree: document defaults, nodes only write overrides. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable.",
+        note: "Read-only. --json/--ndjson stdout is the raw tree (nodes), matching HTTP /snapshot?visual=1; plain human output stays a digest (app, header, controls, nodeCount) unless --full. --file writes a review tree: document defaults, nodes only write overrides. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable. --lane applies the saved browser fixture overlay; snapshot grok-com without a Lane is the unsigned profile.",
+      },
+    ),
+    path(
+      "device observe",
+      [],
+      { visual: true },
+      {
+        summary: "Read the current screen using --lane instead of a positional serial",
+        examples: ["relay device observe --lane grok-lab --json --full"],
+        note: "--lane or --input serial is required when the positional serial is omitted.",
       },
     ),
     path(
@@ -221,8 +232,19 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
           "relay device snapshot emulator-5554 --json",
           "relay device snapshot emulator-5554 --json --full",
           "relay device snapshot emulator-5554 --file tree.json",
+          "relay device snapshot --lane grok-lab --json --full",
         ],
-        note: "Read-only. --json/--ndjson stdout is the raw tree (nodes), matching HTTP /snapshot?visual=1; plain human output stays a digest (app, header, controls, nodeCount) unless --full. --file writes a review tree: document defaults, nodes only write overrides. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable.",
+        note: "Read-only. --json/--ndjson stdout is the raw tree (nodes), matching HTTP /snapshot?visual=1; plain human output stays a digest (app, header, controls, nodeCount) unless --full. --file writes a review tree: document defaults, nodes only write overrides. On iPad, Relay can still return pixels when XCTest accessibility control is unavailable. --lane applies the saved browser fixture overlay; snapshot grok-com without a Lane is the unsigned profile.",
+      },
+    ),
+    path(
+      "device snapshot",
+      [],
+      { visual: true },
+      {
+        summary: "Read the current screen using --lane instead of a positional serial",
+        examples: ["relay device snapshot --lane grok-lab --json --full"],
+        note: "--lane or --input serial is required when the positional serial is omitted.",
       },
     ),
   ),
@@ -238,7 +260,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         "relay device screenshot emulator-5554 --binary > current.png",
         "relay device screenshot 00008110 --mark 78,88 --file preview.png",
       ],
-      note: "Use --file <path> for a PNG file or --binary for raw PNG bytes on stdout. --mark x,y paints a tap preview and does not tap.",
+      note: "Happy path 1/3: screenshot, then interact, then screenshot again. Use --file <path> for a PNG file or --binary for raw PNG bytes on stdout. --mark x,y paints a tap preview and does not tap. On iOS 17+ this uses go-ios pixels (tunnel), not target.open. A missing XCTest session is not a failed screenshot. Do not start with test run or survey.",
       behavior: "screenshot",
     }),
   ),
@@ -412,7 +434,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         'relay device interact --preview --lane grok-lab --file preview.png --input \'{"kind":"label","label":"Imagine"}\'',
         'relay device interact emulator-5554 --input \'{"kind":"swipe","from":{"x":540,"y":1800},"to":{"x":540,"y":650},"durationMs":300}\'',
       ],
-      note: "Device input requires an active exclusive lease owned by the same --actor. --preview paints the selection on a screenshot and does not tap. --lane fills the target (and browser fixture overlay) so --input-file is not needed.",
+      note: "Happy path 2/3 after screenshot. Device input requires an active exclusive lease owned by the same --actor. --preview paints the selection on a screenshot and does not tap. --lane fills the target (and browser fixture overlay) so --input-file is not needed.",
     }),
     path("device interact", [], undefined, {
       summary: "Interact using --lane instead of a positional serial",

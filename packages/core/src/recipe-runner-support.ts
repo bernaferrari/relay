@@ -18,9 +18,11 @@ import {
   scrollUp,
   base,
   longPressTarget,
+  rememberedTargetApplication,
   snapshot,
   type SnapshotNode,
 } from "./device.js";
+import { identifierPresentViaLiveIosRunnerListener } from "./ios-runner-listener-command.js";
 import { resolveNamedControlOutcome } from "./device-target-resolution.js";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 import { TargetControlReservedError } from "./target-control.js";
@@ -661,7 +663,7 @@ const DEFAULT_EXPECT_TIMEOUT_MS = 5000;
  */
 function isNotFoundOrTimeout(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return /\bno match\b|did not match|not found|timed out|timeout/i.test(msg);
+  return /\bno match\b|did not match|not found|timed out|timeout|pixels unchanged/i.test(msg);
 }
 
 /**
@@ -672,6 +674,21 @@ function isNotFoundOrTimeout(err: unknown): boolean {
  * because the device went away.
  */
 async function targetPresent(device: Device, target: StepTarget): Promise<boolean> {
+  if (target.identifier) {
+    try {
+      const context = currentTargetContext();
+      if (context.kind === "device" && context.platform === "ios") {
+        const present = await identifierPresentViaLiveIosRunnerListener({
+          serial: context.serial,
+          identifier: target.identifier,
+          appBundleId: await rememberedTargetApplication(context),
+        });
+        if (present !== undefined) return present;
+      }
+    } catch {
+      // No target context — fall through to the SDK find / snapshot path.
+    }
+  }
   const query = target.identifier
     ? `id="${target.identifier.replaceAll('"', '\\"')}"`
     : target.ref

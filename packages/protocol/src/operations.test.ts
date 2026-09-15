@@ -1000,6 +1000,29 @@ test("graph Test runs require an exact revision and explicit target", () => {
     operationDefinition("app-map.test.run").input.parse(freshSurfaceInput),
     freshSurfaceInput,
   );
+  assert.deepEqual(
+    operationDefinition("app-map.test.run").input.parse({
+      ...input,
+      targetProfileId: "android",
+    }),
+    { ...input, targetProfileId: "android" },
+  );
+  assert.deepEqual(
+    operationDefinition("app-map.combine.preflight").input.parse({
+      appMapId: "grok-web",
+      combineId: "grok-web-daily",
+      browserTargetId: "grok-com",
+      targetKind: "browser",
+      targetProfileId: "android",
+    }),
+    {
+      appMapId: "grok-web",
+      combineId: "grok-web-daily",
+      browserTargetId: "grok-com",
+      targetKind: "browser",
+      targetProfileId: "android",
+    },
+  );
   const warmInput = {
     ...input,
     startup: { mode: "verified-checkpoint" as const, screenId: "settings" },
@@ -1243,6 +1266,18 @@ test("graph Test compilation can preview a verified checkpoint without changing 
     targetProfileId: "ipad-pt-BR",
   };
   assert.deepEqual(operationDefinition("app-map.test.compile").input.parse(input), input);
+  assert.deepEqual(
+    operationDefinition("app-map.test.compile").input.parse({
+      appMapId: "grok-web",
+      testId: "test-grok-web-signed-in-home",
+      targetProfileId: "ios",
+    }),
+    {
+      appMapId: "grok-web",
+      testId: "test-grok-web-signed-in-home",
+      targetProfileId: "ios",
+    },
+  );
   assert.throws(
     () =>
       operationDefinition("app-map.test.compile").input.parse({
@@ -1339,6 +1374,7 @@ test("recording review exposes one bounded semantic edit command", () => {
 test("snapshot input accepts optional full and stays valid when omitted", () => {
   const parse = operationDefinition("target.snapshot.capture").input.parse;
   assert.deepEqual(parse({ serial: "ipad-1" }), { serial: "ipad-1" });
+  assert.deepEqual(parse({ laneId: "grok-lab" }), { laneId: "grok-lab" });
   assert.deepEqual(parse({ serial: "ipad-1", full: true }), { serial: "ipad-1", full: true });
   assert.deepEqual(parse({ serial: "ipad-1", full: false, visual: true }), {
     serial: "ipad-1",
@@ -1351,6 +1387,7 @@ test("snapshot input accepts optional full and stays valid when omitted", () => 
   });
   assert.deepEqual(parse({ serial: "ipad-1", full: "true" }), { serial: "ipad-1", full: true });
   assert.throws(() => parse({ serial: "ipad-1", full: "yes" }), /full/);
+  assert.throws(() => parse({}), /serial or laneId is required/);
 });
 
 test("screenshot preview coordinates accept query-string numbers", () => {

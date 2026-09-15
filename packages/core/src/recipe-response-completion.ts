@@ -4,6 +4,7 @@ import { now } from "./events.js";
 import type { RecipeStep } from "./recipes.js";
 import type { RecipeStepContext } from "./recipe-runner-context.js";
 import { MAX_WAIT_MS } from "./recipe-validation-primitives.js";
+import { describeTarget } from "./recipe-presentation.js";
 import { nodeMatchesTarget, sameTarget, textForTarget } from "./recipe-target-match.js";
 import {
   captureResponseBoundary,
@@ -11,6 +12,11 @@ import {
   turnsAfterBoundary,
   type ResponseBoundary,
 } from "./recipe-response-boundary.js";
+import {
+  captureStillScreenFingerprint,
+  stillScreenAbortMessage,
+  stillScreenUnchanged,
+} from "./still-screen-wait.js";
 
 export function recordInitiatingResponseBoundary(
   nodes: readonly SnapshotNode[],
@@ -78,6 +84,7 @@ export async function waitForResponseCompletion(
   let lastSignals: string[] = startedAt ? ["response-started", "idle-visible"] : [];
   const pollDiagnostics: Array<Record<string, unknown>> = [];
   const firstPollDiagnostics: Array<Record<string, unknown>> = [];
+  let previousPixels: string | undefined;
 
   if (startedAt && leftoverComplete) {
     ctx.log(`response completion: content already complete (${initialText.length} characters)`);
@@ -189,6 +196,21 @@ export async function waitForResponseCompletion(
       }
     }
     previousText = text;
+    if (!startedAt) {
+      const fingerprint = await captureStillScreenFingerprint(device);
+      if (stillScreenUnchanged(previousPixels, fingerprint)) {
+        const elapsedMs = capturedAt - beganAt;
+        throw new Error(
+          stillScreenAbortMessage({
+            kind: "wait-response",
+            expected: describeTarget(step.target),
+            elapsedMs,
+            timeoutMs,
+          }),
+        );
+      }
+      previousPixels = fingerprint ?? previousPixels;
+    }
   }
 
   record("timeout", now(), previousText);

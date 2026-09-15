@@ -55,7 +55,7 @@ test("Test help makes checkpoint startup and retry behavior explicit", () => {
   );
   assert.match(
     compile.paths[0]?.inputHelp?.find(({ name }) => name === "targetProfileId")?.description ?? "",
-    /cannot borrow proof from another locale/u,
+    /ios.*android.*companion/u,
   );
   assert.ok(run.paths[0]?.examples?.some((example) => example.includes("verified-checkpoint")));
 });

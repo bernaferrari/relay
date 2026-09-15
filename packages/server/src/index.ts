@@ -401,8 +401,16 @@ async function handleRequest(
     }
 
     if (method === "GET" && pathname === "/devices") {
-      if (url.searchParams.get("phase") === "android") {
+      const phase = url.searchParams.get("phase");
+      if (phase === "android") {
         const devices = await listAndroidDevicesFast().catch(() => []);
+        json(res, 200, { devices });
+        return;
+      }
+      if (phase === "ios") {
+        const devices = (await listDevices().catch(() => [])).filter(
+          (device) => device.platform === "ios",
+        );
         json(res, 200, { devices });
         return;
       }

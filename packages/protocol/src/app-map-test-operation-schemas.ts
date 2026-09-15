@@ -62,7 +62,9 @@ export const appMapTestRunInputSchema = z
     laneId: identifier("Saved Lane whose overlay the server applies").optional(),
     expectedRevision: natural("Exact saved App Map revision to run").optional(),
     target: authoringTarget.describe("Explicit device or managed browser target").optional(),
-    targetProfileId: identifier("Saved runtime evidence profile to bind before control").optional(),
+    targetProfileId: identifier(
+      "Saved runtime evidence profile, or ios/android to run a linked native companion Test",
+    ).optional(),
     engine: z.enum(["chromium", "firefox", "webkit"]).optional(),
     account: z
       .discriminatedUnion("kind", [
@@ -269,7 +271,9 @@ export const appMapTestCompileInputSchema = z
       "Optional mapped screen identifier to compile as a verified live checkpoint",
     ).optional(),
     startupMode: z.enum(["warm", "cold"]).optional(),
-    targetProfileId: identifier("Saved runtime evidence profile to scope offline proof").optional(),
+    targetProfileId: identifier(
+      "Saved runtime evidence profile, or ios/android to compile a linked native companion Test",
+    ).optional(),
     forceRecaptureScreenIds: forceRecaptureScreenIds.optional(),
   })
   .strict();

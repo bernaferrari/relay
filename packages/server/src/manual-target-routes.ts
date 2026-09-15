@@ -36,6 +36,7 @@ import {
   startIosVideoTake,
   stopIosVideoTake,
 } from "./ios-video-capture.js";
+import { applyLaneToInteractOrThrow, runtimeOverlayFromLaneResolution } from "./lane-run-route.js";
 import { optionalFiniteSearchNumber } from "./search-params.js";
 import { recordAudit, type RequestContext } from "./security.js";
 import { livePreviewOperationContext } from "./target-stream-context.js";
@@ -83,11 +84,30 @@ export async function handleManualTargetRoute(input: ManualTargetRouteInput): Pr
 
   if (method === "GET" && pathname === "/snapshot") {
     const serial = url.searchParams.get("serial") ?? undefined;
+    const laneId = url.searchParams.get("laneId")?.trim() || undefined;
     const interactiveOnly =
       url.searchParams.get("interactiveOnly") === "1" ||
       url.searchParams.get("interactiveOnly") === "true";
     const includeVisual =
-      url.searchParams.get("visual") === "1" || url.searchParams.get("visual") === "true";
+      url.searchParams.get("visual") !== "0" && url.searchParams.get("visual") !== "false";
+    if (laneId) {
+      const resolved = await applyLaneToInteractOrThrow({
+        projectId: scope.projectId,
+        laneId,
+        ...(serial ? { serial } : {}),
+      });
+      const overlay = runtimeOverlayFromLaneResolution(resolved, scope.projectId);
+      assertTargetObservation(scope, resolved.serial);
+      const snap = await captureSnapshot({
+        serial: resolved.serial,
+        interactiveOnly,
+        includeVisual,
+        ...(overlay ? { overlay } : {}),
+      });
+      const tree = formatSnapshotTree(snap.nodes);
+      json(res, 200, { ...snap, tree });
+      return true;
+    }
     assertTargetObservation(scope, serial);
     const snap = await captureSnapshot({ serial, interactiveOnly, includeVisual });
     const tree = formatSnapshotTree(snap.nodes);

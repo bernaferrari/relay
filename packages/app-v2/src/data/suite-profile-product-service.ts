@@ -11,6 +11,7 @@ import type {
   TargetPreflight,
 } from "@relay/protocol";
 import { unrecordedProductName } from "@relay/protocol";
+import { scenarioTestOriginMissingEvidence } from "@relay/product/test-origin-readiness";
 import { accountReloginBatchIdFromError } from "@relay/product/plan-findings";
 import type { ProductRunAccountBinding } from "@relay/product/run-journey";
 import type { Platform } from "../platform/types";
@@ -264,7 +265,7 @@ function text(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 8_192) : fallback;
 }
 
-function testStatus(test: AppMap["tests"][string]): ProductSuiteTest["status"] {
+function testStatus(map: AppMap, test: AppMap["tests"][string]): ProductSuiteTest["status"] {
   if (unrecordedProductName(test.name)) return "needs-review";
   const unresolved = (step: AppMap["tests"][string]["steps"][number]): boolean => {
     if (step.binding.status === "unresolved" || step.execution?.status === "disabled") return true;
@@ -274,7 +275,9 @@ function testStatus(test: AppMap["tests"][string]): ProductSuiteTest["status"] {
     if (step.kind === "loop") return step.steps.some(unresolved);
     return false;
   };
-  return test.steps.length === 0 || test.steps.some(unresolved) ? "needs-review" : "ready";
+  if (test.steps.length === 0 || test.steps.some(unresolved)) return "needs-review";
+  if (scenarioTestOriginMissingEvidence(map, test)) return "needs-review";
+  return "ready";
 }
 
 /** Pure projection used by the service and fixture tests. */
@@ -284,7 +287,7 @@ export function projectProductSuite(map: AppMap, combine: AppMapCombine): Produc
     return {
       id,
       name: text(test?.name, id),
-      status: test ? testStatus(test) : "needs-review",
+      status: test ? testStatus(map, test) : "needs-review",
     } satisfies ProductSuiteTest;
   });
   return {
@@ -515,7 +518,11 @@ function projectSuiteEditor(appMap: AppMap): ProductSuiteEditor {
     appName: text(appMap.name, "App"),
     revision: appMap.revision,
     tests: Object.values(appMap.tests)
-      .map((test) => ({ id: test.id, name: text(test.name, test.id), status: testStatus(test) }))
+      .map((test) => ({
+        id: test.id,
+        name: text(test.name, test.id),
+        status: testStatus(appMap, test),
+      }))
       .sort((left, right) => left.name.localeCompare(right.name)),
     dataSets: Object.values(appMap.variables)
       .map((variable) => ({
@@ -755,7 +762,7 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
     async preflightEnvironment(input) {
       const relay = await client();
       const profile = (await environments()).find((candidate) => candidate.id === input.profileId);
-      if (!profile) throw new TypeError(`Environment profile ${input.profileId} is not available.`);
+      if (!profile) throw new TypeError(`That browser or device is not available.`);
       const target = await relay.invoke("target.preflight", { targetId: profile.target.id });
       const authentication = input.authenticationFixtureReference
         ? assessProductAuthenticationFixture(profile, input.authenticationFixtureReference)

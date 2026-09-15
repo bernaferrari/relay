@@ -190,6 +190,17 @@ export async function prepareSessionTarget(
   return Object.freeze({ browserTarget, ...meta });
 }
 
+/** First Combine cell and standalone jobs reset Android helper bindings.
+ * Later cells in the same batch (`caseIndex > 0`) keep the helper. Physical
+ * iOS never hard-stops here — that backgrounds the app onto SpringBoard. */
+export function shouldHardStopPreparedSession(
+  physicalIos: boolean | undefined,
+  caseIndex: number | undefined,
+): boolean {
+  if (physicalIos) return false;
+  return !(typeof caseIndex === "number" && caseIndex > 0);
+}
+
 /** Acquire the target-scoped Device after generic control/lease checks have
  * completed. A prepared provider target returns its driver facade before any
  * local cleanup, browser setup, or AgentDevice factory call. */
@@ -230,9 +241,11 @@ export async function acquirePreparedSessionDevice(
 
   // A physical iOS target uses one long-lived XCTest process. Stopping it
   // here backgrounds the app immediately before source verification and turns
-  // a valid map run into a tap on SpringBoard. Simulators and Android still
-  // benefit from releasing stale bindings between jobs.
-  if (!target.physicalIos) {
+  // a valid map run into a tap on SpringBoard. The first Combine cell (and
+  // any standalone job) still releases stale Android helper bindings. Later
+  // cells in the same batch keep the helper — recover-between-cells was the
+  // grok-android-daily tax on every Test.
+  if (shouldHardStopPreparedSession(target.physicalIos, job.caseIndex)) {
     await hardStopDeviceSession(job.targetContext);
     resetDeviceClient(job.targetContext);
   }

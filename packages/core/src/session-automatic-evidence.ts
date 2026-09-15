@@ -1,4 +1,3 @@
-import { captureSettledRaster } from "./visual-settling.js";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,6 +5,7 @@ import { join } from "node:path";
 import { base, snapshot, type Device } from "./device.js";
 import { now } from "./events.js";
 import { inferIosSnapshotGeometry, normalizeScreenshotToBounds } from "./ios-geometry.js";
+import { unknownErrorMessage } from "./ios-runner-listener-command.js";
 import { captureIosPngViaGoIos, pixelEvidenceFingerprint } from "./ios-app-launch.js";
 import { readIosDisplayOrientation } from "./ios-device-adapter.js";
 import { visualEvidenceAllowed } from "./redaction.js";
@@ -71,7 +71,7 @@ export async function captureAutomaticState(
       data: { stepId: step.id, phase, nodes: snapshotNodes },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = unknownErrorMessage(error);
     if (job.platform === "ios" && /session|open first/i.test(message)) {
       if (!job.logs.some((line) => line.includes("accessibility tree unavailable"))) {
         log("warn: iOS accessibility tree unavailable — collecting screenshots from pixels");
@@ -124,10 +124,10 @@ export async function captureAutomaticState(
       }
       return bytes;
     };
-    const captured =
-      phase === "after"
-        ? await captureSettledRaster({ capture: captureRaster, bytes: (value) => value })
-        : { value: await captureRaster(), settled: false, samples: 1 };
+    // One PNG. Dest-end chrome that already matched must not enter the
+    // 4-sample / 500ms still loop (`captureSettledRaster`) — that is an
+    // 8–16s tax per assertion on Android. Failures still get this frame.
+    const captured = { value: await captureRaster(), settled: true, samples: 1 };
     let bytes = captured.value;
     if (phase === "after") {
       job.artifacts.push({
@@ -135,7 +135,6 @@ export async function captureAutomaticState(
         capturedAt: now(),
         data: { stepId: step.id, phase, settled: captured.settled, samples: captured.samples },
       });
-      if (!captured.settled) log("After screenshot retained while the screen was still changing.");
     }
     if (job.platform === "ios") {
       const geometry = snapshotNodes ? inferIosSnapshotGeometry(snapshotNodes) : undefined;

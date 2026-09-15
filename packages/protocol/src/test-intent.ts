@@ -217,12 +217,18 @@ export type AppMapTestFamily = {
   routeVariants: AppMapTestRouteVariant[];
 };
 
-/** Cross-map same-intent Test. Pointers never record a route on this map and
- * never join unrelated Tests into one compiled plan. */
+/** Cross-map same-intent Test. Pointers never record a route on this map.
+ * Compile with `ios` / `android` (or a companion-map profile id) follows the
+ * companion Test on that App Map instead of disabling Web steps. */
 export type AppMapNativeRouteCompanion = {
   platform: "android" | "ios";
   appMapId: string;
   testId: string;
+};
+
+/** Provenance when a grok-web compile followed a linked native Test. */
+export type AppMapNativeCompanionCompile = AppMapNativeRouteCompanion & {
+  requestedFrom: { appMapId: string; testId: string };
 };
 
 export type AppMapScenarioTest = AppMapEntity & {
@@ -235,7 +241,8 @@ export type AppMapScenarioTest = AppMapEntity & {
   originApplication?: string;
   /** Absent means an intentionally unjoined, legacy single-surface family. */
   family?: AppMapTestFamily;
-  /** Honest native links. Compile and Combine stay unrecorded on this map. */
+  /** Honest native links. Compile on this map stays unrecorded; ios/android
+   * profile compile follows the companion Test on its App Map. */
   nativeRouteCompanions?: AppMapNativeRouteCompanion[];
   capture?: AppMapCapturePolicy;
   /** Logical surface coverage is independent from graph navigation. */

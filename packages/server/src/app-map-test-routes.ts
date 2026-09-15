@@ -4,9 +4,9 @@ import {
   AppMapTestStepOperationError,
   activeReviewedDocumentOriginsForAppMap,
   AppMapTestCompileError,
+  AppMapTargetProfileError,
   loadFrozenRawAccessibilityEvidence,
-  compileAppMapTest,
-  frozenRawAccessibilityTargetProfiles,
+  compileAppMapTestForTargetProfile,
   compileIntentWalk,
   currentOperationContext,
   editAppMapScenarioTest,
@@ -101,43 +101,50 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
         throw new HttpError(400, "startupMode must be warm or cold");
       }
       const targetProfileId = search.get("targetProfileId")?.trim() || undefined;
-      const runtimeTargetProfiles = targetProfileId
-        ? frozenRawAccessibilityTargetProfiles(appMap).filter(
-            (profile) => profile.id === targetProfileId,
-          )
-        : [];
-      const runtimeTargetProfile = runtimeTargetProfiles[0];
-      if (targetProfileId && runtimeTargetProfiles.length === 0) {
-        throw new HttpError(409, `Target profile ${targetProfileId} is not saved in this App Map`, {
-          code: "TARGET_PROFILE_NOT_SAVED",
-        });
-      }
-      if (runtimeTargetProfiles.length > 1) {
-        throw new HttpError(409, `Target profile ${targetProfileId} has conflicting identities`, {
-          code: "TARGET_PROFILE_AMBIGUOUS",
-        });
-      }
       const forceRecaptureScreenIds = search.getAll("forceRecaptureScreenIds");
-      const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(appMap);
-      const plan = compileAppMapTest(appMap, test, {
-        ...(entryCheckpointScreenId ? { entryCheckpointScreenId } : {}),
-        ...(startupMode ? { startupMode } : {}),
-        ...(forceRecaptureScreenIds.length
-          ? { forceRecaptureSurfaceScreenIds: forceRecaptureScreenIds }
-          : {}),
-        reviewedDocumentOrigins,
-        ...(runtimeTargetProfile ? { runtimeTargetProfile } : {}),
-      }).plan;
-      const evidence = await loadFrozenRawAccessibilityEvidence(plan);
+      const compiled = await compileAppMapTestForTargetProfile({
+        map: appMap,
+        test,
+        ...(targetProfileId ? { targetProfileId } : {}),
+        readAppMap: (id) => readAppMap(scope.projectId, id),
+        compileOptions: async ({ map: subjectMap }) => {
+          const reviewedDocumentOrigins = await activeReviewedDocumentOriginsForAppMap(subjectMap);
+          const sameMap = subjectMap.id === appMap.id;
+          return {
+            ...(sameMap && entryCheckpointScreenId ? { entryCheckpointScreenId } : {}),
+            ...(startupMode ? { startupMode } : {}),
+            ...(sameMap && forceRecaptureScreenIds.length
+              ? { forceRecaptureSurfaceScreenIds: forceRecaptureScreenIds }
+              : {}),
+            reviewedDocumentOrigins,
+          };
+        },
+      });
+      const evidence = await loadFrozenRawAccessibilityEvidence(compiled.plan);
       json(response, 200, {
-        plan,
+        plan: compiled.plan,
         preflight: preflightCompiledAppMapTestOffline(
-          plan,
+          compiled.plan,
           evidence,
-          targetProfileId ? { targetProfileId } : {},
+          compiled.plan.runtimeTargetProfile?.id
+            ? { targetProfileId: compiled.plan.runtimeTargetProfile.id }
+            : targetProfileId
+              ? { targetProfileId }
+              : {},
         ),
+        ...(compiled.nativeCompanion ? { nativeCompanion: compiled.nativeCompanion } : {}),
       });
     } catch (error) {
+      if (error instanceof AppMapTargetProfileError) {
+        throw new HttpError(409, error.message, {
+          code: error.code,
+          ...(error.targetProfileId ? { targetProfileId: error.targetProfileId } : {}),
+          recovery:
+            error.code === "COMPANION_MAP_MISSING" || error.code === "COMPANION_TEST_MISSING"
+              ? "Open the linked native App Map and confirm the companion Test still exists."
+              : "Choose a saved evidence profile, or ios/android to follow a linked native companion.",
+        });
+      }
       if (error instanceof AppMapTestCompileError) {
         throw new HttpError(409, error.message, {
           code: error.code,
@@ -337,6 +344,10 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
           : browserTargetId
             ? { target: { targetId: browserTargetId, platform: "browser" } }
             : {}),
+        ...(body.targetProfileId?.trim()
+          ? { defaultTargetProfileId: body.targetProfileId.trim() }
+          : {}),
+        readAppMap: (id) => readAppMap(scope.projectId, id),
       },
       { reviewedDocumentOrigins },
     );

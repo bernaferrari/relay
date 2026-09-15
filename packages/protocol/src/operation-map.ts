@@ -308,6 +308,8 @@ export type TargetSnapshotDto = {
   source: "sdk" | "android-system" | "pixels-only";
   inspectionState?: "active" | "keyguard" | "asleep" | "unavailable" | "unknown";
   foregroundApp?: string;
+  app?: string;
+  header?: string;
   treeApp?: string;
   bindingState?: "matched" | "rebound" | "unavailable";
   inspectionError?: string;
@@ -463,7 +465,7 @@ type SpecificOperationMap = {
   };
   "target.actions.list": { input: Record<string, never>; output: { actions: ActionSummary[] } };
   "target.devices.list": {
-    input: { phase?: "android" };
+    input: { phase?: "android" | "ios" };
     output: { devices: DeviceSummary[] };
   };
   "target.avds.list": {
@@ -511,7 +513,13 @@ type SpecificOperationMap = {
     };
   };
   "target.snapshot.capture": {
-    input: { serial: string; visual?: boolean; full?: boolean; interactiveOnly?: boolean };
+    input: {
+      serial?: string;
+      laneId?: string;
+      visual?: boolean;
+      full?: boolean;
+      interactiveOnly?: boolean;
+    };
     output: TargetSnapshotDto;
   };
   "target.screenshot.capture": {

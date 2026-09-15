@@ -8,6 +8,7 @@ describe("morning attention", () => {
       "signed-desktop",
       "judge",
       "weekly",
+      "accounts",
       "native",
       "lab-server",
     ]);
@@ -15,7 +16,17 @@ describe("morning attention", () => {
     expect(items.find((item) => item.id === "judge")?.detail).toMatch(/OPENROUTER_API_KEY/u);
     expect(items.find((item) => item.id === "judge")?.detail).toMatch(/grok-web-judged/u);
     expect(items.find((item) => item.id === "weekly")?.label).toBe("Grok.com weekly manual");
+    expect(items.find((item) => item.id === "accounts")?.label).toBe("Accounts health");
+    expect(items.find((item) => item.id === "accounts")?.detail).toMatch(/Check live health/u);
+    expect(items.find((item) => item.id === "accounts")?.href).toBe("/accounts");
     expect(items.find((item) => item.id === "native")?.detail).toMatch(/emulator cannot install Grok/u);
+    expect(items.find((item) => item.id === "native")?.detail).toMatch(/do not Recover-kill or dump/u);
+    expect(items.find((item) => item.id === "native")?.detail).toMatch(
+      /iOS lock and airplane stay Blocked \/ UNRECORDED/u,
+    );
+    expect(items.find((item) => item.id === "native")?.detail).toMatch(
+      /Do not fake a lock run/u,
+    );
     expect(items.find((item) => item.id === "lab-server")?.detail).toMatch(/dev\.relay\.lab-server/u);
   });
 
@@ -38,6 +49,6 @@ describe("morning attention", () => {
         },
       },
     });
-    expect(items.map((item) => item.id)).toEqual(["weekly", "native", "lab-server"]);
+    expect(items.map((item) => item.id)).toEqual(["weekly", "accounts", "native", "lab-server"]);
   });
 });

@@ -28,6 +28,7 @@ export function TestEditorStepOutline({
   recordedPlatforms,
   routePlatformBlockers,
   stepPlatformBlockers,
+  originEvidenceMissing,
   entries,
   selectedStepId,
   busy,
@@ -42,6 +43,7 @@ export function TestEditorStepOutline({
   recordedPlatforms?: readonly PlanPlatform[];
   routePlatformBlockers?: Partial<Record<PlanPlatform, string>>;
   stepPlatformBlockers?: Readonly<Record<string, string>>;
+  originEvidenceMissing?: string;
   entries: readonly StepEntry[];
   selectedStepId?: string;
   busy: boolean;
@@ -126,6 +128,7 @@ export function TestEditorStepOutline({
                       {stepKindLabel(entry.step)} ·{" "}
                       {stepReadinessLabel(entry.step, {
                         productName: test.name,
+                        originEvidenceMissing,
                         unrecordedNative: Boolean(
                           recordedPlatforms?.length &&
                           !recordedPlatforms.includes("android") &&

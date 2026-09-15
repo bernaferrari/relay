@@ -13,7 +13,7 @@ export function JudgeAgreementControls({
     <>
       <p className="text-xs font-normal leading-normal text-muted-foreground">
         Fails closed without OPENROUTER_API_KEY. That is Infra, never a silent pass or a product
-        fail.
+        fail. Disagreement stays Needs review. Do not auto-accept a visual baseline.
       </p>
       <FieldLabel className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground">
         <span className="grid min-w-0 flex-1 gap-0.5">

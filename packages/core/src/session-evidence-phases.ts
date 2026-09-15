@@ -47,13 +47,18 @@ export function automaticEvidencePhases(
     // Assertions need resulting state; interactions retain both sides.
     case "expect-screen":
       return step.id?.startsWith("relay-source-") || step.id?.endsWith(":warm") ? [] : ["after"];
+    // Dest-end wait-for / expect already probed the tree. A settled after
+    // raster on chrome that already matched is 4–16s of still-loop PNG
+    // samples per step and is the bulk of grok-android-daily wall time.
     case "expect":
+    case "expect-set":
+    case "wait-for":
+      return [];
     case "assert-content":
     case "assert-layout":
     case "extract":
     case "evaluate-semantic":
     case "evaluate-visual":
-    case "wait-for":
     case "wait-response":
     case "pause":
     case "review":

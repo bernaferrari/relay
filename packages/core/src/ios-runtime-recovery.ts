@@ -339,6 +339,7 @@ export async function confirmIosRuntimeSession(
     return {
       ...host,
       ready: false,
+      summary: host.summary,
       session: {
         status: "unavailable",
         detail,

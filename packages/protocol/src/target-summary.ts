@@ -99,6 +99,86 @@ function snapshotControlSummary(nodes: unknown[]): Array<Record<string, unknown>
   return controls;
 }
 
+/** Pixels-only frames have no AX chrome. Last-launched app plus a visual
+ * fingerprint is still enough to name Grok's login wordmark. Do not invent
+ * Settings or other nav titles from a bundle id. */
+export function describePixelsOnlySnapshotChrome(input: {
+  foregroundApp?: string;
+  visualFingerprint?: string;
+}): { app?: string; header?: string } {
+  const app = input.foregroundApp?.trim() || undefined;
+  const visual = input.visualFingerprint?.trim();
+  if (!app) return {};
+  if (visual && /grok/i.test(app)) return { app, header: "Grok" };
+  return { app };
+}
+
+function compactInteractResolution(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const point =
+    record.point && typeof record.point === "object" && !Array.isArray(record.point)
+      ? record.point
+      : undefined;
+  const bounds =
+    record.bounds && typeof record.bounds === "object" && !Array.isArray(record.bounds)
+      ? record.bounds
+      : undefined;
+  if (typeof record.method !== "string" && !point && !bounds) return undefined;
+  return {
+    ...(typeof record.method === "string" ? { method: record.method } : {}),
+    ...(point ? { point } : {}),
+    ...(bounds ? { bounds } : {}),
+  };
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/** Interact preview must stay a digest. HTTP /interact already returns mime+base64;
+ * when a wrapper strips the PNG, do not dump path/nodes/tree. CLI `--preview --file`
+ * writes the raster. */
+function interactPreviewDigest(result: unknown): Record<string, unknown> | undefined {
+  const seen = new Set<unknown>();
+  let current: unknown = result;
+  for (let depth = 0; depth < 4; depth++) {
+    if (!current || typeof current !== "object" || Array.isArray(current) || seen.has(current)) {
+      return undefined;
+    }
+    seen.add(current);
+    const record = current as Record<string, unknown>;
+    const preview = record.preview === true;
+    const hasPng = record.mime === "image/png" && typeof record.base64 === "string";
+    if (preview || hasPng) {
+      const resolution = compactInteractResolution(record.resolution);
+      const bytes = finiteNumber(record.bytes);
+      const width = finiteNumber(record.width);
+      const height = finiteNumber(record.height);
+      return {
+        ...(record.ok === true ? { ok: true } : {}),
+        ...(preview ? { preview: true } : {}),
+        ...(typeof record.mime === "string" ? { mime: record.mime } : {}),
+        ...(bytes !== undefined ? { bytes } : {}),
+        ...(width !== undefined ? { width } : {}),
+        ...(height !== undefined ? { height } : {}),
+        ...(typeof record.inspectable === "boolean" ? { inspectable: record.inspectable } : {}),
+        ...(resolution ? { resolution } : {}),
+        nextHint: preview
+          ? "Commit with target.interact (preview:false). Then screenshot again."
+          : "Tap with target.interact (preview:true marks only). Do not start with test run.",
+        ...(!hasPng && preview
+          ? {
+              note: "Preview PNG is not inlined. Use CLI --preview --file.",
+            }
+          : {}),
+      };
+    }
+    current = record.result ?? record.data ?? record.payload;
+  }
+  return undefined;
+}
+
 export function describeSnapshotChrome(nodes: unknown[]): { app?: string; header?: string } {
   let app: string | undefined;
   let header: string | undefined;
@@ -576,17 +656,33 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
       inspectionError?: unknown;
       readiness?: unknown;
       iosSessionLifecycle?: unknown;
+      foregroundApp?: unknown;
+      treeApp?: unknown;
+      app?: unknown;
+      header?: unknown;
     };
     const nodes = Array.isArray(body.nodes) ? body.nodes : [];
     const chrome = describeSnapshotChrome(nodes);
+    const treeApp = typeof body.treeApp === "string" ? body.treeApp.trim() : "";
+    const foregroundApp =
+      typeof body.foregroundApp === "string" ? body.foregroundApp.trim() : "";
+    const visualFingerprint =
+      typeof body.visualFingerprint === "string" ? body.visualFingerprint : undefined;
+    const pixelsChrome = describePixelsOnlySnapshotChrome({
+      foregroundApp: chrome.app || treeApp || foregroundApp || undefined,
+      visualFingerprint,
+    });
+    const namedApp = typeof body.app === "string" ? body.app.trim() : "";
+    const namedHeader = typeof body.header === "string" ? body.header.trim() : "";
+    const app =
+      chrome.app || treeApp || foregroundApp || namedApp || pixelsChrome.app || undefined;
+    const header = chrome.header || namedHeader || pixelsChrome.header || undefined;
     const inspectable = body.inspectable !== false && nodes.length > 0;
     // A screen-identity digest is derived from accessibility semantics. In an
     // uninspectable/empty response it is merely the deterministic digest of
     // no usable nodes, not evidence that Relay captured pixels. Do not
     // relabel it as a visual fingerprint: callers use that field to decide
     // whether a point-based follow-up has fresh raster evidence.
-    const visualFingerprint =
-      typeof body.visualFingerprint === "string" ? body.visualFingerprint : undefined;
     const semanticFingerprint =
       inspectable && typeof body.screenIdentity?.fingerprint === "string"
         ? body.screenIdentity.fingerprint
@@ -632,8 +728,8 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
           ? visualFingerprint.slice(0, 16)
           : undefined,
       ...(visualFingerprint ? { visualFingerprint: visualFingerprint.slice(0, 16) } : {}),
-      ...(chrome.app ? { app: chrome.app } : {}),
-      ...(chrome.header ? { header: chrome.header } : {}),
+      ...(app ? { app } : {}),
+      ...(header ? { header } : {}),
       controls: snapshotControlSummary(nodes),
       ...(proposedRows.length ? { proposedRows } : {}),
       ...(inspectionError ? { inspectionError } : {}),
@@ -654,6 +750,9 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
   }
   if (operationId === "target.scroll-survey.capture") {
     return summarizeScrollSurveyResult(result);
+  }
+  if (operationId === "target.interact") {
+    return interactPreviewDigest(result) ?? result;
   }
   if (operationId !== "target.devices.list") return result;
   if (!result || typeof result !== "object" || Array.isArray(result)) return result;

@@ -10,6 +10,7 @@ import {
 } from "./target-supervisor-recovery-coordinator.js";
 import type { SupervisedTarget, TargetSupervisorStore } from "./target-supervisor-store.js";
 import { recoverTargetRuntime, type TargetRuntimeRecovery } from "./workspace-ios-session.js";
+import { probeLiveIosRunnerListener } from "./ios-runner-listener.js";
 
 export type RecoveryMechanismResult = {
   readiness: TargetRuntimeReadiness;
@@ -183,7 +184,12 @@ export async function recoverSupervisedTargetRuntime(input: {
   mechanisms?: LocalTargetSupervisorRecoveryMechanisms;
 }): Promise<TargetRuntimeRecovery> {
   const before = input.store.health(input.target);
-  if (input.force && before.overall === "quarantined") {
+  const liveListener =
+    input.target.kind === "ios" ? await probeLiveIosRunnerListener(input.target.id) : null;
+  // A healthy testCommand listener is operator proof the last recover lied.
+  // Unquarantine and adopt it — do not require force, and do not treat a
+  // missing tree as a reboot.
+  if ((input.force || liveListener) && before.overall === "quarantined") {
     input.store.transition(input.target, { kind: "operator.human-cleared" });
   }
   const adapter = createLocalTargetSupervisorRecoveryAdapter(

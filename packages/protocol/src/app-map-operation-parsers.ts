@@ -272,6 +272,9 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     if (input.browserTargetId !== undefined) {
       string(input.browserTargetId, "Combine preflight browserTargetId");
     }
+    if (input.targetProfileId !== undefined) {
+      string(input.targetProfileId, "Combine preflight targetProfileId");
+    }
     if (input.targetKind !== undefined && input.targetKind !== "device" && input.targetKind !== "browser") {
       fail("Combine preflight targetKind", "must be device or browser");
     }
@@ -748,6 +751,9 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     (output) => {
       record(output.plan, "Test compilation plan");
       record(output.preflight, "Test compilation offline preflight");
+      if (output.nativeCompanion !== undefined) {
+        record(output.nativeCompanion, "Test compilation native companion");
+      }
     },
   );
 

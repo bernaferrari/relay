@@ -429,10 +429,18 @@ function bindingForCandidate(
 
 export function stepReadinessLabel(
   step: AppMapScenarioTestStep,
-  options?: { unrecordedNative?: boolean; platformBlocker?: string; productName?: string },
+  options?: {
+    unrecordedNative?: boolean;
+    platformBlocker?: string;
+    productName?: string;
+    originEvidenceMissing?: string;
+  },
 ): string {
   if (step.execution?.status === "disabled") return `Disabled · ${step.execution.reason}`;
   if (options?.platformBlocker) return `Blocked · ${options.platformBlocker}`;
+  if (options?.originEvidenceMissing) {
+    return `Needs origin evidence · ${options.originEvidenceMissing} has no recorded variant`;
+  }
   const unrecordedName = Boolean(
     options?.productName && unrecordedProductName(options.productName),
   );

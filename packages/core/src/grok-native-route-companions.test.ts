@@ -34,12 +34,22 @@ function grokWebTest(id: string): AppMapScenarioTest {
   };
 }
 
-test("signed-in grok.com journeys link the same-intent grok-android Test", () => {
-  assert.equal(Object.keys(GROK_WEB_NATIVE_ROUTE_COMPANIONS).length, 9);
+test("signed-in grok.com journeys link the same-intent native Tests", () => {
+  assert.equal(Object.keys(GROK_WEB_NATIVE_ROUTE_COMPANIONS).length, 10);
   for (const [testId, companions] of Object.entries(GROK_WEB_NATIVE_ROUTE_COMPANIONS)) {
-    assert.equal(companions.length, 1);
+    assert.ok(companions.length === 1 || companions.length === 2);
     assert.equal(companions[0]?.platform, "android");
     assert.equal(companions[0]?.appMapId, "grok-android");
+    if (
+      testId === "test-grok-web-signed-in-search" ||
+      testId === "test-grok-web-signed-in-imagine"
+    ) {
+      assert.equal(companions.length, 1);
+    } else {
+      assert.equal(companions.length, 2);
+      assert.equal(companions[1]?.platform, "ios");
+      assert.equal(companions[1]?.appMapId, "grok-ios");
+    }
     assert.deepEqual(grokWebNativeRouteCompanions(testId), companions);
     const scenario = grokWebTest(testId);
     scenario.nativeRouteCompanions = [...companions];
@@ -58,12 +68,27 @@ test("logged-out grok.com Tests, Settings Language, and iOS YAML stay unrecorded
   ]) {
     assert.equal(grokWebNativeRouteCompanions(testId), undefined);
   }
-  for (const companions of Object.values(GROK_WEB_NATIVE_ROUTE_COMPANIONS)) {
-    assert.equal(
-      companions.some((item) => item.platform === "ios"),
-      false,
-    );
-  }
+});
+
+test("web Search does not bind grok-ios Conversations", () => {
+  const companions = grokWebNativeRouteCompanions("test-grok-web-signed-in-search");
+  assert.equal(companions?.length, 1);
+  assert.equal(companions?.[0]?.platform, "android");
+  assert.equal(
+    companions?.some((item) => item.platform === "ios" || item.testId.includes("conversations")),
+    false,
+  );
+});
+
+test("web Imagine does not bind grok-ios Imagine while the tab is Unbound", () => {
+  const companions = grokWebNativeRouteCompanions("test-grok-web-signed-in-imagine");
+  assert.equal(companions?.length, 1);
+  assert.equal(companions?.[0]?.platform, "android");
+  assert.equal(companions?.[0]?.testId, "test-grok-android-imagine");
+  assert.equal(
+    companions?.some((item) => item.platform === "ios" || item.testId.includes("ios-imagine")),
+    false,
+  );
 });
 
 test("companions leave Android and iOS unrecorded on this map", () => {

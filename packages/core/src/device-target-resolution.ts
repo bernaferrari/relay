@@ -19,6 +19,8 @@ export type SemanticSnapshotTarget = {
   label?: string;
   role?: string;
   text?: string;
+  /** Unique nearby heading that scopes an otherwise ambiguous label. */
+  heading?: string;
 };
 
 export type SnapshotTargetRegion = {
@@ -69,6 +71,56 @@ export function snapshotTextMatches(query: string, live: string | undefined): bo
   const normalizedQuery = normalizeSemanticText(query);
   const normalizedLive = normalizeSemanticText(live);
   return Boolean(normalizedQuery && normalizedLive?.includes(normalizedQuery));
+}
+
+function rectContainsPoint(
+  rect: { x: number; y: number; width: number; height: number },
+  point: { x: number; y: number },
+): boolean {
+  return (
+    point.x >= rect.x &&
+    point.x <= rect.x + rect.width &&
+    point.y >= rect.y &&
+    point.y <= rect.y + rect.height
+  );
+}
+
+/** Heading copies that contain one another are one family. Separate locations stay separate. */
+export function headingNodeFamilies(nodes: SnapshotNode[], heading: string): SnapshotNode[][] {
+  const matches = nodes.filter((node) => node.rect && snapshotLabelMatches(heading, node.label));
+  const families: SnapshotNode[][] = [];
+  for (const node of matches) {
+    const point = center(node.rect!);
+    const existing = families.find((family) =>
+      family.some((member) => {
+        const memberCenter = center(member.rect!);
+        return (
+          rectContainsPoint(member.rect!, point) || rectContainsPoint(node.rect!, memberCenter)
+        );
+      }),
+    );
+    if (existing) existing.push(node);
+    else families.push([node]);
+  }
+  return families;
+}
+
+function ancestorChainIncludes(
+  node: SnapshotNode,
+  nodesByIndex: Map<number, SnapshotNode>,
+  headingIndexes: Set<number>,
+): boolean {
+  let parentIndex = node.parentIndex;
+  const seen = new Set<number>();
+  while (typeof parentIndex === "number") {
+    if (seen.has(parentIndex)) return false;
+    seen.add(parentIndex);
+    if (headingIndexes.has(parentIndex)) return true;
+    const parent = nodesByIndex.get(parentIndex);
+    if (!parent) return false;
+    parentIndex = parent.parentIndex;
+  }
+  return false;
 }
 
 /** Status-bar crumbs and 20px captions are unique matches that still waste a tap.
@@ -239,7 +291,7 @@ function resolveSnapshotTarget(
       .map((rect) => rect.y),
   );
   if (region && (!viewport || viewport.width <= 0 || viewport.height <= 0)) return undefined;
-  const candidates = nodes
+  let candidates = nodes
     .filter((node) => {
       if (
         !node.rect ||
@@ -341,6 +393,18 @@ function resolveSnapshotTarget(
       };
     })
     .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined);
+  const heading = target.heading?.trim();
+  if (heading) {
+    const families = headingNodeFamilies(nodes, heading);
+    if (families.length !== 1) return undefined;
+    const headingIndexes = new Set(
+      families[0]!.flatMap((node) => (typeof node.index === "number" ? [node.index] : [])),
+    );
+    if (headingIndexes.size === 0) return undefined;
+    candidates = candidates.filter((candidate) =>
+      ancestorChainIncludes(candidate.node, nodesByIndex, headingIndexes),
+    );
+  }
   if (candidates.length === 0) return undefined;
 
   const activeLocations = candidates
@@ -449,6 +513,7 @@ export type NamedControlTarget = {
   label?: string;
   role?: string;
   text?: string;
+  heading?: string;
   relation?: StepTargetRelation;
   point?: { x: number; y: number };
   /** Exact Android package allowed to replace the current foreground app. */
@@ -598,6 +663,7 @@ export function resolveNamedControlOutcome(
     const semanticTarget = {
       [method]: value,
       ...(target.role ? { role: target.role } : {}),
+      ...(target.heading && method === "label" ? { heading: target.heading } : {}),
     };
     const hit = resolveSnapshotTarget(nodes, semanticTarget);
     // Named control activation is not a reveal operation. Off-screen semantic

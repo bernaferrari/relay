@@ -1304,6 +1304,8 @@ test("test run --help names Variable, Test, Combine, lens, and --all", async () 
   assert.match(help, /--all/u);
   assert.match(help, /visual/u);
   assert.match(help, /smoke/u);
+  assert.match(help, /Not a first poke/u);
+  assert.match(help, /wait-for\/expect-screen/u);
 });
 
 test("combine run --lens maps onto the Combine capture policy", async () => {
@@ -2179,9 +2181,14 @@ test("JSON failures emit exactly one terminal object and diagnostics only to std
     type: "error",
     ok: false,
     operationId: "system.health.get",
-    error: { message: "fetch failed", exitCode: ExitCode.connection },
+    error: {
+      message:
+        "Relay is unreachable (fetch failed). tsx watch may have restarted :8787 and dropped in-memory jobs. Do not recover-kill a live iOS runner. Do not start a new server while a Plan is live.",
+      exitCode: ExitCode.connection,
+    },
   });
   assert.match(io.stderr(), /fetch failed/);
+  assert.match(io.stderr(), /tsx watch/);
   assert.doesNotMatch(io.stdout(), /Invoking|relay:/);
   assert.doesNotMatch(`${io.stdout()}${io.stderr()}`, new RegExp(secret));
 });

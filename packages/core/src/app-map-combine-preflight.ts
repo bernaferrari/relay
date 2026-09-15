@@ -13,6 +13,8 @@ import {
   savedAppMapTargetProfileIdsForTarget,
   unresolvedTargetProfileMessage,
 } from "./app-map-combine-cell-prepare.js";
+import { bindCompanionCombineCells } from "./app-map-native-companion-combine.js";
+import { nativePlatformProfileAlias } from "./app-map-native-companion-compile.js";
 import { synthesizeCombineCellRuntimeProfiles } from "./app-map-combine-from-test.js";
 import {
   assertOptionSandwichReady,
@@ -92,6 +94,7 @@ export async function preflightAppMapCombine(
     strategy?: "zip" | "cartesian" | "pairwise";
     target?: { targetId: string; platform: string };
     defaultTargetProfileId?: string;
+    readAppMap?: (appMapId: string) => Promise<AppMap | null>;
   } = {},
   compileOptions: AppMapTestCompileOptions = {},
 ): Promise<AppMapCombinePreflight> {
@@ -263,15 +266,31 @@ export async function preflightAppMapCombine(
         matrix,
         variableIds: combine.variableIds,
       });
+      const alias = overrides.defaultTargetProfileId
+        ? nativePlatformProfileAlias(overrides.defaultTargetProfileId)
+        : undefined;
+      const companionBindings =
+        alias && overrides.readAppMap
+          ? await bindCompanionCombineCells({
+              map,
+              cells: enumerated,
+              requestedProfileId: overrides.defaultTargetProfileId!,
+              ...(overrides.target ? { requestedTarget: overrides.target } : {}),
+              readAppMap: overrides.readAppMap,
+            })
+          : undefined;
+      if (companionBindings?.issues.length) blockers.push(...companionBindings.issues);
       const assessed = assessAppMapCombineCellBindings({
         cells: enumerated,
-        bindings: synthesizeCombineCellRuntimeProfiles({
-          cells: enumerated,
-          bindings: effectiveCombine.cellRuntimeProfiles ?? [],
-          map,
-          target: overrides.target,
-          explicitProfileId: overrides.defaultTargetProfileId,
-        }),
+        bindings: companionBindings
+          ? companionBindings.bindings
+          : synthesizeCombineCellRuntimeProfiles({
+              cells: enumerated,
+              bindings: effectiveCombine.cellRuntimeProfiles ?? [],
+              map,
+              target: overrides.target,
+              explicitProfileId: overrides.defaultTargetProfileId,
+            }),
         knownTests: new Set(effectiveCombine.testIds),
         knownValues: Object.fromEntries(
           variables.map((variable) => [

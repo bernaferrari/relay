@@ -1149,6 +1149,35 @@ describe("Run and Report", () => {
     });
   });
 
+  it("leaves a missing visual baseline pending without Keep baseline", async () => {
+    const fake = fakeRunService();
+    const comparison = {
+      id: "comparison-pending",
+      code: "VISUAL_BASELINE_MISSING",
+      diff: { changedFrames: 0, addedFrames: 1, removedFrames: 0 },
+      policy: { regions: [] },
+    } as never;
+    const compareVisual = vi.fn().mockResolvedValue(comparison);
+    const reviewVisual = vi.fn().mockResolvedValue({ status: "reviewed" } as never);
+    fake.service.compareVisual = compareVisual;
+    fake.service.reviewVisual = reviewVisual;
+    await renderRun("/runs/run-1", fake.service, platformWithStorage().platform);
+
+    await click(button("Review screenshots"));
+    await click(button("Compare screenshots"));
+    expect(document.body.textContent).toContain("No approved visual baseline");
+    expect(document.body.textContent).toContain("This compare stays pending");
+    expect(document.body.textContent).toContain("Agents cannot approve");
+    expect(document.body.textContent).not.toContain("Keep baseline");
+    await click(button("Leave pending"));
+    expect(reviewVisual).toHaveBeenCalledWith({
+      runId: "run-1",
+      comparisonId: "comparison-pending",
+      action: "retry",
+      note: "Reviewed in Relay",
+    });
+  });
+
   it("labels Test reliability as partial while loaded Run history is incomplete", async () => {
     const fake = fakeRunService();
     fake.service.listTestRuns = async () =>

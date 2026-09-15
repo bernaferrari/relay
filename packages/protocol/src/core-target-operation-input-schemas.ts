@@ -48,16 +48,30 @@ export const executionTargetInputSchema = z.discriminatedUnion("kind", [
 export const coreTargetOperationInputSchemas = {
   "target.snapshot.capture": z
     .object({
-      ...targetReference,
+      serial: identifier("Connected device or managed target identifier").optional(),
+      laneId: identifier("Saved Lane whose overlay the server applies").optional(),
       full: queryBoolean
         .optional()
         .describe("Return the full accessibility tree. Default is a digest."),
       interactiveOnly: queryBoolean
         .optional()
         .describe("Return only interactive controls for a compact live overlay."),
-      visual: queryBoolean.optional(),
+      visual: queryBoolean
+        .optional()
+        .describe(
+          "Default true when the tree is missing: one PNG for visualFingerprint/proposedRows. Pass false to skip. Do not retry snapshot.",
+        ),
     })
-    .strict(),
+    .strict()
+    .superRefine((input, context) => {
+      if (!input.serial && !input.laneId) {
+        context.addIssue({
+          code: "custom",
+          message: "serial or laneId is required",
+          path: ["serial"],
+        });
+      }
+    }),
   "target.screenshot.capture": z
     .object({
       ...targetReference,

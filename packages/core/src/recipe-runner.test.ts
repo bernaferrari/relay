@@ -3224,22 +3224,23 @@ describe("runRecipeStep expect — error classification", () => {
 
   it("visible converts a genuine wait timeout into the assertion message", async () => {
     const device = stubDevice({
-      wait: () => Promise.reject(new Error('Timed out waiting for text "Sign in"')),
+      find: () => Promise.reject(new Error('No match for query "Sign in"')),
+      snapshot: () => Promise.resolve({ nodes: [] }),
     });
     await assert.rejects(
       () =>
         runRecipeStep(
           device,
-          { kind: "expect", target: { label: "Sign in" }, condition: "visible" },
+          { kind: "expect", target: { label: "Sign in" }, condition: "visible", timeoutMs: 0 },
           noLog,
         ),
-      /expect: "label "Sign in"" not visible after 5s/,
+      /expect: "label "Sign in"" not visible after 0s/,
     );
   });
 
   it("visible propagates infrastructure errors with their original message", async () => {
     const device = stubDevice({
-      wait: () => Promise.reject(new Error("no active session — run doctor")),
+      find: () => Promise.reject(new Error("no active session — run doctor")),
     });
     await assert.rejects(
       () =>
@@ -3835,6 +3836,45 @@ describe("runRecipeStep expect-screen", () => {
     assert.equal(runtime.navigationCursor?.status, "unknown");
     assert.equal(discarded.framePath, undefined);
     assert.equal(discarded.jobId, undefined);
+  });
+
+  it("aborts expect-screen when pixels stay still instead of polling the timeout", async () => {
+    let screenshots = 0;
+    const visualFingerprint = "c".repeat(64);
+    const started = Date.now();
+    await assert.rejects(
+      () =>
+        runWithTargetContext({ kind: "device", platform: "android", serial: "still-screen" }, () =>
+          runExpectScreenStep(
+            stubDevice({
+              snapshot: () =>
+                Promise.resolve({ nodes: [{ role: "text", label: "Niagara calendar" }] }),
+              wait: () => Promise.resolve({}),
+            }),
+            {
+              kind: "expect-screen",
+              screenId: "search",
+              screenTitle: "Search",
+              fingerprint: "d".repeat(64),
+              timeoutMs: 90_000,
+            },
+            {
+              log: () => {},
+              job: { id: "still-screen", platform: "android" } as TestJob,
+              runtime: {},
+            },
+            {
+              captureScreenshot: async () => {
+                screenshots += 1;
+                return screenshot("still", visualFingerprint);
+              },
+            },
+          ),
+        ),
+      /pixels unchanged after \d+ms/,
+    );
+    assert.ok(Date.now() - started < 4_000);
+    assert.ok(screenshots >= 2);
   });
 
   it("does not pre-capture raster evidence for source, warm, iOS, or browser expectations", async () => {

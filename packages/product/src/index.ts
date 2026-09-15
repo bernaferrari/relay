@@ -13,3 +13,4 @@ export * from "./map-exploration.js";
 export * from "./agent-debug.js";
 export * from "./run-evidence-export.js";
 export * from "./test-route-platforms.js";
+export * from "./test-origin-readiness.js";

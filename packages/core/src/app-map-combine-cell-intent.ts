@@ -1,4 +1,8 @@
-import type { AppMapCompiledRuntimeTargetProfile, RecipeStep } from "@relay/protocol";
+import type {
+  AppMapCompiledRuntimeTargetProfile,
+  AppMapNativeCompanionCompile,
+  RecipeStep,
+} from "@relay/protocol";
 import { createHash } from "node:crypto";
 import {
   appMapCombineCellId,
@@ -43,6 +47,7 @@ export type AppMapCombineCellExecutionIntent = {
   staticInputs: CombineCellStaticInputs;
   digest: string;
   recipeGraph: Record<string, Recipe>;
+  nativeCompanion?: AppMapNativeCompanionCompile;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -154,6 +159,7 @@ export function digestAppMapCombineCellExecutionIntent(input: {
   childDigest: string;
   wrapper: AppMapCombineCellExecutionIntent["wrapper"];
   staticInputs: CombineCellStaticInputs;
+  nativeCompanion?: AppMapNativeCompanionCompile;
 }): string {
   return createHash("sha256")
     .update(
@@ -174,9 +180,44 @@ export function digestAppMapCombineCellExecutionIntent(input: {
             ),
           ),
         },
+        ...(input.nativeCompanion ? { nativeCompanion: input.nativeCompanion } : {}),
       }),
     )
     .digest("hex");
+}
+
+function companionChildMatchesCell(
+  cellTestId: string,
+  childTestId: string,
+  companion?: AppMapNativeCompanionCompile,
+): boolean {
+  if (cellTestId === childTestId) return true;
+  return Boolean(
+    companion &&
+      companion.requestedFrom.testId === cellTestId &&
+      companion.testId === childTestId,
+  );
+}
+
+function parseNativeCompanion(value: unknown): AppMapNativeCompanionCompile | undefined {
+  if (!isRecord(value)) return undefined;
+  const requestedFrom = isRecord(value.requestedFrom) ? value.requestedFrom : undefined;
+  if (
+    (value.platform !== "android" && value.platform !== "ios") ||
+    !string(value.appMapId) ||
+    !string(value.testId) ||
+    !requestedFrom ||
+    !string(requestedFrom.appMapId) ||
+    !string(requestedFrom.testId)
+  ) {
+    return undefined;
+  }
+  return {
+    platform: value.platform,
+    appMapId: value.appMapId,
+    testId: value.testId,
+    requestedFrom: { appMapId: requestedFrom.appMapId, testId: requestedFrom.testId },
+  };
 }
 
 function appMapCombineCellValueEntriesForDigest(values: Record<string, string>) {
@@ -195,6 +236,7 @@ export function createAppMapCombineCellExecutionIntent(input: {
   wrapperRoot: Recipe;
   recipeGraph: Record<string, Recipe>;
   staticInputs: CombineCellStaticInputs;
+  nativeCompanion?: AppMapNativeCompanionCompile;
 }): AppMapCombineCellExecutionIntent {
   const values = canonicalAppMapCombineCellValues(input.values);
   const recomputed = appMapCombineCellId(input.testId, values);
@@ -238,8 +280,10 @@ export function createAppMapCombineCellExecutionIntent(input: {
       childDigest: digestAppMapTestExecutionValue(input.child),
       wrapper,
       staticInputs: input.staticInputs,
+      ...(input.nativeCompanion ? { nativeCompanion: input.nativeCompanion } : {}),
     }),
     recipeGraph: structuredClone(recipeGraph),
+    ...(input.nativeCompanion ? { nativeCompanion: structuredClone(input.nativeCompanion) } : {}),
   };
   if (!parseAppMapCombineCellExecutionIntent(intent)) {
     throw new Error("Cannot persist an inconsistent Combine cell execution intent");
@@ -272,6 +316,7 @@ function parseAppMapCombineCellExecutionIntentValue(
       "staticInputs",
       "digest",
       "recipeGraph",
+      "nativeCompanion",
     ]) ||
     value.schemaVersion !== 1 ||
     value.kind !== appMapCombineCellExecutionIntentArtifactKind
@@ -318,7 +363,11 @@ function parseAppMapCombineCellExecutionIntentValue(
   }
   const canonicalValues = canonicalAppMapCombineCellValues(values);
   if (appMapCombineCellId(cell.testId, canonicalValues) !== cell.cellId) return undefined;
-  if (cell.testId !== child.sourcePlan.testId) return undefined;
+  const nativeCompanion = parseNativeCompanion(value.nativeCompanion);
+  if (value.nativeCompanion !== undefined && !nativeCompanion) return undefined;
+  if (!companionChildMatchesCell(cell.testId, child.sourcePlan.testId, nativeCompanion)) {
+    return undefined;
+  }
   if (!sameAppMapCombineCellValues(staticInputs.values, canonicalValues)) return undefined;
   const root = recipeGraph[wrapper.rootRecipeId];
   if (!root || root.id !== wrapper.rootRecipeId) return undefined;
@@ -350,6 +399,7 @@ function parseAppMapCombineCellExecutionIntentValue(
       childRecipeGraphDigest: wrapper.childRecipeGraphDigest,
     },
     staticInputs,
+    ...(nativeCompanion ? { nativeCompanion } : {}),
   });
   if (expectedDigest !== value.digest) return undefined;
   return structuredClone(value) as AppMapCombineCellExecutionIntent;

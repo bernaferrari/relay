@@ -16,6 +16,22 @@
   },
   "assurance": "one-phone-three-test-smoke",
   "batchId": "026f18b6-ac1e-4612-a93e-f1374d7c2c09",
+  "laterPackNote": "Sibling session reported grok-android-daily 14/14 ~13m (batch 8aaf9891). Not copied into serialPackWallClockP50/P95 — this file’s measured quote remains 3-Test 143848ms. Do not steal RQCY104BG8X or take UiAutomation to re-measure.",
+  "inventoryAt": "2026-09-14T21:45-03:00",
+  "inventory": {
+    "galaxySerial": "RQCY104BG8X",
+    "adbDevices": [],
+    "galaxy": "unplugged",
+    "avdName": "Resizable_Experimental",
+    "avdState": "stopped",
+    "emulatorSerial": null,
+    "playGrokInstall": "no-go — Grok AI won't work for your device; ai.x.grok not installed (only ai.x.grok.bot)",
+    "androidPrimitivesVsGrok": "android-primitives Files/Chrome/wifi/data is not grok-android; do not close 19z5.17 on primitives 3-pass",
+    "parallelWallClockMs4": null,
+    "parallelWallClockMs8": null,
+    "didNotBootAvd": true,
+    "didNotCloseBead": "19z5.17"
+  },
   "jobs": {
     "test-grok-android-home-chrome": "bff021dd-7a65-4e9d-8493-edb20c9c422d",
     "test-grok-android-sidebar": "f2051337-0a32-46a3-8fff-e65e33a5ceec",

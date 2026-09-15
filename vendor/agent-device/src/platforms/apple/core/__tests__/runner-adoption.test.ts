@@ -121,6 +121,32 @@ test('buildDetachedRunnerLease rewrites the token', () => {
   expect(buildDetachedRunnerLease(lease).ownerToken).toBe(`detached-${lease.ownerToken}`);
 });
 
+test('adoption succeeds for a live physical device runner', async () => {
+  const physical: DeviceInfo = {
+    platform: 'apple',
+    id: 'adopt-device-1',
+    name: 'iPad Pro',
+    kind: 'device',
+    target: 'mobile',
+    booted: true,
+  };
+  const lease = writeStaleLease({
+    deviceId: physical.id,
+    sessionId: `${physical.id}:50937:1`,
+    xctestrunPath: path.join(expectedDerived, 'Build', 'Products', 'env.session.xctestrun'),
+    jsonPath: path.join(expectedDerived, 'Build', 'Products', 'env.session.json'),
+  });
+  mockIsProcessAlive.mockReturnValue(true);
+  mockSendRunnerCommandOnce.mockResolvedValue(new Response(JSON.stringify({ ok: true })));
+
+  const session = await tryAdoptRunnerSessionFromLease(physical, {});
+
+  expect(session).not.toBeNull();
+  expect(session?.port).toBe(lease.port);
+  expect(session?.ready).toBe(true);
+  expect(session?.xctestrunArtifact?.reason).toBe('adopted_from_lease');
+});
+
 test('adoption succeeds for a live, matching, probe-healthy runner', async () => {
   const lease = writeStaleLease();
   mockIsProcessAlive.mockReturnValue(true);

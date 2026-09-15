@@ -6,7 +6,7 @@ import {
 
 export type MorningAttentionItem = {
   id: string;
-  href: "/settings/advanced" | "/suites";
+  href: "/settings/advanced" | "/suites" | "/accounts";
   label: string;
   detail: string;
 };
@@ -15,7 +15,7 @@ const JUDGE_FALLBACK =
   "Visual and semantic judges fail closed without OPENROUTER_API_KEY. That is Infra, never a silent pass. Plan Grok.com logged-out judged chrome (grok-web-judged, --lane grok-daily) is those eight judged Tests. Today it fail-closes as Infra. It is not grok-web-daily and not a judged pass.";
 
 const NATIVE_GROK =
-  "Native Grok columns wait for a phone and iPad. This Mac has neither. The emulator cannot install Grok.";
+  "Native Grok columns need recorded Android and iOS routes. A live phone or iPad pack owns the glass — do not Recover-kill or dump. The emulator cannot install Grok. iOS lock and airplane stay Blocked / UNRECORDED: unlock still needs a person, and airplane is an iOS Settings handoff, not settings airplane on the Grok runner. Do not fake a lock run.";
 
 /** Fail closed to the lab-Mac copy when setup payloads are missing. */
 export function morningAttentionItems(input: {
@@ -51,6 +51,13 @@ export function morningAttentionItems(input: {
     label: "Grok.com weekly manual",
     detail:
       "Weekly pauses stay off daily. Continue with X, dictation, and camera need a phone. Do not schedule them daily.",
+  });
+  items.push({
+    id: "accounts",
+    href: "/accounts",
+    label: "Accounts health",
+    detail:
+      "Check live health before the next unattended Plan. Expired or signed-out accounts fail closed as Infra. One SuperGrok fixture is not a 3-account pack.",
   });
   items.push({
     id: "native",

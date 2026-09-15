@@ -207,6 +207,7 @@ export const appMapAuthoringOperationSchemas = {
       platform: z.enum(["android", "ios"]).optional(),
       targetKind: z.enum(["device", "browser"]).optional(),
       browserTargetId: z.string().optional(),
+      targetProfileId: identifier("Saved runtime profile identifier").optional(),
       selectedCellIds: z.array(identifier("Combine cell identifier")).optional(),
       profileTargets: z.array(combineProfileTargetInputSchema).max(64).optional(),
     })

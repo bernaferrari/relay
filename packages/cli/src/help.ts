@@ -38,7 +38,7 @@ const globalOptions = `Global options:
   --revision current               Resolve the latest saved topology revision for an advanced run
   --device <id>                    Choose a connected Device for an outcome command
   --map <id>                       Choose backing topology when more than one exists (advanced)
-  --lane <id>                      Saved who+where on test run, combine/plan run, or interact --preview. Server resolves revision and overlay; --input-file is not needed
+  --lane <id>                      Saved who+where on test run, combine/plan run, interact, or device snapshot. Server resolves revision and overlay; --input-file is not needed
 
 Screenshot and snapshot output:
   --file <path>                    Save screenshot PNG or snapshot JSON to a file

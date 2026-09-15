@@ -147,12 +147,13 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
           name: "targetProfileId",
           type: "string",
           description:
-            "Optional read-only raw-evidence scope. Select the runtime profile explicitly so translated labels cannot borrow proof from another locale.",
+            "Optional read-only raw-evidence scope. Select the runtime profile explicitly so translated labels cannot borrow proof from another locale. `ios` and `android` follow a linked native companion Test on grok-ios / grok-android.",
         },
       ],
       examples: [
         'relay test compile grok-ios settings-tour --input \'{"entryCheckpointScreenId":"settings"}\'',
         'relay test compile grok-ios settings-tour --input \'{"targetProfileId":"ipad-pt-BR"}\'',
+        'relay test compile grok-web test-grok-web-signed-in-home --input \'{"targetProfileId":"ios"}\'',
       ],
       note: "The returned plan always names its startup policy. This preview does not control a device or persist a Test edit.",
     }),
@@ -200,7 +201,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
           name: "targetProfileId",
           type: "string",
           description:
-            "Optional saved runtime evidence profile. Relay binds it to the selected target and preflights the exact queued plan.",
+            "Optional saved runtime evidence profile, or ios/android to run the linked grok-ios / grok-android companion Test on that device.",
         },
         {
           name: "surfaceCapture",
@@ -218,7 +219,7 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
           name: "in",
           type: "object",
           description:
-            "Variable id → value ids. `relay test run map test --in language=ja,pt` upserts a Combine and starts a campaign. Omit it to run the Test once.",
+            "Variable id → value ids. `relay test run map test --in language=ja,pt` upserts a Combine and starts a campaign. ios/android targetProfileId follows the same native companion as compile/run. Omit --in to run the Test once.",
         },
         {
           name: "lens",
@@ -263,8 +264,10 @@ export const graphTestCommandDescriptors: readonly MappedOperationDescriptor[] =
         'relay test run grok-ios settings-tour --input \'{"expectedRevision":115,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"},"startup":{"mode":"verified-checkpoint","screenId":"settings"}}\'',
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"browser","platform":"browser","targetId":"checkout-web"}}\'',
         'relay test run checkout smoke --input \'{"expectedRevision":7,"target":{"kind":"device","platform":"ios","targetId":"DEVICE"}}\'',
+        'relay test run grok-web test-grok-web-signed-in-home --revision current --input \'{"targetProfileId":"android"}\'',
+        'relay test run grok-web test-grok-web-signed-in-home --in language=en --revision current --input \'{"targetProfileId":"android"}\'',
       ],
-      note: "The run always freezes an exact revision and target. Pass --lane to have the server resolve them from a saved Lane. A person with one connected local device may resolve both explicitly with --target current --revision current; Relay prints the resolved facts before execution. Without --in this is one Test run. With --in, Relay upserts the Combine, fills default target bindings, and starts one cell unless --all is set. A paused job resumes its existing plan; a new run uses only the startup policy supplied here. Relay never turns a checkpoint mismatch into an implicit cold retry or relaunch.",
+      note: "Not a first poke: compiled wait-for/expect-screen poll the accessibility slot while pixels stay still and freeze the glass. Poke with `relay device screenshot` + `relay device interact` first. The run always freezes an exact revision and target. Pass --lane to have the server resolve them from a saved Lane. A person with one connected local device may resolve both explicitly with --target current --revision current; Relay prints the resolved facts before execution. Without --in this is one Test run. With --in, Relay upserts the Combine, fills default target bindings, and starts one cell unless --all is set. A paused job resumes its existing plan; a new run uses only the startup policy supplied here. Relay never turns a checkpoint mismatch into an implicit cold retry or relaunch.",
       behavior: "job-start-watch",
     }),
   ),

@@ -30,6 +30,34 @@ export function parseBudgetMs(raw: string): number {
   return ms;
 }
 
+/** Test-run `--input '{"target":{kind,platform,targetId}}'` is the same fact
+ * combine start stores as serial / browserTargetId. Flatten so `plan run`
+ * accepts that shape without a strict-schema 400. */
+export function flattenCombineStartTarget(input: Record<string, unknown>): Record<string, unknown> {
+  const raw = input.target;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return input;
+  const target = raw as {
+    kind?: unknown;
+    platform?: unknown;
+    targetId?: unknown;
+  };
+  const targetId = typeof target.targetId === "string" ? target.targetId.trim() : "";
+  if (!targetId) return input;
+  const next = { ...input };
+  delete next.target;
+  if (target.kind === "browser" || target.platform === "browser") {
+    return { ...next, browserTargetId: targetId, targetKind: "browser" };
+  }
+  return {
+    ...next,
+    serial: targetId,
+    targetKind: "device",
+    ...(target.platform === "android" || target.platform === "ios"
+      ? { platform: target.platform }
+      : {}),
+  };
+}
+
 export function applyCombineRunFlags(
   operationId: string,
   input: Record<string, unknown>,
@@ -62,6 +90,7 @@ export function applyCombineRunFlags(
     if (cell) throw new UsageError("--cell requires --in variableId=value[,value]");
     if (all) throw new UsageError("--all requires --in variableId=value[,value]");
   }
+  if (operationId === "job.combine.start") input = flattenCombineStartTarget(input);
   if (!usesWorlds && !lens && !cell && !all) return applyLaneFlag(operationId, input, tokens);
   const next = { ...input };
   if (usesWorlds) next.in = worlds;
@@ -79,7 +108,12 @@ export function applyCombineRunFlags(
   return applyLaneFlag(operationId, next, tokens);
 }
 
-const LANE_OPERATIONS = new Set(["app-map.test.run", "job.combine.start", "target.interact"]);
+const LANE_OPERATIONS = new Set([
+  "app-map.test.run",
+  "job.combine.start",
+  "target.interact",
+  "target.snapshot.capture",
+]);
 
 /** `--lane <id>` becomes operation `laneId`. The server calls resolveLaneExecution. */
 export function applyLaneFlag(
@@ -93,7 +127,7 @@ export function applyLaneFlag(
   if (!laneId) throw new UsageError("--lane requires a Lane identifier");
   if (!LANE_OPERATIONS.has(operationId)) {
     throw new UsageError(
-      "--lane is only valid on test run, combine run, plan run, or device interact",
+      "--lane is only valid on test run, combine run, plan run, device interact, or device snapshot",
     );
   }
   if (tokens.values.has("--target") || tokens.values.has("--revision")) {

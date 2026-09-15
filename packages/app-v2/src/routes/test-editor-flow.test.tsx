@@ -486,6 +486,8 @@ describe("Test editor", () => {
     expect(document.body.textContent).toContain("not in YAML");
     await click("Visual judge");
     expect(document.body.textContent).toContain("Fails closed without OPENROUTER_API_KEY");
+    expect(document.body.textContent).toContain("Do not auto-accept a visual baseline");
+    expect(document.body.textContent).toContain("Do not parse LaTeX or H1–H6 size");
     expect(document.body.textContent).toContain("Two independent judges must agree");
     await click("Ignore for identity");
     expect(document.body.textContent).toContain("Identity and visual compare skip");
@@ -494,6 +496,13 @@ describe("Test editor", () => {
     expect(document.body.textContent).toContain("Cookie banner");
     expect(document.body.textContent).toContain("Composer placeholder");
     expect(document.body.textContent).toContain("Heading caret");
+    expect(document.body.textContent).toContain("Library chrome sandwich");
+    expect(document.body.textContent).toContain("Do not survey the infinite feed");
+    expect(document.body.textContent).toContain("Enjoying Grok?");
+    await click("Library chrome sandwich");
+    expect(
+      document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value,
+    ).toBe("0.06,0.14,0.88,0.60");
     await click("Cookie banner");
     expect(
       document.querySelector<HTMLInputElement>("#selected-step-expected-identity-region")?.value,
@@ -563,6 +572,7 @@ describe("Test editor", () => {
     await render(harness.editor);
 
     expect(document.body.textContent).toContain("Fails closed without OPENROUTER_API_KEY");
+    expect(document.body.textContent).toContain("Do not auto-accept a visual baseline");
     expect(document.body.textContent).toContain("Two independent judges must agree");
     await fill(
       document.querySelector<HTMLTextAreaElement>("#selected-step-expected-visual")!,

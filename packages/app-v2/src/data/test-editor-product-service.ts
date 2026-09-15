@@ -13,6 +13,7 @@ import {
   testStepPlatformBlockers,
   type PlanPlatform,
 } from "@relay/product/test-route-platforms";
+import { scenarioTestOriginMissingEvidence } from "@relay/product/test-origin-readiness";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
 
@@ -43,6 +44,7 @@ export type ProductTestEditorDocument = {
   recordedPlatforms?: readonly PlanPlatform[];
   routePlatformBlockers?: Partial<Record<PlanPlatform, string>>;
   stepPlatformBlockers?: Readonly<Record<string, string>>;
+  originEvidenceMissing?: string;
   hasRememberableReply?: boolean;
   history: readonly ProductTestHistoryItem[];
   repairs: readonly ProductTestRepair[];
@@ -219,6 +221,7 @@ export function documentFromMap(
     }),
   ) as Partial<Record<PlanPlatform, string>>;
   const hasRememberableReply = testHasRememberableReply(test, appMap);
+  const originEvidenceMissing = scenarioTestOriginMissingEvidence(appMap, test)?.title;
   return {
     appMapId: appMap.id,
     appName: appMap.name,
@@ -227,6 +230,7 @@ export function documentFromMap(
     recordedPlatforms,
     ...(Object.keys(routePlatformBlockers).length ? { routePlatformBlockers } : {}),
     ...(Object.keys(stepPlatformBlockers).length ? { stepPlatformBlockers } : {}),
+    ...(originEvidenceMissing ? { originEvidenceMissing } : {}),
     ...(hasRememberableReply ? { hasRememberableReply: true } : {}),
     history,
     repairs,

@@ -156,6 +156,7 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
       "confirm",
       "full",
       "interactiveOnly",
+      "laneId",
       "serial",
       "visual",
     ]);
@@ -1721,6 +1722,8 @@ test("returns screenshots as native PNG content without path or base64 metadata 
         text: JSON.stringify({
           mimeType: "image/png",
           bytes: png.byteLength,
+          nextHint:
+            "Tap with target.interact (preview:true marks only). Do not start with test run.",
           capturedAt,
           serial: "emulator-5554",
           jobId: "job-1",
@@ -1739,6 +1742,7 @@ test("returns screenshots as native PNG content without path or base64 metadata 
       result: {
         mimeType: "image/png",
         bytes: png.byteLength,
+        nextHint: "Tap with target.interact (preview:true marks only). Do not start with test run.",
         capturedAt,
         serial: "emulator-5554",
         jobId: "job-1",
@@ -1758,6 +1762,119 @@ test("returns screenshots as native PNG content without path or base64 metadata 
     assert.doesNotMatch(metadata, /private\/var|screenshot\.png|frame\.png/);
     assert.doesNotMatch(metadata, new RegExp(base64));
     assert.doesNotMatch(metadata, /framePath|base64|"path"/);
+  } finally {
+    await session.close();
+  }
+});
+
+test("interact preview without HTTP base64 stays a small digest", async () => {
+  const session = await connectMcp({
+    async invoke() {
+      return {
+        ok: true,
+        preview: true,
+        mime: "image/png",
+        bytes: 700_000,
+        inspectable: false,
+        path: "/tmp/preview.png",
+        nodes: [{ label: "huge leftover tree" }],
+      };
+    },
+  });
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_target_interact",
+        arguments: { serial: "ipad-1", kind: "point", x: 10, y: 20, preview: true },
+      }),
+    );
+    assert.equal(result.isError, undefined);
+    const text = String(result.content[0]?.text ?? "");
+    assert.doesNotMatch(text, /huge leftover tree|base64|\/tmp\/preview\.png/);
+    assert.match(text, /--preview --file/);
+    assert.ok(text.length < 2_000);
+  } finally {
+    await session.close();
+  }
+});
+
+test("interact preview unwraps an invoke envelope into a native PNG", async () => {
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    "base64",
+  );
+  const base64 = png.toString("base64");
+  const session = await connectMcp({
+    async invoke() {
+      return {
+        ok: true,
+        result: {
+          mime: "image/png",
+          base64,
+          bytes: png.byteLength,
+          preview: true,
+          inspectable: false,
+          capturedAt: 1,
+          serial: "ipad-1",
+          width: 1,
+          height: 1,
+        },
+      };
+    },
+  });
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_target_interact",
+        arguments: { serial: "ipad-1", kind: "point", x: 10, y: 20, preview: true },
+      }),
+    );
+    assert.equal(result.isError, undefined);
+    assert.equal(result.content[1]?.type, "image");
+    const text = String(result.content[0]?.text ?? "");
+    assert.doesNotMatch(text, new RegExp(base64));
+    assert.match(text, /"preview":true/);
+    assert.ok(text.length < 2_000);
+  } finally {
+    await session.close();
+  }
+});
+
+test("interact preview returns a PNG image instead of inlined base64 JSON", async () => {
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    "base64",
+  );
+  const base64 = png.toString("base64");
+  const session = await connectMcp({
+    async invoke() {
+      return {
+        mime: "image/png",
+        base64,
+        bytes: png.byteLength,
+        preview: true,
+        inspectable: false,
+        capturedAt: 1,
+        serial: "ipad-1",
+        width: 1,
+        height: 1,
+      };
+    },
+  });
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_target_interact",
+        arguments: { serial: "ipad-1", kind: "point", x: 10, y: 20, preview: true },
+      }),
+    );
+    assert.equal(result.isError, undefined);
+    assert.equal(result.content[1]?.type, "image");
+    const text = String(result.content[0]?.text ?? "");
+    assert.doesNotMatch(text, new RegExp(base64));
+    assert.match(text, /"preview":true/);
+    assert.match(text, /"inspectable":false/);
+    assert.match(text, /Commit with target.interact/);
   } finally {
     await session.close();
   }

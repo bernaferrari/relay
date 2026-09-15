@@ -52,7 +52,12 @@ export function tapPreviewLogicalBounds(
     Math.min(value.width, value.height) / Math.max(value.width, value.height);
   // Same shape (within ~1%) means points and pixels share one orientation and
   // only a scale factor differs — exactly what mapTapPreviewToPixels applies.
-  return Math.abs(aspect(dimensions) - aspect(knownLogical)) < 0.01 ? knownLogical : undefined;
+  // Portrait logical + landscape PNG can share that 3:4 ratio and still swap axes.
+  const sameOrientation =
+    dimensions.width > dimensions.height === knownLogical.width > knownLogical.height;
+  return sameOrientation && Math.abs(aspect(dimensions) - aspect(knownLogical)) < 0.01
+    ? knownLogical
+    : undefined;
 }
 
 function mixPixel(

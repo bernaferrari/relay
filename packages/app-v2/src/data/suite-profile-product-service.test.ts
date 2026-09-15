@@ -112,7 +112,7 @@ describe("suite and environment product projections", () => {
       tests: {
         thread: {
           id: "thread",
-          name: "UNRECORDED — Start Thread (absent from tree)",
+          name: "UNRECORDED — Start Thread (absent from the tree)",
           steps: [
             {
               id: "step-action",
@@ -129,6 +129,46 @@ describe("suite and environment product projections", () => {
       testIds: ["thread"],
     } as AppMapCombine);
     expect(suite.tests[0]).toMatchObject({ id: "thread", status: "needs-review" });
+  });
+
+  it("names share-menu without origin variants as needs-review", () => {
+    const shareMap = {
+      ...map,
+      screens: {
+        "screen-grok-ios-signed-in-home": {
+          id: "screen-grok-ios-signed-in-home",
+          title: "Signed-in SuperGrok home",
+          variantIds: [],
+        },
+      },
+      screenVariants: {},
+      connections: {
+        share: {
+          id: "share",
+          fromScreenId: "screen-grok-ios-signed-in-home",
+          destination: { kind: "end" },
+        },
+      },
+      tests: {
+        share: {
+          id: "share",
+          name: "Share Conversation and Delete menu",
+          steps: [
+            {
+              id: "step-action",
+              kind: "instruction",
+              intent: "Share Conversation and Delete menu",
+              binding: { status: "resolved", kind: "connections", connectionIds: ["share"] },
+            },
+          ],
+        },
+      },
+    } as unknown as AppMap;
+    const suite = projectProductSuite(shareMap, {
+      ...combine,
+      testIds: ["share"],
+    } as AppMapCombine);
+    expect(suite.tests[0]).toMatchObject({ id: "share", status: "needs-review" });
   });
 
   it("keeps browser environment and auth metadata target-scoped while leaving builds unbound", () => {
@@ -877,7 +917,7 @@ describe("suite and environment product projections", () => {
     ).resolves.toEqual({ batchId: "preflight-batch" });
   });
 
-  it("starts six accounts plus Android and iOS as eight Combine columns", async () => {
+  it("starts six accounts plus Android and iOS as eight Plan columns", async () => {
     relay.invoke.mockReset().mockImplementation(async (operation: string, input: unknown) => {
       if (operation === "target.list") {
         return {

@@ -126,6 +126,20 @@ describe("disabled steps", () => {
     ).toMatch(/^Blocked · airplane on iOS is a Settings handoff/u);
   });
 
+  it("names a missing origin variant instead of Ready", () => {
+    expect(
+      stepReadinessLabel(
+        {
+          id: "share",
+          kind: "instruction",
+          intent: "Share Conversation and Delete menu",
+          binding: { status: "resolved", kind: "connections", connectionIds: ["share"] },
+        },
+        { originEvidenceMissing: "Signed-in SuperGrok home" },
+      ),
+    ).toMatch(/^Needs origin evidence · Signed-in SuperGrok home/u);
+  });
+
   it("names Start Thread absent as Unrecorded, not Ready", () => {
     expect(
       stepReadinessLabel({

@@ -239,6 +239,9 @@ export function createAppMapTestRunParsers(dependencies: AppMapParserDependencie
       string(identity.rootRecipeId, "Test run plan identity rootRecipeId");
       record(output.plan, "Test run plan");
       record(output.job, "Test run job");
+      if (output.nativeCompanion !== undefined) {
+        record(output.nativeCompanion, "Test run native companion");
+      }
     },
   );
 

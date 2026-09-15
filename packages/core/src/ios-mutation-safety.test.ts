@@ -12,6 +12,7 @@ import {
   snapshot,
   type Device,
 } from "./device.js";
+import { unknownErrorMessage } from "./ios-runner-listener-command.js";
 import { recordIosVideo } from "./ios-device-adapter.js";
 import { IosSnapshotStaleAfterInputError } from "./ios-snapshot-flight.js";
 import { scrollUp as recipeRunnerScrollUp } from "./recipe-runner-support.js";
@@ -126,7 +127,9 @@ test("an iOS selector miss or outcome-unknown mutation does not falsely fence a 
     } as unknown as Device;
 
     const first = runWithTargetContext(ios(serial), () => snapshot(device));
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    for (let i = 0; i < 50 && snapshotCalls === 0; i += 1) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
     await assert.rejects(
       runWithTargetContext(ios(serial), () =>
         runIosMutationOnce(serial, "press", async () => {
@@ -429,6 +432,37 @@ test("a successful outer iOS Back response reports its one native attempt", asyn
     },
   );
   assert.equal(result.iosSessionLifecycle?.attempts, 1);
+});
+
+test("a runner {message,code} element miss is not-dispatched, not unknown", async () => {
+  const serial = "ios-type-object-miss";
+  let nativeTypes = 0;
+  const device = {
+    interactions: {
+      type: async () => {
+        nativeTypes += 1;
+        throw {
+          message: "element not found",
+          code: "COMMAND_FAILED",
+        };
+      },
+    },
+  } as unknown as Device;
+
+  await assert.rejects(
+    runWithTargetContext(ios(serial), () => interact({ kind: "type", text: "hello" }, { device })),
+    (error: unknown) => {
+      assert.ok(!(error instanceof IosMutationOutcomeUnknownError));
+      assert.equal(unknownErrorMessage(error), "element not found");
+      return true;
+    },
+  );
+  assert.equal(nativeTypes, 1);
+  assert.deepEqual(lastIosMutationAttemptDiagnostic(serial)?.retry, {
+    attempts: 0,
+    decision: "safe-selector-fallback",
+    reason: "selector-was-not-dispatched",
+  });
 });
 
 test("outer iOS swipe and type interactions never retry an uncertain native command", async () => {

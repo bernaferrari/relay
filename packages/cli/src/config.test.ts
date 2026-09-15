@@ -399,6 +399,14 @@ test("Test run accepts explicit current target and revision shortcuts", () => {
     () => parseCli(["map", "list", "--target", "current"], {}),
     /only valid on test run/,
   );
+  const plan = parseCli(
+    ["plan", "run", "grok-android", "grok-android-daily", "--revision", "current"],
+    {},
+  );
+  assert.equal(plan.command, "invoke");
+  if (plan.command !== "invoke") return;
+  assert.equal(plan.operationId, "job.combine.start");
+  assert.equal(plan.currentRevision, true);
   assert.throws(
     () => parseCli(["test", "run", "checkout", "smoke", "--revision", "latest"], {}),
     /accepts only 'current'/,
@@ -453,6 +461,16 @@ test("--lane maps to laneId and does not require --input-file", () => {
     label: "Imagine",
     preview: true,
     laneId: "grok-lab",
+  });
+
+  const snapshot = parseCli(["device", "snapshot", "--lane", "grok-lab", "--full"], {});
+  assert.equal(snapshot.command, "invoke");
+  if (snapshot.command !== "invoke") return;
+  assert.equal(snapshot.operationId, "target.snapshot.capture");
+  assert.deepEqual(snapshot.input, {
+    laneId: "grok-lab",
+    full: true,
+    visual: true,
   });
 
   assert.throws(

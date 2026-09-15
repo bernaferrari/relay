@@ -417,7 +417,7 @@ async function resolveCurrentTestRunInput(
   if (!parsed.currentTarget && !parsed.currentRevision) return parsed.input;
   const appMapId = parsed.input.appMapId;
   if (typeof appMapId !== "string" || !appMapId) {
-    throw new UsageError("test run shortcuts require an App Map id");
+    throw new UsageError("current revision/target shortcuts require an App Map id");
   }
   const next = { ...parsed.input };
   if (parsed.currentRevision) {
@@ -429,7 +429,11 @@ async function resolveCurrentTestRunInput(
     if (typeof appMap.revision !== "number") {
       throw new UsageError("The current App Map has no numeric revision");
     }
-    next.expectedRevision = appMap.revision;
+    if (parsed.operationId === "app-map.test.run") {
+      next.expectedRevision = appMap.revision;
+    } else {
+      output.heartbeat(`Resolved Plan revision ${appMap.revision}`);
+    }
   }
   if (parsed.currentTarget) {
     const response = object(

@@ -49,7 +49,8 @@ export async function tryAdoptRunnerSessionFromLease(
   device: DeviceInfo,
   options: { startupTimeoutMs?: number },
 ): Promise<RunnerSession | null> {
-  if (device.kind !== 'simulator' || !isIosRunnerDetachEnabled()) return null;
+  if (!isIosRunnerDetachEnabled()) return null;
+  if (device.kind !== 'simulator' && device.kind !== 'device') return null;
   // Custom simulator sets run behind the XCTestDevices redirect, whose
   // symlink+lock lifetime is bound to the owning session and cannot be
   // carried across daemons; scoped-set runners always restart fresh.

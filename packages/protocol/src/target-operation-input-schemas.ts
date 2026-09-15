@@ -54,7 +54,14 @@ export const targetOperationInputSchemas = {
   "target.browser-device.control": browserDeviceControlInputSchema,
   "system.doctor.get": empty,
   "target.list": empty,
-  "target.devices.list": z.object({ phase: z.literal("android").optional() }).strict(),
+  "target.devices.list": z
+    .object({
+      phase: z
+        .enum(["android", "ios"])
+        .optional()
+        .describe("Optional platform filter. Omit to list iOS, Android, and browsers."),
+    })
+    .strict(),
   "target.avds.list": empty,
   "target.avd.boot": z
     .object({
@@ -100,6 +107,13 @@ export const targetOperationInputSchemas = {
         .min(1)
         .optional()
         .describe("Required when kind is 'label': accessibility label to tap"),
+      heading: z
+        .string()
+        .min(1)
+        .optional()
+        .describe(
+          "Unique nearby heading that scopes an otherwise ambiguous label (Build Mode vs Finance Dismiss)",
+        ),
       text: z
         .string()
         .optional()

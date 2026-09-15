@@ -136,11 +136,11 @@ const devicesParser = objectParser<{ devices: DeviceSummary[] }>("devices respon
       assertTargetRuntimeReadiness(device.readiness, "device readiness");
   }
 });
-const targetDevicesInputParser = objectParser<{ phase?: "android" }>(
+const targetDevicesInputParser = objectParser<{ phase?: "android" | "ios" }>(
   "target devices input",
   (input) => {
-    if (input.phase !== undefined && input.phase !== "android") {
-      fail("target devices phase", "must be android when provided");
+    if (input.phase !== undefined && input.phase !== "android" && input.phase !== "ios") {
+      fail("target devices phase", "must be android or ios when provided");
     }
   },
 );

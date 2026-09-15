@@ -408,6 +408,61 @@ test("recovery re-probes a slow tree once instead of authorizing runner kills", 
   }
 });
 
+test("recovery adopts a healthy testCommand listener instead of authorizing runner kills", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-recovery-adopt-"));
+  const raster = PNG.sync.write(new PNG({ width: 32, height: 48 }));
+  const serial = "8F1A0C2E-4411-4B8A-9D33-6A1B0E2C9F70";
+  const daemon = await startFakeAgentDeviceDaemon({ nodes: [], raster, serial });
+  const previousDaemonUrl = process.env.AGENT_DEVICE_DAEMON_BASE_URL;
+  const previousGoIos = process.env.RELAY_GO_IOS_BIN;
+  process.env.AGENT_DEVICE_DAEMON_BASE_URL = listeningBaseUrl(daemon);
+  process.env.RELAY_GO_IOS_BIN = join(root, "missing-go-ios");
+  let hostRepairs = 0;
+  const restoreRuntime = setIosSessionHostRuntimeForTests({
+    prepareIosRunner: async () => {
+      throw new Error("prepare must not spawn a replacement xcodebuild");
+    },
+    recoverIosRuntime: async () => {
+      hostRepairs += 1;
+      throw new Error("unexpected host repair for a live listener");
+    },
+    probeLiveIosRunnerListener: async () => ({
+      serial,
+      runnerPid: 25365,
+      port: 50937,
+    }),
+  });
+  setLocalDeviceProvider({ kind: "device", create: () => ({}) as Device });
+  resetIosSnapshotFlights();
+  resetIosRunnerState();
+  resetDeviceClients();
+  try {
+    const result = await runWithTargetContext(
+      { kind: "device", platform: "ios", serial } as const,
+      () => recoverTargetRuntime(serial),
+    );
+    assert.equal(hostRepairs, 0);
+    assert.ok("lifecycle" in result && result.lifecycle.repairAttempts === 1);
+    assert.match(result.summary, /adopted the live XCTest runner/i);
+    assert.match(result.summary, /not a reboot/i);
+    assert.ok(result.actions.some((action) => /healthy runner is not a recover-kill/i.test(action.detail)));
+  } finally {
+    restoreRuntime();
+    setLocalDeviceProvider(undefined);
+    resetDeviceClients();
+    resetIosSnapshotFlights();
+    resetIosRunnerState();
+    if (previousDaemonUrl === undefined) delete process.env.AGENT_DEVICE_DAEMON_BASE_URL;
+    else process.env.AGENT_DEVICE_DAEMON_BASE_URL = previousDaemonUrl;
+    if (previousGoIos === undefined) delete process.env.RELAY_GO_IOS_BIN;
+    else process.env.RELAY_GO_IOS_BIN = previousGoIos;
+    await rm(root, { recursive: true, force: true });
+    await new Promise<void>((resolveClose) => {
+      daemon.close(() => resolveClose());
+    });
+  }
+});
+
 test("a mid-run locked screen surfaces attention with unlock guidance, not generic unavailability", async () => {
   // The daemon answers every accessibility probe with an empty tree, so
   // inspect() falls through to the CoreDevice lock check. That check shells
@@ -431,6 +486,7 @@ test("a mid-run locked screen surfaces attention with unlock guidance, not gener
       hostRepairs += 1;
       throw new Error("host repair must not run for a locked device");
     },
+    waitForIosRunnerListenerReady: async () => null,
   });
   setLocalDeviceProvider({ kind: "device", create: () => ({}) as Device });
   resetIosSnapshotFlights();

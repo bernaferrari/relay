@@ -11,6 +11,7 @@ import {
   resolveSnapshotTargetPoint,
 } from "./device.js";
 import {
+  headingNodeFamilies,
   preflightSemanticActivation,
   resolveNamedControlOutcome,
   resolveSnapshotTargetRevealDirection,
@@ -779,6 +780,46 @@ test("a caption with no row of its own still refuses to become a tap", () => {
   assert.equal(outcome.status, "unhittable");
 });
 
+test("named control resolver coalesces same-frame Settings close wrapper and button", () => {
+  const nav = {
+    index: 9,
+    identifier: "Settings",
+    label: "Close",
+    type: "NavigationBar",
+    enabled: true,
+    hittable: false,
+    rect: { x: 204, y: 40, width: 704, height: 56 },
+  };
+  const wrapper = {
+    index: 10,
+    parentIndex: 9,
+    identifier: "toolbar.close.button",
+    label: "Close",
+    type: "Other",
+    enabled: true,
+    hittable: false,
+    depth: 6,
+    rect: { x: 224, y: 49, width: 38, height: 38 },
+  };
+  const button = {
+    index: 12,
+    parentIndex: 11,
+    identifier: "toolbar.close.button",
+    label: "Close",
+    type: "Button",
+    enabled: true,
+    hittable: false,
+    depth: 8,
+    rect: { x: 224, y: 49, width: 38, height: 38 },
+  };
+  const resolved = resolveNamedControl([nav, wrapper, button], {
+    identifier: "toolbar.close.button",
+  });
+  assert.equal(resolved?.method, "identifier");
+  assert.deepEqual(resolved?.point, { x: 243, y: 68 });
+  assert.deepEqual(resolved?.bounds, button.rect);
+});
+
 test("named control resolver preserves true different-location ambiguity", () => {
   const controls = [
     {
@@ -801,6 +842,88 @@ test("named control resolver preserves true different-location ambiguity", () =>
   assert.equal(outcome.status, "ambiguous");
   assert.equal(outcome.matches, 2);
   assert.match(outcome.detail, /2 different control locations/u);
+});
+
+test("a unique ancestor heading scopes one Dismiss without coalescing the other location", () => {
+  const finance = {
+    index: 1,
+    type: "p",
+    label: "Finance",
+    hittable: false,
+    rect: { x: 469, y: 381, width: 308, height: 18 },
+  };
+  const financeDismiss = {
+    index: 2,
+    parentIndex: 1,
+    type: "button",
+    label: "Dismiss",
+    hittable: true,
+    rect: { x: 991, y: 382, width: 72, height: 32 },
+  };
+  const dialog = {
+    index: 3,
+    type: "dialog",
+    label: "Introducing Build Mode",
+    hittable: true,
+    rect: { x: 824, y: 339, width: 320, height: 301 },
+  };
+  const headingText = {
+    index: 4,
+    parentIndex: 3,
+    type: "text",
+    label: "Introducing Build Mode",
+    hittable: false,
+    rect: { x: 840, y: 511, width: 288, height: 23 },
+  };
+  const buildDismiss = {
+    index: 5,
+    parentIndex: 3,
+    type: "button",
+    label: "Dismiss",
+    hittable: true,
+    rect: { x: 828, y: 596, width: 72, height: 32 },
+  };
+  const nodes = [finance, financeDismiss, dialog, headingText, buildDismiss];
+
+  assert.equal(headingNodeFamilies(nodes, "Introducing Build Mode").length, 1);
+
+  const bare = resolveNamedControlOutcome(nodes, { label: "Dismiss" });
+  if (bare.status === "resolved") assert.fail("two Dismiss locations must stay ambiguous");
+  assert.equal(bare.status, "ambiguous");
+  assert.equal(bare.matches, 2);
+
+  const scoped = resolveNamedControlOutcome(nodes, {
+    label: "Dismiss",
+    heading: "Introducing Build Mode",
+  });
+  assert.equal(scoped.status, "resolved");
+  if (scoped.status === "resolved") {
+    assert.equal(scoped.resolution.method, "label");
+    assert.equal(scoped.resolution.activation, undefined);
+    assert.deepEqual(scoped.resolution.bounds, buildDismiss.rect);
+    assert.deepEqual(scoped.resolution.point, { x: 864, y: 612 });
+  }
+
+  const sameHeadingBoth = resolveNamedControlOutcome(
+    [dialog, { ...financeDismiss, parentIndex: 3 }, headingText, buildDismiss],
+    { label: "Dismiss", heading: "Introducing Build Mode" },
+  );
+  if (sameHeadingBoth.status === "resolved") {
+    assert.fail("two Dismiss locations under one heading must not coalesce");
+  }
+  assert.equal(sameHeadingBoth.status, "ambiguous");
+
+  const twoHeadings = resolveNamedControlOutcome(
+    [
+      { ...dialog, index: 10, rect: { x: 20, y: 20, width: 200, height: 200 } },
+      { ...dialog, index: 11, rect: { x: 600, y: 20, width: 200, height: 200 } },
+      { ...buildDismiss, parentIndex: 10 },
+    ],
+    { label: "Dismiss", heading: "Introducing Build Mode" },
+  );
+  if (twoHeadings.status === "resolved") {
+    assert.fail("two heading locations must not pick a Dismiss");
+  }
 });
 
 test("a slow iOS accessibility traversal is timed out as in-flight, not a missing XCTest session", async () => {
@@ -853,6 +976,151 @@ test("a slow iOS accessibility traversal is timed out as in-flight, not a missin
     [{ label: "Settings" }],
   );
   assert.equal(calls, 2);
+});
+
+test("prefers a LISTENER_READY runner over the bounded SDK Copy probe", async () => {
+  const { snapshot } = await import("./device.js");
+  const { runWithTargetContext } = await import("./target-context.js");
+  const { setLiveIosRunnerCommandPostForTests } = await import("./ios-runner-listener-command.js");
+  const { mkdtemp, rm, writeFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = await mkdtemp(join(tmpdir(), "relay-ios-prefer-listener-"));
+  const serial = "ipad-prefer-live-listener";
+  const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
+  await writeFile(
+    join(dir, `${serial}.json`),
+    JSON.stringify({ runnerPid: process.pid, port: 57051 }),
+  );
+  let sdkSnapshots = 0;
+  const restore = setLiveIosRunnerCommandPostForTests(async (listener, command) => {
+    assert.equal(listener.port, 57051);
+    if (command.command === "querySelector") {
+      if (command.selectorValue === "ask.toolbar.textfield") {
+        return {
+          ok: true,
+          data: { nodes: [{ identifier: "ask.toolbar.textfield", label: "Ask Anything" }] },
+        };
+      }
+      return { ok: true, data: { found: false, nodes: [] } };
+    }
+    if (command.command === "snapshot") {
+      assert.equal(command.depth, 0);
+      return {
+        ok: true,
+        data: {
+          nodes: [
+            {
+              depth: 0,
+              type: "Application",
+              identifier: "ai.x.GrokApp",
+              rect: { x: 0, y: 0, width: 1112, height: 834 },
+            },
+          ],
+        },
+      };
+    }
+    throw new Error("unbounded snapshot must not run when chrome identifiers resolve");
+  });
+  const device = {
+    capture: {
+      snapshot: async () => {
+        sdkSnapshots += 1;
+        return { nodes: [{ label: "Copy probe" }] };
+      },
+    },
+  };
+  try {
+    const nodes = await runWithTargetContext(
+      { kind: "device", platform: "ios", serial } as const,
+      () => snapshot(device as never, { timeoutMs: 20 }),
+    );
+    assert.deepEqual(nodes, [
+      {
+        depth: 0,
+        type: "Application",
+        identifier: "ai.x.GrokApp",
+        rect: { x: 0, y: 0, width: 1112, height: 834 },
+      },
+      { identifier: "ask.toolbar.textfield", label: "Ask Anything", logicalCoordinates: true },
+    ]);
+    assert.equal(sdkSnapshots, 0);
+  } finally {
+    restore();
+    if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+    else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("adopts a LISTENER_READY runner when the SDK session is missing", async () => {
+  const { snapshot } = await import("./device.js");
+  const { runWithTargetContext } = await import("./target-context.js");
+  const { setLiveIosRunnerCommandPostForTests } = await import("./ios-runner-listener-command.js");
+  const { mkdtemp, rm, writeFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = await mkdtemp(join(tmpdir(), "relay-ios-adopt-snap-"));
+  const serial = "ipad-adopt-live-listener";
+  const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
+  await writeFile(
+    join(dir, `${serial}.json`),
+    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+  );
+  const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
+    if (command.command === "querySelector") {
+      if (command.selectorValue === "ask.toolbar.textfield") {
+        return { ok: true, data: { nodes: [{ label: "Ask Anything" }] } };
+      }
+      return { ok: true, data: { found: false, nodes: [] } };
+    }
+    if (command.command === "snapshot") {
+      assert.equal(command.depth, 0);
+      return {
+        ok: true,
+        data: {
+          nodes: [
+            {
+              depth: 0,
+              type: "Application",
+              identifier: "ai.x.GrokApp",
+              rect: { x: 0, y: 0, width: 1112, height: 834 },
+            },
+          ],
+        },
+      };
+    }
+    throw new Error("unbounded snapshot must not run when chrome identifiers resolve");
+  });
+  const device = {
+    capture: {
+      snapshot: async () => {
+        throw new Error("No active session. Run open first.");
+      },
+    },
+  };
+  try {
+    const nodes = await runWithTargetContext(
+      { kind: "device", platform: "ios", serial } as const,
+      () => snapshot(device as never, { timeoutMs: 20 }),
+    );
+    assert.deepEqual(nodes, [
+      {
+        depth: 0,
+        type: "Application",
+        identifier: "ai.x.GrokApp",
+        rect: { x: 0, y: 0, width: 1112, height: 834 },
+      },
+      { label: "Ask Anything", identifier: "ask.toolbar.textfield", logicalCoordinates: true },
+    ]);
+  } finally {
+    restore();
+    if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+    else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("a genuine missing iOS XCTest session remains distinct from an accessibility timeout", async () => {

@@ -138,6 +138,43 @@ test("validation receipts are exact revision markers while legacy tests stay com
   );
 });
 
+test("share-menu with no origin variant is not Ready", () => {
+  const share = scenario("test-grok-ios-share-menu", "Share Conversation and Delete menu");
+  const map: AppMap = {
+    ...app("grok-ios", "Grok iOS daily", { "test-grok-ios-share-menu": share }),
+    screens: {
+      "screen-grok-ios-signed-in-home": {
+        organizationId: "org",
+        projectId: "project",
+        appMapId: "grok-ios",
+        id: "screen-grok-ios-signed-in-home",
+        title: "Signed-in SuperGrok home",
+        variantIds: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+    connections: {
+      "connection-1": {
+        organizationId: "org",
+        projectId: "project",
+        appMapId: "grok-ios",
+        id: "connection-1",
+        fromScreenId: "screen-grok-ios-signed-in-home",
+        destination: { kind: "end" },
+        label: "Share",
+        state: "ready",
+        actions: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    },
+  };
+  const tests = projectProductTests([map]);
+  assert.equal(tests[0]?.status, "needs-review");
+  assert.equal(productTestStatusLabel(tests[0]!.status, share.name), "Unbound");
+});
+
 test("UNRECORDED and still-absent names stay Unrecorded, not Ready", () => {
   const thread = scenario("thread", "Header More on existing chat (Start Thread still absent)");
   const older = scenario(

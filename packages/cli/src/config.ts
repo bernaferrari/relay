@@ -772,11 +772,15 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
   if (revisionShortcut !== undefined && revisionShortcut !== "current") {
     throw new UsageError("--revision currently accepts only 'current'");
   }
+  if (targetShortcut !== undefined && resolved.operationId !== "app-map.test.run") {
+    throw new UsageError("--target current is only valid on test run");
+  }
   if (
-    (targetShortcut !== undefined || revisionShortcut !== undefined) &&
-    resolved.operationId !== "app-map.test.run"
+    revisionShortcut !== undefined &&
+    resolved.operationId !== "app-map.test.run" &&
+    resolved.operationId !== "job.combine.start"
   ) {
-    throw new UsageError("--target current and --revision current are only valid on test run");
+    throw new UsageError("--revision current is only valid on test run or plan run");
   }
   resolved.input = applySurveyRestore(
     resolved.operationId,

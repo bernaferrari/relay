@@ -39,6 +39,7 @@ import type { CombineLensInput } from "./app-map-combine-id.js";
 import type { SourceRevision } from "./source-revision.js";
 import type {
   AppMapCompiledTest,
+  AppMapNativeCompanionCompile,
   AppMapScenarioTestEdit,
   AppMapTestStartup,
   OfflineTestPreflightReport,
@@ -566,11 +567,16 @@ export type AppMapOperationMap = {
       entryCheckpointScreenId?: string;
       startupMode?: "warm" | "cold";
       /** Read-only runtime evidence scope. The target profile is selected by
-       * immutable profile ID, never inferred from translated visible copy. */
+       * immutable profile ID, never inferred from translated visible copy.
+       * `ios` and `android` follow a linked native companion Test. */
       targetProfileId?: string;
       forceRecaptureScreenIds?: string[];
     };
-    output: { plan: AppMapCompiledTest; preflight: OfflineTestPreflightReport };
+    output: {
+      plan: AppMapCompiledTest;
+      preflight: OfflineTestPreflightReport;
+      nativeCompanion?: AppMapNativeCompanionCompile;
+    };
   };
   "app-map.test.from-intent": {
     input: { appMapId: string; intent: string };
@@ -591,8 +597,8 @@ export type AppMapOperationMap = {
       expectedRevision?: number;
       target?: AuthoringTarget;
       /** Optional explicit saved profile scope. Relay binds it to this exact
-       * target before control, then preflights the same frozen plan it queues. */
-      targetProfileId?: string;
+       * target before control, then preflights the same frozen plan it queues.
+       * `ios` and `android` follow a linked native companion Test. */
       engine?: "chromium" | "firefox" | "webkit";
       account?:
         | { kind: "fixture"; accountId: string; accountRevision: string; reference?: string }
@@ -657,6 +663,7 @@ export type AppMapOperationMap = {
       jobs?: AppMapJobSummary[];
       combine?: { id: string; revision: number };
       campaign?: { id: string; selectedCellIds: string[] };
+      nativeCompanion?: AppMapNativeCompanionCompile;
     };
   };
   "app-map.combine.save": {
@@ -677,6 +684,7 @@ export type AppMapOperationMap = {
       platform?: "android" | "ios";
       targetKind?: "device" | "browser";
       browserTargetId?: string;
+      targetProfileId?: string;
       selected?: Record<string, string[]>;
       strategy?: "zip" | "cartesian" | "pairwise";
       selectedCellIds?: string[];

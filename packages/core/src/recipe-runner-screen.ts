@@ -46,6 +46,7 @@ import {
 } from "./destination-survey.js";
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 import { isTransientError } from "./retry.js";
+import { stillScreenAbortMessage, stillScreenUnchanged } from "./still-screen-wait.js";
 import type { DestinationRepairHint } from "./repair-proposal.js";
 import {
   getRecipeAndroidLocalization,
@@ -269,6 +270,8 @@ export async function runExpectScreenStep(
   let mismatchNodeCount = 0;
   let mismatchResolutionMethod = "a11y";
   let inspectionUnavailable = false;
+  let lastMissVisualFingerprint: string | undefined;
+  let stillScreenElapsedMs: number | undefined;
   do {
     // A recovery mutation makes pixels from the preceding attempt stale.
     const reusable = firstAttempt ? priorObservation : undefined;
@@ -422,6 +425,14 @@ export async function runExpectScreenStep(
       await sleep(350, device);
       continue;
     }
+    if (visualFingerprint && stillScreenUnchanged(lastMissVisualFingerprint, visualFingerprint)) {
+      stillScreenElapsedMs = now() - navigationStartedAt;
+      ctx.log(
+        `screen: pixels unchanged while waiting for ${step.screenTitle} (${stillScreenElapsedMs}ms)`,
+      );
+      break;
+    }
+    lastMissVisualFingerprint = visualFingerprint ?? lastMissVisualFingerprint;
     if (Date.now() < deadline) await sleep(Math.min(400, deadline - Date.now()), device);
   } while (Date.now() < deadline);
 
@@ -453,7 +464,17 @@ export async function runExpectScreenStep(
         `return-edge ${step.returnRequirement.connectionId}: reviewed inverse is required for ${step.returnRequirement.destinationScreenId} → ${step.returnRequirement.fromScreenId} (observed “${observedTitle}”; no Back was attempted)`,
       );
     }
-    throw new Error(`expect-screen: on “${observedTitle}”, not “${step.screenTitle}”`);
+    throw new Error(
+      stillScreenElapsedMs !== undefined
+        ? stillScreenAbortMessage({
+            kind: "expect-screen",
+            expected: step.screenTitle,
+            observed: observedTitle,
+            elapsedMs: stillScreenElapsedMs,
+            timeoutMs: timeout,
+          })
+        : `expect-screen: on “${observedTitle}”, not “${step.screenTitle}”`,
+    );
   }
   if (step.evidenceSurface && verifiedNodes) {
     const captureDestinationScreenshot = dependencies.captureScreenshot ?? captureScreenshot;

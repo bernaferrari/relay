@@ -11,6 +11,7 @@ import { parseOptionalRunTestStepEvidence, unrecordedProductName } from "@relay/
 import { createRelayOperationPort, type RelayInvokeClient } from "@relay/workflows/operation-port";
 import { routeUrls } from "./routes.js";
 import { findUniqueProductTestOwner, type ProductTestOwner } from "./test-identity.js";
+import { scenarioTestOriginMissingEvidence } from "./test-origin-readiness.js";
 
 /** Public Test state. A missing binding is review work, not an execution error. */
 export type ProductTestStatus = "ready" | "needs-review";
@@ -208,9 +209,10 @@ function stepHasReview(step: AppMapScenarioTestStep): boolean {
   return false;
 }
 
-function testStatus(test: AppMapScenarioTest): ProductTestStatus {
+function testStatus(map: AppMap, test: AppMapScenarioTest): ProductTestStatus {
   if (unrecordedProductName(test.name)) return "needs-review";
   if (test.steps.length === 0 || test.steps.some(stepHasReview)) return "needs-review";
+  if (scenarioTestOriginMissingEvidence(map, test)) return "needs-review";
   const validation = test.validation;
   if (
     validation &&
@@ -469,7 +471,7 @@ function projectTestSummary(
     appMapId: map.id,
     appName: map.name,
     stepCount: flattenCount(test.steps),
-    status: testStatus(test),
+    status: testStatus(map, test),
     updatedAt: test.updatedAt,
     href: routeUrls.test(test.id),
     ...(recentRun ? { recentRun } : {}),

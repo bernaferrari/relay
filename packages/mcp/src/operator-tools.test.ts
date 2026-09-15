@@ -105,6 +105,30 @@ test("every operator verb has a schema and a description with a worked example",
   }
 });
 
+test("operator copy uses Plan language and adopts a live runner", () => {
+  const recover = relayOperatorTools.find((tool) => tool.name === "relay_recover");
+  assert.ok(recover);
+  assert.match(recover.description, /adopts the live XCTest runner/u);
+  assert.doesNotMatch(recover.description, /remount/u);
+  const plan = relayOperatorTools.find((tool) => tool.name === "relay_plan_run");
+  assert.ok(plan);
+  assert.match(plan.description, /saved Plan \(every selected case\)/u);
+  assert.match(plan.description, /Infra columns/u);
+  assert.doesNotMatch(plan.description, /\(Combine\)/u);
+  const findings = relayOperatorTools.find((tool) => tool.name === "relay_findings");
+  assert.ok(findings);
+  assert.match(findings.description, /Plan findings/u);
+  assert.doesNotMatch(findings.description, /Combine findings/u);
+  assert.equal(
+    plan.inputSchema.safeParse({
+      appMapId: "grok-web",
+      combineId: "grok-hourly",
+      executionMode: "pilot",
+    }).success,
+    false,
+  );
+});
+
 test("operator profile registers at most 21 hand-named verbs and hides takeover", async () => {
   const server = createMcpServer({
     invoker: { async invoke() {} },

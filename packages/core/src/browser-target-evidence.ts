@@ -165,7 +165,8 @@ async function collectBrowserSnapshotNodes(page: Page, maxNodes: number): Promis
         const style = window.getComputedStyle(element);
         return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden";
       });
-      return visible.slice(0, options.limit).map((element, index) => {
+      const bounded = visible.slice(0, options.limit);
+      return bounded.map((element, index) => {
         const html = element as HTMLElement;
         const input = element as HTMLInputElement;
         const rect = element.getBoundingClientRect();
@@ -185,8 +186,19 @@ async function collectBrowserSnapshotNodes(page: Page, maxNodes: number): Promis
           input.placeholder ||
           input.name ||
           "";
+        let parentIndex: number | undefined;
+        let ancestor = element.parentElement;
+        while (ancestor) {
+          const found = bounded.indexOf(ancestor);
+          if (found !== -1) {
+            parentIndex = found;
+            break;
+          }
+          ancestor = ancestor.parentElement;
+        }
         return {
           index,
+          ...(parentIndex !== undefined ? { parentIndex } : {}),
           role,
           type: role,
           label: label.slice(0, 500),

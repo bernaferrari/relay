@@ -62,6 +62,29 @@ export async function applyLaneToInteractOrThrow(input: {
   }
 }
 
+/** Browser fixture / unsigned-lane overlay for interact and snapshot. */
+export function runtimeOverlayFromLaneResolution(
+  resolved: LaneInteractResolution,
+  projectId: string,
+):
+  | {
+      authenticationFixtureId?: string;
+      projectId?: string;
+      unsignedLaneId?: string;
+    }
+  | undefined {
+  if (!resolved.authenticationFixtureId && !resolved.unsignedLaneId) return undefined;
+  return {
+    ...(resolved.authenticationFixtureId
+      ? {
+          authenticationFixtureId: resolved.authenticationFixtureId,
+          projectId,
+        }
+      : {}),
+    ...(resolved.unsignedLaneId ? { unsignedLaneId: resolved.unsignedLaneId } : {}),
+  };
+}
+
 /** Overlay for target.open / Browser Device. Never writes grok-com fixture. */
 export async function applyLaneToBrowserOpenOrThrow(input: {
   projectId: string;

@@ -29,6 +29,7 @@ import {
   type RelayResourceScope,
 } from "./resources.js";
 import { compactOfflineReplayToolResult } from "./offline-replay-result.js";
+import { pngScreenshotRecord } from "./png-result.js";
 import {
   compactReplayLabOutcome,
   invokeRelayOutcomeTool,
@@ -90,15 +91,16 @@ export function relayMcpInstructionsForProfile(profile: RelayMcpProfile): string
     "Use Relay tools only within the configured organization and project scope.",
     "Treat tool results as server-authoritative and preserve Relay actor identity.",
     profile === "operator"
-      ? "Prefer operator verbs: health, devices, screenshot, snapshot, preview, tap, type, swipe, recover, teach, run (optional lane), plan_run, wait, findings, evidence, visual_compare, visual_review (human only), lanes. Use relay_advanced for other operations; lease.takeover is not available."
+      ? "Prefer operator verbs: health, devices, screenshot, snapshot, preview, tap, type, swipe, recover, teach, run (optional lane), plan_run, wait, findings, evidence, visual_compare, visual_review (human only), lanes. Use relay_advanced for other operations; lease.takeover is not available. relay_recover adopts a healthy live XCTest runner — do not kill it. Do not bounce :8787 (tsx watch / pnpm dev:app) while a Plan or iPad pack is live."
       : profile === "outcome"
         ? "Prefer outcome tools: connect, observe, record, run, repeat, inspect, debug, repair, and export evidence."
         : "Use only tools registered in the selected profile; start with read-only inspection and choose the narrowest tool that can complete the requested task.",
     "Omit the advanced appMapId and targetId fields when exactly one Test workspace and one ready Device exist.",
     "Never retry an outcome whose snapshot says the mutation outcome is unknown; inspect its continuation reference.",
-    "Repeat runs one representative pilot first and requires explicit confirmation before remaining values.",
+    "Repeat runs one representative case first and requires explicit confirmation before remaining values.",
     "Replay Lab accepts only explicit bounded TracePack payloads and always keeps future target behavior unknown.",
     "Repair tools create reviewable proposals; they never silently rewrite an approved Test.",
+    "Happy path: screenshot → preview/tap → screenshot. Do not start with test run, survey, recover, or wait-for recipes.",
     "For advanced Device control, capture a screenshot before interacting and prefer identifier, then label, text, and point.",
     "A missing accessibility tree is not a failed session; pixels and point control remain usable.",
     "Never displace another actor's Device control implicitly, and wait or cancel an active reserved Run before sending input.",
@@ -424,8 +426,13 @@ function decodePngBase64(value: unknown): Buffer | undefined {
   return bytes;
 }
 
+function resultLooksLikePng(result: unknown): boolean {
+  return pngScreenshotRecord(result) !== undefined;
+}
+
 function screenshotResult(result: unknown): CallToolResult {
-  if (!result || typeof result !== "object" || Array.isArray(result)) {
+  const screenshot = pngScreenshotRecord(result);
+  if (!screenshot) {
     return errorResult(
       localError(
         "target.screenshot.capture",
@@ -435,7 +442,6 @@ function screenshotResult(result: unknown): CallToolResult {
       ),
     );
   }
-  const screenshot = result as Record<string, unknown>;
   const bytes = decodePngBase64(screenshot.base64);
   if (screenshot.mime !== "image/png" || !bytes) {
     return errorResult(
@@ -451,8 +457,20 @@ function screenshotResult(result: unknown): CallToolResult {
   const metadata: Record<string, unknown> = {
     mimeType: "image/png",
     bytes: bytes.byteLength,
+    nextHint:
+      screenshot.preview === true
+        ? "Commit with target.interact (preview:false). Then screenshot again."
+        : "Tap with target.interact (preview:true marks only). Do not start with test run.",
   };
-  for (const key of ["capturedAt", "serial", "jobId", "width", "height"] as const) {
+  for (const key of [
+    "capturedAt",
+    "serial",
+    "jobId",
+    "width",
+    "height",
+    "preview",
+    "inspectable",
+  ] as const) {
     const value = screenshot[key];
     if (
       value === null ||
@@ -480,6 +498,13 @@ function screenshotResult(result: unknown): CallToolResult {
         status: match.status,
       };
     }
+  }
+  if (
+    screenshot.resolution &&
+    typeof screenshot.resolution === "object" &&
+    !Array.isArray(screenshot.resolution)
+  ) {
+    metadata.resolution = screenshot.resolution;
   }
   return {
     content: [
@@ -576,6 +601,9 @@ async function invokeRelayTool(
   }
 
   if (descriptor.operationId === "target.screenshot.capture") return screenshotResult(result);
+  if (descriptor.operationId === "target.interact" && resultLooksLikePng(result)) {
+    return screenshotResult(result);
+  }
   try {
     const inner = summarizeExecutionOperationResult(
       descriptor.operationId,

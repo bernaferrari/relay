@@ -92,6 +92,30 @@ test("editor notice names disabled native platforms", () => {
   assert.match(unrecordedNativeEditorNotice(statuses) ?? "", /Grok Settings/u);
 });
 
+test("Android and iOS companions are Linked, not recorded routeVariants", () => {
+  const statuses = testRoutePlatformStatuses({
+    originApplication: "https://grok.com",
+    nativeRouteCompanions: [
+      {
+        platform: "android",
+        appMapId: "grok-android",
+        testId: "test-grok-android-home-chrome",
+      },
+      {
+        platform: "ios",
+        appMapId: "grok-ios",
+        testId: "test-grok-ios-home-chrome",
+      },
+    ],
+  });
+  assert.equal(statuses[0]?.status, "reviewed");
+  assert.equal(statuses[1]?.status, "linked");
+  assert.equal(statuses[1]?.companion?.testId, "test-grok-android-home-chrome");
+  assert.equal(statuses[2]?.status, "linked");
+  assert.equal(statuses[2]?.companion?.testId, "test-grok-ios-home-chrome");
+  assert.equal(unrecordedNativeEditorNotice(statuses), undefined);
+});
+
 test("an Android companion is Linked, not Recorded, and iOS stays unrecorded", () => {
   const statuses = testRoutePlatformStatuses({
     originApplication: "https://grok.com",

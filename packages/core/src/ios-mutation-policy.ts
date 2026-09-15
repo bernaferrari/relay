@@ -10,6 +10,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 import { noteConfirmedIosSnapshotInput } from "./ios-snapshot-flight.js";
+import { unknownErrorMessage } from "./ios-runner-listener-command.js";
 import { currentTargetContext } from "./target-context.js";
 import { TargetControlReservedError } from "./target-control.js";
 import { invalidateTargetSemanticControl } from "./target-runtime-readiness.js";
@@ -273,7 +274,7 @@ export function currentIosDeviceSerial(): string | undefined {
 
 function mutationErrorMessage(error: unknown): string {
   if (error instanceof IosMutationOutcomeUnknownError) return mutationErrorMessage(error.cause);
-  return error instanceof Error ? error.message : String(error);
+  return unknownErrorMessage(error);
 }
 
 /**
@@ -284,7 +285,14 @@ function mutationErrorMessage(error: unknown): string {
  */
 export function iosSelectorWasNotDispatched(error: unknown): boolean {
   const message = mutationErrorMessage(error).trim();
-  return /^(?:native )?(?:selector )?(?:did not match an element|no match(?:ing element)?|element not found)(?:[.!])?$/i.test(
+  if (
+    /^(?:native )?(?:selector )?(?:did not match an element|no match(?:ing element)?|element not found)(?:[.!])?$/i.test(
+      message,
+    )
+  ) {
+    return true;
+  }
+  return /(?:^|:\s*)(?:element not found|did not match an element|no matching element|no focused (?:text )?field|no first responder|Copy probe, not the product app)\b/i.test(
     message,
   );
 }

@@ -42,7 +42,6 @@ import {
   pressKey,
   sleep,
   swipeGesture,
-  waitFor,
   base,
   clipboardWrite,
   clipboardRead,
@@ -77,6 +76,11 @@ import { describeTarget, type RecipeStep } from "./recipes.js";
 import { evaluateSemantic } from "./evaluation.js";
 import { setAndroidMobileData } from "./android-mobile-data.js";
 import { assertRecipeStepPlatformSupport } from "./recipe-platform-support.js";
+import {
+  boundRecipeWaitMs,
+  captureStillScreenFingerprint,
+  waitForTargetVisible,
+} from "./still-screen-wait.js";
 import {
   runAppBackgroundStep,
   runEvaluateVisualStep,
@@ -166,22 +170,18 @@ async function runRequiredRecipeStep(
       break;
     case "wait-for": {
       const target = step.target;
-      const timeout = Math.min(step.timeoutMs ?? 30_000, MAX_WAIT_MS);
-      if (target.identifier || target.ref) {
-        const end = Date.now() + timeout;
-        if (!(await pollUntil(device, end, () => targetPresent(device, target)))) {
-          throw new Error(
-            `wait-for: timed out waiting for ${describeTarget(target)} (${timeout}ms)`,
-          );
-        }
-      } else if (target.label) {
-        await waitFor(device, { text: target.label }, timeout);
-      } else if (target.text) {
-        await waitFor(device, { query: target.text }, timeout);
-      } else {
-        // Validation rejects point-only / empty targets, but guard defensively.
+      if (!target.identifier && !target.ref && !target.label && !target.text) {
         throw new Error(`wait-for: target has no identifier/ref/label/text`);
       }
+      await waitForTargetVisible({
+        present: () => targetPresent(device, target),
+        captureFingerprint: () => captureStillScreenFingerprint(device),
+        sleep: (ms) => sleep(ms, device),
+        timeoutMs: boundRecipeWaitMs(step.timeoutMs),
+        kind: "wait-for",
+        expected: describeTarget(target),
+        log: ctx.log,
+      });
       break;
     }
     case "wait-response":
@@ -189,25 +189,24 @@ async function runRequiredRecipeStep(
       break;
     case "expect": {
       const target = step.target;
-      const timeout = Math.min(step.timeoutMs ?? DEFAULT_EXPECT_TIMEOUT_MS, MAX_WAIT_MS);
+      const timeout = boundRecipeWaitMs(step.timeoutMs, DEFAULT_EXPECT_TIMEOUT_MS);
       const timeoutSec = Math.round(timeout / 1000);
       const label = describeTarget(target);
 
       if (step.condition === "visible") {
         try {
-          if (target.identifier || target.ref) {
-            const end = Date.now() + timeout;
-            if (!(await pollUntil(device, end, () => targetPresent(device, target)))) {
-              throw new Error(`timed out waiting for ${describeTarget(target)}`);
-            }
-          } else if (target.label) {
-            await waitFor(device, { text: target.label }, timeout);
-          } else if (target.text) {
-            await waitFor(device, { query: target.text }, timeout);
-          } else {
-            // Validation rejects point-only / empty targets, but guard defensively.
+          if (!target.identifier && !target.ref && !target.label && !target.text) {
             throw new Error(`expect: target has no identifier/ref/label/text`);
           }
+          await waitForTargetVisible({
+            present: () => targetPresent(device, target),
+            captureFingerprint: () => captureStillScreenFingerprint(device),
+            sleep: (ms) => sleep(ms, device),
+            timeoutMs: timeout,
+            kind: "expect",
+            expected: label,
+            log: ctx.log,
+          });
         } catch (err) {
           if (isCancel(err)) throw err;
           // Infrastructure failures (no device / adb / session / connection)
@@ -315,7 +314,13 @@ async function runRequiredRecipeStep(
       (job?.artifacts ?? ctx.artifacts)?.push({
         kind: "content-assertion",
         capturedAt: now(),
-        data: { input: step.input, expected: step.expected, match: step.match, passed, ...provenance },
+        data: {
+          input: step.input,
+          expected: step.expected,
+          match: step.match,
+          passed,
+          ...provenance,
+        },
       });
       if (!passed) {
         throw new Error(

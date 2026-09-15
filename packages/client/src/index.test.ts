@@ -312,7 +312,7 @@ test("device discovery accepts the registered fast Android phase", async () => {
   assert.equal(request?.url, "https://relay.test/devices?phase=android");
   await assert.rejects(
     () => client.resource("/devices?phase=apple"),
-    /target devices phase must be android/,
+    /target devices phase must be android or ios/,
   );
 });
 

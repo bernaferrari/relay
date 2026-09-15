@@ -100,7 +100,7 @@ export function registerRelayResources(
         : `On TARGET_CONTROL_LEASE_REQUIRED, lease.create is not exposed in selected MCP profile "${profile}". Use a profile that exposes the canonical lease.create and lease.release pair, or ask an operator to acquire the lease.`;
   const targetRecoveryRule =
     profile === "operator"
-      ? "Launch does not wait on XCTest. No active session is not a failed launch — use relay_recover."
+      ? "Launch does not wait on XCTest. No active session is not a failed launch — use relay_recover, which adopts a healthy live runner instead of killing it."
       : activeOperations.has("target.recover")
         ? "Launch does not wait on XCTest. No active session is not a failed launch — recover the runner."
         : `Launch does not wait on XCTest. No active session is not a failed launch — target.recover is not exposed in selected MCP profile "${profile}"; use an authorized operator or profile to recover the runner.`;
@@ -125,12 +125,18 @@ export function registerRelayResources(
       mandatory: true,
       readBefore: ["target.interact", "target.recover", "target.snapshot", "app.launch"],
       rules: [
+        "Happy path: screenshot → preview/tap → screenshot. Do not start with test run, survey, or recover.",
         "Take a screenshot before interacting. Prefer identifier, then label, then text, then point.",
+        "Chrome-bounded iOS snapshot queries measured unique home ids and unique chrome labels plus the requested selector. Unique labels such as grok-compose resolve the same way unique ids do. Do not walk conversation lists. A chrome-bounded miss is not a recover-kill.",
         "If a tap does not change pixels, it missed; try the label, not a cell center.",
-        "A missing accessibility tree is not a failed session — screenshot plus point still works.",
+        "A missing accessibility tree is not a failed session — screenshot plus a point tap uses CoreDevice HID pixels. Recover only for the tree. Do not retry the tap because XCTest is down.",
+        "relay_recover / target.recover adopts a healthy live XCTest runner. Do not kill a ready runner, remount DDI in a loop, or reboot the iPad.",
+        "wait-for/expect-screen poll the accessibility slot while pixels stay still and freeze the glass. Screenshot + interact instead.",
+        "Physical iPad screenshot uses go-ios, not target.open. iOS 17+ needs an active tunnel. A missing XCTest session is not a failed screenshot or point tap.",
         leaseRecoveryRule,
         "On TARGET_CONTROL_RUN_RESERVED, wait or cancel the active job before sending input.",
         targetRecoveryRule,
+        "Signed-in browser snapshot needs laneId / --lane so the fixture overlay is applied. Snapshot grok-com without a Lane is the unsigned profile.",
         "Do not retry snapshot in a loop. Do not fail a tour only because the tree is missing.",
       ],
     }),

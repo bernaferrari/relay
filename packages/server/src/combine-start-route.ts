@@ -6,6 +6,7 @@ import type {
   AppMapCombineCellRuntimeProfile,
   AppMapCombineCellTargetBinding,
   AppMapCompiledTest,
+  AppMapNativeCompanionCompile,
   CombineCampaign,
   RepeatCampaignExecutionIdentity,
 } from "@relay/protocol";
@@ -14,6 +15,7 @@ import {
   AppMapCombineCellContractError,
   AppMapCombineWorldError,
   AppMapCompileError,
+  AppMapTargetProfileError,
   KeyedSerialQueue,
   activeReviewedDocumentOriginsForAppMap,
   applyFullSurfaceDestinationBindings,
@@ -50,6 +52,11 @@ import {
   combineCellContractHttpError,
   requireSingleTestUseAppMapTestRun,
 } from "./app-map-combine-runtime-contract.js";
+import {
+  combineStartControlTargetIds,
+  httpErrorFromAppMapTargetProfile,
+  savedBrowserIdentityForProfile,
+} from "./app-map-test-run-prepare.js";
 import { queuedAppMapTestTargetProfile } from "./app-map-test-target-profile.js";
 import { HttpError, json, parseJsonBody } from "./http.js";
 import { applyLaneToCombineStartOrThrow } from "./lane-run-route.js";
@@ -131,6 +138,7 @@ export type CombineStartResult = {
     targetPreflights: LocalCombineCampaignAdmission["targetPreflights"];
   };
   campaign?: CombineCampaign;
+  nativeCompanion?: AppMapNativeCompanionCompile;
 };
 
 export type CombineStartRouteContext = {
@@ -139,47 +147,6 @@ export type CombineStartRouteContext = {
   scope: RequestContext;
   runtime: JobRouteRuntime;
 };
-
-function savedIdentityFromProfile(profile: {
-  platform?: string;
-  browserCaseProfile?: { engine?: string; authenticationFixtureId?: string };
-}): { engine?: string; authenticationFixtureId?: string; platform?: string } {
-  const browser = profile.browserCaseProfile;
-  return {
-    ...(browser?.engine ? { engine: browser.engine } : {}),
-    ...(browser?.authenticationFixtureId
-      ? { authenticationFixtureId: browser.authenticationFixtureId }
-      : {}),
-    ...(profile.platform ? { platform: profile.platform } : {}),
-  };
-}
-
-export function savedBrowserIdentityForProfile(
-  map: {
-    screenVariants?: Record<
-      string,
-      {
-        targetProfile?: {
-          id?: string;
-          platform?: string;
-          browserCaseProfile?: { engine?: string; authenticationFixtureId?: string };
-        };
-      }
-    >;
-  },
-  ...profileIds: Array<string | undefined>
-): { engine?: string; authenticationFixtureId?: string; platform?: string } {
-  const wanted = new Set(
-    profileIds.map((id) => id?.trim()).filter((id): id is string => Boolean(id)),
-  );
-  if (!wanted.size) return {};
-  for (const variant of Object.values(map.screenVariants ?? {})) {
-    const profile = variant.targetProfile;
-    if (!profile?.id || !wanted.has(profile.id)) continue;
-    return savedIdentityFromProfile(profile);
-  }
-  return {};
-}
 
 function ephemeralCombineFromTest(input: {
   mapId: string;
@@ -364,6 +331,7 @@ async function executeCombineStartUnlocked(
       cellTargetBindings: body.cellTargetBindings,
       selectedCellIds: body.selectedCellIds,
       defaultTargetProfileId: body.defaultTargetProfileId,
+      readAppMap: (id: string) => readAppMap(scope.projectId, id),
       ...(targetId && !body.profileTargets?.length
         ? {
             target: {
@@ -656,16 +624,14 @@ async function executeCombineStartUnlocked(
       admission = admitted.admission;
       staged = admitted.staged;
     } else {
-      const targetIds = body.profileTargets?.length
-        ? body.profileTargets
-            .map((item) => item.target.browserTargetId ?? item.target.serial)
-            .filter(Boolean)
-        : targetId
-          ? [targetId]
-          : [];
+      const targetIds = combineStartControlTargetIds({
+        ...(body.profileTargets ? { profileTargets: body.profileTargets } : {}),
+        selectedCells: selectedToQueue,
+        ...(targetId ? { fallbackTargetId: targetId } : {}),
+      });
       if (!targetIds.length) throw new HttpError(400, "serial or browserTargetId is required");
       for (const selectedTargetId of targetIds)
-        await runtime.assertTargetControl(scope, selectedTargetId!);
+        await runtime.assertTargetControl(scope, selectedTargetId);
       if (
         targetKind === "device" ||
         body.profileTargets?.some((item) => item.target.targetKind !== "browser")
@@ -822,6 +788,9 @@ async function executeCombineStartUnlocked(
       jobs: queued.jobs.map((job) => summarizeJob(job)),
       selectedCellIds: selectedToQueue.map((cell) => cell.cellId),
       plan: selectedToQueue[0]!.plan,
+      ...(selectedToQueue[0]!.nativeCompanion
+        ? { nativeCompanion: selectedToQueue[0]!.nativeCompanion }
+        : {}),
       ...(acceptedAdmission
         ? {
             admission: {
@@ -881,6 +850,7 @@ async function executeCombineStartUnlocked(
       );
     }
     if (error instanceof HttpError) throw error;
+    if (error instanceof AppMapTargetProfileError) throw httpErrorFromAppMapTargetProfile(error);
     if (error instanceof AppMapCombineCellContractError)
       throw combineCellContractHttpError(error, {
         map,

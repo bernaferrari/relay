@@ -602,6 +602,7 @@ function TestEditorDocument() {
                 recordedPlatforms={editorDocument.recordedPlatforms}
                 routePlatformBlockers={editorDocument.routePlatformBlockers}
                 stepPlatformBlockers={editorDocument.stepPlatformBlockers}
+                originEvidenceMissing={editorDocument.originEvidenceMissing}
                 entries={entries}
                 selectedStepId={selected?.step.id}
                 busy={edit.isPending || repair.isPending}

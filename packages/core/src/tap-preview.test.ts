@@ -61,6 +61,14 @@ test("scales a Retina raster against its known logical viewport", () => {
   assert.equal(mapped.y, 176);
 });
 
+test("rejects a same-ratio raster whose orientation opposes the logical space", () => {
+  const logical = tapPreviewLogicalBounds(solidPng(2224, 1668, [0, 0, 0]), {
+    width: 834,
+    height: 1112,
+  });
+  assert.equal(logical, undefined);
+});
+
 test("rejects a raster whose shape cannot be the known logical space", () => {
   // A portrait raster cannot be a landscape interaction space at any scale;
   // annotating it with those points would draw fiction.

@@ -39,6 +39,15 @@ import {
   type TargetContext,
 } from "./target-context.js";
 import { iosSelectorWasNotDispatched, runIosMutationOnce } from "./ios-mutation-policy.js";
+import {
+  identifierNodesViaLiveIosRunnerListener,
+  isIosSessionMissingSnapshotError,
+  labelNodesViaLiveIosRunnerListener,
+  snapshotViaLiveIosRunnerListener,
+  tapViaLiveIosRunnerListener,
+  typeViaLiveIosRunnerListener,
+} from "./ios-runner-listener-command.js";
+import { probeLiveIosRunnerListener } from "./ios-runner-listener.js";
 import { captureIosSnapshot, resetIosSnapshotFlights } from "./ios-snapshot-flight.js";
 export {
   IosMutationOutcomeUnknownError,
@@ -214,6 +223,28 @@ export async function sleep(ms: number, device: Device = createDevice()): Promis
   await cooperativeCheckpoint();
 }
 
+async function snapshotFromLiveIosListenerIfReady(
+  context: TargetContext,
+  opts?: {
+    interactiveOnly?: boolean;
+    timeoutMs?: number;
+    includeIdentifiers?: readonly string[];
+    includeLabels?: readonly string[];
+  },
+): Promise<SnapshotNode[] | undefined> {
+  if (context.kind !== "device" || context.platform !== "ios") return undefined;
+  const live = await probeLiveIosRunnerListener(context.serial);
+  if (!live) return undefined;
+  return await snapshotViaLiveIosRunnerListener({
+    serial: context.serial,
+    interactiveOnly: opts?.interactiveOnly ?? false,
+    appBundleId: await rememberedTargetApplication(context),
+    timeoutMs: opts?.timeoutMs,
+    ...(opts?.includeIdentifiers?.length ? { includeIdentifiers: opts.includeIdentifiers } : {}),
+    ...(opts?.includeLabels?.length ? { includeLabels: opts.includeLabels } : {}),
+  });
+}
+
 export async function snapshot(
   device: Device,
   opts?: {
@@ -222,6 +253,8 @@ export async function snapshot(
     timeoutMs?: number;
     /** Override the normal read retry budget for latency-sensitive callers. */
     retryAttempts?: number;
+    includeIdentifiers?: readonly string[];
+    includeLabels?: readonly string[];
   },
 ): Promise<SnapshotNode[]> {
   const run = () =>
@@ -239,7 +272,23 @@ export async function snapshot(
   // Physical iOS XCTest snapshots can sit on the daemon's 90s budget after the
   // runner dies. Fail fast so expect-screen/tour can use pixels instead.
   if (context?.kind === "device" && context.platform === "ios") {
-    return await captureIosSnapshot(context, opts?.interactiveOnly ?? false, run, opts?.timeoutMs);
+    // Recipes already press/type through the adopted testCommand listener.
+    // Recapture / observe / screen-capture must use that same usbmux path.
+    // The bounded SDK probe looks at Relay’s Copy-probe session, not the
+    // LISTENER_READY runner — adopt first, and do not recover-kill it.
+    const adopted = await snapshotFromLiveIosListenerIfReady(context, opts);
+    if (adopted !== undefined) return adopted;
+    try {
+      return await captureIosSnapshot(
+        context,
+        opts?.interactiveOnly ?? false,
+        run,
+        opts?.timeoutMs,
+      );
+    } catch (error) {
+      if (!isIosSessionMissingSnapshotError(error)) throw error;
+      throw new Error("iOS snapshot needs an active XCTest session");
+    }
   }
   const result = await controlled(
     run,
@@ -351,17 +400,52 @@ export type RepeatedPress = {
   doubleTap?: boolean;
 };
 
+async function pressViaLiveIosListener(
+  selectorKey: "label" | "id",
+  selectorValue: string,
+): Promise<boolean> {
+  if (selectedPlatform() !== "ios") return false;
+  let context: ReturnType<typeof currentTargetContext>;
+  try {
+    context = currentTargetContext();
+  } catch {
+    return false;
+  }
+  if (context.kind !== "device" || context.platform !== "ios") return false;
+  const live = await probeLiveIosRunnerListener(context.serial);
+  if (!live) return false;
+  const appBundleId = await rememberedTargetApplication(context);
+  // One usbmux tap on the LISTENER_READY runner. Do not also dispatch through
+  // the unbound SDK session — that is a second press with unknown outcome.
+  await controlledMutation("press", () =>
+    tapViaLiveIosRunnerListener({
+      serial: context.serial,
+      selectorKey,
+      selectorValue,
+      ...(appBundleId ? { appBundleId } : {}),
+    }),
+  );
+  return true;
+}
+
 export async function pressLabel(
   device: Device,
   label: string,
   repeated?: RepeatedPress,
+  heading?: string,
 ): Promise<void> {
-  const point = resolveSnapshotTargetPoint(await snapshot(device), { label });
+  const scopedHeading = heading?.trim();
+  // Native label selectors cannot see an ancestor heading, so skip the iOS
+  // listener when a heading scopes an otherwise ambiguous label.
+  if (!scopedHeading && (await pressViaLiveIosListener("label", label))) return;
+  const semantic = { label, ...(scopedHeading ? { heading: scopedHeading } : {}) };
+  const point = resolveSnapshotTargetPoint(await snapshot(device), semantic);
   try {
     await controlledMutation("press", () =>
       nativeDevice(device).interactions.press({
         ...base(),
         selector: `label="${label.replaceAll('"', '\\"')}"`,
+        ...(scopedHeading ? { heading: scopedHeading } : {}),
         ...iosNonHittablePressFields(point),
         ...repeated,
       } as never),
@@ -370,8 +454,8 @@ export async function pressLabel(
     if (selectedPlatform() === "android" && !iosSelectorWasNotDispatched(error)) throw error;
     const fallback =
       selectedPlatform() === "ios"
-        ? await iosSnapshotFallbackPoint(device, { label }, error, point)
-        : (point ?? (await iosSnapshotFallbackPoint(device, { label }, error)));
+        ? await iosSnapshotFallbackPoint(device, semantic, error, point)
+        : (point ?? (await iosSnapshotFallbackPoint(device, semantic, error)));
     await pressPoint(device, fallback.x, fallback.y, repeated);
   }
 }
@@ -381,6 +465,7 @@ export async function pressIdentifier(
   identifier: string,
   repeated?: RepeatedPress,
 ): Promise<void> {
+  if (await pressViaLiveIosListener("id", identifier)) return;
   const point = resolveSnapshotTargetPoint(await snapshot(device), { identifier });
   try {
     await controlledMutation("press", () =>
@@ -976,9 +1061,32 @@ export async function typeText(device: Device, text: string): Promise<void> {
     }
     return;
   }
+  if (await typeViaLiveIosListener(text)) return;
   await controlledMutation("type", () =>
     nativeDevice(device).interactions.type({ ...base(), text }),
   );
+}
+
+async function typeViaLiveIosListener(text: string): Promise<boolean> {
+  if (selectedPlatform() !== "ios") return false;
+  let context: ReturnType<typeof currentTargetContext>;
+  try {
+    context = currentTargetContext();
+  } catch {
+    return false;
+  }
+  if (context.kind !== "device" || context.platform !== "ios") return false;
+  const live = await probeLiveIosRunnerListener(context.serial);
+  if (!live) return false;
+  const appBundleId = await rememberedTargetApplication(context);
+  await controlledMutation("type", () =>
+    typeViaLiveIosRunnerListener({
+      serial: context.serial,
+      text,
+      ...(appBundleId ? { appBundleId } : {}),
+    }),
+  );
+  return true;
 }
 
 export async function pressKey(device: Device, key: "back" | "home" | "recents"): Promise<void> {
@@ -1157,6 +1265,10 @@ export async function pressResolvedControl(
   // Only resolutions with current-tree evidence that their native selector is
   // untrustworthy opt out. Stable identifiers and labels keep their stronger
   // selector-first behavior.
+  if (resolution.method === "label" && target.label?.trim() && target.heading?.trim()) {
+    await pressLabel(device, target.label, repeated, target.heading);
+    return resolution;
+  }
   if (resolution.activation === "snapshot-point") {
     await pressPoint(device, resolution.point.x, resolution.point.y, repeated);
     return resolution;
@@ -1233,7 +1345,10 @@ export async function pressNamedControl(
   }
   let nodes: SnapshotNode[];
   try {
-    nodes = await snapshot(device);
+    nodes = await snapshot(device, {
+      ...(target.identifier?.trim() ? { includeIdentifiers: [target.identifier] } : {}),
+      ...(target.label?.trim() ? { includeLabels: [target.label] } : {}),
+    });
   } catch (error) {
     if (pointOnly) {
       await pressPoint(device, pointOnly.point.x, pointOnly.point.y, repeated);
@@ -1245,7 +1360,37 @@ export async function pressNamedControl(
     await pressPoint(device, pointOnly.point.x, pointOnly.point.y, repeated);
     return pointOnly;
   }
-  const resolved = resolveNamedControl(nodes, target);
+  let resolved = resolveNamedControl(nodes, target);
+  if (!resolved && target.identifier?.trim() && selectedPlatform() === "ios") {
+    try {
+      const iosContext = currentTargetContext();
+      if (iosContext.kind === "device" && iosContext.platform === "ios") {
+        const extra = await identifierNodesViaLiveIosRunnerListener({
+          serial: iosContext.serial,
+          identifier: target.identifier,
+          appBundleId: await rememberedTargetApplication(iosContext),
+        });
+        if (extra?.length) resolved = resolveNamedControl(extra, { identifier: target.identifier });
+      }
+    } catch {
+      // Keep the chrome-bounded miss. Do not invent a point.
+    }
+  }
+  if (!resolved && target.label?.trim() && selectedPlatform() === "ios") {
+    try {
+      const iosContext = currentTargetContext();
+      if (iosContext.kind === "device" && iosContext.platform === "ios") {
+        const extra = await labelNodesViaLiveIosRunnerListener({
+          serial: iosContext.serial,
+          label: target.label,
+          appBundleId: await rememberedTargetApplication(iosContext),
+        });
+        if (extra?.length) resolved = resolveNamedControl(extra, { label: target.label });
+      }
+    } catch {
+      // Keep the chrome-bounded miss. Do not invent a point.
+    }
+  }
   if (!resolved) {
     throw new Error("no unique control matched identifier, label, text, or point");
   }

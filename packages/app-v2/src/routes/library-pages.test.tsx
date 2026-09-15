@@ -479,6 +479,8 @@ describe("Runs workspace", () => {
     expect(document.body.textContent).toContain("In progress");
     expect(document.body.textContent).toContain("Morning review");
     expect(document.body.textContent).toContain("Check Sign-ins");
+    expect(document.body.textContent).toContain("Check live health");
+    expect(document.body.textContent).toContain("Accounts health");
     expect(document.body.textContent).toContain("Neither accepts a screenshot baseline");
     expect(document.body.textContent).toContain("Needs attention on this Mac");
     expect(document.body.textContent).toContain("Signed desktop build");
@@ -493,6 +495,7 @@ describe("Runs workspace", () => {
       ),
     ).toBe(true);
     expect(document.body.textContent).toContain("emulator cannot install Grok");
+    expect(document.body.textContent).toContain("do not Recover-kill or dump");
     expect(document.body.textContent).toContain("Lab Mac launchd stays unloaded");
     expect(document.body.textContent).toContain("dev.relay.lab-server");
     expect(document.body.textContent?.match(/2\.5 s/g)).toHaveLength(1);

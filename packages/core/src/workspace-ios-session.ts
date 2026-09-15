@@ -28,6 +28,11 @@ import {
 } from "./ios-runtime-recovery.js";
 import { androidSnapshotApplication, recoverAndroidInspection } from "./android-ui-snapshot.js";
 import { killStaleIosTestRunners, remountIosDeveloperDiskImage } from "./ios-app-launch.js";
+import {
+  probeLiveIosRunnerListener,
+  waitForIosRunnerListenerReady,
+  type LiveIosRunnerListener,
+} from "./ios-runner-listener.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
 import { runTargetMutation } from "./target-control.js";
 import { resolveRuntimeTarget } from "./workspace-devices.js";
@@ -79,11 +84,15 @@ function iosRunnerFailureTtlMs(error: Error): number {
 type IosSessionHostRuntime = {
   prepareIosRunner: typeof prepareIosRunner;
   recoverIosRuntime: typeof recoverIosRuntime;
+  probeLiveIosRunnerListener: typeof probeLiveIosRunnerListener;
+  waitForIosRunnerListenerReady: typeof waitForIosRunnerListenerReady;
 };
 
 const defaultIosSessionHostRuntime: IosSessionHostRuntime = {
   prepareIosRunner,
   recoverIosRuntime,
+  probeLiveIosRunnerListener,
+  waitForIosRunnerListenerReady,
 };
 let iosSessionHostRuntime = defaultIosSessionHostRuntime;
 
@@ -124,6 +133,14 @@ async function recoverIosHostRuntime(
   });
   iosRuntimeRecoveries.set(serial, recovery);
   return recovery;
+}
+
+function adoptedLiveIosRunnerDetail(listener: LiveIosRunnerListener): string {
+  return `Adopted the live XCTest testCommand listener (pid ${listener.runnerPid}, port ${listener.port}). A healthy runner is not a recover-kill.`;
+}
+
+function adoptedLiveIosRunnerSummary(listener: LiveIosRunnerListener): string {
+  return `Relay adopted the live XCTest runner on port ${listener.port} instead of spawning a new xcodebuild. Missing named controls is not a reboot.`;
 }
 
 /** Forget runner preparation state after the Apple account or team changes. */
@@ -360,6 +377,28 @@ async function recoverTargetRuntimeReserved(
           } satisfies IosRuntimeRecoveryResult;
         }
       }
+      const liveListener = await iosSessionHostRuntime.probeLiveIosRunnerListener(serial);
+      if (liveListener) {
+        onRepairStep({
+          stage: "repair",
+          outcome: "passed",
+          durationMs: 0,
+          detail: `Adopted the live XCTest testCommand listener on port ${liveListener.port} instead of killing it.`,
+        });
+        return {
+          serial,
+          recovered: false,
+          ready: false,
+          actions: [
+            {
+              kind: "agent-device",
+              status: "completed",
+              detail: adoptedLiveIosRunnerDetail(liveListener),
+            },
+          ],
+          summary: adoptedLiveIosRunnerSummary(liveListener),
+        } satisfies IosRuntimeRecoveryResult;
+      }
       const named = foreignSessionNameFromError(sessionError) ?? foreign;
       // A watchdog/wedged cause describes a stuck runner process, not host
       // infrastructure. Route it to the targeted zombie-runner kill instead of
@@ -395,11 +434,14 @@ async function recoverTargetRuntimeReserved(
       }
       try {
         await ensureIosRunnerPrepared(device, serial);
+        const readyListener = await iosSessionHostRuntime.waitForIosRunnerListenerReady(serial);
         onRepairStep({
           stage: "repair",
           outcome: "passed",
           durationMs: 0,
-          detail: "Prepared the XCTest runner after cleanup.",
+          detail: readyListener
+            ? `Prepared the XCTest runner and waited until the testCommand listener was ready on port ${readyListener.port}.`
+            : "Prepared the XCTest runner after cleanup.",
         });
         host.actions = [
           {
@@ -445,11 +487,15 @@ async function recoverTargetRuntimeReserved(
           device = createDevice();
           try {
             await ensureIosRunnerPrepared(device, serial);
+            const remountedListener =
+              await iosSessionHostRuntime.waitForIosRunnerListenerReady(serial);
             onRepairStep({
               stage: "repair",
               outcome: "passed",
               durationMs: 0,
-              detail: "Prepared the XCTest runner after remounting the developer disk image.",
+              detail: remountedListener
+                ? `Prepared the XCTest runner after remounting the developer disk image and waited until the testCommand listener was ready on port ${remountedListener.port}.`
+                : "Prepared the XCTest runner after remounting the developer disk image.",
             });
             host.actions = [
               {

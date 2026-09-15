@@ -14,7 +14,10 @@ import type { Recipe } from "./recipes.js";
 import { readPersistedRun } from "./runs.js";
 import { prepareJobBatch, runJobSync, waitForJobCompletion } from "./session.js";
 import { TargetDriverRegistry, runWithTargetDriverRegistry } from "./target-driver-registry.js";
-import { runColdAppMapStartup } from "./session-provider-execution.js";
+import {
+  runColdAppMapStartup,
+  shouldHardStopPreparedSession,
+} from "./session-provider-execution.js";
 
 test("cold App Map startup fails with an actionable error when origin app is unbound", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-cold-startup-origin-"));
@@ -59,6 +62,14 @@ test("cold App Map startup launches the frozen Test origin instead of target las
   );
   assert.deepEqual(launched, ["com.example.origin-a"]);
   assert.match(logs[0] ?? "", /com\.example\.origin-a/u);
+});
+
+test("combine cells after the first skip Android helper recover", () => {
+  assert.equal(shouldHardStopPreparedSession(false, undefined), true);
+  assert.equal(shouldHardStopPreparedSession(false, 0), true);
+  assert.equal(shouldHardStopPreparedSession(false, 1), false);
+  assert.equal(shouldHardStopPreparedSession(true, 0), false);
+  assert.equal(shouldHardStopPreparedSession(true, 1), false);
 });
 
 test("verified checkpoint startup does not relaunch the frozen Test origin", async () => {

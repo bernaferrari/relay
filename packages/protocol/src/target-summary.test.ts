@@ -165,6 +165,68 @@ test("snapshot summaries keep navigation tabs even when chrome fills the tree fi
   assert.ok(identifiers.includes("navigation.tab.build"));
 });
 
+test("uninspectable snapshots still surface app and visual fingerprint", () => {
+  const result = summarizeTargetOperationResult("target.snapshot.capture", {
+    serial: "ipad",
+    inspectable: false,
+    source: "pixels-only",
+    nodes: [],
+    foregroundApp: "ai.x.GrokApp",
+    visualFingerprint: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  }) as { app?: string; header?: string; fingerprint?: string; visualFingerprint?: string };
+  assert.equal(result.app, "ai.x.GrokApp");
+  assert.equal(result.header, "Grok");
+  assert.equal(result.fingerprint, "bbbbbbbbbbbbbbbb");
+  assert.equal(result.visualFingerprint, "bbbbbbbbbbbbbbbb");
+});
+
+test("uninspectable snapshots keep payload app and header when already named", () => {
+  const result = summarizeTargetOperationResult("target.snapshot.capture", {
+    serial: "ipad",
+    inspectable: false,
+    source: "pixels-only",
+    nodes: [],
+    app: "ai.x.GrokApp",
+    header: "Grok",
+    visualFingerprint: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  }) as { app?: string; header?: string };
+  assert.equal(result.app, "ai.x.GrokApp");
+  assert.equal(result.header, "Grok");
+});
+
+test("uninspectable snapshots do not invent a Grok header without visual identity", () => {
+  const result = summarizeTargetOperationResult("target.snapshot.capture", {
+    serial: "ipad",
+    inspectable: false,
+    source: "pixels-only",
+    nodes: [],
+    foregroundApp: "ai.x.GrokApp",
+  }) as { app?: string; header?: string };
+  assert.equal(result.app, "ai.x.GrokApp");
+  assert.equal(result.header, undefined);
+});
+
+test("interact preview summaries drop inlined PNG base64", () => {
+  const base64 =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+  const result = summarizeTargetOperationResult("target.interact", {
+    ok: true,
+    result: {
+      ok: true,
+      preview: true,
+      mime: "image/png",
+      base64,
+      bytes: 68,
+      inspectable: false,
+    },
+  }) as { preview?: boolean; base64?: string; bytes?: number; nextHint?: string };
+  assert.equal(result.preview, true);
+  assert.equal(result.base64, undefined);
+  assert.equal(result.bytes, 68);
+  assert.match(result.nextHint ?? "", /preview:false/);
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(base64));
+});
+
 test("uninspectable snapshots tell agents to use pixels and point taps", () => {
   const result = summarizeTargetOperationResult("target.snapshot.capture", {
     serial: "ipad",
@@ -494,4 +556,44 @@ test("non-device and malformed results remain unchanged", () => {
   const value = { devices: [{ id: "bad" }] };
   assert.equal(summarizeTargetOperationResult("target.devices.list", value), value);
   assert.equal(summarizeTargetOperationResult("target.list", value), value);
+});
+
+test("interact preview digest drops base64 and stays small when HTTP has no PNG", () => {
+  const withPng = summarizeTargetOperationResult("target.interact", {
+    ok: true,
+    preview: true,
+    mime: "image/png",
+    base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    bytes: 70,
+    width: 1,
+    height: 1,
+    inspectable: true,
+    path: "/tmp/huge.png",
+    nodes: [{ label: "private tree" }],
+    resolution: { method: "label", point: { x: 10, y: 20 }, bounds: { x: 1, y: 2, width: 3, height: 4 } },
+  }) as Record<string, unknown>;
+  assert.equal(withPng.preview, true);
+  assert.equal(withPng.base64, undefined);
+  assert.equal(withPng.path, undefined);
+  assert.equal(withPng.nodes, undefined);
+  assert.deepEqual(withPng.resolution, {
+    method: "label",
+    point: { x: 10, y: 20 },
+    bounds: { x: 1, y: 2, width: 3, height: 4 },
+  });
+
+  const noPng = summarizeTargetOperationResult("target.interact", {
+    ok: true,
+    preview: true,
+    mime: "image/png",
+    bytes: 700_000,
+    inspectable: false,
+    path: "/tmp/preview.png",
+    nodes: [{ label: "huge leftover tree" }],
+  }) as Record<string, unknown>;
+  assert.equal(noPng.preview, true);
+  assert.equal(noPng.base64, undefined);
+  assert.equal(noPng.path, undefined);
+  assert.equal(noPng.nodes, undefined);
+  assert.match(String(noPng.note), /--preview --file/);
 });

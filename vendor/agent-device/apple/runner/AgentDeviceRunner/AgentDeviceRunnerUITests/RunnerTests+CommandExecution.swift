@@ -461,7 +461,37 @@ extension RunnerTests {
     XCTAssertNil(xctestRecordedFailureResponse(command: tapCommand, response: runnerFatalResponse))
   }
 
-  func testMissingBundleCommandInvalidatesCompleteCachedTargetState() throws {
+  func testSnapshotSkipsActivationSoClipboardProbeDoesNotStealProductApp() throws {
+    let snapshot = try runnerCommandFixture(
+      #"{"command":"snapshot","commandId":"snapshot-product","appBundleId":"ai.x.GrokApp"}"#
+    )
+    let snapshotWithoutBundle = try runnerCommandFixture(
+      #"{"command":"snapshot","commandId":"snapshot-without-bundle"}"#
+    )
+    XCTAssertTrue(shouldSkipAppActivationPreflight(snapshot))
+    XCTAssertTrue(shouldSkipAppActivationPreflight(snapshotWithoutBundle))
+
+    app.launch()
+    currentApp = app
+    currentBundleId = "ai.x.GrokApp"
+    currentAppProcessIdentifier = 42
+    snapshotXCTestPenaltyWarmupExemptionPending = true
+    defer {
+      invalidateCachedTarget(reason: "unit_test_cleanup")
+      app.terminate()
+    }
+
+    let preparation = prepareActiveCommandContext(command: snapshot)
+    guard case .context(let context) = preparation else {
+      XCTFail("expected snapshot to bind the product app without activation")
+      return
+    }
+    XCTAssertEqual(context.app.bundleIdentifier, "ai.x.GrokApp")
+    XCTAssertEqual(currentBundleId, "ai.x.GrokApp")
+    XCTAssertEqual(currentAppProcessIdentifier, 42)
+  }
+
+  func testMissingBundleInteractionStillInvalidatesCompleteCachedTargetState() throws {
     app.launch()
     currentApp = app
     currentBundleId = "com.example.stale-target"
@@ -472,7 +502,7 @@ extension RunnerTests {
       app.terminate()
     }
     let command = try runnerCommandFixture(
-      #"{"command":"snapshot","commandId":"snapshot-without-bundle"}"#
+      #"{"command":"tap","commandId":"tap-without-bundle","selectorKey":"label","selectorValue":"Ask Anything"}"#
     )
 
     _ = prepareActiveCommandContext(command: command)
@@ -1568,8 +1598,15 @@ extension RunnerTests {
       if let bundleId = requestedBundleId, targetNeedsActivation(activeApp) {
         activeApp = activateTarget(bundleId: bundleId, reason: "stale_target")
       } else if requestedBundleId == nil, targetNeedsActivation(activeApp) {
-        ensureRunnerHostAppActive(reason: "missing_app_bundle")
-        activeApp = app
+        // Read-only inspect must not foreground AgentDeviceRunner (clipboard
+        // probe). That parks XCTest on the runner UI and later Grok activate()
+        // times out on the main thread.
+        if isReadOnlyCommand(command) {
+          activeApp = currentApp ?? app
+        } else {
+          ensureRunnerHostAppActive(reason: "missing_app_bundle")
+          activeApp = app
+        }
       }
 
       let skipExistenceWait = canUseFastForegroundAppGuard(
@@ -2717,6 +2754,15 @@ extension RunnerTests {
     if command.command == .alert {
       return true
     }
+    // Snapshot / inspect attach to the requested product bundle (or the last
+    // cached product). Never activate the runner host — that foregrounds the
+    // clipboard probe and hides Grok.
+    switch command.command {
+    case .snapshot, .findText, .readText, .querySelector, .gestureViewport:
+      return true
+    default:
+      break
+    }
     // Coordinate-only synthesized taps can run after an AX-fatal foreground screen because they do not
     // need app activation, window lookup, keyboard lookup, or element resolution. Selector/text
     // interactions intentionally stay on the normal AX path because they need an element query.
@@ -2784,9 +2830,17 @@ extension RunnerTests {
       .trimmingCharacters(in: .whitespacesAndNewlines),
       !bundleId.isEmpty
     else {
+      // Missing bundle: keep the last product target. Never fall back to the
+      // runner host while a product bundle is cached — that is Copy probe.
+      if let currentBundleId, let currentApp, currentApp !== app {
+        return currentApp
+      }
+      if let currentBundleId {
+        return XCUIApplication(bundleIdentifier: currentBundleId)
+      }
       return currentApp ?? app
     }
-    if currentBundleId == bundleId, let currentApp {
+    if currentBundleId == bundleId, let currentApp, currentApp !== app {
       return currentApp
     }
     return XCUIApplication(bundleIdentifier: bundleId)

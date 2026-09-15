@@ -53,6 +53,26 @@ test("automatic evidence preserves causal frames without duplicating passive ste
     "after",
   ]);
   assert.deepEqual(
+    automaticEvidencePhases({ kind: "wait-for", target: { label: "Ask" }, timeoutMs: 8000 }),
+    [],
+  );
+  assert.deepEqual(
+    automaticEvidencePhases({
+      kind: "expect-set",
+      labels: ["Ask", "Imagine", "Build"],
+      extras: "allow",
+    }),
+    [],
+  );
+  assert.deepEqual(
+    automaticEvidencePhases({
+      kind: "expect",
+      target: { label: "Copy message" },
+      condition: "visible",
+    }),
+    [],
+  );
+  assert.deepEqual(
     automaticEvidencePhases({
       kind: "tour",
       depth: 0,

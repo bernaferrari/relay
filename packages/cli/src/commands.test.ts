@@ -663,6 +663,7 @@ test("App Map vocabulary resolves to canonical granular operations", () => {
       { actionId: "login", serial: "pixel-9" },
     ],
     [["device", "screenshot", "pixel-9"], "target.screenshot.capture", { serial: "pixel-9" }],
+    [["target", "devices"], "target.devices.list", {}],
     [["device", "survey", "pixel-9"], "target.scroll-survey.capture", { serial: "pixel-9" }],
     [
       ["connect", "get", "checkout", "continue"],

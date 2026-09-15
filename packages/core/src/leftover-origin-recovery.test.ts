@@ -154,6 +154,19 @@ test("leftover conversation recovers home through recorded New Chat", () => {
   ]);
 });
 
+test("draft dest-screen leftover is ignored even when New Chat is Ready", () => {
+  assert.equal(
+    leftoverConversationHomePrelude(
+      mapWith({
+        "open-conversation": { ...openConversation, state: "draft" },
+        "new-chat": newChat,
+      }),
+      "home",
+    ),
+    undefined,
+  );
+});
+
 test("Sign Out dest-screen is not a leftover conversation cursor", () => {
   assert.equal(
     leftoverConversationHomePrelude(mapWith({ "sign-out": signOut, "new-chat": newChat }), "home"),

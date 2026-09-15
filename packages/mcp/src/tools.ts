@@ -82,21 +82,23 @@ function isToolOperation(
 
 const extraGuidance: Partial<Record<OperationId, string>> = {
   "target.screenshot.capture":
-    " Step 1 of a tap: capture pixels, then call interact. Do not retry snapshot in a loop if the tree is missing.",
+    " Happy path 1/3: capture pixels, then interact, then screenshot again. iOS 17+ pixels need go-ios tunnel, not target.open. A missing XCTest session is not a failed screenshot. Do not start with test run, survey, or recover. Do not retry snapshot in a loop if the tree is missing.",
   "target.interact":
-    " Step 2 of a tap: after screenshot or snapshot, send one interaction. Prefer identifier, then label, then text, then point. Use preview:true to mark without committing. Huge SwiftUI cells are often not hittable — tap the label. If pixels do not change, it is a dead cell, not a new screen.",
+    " Happy path 2/3: after screenshot, send one interaction. Prefer identifier, then label, then text, then point. Use preview:true to mark without committing (returns a PNG image, not JSON). Huge SwiftUI cells are often not hittable — tap the label. If pixels do not change, it is a dead cell, not a new screen. A missing XCTest runner is not a reason to retry a point tap — Relay taps via pixels (CoreDevice HID). Recover only for identifier/label. Do not start with app-map.test.run.",
   "target.ground":
     " Resolve text (or InteractInput) to a tap without committing. Order: unique a11y label/id → Grok Menu/Private heuristics → optional OpenRouter vision. On miss, returns candidates — never relaunches the app.",
   "target.do":
     " Ground then interact in one call. Prefer this for NL taps (Menu, Appearance). Requires exclusive lease.",
   "target.snapshot.capture":
-    " Default JSON is a digest (app, header, controls, nodeCount). Pass full:true for the accessibility tree nodes. The tree may still be missing — screenshot plus a point tap still works. Do not retry snapshot in a loop.",
+    " Default JSON is a digest (app, header, controls, nodeCount, fingerprint). Missing trees still return pixel identity (visualFingerprint/proposedRows/app/header when visual identity or last launch can name them). Pass visual:false to skip that one-shot PNG. Pass full:true for nodes. Pass laneId for a saved Lane overlay (signed-in grok-lab); snapshot grok-com without a Lane is the unsigned profile. Screenshot plus a point tap uses pixels (HID), not XCTest. Do not retry snapshot or the tap because the runner is down. Do not retry snapshot in a loop.",
+  "target.devices.list":
+    " Omit phase to list iOS, Android, and browsers. phase is an optional android|ios filter, not a required platform.",
   "target.scroll-survey.capture":
-    " Pass dir on this call to persist frames once (force overwrites a non-empty folder). The tool result is a digest without base64. A survey directory is raw capture evidence; use Combine export when a person needs a portable review folder.",
+    " Not a first poke. Pass dir on this call to persist frames once (force overwrites a non-empty folder). The tool result is a digest without base64. A survey directory is raw capture evidence; use Plan export when a person needs a portable review folder.",
   "target.app.launch":
     " Launch is not the same as foreground. The result includes observed.app and observed.matched so a bounce (Chrome → Settings) is visible.",
   "target.recover":
-    " Repair the runner without rebooting the device. A missing XCTest session is not a failed launch.",
+    " Not a first poke and not a wait loop. Adopt a healthy live XCTest runner; do not kill it and do not reboot. A missing XCTest session is not a failed launch.",
   "target.browser-auth.save":
     " Human-only. Open the managed Browser Device, complete sign-in or MFA, and review the current account before saving. Relay returns only non-secret metadata and an exact encrypted fixture reference.",
   "target.browser-auth.list":
@@ -112,11 +114,11 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
   "discovery.start":
     " Starts the server-owned explore job. Poll relay_discovery_get. Each identity-changing interact becomes one pending proposal. Do not self-approve.",
   "job.combine.analysis":
-    " Read durable findings from the current Combine evidence without writing a pack. Each finding names its source frame; export only when a person needs a portable folder.",
+    " Read durable Plan findings without writing a pack. Each finding names its source frame; export only when a person needs a portable folder.",
   "job.combine.start":
-    " Run a saved Variable × Test Combine. Default is one cell. Pass executionMode all to run every selected world. cell or selectedCellIds names the worlds to queue and those named cells run. A default serial/target fills missing cell bindings. A single Test with in worlds uses app-map.test.run. Never invent a Variable for screenshots.",
+    " Run a saved Plan. Default is one cell. Pass executionMode all to run every selected world. Missing extra sign-ins or devices fail closed as Infra columns, not a smaller Plan. cell or selectedCellIds names the worlds to queue. A default serial/target fills missing cell bindings. A single Test with in worlds uses app-map.test.run. Never invent a Variable for screenshots.",
   "app-map.test.run":
-    " Without `in`: runs one saved Test once (expectedRevision + target are required). With `in`: upserts a Combine for this Test × the selected worlds and runs one cell — pass executionMode:'all' to run every world instead; `cell` or `selectedCellIds` names which. Never invent a Variable for screenshots.",
+    " Not a first poke: compiled wait-for/expect-screen poll the accessibility slot while pixels stay still and freeze the glass. Poke with screenshot + interact first. Without `in`: runs one saved Test once (expectedRevision + target are required). With `in`: upserts a Combine for this Test × the selected worlds and runs one cell — pass executionMode:'all' to run every world instead; `cell` or `selectedCellIds` names which. Never invent a Variable for screenshots.",
   "app-map.screen.alias-observe":
     " One-command fix when a run reports an unknown screen in a new locale: navigate the target to that screen first, then approve its observed fingerprint as an alias of the mapped screen. Never replaces the primary fingerprint; repeats deduplicate.",
   "app-map.scroll-surface.origin.inspect":

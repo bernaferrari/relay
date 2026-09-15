@@ -94,6 +94,28 @@ test("infers upside-down from a portrait interface with an inverted Application 
   });
 });
 
+test("listener chrome query nodes keep logical Fast bounds next to the Application root", () => {
+  const fast = {
+    identifier: "toolbar.model.selector.button",
+    label: "Fast",
+    type: "Button",
+    enabled: true,
+    hittable: true,
+    logicalCoordinates: true,
+    rect: { x: 268.9, y: 784, width: 80.5, height: 36 },
+  };
+  const nodes: SnapshotNode[] = [
+    {
+      depth: 0,
+      type: "Application",
+      rect: { x: 0, y: 0, width: 1112, height: 834 },
+    },
+    fast,
+  ];
+  const normalized = normalizeIosSnapshotNodes(nodes);
+  assert.deepEqual(normalized[1]?.rect, fast.rect);
+});
+
 test("normalizes a sparse Window-less tree from its Application-root aspect alone", () => {
   // A recovering XCTest session can omit the Window node entirely. The root's
   // landscape aspect still proves descendants arrived portrait-native.

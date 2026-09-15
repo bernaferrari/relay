@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -284,4 +284,55 @@ test("capability recovery never clears or retries an uncertain input mutation", 
   assert.equal(store.health(target).input.pendingMutationId, "mutation-uncertain");
   assert.equal(store.health(target).counters.uncertainMutations, 1);
   assert.equal(store.health(target).counters.reconciliations, 0);
+});
+
+test("a healthy testCommand listener unquarantines without force and without runner restart", async (t) => {
+  const store = await fixture(t);
+  const serial = "ipad-live-listener";
+  const iosTarget = { id: serial, kind: "ios" } as const;
+  const leaseDir = await mkdtemp(join(tmpdir(), "relay-live-listener-lease-"));
+  t.after(async () => {
+    await rm(leaseDir, { recursive: true, force: true });
+  });
+  await writeFile(
+    join(leaseDir, `${serial}.json`),
+    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+  );
+  const previousLeaseDir = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = leaseDir;
+  t.after(() => {
+    if (previousLeaseDir === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+    else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previousLeaseDir;
+  });
+  store.transition(iosTarget, {
+    kind: "operator.quarantined",
+    reason: "A recover probe lied about a live LISTENER_READY runner.",
+  });
+  let restarted = 0;
+  const recovery = await recoverSupervisedTargetRuntime({
+    store,
+    target: iosTarget,
+    channel: "semantics",
+    mechanisms: {
+      async refreshPixels() {
+        throw new Error("unexpected pixel recovery");
+      },
+      async refreshSemantics() {
+        return {
+          readiness: readiness({ pixels: true, semantics: true }),
+          reason: "adopted live listener",
+        };
+      },
+      async restartSemanticRunner() {
+        restarted += 1;
+        throw new Error("healthy runner must not be recover-killed");
+      },
+      async preparePlatformServices() {
+        throw new Error("unexpected escalation");
+      },
+    },
+  });
+  assert.equal(restarted, 0);
+  assert.equal(recovery.ready, true);
+  assert.notEqual(store.health(iosTarget).overall, "quarantined");
 });

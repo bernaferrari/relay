@@ -16,7 +16,7 @@ import {
 } from "@relay/core";
 import { assertTargetControl, assertTargetObservation } from "./access-control.js";
 import { HttpError, json, parseJsonBody } from "./http.js";
-import { applyLaneToInteractOrThrow } from "./lane-run-route.js";
+import { applyLaneToInteractOrThrow, runtimeOverlayFromLaneResolution } from "./lane-run-route.js";
 import type { RequestContext } from "./security.js";
 
 type InteractionRouteInput = {
@@ -209,18 +209,7 @@ export async function handleInteractionRoute(input: InteractionRouteInput): Prom
       ...(typeof laneId === "string" ? { laneId } : {}),
       ...(typeof serial === "string" ? { serial } : {}),
     });
-    const overlay =
-      resolved.authenticationFixtureId || resolved.unsignedLaneId
-        ? {
-            ...(resolved.authenticationFixtureId
-              ? {
-                  authenticationFixtureId: resolved.authenticationFixtureId,
-                  projectId: scope.projectId,
-                }
-              : {}),
-            ...(resolved.unsignedLaneId ? { unsignedLaneId: resolved.unsignedLaneId } : {}),
-          }
-        : undefined;
+    const overlay = runtimeOverlayFromLaneResolution(resolved, scope.projectId);
     const interaction = rest as InteractInput;
     if (preview === true) {
       assertTargetObservation(scope, resolved.serial);

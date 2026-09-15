@@ -57,7 +57,13 @@ export function normalizeIosSnapshotNodes(
   const logicalWidth = geometry.logicalWidth;
   const logicalHeight = geometry.logicalHeight;
   return nodes.map((node) => {
-    if (!node.rect || (node.depth === 0 && node.type === "Application")) return node;
+    if (
+      !node.rect ||
+      node.logicalCoordinates ||
+      (node.depth === 0 && node.type === "Application")
+    ) {
+      return node;
+    }
     const rect = node.rect;
     switch (geometry.rotation) {
       case "left":

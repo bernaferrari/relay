@@ -28,6 +28,8 @@
     "ios-preview:package": "node scripts/build-ios-preview-sidecar.mjs",
     "ios-preview:verify": "node scripts/verify-ios-preview-sidecar.mjs",
     "ios-preview:test": "cd packages/ios-preview-producer && go test -mod=readonly -race ./...",
+    "ios-hid-tap:build": "node scripts/build-ios-hid-tap.mjs",
+    "ios-hid-tap:test": "cd packages/ios-hid-tap && go test ./...",
     "check": "vp check",
     "fmt": "vp fmt",
     "lint": "vp lint",

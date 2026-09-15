@@ -68,6 +68,12 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
       inputHelp: [
         { name: "serial", type: "string", description: "Optional connected device to verify" },
         {
+          name: "targetProfileId",
+          type: "string",
+          description:
+            "Saved evidence profile, or ios/android to follow a linked grok-ios / grok-android companion",
+        },
+        {
           name: "profileTargets",
           type: "array",
           description:
@@ -78,6 +84,7 @@ export const appMapRunPlanCommandDescriptors: readonly MappedOperationDescriptor
         "relay combine preflight grok-android language-x-settings",
         'relay combine preflight grok-android language-x-settings --input \'{"serial":"DEVICE"}\'',
         'relay combine preflight grok-web grok-web-daily --input \'{"browserTargetId":"grok-com","targetKind":"browser"}\'',
+        'relay combine preflight grok-web grok-web-daily --input \'{"browserTargetId":"grok-com","targetProfileId":"android"}\'',
       ],
     }),
   ),

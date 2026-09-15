@@ -20,6 +20,13 @@
     "8": 401137,
     "12": null
   },
+  "nAccountPlan": {
+    "requestedColumns": 8,
+    "maxProfileTargets": 64,
+    "liveSixAccountPlusDevices": false,
+    "parallelWallClockMs12": null,
+    "note": "Software: a Plan with 6 fixture accounts + Android + iOS starts as eight columns; missing sign-ins or serials fail closed as Infra, not a smaller Plan. Live 6-account pack is unmeasured (one SuperGrok fixture 7189423f, concurrentAccountsPossible false). Do not invent parallelWallClockMs.12 (host capacity 8). Do not steal live iPad db0c9b7c… or Galaxy RQCY104BG8X to fill native columns."
+  },
   "twoLane": {
     "n": 2,
     "wallClockMs": 17254,

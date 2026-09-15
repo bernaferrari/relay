@@ -222,7 +222,11 @@ export function createTargetCaptureOperationParsers(input: {
   const targetSnapshotInputParser = objectParser<OperationInput<"target.snapshot.capture">>(
     "target snapshot input",
     (value) => {
-      targetInputParser.parse(value);
+      if (value.serial !== undefined) string(value.serial, "target serial");
+      if (value.laneId !== undefined) string(value.laneId, "target snapshot laneId");
+      if (!value.serial && !value.laneId) {
+        fail("target snapshot", "serial or laneId is required");
+      }
       optionalQueryBoolean(value.full, "full");
       optionalQueryBoolean(value.interactiveOnly, "interactiveOnly");
     },

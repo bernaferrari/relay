@@ -3,11 +3,29 @@ import test from "node:test";
 import {
   assertPlanCliFlags,
   applyLaneFlag,
+  flattenCombineStartTarget,
   evidencePackCliFlags,
   parseBudgetMs,
   parseRunOutDir,
   startedPlanBatchId,
 } from "./cli-run-flags.js";
+
+test("plan run flattens test-run target JSON onto combine start fields", () => {
+  assert.deepEqual(
+    flattenCombineStartTarget({
+      appMapId: "grok-android",
+      combineId: "grok-android-daily",
+      target: { kind: "device", platform: "android", targetId: "RQCY104BG8X" },
+    }),
+    {
+      appMapId: "grok-android",
+      combineId: "grok-android-daily",
+      serial: "RQCY104BG8X",
+      targetKind: "device",
+      platform: "android",
+    },
+  );
+});
 
 test("parses budget units used by the three-minute findings loop", () => {
   assert.equal(parseBudgetMs("3m"), 180_000);
@@ -79,6 +97,10 @@ test("--lane is only valid on run and interact verbs", () => {
   });
   assert.deepEqual(applyLaneFlag("target.interact", { kind: "label" }, tokens), {
     kind: "label",
+    laneId: "grok-daily",
+  });
+  assert.deepEqual(applyLaneFlag("target.snapshot.capture", { full: true }, tokens), {
+    full: true,
     laneId: "grok-daily",
   });
   assert.throws(() => applyLaneFlag("app-map.get", {}, tokens), /only valid on test run/);

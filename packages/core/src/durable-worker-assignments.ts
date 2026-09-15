@@ -127,10 +127,13 @@ export class DurableWorkerAssignmentContentionError extends Error {
     readonly scope: "target" | "host",
     readonly assignmentId: string,
     readonly blockingAssignmentId: string,
+    readonly blockingStatus?: DurableWorkerAssignmentStatus,
   ) {
     super(
       scope === "target"
-        ? `Durable worker target is already executing assignment ${blockingAssignmentId}`
+        ? blockingStatus === "recovery-required"
+          ? `Durable worker target has a recovery-required fence from assignment ${blockingAssignmentId}. Recover the serial with recoveryFenceAssignmentId before the next job.`
+          : `Durable worker target is already executing assignment ${blockingAssignmentId}`
         : `Durable worker host capacity is already occupied by assignment ${blockingAssignmentId}`,
     );
     this.name = "DurableWorkerAssignmentContentionError";
@@ -753,7 +756,12 @@ export class DurableWorkerAssignmentStore {
           candidate.executionTarget.kind !== "local-browser"),
     );
     if (targetOwner) {
-      throw new DurableWorkerAssignmentContentionError("target", candidate.id, targetOwner.id);
+      throw new DurableWorkerAssignmentContentionError(
+        "target",
+        candidate.id,
+        targetOwner.id,
+        targetOwner.status,
+      );
     }
 
     const host = candidate.lane.host;

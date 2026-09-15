@@ -252,13 +252,55 @@ test("Android after evidence refreshes a cached before raster", async () => {
       { kind: "device", platform: "android", serial: "android-test" },
       () => captureAutomaticState(job, device, resultStep, "after", () => {}, runtime),
     );
-    assert.equal(captures, 2);
+    assert.equal(captures, 1);
     assert.equal(runtime.observation?.screenshot?.base64, fakePng("after").toString("base64"));
     assert.ok(
       job.artifacts.some(
         (artifact) =>
-          artifact.kind === "visual-settling" && (artifact.data as { settled: boolean }).settled,
+          artifact.kind === "visual-settling" &&
+          (artifact.data as { settled: boolean; samples: number }).settled &&
+          (artifact.data as { samples: number }).samples === 1,
       ),
+    );
+  } finally {
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("UI-tree capture logs the runner message instead of [object Object]", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-tree-objerr-"));
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  const logs: string[] = [];
+  const device = {
+    capture: {
+      snapshot: async () => {
+        throw {
+          message: "find could not read the current accessibility tree",
+          code: "COMMAND_FAILED",
+        };
+      },
+      screenshot: async ({ path }: { path: string }) => {
+        await writeFile(path, fakePng("tree-err"));
+        return {};
+      },
+    },
+  } as unknown as Device;
+  try {
+    await runWithTargetContext({ kind: "device", platform: "ios", serial: "tree-err-ipad" }, () =>
+      captureAutomaticState(iosJob("tree-err-ipad"), device, step("Wait"), "after", (line) =>
+        logs.push(line),
+      ),
+    );
+    assert.ok(
+      logs.some((line) => line.includes("find could not read the current accessibility tree")),
+      logs.join("\n"),
+    );
+    assert.equal(
+      logs.some((line) => line.includes("[object Object]")),
+      false,
     );
   } finally {
     if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;

@@ -148,6 +148,24 @@ describe("test editor assertions", () => {
     const caret = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "heading-caret");
     expect(caret).toBeDefined();
     expect(parseRegion(caret!.region)).toEqual({ x: 0.53, y: 0.25, width: 0.08, height: 0.01 });
+    const sandwich = IDENTITY_IGNORE_PRESETS.find((item) => item.id === "library-chrome-sandwich");
+    expect(sandwich).toBeDefined();
+    expect(parseRegion(sandwich!.region)).toEqual({ x: 0.06, y: 0.14, width: 0.88, height: 0.6 });
+    expect(
+      validationBindingFromDraft({
+        kind: "identity-ignore",
+        name: sandwich!.name,
+        region: sandwich!.region,
+      }),
+    ).toEqual({
+      status: "resolved",
+      kind: "recipe-step",
+      step: {
+        kind: "identity-ignore",
+        region: { x: 0.06, y: 0.14, width: 0.88, height: 0.6 },
+        name: "library chrome sandwich",
+      },
+    });
     expect(
       isValidationDraftReady({
         kind: "identity-ignore",
@@ -239,5 +257,20 @@ describe("test editor assertions", () => {
         },
       }),
     ).toBe("Checks that the expected screen is showing.");
+    expect(
+      checkpointBindingCopy({
+        id: "step-visual",
+        kind: "validation",
+        intent: "Judge composer chrome",
+        capture: true,
+        binding: {
+          status: "resolved",
+          kind: "recipe-step",
+          step: { kind: "evaluate-visual", criteria: ["Composer is visible"] },
+        },
+      }),
+    ).toBe(
+      "A visual judge will score this screenshot. Disagreement stays Needs review. Do not auto-accept.",
+    );
   });
 });

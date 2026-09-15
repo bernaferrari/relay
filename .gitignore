@@ -41,6 +41,28 @@ devimages/
 tmp/
 selfIdentity.plist
 
+# Local capture dumps: survey mosaics, preview marks, map export JSON, visual-pending
+# review PNGs. Matches `.tmp/` at any package level (e.g. packages/server/.tmp/).
+# Keep files on disk for human review; do not ship them. App Map source of truth lives
+# in `.relay/control.sqlite`, not in these export dumps.
+.tmp/
+
+# Stray control-plane copies (canonical store is `.relay/control.sqlite`, already ignored).
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+
+# Apple / Xcode local build products (runner DerivedData, user state).
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xcresult
+
+# In-tree HID helper if someone builds beside sources (canonical binary is `.relay/bin/`).
+packages/ios-hid-tap/ios-hid-tap
+packages/ios-hid-tap/ios-hid-tap.exe
+
 # Beads / Dolt files (added by bd init)
 .dolt/
 *.db
