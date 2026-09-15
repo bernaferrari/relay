@@ -1,4 +1,11 @@
-import { AppError, createRequestCanceledError, toAppErrorCode } from '@agent-device/kernel/errors';
+import {
+  AppError,
+  createRequestCanceledError,
+  isRequestCanceledDetails,
+  toAppErrorCode,
+  type AppErrorCode,
+  type AppErrorDetails,
+} from '@agent-device/kernel/errors';
 import crypto from 'node:crypto';
 import { ALERT_NOT_FOUND_RUNNER_CODE } from '@agent-device/contracts/alert-contract';
 import type { DeviceRotation } from '@agent-device/contracts/device';
@@ -143,14 +150,33 @@ export function resolveRunnerRequestSignal(options: {
   return AbortSignal.any([registeredSignal, options.signal]);
 }
 
+/**
+ * Details evidence a rule requires beyond code and message. A predicate rather than a
+ * fixed vocabulary because the useful evidence is a shape: a recorded deadline, a
+ * preflight marker, a retriable flag. Every predicate below names one.
+ */
+type RunnerErrorDetailsMatch = (details: AppErrorDetails) => boolean;
+
 type RunnerErrorMatch = {
   /** Required `AppError.code`; absent = any AppError. */
-  code?: string;
+  code?: AppErrorCode;
   /** Every entry must appear in the lowercased message. */
   messageIncludesAll?: readonly string[];
   /** Required details evidence beyond code/message. */
-  details?: 'retriable' | 'usbmux-device-unattached';
+  details?: RunnerErrorDetailsMatch;
 };
+
+const hasRetriableFlag: RunnerErrorDetailsMatch = (details) => details.retriable === true;
+const hasUsbmuxDeviceUnattached: RunnerErrorDetailsMatch = (details) =>
+  details.usbmuxDeviceAttached === false;
+/**
+ * The preflight marks whatever it was waiting on when it stopped, and one of the things it waits on
+ * is a caller that stopped waiting. A canceled request is not a wedged runner: the restart this
+ * marker authorises would boot a runner for a command nobody is going to send again. Every abort in
+ * the connect loop normalizes to the typed canceled reason before it reaches here.
+ */
+const hasReadinessPreflightFailure: RunnerErrorDetailsMatch = (details) =>
+  details.runnerReadinessPreflightFailed === true && !isRequestCanceledDetails(details);
 
 type RunnerErrorVerdicts = {
   /** isRetryableRunnerError: transport error worth a same-session resend. */
@@ -161,6 +187,10 @@ type RunnerErrorVerdicts = {
   sessionFatalReason?: string;
   /** Connect-shaped failure before the command was sent: restart the session and replay. */
   restartBeforeSend?: boolean;
+  /** Readiness preflight gave up before the command was written: restart the session and replay. */
+  restartAfterReadinessPreflight?: boolean;
+  /** The runner never accepted a connection, so the restored artifact itself is suspect. */
+  artifactSuspect?: boolean;
 };
 
 type RunnerErrorRule = {
@@ -183,43 +213,68 @@ type RunnerErrorRule = {
 export const RUNNER_ERROR_RULES: readonly RunnerErrorRule[] = [
   {
     reason: 'usbmux_device_unattached',
-    match: { code: 'DEVICE_NOT_FOUND', details: 'usbmux-device-unattached' },
+    match: { code: 'DEVICE_NOT_FOUND', details: hasUsbmuxDeviceUnattached },
     verdicts: { connectRetry: false },
   },
   {
     reason: 'flagged_retriable',
-    match: { code: 'COMMAND_FAILED', details: 'retriable' },
-    verdicts: { retryable: true },
+    match: { code: 'COMMAND_FAILED', details: hasRetriableFlag },
+    verdicts: { retryable: true, connectRetry: true },
   },
   {
+    // Says `artifactSuspect: false` on purpose: its message also reads as a refused
+    // connection, and a boot that cannot compile is not cured by wiping derived data.
     reason: 'xcodebuild_exited_early',
     match: { code: 'COMMAND_FAILED', messageIncludesAll: ['xcodebuild exited early'] },
+    verdicts: { retryable: false, connectRetry: false, artifactSuspect: false },
+  },
+  {
+    // A device still mid-attachment is not a runner we can talk to yet, and waiting on
+    // it inside this request is what the caller's own retry is for.
+    reason: 'device_busy_connecting',
+    match: { code: 'COMMAND_FAILED', messageIncludesAll: ['device is busy', 'connecting'] },
     verdicts: { retryable: false, connectRetry: false },
   },
   {
-    reason: 'device_busy_connecting',
-    match: { code: 'COMMAND_FAILED', messageIncludesAll: ['device is busy', 'connecting'] },
-    verdicts: { retryable: false },
+    // The marker is the whole fact: the preflight gave up before the command was written, so
+    // replaying it cannot duplicate anything. It is asked for alone because the preflight fails in
+    // whatever shape the connect loop ended with — a refusal, an exhausted probe, a killed
+    // fallback — and a rule that also required a recorded budget would fire on only some of them.
+    reason: 'runner_readiness_preflight_failed',
+    match: { code: 'COMMAND_FAILED', details: hasReadinessPreflightFailure },
+    verdicts: { restartAfterReadinessPreflight: true },
   },
   {
     reason: 'runner_connect_refused',
     match: { code: 'COMMAND_FAILED', messageIncludesAll: ['runner did not accept connection'] },
-    verdicts: { retryable: true, restartBeforeSend: true },
+    verdicts: {
+      retryable: true,
+      connectRetry: true,
+      restartBeforeSend: true,
+      artifactSuspect: true,
+    },
+  },
+  {
+    // Every endpoint answered and none of them had a runner: with a restored artifact
+    // in hand, that artifact is the common cause.
+    reason: 'runner_endpoint_probe_exhausted',
+    match: { code: 'COMMAND_FAILED', messageIncludesAll: ['runner endpoint probe failed'] },
+    verdicts: { artifactSuspect: true },
   },
   {
     reason: 'fetch_failed',
     match: { code: 'COMMAND_FAILED', messageIncludesAll: ['fetch failed'] },
-    verdicts: { retryable: true },
+    verdicts: { retryable: true, connectRetry: true },
   },
   {
     reason: 'econnrefused',
     match: { code: 'COMMAND_FAILED', messageIncludesAll: ['econnrefused'] },
-    verdicts: { retryable: true },
+    verdicts: { retryable: true, connectRetry: true },
   },
   {
     reason: 'socket_hang_up',
     match: { code: 'COMMAND_FAILED', messageIncludesAll: ['socket hang up'] },
-    verdicts: { retryable: true },
+    verdicts: { retryable: true, connectRetry: true },
   },
   {
     reason: 'ax_snapshot_failure',
@@ -249,8 +304,7 @@ function matchesRunnerErrorRule(error: AppError, match: RunnerErrorMatch): boole
 
 function matchesRunnerErrorDetails(error: AppError, details: RunnerErrorMatch['details']): boolean {
   if (details === undefined) return true;
-  if (details === 'retriable') return error.details?.retriable === true;
-  return isUsbmuxDeviceUnattachedError(error);
+  return details((error.details ?? {}) as AppErrorDetails);
 }
 
 function matchesRunnerErrorMessage(error: AppError, parts: readonly string[] | undefined): boolean {
@@ -287,14 +341,34 @@ export function isRetryableRunnerError(err: unknown): boolean {
  */
 export function isUsbmuxDeviceUnattachedError(error: unknown): boolean {
   if (!(error instanceof AppError) || error.code !== 'DEVICE_NOT_FOUND') return false;
-  return (
-    (error.details as { usbmuxDeviceAttached?: unknown } | undefined)?.usbmuxDeviceAttached ===
-    false
-  );
+  return hasUsbmuxDeviceUnattached((error.details ?? {}) as AppErrorDetails);
 }
 
+/**
+ * Default is true and not false: the common failure while the runner boots is an error
+ * no rule describes, and giving up on it would fail a command that the connect loop was
+ * about to succeed. A rule says false only when waiting cannot help.
+ */
 export function shouldRetryRunnerConnectError(error: unknown): boolean {
   return runnerErrorVerdict(error, 'connectRetry') ?? true;
+}
+
+/**
+ * The readiness preflight gave up, so the runner never saw the command: restarting the session and
+ * replaying is both safe and the only way out. The marker carries the rule; the message does not.
+ */
+export function shouldRestartRunnerAfterReadinessPreflight(error: unknown): boolean {
+  return runnerErrorVerdict(error, 'restartAfterReadinessPreflight') ?? false;
+}
+
+/**
+ * The runner refused or never answered on every route, which is what a restored artifact
+ * that cannot boot looks like. Deliberately narrow: the recovery it authorises is a clean
+ * `xcodebuild` rebuild, so a slow boot, a busy device or a transport failure partway
+ * through a command must not pay that price.
+ */
+export function shouldRebuildCachedRunnerArtifact(error: unknown): boolean {
+  return runnerErrorVerdict(error, 'artifactSuspect') ?? false;
 }
 
 /**
