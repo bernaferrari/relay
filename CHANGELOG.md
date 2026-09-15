@@ -53,8 +53,25 @@
   is invalidated and prepare retries with the artifact intact. Only a failure that indicts the
   artifact rebuilds it, so a runner that refuses the connection or never answers on any route still
   wipes it and rebuilds, which is what that rule is for.
-
+- Added (record): `record stop` now answers the question a video cannot — whether its recorder
+  actually stopped — beside the export. The result carries `recorder` and `nativePathDisposition` on
+  CLI `--json`, the Node client, and MCP (ADR 0024). Today a stop says `confirmed`, or `lost` with
+  `owner-session-lost` for an Apple recording whose session was invalidated, and names its artifact
+  path `retirable` or `retired`; the wider vocabulary those two fields declare (`unconfirmed`, the
+  identity-mismatch reasons, `pending`) arrives with the later ADR 0024 steps that gain the probes
+  those states describe. Both are disclosures about the recorder and the path it writes to, not
+  failures: the export is served either way, and a stop with nothing to report — an older session's
+  replay, or a backend whose recorder writes the served file itself — omits them. No stop changes
+  outcome in this release; the fields land first so the coordinator can report what it already knows
+  before it starts acting on it.
+- Fixed (record): an Android stop credits the device with retiring its recording only when the
+  device proved the chunks gone. The probe read any failed `test -e` as "not there", so an adb that
+  timed out or a device dropped mid-call turned chunks that were still on the device into
+  `nativePathDisposition: "retired"`, and a reattach that could not question the device at all
+  declared the recording's artifact lost. A probe that never ran now answers uncertain: the path
+  stays `retirable` and the recording stays finishable until the device answers.
 - Changed (sessions): the implicit session is now keyed by workspace **and platform**, so one checkout
+
   can drive iOS and Android without inventing a `--session` name for every command (#2580). An
   implicit session was addressed by `cwd:<workspace>:default`, one slot per checkout, and it stayed
   bound to the first device it touched. A repo that tests both platforms — a visual-regression run

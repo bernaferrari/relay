@@ -1,6 +1,12 @@
 import type { PlatformRuntimeHost } from '@agent-device/contracts/platform-runtime-operations';
 import type { ScreenRecordingLiveSnapshot } from '@agent-device/contracts/screen-recording-runtime';
-import { cleanupChunks, pullChunks, stopOwnedChunks, waitForStableArtifacts } from './chunks.ts';
+import {
+  cleanupChunks,
+  nativeChunksDisposition,
+  pullChunks,
+  stopOwnedChunks,
+  waitForStableArtifacts,
+} from './chunks.ts';
 import { completed } from './completion.ts';
 import { createCompletedNativeManifest, type NativeManifest } from './manifest.ts';
 import { persistNativeManifest } from './manifest-store.ts';
@@ -44,12 +50,31 @@ export async function finalizeAndroidRecording(params: {
     reachedLimit,
     startedAtMs: params.startedAtMs,
     stoppedAtMs,
+    // `stopOwnedChunks` either observed each recorder gone or threw; reaching here is proof, not an
+    // assumption (ADR 0024 2.2).
+    stopObservation: { recorder: 'confirmed' },
+    // The recorders are gone and the remote chunks still sit on the device: owed a removal, safe to do.
+    nativePathDisposition: 'retirable',
   });
+  // The marker is published before disposal on purpose: a crash after it must not lose a completion
+  // the export already earned. Its disposition is true of the moment it was written, and every
+  // reader re-reads that one field from the device rather than replaying it.
   await persistNativeManifest(
     params.transport,
     params.manifestPath,
     createCompletedNativeManifest(params.evidence, outcome.result),
   );
   await cleanupChunks(params.transport, params.evidence.chunks);
-  return outcome;
+  // Disposal is over once the device stops showing the chunks. A removal the device reported but
+  // did not perform stays owed instead of being declared done by the call's return value.
+  return {
+    status: 'completed',
+    result: {
+      ...outcome.result,
+      nativePathDisposition: await nativeChunksDisposition(
+        params.transport,
+        params.evidence.chunks,
+      ),
+    },
+  };
 }
