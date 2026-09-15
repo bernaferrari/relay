@@ -32,6 +32,15 @@ import type { RunnerSession } from './runner-session-types.ts';
  */
 const RUNNER_BUSY_RUNNER_CODE = 'RUNNER_BUSY';
 
+/**
+ * The runner's own code for the command that just tripped the execution watchdog: its main-thread
+ * work was abandoned and the thread is now occupied (#2552). Unlike `RUNNER_BUSY` (a fast refusal
+ * of a *later* command), this is the error the *stalling* command itself returns, so it is the only
+ * typed signal available before any refusal happens. Not retriable: the wait already elapsed and an
+ * immediate retry would only meet `RUNNER_BUSY`.
+ */
+const MAIN_THREAD_TIMEOUT_RUNNER_CODE = 'MAIN_THREAD_TIMEOUT';
+
 const RUNNER_CACHE_RECOVERY_HINT =
   'If runner build products look stale or corrupted, run `pnpm clean:xcuitest` in a local checkout, or remove ~/.agent-device/apple-runner/derived, then retry.';
 
@@ -332,6 +341,21 @@ export function isRetryableRunnerError(err: unknown): boolean {
 }
 
 /**
+ * True when the runner reported its main thread occupied by watchdog-abandoned XCTest work, either
+ * as a fast refusal of this command (`RUNNER_BUSY`) or as the timeout the stalling command itself
+ * returns (`MAIN_THREAD_TIMEOUT`) (#2552). Both are diagnostic-only on the wire (`COMMAND_FAILED` +
+ * `details.runnerErrorCode`), so family policy reads the typed detail rather than the message.
+ */
+export function isRunnerMainThreadOccupiedError(error: unknown): boolean {
+  if (!(error instanceof AppError)) return false;
+  const runnerErrorCode = error.details?.runnerErrorCode;
+  return (
+    runnerErrorCode === RUNNER_BUSY_RUNNER_CODE ||
+    runnerErrorCode === MAIN_THREAD_TIMEOUT_RUNNER_CODE
+  );
+}
+
+/**
  * True when usbmuxd answered and the device is simply not attached by cable.
  * A CoreDevice-backed device falls back to its network tunnel; an XCTest-backed
  * device has no second route, so this verdict is terminal rather than retryable.
@@ -413,6 +437,7 @@ export const SCROLL_KEYBOARD_OCCLUDES_SURFACE_RUNNER_CODE = 'SCROLL_KEYBOARD_OCC
  */
 const DIAGNOSTIC_ONLY_RUNNER_ERROR_CODES: ReadonlySet<string> = new Set([
   RUNNER_BUSY_RUNNER_CODE,
+  MAIN_THREAD_TIMEOUT_RUNNER_CODE,
   ALERT_NOT_FOUND_RUNNER_CODE,
   SCROLL_KEYBOARD_OCCLUDES_SURFACE_RUNNER_CODE,
 ]);
