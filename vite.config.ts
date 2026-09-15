@@ -39,6 +39,7 @@ export default defineConfig({
     ],
   },
   lint: {
+    jsPlugins: ["@shadcn/lint"],
     options: {
       typeAware: false,
       typeCheck: false,
