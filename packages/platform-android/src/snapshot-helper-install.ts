@@ -1,11 +1,11 @@
 import { asAppError, type AppError } from '@agent-device/kernel/errors';
 import {
   inspectInstalledAndroidHelper,
+  installAndroidHelperPackage,
   verifyAndroidHelperApkChecksum,
 } from './helper-package-install.ts';
 import {
   androidAdbResultError,
-  installAndroidAdbPackage,
   type AndroidAdbExecutor,
   type AndroidAdbProvider,
 } from './adb-executor.ts';
@@ -226,7 +226,7 @@ async function installAndroidSnapshotHelper(
   options: { packageName: string; timeoutMs?: number; signal?: AbortSignal },
 ): Promise<Awaited<ReturnType<AndroidAdbExecutor>>> {
   const install = async () =>
-    await installAndroidAdbPackage(apkPath, {
+    await installAndroidHelperPackage(apkPath, {
       allowFailure: true,
       provider: adbProvider,
       replace: true,
