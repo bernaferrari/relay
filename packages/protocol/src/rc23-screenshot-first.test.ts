@@ -69,20 +69,20 @@ test("two Settings captions on web vs iOS are two slots", () => {
   assert.equal(ios.configuration?.app, "ai.x.GrokApp");
 });
 
-test("30 planned; 17 captured + 1 blocked + 12 missing = 30; mixed 12 is not complete", () => {
+test("30 planned; 28 captured + 1 blocked + 1 missing = 30; mixed 12 is not complete", () => {
   const queue = resolveRc23ScreenshotFirstQueue();
   const counts = partitionRc23ScreenshotFirst(queue);
   assert.equal(counts.planned, 30);
-  assert.equal(counts.captured, 17);
+  assert.equal(counts.captured, 28);
   assert.equal(counts.blocked, 1);
-  assert.equal(counts.missing, 12);
-  assert.equal(counts.pending, 17);
+  assert.equal(counts.missing, 1);
+  assert.equal(counts.pending, 28);
   assert.equal(counts.accepted, 0);
   assert.equal(counts.captured + counts.blocked + counts.missing, 30);
   assert.notEqual(counts.captured, 12);
   assert.notEqual(counts.captured, 30);
   assert.notEqual(counts.planned, 13);
-  assert.equal(RC23_SCREENSHOT_FIRST_CAPTURED_PENDING.length, 17);
+  assert.equal(RC23_SCREENSHOT_FIRST_CAPTURED_PENDING.length, 28);
 });
 
 test("iOS Imagine stays blocked Unbound in the denominator, not omitted", () => {
@@ -102,13 +102,13 @@ test("iOS Imagine stays blocked Unbound in the denominator, not omitted", () => 
   assert.equal(android.scenarioKind, "physical");
 });
 
-test("Looks correct cannot accept missing, including the 12 never-run slots", () => {
+test("Looks correct cannot accept missing, including the never-run web models slot", () => {
   const queue = resolveRc23ScreenshotFirstQueue();
   const refusal = rc23LooksCorrectCannotAcceptMissing(queue);
-  assert.equal(refusal.missingAttempted, 13);
+  assert.equal(refusal.missingAttempted, 2);
   assert.equal(refusal.selected, 0);
   const missing = queue.items.find(
-    (item) => item.checkpointId === "logo" && item.configuration?.browser === "grok-com",
+    (item) => item.checkpointId === "models" && item.configuration?.browser === "grok-com",
   )!;
   assert.equal(missing.status, "missing");
   assert.equal(

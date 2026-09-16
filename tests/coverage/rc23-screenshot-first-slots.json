@@ -22,10 +22,10 @@
   "attempt": 1,
   "counts": {
     "planned": 30,
-    "captured": 17,
+    "captured": 28,
     "blocked": 1,
-    "missing": 12,
-    "pending": 17,
+    "missing": 1,
+    "pending": 28,
     "accepted": 0
   },
   "slots": [
@@ -56,6 +56,8 @@
       "caption": "Home chrome",
       "testId": "test-grok-android-home-chrome",
       "status": "captured",
+      "jobId": "ec54c62a-1de6-43ca-875a-0595c152b177",
+      "mapRevision": 339,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -85,7 +87,8 @@
       "attempt": 1,
       "caption": "Dictation",
       "testId": "test-grok-web-signed-in-dictation-inspect",
-      "status": "missing",
+      "status": "captured",
+      "jobId": "b1eead7a-775e-4569-bb30-d9d63fe94071",
       "scenarioKind": "browser-approximation",
       "blocked": false
     },
@@ -101,6 +104,8 @@
       "caption": "Dictation",
       "testId": "test-grok-android-dictation",
       "status": "captured",
+      "jobId": "81b51428-9d40-401a-bffd-46121e962948",
+      "mapRevision": 349,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -130,7 +135,8 @@
       "attempt": 1,
       "caption": "Sidebar",
       "testId": "test-grok-web-signed-in-sidebar",
-      "status": "missing",
+      "status": "captured",
+      "jobId": "b7c18573-1cc2-4fb5-92fe-2ec35aa86885",
       "scenarioKind": "browser-approximation",
       "blocked": false
     },
@@ -146,6 +152,8 @@
       "caption": "Sidebar",
       "testId": "test-grok-android-sidebar",
       "status": "captured",
+      "jobId": "16e8fc06-bb9d-400b-9916-dc496c3096b9",
+      "mapRevision": 340,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -191,6 +199,8 @@
       "caption": "Attach",
       "testId": "test-grok-android-attach",
       "status": "captured",
+      "jobId": "6529ee13-5d48-4db7-84da-d93783e74b47",
+      "mapRevision": 351,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -205,7 +215,8 @@
       "attempt": 1,
       "caption": "Attach",
       "testId": "test-grok-ios-attach",
-      "status": "missing",
+      "status": "captured",
+      "jobId": "679b39b7-fb38-41de-a5b9-661504f0eeb0",
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -236,6 +247,8 @@
       "caption": "Settings",
       "testId": "test-grok-android-settings",
       "status": "captured",
+      "jobId": "6290fd6f-7ae0-4490-b45f-a8f7cb394830",
+      "mapRevision": 357,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -250,7 +263,8 @@
       "attempt": 1,
       "caption": "Settings",
       "testId": "test-grok-ios-settings",
-      "status": "missing",
+      "status": "captured",
+      "jobId": "ec09b7ba-fe83-4fa4-b076-121bc713a99a",
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -281,6 +295,8 @@
       "caption": "Imagine",
       "testId": "test-grok-android-imagine",
       "status": "captured",
+      "jobId": "001be26c-3440-443f-ac03-06545a320999",
+      "mapRevision": 341,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -310,7 +326,8 @@
       "attempt": 1,
       "caption": "Logo",
       "testId": "test-grok-web-signed-in-logo",
-      "status": "missing",
+      "status": "captured",
+      "jobId": "d8bf4385-97b1-4aee-9116-86cacc44b46e",
       "scenarioKind": "browser-approximation",
       "blocked": false
     },
@@ -326,6 +343,8 @@
       "caption": "Logo",
       "testId": "test-grok-android-logo",
       "status": "captured",
+      "jobId": "c22f19eb-ba85-4201-a2f2-36f1c0f88c2d",
+      "mapRevision": 342,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -340,7 +359,8 @@
       "attempt": 1,
       "caption": "Logo",
       "testId": "test-grok-ios-logo",
-      "status": "missing",
+      "status": "captured",
+      "jobId": "eb3512fd-48d5-415e-8cdc-d5a0ffedc77d",
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -354,8 +374,9 @@
       },
       "attempt": 1,
       "caption": "Composer focus",
-      "testId": null,
-      "status": "missing",
+      "testId": "test-grok-web-signed-in-composer-focus",
+      "status": "captured",
+      "jobId": "ded7d047-82a0-4d69-b80c-03cf781cab60",
       "scenarioKind": "browser-approximation",
       "blocked": false
     },
@@ -371,6 +392,8 @@
       "caption": "Composer focus",
       "testId": "test-grok-android-composer-focus",
       "status": "captured",
+      "jobId": "78a0127a-f0b0-45e0-b1b8-634489b62b39",
+      "mapRevision": 350,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -385,7 +408,8 @@
       "attempt": 1,
       "caption": "Composer focus",
       "testId": "test-grok-ios-composer-focus",
-      "status": "missing",
+      "status": "captured",
+      "jobId": "2e31db46-e93a-4b86-ab77-1f71917b110d",
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -416,6 +440,8 @@
       "caption": "Models",
       "testId": "test-grok-android-models",
       "status": "captured",
+      "jobId": "e53e8f65-9284-45f2-8e5c-21aed9f8cee1",
+      "mapRevision": 353,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -430,7 +456,8 @@
       "attempt": 1,
       "caption": "Models",
       "testId": "test-grok-ios-models",
-      "status": "missing",
+      "status": "captured",
+      "jobId": "3cd34331-eacc-4f36-8a9d-6df00122a10d",
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -445,7 +472,8 @@
       "attempt": 1,
       "caption": "Private chat",
       "testId": "test-grok-web-signed-in-private-chat",
-      "status": "missing",
+      "status": "captured",
+      "jobId": "2b2377c7-9e77-49a0-9aa1-e41299ec1831",
       "scenarioKind": "browser-approximation",
       "blocked": false
     },
@@ -461,6 +489,8 @@
       "caption": "Private chat",
       "testId": "test-grok-android-private-chat",
       "status": "captured",
+      "jobId": "5e78db0d-1959-4cc1-b8ce-96848f371ce4",
+      "mapRevision": 354,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -475,7 +505,8 @@
       "attempt": 1,
       "caption": "Private chat",
       "testId": "test-grok-ios-private-chat",
-      "status": "missing",
+      "status": "captured",
+      "jobId": "dd229b0b-918e-42eb-9e62-fab1851a1d8d",
       "scenarioKind": "physical",
       "blocked": false
     }

@@ -61,7 +61,7 @@ const CAPTIONS: Record<Rc23ScreenshotFirstCheckpointId, string> = {
   "private-chat": "Private chat",
 };
 
-/** Dest-end (or inspect) Tests that exist. Web composer-focus has none. */
+/** Dest-end (or inspect) Tests that exist. */
 export const RC23_SCREENSHOT_FIRST_TESTS: Record<
   Rc23ScreenshotFirstCheckpointId,
   Record<Rc23ScreenshotFirstPlatform, string | null>
@@ -102,7 +102,7 @@ export const RC23_SCREENSHOT_FIRST_TESTS: Record<
     ios: "test-grok-ios-logo",
   },
   "composer-focus": {
-    web: null,
+    web: "test-grok-web-signed-in-composer-focus",
     android: "test-grok-android-composer-focus",
     ios: "test-grok-ios-composer-focus",
   },
@@ -151,6 +151,31 @@ export const RC23_SCREENSHOT_FIRST_CAPTURED_PENDING: readonly Rc23ScreenshotFirs
     jobId: "3787eb65-1523-4525-beb0-c310c28eaa10",
   },
   {
+    checkpointId: "dictation",
+    platform: "web",
+    jobId: "b1eead7a-775e-4569-bb30-d9d63fe94071",
+  },
+  {
+    checkpointId: "sidebar",
+    platform: "web",
+    jobId: "b7c18573-1cc2-4fb5-92fe-2ec35aa86885",
+  },
+  {
+    checkpointId: "logo",
+    platform: "web",
+    jobId: "d8bf4385-97b1-4aee-9116-86cacc44b46e",
+  },
+  {
+    checkpointId: "composer-focus",
+    platform: "web",
+    jobId: "ded7d047-82a0-4d69-b80c-03cf781cab60",
+  },
+  {
+    checkpointId: "private-chat",
+    platform: "web",
+    jobId: "2b2377c7-9e77-49a0-9aa1-e41299ec1831",
+  },
+  {
     checkpointId: "home-chrome",
     platform: "ios",
     jobId: "3754526f-bcf2-4818-838e-0adcb8596a0e",
@@ -164,6 +189,36 @@ export const RC23_SCREENSHOT_FIRST_CAPTURED_PENDING: readonly Rc23ScreenshotFirs
     checkpointId: "sidebar",
     platform: "ios",
     jobId: "345c2e67-8b32-49f3-9d9a-1876809d313d",
+  },
+  {
+    checkpointId: "logo",
+    platform: "ios",
+    jobId: "eb3512fd-48d5-415e-8cdc-d5a0ffedc77d",
+  },
+  {
+    checkpointId: "composer-focus",
+    platform: "ios",
+    jobId: "2e31db46-e93a-4b86-ab77-1f71917b110d",
+  },
+  {
+    checkpointId: "attach",
+    platform: "ios",
+    jobId: "679b39b7-fb38-41de-a5b9-661504f0eeb0",
+  },
+  {
+    checkpointId: "models",
+    platform: "ios",
+    jobId: "3cd34331-eacc-4f36-8a9d-6df00122a10d",
+  },
+  {
+    checkpointId: "private-chat",
+    platform: "ios",
+    jobId: "dd229b0b-918e-42eb-9e62-fab1851a1d8d",
+  },
+  {
+    checkpointId: "settings",
+    platform: "ios",
+    jobId: "ec09b7ba-fe83-4fa4-b076-121bc713a99a",
   },
   {
     checkpointId: "home-chrome",
