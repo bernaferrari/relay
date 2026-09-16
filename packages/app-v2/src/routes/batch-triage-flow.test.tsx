@@ -405,7 +405,7 @@ describe("Batch review controls", () => {
         ],
         summary: {
           captured: 1,
-          missing: 1,
+          missing: 0,
           pending: 1,
           accepted: 0,
           issue: 0,
@@ -418,6 +418,8 @@ describe("Batch review controls", () => {
     } as unknown as RunAcrossProductService);
     expect(document.body.textContent).toContain("Screenshot review");
     expect(document.body.textContent).toContain("2 planned · 1 captured · 1 blocked");
+    expect(document.body.textContent).toContain("0 missing");
+    expect(document.body.textContent).toContain("blocked");
     expect(document.body.textContent).toContain(
       "Looks correct does not approve a visual baseline.",
     );
@@ -441,5 +443,45 @@ describe("Batch review controls", () => {
         ],
       },
     ]);
+  });
+
+  it("reviews captured Plan screenshots while the Plan is still running", async () => {
+    await render({
+      getReport: async () => ({ ...report, status: "running" as const }),
+      getFailureClusters: async () => ({ campaignId: "batch-1", clusters: [] }),
+      getFindings: async () => {
+        throw new Error("Failed to fetch");
+      },
+      getCaptureReview: async () => ({
+        items: [
+          {
+            captureId: "frames/001.png::aaa",
+            caption: "Settings",
+            status: "pending" as const,
+            runId: "run-1",
+            framePath: "frames/001.png",
+            imageSha256: "aaa",
+            attempt: 1,
+          },
+        ],
+        summary: {
+          captured: 1,
+          missing: 0,
+          pending: 1,
+          accepted: 0,
+          issue: 0,
+          needMoreEvidence: 0,
+          planned: 1,
+          blocked: 0,
+        },
+      }),
+      cancel: async () => report,
+    } as unknown as RunAcrossProductService);
+    expect(document.body.textContent).toContain("Relay is running this Plan");
+    expect(document.body.textContent).toContain("Screenshot review");
+    expect(document.body.textContent).toContain(
+      "New captures appear here as they finish. Selection does not include later arrivals.",
+    );
+    expect(document.body.textContent).toContain("1 planned · 1 captured · 0 blocked · 0 missing");
   });
 });

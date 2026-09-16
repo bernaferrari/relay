@@ -55,7 +55,7 @@ export const planCaptureReviewCommandPath = path("plan capture review", ["batchI
     "relay plan capture review <batch-id>",
     'relay plan capture review <batch-id> --input \'{"pending":true,"screen":"Settings","account":"Member"}\'',
   ],
-  note: "Planned, captured, blocked, pending, accepted, and issue counts. Filters change the working set, not the denominator. Missing stays in the denominator. Looks correct does not approve a visual baseline.",
+  note: "Planned, captured, blocked, missing, pending, accepted, and issue counts. Filters change the working set, not the denominator. Blocked is not missing. Looks correct does not approve a visual baseline.",
 });
 
 export const planCaptureReviewApplyCommandPath = path(

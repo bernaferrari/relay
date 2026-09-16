@@ -39,7 +39,7 @@ describe("captureReviewSummaryLine", () => {
       captureReviewSummaryLine({
         summary: {
           captured: 1,
-          missing: 1,
+          missing: 0,
           pending: 1,
           accepted: 0,
           issue: 0,
@@ -48,6 +48,6 @@ describe("captureReviewSummaryLine", () => {
           blocked: 1,
         },
       }),
-    ).toBe("2 planned · 1/2 captured · 1 pending review · 1 missing · 1 blocked");
+    ).toBe("2 planned · 1 captured · 1 blocked · 0 missing · 1 pending · 0 accepted");
   });
 });

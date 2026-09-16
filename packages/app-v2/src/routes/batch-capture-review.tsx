@@ -5,6 +5,7 @@ import type { CaptureReviewAction, PlanCaptureReviewItem } from "@relay/protocol
 import {
   captureReviewQueueFrameKey,
   filterPlanCaptureReviewQueue,
+  formatCaptureReviewCoverageSummary,
   parsePlanCaptureReviewFilter,
   planCaptureReviewFilterOptions,
 } from "@relay/protocol";
@@ -45,14 +46,28 @@ function planCaptureFrames(
   });
 }
 
+function blockedCoverageNote(items: readonly PlanCaptureReviewItem[]): string {
+  const blocked = items.filter((item) => item.blocked);
+  if (blocked.length !== 1) return "";
+  const item = blocked[0]!;
+  const imagine =
+    item.checkpointId === "imagine" || item.caption.trim().toLowerCase() === "imagine";
+  if (!imagine) return "";
+  return item.configuration?.app === "ai.x.GrokApp"
+    ? " (iOS Imagine Unbound)"
+    : " (Imagine Unbound)";
+}
+
 export function PlanCaptureReviewSection({
   batchId,
   runAcrossService,
   platform,
+  streaming = false,
 }: {
   batchId: string;
   runAcrossService: RunAcrossProductService;
   platform: Platform;
+  streaming?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -68,6 +83,7 @@ export function PlanCaptureReviewSection({
     },
     enabled: Boolean(runAcrossService.getCaptureReview),
     staleTime: 5_000,
+    refetchInterval: streaming ? 5_000 : false,
   });
   const review = useMutation({
     mutationFn: (input: {
@@ -124,33 +140,35 @@ export function PlanCaptureReviewSection({
       })),
     });
   };
+  const blockedNote = blockedCoverageNote(queue.items);
   return (
     <section className="relay-batch-capture-review mt-5 rounded-xl border border-border bg-[var(--surface-raised-strong)]">
       <h2 className="px-5 pt-4 text-[20px] font-semibold tracking-tight text-foreground">
         Screenshot review
       </h2>
-      <p className="px-5 text-sm text-muted-foreground">
-        {queue.summary.planned} planned · {queue.summary.captured} captured
-        {queue.summary.blocked ? ` · ${queue.summary.blocked} blocked` : ""} ·{" "}
-        {queue.summary.accepted} accepted · {queue.summary.issue} issue
-        {queue.summary.issue === 1 ? "" : "s"} · {queue.summary.pending} pending · Looks correct
-        does not approve a visual baseline.
+      <p className="px-5 text-sm tabular-nums text-muted-foreground">
+        {formatCaptureReviewCoverageSummary(queue.summary)}
+        {blockedNote} · Looks correct does not approve a visual baseline.
       </p>
+      {streaming ? (
+        <p className="px-5 pt-1 text-xs text-muted-foreground">
+          New captures appear here as they finish. Selection does not include later arrivals.
+        </p>
+      ) : null}
       <div
         className="flex flex-wrap items-center gap-3 px-5 pt-2 text-sm"
         aria-label="Screenshot review filters"
       >
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            className="size-3.5 accent-foreground"
-            checked={pendingOnly}
-            onChange={(event) => setPendingOnly(event.target.checked)}
-          />
+        <button
+          type="button"
+          aria-pressed={pendingOnly}
+          className={`rounded-md border px-2.5 py-1 transition-colors ${pendingOnly ? "border-foreground bg-accent" : "border-border bg-background"}`}
+          onClick={() => setPendingOnly((current) => !current)}
+        >
           Pending
-        </label>
+        </button>
         <label className="flex items-center gap-2">
-          Screen
+          By screen
           <select
             aria-label="Filter by screen"
             className="rounded-md border border-border bg-background px-2 py-1"
@@ -166,7 +184,7 @@ export function PlanCaptureReviewSection({
           </select>
         </label>
         <label className="flex items-center gap-2">
-          Device or account
+          By device/account
           <select
             aria-label="Filter by device or account"
             className="rounded-md border border-border bg-background px-2 py-1"
@@ -193,6 +211,7 @@ export function PlanCaptureReviewSection({
         selectedIndex={selectedIndex}
         onSelect={setSelectedIndex}
         busy={review.isPending}
+        showCoverage={false}
         onReview={
           runAcrossService.reviewCaptures
             ? (action, item) => reviewItem(action, [item as PlanCaptureReviewItem])

@@ -172,5 +172,78 @@ describe("Plan screenshot review filters", () => {
         },
       ],
     });
+    expect(
+      host.querySelector('ul[aria-label="Screenshots for review"] button')?.className,
+    ).toContain("min-h-[8.5rem]");
+  });
+
+  it("shows blocked iOS Imagine as blocked, not missing, in freeze counts", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <PlanCaptureReviewSection
+            batchId="plan-1"
+            platform={platform()}
+            runAcrossService={
+              {
+                getCaptureReview: async () => ({
+                  items: [
+                    item({
+                      runId: "run-web-imagine",
+                      caption: "Imagine",
+                      captureId: "frames/imagine-web.png::web",
+                      framePath: "frames/imagine-web.png",
+                      imageSha256: "web",
+                      checkpointId: "imagine",
+                      account: "Member",
+                      device: "Chrome",
+                    }),
+                    {
+                      ...item({
+                        runId: "run-ios-imagine",
+                        caption: "Imagine",
+                        captureId: "missing::imagine",
+                        checkpointId: "imagine",
+                      }),
+                      status: "missing" as const,
+                      framePath: undefined,
+                      imageSha256: undefined,
+                      blocked: true,
+                      configuration: { app: "ai.x.GrokApp" },
+                    },
+                  ],
+                  summary: {
+                    captured: 1,
+                    missing: 0,
+                    pending: 1,
+                    accepted: 0,
+                    issue: 0,
+                    needMoreEvidence: 0,
+                    planned: 2,
+                    blocked: 1,
+                  },
+                }),
+              } as unknown as RunAcrossProductService
+            }
+          />
+        </QueryClientProvider>,
+      );
+    });
+    for (let index = 0; index < 4; index += 1) {
+      await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
+    }
+    expect(host.textContent).toContain(
+      "2 planned · 1 captured · 1 blocked · 0 missing · 1 pending · 0 accepted",
+    );
+    expect(host.textContent).toContain("iOS Imagine Unbound");
+    expect(host.textContent).not.toContain("2 tests passed");
+    const checks = [
+      ...host.querySelectorAll('ul[aria-label="Screenshots for review"] input[type="checkbox"]'),
+    ];
+    expect(checks).toHaveLength(1);
   });
 });

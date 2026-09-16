@@ -265,16 +265,6 @@ export function BatchPage() {
       {report ? (
         <>
           <BatchResultSummary report={report} />
-          {!active ? (
-            <PlanCaptureReviewSection
-              batchId={batchId}
-              runAcrossService={runAcrossService}
-              platform={platform}
-            />
-          ) : null}
-          {findingsReport ? (
-            <BatchFindingsLead report={findingsReport} gridHasProblems={hasProblems} />
-          ) : null}
           {active ? (
             <div
               className="relay-batch-active mt-5 flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground"
@@ -291,6 +281,15 @@ export function BatchPage() {
                 {cancel.isPending ? "Stopping…" : "Stop"}
               </Button>
             </div>
+          ) : null}
+          <PlanCaptureReviewSection
+            batchId={batchId}
+            runAcrossService={runAcrossService}
+            platform={platform}
+            streaming={active}
+          />
+          {findingsReport ? (
+            <BatchFindingsLead report={findingsReport} gridHasProblems={hasProblems} />
           ) : null}
 
           {canContinue ? (
