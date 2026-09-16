@@ -26,7 +26,11 @@ import type {
   RecipeStep,
   StepTarget,
 } from "@relay/protocol";
-import { sequenceAfterIsPlaceholder } from "@relay/protocol";
+import {
+  CAPTURE_REVIEW_DEST_PHASE,
+  CAPTURE_REVIEW_LEFTOVER_PHASE,
+  sequenceAfterIsPlaceholder,
+} from "@relay/protocol";
 import { parseExpectScreenCampaignFields, parseTourStops } from "./recipe-validation-campaign.js";
 import { parseDeviceRecipeStep } from "./recipe-validation-device-steps.js";
 import { parseJudgeRecipeStep, parseNamedPixelRegions } from "./recipe-validation-judges.js";
@@ -50,8 +54,12 @@ function parseScreenshotReview(
   if (policy !== undefined && policy !== "fast" && policy !== "stable" && policy !== "sequence") {
     throw stepErr(index, "screenshot.review.policy must be fast, stable, or sequence");
   }
+  const identityPhase =
+    raw.phase === CAPTURE_REVIEW_DEST_PHASE || raw.phase === CAPTURE_REVIEW_LEFTOVER_PHASE;
   const hasSequenceFields =
-    raw.phase !== undefined || raw.phases !== undefined || raw.checkpointId !== undefined;
+    (raw.phase !== undefined && !identityPhase) ||
+    raw.phases !== undefined ||
+    raw.checkpointId !== undefined;
   if (hasSequenceFields && policy !== "sequence") {
     throw stepErr(index, "screenshot.review named phases require policy sequence");
   }

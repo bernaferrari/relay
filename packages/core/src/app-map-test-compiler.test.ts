@@ -1922,18 +1922,37 @@ test("dest-end capture-true compiles a later-review screenshot into plannedSlots
   work.steps = [{ ...instruction, capture: true }];
   const compiled = compileAppMapTest(map, work);
   assert.ok(compiled.plan.destEndRecipeIds?.length);
-  const screenshot = compiled.root.steps.find((step) => step.kind === "screenshot");
+  const destRecipe = compiled.graph[compiled.plan.rootRecipeId]!;
+  const destModule = destRecipe.steps.find((step) => step.kind === "module");
+  assert.equal(destModule?.kind, "module");
+  const destEndRecipe =
+    destModule?.kind === "module" ? compiled.graph[destModule.recipeId] : undefined;
+  assert.ok(destEndRecipe);
+  const destWaitIndex = destEndRecipe!.steps.findIndex(
+    (step) => step.kind === "wait-for" && step.target?.identifier === "settings.account",
+  );
+  assert.ok(destWaitIndex >= 0);
+  const screenshot = destEndRecipe!.steps[destWaitIndex + 1];
   assert.deepEqual(screenshot, {
     kind: "screenshot",
     caption: `step:${instruction.id}:${instruction.intent}`,
-    review: { mode: "later", lookFor: instruction.intent, policy: "fast" },
-    id: `relay-test-${instruction.id}-2`,
+    review: { mode: "later", lookFor: instruction.intent, phase: "dest", policy: "fast" },
+    id: `relay-test-${instruction.id}-dest`,
   });
+  assert.equal(
+    destEndRecipe!.steps.some((step) => step.kind === "screenshot" && step !== screenshot),
+    false,
+  );
+  assert.equal(
+    destRecipe.steps.some((step) => step.kind === "screenshot"),
+    false,
+  );
   assert.equal(compiled.plan.executionQueue, "fast-ui");
   assert.equal(compiled.plan.plannedSlots?.length, 1);
-  assert.equal(compiled.plan.plannedSlots?.[0]?.checkpointId, `relay-test-${instruction.id}-2`);
-  assert.equal(compiled.plan.plannedSlots?.[0]?.stepId, `relay-test-${instruction.id}-2`);
+  assert.equal(compiled.plan.plannedSlots?.[0]?.checkpointId, `relay-test-${instruction.id}-dest`);
+  assert.equal(compiled.plan.plannedSlots?.[0]?.stepId, `relay-test-${instruction.id}-dest`);
   assert.equal(compiled.plan.plannedSlots?.[0]?.attempt, 1);
+  assert.equal(compiled.plan.plannedSlots?.[0]?.phase, "dest");
   assert.equal(compiled.plan.plannedSlots?.[0]?.lookFor, instruction.intent);
   assert.doesNotThrow(() =>
     createAppMapTestExecutionIntent({
@@ -1941,6 +1960,60 @@ test("dest-end capture-true compiles a later-review screenshot into plannedSlots
       recipeGraph: compiled.graph,
       preflight: preflightCompiledAppMapTestOffline(compiled.plan),
     }),
+  );
+});
+
+test("dest-end leftover Close last-frame is not dest capture-review identity", () => {
+  const map = fixture();
+  const work = destEndPrimitiveWork(map, "open-sidebar", [
+    {
+      id: "open-sidebar",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { identifier: "composer" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { identifier: "sidebar.open" } },
+        { kind: "wait-for", target: { label: "Automations" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { label: "Close" } },
+        { kind: "wait-for", target: { identifier: "voice.speak.button" }, timeoutMs: 8_000 },
+      ],
+    },
+  ]);
+  const instruction = work.steps[0]!;
+  work.steps = [{ ...instruction, capture: true }];
+  const compiled = compileAppMapTest(map, work);
+  const destModule = compiled.graph[compiled.plan.rootRecipeId]!.steps.find(
+    (step) => step.kind === "module",
+  );
+  const destEndRecipe =
+    destModule?.kind === "module" ? compiled.graph[destModule.recipeId] : undefined;
+  assert.ok(destEndRecipe);
+  const kinds = destEndRecipe!.steps.map((step) =>
+    step.kind === "screenshot" ? `${step.kind}:${step.review?.phase ?? ""}` : step.kind,
+  );
+  assert.deepEqual(kinds, [
+    "wait-for",
+    "tap",
+    "wait-for",
+    "screenshot:dest",
+    "tap",
+    "wait-for",
+  ]);
+  const destWaitIndex = destEndRecipe!.steps.findIndex(
+    (step) => step.kind === "wait-for" && step.target?.label === "Automations",
+  );
+  const leftoverCloseIndex = destEndRecipe!.steps.findIndex(
+    (step) => step.kind === "tap" && step.target?.label === "Close",
+  );
+  assert.ok(destWaitIndex >= 0);
+  assert.ok(leftoverCloseIndex > destWaitIndex);
+  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.kind, "screenshot");
+  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.phase, "dest");
+  assert.ok(leftoverCloseIndex > destWaitIndex + 1);
+  assert.equal(compiled.plan.plannedSlots?.length, 1);
+  assert.equal(compiled.plan.plannedSlots?.[0]?.phase, "dest");
+  assert.equal(
+    compiled.plan.plannedSlots?.some((slot) => slot.phase === "leftover"),
+    false,
   );
 });
 

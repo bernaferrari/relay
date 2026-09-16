@@ -179,8 +179,11 @@ test("default dest-end chrome inspect is Fast UI and cannot claim S16 with a 10s
   const map = queueMap({ "settings-inspect": inspectTest() });
   const compiled = compileAppMapTest(map, inspectTest());
   assert.equal(compiled.plan.executionQueue, "fast-ui");
-  const screenshot = compiled.root.steps.find((step) => step.kind === "screenshot");
+  const screenshot = Object.values(compiled.graph)
+    .flatMap((recipe) => recipe.steps)
+    .find((step) => step.kind === "screenshot");
   assert.equal(screenshot?.kind === "screenshot" ? screenshot.review?.policy : undefined, "fast");
+  assert.equal(screenshot?.kind === "screenshot" ? screenshot.review?.phase : undefined, "dest");
   assert.equal(
     canCoverWorkbookFamily({
       executionQueue: compiled.plan.executionQueue,

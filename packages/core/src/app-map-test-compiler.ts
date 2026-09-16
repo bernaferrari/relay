@@ -15,6 +15,7 @@ import {
   compileAppMapConnection,
   compileAppMapFlow,
   compileAppMapRoutine,
+  destEndDestinationWaitForIndex,
 } from "./app-map-compiler.js";
 import {
   compiledFlowGraphFromLiveCheckpoint,
@@ -67,6 +68,16 @@ const MAX_COMPILED_STEPS = 4_096;
 /** Bounded automatic survey using the `target.scroll-survey.capture` default, so an every-screen Test
  * never costs more than one manual `device survey`. */
 const DESTINATION_SURVEY_MAX_SCROLLS = 4;
+
+function insertDestEndCaptureReviewScreenshot(
+  recipe: { steps: RecipeStep[] },
+  screenshot: RecipeStep,
+): boolean {
+  const destIndex = destEndDestinationWaitForIndex(recipe.steps);
+  if (destIndex < 0) return false;
+  recipe.steps.splice(destIndex + 1, 0, screenshot);
+  return true;
+}
 
 export type AppMapTestCompileOptions = {
   /** Run-scoped startup choice. Warm preserves the current target; cold
@@ -768,19 +779,27 @@ export function compileAppMapScenarioTest(
           step.binding.connectionIds.some(
             (connectionId) => map.connections[connectionId]?.destination.kind === "end",
           );
-        recipeSteps.push({
-          kind: "screenshot",
-          caption: `step:${step.id}:${step.intent}`,
-          ...(destEnd
-            ? {
-                review: destEndInspectScreenshotReview(
-                  test,
-                  step.intent,
-                  destEndChromeInspectForTest(map, test),
-                ),
-              }
-            : {}),
-        });
+        if (destEnd) {
+          const destModule = recipeSteps.at(-1);
+          const destRecipe =
+            destModule?.kind === "module" ? graph[destModule.recipeId] : undefined;
+          const screenshot: RecipeStep = {
+            kind: "screenshot",
+            caption: `step:${step.id}:${step.intent}`,
+            review: destEndInspectScreenshotReview(
+              test,
+              step.intent,
+              destEndChromeInspectForTest(map, test),
+            ),
+            id: `relay-test-${step.id}-dest`,
+          };
+          if (destRecipe) insertDestEndCaptureReviewScreenshot(destRecipe, screenshot);
+        } else {
+          recipeSteps.push({
+            kind: "screenshot",
+            caption: `step:${step.id}:${step.intent}`,
+          });
+        }
       }
       for (let index = start; index < recipeSteps.length; index += 1) {
         const recipeStep = recipeSteps[index]!;

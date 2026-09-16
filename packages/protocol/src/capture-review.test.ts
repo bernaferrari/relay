@@ -6,8 +6,11 @@ import {
   captureReviewCheckpointFamilyId,
   captureReviewCoverageLine,
   captureReviewId,
+  captureReviewIdentityFramePaths,
   captureReviewSlotFamilyId,
   captureReviewSlotId,
+  CAPTURE_REVIEW_DEST_PHASE,
+  CAPTURE_REVIEW_LEFTOVER_PHASE,
   formatCaptureReviewConfiguration,
   formatCaptureReviewCoverageSummary,
   materializeCaptureReviewSlots,
@@ -895,6 +898,176 @@ test("leftover inspect chrome does not mint a recapture attempt", () => {
   assert.equal(queue.items.length, 1);
   assert.equal(queue.items[0]?.attempt, 1);
   assert.equal(queue.summary.missing, 0);
+});
+
+function destEndSlot() {
+  return {
+    requirementId: "rc23-screenshot-first",
+    checkpointId: "logo",
+    caption: "Logo",
+    lookFor: "Speak home chrome",
+    stepId: "relay-test-logo-dest",
+    attempt: 1,
+    phase: CAPTURE_REVIEW_DEST_PHASE,
+    configuration: { app: "android" },
+  };
+}
+
+test("dest-end plannedSlots keep dest phase from Fast later-review", () => {
+  const planned = materializeCaptureReviewSlots({
+    requirementId: "rc23-screenshot-first",
+    recipeSteps: [
+      {
+        id: "relay-test-logo-dest",
+        kind: "screenshot",
+        caption: "Logo",
+        review: {
+          mode: "later",
+          lookFor: "Speak home chrome",
+          policy: "fast",
+          phase: CAPTURE_REVIEW_DEST_PHASE,
+        },
+      },
+    ],
+  });
+  assert.equal(planned.length, 1);
+  assert.equal(planned[0]?.phase, CAPTURE_REVIEW_DEST_PHASE);
+  assert.equal(planned[0]?.checkpointId, "relay-test-logo-dest");
+  assert.match(captureReviewSlotId(planned[0]!), /::dest$/u);
+});
+
+test("dest-end dest-phase identity is dest wait-for pixels, not leftover Close last-frame", () => {
+  const dest = destEndSlot();
+  const leftoverHome = {
+    kind: "capture-review",
+    data: {
+      caption: dest.caption,
+      lookFor: dest.lookFor,
+      framePath: "frames/005.png",
+      imageSha256: "home-leftover",
+      stepId: dest.stepId,
+      checkpointId: dest.checkpointId,
+      attempt: 1,
+      phase: CAPTURE_REVIEW_LEFTOVER_PHASE,
+      configuration: dest.configuration,
+    },
+  };
+  const destWait = {
+    kind: "capture-review",
+    data: {
+      caption: dest.caption,
+      lookFor: dest.lookFor,
+      framePath: "frames/002.png",
+      imageSha256: "automations-settings",
+      stepId: dest.stepId,
+      slotId: captureReviewSlotId(dest),
+      checkpointId: dest.checkpointId,
+      attempt: 1,
+      phase: CAPTURE_REVIEW_DEST_PHASE,
+      configuration: dest.configuration,
+    },
+  };
+  const queue = resolveCaptureReviewQueue({
+    plannedSlots: [dest],
+    artifacts: [leftoverHome, destWait],
+  });
+  assert.equal(queue.items[0]?.status, "pending");
+  assert.equal(queue.items[0]?.phase, CAPTURE_REVIEW_DEST_PHASE);
+  assert.equal(queue.items[0]?.framePath, "frames/002.png");
+  assert.equal(queue.items[0]?.imageSha256, "automations-settings");
+  assert.notEqual(queue.items[0]?.framePath, "frames/005.png");
+  assert.deepEqual(captureReviewIdentityFramePaths([leftoverHome, destWait]), ["frames/002.png"]);
+});
+
+test("inspect-setup-skipped leftover Type to imagine is not dest captured for Speak home", () => {
+  const dest = destEndSlot();
+  const leftoverImagine = {
+    kind: "capture-review",
+    data: {
+      caption: dest.caption,
+      lookFor: dest.lookFor,
+      framePath: "frames/003.png",
+      imageSha256: "type-to-imagine",
+      stepId: dest.stepId,
+      slotId: captureReviewSlotId(dest),
+      checkpointId: dest.checkpointId,
+      attempt: 1,
+      configuration: dest.configuration,
+    },
+  };
+  const queue = resolveCaptureReviewQueue({
+    plannedSlots: [dest],
+    artifacts: [
+      {
+        kind: "conditional-step-skipped",
+        data: { reason: "inspect-setup-skipped", coverage: "inspect" },
+      },
+      leftoverImagine,
+    ],
+  });
+  assert.equal(queue.items.length, 1);
+  assert.equal(queue.items[0]?.status, "missing");
+  assert.equal(queue.items[0]?.phase, CAPTURE_REVIEW_DEST_PHASE);
+  assert.equal(queue.summary.missing, 1);
+  assert.equal(queue.summary.captured, 0);
+  assert.deepEqual(captureReviewIdentityFramePaths([leftoverImagine]), []);
+  const destFilled = resolveCaptureReviewQueue({
+    plannedSlots: [dest],
+    artifacts: [
+      {
+        kind: "conditional-step-skipped",
+        data: { reason: "inspect-setup-skipped", coverage: "inspect" },
+      },
+      leftoverImagine,
+      {
+        kind: "capture-review",
+        data: {
+          ...leftoverImagine.data,
+          framePath: "frames/002.png",
+          imageSha256: "speak-home",
+          phase: CAPTURE_REVIEW_DEST_PHASE,
+        },
+      },
+    ],
+  });
+  assert.equal(destFilled.items[0]?.status, "pending");
+  assert.equal(destFilled.items[0]?.framePath, "frames/002.png");
+});
+
+test("unphased leftover stays pending not missing", () => {
+  const leftover = {
+    requirementId: "rc23-screenshot-first",
+    checkpointId: "logo",
+    caption: "Logo",
+    lookFor: "Speak home chrome",
+    stepId: "relay-test-logo-leftover",
+    attempt: 1,
+    configuration: { app: "android" },
+  };
+  const queue = resolveCaptureReviewQueue({
+    plannedSlots: [leftover],
+    artifacts: [
+      {
+        kind: "capture-review",
+        data: {
+          caption: leftover.caption,
+          lookFor: leftover.lookFor,
+          framePath: "frames/005.png",
+          imageSha256: "home-leftover",
+          stepId: leftover.stepId,
+          checkpointId: leftover.checkpointId,
+          attempt: 1,
+          configuration: leftover.configuration,
+        },
+      },
+    ],
+  });
+  assert.equal(queue.items.length, 1);
+  assert.equal(queue.items[0]?.status, "pending");
+  assert.equal(queue.items[0]?.phase, undefined);
+  assert.equal(queue.items[0]?.framePath, "frames/005.png");
+  assert.equal(queue.summary.missing, 0);
+  assert.equal(queue.summary.pending, 1);
 });
 
 test("unphased slot ids stay stable when phase is omitted", () => {

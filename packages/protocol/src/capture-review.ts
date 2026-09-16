@@ -116,6 +116,45 @@ export function formatCaptureReviewObservedSession(
   ].filter((part): part is string => Boolean(part?.trim()));
 }
 
+/** Dest-end capture-review identity. Leftover dismiss is a later phase. */
+export const CAPTURE_REVIEW_DEST_PHASE = "dest";
+export const CAPTURE_REVIEW_LEFTOVER_PHASE = "leftover";
+
+export function isCaptureReviewDestPhase(phase?: string): boolean {
+  return phase?.trim() === CAPTURE_REVIEW_DEST_PHASE;
+}
+
+export function isCaptureReviewLeftoverPhase(phase?: string): boolean {
+  return phase?.trim() === CAPTURE_REVIEW_LEFTOVER_PHASE;
+}
+
+/** Dest slots bind dest-phase pixels only. Leftover Close/Back cannot fill dest. */
+function captureReviewFillsDestPhase(
+  artifactPhase: string | undefined,
+  slotPhase: string | undefined,
+): boolean {
+  if (!isCaptureReviewDestPhase(slotPhase)) return true;
+  return isCaptureReviewDestPhase(artifactPhase) && !isCaptureReviewLeftoverPhase(artifactPhase);
+}
+
+/** Dest-end identity prefers dest-phase capture-review. Leftover Close/Back
+ * last-frame artifacts are recorded but never overwrite dest. */
+export function captureReviewIdentityFramePaths(
+  artifacts: readonly { kind?: string; data?: unknown }[],
+): string[] {
+  const dest: string[] = [];
+  for (const artifact of artifacts) {
+    if (artifact.kind !== "capture-review") continue;
+    const payload = record(artifact.data);
+    const framePath = text(payload?.framePath);
+    if (!framePath) continue;
+    const phase = text(payload?.phase);
+    if (isCaptureReviewLeftoverPhase(phase)) continue;
+    if (isCaptureReviewDestPhase(phase)) dest.push(framePath);
+  }
+  return dest;
+}
+
 /** Stable planned capture identity. Caption is display text only. */
 export type CaptureReviewSlotIdentity = {
   requirementId?: string;
@@ -580,6 +619,7 @@ function screenshotSlots(
       ),
     );
   }
+  const phase = text(review.phase);
   return [
     plannedScreenshotSlot(
       {
@@ -587,6 +627,7 @@ function screenshotSlots(
         caption: defaultCaption,
         ...(defaultLookFor ? { lookFor: defaultLookFor } : {}),
         ...(stepId ? { stepId } : {}),
+        ...(phase ? { phase } : {}),
       },
       context,
     ),
@@ -846,6 +887,7 @@ function sameOptional<T>(left: T | undefined, right: T | undefined): boolean {
 }
 
 function artifactMatchesSlot(artifact: CaptureReviewItem, slot: CaptureReviewPlannedSlot): boolean {
+  if (!captureReviewFillsDestPhase(artifact.phase, slot.phase)) return false;
   if (artifact.slotId && artifact.slotId === captureReviewSlotId(slot)) return true;
   const checkpoint = artifact.checkpointId ?? artifact.stepId;
   if (checkpoint && checkpoint === slot.checkpointId) {
@@ -876,7 +918,14 @@ function bindArtifactToSlots(
   for (const [index, slot] of slots.entries()) {
     if (bound.has(index)) continue;
     if (artifactMatchesSlot(artifact, slot)) exact.push(index);
-    else if (artifact.stepId && artifact.stepId === slot.stepId) byStep.push(index);
+    else if (
+      artifact.stepId &&
+      artifact.stepId === slot.stepId &&
+      sameCaptureReviewPhase(artifact.phase, slot.phase) &&
+      captureReviewFillsDestPhase(artifact.phase, slot.phase)
+    ) {
+      byStep.push(index);
+    }
   }
   const candidates = exact.length ? exact : byStep;
   if (candidates.length === 1) {
@@ -900,6 +949,20 @@ function bindArtifactToSlots(
     return true;
   }
   return false;
+}
+
+function artifactImpersonatesDestSlot(
+  artifact: CaptureReviewItem,
+  slots: readonly CaptureReviewPlannedSlot[],
+): boolean {
+  return slots.some((slot) => {
+    if (!isCaptureReviewDestPhase(slot.phase)) return false;
+    if (isCaptureReviewDestPhase(artifact.phase)) return false;
+    if (artifact.slotId && artifact.slotId === captureReviewSlotId(slot)) return true;
+    const checkpoint = artifact.checkpointId ?? artifact.stepId;
+    if (checkpoint && checkpoint === slot.checkpointId) return true;
+    return Boolean(artifact.stepId && artifact.stepId === slot.stepId);
+  });
 }
 
 function overlayDecision(
@@ -989,7 +1052,9 @@ export function resolveCaptureReviewQueue(input: {
     const bound = new Set<number>();
     const extras: CaptureReviewItem[] = [];
     for (const artifact of artifacts) {
-      if (!bindArtifactToSlots(artifact, items, planned, bound)) extras.push(artifact);
+      if (bindArtifactToSlots(artifact, items, planned, bound)) continue;
+      if (artifactImpersonatesDestSlot(artifact, planned)) continue;
+      extras.push(artifact);
     }
     items.push(...extras);
   } else {

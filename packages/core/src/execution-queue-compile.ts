@@ -1,5 +1,6 @@
 import type { AppMap, AppMapScenarioTest, ExecutionQueue, RecipeStep } from "@relay/protocol";
 import {
+  CAPTURE_REVIEW_DEST_PHASE,
   destEndConnectionsAreChromeInspect,
   executionQueueForTest,
   sequenceAfterIsPlaceholder,
@@ -92,7 +93,7 @@ export function destEndInspectScreenshotReview(
   test: AppMapScenarioTest,
   lookFor: string,
   destEndChromeInspect: boolean,
-): { mode: "later"; lookFor: string; policy?: "fast" } {
+): { mode: "later"; lookFor: string; phase: typeof CAPTURE_REVIEW_DEST_PHASE; policy?: "fast" } {
   const queue = executionQueueForTest({
     executionQueue: test.executionQueue,
     destEndChromeInspect,
@@ -100,6 +101,7 @@ export function destEndInspectScreenshotReview(
   return {
     mode: "later",
     lookFor,
+    phase: CAPTURE_REVIEW_DEST_PHASE,
     ...(queue === "fast-ui" ? { policy: "fast" as const } : {}),
   };
 }
