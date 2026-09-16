@@ -314,6 +314,10 @@ test("identity-ignore is not a visual exclusion until comparison policy is updat
     assert.equal(compared.diff.frames[0]?.changedPixels, 1);
     assert.equal(compared.policy.regions.length, 0);
     assert.equal((await getVisualComparisonPolicy(root, latest)).regions.length, 0);
+    assert.equal(
+      (await getVisualBaseline(root, "sign-in", "pixel-1", "project-a"))?.runId,
+      "approved",
+    );
 
     const initial = await getVisualComparisonPolicy(root, latest);
     await updateVisualComparisonPolicy(root, latest, {
@@ -338,6 +342,32 @@ test("identity-ignore is not a visual exclusion until comparison policy is updat
     assert.equal(ignored.code, "VISUAL_MATCH");
     assert.equal(ignored.diff.frames[0]?.changedPixels, 0);
     assert.equal(ignored.policy.regions[0]?.id, "reply-body");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("identity-ignore does not count as a visual baseline", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-visual-identity-ignore-baseline-"));
+  try {
+    const latest = await runFixture(root, {
+      id: "latest",
+      projectId: "project-a",
+      serial: "pixel-1",
+      frames: [pngWithChangedTopLeft(true)],
+      artifacts: [
+        {
+          kind: "identity-ignore",
+          capturedAt: 1,
+          data: { name: "clock", x: 0, y: 0, width: 0.25, height: 0.25, frameIndex: 0 },
+        },
+      ],
+    });
+    const compared = await compareVisualBaseline(root, latest);
+    assert.equal(compared.code, "VISUAL_BASELINE_MISSING");
+    assert.equal(compared.baseline, null);
+    assert.equal(compared.policy.regions.length, 0);
+    assert.equal(await getVisualBaseline(root, "sign-in", "pixel-1", "project-a"), null);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

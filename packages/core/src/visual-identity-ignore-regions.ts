@@ -9,7 +9,8 @@ import type { VisualComparisonPolicy, VisualRegion } from "@relay/protocol";
  * Host packs still drop leftover chats, composer placeholders, and intro
  * overlays for identity matching. This module never turns identity-ignore or
  * grok.com ui-tree chrome (composer / intro / reply-body) into a visual
- * exclusion. Looks correct does not write these regions.
+ * exclusion. Checkpoint scoping for identity matching lives in
+ * recipe-identity-ignore-scope. Looks correct does not write these regions.
  */
 
 type FrameSize = {

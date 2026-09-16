@@ -9,6 +9,7 @@ import {
   captureReviewIdentityFramePaths,
   captureReviewSlotFamilyId,
   captureReviewSlotId,
+  CAPTURE_REVIEW_ACTIONS,
   CAPTURE_REVIEW_DEST_PHASE,
   CAPTURE_REVIEW_LEFTOVER_PHASE,
   formatCaptureReviewConfiguration,
@@ -19,6 +20,7 @@ import {
   resolveCaptureReviewQueue,
   summarizeCaptureReview,
 } from "./capture-review.js";
+import { VISUAL_REVIEW_ACTIONS } from "./visual-verification.js";
 import {
   captureRasterPolicyMeasuresStability,
   DEFAULT_CAPTURE_RASTER_POLICY,
@@ -369,6 +371,35 @@ test("a chat identity-ignore overlay stays off a later settings capture", () => 
   });
   assert.equal(queue.items[0]?.masks, undefined);
   assert.equal(queue.items[1]?.masks, undefined);
+});
+
+test("identity-ignore kind on a capture-review mask is dropped", () => {
+  const queue = resolveCaptureReviewQueue({
+    artifacts: [
+      {
+        kind: "capture-review",
+        data: {
+          caption: "Chat",
+          framePath: "frames/001.png",
+          imageSha256: "chat",
+          stepId: "chat",
+          masks: [
+            { kind: "identity-ignore", name: "clock", x: 0.8, y: 0, width: 0.2, height: 0.05 },
+          ],
+        },
+      },
+    ],
+  });
+  assert.equal(queue.items[0]?.masks, undefined);
+});
+
+test("Use as baseline remains a separate explicit action from Looks correct", () => {
+  assert.deepEqual([...CAPTURE_REVIEW_ACTIONS], ["accept", "report-issue", "need-more-evidence"]);
+  assert.equal(
+    (CAPTURE_REVIEW_ACTIONS as readonly string[]).includes("approve-new-baseline"),
+    false,
+  );
+  assert.equal(VISUAL_REVIEW_ACTIONS.includes("approve-new-baseline"), true);
 });
 
 test("an explicit capture-review mask stays on the selected chat frame", () => {
@@ -1000,6 +1031,33 @@ test("dest-end dest-phase identity is dest wait-for pixels, not leftover Close l
   assert.equal(queue.items[0]?.policy, "fast");
   assert.notEqual(queue.items[0]?.framePath, "frames/005.png");
   assert.deepEqual(captureReviewIdentityFramePaths([leftoverHome, destWait]), ["frames/002.png"]);
+});
+
+test("dest-phase leftover Close still cannot bind dest", () => {
+  const dest = destEndSlot();
+  const leftoverClose = {
+    kind: "capture-review",
+    data: {
+      caption: "Close",
+      framePath: "frames/005.png",
+      imageSha256: "close-leftover",
+      stepId: dest.stepId,
+      checkpointId: dest.checkpointId,
+      attempt: 1,
+      phase: CAPTURE_REVIEW_LEFTOVER_PHASE,
+      configuration: dest.configuration,
+    },
+  };
+  const queue = resolveCaptureReviewQueue({
+    plannedSlots: [dest],
+    artifacts: [leftoverClose],
+  });
+  assert.equal(queue.items.length, 1);
+  assert.equal(queue.items[0]?.status, "missing");
+  assert.equal(queue.items[0]?.phase, CAPTURE_REVIEW_DEST_PHASE);
+  assert.equal(queue.items[0]?.framePath, undefined);
+  assert.equal(queue.items[0]?.imageSha256, undefined);
+  assert.deepEqual(captureReviewIdentityFramePaths([leftoverClose]), []);
 });
 
 test("inspect-setup-skipped leftover Type to imagine is not dest captured for Speak home", () => {

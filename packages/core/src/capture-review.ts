@@ -111,16 +111,46 @@ export function applyCaptureReviewDecision(
       "Refresh the Run and review the exact PNG that is displayed. Looks correct never applies to a later screenshot.",
     );
   }
+  const prior = (run.captureReviews ?? []).find(
+    (decision) => decision.captureId === item.captureId,
+  );
+  if (prior && prior.decidedBy.id !== input.actor.id) {
+    throw new CaptureReviewError(
+      "CAPTURE_REVIEW_CONFLICT",
+      "Another reviewer already saved a decision for this screenshot",
+      "Refresh the Plan captures panel and continue with items that are still pending. Looks correct never overwrites another person's saved decision.",
+    );
+  }
+  const note = input.note?.trim().slice(0, 2_000) || prior?.note;
+  if (
+    prior &&
+    prior.action === input.action &&
+    (!prior.imageSha256 || !item.imageSha256 || prior.imageSha256 === item.imageSha256)
+  ) {
+    const captureReviews =
+      note === prior.note
+        ? (run.captureReviews ?? [])
+        : (run.captureReviews ?? []).map((decision) =>
+            decision.captureId === prior.captureId
+              ? { ...prior, ...(note ? { note } : {}) }
+              : decision,
+          );
+    return {
+      captureReviews,
+      queue: captureReviewQueueForRun({ ...run, captureReviews }),
+      outcome: run.outcome,
+    };
+  }
   const decision: CaptureReviewDecision = {
     captureId: item.captureId,
     action: input.action,
     decidedAt: Date.now(),
     decidedBy: input.actor,
     ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
-    ...(input.note?.trim() ? { note: input.note.trim().slice(0, 2_000) } : {}),
+    ...(note ? { note } : {}),
   };
   const captureReviews = [
-    ...(run.captureReviews ?? []).filter((prior) => prior.captureId !== item.captureId),
+    ...(run.captureReviews ?? []).filter((existing) => existing.captureId !== item.captureId),
     decision,
   ];
   return {

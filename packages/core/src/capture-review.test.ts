@@ -116,6 +116,37 @@ test("Looks correct does not copy identity-ignore into a baseline ignore list", 
   assert.equal(applied.captureReviews[0]?.action, "accept");
 });
 
+test("identity-ignore does not count as a visual baseline", () => {
+  const applied = applyCaptureReviewDecision(
+    {
+      artifacts: [
+        artifact,
+        {
+          kind: "identity-ignore",
+          capturedAt: 1,
+          data: { name: "clock", x: 0.8, y: 0, width: 0.2, height: 0.05, frameIndex: 0 },
+        },
+      ],
+      outcome: "passed",
+      recipeSnapshot: { steps: [] },
+    },
+    {
+      captureId: captureReviewId({
+        caption: "Arabic account settings",
+        framePath: "frames/001.png",
+        imageSha256: "aaa",
+      }),
+      action: "accept",
+      actor: { id: "human:maria", kind: "human" },
+      imageSha256: "aaa",
+    },
+  );
+  assert.equal(applied.captureReviews[0]?.action, "accept");
+  assert.equal("approvedBaselineId" in (applied.captureReviews[0] ?? {}), false);
+  assert.equal(applied.queue.items[0]?.masks, undefined);
+  assert.equal(applied.outcome, "passed");
+});
+
 test("a missing screenshot stays missing and cannot be accepted", () => {
   const run = {
     artifacts: [],
@@ -249,6 +280,56 @@ test("Looks correct on attempt 1 cannot accept a missing recapture attempt 2", (
     (error: unknown) =>
       error instanceof CaptureReviewError && error.code === "CAPTURE_REVIEW_MISSING",
   );
+});
+
+test("a second human cannot overwrite another reviewer's saved decision or note", () => {
+  const captureId = captureReviewId({
+    caption: "Arabic account settings",
+    framePath: "frames/001.png",
+    imageSha256: "aaa",
+  });
+  const run = {
+    artifacts: [artifact],
+    outcome: "passed" as const,
+    recipeSnapshot: { steps: [] },
+  };
+  const first = applyCaptureReviewDecision(run, {
+    captureId,
+    action: "report-issue",
+    actor: { id: "human:maria", kind: "human" },
+    imageSha256: "aaa",
+    note: "Save overlaps seats",
+  });
+  assert.equal(first.outcome, "passed");
+  assert.equal(first.captureReviews[0]?.note, "Save overlaps seats");
+  assert.equal(first.queue.items[0]?.note, "Save overlaps seats");
+  assert.throws(
+    () =>
+      applyCaptureReviewDecision(
+        { ...run, captureReviews: first.captureReviews },
+        {
+          captureId,
+          action: "accept",
+          actor: { id: "human:alex", kind: "human" },
+          imageSha256: "aaa",
+        },
+      ),
+    (error: unknown) =>
+      error instanceof CaptureReviewError && error.code === "CAPTURE_REVIEW_CONFLICT",
+  );
+  const retry = applyCaptureReviewDecision(
+    { ...run, captureReviews: first.captureReviews },
+    {
+      captureId,
+      action: "report-issue",
+      actor: { id: "human:maria", kind: "human" },
+      imageSha256: "aaa",
+    },
+  );
+  assert.equal(retry.outcome, "passed");
+  assert.equal(retry.captureReviews[0]?.decidedBy.id, "human:maria");
+  assert.equal(retry.captureReviews[0]?.note, "Save overlaps seats");
+  assert.equal(retry.captureReviews.length, 1);
 });
 
 test("run capture review reads Combine cell child plannedSlots", () => {

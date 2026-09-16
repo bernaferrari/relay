@@ -656,7 +656,7 @@ function StepMedia({
         ) : null}
         {masks?.length && imageSize.width > 0 ? (
           <svg
-            aria-label="Comparison masks"
+            aria-label="Review overlays"
             className="pointer-events-none absolute inset-5 z-10 h-[calc(100%-2.5rem)] w-[calc(100%-2.5rem)]"
             viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
             preserveAspectRatio="xMidYMid meet"

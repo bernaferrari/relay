@@ -256,7 +256,7 @@ export function CaptureReviewPanel({
                 checked={Boolean(showMasks)}
                 onChange={(event) => onShowMasksChange(event.target.checked)}
               />
-              Show comparison masks
+              Show review overlays
             </label>
           ) : null}
           {onReview && reviewable(selected) ? (

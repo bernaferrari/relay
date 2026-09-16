@@ -190,7 +190,7 @@ describe("daily QA recipe steps", () => {
     }
   });
 
-  it("registers an identity-ignore region for later screen proofs", async () => {
+  it("registers an identity-ignore region for this checkpoint's screen proofs", async () => {
     const owner = job();
     const runtime: RecipeStepContext["runtime"] = {};
     await runWithTargetContext({ kind: "browser", platform: "browser", targetId: "grok-web" }, () =>
@@ -205,7 +205,7 @@ describe("daily QA recipe steps", () => {
       ),
     );
     assert.deepEqual(runtime?.identityIgnoreRegions, [
-      { x: 80, y: 180, width: 900, height: 1400, name: "reply body" },
+      { x: 80, y: 180, width: 900, height: 1400, name: "reply body", frameIndex: 0 },
     ]);
     assert.equal(
       owner.artifacts.some((item) => item.kind === "identity-ignore"),

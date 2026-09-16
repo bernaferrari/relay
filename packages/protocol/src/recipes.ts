@@ -394,7 +394,8 @@ export type RecipeStep = RecipeStepMetadata &
          * identity while their body content changes between executions. */
         observations?: ScreenIdentityObservation[];
         /** Authored dynamic regions copied from the destination screen so
-         * identity proofs and visual baselines compare chrome only. */
+         * identity proofs omit clocks and other volatile chrome. Visual
+         * compare uses VisualComparisonPolicy, not these. */
         ignoreRegions?: Array<{
           x: number;
           y: number;
@@ -488,8 +489,9 @@ export type RecipeStep = RecipeStepMetadata &
         region?: { x: number; y: number; width: number; height: number };
       }
     | {
-        /** Exclude this viewport rectangle from later screen-identity proofs
-         * so a changing reply body cannot re-key the same conversation.
+        /** Exclude this viewport rectangle from this checkpoint's
+         * screen-identity proofs so a changing reply body cannot re-key the
+         * same conversation. Later checkpoints must re-author the ignore.
          * Not a capture-review mask and not a visual-baseline exclusion unless
          * a VisualComparisonPolicy region says so. */
         kind: "identity-ignore";

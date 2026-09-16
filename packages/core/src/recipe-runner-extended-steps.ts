@@ -141,11 +141,15 @@ export async function runSemanticScrollStep(
   let repeated = 0;
   for (let attempt = 0; attempt <= maxAttempts; attempt += 1) {
     await cooperativeCheckpoint();
+    const untilScope = {
+      frameIndex: ctx.job?.frames?.length ?? 0,
+      screenId: step.until.screenId,
+    };
     const observed = observeScreenIdentity(
       await snapshot(device),
-      recipeScreenIdentityOptions(ctx),
+      recipeScreenIdentityOptions(ctx, undefined, untilScope),
     );
-    const untilOptions = recipeScreenIdentityOptions(ctx);
+    const untilOptions = recipeScreenIdentityOptions(ctx, undefined, untilScope);
     const untilExpected = expectedScreenFingerprints(step.until, untilOptions);
     const untilObservations = reobserveScreenIdentities(step.until.observations, untilOptions);
     const untilCompare = untilObservations.length

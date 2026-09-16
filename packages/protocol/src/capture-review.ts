@@ -199,6 +199,7 @@ export type CaptureReviewItem = {
   masks?: CaptureReviewMask[];
   decidedAt?: number;
   decidedBy?: CaptureReviewActor;
+  note?: string;
 };
 
 export type CaptureReviewDecision = {
@@ -480,6 +481,7 @@ function parseMask(value: unknown): CaptureReviewMask | undefined {
     return undefined;
   }
   if (width <= 0 || height <= 0) return undefined;
+  if (text(payload.kind) === "identity-ignore") return undefined;
   return {
     x,
     y,
@@ -1006,6 +1008,7 @@ function overlayDecision(
     status: captureReviewStatusForAction(match.action),
     decidedAt: match.decidedAt,
     decidedBy: match.decidedBy,
+    ...(match.note ? { note: match.note } : {}),
   };
 }
 

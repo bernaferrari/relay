@@ -16,7 +16,11 @@ import { pressKey, pressLabel, scrollUp, sleep, snapshot, type SnapshotNode } fr
 import { now } from "./events.js";
 import { recordFrameObservation } from "./frame-observation.js";
 import { OPTIONAL_TREE_BUDGET_MS, withOptionalTreeBudget } from "./optional-tree-budget.js";
-import type { FreshDeviceObservation, RecipeStepContext } from "./recipe-runner-context.js";
+import type {
+  FreshDeviceObservation,
+  IdentityIgnoreObservation,
+  RecipeStepContext,
+} from "./recipe-runner-context.js";
 import {
   currentVerifiedScreen,
   markNavigationUnknown,
@@ -74,12 +78,26 @@ import {
 const DEFAULT_EXPECT_TIMEOUT_MS = 5_000;
 const MAX_WAIT_MS = 15 * 60 * 1_000;
 
+function expectScreenIdentityScope(
+  ctx: RecipeStepContext,
+  step: Extract<RecipeStep, { kind: "expect-screen" }>,
+): IdentityIgnoreObservation {
+  return {
+    screenId: step.screenId,
+    frameIndex: ctx.job?.frames?.length ?? 0,
+    ...(step.id ? { stepId: step.id, checkpointId: step.id } : {}),
+  };
+}
+
 function observeStepIdentity(
   nodes: readonly SnapshotNode[],
   ctx: RecipeStepContext,
-  extra?: Extract<RecipeStep, { kind: "expect-screen" }>["ignoreRegions"],
+  step: Extract<RecipeStep, { kind: "expect-screen" }>,
 ) {
-  return observeScreenIdentity(nodes, recipeScreenIdentityOptions(ctx, extra));
+  return observeScreenIdentity(
+    nodes,
+    recipeScreenIdentityOptions(ctx, step.ignoreRegions, expectScreenIdentityScope(ctx, step)),
+  );
 }
 
 function combineCellChildLaneId(
@@ -543,8 +561,13 @@ export async function runExpectScreenStep(
           kind: "identity-ignore",
           region: { x: region.x, y: region.y, width: region.width, height: region.height },
           ...(region.name ? { name: region.name } : {}),
+          ...(step.id ? { id: step.id } : {}),
         },
         ctx,
+        {
+          screenId: step.screenId,
+          ...(step.id ? { stepId: step.id, checkpointId: step.id } : {}),
+        },
       );
     }
   }
@@ -555,11 +578,11 @@ export async function runExpectScreenStep(
   }
   const expected = expectedScreenFingerprints(
     step,
-    recipeScreenIdentityOptions(ctx, step.ignoreRegions),
+    recipeScreenIdentityOptions(ctx, step.ignoreRegions, expectScreenIdentityScope(ctx, step)),
   );
   const hostedObservations = reobserveScreenIdentities(
     step.observations,
-    recipeScreenIdentityOptions(ctx, step.ignoreRegions),
+    recipeScreenIdentityOptions(ctx, step.ignoreRegions, expectScreenIdentityScope(ctx, step)),
   );
   const compareObservations = hostedObservations.length
     ? hostedObservations
@@ -618,7 +641,7 @@ export async function runExpectScreenStep(
     const observedAt = attempt.observedAt;
     const chrome = describeSnapshotChrome(nodes);
     observedTitle = chrome.header ?? chrome.app ?? "unknown";
-    const observed = observeStepIdentity(nodes, ctx, step.ignoreRegions);
+    const observed = observeStepIdentity(nodes, ctx, step);
     const semanticMatch = compareObservations.some(
       (observation) => compareScreenIdentity(observed, observation).decision === "match",
     );
@@ -832,7 +855,7 @@ export async function runExpectScreenStep(
   }
   if (verifiedNodes && ctx.runtime) {
     if (verifiedScreenshot) {
-      const observed = observeStepIdentity(verifiedNodes, ctx, step.ignoreRegions);
+      const observed = observeStepIdentity(verifiedNodes, ctx, step);
       const visualFingerprint =
         verifiedScreenshot.screenMatch?.visualFingerprint ??
         observeVisualScreenFingerprint(Buffer.from(verifiedScreenshot.base64, "base64"));
@@ -864,7 +887,7 @@ export async function runExpectScreenStep(
       semanticNodes: verifiedNodes,
       includeScreenMatch: true,
     }).catch(() => undefined);
-    const observed = observeStepIdentity(verifiedNodes, ctx, step.ignoreRegions);
+    const observed = observeStepIdentity(verifiedNodes, ctx, step);
     const capturedAt = now();
     ctx.job.artifacts.push({
       kind: "campaign-repair-checkpoint-proof",

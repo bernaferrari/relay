@@ -152,9 +152,19 @@ export async function runJudgeConsensus(
 export function runIdentityIgnoreStep(
   step: Extract<RecipeStep, { kind: "identity-ignore" }>,
   ctx: RecipeStepContext,
+  bind?: { stepId?: string; screenId?: string; checkpointId?: string },
 ): void {
   if (!ctx.runtime) throw new Error("identity-ignore: recipe runtime is required");
-  const region = { ...step.region, ...(step.name ? { name: step.name } : {}) };
+  const frameIndex = ctx.job?.frames?.length ?? 0;
+  const region = {
+    ...step.region,
+    ...(step.name ? { name: step.name } : {}),
+    ...(step.id ? { authoredStepId: step.id } : {}),
+    frameIndex,
+    ...(bind?.stepId ? { stepId: bind.stepId } : {}),
+    ...(bind?.screenId ? { screenId: bind.screenId } : {}),
+    ...(bind?.checkpointId ? { checkpointId: bind.checkpointId } : {}),
+  };
   ctx.runtime.identityIgnoreRegions = [...(ctx.runtime.identityIgnoreRegions ?? []), region];
   (ctx.job?.artifacts ?? ctx.artifacts)?.push({
     kind: "identity-ignore",
@@ -162,7 +172,6 @@ export function runIdentityIgnoreStep(
     data: {
       ...region,
       // Provenance for the identity step. Not a visual exclusion or review mask.
-      frameIndex: ctx.job?.frames?.length ?? 0,
     },
   });
   ctx.log(

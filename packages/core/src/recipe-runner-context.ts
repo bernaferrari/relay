@@ -11,6 +11,17 @@ import type { TestJob } from "./session.js";
 import type { AppIdentityPolicy } from "./app-identity-policy.js";
 import { identityPolicyForTarget } from "./app-identity-policy.js";
 import type { ResponseBoundary } from "./recipe-response-boundary.js";
+import {
+  identityIgnoreRegionsForObservation,
+  type IdentityIgnoreObservation,
+  type RuntimeIdentityIgnoreRegion,
+} from "./recipe-identity-ignore-scope.js";
+
+export type {
+  IdentityIgnoreObservation,
+  RuntimeIdentityIgnoreRegion,
+} from "./recipe-identity-ignore-scope.js";
+export { identityIgnoreRegionsForObservation } from "./recipe-identity-ignore-scope.js";
 
 export type FreshDeviceObservation = {
   nodes?: SnapshotNode[];
@@ -69,14 +80,9 @@ export type RecipeRuntimeState = {
    * Destructive setup effects are firewalled after this boundary, including
    * when they are hidden inside reusable modules or graph routines. */
   campaignCoverageStarted?: boolean;
-  /** Run-local rectangles excluded from later screen-identity proofs. */
-  identityIgnoreRegions?: Array<{
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    name?: string;
-  }>;
+  /** Checkpoint-scoped rectangles excluded from this identity proof.
+   * Later checkpoints do not inherit them unless they re-author the ignore. */
+  identityIgnoreRegions?: RuntimeIdentityIgnoreRegion[];
   /** Reviewed App identity pack. Generic runs omit grok.com heuristics. */
   identityPolicy?: AppIdentityPolicy;
   /** Compiled dest-end coverage recipes. P3.1 primitives may live here. */
@@ -286,6 +292,7 @@ function appMapIdFromJob(job?: TestJob): string | undefined {
 export function recipeScreenIdentityOptions(
   ctx: RecipeStepContext,
   extra?: RecipeRuntimeState["identityIgnoreRegions"],
+  observation?: IdentityIgnoreObservation,
 ): {
   ignoreRegions: NonNullable<RecipeRuntimeState["identityIgnoreRegions"]>;
   policy?: AppIdentityPolicy;
@@ -296,8 +303,19 @@ export function recipeScreenIdentityOptions(
       browserTargetId: ctx.job?.browserTargetId,
       appMapId: appMapIdFromJob(ctx.job),
     });
+  const scoped = identityIgnoreRegionsForObservation({
+    regions: ctx.runtime?.identityIgnoreRegions ?? [],
+    extra,
+    observation: {
+      frameIndex: observation?.frameIndex ?? ctx.job?.frames?.length ?? 0,
+      ...(observation?.stepId ? { stepId: observation.stepId } : {}),
+      ...(observation?.screenId ? { screenId: observation.screenId } : {}),
+      ...(observation?.checkpointId ? { checkpointId: observation.checkpointId } : {}),
+    },
+  });
+  if (ctx.runtime) ctx.runtime.identityIgnoreRegions = scoped.next;
   return {
-    ignoreRegions: [...(ctx.runtime?.identityIgnoreRegions ?? []), ...(extra ?? [])],
+    ignoreRegions: scoped.applied,
     ...(policy ? { policy } : {}),
   };
 }
