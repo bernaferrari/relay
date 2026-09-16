@@ -1045,6 +1045,43 @@ test("coverage:transition unsigned Settings waits Light dest chrome and does not
   assert.equal(steps[2]?.when, undefined);
 });
 
+test("dest-end leftover skip keeps open-sidebar chrome when Settings unique wait-for follows", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.actions = [
+    {
+      id: "settings-peek",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { identifier: "composer" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { identifier: "sidebar.open" } },
+        { kind: "wait-for", target: { identifier: "sidebar.settings" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { identifier: "sidebar.settings" } },
+        { kind: "wait-for", target: { identifier: "toolbar.close" }, timeoutMs: 8_000 },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  const sidebarWhen = { target: { identifier: "sidebar.settings" }, condition: "absent" as const };
+  assert.deepEqual(
+    steps.map((step) => `${step.kind}:${step.target?.identifier ?? ""}`),
+    [
+      "wait-for:composer",
+      "tap:sidebar.open",
+      "wait-for:sidebar.settings",
+      "tap:sidebar.settings",
+      "wait-for:toolbar.close",
+    ],
+  );
+  assert.deepEqual(steps[0]?.when, sidebarWhen);
+  assert.deepEqual(steps[1]?.when, sidebarWhen);
+  assert.equal(steps[2]?.when, undefined);
+  assert.equal(steps[3]?.when, undefined);
+  assert.equal(steps[4]?.when, undefined);
+});
+
 test("dest-end leftover skip uses later wait-for dest chrome not a Settings label tap", () => {
   const map = fixture();
   map.connections["open-home"]!.destination = { kind: "end" };

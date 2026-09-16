@@ -272,8 +272,42 @@ function lastRequiredWaitForIndex(
   return -1;
 }
 
-/** Dest-end dest wait-for: leftover skip dest chrome first, then last required
- * wait-for. Leftover Close/Back after this index is leftover dismiss, not dest. */
+function destEndLeftoverDismissTapIndex(
+  steps: readonly RecipeStep[],
+  start: number,
+  end: number,
+): number {
+  for (let index = start; index < end; index += 1) {
+    const step = steps[index];
+    if (step?.kind !== "tap") continue;
+    const label = step.target.label?.trim().toLowerCase();
+    if (label === "close" || label === "back") return index;
+  }
+  return -1;
+}
+
+function destEndRequiredChromeWaitForIndex(
+  steps: readonly RecipeStep[],
+  origin: Extract<RecipeStep, { kind: "wait-for" }>,
+  opener: Extract<RecipeStep, { kind: "tap" }>,
+  start: number,
+  end: number,
+  mode: "first" | "last",
+): number {
+  let last = -1;
+  for (let index = start; index < end; index += 1) {
+    const step = steps[index];
+    if (step?.kind !== "wait-for" || step.optional === true) continue;
+    if (semanticTargetMatches(step.target, origin.target)) continue;
+    if (semanticTargetMatches(step.target, opener.target)) continue;
+    if (mode === "first") return index;
+    last = index;
+  }
+  return last;
+}
+
+/** Dest-end leftover skip dest chrome: first unique wait-for after the opener.
+ * Overlay waits (open sidebar) skip the opener without becoming dest-phase. */
 export function destEndDestinationWaitForIndex(
   steps: readonly RecipeStep[],
   start = 0,
@@ -287,13 +321,15 @@ export function destEndDestinationWaitForIndex(
     const origin = steps[originIndex];
     const opener = steps[originIndex + 1];
     if (origin?.kind === "wait-for" && opener?.kind === "tap") {
-      for (let index = originIndex + 2; index < end; index += 1) {
-        const later = destEndOpenChromeTarget(steps[index]!);
-        if (!later) continue;
-        if (semanticTargetMatches(later, origin.target)) continue;
-        if (semanticTargetMatches(later, opener.target)) continue;
-        return index;
-      }
+      const firstChrome = destEndRequiredChromeWaitForIndex(
+        steps,
+        origin,
+        opener,
+        originIndex + 2,
+        end,
+        "first",
+      );
+      if (firstChrome >= 0) return firstChrome;
       for (let index = originIndex + 2; index < end; index += 1) {
         const later = destEndOpenFallbackTarget(steps[index]!);
         if (!later) continue;
@@ -304,6 +340,37 @@ export function destEndDestinationWaitForIndex(
     }
   }
   return lastRequiredWaitForIndex(steps, start, end);
+}
+
+/** Dest-end dest-phase wait-for: last required dest chrome after the opener,
+ * before leftover Close/Back. Open-sidebar leftover is not dest. */
+export function destEndCaptureWaitForIndex(
+  steps: readonly RecipeStep[],
+  start = 0,
+  end = steps.length,
+): number {
+  const originIndex = steps.findIndex(
+    (step, index) =>
+      index >= start && index < end && step.kind === "wait-for" && step.optional !== true,
+  );
+  if (originIndex >= 0 && originIndex + 1 < end) {
+    const origin = steps[originIndex];
+    const opener = steps[originIndex + 1];
+    if (origin?.kind === "wait-for" && opener?.kind === "tap") {
+      const leftoverDismiss = destEndLeftoverDismissTapIndex(steps, originIndex + 2, end);
+      const destEnd = leftoverDismiss >= 0 ? leftoverDismiss : end;
+      const lastChrome = destEndRequiredChromeWaitForIndex(
+        steps,
+        origin,
+        opener,
+        originIndex + 2,
+        destEnd,
+        "last",
+      );
+      if (lastChrome >= 0) return lastChrome;
+    }
+  }
+  return destEndDestinationWaitForIndex(steps, start, end);
 }
 
 /** Dest-end wait-for origin + opener tap SOS when leftover is already the

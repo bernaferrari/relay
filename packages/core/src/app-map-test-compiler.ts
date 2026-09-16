@@ -15,7 +15,7 @@ import {
   compileAppMapConnection,
   compileAppMapFlow,
   compileAppMapRoutine,
-  destEndDestinationWaitForIndex,
+  destEndCaptureWaitForIndex,
 } from "./app-map-compiler.js";
 import {
   compiledFlowGraphFromLiveCheckpoint,
@@ -72,7 +72,7 @@ function insertDestEndCaptureReviewScreenshot(
   recipe: { steps: RecipeStep[] },
   screenshot: RecipeStep,
 ): boolean {
-  const destIndex = destEndDestinationWaitForIndex(recipe.steps);
+  const destIndex = destEndCaptureWaitForIndex(recipe.steps);
   if (destIndex < 0) return false;
   recipe.steps.splice(destIndex + 1, 0, screenshot);
   return true;
