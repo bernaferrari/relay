@@ -56,6 +56,7 @@ export type PlanCaptureReviewSelection = {
   captureId: string;
   imageSha256?: string;
   action?: CaptureReviewAction;
+  note?: string;
 };
 
 export function summarizePlanCaptureReview(

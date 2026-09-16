@@ -81,6 +81,7 @@ test("Plan capture review lists the queue and bulk-accepts exact items only", ()
         runId: "run-8",
         captureId: "frames/001.png::aaa",
         imageSha256: "aaa",
+        note: "Save is visible",
       },
     ],
     pending: true,

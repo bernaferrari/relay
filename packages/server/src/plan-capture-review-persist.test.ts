@@ -4,7 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
-import { persistRun, readPersistedRun, resetControlDatabaseCache, type TestJob } from "@relay/core";
+import {
+  getVisualBaseline,
+  persistRun,
+  readPersistedRun,
+  resetControlDatabaseCache,
+  runsRoot,
+  type TestJob,
+} from "@relay/core";
 import {
   RC23_SCREENSHOT_FIRST_CAPTURED_PENDING,
   captureReviewSlotId,
@@ -54,6 +61,7 @@ async function persistFreezeSlot(input: {
   slot: Rc23ScreenshotFirstSlot;
   caseIndex: number;
   at: number;
+  batchId?: string;
 }): Promise<string> {
   const hit = RC23_SCREENSHOT_FIRST_CAPTURED_PENDING.find(
     (item) =>
@@ -129,7 +137,7 @@ async function persistFreezeSlot(input: {
     },
     resolvedInputs: { locale: `${input.slot.platform}-${input.slot.checkpointId}` },
     evidencePolicy: { schemaVersion: 1, sensitive: {} },
-    batchId: freezeBatchId,
+    batchId: input.batchId ?? freezeBatchId,
     caseIndex: input.caseIndex,
     caseCount: 30,
   } as unknown as TestJob);
@@ -295,6 +303,178 @@ test(
       );
       assert.equal(imagine?.outcome, "harness-failure");
       assert.equal(imagine?.captureReviews?.length ?? 0, 0);
+    } finally {
+      await server?.close().catch(() => undefined);
+      resetControlDatabaseCache();
+      if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+      else process.env.RELAY_RUNS_DIR = previousRuns;
+      if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+      else process.env.RELAY_STATE_DIR = previousState;
+      if (previousWorkspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+      else process.env.RELAY_WORKSPACE_ROOT = previousWorkspace;
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "Plan capture-review resumes a 30-item bulk accept without losing notes or overwriting reviewers",
+  { timeout: 90_000 },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "relay-rc23-capture-bulk-"));
+    const previousRuns = process.env.RELAY_RUNS_DIR;
+    const previousState = process.env.RELAY_STATE_DIR;
+    const previousWorkspace = process.env.RELAY_WORKSPACE_ROOT;
+    process.env.RELAY_RUNS_DIR = join(root, "runs");
+    process.env.RELAY_STATE_DIR = join(root, "state");
+    process.env.RELAY_WORKSPACE_ROOT = root;
+    resetControlDatabaseCache();
+    const batchId = `${freezeBatchId}-bulk`;
+    let server: Awaited<ReturnType<typeof startServer>> | undefined;
+    try {
+      const at = Date.now();
+      const slots = materializeRc23ScreenshotFirstSlots();
+      assert.equal(slots.length, 30);
+      for (const [caseIndex, slot] of slots.entries()) {
+        await persistFreezeSlot({ slot, caseIndex, at, batchId });
+      }
+
+      server = await startServer({ host: "127.0.0.1", port: 0 });
+      const maria = client(server.port, "human:maria", "human");
+      const listed = await maria.invoke("job.combine.capture.review", { batchId });
+      const queue = listed.queue as PlanCaptureReviewQueue;
+      assertFreezeCounts(queue.summary);
+      const pending = queue.items.filter((item) => item.status === "pending");
+      const blocked = queue.items.filter((item) => item.blocked);
+      assert.equal(pending.length, 29);
+      assert.equal(blocked.length, 1);
+      const first = pending[0]!;
+      const second = pending[1]!;
+      const note = "Save overlaps seats";
+      const failed = await maria.invoke("job.combine.capture.review.apply", {
+        batchId,
+        action: "accept",
+        items: [
+          {
+            runId: first.runId,
+            captureId: first.captureId,
+            imageSha256: first.imageSha256,
+            note,
+          },
+          {
+            runId: second.runId,
+            captureId: second.captureId,
+            imageSha256: "stale",
+          },
+        ],
+      });
+      assert.deepEqual(
+        failed.results.map((result) => result.status),
+        ["applied", "conflict"],
+      );
+      assert.equal(failed.queue.summary.accepted, 1);
+      assert.equal(failed.queue.summary.pending, 28);
+      assert.equal(
+        failed.queue.items.find((item) => item.captureId === first.captureId)?.note,
+        note,
+      );
+
+      await server.close();
+      resetControlDatabaseCache();
+      server = await startServer({ host: "127.0.0.1", port: 0 });
+      const afterFail = await client(server.port, "human:maria", "human").invoke(
+        "job.combine.capture.review",
+        { batchId },
+      );
+      const resumedQueue = afterFail.queue as PlanCaptureReviewQueue;
+      assert.equal(resumedQueue.summary.accepted, 1);
+      assert.equal(resumedQueue.summary.pending, 28);
+      assert.equal(resumedQueue.summary.blocked, 1);
+      assert.equal(resumedQueue.summary.planned, 30);
+      assert.equal(
+        resumedQueue.items.find((item) => item.captureId === first.captureId)?.note,
+        note,
+      );
+      assert.equal(resumedQueue.items.length, 30);
+      const resumed = await client(server.port, "human:maria", "human").invoke(
+        "job.combine.capture.review.apply",
+        {
+          batchId,
+          action: "accept",
+          items: resumedQueue.items.map((item) => ({
+            runId: item.runId,
+            captureId: item.captureId,
+            ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
+          })),
+        },
+      );
+      assert.equal(resumed.results.length, 30);
+      assert.equal(resumed.results.filter((result) => result.status === "applied").length, 29);
+      assert.equal(resumed.results.filter((result) => result.status === "missing").length, 1);
+      assert.equal(resumed.queue.summary.accepted, 29);
+      assert.equal(resumed.queue.summary.pending, 0);
+      assert.equal(resumed.queue.summary.blocked, 1);
+      assert.equal(
+        resumed.queue.items.find((item) => item.captureId === first.captureId)?.note,
+        note,
+      );
+      assert.equal(
+        resumed.queue.items.find((item) => item.captureId === first.captureId)?.decidedBy?.id,
+        "human:maria",
+      );
+
+      const overwrite = await client(server.port, "human:alex", "human").invoke(
+        "job.combine.capture.review.apply",
+        {
+          batchId,
+          action: "report-issue",
+          items: [
+            {
+              runId: first.runId,
+              captureId: first.captureId,
+              imageSha256: first.imageSha256,
+              note: "alex should not win",
+            },
+          ],
+        },
+      );
+      assert.equal(overwrite.results[0]?.status, "conflict");
+      assert.equal(
+        overwrite.queue.items.find((item) => item.captureId === first.captureId)?.note,
+        note,
+      );
+      assert.equal(
+        overwrite.queue.items.find((item) => item.captureId === first.captureId)?.decidedBy?.id,
+        "human:maria",
+      );
+
+      await server.close();
+      resetControlDatabaseCache();
+      server = await startServer({ host: "127.0.0.1", port: 0 });
+      const afterRestart = await client(server.port, "human:maria", "human").invoke(
+        "job.combine.capture.review",
+        { batchId },
+      );
+      assert.equal(afterRestart.queue.summary.accepted, 29);
+      assert.equal(afterRestart.queue.summary.pending, 0);
+      assert.equal(afterRestart.queue.summary.blocked, 1);
+      assert.equal(afterRestart.queue.summary.planned, 30);
+      assert.equal(
+        afterRestart.queue.items.find((item) => item.captureId === first.captureId)?.note,
+        note,
+      );
+      const persistedFirst = await readPersistedRun(first.runId);
+      assert.equal(persistedFirst?.outcome, "passed");
+      assert.equal(persistedFirst?.captureReviews?.[0]?.note, note);
+      assert.equal(persistedFirst?.captureReviews?.[0]?.decidedBy.id, "human:maria");
+      const imagine = await readPersistedRun(
+        freezeRunId(
+          slots.find((slot) => slot.checkpointId === "imagine" && slot.platform === "ios")!,
+        ),
+      );
+      assert.equal(imagine?.outcome, "harness-failure");
+      assert.equal(imagine?.captureReviews?.length ?? 0, 0);
+      assert.equal(await getVisualBaseline(runsRoot(), "rc23-screenshot-first", "grok-com"), null);
     } finally {
       await server?.close().catch(() => undefined);
       resetControlDatabaseCache();

@@ -124,6 +124,7 @@ export const executionOperationSchemas = {
               captureId: identifier("Capture review identifier"),
               imageSha256: z.string().optional(),
               action: z.enum(CAPTURE_REVIEW_ACTIONS).optional(),
+              note: z.string().max(2_000).optional(),
             })
             .strict(),
         )

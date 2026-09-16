@@ -353,6 +353,152 @@ test("Plan dest-phase identity is not overwritten by leftover Close/Back", () =>
   assert.equal(queue.summary.missing, 0);
 });
 
+test("bulk Looks correct keeps notes when a later selected image conflicts", () => {
+  const member = run("run-member", "frames/001.png", "aaa");
+  const admin = run("run-admin", "frames/002.png", "bbb");
+  const memberId = captureReviewId({
+    caption: "Settings",
+    framePath: "frames/001.png",
+    imageSha256: "aaa",
+  });
+  const adminId = captureReviewId({
+    caption: "Settings",
+    framePath: "frames/002.png",
+    imageSha256: "bbb",
+  });
+  const applied = applyPlanCaptureReviewDecisions([member, admin], {
+    action: "accept",
+    actor: { id: "human:maria", kind: "human" },
+    items: [
+      {
+        runId: "run-member",
+        captureId: memberId,
+        imageSha256: "aaa",
+        note: "Save is visible",
+      },
+      { runId: "run-admin", captureId: adminId, imageSha256: "stale" },
+    ],
+  });
+  assert.deepEqual(
+    applied.results.map((result) => result.status),
+    ["applied", "conflict"],
+  );
+  assert.equal(applied.queue.summary.accepted, 1);
+  assert.equal(applied.queue.summary.pending, 1);
+  assert.equal(
+    applied.runs.find((item) => item.runId === "run-member")?.captureReviews[0]?.note,
+    "Save is visible",
+  );
+  assert.equal(applied.runs.find((item) => item.runId === "run-admin")?.captureReviews.length, 0);
+});
+
+test("a second Plan reviewer cannot overwrite the first reviewer's saved decision", () => {
+  const member = run("run-member", "frames/001.png", "aaa", { account: "Member" });
+  const admin = run("run-admin", "frames/002.png", "bbb", { account: "Admin" });
+  const memberId = captureReviewId({
+    caption: "Settings",
+    framePath: "frames/001.png",
+    imageSha256: "aaa",
+  });
+  const adminId = captureReviewId({
+    caption: "Settings",
+    framePath: "frames/002.png",
+    imageSha256: "bbb",
+  });
+  const first = applyPlanCaptureReviewDecisions([member, admin], {
+    action: "accept",
+    actor: { id: "human:maria", kind: "human" },
+    items: [
+      {
+        runId: "run-member",
+        captureId: memberId,
+        imageSha256: "aaa",
+        note: "Member Save is visible",
+      },
+    ],
+  });
+  const second = applyPlanCaptureReviewDecisions(
+    [{ ...member, captureReviews: first.runs[0]?.captureReviews }, admin],
+    {
+      action: "report-issue",
+      actor: { id: "human:alex", kind: "human" },
+      items: [
+        { runId: "run-member", captureId: memberId, imageSha256: "aaa" },
+        {
+          runId: "run-admin",
+          captureId: adminId,
+          imageSha256: "bbb",
+          note: "Admin seats stay 99",
+        },
+      ],
+    },
+  );
+  assert.deepEqual(
+    second.results.map((result) => result.status),
+    ["conflict", "applied"],
+  );
+  assert.equal(
+    second.runs.find((item) => item.runId === "run-member")?.captureReviews[0]?.decidedBy.id,
+    "human:maria",
+  );
+  assert.equal(
+    second.runs.find((item) => item.runId === "run-member")?.captureReviews[0]?.note,
+    "Member Save is visible",
+  );
+  assert.equal(
+    second.runs.find((item) => item.runId === "run-admin")?.captureReviews[0]?.decidedBy.id,
+    "human:alex",
+  );
+  assert.equal(second.queue.summary.accepted, 1);
+  assert.equal(second.queue.summary.issue, 1);
+});
+
+test("thirty explicitly selected Plan captures apply without waiting for more generation", () => {
+  const runs = Array.from({ length: 30 }, (_, index) => {
+    if (index === 29) {
+      return {
+        id: "run-imagine",
+        status: "blocked" as const,
+        outcome: "harness-failure" as const,
+        artifacts: [],
+        recipeSnapshot: {
+          steps: [
+            { id: "imagine", kind: "screenshot", caption: "Imagine", review: { mode: "later" } },
+          ],
+        },
+      };
+    }
+    return {
+      ...run(`run-${index}`, `frames/${String(index + 1).padStart(3, "0")}.png`, `sha-${index}`),
+      outcome: "passed" as const,
+    };
+  });
+  const queue = captureReviewQueueForPlan(runs);
+  assert.equal(queue.summary.planned, 30);
+  assert.equal(queue.summary.captured, 29);
+  assert.equal(queue.summary.blocked, 1);
+  const applied = applyPlanCaptureReviewDecisions(runs, {
+    action: "accept",
+    actor: { id: "human:maria", kind: "human" },
+    items: queue.items.map((item) => ({
+      runId: item.runId,
+      captureId: item.captureId,
+      ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
+    })),
+  });
+  assert.equal(applied.results.length, 30);
+  assert.equal(applied.results.filter((result) => result.status === "applied").length, 29);
+  assert.equal(applied.results.filter((result) => result.status === "missing").length, 1);
+  assert.equal(applied.queue.summary.accepted, 29);
+  assert.equal(applied.queue.summary.pending, 0);
+  assert.equal(applied.queue.summary.blocked, 1);
+  assert.equal(applied.queue.summary.planned, 30);
+  assert.equal(
+    applied.runs.find((item) => item.runId === "run-imagine")?.captureReviews.length ?? 0,
+    0,
+  );
+});
+
 test("unique Plan batch prefix selects the existing campaign", () => {
   assert.equal(
     resolveUniquePlanBatchId("d7eafb3c", ["d7eafb3c-4534-4027-8480-9d075ea4fb0f"]),

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,6 +7,7 @@ import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
 import {
   getVisualBaseline,
+  persistPersistedRun,
   persistRun,
   readPersistedRun,
   resetControlDatabaseCache,
@@ -16,7 +18,12 @@ import {
   SEEDED_MEMBER_CAPTURE_SETTINGS_PHASE,
   SEEDED_MEMBER_CAPTURE_STEP_ID,
   SEEDED_MEMBER_CAPTURE_TEST_ID,
+  SEEDED_MEMBER_DEFECT_SEATS,
+  SEEDED_MEMBER_SESSION_COOKIE,
   SEEDED_MEMBER_TARGET_ID,
+  listenSeededMemberApp,
+  mintSeededMemberSession,
+  seededMemberCaptureConfigurations,
   type TestJob,
 } from "@relay/core";
 import { captureReviewSlotId, formatCaptureReviewCoverageSummary } from "@relay/protocol";
@@ -343,6 +350,351 @@ test(
     } finally {
       await server?.close().catch(() => undefined);
       resetControlDatabaseCache();
+      if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+      else process.env.RELAY_RUNS_DIR = previousRuns;
+      if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+      else process.env.RELAY_STATE_DIR = previousState;
+      if (previousWorkspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+      else process.env.RELAY_WORKSPACE_ROOT = previousWorkspace;
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "eight seeded capture configurations persist through Relay review, restart, repair, and export",
+  { timeout: 90_000 },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "relay-seeded-eight-"));
+    const previousRuns = process.env.RELAY_RUNS_DIR;
+    const previousState = process.env.RELAY_STATE_DIR;
+    const previousWorkspace = process.env.RELAY_WORKSPACE_ROOT;
+    const previousKey = process.env.OPENROUTER_API_KEY;
+    process.env.RELAY_RUNS_DIR = join(root, "runs");
+    process.env.RELAY_STATE_DIR = join(root, "state");
+    process.env.RELAY_WORKSPACE_ROOT = root;
+    delete process.env.OPENROUTER_API_KEY;
+    resetControlDatabaseCache();
+    const eightBatchId = "seeded-member-eight-config";
+    const { server: fixture, url, app } = await listenSeededMemberApp({ defect: true });
+    let server: Awaited<ReturnType<typeof startServer>> | undefined;
+    try {
+      const cells = seededMemberCaptureConfigurations();
+      assert.equal(cells.length, 8);
+      const at = Date.now();
+      const runIds: string[] = [];
+      for (const [index, cell] of cells.entries()) {
+        const token = mintSeededMemberSession(cell.role);
+        const settings = await fetch(new URL("/settings", url), {
+          headers: {
+            cookie: `${SEEDED_MEMBER_SESSION_COOKIE}=${token}`,
+            "accept-language": cell.locale.tag,
+          },
+        });
+        const html = await settings.text();
+        assert.match(html, new RegExp(`id="session-role">${cell.role}`));
+        assert.match(html, /id="save-settings"/);
+        assert.match(html, /layout-defect/);
+        if (cell.locale.id === "ar") {
+          assert.match(html, /dir="rtl"/);
+        }
+        if (cell.role === "member") {
+          assert.match(html, new RegExp(`id="team-seats"[^>]*>${SEEDED_MEMBER_DEFECT_SEATS}`));
+        }
+        const imageSha256 = createHash("sha256")
+          .update(html)
+          .update(`\n${cell.viewport.width}x${cell.viewport.height}`)
+          .digest("hex");
+        const id = `eight-${String(index).padStart(2, "0")}`;
+        runIds.push(id);
+        const slot = {
+          checkpointId: SEEDED_MEMBER_CAPTURE_STEP_ID,
+          stepId: SEEDED_MEMBER_CAPTURE_STEP_ID,
+          attempt: 1,
+          caption: cell.caption,
+          lookFor: SEEDED_MEMBER_CAPTURE_LOOK_FOR,
+          configuration: {
+            account: cell.role === "member" ? "Member" : "Admin",
+            viewport: `${cell.viewport.width}×${cell.viewport.height}`,
+            locale: cell.locale.tag,
+          },
+        };
+        await persistRun({
+          id,
+          projectId,
+          ownerId: "agent:cursor",
+          action: SEEDED_MEMBER_CAPTURE_TEST_ID,
+          recipeId: SEEDED_MEMBER_CAPTURE_TEST_ID,
+          title: cell.caption,
+          platform: "browser",
+          targetKind: "browser",
+          browserTargetId: SEEDED_MEMBER_TARGET_ID,
+          targetContext: {
+            kind: "browser",
+            platform: "browser",
+            targetId: SEEDED_MEMBER_TARGET_ID,
+          },
+          status: "ok",
+          outcome: "passed",
+          queuedAt: at,
+          startedAt: at,
+          finishedAt: at + 1,
+          attempts: 1,
+          logs: [],
+          steps: [],
+          frames: [],
+          glyphs: [],
+          kind: "Replay",
+          tone: "acc",
+          artifacts: [
+            {
+              kind: "app-map-test-execution-intent",
+              capturedAt: at,
+              data: { plan: { plannedSlots: [slot] } },
+            },
+            {
+              kind: "capture-review",
+              capturedAt: at,
+              data: {
+                caption: cell.caption,
+                lookFor: SEEDED_MEMBER_CAPTURE_LOOK_FOR,
+                framePath: `frames/${String(index + 1).padStart(3, "0")}.png`,
+                imageSha256,
+                checkpointId: SEEDED_MEMBER_CAPTURE_STEP_ID,
+                stepId: SEEDED_MEMBER_CAPTURE_STEP_ID,
+                attempt: 1,
+                configuration: slot.configuration,
+                slotId: captureReviewSlotId(slot),
+              },
+            },
+          ],
+          recipeSnapshot: {
+            id: SEEDED_MEMBER_CAPTURE_TEST_ID,
+            title: cell.caption,
+            source: "custom",
+            steps: [],
+            createdAt: at,
+            updatedAt: at,
+          },
+          resolvedInputs: { account: slot.configuration.account, locale: cell.locale.tag },
+          evidencePolicy: { schemaVersion: 1, sensitive: {} },
+          batchId: eightBatchId,
+          caseIndex: index,
+          caseCount: 8,
+        } as unknown as TestJob);
+      }
+
+      server = await startServer({ host: "127.0.0.1", port: 0 });
+      const agent = client(server.port, "agent:cursor", "agent");
+      const reviewer = client(server.port, "human:reviewer", "human");
+      const listed = await agent.invoke("job.combine.capture.review", { batchId: eightBatchId });
+      const queue = listed.queue as PlanCaptureReviewQueue;
+      assert.equal(queue.summary.planned, 8);
+      assert.equal(queue.summary.captured, 8);
+      assert.equal(queue.summary.pending, 8);
+      assert.equal(queue.summary.accepted, 0);
+      assert.equal(new Set(queue.items.map((item) => item.caption)).size, 8);
+      assert.equal(
+        queue.items.every((item) => item.lookFor === SEEDED_MEMBER_CAPTURE_LOOK_FOR),
+        true,
+      );
+      const memberDesktopEn = queue.items.find(
+        (item) =>
+          item.configuration?.account === "Member" &&
+          item.configuration?.viewport === "900×600" &&
+          item.configuration?.locale === "en-US",
+      );
+      assert.ok(memberDesktopEn);
+      await assert.rejects(
+        () =>
+          agent.invoke("job.combine.capture.review.apply", {
+            batchId: eightBatchId,
+            action: "accept",
+            items: [
+              {
+                runId: memberDesktopEn.runId,
+                captureId: memberDesktopEn.captureId,
+                imageSha256: memberDesktopEn.imageSha256,
+              },
+            ],
+          }),
+        isActorRequired,
+      );
+      const wrongAccount = await reviewer.invoke("job.combine.capture.review.apply", {
+        batchId: eightBatchId,
+        action: "accept",
+        account: "Admin",
+        items: [
+          {
+            runId: memberDesktopEn.runId,
+            captureId: memberDesktopEn.captureId,
+            imageSha256: memberDesktopEn.imageSha256,
+          },
+        ],
+      });
+      assert.equal(wrongAccount.results[0]?.status, "not-found");
+      assert.equal(wrongAccount.queue.summary.accepted, 0);
+      const stale = await reviewer.invoke("job.combine.capture.review.apply", {
+        batchId: eightBatchId,
+        action: "accept",
+        items: [
+          {
+            runId: memberDesktopEn.runId,
+            captureId: memberDesktopEn.captureId,
+            imageSha256: "stale",
+          },
+        ],
+      });
+      assert.equal(stale.results[0]?.status, "conflict");
+      const defectNote = "Save overlaps seats";
+      const reported = await reviewer.invoke("job.combine.capture.review.apply", {
+        batchId: eightBatchId,
+        action: "report-issue",
+        items: [
+          {
+            runId: memberDesktopEn.runId,
+            captureId: memberDesktopEn.captureId,
+            imageSha256: memberDesktopEn.imageSha256,
+            note: defectNote,
+          },
+        ],
+      });
+      assert.equal(reported.results[0]?.status, "applied");
+      assert.equal(reported.queue.summary.issue, 1);
+      assert.equal(reported.queue.summary.pending, 7);
+      assert.equal(
+        reported.queue.items.find((item) => item.captureId === memberDesktopEn.captureId)?.note,
+        defectNote,
+      );
+
+      await server.close();
+      resetControlDatabaseCache();
+      server = await startServer({ host: "127.0.0.1", port: 0 });
+      const afterIssue = await client(server.port, "human:reviewer", "human").invoke(
+        "job.combine.capture.review",
+        { batchId: eightBatchId },
+      );
+      assert.equal(afterIssue.queue.summary.issue, 1);
+      assert.equal(
+        afterIssue.queue.items.find((item) => item.captureId === memberDesktopEn.captureId)?.note,
+        defectNote,
+      );
+      const persistedIssue = await readPersistedRun(memberDesktopEn.runId);
+      assert.equal(persistedIssue?.outcome, "passed");
+      assert.equal(persistedIssue?.captureReviews?.[0]?.note, defectNote);
+
+      await server.close();
+      resetControlDatabaseCache();
+      app.setDefect(false);
+      const repairedHtml = await (
+        await fetch(new URL("/settings", url), {
+          headers: {
+            cookie: `${SEEDED_MEMBER_SESSION_COOKIE}=${mintSeededMemberSession("member")}`,
+            "accept-language": "en-US",
+          },
+        })
+      ).text();
+      assert.doesNotMatch(repairedHtml, /<body class="layout-defect">/);
+      const repairedSha = createHash("sha256")
+        .update(repairedHtml)
+        .update("\n900x600")
+        .digest("hex");
+      assert.notEqual(repairedSha, memberDesktopEn.imageSha256);
+      const latest = await readPersistedRun(memberDesktopEn.runId);
+      assert.ok(latest);
+      const recaptured = structuredClone(latest);
+      recaptured.artifacts = recaptured.artifacts.map((artifact) => {
+        if (artifact.kind !== "capture-review") return artifact;
+        const data = artifact.data as Record<string, unknown>;
+        return { ...artifact, data: { ...data, imageSha256: repairedSha } };
+      });
+      await persistPersistedRun(runsRoot(), latest, recaptured, "capture-review");
+
+      server = await startServer({ host: "127.0.0.1", port: 0 });
+      const afterRecapture = await client(server.port, "human:reviewer", "human").invoke(
+        "job.combine.capture.review",
+        { batchId: eightBatchId },
+      );
+      const repairedItem = afterRecapture.queue.items.find(
+        (item) => item.runId === memberDesktopEn.runId,
+      );
+      assert.ok(repairedItem);
+      assert.equal(repairedItem.status, "pending");
+      assert.equal(repairedItem.imageSha256, repairedSha);
+      assert.notEqual(repairedItem.captureId, memberDesktopEn.captureId);
+      const staleIdentity = await client(server.port, "human:reviewer", "human").invoke(
+        "job.combine.capture.review.apply",
+        {
+          batchId: eightBatchId,
+          action: "accept",
+          items: [
+            {
+              runId: repairedItem.runId,
+              captureId: repairedItem.captureId,
+              imageSha256: memberDesktopEn.imageSha256,
+            },
+          ],
+        },
+      );
+      assert.equal(staleIdentity.results[0]?.status, "conflict");
+      const accepted = await client(server.port, "human:reviewer", "human").invoke(
+        "job.combine.capture.review.apply",
+        {
+          batchId: eightBatchId,
+          action: "accept",
+          items: [
+            {
+              runId: repairedItem.runId,
+              captureId: repairedItem.captureId,
+              imageSha256: repairedSha,
+            },
+          ],
+        },
+      );
+      assert.equal(accepted.results[0]?.status, "applied");
+      assert.equal(accepted.queue.summary.accepted, 1);
+      assert.equal(accepted.queue.summary.pending, 7);
+      assert.equal(accepted.queue.summary.issue, 0);
+      assert.equal(
+        await getVisualBaseline(runsRoot(), SEEDED_MEMBER_CAPTURE_TEST_ID, SEEDED_MEMBER_TARGET_ID),
+        null,
+      );
+
+      await server.close();
+      resetControlDatabaseCache();
+      server = await startServer({ host: "127.0.0.1", port: 0 });
+      const afterAccept = await client(server.port, "human:reviewer", "human").invoke(
+        "job.combine.capture.review",
+        { batchId: eightBatchId },
+      );
+      assert.equal(afterAccept.queue.summary.accepted, 1);
+      assert.equal(afterAccept.queue.summary.pending, 7);
+      assert.equal(afterAccept.queue.summary.planned, 8);
+      const persistedRepaired = await readPersistedRun(memberDesktopEn.runId);
+      assert.equal(persistedRepaired?.outcome, "passed");
+      assert.equal(
+        persistedRepaired?.captureReviews?.find((item) => item.captureId === repairedItem.captureId)
+          ?.action,
+        "accept",
+      );
+      const exported = await client(server.port, "human:reviewer", "human").invoke(
+        "job.combine.export",
+        { batchId: eightBatchId },
+      );
+      const exportedHtml = await readFile(join(exported.rootDir, "index.html"), "utf8");
+      const coverage = formatCaptureReviewCoverageSummary(afterAccept.queue.summary);
+      assert.match(exportedHtml, new RegExp(coverage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"));
+      assert.doesNotMatch(exportedHtml, /runs passed/u);
+      assert.match(exportedHtml, /Looks correct does not approve a visual baseline/u);
+      assert.equal(runIds.length, 8);
+    } finally {
+      await server?.close().catch(() => undefined);
+      await new Promise<void>((resolve, reject) =>
+        fixture.close((error) => (error ? reject(error) : resolve())),
+      );
+      resetControlDatabaseCache();
+      if (previousKey === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = previousKey;
       if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
       else process.env.RELAY_RUNS_DIR = previousRuns;
       if (previousState === undefined) delete process.env.RELAY_STATE_DIR;

@@ -206,6 +206,7 @@ export function applyPlanCaptureReviewDecisions(
           action: selection.action ?? input.action,
           actor: input.actor,
           ...(selection.imageSha256 ? { imageSha256: selection.imageSha256 } : {}),
+          ...(selection.note ? { note: selection.note } : {}),
         },
       );
       reviewsByRun.set(run.id, applied.captureReviews);
@@ -255,16 +256,36 @@ export async function reviewPersistedPlanCaptures(
     filter?: PlanCaptureReviewFilter;
   },
 ): Promise<PlanCaptureReviewApplyResult> {
+  assertHumanCaptureReviewActor(
+    input.actor,
+    "A human must decide these screenshots",
+    "Open the Plan captures panel and ask a person to mark Looks correct, Report issue, or Need more evidence.",
+  );
   const resolved = await resolvePersistedPlanBatchId(batchId);
   const loaded = await listPersistedRuns(1_000, undefined, resolved);
-  const applied = applyPlanCaptureReviewDecisions(loaded, input);
-  const appliedIds = new Set(
-    applied.results.filter((result) => result.status === "applied").map((result) => result.runId),
-  );
-  for (const next of applied.runs) {
-    if (!appliedIds.has(next.runId)) continue;
-    const run = loaded.find((candidate) => candidate.id === next.runId);
-    if (!run) continue;
+  const results: Array<PlanCaptureReviewItemResult | undefined> = Array.from({
+    length: input.items.length,
+  });
+  const indexesByRun = new Map<string, number[]>();
+  for (const [index, selection] of input.items.entries()) {
+    const indexes = indexesByRun.get(selection.runId) ?? [];
+    indexes.push(index);
+    indexesByRun.set(selection.runId, indexes);
+  }
+  for (const [runId, indexes] of indexesByRun) {
+    const run = loaded.find((candidate) => candidate.id === runId);
+    if (!run) {
+      for (const index of indexes) {
+        const selection = input.items[index]!;
+        results[index] = {
+          runId: selection.runId,
+          captureId: selection.captureId,
+          status: "not-found",
+          error: "That screenshot is not in this Plan's review queue",
+        };
+      }
+      continue;
+    }
     await withRunWriteLock(run.dir, async () => {
       const latest = (await readCompletedPersistedRun(run.dir)) ?? run;
       latest.dir = run.dir;
@@ -275,15 +296,34 @@ export async function reviewPersistedPlanCaptures(
           "Re-open the Plan from the current project before reviewing screenshots.",
         );
       }
+      const applied = applyPlanCaptureReviewDecisions([latest], {
+        items: indexes.map((index) => input.items[index]!),
+        action: input.action,
+        actor: input.actor,
+        ...(input.filter ? { filter: input.filter } : {}),
+      });
+      for (const [offset, result] of applied.results.entries()) {
+        results[indexes[offset]!] = result;
+      }
+      if (!applied.results.some((result) => result.status === "applied")) return;
       const persisted: PersistedRun = structuredClone(latest);
-      persisted.captureReviews = next.captureReviews;
+      persisted.captureReviews = applied.runs[0]?.captureReviews ?? latest.captureReviews;
       await persistPersistedRun(root, latest, persisted, "capture-review");
     });
   }
   const refreshed = await listPersistedRuns(1_000, undefined, resolved);
   return {
     queue: captureReviewQueueForPlan(refreshed.length ? refreshed : loaded),
-    results: applied.results,
+    results: results.map((result, index) => {
+      if (result) return result;
+      const selection = input.items[index]!;
+      return {
+        runId: selection.runId,
+        captureId: selection.captureId,
+        status: "not-found",
+        error: "That screenshot is not in this Plan's review queue",
+      };
+    }),
   };
 }
 
