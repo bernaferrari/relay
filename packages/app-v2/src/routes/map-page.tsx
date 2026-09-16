@@ -26,17 +26,15 @@ export function MapPage() {
   });
   const [refresh, setRefresh] = useState<{ screen: ProductMapScreen; revision: number }>();
   const { appId } = routeApi.useParams();
-  const view = routeApi.useSearch().view ?? "map";
+  const search = routeApi.useSearch();
+  const view = search.view ?? "map";
   const navigate = routeApi.useNavigate();
   const setView = (view: "map" | "paths" | "screens") =>
-    void navigate({ search: { view }, replace: true });
-  const [inspectedScreenId, setInspectedScreenId] = useState<string>();
-  const openScreen = (id: string) => {
-    setInspectedPathId(undefined);
-    setInspectedScreenId(id);
-    setView("map");
-  };
-  const [inspectedPathId, setInspectedPathId] = useState<string>();
+    void navigate({ search: (previous) => ({ ...previous, view }), replace: true });
+  const inspectedScreenId = search.screen;
+  const inspectedPathId = search.path;
+  const openScreen = (screen: string) =>
+    void navigate({ search: { view: "map", screen }, replace: true });
   const map = useQuery({
     queryKey: ["map", appId],
     queryFn: () => mapService.get(appId),
@@ -96,8 +94,18 @@ export function MapPage() {
       void map.refetch();
     },
   });
-  const visibleScreens = map.data?.screens.slice(0, 500) ?? [];
-  const visiblePaths = map.data?.paths.slice(0, 500) ?? [];
+  const inspectedPath = map.data?.paths.find((path) => path.id === inspectedPathId);
+  const priorityScreens = new Set([
+    inspectedScreenId,
+    inspectedPath?.fromScreenId,
+    inspectedPath?.toScreenId,
+  ]);
+  const visibleScreens = [...(map.data?.screens ?? [])]
+    .sort((a, b) => Number(priorityScreens.has(b.id)) - Number(priorityScreens.has(a.id)))
+    .slice(0, 500);
+  const visiblePaths = [...(map.data?.paths ?? [])]
+    .sort((a, b) => Number(b.id === inspectedPathId) - Number(a.id === inspectedPathId))
+    .slice(0, 500);
 
   return (
     <section className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
@@ -119,6 +127,9 @@ export function MapPage() {
           <h1 className="shrink-0 text-sm">App map</h1>
         </div>
         <div className="[-webkit-app-region:no-drag] flex shrink-0 items-center gap-3">
+          <Button nativeButton={false} variant="ghost" size="sm" render={<Link to="/sessions" />}>
+            Live sessions
+          </Button>
           <div className="inline-flex rounded-lg bg-muted p-0.5" aria-label="Map view">
             <Button
               size="sm"
@@ -172,12 +183,27 @@ export function MapPage() {
       />
       {map.data ? (
         <>
+          {view === "map" && map.data.screens.length > visibleScreens.length ? (
+            <p className="px-4 py-2 text-xs text-muted-foreground">
+              Showing {visibleScreens.length} of {map.data.screens.length} screens. Use Screens to
+              find and open any captured screen.
+            </p>
+          ) : null}
           {view === "map" ? (
             <>
               {map.data.screens.length ? (
                 <InfiniteMapCanvas
                   initialPathId={inspectedPathId}
                   initialScreenId={inspectedScreenId}
+                  onScreenChange={(screen) =>
+                    void navigate({
+                      search: (previous) => ({ ...previous, screen }),
+                      replace: true,
+                    })
+                  }
+                  onPathChange={(path) =>
+                    void navigate({ search: (previous) => ({ ...previous, path }), replace: true })
+                  }
                   loadScreenshot={mapService.loadScreenshot}
                   loadAccessibilityTree={mapService.loadAccessibilityTree}
                   saving={updateScreen.isPending}
@@ -228,9 +254,7 @@ export function MapPage() {
               screens={map.data.screens}
               loadScreenshot={mapService.loadScreenshot}
               onInspect={(id) => {
-                setInspectedScreenId(undefined);
-                setInspectedPathId(id);
-                setView("map");
+                void navigate({ search: { view: "map", path: id }, replace: true });
               }}
             />
           ) : null}

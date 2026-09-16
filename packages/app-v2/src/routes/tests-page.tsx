@@ -20,7 +20,6 @@ import { MorningReviewCard } from "./morning-review-card";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 
 const routeApi = getRouteApi("/tests");
-const allAppsValue = "all-apps";
 
 type TestFilter = "all" | "ready" | "needs-review";
 type ResultFilter = "all" | "passed" | "failed" | "running" | "never";
@@ -132,10 +131,6 @@ export function TestsPage() {
     { value: "running", label: "Running" },
     { value: "never", label: "Never run" },
   ] as const;
-  const appOptions = [
-    { value: allAppsValue, label: "All apps" },
-    ...apps.map(([id, label]) => ({ value: id, label })),
-  ];
   function updateFilter(next: { app?: string; status?: TestFilter; result?: ResultFilter }) {
     void navigate({
       replace: true,
@@ -293,13 +288,6 @@ export function TestsPage() {
               options={resultOptions}
               onValueChange={(value) => updateFilter({ result: resultFilter(value) })}
             />
-            <FilterSelect
-              compact
-              label="App"
-              value={app || allAppsValue}
-              options={appOptions}
-              onValueChange={(value) => updateFilter({ app: value === allAppsValue ? "" : value })}
-            />
           </>
         }
       />
@@ -419,7 +407,7 @@ function TestRow({ test }: { test: ProductTestSummary }) {
             )
           }
         >
-          {test.status === "needs-review" ? "Review steps" : "Run"}
+          {test.status === "needs-review" ? "Review steps" : "Run options"}
         </Button>
       </div>
     </li>

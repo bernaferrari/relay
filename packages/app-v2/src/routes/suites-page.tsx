@@ -47,6 +47,7 @@ export function SuitesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [appId, setAppId] = useState("");
   const [name, setName] = useState("");
+  const [testQuery, setTestQuery] = useState("");
   const [testIds, setTestIds] = useState<Set<string>>(() => new Set());
   const [variableIds, setVariableIds] = useState<Set<string>>(() => new Set());
   const suites = useQuery({
@@ -107,6 +108,7 @@ export function SuitesPage() {
         : (apps.data?.[0]?.id ?? ""),
     );
     setName("");
+    setTestQuery("");
     setTestIds(new Set());
     setVariableIds(new Set());
     createSuite.reset();
@@ -134,16 +136,6 @@ export function SuitesPage() {
         description="Groups of Tests you can run together every day."
         actions={
           <>
-            <nav className="flex items-center gap-1 text-sm" aria-label="Library">
-              <Link
-                className="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground"
-                to="/tests"
-                search={requestedApp ? { app: requestedApp } : {}}
-              >
-                Tests
-              </Link>
-              <span className="rounded-md bg-muted px-2 py-1 font-semibold">Plans</span>
-            </nav>
             <Button nativeButton={false} render={<Link to="/environments" />} variant="outline">
               Browsers
             </Button>
@@ -211,30 +203,56 @@ export function SuitesPage() {
                     </FieldError>
                   ) : null}
                   {editor.data ? (
-                    <div className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto p-1">
+                    <div className="grid min-w-0 gap-5">
                       <fieldset>
-                        <legend>Tests</legend>
-                        {editor.data.tests.map((test) => (
-                          <ChoiceLabel
-                            key={test.id}
-                            className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
-                          >
-                            <span className="grid min-w-0 flex-1 gap-0.5">
-                              <span className="truncate text-sm font-medium text-foreground">
-                                {test.name}
-                              </span>
-                              <span className="truncate text-xs leading-snug text-muted-foreground">
-                                {productTestStatusLabel(test.status, test.name)}
-                              </span>
-                            </span>
-                            <Checkbox
-                              checked={testIds.has(test.id)}
-                              onCheckedChange={(checked) =>
-                                toggle(setTestIds, test.id, checked === true)
-                              }
-                            />
-                          </ChoiceLabel>
-                        ))}
+                        <legend className="mb-3 text-sm font-medium">
+                          Tests · {testIds.size} selected
+                        </legend>
+                        <Input
+                          aria-label="Search Tests for this Plan"
+                          placeholder="Find a Test…"
+                          value={testQuery}
+                          onChange={(event) => setTestQuery(event.currentTarget.value)}
+                          className="mb-3"
+                        />
+                        <div className="grid max-h-64 gap-2 overflow-y-auto p-1">
+                          {!editor.data.tests.some((test) =>
+                            test.name
+                              .toLocaleLowerCase()
+                              .includes(testQuery.trim().toLocaleLowerCase()),
+                          ) ? (
+                            <p className="p-3 text-sm text-muted-foreground">
+                              No Tests match your search. Your selection is preserved.
+                            </p>
+                          ) : null}
+                          {editor.data.tests
+                            .filter((test) =>
+                              test.name
+                                .toLocaleLowerCase()
+                                .includes(testQuery.trim().toLocaleLowerCase()),
+                            )
+                            .map((test) => (
+                              <ChoiceLabel
+                                key={test.id}
+                                className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+                              >
+                                <span className="grid min-w-0 flex-1 gap-0.5">
+                                  <span className="truncate text-sm font-medium text-foreground">
+                                    {test.name}
+                                  </span>
+                                  <span className="truncate text-xs leading-snug text-muted-foreground">
+                                    {productTestStatusLabel(test.status, test.name)}
+                                  </span>
+                                </span>
+                                <Checkbox
+                                  checked={testIds.has(test.id)}
+                                  onCheckedChange={(checked) =>
+                                    toggle(setTestIds, test.id, checked === true)
+                                  }
+                                />
+                              </ChoiceLabel>
+                            ))}
+                        </div>
                       </fieldset>
                       {editor.data.dataSets.length ? (
                         <fieldset>
@@ -272,7 +290,7 @@ export function SuitesPage() {
                         : "Relay could not save this Plan."}
                     </FieldError>
                   ) : null}
-                  <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
+                  <div className="relay-dialog-actions sticky bottom-0 border-t border-border bg-background pt-4 flex flex-wrap items-center justify-end gap-2.5">
                     <DialogClose
                       render={
                         <Button variant="ghost" disabled={createSuite.isPending}>
@@ -318,20 +336,6 @@ export function SuitesPage() {
       ) : null}
       {!suites.isPending && !suites.error && suites.data ? (
         <>
-          <SelectField
-            className="mb-5 max-w-xs"
-            label="App"
-            value={requestedApp || "all-apps"}
-            options={[
-              { value: "all-apps", label: "All apps" },
-              ...(apps.data ?? []).map((app) => ({ value: app.id, label: app.name })),
-            ]}
-            onValueChange={(value) =>
-              void navigate({
-                search: { app: value === "all-apps" ? undefined : value } as never,
-              })
-            }
-          />
           <dl
             className="my-7 grid grid-cols-3 border-y border-border py-4 max-[560px]:grid-cols-1"
             aria-label="Plan status"

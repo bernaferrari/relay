@@ -38,11 +38,13 @@ export function BatchFailureClusters({
   selected,
   onToggle,
   cases = [],
+  onInspect,
 }: {
   clusters: readonly ProductBatchFailureCluster[];
   selected: ReadonlySet<string>;
   onToggle(cluster: ProductBatchFailureCluster, checked: boolean): void;
   cases?: readonly ProductBatchCase[];
+  onInspect?(runId: string): void;
 }) {
   if (!clusters.length) return null;
   return (
@@ -94,6 +96,18 @@ export function BatchFailureClusters({
                 className={`${reportLinkClass} col-start-2 sm:col-start-auto sm:justify-self-end`}
                 to="/runs/$runId"
                 params={{ runId: cluster.representativeRunId }}
+                onClick={(event) => {
+                  if (
+                    onInspect &&
+                    !event.metaKey &&
+                    !event.ctrlKey &&
+                    !event.shiftKey &&
+                    !event.altKey
+                  ) {
+                    event.preventDefault();
+                    onInspect(cluster.representativeRunId);
+                  }
+                }}
                 search={{ reportView: "captures" }}
               >
                 Report
@@ -114,6 +128,7 @@ export function BatchResultMatrix({
   onRerun,
   rerunning,
   testNames = {},
+  onInspect,
 }: {
   report: ProductBatchReport;
   selected: ReadonlySet<string>;
@@ -121,6 +136,7 @@ export function BatchResultMatrix({
   onRerun(item: ProductBatchCase): void;
   rerunning: boolean;
   testNames?: BatchTestNames;
+  onInspect?(item: ProductBatchCase): void;
 }) {
   const [showPassed, setShowPassed] = useState(false);
   const matrix = buildBatchMatrix(report.cases, report.setup, testNames);
@@ -205,6 +221,7 @@ export function BatchResultMatrix({
                               compact
                               onToggle={(checked) => onToggleCase(item, checked)}
                               onRerun={() => onRerun(item)}
+                              onInspect={onInspect ? () => onInspect(item) : undefined}
                               rerunning={rerunning}
                             />
                           ))}
@@ -231,6 +248,7 @@ export function BatchResultMatrix({
                     allowSelect={allowSelect}
                     onToggle={(checked) => onToggleCase(item, checked)}
                     onRerun={() => onRerun(item)}
+                    onInspect={onInspect ? () => onInspect(item) : undefined}
                     rerunning={rerunning}
                   />
                 </li>
@@ -299,6 +317,7 @@ function BatchCaseResult({
   onRerun,
   rerunning,
   compact = false,
+  onInspect,
   quiet = false,
 }: {
   item: ProductBatchCase;
@@ -308,6 +327,7 @@ function BatchCaseResult({
   onRerun(): void;
   rerunning: boolean;
   compact?: boolean;
+  onInspect?(): void;
   quiet?: boolean;
 }) {
   const rerunnable = isBatchCaseRerunnable(item);
@@ -339,6 +359,12 @@ function BatchCaseResult({
         <Link
           to="/runs/$runId"
           params={{ runId: item.runId }}
+          onClick={(event) => {
+            if (onInspect && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+              event.preventDefault();
+              onInspect();
+            }
+          }}
           search={{ reportView: "captures" }}
           className={`grid min-w-0 gap-1 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${allowSelect ? "col-start-1 ml-8" : ""}`}
         >

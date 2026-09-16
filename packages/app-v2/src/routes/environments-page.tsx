@@ -40,7 +40,18 @@ export function EnvironmentsPage() {
       ? String(rawSearch.returnTo)
       : undefined;
   const continuation = rawReturnTo ? readSetupContinuation(rawReturnTo) : undefined;
-  const [open, setOpen] = useState(false);
+  const open =
+    rawSearch &&
+    typeof rawSearch === "object" &&
+    "view" in rawSearch &&
+    String(rawSearch.view) === "new";
+  function setOpen(next: boolean) {
+    void navigate({
+      to: "/environments",
+      search: (previous) => ({ ...previous, view: next ? "new" : undefined }),
+      replace: true,
+    });
+  }
   const [name, setName] = useState("");
   const [startUrl, setStartUrl] = useState("");
   const spaces = useQuery({

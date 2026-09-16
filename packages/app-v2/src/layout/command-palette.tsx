@@ -1,3 +1,4 @@
+import { primaryDestinations } from "./primary-destinations";
 /** @jsxImportSource react */
 import {
   Dialog,
@@ -15,7 +16,6 @@ import {
   FlaskConical,
   GitCompareArrows,
   History,
-  MonitorSmartphone,
   Plus,
   KeyRound,
   Search,
@@ -35,6 +35,14 @@ type Command = {
 };
 
 const workspaceCommands: readonly Command[] = [
+  ...primaryDestinations.map((destination) => ({
+    id: destination.to.slice(1),
+    label: `Open ${destination.label}`,
+    detail: destination.detail,
+    href: destination.to,
+    icon: destination.icon,
+    keywords: destination.keywords,
+  })),
   {
     id: "apps",
     label: "Manage apps",
@@ -49,13 +57,7 @@ const workspaceCommands: readonly Command[] = [
     href: "/changes",
     icon: GitCompareArrows,
   },
-  {
-    id: "tests",
-    label: "Open Tests",
-    detail: "Reviewed journeys",
-    href: "/tests",
-    icon: FlaskConical,
-  },
+
   {
     id: "failed-runs",
     label: "Review failed Runs",
@@ -64,13 +66,7 @@ const workspaceCommands: readonly Command[] = [
     icon: History,
     keywords: "reports failures",
   },
-  {
-    id: "devices",
-    label: "Open Devices",
-    detail: "Connected browsers and devices",
-    href: "/devices",
-    icon: MonitorSmartphone,
-  },
+
   {
     id: "versions",
     label: "Manage versions",

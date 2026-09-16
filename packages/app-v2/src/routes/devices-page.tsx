@@ -244,7 +244,7 @@ export function DevicesPage() {
               render={
                 <Link
                   to="/environments"
-                  search={continuation ? { returnTo: search.returnTo } : undefined}
+                  search={{ view: "new", ...(continuation ? { returnTo: search.returnTo } : {}) }}
                 />
               }
             >
@@ -303,7 +303,7 @@ export function DevicesPage() {
                 render={
                   <Link
                     to="/environments"
-                    search={continuation ? { returnTo: search.returnTo } : undefined}
+                    search={{ view: "new", ...(continuation ? { returnTo: search.returnTo } : {}) }}
                   />
                 }
               >

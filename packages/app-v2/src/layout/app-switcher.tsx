@@ -177,7 +177,7 @@ export function AppSwitcher() {
         >
           <span className="relay-app-switcher-copy flex min-w-0 flex-1 flex-col gap-1">
             <span className="relay-app-switcher-label text-xs font-normal leading-4 text-muted-foreground">
-              Workspace
+              {scope.kind === "workspace" ? "Workspace" : "App"}
             </span>
             <span className="relay-app-switcher-name truncate text-sm font-medium leading-5">
               {contextName}
@@ -193,7 +193,7 @@ export function AppSwitcher() {
         >
           <DropdownMenuGroup>
             <DropdownMenuLabel className="px-3 py-2 text-xs font-medium text-muted-foreground">
-              Workspace
+              Choose an app
             </DropdownMenuLabel>
             <DropdownMenuRadioGroup
               value={

@@ -12,23 +12,10 @@ import {
   useSidebar,
 } from "@relay/ui-react/components/sidebar";
 import { Link, useLocation } from "@tanstack/react-router";
-import {
-  FlaskConical,
-  GitCompare,
-  History,
-  Layers3,
-  MonitorSmartphone,
-  Settings,
-} from "lucide-react";
+import { GitCompare, Settings } from "lucide-react";
 import { AppSwitcher } from "./app-switcher";
 import { ActiveWork } from "./active-work";
-
-const mainItems = [
-  { to: "/tests", label: "Tests", icon: FlaskConical },
-  { to: "/suites", label: "Plans", icon: Layers3 },
-  { to: "/runs", label: "Results", icon: History },
-  { to: "/devices", label: "Devices", icon: MonitorSmartphone },
-] as const;
+import { primaryDestinations } from "./primary-destinations";
 
 export function isSidebarItemActive(pathname: string, itemPath: `/${string}`) {
   const sidebar = routeContractForPath(pathname)?.sidebar;
@@ -37,7 +24,9 @@ export function isSidebarItemActive(pathname: string, itemPath: `/${string}`) {
 }
 
 export function SidebarContent({ label = "Primary" }: { label?: string }) {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  const app = (search as Record<string, unknown>).app;
+  const collectionSearch = typeof app === "string" ? { app } : {};
   const { isMobile, setOpenMobile } = useSidebar();
   const settingsActive = pathname.startsWith("/settings/");
   const closeMobileNavigation = () => {
@@ -50,12 +39,18 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
       <SidebarGroup className="relay-sidebar-group flex-none pt-1.5">
         <nav className="relay-nav flex flex-col gap-0.5" aria-label={label}>
           <SidebarMenu className="relay-sidebar-menu m-0 grid list-none gap-0.5 p-0">
-            {mainItems.map((item) => {
+            {primaryDestinations.map((item) => {
               const active = isSidebarItemActive(pathname, item.to);
               return (
                 <SidebarMenuItem key={item.to}>
                   <SidebarMenuButton
-                    render={<Link to={item.to} onClick={closeMobileNavigation} />}
+                    render={
+                      <Link
+                        to={item.to}
+                        search={item.to === "/devices" ? {} : collectionSearch}
+                        onClick={closeMobileNavigation}
+                      />
+                    }
                     isActive={active}
                     aria-current={active ? "page" : undefined}
                     className={`relay-nav-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-[var(--text-base)]${active ? " relay-nav-link--active bg-[var(--surface-base-active)] font-semibold text-[var(--text-strong)] shadow-none" : ""}`}

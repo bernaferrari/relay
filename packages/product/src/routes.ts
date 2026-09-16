@@ -145,7 +145,11 @@ export const ROUTE_DEFINITIONS = [
   d("/apps/:appId/accounts", "/apps/:appId", "Accounts", "App", "apps", null, ["status", "view"]),
   d("/versions", "/home", "Versions", null, "apps", null, ["status", "view"]),
   d("/accounts", "/home", "Accounts", null, "apps", null, ["status", "view"]),
-  d("/apps/:appId/map", "/apps/:appId", "Map", "Map", "apps", "explore-app", ["view", "screen"]),
+  d("/apps/:appId/map", "/apps/:appId", "Map", "Map", "apps", "explore-app", [
+    "view",
+    "screen",
+    "path",
+  ]),
   d("/tests", "/home", "Tests", "Test", "tests", "record-test", ["status", "app", "view", "q"]),
   d("/tests/new", "/tests", "New Test", "Test", "tests", "record-test", [
     "app",

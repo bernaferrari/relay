@@ -106,6 +106,15 @@ async function render(
 }
 
 describe("Map exploration", () => {
+  it("restores an inspected screen from a deep link and keeps it while changing views", async () => {
+    const { history } = await render(undefined, undefined, "/apps/shop/map?screen=cart");
+    expect(document.body.textContent).toContain("Cart");
+    await act(async () => button("Screens").click());
+    expect(history.location.search).toContain("screen=cart");
+    await act(async () => button("Map").click());
+    expect(history.location.search).toContain("screen=cart");
+  });
+
   it("keeps routine returns local until explicitly inspected", async () => {
     await render({
       get: async () => ({

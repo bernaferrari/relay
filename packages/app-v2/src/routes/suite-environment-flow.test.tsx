@@ -194,7 +194,7 @@ async function render(
         appResourcesService={
           {
             listAccountLanes: async () => [],
-          } as AppResourcesProductService
+          } as unknown as AppResourcesProductService
         }
       />,
     );
@@ -337,7 +337,7 @@ describe("Suite and Environment routes", () => {
   it("creates a browser with labeled fields and opens its canonical detail route", async () => {
     const created = { ...space, id: "space-2", name: "New staging" };
     const create = vi.fn(async () => created);
-    const { history } = await render("/environments", {
+    const { history } = await render("/environments?view=new", {
       browserService: browserService({ createSpace: create }),
     });
     expect(document.querySelector("h1")?.textContent).toBe("Browsers");
@@ -345,7 +345,7 @@ describe("Suite and Environment routes", () => {
     expect(document.body.textContent).toContain("Staging browser");
     expect(document.body.textContent).not.toContain("Fresh browser each session");
     expect(document.body.textContent).not.toContain("Open →");
-    await clickButton("New browser");
+
     await fill("space-name", "New staging");
     await fill("space-url", "https://new.example.test");
     expect(document.querySelector('label[for="space-name"]')?.textContent).toBe("Name");

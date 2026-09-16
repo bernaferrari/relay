@@ -1,3 +1,4 @@
+import { useMapSelection } from "../hooks/use-map-selection";
 import { MapFrameTitle } from "./map-frame-title";
 import { separateMapScreens } from "./map-layout";
 import { useQueries } from "@tanstack/react-query";
@@ -73,9 +74,13 @@ export function InfiniteMapCanvas({
   saving = false,
   initialPathId,
   initialScreenId,
+  onScreenChange,
+  onPathChange,
 }: {
   initialPathId?: string;
   initialScreenId?: string;
+  onScreenChange?(id: string | undefined): void;
+  onPathChange?(id: string | undefined): void;
   saving?: boolean;
   onRefreshScreen?: (screen: ProductMapScreen) => void;
   onUpdateScreen?: (
@@ -163,13 +168,14 @@ export function InfiniteMapCanvas({
   );
   const [spacePan, setSpacePan] = useState(false);
   const panningTool = handTool || spacePan;
-  const [selectedPathId, setSelectedPathId] = useState(initialPathId);
+  const [selectedPathId, setSelectedPathId] = useMapSelection(initialPathId, onPathChange);
   const selectedPath = visiblePaths.find((path) => path.id === selectedPathId);
   const [focusScreenId, setFocusScreenId] = useState<string | undefined>(
     initialScreenId ?? selectedPath?.fromScreenId,
   );
-  const [selectedScreenId, setSingleScreenId] = useState<string | undefined>(
+  const [selectedScreenId, setSingleScreenId] = useMapSelection(
     initialScreenId ?? selectedPath?.fromScreenId,
+    onScreenChange,
   );
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [marquee, setMarquee] = useState<{ x: number; y: number; width: number; height: number }>();

@@ -180,7 +180,9 @@ export function AgentDebugPage() {
         }
         description={
           contextualRunId
-            ? "Review the failure, then choose a device to investigate."
+            ? originReady
+              ? "Starting on the original device. Relay will capture this investigation separately from the failed Run."
+              : "Review the failure, then choose a device to investigate."
             : "Name the problem, pick a device, and start capturing."
         }
       />

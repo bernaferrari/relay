@@ -100,6 +100,11 @@ export function CaptureReviewPanel({
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const selected = queue.items[Math.min(selectedIndex, Math.max(0, queue.items.length - 1))];
+  const pendingIndices = queue.items.flatMap((item, index) =>
+    item.status === "pending" && reviewable(item) && index !== selectedIndex ? [index] : [],
+  );
+  const nextPendingIndex =
+    pendingIndices.find((index) => index > selectedIndex) ?? pendingIndices[0];
   const selectedMeta = selected ? planFields(selected) : {};
   const selectedBlocked = selected ? blockedUnboundLabel(selected) : undefined;
   const frame = selected
@@ -143,6 +148,16 @@ export function CaptureReviewPanel({
             {captureReviewSummaryLine(queue)}
           </p>
         ) : null}
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={nextPendingIndex === undefined}
+          onClick={() => {
+            if (nextPendingIndex !== undefined) onSelect(nextPendingIndex);
+          }}
+        >
+          Next pending screenshot
+        </Button>
         {onReviewMany && bulkItems.length > 1 ? (
           <div className="flex flex-wrap items-center gap-2">
             <Button

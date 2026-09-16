@@ -283,7 +283,7 @@ describe("Tests library", () => {
     expect(
       document.querySelector('a[href="/tests/test-checkout-internal/edit"]')?.textContent,
     ).toContain("Review steps");
-    await clickText("Run");
+    await clickText("Run options");
     expect(history.location.pathname).toBe("/tests/test-language-internal");
     expect(history.location.search).toBe("?setup=run");
     expect(history.location.hash).toBe("");
@@ -343,7 +343,7 @@ describe("Tests workspace", () => {
     expect(document.body.textContent).not.toContain("app-shop-internal");
     expect(document.body.textContent).not.toContain("test-language-internal");
     expect(document.querySelectorAll("select")).toHaveLength(0);
-    expect(document.querySelectorAll('[data-slot="select-trigger"]')).toHaveLength(3);
+    expect(document.querySelectorAll('[data-slot="select-trigger"]')).toHaveLength(2);
     expect(document.querySelector('[data-slot="library-search-control"] svg')).not.toBeNull();
 
     const search = document.querySelector<HTMLInputElement>("#test-search")!;
@@ -502,7 +502,7 @@ describe("Runs workspace", () => {
     expect(document.body.textContent).not.toContain("run-passed-internal");
     expect(document.querySelector('a[href="/runs/run-passed-internal"]')).not.toBeNull();
     expect(document.querySelectorAll("select")).toHaveLength(0);
-    expect(document.querySelectorAll('[data-slot="select-trigger"]')).toHaveLength(1);
+    expect(document.querySelectorAll('[data-slot="select-trigger"]')).toHaveLength(0);
   });
 
   it("uses the centered shared recovery state when Runs cannot load", async () => {

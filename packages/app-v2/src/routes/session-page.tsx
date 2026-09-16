@@ -274,7 +274,106 @@ export function SessionPage() {
       ) : null}
 
       {value ? (
-        <div className="mt-6 grid items-start gap-6 max-[879px]:grid-cols-1 min-[880px]:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="mt-6 grid items-start gap-6 max-[879px]:grid-cols-1 min-[880px]:grid-cols-[minmax(0,1fr)_300px]">
+          <section
+            className="flex min-h-[min(72dvh,760px)] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card min-[880px]:sticky min-[880px]:top-4"
+            aria-labelledby="session-stage-title"
+            data-slot="live-device-rail"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-2.5">
+              <h2 id="session-stage-title" className="text-[13px] font-medium">
+                {canControl ? "Live target" : "Target unavailable"}
+              </h2>
+              {canControl && liveStatus === "degraded" ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setLiveAttempt((attempt) => attempt + 1)}
+                >
+                  Reconnect
+                </Button>
+              ) : null}
+            </div>
+            {canControl ? (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <LiveTargetCanvas
+                  canvasRef={canvas}
+                  status={liveStatus}
+                  issue={liveIssue}
+                  busy={liveBusy}
+                  targetTitle={targetLabel(value)}
+                  targetDetail={`${value.target.kind === "browser" ? "Browser" : "Device"} · ${value.actorKind === "agent" ? "Agent" : "Manual"}`}
+                  browserContext={browserContext}
+                  send={send}
+                  recording={false}
+                  layout="rail"
+                  helpText="Tap, type, or scroll. Not recorded."
+                  overlay={
+                    talkBack.on && talkBack.mode !== "off" ? (
+                      <TalkBackOverlay
+                        canvasRef={canvas}
+                        items={talkBack.inspection.overlayItems}
+                        bounds={talkBack.inspection.bounds}
+                        mode={talkBack.mode}
+                      />
+                    ) : null
+                  }
+                  toolbar={
+                    <TalkBackModeSelect
+                      mode={talkBack.mode}
+                      loading={talkBack.loading}
+                      onModeChange={(mode) => talkBack.setMode(mode)}
+                    />
+                  }
+                />
+                {talkBack.on ? (
+                  <div className="border-t border-border px-3 py-3">
+                    <TalkBackIssueList
+                      review={talkBack.inspection.review}
+                      inspectable={talkBack.inspection.inspectable}
+                      message={talkBack.issue ?? talkBack.inspection.message}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <div className="grid min-h-[280px] flex-1 place-items-center content-center gap-4 px-5 py-8 text-center text-sm leading-relaxed text-muted-foreground">
+                <p className="max-w-[46ch]">{sessionAvailability(value)}</p>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  {isActiveSession(value) ? (
+                    <Button onClick={() => refresh.mutate()} disabled={refresh.isPending}>
+                      <RefreshCcw aria-hidden="true" />
+                      {refresh.isPending ? "Reconnecting…" : "Reconnect"}
+                    </Button>
+                  ) : null}
+                  {value.state === "reviewing" ? (
+                    <Button
+                      variant="default"
+                      nativeButton={false}
+                      render={
+                        <Link
+                          to="/recordings/$recordingId/review"
+                          params={{ recordingId: value.id }}
+                        />
+                      }
+                    >
+                      Review recording
+                    </Button>
+                  ) : value.committedTestId ? (
+                    <Button
+                      variant="outline"
+                      nativeButton={false}
+                      render={
+                        <Link to="/tests/$testId" params={{ testId: value.committedTestId }} />
+                      }
+                    >
+                      Open saved Test
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            )}
+          </section>
           <aside className="grid min-w-0 gap-6" aria-label="Session context">
             {canControl ? (
               <p className="max-w-[52ch] text-sm leading-6 text-muted-foreground">
@@ -383,106 +482,6 @@ export function SessionPage() {
               )}
             </section>
           </aside>
-
-          <section
-            className="order-first flex min-h-[min(72dvh,760px)] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card min-[880px]:sticky min-[880px]:top-4 min-[880px]:order-none"
-            aria-labelledby="session-stage-title"
-            data-slot="live-device-rail"
-          >
-            <div className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-2.5">
-              <h2 id="session-stage-title" className="text-[13px] font-medium">
-                {canControl ? "Live target" : "Target unavailable"}
-              </h2>
-              {canControl && liveStatus === "degraded" ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setLiveAttempt((attempt) => attempt + 1)}
-                >
-                  Reconnect
-                </Button>
-              ) : null}
-            </div>
-            {canControl ? (
-              <div className="flex min-h-0 flex-1 flex-col">
-                <LiveTargetCanvas
-                  canvasRef={canvas}
-                  status={liveStatus}
-                  issue={liveIssue}
-                  busy={liveBusy}
-                  targetTitle={targetLabel(value)}
-                  targetDetail={`${value.target.kind === "browser" ? "Browser" : "Device"} · ${value.actorKind === "agent" ? "Agent" : "Manual"}`}
-                  browserContext={browserContext}
-                  send={send}
-                  recording={false}
-                  layout="rail"
-                  helpText="Tap, type, or scroll. Not recorded."
-                  overlay={
-                    talkBack.on && talkBack.mode !== "off" ? (
-                      <TalkBackOverlay
-                        canvasRef={canvas}
-                        items={talkBack.inspection.overlayItems}
-                        bounds={talkBack.inspection.bounds}
-                        mode={talkBack.mode}
-                      />
-                    ) : null
-                  }
-                  toolbar={
-                    <TalkBackModeSelect
-                      mode={talkBack.mode}
-                      loading={talkBack.loading}
-                      onModeChange={(mode) => talkBack.setMode(mode)}
-                    />
-                  }
-                />
-                {talkBack.on ? (
-                  <div className="border-t border-border px-3 py-3">
-                    <TalkBackIssueList
-                      review={talkBack.inspection.review}
-                      inspectable={talkBack.inspection.inspectable}
-                      message={talkBack.issue ?? talkBack.inspection.message}
-                    />
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <div className="grid min-h-[280px] flex-1 place-items-center content-center gap-4 px-5 py-8 text-center text-sm leading-relaxed text-muted-foreground">
-                <p className="max-w-[46ch]">{sessionAvailability(value)}</p>
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  {isActiveSession(value) ? (
-                    <Button onClick={() => refresh.mutate()} disabled={refresh.isPending}>
-                      <RefreshCcw aria-hidden="true" />
-                      {refresh.isPending ? "Reconnecting…" : "Reconnect"}
-                    </Button>
-                  ) : null}
-                  {value.state === "reviewing" ? (
-                    <Button
-                      variant="default"
-                      nativeButton={false}
-                      render={
-                        <Link
-                          to="/recordings/$recordingId/review"
-                          params={{ recordingId: value.id }}
-                        />
-                      }
-                    >
-                      Review recording
-                    </Button>
-                  ) : value.committedTestId ? (
-                    <Button
-                      variant="outline"
-                      nativeButton={false}
-                      render={
-                        <Link to="/tests/$testId" params={{ testId: value.committedTestId }} />
-                      }
-                    >
-                      Open saved Test
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            )}
-          </section>
         </div>
       ) : null}
     </LibraryPage>

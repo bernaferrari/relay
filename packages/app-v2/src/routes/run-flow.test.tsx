@@ -369,6 +369,29 @@ async function selectOption(label: string, option: string) {
 }
 
 describe("Run and Report", () => {
+  it("keeps saved Test steps separate from historical evidence and preserves definition selection", async () => {
+    const fake = fakeRunService(runState("succeeded"));
+    const { history } = await renderRun(
+      "/tests/test-1?run=run-1",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(document.querySelectorAll("button[data-step-id]")).toHaveLength(0);
+    expect(document.body.textContent).toContain("Historical execution");
+    await click(button("Test definition"));
+    const steps = [...document.querySelectorAll<HTMLButtonElement>("button[data-step-id]")];
+    expect(steps).toHaveLength(3);
+    await click(steps[1]!);
+    expect(button("Test definition").getAttribute("aria-pressed")).toBe("true");
+    expect(history.location.search).toContain("view=definition");
+    await click(button("Run evidence"));
+    expect(document.querySelectorAll("button[data-step-id]")).toHaveLength(0);
+    await click(button("Test definition"));
+    expect(
+      document.querySelector('[data-step-id="step-check"]')?.getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
   it("offers step review when saved capture controls block compilation", async () => {
     const fake = fakeRunService();
     fake.service.start = async () => ({
@@ -392,7 +415,7 @@ describe("Run and Report", () => {
       },
     ];
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
-    await click(button("Run Test"));
+    await click(button("Run now"));
     expect(document.body.textContent).toContain("Saved controls need review");
     expect(document.body.textContent).not.toContain("restore this work");
     const review = [
@@ -419,7 +442,7 @@ describe("Run and Report", () => {
       platformWithStorage().platform,
     );
     await selectOption("Device or browser", "Checkout browser");
-    await click(button("Run Test"));
+    await click(button("Run now"));
     expect(String(history.location.search)).not.toContain("setup=run");
     await act(async () => fake.complete());
     await settle();
@@ -502,7 +525,7 @@ describe("Run and Report", () => {
       document.querySelector<HTMLButtonElement>('button[aria-label="Device or browser"]')
         ?.textContent,
     ).toContain("Checkout browser");
-    expect(button("Run Test").disabled).toBe(false);
+    expect(button("Run now").disabled).toBe(false);
   });
 
   it("submits the visible build and cold-start choices", async () => {
@@ -516,7 +539,7 @@ describe("Run and Report", () => {
     );
     if (!cold) throw new Error("Cold-start selector not found");
     await click(cold.closest("label") ?? cold);
-    await click(button("Run Test"));
+    await click(button("Run now"));
     expect(fake.startInputs[0]).toMatchObject({
       sourceRevision: { vcs: "git", sha: "abcdef1234567", buildId: "build-android-1" },
       startup: { mode: "cold" },
@@ -635,14 +658,14 @@ describe("Run and Report", () => {
     const storage = platformWithStorage();
     const { history } = await renderRun("/tests/test-1", fake.service, storage.platform);
 
-    expect(button("Set up Run").disabled).toBe(false);
-    expect(document.body.textContent?.match(/Set up Run/g)).toHaveLength(1);
+    expect(button("Set up run").disabled).toBe(false);
+    expect(document.body.textContent?.match(/Set up run/g)).toHaveLength(1);
     await openRunSettings();
     expect(document.body.textContent).toContain("Checkout browser");
     expect(document.body.textContent).toContain("Pixel 9 Pro");
     expect(document.body.textContent).not.toContain("browser-golden");
     expect(document.body.textContent).not.toContain("emulator-5554");
-    expect(document.body.textContent).toContain("Run this test to see its result here.");
+    expect(document.body.textContent).toContain("No recording reference was saved for this step.");
     const savedSteps = [
       ...document.querySelectorAll<HTMLButtonElement>(".relay-test-readable-steps button"),
     ];
@@ -652,8 +675,8 @@ describe("Run and Report", () => {
     expect(savedSteps[1]?.getAttribute("aria-pressed")).toBe("true");
     await openRunSettings();
     await selectOption("Device or browser", "Checkout browser");
-    expect(button("Run Test").disabled).toBe(false);
-    await click(button("Run Test"));
+    expect(button("Run now").disabled).toBe(false);
+    await click(button("Run now"));
 
     expect(fake.calls).toContain("start:test-1:settings-language-proof:browser-golden");
     expect(history.location.pathname).toBe("/tests/test-1");
@@ -840,7 +863,7 @@ describe("Run and Report", () => {
     history.push("/tests/test-2");
     await settle();
     expect(document.body.textContent).not.toContain("Checking Language");
-    expect(document.body.textContent).toContain("Set up Run");
+    expect(document.body.textContent).toContain("Set up run");
 
     history.push("/tests/test-1");
     await settle();
@@ -984,7 +1007,7 @@ describe("Run and Report", () => {
 
     expect(document.body.textContent).toContain("Checking Language");
     expect(
-      [...document.querySelectorAll("button")].some((item) => item.textContent === "Set up Run"),
+      [...document.querySelectorAll("button")].some((item) => item.textContent === "Set up run"),
     ).toBe(false);
     expect(
       [...document.querySelectorAll("a")].some((item) =>
@@ -1005,7 +1028,7 @@ describe("Run and Report", () => {
       ),
     ).toBe(true);
     expect(
-      [...document.querySelectorAll("button")].some((item) => item.textContent === "Set up Run"),
+      [...document.querySelectorAll("button")].some((item) => item.textContent === "Set up run"),
     ).toBe(true);
   });
 

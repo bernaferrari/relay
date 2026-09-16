@@ -7,7 +7,6 @@ import { Button } from "@relay/ui-react/components/button";
 import { useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { FilterSelect } from "../components/filter-select";
 import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
 import { RunHistoryList, type RunHistoryRowInteraction } from "../components/run-history-list";
@@ -19,7 +18,6 @@ import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 import { collapsePlanResultRows } from "./runs-plan-results";
 
 const routeApi = getRouteApi("/runs");
-const allAppsValue = "all-apps";
 
 type RunView = "latest" | "all" | "failed" | "needs-review" | "active";
 
@@ -64,21 +62,6 @@ export function RunsPage() {
         ? 3_000
         : false,
   });
-  const apps = useMemo(
-    () =>
-      [
-        ...new Map(
-          (runs.data ?? []).flatMap((run) =>
-            run.appMapId && run.appName ? [[run.appMapId, run.appName] as const] : [],
-          ),
-        ).entries(),
-      ].sort(([, left], [, right]) => left.localeCompare(right)),
-    [runs.data],
-  );
-  const appOptions = [
-    { value: allAppsValue, label: "All apps" },
-    ...apps.map(([id, label]) => ({ value: id, label })),
-  ];
   const visibleRuns = useMemo(() => {
     const searched = (runs.data ?? []).filter(
       (run) =>
@@ -95,9 +78,7 @@ export function RunsPage() {
     }
     if (view === "needs-review") {
       return collapsePlanResultRows(
-        searched.filter(
-          (run) => run.review?.status === "pending" || run.outcome === "uncertain",
-        ),
+        searched.filter((run) => run.review?.status === "pending" || run.outcome === "uncertain"),
       );
     }
     if (view === "active") {
@@ -137,7 +118,7 @@ export function RunsPage() {
     >
       <PageHeader
         title="Results"
-        description="Yesterday’s Plan grids, then individual Test Runs. Open a Plan Result to read Findings."
+        description="Review Test runs and Plan results, inspect failures, and decide what needs attention."
       />
       <MorningReviewCard />
 
@@ -166,26 +147,15 @@ export function RunsPage() {
             placeholder="Search by Test, app, or device"
             onChange={(next) => {
               setQuery(next);
-              void navigate({ search: (previous) => ({ ...previous, q: next || undefined }) });
+              void navigate({
+                search: (previous) => ({ ...previous, q: next || undefined }),
+                replace: true,
+              });
             }}
           />
         }
         filters={
           <>
-            <FilterSelect
-              compact
-              label="App"
-              value={app || allAppsValue}
-              options={appOptions}
-              onValueChange={(nextApp) => {
-                void navigate({
-                  search: (previous) => ({
-                    ...previous,
-                    app: nextApp === allAppsValue ? undefined : nextApp,
-                  }),
-                });
-              }}
-            />
             {view !== "all" || app || testId || query ? (
               <Button variant="ghost" size="sm" onClick={clearFilters}>
                 Clear

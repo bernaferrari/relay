@@ -117,6 +117,28 @@ afterEach(async () => {
 });
 
 describe("Batch review controls", () => {
+  it("advances to the next unresolved case only after a successful review", async () => {
+    const triage = vi.fn(async () => report);
+    await render({
+      getReport: async () => report,
+      getFailureClusters: async () => ({ campaignId: "batch-1", clusters: [] }),
+      getFindings: async () => undefined,
+      triage,
+    } as unknown as RunAcrossProductService);
+    const resolve = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "Resolve and continue",
+    );
+    if (!resolve) throw new Error("Resolve action not found");
+    await act(async () => resolve.click());
+    await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
+    expect(triage).toHaveBeenCalledWith("batch-1", {
+      caseIds: ["login-ios"],
+      triageStatus: "resolved",
+    });
+    expect(document.querySelector("h3")?.textContent).toContain("Case 2");
+    expect(report.cases.every((item) => item.status === "failed")).toBe(true);
+  });
+
   it("still shows morning Findings copy when analysis is missing", async () => {
     await render({
       getReport: async () => report,
@@ -177,7 +199,7 @@ describe("Batch review controls", () => {
     expect(document.body.textContent).toContain("Assign to me");
     expect(document.body.textContent).toContain("Add note");
     const checkbox = document.querySelector<HTMLButtonElement>(
-      '[role="checkbox"][aria-label="Select Default data"]',
+      '[role="checkbox"][aria-label="Select case 1"]',
     );
     if (!checkbox) throw new Error("Case checkbox not found");
     await act(async () => checkbox.click());
@@ -302,6 +324,11 @@ describe("Batch review controls", () => {
         throw new Error("Failed to fetch");
       },
     } as unknown as RunAcrossProductService);
+    const groups = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Failure groups",
+    );
+    if (!groups) throw new Error("Failure groups not found");
+    await act(async () => groups.click());
     expect(document.body.textContent).toContain("Same failure");
     expect(document.body.textContent).toContain("1 group");
     expect(document.body.textContent).toContain("Select a group to rerun");
