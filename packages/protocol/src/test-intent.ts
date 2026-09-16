@@ -1,3 +1,5 @@
+import type { AppMapTestStartingState } from "./routine-effects.js";
+import type { ExecutionQueue } from "./execution-queue.js";
 import type { BrowserEngine } from "./browser-case-profile.js";
 import type {
   AppMapCapturePolicy,
@@ -5,6 +7,7 @@ import type {
   AssertionSpec,
   NormalizedSemanticNode,
 } from "./app-map.js";
+import type { CaptureReviewPlannedSlot } from "./capture-review.js";
 import type { ReviewedActionIntentBinding, ReviewedLogicalStateBinding } from "./product-intent.js";
 import type { HumanCheckpointReason, RecipeStep, StepTarget } from "./recipes.js";
 import type { RawAccessibilityTreeEvidence, ScrollSurfaceTestBinding } from "./scroll-surface.js";
@@ -247,6 +250,12 @@ export type AppMapScenarioTest = AppMapEntity & {
    * profile compile follows the companion Test on its App Map. */
   nativeRouteCompanions?: AppMapNativeRouteCompanion[];
   capture?: AppMapCapturePolicy;
+  /** Entry facts / leftover this Test claims. A following Test cannot treat
+   * leftover Settings, sidebar, Private Chat, or signed-out as Home. */
+  startingState?: AppMapTestStartingState;
+  /** Fast UI / live output / stateful-survival. Dest-end chrome inspect
+   * defaults to Fast UI. Absent is undeclared, never an S16 claim. */
+  executionQueue?: ExecutionQueue;
   /** Logical surface coverage is independent from graph navigation. */
   surfaceBindings?: ScrollSurfaceTestBinding[];
   /** Optional exact validation receipt. Legacy Tests without a receipt retain
@@ -288,6 +297,8 @@ export type AppMapScenarioTestEdit =
         capture?: AppMapCapturePolicy | null;
         family?: AppMapTestFamily | null;
         nativeRouteCompanions?: AppMapNativeRouteCompanion[] | null;
+        startingState?: AppMapTestStartingState | null;
+        executionQueue?: ExecutionQueue | null;
       };
     }
   | {
@@ -596,6 +607,11 @@ export type AppMapCompiledTest = {
     screenshotCount: number;
     destinationProofCount: number;
   };
+  /** Frozen capture-for-review obligations. Caption is display text only. */
+  plannedSlots?: readonly CaptureReviewPlannedSlot[];
+  /** Resolved Fast UI / live output / stateful-survival queue. Dest-end
+   * chrome inspect defaults to fast-ui when the Test omitted it. */
+  executionQueue?: ExecutionQueue;
   startup: AppMapTestStartup;
   /** Explicit recording origin application, when the Test has one. */
   originApplication?: string;

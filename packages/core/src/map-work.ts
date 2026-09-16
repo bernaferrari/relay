@@ -11,6 +11,10 @@ export { AppMapTestCompileError } from "./app-map-test-compiler.js";
 export type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
 import { compileOptionsForVisualSurface } from "./combine-visual-surface.js";
 import type { Recipe } from "./recipes.js";
+import {
+  assessSequentialStartingState,
+  throwIfUnsafeStartingState,
+} from "./starting-state-routines.js";
 
 /** Compile the only supported Test contract: graph-native scenario intent. */
 export function compileAppMapTest(
@@ -29,6 +33,7 @@ export function compileAppMapCombine(
   options: AppMapTestCompileOptions = {},
 ): { root: Recipe; graph: Record<string, Recipe> } {
   if (!combine.testIds.length) throw new Error("Combination needs at least one test");
+  throwIfUnsafeStartingState(assessSequentialStartingState(map, combine.testIds));
   const graph: Record<string, Recipe> = {};
   const modules: RecipeStep[] = [];
   for (const testId of combine.testIds) {

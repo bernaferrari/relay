@@ -5,7 +5,9 @@ import type {
   AppMapCombinePreflightIssue,
   RecipeStep,
 } from "@relay/protocol";
+import { quoteDeclaredExecutionQueues } from "@relay/protocol";
 import type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
+import { AppMapTestCompileError } from "./app-map-test-compile-error.js";
 import { compileAppMapCombine, compileAppMapTest } from "./map-work.js";
 import {
   assessAppMapCombineCellBindings,
@@ -25,6 +27,12 @@ import {
   type OptionRunSet,
 } from "./option-run.js";
 import type { Recipe } from "./recipes.js";
+import {
+  assessMutatingRoutineSharing,
+  assessSequentialStartingState,
+  UnsafeStartingStateError,
+} from "./starting-state-routines.js";
+import { declaredDwellMsFromRecipeGraph } from "./execution-queue-compile.js";
 
 function issue(
   code: AppMapCombinePreflightIssue["code"],
@@ -125,6 +133,13 @@ export async function preflightAppMapCombine(
     blockers.push(issue("missing-variable", "Choose at least one Variable."));
   }
   if (!combine.testIds.length) blockers.push(issue("missing-test", "Choose at least one Test."));
+  for (const starting of assessSequentialStartingState(map, effectiveCombine.testIds)) {
+    blockers.push({
+      code: "unsafe-starting-state",
+      message: starting.message,
+      testId: starting.testId,
+    });
+  }
   const requiresCellCompilation =
     !compileOptions.runtimeTargetProfile && tests.some((test) => test.family !== undefined);
 
@@ -230,12 +245,26 @@ export async function preflightAppMapCombine(
           worlds;
       }
     } catch (error) {
-      blockers.push(
-        issue(
-          "compile-failed",
-          error instanceof Error ? error.message : "Relay could not compile this Combine.",
-        ),
-      );
+      if (error instanceof UnsafeStartingStateError) {
+        blockers.push({
+          code: "unsafe-starting-state",
+          message: error.message,
+          testId: error.testId,
+        });
+      } else if (error instanceof AppMapTestCompileError && error.code === "unsafe-execution-queue") {
+        blockers.push({
+          code: "unsafe-execution-queue",
+          message: error.message,
+          testId: error.testId,
+        });
+      } else {
+        blockers.push(
+          issue(
+            "compile-failed",
+            error instanceof Error ? error.message : "Relay could not compile this Combine.",
+          ),
+        );
+      }
     }
   }
 
@@ -301,6 +330,23 @@ export async function preflightAppMapCombine(
       });
       cells = assessed.states;
       blockers.push(...assessed.issues);
+      const accountVariable = variables.find((variable) => variable.kind === "account");
+      const sharingIssues = assessMutatingRoutineSharing(
+        map,
+        assessed.states.map((cell) => ({
+          testId: cell.testId,
+          ...(accountVariable && cell.values[accountVariable.id]
+            ? { accountId: cell.values[accountVariable.id] }
+            : {}),
+        })),
+      );
+      for (const starting of sharingIssues) {
+        blockers.push({
+          code: "unsafe-starting-state",
+          message: starting.message,
+          testId: starting.testId,
+        });
+      }
       if (overrides.target) {
         const target = {
           targetId: overrides.target.targetId,
@@ -321,6 +367,42 @@ export async function preflightAppMapCombine(
         ),
       );
     }
+  }
+  let queueQuotes: AppMapCombinePreflight["queueQuotes"];
+  if (tests.length) {
+    const members = tests.flatMap((test) => {
+      try {
+        const compiled = compileAppMapTest(map, test, compileOptions);
+        const queue = compiled.plan.executionQueue;
+        if (!queue) return [];
+        return [
+          {
+            executionQueue: queue,
+            workMs: estimateRecipeDuration(
+              compiled.root,
+              compiled.graph,
+              new Set([compiled.root.id]),
+            ),
+            requiredDwellMs: declaredDwellMsFromRecipeGraph(compiled.graph, compiled.root.id),
+          },
+        ];
+      } catch (error) {
+        if (error instanceof AppMapTestCompileError && error.code === "unsafe-execution-queue") {
+          blockers.push({
+            code: "unsafe-execution-queue",
+            message: error.message,
+            testId: error.testId,
+          });
+        }
+        return [];
+      }
+    });
+    const worldCount = Math.max(1, worlds);
+    const quoted = quoteDeclaredExecutionQueues(
+      members.flatMap((member) => Array.from({ length: worldCount }, () => member)),
+      1,
+    );
+    if (quoted.length) queueQuotes = quoted;
   }
   return {
     ok: blockers.length === 0,
@@ -345,6 +427,7 @@ export async function preflightAppMapCombine(
     deviceRuns: worlds,
     ...(expectedScreenshots !== undefined ? { expectedScreenshots } : {}),
     ...(estimatedDurationMs !== undefined ? { estimatedDurationMs } : {}),
+    ...(queueQuotes ? { queueQuotes } : {}),
     blockers,
     warnings,
     cells,

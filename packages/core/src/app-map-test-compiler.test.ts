@@ -1513,6 +1513,7 @@ test("dest-end mobile-data and app.background compile as coverage primitives", (
   );
   assert.ok(compiledMobile.plan.destEndRecipeIds?.length);
   assert.equal(compiledMobile.plan.startup.mode, "warm");
+  assert.equal(compiledMobile.plan.executionQueue, undefined);
 
   const background = destEndPrimitiveWork(map, "app-background", [
     {
@@ -1904,6 +1905,45 @@ test("verified checkpoint startup skips cold setup but begins with fresh destina
   assert.equal(standalone.recipes[standalone.rootRecipeId]?.steps[0]?.kind, "expect-screen");
 });
 
+test("dest-end capture-true compiles a later-review screenshot into plannedSlots", () => {
+  const map = fixture();
+  const work = destEndPrimitiveWork(map, "open-settings-panel", [
+    {
+      id: "open-settings",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { identifier: "composer" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { identifier: "sidebar.settings" } },
+        { kind: "wait-for", target: { identifier: "settings.account" }, timeoutMs: 8_000 },
+      ],
+    },
+  ]);
+  const instruction = work.steps[0]!;
+  work.steps = [{ ...instruction, capture: true }];
+  const compiled = compileAppMapTest(map, work);
+  assert.ok(compiled.plan.destEndRecipeIds?.length);
+  const screenshot = compiled.root.steps.find((step) => step.kind === "screenshot");
+  assert.deepEqual(screenshot, {
+    kind: "screenshot",
+    caption: `step:${instruction.id}:${instruction.intent}`,
+    review: { mode: "later", lookFor: instruction.intent, policy: "fast" },
+    id: `relay-test-${instruction.id}-2`,
+  });
+  assert.equal(compiled.plan.executionQueue, "fast-ui");
+  assert.equal(compiled.plan.plannedSlots?.length, 1);
+  assert.equal(compiled.plan.plannedSlots?.[0]?.checkpointId, `relay-test-${instruction.id}-2`);
+  assert.equal(compiled.plan.plannedSlots?.[0]?.stepId, `relay-test-${instruction.id}-2`);
+  assert.equal(compiled.plan.plannedSlots?.[0]?.attempt, 1);
+  assert.equal(compiled.plan.plannedSlots?.[0]?.lookFor, instruction.intent);
+  assert.doesNotThrow(() =>
+    createAppMapTestExecutionIntent({
+      plan: compiled.plan,
+      recipeGraph: compiled.graph,
+      preflight: preflightCompiledAppMapTestOffline(compiled.plan),
+    }),
+  );
+});
+
 test("scenario steps capture one result frame without recapturing their bound path", () => {
   const work = scenario();
   work.steps = [{ ...work.steps[0]!, capture: true }];
@@ -1929,6 +1969,12 @@ test("scenario steps capture one result frame without recapturing their bound pa
     )?.bindingKind,
     "connections",
   );
+  const diagnostic = compiled.root.steps.find((step) => step.kind === "screenshot");
+  assert.equal(diagnostic?.kind, "screenshot");
+  if (diagnostic?.kind === "screenshot") {
+    assert.equal(diagnostic.review, undefined);
+  }
+  assert.equal(compiled.plan.plannedSlots?.length ?? 0, 0);
 });
 
 test("scenario instruction paths reuse their nearest shared checkpoint", () => {

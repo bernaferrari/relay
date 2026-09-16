@@ -1,4 +1,11 @@
 import { parseAuthoringCaptureReview, type TargetProfile } from "@relay/protocol";
+import {
+  isRoutineAccountIsolation,
+  isRoutineLeftoverSurface,
+  isRoutineSharingPolicy,
+  isRoutineStartingStateFact,
+  type RoutineEffects,
+} from "@relay/protocol";
 import { appMapFail } from "./errors.js";
 import { browserTargetProfileProblem } from "./validation-target-profile.js";
 import type {
@@ -448,6 +455,13 @@ export function assertConnection(connection: Connection, scope: AppMapScope, lab
   else if (connection.destination.kind !== "end")
     appMapFail("invalid-map", `${label}.destination.kind is unsupported`);
   optionalText(connection.label, `${label}.label`);
+  if (
+    connection.coverage !== undefined &&
+    connection.coverage !== "inspect" &&
+    connection.coverage !== "transition"
+  ) {
+    appMapFail("invalid-map", `${label}.coverage is unsupported`);
+  }
   if (connection.actionIntentBinding !== undefined) {
     assertReviewedBinding(
       connection.actionIntentBinding,
@@ -661,6 +675,68 @@ export function assertAppMapCombine(
   }
 }
 
+function assertUniqueEnumList(
+  values: readonly string[] | undefined,
+  label: string,
+  allowed: (value: string) => boolean,
+  kind: string,
+): void {
+  if (values === undefined) return;
+  if (!Array.isArray(values)) appMapFail("invalid-map", `${label} must be an array`);
+  const seen = new Set<string>();
+  values.forEach((value, index) => {
+    if (typeof value !== "string" || !allowed(value)) {
+      appMapFail("invalid-map", `${label}[${index}] must be a ${kind}`);
+    }
+    if (seen.has(value)) appMapFail("duplicate-id", `${label} contains duplicate ${value}`);
+    seen.add(value);
+  });
+}
+
+export function assertRoutineEffects(effects: RoutineEffects, label: string): void {
+  objectValue(effects, label);
+  const unknown = Object.keys(effects).filter(
+    (key) =>
+      ![
+        "establishes",
+        "requires",
+        "leftover",
+        "sharing",
+        "accountIsolation",
+        "accountIsolationNote",
+      ].includes(key),
+  );
+  if (unknown.length) appMapFail("invalid-map", `${label} contains unknown field ${unknown[0]}`);
+  assertUniqueEnumList(
+    effects.establishes,
+    `${label}.establishes`,
+    isRoutineStartingStateFact,
+    "starting-state fact",
+  );
+  assertUniqueEnumList(
+    effects.requires,
+    `${label}.requires`,
+    isRoutineStartingStateFact,
+    "starting-state fact",
+  );
+  assertUniqueEnumList(
+    effects.leftover,
+    `${label}.leftover`,
+    isRoutineLeftoverSurface,
+    "leftover surface",
+  );
+  if (effects.sharing !== undefined && !isRoutineSharingPolicy(effects.sharing)) {
+    appMapFail("invalid-map", `${label}.sharing is unsupported`);
+  }
+  if (
+    effects.accountIsolation !== undefined &&
+    !isRoutineAccountIsolation(effects.accountIsolation)
+  ) {
+    appMapFail("invalid-map", `${label}.accountIsolation is unsupported`);
+  }
+  optionalText(effects.accountIsolationNote, `${label}.accountIsolationNote`, 500);
+}
+
 export function assertRoutine(routine: Routine, scope: AppMapScope, label: string): void {
   assertEntity(routine, scope, label);
   requiredText(routine.name, `${label}.name`);
@@ -682,6 +758,7 @@ export function assertRoutine(routine: Routine, scope: AppMapScope, label: strin
       appMapFail("invalid-map", `${label}.parameters[${index}].required must be boolean`);
   });
   assertActions(routine.actions, `${label}.actions`);
+  if (routine.effects !== undefined) assertRoutineEffects(routine.effects, `${label}.effects`);
 }
 
 export function assertFlow(flow: Flow, scope: AppMapScope, label: string): void {
@@ -762,6 +839,14 @@ export function assertConnectionPatch(patch: ConnectionPatch, label: string): vo
   }
   if (patch.label !== undefined && patch.label !== null)
     requiredText(patch.label, `${label}.label`);
+  if (
+    patch.coverage !== undefined &&
+    patch.coverage !== null &&
+    patch.coverage !== "inspect" &&
+    patch.coverage !== "transition"
+  ) {
+    appMapFail("invalid-map", `${label}.coverage is unsupported`);
+  }
   if (patch.actionIntentBinding !== undefined && patch.actionIntentBinding !== null) {
     assertReviewedBinding(patch.actionIntentBinding, "intentId", `${label}.actionIntentBinding`);
   }

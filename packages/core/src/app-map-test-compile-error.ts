@@ -15,7 +15,9 @@ export type AppMapTestCompileErrorCode =
   | "target-profile-ambiguous"
   | "route-variant-not-found"
   | "route-variant-ambiguous"
-  | "unsupported-platform";
+  | "unsupported-platform"
+  | "unsafe-starting-state"
+  | "unsafe-execution-queue";
 
 export class AppMapTestCompileError extends Error {
   constructor(

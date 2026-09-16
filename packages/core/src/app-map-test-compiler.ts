@@ -9,6 +9,7 @@ import type {
   RecipeStep,
   ReviewedDocumentOriginProjection,
 } from "@relay/protocol";
+import { materializeCaptureReviewSlots } from "@relay/protocol";
 import { assertScenarioTest } from "./app-map/test-intent-validation.js";
 import {
   compileAppMapConnection,
@@ -30,6 +31,18 @@ import {
 import { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
 import { attachMappedInboundPrelude } from "./app-map-test-inbound-prelude.js";
 import { leftoverWarmConfirmationSteps } from "./leftover-origin-recovery.js";
+import {
+  assertCompiledExecutionQueue,
+  destEndChromeInspectForTest,
+  destEndInspectScreenshotReview,
+  resolvedExecutionQueue,
+} from "./execution-queue-compile.js";
+import {
+  assessIntraTestStartingState,
+  assessTransitionDeclaredSource,
+  throwIfUnsafeStartingState,
+  UnsafeStartingStateError,
+} from "./starting-state-routines.js";
 import type { Recipe } from "./recipes.js";
 import { testWithSelectedRouteVariant } from "./app-map-test-route-variants.js";
 import { resolveScenarioTestCompileRoute } from "./app-map-test-compile-route.js";
@@ -145,6 +158,22 @@ export function compileAppMapScenarioTest(
   const selectedRouteVariant = resolved.selectedRouteVariant;
   const test = testWithSelectedRouteVariant(resolved.test, selectedRouteVariant);
   assertScenarioTest(test, `Selected Test ${test.id}`);
+  try {
+    throwIfUnsafeStartingState([
+      ...assessIntraTestStartingState(map, test),
+      ...assessTransitionDeclaredSource(map, test),
+    ]);
+  } catch (error) {
+    if (error instanceof UnsafeStartingStateError) {
+      throw new AppMapTestCompileError(
+        "unsafe-starting-state",
+        test.id,
+        test.steps[0]?.id ?? test.id,
+        error.message,
+      );
+    }
+    throw error;
+  }
   if (
     test.organizationId !== map.organizationId ||
     test.projectId !== map.projectId ||
@@ -733,7 +762,25 @@ export function compileAppMapScenarioTest(
           break;
       }
       if (step.capture && recipeSteps.at(-1)?.kind !== "screenshot") {
-        recipeSteps.push({ kind: "screenshot", caption: `step:${step.id}:${step.intent}` });
+        const destEnd =
+          step.kind === "instruction" &&
+          step.binding.kind === "connections" &&
+          step.binding.connectionIds.some(
+            (connectionId) => map.connections[connectionId]?.destination.kind === "end",
+          );
+        recipeSteps.push({
+          kind: "screenshot",
+          caption: `step:${step.id}:${step.intent}`,
+          ...(destEnd
+            ? {
+                review: destEndInspectScreenshotReview(
+                  test,
+                  step.intent,
+                  destEndChromeInspectForTest(map, test),
+                ),
+              }
+            : {}),
+        });
       }
       for (let index = start; index < recipeSteps.length; index += 1) {
         const recipeStep = recipeSteps[index]!;
@@ -819,6 +866,8 @@ export function compileAppMapScenarioTest(
       claimedAbsent.reason,
     );
   }
+  const executionQueue = resolvedExecutionQueue(map, test);
+  assertCompiledExecutionQueue(test, graph, executionQueue);
   const plan: AppMapCompiledTest = {
     schemaVersion: 1,
     appMapId: map.id,
@@ -862,6 +911,12 @@ export function compileAppMapScenarioTest(
       ? { destEndRecipeIds: [...destEndRecipeIds].sort((left, right) => left.localeCompare(right)) }
       : {}),
     performance: compiledPerformance(rootRecipeId, graph),
+    plannedSlots: materializeCaptureReviewSlots({
+      recipeSteps: root.steps,
+      recipes: graph,
+      requirementId: test.id,
+    }),
+    ...(executionQueue ? { executionQueue } : {}),
     startup: options.entryCheckpointScreenId
       ? { mode: "verified-checkpoint", screenId: options.entryCheckpointScreenId }
       : {

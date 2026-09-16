@@ -6,6 +6,13 @@ import type {
   RecipeStep,
 } from "@relay/protocol";
 import { APP_MAP_TEST_INTENT_LIMITS, APP_MAP_TEST_INTENT_SCHEMA_VERSION } from "@relay/protocol";
+import {
+  isExecutionQueue,
+  isRoutineAccountIsolation,
+  isRoutineLeftoverSurface,
+  isRoutineSharingPolicy,
+  isRoutineStartingStateFact,
+} from "@relay/protocol";
 import { BROWSER_ENGINES } from "@relay/protocol";
 import { validateRecipeSteps } from "../recipes.js";
 import { appMapFail } from "./errors.js";
@@ -432,6 +439,8 @@ export function assertScenarioTest(test: AppMapScenarioTest, label: string): voi
       "capture",
       "surfaceBindings",
       "validation",
+      "startingState",
+      "executionQueue",
       "createdAt",
       "updatedAt",
     ],
@@ -464,6 +473,73 @@ export function assertScenarioTest(test: AppMapScenarioTest, label: string): voi
       }
     } else if (capture.screenIds !== undefined) {
       appMapFail("invalid-map", `${label}.capture.screenIds is only valid for checkpoints`);
+    }
+  }
+  if (test.startingState !== undefined) {
+    const starting = objectValue(test.startingState, `${label}.startingState`);
+    allowedKeys(
+      starting,
+      [
+        "requires",
+        "sourceScreenId",
+        "leftover",
+        "sharing",
+        "accountIsolation",
+        "accountIsolationNote",
+      ],
+      `${label}.startingState`,
+    );
+    if (starting.sourceScreenId !== undefined) {
+      identifier(starting.sourceScreenId, `${label}.startingState.sourceScreenId`);
+    }
+    if (starting.requires !== undefined) {
+      if (!Array.isArray(starting.requires)) {
+        appMapFail("invalid-map", `${label}.startingState.requires must be an array`);
+      }
+      const seen = new Set<string>();
+      starting.requires.forEach((value, index) => {
+        if (typeof value !== "string" || !isRoutineStartingStateFact(value)) {
+          appMapFail("invalid-map", `${label}.startingState.requires[${index}] is unsupported`);
+        }
+        if (seen.has(value)) {
+          appMapFail("duplicate-id", `${label}.startingState.requires contains duplicate ${value}`);
+        }
+        seen.add(value);
+      });
+    }
+    if (starting.leftover !== undefined) {
+      if (!Array.isArray(starting.leftover)) {
+        appMapFail("invalid-map", `${label}.startingState.leftover must be an array`);
+      }
+      const seen = new Set<string>();
+      starting.leftover.forEach((value, index) => {
+        if (typeof value !== "string" || !isRoutineLeftoverSurface(value)) {
+          appMapFail("invalid-map", `${label}.startingState.leftover[${index}] is unsupported`);
+        }
+        if (seen.has(value)) {
+          appMapFail("duplicate-id", `${label}.startingState.leftover contains duplicate ${value}`);
+        }
+        seen.add(value);
+      });
+    }
+    if (
+      starting.sharing !== undefined &&
+      (typeof starting.sharing !== "string" || !isRoutineSharingPolicy(starting.sharing))
+    ) {
+      appMapFail("invalid-map", `${label}.startingState.sharing is unsupported`);
+    }
+    if (
+      starting.accountIsolation !== undefined &&
+      (typeof starting.accountIsolation !== "string" ||
+        !isRoutineAccountIsolation(starting.accountIsolation))
+    ) {
+      appMapFail("invalid-map", `${label}.startingState.accountIsolation is unsupported`);
+    }
+    optionalText(starting.accountIsolationNote, `${label}.startingState.accountIsolationNote`, 500);
+  }
+  if (test.executionQueue !== undefined) {
+    if (typeof test.executionQueue !== "string" || !isExecutionQueue(test.executionQueue)) {
+      appMapFail("invalid-map", `${label}.executionQueue is unsupported`);
     }
   }
   if (test.validation !== undefined) {

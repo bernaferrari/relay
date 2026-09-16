@@ -7,6 +7,8 @@ import {
   stepTarget,
 } from "./operation-schema-primitives.js";
 import { nativeRouteCompanions } from "./app-map-native-route-companion-schema.js";
+import { appMapTestStartingStateSchema } from "./routine-effects.js";
+import { executionQueueSchema } from "./execution-queue.js";
 import { repeatPilotSpecSchema, repeatSpecSchema } from "./repeat-spec.js";
 
 const forceRecaptureScreenIds = z
@@ -763,6 +765,8 @@ export const graphTest = z
     kind: z.literal("scenario"),
     intentSchemaVersion: z.literal(1),
     originApplication: z.string().trim().min(1).optional(),
+    startingState: appMapTestStartingStateSchema.optional(),
+    executionQueue: executionQueueSchema.optional(),
     steps: z.array(graphTestStep).max(200),
     family: testFamily.optional(),
     nativeRouteCompanions: nativeRouteCompanions.optional(),
@@ -840,6 +844,8 @@ const testSemanticEdit = z.discriminatedUnion("kind", [
           capture: testCapturePolicy.nullable().optional(),
           family: testFamily.nullable().optional(),
           nativeRouteCompanions: nativeRouteCompanions.nullable().optional(),
+          startingState: appMapTestStartingStateSchema.nullable().optional(),
+          executionQueue: executionQueueSchema.nullable().optional(),
         })
         .strict()
         .refine((patch) => Object.keys(patch).length > 0, "Test patch must change a field"),

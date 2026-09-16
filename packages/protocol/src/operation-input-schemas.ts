@@ -7,6 +7,7 @@ import {
   repeatWorkflowMutationSchema,
   testSemanticEdits,
 } from "./app-map-test-operation-schemas.js";
+import { routineEffectsSchema } from "./routine-effects.js";
 import { reviewedDocumentOriginOperationSchemas } from "./reviewed-document-origin-operation-schemas.js";
 import { appMapAuthoringOperationSchemas } from "./app-map-authoring-operation-schemas.js";
 import { executionOperationSchemas } from "./execution-operation-schemas.js";
@@ -313,6 +314,7 @@ export const operationInputSchemas = {
           fromScreenId: identifier("Source screen identifier"),
           destination: connectionDestination,
           label: z.string().optional(),
+          coverage: z.enum(["inspect", "transition"]).optional(),
           caseStackId: identifier("Optional case stack identifier").optional(),
           state: z.enum(["draft", "ready"]).optional(),
           actions: z.array(unknownRecord).describe("Optional action specifications").optional(),
@@ -418,6 +420,7 @@ export const operationInputSchemas = {
           description: z.string().optional(),
           parameters: z.array(unknownRecord).optional(),
           actions: z.array(unknownRecord).describe("Reusable action specifications"),
+          effects: routineEffectsSchema.optional(),
         })
         .strict(),
     })

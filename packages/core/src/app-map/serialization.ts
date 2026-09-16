@@ -1,4 +1,4 @@
-import type { TargetProfile } from "@relay/protocol";
+import type { RoutineLeftoverSurface, RoutineStartingStateFact, TargetProfile } from "@relay/protocol";
 import type {
   ActionSpec,
   AddScreenInput,
@@ -90,7 +90,28 @@ function normalizedConnection(value: Connection): Connection {
 }
 
 function normalizedRoutine(value: Routine): Routine {
-  return { ...structuredClone(value), actions: value.actions.map(normalizedAction) };
+  const cloned = { ...structuredClone(value), actions: value.actions.map(normalizedAction) };
+  if (!cloned.effects) return cloned;
+  const effects = cloned.effects;
+  return {
+    ...cloned,
+    effects: {
+      ...(effects.establishes
+        ? { establishes: sortedStrings([...effects.establishes]) as RoutineStartingStateFact[] }
+        : {}),
+      ...(effects.requires
+        ? { requires: sortedStrings([...effects.requires]) as RoutineStartingStateFact[] }
+        : {}),
+      ...(effects.leftover
+        ? { leftover: sortedStrings([...effects.leftover]) as RoutineLeftoverSurface[] }
+        : {}),
+      ...(effects.sharing ? { sharing: effects.sharing } : {}),
+      ...(effects.accountIsolation ? { accountIsolation: effects.accountIsolation } : {}),
+      ...(effects.accountIsolationNote
+        ? { accountIsolationNote: effects.accountIsolationNote }
+        : {}),
+    },
+  };
 }
 
 function normalizedAddScreenInput(value: AddScreenInput): AddScreenInput {

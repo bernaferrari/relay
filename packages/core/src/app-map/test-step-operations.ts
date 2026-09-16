@@ -387,7 +387,8 @@ export function applyScenarioTestStepEdits(
         case "test.patch": {
           const keys = Object.keys(edit.patch);
           const unknown = keys.find(
-            (key) => !["name", "capture", "family", "nativeRouteCompanions"].includes(key),
+            (key) =>
+              !["name", "capture", "family", "nativeRouteCompanions", "startingState", "executionQueue"].includes(key),
           );
           if (unknown) {
             fail(
@@ -412,19 +413,37 @@ export function applyScenarioTestStepEdits(
                   return withoutFamily;
                 })()
               : withoutCapture;
+          const withoutStarting =
+            edit.patch.startingState === null
+              ? (() => {
+                  const { startingState: _starting, ...withoutStarting } = withoutFamily;
+                  return withoutStarting;
+                })()
+              : withoutFamily;
+          const withoutQueue =
+            edit.patch.executionQueue === null
+              ? (() => {
+                  const { executionQueue: _queue, ...withoutQueue } = withoutStarting;
+                  return withoutQueue;
+                })()
+              : withoutStarting;
           const base =
             edit.patch.nativeRouteCompanions === null
               ? (() => {
                   const { nativeRouteCompanions: _companions, ...withoutCompanions } =
-                    withoutFamily;
+                    withoutQueue;
                   return withoutCompanions;
                 })()
-              : withoutFamily;
+              : withoutQueue;
           return validated({
             ...base,
             ...(edit.patch.name !== undefined ? { name: edit.patch.name } : {}),
             ...(edit.patch.capture && { capture: structuredClone(edit.patch.capture) }),
             ...(edit.patch.family && { family: structuredClone(edit.patch.family) }),
+            ...(edit.patch.startingState && {
+              startingState: structuredClone(edit.patch.startingState),
+            }),
+            ...(edit.patch.executionQueue && { executionQueue: edit.patch.executionQueue }),
             ...(edit.patch.nativeRouteCompanions && {
               nativeRouteCompanions: structuredClone(edit.patch.nativeRouteCompanions),
             }),

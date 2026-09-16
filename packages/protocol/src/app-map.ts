@@ -1,4 +1,12 @@
-import type { RecipeParameter, RecipeStep, StepPoint, StepTarget } from "./recipes.js";
+import type { RoutineEffects } from "./routine-effects.js";
+import type { ExecutionQueueDurationQuote } from "./execution-queue.js";
+import type {
+  CaptureCoverage,
+  RecipeParameter,
+  RecipeStep,
+  StepPoint,
+  StepTarget,
+} from "./recipes.js";
 import type { AppMapScenarioTest, AppMapScenarioTestEdit } from "./test-intent.js";
 import type { AssertionSpec } from "./assertions.js";
 import type { ActorKind } from "./coordination.js";
@@ -223,6 +231,8 @@ export type ScreenVariant = AppMapEntity & {
 type ActionMetadata = {
   id: string;
   label?: string;
+  /** Inspect may reuse leftover state. Transition must run the opener. */
+  coverage?: CaptureCoverage;
   /** Continue when this best-effort setup or cleanup action is unavailable. */
   optional?: boolean;
   /** Execute only when the named UI state is currently true. This keeps
@@ -291,6 +301,8 @@ export type Connection = AppMapEntity & {
   fromScreenId: string;
   destination: ConnectionDestination;
   label?: string;
+  /** Dest-end inspect may skip an already-open view. Transition cannot. */
+  coverage?: CaptureCoverage;
   actionIntentBinding?: ReviewedActionIntentBinding;
   caseStackId?: string;
   state: "draft" | "ready";
@@ -459,7 +471,9 @@ export type AppMapCombinePreflightIssue = {
     | "extra-target-binding"
     | "mismatched-target-binding"
     | "unsupported-target-binding"
-    | "zero-target-bindings";
+    | "zero-target-bindings"
+    | "unsafe-starting-state"
+    | "unsafe-execution-queue";
   message: string;
   cellId?: string;
   testId?: string;
@@ -526,6 +540,9 @@ export type AppMapCombinePreflight = {
   /** Wall-clock of completed Plan runs with the same cell count. Never a
    * guessed recipe estimate. Parallel contexts stay unquoted here. */
   observedDuration?: AppMapCombineObservedDuration;
+  /** Separate Fast UI / live output / stateful-survival duration targets when
+   * members declare a queue. Not a three-minute workbook promise. */
+  queueQuotes?: ExecutionQueueDurationQuote[];
   blockers: AppMapCombinePreflightIssue[];
   warnings: AppMapCombinePreflightIssue[];
   cells: AppMapCombineCellState[];
@@ -540,6 +557,9 @@ export type Routine = AppMapEntity & {
   description?: string;
   parameters: RecipeParameter[];
   actions: ActionSpec[];
+  /** Starting-state facts, leftover surfaces, and sharing policy. Absent
+   * effects do not invent leftover Home or Settings. */
+  effects?: RoutineEffects;
 };
 
 export type Flow = AppMapEntity & {
@@ -654,6 +674,7 @@ export type ConnectionPatch = {
   fromScreenId?: string;
   destination?: ConnectionDestination;
   label?: string | null;
+  coverage?: CaptureCoverage | null;
   actionIntentBinding?: ReviewedActionIntentBinding | null;
   caseStackId?: string | null;
   state?: Connection["state"];
@@ -676,6 +697,7 @@ export type CreateConnectionInput = Pick<Connection, "id" | "fromScreenId" | "de
     Pick<
       Connection,
       | "label"
+      | "coverage"
       | "actionIntentBinding"
       | "caseStackId"
       | "state"
@@ -687,7 +709,7 @@ export type CreateConnectionInput = Pick<Connection, "id" | "fromScreenId" | "de
   >;
 
 export type SaveRoutineInput = Pick<Routine, "name" | "actions"> &
-  Partial<Pick<Routine, "description" | "parameters">>;
+  Partial<Pick<Routine, "description" | "parameters" | "effects">>;
 
 export type SaveFlowInput = Pick<Flow, "name" | "startScreenId" | "connectionIds"> &
   Partial<Pick<Flow, "setup">>;
