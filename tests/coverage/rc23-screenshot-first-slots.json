@@ -177,8 +177,8 @@
       "caption": "Sidebar",
       "testId": "test-grok-ios-sidebar",
       "status": "captured",
-      "jobId": "345c2e67-8b32-49f3-9d9a-1876809d313d",
-      "mapRevision": 316,
+      "jobId": "87c73e11-aab5-4fe9-ac84-ad5d3b78e449",
+      "mapRevision": 328,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -228,8 +228,8 @@
       "caption": "Attach",
       "testId": "test-grok-ios-attach",
       "status": "captured",
-      "jobId": "679b39b7-fb38-41de-a5b9-661504f0eeb0",
-      "mapRevision": 319,
+      "jobId": "c585dc28-791d-4e9e-bf6a-1e861894ac2a",
+      "mapRevision": 329,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -279,8 +279,8 @@
       "caption": "Settings",
       "testId": "test-grok-ios-settings",
       "status": "captured",
-      "jobId": "ec09b7ba-fe83-4fa4-b076-121bc713a99a",
-      "mapRevision": 322,
+      "jobId": "5234cbf5-d91e-4052-b825-7d2dae493fa1",
+      "mapRevision": 332,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -481,8 +481,8 @@
       "caption": "Models",
       "testId": "test-grok-ios-models",
       "status": "captured",
-      "jobId": "3cd34331-eacc-4f36-8a9d-6df00122a10d",
-      "mapRevision": 320,
+      "jobId": "67eff67f-9710-42e7-8e6e-70cbc828029e",
+      "mapRevision": 330,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -532,8 +532,8 @@
       "caption": "Private chat",
       "testId": "test-grok-ios-private-chat",
       "status": "captured",
-      "jobId": "dd229b0b-918e-42eb-9e62-fab1851a1d8d",
-      "mapRevision": 321,
+      "jobId": "69f353ad-2a43-4559-876e-557d69424dc8",
+      "mapRevision": 331,
       "scenarioKind": "physical",
       "blocked": false
     }
