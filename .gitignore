@@ -10,6 +10,9 @@ out/
 .pnpm-store/
 .relay/
 coverage/
+# Reviewed Grok QA inventories (not Vitest HTML).
+!tests/coverage/
+!tests/coverage/**
 .turbo/
 .cache/
 vendor/opencode/

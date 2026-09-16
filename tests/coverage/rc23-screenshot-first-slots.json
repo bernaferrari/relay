@@ -1,0 +1,483 @@
+{
+  "id": "rc23-screenshot-first",
+  "requirementId": "rc23-screenshot-first",
+  "workbookBound": 0,
+  "checkpointIds": [
+    "home-chrome",
+    "dictation",
+    "sidebar",
+    "attach",
+    "settings",
+    "imagine",
+    "logo",
+    "composer-focus",
+    "models",
+    "private-chat"
+  ],
+  "platforms": [
+    "web",
+    "android",
+    "ios"
+  ],
+  "attempt": 1,
+  "counts": {
+    "planned": 30,
+    "captured": 17,
+    "blocked": 1,
+    "missing": 12,
+    "pending": 17,
+    "accepted": 0
+  },
+  "slots": [
+    {
+      "slotId": "rc23-screenshot-first::home-chrome::grok-com::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "home-chrome",
+      "platform": "web",
+      "configuration": {
+        "browser": "grok-com"
+      },
+      "attempt": 1,
+      "caption": "Home chrome",
+      "testId": "test-grok-web-signed-in-home",
+      "status": "captured",
+      "scenarioKind": "browser-approximation",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::home-chrome::android::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "home-chrome",
+      "platform": "android",
+      "configuration": {
+        "app": "android"
+      },
+      "attempt": 1,
+      "caption": "Home chrome",
+      "testId": "test-grok-android-home-chrome",
+      "status": "captured",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::home-chrome::ai.x.GrokApp::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "home-chrome",
+      "platform": "ios",
+      "configuration": {
+        "app": "ai.x.GrokApp"
+      },
+      "attempt": 1,
+      "caption": "Home chrome",
+      "testId": "test-grok-ios-home-chrome",
+      "status": "captured",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::dictation::grok-com::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "dictation",
+      "platform": "web",
+      "configuration": {
+        "browser": "grok-com"
+      },
+      "attempt": 1,
+      "caption": "Dictation",
+      "testId": "test-grok-web-signed-in-dictation-inspect",
+      "status": "missing",
+      "scenarioKind": "browser-approximation",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::dictation::android::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "dictation",
+      "platform": "android",
+      "configuration": {
+        "app": "android"
+      },
+      "attempt": 1,
+      "caption": "Dictation",
+      "testId": "test-grok-android-dictation",
+      "status": "captured",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::dictation::ai.x.GrokApp::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "dictation",
+      "platform": "ios",
+      "configuration": {
+        "app": "ai.x.GrokApp"
+      },
+      "attempt": 1,
+      "caption": "Dictation",
+      "testId": "test-grok-ios-dictation",
+      "status": "captured",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::sidebar::grok-com::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "sidebar",
+      "platform": "web",
+      "configuration": {
+        "browser": "grok-com"
+      },
+      "attempt": 1,
+      "caption": "Sidebar",
+      "testId": "test-grok-web-signed-in-sidebar",
+      "status": "missing",
+      "scenarioKind": "browser-approximation",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::sidebar::android::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "sidebar",
+      "platform": "android",
+      "configuration": {
+        "app": "android"
+      },
+      "attempt": 1,
+      "caption": "Sidebar",
+      "testId": "test-grok-android-sidebar",
+      "status": "captured",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::sidebar::ai.x.GrokApp::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "sidebar",
+      "platform": "ios",
+      "configuration": {
+        "app": "ai.x.GrokApp"
+      },
+      "attempt": 1,
+      "caption": "Sidebar",
+      "testId": "test-grok-ios-sidebar",
+      "status": "captured",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::attach::grok-com::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "attach",
+      "platform": "web",
+      "configuration": {
+        "browser": "grok-com"
+      },
+      "attempt": 1,
+      "caption": "Attach",
+      "testId": "test-grok-web-signed-in-attach",
+      "status": "captured",
+      "scenarioKind": "browser-approximation",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::attach::android::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "attach",
+      "platform": "android",
+      "configuration": {
+        "app": "android"
+      },
+      "attempt": 1,
+      "caption": "Attach",
+      "testId": "test-grok-android-attach",
+      "status": "captured",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::attach::ai.x.GrokApp::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "attach",
+      "platform": "ios",
+      "configuration": {
+        "app": "ai.x.GrokApp"
+      },
+      "attempt": 1,
+      "caption": "Attach",
+      "testId": "test-grok-ios-attach",
+      "status": "missing",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::settings::grok-com::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "settings",
+      "platform": "web",
+      "configuration": {
+        "browser": "grok-com"
+      },
+      "attempt": 1,
+      "caption": "Settings",
+      "testId": "test-grok-web-signed-in-settings",
+      "status": "captured",
+      "scenarioKind": "browser-approximation",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::settings::android::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "settings",
+      "platform": "android",
+      "configuration": {
+        "app": "android"
+      },
+      "attempt": 1,
+      "caption": "Settings",
+      "testId": "test-grok-android-settings",
+      "status": "captured",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::settings::ai.x.GrokApp::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "settings",
+      "platform": "ios",
+      "configuration": {
+        "app": "ai.x.GrokApp"
+      },
+      "attempt": 1,
+      "caption": "Settings",
+      "testId": "test-grok-ios-settings",
+      "status": "missing",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::imagine::grok-com::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "imagine",
+      "platform": "web",
+      "configuration": {
+        "browser": "grok-com"
+      },
+      "attempt": 1,
+      "caption": "Imagine",
+      "testId": "test-grok-web-signed-in-imagine",
+      "status": "captured",
+      "scenarioKind": "browser-approximation",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::imagine::android::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "imagine",
+      "platform": "android",
+      "configuration": {
+        "app": "android"
+      },
+      "attempt": 1,
+      "caption": "Imagine",
+      "testId": "test-grok-android-imagine",
+      "status": "captured",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::imagine::ai.x.GrokApp::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "imagine",
+      "platform": "ios",
+      "configuration": {
+        "app": "ai.x.GrokApp"
+      },
+      "attempt": 1,
+      "caption": "Imagine",
+      "testId": "test-grok-ios-imagine",
+      "status": "blocked",
+      "scenarioKind": "physical",
+      "blocked": true
+    },
+    {
+      "slotId": "rc23-screenshot-first::logo::grok-com::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "logo",
+      "platform": "web",
+      "configuration": {
+        "browser": "grok-com"
+      },
+      "attempt": 1,
+      "caption": "Logo",
+      "testId": "test-grok-web-signed-in-logo",
+      "status": "missing",
+      "scenarioKind": "browser-approximation",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::logo::android::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "logo",
+      "platform": "android",
+      "configuration": {
+        "app": "android"
+      },
+      "attempt": 1,
+      "caption": "Logo",
+      "testId": "test-grok-android-logo",
+      "status": "captured",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::logo::ai.x.GrokApp::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "logo",
+      "platform": "ios",
+      "configuration": {
+        "app": "ai.x.GrokApp"
+      },
+      "attempt": 1,
+      "caption": "Logo",
+      "testId": "test-grok-ios-logo",
+      "status": "missing",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::composer-focus::grok-com::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "composer-focus",
+      "platform": "web",
+      "configuration": {
+        "browser": "grok-com"
+      },
+      "attempt": 1,
+      "caption": "Composer focus",
+      "testId": null,
+      "status": "missing",
+      "scenarioKind": "browser-approximation",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::composer-focus::android::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "composer-focus",
+      "platform": "android",
+      "configuration": {
+        "app": "android"
+      },
+      "attempt": 1,
+      "caption": "Composer focus",
+      "testId": "test-grok-android-composer-focus",
+      "status": "captured",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::composer-focus::ai.x.GrokApp::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "composer-focus",
+      "platform": "ios",
+      "configuration": {
+        "app": "ai.x.GrokApp"
+      },
+      "attempt": 1,
+      "caption": "Composer focus",
+      "testId": "test-grok-ios-composer-focus",
+      "status": "missing",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::models::grok-com::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "models",
+      "platform": "web",
+      "configuration": {
+        "browser": "grok-com"
+      },
+      "attempt": 1,
+      "caption": "Models",
+      "testId": "test-grok-web-signed-in-model-iterate",
+      "status": "missing",
+      "scenarioKind": "browser-approximation",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::models::android::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "models",
+      "platform": "android",
+      "configuration": {
+        "app": "android"
+      },
+      "attempt": 1,
+      "caption": "Models",
+      "testId": "test-grok-android-models",
+      "status": "captured",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::models::ai.x.GrokApp::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "models",
+      "platform": "ios",
+      "configuration": {
+        "app": "ai.x.GrokApp"
+      },
+      "attempt": 1,
+      "caption": "Models",
+      "testId": "test-grok-ios-models",
+      "status": "missing",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::private-chat::grok-com::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "private-chat",
+      "platform": "web",
+      "configuration": {
+        "browser": "grok-com"
+      },
+      "attempt": 1,
+      "caption": "Private chat",
+      "testId": "test-grok-web-signed-in-private-chat",
+      "status": "missing",
+      "scenarioKind": "browser-approximation",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::private-chat::android::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "private-chat",
+      "platform": "android",
+      "configuration": {
+        "app": "android"
+      },
+      "attempt": 1,
+      "caption": "Private chat",
+      "testId": "test-grok-android-private-chat",
+      "status": "captured",
+      "scenarioKind": "physical",
+      "blocked": false
+    },
+    {
+      "slotId": "rc23-screenshot-first::private-chat::ai.x.GrokApp::::::1",
+      "requirementId": "rc23-screenshot-first",
+      "checkpointId": "private-chat",
+      "platform": "ios",
+      "configuration": {
+        "app": "ai.x.GrokApp"
+      },
+      "attempt": 1,
+      "caption": "Private chat",
+      "testId": "test-grok-ios-private-chat",
+      "status": "missing",
+      "scenarioKind": "physical",
+      "blocked": false
+    }
+  ]
+}

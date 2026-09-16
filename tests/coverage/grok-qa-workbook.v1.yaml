@@ -1,0 +1,1008 @@
+# Reviewed Grok QA coverage manifest (RC-09 freeze + RC-13 evidence packets / user review §3 and §6A).
+# Source workbook grok-qa-graph.xlsx is unchanged. This freeze corrects advertised
+# "16 live cases" to 15 active families. grok-ios-daily 12/12 is not this workbook.
+# Coverage is only an explicit reviewed Test binding. Similar names never cover.
+# Packets: view=single view, transition=before/after, screenshot-receipt=screenshot+file/link receipt,
+# persistence=before/restart/after, sequence=short temporal sequence, generated-output=declared phase.
+# suggestedExecutionQueue is Fast UI | live-output | stateful-survival — not a Test binding.
+schemaVersion: 1
+id: grok-qa-workbook
+revision: 2
+reviewedAt: "2026-09-16"
+source:
+  workbook: grok-qa-graph.xlsx
+  sha256: 43a2ba192fde342e074b8dac805572b23136701d0662d0a9933cb8cacc81de7a
+  originals: "'Merge map'!A4:G61"
+  families: "'Suite'!A4:H20"
+  exclusions: "'Dead and skip'!A4:D10"
+counts:
+  originals: 58
+  families: 17
+  excludedFamilies:
+    - S15
+    - S17
+  activeFamilies: 15
+  globallyExcludedOriginals: 5
+  remainingBeforePlatformTierGates: 53
+conflicts:
+  - id: customize-grok-removed-vs-peek
+    originalIds: [8]
+    relatedOriginalIds: [40]
+    status: unresolved
+    summary: "Workbook S05 says Customize Grok must NOT appear (removed iOS 1.4.27 / Android 1.2.24.11). Live grok-ios Test test-grok-ios-presets is Customize Grok peek dest-end (Settings popover; do not tap App Language or Sign Out). test-grok-ios-unrecorded-customize-preset records the removed preset. Neither source silently rewrites the other."
+    sources:
+      - "Suite S05 / original 8 presets"
+      - "grok-ios test-grok-ios-presets (Customize Grok peek)"
+      - "grok-ios test-grok-ios-unrecorded-customize-preset"
+  - id: dictation-workbook-skip-vs-ios-dest-end
+    originalIds: [42]
+    status: unresolved
+    summary: "Original 42 Enable Dictation is globally excluded (S15 DEAD-SKIP). grok-ios test-grok-ios-dictation is Dictation inspect dest-end on grok-ios-daily (inspect grok-mic + Speak; do not enable dictation or tap Speak). That inspect Test is not a reviewed binding of original 42 and does not resurrect the skipped toggle."
+    sources:
+      - "Suite S15 / Dead and skip original 42"
+      - "grok-ios test-grok-ios-dictation (Dictation inspect)"
+  - id: orig-50-fast-vs-heavy-expert
+    originalIds: [50]
+    status: unresolved
+    summary: "Original 50 is a 5-image edit (dogs/hat or animals). Workbook/plan gates the 5-pack to Heavy/Expert, and also notes Fast is OK for single-image since 3/27. Leave gating unresolved until the requirement owner chooses. Do not guess Fast vs Heavy/Expert."
+    sources:
+      - "Suite S11 / original 50"
+      - "plan required-requirement decision 2"
+notWorkbookPacks:
+  - packId: grok-ios-daily
+    testIds:
+      - test-grok-ios-home-chrome
+      - test-grok-ios-dictation
+      - test-grok-ios-sidebar
+      - test-grok-ios-logo
+      - test-grok-ios-composer-focus
+      - test-grok-ios-conversations
+      - test-grok-ios-new-chat
+      - test-grok-ios-private-chat
+      - test-grok-ios-attach
+      - test-grok-ios-settings
+      - test-grok-ios-models
+      - test-grok-ios-presets
+    note: "12 leftover-tolerant dest-end Tests (batch d7eafb3c). Not the 58-row workbook. Imagine stays Unbound and is not a member. Dictation inspect is not original 42. Customize Grok peek is not a reviewed S05 binding."
+  - packId: grok-ios-imagine
+    testIds:
+      - test-grok-ios-imagine
+    note: "iOS Imagine Unbound — navigation.tab.imagine absent. Compile unresolved-step. Not coverage for original 37."
+families:
+  - id: S01
+    name: "Auth in + out"
+    active: true
+    queue: "auth-isolated"
+    originalIds: [44, 45, 46, 47]
+    suiteRow: "'Suite'!A4:H4"
+  - id: S02
+    name: "Shell navigation"
+    active: true
+    queue: "fast-ui"
+    originalIds: [3, 33, 35, 36, 37]
+    suiteRow: "'Suite'!A5:H5"
+  - id: S03
+    name: "Composer send"
+    active: true
+    queue: "fast-ui"
+    originalIds: [1, 2, 6]
+    suiteRow: "'Suite'!A6:H6"
+  - id: S04
+    name: "Attach + file analysis"
+    active: true
+    queue: "fast-ui"
+    originalIds: [4, 5, 53]
+    suiteRow: "'Suite'!A7:H7"
+  - id: S05
+    name: "Model + presets"
+    active: true
+    queue: "fast-ui"
+    originalIds: [7, 8]
+    suiteRow: "'Suite'!A8:H8"
+  - id: S06
+    name: "Auto routing pair"
+    active: true
+    queue: "output"
+    originalIds: [28, 29]
+    suiteRow: "'Suite'!A9:H9"
+  - id: S07
+    name: "Response chrome"
+    active: true
+    queue: "output"
+    originalIds: [9, 10, 12, 13]
+    suiteRow: "'Suite'!A10:H10"
+  - id: S08
+    name: "Output battery (one thread)"
+    active: true
+    queue: "output"
+    originalIds: [14, 15, 32, 48, 51, 52]
+    suiteRow: "'Suite'!A11:H11"
+  - id: S09
+    name: "Single-agent tools + sources"
+    active: true
+    queue: "tools/output"
+    originalIds: [11, 30, 56]
+    suiteRow: "'Suite'!A12:H12"
+  - id: S10
+    name: "Heavy multi-agent"
+    active: true
+    queue: "slow-output"
+    originalIds: [31, 57, 58]
+    suiteRow: "'Suite'!A13:H13"
+  - id: S11
+    name: "Image gen + edit + export"
+    active: true
+    queue: "slow-output"
+    originalIds: [16, 17, 50, 54, 55]
+    suiteRow: "'Suite'!A14:H14"
+  - id: S12
+    name: "Image search"
+    active: true
+    queue: "output"
+    originalIds: [49]
+    suiteRow: "'Suite'!A15:H15"
+  - id: S13
+    name: "History lifecycle"
+    active: true
+    queue: "stateful"
+    originalIds: [21, 34, 38, 39]
+    suiteRow: "'Suite'!A16:H16"
+  - id: S14
+    name: "Settings inventory + language + sub"
+    active: true
+    queue: "fast-ui"
+    originalIds: [40, 41, 43]
+    suiteRow: "'Suite'!A17:H17"
+  - id: S15
+    name: "DEAD — Dictation"
+    active: false
+    queue: "excluded"
+    originalIds: [42]
+    suiteRow: "'Suite'!A18:H18"
+  - id: S16
+    name: "Survival matrix"
+    active: true
+    queue: "survival"
+    originalIds: [22, 23, 24, 25, 26, 27]
+    suiteRow: "'Suite'!A19:H19"
+  - id: S17
+    name: "DEAD — Threads"
+    active: false
+    queue: "excluded"
+    originalIds: [18, 19, 20]
+    suiteRow: "'Suite'!A20:H20"
+originals:
+  - id: 1
+    gqaId: GQA-001
+    name: "Type and send a message"
+    family: S03
+    mergeMapRow: "'Merge map'!A4:G4"
+    criteria: "Message is entered and sent successfully."
+    intent: "Type a message inside the main text input field and send it."
+    evidencePacket: generated-output
+    queue: "fast-ui"
+    suggestedExecutionQueue: live-output
+    gates:
+      []
+    status: unbound
+    bindings: []
+  - id: 2
+    gqaId: GQA-002
+    name: "Multiline composer"
+    family: S03
+    mergeMapRow: "'Merge map'!A5:G5"
+    criteria: "Message is entered and sent successfully. Input box expands to show multiple lines of text."
+    intent: "Type a long message with line breaks to create a multiline entry."
+    evidencePacket: view
+    queue: "fast-ui"
+    suggestedExecutionQueue: fast-ui
+    gates:
+      []
+    status: unbound
+    bindings: []
+  - id: 3
+    gqaId: GQA-003
+    name: "New Chat from header pencil"
+    family: S02
+    mergeMapRow: "'Merge map'!A6:G6"
+    criteria: "New Chat button becomes visible after sending a message. When tapped, it opens a new, empty chat screen with no previous history."
+    intent: "Start a new conversation or select an existing one. Once a chat message appears, interact with the pencil icon in the top-right corner."
+    evidencePacket: transition
+    queue: "fast-ui"
+    suggestedExecutionQueue: fast-ui
+    gates:
+      []
+    status: unbound
+    bindings: []
+  - id: 4
+    gqaId: GQA-004
+    name: "Attach / import menu"
+    family: S04
+    mergeMapRow: "'Merge map'!A7:G7"
+    criteria: "Mobile menu: Camera, Photos|Gallery, Files, Connectors, Skills. Web: Upload a file, Add from Google Drive, Recent, Skills, Connectors."
+    intent: "Interact with the Attachment (paperclip) icon to open import options."
+    evidencePacket: view
+    queue: "fast-ui"
+    suggestedExecutionQueue: fast-ui
+    gates:
+      - "Platform menu inventory. File Connectors column itself is original 5 (globally skipped); upload still live."
+    status: unbound
+    bindings: []
+  - id: 5
+    gqaId: GQA-005
+    name: "File Connectors (Drive / OneDrive)"
+    family: S04
+    mergeMapRow: "'Merge map'!A8:G8"
+    criteria: "Add from/Connect Google Drive. Add from/Connect Microsoft OneDrive."
+    intent: "Make sure Google Drive & Microsoft OneDrive are connected. Settings > Data Controls > File Connectors."
+    evidencePacket: view
+    queue: "fast-ui"
+    suggestedExecutionQueue: fast-ui
+    gates:
+      - WEB ONLY, skip for now (4/2). Upload still live via original 53.
+    status: excluded
+    exclusion:
+      kind: dead
+      authorizedBy: workbook
+      reason: "Standalone File Connectors column is globally skipped (WEB ONLY, skip for now 4/2). Merge map DEAD. Upload stays live as original 53."
+    bindings: []
+  - id: 6
+    gqaId: GQA-006
+    name: "Autocomplete / typeaheads"
+    family: S03
+    mergeMapRow: "'Merge map'!A9:G9"
+    criteria: "The selected query is sent and the assistant responds. Typeaheads toggled on in Settings must stick after force-close and reopen."
+    intent: "In a new chat, start typing an incomplete query like Who was the. Select a typeahead suggestion."
+    evidencePacket: persistence
+    queue: "fast-ui"
+    suggestedExecutionQueue: stateful-survival
+    gates:
+      - SuperGrok or above. Skip Android.
+    status: unbound
+    bindings: []
+  - id: 7
+    gqaId: GQA-007
+    name: "Model selector"
+    family: S05
+    mergeMapRow: "'Merge map'!A10:G10"
+    criteria: "Model updates immediately and new selection is reflected in the UI."
+    intent: "Tap Model Selector dropdown and select a different chat model. Test all available options."
+    evidencePacket: view
+    queue: "fast-ui"
+    suggestedExecutionQueue: fast-ui
+    gates:
+      - "Selector: SuperGrok Lite+."
+      - Inspect separately from actually switching Fast/Expert.
+    status: unbound
+    bindings: []
+  - id: 8
+    gqaId: GQA-008
+    name: "Presets"
+    family: S05
+    mergeMapRow: "'Merge map'!A11:G11"
+    criteria: "All tools open and function as expected. Customize Grok no longer a preset on iOS 1.4.27 (4581) or Android 1.2.24.11."
+    intent: "Check Get SuperGrok (only if unsubscribed)/Try Skills, Create Videos, Edit Image, Voice Mode, Open Camera, Analyze Docs."
+    evidencePacket: view
+    queue: "fast-ui"
+    suggestedExecutionQueue: fast-ui
+    gates:
+      - "Presets: mobile only."
+      - "Workbook: Customize Grok must NOT appear. Live iOS Customize Grok peek exists — conflict unresolved."
+    status: unbound
+    bindings: []
+  - id: 9
+    gqaId: GQA-009
+    name: "Response toolbar"
+    family: S07
+    mergeMapRow: "'Merge map'!A12:G12"
+    criteria: "Web quick actions: Regen, Read Aloud, Copy, Create Share Link, Rating, More {Report Issue, Export PDF, Start Thread}. Android = no More."
+    intent: "After assistant responds, verify Copy, Share, Like, Dislike, Read Aloud, Regenerate, and More are visible and functional. Tap More and verify Copy Plaintext, Copy ID, and Report Issue."
+    evidencePacket: screenshot-receipt
+    queue: "output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Start Thread is absent leftover chrome, not Thread coverage (originals 18-20).
+    status: unbound
+    bindings: []
+  - id: 10
+    gqaId: GQA-010
+    name: "Follow-up chips"
+    family: S07
+    mergeMapRow: "'Merge map'!A13:G13"
+    criteria: "The query text is sent in the chat and the assistant responds to that query."
+    intent: "Below the message and toolbar, suggested follow-up queries are shown. Click one."
+    evidencePacket: transition
+    queue: "output"
+    suggestedExecutionQueue: live-output
+    gates:
+      []
+    status: unbound
+    bindings: []
+  - id: 11
+    gqaId: GQA-011
+    name: "Sources rail (Expert movie review)"
+    family: S09
+    mergeMapRow: "'Merge map'!A14:G14"
+    criteria: "The detailed list opens in the sidebar (or a lower pop-up on Android/iOS)."
+    intent: "Select Expert and ask a detailed web-search question, e.g. review of The Usual Suspects. Click 10 web pages / 20 X posts."
+    evidencePacket: sequence
+    queue: "tools/output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - "Sources rail: SuperGrok Lite+."
+    status: unbound
+    bindings: []
+  - id: 12
+    gqaId: GQA-012
+    name: "No autoscroll"
+    family: S07
+    mergeMapRow: "'Merge map'!A15:G15"
+    criteria: "The response should not autoscroll to the bottom."
+    intent: "After the response has been generated, the beginning of the response is visible."
+    evidencePacket: sequence
+    queue: "output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Added 7/13.
+    status: unbound
+    bindings: []
+  - id: 13
+    gqaId: GQA-013
+    name: "Share conversation"
+    family: S07
+    mergeMapRow: "'Merge map'!A16:G16"
+    criteria: "A copied-link confirmation appears and the correct share link is copied. On iOS, ... next to New Chat opens Share Conversation & Delete Conversation."
+    intent: "Interact with the share button in the top-right corner of the chat page."
+    evidencePacket: screenshot-receipt
+    queue: "output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Share toast iOS-noted 4/13.
+    status: unbound
+    bindings: []
+  - id: 14
+    gqaId: GQA-014
+    name: "Code block"
+    family: S08
+    mergeMapRow: "'Merge map'!A17:G17"
+    criteria: "Code displays inside a formatted block with syntax highlighting and copy option."
+    intent: "Request a code snippet, e.g. Write a Python function to reverse a string."
+    evidencePacket: generated-output
+    queue: "output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Human reviews rendering. Copy needs a receipt.
+    status: unbound
+    bindings: []
+  - id: 15
+    gqaId: GQA-015
+    name: "Markdown headers"
+    family: S08
+    mergeMapRow: "'Merge map'!A18:G18"
+    criteria: "Response displays formatted headers with size hierarchy (H1 largest – H6 smallest)."
+    intent: "Request markdown headers from H1 to H6 with examples of bold and italic text."
+    evidencePacket: generated-output
+    queue: "output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - No mandatory Markdown judge. Keep human criterion.
+    status: unbound
+    bindings: []
+  - id: 16
+    gqaId: GQA-016
+    name: "Image gen download"
+    family: S11
+    mergeMapRow: "'Merge map'!A19:G19"
+    criteria: "Image downloads successfully."
+    intent: "Ask Grok to generate an image. Click download icon from image in carousel."
+    evidencePacket: screenshot-receipt
+    queue: "slow-output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Reuse the exact newly generated image.
+    status: unbound
+    bindings: []
+  - id: 17
+    gqaId: GQA-017
+    name: "Make Video"
+    family: S11
+    mergeMapRow: "'Merge map'!A20:G20"
+    criteria: "Lightbox opens in Imagine and video generated successfully."
+    intent: "Ask Grok to generate an image. Click Make Video icon."
+    evidencePacket: generated-output
+    queue: "slow-output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - "Make Video: SuperGrok Lite+."
+    status: unbound
+    bindings: []
+  - id: 18
+    gqaId: GQA-018
+    name: "Start Thread"
+    family: S17
+    mergeMapRow: "'Merge map'!A21:G21"
+    criteria: "A sidebar opens showing the current model response and Reply to thread input."
+    intent: "After the assistant responds, click Start a thread on the latest and an older response."
+    evidencePacket: view
+    queue: "excluded"
+    suggestedExecutionQueue: live-output
+    gates:
+      - "Removed 5/22. Was web only. If Start Thread still appears in More, file leftover chrome — do not write a happy-path case."
+    status: excluded
+    exclusion:
+      kind: dead
+      authorizedBy: workbook
+      reason: "Threads removed 5/22. Was web only. No happy-path case."
+    bindings: []
+  - id: 19
+    gqaId: GQA-019
+    name: "Reply in thread"
+    family: S17
+    mergeMapRow: "'Merge map'!A22:G22"
+    criteria: "Message is entered and sent successfully and the assistant replies in the thread. Small number appears on Start a thread."
+    intent: "Type a message in the Reply to thread text input field and send it in the thread."
+    evidencePacket: generated-output
+    queue: "excluded"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Removed 5/22.
+    status: excluded
+    exclusion:
+      kind: dead
+      authorizedBy: workbook
+      reason: "Threads removed 5/22."
+    bindings: []
+  - id: 20
+    gqaId: GQA-020
+    name: "Continue main chat with thread"
+    family: S17
+    mergeMapRow: "'Merge map'!A23:G23"
+    criteria: "Message is entered and sent successfully and the assistant replies in the main chat."
+    intent: "After the assistant responds in the thread, continue the main conversation. Try with the thread opened and closed."
+    evidencePacket: transition
+    queue: "excluded"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Removed 5/22.
+    status: excluded
+    exclusion:
+      kind: dead
+      authorizedBy: workbook
+      reason: "Threads removed 5/22."
+    bindings: []
+  - id: 21
+    gqaId: GQA-021
+    name: "Open older conversation"
+    family: S13
+    mergeMapRow: "'Merge map'!A24:G24"
+    criteria: "The old conversation opens and shows previous messages correctly. New prompts are successfully sent and responses are received."
+    intent: "From the sidebar, open an older conversation and verify previous messages load. Type a new prompt in the same chat and send it."
+    evidencePacket: transition
+    queue: "stateful"
+    suggestedExecutionQueue: stateful-survival
+    gates:
+      []
+    status: unbound
+    bindings: []
+  - id: 22
+    gqaId: GQA-022
+    name: "Force-close while generating"
+    family: S16
+    mergeMapRow: "'Merge map'!A25:G25"
+    criteria: "Previous messages are visible, and the response resumes after the app restarts."
+    intent: "Start a conversation; while the response is generating, close the app/tab completely and reopen it. Navigate to the conversation via history."
+    evidencePacket: persistence
+    queue: "survival"
+    suggestedExecutionQueue: stateful-survival
+    gates:
+      - All platforms. Isolated fixture.
+    status: unbound
+    bindings: []
+  - id: 23
+    gqaId: GQA-023
+    name: "App-swap ~1 min"
+    family: S16
+    mergeMapRow: "'Merge map'!A26:G26"
+    criteria: "Previous messages are preserved, and conversation can continue normally."
+    intent: "While the conversation is active, switch to another app for about one minute, then return to the chat."
+    evidencePacket: sequence
+    queue: "survival"
+    suggestedExecutionQueue: stateful-survival
+    gates:
+      - Mobile-leaning. Required duration is real.
+    status: unbound
+    bindings: []
+  - id: 24
+    gqaId: GQA-024
+    name: "Lock / unlock"
+    family: S16
+    mergeMapRow: "'Merge map'!A27:G27"
+    criteria: "Chat reconnects seamlessly with no lost messages."
+    intent: "Start chat; while conversation is responding, lock the screen, unlock, and return."
+    evidencePacket: sequence
+    queue: "survival"
+    suggestedExecutionQueue: stateful-survival
+    gates:
+      - Mobile. Lock/unlock needs a person. Do not reboot.
+    status: unbound
+    bindings: []
+  - id: 25
+    gqaId: GQA-025
+    name: "Wi-Fi → cellular → Wi-Fi"
+    family: S16
+    mergeMapRow: "'Merge map'!A28:G28"
+    criteria: "Chat reconnects seamlessly with no lost messages."
+    intent: "Start chat on Wi-Fi, switch to Mobile data, then reconnect back to Wi-Fi."
+    evidencePacket: sequence
+    queue: "survival"
+    suggestedExecutionQueue: stateful-survival
+    gates:
+      - Actual radio switching only when supported. Not a browser-offline stand-in.
+    status: unbound
+    bindings: []
+  - id: 26
+    gqaId: GQA-026
+    name: "Image gen offline 1 min"
+    family: S16
+    mergeMapRow: "'Merge map'!A29:G29"
+    criteria: "Image generation pauses while offline and continues automatically after connection is restored."
+    intent: "Start generating an image, then turn off Wi-Fi. After one minute, turn Wi-Fi back on."
+    evidencePacket: sequence
+    queue: "survival"
+    suggestedExecutionQueue: stateful-survival
+    gates:
+      - Own assert. Required one-minute outage cannot become ten seconds.
+    status: unbound
+    bindings: []
+  - id: 27
+    gqaId: GQA-027
+    name: "Chat ↔ Imagine while responding"
+    family: S16
+    mergeMapRow: "'Merge map'!A30:G30"
+    criteria: "Switching tabs does not interrupt or reset the current conversation."
+    intent: "Navigate between Chat and Imagine while assistant is responding."
+    evidencePacket: sequence
+    queue: "survival"
+    suggestedExecutionQueue: stateful-survival
+    gates:
+      - iOS Imagine Unbound — do not invent navigation.tab.imagine.
+    status: unbound
+    bindings: []
+  - id: 28
+    gqaId: GQA-028
+    name: "Auto routes Fast"
+    family: S06
+    mergeMapRow: "'Merge map'!A31:G31"
+    criteria: "The request is routed to the Fast model. A Think harder button is shown and routes to the Expert model when clicked."
+    intent: "Prompt the Auto model with a simple query (e.g. What's up bro)."
+    evidencePacket: transition
+    queue: "output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Auto model. Added 7/21. Do not tap Fast/Expert on pinned SuperGrok pricing.
+    status: unbound
+    bindings: []
+  - id: 29
+    gqaId: GQA-029
+    name: "Auto routes Expert"
+    family: S06
+    mergeMapRow: "'Merge map'!A32:G32"
+    criteria: "The request is routed to the Expert model. A Quick answer button is shown and routes to the Fast model when clicked."
+    intent: "Prompt the Auto model with a complex query (e.g. Think hard about AI)."
+    evidencePacket: transition
+    queue: "output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Auto model. Both directions required.
+    status: unbound
+    bindings: []
+  - id: 30
+    gqaId: GQA-030
+    name: "Single-agent tools + Slack"
+    family: S09
+    mergeMapRow: "'Merge map'!A33:G33"
+    criteria: "A thinking trace appears and can be expanded. Trace shows web searches and connector tools (e.g. Used Slack Search Public)."
+    intent: "With a connector enabled, send a tool+web prompt to Expert or Fast: look up the latest news in AI and draft a summary in my Slack DMs."
+    evidencePacket: sequence
+    queue: "tools/output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Added 7/22 for the connector variant.
+    status: unbound
+    bindings: []
+  - id: 31
+    gqaId: GQA-031
+    name: "Heavy multi-agent"
+    family: S10
+    mergeMapRow: "'Merge map'!A34:G34"
+    criteria: "Heavy chrome: Agents working → 4 agents. Magnifier/brain → notes with actions + tools. Finishes, no timeout."
+    intent: "Start a conversation, send a tool+web prompt with Heavy: look up the latest news in AI and draft a summary in my Slack DMs."
+    evidencePacket: sequence
+    queue: "slow-output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - "Heavy entitlement. Investment prompt is a Heavy vehicle, not a separate finance product test."
+    status: unbound
+    bindings: []
+  - id: 32
+    gqaId: GQA-032
+    name: "Coffee shop near me"
+    family: S08
+    mergeMapRow: "'Merge map'!A35:G35"
+    criteria: "The response should contain the requested locations near you."
+    intent: "Prompt: What’s the best coffee shop near me? Prompt variations acceptable."
+    evidencePacket: generated-output
+    queue: "output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Location added 5/20. Uses actual near-me results.
+    status: unbound
+    bindings: []
+  - id: 33
+    gqaId: GQA-033
+    name: "Open/close side menu"
+    family: S02
+    mergeMapRow: "'Merge map'!A36:G36"
+    criteria: "Side menu opens and closes. Mobile: profile header with username and tier, Conversations. Web: logo, Search, Chat, Voice, Imagine, Build, Projects, History, profile photo."
+    intent: "Tap the Menu icon (top-left) to open it. Swipe right-to-left or tap X to close it."
+    evidencePacket: transition
+    queue: "fast-ui"
+    suggestedExecutionQueue: fast-ui
+    gates:
+      - "Build is web. Execute each required entry-point; do not replace a navigation test with an already-open screen."
+    status: unbound
+    bindings: []
+  - id: 34
+    gqaId: GQA-034
+    name: "History / Conversations expand"
+    family: S13
+    mergeMapRow: "'Merge map'!A37:G37"
+    criteria: "Section collapses/expands correctly. Recent chats listed with titles and timestamps, newest on top."
+    intent: "In the side menu, locate History (web) or Conversations (mobile). Tap the arrow icon next to it."
+    evidencePacket: view
+    queue: "stateful"
+    suggestedExecutionQueue: fast-ui
+    gates:
+      - History list removed on iOS (use Conversations).
+    status: unbound
+    bindings: []
+  - id: 35
+    gqaId: GQA-035
+    name: "Logo from destinations"
+    family: S02
+    mergeMapRow: "'Merge map'!A38:G38"
+    criteria: "Navigation to a new chat page, or a new voice chat page if speak/voice mode is on."
+    intent: "Click the Grok logo from chat, Imagine, Voice, Projects, and History pages."
+    evidencePacket: transition
+    queue: "fast-ui"
+    suggestedExecutionQueue: fast-ui
+    gates:
+      - Logo path web-called-out. iOS Imagine Unbound.
+    status: unbound
+    bindings: []
+  - id: 36
+    gqaId: GQA-036
+    name: "New Chat from menu"
+    family: S02
+    mergeMapRow: "'Merge map'!A39:G39"
+    criteria: "A fresh, empty chat opens, and new message is sent successfully."
+    intent: "Tap the New Chat icon in the side menu. Once new chat opens, type and send a new message."
+    evidencePacket: transition
+    queue: "fast-ui"
+    suggestedExecutionQueue: fast-ui
+    gates:
+      []
+    status: unbound
+    bindings: []
+  - id: 37
+    gqaId: GQA-037
+    name: "Imagine from menu"
+    family: S02
+    mergeMapRow: "'Merge map'!A40:G40"
+    criteria: "The Imagine feed opens."
+    intent: "Click the Imagine button (Image icon) from the side menu."
+    evidencePacket: transition
+    queue: "fast-ui"
+    suggestedExecutionQueue: fast-ui
+    gates:
+      - "iOS Imagine Unbound: navigation.tab.imagine absent. Do not invent the tab. Android Imagine exists as a native companion of signed-in web Imagine, not a workbook binding."
+    status: unbound
+    bindings: []
+  - id: 38
+    gqaId: GQA-038
+    name: "Search history"
+    family: S13
+    mergeMapRow: "'Merge map'!A41:G41"
+    criteria: "Only matching chats are shown, and clearing the search restores the full list."
+    intent: "Type a keyword in the search field/history page to look for a specific chat."
+    evidencePacket: transition
+    queue: "stateful"
+    suggestedExecutionQueue: fast-ui
+    gates:
+      - Search lives on history page.
+    status: unbound
+    bindings: []
+  - id: 39
+    gqaId: GQA-039
+    name: "Delete conversation"
+    family: S13
+    mergeMapRow: "'Merge map'!A42:G42"
+    criteria: "Deleted chat disappears from the conversation list and does not reappear after restarting the app."
+    intent: "Open Side Menu, go to Conversations. Long press a chat, select Delete Conversation, and confirm. Try older conversations as well."
+    evidencePacket: persistence
+    queue: "stateful"
+    suggestedExecutionQueue: stateful-survival
+    gates:
+      - Owned disposable data. Post-restart observation required.
+    status: unbound
+    bindings: []
+  - id: 40
+    gqaId: GQA-040
+    name: "Settings inventory"
+    family: S14
+    mergeMapRow: "'Merge map'!A43:G43"
+    criteria: "Settings opens and displays the platform section list (mobile vs web). All toggles, links, and sections are visible, scrollable, and responsive."
+    intent: "Open Side Menu, go to Settings. Check that all sections and options are available and displayed correctly."
+    evidencePacket: view
+    queue: "fast-ui"
+    suggestedExecutionQueue: fast-ui
+    gates:
+      - "Do not test Enable Dictation (original 42). Do not tap App Language / Sign Out. Logged-out Light/Dark/System is not Account/Appearance."
+    status: unbound
+    bindings: []
+  - id: 41
+    gqaId: GQA-041
+    name: "App Language"
+    family: S14
+    mergeMapRow: "'Merge map'!A44:G44"
+    criteria: "App interface updates to selected language."
+    intent: "Select App Language. Choose a new language, and confirm the change."
+    evidencePacket: persistence
+    queue: "fast-ui"
+    suggestedExecutionQueue: stateful-survival
+    gates:
+      - "Android got App Language. Isolated settings mutation. Do not tap App Language in default capture."
+    status: unbound
+    bindings: []
+  - id: 42
+    gqaId: GQA-042
+    name: "Enable Dictation"
+    family: S15
+    mergeMapRow: "'Merge map'!A45:G45"
+    criteria: "Dictation feature activates when ON. User can dictate a message using the microphone and successfully send it."
+    intent: "Toggle Enable Dictation ON. Return to chat, and tap the microphone icon to dictate text."
+    evidencePacket: transition
+    queue: "excluded"
+    suggestedExecutionQueue: stateful-survival
+    gates:
+      - "Workbook skip — option will be removed. grok-ios dictation dest-end exists as inspect-only (do not enable dictation or tap Speak). Do not overwrite either source."
+    status: excluded
+    exclusion:
+      kind: dead-skip
+      authorizedBy: workbook
+      reason: "Enable Dictation marked Skip — option will be removed. S15 inactive."
+    bindings: []
+  - id: 43
+    gqaId: GQA-043
+    name: "SuperGrok subscription row"
+    family: S14
+    mergeMapRow: "'Merge map'!A46:G46"
+    criteria: "Subscription details or Upgrade banner display correctly and links navigate to the correct subscription management page."
+    intent: "Select SuperGrok. If subscribed, verify plan details at bottom; else verify upgrade banner with Upgrade."
+    evidencePacket: view
+    queue: "fast-ui"
+    suggestedExecutionQueue: fast-ui
+    gates:
+      - Do not tap Upgrade / Try now / Dismiss.
+    status: unbound
+    bindings: []
+  - id: 44
+    gqaId: GQA-044
+    name: "Sign Out"
+    family: S01
+    mergeMapRow: "'Merge map'!A47:G47"
+    criteria: "User is signed out successfully and redirected to the login or onboarding screen."
+    intent: "Select Sign Out and confirm."
+    evidencePacket: transition
+    queue: "auth-isolated"
+    suggestedExecutionQueue: stateful-survival
+    gates:
+      - "Keep sign-out out of the default shared capture session. Do not tap Sign Out in daily packs."
+    status: unbound
+    bindings: []
+  - id: 45
+    gqaId: GQA-045
+    name: "Continue with X (sheet / X absent)"
+    family: S01
+    mergeMapRow: "'Merge map'!A48:G48"
+    criteria: "Grok will log in with X account. Session exists after authorize."
+    intent: "On Welcome tap Continue with X. Sheet appears with x.com auth page. Sign in. Press Authorize app."
+    evidencePacket: sequence
+    queue: "auth-isolated"
+    suggestedExecutionQueue: stateful-survival
+    gates:
+      - X-absent mobile fixture. Isolated auth.
+    status: unbound
+    bindings: []
+  - id: 46
+    gqaId: GQA-046
+    name: "Continue with X (X app present)"
+    family: S01
+    mergeMapRow: "'Merge map'!A49:G49"
+    criteria: "Grok will log in with X account."
+    intent: "On Welcome tap Continue with X. X app opens with x.com auth. Sign in. Press Authorize app."
+    evidencePacket: sequence
+    queue: "auth-isolated"
+    suggestedExecutionQueue: stateful-survival
+    gates:
+      - X-installed mobile fixture. Both X variants on mobile.
+    status: unbound
+    bindings: []
+  - id: 47
+    gqaId: GQA-047
+    name: "Sign Up"
+    family: S01
+    mergeMapRow: "'Merge map'!A50:G50"
+    criteria: "The Create your account page opens with sign-up options, switch to sign-in, and terms/policy at the bottom."
+    intent: "On the logged out Grok page, click the Sign Up button."
+    evidencePacket: view
+    queue: "auth-isolated"
+    suggestedExecutionQueue: stateful-survival
+    gates:
+      - "Web only. Logged-out Sign up currently Cloudflare-blocked / unbound on grok.com — not a reviewed binding."
+    status: unbound
+    bindings: []
+  - id: 48
+    gqaId: GQA-048
+    name: "Math 3*5"
+    family: S08
+    mergeMapRow: "'Merge map'!A51:G51"
+    criteria: "Result should appear instantly. There should be no Quick Answer visible (thunderbolt suggestions)."
+    intent: "Type simple math expression, e.g. 3 * 5."
+    evidencePacket: generated-output
+    queue: "output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - "Math web-only / skip mobile. Quick answer paid-only. No mandatory number-equals judge."
+    status: unbound
+    bindings: []
+  - id: 49
+    gqaId: GQA-049
+    name: "Image search"
+    family: S12
+    mergeMapRow: "'Merge map'!A52:G52"
+    criteria: "First set is on-subject. Follow-ups are actually similar, not a new random set."
+    intent: "Ask to find 3 images of New York, then 3 more similar to the first, then similar to an object in one of them."
+    evidencePacket: sequence
+    queue: "output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Disabled on Free. SuperGrok+. Do not make this depend on image generation S11.
+    status: unbound
+    bindings: []
+  - id: 50
+    gqaId: GQA-050
+    name: "Five-image edit (dogs / hat)"
+    family: S11
+    mergeMapRow: "'Merge map'!A53:G53"
+    criteria: "Images should be generated and edited according to requests."
+    intent: "Generate 5 images of dogs. Ask to change the second image (add hat). Or generate 5 animals and edit a particular animal."
+    evidencePacket: generated-output
+    queue: "slow-output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - "UNRESOLVED: 5-pack gate is Heavy/Expert; notes also say Fast is OK for single-image since 3/27. Do not guess Fast vs Heavy/Expert."
+    status: unbound
+    bindings: []
+  - id: 51
+    gqaId: GQA-051
+    name: "Capital of France"
+    family: S08
+    mergeMapRow: "'Merge map'!A54:G54"
+    criteria: "A short answer should be given almost immediately <1s. On mobile a quick response may appear before submitting."
+    intent: "Type a simple factual question, e.g. Capital of France? Prompt variations encouraged."
+    evidencePacket: generated-output
+    queue: "output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Timing is auxiliary evidence. No mandatory answer judge.
+    status: unbound
+    bindings: []
+  - id: 52
+    gqaId: GQA-052
+    name: "Hello in another language"
+    family: S08
+    mergeMapRow: "'Merge map'!A55:G55"
+    criteria: "Grok should respond back with a greeting in the language utilized to prompt."
+    intent: "Prompt Hello! or any other greeting in any language of your choice."
+    evidencePacket: generated-output
+    queue: "output"
+    suggestedExecutionQueue: live-output
+    gates:
+      []
+    status: unbound
+    bindings: []
+  - id: 53
+    gqaId: GQA-053
+    name: "Upload pdf / docx / image analysis"
+    family: S04
+    mergeMapRow: "'Merge map'!A56:G56"
+    criteria: "Check for an accurate analysis of the file, not a generic stub."
+    intent: "Upload pdf / docx / image file. Try different files as file processing result could be cached."
+    evidencePacket: generated-output
+    queue: "fast-ui"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Hashed small fixtures. File Connectors setup is original 5 (skipped).
+    status: unbound
+    bindings: []
+  - id: 54
+    gqaId: GQA-054
+    name: "Draw a puppy"
+    family: S11
+    mergeMapRow: "'Merge map'!A57:G57"
+    criteria: "It should generate an image based on the prompt using Imagine. At least 2 follow-up suggestions."
+    intent: "Prompt Draw a puppy. Prompt variations encouraged."
+    evidencePacket: generated-output
+    queue: "slow-output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Single-image requirement since 3/27. iOS Imagine Unbound.
+    status: unbound
+    bindings: []
+  - id: 55
+    gqaId: GQA-055
+    name: "Draw a hat on it"
+    family: S11
+    mergeMapRow: "'Merge map'!A58:G58"
+    criteria: "It should generate an image edited from the image attached using Imagine. At least 2 follow-up suggestions."
+    intent: "Upload any image or continue off a generated image. Prompt Draw a hat on X."
+    evidencePacket: generated-output
+    queue: "slow-output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Reuse the exact newly generated image where valid.
+    status: unbound
+    bindings: []
+  - id: 56
+    gqaId: GQA-056
+    name: "Latest news (single-agent)"
+    family: S09
+    mergeMapRow: "'Merge map'!A59:G59"
+    criteria: "Before the final answer: tool chips + result counts. After: logos + N sources. Tap sources → rail. News is dated today/recent, reputable + X. Think Harder only if Auto."
+    intent: "Prompt Latest news."
+    evidencePacket: sequence
+    queue: "tools/output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Same sources rail as original 11. SuperGrok Lite+.
+    status: unbound
+    bindings: []
+  - id: 57
+    gqaId: GQA-057
+    name: "Latest news (Heavy notes)"
+    family: S10
+    mergeMapRow: "'Merge map'!A60:G60"
+    criteria: "Before the final answer: note-taker headers during the run. After: same sources rail as S09. At least 2 follow-ups on the news variant."
+    intent: "Prompt Latest news. on Heavy."
+    evidencePacket: sequence
+    queue: "slow-output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Do not re-spec the sources rail.
+    status: unbound
+    bindings: []
+  - id: 58
+    gqaId: GQA-058
+    name: "Heavy investment GOOGL vs TSLA"
+    family: S10
+    mergeMapRow: "'Merge map'!A61:G61"
+    criteria: "The heavy UI with multiple agents running should show. Agents working → 4 agents. Notes include actions and tools. Final answer without timeout."
+    intent: "Prompt: Should I purchase GOOGL or TSLA stock today if I want the highest return? Prompt variations encouraged."
+    evidencePacket: sequence
+    queue: "slow-output"
+    suggestedExecutionQueue: live-output
+    gates:
+      - Investment prompt is the Heavy vehicle, not a separate finance product test.
+    status: unbound
+    bindings: []
