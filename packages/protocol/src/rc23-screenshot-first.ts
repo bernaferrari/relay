@@ -20,6 +20,7 @@ import {
 import {
   selectedPlanCaptureReviewItems,
   type PlanCaptureReviewQueue,
+  type PlanCaptureReviewRunInput,
 } from "./capture-review-plan.js";
 
 export const RC23_SCREENSHOT_FIRST_REQUIREMENT_ID = "rc23-screenshot-first";
@@ -312,6 +313,31 @@ export function materializeRc23ScreenshotFirstSlots(): Rc23ScreenshotFirstSlot[]
 
 function runPlatform(platform: Rc23ScreenshotFirstPlatform): "browser" | "android" | "ios" {
   return platform === "web" ? "browser" : platform;
+}
+
+/**
+ * Product persist mapping: Unbound iOS Imagine is a blocked Run, not a
+ * missing caption and not a capability-gate-only in-memory row. Capture-review
+ * GET/export after restart must keep this slot in the planned denominator.
+ */
+export function rc23ScreenshotFirstProductPlanRuns(input?: {
+  captured?: readonly Rc23ScreenshotFirstCapture[];
+}): PlanCaptureReviewRunInput[] {
+  return rc23ScreenshotFirstRuns(input).map((run) => {
+    const captured = Boolean(run.artifacts?.length);
+    return {
+      runId: run.runId,
+      plannedSlots: run.plannedSlots,
+      artifacts: [
+        {
+          kind: "app-map-test-execution-intent",
+          data: { plan: { plannedSlots: run.plannedSlots } },
+        },
+        ...(run.artifacts ?? []),
+      ],
+      ...(!captured ? { blocked: true } : {}),
+    };
+  });
 }
 
 export function rc23ScreenshotFirstRuns(input?: {

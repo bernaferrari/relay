@@ -416,13 +416,16 @@ test(
           const page = await context.newPage();
           await page.goto(new URL("/settings", url).href, { waitUntil: "networkidle" });
           await page.locator("#save-settings").waitFor();
-          png = await page.screenshot({ type: "png" });
+          png = Buffer.from(await page.screenshot({ type: "png" }));
           await context.close();
         } finally {
           await browser.close();
         }
       } catch (error) {
-        if (process.env.GOLDEN_ACCEPTANCE_MODE === "required" || process.env.RELAY_TEST_CHROME_PATH) {
+        if (
+          process.env.GOLDEN_ACCEPTANCE_MODE === "required" ||
+          process.env.RELAY_TEST_CHROME_PATH
+        ) {
           throw error;
         }
         t.diagnostic(
@@ -502,7 +505,11 @@ test(
       const persisted = await persistRun(job);
       const reviews = persisted.artifacts.filter((item) => item.kind === "capture-review");
       assert.equal(reviews.length, 1);
-      const captured = reviews[0]?.data as { slotId?: string; phase?: string; imageSha256?: string };
+      const captured = reviews[0]?.data as {
+        slotId?: string;
+        phase?: string;
+        imageSha256?: string;
+      };
       assert.equal(captured.phase, SEEDED_MEMBER_CAPTURE_SETTINGS_PHASE);
       assert.equal(captured.slotId, captureReviewSlotId(planned[0]!));
       assert.equal(typeof captured.imageSha256, "string");
@@ -515,15 +522,64 @@ test(
         queue.items.find((item) => item.phase === SEEDED_MEMBER_CAPTURE_LANGUAGE_PHASE)?.status,
         "missing",
       );
-      const planQueue = captureReviewQueueForPlan([persisted]);
-      assert.equal(planQueue.summary.planned, 2);
+      const imagineSlot = {
+        checkpointId: "imagine",
+        stepId: "imagine",
+        attempt: 1,
+        caption: "Imagine",
+        lookFor: "Imagine tab is present",
+      };
+      const blocked = await persistRun({
+        id: "imagine-unbound-seeded",
+        action: compiled.root.id,
+        title: "Imagine Unbound",
+        platform: "ios",
+        targetKind: "device",
+        targetContext: {
+          kind: "browser",
+          platform: "browser",
+          targetId: SEEDED_MEMBER_TARGET_ID,
+        },
+        status: "error",
+        outcome: "harness-failure",
+        error: "iOS Imagine Unbound — navigation.tab.imagine absent. Do not invent the tab.",
+        queuedAt: at,
+        startedAt: at,
+        finishedAt: at + 1,
+        attempts: 1,
+        logs: [],
+        steps: [],
+        frames: [],
+        glyphs: [],
+        kind: "Replay",
+        tone: "acc",
+        artifacts: [
+          {
+            kind: "app-map-test-execution-intent",
+            capturedAt: at,
+            data: { plan: { plannedSlots: [imagineSlot] } },
+          },
+        ],
+        recipeId: compiled.root.id,
+        recipeSnapshot: compiled.root,
+        recipeGraph: compiled.graph,
+        resolvedInputs: { account: "Member" },
+        evidencePolicy: { schemaVersion: 1, sensitive: {} },
+        batchId,
+        caseIndex: 1,
+      } as unknown as TestJob);
+      const planQueue = captureReviewQueueForPlan([persisted, blocked]);
+      assert.equal(planQueue.summary.planned, 3);
       assert.equal(planQueue.summary.captured, 1);
       assert.equal(planQueue.summary.missing, 1);
+      assert.equal(planQueue.summary.blocked, 1);
 
       const capturedItem = queue.items.find((item) => item.status === "pending");
       const missingItem = queue.items.find((item) => item.status === "missing");
+      const blockedItem = planQueue.items.find((item) => item.blocked);
       assert.ok(capturedItem);
       assert.ok(missingItem);
+      assert.ok(blockedItem);
       await assert.rejects(
         () =>
           reviewPersistedCapture(runsRoot(), persisted, {
@@ -539,6 +595,16 @@ test(
         () =>
           reviewPersistedCapture(runsRoot(), persisted, {
             captureId: missingItem.captureId,
+            action: "accept",
+            actor: { id: "human:maria", kind: "human" },
+          }),
+        (error: unknown) =>
+          error instanceof CaptureReviewError && error.code === "CAPTURE_REVIEW_MISSING",
+      );
+      await assert.rejects(
+        () =>
+          reviewPersistedCapture(runsRoot(), blocked, {
+            captureId: blockedItem.captureId,
             action: "accept",
             actor: { id: "human:maria", kind: "human" },
           }),
@@ -561,6 +627,8 @@ test(
 
       const reloaded = await readCompletedPersistedRun(accepted.run.dir);
       assert.ok(reloaded, "capture-review decisions must survive a run-store reload");
+      const reloadedBlocked = await readCompletedPersistedRun(blocked.dir);
+      assert.ok(reloadedBlocked, "blocked Imagine must survive a run-store reload");
       const restarted = captureReviewQueueForRun(reloaded);
       assert.equal(restarted.summary.accepted, 1);
       assert.equal(restarted.summary.missing, 1);
@@ -569,17 +637,25 @@ test(
         restarted.items.find((item) => item.phase === SEEDED_MEMBER_CAPTURE_LANGUAGE_PHASE)?.status,
         "missing",
       );
+      const restartedPlan = captureReviewQueueForPlan([reloaded, reloadedBlocked]);
+      assert.equal(restartedPlan.summary.planned, 3);
+      assert.equal(restartedPlan.summary.accepted, 1);
+      assert.equal(restartedPlan.summary.missing, 1);
+      assert.equal(restartedPlan.summary.blocked, 1);
+      assert.equal(reloaded.outcome, persisted.outcome);
+      assert.equal(reloadedBlocked.outcome, "harness-failure");
 
       const pack = await exportCombineEvidencePack({
         batchId,
-        jobs: [{ ...reloaded, runDir: reloaded.dir, title: scenario.name }],
+        jobs: [
+          { ...reloaded, runDir: reloaded.dir, title: scenario.name },
+          { ...reloadedBlocked, runDir: reloadedBlocked.dir, title: "Imagine Unbound" },
+        ],
         title: scenario.name,
       });
       const html = await readFile(join(pack.rootDir, "index.html"), "utf8");
       const readme = await readFile(join(pack.rootDir, "README.md"), "utf8");
-      const coverage = formatCaptureReviewCoverageSummary(
-        captureReviewQueueForPlan([reloaded]).summary,
-      );
+      const coverage = formatCaptureReviewCoverageSummary(restartedPlan.summary);
       assert.match(html, new RegExp(coverage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"));
       assert.doesNotMatch(html, /runs passed/u);
       assert.doesNotMatch(html, /\d+ tests passed/u);

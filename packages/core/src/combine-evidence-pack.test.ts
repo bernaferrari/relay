@@ -4,6 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { CombineEvidenceControl } from "@relay/protocol";
+import {
+  formatCaptureReviewCoverageSummary,
+  rc23ScreenshotFirstProductPlanRuns,
+} from "@relay/protocol";
 import { PNG } from "pngjs";
 import { FRAME_OBSERVATION_KIND, type FrameObservation } from "./frame-observation.js";
 import {
@@ -760,6 +764,69 @@ test("multiple runs of one locale retain separate original image files", async (
     assert.equal(await readFile(join(pack.rootDir, paths[1]!), "utf8"), "second");
     assert.equal(pack.manifest.content?.inspectedPages, 0);
     assert.match(await readFile(join(pack.rootDir, "comparison.html"), "utf8"), /Left capture/);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("capture-review export keeps 29 pending + 1 blocked Imagine distinct from passed", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-pack-capture-review-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = directory;
+  try {
+    const jobs = rc23ScreenshotFirstProductPlanRuns().map((run, caseIndex) => {
+      const slot = run.plannedSlots?.[0];
+      return {
+        id: run.runId,
+        action: "rc23-screenshot-first",
+        title: `${slot?.caption ?? "checkpoint"} · ${caseIndex + 1}`,
+        status: run.blocked ? "error" : "ok",
+        outcome: run.blocked ? "harness-failure" : "passed",
+        error: run.blocked
+          ? "iOS Imagine Unbound — navigation.tab.imagine absent. Do not invent the tab."
+          : undefined,
+        batchId: "rc23-screenshot-first",
+        caseIndex,
+        artifacts: run.artifacts ?? [],
+        frames: [],
+        steps: [],
+        resolvedInputs: { locale: run.runId },
+        recipeId: "rc23-screenshot-first",
+      } as unknown as TestJob;
+    });
+    const pack = await exportCombineEvidencePack({
+      batchId: "rc23-screenshot-first",
+      jobs,
+      title: "RC-23 screenshot-first",
+    });
+    const html = await readFile(join(pack.rootDir, "index.html"), "utf8");
+    const readme = await readFile(join(pack.rootDir, "README.md"), "utf8");
+    const checklist = JSON.parse(
+      await readFile(join(pack.rootDir, "checklist.json"), "utf8"),
+    ) as Array<{ status: string }>;
+    const coverage = "30 planned · 29 captured · 1 blocked · 0 missing · 29 pending · 0 accepted";
+    assert.equal(
+      formatCaptureReviewCoverageSummary({
+        planned: 30,
+        captured: 29,
+        blocked: 1,
+        missing: 0,
+        pending: 29,
+        accepted: 0,
+        issue: 0,
+        needMoreEvidence: 0,
+      }),
+      coverage,
+    );
+    assert.match(html, new RegExp(coverage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"));
+    assert.doesNotMatch(html, /runs passed/u);
+    assert.doesNotMatch(html, /\d+ tests passed/u);
+    assert.match(readme, /planned \/ captured \/ blocked \+ pending review/u);
+    assert.equal(checklist.filter((row) => row.status === "pending review").length, 29);
+    assert.equal(checklist.filter((row) => row.status === "could not run").length, 1);
+    assert.equal(checklist.filter((row) => row.status === "passed").length, 0);
   } finally {
     if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previous;

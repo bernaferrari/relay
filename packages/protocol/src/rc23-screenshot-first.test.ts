@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { captureReviewSlotId, formatCaptureReviewCoverageSummary } from "./capture-review.js";
-import { selectedPlanCaptureReviewItems } from "./capture-review-plan.js";
+import {
+  resolvePlanCaptureReviewQueue,
+  selectedPlanCaptureReviewItems,
+} from "./capture-review-plan.js";
 import {
   RC23_SCREENSHOT_FIRST_CAPTURED_PENDING,
   RC23_SCREENSHOT_FIRST_CHECKPOINT_IDS,
@@ -12,6 +15,7 @@ import {
   materializeRc23ScreenshotFirstSlots,
   partitionRc23ScreenshotFirst,
   rc23LooksCorrectCannotAcceptMissing,
+  rc23ScreenshotFirstProductPlanRuns,
   resolveRc23ScreenshotFirstQueue,
 } from "./rc23-screenshot-first.js";
 import {
@@ -123,6 +127,29 @@ test("iOS Imagine stays blocked Unbound in the denominator, not omitted", () => 
   assert.equal(android.status, "pending");
   assert.equal(android.blocked, undefined);
   assert.equal(android.scenarioKind, "physical");
+});
+
+test("product persist mapping keeps Imagine blocked in the denominator, not missing", () => {
+  const queue = resolvePlanCaptureReviewQueue(rc23ScreenshotFirstProductPlanRuns());
+  const counts = partitionRc23ScreenshotFirst(queue);
+  assert.equal(counts.planned, 30);
+  assert.equal(counts.captured, 29);
+  assert.equal(counts.blocked, 1);
+  assert.equal(counts.missing, 0);
+  assert.equal(counts.pending, 29);
+  assert.equal(counts.accepted, 0);
+  assert.equal(
+    formatCaptureReviewCoverageSummary(queue.summary),
+    "30 planned · 29 captured · 1 blocked · 0 missing · 29 pending · 0 accepted",
+  );
+  const imagine = queue.items.find((item) => item.checkpointId === "imagine" && item.blocked);
+  assert.ok(imagine);
+  assert.equal(imagine.status, "missing");
+  assert.equal(
+    selectedPlanCaptureReviewItems(queue, [{ runId: imagine.runId, captureId: imagine.captureId }])
+      .length,
+    0,
+  );
 });
 
 test("Looks correct cannot accept missing, including the blocked iOS Imagine slot", () => {
