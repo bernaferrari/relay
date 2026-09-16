@@ -1990,14 +1990,7 @@ test("dest-end leftover Close last-frame is not dest capture-review identity", (
   const kinds = destEndRecipe!.steps.map((step) =>
     step.kind === "screenshot" ? `${step.kind}:${step.review?.phase ?? ""}` : step.kind,
   );
-  assert.deepEqual(kinds, [
-    "wait-for",
-    "tap",
-    "wait-for",
-    "screenshot:dest",
-    "tap",
-    "wait-for",
-  ]);
+  assert.deepEqual(kinds, ["wait-for", "tap", "wait-for", "screenshot:dest", "tap", "wait-for"]);
   const destWaitIndex = destEndRecipe!.steps.findIndex(
     (step) => step.kind === "wait-for" && step.target?.label === "Automations",
   );

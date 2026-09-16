@@ -128,7 +128,11 @@ function survivalTest(): AppMapScenarioTest {
               policy: "sequence",
               phases: [
                 { id: "before", caption: "Before airplane" },
-                { id: "during", caption: "During airplane", intervalMs: SURVIVAL_REQUIRED_DWELL_MS },
+                {
+                  id: "during",
+                  caption: "During airplane",
+                  intervalMs: SURVIVAL_REQUIRED_DWELL_MS,
+                },
               ],
             },
           },
@@ -219,8 +223,7 @@ test("live-output compile rejects a loading placeholder as Sequence after", () =
   };
   assert.throws(
     () => compileAppMapTest(queueMap({ "live-reply": illegal }), illegal),
-    (error: unknown) =>
-      error instanceof Error && /loading placeholder/u.test(error.message),
+    (error: unknown) => error instanceof Error && /loading placeholder/u.test(error.message),
   );
 });
 
@@ -267,12 +270,18 @@ test("Combine/plan duration quote lists the three queues separately when members
     }).ok,
     false,
   );
-  assert.equal(preflight.blockers.some((item) => item.code === "unsafe-execution-queue"), false);
+  assert.equal(
+    preflight.blockers.some((item) => item.code === "unsafe-execution-queue"),
+    false,
+  );
   assert.equal(
     compileAppMapTest(map, inspectTest()).plan.executionQueue === "fast-ui" &&
       compileAppMapTest(map, liveOutputTest()).plan.executionQueue === "live-output" &&
       compileAppMapTest(map, survivalTest()).plan.executionQueue === "stateful-survival",
     true,
   );
-  assert.equal(new AppMapTestCompileError("unsafe-execution-queue", "x", "y", "z").code, "unsafe-execution-queue");
+  assert.equal(
+    new AppMapTestCompileError("unsafe-execution-queue", "x", "y", "z").code,
+    "unsafe-execution-queue",
+  );
 });

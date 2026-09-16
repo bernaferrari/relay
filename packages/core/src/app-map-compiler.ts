@@ -281,10 +281,7 @@ export function destEndDestinationWaitForIndex(
 ): number {
   const originIndex = steps.findIndex(
     (step, index) =>
-      index >= start &&
-      index < end &&
-      step.kind === "wait-for" &&
-      step.optional !== true,
+      index >= start && index < end && step.kind === "wait-for" && step.optional !== true,
   );
   if (originIndex >= 0 && originIndex + 1 < end) {
     const origin = steps[originIndex];

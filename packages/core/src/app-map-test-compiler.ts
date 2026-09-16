@@ -781,8 +781,7 @@ export function compileAppMapScenarioTest(
           );
         if (destEnd) {
           const destModule = recipeSteps.at(-1);
-          const destRecipe =
-            destModule?.kind === "module" ? graph[destModule.recipeId] : undefined;
+          const destRecipe = destModule?.kind === "module" ? graph[destModule.recipeId] : undefined;
           const screenshot: RecipeStep = {
             kind: "screenshot",
             caption: `step:${step.id}:${step.intent}`,
