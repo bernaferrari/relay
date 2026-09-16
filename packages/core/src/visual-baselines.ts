@@ -747,6 +747,9 @@ export async function compareVisualBaseline(
 ): Promise<VisualComparison> {
   const latest = await snapshotRun(run);
   const baseline = await getVisualBaseline(root, run.action, latest.targetKey, latest.projectKey);
+  // Identity-ignore and grok.com ui-tree chrome (composer / intro / reply-body)
+  // stay identity-only. They are not a visual exclusion until a person updates
+  // this comparison policy. Looks correct does not write these regions.
   const policy = withIdentityIgnoreRegions(
     await getVisualComparisonPolicy(root, run),
     run.artifacts ?? [],

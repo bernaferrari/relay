@@ -127,7 +127,7 @@ export function registerRelayResources(
       rules: [
         "Happy path: screenshot → preview/tap → screenshot. Do not start with test run, survey, or recover.",
         "Take a screenshot before interacting. Prefer identifier, then label, then text, then point.",
-        "Chrome-bounded iOS snapshot queries measured unique home ids and unique chrome labels plus the requested selector. Unique labels such as grok-compose resolve the same way unique ids do. Do not walk conversation lists. A chrome-bounded miss is not a recover-kill.",
+        "Chrome-bounded iOS snapshot queries measured unique home ids and unique chrome labels plus the requested selector. Unique labels such as grok-compose and New temporary conversation resolve the same way unique ids do. Do not walk conversation lists. A chrome-bounded miss is not a recover-kill.",
         "If a tap does not change pixels, it missed; try the label, not a cell center.",
         "A missing accessibility tree is not a failed session — screenshot plus a point tap uses CoreDevice HID pixels. Recover only for the tree. Do not retry the tap because XCTest is down.",
         "relay_recover / target.recover adopts a healthy live XCTest runner. Do not kill a ready runner, remount DDI in a loop, or reboot the iPad.",

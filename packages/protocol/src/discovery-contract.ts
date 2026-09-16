@@ -112,9 +112,13 @@ export type DiscoveryDecisionProvenance = {
   durationMs?: number;
 };
 
-/** Viewport rectangle omitted from identity proofs and visual baselines.
- * Unit rectangles (every edge ≤ 1) are fractions of the observed frame;
- * larger values are pixels of that same frame. */
+/**
+ * Viewport rectangle omitted from screen-identity matching.
+ * Not a capture-review mask and not a visual-baseline exclusion unless a
+ * VisualComparisonPolicy region says so. Unit rectangles (every edge ≤ 1)
+ * are fractions of the observed frame; larger values are pixels of that
+ * same frame.
+ */
 export type ScreenIdentityIgnoreRegion = {
   x: number;
   y: number;
@@ -132,8 +136,9 @@ export type ScreenIdentity = {
   /** Additional fingerprints that a person or a high-confidence matcher has
    * approved as the same screen. */
   aliases?: string[];
-  /** Authored dynamic regions (reply body, gallery). Identity and visual
-   * compare omit these rectangles so chrome can match across runs. */
+  /** Authored dynamic regions (reply body, gallery) for identity matching.
+   * Host packs already drop leftover chats; geometric ignore must not punch
+   * remaining chrome. Visual compare uses VisualComparisonPolicy, not these. */
   ignoreRegions?: ScreenIdentityIgnoreRegion[];
 };
 

@@ -845,7 +845,10 @@ test("dest-end skips origin wait and opener tap when leftover already shows dest
     target: { identifier: "sidebar.settings" },
     condition: "absent",
   });
+  assert.equal(steps[0]?.coverage, "inspect");
+  assert.equal(steps[1]?.coverage, "inspect");
   assert.equal(steps[2]?.when, undefined);
+  assert.equal(steps[2]?.coverage, undefined);
 
   const flow = compileAppMapFlow(map, "checkout");
   const flowSteps = flow.recipes[flow.rootRecipeId]!.steps;
@@ -888,6 +891,213 @@ test("dest-end skips the whole open prefix when a peek leftover already shows de
   assert.deepEqual(steps[2]?.when, destWhen);
   assert.equal(steps[3]?.when, undefined);
   assert.equal(steps[4]?.when, undefined);
+});
+
+test("dest-end leftover skip keeps optional close-home then uses Temporary Chat dest wait-for", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.actions = [
+    {
+      id: "private-chat",
+      kind: "steps",
+      steps: [
+        {
+          kind: "wait-for",
+          optional: true,
+          target: { label: "grok-arrows-right" },
+          timeoutMs: 0,
+        },
+        {
+          kind: "tap",
+          target: { label: "grok-arrows-right" },
+          when: { condition: "present", target: { label: "grok-arrows-right" } },
+        },
+        { kind: "wait-for", target: { identifier: "ask.toolbar.textfield" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { label: "New temporary conversation" } },
+        { kind: "wait-for", target: { label: "Temporary Chat" }, timeoutMs: 8_000 },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  const destWhen = { target: { label: "Temporary Chat" }, condition: "absent" as const };
+  assert.deepEqual(
+    steps.map((step) => step.kind),
+    ["wait-for", "tap", "wait-for", "tap", "wait-for"],
+  );
+  assert.equal(steps[0]?.when, undefined);
+  assert.deepEqual(steps[1]?.when, {
+    condition: "present",
+    target: { label: "grok-arrows-right" },
+  });
+  assert.deepEqual(steps[2]?.when, destWhen);
+  assert.deepEqual(steps[3]?.when, destWhen);
+  assert.equal(steps[4]?.when, undefined);
+});
+
+test("dest-end leftover skip does not gate the Private Chat exit tap after dest wait-for", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.actions = [
+    {
+      id: "private-chat-round-trip",
+      kind: "steps",
+      steps: [
+        {
+          kind: "wait-for",
+          optional: true,
+          target: { label: "grok-arrows-right" },
+          timeoutMs: 0,
+        },
+        {
+          kind: "tap",
+          target: { label: "grok-arrows-right" },
+          when: { condition: "present", target: { label: "grok-arrows-right" } },
+        },
+        { kind: "wait-for", target: { identifier: "ask.toolbar.textfield" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { label: "New temporary conversation" } },
+        { kind: "wait-for", target: { label: "Temporary Chat" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { label: "New temporary conversation" } },
+        { kind: "wait-for", target: { identifier: "voice.speak.button" }, timeoutMs: 8_000 },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  const destWhen = { target: { label: "Temporary Chat" }, condition: "absent" as const };
+  assert.deepEqual(
+    steps.map((step) => step.kind),
+    ["wait-for", "tap", "wait-for", "tap", "wait-for", "tap", "wait-for"],
+  );
+  assert.deepEqual(steps[2]?.when, destWhen);
+  assert.deepEqual(steps[3]?.when, destWhen);
+  assert.equal(steps[4]?.when, undefined);
+  assert.equal(steps[5]?.when, undefined);
+  assert.equal(steps[6]?.when, undefined);
+  assert.deepEqual(steps[5]?.target, { label: "New temporary conversation" });
+  assert.deepEqual(steps[6]?.target, { identifier: "voice.speak.button" });
+});
+
+test("dest-end leftover skip is inspect-only and cannot prove a required Settings tap", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.coverage = "transition";
+  map.connections["open-home"]!.actions = [
+    {
+      id: "open-settings",
+      kind: "steps",
+      coverage: "transition",
+      steps: [
+        { kind: "wait-for", target: { identifier: "composer" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { identifier: "sidebar.settings" }, coverage: "transition" },
+        { kind: "wait-for", target: { identifier: "settings.account" }, timeoutMs: 8_000 },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  assert.deepEqual(
+    steps.map((step) => step.kind),
+    ["wait-for", "tap", "wait-for"],
+  );
+  assert.equal(steps[0]?.when, undefined);
+  assert.equal(steps[1]?.when, undefined);
+  assert.equal(steps[1]?.coverage, "transition");
+  assert.equal(steps[2]?.when, undefined);
+});
+
+test("coverage:transition unsigned Settings waits Light dest chrome and does not leftover-skip", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.coverage = "transition";
+  map.connections["open-home"]!.actions = [
+    {
+      id: "open-settings-overlay",
+      kind: "steps",
+      coverage: "transition",
+      steps: [
+        { kind: "wait-for", target: { label: "Imagine" }, timeoutMs: 30_000 },
+        { kind: "tap", target: { label: "Settings" }, coverage: "transition" },
+        { kind: "wait-for", target: { label: "Light" }, timeoutMs: 8_000 },
+        {
+          kind: "expect-set",
+          scope: { role: "menu", text: "Feedback" },
+          labels: ["Dark", "Feedback", "Language", "Light", "System"],
+          timeoutMs: 8_000,
+        },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  assert.deepEqual(
+    steps.map((step) => step.kind),
+    ["wait-for", "tap", "wait-for", "expect-set"],
+  );
+  assert.deepEqual(steps[2]?.target, { label: "Light" });
+  assert.equal(steps[0]?.when, undefined);
+  assert.equal(steps[1]?.when, undefined);
+  assert.equal(steps[1]?.coverage, "transition");
+  assert.equal(steps[2]?.when, undefined);
+});
+
+test("dest-end leftover skip uses later wait-for dest chrome not a Settings label tap", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.actions = [
+    {
+      id: "settings-panel",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { identifier: "sidebar-search" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { label: "Account" } },
+        { kind: "tap", target: { label: "Settings" } },
+        { kind: "wait-for", target: { label: "Appearance" }, timeoutMs: 8_000 },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  const destWhen = { target: { label: "Appearance" }, condition: "absent" as const };
+  assert.deepEqual(
+    steps.map((step) => step.kind),
+    ["wait-for", "tap", "tap", "wait-for"],
+  );
+  assert.deepEqual(steps[0]?.when, destWhen);
+  assert.deepEqual(steps[1]?.when, destWhen);
+  assert.deepEqual(steps[2]?.when, destWhen);
+  assert.equal(steps[3]?.when, undefined);
+});
+
+test("dest-end does not treat a label-only later tap as leftover dest chrome", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.actions = [
+    {
+      id: "settings-open",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { identifier: "sidebar-search" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { label: "Account" } },
+        { kind: "tap", target: { label: "Settings" } },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  assert.deepEqual(
+    steps.map((step) => step.kind),
+    ["wait-for", "tap", "tap"],
+  );
+  assert.equal(steps[0]?.when, undefined);
+  assert.equal(steps[1]?.when, undefined);
+  assert.equal(steps[2]?.when, undefined);
 });
 
 test("dest-end does not rewrite an opener that already has leftover policy", () => {

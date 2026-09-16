@@ -7,6 +7,7 @@ import {
 } from "./app-map-test-operation-schemas.js";
 import { repeatPilotSpecSchema, repeatSpecSchema } from "./repeat-spec.js";
 import { repeatFailureClusterReportSchema } from "./repeat-failure.js";
+import { CAPTURE_REVIEW_STATUSES } from "./capture-review.js";
 
 const targetCapabilitySchema = z.enum([
   "snapshot",
@@ -587,6 +588,7 @@ export const combineCampaignSchema = z
         strategy: z.enum(["zip", "cartesian", "pairwise"]).optional(),
         seed: z.number(),
         title: z.string().optional(),
+        laneId: z.string().trim().min(1).optional(),
         unsignedLaneId: z.string().trim().min(1).optional(),
         repeat: z
           .object({
@@ -786,6 +788,76 @@ export const executionOperationOutputSchemas = {
     })
     .strict(),
   "job.combine.analysis": combineEvidenceAnalysisReportSchema,
+  "job.combine.capture.review": z
+    .object({
+      queue: z
+        .object({
+          items: z.array(
+            z
+              .object({
+                captureId: z.string(),
+                caption: z.string(),
+                status: z.enum(CAPTURE_REVIEW_STATUSES),
+                runId: z.string(),
+              })
+              .passthrough(),
+          ),
+          summary: z
+            .object({
+              captured: z.number(),
+              missing: z.number(),
+              pending: z.number(),
+              accepted: z.number(),
+              issue: z.number(),
+              needMoreEvidence: z.number(),
+              planned: z.number(),
+              blocked: z.number(),
+            })
+            .strict(),
+        })
+        .strict(),
+    })
+    .strict(),
+  "job.combine.capture.review.apply": z
+    .object({
+      queue: z
+        .object({
+          items: z.array(
+            z
+              .object({
+                captureId: z.string(),
+                caption: z.string(),
+                status: z.enum(CAPTURE_REVIEW_STATUSES),
+                runId: z.string(),
+              })
+              .passthrough(),
+          ),
+          summary: z
+            .object({
+              captured: z.number(),
+              missing: z.number(),
+              pending: z.number(),
+              accepted: z.number(),
+              issue: z.number(),
+              needMoreEvidence: z.number(),
+              planned: z.number(),
+              blocked: z.number(),
+            })
+            .strict(),
+        })
+        .strict(),
+      results: z.array(
+        z
+          .object({
+            runId: z.string(),
+            captureId: z.string(),
+            status: z.enum(["applied", "missing", "not-found", "conflict", "actor-required"]),
+            error: z.string().optional(),
+          })
+          .strict(),
+      ),
+    })
+    .strict(),
   "job.combine.campaign.get": z.object({ campaign: combineCampaignSchema }).strict(),
   "job.combine.campaign.repeat.active": z
     .object({ campaign: combineCampaignSchema.nullable() })

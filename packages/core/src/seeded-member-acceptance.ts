@@ -33,6 +33,9 @@ export const SEEDED_MEMBER_VIEWPORT = { width: 900, height: 600 } as const;
 export const SEEDED_MEMBER_COMPACT_VIEWPORT = { width: 390, height: 844 } as const;
 export const SEEDED_MEMBER_CAPTURE_LOOK_FOR =
   "Arabic text is readable, seats are not truncated, and Save is visible.";
+export const SEEDED_MEMBER_CAPTURE_SETTINGS_PHASE = "settings";
+export const SEEDED_MEMBER_CAPTURE_LANGUAGE_PHASE = "language";
+export const SEEDED_MEMBER_CAPTURE_LANGUAGE_CAPTION = "Language list";
 /** Shared with the unsigned saved target. Unique Member/Admin profiles overlay
  * a fixture only; they must not invent a different environmentRevision. */
 export const SEEDED_MEMBER_BROWSER_ENVIRONMENT = {
@@ -286,6 +289,7 @@ export const SEEDED_MEMBER_CAPTURE_STEP_ID = "capture-settings";
 export function seededMemberCaptureReviewTest(input?: {
   scope?: SeededMemberScope;
   at?: number;
+  sequencePhases?: boolean;
 }): AppMapScenarioTest {
   const scope = input?.scope ?? defaultScope;
   const at = input?.at ?? 1;
@@ -314,11 +318,27 @@ export function seededMemberCaptureReviewTest(input?: {
           status: "resolved",
           kind: "recipe-step",
           step: {
+            id: SEEDED_MEMBER_CAPTURE_STEP_ID,
             kind: "screenshot",
             caption: "Member account settings",
             review: {
               mode: "later",
               lookFor: SEEDED_MEMBER_CAPTURE_LOOK_FOR,
+              ...(input?.sequencePhases
+                ? {
+                    policy: "sequence" as const,
+                    phases: [
+                      {
+                        id: SEEDED_MEMBER_CAPTURE_SETTINGS_PHASE,
+                        caption: "Member account settings",
+                      },
+                      {
+                        id: SEEDED_MEMBER_CAPTURE_LANGUAGE_PHASE,
+                        caption: SEEDED_MEMBER_CAPTURE_LANGUAGE_CAPTION,
+                      },
+                    ],
+                  }
+                : {}),
             },
           },
         },

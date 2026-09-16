@@ -1,4 +1,4 @@
-import { type ActorKind, type ServerConnection } from "@relay/protocol";
+import { actorKindFromId, type ServerConnection } from "@relay/protocol";
 import { readFileSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
 import { resolveCommand, resolveResourceCommand, type CommandBehavior } from "./commands.js";
@@ -221,12 +221,6 @@ function parseCredentialSource(value: string): CredentialSource {
   if (value === "none") return { type: "none" };
   if (value.startsWith("env:") && value.length > 4) return { type: "env", name: value.slice(4) };
   throw new UsageError("--credential-source must be 'none' or 'env:NAME'");
-}
-
-function actorKind(actorId: string): ActorKind {
-  if (actorId.startsWith("agent:")) return "agent";
-  if (actorId.startsWith("system:")) return "system";
-  return "human";
 }
 
 function booleanEnv(value: string | undefined, fallback: boolean): boolean {
@@ -503,7 +497,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     ),
     projectId: choose(tokens.values.get("--project"), env.RELAY_PROJECT_ID, defaults.project),
     actorId: actor,
-    actorKind: actorKind(actor),
+    actorKind: actorKindFromId(actor),
     auth: credential ? { type: "bearer", token: credential } : { type: "none" },
   };
   const ensureLocalServer =

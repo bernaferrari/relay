@@ -164,6 +164,15 @@ test("freezes one parser-validated Test execution intent", () => {
   );
 });
 
+test("fixture Lane --lane grok-lab is stamped on the execution intent", () => {
+  const intent = createAppMapTestExecutionIntent({ ...fixture(), laneId: "grok-lab" });
+  assert.equal(intent.laneId, "grok-lab");
+  assert.deepEqual(parseAppMapTestExecutionIntent(intent), intent);
+  const unsigned = createAppMapTestExecutionIntent(fixture());
+  assert.equal(unsigned.laneId, undefined);
+  assert.deepEqual(parseAppMapTestExecutionIntent(unsigned), unsigned);
+});
+
 test("binds preflight execution risk to the exact frozen Test plan", () => {
   const intent = createAppMapTestExecutionIntent(fixture());
   assert.equal(intent.preflight.executionRisk.level, "safe");

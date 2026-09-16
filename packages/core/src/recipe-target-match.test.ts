@@ -109,6 +109,67 @@ test("labelsForScope prefers menu option roles over group chrome", () => {
   ]);
 });
 
+test("labelsForScope walks Theme group radios when parentIndex is present", () => {
+  const nodes = [
+    {
+      index: 26,
+      role: "menu",
+      identifier: "radix-_r_6_",
+      label: "Language\nFeedback",
+      rect: { x: 892, y: 57, width: 198, height: 127 },
+    },
+    {
+      index: 27,
+      parentIndex: 26,
+      role: "group",
+      label: "Theme",
+      rect: { x: 899, y: 64, width: 184, height: 38 },
+    },
+    {
+      index: 28,
+      parentIndex: 27,
+      role: "menuitemradio",
+      label: "Light",
+      rect: { x: 899, y: 64, width: 56, height: 38 },
+    },
+    {
+      index: 31,
+      parentIndex: 27,
+      role: "menuitemradio",
+      label: "Dark",
+      rect: { x: 963, y: 64, width: 56, height: 38 },
+    },
+    {
+      index: 34,
+      parentIndex: 27,
+      role: "menuitemradio",
+      label: "System",
+      rect: { x: 1027, y: 64, width: 56, height: 38 },
+    },
+    {
+      index: 37,
+      parentIndex: 26,
+      role: "menuitem",
+      label: "Language",
+      rect: { x: 899, y: 109, width: 184, height: 30 },
+    },
+    {
+      index: 40,
+      parentIndex: 26,
+      role: "menuitem",
+      label: "Feedback",
+      rect: { x: 899, y: 147, width: 184, height: 30 },
+    },
+  ];
+  assert.deepEqual(labelsForScope(nodes, { role: "menu", text: "Feedback" }), [
+    "Dark",
+    "Feedback",
+    "Language",
+    "Light",
+    "System",
+  ]);
+});
+
 test("labelsForScope reads Android Compose text descendants under a chrome id", () => {
   const nodes = [
     {

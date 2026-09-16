@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseCommandEnvelope, parseEventEnvelope } from "./coordination.js";
+import { actorKindFromId, parseCommandEnvelope, parseEventEnvelope } from "./coordination.js";
+
+test("actor kind follows the id prefix so agent:* cannot impersonate a human", () => {
+  assert.equal(actorKindFromId("agent:cursor"), "agent");
+  assert.equal(actorKindFromId("system:desktop-main"), "system");
+  assert.equal(actorKindFromId("human:reviewer"), "human");
+  assert.equal(actorKindFromId("local-user"), "human");
+});
 
 const identity = {
   schemaVersion: 1 as const,

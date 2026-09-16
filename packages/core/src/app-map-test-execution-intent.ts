@@ -33,6 +33,8 @@ export type AppMapTestExecutionIntent = {
    * execution source rather than inferred from a mutable App Map later. */
   recipeGraph: Record<string, Recipe>;
   preflight: OfflineTestPreflightReport;
+  /** Invoked Lane (`--lane grok-lab`). Optional so older intents still parse. */
+  laneId?: string;
 };
 
 function profileKey(profile: AppMapCompiledRuntimeTargetProfile | undefined): string {
@@ -380,6 +382,55 @@ function familyTargetMatchesRuntime(plan: AppMapCompiledTest): boolean {
   );
 }
 
+function canonicalCaptureReviewConfiguration(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return (
+    ownKeys(value, ["app", "account", "browser", "viewport", "locale", "build"]) &&
+    ["app", "account", "browser", "viewport", "locale", "build"].every(
+      (key) => value[key] === undefined || string(value[key]),
+    )
+  );
+}
+
+function canonicalPlannedCaptureSlot(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (
+    !ownKeys(value, [
+      "requirementId",
+      "checkpointId",
+      "configuration",
+      "invocation",
+      "iteration",
+      "attempt",
+      "caption",
+      "lookFor",
+      "stepId",
+      "phase",
+      "intervalMs",
+    ]) ||
+    !string(value.checkpointId) ||
+    !string(value.caption)
+  ) {
+    return false;
+  }
+  if (value.requirementId !== undefined && !string(value.requirementId)) return false;
+  if (value.invocation !== undefined && !string(value.invocation)) return false;
+  if (value.lookFor !== undefined && !string(value.lookFor)) return false;
+  if (value.stepId !== undefined && !string(value.stepId)) return false;
+  if (value.phase !== undefined && !string(value.phase)) return false;
+  if (value.iteration !== undefined && !integer(value.iteration)) return false;
+  if (value.attempt !== undefined && !integer(value.attempt)) return false;
+  if (value.intervalMs !== undefined && !integer(value.intervalMs)) return false;
+  return (
+    value.configuration === undefined || canonicalCaptureReviewConfiguration(value.configuration)
+  );
+}
+
+function canonicalPlannedCaptureSlots(value: unknown): boolean {
+  if (value === undefined) return true;
+  return Array.isArray(value) && value.every(canonicalPlannedCaptureSlot);
+}
+
 /** The registered historical plan shape. This deliberately checks the
  * App-Map-Test discriminators, compiled root, and parsed recipe projection;
  * labels, recipe IDs, and opaque artifact fields never classify a legacy job
@@ -406,6 +457,8 @@ export function parseCanonicalAppMapTestPlan(value: unknown): AppMapCompiledTest
       "destEndRecipeIds",
       "destEndObservationsByRecipeId",
       "performance",
+      "plannedSlots",
+      "executionQueue",
       "startup",
       "originApplication",
       "omittedSteps",
@@ -426,7 +479,12 @@ export function parseCanonicalAppMapTestPlan(value: unknown): AppMapCompiledTest
     !isRecord(value.performance) ||
     !canonicalStartup(value.startup) ||
     (value.originApplication !== undefined && !string(value.originApplication)) ||
-    (value.testFamily !== undefined && !canonicalTestFamily(value.testFamily))
+    (value.testFamily !== undefined && !canonicalTestFamily(value.testFamily)) ||
+    !canonicalPlannedCaptureSlots(value.plannedSlots) ||
+    (value.executionQueue !== undefined &&
+      value.executionQueue !== "fast-ui" &&
+      value.executionQueue !== "live-output" &&
+      value.executionQueue !== "stateful-survival")
   ) {
     return undefined;
   }
@@ -474,12 +532,14 @@ export function createAppMapTestExecutionIntent(input: {
   plan: AppMapCompiledTest;
   recipeGraph: Record<string, Recipe>;
   preflight: OfflineTestPreflightReport;
+  laneId?: string;
 }): AppMapTestExecutionIntent {
   const rootRecipe = input.recipeGraph[input.plan.rootRecipeId];
   if (!rootRecipe || rootRecipe.id !== input.plan.rootRecipeId) {
     throw new Error("Cannot persist a Test execution intent without its compiled root recipe");
   }
   const selectedRuntimeTargetProfile = input.plan.runtimeTargetProfile;
+  const laneId = input.laneId?.trim();
   const intent: AppMapTestExecutionIntent = {
     schemaVersion: 1,
     kind: appMapTestExecutionIntentArtifactKind,
@@ -498,6 +558,7 @@ export function createAppMapTestExecutionIntent(input: {
     plan: structuredClone(input.plan),
     recipeGraph: structuredClone(input.recipeGraph),
     preflight: structuredClone(input.preflight),
+    ...(laneId ? { laneId } : {}),
   };
   if (!parseAppMapTestExecutionIntent(intent)) {
     throw new Error("Cannot persist an inconsistent App Map Test execution intent");
@@ -534,6 +595,7 @@ function parseAppMapTestExecutionIntentValue(
       "plan",
       "recipeGraph",
       "preflight",
+      "laneId",
     ]) ||
     value.schemaVersion !== 1 ||
     value.kind !== appMapTestExecutionIntentArtifactKind
@@ -644,7 +706,8 @@ function parseAppMapTestExecutionIntentValue(
     preflight.appMapId !== plan.appMapId ||
     preflight.appMapRevision !== plan.appMapRevision ||
     preflight.testId !== plan.test.id ||
-    !sameProfile(selected, plan.runtimeTargetProfile)
+    !sameProfile(selected, plan.runtimeTargetProfile) ||
+    (value.laneId !== undefined && !string(value.laneId))
   ) {
     return undefined;
   }

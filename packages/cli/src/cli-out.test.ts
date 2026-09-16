@@ -12,6 +12,10 @@ const pngBytes = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64",
 );
+const overlayBytes = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
 
 function capture() {
   const stdout = new PassThrough();
@@ -54,8 +58,9 @@ test("writeRunOutDir writes result.json, stderr.log, and copies job PNGs", async
       result: { job: { resources: { runDir } } },
     });
     assert.equal(await readFile(join(outDir, "stderr.log"), "utf8"), "Waiting on job.get…\n");
-    assert.deepEqual(copied, [join(outDir, "screen.png")]);
-    assert.deepEqual(await readFile(join(outDir, "screen.png")), pngBytes);
+    assert.deepEqual(await readFile(join(outDir, "checkpoint.png")), pngBytes);
+    assert.deepEqual(await readFile(join(outDir, "run", "screen.png")), pngBytes);
+    assert.ok(copied.includes(join(outDir, "checkpoint.png")));
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -111,7 +116,122 @@ test("job watch --out captures stderr progress and copies runDir PNGs", async ()
     assert.match(io.stderr(), /tour → Settings/);
     assert.equal(JSON.parse(await readFile(join(outDir, "result.json"), "utf8")).ok, true);
     assert.match(await readFile(join(outDir, "stderr.log"), "utf8"), /tour → Settings/);
-    assert.deepEqual(await readFile(join(outDir, "frame.png")), pngBytes);
+    assert.deepEqual(await readFile(join(outDir, "checkpoint.png")), pngBytes);
+    assert.deepEqual(await readFile(join(outDir, "abc", "frame.png")), pngBytes);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("writeRunOutDir exports capture-review dest frame instead of flattening home cookies onto 003.png", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-cli-out-checkpoint-"));
+  const homeDir = join(root, "home-run");
+  const settingsDir = join(root, "settings-run");
+  const outDir = join(root, "out");
+  try {
+    await mkdir(join(homeDir, "frames"), { recursive: true });
+    await mkdir(join(settingsDir, "frames"), { recursive: true });
+    await writeFile(join(homeDir, "frames", "001.png"), pngBytes);
+    await writeFile(join(homeDir, "frames", "003.png"), pngBytes);
+    await writeFile(join(settingsDir, "frames", "001.png"), pngBytes);
+    await writeFile(join(settingsDir, "frames", "003.png"), overlayBytes);
+    await writeFile(join(settingsDir, "frames", "004.png"), overlayBytes);
+    const copied = await writeRunOutDir({
+      dir: outDir,
+      envelope: {
+        type: "result",
+        ok: true,
+        result: {
+          jobs: [
+            {
+              id: "9c7a40d9-eb06-43ee-8807-ba5ffdbd32e3",
+              resources: { runDir: homeDir },
+              frames: [{ path: "frames/001.png" }, { path: "frames/003.png" }],
+              artifacts: [
+                {
+                  kind: "capture-review",
+                  data: { status: "pending", framePath: "frames/001.png", caption: "Observe" },
+                },
+              ],
+            },
+            {
+              id: "ab4823a9-5dc4-4ab4-8acb-60b32475e045",
+              resources: { runDir: settingsDir },
+              frames: [
+                { path: "frames/001.png" },
+                { path: "frames/003.png" },
+                { path: "frames/004.png" },
+              ],
+              artifacts: [
+                {
+                  kind: "capture-review",
+                  data: {
+                    status: "pending",
+                    framePath: "frames/003.png",
+                    caption: "Settings",
+                    lookFor: "Settings",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+      stderr: "",
+    });
+    const checkpoint = await readFile(join(outDir, "checkpoint.png"));
+    assert.deepEqual(checkpoint, overlayBytes);
+    assert.notDeepEqual(checkpoint, pngBytes);
+    try {
+      const flattened = await readFile(join(outDir, "003.png"));
+      assert.deepEqual(
+        flattened,
+        overlayBytes,
+        "flattened 003.png must be the Settings overlay, not home cookies",
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    assert.ok(
+      copied.some((path) => path.endsWith("checkpoint.png")),
+      "checkpoint.png must be exported as the capture-review dest frame",
+    );
+    assert.deepEqual(
+      await readFile(join(outDir, "ab4823a9", "frames", "003.png")),
+      overlayBytes,
+    );
+    assert.deepEqual(await readFile(join(outDir, "9c7a40d9", "frames", "003.png")), pngBytes);
+    assert.deepEqual(await readFile(join(outDir, "ab4823a9", "checkpoint.png")), overlayBytes);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("writeRunOutDir falls back to the last dest frame when capture-review is missing", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-cli-out-last-dest-"));
+  const runDir = join(root, "job-run");
+  const outDir = join(root, "out");
+  try {
+    await mkdir(join(runDir, "frames"), { recursive: true });
+    await writeFile(join(runDir, "frames", "001.png"), pngBytes);
+    await writeFile(join(runDir, "frames", "004.png"), overlayBytes);
+    await writeRunOutDir({
+      dir: outDir,
+      envelope: {
+        type: "result",
+        ok: true,
+        result: {
+          job: {
+            id: "ab4823a9-last-dest",
+            resources: { runDir },
+            frames: [{ path: "frames/001.png" }, { path: "frames/004.png" }],
+            artifacts: [],
+          },
+        },
+      },
+      stderr: "",
+    });
+    assert.deepEqual(await readFile(join(outDir, "checkpoint.png")), overlayBytes);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

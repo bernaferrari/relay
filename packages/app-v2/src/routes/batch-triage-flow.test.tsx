@@ -349,4 +349,97 @@ describe("Batch review controls", () => {
     expect(confirm).toBeInstanceOf(HTMLButtonElement);
     expect(reject).toBeInstanceOf(HTMLButtonElement);
   });
+
+  it("reviews Plan screenshots from the Batch page without accepting a baseline", async () => {
+    const reviewCaptures = vi.fn(async () => ({
+      queue: {
+        items: [
+          {
+            captureId: "frames/001.png::aaa",
+            caption: "Settings",
+            status: "accepted" as const,
+            runId: "run-1",
+            framePath: "frames/001.png",
+            imageSha256: "aaa",
+            attempt: 1,
+          },
+        ],
+        summary: {
+          captured: 1,
+          missing: 0,
+          pending: 0,
+          accepted: 1,
+          issue: 0,
+          needMoreEvidence: 0,
+          planned: 1,
+          blocked: 0,
+        },
+      },
+      results: [{ runId: "run-1", captureId: "frames/001.png::aaa", status: "applied" as const }],
+    }));
+    await render({
+      getReport: async () => report,
+      getFailureClusters: async () => ({ campaignId: "batch-1", clusters: [] }),
+      getFindings: async () => {
+        throw new Error("Failed to fetch");
+      },
+      getCaptureReview: async () => ({
+        items: [
+          {
+            captureId: "frames/001.png::aaa",
+            caption: "Settings",
+            status: "pending" as const,
+            runId: "run-1",
+            framePath: "frames/001.png",
+            imageSha256: "aaa",
+            attempt: 1,
+          },
+          {
+            captureId: "missing::settings",
+            caption: "Language",
+            status: "missing" as const,
+            runId: "run-2",
+            attempt: 1,
+            blocked: true,
+          },
+        ],
+        summary: {
+          captured: 1,
+          missing: 1,
+          pending: 1,
+          accepted: 0,
+          issue: 0,
+          needMoreEvidence: 0,
+          planned: 2,
+          blocked: 1,
+        },
+      }),
+      reviewCaptures,
+    } as unknown as RunAcrossProductService);
+    expect(document.body.textContent).toContain("Screenshot review");
+    expect(document.body.textContent).toContain("2 planned · 1 captured · 1 blocked");
+    expect(document.body.textContent).toContain(
+      "Looks correct does not approve a visual baseline.",
+    );
+    const accept = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Looks correct",
+    );
+    if (!(accept instanceof HTMLButtonElement)) throw new Error("Looks correct not found");
+    await act(async () => accept.click());
+    await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
+    expect(reviewCaptures).toHaveBeenCalledTimes(1);
+    expect(reviewCaptures.mock.calls[0]).toEqual([
+      "batch-1",
+      {
+        action: "accept",
+        items: [
+          {
+            runId: "run-1",
+            captureId: "frames/001.png::aaa",
+            imageSha256: "aaa",
+          },
+        ],
+      },
+    ]);
+  });
 });

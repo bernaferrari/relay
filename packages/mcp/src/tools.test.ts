@@ -809,6 +809,22 @@ test("marks App Map Combine execution as a per-cell runtime profile contract", (
   assert.match(tool("job.combine.start").description, /app-map\.test\.run/u);
 });
 
+test("Plan capture review is a human screenshot queue, not a baseline", () => {
+  const listed = tool("job.combine.capture.review");
+  const applied = tool("job.combine.capture.review.apply");
+  assert.equal(listed.requiresConfirmation, false);
+  assert.equal(applied.requiresConfirmation, true);
+  assert.match(listed.description, /Looks correct does not approve a visual baseline/u);
+  assert.match(applied.description, /exact selected Plan items/u);
+  assert.match(applied.description, /confirm: true/u);
+  assert.equal(
+    relayMcpToolsForProfile("observe").some(
+      (item) => item.operationId === "job.combine.capture.review.apply",
+    ),
+    false,
+  );
+});
+
 test("publishes exact graph Test and one-pass run schemas", () => {
   const save = tool("app-map.test.save").inputSchema.parse({
     appMapId: "checkout",

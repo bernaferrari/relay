@@ -355,6 +355,94 @@ describe("validateRecipeSteps", () => {
     };
     assert.deepEqual(validateRecipeSteps([step]), [step]);
   });
+  test("keeps inspect vs transition coverage on a required action", () => {
+    const step = {
+      kind: "tap" as const,
+      target: { identifier: "sidebar.settings" },
+      coverage: "transition" as const,
+    };
+    assert.deepEqual(validateRecipeSteps([step]), [step]);
+  });
+  test("keeps a fast capture-for-review policy", () => {
+    const step = {
+      kind: "screenshot" as const,
+      caption: "Settings",
+      review: { mode: "later" as const, policy: "fast" as const },
+    };
+    assert.deepEqual(validateRecipeSteps([step]), [step]);
+  });
+  test("keeps named sequence phases and does not rewrite wait durations", () => {
+    const steps = validateRecipeSteps([
+      {
+        kind: "screenshot",
+        id: "interrupt",
+        caption: "Survival",
+        review: {
+          mode: "later",
+          policy: "sequence",
+          phases: [
+            { id: "before", caption: "Before airplane" },
+            { id: "during", caption: "During airplane", intervalMs: 60_000 },
+          ],
+        },
+      },
+      { kind: "sleep", ms: 60_000 },
+      {
+        kind: "screenshot",
+        id: "interrupt-after",
+        caption: "After reconnect",
+        review: {
+          mode: "later",
+          policy: "sequence",
+          checkpointId: "interrupt",
+          phase: "after",
+        },
+      },
+    ]);
+    assert.equal(steps[0] && steps[0].kind === "screenshot" && steps[0].review?.policy, "sequence");
+    assert.equal(
+      steps[0] && steps[0].kind === "screenshot" && steps[0].review?.phases?.[1]?.intervalMs,
+      60_000,
+    );
+    assert.equal(steps[1] && steps[1].kind === "sleep" && steps[1].ms, 60_000);
+    assert.equal(steps[2] && steps[2].kind === "screenshot" && steps[2].review?.phase, "after");
+    assert.equal(
+      steps[2] && steps[2].kind === "screenshot" && steps[2].review?.checkpointId,
+      "interrupt",
+    );
+  });
+  test("rejects a loading placeholder as the Sequence after phase", () => {
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            kind: "screenshot",
+            caption: "Final response",
+            review: {
+              mode: "later",
+              policy: "sequence",
+              phase: "after",
+              lookFor: "Working for 1s",
+              phases: [{ id: "after", caption: "Working", lookFor: "Working for 1s" }],
+            },
+          },
+        ]),
+      /loading placeholder/u,
+    );
+  });
+  test("rejects sequence without named phases instead of treating it as Stable", () => {
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            kind: "screenshot",
+            caption: "Final screen",
+            review: { mode: "later", policy: "sequence" },
+          },
+        ]),
+      /named phases/u,
+    );
+  });
   test("retains complete reviewed external-effect provenance and rejects partial declarations", () => {
     const step = {
       kind: "tap" as const,

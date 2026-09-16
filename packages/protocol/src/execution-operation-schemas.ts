@@ -103,6 +103,38 @@ export const executionOperationSchemas = {
     .strict(),
   "job.combine.export": batchRef,
   "job.combine.analysis": batchRef,
+  "job.combine.capture.review": z
+    .object({
+      batchId: identifier("Plan campaign identifier"),
+      pending: queryBoolean.optional(),
+      screen: z.string().trim().min(1).max(256).optional(),
+      device: z.string().trim().min(1).max(256).optional(),
+      account: z.string().trim().min(1).max(256).optional(),
+    })
+    .strict(),
+  "job.combine.capture.review.apply": z
+    .object({
+      batchId: identifier("Plan campaign identifier"),
+      action: z.enum(CAPTURE_REVIEW_ACTIONS),
+      items: z
+        .array(
+          z
+            .object({
+              runId: identifier("Persisted Run identifier"),
+              captureId: identifier("Capture review identifier"),
+              imageSha256: z.string().optional(),
+              action: z.enum(CAPTURE_REVIEW_ACTIONS).optional(),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(500),
+      pending: queryBoolean.optional(),
+      screen: z.string().trim().min(1).max(256).optional(),
+      device: z.string().trim().min(1).max(256).optional(),
+      account: z.string().trim().min(1).max(256).optional(),
+    })
+    .strict(),
   "run.list": z
     .object({
       limit: z.coerce.number().int().positive().optional(),

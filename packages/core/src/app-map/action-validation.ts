@@ -106,6 +106,13 @@ export function assertActions(actions: ActionSpec[], label: string): void {
     }
     seen.add(action.id);
     optionalText(action.label, `${item}.label`);
+    if (
+      action.coverage !== undefined &&
+      action.coverage !== "inspect" &&
+      action.coverage !== "transition"
+    ) {
+      appMapFail("invalid-map", `${item}.coverage is unsupported`);
+    }
     if (action.optional !== undefined && typeof action.optional !== "boolean") {
       appMapFail("invalid-map", `${item}.optional must be a boolean`);
     }

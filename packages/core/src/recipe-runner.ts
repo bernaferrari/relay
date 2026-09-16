@@ -14,6 +14,11 @@ import {
 } from "./recipe-runner-support.js";
 import { waitForResponseCompletion } from "./recipe-response-completion.js";
 import {
+  describeCoverageStepReason,
+  inspectSetupSkip,
+  leftoverSkipForbidden,
+} from "./coverage-step-outcome.js";
+import {
   campaignExecutionStep,
   invalidateVerifiedScreen,
   stepBreaksVerifiedScreen,
@@ -72,6 +77,7 @@ import {
 } from "./control.js";
 import { publish, now } from "./events.js";
 import { runAction, isActionId } from "./actions.js";
+import { captureReviewEnterModule, captureReviewEnterRepeat } from "@relay/protocol";
 import { describeTarget, type RecipeStep } from "./recipes.js";
 import { evaluateSemantic } from "./evaluation.js";
 import { setAndroidMobileData } from "./android-mobile-data.js";
@@ -121,6 +127,19 @@ async function runRequiredRecipeStep(
     case "tap":
       try {
         await runTapStep(device, step, ctx);
+        if (step.coverage === "transition") {
+          job?.artifacts.push({
+            kind: "coverage-step-result",
+            capturedAt: now(),
+            data: {
+              reason: "transition-executed" as const,
+              coverage: "transition" as const,
+              stepId: step.id,
+              stepKind: step.kind,
+            },
+          });
+          log(describeCoverageStepReason("transition-executed"));
+        }
       } finally {
         invalidateVerifiedScreen(ctx);
       }
@@ -157,10 +176,16 @@ async function runRequiredRecipeStep(
       await sleep(step.ms, device);
       break;
     case "screenshot": {
-      await captureRecipeScreenshot(device, step.caption, ctx, {}, {
-        ...(step.review ? { review: step.review } : {}),
-        ...(step.id ? { stepId: step.id } : {}),
-      });
+      await captureRecipeScreenshot(
+        device,
+        step.caption,
+        ctx,
+        {},
+        {
+          ...(step.review ? { review: step.review } : {}),
+          ...(step.id ? { stepId: step.id } : {}),
+        },
+      );
       break;
     }
     case "capture-surface": {
@@ -521,7 +546,13 @@ async function runRequiredRecipeStep(
       break;
     }
     case "module": {
-      await runReusableRecipe(device, step.recipeId, ctx, runRecipeStep, step.bindings);
+      await runReusableRecipe(
+        device,
+        step.recipeId,
+        { ...ctx, captureReview: captureReviewEnterModule(ctx.captureReview, step.recipeId) },
+        runRecipeStep,
+        step.bindings,
+      );
       break;
     }
     case "branch": {
@@ -544,7 +575,14 @@ async function runRequiredRecipeStep(
       log(
         `branch: ${matched ? "matched" : "otherwise"}${recipeId ? ` → ${recipeId}` : " → continue"}`,
       );
-      if (recipeId) await runReusableRecipe(device, recipeId, ctx, runRecipeStep);
+      if (recipeId) {
+        await runReusableRecipe(
+          device,
+          recipeId,
+          { ...ctx, captureReview: captureReviewEnterModule(ctx.captureReview, recipeId) },
+          runRecipeStep,
+        );
+      }
       break;
     }
     case "repeat": {
@@ -552,7 +590,15 @@ async function runRequiredRecipeStep(
         await cooperativeCheckpoint(job?.id);
         if (job) job.resolvedInputs.iteration = String(iteration + 1);
         log(`repeat: ${iteration + 1}/${step.count}`);
-        await runReusableRecipe(device, step.recipeId, ctx, runRecipeStep);
+        await runReusableRecipe(
+          device,
+          step.recipeId,
+          {
+            ...ctx,
+            captureReview: captureReviewEnterRepeat(ctx.captureReview, step.recipeId, iteration),
+          },
+          runRecipeStep,
+        );
       }
       job?.artifacts.push({
         kind: "loop",
@@ -794,9 +840,14 @@ export async function runRecipeStep(
     invalidateVerifiedScreen(ctx);
     const present = await conditionalTargetPresent(device, step.when);
     const shouldRun = step.when.condition === "present" ? present : !present;
-    if (!shouldRun) {
-      const message = `${describeTarget(step.when.target)} is ${present ? "present" : "absent"}`;
-      ctx.log(`conditional ${step.kind}: skipped — ${message}`);
+    if (!shouldRun && leftoverSkipForbidden(step)) {
+      // Coverage:transition leftover skip cannot prove the required opener.
+    } else if (!shouldRun) {
+      const inspectSkip = inspectSetupSkip(step);
+      const message = inspectSkip
+        ? describeCoverageStepReason("inspect-setup-skipped")
+        : `${describeTarget(step.when.target)} is ${present ? "present" : "absent"}`;
+      ctx.log(inspectSkip ? message : `conditional ${step.kind}: skipped — ${message}`);
       ctx.job?.artifacts.push({
         kind: "conditional-step-skipped",
         capturedAt: now(),
@@ -806,6 +857,9 @@ export async function runRecipeStep(
           condition: step.when.condition,
           target: step.when.target,
           observed: present ? "present" : "absent",
+          ...(inspectSkip
+            ? { reason: "inspect-setup-skipped" as const, coverage: "inspect" as const }
+            : {}),
         },
       });
       return;

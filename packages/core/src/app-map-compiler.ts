@@ -6,6 +6,7 @@ import type {
   AppMapCompiledRecipe,
   AppMapCompiledStepProvenance,
   AssertionSpec,
+  CaptureCoverage,
   Connection,
   RecipeStep,
   Routine,
@@ -250,19 +251,45 @@ function destEndOpenChromeTarget(step: RecipeStep): StepTarget | undefined {
 }
 
 function destEndOpenFallbackTarget(step: RecipeStep): StepTarget | undefined {
-  if (step.kind === "tap") return step.target;
-  return undefined;
+  if (step.kind !== "tap") return undefined;
+  // Label-only dest chrome is often origin chrome too — grok.com "Settings"
+  // stays in the signed-in tree, so leftover skip would skip the account
+  // opener and then SOS tapping a non-hittable Settings node. Identifier
+  // dest chrome is overlay-unique (iOS close / camera / sidebar settings).
+  if (!step.target.identifier?.trim()) return undefined;
+  return step.target;
 }
 
 /** Dest-end wait-for origin + opener tap SOS when leftover is already the
  * overlay (open sidebar hides the composer). Skip the open prefix when later
  * dest chrome is already on screen — do not tap the opener, which would close
  * it, and do not re-tap a peek that is already open. */
+function destEndLeftoverSkipAllowed(
+  steps: RecipeStep[],
+  start: number,
+  end: number,
+  coverage?: CaptureCoverage,
+): boolean {
+  if (coverage === "transition") return false;
+  for (let index = start; index < end; index += 1) {
+    if (steps[index]?.coverage === "transition") return false;
+  }
+  return true;
+}
+
 function applyDestEndOpenLeftoverPolicy(
   steps: RecipeStep[],
   start = 0,
   end = steps.length,
+  coverage?: CaptureCoverage,
 ): void {
+  if (coverage) {
+    for (let index = start; index < end; index += 1) {
+      const step = steps[index];
+      if (step && !step.coverage) step.coverage = coverage;
+    }
+  }
+  if (!destEndLeftoverSkipAllowed(steps, start, end, coverage)) return;
   const originIndex = steps.findIndex(
     (step, index) =>
       index >= start &&
@@ -303,6 +330,7 @@ function applyDestEndOpenLeftoverPolicy(
     const step = steps[index]!;
     if ((step.kind !== "wait-for" && step.kind !== "tap") || step.when) continue;
     step.when = structuredClone(when);
+    if (!step.coverage) step.coverage = "inspect";
   }
 }
 
@@ -313,6 +341,11 @@ function connectionActionsStartWithWaitFor(connection: Connection | undefined): 
     return first.steps[0]?.kind === "wait-for";
   }
   return false;
+}
+
+function stampActionCoverage(step: RecipeStep, coverage?: CaptureCoverage): RecipeStep {
+  if (!coverage || step.coverage) return step;
+  return { ...step, coverage };
 }
 
 function actionSteps(map: AppMap, action: ActionSpec, sourceScreenId?: string): RecipeStep[] {
@@ -425,12 +458,15 @@ function actionSteps(map: AppMap, action: ActionSpec, sourceScreenId?: string): 
       step.kind === "reveal" && !step.navigation?.length
         ? semanticRevealPlans(map, sourceScreenId, step.target)
         : [];
-    return {
-      ...step,
-      ...(navigation.length ? { navigation } : {}),
-      ...(action.optional ? { optional: true as const } : {}),
-      ...(action.when ? { when: structuredClone(action.when) } : {}),
-    };
+    return stampActionCoverage(
+      {
+        ...step,
+        ...(navigation.length ? { navigation } : {}),
+        ...(action.optional ? { optional: true as const } : {}),
+        ...(action.when ? { when: structuredClone(action.when) } : {}),
+      },
+      action.coverage,
+    );
   });
 }
 
@@ -687,7 +723,12 @@ export function compileAppMapFlow(
         ownerId: connection.id,
       });
     } else {
-      applyDestEndOpenLeftoverPolicy(root.steps, rangeStart);
+      applyDestEndOpenLeftoverPolicy(
+        root.steps,
+        rangeStart,
+        root.steps.length,
+        connection.coverage,
+      );
     }
     connections.push({
       connectionIndex,
@@ -811,7 +852,7 @@ export function compileAppMapConnection(
     });
     root.steps.push(step);
   } else {
-    applyDestEndOpenLeftoverPolicy(root.steps);
+    applyDestEndOpenLeftoverPolicy(root.steps, 0, root.steps.length, connection.coverage);
   }
   recipes[rootRecipeId] = root;
 

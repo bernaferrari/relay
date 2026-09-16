@@ -4,6 +4,13 @@ export type ActorKind = (typeof ACTOR_KINDS)[number];
 
 export type ActorIdentity = { actorId: string; actorKind: ActorKind };
 
+/** Kind follows the actor id prefix. `agent:*` cannot claim to be a human. */
+export function actorKindFromId(actorId: string): ActorKind {
+  if (actorId.startsWith("agent:")) return "agent";
+  if (actorId.startsWith("system:")) return "system";
+  return "human";
+}
+
 export type OperationScope = { organizationId: string; projectId: string };
 
 export type CommandIdentity = ActorIdentity &

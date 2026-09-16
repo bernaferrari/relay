@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { collaborationStateRoot, redactText } from "@relay/core";
 import {
+  actorKindFromId,
   projectRoles,
   type ActorIdentity,
   type ActorKind,
@@ -239,11 +240,15 @@ export function resolveCommandActor(
   if (!/^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/.test(actorId)) {
     throw new Error("Local actorId contains unsupported characters");
   }
-  const actorKind = requestedKind ?? "human";
-  if (actorKind !== "human" && actorKind !== "agent" && actorKind !== "system") {
+  if (
+    requestedKind &&
+    requestedKind !== "human" &&
+    requestedKind !== "agent" &&
+    requestedKind !== "system"
+  ) {
     throw new Error("Local actorKind must be human, agent, or system");
   }
-  return { actorId, actorKind };
+  return { actorId, actorKind: actorKindFromId(actorId) };
 }
 
 function header(headers: IncomingHttpHeaders, name: string): string | undefined {

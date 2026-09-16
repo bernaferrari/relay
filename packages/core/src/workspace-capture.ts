@@ -673,6 +673,12 @@ export function iosPixelsUnavailableMessage(goIosError: unknown, sdkError?: unkn
   return `iOS screenshot failed via go-ios: ${goIos}`;
 }
 
+/** Follow-on AX after a raster is opt-in. Android used to snapshot by default,
+ * which let a hung tree stall the PNG; recipe callers already pass false. */
+export function screenshotIncludesFollowOnTree(includeScreenMatch?: boolean): boolean {
+  return includeScreenMatch === true;
+}
+
 export async function captureScreenshot(opts?: {
   serial?: string;
   device?: Device;
@@ -680,7 +686,8 @@ export async function captureScreenshot(opts?: {
   jobId?: string;
   /** skip attaching to job */
   ephemeral?: boolean;
-  /** skip the additional semantic snapshot when the caller only needs pixels */
+  /** Opt-in follow-on semantic snapshot after pixels. Default is pixels only
+   * on every platform so a hung tree cannot stall the raster. */
   includeScreenMatch?: boolean;
   /** Fresh semantic proof supplied by the caller to avoid a second tree walk. */
   semanticNodes?: readonly SnapshotNode[];
@@ -806,12 +813,7 @@ export async function captureScreenshot(opts?: {
     const base64 = buf.toString("base64");
     const dimensions = pngDimensions(buf);
     let screenMatch: ScreenshotPayload["screenMatch"];
-    if (
-      opts?.includeScreenMatch === true ||
-      (opts?.includeScreenMatch !== false &&
-        context.kind === "device" &&
-        context.platform !== "ios")
-    ) {
+    if (screenshotIncludesFollowOnTree(opts?.includeScreenMatch)) {
       try {
         semanticNodes ??= (await snapshotForTarget(target, false, "snapshot")).nodes;
         const identity = observeScreenIdentityForHost(semanticNodes, {

@@ -271,6 +271,13 @@ function summarizePackExport(response: Record<string, unknown>): unknown {
   };
 }
 
+function summarizePlanCaptureReview(response: Record<string, unknown>): unknown {
+  return {
+    ...(response.queue !== undefined ? { queue: response.queue } : {}),
+    ...(response.results !== undefined ? { results: response.results } : {}),
+  };
+}
+
 /**
  * A standalone step is not a job, but an iOS outcome-unknown still needs the
  * exact same terminal/review facts to reach an MCP caller. Keep the repair
@@ -315,6 +322,7 @@ export function summarizeExecutionOperationResult(operationId: string, result: u
   if (operationId !== "app-map.flow.run" && !operationId.startsWith("job.")) return result;
   if (operationId.endsWith(".export")) return summarizePackExport(response);
   if (operationId.endsWith(".analysis")) return summarizeLocaleAnalysis(response);
+  if (operationId.includes(".capture.review")) return summarizePlanCaptureReview(response);
   const job = response.job === undefined ? undefined : summarizeJob(response.job);
   const jobs = Array.isArray(response.jobs) ? response.jobs.map(summarizeJob) : undefined;
   const plan = object(response.plan);

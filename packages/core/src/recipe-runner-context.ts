@@ -1,6 +1,8 @@
 import type {
   NavigationProofCursor as PublicNavigationProofCursor,
   NavigationProofCursorArtifact,
+  CaptureReviewPlannedSlot,
+  CaptureReviewRuntimeCursor,
 } from "@relay/protocol";
 import type { Recipe, RecipeStep } from "./recipes.js";
 import type { SnapshotNode } from "./device.js";
@@ -338,6 +340,10 @@ export type RecipeStepContext = {
   moduleStack?: string[];
   recipeGraph?: Readonly<Record<string, Recipe>>;
   runtime?: RecipeRuntimeState;
+  /** Frozen capture-for-review identity for the current nested invocation. */
+  captureReview?: CaptureReviewRuntimeCursor;
+  /** Compiled plan obligations. Runner stamps match these slot ids. */
+  plannedSlots?: CaptureReviewPlannedSlot[];
   /** Host policy/test seam for manual steps that omit an authored deadline. */
   defaultHumanCheckpointTimeoutMs?: number;
   /** Test seam and provider override for pixel-only destination identity. */

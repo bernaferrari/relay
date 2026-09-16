@@ -36,7 +36,63 @@ test("unscoped identity-ignore does not leak onto later frames", () => {
   assert.equal(regions.length, 0);
 });
 
-test("identity-ignore bound to a frame stays on that frame", () => {
+test("unscoped identity-ignore is not a visual exclusion on a single-frame run", () => {
+  const merged = withIdentityIgnoreRegions(
+    policy,
+    [
+      {
+        kind: "identity-ignore",
+        data: { name: "reply body", x: 0, y: 80, width: 1280, height: 640 },
+      },
+    ],
+    [{ index: 0, width: 1280, height: 800, stepId: "chat" }],
+  );
+  assert.equal(merged.regions.length, 0);
+  assert.equal(merged, policy);
+});
+
+test("unscoped identity-ignore is not a visual exclusion on a Settings-only run", () => {
+  const merged = withIdentityIgnoreRegions(
+    policy,
+    [
+      {
+        kind: "identity-ignore",
+        data: { name: "reply body", x: 0, y: 80, width: 1280, height: 640 },
+      },
+    ],
+    [{ index: 0, width: 1280, height: 800, stepId: "settings" }],
+  );
+  assert.equal(merged.regions.length, 0);
+  assert.equal(merged, policy);
+});
+
+test("identity-ignore is not a visual exclusion on its bound frame", () => {
+  const merged = withIdentityIgnoreRegions(
+    policy,
+    [
+      {
+        kind: "identity-ignore",
+        data: {
+          name: "reply body",
+          x: 0,
+          y: 80,
+          width: 1280,
+          height: 640,
+          stepId: "chat",
+          frameIndex: 0,
+        },
+      },
+    ],
+    [
+      { index: 0, width: 1280, height: 800, stepId: "chat" },
+      { index: 1, width: 1280, height: 800, stepId: "settings" },
+    ],
+  );
+  assert.equal(merged.regions.length, 0);
+  assert.equal(merged, policy);
+});
+
+test("identity-ignore bound to a frame stays off later Settings", () => {
   const regions = visualIgnoreRegionsFromIdentityArtifacts(
     [
       {
@@ -49,45 +105,76 @@ test("identity-ignore bound to a frame stays on that frame", () => {
       { index: 1, width: 1280, height: 800, stepId: "settings" },
     ],
   );
-  assert.equal(regions.length, 1);
-  assert.equal(regions[0]?.mode, "ignore");
-  assert.equal(regions[0]?.name, "reply body");
-  assert.equal(regions[0]?.frameIndex, 0);
-  assert.equal(regions[0]?.y, 0.1);
-  assert.equal(regions[0]?.height, 0.8);
+  assert.equal(regions.length, 0);
 });
 
-test("ui-tree ignore follows the capturing step, not a later Settings frame", () => {
-  const regions = visualIgnoreRegionsFromIdentityArtifacts(
-    [
+const chatChromeTree = {
+  kind: "ui-tree" as const,
+  data: {
+    stepId: "chat",
+    nodes: [
+      { role: "article", label: "You", rect: { x: 80, y: 80, width: 40, height: 40 } },
+      { role: "article", label: "Grok", rect: { x: 80, y: 200, width: 400, height: 120 } },
       {
-        kind: "ui-tree",
-        data: {
-          stepId: "chat",
-          nodes: [
-            { role: "article", label: "You", rect: { x: 80, y: 80, width: 40, height: 40 } },
-            { role: "article", label: "Grok", rect: { x: 80, y: 200, width: 400, height: 120 } },
-          ],
-        },
+        role: "div",
+        identifier: "chat-input",
+        label: "Ask Grok anything",
+        rect: { x: 275, y: 232, width: 726, height: 42 },
+      },
+      {
+        role: "dialog",
+        label: "Introducing Build Mode",
+        rect: { x: 824, y: 339, width: 320, height: 301 },
       },
     ],
+  },
+};
+
+test("grok.com ui-tree composer intro and reply-body are not visual exclusions", () => {
+  const regions = visualIgnoreRegionsFromIdentityArtifacts(
+    [chatChromeTree],
+    [{ index: 0, width: 1280, height: 800, stepId: "chat" }],
+  );
+  assert.equal(regions.length, 0);
+});
+
+test("Settings-only compare does not inherit Chat ui-tree chrome as a visual ignore", () => {
+  const merged = withIdentityIgnoreRegions(
+    policy,
+    [chatChromeTree],
+    [{ index: 0, width: 1280, height: 800, stepId: "settings" }],
+  );
+  assert.equal(merged.regions.length, 0);
+  assert.equal(merged, policy);
+});
+
+test("unscoped Chat ui-tree is not a visual exclusion on a Settings-only run", () => {
+  const merged = withIdentityIgnoreRegions(
+    policy,
+    [{ kind: "ui-tree", data: { nodes: chatChromeTree.data.nodes } }],
+    [{ index: 0, width: 1280, height: 800, stepId: "settings" }],
+  );
+  assert.equal(merged.regions.length, 0);
+  assert.equal(merged, policy);
+});
+
+test("Chat ui-tree chrome stays off later Settings for visual compare", () => {
+  const regions = visualIgnoreRegionsFromIdentityArtifacts(
+    [chatChromeTree],
     [
       { index: 0, width: 1280, height: 800, stepId: "chat" },
       { index: 1, width: 1280, height: 800, stepId: "settings" },
     ],
   );
-  assert.equal(regions.length, 1);
-  assert.equal(regions[0]?.name, "reply body");
-  assert.equal(regions[0]?.frameIndex, 0);
+  assert.equal(regions.length, 0);
 });
 
-test("already-normalized identity-ignore regions stay unit rectangles", () => {
+test("already-normalized identity-ignore regions are not visual exclusions", () => {
   const regions = visualIgnoreRegionsFromIdentityArtifacts(
     [{ kind: "identity-ignore", data: { x: 0, y: 0.2, width: 1, height: 0.6, name: "reply" } }],
     [{ index: 0, width: 1280, height: 800 }],
   );
-  assert.equal(regions[0]?.y, 0.2);
-  assert.equal(regions[0]?.height, 0.6);
+  assert.equal(regions.length, 0);
 });
 
 test("identity-ignore never overwrites a reviewed visual policy id", () => {
@@ -114,7 +201,79 @@ test("identity-ignore never overwrites a reviewed visual policy id", () => {
   assert.equal(merged.regions[0]?.name, "reviewed");
 });
 
-test("logged-out continue ignores the user bubble and leaves the paywall compared", () => {
+test("explicit comparison ignore stays off a later Settings frame", () => {
+  const merged = withIdentityIgnoreRegions(
+    {
+      ...policy,
+      regions: [
+        {
+          id: "chat-reply",
+          name: "reply body",
+          mode: "ignore",
+          frameIndex: 0,
+          x: 0,
+          y: 0.1,
+          width: 1,
+          height: 0.8,
+        },
+      ],
+    },
+    [
+      {
+        kind: "identity-ignore",
+        data: { name: "reply body", x: 0, y: 80, width: 1280, height: 640, frameIndex: 0 },
+      },
+    ],
+    [
+      { index: 0, width: 1280, height: 800, stepId: "chat" },
+      { index: 1, width: 1280, height: 800, stepId: "settings" },
+    ],
+  );
+  assert.equal(merged.regions.length, 1);
+  assert.equal(merged.regions[0]?.id, "chat-reply");
+  assert.equal(merged.regions[0]?.frameIndex, 0);
+});
+
+test("a grok.com ui-tree does not auto-save leftover-chat chrome as a visual ignore", () => {
+  const merged = withIdentityIgnoreRegions(
+    policy,
+    [chatChromeTree, { ...chatChromeTree, data: { ...chatChromeTree.data, stepId: undefined } }],
+    [{ index: 0, width: 1280, height: 800, stepId: "chat" }],
+  );
+  assert.equal(merged.regions.length, 0);
+  assert.equal(merged, policy);
+});
+
+test("human comparison policy still ignores reply-body pixels after it is updated", () => {
+  const reviewed: VisualComparisonPolicy = {
+    ...policy,
+    regions: [
+      {
+        id: "reply-body",
+        name: "reply body",
+        mode: "ignore",
+        frameIndex: 0,
+        x: 0,
+        y: 0.1,
+        width: 1,
+        height: 0.8,
+      },
+    ],
+  };
+  const merged = withIdentityIgnoreRegions(
+    reviewed,
+    [chatChromeTree],
+    [
+      { index: 0, width: 1280, height: 800, stepId: "chat" },
+      { index: 1, width: 1280, height: 800, stepId: "settings" },
+    ],
+  );
+  assert.equal(merged.regions.length, 1);
+  assert.equal(merged.regions[0]?.id, "reply-body");
+  assert.equal(merged.regions[0]?.frameIndex, 0);
+});
+
+test("paywall ui-tree leftover chrome is not a visual exclusion", () => {
   const regions = visualIgnoreRegionsFromIdentityArtifacts(
     [
       {
@@ -130,9 +289,10 @@ test("logged-out continue ignores the user bubble and leaves the paywall compare
               rect: { x: 297, y: 165, width: 427, height: 22 },
             },
             {
-              role: "dialog",
-              label: "Cookie notice",
-              rect: { x: 736, y: 647, width: 528, height: 136 },
+              role: "div",
+              identifier: "chat-input",
+              label: "Ask Grok anything",
+              rect: { x: 275, y: 232, width: 726, height: 42 },
             },
           ],
         },
@@ -140,66 +300,10 @@ test("logged-out continue ignores the user bubble and leaves the paywall compare
     ],
     [{ index: 0, width: 1280, height: 800 }],
   );
-  assert.equal(regions.length, 1);
-  assert.equal(regions[0]?.name, "user bubble");
-  assert.equal(regions[0]?.mode, "ignore");
-  assert.ok((regions[0]?.x ?? 0) > 0.7);
-  assert.ok((regions[0]?.width ?? 1) < 0.1);
-  assert.ok((regions[0]?.height ?? 1) < 0.12);
-  assert.ok((regions[0]?.y ?? 0) + (regions[0]?.height ?? 0) < 0.2);
+  assert.equal(regions.length, 0);
 });
 
-test("authored user-bubble identity-ignore is not stacked with a ui-tree column", () => {
-  const regions = visualIgnoreRegionsFromIdentityArtifacts(
-    [
-      {
-        kind: "identity-ignore",
-        data: { name: "user bubble", x: 0.7, y: 0.08, width: 0.28, height: 0.1 },
-      },
-      {
-        kind: "ui-tree",
-        data: {
-          nodes: [
-            { role: "article", label: "You", rect: { x: 80, y: 80, width: 40, height: 40 } },
-            {
-              role: "h2",
-              label: "Continue your conversation",
-              rect: { x: 297, y: 165, width: 427, height: 22 },
-            },
-          ],
-        },
-      },
-    ],
-    [{ index: 0, width: 1280, height: 800 }],
-  );
-  assert.equal(regions.length, 1);
-  assert.equal(regions[0]?.name, "user bubble");
-  assert.equal(regions[0]?.x, 0.7);
-  assert.equal(regions[0]?.width, 0.28);
-});
-
-test("a grok.com ui-tree covers the reply body without a recipe identity-ignore step", () => {
-  const regions = visualIgnoreRegionsFromIdentityArtifacts(
-    [
-      {
-        kind: "ui-tree",
-        data: {
-          nodes: [
-            { role: "article", label: "You", rect: { x: 80, y: 80, width: 40, height: 40 } },
-            { role: "article", label: "Grok", rect: { x: 80, y: 200, width: 400, height: 120 } },
-          ],
-        },
-      },
-    ],
-    [{ index: 0, width: 1280, height: 800 }],
-  );
-  assert.equal(regions[0]?.name, "reply body");
-  assert.equal(regions[0]?.mode, "ignore");
-  assert.ok((regions[0]?.y ?? 1) < 0.15);
-  assert.ok((regions[0]?.width ?? 0) > 0.8);
-});
-
-test("authored cookie banner stays a bottom-right unit rectangle", () => {
+test("authored cookie banner is not a visual exclusion", () => {
   const regions = visualIgnoreRegionsFromIdentityArtifacts(
     [
       {
@@ -209,16 +313,10 @@ test("authored cookie banner stays a bottom-right unit rectangle", () => {
     ],
     [{ index: 0, width: 1280, height: 800 }],
   );
-  assert.equal(regions.length, 1);
-  assert.equal(regions[0]?.name, "cookie banner");
-  assert.equal(regions[0]?.mode, "ignore");
-  assert.equal(regions[0]?.x, 0.57);
-  assert.equal(regions[0]?.y, 0.8);
-  assert.equal(regions[0]?.width, 0.43);
-  assert.equal(regions[0]?.height, 0.2);
+  assert.equal(regions.length, 0);
 });
 
-test("authored heading caret stays a thin underline below the heading text", () => {
+test("authored heading caret is not a visual exclusion", () => {
   const regions = visualIgnoreRegionsFromIdentityArtifacts(
     [
       {
@@ -228,251 +326,19 @@ test("authored heading caret stays a thin underline below the heading text", () 
     ],
     [{ index: 0, width: 1280, height: 800 }],
   );
-  assert.equal(regions.length, 1);
-  assert.equal(regions[0]?.name, "heading caret");
-  assert.equal(regions[0]?.mode, "ignore");
-  assert.equal(regions[0]?.x, 0.53);
-  assert.equal(regions[0]?.y, 0.25);
-  assert.equal(regions[0]?.width, 0.08);
-  assert.equal(regions[0]?.height, 0.01);
-  assert.ok((regions[0]?.y ?? 0) >= 0.25);
-  assert.ok((regions[0]?.width ?? 1) < 0.1);
-  assert.ok((regions[0]?.height ?? 1) <= 0.01);
+  assert.equal(regions.length, 0);
 });
 
-test("chat-input identifier ignores the tight composer placeholder, not the viewport", () => {
-  const regions = visualIgnoreRegionsFromIdentityArtifacts(
-    [
-      {
-        kind: "ui-tree",
-        data: {
-          nodes: [
-            {
-              role: "div",
-              identifier: "grok-app-root",
-              label: "Switch to Build Mode to create apps",
-              rect: { x: 0, y: 0, width: 1280, height: 800 },
-            },
-            {
-              role: "div",
-              identifier: "chat-input",
-              label: "Switch to Build Mode to create apps",
-              rect: { x: 275, y: 232, width: 726, height: 42 },
-            },
-            { role: "button", label: "Sign in", rect: { x: 1100, y: 11, width: 76, height: 40 } },
-          ],
-        },
-      },
-    ],
-    [{ index: 0, width: 1280, height: 800 }],
-  );
-  assert.equal(regions.length, 1);
-  assert.equal(regions[0]?.name, "composer placeholder");
-  assert.ok((regions[0]?.width ?? 1) < 0.72);
-  assert.ok((regions[0]?.height ?? 1) < 0.08);
-  assert.ok((regions[0]?.y ?? 0) > 0.25);
-  assert.ok((regions[0]?.y ?? 0) + (regions[0]?.height ?? 0) < 0.4);
-});
-
-test("a grok.com ui-tree covers a unique Build Mode intro dialog", () => {
-  const regions = visualIgnoreRegionsFromIdentityArtifacts(
-    [
-      {
-        kind: "ui-tree",
-        data: {
-          nodes: [
-            {
-              role: "dialog",
-              label: "Introducing Build Mode",
-              rect: { x: 824, y: 339, width: 320, height: 301 },
-            },
-            { role: "button", label: "Chat", rect: { x: 16, y: 80, width: 72, height: 32 } },
-          ],
-        },
-      },
-    ],
-    [{ index: 0, width: 1280, height: 800 }],
-  );
-  assert.equal(regions.length, 1);
-  assert.equal(regions[0]?.name, "intro overlay");
-  assert.equal(regions[0]?.mode, "ignore");
-  assert.equal(regions[0]?.x, 824 / 1280);
-  assert.equal(regions[0]?.y, 339 / 800);
-  assert.equal(regions[0]?.width, 320 / 1280);
-  assert.equal(regions[0]?.height, 301 / 800);
-});
-
-test("cookie banner stacks with composer placeholder and skips a reply-body column", () => {
+test("cookie identity-ignore plus a Chat ui-tree still adds no visual exclusion", () => {
   const regions = visualIgnoreRegionsFromIdentityArtifacts(
     [
       {
         kind: "identity-ignore",
         data: { name: "cookie banner", x: 0.57, y: 0.8, width: 0.43, height: 0.2 },
       },
-      {
-        kind: "ui-tree",
-        data: {
-          nodes: [
-            {
-              role: "div",
-              identifier: "chat-input",
-              label: "Type / to use slash commands",
-              rect: { x: 275, y: 232, width: 726, height: 42 },
-            },
-            { role: "article", label: "You", rect: { x: 80, y: 80, width: 40, height: 40 } },
-          ],
-        },
-      },
+      chatChromeTree,
     ],
-    [{ index: 0, width: 1280, height: 800 }],
-  );
-  assert.deepEqual([...new Set(regions.map((region) => region.name))].sort(), [
-    "composer placeholder",
-    "cookie banner",
-  ]);
-});
-
-test("a paywall ui-tree does not ignore the composer slot", () => {
-  const regions = visualIgnoreRegionsFromIdentityArtifacts(
-    [
-      {
-        kind: "ui-tree",
-        data: {
-          nodes: [
-            {
-              role: "div",
-              identifier: "chat-input",
-              label: "Ask Grok anything",
-              rect: { x: 275, y: 232, width: 726, height: 42 },
-            },
-          ],
-        },
-      },
-      {
-        kind: "ui-tree",
-        data: {
-          nodes: [
-            {
-              role: "h2",
-              label: "Continue your conversation",
-              rect: { x: 297, y: 165, width: 427, height: 22 },
-            },
-            { role: "article", label: "You", rect: { x: 926, y: 80, width: 65, height: 54 } },
-          ],
-        },
-      },
-    ],
-    [{ index: 0, width: 1280, height: 800 }],
-  );
-  assert.equal(regions.length, 1);
-  assert.equal(regions[0]?.name, "user bubble");
-});
-
-test("cookie banner stacks with user bubble and skips ui-tree inference", () => {
-  const regions = visualIgnoreRegionsFromIdentityArtifacts(
-    [
-      {
-        kind: "identity-ignore",
-        data: { name: "user bubble", x: 0.7, y: 0.08, width: 0.28, height: 0.1 },
-      },
-      {
-        kind: "identity-ignore",
-        data: { name: "cookie banner", x: 0.57, y: 0.8, width: 0.43, height: 0.2 },
-      },
-      {
-        kind: "ui-tree",
-        data: {
-          nodes: [
-            { role: "article", label: "You", rect: { x: 926, y: 80, width: 65, height: 54 } },
-            {
-              role: "h2",
-              label: "Continue your conversation",
-              rect: { x: 297, y: 165, width: 427, height: 22 },
-            },
-          ],
-        },
-      },
-    ],
-    [{ index: 0, width: 1280, height: 800 }],
-  );
-  assert.deepEqual([...new Set(regions.map((region) => region.name))].sort(), [
-    "cookie banner",
-    "user bubble",
-  ]);
-});
-
-test("a unique Ask Grok anything textbox is ignored when chat-input is absent", () => {
-  const regions = visualIgnoreRegionsFromIdentityArtifacts(
-    [
-      {
-        kind: "ui-tree",
-        data: {
-          nodes: [
-            {
-              role: "textarea",
-              label: "Ask Grok anything",
-              rect: { x: 275, y: 232, width: 726, height: 42 },
-            },
-          ],
-        },
-      },
-    ],
-    [{ index: 0, width: 1280, height: 800 }],
-  );
-  assert.equal(regions[0]?.name, "composer placeholder");
-  assert.ok((regions[0]?.height ?? 1) < 0.08);
-});
-
-test("an email textbox is not treated as the composer placeholder", () => {
-  const regions = visualIgnoreRegionsFromIdentityArtifacts(
-    [
-      {
-        kind: "ui-tree",
-        data: {
-          nodes: [
-            {
-              role: "textbox",
-              label: "Email",
-              rect: { x: 275, y: 232, width: 726, height: 42 },
-            },
-          ],
-        },
-      },
-    ],
-    [{ index: 0, width: 1280, height: 800 }],
+    [{ index: 0, width: 1280, height: 800, stepId: "chat" }],
   );
   assert.equal(regions.length, 0);
-});
-
-test("ui-tree ignore stays off screens that are not a conversation", () => {
-  const regions = visualIgnoreRegionsFromIdentityArtifacts(
-    [
-      {
-        kind: "ui-tree",
-        data: {
-          nodes: [
-            { role: "button", label: "Imagine", rect: { x: 900, y: 11, width: 80, height: 40 } },
-          ],
-        },
-      },
-    ],
-    [{ index: 0, width: 1280, height: 800 }],
-  );
-  assert.equal(regions.length, 0);
-});
-
-test("duplicate conversation ui-trees still produce one ignore region per frame", () => {
-  const tree = {
-    kind: "ui-tree" as const,
-    data: {
-      nodes: [{ role: "article", label: "You", rect: { x: 80, y: 80, width: 40, height: 40 } }],
-    },
-  };
-  const merged = withIdentityIgnoreRegions(
-    policy,
-    [tree, tree],
-    [{ index: 0, width: 1280, height: 800 }],
-  );
-  assert.equal(merged.regions.length, 1);
-  assert.equal(merged.regions[0]?.name, "reply body");
 });

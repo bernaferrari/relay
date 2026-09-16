@@ -110,6 +110,14 @@ test("dynamic canonical routes resolve to their registered operation", () => {
     "app-map.scroll-surface.origin.revoke",
   );
   assert.equal(findOperationHandler("POST", "/app-maps/onboarding/teach")?.id, "app-map.teach");
+  assert.equal(
+    findOperationHandler("GET", "/jobs/combine/plan-1/capture-review")?.id,
+    "job.combine.capture.review",
+  );
+  assert.equal(
+    findOperationHandler("POST", "/jobs/combine/plan-1/capture-review")?.id,
+    "job.combine.capture.review.apply",
+  );
   assert.equal(findOperationHandler("GET", "/events")?.id, "event.stream");
 });
 

@@ -570,6 +570,52 @@ test("run capture review records Looks correct without a baseline action", () =>
   );
 });
 
+test("plan capture review lists and bulk-accepts exact Plan screenshots", () => {
+  assert.deepEqual(resolveCommand(["plan", "capture", "review", "plan-1"]), {
+    operationId: "job.combine.capture.review",
+    commandPath: "plan capture review",
+    input: { batchId: "plan-1" },
+  });
+  assert.deepEqual(
+    resolveCommand(["plan", "capture", "review", "plan-1"], {
+      pending: true,
+      screen: "Settings",
+      device: "iPad",
+      account: "Member",
+    }),
+    {
+      operationId: "job.combine.capture.review",
+      commandPath: "plan capture review",
+      input: {
+        batchId: "plan-1",
+        pending: true,
+        screen: "Settings",
+        device: "iPad",
+        account: "Member",
+      },
+    },
+  );
+  assert.deepEqual(
+    resolveCommand(["plan", "capture", "review", "apply", "plan-1"], {
+      action: "accept",
+      items: [{ runId: "run-8", captureId: "frames/001.png::aaa", imageSha256: "aaa" }],
+      pending: true,
+      screen: "Settings",
+    }),
+    {
+      operationId: "job.combine.capture.review.apply",
+      commandPath: "plan capture review apply",
+      input: {
+        batchId: "plan-1",
+        action: "accept",
+        items: [{ runId: "run-8", captureId: "frames/001.png::aaa", imageSha256: "aaa" }],
+        pending: true,
+        screen: "Settings",
+      },
+    },
+  );
+});
+
 test("one failed check is inspectable and selectively retryable", () => {
   assert.deepEqual(resolveCommand(["repair", "retry", "run-1", "usage"]), {
     operationId: "run.repair.retry",

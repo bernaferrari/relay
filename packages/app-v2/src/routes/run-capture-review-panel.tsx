@@ -4,8 +4,11 @@ import { useState } from "react";
 import { Button } from "@relay/ui-react/components/button";
 import {
   captureReviewAdvanceIndex,
-  captureReviewCoverageLine,
+  captureReviewQueueFrameKey,
+  captureReviewQueueItemKey,
   formatCaptureReviewConfiguration,
+  formatCaptureReviewCoverageSummary,
+  formatCaptureReviewObservedSession,
   type CaptureReviewAction,
   type CaptureReviewConfiguration,
   type CaptureReviewItem,
@@ -14,19 +17,19 @@ import {
 import { ReportImage } from "../components/report-image";
 import type { ReportEvidenceItem } from "../data/run-product-service";
 
-export function captureReviewSummaryLine(queue: CaptureReviewQueue): string {
-  const { summary } = queue;
-  const parts = [captureReviewCoverageLine(summary)];
-  if (summary.pending) parts.push(`${summary.pending} pending review`);
-  if (summary.accepted) parts.push(`${summary.accepted} accepted`);
-  if (summary.issue) parts.push(`${summary.issue} issue${summary.issue === 1 ? "" : "s"}`);
-  if (summary.needMoreEvidence) {
-    parts.push(
-      `${summary.needMoreEvidence} need${summary.needMoreEvidence === 1 ? "s" : ""} more evidence`,
-    );
-  }
-  if (summary.missing) parts.push(`${summary.missing} missing`);
-  return parts.join(" · ");
+function planFields(item: CaptureReviewItem): { runId?: string; blocked?: boolean } {
+  const record = item as CaptureReviewItem & { runId?: string; blocked?: boolean };
+  return {
+    ...(typeof record.runId === "string" ? { runId: record.runId } : {}),
+    ...(record.blocked ? { blocked: true } : {}),
+  };
+}
+
+export function captureReviewSummaryLine(queue: {
+  items?: unknown;
+  summary: CaptureReviewQueue["summary"] & { planned?: number; blocked?: number };
+}): string {
+  return formatCaptureReviewCoverageSummary(queue.summary);
 }
 
 export function CaptureReviewPanel({
@@ -54,20 +57,25 @@ export function CaptureReviewPanel({
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const selected = queue.items[Math.min(selectedIndex, Math.max(0, queue.items.length - 1))];
-  const frame = selected?.framePath
-    ? frames.find((item) => item.id === selected.framePath)
+  const selectedMeta = selected ? planFields(selected) : {};
+  const frame = selected
+    ? frames.find(
+        (item) => item.id === captureReviewQueueFrameKey({ ...selected, ...selectedMeta }),
+      )
     : undefined;
-  const configuration = formatCaptureReviewConfiguration(
-    selected?.configuration ?? fallbackConfiguration,
-  );
-  const bulkItems = queue.items.filter(
-    (item) => selectedIds.has(item.captureId) && item.status !== "missing",
-  );
-  const toggleSelected = (captureId: string, enabled: boolean) => {
+  const configuration = [
+    ...formatCaptureReviewConfiguration(selected?.configuration ?? fallbackConfiguration),
+    ...formatCaptureReviewObservedSession(selected?.observed),
+  ];
+  const bulkItems = queue.items.filter((item) => {
+    const key = captureReviewQueueItemKey({ ...item, ...planFields(item) });
+    return selectedIds.has(key) && item.status !== "missing";
+  });
+  const toggleSelected = (key: string, enabled: boolean) => {
     setSelectedIds((current) => {
       const next = new Set(current);
-      if (enabled) next.add(captureId);
-      else next.delete(captureId);
+      if (enabled) next.add(key);
+      else next.delete(key);
       return next;
     });
   };
@@ -88,19 +96,19 @@ export function CaptureReviewPanel({
       <p className="px-3 py-2 text-xs text-muted-foreground">{captureReviewSummaryLine(queue)}</p>
       <ul className="flex flex-wrap gap-1" aria-label="Screenshots for review">
         {queue.items.map((item, index) => {
-          const thumb = item.framePath
-            ? frames.find((frame) => frame.id === item.framePath)
-            : undefined;
+          const identity = { ...item, ...planFields(item) };
+          const key = captureReviewQueueItemKey(identity);
+          const thumb = frames.find((frame) => frame.id === captureReviewQueueFrameKey(identity));
           return (
-            <li key={item.captureId} className="relative">
+            <li key={key} className="relative">
               {item.status !== "missing" ? (
                 <label className="absolute start-1 top-1 z-10">
                   <span className="sr-only">Select {item.caption}</span>
                   <input
                     type="checkbox"
                     className="size-3.5 accent-foreground"
-                    checked={selectedIds.has(item.captureId)}
-                    onChange={(event) => toggleSelected(item.captureId, event.target.checked)}
+                    checked={selectedIds.has(key)}
+                    onChange={(event) => toggleSelected(key, event.target.checked)}
                     onClick={(event) => event.stopPropagation()}
                   />
                 </label>
@@ -129,11 +137,29 @@ export function CaptureReviewPanel({
       {selected ? (
         <div className="grid gap-2 px-3 pb-3">
           <p className="text-sm font-medium">{selected.caption}</p>
+          {selectedMeta.runId ||
+          (selected.attempt && selected.attempt > 1) ||
+          selectedMeta.blocked ? (
+            <p className="text-xs text-muted-foreground">
+              {[
+                selectedMeta.runId,
+                selected.attempt && selected.attempt > 1
+                  ? `attempt ${selected.attempt}`
+                  : undefined,
+                selectedMeta.blocked ? "blocked" : undefined,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          ) : null}
           {configuration.length ? (
             <p className="text-xs text-muted-foreground">{configuration.join(" · ")}</p>
           ) : null}
           {selected.lookFor ? (
             <p className="text-sm text-muted-foreground">Look for: {selected.lookFor}</p>
+          ) : null}
+          {selected.framePath ? (
+            <p className="text-xs text-muted-foreground">Full image: {selected.framePath}</p>
           ) : null}
           <p className="text-xs text-muted-foreground">
             {selected.status === "missing"
@@ -195,8 +221,16 @@ export function CaptureReviewPanel({
               ) : null}
             </div>
           ) : null}
-          {frame?.media ? null : selected.status === "missing" ? (
+          {frame?.media ? (
+            <ReportImage
+              media={frame.media}
+              alt={selected.caption}
+              className="max-h-[28rem] w-full max-w-full object-contain"
+            />
+          ) : selected.status === "missing" ? (
             <p className="text-sm">No screenshot was saved for this checkpoint.</p>
+          ) : selected.framePath ? (
+            <p className="text-sm">Full image: {selected.framePath}</p>
           ) : null}
         </div>
       ) : null}

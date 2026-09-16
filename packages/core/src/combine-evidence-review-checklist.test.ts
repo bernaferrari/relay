@@ -65,6 +65,14 @@ test("manual cancellation stays cancelled, not could not run", () => {
   );
 });
 
+test("ok capture-review work stays pending review instead of passed", () => {
+  assert.equal(
+    classifyReviewChecklistStatus({ status: "ok", captureReviewPending: true }),
+    "pending review",
+  );
+  assert.equal(classifyReviewChecklistStatus({ status: "ok" }), "passed");
+});
+
 test("ok or healed without a job finding is passed", () => {
   assert.equal(classifyReviewChecklistStatus({ status: "ok" }), "passed");
   assert.equal(classifyReviewChecklistStatus({ status: "healed" }), "passed");

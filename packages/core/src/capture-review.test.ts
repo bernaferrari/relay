@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { captureReviewId } from "@relay/protocol";
-import { applyCaptureReviewDecision, CaptureReviewError } from "./capture-review.js";
+import { captureReviewId, captureReviewSlotId } from "@relay/protocol";
+import {
+  applyCaptureReviewDecision,
+  captureReviewQueueForRun,
+  CaptureReviewError,
+} from "./capture-review.js";
 
 const artifact = {
   kind: "capture-review",
@@ -38,29 +42,104 @@ test("Looks correct binds to the exact image and does not change execution outco
   assert.equal(applied.queue.summary.pending, 0);
 });
 
-test("a missing screenshot stays missing and cannot be accepted", () => {
-  assert.throws(
-    () =>
-      applyCaptureReviewDecision(
+test("Looks correct does not copy ui-tree chrome into a baseline ignore list", () => {
+  const applied = applyCaptureReviewDecision(
+    {
+      artifacts: [
+        artifact,
         {
-          artifacts: [],
-          recipeSnapshot: {
-            steps: [
+          kind: "ui-tree",
+          capturedAt: 1,
+          data: {
+            stepId: "chat",
+            nodes: [
+              { role: "article", label: "You", rect: { x: 80, y: 80, width: 40, height: 40 } },
               {
-                kind: "screenshot",
-                caption: "Arabic account settings",
-                review: { mode: "later" },
+                role: "div",
+                identifier: "chat-input",
+                label: "Ask Grok anything",
+                rect: { x: 275, y: 232, width: 726, height: 42 },
               },
             ],
           },
         },
+      ],
+      outcome: "passed",
+      recipeSnapshot: { steps: [] },
+    },
+    {
+      captureId: captureReviewId({
+        caption: "Arabic account settings",
+        framePath: "frames/001.png",
+        imageSha256: "aaa",
+      }),
+      action: "accept",
+      actor: { id: "human:maria", kind: "human" },
+      imageSha256: "aaa",
+    },
+  );
+  assert.equal(applied.outcome, "passed");
+  assert.equal(applied.queue.items[0]?.status, "accepted");
+  assert.equal(applied.queue.items[0]?.masks, undefined);
+  assert.equal(applied.captureReviews.length, 1);
+});
+
+test("Looks correct does not copy identity-ignore into a baseline ignore list", () => {
+  const applied = applyCaptureReviewDecision(
+    {
+      artifacts: [
+        artifact,
         {
-          captureId: captureReviewId({ caption: "Arabic account settings" }),
-          action: "accept",
-          actor: { id: "human:maria", kind: "human" },
+          kind: "identity-ignore",
+          capturedAt: 1,
+          data: { name: "reply body", x: 0, y: 0.1, width: 1, height: 0.8, frameIndex: 0 },
         },
-      ),
-    (error: unknown) => error instanceof CaptureReviewError && error.code === "CAPTURE_REVIEW_MISSING",
+      ],
+      outcome: "passed",
+      recipeSnapshot: { steps: [] },
+    },
+    {
+      captureId: captureReviewId({
+        caption: "Arabic account settings",
+        framePath: "frames/001.png",
+        imageSha256: "aaa",
+      }),
+      action: "accept",
+      actor: { id: "human:maria", kind: "human" },
+      imageSha256: "aaa",
+    },
+  );
+  assert.equal(applied.outcome, "passed");
+  assert.equal(applied.queue.items[0]?.status, "accepted");
+  assert.equal(applied.queue.items[0]?.masks, undefined);
+  assert.equal(applied.captureReviews.length, 1);
+  assert.equal(applied.captureReviews[0]?.action, "accept");
+});
+
+test("a missing screenshot stays missing and cannot be accepted", () => {
+  const run = {
+    artifacts: [],
+    recipeSnapshot: {
+      steps: [
+        {
+          kind: "screenshot",
+          caption: "Arabic account settings",
+          review: { mode: "later" },
+        },
+      ],
+    },
+  };
+  const planned = captureReviewQueueForRun(run);
+  assert.equal(planned.items[0]?.status, "missing");
+  assert.throws(
+    () =>
+      applyCaptureReviewDecision(run, {
+        captureId: planned.items[0]!.captureId,
+        action: "accept",
+        actor: { id: "human:maria", kind: "human" },
+      }),
+    (error: unknown) =>
+      error instanceof CaptureReviewError && error.code === "CAPTURE_REVIEW_MISSING",
   );
 });
 
@@ -82,4 +161,120 @@ test("agents cannot mark Looks correct", () => {
     (error: unknown) =>
       error instanceof CaptureReviewError && error.code === "CAPTURE_REVIEW_ACTOR_REQUIRED",
   );
+});
+
+test("agent:cursor cannot impersonate a human Looks correct", () => {
+  assert.throws(
+    () =>
+      applyCaptureReviewDecision(
+        { artifacts: [artifact], recipeSnapshot: { steps: [] } },
+        {
+          captureId: captureReviewId({
+            caption: "Arabic account settings",
+            framePath: "frames/001.png",
+            imageSha256: "aaa",
+          }),
+          action: "accept",
+          actor: { id: "agent:cursor", kind: "human" },
+        },
+      ),
+    (error: unknown) =>
+      error instanceof CaptureReviewError && error.code === "CAPTURE_REVIEW_ACTOR_REQUIRED",
+  );
+});
+
+test("Looks correct on attempt 1 cannot accept a missing recapture attempt 2", () => {
+  const firstSlot = {
+    checkpointId: "settings",
+    stepId: "settings",
+    attempt: 1,
+    caption: "Settings",
+  };
+  const secondSlot = { ...firstSlot, attempt: 2 };
+  const run = {
+    artifacts: [
+      {
+        kind: "capture-review",
+        capturedAt: 1,
+        data: {
+          caption: "Settings",
+          framePath: "frames/001.png",
+          imageSha256: "aaa",
+          checkpointId: "settings",
+          stepId: "settings",
+          attempt: 1,
+          slotId: captureReviewSlotId(firstSlot),
+        },
+      },
+    ],
+    recipeSnapshot: {
+      steps: [
+        {
+          id: "settings",
+          kind: "screenshot",
+          caption: "Settings",
+          review: { mode: "later" },
+        },
+      ],
+    },
+  };
+  const missingArtifact = {
+    kind: "capture-review",
+    capturedAt: 2,
+    data: {
+      caption: "Settings",
+      checkpointId: "settings",
+      stepId: "settings",
+      attempt: 2,
+      slotId: captureReviewSlotId(secondSlot),
+    },
+  };
+  const queue = captureReviewQueueForRun({
+    ...run,
+    artifacts: [...run.artifacts, missingArtifact],
+  });
+  assert.equal(queue.items.length, 2);
+  const missing = queue.items.find((item) => item.attempt === 2);
+  assert.equal(missing?.status, "missing");
+  assert.throws(
+    () =>
+      applyCaptureReviewDecision(
+        { ...run, artifacts: [...run.artifacts, missingArtifact] },
+        {
+          captureId: missing!.captureId,
+          action: "accept",
+          actor: { id: "human:maria", kind: "human" },
+        },
+      ),
+    (error: unknown) =>
+      error instanceof CaptureReviewError && error.code === "CAPTURE_REVIEW_MISSING",
+  );
+});
+
+test("run capture review reads Combine cell child plannedSlots", () => {
+  const queue = captureReviewQueueForRun({
+    artifacts: [
+      {
+        kind: "app-map-combine-cell-execution-intent",
+        capturedAt: 1,
+        data: {
+          child: {
+            plan: {
+              plannedSlots: [
+                {
+                  checkpointId: "settings",
+                  caption: "Settings",
+                  stepId: "settings",
+                  attempt: 1,
+                },
+              ],
+            },
+          },
+        },
+      },
+    ],
+  });
+  assert.equal(queue.items.length, 1);
+  assert.equal(queue.summary.missing, 1);
+  assert.equal(queue.items[0]?.caption, "Settings");
 });

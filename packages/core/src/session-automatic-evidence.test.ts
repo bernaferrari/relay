@@ -4,14 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { Device } from "./device-capabilities.js";
+import { OPTIONAL_TREE_BUDGET_MS } from "./optional-tree-budget.js";
+import type { RecipeRuntimeState } from "./recipe-runner-context.js";
+import { captureAutomaticState } from "./session-automatic-evidence.js";
+import type { TestJob } from "./session-contract.js";
+import { runWithTargetContext } from "./target-context.js";
 import {
   recordTargetPixelCapture,
   resetTargetRuntimeReadiness,
 } from "./target-runtime-readiness.js";
-import { captureAutomaticState } from "./session-automatic-evidence.js";
-import type { RecipeRuntimeState } from "./recipe-runner-context.js";
-import type { TestJob } from "./session-contract.js";
-import { runWithTargetContext } from "./target-context.js";
 import type { TraceStep } from "./trace.js";
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -56,6 +57,10 @@ function iosJob(serial: string): TestJob {
     steps: [],
     glyphs: [],
   } as unknown as TestJob;
+}
+
+function androidJob(serial: string): TestJob {
+  return { ...iosJob(serial), platform: "android" };
 }
 
 function step(title: string): TraceStep {
@@ -369,10 +374,101 @@ test("iOS after UI-tree skips catalog snapshot so an open library cannot kill th
     );
     assert.equal(snapshots, 0);
     const tree = job.artifacts.find((artifact) => artifact.kind === "ui-tree");
-    assert.deepEqual(tree?.data?.nodes, []);
+    const skipped = (tree?.data ?? {}) as { nodes?: unknown };
+    assert.deepEqual(skipped.nodes, []);
   } finally {
     if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
     else process.env.RELAY_RUNS_DIR = previousRuns;
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("automatic tap evidence keeps the screenshot when follow-on tree throws", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-auto-tree-throw-"));
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  const order: string[] = [];
+  const job = androidJob("auto-tree-throw");
+  const resultStep = step("Tap Continue");
+  const device = {
+    capture: {
+      snapshot: async () => {
+        order.push("tree");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        throw new Error("accessibility snapshot timed out");
+      },
+      screenshot: async () => {
+        order.push("pixels");
+        return { base64: fakePng("tap-after").toString("base64") };
+      },
+    },
+  } as unknown as Device;
+  try {
+    await runWithTargetContext(
+      { kind: "device", platform: "android", serial: "auto-tree-throw" },
+      () => captureAutomaticState(job, device, resultStep, "after", () => {}),
+    );
+    assert.deepEqual(order, ["pixels", "tree"]);
+    assert.equal(job.frames.length, 1);
+    assert.equal(resultStep.frames.length, 1);
+    assert.equal(job.frames[0]?.path, "frames/001.png");
+    const settling = job.artifacts.find((artifact) => artifact.kind === "visual-settling");
+    const tree = job.artifacts.find((artifact) => artifact.kind === "ui-tree");
+    const data = (tree?.data ?? {}) as { status?: string; error?: string; framePath?: string };
+    assert.equal(settling?.capturedAt, job.frames[0]?.capturedAt);
+    assert.equal(data.status, "failed");
+    assert.match(String(data.error), /timed out/u);
+    assert.equal(data.framePath, "frames/001.png");
+    assert.ok((tree?.capturedAt ?? 0) > (job.frames[0]?.capturedAt ?? 0));
+    assert.notEqual(tree?.capturedAt, settling?.capturedAt);
+  } finally {
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test(
+  "automatic tap evidence does not wait out a hung follow-on tree",
+  { timeout: OPTIONAL_TREE_BUDGET_MS + 1_500 },
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "relay-auto-tree-hang-"));
+    const previousRuns = process.env.RELAY_RUNS_DIR;
+    process.env.RELAY_RUNS_DIR = root;
+    const job = androidJob("auto-tree-hang");
+    const resultStep = step("Tap Continue");
+    const device = {
+      capture: {
+        snapshot: () => new Promise(() => {}),
+        screenshot: async () => ({ base64: fakePng("tap-after").toString("base64") }),
+      },
+    } as unknown as Device;
+    try {
+      const started = Date.now();
+      await runWithTargetContext(
+        { kind: "device", platform: "android", serial: "auto-tree-hang" },
+        () => captureAutomaticState(job, device, resultStep, "after", () => {}),
+      );
+      const elapsed = Date.now() - started;
+      assert.ok(
+        elapsed >= OPTIONAL_TREE_BUDGET_MS - 100,
+        `hung tree should wait the optional budget, got ${elapsed}ms`,
+      );
+      assert.ok(
+        elapsed < OPTIONAL_TREE_BUDGET_MS + 1_000,
+        `hung tree must not wait out the snapshot timeout, got ${elapsed}ms`,
+      );
+      assert.equal(job.frames.length, 1);
+      assert.equal(resultStep.frames.length, 1);
+      const tree = job.artifacts.find((artifact) => artifact.kind === "ui-tree");
+      const data = (tree?.data ?? {}) as { status?: string; error?: string };
+      assert.equal(data.status, "failed");
+      assert.match(String(data.error), /optional accessibility snapshot exceeded/u);
+      assert.ok((tree?.capturedAt ?? 0) > (job.frames[0]?.capturedAt ?? 0));
+    } finally {
+      if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+      else process.env.RELAY_RUNS_DIR = previousRuns;
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);

@@ -33,4 +33,21 @@ describe("captureReviewSummaryLine", () => {
       }),
     ).toBe("47/50 captured · 40 pending review · 5 accepted · 2 issues · 3 missing");
   });
+
+  it("reports planned and blocked on a Plan queue without accepting a baseline", () => {
+    expect(
+      captureReviewSummaryLine({
+        summary: {
+          captured: 1,
+          missing: 1,
+          pending: 1,
+          accepted: 0,
+          issue: 0,
+          needMoreEvidence: 0,
+          planned: 2,
+          blocked: 1,
+        },
+      }),
+    ).toBe("2 planned · 1/2 captured · 1 pending review · 1 missing · 1 blocked");
+  });
 });

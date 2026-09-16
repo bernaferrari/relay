@@ -11,6 +11,7 @@ import type { CombineEvidenceFinding, CombineEvidenceFindingCode } from "@relay/
 
 export const REVIEW_CHECKLIST_STATUSES = [
   "passed",
+  "pending review",
   "check failed",
   "could not run",
   "cancelled",
@@ -44,6 +45,7 @@ export type ReviewChecklistCase = {
   name: string;
   status: string;
   frames: readonly string[];
+  note?: string;
 };
 
 const JOB_FINDING_CODES: readonly CombineEvidenceFindingCode[] = [
@@ -100,6 +102,7 @@ export function reviewChecklistFramePair(frames: readonly string[]): {
 export function classifyReviewChecklistStatus(input: {
   status: string;
   findingCode?: CombineEvidenceFindingCode;
+  captureReviewPending?: boolean;
 }): ReviewChecklistStatus {
   if (input.findingCode === "PRODUCT_ASSERTION") return "check failed";
   if (input.findingCode === "USER_CANCELLED") return "cancelled";
@@ -112,7 +115,7 @@ export function classifyReviewChecklistStatus(input: {
   }
   if (input.status === "cancelled") return "cancelled";
   if (input.status === "ok" || input.status === "healed" || input.status === "passed") {
-    return "passed";
+    return input.captureReviewPending ? "pending review" : "passed";
   }
   return "could not run";
 }
@@ -132,6 +135,7 @@ export function reviewChecklistRows(input: {
   findings: readonly CombineEvidenceFinding[];
   visualComparisonByJobId?: ReadonlyMap<string, string> | Readonly<Record<string, string>>;
   todoItems?: readonly ReviewChecklistTodoItem[];
+  pendingReviewJobIds?: ReadonlySet<string>;
 }): ReviewChecklistRow[] {
   const comparisonOf = (jobId: string): string | undefined => {
     const table = input.visualComparisonByJobId;
@@ -146,13 +150,18 @@ export function reviewChecklistRows(input: {
     return {
       id: item.jobId,
       test: item.name,
-      status: classifyReviewChecklistStatus({ status: item.status, findingCode }),
+      status: classifyReviewChecklistStatus({
+        status: item.status,
+        findingCode,
+        ...(input.pendingReviewJobIds?.has(item.jobId) ? { captureReviewPending: true } : {}),
+      }),
       jobId: item.jobId,
       reviewCommand: visualReviewCommand(item.jobId),
       ...(findingCode ? { findingCode } : {}),
       ...(frames.beforePng ? { beforePng: frames.beforePng } : {}),
       ...(frames.afterPng ? { afterPng: frames.afterPng } : {}),
       ...(comparisonId ? { visualComparisonId: comparisonId } : {}),
+      ...(item.note ? { note: item.note } : {}),
     } satisfies ReviewChecklistRow;
   });
   return mergeReviewChecklistTodos(rows, input.todoItems ?? []);
@@ -237,7 +246,10 @@ function pngCell(path: string | undefined, label: string): string {
   return `<a href="${href}"><img src="${href}" alt="${escapeHtml(label)}"></a>`;
 }
 
-export function reviewChecklistSection(rows: readonly ReviewChecklistRow[]): string {
+export function reviewChecklistSection(
+  rows: readonly ReviewChecklistRow[],
+  options?: { captureReview?: string },
+): string {
   const body = rows
     .map((row) => {
       const note = row.note ? `<br><small>${escapeHtml(row.note)}</small>` : "";
@@ -250,16 +262,24 @@ export function reviewChecklistSection(rows: readonly ReviewChecklistRow[]): str
     .join("");
   return `<section id="review-checklist">
 <style>
-#review-checklist{margin:0 0 28px}#review-checklist h2{font-size:16px;margin:0 0 8px}#review-checklist .guidance{color:#64646c;margin:0 0 12px;font-size:13px}#review-checklist table{border-collapse:collapse;width:100%;background:#fff;border:1px solid #dedee3;border-radius:14px;overflow:hidden}#review-checklist th,#review-checklist td{border-bottom:1px solid #e8e8eb;padding:8px 10px;vertical-align:top;text-align:left;font-size:12px}#review-checklist th{color:#71717a;font-weight:600}#review-checklist img{max-width:160px;height:auto;border-radius:8px;background:#eee}#review-checklist code{font-size:11px;background:#f1f1f4;border-radius:5px;padding:1px 5px}#review-checklist tr[data-status="check failed"] .status,#review-checklist tr[data-status="could not run"] .status{color:#c2410c}#review-checklist tr[data-status=todo] .status{color:#b45309}#review-checklist tr[data-status=passed] .status{color:#15803d}@media(prefers-color-scheme:dark){#review-checklist table{background:#222225;border-color:#39393f}#review-checklist th,#review-checklist td{border-color:#39393f}#review-checklist .guidance{color:#a1a1aa}#review-checklist code{background:#2e2e33}#review-checklist img{background:#111}#review-checklist tr[data-status="check failed"] .status,#review-checklist tr[data-status="could not run"] .status{color:#fdba74}#review-checklist tr[data-status=passed] .status{color:#86efac}}
+#review-checklist{margin:0 0 28px}#review-checklist h2{font-size:16px;margin:0 0 8px}#review-checklist .guidance{color:#64646c;margin:0 0 12px;font-size:13px}#review-checklist table{border-collapse:collapse;width:100%;background:#fff;border:1px solid #dedee3;border-radius:14px;overflow:hidden}#review-checklist th,#review-checklist td{border-bottom:1px solid #e8e8eb;padding:8px 10px;vertical-align:top;text-align:left;font-size:12px}#review-checklist th{color:#71717a;font-weight:600}#review-checklist img{max-width:160px;height:auto;border-radius:8px;background:#eee}#review-checklist code{font-size:11px;background:#f1f1f4;border-radius:5px;padding:1px 5px}#review-checklist tr[data-status="check failed"] .status,#review-checklist tr[data-status="could not run"] .status{color:#c2410c}#review-checklist tr[data-status=todo] .status,#review-checklist tr[data-status="pending review"] .status{color:#b45309}#review-checklist tr[data-status=passed] .status{color:#15803d}@media(prefers-color-scheme:dark){#review-checklist table{background:#222225;border-color:#39393f}#review-checklist th,#review-checklist td{border-color:#39393f}#review-checklist .guidance{color:#a1a1aa}#review-checklist code{background:#2e2e33}#review-checklist img{background:#111}#review-checklist tr[data-status="check failed"] .status,#review-checklist tr[data-status="could not run"] .status{color:#fdba74}#review-checklist tr[data-status=todo] .status,#review-checklist tr[data-status="pending review"] .status{color:#fbbf24}#review-checklist tr[data-status=passed] .status{color:#86efac}}
 </style>
 <h2>Review checklist</h2>
-<p class="guidance">Confirm and Reject never accept a visual baseline. Approve or reject pixels only with <code>relay run visual review &lt;job&gt;</code>.</p>
+<p class="guidance">${
+    options?.captureReview
+      ? `${escapeHtml(options.captureReview)}. Looks correct does not approve a visual baseline.`
+      : "Confirm and Reject never accept a visual baseline. Approve or reject pixels only with <code>relay run visual review &lt;job&gt;</code>."
+  }</p>
 <table><thead><tr><th>Test</th><th>Status</th><th>Before</th><th>After</th><th>visual-comparison</th><th>Review</th></tr></thead><tbody>${body}</tbody></table>
 </section>`;
 }
 
-export function embedReviewChecklist(html: string, rows: readonly ReviewChecklistRow[]): string {
-  const block = `${REVIEW_CHECKLIST_START}\n${reviewChecklistSection(rows)}\n${REVIEW_CHECKLIST_END}`;
+export function embedReviewChecklist(
+  html: string,
+  rows: readonly ReviewChecklistRow[],
+  options?: { captureReview?: string },
+): string {
+  const block = `${REVIEW_CHECKLIST_START}\n${reviewChecklistSection(rows, options)}\n${REVIEW_CHECKLIST_END}`;
   const start = html.indexOf(REVIEW_CHECKLIST_START);
   if (start >= 0) {
     const end = html.indexOf(REVIEW_CHECKLIST_END);
@@ -273,8 +293,9 @@ export async function writeReviewChecklistFiles(
   rootDir: string,
   html: string,
   rows: readonly ReviewChecklistRow[],
+  options?: { captureReview?: string },
 ): Promise<string> {
-  const next = embedReviewChecklist(html, rows);
+  const next = embedReviewChecklist(html, rows, options);
   await writeFile(join(rootDir, "checklist.json"), `${JSON.stringify(rows, null, 2)}\n`, "utf8");
   return next;
 }

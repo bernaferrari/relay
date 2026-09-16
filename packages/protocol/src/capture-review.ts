@@ -1,4 +1,7 @@
+import type { BrowserAuthenticationHealth } from "./browser-authentication-fixture.js";
 import type { ActorKind } from "./coordination.js";
+import type { BrowserLaneSessionStoreKind } from "./browser-lane-session.js";
+import type { CaptureSequencePhase } from "./recipes.js";
 
 export const CAPTURE_REVIEW_ACTIONS = ["accept", "report-issue", "need-more-evidence"] as const;
 export type CaptureReviewAction = (typeof CAPTURE_REVIEW_ACTIONS)[number];
@@ -14,6 +17,12 @@ export type CaptureReviewStatus = (typeof CAPTURE_REVIEW_STATUSES)[number];
 
 export type CaptureReviewActor = { id: string; kind: ActorKind };
 
+/**
+ * Overlay on one capture for human review. Bound to that item's frame/step.
+ * Does not apply to later frames unless that item is selected, does not write
+ * a visual baseline, and is not derived from identity-ignore. Looks correct
+ * does not copy these into VisualComparisonPolicy.
+ */
 export type CaptureReviewMask = {
   x: number;
   y: number;
@@ -31,6 +40,102 @@ export type CaptureReviewConfiguration = {
   build?: string;
 };
 
+/** Lane/profile/cookie-store used at capture time. Display metadata only.
+ * Not part of slotId unless a field is already on CaptureReviewConfiguration. */
+export type CaptureReviewObservedSession = {
+  laneId?: string;
+  profileId?: string;
+  sessionStore?: BrowserLaneSessionStoreKind;
+};
+
+/** Capture-review account when a fixture is not ready to claim the pixels. */
+export const BLOCKED_CAPTURE_REVIEW_ACCOUNT = "blocked";
+
+/** Expired, errored, signed-out, or zero-ready fixtures must not be labeled
+ * as the saved account (SuperGrok). Missing health stays the fixture. */
+export function fixtureCaptureReviewAccountIsBlocked(input: {
+  fixtureHealthStatus?: BrowserAuthenticationHealth["status"];
+  fixtureSignedIn?: boolean;
+  readyCount?: number;
+}): boolean {
+  if (input.readyCount === 0) return true;
+  if (input.fixtureSignedIn === false) return true;
+  return input.fixtureHealthStatus !== undefined && input.fixtureHealthStatus !== "ready";
+}
+
+/** Account on the pixels, not a Lane-name overlay. Fixture identity wins;
+ * unsigned/signed-out stays signed-out even when the Lane is named grok-lab. */
+export function observedCaptureReviewAccount(input: {
+  laneId?: string;
+  unsignedLaneId?: string;
+  targetProfileId?: string;
+  authenticationFixtureId?: string;
+  fixtureName?: string;
+  signedOut?: boolean;
+  resolvedAccount?: string;
+  fixtureHealthStatus?: BrowserAuthenticationHealth["status"];
+  fixtureSignedIn?: boolean;
+  readyCount?: number;
+}): { account?: string; observed: CaptureReviewObservedSession } {
+  const laneId = input.laneId?.trim() || input.unsignedLaneId?.trim() || undefined;
+  const unsignedLaneId = input.unsignedLaneId?.trim() || undefined;
+  const profileId = input.targetProfileId?.trim() || undefined;
+  const fixture = input.authenticationFixtureId?.trim() || undefined;
+  const observed: CaptureReviewObservedSession = {
+    ...(laneId ? { laneId } : {}),
+    ...(profileId ? { profileId } : {}),
+  };
+  if (fixture) {
+    if (fixtureCaptureReviewAccountIsBlocked(input)) {
+      return { account: BLOCKED_CAPTURE_REVIEW_ACCOUNT, observed };
+    }
+    return {
+      account: input.fixtureName?.trim() || fixture,
+      observed,
+    };
+  }
+  if (input.signedOut === true || unsignedLaneId) {
+    return { account: "signed-out", observed };
+  }
+  const resolved = input.resolvedAccount?.trim() || undefined;
+  return { ...(resolved ? { account: resolved } : {}), observed };
+}
+
+export function formatCaptureReviewObservedSession(
+  observed?: CaptureReviewObservedSession,
+): string[] {
+  if (!observed) return [];
+  return [
+    observed.laneId,
+    observed.profileId,
+    observed.sessionStore === "playwright-user-data"
+      ? "Playwright user-data"
+      : observed.sessionStore === "electron-partition"
+        ? "Electron partition"
+        : undefined,
+  ].filter((part): part is string => Boolean(part?.trim()));
+}
+
+/** Stable planned capture identity. Caption is display text only. */
+export type CaptureReviewSlotIdentity = {
+  requirementId?: string;
+  checkpointId: string;
+  configuration?: CaptureReviewConfiguration;
+  invocation?: string;
+  iteration?: number;
+  attempt?: number;
+  /** Named Sequence phase. Recapture of the same phase keeps this family. */
+  phase?: string;
+};
+
+export type CaptureReviewPlannedSlot = CaptureReviewSlotIdentity & {
+  caption: string;
+  lookFor?: string;
+  stepId?: string;
+  /** Authored interval for this phase. Not a wait, and never equated across phases. */
+  intervalMs?: number;
+};
+
 export type CaptureReviewItem = {
   captureId: string;
   caption: string;
@@ -39,9 +144,17 @@ export type CaptureReviewItem = {
   framePath?: string;
   imageSha256?: string;
   stepId?: string;
+  slotId?: string;
+  requirementId?: string;
+  checkpointId?: string;
+  invocation?: string;
+  iteration?: number;
+  attempt?: number;
+  phase?: string;
   settled?: boolean;
   samples?: number;
   configuration?: CaptureReviewConfiguration;
+  observed?: CaptureReviewObservedSession;
   masks?: CaptureReviewMask[];
   decidedAt?: number;
   decidedBy?: CaptureReviewActor;
@@ -74,18 +187,158 @@ export function captureReviewId(input: {
   caption: string;
   framePath?: string;
   imageSha256?: string;
+  slotId?: string;
 }): string {
   const caption = input.caption.trim() || "screenshot";
   const framePath = input.framePath?.trim();
   const imageSha256 = input.imageSha256?.trim();
-  if (!framePath) return `missing::${caption}`;
+  const slotId = input.slotId?.trim();
+  if (!framePath) return `missing::${slotId || caption}`;
   if (!imageSha256) return `${framePath}::unhashed`;
   return `${framePath}::${imageSha256}`;
+}
+
+export function captureReviewSlotId(identity: CaptureReviewSlotIdentity): string {
+  const configuration = formatCaptureReviewConfiguration(identity.configuration).join(",");
+  const parts = [
+    identity.requirementId?.trim() || "",
+    identity.checkpointId.trim() || "checkpoint",
+    configuration,
+    identity.invocation?.trim() || "",
+    identity.iteration === undefined ? "" : String(identity.iteration),
+    identity.attempt === undefined ? "" : String(identity.attempt),
+  ];
+  const phase = identity.phase?.trim();
+  if (phase) parts.push(phase);
+  return parts.join("::");
+}
+
+/** Identity without attempt. Recapture of the same phase keeps this family. */
+export function captureReviewSlotFamilyId(identity: CaptureReviewSlotIdentity): string {
+  return captureReviewSlotId({ ...identity, attempt: undefined });
+}
+
+/** Sequence phases of one checkpoint share this id; phase is not included. */
+export function captureReviewCheckpointFamilyId(identity: CaptureReviewSlotIdentity): string {
+  return captureReviewSlotId({ ...identity, attempt: undefined, phase: undefined });
+}
+
+function sameCaptureReviewPhase(left?: string, right?: string): boolean {
+  return (left?.trim() || "") === (right?.trim() || "");
+}
+
+/** Named Sequence frames. An unphased sequence is not a silent Stable slot. */
+export function namedCaptureSequencePhases(review: unknown): CaptureSequencePhase[] {
+  const payload = record(review);
+  if (!payload) return [];
+  const named: CaptureSequencePhase[] = [];
+  const seen = new Set<string>();
+  if (Array.isArray(payload.phases)) {
+    for (const item of payload.phases) {
+      const phase = record(item);
+      const id = text(phase?.id);
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const intervalMs = integerField(phase?.intervalMs);
+      named.push({
+        id,
+        ...(text(phase?.caption) ? { caption: text(phase?.caption) } : {}),
+        ...(text(phase?.lookFor) ? { lookFor: text(phase?.lookFor) } : {}),
+        ...(intervalMs !== undefined && intervalMs > 0 ? { intervalMs } : {}),
+      });
+    }
+  }
+  const current = text(payload.phase);
+  if (current && !seen.has(current)) {
+    named.push({ id: current });
+  }
+  return named;
+}
+
+function normalizedCaptureReviewAttempt(attempt?: number): number {
+  return attempt === undefined ? 1 : attempt;
+}
+
+function sameCaptureReviewAttempt(left?: number, right?: number): boolean {
+  return normalizedCaptureReviewAttempt(left) === normalizedCaptureReviewAttempt(right);
+}
+
+function withCaptureReviewAttempt(
+  slot: CaptureReviewPlannedSlot,
+  attempt: number,
+): CaptureReviewPlannedSlot {
+  return { ...slot, attempt };
+}
+
+function plannedSlotHasAttempt(
+  slots: readonly CaptureReviewPlannedSlot[],
+  identity: CaptureReviewSlotIdentity,
+  attempt: number,
+): boolean {
+  return slots.some(
+    (slot) =>
+      captureReviewSlotFamilyId(slot) === captureReviewSlotFamilyId(identity) &&
+      sameCaptureReviewAttempt(slot.attempt, attempt),
+  );
+}
+
+/**
+ * Assign the next recapture attempt for one checkpoint family.
+ * Leftover chrome is not an input; only prior capture identities occupy attempts.
+ */
+export function assignCaptureReviewAttempt(input: {
+  plannedSlots: readonly CaptureReviewPlannedSlot[];
+  captured?: readonly CaptureReviewSlotIdentity[];
+  slot: CaptureReviewPlannedSlot;
+}): { attempt: number; plannedSlots: CaptureReviewPlannedSlot[] } {
+  const family = captureReviewSlotFamilyId(input.slot);
+  const planned: CaptureReviewPlannedSlot[] = input.plannedSlots.map((slot) =>
+    captureReviewSlotFamilyId(slot) === family && slot.attempt === undefined
+      ? withCaptureReviewAttempt(slot, 1)
+      : slot,
+  );
+  if (!planned.some((slot) => captureReviewSlotFamilyId(slot) === family)) {
+    planned.push(withCaptureReviewAttempt(input.slot, 1));
+  }
+  const captured = (input.captured ?? []).filter(
+    (identity) => captureReviewSlotFamilyId(identity) === family,
+  );
+  if (captured.length === 0) return { attempt: 1, plannedSlots: planned };
+  const occupied = [
+    ...planned
+      .filter((slot) => captureReviewSlotFamilyId(slot) === family)
+      .map((slot) => normalizedCaptureReviewAttempt(slot.attempt)),
+    ...captured.map((identity) => normalizedCaptureReviewAttempt(identity.attempt)),
+  ];
+  const attempt = Math.max(...occupied) + 1;
+  if (!plannedSlotHasAttempt(planned, input.slot, attempt)) {
+    planned.push(withCaptureReviewAttempt(input.slot, attempt));
+  }
+  return { attempt, plannedSlots: planned };
 }
 
 export function captureReviewCoverageLine(summary: CaptureReviewSummary): string {
   const total = summary.captured + summary.missing;
   return `${summary.captured}/${total} captured`;
+}
+
+/** Planned / captured / blocked + pending review. Never "N tests passed". */
+export function formatCaptureReviewCoverageSummary(
+  summary: CaptureReviewSummary & { planned?: number; blocked?: number },
+): string {
+  const parts = [captureReviewCoverageLine(summary)];
+  if (summary.planned) parts.unshift(`${summary.planned} planned`);
+  if (summary.pending) parts.push(`${summary.pending} pending review`);
+  if (summary.accepted) parts.push(`${summary.accepted} accepted`);
+  if (summary.issue) parts.push(`${summary.issue} issue${summary.issue === 1 ? "" : "s"}`);
+  if (summary.needMoreEvidence) {
+    parts.push(
+      `${summary.needMoreEvidence} need${summary.needMoreEvidence === 1 ? "s" : ""} more evidence`,
+    );
+  }
+  if (summary.missing) parts.push(`${summary.missing} missing`);
+  if (summary.blocked) parts.push(`${summary.blocked} blocked`);
+  return parts.join(" · ");
 }
 
 /** Keyboard movement for the capture contact sheet. Unrecognized keys leave selection unchanged. */
@@ -179,6 +432,20 @@ function parseMask(value: unknown): CaptureReviewMask | undefined {
   };
 }
 
+function parseObservedSession(value: unknown): CaptureReviewObservedSession | undefined {
+  const payload = record(value);
+  if (!payload) return undefined;
+  const store = text(payload.sessionStore);
+  const sessionStore: BrowserLaneSessionStoreKind | undefined =
+    store === "playwright-user-data" || store === "electron-partition" ? store : undefined;
+  const observed: CaptureReviewObservedSession = {
+    ...(text(payload.laneId) ? { laneId: text(payload.laneId) } : {}),
+    ...(text(payload.profileId) ? { profileId: text(payload.profileId) } : {}),
+    ...(sessionStore ? { sessionStore } : {}),
+  };
+  return Object.keys(observed).length ? observed : undefined;
+}
+
 function parseConfiguration(value: unknown): CaptureReviewConfiguration | undefined {
   const payload = record(value);
   if (!payload) return undefined;
@@ -193,33 +460,304 @@ function parseConfiguration(value: unknown): CaptureReviewConfiguration | undefi
   return Object.keys(configuration).length ? configuration : undefined;
 }
 
-function frameIndexFromPath(path?: string): number | undefined {
-  const match = /(?:^|\/)frames\/(\d+)\.png$/u.exec(path ?? "");
-  if (!match) return undefined;
-  const index = Number(match[1]);
-  return Number.isInteger(index) && index > 0 ? index - 1 : undefined;
+function integerField(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) ? value : undefined;
 }
 
-function identityMasksForItem(
-  item: CaptureReviewItem,
-  artifacts: readonly { kind?: string; data?: unknown }[],
-): CaptureReviewMask[] {
-  const frameIndex = frameIndexFromPath(item.framePath);
-  const masks: CaptureReviewMask[] = [];
-  for (const artifact of artifacts) {
-    if (artifact.kind !== "identity-ignore") continue;
-    const payload = record(artifact.data);
-    if (!payload) continue;
-    const stepId = text(payload.stepId);
-    const boundFrame = finiteNumber(payload.frameIndex);
-    if (!stepId && boundFrame === undefined) continue;
-    if (stepId && item.stepId && stepId !== item.stepId) continue;
-    if (boundFrame !== undefined && frameIndex !== undefined && boundFrame !== frameIndex) continue;
-    if (stepId && !item.stepId && boundFrame === undefined) continue;
-    const mask = parseMask(payload);
-    if (mask) masks.push(mask);
+export function joinCaptureReviewInvocation(parent: string | undefined, part: string): string {
+  return parent ? `${parent}/${part}` : part;
+}
+
+export type CaptureReviewRuntimeCursor = {
+  requirementId?: string;
+  invocation?: string;
+  iteration?: number;
+  attempt?: number;
+  moduleCalls: Map<string, number>;
+};
+
+export function captureReviewEnterModule(
+  cursor: CaptureReviewRuntimeCursor | undefined,
+  recipeId: string,
+): CaptureReviewRuntimeCursor {
+  const moduleCalls = cursor?.moduleCalls ?? new Map<string, number>();
+  const call = moduleCalls.get(recipeId) ?? 0;
+  moduleCalls.set(recipeId, call + 1);
+  return {
+    ...(cursor?.requirementId ? { requirementId: cursor.requirementId } : {}),
+    ...(cursor?.attempt !== undefined ? { attempt: cursor.attempt } : {}),
+    ...(cursor?.iteration !== undefined ? { iteration: cursor.iteration } : {}),
+    invocation: joinCaptureReviewInvocation(cursor?.invocation, `module:${recipeId}#${call}`),
+    moduleCalls,
+  };
+}
+
+export function captureReviewEnterRepeat(
+  cursor: CaptureReviewRuntimeCursor | undefined,
+  recipeId: string,
+  iteration: number,
+): CaptureReviewRuntimeCursor {
+  return {
+    ...(cursor?.requirementId ? { requirementId: cursor.requirementId } : {}),
+    ...(cursor?.attempt !== undefined ? { attempt: cursor.attempt } : {}),
+    invocation: joinCaptureReviewInvocation(cursor?.invocation, `repeat:${recipeId}`),
+    iteration,
+    moduleCalls: new Map(),
+  };
+}
+
+function recipeRecord(
+  recipes: Record<string, { steps?: readonly unknown[] }> | undefined,
+  recipeId: string,
+): { steps?: readonly unknown[] } | undefined {
+  return recipes?.[recipeId];
+}
+
+function plannedScreenshotSlot(
+  input: {
+    checkpointId: string;
+    caption: string;
+    lookFor?: string;
+    stepId?: string;
+    phase?: string;
+    intervalMs?: number;
+  },
+  context: {
+    requirementId?: string;
+    configuration?: CaptureReviewConfiguration;
+    invocation?: string;
+    iteration?: number;
+    attempt?: number;
+  },
+): CaptureReviewPlannedSlot {
+  return {
+    checkpointId: input.checkpointId,
+    caption: input.caption,
+    attempt: context.attempt ?? 1,
+    ...(context.requirementId ? { requirementId: context.requirementId } : {}),
+    ...(context.configuration ? { configuration: context.configuration } : {}),
+    ...(context.invocation ? { invocation: context.invocation } : {}),
+    ...(context.iteration !== undefined ? { iteration: context.iteration } : {}),
+    ...(input.phase ? { phase: input.phase } : {}),
+    ...(input.lookFor ? { lookFor: input.lookFor } : {}),
+    ...(input.stepId ? { stepId: input.stepId } : {}),
+    ...(input.intervalMs !== undefined ? { intervalMs: input.intervalMs } : {}),
+  };
+}
+
+function screenshotSlots(
+  step: Record<string, unknown>,
+  path: string,
+  context: {
+    requirementId?: string;
+    configuration?: CaptureReviewConfiguration;
+    invocation?: string;
+    iteration?: number;
+    attempt?: number;
+  },
+): CaptureReviewPlannedSlot[] {
+  const review = record(step.review);
+  if (review?.mode !== "later") return [];
+  const stepId = text(step.id);
+  const checkpointId = text(review.checkpointId) ?? stepId ?? `screenshot:${path}`;
+  const defaultCaption = text(step.caption) ?? "screenshot";
+  const defaultLookFor = text(review.lookFor);
+  const policy = text(review.policy);
+  if (policy === "sequence") {
+    return namedCaptureSequencePhases(review).map((phase) =>
+      plannedScreenshotSlot(
+        {
+          checkpointId,
+          caption: phase.caption ?? defaultCaption,
+          ...((phase.lookFor ?? defaultLookFor)
+            ? { lookFor: phase.lookFor ?? defaultLookFor }
+            : {}),
+          ...(stepId ? { stepId } : {}),
+          phase: phase.id,
+          ...(phase.intervalMs !== undefined ? { intervalMs: phase.intervalMs } : {}),
+        },
+        context,
+      ),
+    );
   }
-  return masks;
+  return [
+    plannedScreenshotSlot(
+      {
+        checkpointId,
+        caption: defaultCaption,
+        ...(defaultLookFor ? { lookFor: defaultLookFor } : {}),
+        ...(stepId ? { stepId } : {}),
+      },
+      context,
+    ),
+  ];
+}
+
+function pushUniqueCaptureSlot(
+  slots: CaptureReviewPlannedSlot[],
+  slot: CaptureReviewPlannedSlot,
+): void {
+  const id = captureReviewSlotId(slot);
+  if (slots.some((existing) => captureReviewSlotId(existing) === id)) return;
+  slots.push(slot);
+}
+
+function walkCaptureSlots(
+  steps: readonly unknown[],
+  recipes: Record<string, { steps?: readonly unknown[] }> | undefined,
+  context: {
+    requirementId?: string;
+    configuration?: CaptureReviewConfiguration;
+    invocation?: string;
+    iteration?: number;
+    attempt?: number;
+    path: string;
+  },
+  moduleCalls: Map<string, number>,
+): CaptureReviewPlannedSlot[] {
+  const slots: CaptureReviewPlannedSlot[] = [];
+  for (const [index, value] of steps.entries()) {
+    const step = record(value);
+    if (!step) continue;
+    const path = context.path ? `${context.path}.${index}` : String(index);
+    const kind = text(step.kind);
+    if (kind === "screenshot") {
+      for (const slot of screenshotSlots(step, path, context)) pushUniqueCaptureSlot(slots, slot);
+      continue;
+    }
+    if (kind === "module") {
+      const recipeId = text(step.recipeId);
+      if (!recipeId) continue;
+      const call = moduleCalls.get(recipeId) ?? 0;
+      moduleCalls.set(recipeId, call + 1);
+      const invocation = joinCaptureReviewInvocation(
+        context.invocation,
+        `module:${recipeId}#${call}`,
+      );
+      const nested = recipeRecord(recipes, recipeId);
+      if (nested?.steps) {
+        slots.push(
+          ...walkCaptureSlots(nested.steps, recipes, { ...context, invocation, path }, moduleCalls),
+        );
+      } else {
+        slots.push({
+          checkpointId: `module:${recipeId}`,
+          caption: recipeId,
+          invocation,
+          ...(context.requirementId ? { requirementId: context.requirementId } : {}),
+          ...(context.configuration ? { configuration: context.configuration } : {}),
+          ...(context.iteration !== undefined ? { iteration: context.iteration } : {}),
+        });
+      }
+      continue;
+    }
+    if (kind === "branch") {
+      for (const recipeId of [text(step.thenRecipeId), text(step.elseRecipeId)]) {
+        if (!recipeId) continue;
+        const call = moduleCalls.get(recipeId) ?? 0;
+        moduleCalls.set(recipeId, call + 1);
+        const invocation = joinCaptureReviewInvocation(
+          context.invocation,
+          `module:${recipeId}#${call}`,
+        );
+        const nested = recipeRecord(recipes, recipeId);
+        if (nested?.steps) {
+          slots.push(
+            ...walkCaptureSlots(
+              nested.steps,
+              recipes,
+              { ...context, invocation, path },
+              moduleCalls,
+            ),
+          );
+        } else {
+          slots.push({
+            checkpointId: `module:${recipeId}`,
+            caption: recipeId,
+            invocation,
+            ...(context.requirementId ? { requirementId: context.requirementId } : {}),
+            ...(context.configuration ? { configuration: context.configuration } : {}),
+            ...(context.iteration !== undefined ? { iteration: context.iteration } : {}),
+          });
+        }
+      }
+      continue;
+    }
+    if (kind === "repeat") {
+      const recipeId = text(step.recipeId);
+      const count = integerField(step.count) ?? 0;
+      if (!recipeId || count <= 0) continue;
+      const nested = recipeRecord(recipes, recipeId);
+      for (let iteration = 0; iteration < count; iteration += 1) {
+        const invocation = joinCaptureReviewInvocation(context.invocation, `repeat:${recipeId}`);
+        if (nested?.steps) {
+          slots.push(
+            ...walkCaptureSlots(
+              nested.steps,
+              recipes,
+              { ...context, invocation, iteration, path: `${path}[${iteration}]` },
+              new Map(),
+            ),
+          );
+        } else {
+          slots.push({
+            checkpointId: `repeat:${recipeId}`,
+            caption: recipeId,
+            invocation,
+            iteration,
+            ...(context.requirementId ? { requirementId: context.requirementId } : {}),
+            ...(context.configuration ? { configuration: context.configuration } : {}),
+          });
+        }
+      }
+      continue;
+    }
+    if (kind === "loop") {
+      const nestedSteps = Array.isArray(step.steps) ? step.steps : undefined;
+      const values = Array.isArray(step.values) ? step.values : undefined;
+      const count = integerField(step.count) ?? values?.length ?? 0;
+      const recipeId = text(step.recipeId);
+      const body = nestedSteps ?? recipeRecord(recipes, recipeId ?? "")?.steps;
+      for (let iteration = 0; iteration < count; iteration += 1) {
+        const invocation = joinCaptureReviewInvocation(
+          context.invocation,
+          `loop:${recipeId || path}`,
+        );
+        if (body) {
+          slots.push(
+            ...walkCaptureSlots(
+              body,
+              recipes,
+              { ...context, invocation, iteration, path: `${path}[${iteration}]` },
+              new Map(),
+            ),
+          );
+        }
+      }
+    }
+  }
+  return slots;
+}
+
+/** Expand the compiled plan into expected capture slots. Captions are labels. */
+export function materializeCaptureReviewSlots(input: {
+  recipeSteps?: readonly unknown[];
+  recipes?: Record<string, { steps?: readonly unknown[] }>;
+  plannedSlots?: readonly CaptureReviewPlannedSlot[];
+  configuration?: CaptureReviewConfiguration;
+  requirementId?: string;
+}): CaptureReviewPlannedSlot[] {
+  if (input.plannedSlots !== undefined) return [...input.plannedSlots];
+  return walkCaptureSlots(
+    input.recipeSteps ?? [],
+    input.recipes,
+    {
+      path: "",
+      ...(input.requirementId ? { requirementId: input.requirementId } : {}),
+      ...(input.configuration ? { configuration: input.configuration } : {}),
+    },
+    new Map(),
+  );
 }
 
 function captureReviewArtifact(data: unknown): CaptureReviewItem | undefined {
@@ -230,17 +768,36 @@ function captureReviewArtifact(data: unknown): CaptureReviewItem | undefined {
   const imageSha256 = text(payload.imageSha256);
   const status = payload.status === "missing" || !framePath ? "missing" : "pending";
   const configuration = parseConfiguration(payload.configuration);
+  const observed = parseObservedSession(payload.observed);
   const masks = Array.isArray(payload.masks)
     ? payload.masks.flatMap((value) => {
         const mask = parseMask(value);
         return mask ? [mask] : [];
       })
     : [];
+  const checkpointId = text(payload.checkpointId) ?? text(payload.stepId);
+  const iteration = integerField(payload.iteration);
+  const attempt = integerField(payload.attempt);
+  const phase = text(payload.phase);
+  const slotIdentity: CaptureReviewSlotIdentity | undefined = checkpointId
+    ? {
+        checkpointId,
+        ...(text(payload.requirementId) ? { requirementId: text(payload.requirementId) } : {}),
+        ...(configuration ? { configuration } : {}),
+        ...(text(payload.invocation) ? { invocation: text(payload.invocation) } : {}),
+        ...(iteration !== undefined ? { iteration } : {}),
+        ...(attempt !== undefined ? { attempt } : {}),
+        ...(phase ? { phase } : {}),
+      }
+    : undefined;
+  const slotId =
+    text(payload.slotId) ?? (slotIdentity ? captureReviewSlotId(slotIdentity) : undefined);
   return {
     captureId: captureReviewId({
       caption,
       ...(framePath ? { framePath } : {}),
       ...(imageSha256 ? { imageSha256 } : {}),
+      ...(slotId && !framePath ? { slotId } : {}),
     }),
     caption,
     status,
@@ -248,30 +805,101 @@ function captureReviewArtifact(data: unknown): CaptureReviewItem | undefined {
     ...(framePath ? { framePath } : {}),
     ...(imageSha256 ? { imageSha256 } : {}),
     ...(text(payload.stepId) ? { stepId: text(payload.stepId) } : {}),
+    ...(slotId ? { slotId } : {}),
+    ...(slotIdentity?.requirementId ? { requirementId: slotIdentity.requirementId } : {}),
+    ...(slotIdentity?.checkpointId ? { checkpointId: slotIdentity.checkpointId } : {}),
+    ...(slotIdentity?.invocation ? { invocation: slotIdentity.invocation } : {}),
+    ...(slotIdentity?.iteration !== undefined ? { iteration: slotIdentity.iteration } : {}),
+    ...(slotIdentity?.attempt !== undefined ? { attempt: slotIdentity.attempt } : {}),
+    ...(slotIdentity?.phase ? { phase: slotIdentity.phase } : {}),
     ...(typeof payload.settled === "boolean" ? { settled: payload.settled } : {}),
     ...(typeof payload.samples === "number" && Number.isFinite(payload.samples)
       ? { samples: payload.samples }
       : {}),
     ...(configuration ? { configuration } : {}),
+    ...(observed ? { observed } : {}),
     ...(masks.length ? { masks } : {}),
   };
 }
 
-function authoredCaptureCaptions(
-  steps: readonly unknown[],
-): Array<{ caption: string; lookFor?: string }> {
-  const captions: Array<{ caption: string; lookFor?: string }> = [];
-  for (const value of steps) {
-    const step = record(value);
-    if (step?.kind !== "screenshot") continue;
-    const review = record(step.review);
-    if (review?.mode !== "later") continue;
-    captions.push({
-      caption: text(step.caption) ?? "screenshot",
-      ...(text(review.lookFor) ? { lookFor: text(review.lookFor) } : {}),
-    });
+function plannedItem(slot: CaptureReviewPlannedSlot): CaptureReviewItem {
+  const slotId = captureReviewSlotId(slot);
+  return {
+    captureId: captureReviewId({ caption: slot.caption, slotId }),
+    caption: slot.caption,
+    status: "missing",
+    slotId,
+    checkpointId: slot.checkpointId,
+    ...(slot.lookFor ? { lookFor: slot.lookFor } : {}),
+    ...(slot.stepId ? { stepId: slot.stepId } : {}),
+    ...(slot.requirementId ? { requirementId: slot.requirementId } : {}),
+    ...(slot.invocation ? { invocation: slot.invocation } : {}),
+    ...(slot.iteration !== undefined ? { iteration: slot.iteration } : {}),
+    attempt: normalizedCaptureReviewAttempt(slot.attempt),
+    ...(slot.phase ? { phase: slot.phase } : {}),
+    ...(slot.configuration ? { configuration: slot.configuration } : {}),
+  };
+}
+
+function sameOptional<T>(left: T | undefined, right: T | undefined): boolean {
+  return left === undefined || right === undefined || left === right;
+}
+
+function artifactMatchesSlot(artifact: CaptureReviewItem, slot: CaptureReviewPlannedSlot): boolean {
+  if (artifact.slotId && artifact.slotId === captureReviewSlotId(slot)) return true;
+  const checkpoint = artifact.checkpointId ?? artifact.stepId;
+  if (checkpoint && checkpoint === slot.checkpointId) {
+    return (
+      sameOptional(artifact.invocation, slot.invocation) &&
+      sameOptional(artifact.iteration, slot.iteration) &&
+      sameCaptureReviewAttempt(artifact.attempt, slot.attempt) &&
+      sameCaptureReviewPhase(artifact.phase, slot.phase)
+    );
   }
-  return captions;
+  if (artifact.stepId && artifact.stepId === slot.stepId) {
+    return (
+      sameOptional(artifact.iteration, slot.iteration) &&
+      sameCaptureReviewPhase(artifact.phase, slot.phase)
+    );
+  }
+  return false;
+}
+
+function bindArtifactToSlots(
+  artifact: CaptureReviewItem,
+  items: CaptureReviewItem[],
+  slots: readonly CaptureReviewPlannedSlot[],
+  bound: Set<number>,
+): boolean {
+  const exact: number[] = [];
+  const byStep: number[] = [];
+  for (const [index, slot] of slots.entries()) {
+    if (bound.has(index)) continue;
+    if (artifactMatchesSlot(artifact, slot)) exact.push(index);
+    else if (artifact.stepId && artifact.stepId === slot.stepId) byStep.push(index);
+  }
+  const candidates = exact.length ? exact : byStep;
+  if (candidates.length === 1) {
+    const index = candidates[0]!;
+    bound.add(index);
+    const slot = slots[index]!;
+    items[index] = {
+      ...artifact,
+      caption: slot.caption,
+      lookFor: artifact.lookFor ?? slot.lookFor,
+      slotId: captureReviewSlotId(slot),
+      checkpointId: slot.checkpointId,
+      stepId: artifact.stepId ?? slot.stepId,
+      requirementId: artifact.requirementId ?? slot.requirementId,
+      invocation: artifact.invocation ?? slot.invocation,
+      iteration: artifact.iteration ?? slot.iteration,
+      attempt: artifact.attempt ?? slot.attempt,
+      phase: artifact.phase ?? slot.phase,
+      configuration: artifact.configuration ?? slot.configuration,
+    };
+    return true;
+  }
+  return false;
 }
 
 function overlayDecision(
@@ -294,37 +922,79 @@ function overlayDecision(
   };
 }
 
+function expandPlannedSlotsFromArtifacts(
+  planned: CaptureReviewPlannedSlot[],
+  artifacts: readonly CaptureReviewItem[],
+): CaptureReviewPlannedSlot[] {
+  if (!planned.length) return planned;
+  const slots: CaptureReviewPlannedSlot[] = planned.map((slot) =>
+    slot.attempt === undefined && slot.stepId ? withCaptureReviewAttempt(slot, 1) : slot,
+  );
+  for (const artifact of artifacts) {
+    const checkpointId = artifact.checkpointId ?? artifact.stepId;
+    if (!checkpointId) continue;
+    const identity: CaptureReviewSlotIdentity = {
+      checkpointId,
+      ...(artifact.requirementId ? { requirementId: artifact.requirementId } : {}),
+      ...(artifact.configuration ? { configuration: artifact.configuration } : {}),
+      ...(artifact.invocation ? { invocation: artifact.invocation } : {}),
+      ...(artifact.iteration !== undefined ? { iteration: artifact.iteration } : {}),
+      attempt: normalizedCaptureReviewAttempt(artifact.attempt),
+      ...(artifact.phase ? { phase: artifact.phase } : {}),
+    };
+    const family = slots.find(
+      (slot) => captureReviewSlotFamilyId(slot) === captureReviewSlotFamilyId(identity),
+    );
+    if (!family) continue;
+    const attempt = normalizedCaptureReviewAttempt(identity.attempt);
+    if (!plannedSlotHasAttempt(slots, family, attempt)) {
+      slots.push(withCaptureReviewAttempt(family, attempt));
+    }
+  }
+  return slots;
+}
+
 /** Build the human review queue. Decisions never rewrite execution outcome. */
 export function resolveCaptureReviewQueue(input: {
   artifacts?: readonly { kind?: string; data?: unknown }[];
   decisions?: readonly CaptureReviewDecision[];
   recipeSteps?: readonly unknown[];
+  recipes?: Record<string, { steps?: readonly unknown[] }>;
+  plannedSlots?: readonly CaptureReviewPlannedSlot[];
+  configuration?: CaptureReviewConfiguration;
+  requirementId?: string;
 }): CaptureReviewQueue {
+  const artifacts: CaptureReviewItem[] = [];
   const seen = new Set<string>();
-  const items: CaptureReviewItem[] = [];
   for (const artifact of input.artifacts ?? []) {
     if (artifact.kind !== "capture-review") continue;
     const item = captureReviewArtifact(artifact.data);
     if (!item || seen.has(item.captureId)) continue;
     seen.add(item.captureId);
-    items.push(overlayDecision(item, input.decisions ?? []));
+    artifacts.push(item);
   }
-  for (const authored of authoredCaptureCaptions(input.recipeSteps ?? [])) {
-    const already = items.some((item) => item.caption === authored.caption);
-    if (already) continue;
-    const captureId = captureReviewId({ caption: authored.caption });
-    items.push({
-      captureId,
-      caption: authored.caption,
-      status: "missing",
-      ...(authored.lookFor ? { lookFor: authored.lookFor } : {}),
-    });
+  const planned = expandPlannedSlotsFromArtifacts(
+    materializeCaptureReviewSlots({
+      recipeSteps: input.recipeSteps,
+      recipes: input.recipes,
+      plannedSlots: input.plannedSlots,
+      configuration: input.configuration,
+      requirementId: input.requirementId,
+    }),
+    artifacts,
+  );
+  const items: CaptureReviewItem[] = [];
+  if (planned.length) {
+    items.push(...planned.map(plannedItem));
+    const bound = new Set<number>();
+    const extras: CaptureReviewItem[] = [];
+    for (const artifact of artifacts) {
+      if (!bindArtifactToSlots(artifact, items, planned, bound)) extras.push(artifact);
+    }
+    items.push(...extras);
+  } else {
+    items.push(...artifacts);
   }
-  const artifacts = input.artifacts ?? [];
-  const withMasks = items.map((item) => {
-    if (item.masks?.length) return item;
-    const masks = identityMasksForItem(item, artifacts);
-    return masks.length ? { ...item, masks } : item;
-  });
-  return { items: withMasks, summary: summarizeCaptureReview(withMasks) };
+  const reviewed = items.map((item) => overlayDecision(item, input.decisions ?? []));
+  return { items: reviewed, summary: summarizeCaptureReview(reviewed) };
 }

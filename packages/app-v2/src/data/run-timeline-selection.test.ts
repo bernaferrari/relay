@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { describeCoverageStepReason } from "@relay/protocol";
 import { projectRunReport } from "./run-report-projection";
 import { initialRunStep } from "./run-timeline-selection";
 
@@ -94,6 +95,57 @@ it("omits skipped conditional targets from the action timeline", () => {
     {},
   );
   expect(result.timeline.map((step) => step.id)).toEqual(["actual"]);
+});
+
+it("shows inspect leftover skip instead of claiming the opener tap executed", () => {
+  const skipTitle = describeCoverageStepReason("inspect-setup-skipped");
+  const result = projectRunReport(
+    "run",
+    {
+      steps: [
+        {
+          id: "skipped-opener",
+          title: skipTitle,
+          status: "ok",
+          log: skipTitle,
+          frames: [{ path: "settings.png" }],
+        },
+        {
+          id: "capture",
+          title: "Settings panel",
+          status: "ok",
+          frames: [{ path: "settings.png" }],
+        },
+      ],
+    },
+    {},
+  );
+  expect(result.timeline.map((step) => [step.id, step.title])).toEqual([
+    ["skipped-opener", skipTitle],
+    ["capture", "Settings panel"],
+  ]);
+  expect(result.timeline.some((step) => /tap/iu.test(step.title))).toBe(false);
+});
+
+it("shows a required transition opener as executed when leftover chrome is still present", () => {
+  const executedTitle = describeCoverageStepReason("transition-executed");
+  const result = projectRunReport(
+    "run",
+    {
+      steps: [
+        {
+          id: "opener",
+          title: executedTitle,
+          status: "ok",
+          log: executedTitle,
+          frames: [{ path: "after-tap.png" }],
+        },
+      ],
+    },
+    {},
+  );
+  expect(result.timeline.map((step) => [step.id, step.title])).toEqual([["opener", executedTitle]]);
+  expect(result.timeline[0]?.title).not.toBe(describeCoverageStepReason("inspect-setup-skipped"));
 });
 
 it("does not repeat a wrapper capture when the same authored step has visible capture evidence", () => {

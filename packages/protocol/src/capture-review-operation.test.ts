@@ -53,3 +53,50 @@ test("graph Test schema accepts capture-for-review without a judge", () => {
     }),
   );
 });
+
+test("Plan capture review lists the queue and bulk-accepts exact items only", () => {
+  const listed = operationDefinition("job.combine.capture.review").input.parse({
+    batchId: "plan-1",
+  });
+  assert.deepEqual(listed, { batchId: "plan-1" });
+  const filtered = operationDefinition("job.combine.capture.review").input.parse({
+    batchId: "plan-1",
+    pending: "true",
+    screen: "Settings",
+    device: "iPad",
+    account: "Member",
+  });
+  assert.deepEqual(filtered, {
+    batchId: "plan-1",
+    pending: true,
+    screen: "Settings",
+    device: "iPad",
+    account: "Member",
+  });
+  const applied = {
+    batchId: "plan-1",
+    action: "accept" as const,
+    items: [
+      {
+        runId: "run-8",
+        captureId: "frames/001.png::aaa",
+        imageSha256: "aaa",
+      },
+    ],
+    pending: true,
+    screen: "Settings",
+  };
+  assert.deepEqual(operationDefinition("job.combine.capture.review.apply").input.parse(applied), {
+    ...applied,
+    pending: true,
+  });
+  assert.throws(
+    () =>
+      operationDefinition("job.combine.capture.review.apply").input.parse({
+        batchId: "plan-1",
+        action: "approve-new-baseline",
+        items: [{ runId: "run-8", captureId: "frames/001.png::aaa" }],
+      }),
+    /unsupported|invalid_value|Invalid option/u,
+  );
+});

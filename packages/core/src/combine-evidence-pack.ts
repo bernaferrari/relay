@@ -15,7 +15,9 @@ import type {
   CombineEvidenceFinding,
   CombineEvidenceAnalysisReport,
   CombineEvidencePackManifest,
+  CaptureReviewDecision,
 } from "@relay/protocol";
+import { formatCaptureReviewCoverageSummary } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import { pngDimensions } from "./ios-geometry.js";
 import { frameObservations } from "./frame-observation.js";
@@ -36,6 +38,11 @@ import {
 import { listPersistedRuns, runsRoot } from "./runs.js";
 import { slugEvidencePathSegment } from "./screen-identity.js";
 import { listJobs, type TestJob } from "./session.js";
+import { captureReviewQueueForPlan } from "./capture-review-plan.js";
+import {
+  coverageOutcomesFromArtifacts,
+  describeCoverageStepReasons,
+} from "./coverage-step-outcome.js";
 import { composeScrollSurveyFrames } from "./scrollable-survey.js";
 import type { ScrollSurveyFrame } from "./scrollable-survey-types.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
@@ -65,6 +72,8 @@ export type CombineEvidenceCase = Pick<
   | "steps"
   | "resolvedInputs"
   | "recipeId"
+  | "recipeSnapshot"
+  | "recipeGraph"
   | "runDir"
   | "error"
   | "outcome"
@@ -74,6 +83,7 @@ export type CombineEvidenceCase = Pick<
    * and the pack only ever reports this status, never branches on it. */
   status: string;
   /** Optional on a persisted run; every reader here already falls back. */
+  captureReviews?: CaptureReviewDecision[];
   title?: string;
 };
 
@@ -100,7 +110,24 @@ function findingLine(
   return `<li data-severity="${escapeHtml(finding.severity)}"><code>${escapeHtml(finding.code)}</code> ${body} <em>${escapeHtml(finding.confidence)} confidence</em></li>`;
 }
 
-function portablePackHtml(manifest: CombineEvidencePackManifest): string {
+function captureReviewQueueForCases(jobs: CombineEvidenceCase[]) {
+  return captureReviewQueueForPlan(
+    jobs.map((job) => ({
+      id: job.id,
+      artifacts: job.artifacts,
+      captureReviews: job.captureReviews,
+      outcome: job.outcome,
+      status: job.status,
+      recipeSnapshot: job.recipeSnapshot,
+      recipeGraph: job.recipeGraph,
+    })),
+  );
+}
+
+function portablePackHtml(
+  manifest: CombineEvidencePackManifest,
+  captureReviewHeadline?: string,
+): string {
   const passed = manifest.cases.filter((item) => item.status === "ok" || item.status === "healed");
   const expected = manifest.cases.reduce((total, item) => total + (item.expectedFrames ?? 0), 0);
   const captured = manifest.cases.reduce((total, item) => total + item.frames.length, 0);
@@ -133,10 +160,13 @@ function portablePackHtml(manifest: CombineEvidencePackManifest): string {
 </section>`;
     })
     .join("\n");
+  const summary = captureReviewHeadline
+    ? `${escapeHtml(captureReviewHeadline)} · Looks correct does not approve a visual baseline.`
+    : `${passed.length} of ${manifest.cases.length} runs passed · ${captured}${expected ? ` of ${expected}` : ""} screenshots · ${analysis.findings.length} finding${analysis.findings.length === 1 ? "" : "s"} (${analysis.critical} critical) against ${escapeHtml(analysis.baselineLocale)}${blind ? ` · ${blind} frame${blind === 1 ? "" : "s"} without a UI tree, checked for presence only` : ""}`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(manifest.title)}</title>
 <style>:root{color-scheme:light dark;font:14px ui-sans-serif,system-ui,sans-serif;background:#f7f7f8;color:#18181b}*{box-sizing:border-box}body{margin:0}main{max-width:1440px;margin:auto;padding:32px}h1{font-size:24px;letter-spacing:-.03em;margin:0 0 6px}.summary{color:#64646c;margin:0 0 28px}.case{background:#fff;border:1px solid #dedee3;border-radius:14px;margin:0 0 16px;overflow:hidden}.case>header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;border-bottom:1px solid #e8e8eb}.case header div{display:grid;gap:2px}.case header span{font-size:12px;color:#71717a}.case header b{font-size:11px;text-transform:capitalize}.case header b[data-status=error],.case header b[data-status=cancelled]{color:#c2410c}.frames{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;padding:10px}.frames figure{position:relative;margin:0;border-radius:9px;overflow:hidden;background:#eee;min-height:120px}.frames img{display:block;width:100%;height:240px;object-fit:contain}.frames figcaption{position:absolute;right:6px;bottom:6px;border-radius:99px;background:#000b;color:white;padding:3px 7px;font-size:10px}.empty{color:#71717a;padding:20px}.findings{margin:0;padding:4px 14px 14px 30px;display:grid;gap:6px}.findings li{font-size:12px}.findings li[data-severity=critical]{color:#b91c1c}.findings code{font-size:11px;background:#f1f1f4;border-radius:5px;padding:1px 5px}.findings em{color:#71717a;font-style:normal}.clean{margin:0;padding:4px 14px 14px;font-size:12px;color:#71717a}@media(prefers-color-scheme:dark){:root{background:#171719;color:#f4f4f5}.case{background:#222225;border-color:#39393f}.case>header{border-color:#39393f}.case header span,.summary,.empty,.clean{color:#a1a1aa}.frames figure{background:#111}.findings code{background:#2e2e33}.findings li[data-severity=critical]{color:#fca5a5}}</style></head>
-<body><main><h1>${escapeHtml(manifest.title)}</h1><p class="summary">${passed.length} of ${manifest.cases.length} runs passed · ${captured}${expected ? ` of ${expected}` : ""} screenshots · ${analysis.findings.length} finding${analysis.findings.length === 1 ? "" : "s"} (${analysis.critical} critical) against ${escapeHtml(analysis.baselineLocale)}${blind ? ` · ${blind} frame${blind === 1 ? "" : "s"} without a UI tree, checked for presence only` : ""} · ${new Date(manifest.generatedAt).toISOString()}</p>${cards}</main></body></html>\n`;
+<body><main><h1>${escapeHtml(manifest.title)}</h1><p class="summary">${summary} · ${new Date(manifest.generatedAt).toISOString()}</p>${cards}</main></body></html>\n`;
 }
 
 function expectedEvidenceFrames(job: CombineEvidenceCase): number | undefined {
@@ -645,6 +675,9 @@ export async function exportCombineEvidencePack(input: {
       }
       await writePackFullPage(job, { directory, screenshotDir, accessibilityDir, frames });
     }
+    const coverageNote = describeCoverageStepReasons(
+      coverageOutcomesFromArtifacts(job.artifacts ?? []),
+    );
     cases.push({
       locale,
       jobId: job.id,
@@ -652,6 +685,7 @@ export async function exportCombineEvidencePack(input: {
       name: job.title ?? job.action,
       frames,
       ...(evidence.expected !== undefined ? { expectedFrames: evidence.expected } : {}),
+      ...(coverageNote ? { note: coverageNote } : {}),
     });
   }
 
@@ -714,21 +748,37 @@ export async function exportCombineEvidencePack(input: {
     analysisCoverage: coverage,
   };
   await writeFile(join(rootDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  const captureReview = captureReviewQueueForCases(input.jobs);
+  const captureReviewHeadline = captureReview.items.length
+    ? formatCaptureReviewCoverageSummary(captureReview.summary)
+    : undefined;
+  const pendingReviewJobIds = new Set(
+    captureReview.items
+      .filter(
+        (item) =>
+          item.status === "pending" ||
+          item.status === "missing" ||
+          item.status === "need-more-evidence",
+      )
+      .map((item) => item.runId),
+  );
   const checklistRows = reviewChecklistRows({
     cases: manifest.cases,
     findings: analysis.findings,
     visualComparisonByJobId: await readVisualComparisonIdsByRunId(runsRoot()),
     todoItems: input.todoItems,
+    pendingReviewJobIds,
   });
   await writeFile(
     join(rootDir, "index.html"),
     await writeReviewChecklistFiles(
       rootDir,
-      portablePackHtml(manifest).replace(
+      portablePackHtml(manifest, captureReviewHeadline).replace(
         "<main>",
         '<main><p><a href="comparison.html">Compare screens side by side</a></p>',
       ),
       checklistRows,
+      captureReviewHeadline ? { captureReview: captureReviewHeadline } : undefined,
     ),
     "utf8",
   );
@@ -742,8 +792,16 @@ export async function exportCombineEvidencePack(input: {
       `Locales: ${manifest.locales.join(", ")}`,
       `Findings: ${analysis.findings.length} (${analysis.critical} critical) against ${analysis.baselineLocale}`,
       `Frames read: ${coverage.inspectedFrames} of ${coverage.frames} carried a UI tree`,
+      ...(captureReviewHeadline
+        ? [
+            `Capture review: ${captureReviewHeadline}`,
+            "Looks correct does not approve a visual baseline.",
+          ]
+        : []),
       "",
-      "Open index.html for the Test checklist (passed | check failed | could not run | todo) and the frame report. Confirm and Reject never accept a visual baseline; use `relay run visual review <job>`. Each folder is one matrix case: screenshots/ are the rasters (full.png is the stitched long page when a destination survey or stitch was captured), accessibility/ holds the raw tree beside each PNG when one was captured.",
+      captureReviewHeadline
+        ? "Open index.html for planned / captured / blocked + pending review. Execution ok is not visual acceptance. Looks correct does not approve a visual baseline."
+        : "Open index.html for the Test checklist (passed | check failed | could not run | todo) and the frame report. Confirm and Reject never accept a visual baseline; use `relay run visual review <job>`. Each folder is one matrix case: screenshots/ are the rasters (full.png is the stitched long page when a destination survey or stitch was captured), accessibility/ holds the raw tree beside each PNG when one was captured.",
       "manifest.json carries the same findings under `analysis`, and `byCanonicalKey` maps each one to the frame it came from.",
       "",
     ].join("\n"),

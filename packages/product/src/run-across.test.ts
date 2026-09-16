@@ -669,3 +669,59 @@ test("expanded Batch identities rerun only the selected profile case", () => {
   const selected = selectProductBatchCases(batch, { executionCaseIds: ["case-profile-b"] });
   assert.deepEqual(selected.caseIds, ["case-profile-b"]);
 });
+
+test("Plan capture review lists the queue and bulk-accepts exact selected items", async () => {
+  const calls: Array<[string, Record<string, unknown>]> = [];
+  const queue = {
+    items: [
+      {
+        captureId: "frames/001.png::aaa",
+        caption: "Settings",
+        status: "pending",
+        runId: "run-8",
+        imageSha256: "aaa",
+        attempt: 1,
+      },
+    ],
+    summary: {
+      captured: 1,
+      missing: 0,
+      pending: 1,
+      accepted: 0,
+      issue: 0,
+      needMoreEvidence: 0,
+      planned: 1,
+      blocked: 0,
+    },
+  };
+  const invoke = async (id: string, input: Record<string, unknown>) => {
+    calls.push([id, input]);
+    if (id === "job.combine.capture.review") return { queue };
+    return {
+      queue: {
+        ...queue,
+        summary: { ...queue.summary, pending: 0, accepted: 1 },
+        items: [{ ...queue.items[0]!, status: "accepted" }],
+      },
+      results: [{ runId: "run-8", captureId: "frames/001.png::aaa", status: "applied" }],
+    };
+  };
+  const service = createProductRunAcrossService({ invoke } as never, { invoke } as never);
+  assert.deepEqual(await service.getCaptureReview?.("plan-1"), queue);
+  const applied = await service.reviewCaptures?.("plan-1", {
+    action: "accept",
+    items: [{ runId: "run-8", captureId: "frames/001.png::aaa", imageSha256: "aaa" }],
+  });
+  assert.equal(applied?.results[0]?.status, "applied");
+  assert.deepEqual(calls, [
+    ["job.combine.capture.review", { batchId: "plan-1" }],
+    [
+      "job.combine.capture.review.apply",
+      {
+        batchId: "plan-1",
+        action: "accept",
+        items: [{ runId: "run-8", captureId: "frames/001.png::aaa", imageSha256: "aaa" }],
+      },
+    ],
+  ]);
+});

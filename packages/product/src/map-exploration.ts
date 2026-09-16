@@ -31,7 +31,8 @@ export type ProductMapScreen = {
   readonly variants: readonly ProductMapScreenVariant[];
   readonly coveringTests: readonly { readonly id: string; readonly name: string }[];
   readonly recentFailures: readonly ProductMapFailure[];
-  /** Authored identity-ignore region names. Visual baselines compare chrome only. */
+  /** Authored identity-ignore region names. Identity matching omits these;
+   * visual compare needs an explicit comparison policy. */
   readonly ignoreRegionNames?: readonly string[];
 };
 

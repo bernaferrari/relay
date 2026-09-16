@@ -1,7 +1,9 @@
 import {
   canonicalAppMapCombineCellValues,
   parseAppMapTestTupleIdentity,
+  describeCoverageStepReasons,
   type CampaignCheckSummary,
+  type CoverageStepReason,
   type JobSummary,
 } from "@relay/protocol";
 import type { TestJob } from "./session-contract.js";
@@ -65,6 +67,18 @@ export function summarizeJob(job: TestJob): JobSummary {
     ) {
       return [];
     }
+    const coverageOutcomes = Array.isArray(data.coverageOutcomes)
+      ? data.coverageOutcomes.filter(
+          (reason): reason is CoverageStepReason =>
+            reason === "inspect-setup-skipped" || reason === "transition-executed",
+        )
+      : [];
+    const coverageNote =
+      typeof data.coverageNote === "string" && data.coverageNote.trim()
+        ? data.coverageNote.trim()
+        : coverageOutcomes.length
+          ? describeCoverageStepReasons(coverageOutcomes)
+          : undefined;
     return [
       {
         id: data.id,
@@ -77,6 +91,8 @@ export function summarizeJob(job: TestJob): JobSummary {
         ...(typeof data.dependencyReason === "string"
           ? { dependencyReason: data.dependencyReason }
           : {}),
+        ...(coverageOutcomes.length ? { coverageOutcomes } : {}),
+        ...(coverageNote ? { coverageNote } : {}),
       },
     ];
   });

@@ -965,6 +965,22 @@ test("listener snapshot chrome skips attach, sidebar, and compose labels on clos
     if (command.command === "querySelector") {
       if (command.selectorKey === "label") {
         labelQueries.push(String(command.selectorValue));
+        if (command.selectorValue === "New temporary conversation") {
+          return {
+            ok: true,
+            data: {
+              found: true,
+              nodes: [
+                {
+                  label: "New temporary conversation",
+                  type: "Button",
+                  hittable: true,
+                  rect: { x: 1052, y: 20, width: 44, height: 44 },
+                },
+              ],
+            },
+          };
+        }
         return { ok: true, data: { found: false, nodes: [] } };
       }
       if (command.selectorKey === "id") {
@@ -1010,12 +1026,14 @@ test("listener snapshot chrome skips attach, sidebar, and compose labels on clos
     throw new Error("conversation-depth snapshot must not run after chrome identifiers resolve");
   });
   try {
-    await snapshotViaLiveIosRunnerListener({
+    const nodes = await snapshotViaLiveIosRunnerListener({
       serial,
       appBundleId: "ai.x.GrokApp",
     });
     assert.ok(idQueries.includes("sidebar.open.button"));
     assert.ok(idQueries.includes("ask.toolbar.add.button"));
+    assert.ok(labelQueries.includes("New temporary conversation"));
+    assert.ok(nodes.some((node) => node.label === "New temporary conversation"));
     for (const identifier of [
       "ask.toolbar.add.menu.camera",
       "ask.toolbar.add.menu.photos",

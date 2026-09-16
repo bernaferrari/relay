@@ -161,6 +161,7 @@ export function runIdentityIgnoreStep(
     capturedAt: now(),
     data: {
       ...region,
+      // Provenance for the identity step. Not a visual exclusion or review mask.
       frameIndex: ctx.job?.frames?.length ?? 0,
     },
   });

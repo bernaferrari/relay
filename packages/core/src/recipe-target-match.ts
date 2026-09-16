@@ -232,15 +232,41 @@ export function labelsForScope(nodes: SnapshotNode[], scope: StepTarget): string
     });
   };
 
+  const optionRoles = new Set(["menuitem", "menuitemradio", "option"]);
+  const isOptionRole = (node: SnapshotNode): boolean =>
+    optionRoles.has((node.role ?? node.type ?? "").trim().toLocaleLowerCase());
+  const linkedOptionDescendants = (rootIndex: number): SnapshotNode[] => {
+    const found: SnapshotNode[] = [];
+    const queue = [...(byParent.get(rootIndex) ?? [])];
+    while (queue.length > 0) {
+      const child = queue.shift()!;
+      if (isOptionRole(child)) {
+        found.push(child);
+        continue;
+      }
+      if (child.index !== undefined) queue.push(...(byParent.get(child.index) ?? []));
+    }
+    return found;
+  };
+
   const roots = nodes.filter((node) => nodeMatchesTarget(node, scope));
   const options: SnapshotNode[] = [];
   const seen = new Set<SnapshotNode>();
   for (const root of roots) {
     const linkedChildren = root.index !== undefined ? (byParent.get(root.index) ?? []) : [];
+    const optionDescendants =
+      root.index !== undefined ? linkedOptionDescendants(root.index) : [];
     // Browser snapshots often assign an index but omit parentIndex. Empty
     // linked children must not skip rectangle containment or expect-set
-    // sees an empty option set while the menu is visibly open.
-    const directChildren = linkedChildren.length > 0 ? linkedChildren : containedBy(root);
+    // sees an empty option set while the menu is visibly open. Nested Theme
+    // groups (Light/Dark/System radios) must still count when parentIndex is
+    // present — otherwise leftover Settings dest-end SOS's on an open overlay.
+    const directChildren =
+      optionDescendants.length > 0
+        ? optionDescendants
+        : linkedChildren.length > 0
+          ? linkedChildren
+          : containedBy(root);
     for (const child of directChildren) {
       if (seen.has(child)) continue;
       seen.add(child);
@@ -248,10 +274,7 @@ export function labelsForScope(nodes: SnapshotNode[], scope: StepTarget): string
     }
   }
 
-  const optionRoles = new Set(["menuitem", "menuitemradio", "option"]);
-  const optionLike = options.filter((node) =>
-    optionRoles.has((node.role ?? node.type ?? "").trim().toLocaleLowerCase()),
-  );
+  const optionLike = options.filter((node) => isOptionRole(node));
   const labeled = optionLike.length > 0 ? optionLike : options;
 
   return [

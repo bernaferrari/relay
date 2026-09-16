@@ -23,6 +23,21 @@ import {
 } from "./recipe-runner-campaign-support.js";
 import { isCancel } from "./recipe-runner-support.js";
 import { isTargetUnavailableError } from "./target-unavailable.js";
+import {
+  coverageOutcomesFromArtifacts,
+  describeCoverageStepReasons,
+} from "./coverage-step-outcome.js";
+
+function coverageResultFields(ctx: RecipeStepContext, coverageArtifactStart: number) {
+  const coverageOutcomes = coverageOutcomesFromArtifacts(
+    ctx.job?.artifacts.slice(coverageArtifactStart) ?? [],
+  );
+  if (coverageOutcomes.length === 0) return {};
+  return {
+    coverageOutcomes,
+    coverageNote: describeCoverageStepReasons(coverageOutcomes),
+  };
+}
 
 function freshCleanupTerminalObservation(
   ctx: RecipeStepContext,
@@ -265,6 +280,7 @@ export async function runCampaignCheck(
       ? (ctx.job?.id ?? getExecutingJobId())
       : undefined;
   armCompensatingCleanup(cancellationCleanupJobId);
+  const coverageArtifactStart = ctx.job?.artifacts.length ?? 0;
   try {
     if (useCanonicalRecovery) {
       ctx.log(`check recovery: ${step.check.title} — one canonical path`);
@@ -604,12 +620,21 @@ export async function runCampaignCheck(
             }),
       });
     }
+    const coverage = coverageResultFields(ctx, coverageArtifactStart);
     ctx.job?.artifacts.push({
       kind: "campaign-check-result",
       capturedAt: finishedAt,
-      data: { ...step.check, status: "passed", startedAt, finishedAt },
+      data: {
+        ...step.check,
+        status: "passed",
+        startedAt,
+        finishedAt,
+        ...coverage,
+      },
     });
-    ctx.log(`check passed: ${step.check.title}`);
+    ctx.log(
+      `check passed: ${step.check.title}${coverage.coverageNote ? ` — ${coverage.coverageNote}` : ""}`,
+    );
     disarmCompensatingCleanup(cancellationCleanupJobId);
     return;
   }
@@ -722,6 +747,7 @@ export async function runCampaignCheck(
   if (recovery && !failedConfirmationTransitionId) {
     groups[recovery.groupId] = { status: "blocked", reason: message };
   }
+  const coverage = coverageResultFields(ctx, coverageArtifactStart);
   ctx.job?.artifacts.push({
     kind: "campaign-check-result",
     capturedAt: finishedAt,
@@ -733,9 +759,12 @@ export async function runCampaignCheck(
       ...(cleanupMessage ? { cleanupError: cleanupMessage } : {}),
       startedAt,
       finishedAt,
+      ...coverage,
     },
   });
-  ctx.log(`check failed: ${step.check.title} — ${message}`);
+  ctx.log(
+    `check failed: ${step.check.title} — ${message}${coverage.coverageNote ? ` — ${coverage.coverageNote}` : ""}`,
+  );
   disarmCompensatingCleanup(cancellationCleanupJobId);
 }
 

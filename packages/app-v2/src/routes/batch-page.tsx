@@ -31,6 +31,7 @@ import {
 } from "./batch-plan-review";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { resolvePlanFindings } from "./batch-finding-review";
+import { PlanCaptureReviewSection } from "./batch-capture-review";
 
 const routeApi = getRouteApi("/batches/$batchId");
 
@@ -264,6 +265,13 @@ export function BatchPage() {
       {report ? (
         <>
           <BatchResultSummary report={report} />
+          {!active ? (
+            <PlanCaptureReviewSection
+              batchId={batchId}
+              runAcrossService={runAcrossService}
+              platform={platform}
+            />
+          ) : null}
           {findingsReport ? (
             <BatchFindingsLead report={findingsReport} gridHasProblems={hasProblems} />
           ) : null}

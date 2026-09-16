@@ -107,7 +107,10 @@ export const IOS_BOUNDED_CHROME_IDENTIFIERS = [
   ...IOS_BOUNDED_SIDEBAR_CHROME_IDENTIFIERS,
 ] as const;
 
-/** Unique SuperGrok chrome labels omitted from chrome-bounded snapshot. */
+/** Unique closed-home chrome labels — queried while the hamburger is present. */
+export const IOS_BOUNDED_HOME_CHROME_LABELS = ["New temporary conversation"] as const;
+
+/** Unique SuperGrok sidebar chrome labels omitted from chrome-bounded snapshot. */
 export const IOS_BOUNDED_CHROME_LABELS = [
   "grok-compose",
   "grok-arrows-right",
@@ -256,9 +259,18 @@ export async function snapshotViaLiveIosRunnerListener(input: {
   const hamburgerPresent = chromeNodeHasIdentifier(identifiers, "sidebar.open.button");
   const chrome = [
     ...identifiers,
-    ...(await queryIosChromeLabelsViaListener(listener, post, input, timeoutMs, {
-      includeDefaults: !hamburgerPresent,
-    })),
+    ...(await queryIosChromeLabelsViaListener(
+      listener,
+      post,
+      {
+        appBundleId: input.appBundleId,
+        includeLabels: hamburgerPresent
+          ? [...IOS_BOUNDED_HOME_CHROME_LABELS, ...(input.includeLabels ?? [])]
+          : input.includeLabels,
+      },
+      timeoutMs,
+      { includeDefaults: !hamburgerPresent },
+    )),
   ];
   if (chrome.length > 0) {
     if (isIosRunnerHostProbeTree(chrome)) {

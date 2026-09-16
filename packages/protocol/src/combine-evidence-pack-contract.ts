@@ -20,6 +20,8 @@ export type CombineEvidencePackCase = {
   frames: string[];
   expectedFrames?: number;
   captures?: CombineEvidencePackFrame[];
+  /** Inspect leftover skip vs required transition — never inferred from chrome. */
+  note?: string;
 };
 
 /** One authored screenshot of a batch that has not been exported yet. */

@@ -1,9 +1,20 @@
 import { createHash } from "node:crypto";
-import { describeSnapshotChrome, type CaptureReviewConfiguration } from "@relay/protocol";
+import {
+  assignCaptureReviewAttempt,
+  captureReviewSlotId,
+  describeSnapshotChrome,
+  observedCaptureReviewAccount,
+  sequenceAfterIsPlaceholder,
+  type CaptureReviewConfiguration,
+  type CaptureReviewObservedSession,
+  type CaptureReviewPlannedSlot,
+  type CaptureReviewSlotIdentity,
+} from "@relay/protocol";
 import type { Device } from "./device.js";
 import { pressKey, pressLabel, scrollUp, sleep, snapshot, type SnapshotNode } from "./device.js";
 import { now } from "./events.js";
 import { recordFrameObservation } from "./frame-observation.js";
+import { OPTIONAL_TREE_BUDGET_MS, withOptionalTreeBudget } from "./optional-tree-budget.js";
 import type { FreshDeviceObservation, RecipeStepContext } from "./recipe-runner-context.js";
 import {
   currentVerifiedScreen,
@@ -33,7 +44,8 @@ import {
   observeVisualScreenFingerprint,
 } from "./screen-identity.js";
 import { writeFrameTree } from "./run-frame-tree.js";
-import { captureSettledRaster } from "./visual-settling.js";
+import { writeFramePng } from "./runs.js";
+import { captureSettledRaster, type VisualCapturePolicy } from "./visual-settling.js";
 import {
   attachScreenshotPayload,
   captureScreenshot,
@@ -69,21 +81,61 @@ function observeStepIdentity(
   return observeScreenIdentity(nodes, recipeScreenIdentityOptions(ctx, extra));
 }
 
+function combineCellChildLaneId(
+  artifacts: readonly { kind?: string; data?: unknown }[] | undefined,
+): string | undefined {
+  for (const artifact of artifacts ?? []) {
+    if (artifact.kind !== "app-map-combine-cell-execution-intent") continue;
+    const data =
+      artifact.data && typeof artifact.data === "object" && !Array.isArray(artifact.data)
+        ? (artifact.data as Record<string, unknown>)
+        : undefined;
+    const child =
+      data?.child && typeof data.child === "object" && !Array.isArray(data.child)
+        ? (data.child as Record<string, unknown>)
+        : undefined;
+    const laneId = textField(child?.laneId);
+    if (laneId) return laneId;
+  }
+  return undefined;
+}
+
 function captureReviewConfigurationFromJob(
   job: RecipeStepContext["job"],
-): CaptureReviewConfiguration | undefined {
-  if (!job) return undefined;
+  artifacts?: RecipeStepContext["artifacts"],
+): {
+  configuration?: CaptureReviewConfiguration;
+  observed?: CaptureReviewObservedSession;
+} {
+  if (!job) return {};
   const viewport = job.browserCaseProfile?.viewport;
-  const account = job.resolvedInputs?.account?.trim() || job.resolvedInputs?.Account?.trim();
+  const labeled = observedCaptureReviewAccount({
+    laneId:
+      job.laneId || combineCellChildLaneId(job.artifacts) || combineCellChildLaneId(artifacts),
+    unsignedLaneId: job.unsignedLaneId,
+    targetProfileId: job.targetProfile?.id,
+    authenticationFixtureId: job.browserCaseProfile?.authenticationFixtureId,
+    resolvedAccount: job.resolvedInputs?.account?.trim() || job.resolvedInputs?.Account?.trim(),
+    fixtureHealthStatus: job.authenticationHealth?.status,
+    fixtureSignedIn: job.authenticationHealth?.signedIn,
+  });
   const locale =
     job.resolvedInputs?.language?.trim() ||
     job.resolvedInputs?.locale?.trim() ||
     job.browserCaseProfile?.locale;
+  const browserJob = Boolean(job.browserTargetId || job.browserCaseProfile);
+  const observed: CaptureReviewObservedSession | undefined = (() => {
+    const session: CaptureReviewObservedSession = {
+      ...labeled.observed,
+      ...(browserJob ? { sessionStore: "playwright-user-data" as const } : {}),
+    };
+    return Object.keys(session).length ? session : undefined;
+  })();
   const configuration: CaptureReviewConfiguration = {
     ...(job.deviceName?.trim() || job.browserTargetId?.trim()
       ? { app: (job.deviceName ?? job.browserTargetId)!.trim() }
       : {}),
-    ...(account ? { account } : {}),
+    ...(labeled.account ? { account: labeled.account } : {}),
     ...(job.browserCaseProfile?.engine ? { browser: job.browserCaseProfile.engine } : {}),
     ...(viewport ? { viewport: `${viewport.width}×${viewport.height}` } : {}),
     ...(locale ? { locale } : {}),
@@ -93,7 +145,75 @@ function captureReviewConfigurationFromJob(
         ? { build: job.appVersion.trim() }
         : {}),
   };
-  return Object.keys(configuration).length ? configuration : undefined;
+  return {
+    ...(Object.keys(configuration).length ? { configuration } : {}),
+    ...(observed ? { observed } : {}),
+  };
+}
+
+function textField(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function integerField(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) ? value : undefined;
+}
+
+function capturedReviewIdentities(
+  artifacts: readonly { kind?: string; data?: unknown }[] | undefined,
+): CaptureReviewSlotIdentity[] {
+  const identities: CaptureReviewSlotIdentity[] = [];
+  for (const artifact of artifacts ?? []) {
+    if (artifact.kind !== "capture-review") continue;
+    const data =
+      artifact.data && typeof artifact.data === "object" && !Array.isArray(artifact.data)
+        ? (artifact.data as Record<string, unknown>)
+        : undefined;
+    const checkpointId = textField(data?.checkpointId) ?? textField(data?.stepId);
+    if (!checkpointId) continue;
+    const iteration = integerField(data?.iteration);
+    const attempt = integerField(data?.attempt);
+    identities.push({
+      checkpointId,
+      ...(textField(data?.requirementId) ? { requirementId: textField(data?.requirementId) } : {}),
+      ...(textField(data?.invocation) ? { invocation: textField(data?.invocation) } : {}),
+      ...(iteration !== undefined ? { iteration } : {}),
+      ...(attempt !== undefined ? { attempt } : {}),
+      ...(textField(data?.phase) ? { phase: textField(data?.phase) } : {}),
+    });
+  }
+  return identities;
+}
+
+function reviewCapturePhase(
+  review: Extract<RecipeStep, { kind: "screenshot" }>["review"],
+): string | undefined {
+  const named = review?.phase?.trim();
+  if (named) return named;
+  if (review?.policy === "sequence") return review.phases?.[0]?.id;
+  return undefined;
+}
+
+function persistCaptureReviewPlannedSlots(
+  ctx: RecipeStepContext,
+  slots: CaptureReviewPlannedSlot[],
+): void {
+  ctx.plannedSlots = slots;
+  for (const artifact of ctx.job?.artifacts ?? ctx.artifacts ?? []) {
+    if (!artifact?.data || typeof artifact.data !== "object" || Array.isArray(artifact.data)) {
+      continue;
+    }
+    const data = artifact.data as {
+      plan?: { plannedSlots?: CaptureReviewPlannedSlot[] };
+      child?: { plan?: { plannedSlots?: CaptureReviewPlannedSlot[] } };
+    };
+    if (artifact.kind === "app-map-test-execution-intent" && data.plan) {
+      data.plan.plannedSlots = slots;
+    }
+    if (artifact.kind === "app-map-combine-cell-execution-intent" && data.child?.plan) {
+      data.child.plan.plannedSlots = slots;
+    }
+  }
 }
 
 export async function captureRecipeScreenshot(
@@ -102,14 +222,29 @@ export async function captureRecipeScreenshot(
   ctx: RecipeStepContext,
   dependencies: { captureScreenshot?: typeof captureScreenshot } = {},
   options: {
-    review?: { mode: "later"; lookFor?: string };
+    review?: Extract<RecipeStep, { kind: "screenshot" }>["review"];
     stepId?: string;
   } = {},
 ): Promise<void> {
   const verified = currentVerifiedScreen(ctx.runtime);
   const observation = ctx.runtime?.observation;
   const nodes = observation?.nodes ?? verified?.nodes;
+  const phase = reviewCapturePhase(options.review);
+  const phaseSpec = options.review?.phases?.find((item) => item.id === phase);
+  const reviewCaption = phaseSpec?.caption ?? caption;
+  const lookFor = phaseSpec?.lookFor ?? options.review?.lookFor;
+  if (
+    sequenceAfterIsPlaceholder({
+      ...(phase ? { phase } : {}),
+      ...(lookFor ? { lookFor } : {}),
+      ...(reviewCaption ? { caption: reviewCaption } : {}),
+      ...(options.review?.phases ? { phases: options.review.phases } : {}),
+    })
+  ) {
+    throw new Error("Live-output Sequence after cannot be a loading placeholder");
+  }
   const capture = await captureSettledRaster({
+    policy: options.review?.policy,
     capture: () =>
       (dependencies.captureScreenshot ?? captureScreenshot)({
         device,
@@ -126,54 +261,161 @@ export async function captureRecipeScreenshot(
     screenshot = await attachScreenshotPayload(
       capture.value,
       ctx.job?.id,
-      caption ?? `screenshot · ${new Date().toISOString()}`,
+      reviewCaption ?? `screenshot · ${new Date().toISOString()}`,
     );
+    if (!screenshot.framePath && ctx.job) {
+      const frame = await writeFramePng(
+        ctx.job,
+        capture.value.base64,
+        reviewCaption ?? `screenshot · ${new Date().toISOString()}`,
+        { capturedAt: capture.value.capturedAt },
+      );
+      screenshot.framePath = frame.path;
+    }
   } finally {
     await cleanupScreenshot(capture.value.path);
   }
+  const screenshotCapturedAt = screenshot.capturedAt;
   (ctx.job?.artifacts ?? ctx.artifacts)?.push({
     kind: "visual-settling",
-    capturedAt: now(),
+    capturedAt: screenshotCapturedAt,
     data: {
       settled: capture.settled,
       samples: capture.samples,
-      stabilityMeasured: true,
+      stabilityMeasured: capture.stabilityMeasured,
       framePath: screenshot.framePath,
+      ...(options.review?.policy ? { policy: options.review.policy } : {}),
+      ...(phase ? { phase } : {}),
     },
   });
   if (options.review?.mode === "later") {
     const imageSha256 = createHash("sha256")
       .update(Buffer.from(capture.value.base64, "base64"))
       .digest("hex");
-    const configuration = captureReviewConfigurationFromJob(ctx.job);
+    const { configuration, observed } = captureReviewConfigurationFromJob(ctx.job, ctx.artifacts);
+    const checkpointId = options.review.checkpointId ?? options.stepId;
+    const cursor = ctx.captureReview;
+    const family = checkpointId
+      ? {
+          checkpointId,
+          caption: reviewCaption ?? "screenshot",
+          ...(lookFor ? { lookFor } : {}),
+          ...(options.stepId ? { stepId: options.stepId } : {}),
+          ...(cursor?.requirementId ? { requirementId: cursor.requirementId } : {}),
+          ...(cursor?.invocation ? { invocation: cursor.invocation } : {}),
+          ...(cursor?.iteration !== undefined ? { iteration: cursor.iteration } : {}),
+          ...(phase ? { phase } : {}),
+        }
+      : undefined;
+    const assigned = family
+      ? assignCaptureReviewAttempt({
+          plannedSlots: ctx.plannedSlots ?? [],
+          captured: capturedReviewIdentities(ctx.job?.artifacts ?? ctx.artifacts),
+          slot: family,
+        })
+      : undefined;
+    if (assigned) persistCaptureReviewPlannedSlots(ctx, assigned.plannedSlots);
+    const identity = family ? { ...family, attempt: assigned?.attempt ?? 1 } : undefined;
+    const computedSlotId = identity ? captureReviewSlotId(identity) : undefined;
+    const frozen = computedSlotId
+      ? ctx.plannedSlots?.find((slot) => captureReviewSlotId(slot) === computedSlotId)
+      : undefined;
+    const slotId = frozen ? captureReviewSlotId(frozen) : computedSlotId;
     (ctx.job?.artifacts ?? ctx.artifacts)?.push({
       kind: "capture-review",
-      capturedAt: now(),
+      capturedAt: screenshotCapturedAt,
       data: {
         status: screenshot.framePath ? "pending" : "missing",
-        caption: caption ?? "screenshot",
-        ...(options.review.lookFor ? { lookFor: options.review.lookFor } : {}),
+        caption: reviewCaption ?? "screenshot",
+        ...(lookFor ? { lookFor } : {}),
         ...(screenshot.framePath ? { framePath: screenshot.framePath } : {}),
         imageSha256,
         ...(options.stepId ? { stepId: options.stepId } : {}),
+        ...(slotId ? { slotId } : {}),
+        ...((frozen?.requirementId ?? identity?.requirementId)
+          ? { requirementId: frozen?.requirementId ?? identity?.requirementId }
+          : {}),
+        ...((frozen?.checkpointId ?? identity?.checkpointId)
+          ? { checkpointId: frozen?.checkpointId ?? identity?.checkpointId }
+          : {}),
+        ...((frozen?.invocation ?? identity?.invocation)
+          ? { invocation: frozen?.invocation ?? identity?.invocation }
+          : {}),
+        ...(frozen?.iteration !== undefined || identity?.iteration !== undefined
+          ? { iteration: frozen?.iteration ?? identity?.iteration }
+          : {}),
+        ...(frozen?.attempt !== undefined || identity?.attempt !== undefined
+          ? { attempt: frozen?.attempt ?? identity?.attempt }
+          : {}),
+        ...((frozen?.phase ?? identity?.phase) ? { phase: frozen?.phase ?? identity?.phase } : {}),
         settled: capture.settled,
         samples: capture.samples,
+        ...(options.review.policy ? { policy: options.review.policy } : {}),
         ...(configuration ? { configuration } : {}),
+        ...(observed ? { observed } : {}),
       },
     });
   }
   if (!capture.settled) ctx.log("Screenshot retained while the screen was still changing.");
   if (observation) observation.screenshot = screenshot;
   if (verified) verified.screenshot = screenshot;
-  // The tree that produced this frame is the only chance to read its text
-  // later: a matrix compares copy across locales long after the run.
-  //
-  // The smallest honest locale body is a launch and a screenshot, which never
-  // verifies a screen and so holds no tree. Reading one here is what separates
-  // a pack of forty unreadable rasters from a pack that can be compared. Only
-  // matrix cases pay for it, and a target that cannot answer still yields a
-  // frame — the observation is evidence, not a gate on the capture.
-  const readable = nodes?.length ? nodes : await frameNodes(device, ctx);
+  await collectOptionalReviewTree({
+    device,
+    ctx,
+    screenshot,
+    caption,
+    nodes,
+    policy: options.review?.policy,
+  });
+}
+
+function recordOptionalTreeFailure(
+  ctx: RecipeStepContext,
+  screenshot: { framePath?: string },
+  error: unknown,
+  policy: VisualCapturePolicy | undefined,
+): void {
+  const message = error instanceof Error ? error.message : String(error);
+  ctx.log(`warn: optional UI-tree capture failed: ${message}`);
+  (ctx.job?.artifacts ?? ctx.artifacts)?.push({
+    kind: "ui-tree",
+    capturedAt: now(),
+    data: {
+      status: "failed",
+      error: message,
+      nodes: [],
+      ...(screenshot.framePath ? { framePath: screenshot.framePath } : {}),
+      ...(policy ? { policy } : {}),
+    },
+  });
+}
+
+async function collectOptionalReviewTree(input: {
+  device: Device;
+  ctx: RecipeStepContext;
+  screenshot: { framePath?: string; base64?: string };
+  caption: string | undefined;
+  nodes: readonly SnapshotNode[] | undefined;
+  policy: VisualCapturePolicy | undefined;
+}): Promise<void> {
+  const { device, ctx, screenshot, caption, nodes, policy } = input;
+  // Cached nodes already belong to this frame. A follow-on snapshot is only
+  // for matrix packs that never verified a screen. Fast/Sequence cannot let
+  // that read fail the pixel slot; Stable still waits on the ordinary budget.
+  let readable: readonly SnapshotNode[] | undefined = nodes?.length ? nodes : undefined;
+  if (!readable) {
+    const budget = policy === "fast" || policy === "sequence" ? OPTIONAL_TREE_BUDGET_MS : undefined;
+    try {
+      readable = await withOptionalTreeBudget(budget, () =>
+        frameNodes(device, ctx, {
+          retryAttempts: 1,
+          ...(budget !== undefined ? { timeoutMs: budget } : {}),
+        }),
+      );
+    } catch (error) {
+      recordOptionalTreeFailure(ctx, screenshot, error, policy);
+    }
+  }
   recordFrameObservation({
     ...(ctx.job ? { job: ctx.job } : {}),
     ...(screenshot.framePath ? { framePath: screenshot.framePath } : {}),
@@ -182,20 +424,24 @@ export async function captureRecipeScreenshot(
     ...(screenshot.base64 ? { base64: screenshot.base64 } : {}),
   });
   if (ctx.job && screenshot.framePath && readable?.length) {
-    await writeFrameTree(ctx.job, screenshot.framePath, readable);
+    try {
+      await writeFrameTree(ctx.job, screenshot.framePath, readable);
+    } catch (error) {
+      recordOptionalTreeFailure(ctx, screenshot, error, policy);
+    }
   }
 }
 
 async function frameNodes(
   device: Device,
   ctx: RecipeStepContext,
+  options: { retryAttempts?: number; timeoutMs?: number } = {},
 ): Promise<SnapshotNode[] | undefined> {
   if (!ctx.job?.batchId) return undefined;
-  try {
-    return await snapshot(device);
-  } catch {
-    return undefined;
-  }
+  return await snapshot(device, {
+    ...(options.retryAttempts !== undefined ? { retryAttempts: options.retryAttempts } : {}),
+    ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+  });
 }
 
 type ExpectScreenDependencies = {

@@ -172,6 +172,17 @@ describe("server security", () => {
       ),
       { actorId: "system:desktop-main", actorKind: "system" },
     );
+    assert.deepEqual(resolveCommandActor({ "x-relay-actor-id": "agent:explorer-1" }, context), {
+      actorId: "agent:explorer-1",
+      actorKind: "agent",
+    });
+    assert.deepEqual(
+      resolveCommandActor(
+        { "x-relay-actor-id": "agent:cursor", "x-relay-actor-kind": "human" },
+        context,
+      ),
+      { actorId: "agent:cursor", actorKind: "agent" },
+    );
   });
 
   it("binds authenticated requests to the configured service actor", () => {

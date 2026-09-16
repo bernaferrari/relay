@@ -618,6 +618,7 @@ function parseStepMetadata(
   index: number,
 ): {
   id?: string;
+  coverage?: RecipeStep["coverage"];
   group?: string;
   evidence?: RecordedStepEvidence;
   note?: string;
@@ -628,6 +629,7 @@ function parseStepMetadata(
 } {
   const metadata: {
     id?: string;
+    coverage?: RecipeStep["coverage"];
     group?: string;
     evidence?: RecordedStepEvidence;
     note?: string;
@@ -641,6 +643,12 @@ function parseStepMetadata(
       throw stepErr(index, "id must use letters, numbers, hyphens, and underscores only");
     }
     metadata.id = raw.id;
+  }
+  if (raw.coverage !== undefined) {
+    if (raw.coverage !== "inspect" && raw.coverage !== "transition") {
+      throw stepErr(index, 'coverage must be "inspect" or "transition"');
+    }
+    metadata.coverage = raw.coverage;
   }
   if (raw.group !== undefined) {
     if (!isString(raw.group) || raw.group.trim().length === 0 || raw.group.trim().length > 96) {

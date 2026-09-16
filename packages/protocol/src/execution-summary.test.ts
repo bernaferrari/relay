@@ -214,6 +214,40 @@ test("a live analysis reports verdicts and coverage without a frame list per cas
   assert.equal(result.analysis?.findings?.[0]?.frame, "frames/001.png");
 });
 
+test("Plan capture review keeps the queue instead of collapsing to an empty job summary", () => {
+  const queue = {
+    items: [
+      {
+        captureId: "frames/001.png::aaa",
+        caption: "Settings",
+        status: "pending",
+        runId: "run-8",
+        attempt: 2,
+      },
+    ],
+    summary: {
+      captured: 1,
+      missing: 0,
+      pending: 1,
+      accepted: 0,
+      issue: 0,
+      needMoreEvidence: 0,
+      planned: 1,
+      blocked: 0,
+    },
+  };
+  const listed = summarizeExecutionOperationResult("job.combine.capture.review", { queue }) as {
+    queue?: { summary?: { planned?: number }; items?: Array<{ attempt?: number }> };
+  };
+  assert.equal(listed.queue?.summary?.planned, 1);
+  assert.equal(listed.queue?.items?.[0]?.attempt, 2);
+  const applied = summarizeExecutionOperationResult("job.combine.capture.review.apply", {
+    queue,
+    results: [{ runId: "run-8", captureId: "frames/001.png::aaa", status: "applied" }],
+  }) as { results?: Array<{ status?: string }> };
+  assert.equal(applied.results?.[0]?.status, "applied");
+});
+
 test("job.get retains bounded campaign outcomes and lineage", () => {
   const result = summarizeExecutionOperationResult("job.get", {
     job: {

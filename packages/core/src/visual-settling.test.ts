@@ -16,7 +16,7 @@ test("waits through animation even when the accessibility tree is already ready"
       elapsed += ms;
     },
   });
-  assert.deepEqual(result, { value: "new", settled: true, samples: 4 });
+  assert.deepEqual(result, { value: "new", settled: true, samples: 4, stabilityMeasured: true });
   assert.equal(elapsed, 1500);
   assert.deepEqual(discarded, ["old", "transition", "new"]);
 });
@@ -44,7 +44,7 @@ test("bounds continuously changing content without claiming it settled", async (
     bytes: (frame) => Buffer.from(frame),
     wait: async () => {},
   });
-  assert.deepEqual(result, { value: "4", settled: false, samples: 4 });
+  assert.deepEqual(result, { value: "4", settled: false, samples: 4, stabilityMeasured: true });
 });
 
 test("cleans up the last temporary frame when a later capture fails", async () => {
@@ -81,5 +81,53 @@ test("slow captures exhaust the time budget without seven expensive probes", asy
     },
     clock: () => clock,
   });
-  assert.deepEqual(result, { value: "2", settled: false, samples: 2 });
+  assert.deepEqual(result, { value: "2", settled: false, samples: 2, stabilityMeasured: true });
+});
+
+test("fast capture is one fresh image and does not measure stability", async () => {
+  let samples = 0;
+  let waited = 0;
+  const result = await captureSettledRaster({
+    policy: "fast",
+    capture: async () => {
+      samples += 1;
+      return "now";
+    },
+    bytes: (frame) => Buffer.from(frame),
+    wait: async (ms) => {
+      waited += ms;
+    },
+  });
+  assert.deepEqual(result, {
+    value: "now",
+    settled: false,
+    samples: 1,
+    stabilityMeasured: false,
+  });
+  assert.equal(samples, 1);
+  assert.equal(waited, 0);
+});
+
+test("sequence capture is one fresh image and does not use the stable loop", async () => {
+  let samples = 0;
+  let waited = 0;
+  const result = await captureSettledRaster({
+    policy: "sequence",
+    capture: async () => {
+      samples += 1;
+      return "during";
+    },
+    bytes: (frame) => Buffer.from(frame),
+    wait: async (ms) => {
+      waited += ms;
+    },
+  });
+  assert.deepEqual(result, {
+    value: "during",
+    settled: false,
+    samples: 1,
+    stabilityMeasured: false,
+  });
+  assert.equal(samples, 1);
+  assert.equal(waited, 0);
 });

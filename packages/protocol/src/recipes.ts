@@ -170,9 +170,42 @@ export type HumanCheckpointReason =
  * screen is useful context for every action (including scroll and key), even
  * when that action does not execute against a UI target.
  */
+/** Inspect may reuse an already-reached view. Transition must execute the
+ * reviewed action from a known source — leftover skip cannot prove it. */
+export type CaptureCoverage = "inspect" | "transition";
+/** Fast = one fresh image. Stable = 2–4 rasters. Sequence = named temporal phases. */
+export type CaptureRasterPolicy = "fast" | "stable" | "sequence";
+/** Named temporal frame for Sequence. Captions are labels; id is identity. */
+export type CaptureSequencePhase = {
+  id: string;
+  caption?: string;
+  lookFor?: string;
+  /** Original interval this phase represents. Never rewritten to a shorter wait. */
+  intervalMs?: number;
+};
+/** Runtime leftover skip vs required opener. Reports must not infer this from
+ * leftover chrome; they read RecipeStep.coverage / this stamped reason. */
+export const COVERAGE_STEP_REASONS = ["inspect-setup-skipped", "transition-executed"] as const;
+export type CoverageStepReason = (typeof COVERAGE_STEP_REASONS)[number];
+
+export function describeCoverageStepReason(reason: CoverageStepReason): string {
+  switch (reason) {
+    case "inspect-setup-skipped":
+      return "Inspect setup skipped — already on this view";
+    case "transition-executed":
+      return "Transition executed";
+  }
+}
+
+export function describeCoverageStepReasons(reasons: readonly CoverageStepReason[]): string {
+  return [...new Set(reasons)].map(describeCoverageStepReason).join("; ");
+}
+
 export type RecipeStepMetadata = {
   /** Stable editor identity. It survives reordering and is never used by the runner. */
   id?: string;
+  /** Inspect = capture/setup. Transition = the action under test. */
+  coverage?: CaptureCoverage;
   /** A human task boundary inside a test. It is editor metadata, never runner behavior. */
   group?: string;
   /** Immutable screen/UI-tree context captured when this step was recorded. */
@@ -444,7 +477,9 @@ export type RecipeStep = RecipeStepMetadata &
       }
     | {
         /** Exclude this viewport rectangle from later screen-identity proofs
-         * so a changing reply body cannot re-key the same conversation. */
+         * so a changing reply body cannot re-key the same conversation.
+         * Not a capture-review mask and not a visual-baseline exclusion unless
+         * a VisualComparisonPolicy region says so. */
         kind: "identity-ignore";
         region: { x: number; y: number; width: number; height: number };
         name?: string;
@@ -476,6 +511,13 @@ export type RecipeStep = RecipeStepMetadata &
         review?: {
           mode: "later";
           lookFor?: string;
+          policy?: CaptureRasterPolicy;
+          /** Shared Sequence checkpoint. Defaults to the screenshot step id. */
+          checkpointId?: string;
+          /** Named phase this capture fills. */
+          phase?: string;
+          /** Declared named phases. Two phases materialize two plannedSlots. */
+          phases?: readonly CaptureSequencePhase[];
         };
       }
     | {

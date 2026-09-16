@@ -42,6 +42,16 @@ export function createRunAcrossProductService(platform: Platform): RunAcrossProd
     cancel: (batchId) => service().then((item) => item.cancel(batchId)),
     getReport: (batchId) => service().then((item) => item.getReport(batchId)),
     getFindings: (batchId) => service().then((item) => item.getFindings(batchId)),
+    getCaptureReview: (batchId) =>
+      service().then((item) => {
+        if (!item.getCaptureReview) throw new Error("Plan capture review is unavailable.");
+        return item.getCaptureReview(batchId);
+      }),
+    reviewCaptures: (batchId, input) =>
+      service().then((item) => {
+        if (!item.reviewCaptures) throw new Error("Plan capture review is unavailable.");
+        return item.reviewCaptures(batchId, input);
+      }),
     exportReport: (batchId) => service().then((item) => item.exportReport(batchId)),
     downloadExport: async (batchId) => {
       const { client } = await productClientForPlatform(platform);

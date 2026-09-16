@@ -36,6 +36,37 @@ function pngWithChangedTopLeft(changed: boolean): Buffer {
   return PNG.sync.write(image);
 }
 
+/** Pixel (0,2) sits inside grok.com ui-tree reply-body / intro inference on a 4×4 frame. */
+function pngWithChangedReplyBody(changed: boolean): Buffer {
+  const image = new PNG({ width: 4, height: 4 });
+  for (let offset = 0; offset < image.data.length; offset += 4) image.data[offset + 3] = 255;
+  if (changed) image.data[(2 * 4 + 0) * 4] = 255;
+  return PNG.sync.write(image);
+}
+
+const chatUiTreeArtifact = {
+  kind: "ui-tree" as const,
+  capturedAt: 1,
+  data: {
+    stepId: "chat",
+    nodes: [
+      { role: "article", label: "You", rect: { x: 0, y: 1, width: 1, height: 1 } },
+      { role: "article", label: "Grok", rect: { x: 0, y: 2, width: 2, height: 1 } },
+      {
+        role: "div",
+        identifier: "chat-input",
+        label: "Ask Grok anything",
+        rect: { x: 0, y: 2, width: 3, height: 1 },
+      },
+      {
+        role: "dialog",
+        label: "Introducing Build Mode",
+        rect: { x: 0, y: 0, width: 4, height: 4 },
+      },
+    ],
+  },
+};
+
 async function runFixture(
   root: string,
   input: {
@@ -44,6 +75,7 @@ async function runFixture(
     serial?: string;
     profileId?: string;
     frames: Buffer[];
+    frameStepIds?: Array<string | undefined>;
     artifacts?: PersistedRun["artifacts"];
   },
 ): Promise<PersistedRun> {
@@ -54,6 +86,7 @@ async function runFixture(
     input.frames.map(async (contents, index) => {
       const file = `${String(index + 1).padStart(3, "0")}.png`;
       await writeFile(join(dir, "frames", file), contents);
+      const stepId = input.frameStepIds?.[index];
       return {
         path: `frames/${file}`,
         caption: `Frame ${index + 1}`,
@@ -62,6 +95,7 @@ async function runFixture(
         mime: "image/png",
         width: 100,
         height: 200,
+        ...(stepId ? { stepId } : {}),
       };
     }),
   );
@@ -252,7 +286,7 @@ test("visual policies compare selected regions and ignore approved dynamic conte
   }
 });
 
-test("identity-ignore artifacts cover the reply body without approving a baseline", async () => {
+test("identity-ignore is not a visual exclusion until comparison policy is updated", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-visual-identity-ignore-"));
   try {
     const approved = await runFixture(root, {
@@ -275,10 +309,217 @@ test("identity-ignore artifacts cover the reply body without approving a baselin
         },
       ],
     });
+    const compared = await compareVisualBaseline(root, latest);
+    assert.equal(compared.code, "VISUAL_CHANGED");
+    assert.equal(compared.diff.frames[0]?.changedPixels, 1);
+    assert.equal(compared.policy.regions.length, 0);
+    assert.equal((await getVisualComparisonPolicy(root, latest)).regions.length, 0);
+
+    const initial = await getVisualComparisonPolicy(root, latest);
+    await updateVisualComparisonPolicy(root, latest, {
+      expectedRevision: initial.revision,
+      changeThreshold: initial.changeThreshold,
+      pixelThreshold: initial.pixelThreshold,
+      regions: [
+        {
+          id: "reply-body",
+          name: "reply body",
+          mode: "ignore",
+          frameIndex: 0,
+          x: 0,
+          y: 0,
+          width: 0.25,
+          height: 0.25,
+        },
+      ],
+      actor: { id: "reviewer-1", kind: "human" },
+    });
     const ignored = await compareVisualBaseline(root, latest);
     assert.equal(ignored.code, "VISUAL_MATCH");
     assert.equal(ignored.diff.frames[0]?.changedPixels, 0);
+    assert.equal(ignored.policy.regions[0]?.id, "reply-body");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a chat comparison ignore does not hide a later Settings frame", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-visual-settings-frame-"));
+  try {
+    const approved = await runFixture(root, {
+      id: "approved",
+      projectId: "project-a",
+      serial: "pixel-1",
+      frames: [pngWithChangedTopLeft(false), pngWithChangedTopLeft(false)],
+    });
+    await approveVisualBaseline(root, approved);
+    const latest = await runFixture(root, {
+      id: "latest",
+      projectId: "project-a",
+      serial: "pixel-1",
+      frames: [pngWithChangedTopLeft(true), pngWithChangedTopLeft(true)],
+      artifacts: [
+        {
+          kind: "identity-ignore",
+          capturedAt: 1,
+          data: {
+            name: "reply body",
+            x: 0,
+            y: 0,
+            width: 0.25,
+            height: 0.25,
+            stepId: "chat",
+            frameIndex: 0,
+          },
+        },
+      ],
+    });
+    const leaked = await compareVisualBaseline(root, latest);
+    assert.equal(leaked.code, "VISUAL_CHANGED");
+    assert.equal(leaked.policy.regions.length, 0);
+    assert.equal(leaked.diff.frames[0]?.changedPixels, 1);
+    assert.equal(leaked.diff.frames[1]?.changedPixels, 1);
+
+    const initial = await getVisualComparisonPolicy(root, latest);
+    await updateVisualComparisonPolicy(root, latest, {
+      expectedRevision: initial.revision,
+      changeThreshold: initial.changeThreshold,
+      pixelThreshold: initial.pixelThreshold,
+      regions: [
+        {
+          id: "chat-reply",
+          name: "reply body",
+          mode: "ignore",
+          frameIndex: 0,
+          x: 0,
+          y: 0,
+          width: 0.25,
+          height: 0.25,
+        },
+      ],
+      actor: { id: "reviewer-1", kind: "human" },
+    });
+    const scoped = await compareVisualBaseline(root, latest);
+    assert.equal(scoped.code, "VISUAL_CHANGED");
+    assert.equal(scoped.diff.frames[0]?.changedPixels, 0);
+    assert.equal(scoped.diff.frames[1]?.changedPixels, 1);
+    assert.equal(
+      scoped.policy.regions.some((region) => region.frameIndex === 1),
+      false,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Settings-only compare stays VISUAL_CHANGED on ui-tree chrome pixels until policy is updated", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-visual-settings-only-uitree-"));
+  try {
+    const approved = await runFixture(root, {
+      id: "approved",
+      projectId: "project-a",
+      serial: "pixel-1",
+      frames: [pngWithChangedReplyBody(false)],
+      frameStepIds: ["settings"],
+    });
+    await approveVisualBaseline(root, approved);
+    const latest = await runFixture(root, {
+      id: "latest",
+      projectId: "project-a",
+      serial: "pixel-1",
+      frames: [pngWithChangedReplyBody(true)],
+      frameStepIds: ["settings"],
+      artifacts: [
+        chatUiTreeArtifact,
+        { ...chatUiTreeArtifact, data: { ...chatUiTreeArtifact.data, stepId: undefined } },
+      ],
+    });
+    const compared = await compareVisualBaseline(root, latest);
+    assert.equal(compared.code, "VISUAL_CHANGED");
+    assert.equal(compared.diff.frames[0]?.changedPixels, 1);
+    assert.equal(compared.policy.regions.length, 0);
     assert.equal((await getVisualComparisonPolicy(root, latest)).regions.length, 0);
+
+    const initial = await getVisualComparisonPolicy(root, latest);
+    await updateVisualComparisonPolicy(root, latest, {
+      expectedRevision: initial.revision,
+      changeThreshold: initial.changeThreshold,
+      pixelThreshold: initial.pixelThreshold,
+      regions: [
+        {
+          id: "settings-reply",
+          name: "reply body",
+          mode: "ignore",
+          frameIndex: 0,
+          x: 0,
+          y: 0.5,
+          width: 0.25,
+          height: 0.25,
+        },
+      ],
+      actor: { id: "reviewer-1", kind: "human" },
+    });
+    const ignored = await compareVisualBaseline(root, latest);
+    assert.equal(ignored.code, "VISUAL_MATCH");
+    assert.equal(ignored.diff.frames[0]?.changedPixels, 0);
+    assert.equal(ignored.policy.regions[0]?.id, "settings-reply");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("later Settings frame stays VISUAL_CHANGED on Chat ui-tree chrome pixels until policy is updated", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-visual-later-settings-uitree-"));
+  try {
+    const approved = await runFixture(root, {
+      id: "approved",
+      projectId: "project-a",
+      serial: "pixel-1",
+      frames: [pngWithChangedReplyBody(false), pngWithChangedReplyBody(false)],
+      frameStepIds: ["chat", "settings"],
+    });
+    await approveVisualBaseline(root, approved);
+    const latest = await runFixture(root, {
+      id: "latest",
+      projectId: "project-a",
+      serial: "pixel-1",
+      frames: [pngWithChangedReplyBody(true), pngWithChangedReplyBody(true)],
+      frameStepIds: ["chat", "settings"],
+      artifacts: [chatUiTreeArtifact],
+    });
+    const compared = await compareVisualBaseline(root, latest);
+    assert.equal(compared.code, "VISUAL_CHANGED");
+    assert.equal(compared.policy.regions.length, 0);
+    assert.equal(compared.diff.frames[0]?.changedPixels, 1);
+    assert.equal(compared.diff.frames[1]?.changedPixels, 1);
+
+    const initial = await getVisualComparisonPolicy(root, latest);
+    await updateVisualComparisonPolicy(root, latest, {
+      expectedRevision: initial.revision,
+      changeThreshold: initial.changeThreshold,
+      pixelThreshold: initial.pixelThreshold,
+      regions: [
+        {
+          id: "chat-reply",
+          name: "reply body",
+          mode: "ignore",
+          frameIndex: 0,
+          x: 0,
+          y: 0.5,
+          width: 0.25,
+          height: 0.25,
+        },
+      ],
+      actor: { id: "reviewer-1", kind: "human" },
+    });
+    const scoped = await compareVisualBaseline(root, latest);
+    assert.equal(scoped.code, "VISUAL_CHANGED");
+    assert.equal(scoped.diff.frames[0]?.changedPixels, 0);
+    assert.equal(scoped.diff.frames[1]?.changedPixels, 1);
+    assert.equal(
+      scoped.policy.regions.some((region) => region.frameIndex === 1),
+      false,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

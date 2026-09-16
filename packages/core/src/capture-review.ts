@@ -1,10 +1,13 @@
-import type { ActorKind } from "@relay/protocol";
 import {
+  actorKindFromId,
   resolveCaptureReviewQueue,
+  type ActorKind,
   type CaptureReviewAction,
   type CaptureReviewDecision,
+  type CaptureReviewPlannedSlot,
   type CaptureReviewQueue,
 } from "@relay/protocol";
+import { executionIntentPlannedSlots } from "./run-test-step-evidence.js";
 import {
   persistPersistedRun,
   persistedRunBelongsToStore,
@@ -36,22 +39,42 @@ export type CaptureReviewResult = {
   decision: CaptureReviewDecision;
 };
 
-export function captureReviewQueueForRun(
-  run: Pick<PersistedRun, "artifacts" | "captureReviews"> & {
-    recipeSnapshot?: { steps?: readonly unknown[] };
-  },
-): CaptureReviewQueue {
+type CaptureReviewRun = Pick<PersistedRun, "artifacts" | "captureReviews"> & {
+  recipeSnapshot?: {
+    steps?: readonly unknown[];
+    recipes?: Record<string, { steps?: readonly unknown[] }>;
+  };
+  recipeGraph?: Record<string, { steps?: readonly unknown[] }>;
+};
+
+function plannedSlotsForRun(
+  run: CaptureReviewRun,
+): readonly CaptureReviewPlannedSlot[] | undefined {
+  return executionIntentPlannedSlots(run.artifacts ?? []);
+}
+
+export function captureReviewQueueForRun(run: CaptureReviewRun): CaptureReviewQueue {
   return resolveCaptureReviewQueue({
     artifacts: run.artifacts,
     decisions: run.captureReviews,
     recipeSteps: run.recipeSnapshot?.steps,
+    recipes: run.recipeGraph ?? run.recipeSnapshot?.recipes,
+    plannedSlots: plannedSlotsForRun(run),
   });
 }
 
+export function assertHumanCaptureReviewActor(
+  actor: { id: string; kind: ActorKind },
+  message: string,
+  recovery: string,
+): void {
+  if (actor.kind !== "human" || actorKindFromId(actor.id) !== "human") {
+    throw new CaptureReviewError("CAPTURE_REVIEW_ACTOR_REQUIRED", message, recovery);
+  }
+}
+
 export function applyCaptureReviewDecision(
-  run: Pick<PersistedRun, "artifacts" | "captureReviews" | "outcome"> & {
-    recipeSnapshot?: { steps?: readonly unknown[] };
-  },
+  run: CaptureReviewRun & Pick<PersistedRun, "outcome">,
   input: {
     captureId: string;
     action: CaptureReviewAction;
@@ -60,13 +83,11 @@ export function applyCaptureReviewDecision(
     note?: string;
   },
 ): { captureReviews: CaptureReviewDecision[]; queue: CaptureReviewQueue; outcome?: string } {
-  if (input.actor.kind !== "human") {
-    throw new CaptureReviewError(
-      "CAPTURE_REVIEW_ACTOR_REQUIRED",
-      "A human must decide this screenshot",
-      "Open the Run captures panel and ask a person to mark Looks correct, Report issue, or Need more evidence.",
-    );
-  }
+  assertHumanCaptureReviewActor(
+    input.actor,
+    "A human must decide this screenshot",
+    "Open the Run captures panel and ask a person to mark Looks correct, Report issue, or Need more evidence.",
+  );
   const current = captureReviewQueueForRun(run);
   const item = current.items.find((candidate) => candidate.captureId === input.captureId);
   if (!item) {
@@ -104,11 +125,7 @@ export function applyCaptureReviewDecision(
   ];
   return {
     captureReviews,
-    queue: resolveCaptureReviewQueue({
-      artifacts: run.artifacts,
-      decisions: captureReviews,
-      recipeSteps: run.recipeSnapshot?.steps,
-    }),
+    queue: captureReviewQueueForRun({ ...run, captureReviews }),
     outcome: run.outcome,
   };
 }

@@ -9,6 +9,7 @@ import {
   summarizeAuthoringOperationResult,
   summarizeExecutionOperationResult,
   summarizeTargetOperationResult,
+  formatPlanCaptureReviewQueue,
   wantsFullSnapshotTree,
 } from "@relay/protocol";
 import type { OutputMode } from "./config.js";
@@ -722,6 +723,13 @@ export async function runCli(
             operationId,
             renderPlanFindingsMarkdown(result as Parameters<typeof renderPlanFindingsMarkdown>[0]),
           );
+        } else if (
+          operationId === "job.combine.capture.review" &&
+          parsed.config.output === "human"
+        ) {
+          const queue = (result as { queue?: Parameters<typeof formatPlanCaptureReviewQueue>[0] })
+            .queue;
+          output.result(operationId, queue ? formatPlanCaptureReviewQueue(queue) : result);
         } else {
           output.result(
             operationId,

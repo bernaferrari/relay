@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMapTestStepProvenance } from "@relay/protocol";
-import { projectRunTestStepEvidence } from "./run-test-step-evidence.js";
+import {
+  executionIntentPlannedSlots,
+  projectRunTestStepEvidence,
+} from "./run-test-step-evidence.js";
 import type { TraceStep } from "./trace.js";
 
 function trace(input: Partial<TraceStep> & Pick<TraceStep, "id" | "index">): TraceStep {
@@ -90,4 +93,40 @@ test("repeated and branched traces retain explicit authored identity and occurre
     eventSequences: [8],
     artifactKinds: ["command-attempt"],
   });
+});
+
+test("Combine cell child plannedSlots are readable without a digest parse", () => {
+  const slots = executionIntentPlannedSlots([
+    {
+      kind: "app-map-combine-cell-execution-intent",
+      data: {
+        digest: "not-a-canonical-intent",
+        child: {
+          plan: {
+            plannedSlots: [{ checkpointId: "home", caption: "Home", attempt: 1 }],
+          },
+        },
+      },
+    },
+  ]);
+  assert.equal(slots?.length, 1);
+  assert.equal(slots?.[0]?.checkpointId, "home");
+});
+
+test("Test execution intent plannedSlots win over Combine cell child", () => {
+  const slots = executionIntentPlannedSlots([
+    {
+      kind: "app-map-test-execution-intent",
+      data: { plan: { plannedSlots: [{ checkpointId: "test", caption: "Test", attempt: 1 }] } },
+    },
+    {
+      kind: "app-map-combine-cell-execution-intent",
+      data: {
+        child: {
+          plan: { plannedSlots: [{ checkpointId: "cell", caption: "Cell", attempt: 1 }] },
+        },
+      },
+    },
+  ]);
+  assert.equal(slots?.[0]?.checkpointId, "test");
 });

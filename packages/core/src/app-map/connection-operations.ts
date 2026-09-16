@@ -38,6 +38,8 @@ export function patchConnection(
   if (patch.destination !== undefined) connection.destination = structuredClone(patch.destination);
   if (patch.label === null) delete connection.label;
   else if (patch.label !== undefined) connection.label = patch.label;
+  if (patch.coverage === null) delete connection.coverage;
+  else if (patch.coverage !== undefined) connection.coverage = patch.coverage;
   if (patch.actionIntentBinding === null) delete connection.actionIntentBinding;
   else if (patch.actionIntentBinding !== undefined)
     connection.actionIntentBinding = structuredClone(patch.actionIntentBinding);

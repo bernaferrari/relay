@@ -5,6 +5,8 @@ export type CombineOperationId =
   | "job.combine.start"
   | "job.combine.export"
   | "job.combine.analysis"
+  | "job.combine.capture.review"
+  | "job.combine.capture.review.apply"
   | "job.combine.campaign.get"
   | "job.combine.campaign.repeat.active"
   | "job.combine.campaign.repeat.clusters"
@@ -28,6 +30,19 @@ export const combineOperationDefinitions = [
   query("job.combine.analysis", "Analyze Combine evidence", "/jobs/combine/:batchId/analysis", {
     category: "execution",
   }),
+  query(
+    "job.combine.capture.review",
+    "List Plan screenshot review",
+    "/jobs/combine/:batchId/capture-review",
+    { category: "evidence" },
+  ),
+  command(
+    "job.combine.capture.review.apply",
+    "Review Plan screenshots",
+    "POST",
+    "/jobs/combine/:batchId/capture-review",
+    { category: "evidence", confirmation: "confirm" },
+  ),
   query(
     "job.combine.campaign.get",
     "Get a resumable Combine campaign",

@@ -5,7 +5,10 @@ import type {
   CombineTriageStatus,
   CombineEvidenceAnalysisReport,
   CombineEvidenceFindingCode,
+  CaptureReviewAction,
   FailureCategory,
+  PlanCaptureReviewQueue,
+  PlanCaptureReviewSelection,
   RepeatFailureKind,
   RepeatFailureClusterReport,
 } from "@relay/protocol";
@@ -210,6 +213,22 @@ export type ProductRunAcrossService = {
   cancel(batchId: string): Promise<ProductRunAcrossBatch>;
   getReport(batchId: string): Promise<ProductBatchReport>;
   getFindings(batchId: string): Promise<CombineEvidenceAnalysisReport>;
+  getCaptureReview?(batchId: string): Promise<PlanCaptureReviewQueue>;
+  reviewCaptures?(
+    batchId: string,
+    input: {
+      action: CaptureReviewAction;
+      items: readonly PlanCaptureReviewSelection[];
+    },
+  ): Promise<{
+    queue: PlanCaptureReviewQueue;
+    results: Array<{
+      runId: string;
+      captureId: string;
+      status: "applied" | "missing" | "not-found" | "conflict" | "actor-required";
+      error?: string;
+    }>;
+  }>;
   exportReport(batchId: string): Promise<ProductBatchReport>;
   /** Authenticated binary export for UI consumers. */
   downloadExport?(batchId: string): Promise<Blob>;
@@ -804,6 +823,25 @@ export function createProductRunAcrossService(
     },
     async getFindings(batchId) {
       return operations.invoke("job.combine.analysis", { batchId });
+    },
+    async getCaptureReview(batchId) {
+      const output = await operations.invoke("job.combine.capture.review", { batchId });
+      return output.queue as PlanCaptureReviewQueue;
+    },
+    async reviewCaptures(batchId, input) {
+      return operations.invoke("job.combine.capture.review.apply", {
+        batchId,
+        action: input.action,
+        items: [...input.items],
+      }) as Promise<{
+        queue: PlanCaptureReviewQueue;
+        results: Array<{
+          runId: string;
+          captureId: string;
+          status: "applied" | "missing" | "not-found" | "conflict" | "actor-required";
+          error?: string;
+        }>;
+      }>;
     },
     async exportReport(batchId) {
       const batch = await campaign(batchId);

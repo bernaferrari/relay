@@ -1405,6 +1405,44 @@ test("connects and updates an edge while preserving immutable input", () => {
   assert.equal(cleared.connections.finish?.sourceAnchor, undefined);
 });
 
+test("connection coverage survives create and update", () => {
+  const input = mapFixture();
+  const opened = connectAppMapScreens(
+    input,
+    connection({
+      ...entity("settings-tap"),
+      fromScreenId: "home",
+      destination: { kind: "end" },
+      coverage: "transition",
+      actions: [
+        {
+          id: "open-settings",
+          kind: "tap",
+          target: { identifier: "sidebar.settings" },
+          coverage: "transition",
+        },
+      ],
+    }),
+    context(input, "connect-settings"),
+  );
+  assert.equal(opened.connections["settings-tap"]?.coverage, "transition");
+  assert.equal(opened.connections["settings-tap"]?.actions[0]?.coverage, "transition");
+  const inspected = updateAppMapConnection(
+    opened,
+    "settings-tap",
+    { coverage: "inspect" },
+    context(opened, "inspect-settings"),
+  );
+  assert.equal(inspected.connections["settings-tap"]?.coverage, "inspect");
+  const cleared = updateAppMapConnection(
+    inspected,
+    "settings-tap",
+    { coverage: null },
+    context(inspected, "clear-settings-coverage"),
+  );
+  assert.equal(cleared.connections["settings-tap"]?.coverage, undefined);
+});
+
 test("connection removal rejects flow and immutable result references", () => {
   const flowUse = mapFixture();
   expectError(

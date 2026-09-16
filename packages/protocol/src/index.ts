@@ -14,6 +14,8 @@ export * from "./authoring.js";
 export * from "./authoring-capture.js";
 export * from "./collaboration.js";
 export * from "./app-map.js";
+export * from "./routine-effects.js";
+export * from "./execution-queue.js";
 export * from "./product-intent.js";
 export * from "./connection-presentation.js";
 export * from "./connection-execution.js";
@@ -34,6 +36,10 @@ export * from "./case-expansion.js";
 export * from "./execution-summary.js";
 export * from "./run-review.js";
 export * from "./capture-review.js";
+export * from "./capture-review-plan.js";
+export * from "./capability-gate.js";
+export * from "./rc23-screenshot-first.js";
+export * from "./workbook-coverage.js";
 export * from "./campaign-repair.js";
 export * from "./combine-campaign.js";
 export * from "./plan-result-summary.js";
@@ -251,6 +257,8 @@ export type CampaignCheckSummary = {
   durationMs: number;
   error?: string;
   dependencyReason?: string;
+  coverageOutcomes?: import("./recipes.js").CoverageStepReason[];
+  coverageNote?: string;
 };
 
 export type TraceFrameDto = {

@@ -111,6 +111,26 @@ export function projectRunTestStepEvidence(input: {
   return result;
 }
 
+export function executionIntentPlannedSlots(
+  artifacts: readonly { kind?: string; data?: unknown }[],
+): import("@relay/protocol").CaptureReviewPlannedSlot[] | undefined {
+  for (const artifact of artifacts) {
+    if (artifact?.kind !== "app-map-test-execution-intent") continue;
+    const slots = record(record(artifact.data)?.plan)?.plannedSlots;
+    if (Array.isArray(slots)) {
+      return slots as import("@relay/protocol").CaptureReviewPlannedSlot[];
+    }
+  }
+  for (const artifact of artifacts) {
+    if (artifact?.kind !== "app-map-combine-cell-execution-intent") continue;
+    const slots = record(record(record(artifact.data)?.child)?.plan)?.plannedSlots;
+    if (Array.isArray(slots)) {
+      return slots as import("@relay/protocol").CaptureReviewPlannedSlot[];
+    }
+  }
+  return undefined;
+}
+
 export function executionIntentProvenance(
   artifacts: readonly { kind: string; data: unknown }[],
 ): import("@relay/protocol").AppMapTestStepProvenance[] {

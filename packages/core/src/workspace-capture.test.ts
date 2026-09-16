@@ -22,6 +22,7 @@ import {
   iosPixelsUnavailableMessage,
   isAndroidSnapshotOwnershipUnreleased,
   iosLogicalBoundsForSerial,
+  screenshotIncludesFollowOnTree,
 } from "./workspace-capture.js";
 
 function iosSnapshotDevice(nodes: SnapshotNode[]): Device {
@@ -303,6 +304,12 @@ test("iOS capture adopts the LISTENER_READY runner instead of the bounded Copy p
     else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previous;
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("Android screenshots do not take a follow-on tree unless asked", () => {
+  assert.equal(screenshotIncludesFollowOnTree(undefined), false);
+  assert.equal(screenshotIncludesFollowOnTree(false), false);
+  assert.equal(screenshotIncludesFollowOnTree(true), true);
 });
 
 test("a failed screenshot capture removes its private temporary directory before returning", async () => {

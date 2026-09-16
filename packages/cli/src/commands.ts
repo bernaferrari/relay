@@ -15,7 +15,12 @@ import {
   type MappedOperationDescriptor,
 } from "./command-descriptors.js";
 import { UsageError } from "./errors.js";
-import { planFindingsCommandPath, planRunCommandPath } from "./plan-commands.js";
+import {
+  planCaptureReviewApplyCommandPath,
+  planCaptureReviewCommandPath,
+  planFindingsCommandPath,
+  planRunCommandPath,
+} from "./plan-commands.js";
 import { cliResourceDescriptors } from "./resource-commands.js";
 import { runEvidenceCommandDescriptors } from "./run-share-commands.js";
 import { proofCommandDescriptors } from "./proof-commands.js";
@@ -585,6 +590,8 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
     planFindingsCommandPath,
   ),
+  mapped("job.combine.capture.review", planCaptureReviewCommandPath),
+  mapped("job.combine.capture.review.apply", planCaptureReviewApplyCommandPath),
 
   ...runEvidenceCommandDescriptors,
   mapped(
@@ -731,7 +738,8 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           name: "action",
           type: '"accept" | "report-issue" | "need-more-evidence"',
           required: true,
-          description: "Looks correct, report an issue, or ask for more evidence. Never a baseline.",
+          description:
+            "Looks correct, report an issue, or ask for more evidence. Never a baseline.",
         },
         {
           name: "imageSha256",

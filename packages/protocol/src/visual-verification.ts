@@ -28,7 +28,12 @@ export type VisualReviewActor = { id: string; kind: "human" | "agent" | "system"
 
 export type VisualRegionMode = "compare" | "ignore";
 
-/** A device-independent rectangle. Coordinates are normalized to the captured frame. */
+/**
+ * Human-authored compare/ignore rectangle on one frame of a visual baseline.
+ * Looks correct does not write this. Identity-ignore is not this. grok.com
+ * ui-tree composer / intro / reply-body chrome is identity-only, not this.
+ * Regions bind to `frameIndex` and do not apply to later frames.
+ */
 export type VisualRegion = {
   id: string;
   name: string;
@@ -40,6 +45,10 @@ export type VisualRegion = {
   height: number;
 };
 
+/** Human-authored pixel comparison rules for one recipe/target.
+ * Looks correct does not write this. Identity-ignore does not write this.
+ * grok.com ui-tree chrome does not write this. The ignore list is a separate
+ * human action from screenshot review. */
 export type VisualComparisonPolicy = {
   schemaVersion: 1;
   id: string;
