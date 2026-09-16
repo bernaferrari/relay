@@ -48,18 +48,18 @@
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
-    "playwright-core": "^1.62.1",
+    "playwright-core": "^1.63.0",
     "pngjs": "^7.0.0",
-    "yaml": "^2.9.0",
+    "yaml": "^2.9.1",
     "zod": "4.4.3"
   },
   "devDependencies": {
     "@relay/client": "workspace:*",
     "@relay/protocol": "workspace:*",
     "@relay/workflows": "workspace:*",
-    "@types/node": "^26.1.2",
+    "@types/node": "^26.5.1",
     "esbuild": "0.28.2",
-    "tsx": "^4.23.6",
+    "tsx": "^4.23.13",
     "typescript": "catalog:"
   },
   "engines": {
