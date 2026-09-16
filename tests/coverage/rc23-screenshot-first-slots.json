@@ -73,6 +73,8 @@
       "caption": "Home chrome",
       "testId": "test-grok-ios-home-chrome",
       "status": "captured",
+      "jobId": "3754526f-bcf2-4818-838e-0adcb8596a0e",
+      "mapRevision": 316,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -121,6 +123,8 @@
       "caption": "Dictation",
       "testId": "test-grok-ios-dictation",
       "status": "captured",
+      "jobId": "ea3bfb8e-005a-4442-b78a-49b40c11ba23",
+      "mapRevision": 316,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -169,6 +173,8 @@
       "caption": "Sidebar",
       "testId": "test-grok-ios-sidebar",
       "status": "captured",
+      "jobId": "345c2e67-8b32-49f3-9d9a-1876809d313d",
+      "mapRevision": 316,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -217,6 +223,7 @@
       "testId": "test-grok-ios-attach",
       "status": "captured",
       "jobId": "679b39b7-fb38-41de-a5b9-661504f0eeb0",
+      "mapRevision": 319,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -265,6 +272,7 @@
       "testId": "test-grok-ios-settings",
       "status": "captured",
       "jobId": "ec09b7ba-fe83-4fa4-b076-121bc713a99a",
+      "mapRevision": 322,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -361,6 +369,7 @@
       "testId": "test-grok-ios-logo",
       "status": "captured",
       "jobId": "eb3512fd-48d5-415e-8cdc-d5a0ffedc77d",
+      "mapRevision": 317,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -410,6 +419,7 @@
       "testId": "test-grok-ios-composer-focus",
       "status": "captured",
       "jobId": "2e31db46-e93a-4b86-ab77-1f71917b110d",
+      "mapRevision": 318,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -458,6 +468,7 @@
       "testId": "test-grok-ios-models",
       "status": "captured",
       "jobId": "3cd34331-eacc-4f36-8a9d-6df00122a10d",
+      "mapRevision": 320,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -507,6 +518,7 @@
       "testId": "test-grok-ios-private-chat",
       "status": "captured",
       "jobId": "dd229b0b-918e-42eb-9e62-fab1851a1d8d",
+      "mapRevision": 321,
       "scenarioKind": "physical",
       "blocked": false
     }

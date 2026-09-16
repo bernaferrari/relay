@@ -19,7 +19,7 @@ Canonical freeze: `packages/protocol/src/rc23-screenshot-first.ts`. Slot identit
 
 ## Ten checkpoint ids
 
-Dest-end on **at least one** platform (compile 2026-09-16, maps grok-web r901 / grok-android **r361** / grok-ios r317–r322). Web dictation and composer-focus are inspect, not dest-end. iOS Imagine compile `unresolved-step` — **blocked, not omitted**. Android 10/10 dest-ends are captured pending (not accepted). Android leftover dest-wait patches: logo r359, sidebar r360, models r361. iOS is **9 captured pending + 1 blocked Unbound** (Imagine). Remaining freeze hole is **web models**.
+Dest-end on **at least one** platform (compile 2026-09-16, maps grok-web r901 / grok-android **r361** / grok-ios capture r316–r322, dest-wait **r324–r328**). Web dictation and composer-focus are inspect, not dest-end. iOS Imagine compile `unresolved-step` — **blocked, not omitted**. Android 10/10 dest-ends are captured pending (not accepted). Android leftover dest-wait patches: logo r359, sidebar r360, models r361. iOS is **9 captured pending + 1 blocked Unbound** (Imagine); capture-review last-frame identity FAIL on sidebar/attach/models/private-chat/settings (close hid dest). Remaining freeze hole is **web models**.
 
 1. `home-chrome`
 2. `dictation`
@@ -38,14 +38,14 @@ Left out of this ten: new-chat (dest-end exists), Search (Android-only companion
 | --- | --- | --- | --- |
 | home-chrome | captured pending `a0b6380d` | captured pending `ec54c62a` | captured pending `3754526f` |
 | dictation | captured pending `b1eead7a` (inspect; do not enable) | captured pending `81b51428` | captured pending `ea3bfb8e` (not orig 42) |
-| sidebar | captured pending `b7c18573` dest-end | captured pending `16e8fc06` dest `frames/002`; last-frame home **identity FAIL** | captured pending `345c2e67` |
-| attach | captured pending `a11c41b4` | captured pending `6529ee13` | captured pending `679b39b7` |
-| settings | captured pending `3787eb65` | captured pending `6290fd6f` (Appearance panel; not sidebar gear) | captured pending `ec09b7ba` (peek, no Sign Out) |
+| sidebar | captured pending `b7c18573` dest-end | captured pending `16e8fc06` dest `frames/002`; last-frame home **identity FAIL** | captured pending `345c2e67` dest `frames/002`; last-frame home **identity FAIL** |
+| attach | captured pending `a11c41b4` | captured pending `6529ee13` | captured pending `679b39b7` dest `frames/004`; last-frame home **identity FAIL** |
+| settings | captured pending `3787eb65` | captured pending `6290fd6f` (Appearance panel; not sidebar gear) | captured pending `ec09b7ba` dest peek `frames/007`; last-frame home **identity FAIL** |
 | imagine | captured pending `37014ba6` **browser-approximation** | captured pending `001be26c` | **blocked Unbound** |
 | logo | captured pending `d8bf4385` leftover inspect-skip | captured pending `c22f19eb` **identity FAIL** Imagine leftover | captured pending `eb3512fd` (inspect wait-for) |
 | composer-focus | captured pending `ded7d047` inspect (`chat-input`; do not type) | captured pending `78a0127a` | captured pending `2e31db46` |
-| models | **missing** (dest-end `model-iterate`; TAP no-op under Build Mode leftover; cancelled `fc5c83d3`) | captured pending `e53e8f65` dest Auto sheet `frames/004`; last-frame home **identity FAIL** | captured pending `3cd34331` (Fast selector allowed) |
-| private-chat | captured pending `2b2377c7` dest-end | captured pending `5e78db0d` | captured pending `dd229b0b` |
+| models | **missing** (dest-end `model-iterate`; TAP no-op under Build Mode leftover; cancelled `fc5c83d3`) | captured pending `e53e8f65` dest Auto sheet `frames/004`; last-frame home **identity FAIL** | captured pending `3cd34331` dest Fast sheet `frames/003`; last-frame home **identity FAIL** |
+| private-chat | captured pending `2b2377c7` dest-end | captured pending `5e78db0d` | captured pending `dd229b0b` dest Private Chat `frames/005`; last-frame home **identity FAIL** |
 
 Two captions named **Settings** on web vs iOS are **two slots** (`rc23-screenshot-first::settings::grok-com::::1` vs `…::ai.x.GrokApp::::1`).
 
@@ -105,26 +105,26 @@ Models leftover still signed-in home (`b2dcd768…`) with Fast on `model-select-
 
 | Cell | Job | Duration | Status |
 | --- | --- | ---: | --- |
-| Home | `3754526f-bcf2-4818-838e-0adcb8596a0e` | 71141ms | captured pending |
-| Dictation inspect | `ea3bfb8e-005a-4442-b78a-49b40c11ba23` | 67137ms | captured pending; not orig 42 |
-| Sidebar | `345c2e67-8b32-49f3-9d9a-1876809d313d` | 57607ms | captured pending |
+| Home | `3754526f-bcf2-4818-838e-0adcb8596a0e` r316 | 71141ms | captured pending; identity **PASS** `frames/003.png` SuperGrok Ask+Speak |
+| Dictation inspect | `ea3bfb8e-005a-4442-b78a-49b40c11ba23` r316 | 67137ms | captured pending; identity **PASS** `frames/003.png` SuperGrok Speak visible; did not toggle; not orig 42 |
+| Sidebar | `345c2e67-8b32-49f3-9d9a-1876809d313d` r316 | 57607ms | captured pending; dest **PASS** `frames/002.png` SuperGrok Plus Bernardo Ferrari + Automations + Settings gear; capture-review last `frames/005.png` SuperGrok home — last-frame **identity FAIL**. Close hid dest. Patched r324 |
 
-Plan `78f13d43-6783-43fa-b5cd-29e7e2b1d340` cell span **196019ms**. This is **not** chrome quote `86740566` **120703ms** and **not** daily `d7eafb3c` **1054460ms**.
+Plan `78f13d43-6783-43fa-b5cd-29e7e2b1d340` cell span **196019ms**. This is **not** chrome quote `86740566` **120703ms** and **not** daily `d7eafb3c` **1054460ms**. Capture-review `fast` · `settled:false` · `status:pending`. App `Grok` / header SuperGrok. Pixel account SuperGrok Plus. **0 accepted.**
 
 ### iOS leftover-tolerant dest-end fill — Lane grok-ios-daily, prime without relaunch, review later, Fast UI
 
-Sequential from leftover signed-in Home (keyboard leftover mid-pack). Identifier then label. Preview before tap. Did **not** 12-pack, Imagine/Create Videos, Sign Out, or conversation-list walk. Fast tap only on models.
+Sequential from leftover signed-in Home (keyboard leftover mid-pack). Identifier then label. Preview before tap. Did **not** 12-pack, Imagine/Create Videos, Sign Out, or conversation-list walk. Fast tap only on models. Job JSON `account:signed-out` is Lane `unsignedLaneId=grok-ios-daily` — pixels are SuperGrok / Bernardo Ferrari.
 
 | Cell | Job | Rev | Duration | Coverage | Status |
 | --- | --- | ---: | ---: | --- | --- |
-| Logo | `eb3512fd-48d5-415e-8cdc-d5a0ffedc77d` | r317 | 7675ms | inspect wait-for | captured pending |
-| Composer focus | `2e31db46-e93a-4b86-ab77-1f71917b110d` | r318 | 53636ms | transition; grok-arrows-right inspect-skip | captured pending |
-| Attach | `679b39b7-fb38-41de-a5b9-661504f0eeb0` | r319 | 88580ms | transition; camera inspect-skip then opener | captured pending |
-| Models | `3cd34331-eacc-4f36-8a9d-6df00122a10d` | r320 | 37750ms | transition; Fast selector allowed | captured pending |
-| Private chat | `dd229b0b-918e-42eb-9e62-fab1851a1d8d` | r321 | 88982ms | transition round-trip hat → Temporary Chat → Speak | captured pending |
-| Settings | `ec09b7ba-fe83-4fa4-b076-121bc713a99a` | r322 | 67974ms | transition peek; no Sign Out | captured pending |
+| Logo | `eb3512fd-48d5-415e-8cdc-d5a0ffedc77d` | r317 | 7675ms | inspect wait-for | captured pending; identity **PASS** `frames/001.png` SuperGrok home Speak |
+| Composer focus | `2e31db46-e93a-4b86-ab77-1f71917b110d` | r318 | 53636ms | transition; grok-arrows-right inspect-skip | captured pending; identity **PASS** `frames/005.png` focused Ask Anything + keyboard |
+| Attach | `679b39b7-fb38-41de-a5b9-661504f0eeb0` | r319 | 88580ms | transition; camera inspect-skip then opener | captured pending; dest **PASS** `frames/004.png` Camera/Photo or Video/Files/Connectors/Skills; capture-review last `frames/008.png` Ask home + keyboard — last-frame **identity FAIL**. Close hid dest. Patched r325 |
+| Models | `3cd34331-eacc-4f36-8a9d-6df00122a10d` | r320 | 37750ms | transition; Fast selector allowed | captured pending; dest **PASS** `frames/003.png` Fast sheet (Fast checked, Heavy/Expert/Auto/Build); capture-review last `frames/006.png` Ask home + keyboard — last-frame **identity FAIL**. Patched r326 dest-wait Heavy |
+| Private chat | `dd229b0b-918e-42eb-9e62-fab1851a1d8d` | r321 | 88982ms | transition round-trip hat → Temporary Chat → Speak | captured pending; dest **PASS** `frames/005.png` Private Chat + Temporary Chat AX; capture-review last `frames/007.png` Speak home — last-frame **identity FAIL**. Patched r327 dest-wait Temporary Chat |
+| Settings | `ec09b7ba-fe83-4fa4-b076-121bc713a99a` | r322 | 67974ms | transition peek; no Sign Out | captured pending; dest **PASS** `frames/007.png` Settings + Bernardo Ferrari @bernaferrari SuperGrok Plus; capture-review last `frames/011.png` SuperGrok home — last-frame **identity FAIL**. Close hid dest. Patched r328. Did not tap Sign Out |
 
-iOS Imagine: compile `unresolved-step` (`navigation.tab.imagine` absent). **Blocked / Unbound.** Do not invent nav. Leftover after settings: closed signed-in Home, keyboard dismissed, Speak unique.
+iOS Imagine: compile `unresolved-step` (`navigation.tab.imagine` absent). **Blocked / Unbound.** Do not invent nav. Live leftover dest-wait patches **r324–r328** (sidebar no Close; attach no close; models dest-wait Heavy; private-chat dest Temporary Chat; settings dest close-button wait, no close tap). Did not re-run. Leftover after review: closed signed-in Home, keyboard dismissed, Speak unique, visual fp `8521c88d…`, AX `511ae65c64463269`.
 
 ### Android — physical SM S931B `RQCY104BG8X`
 
@@ -148,7 +148,7 @@ Capture-review on disk is **fast** · `settled:false` · `samples:1` · `status:
 ## Still not RC-23 acceptance
 
 - 1 missing dest-end capture **not executed this freeze** (**web models**). iOS Imagine stays **blocked Unbound**. iOS rows are 9 captured pending + 1 blocked — **not** 10 accepted.
-- **28 captured ≠ 30 complete.** Android logo last-frame + sidebar/models capture-review last frames are **identity FAIL** (wrong screen); dest-wait patched r359–r361, not re-run. **Not accepted.**
+- **28 captured ≠ 30 complete.** Android logo last-frame + sidebar/models capture-review last frames are **identity FAIL** (wrong screen); dest-wait patched r359–r361, not re-run. iOS sidebar/attach/models/private-chat/settings capture-review last frames are **identity FAIL** (close hid dest); dest-wait patched r324–r328, not re-run. **Not accepted.**
 - No unfamiliar-QA vs agent (Package 3 Vite stranger still **blocked**; did not `pnpm dev:app`).
 - No bulk accept; capture-review pending. Looks correct cannot accept missing.
 - Workbook originals not executed (0/53/5).
