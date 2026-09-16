@@ -2,39 +2,74 @@
   "schemaVersion": 1,
   "packId": "grok-android-daily",
   "provenance": "measured",
-  "measuredAt": "2026-09-13",
+  "measuredAt": "2026-09-16",
   "sampleCount": 1,
   "emulatorFarm": "no-go",
-  "note": "Physical SM S931B serial RQCY104BG8X. Plan grok-android-daily is 3 dest-end Tests (home chrome, sidebar open-close, Imagine) on signed-in Account. Batch 026f18b6 3/3 ok, cell span 143848ms (~2.4 min). 2026-09-13: Play AVD Resizable_Experimental boots emulator-5554 (~33s, unlocked). Play Store signed in. Grok AI: This app won't work for your device; ai.x.grok not installed (only ai.x.grok.bot). Do not add a grok-android Lane on this AVD. Farm remains no-go for Grok. android-primitives (not Grok): upload dest-screen 1e7819ba/a27139f5/adc164b8; mobile-data dest-end f0783f5f/b46330b2/4b7dde7a (svc data flips mobile_data 1→0→1); app-background dest-end fef3df3d/b5ebca2f/d741ae00; wifi dest-end 56a9159b/ea96bac9/1a02aff6 (settings wifi off/on, wait-for Wifi signal full.; airplane_mode_on stays 0); wait-response.maxMs dest-end 14e610be/4dbfb0f2/c45acaec (Chrome FRE Stay signed out / Make Chrome your own, maxMs 15000). kind:offline is compile unsupported-platform on this Android lane — no recorded Android offline job. Browser dest-end test-grok-web-offline 3-passed on grok-daily (You are offline toast): a11fa91b/dafb5a52/1e59bf60. Parallelism is device count. Do not promise a 10-minute N-lane. grok-com authenticationFixtureId stays empty.",
+  "note": "Physical SM S931B serial RQCY104BG8X. Quoted 3 dest-end Tests only (Home chrome, Sidebar, Imagine) — not the 19-test grok-android-daily Plan. Sequential leftover-tolerant dest-end 2026-09-16 from Imagine gallery leftover 3/3. Cell span 52880ms (first job startedAt 1789578927191 → last finishedAt 1789578980071). Orchestrator wall 62226ms (.tmp/19z5-android-rc17/pack3.summary.json spanMs, leftover snapshot/screenshot between cells) is CLI/watch, not cell span — same split as grok-ios-daily cliWatchMs. Jobs ec54c62a (Home r339 9270ms job / 13306ms CLI, Ask prelude from Type to imagine), 16e8fc06 (Sidebar r340 13367ms job / 16479ms CLI, leftover Speak), 001be26c (Imagine r341 14681ms job / 18181ms CLI, leftover Type to imagine unique). Same day from Speak closed home also 3/3 orchestrator wall 55116ms / cell span 46687ms (ddf7e94d / 9658cf2d / 67b12324) — not copied into P50. 2026-09-13 batch 026f18b6 reported 143848ms; live job.get 404 on this :8787; evidence pack 3/3 ok jobs bff021dd / f2051337 / 6caf6c27 — superseded, not copied. Play AVD Resizable_Experimental: Grok AI won't work for your device; ai.x.grok not installed (only ai.x.grok.bot). Do not add a grok-android Lane on that AVD. Farm remains no-go for Grok. android-primitives (not Grok) earlier dest-end quotes stay in laterPackNote. Parallelism is device count. grok-com authenticationFixtureId stays empty. 19z5 stays open.",
   "workItems": 3,
-  "serialPackWallClockP50Ms": 143848,
-  "serialPackWallClockP95Ms": 143848,
+  "serialPackWallClockP50Ms": 52880,
+  "serialPackWallClockP95Ms": 52880,
+  "cellSpanMs": 52880,
+  "cliWatchMs": 62226,
   "parallelWallClockMs": {
-    "1": 143848,
+    "1": 52880,
     "4": null,
     "8": null
   },
   "assurance": "one-phone-three-test-smoke",
-  "batchId": "026f18b6-ac1e-4612-a93e-f1374d7c2c09",
-  "laterPackNote": "Sibling session reported grok-android-daily 14/14 ~13m (batch 8aaf9891). Not copied into serialPackWallClockP50/P95 — this file’s measured quote remains 3-Test 143848ms. Do not steal RQCY104BG8X or take UiAutomation to re-measure.",
-  "inventoryAt": "2026-09-14T21:45-03:00",
+  "batchId": "ec54c62a-1de6-43ca-875a-0595c152b177",
+  "batchKind": "sequential-dest-end",
+  "cellDurationsMs": {
+    "test-grok-android-home-chrome": 9270,
+    "test-grok-android-sidebar": 13367,
+    "test-grok-android-imagine": 14681
+  },
+  "fromClosedHomePack": {
+    "spanMs": 55116,
+    "cellSpanMs": 46687,
+    "note": "Orchestrator wall 55116ms from pack2.summary.json; cell span 46687ms (ddf7e94d startedAt 1789578636690 → 67b12324 finishedAt 1789578683377). Not copied into P50.",
+    "jobs": {
+      "test-grok-android-home-chrome": "ddf7e94d-a950-4833-b143-fe64eac5bffe",
+      "test-grok-android-sidebar": "9658cf2d-e856-469b-9556-47ea3c6e6442",
+      "test-grok-android-imagine": "67b12324-0cb3-4a73-b1ae-94eab4fbbd68"
+    }
+  },
+  "supersededBatch": {
+    "batchId": "026f18b6-ac1e-4612-a93e-f1374d7c2c09",
+    "reportedCellSpanMs": 143848,
+    "liveJobGet": "404",
+    "evidencePack": ".relay/combine-evidence/026f18b6-ac1e-4612-a93e-f1374d7c2c09/pack/index.html",
+    "jobs": {
+      "test-grok-android-home-chrome": "bff021dd-7a65-4e9d-8493-edb20c9c422d",
+      "test-grok-android-sidebar": "f2051337-0a32-46a3-8fff-e65e33a5ceec",
+      "test-grok-android-imagine": "6caf6c27-1a3d-482b-b8f0-7e26195cda88"
+    }
+  },
+  "laterPackNote": "2026-09-13 batch 026f18b6 143848ms superseded (live jobs gone; evidence 3/3 ok). Sibling session reported grok-android-daily 14/14 ~13m (batch 8aaf9891) — not copied into serialPackWallClockP50/P95. Play AVD Resizable_Experimental Grok install remains no-go. android-primitives (not Grok): upload dest-screen 1e7819ba/a27139f5/adc164b8; mobile-data dest-end f0783f5f/b46330b2/4b7dde7a; app-background dest-end fef3df3d/b5ebca2f/d741ae00; wifi dest-end 56a9159b/ea96bac9/1a02aff6; wait-response.maxMs dest-end 14e610be/4dbfb0f2/c45acaec. kind:offline is compile unsupported-platform on Android. Browser dest-end test-grok-web-offline 3-passed on grok-daily: a11fa91b/dafb5a52/1e59bf60. Do not close 19z5.",
+  "inventoryAt": "2026-09-16T14:16-03:00",
   "inventory": {
     "galaxySerial": "RQCY104BG8X",
-    "adbDevices": [],
-    "galaxy": "unplugged",
+    "adbDevices": ["RQCY104BG8X"],
+    "galaxy": "device",
     "avdName": "Resizable_Experimental",
-    "avdState": "stopped",
+    "avdState": "not-checked-this-run",
     "emulatorSerial": null,
     "playGrokInstall": "no-go — Grok AI won't work for your device; ai.x.grok not installed (only ai.x.grok.bot)",
     "androidPrimitivesVsGrok": "android-primitives Files/Chrome/wifi/data is not grok-android; do not close 19z5.17 on primitives 3-pass",
     "parallelWallClockMs4": null,
     "parallelWallClockMs8": null,
     "didNotBootAvd": true,
-    "didNotCloseBead": "19z5.17"
+    "didNotCloseBead": "19z5"
   },
   "jobs": {
-    "test-grok-android-home-chrome": "bff021dd-7a65-4e9d-8493-edb20c9c422d",
-    "test-grok-android-sidebar": "f2051337-0a32-46a3-8fff-e65e33a5ceec",
-    "test-grok-android-imagine": "6caf6c27-1a3d-482b-b8f0-7e26195cda88"
+    "test-grok-android-home-chrome": "ec54c62a-1de6-43ca-875a-0595c152b177",
+    "test-grok-android-sidebar": "16e8fc06-bb9d-400b-9916-dc496c3096b9",
+    "test-grok-android-imagine": "001be26c-3440-443f-ac03-06545a320999"
+  },
+  "appMapRevisionQuoted": 341,
+  "leftoverAfterQuote": {
+    "afterHome": "Speak home fingerprint 2b91d775b737030b after Ask prelude from Type to imagine (conversation leftover, not empty home)",
+    "afterSidebar": "Speak home fingerprint 2b91d775b737030b",
+    "afterImagine": "Imagine gallery fingerprint 88c5cab4679613bb; Type to imagine unique; Ask unique; Speak absent"
   }
 }

@@ -4,7 +4,7 @@
   "provenance": "measured",
   "measuredAt": "2026-09-15T23:19:50Z",
   "sampleCount": 1,
-  "note": "Physical iPad Pro serial db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5. Quote is Plan grok-ios-chrome (3 dest-end Tests that start and return on closed SuperGrok home: home chrome, dictation inspect, sidebar open-close), not grok-ios-daily (16 Tests including Imagine Unbound + type hello / 3*5 / share-menu). Batch 86740566 3/3 ok, 0 findings, 3/3 frames, cell span 120703ms (~2.0 min). Jobs prime without relaunch; dest-end compiles warm so cold Restart app does not focus the composer between cells. Earlier grok-ios-chrome batch 647f1b50 0/3 HARNESS_FAILURE is not this quote: dest-end defaulted cold (keyboard leftover + XCTest watchdog) and dictation threw Choose a starting app. Parallelism is device count. Do not copy grok-ios-daily wall into this quote. Do not steal db0c9b7c…. grok-com authenticationFixtureId stays empty.",
+  "note": "Physical iPad Pro serial db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5. Top-level quote is Plan grok-ios-chrome (3 dest-end Tests that start and return on closed SuperGrok home: home chrome, dictation inspect, sidebar open-close). Batch 86740566 3/3 ok, 0 findings, 3/3 frames, cell span 120703ms (~2.0 min). Jobs prime without relaunch; dest-end compiles warm so cold Restart app does not focus the composer between cells. Earlier grok-ios-chrome batch 647f1b50 0/3 HARNESS_FAILURE is not this quote: dest-end defaulted cold (keyboard leftover + XCTest watchdog) and dictation threw Choose a starting app. Do not copy grok-ios-daily wall into serialPackWallClockP50/P95. Honest 12-Test grok-ios-daily quote lives in dailyPack (batch d7eafb3c, cell span 1054460ms). Packs 99b06642 and 00b307de are not daily quotes. Parallelism is device count. Do not steal db0c9b7c…. grok-com authenticationFixtureId stays empty.",
   "workItems": 3,
   "serialPackWallClockP50Ms": 120703,
   "serialPackWallClockP95Ms": 120703,
@@ -25,5 +25,69 @@
     "test-grok-ios-home-chrome": 36633,
     "test-grok-ios-dictation": 28151,
     "test-grok-ios-sidebar": 55836
+  },
+  "dailyPack": {
+    "packId": "grok-ios-daily",
+    "provenance": "measured",
+    "measuredAt": "2026-09-16T04:24:27Z",
+    "sampleCount": 1,
+    "assurance": "one-ipad-twelve-test-leftover-tolerant-dest-end",
+    "note": "Plan grok-ios-daily on Lane grok-ios-daily, map r314, 12 leftover-tolerant dest-end Tests (home-chrome, dictation, sidebar, logo, composer-focus, conversations, new-chat, private-chat, attach, settings, models, presets). Imagine stays Unbound (no unique AX; chips have no AX — do not invent nav). Type/share/send/math unbound. Batch d7eafb3c 12/12 ok, 0 findings, 17/17 combine frames, cell span 1054460ms (~17.6 min). CLI watch 1160364ms (~19.3 min). Jobs prime without relaunch. Private-chat dest-end round-trip 3-pass before the pack: b06b294e (r311, 93036ms), c3d28295 (r312, 99648ms), 37e21e6f (r313, 92415ms). Pack private-chat cell bb7f9ac4 also passed. Long pole attach 150312ms then private-chat 143855ms. Failed prior packs are not this quote: 99b06642 cancelled (Private Chat leftover hid Speak); 00b307de Conversations leftover SOS’d new-chat / Settings / Presets. Do not copy grok-ios-chrome 86740566 120703ms as this daily quote. Leftover after last cell: closed SuperGrok home with Speak (pack frame 009 also had keyboard; post-pack leftover.png keyboard dismissed). Visual compares uninspected — do not auto-accept. OPENROUTER unset. adb empty. grok-com authenticationFixtureId stays empty.",
+    "workItems": 12,
+    "serialPackWallClockP50Ms": 1054460,
+    "serialPackWallClockP95Ms": 1054460,
+    "parallelWallClockMs": {
+      "1": 1054460,
+      "4": null,
+      "8": null
+    },
+    "batchId": "d7eafb3c-4534-4027-8480-9d075ea4fb0f",
+    "failedPriorBatchIds": [
+      "99b06642",
+      "00b307de"
+    ],
+    "cliWatchMs": 1160364,
+    "mapRevision": 314,
+    "jobs": {
+      "test-grok-ios-home-chrome": "2620ac41-352c-4f34-8d29-69663af133f2",
+      "test-grok-ios-dictation": "7c772edf-4f60-4818-a6e9-36219330edc3",
+      "test-grok-ios-sidebar": "a80322ea-2dec-4a0b-97c8-9d3449da2f1e",
+      "test-grok-ios-logo": "ad5b7a23-e79c-4507-95bd-70e543c85da1",
+      "test-grok-ios-composer-focus": "658746b1-1aa6-452c-9456-2b2b21ac7354",
+      "test-grok-ios-conversations": "50a7587f-08de-4fe8-9d4b-3342735c2d70",
+      "test-grok-ios-new-chat": "02a00bf9-af2a-4933-b498-9b6a88534bfb",
+      "test-grok-ios-private-chat": "bb7f9ac4-50e9-4402-b17d-453324ed3529",
+      "test-grok-ios-attach": "12069cc2-0b77-4a3d-a02c-a77352132b8f",
+      "test-grok-ios-settings": "2ec5c0b2-42c7-477f-9952-da619486aa27",
+      "test-grok-ios-models": "796d919e-4489-4da4-b005-777be2b6d99c",
+      "test-grok-ios-presets": "91812065-6a4a-4f13-8f72-b19fd3af70f8"
+    },
+    "cellDurationsMs": {
+      "test-grok-ios-home-chrome": 70295,
+      "test-grok-ios-dictation": 65129,
+      "test-grok-ios-sidebar": 56814,
+      "test-grok-ios-logo": 30220,
+      "test-grok-ios-composer-focus": 90935,
+      "test-grok-ios-conversations": 64528,
+      "test-grok-ios-new-chat": 89256,
+      "test-grok-ios-private-chat": 143855,
+      "test-grok-ios-attach": 150312,
+      "test-grok-ios-settings": 125566,
+      "test-grok-ios-models": 73978,
+      "test-grok-ios-presets": 93064
+    },
+    "privateChatRoundTrip": {
+      "jobs": {
+        "r311": "b06b294e-97ab-4410-b789-7de434acb17b",
+        "r312": "c3d28295-a75a-4f13-8b6d-a7ce24ed71ec",
+        "r313": "37e21e6f-944e-4209-961a-6ddc0427b6ea"
+      },
+      "checkDurationsMs": {
+        "r311": 93036,
+        "r312": 99648,
+        "r313": 92415
+      }
+    },
+    "imagine": "unbound"
   }
 }
