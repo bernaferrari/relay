@@ -18,6 +18,7 @@ import {
   resolveScheduledTargetProfile,
   runWithOperationContext,
   sensitiveInputNames,
+  assertClaimedBrowserJobStartAllowed,
 } from "@relay/core";
 
 export type SchedulerRuntime = {
@@ -111,6 +112,12 @@ export async function runDueSchedules(
         seed: scheduledAt,
       });
       const targetProfile = resolveScheduledTargetProfile(schedule, targetProfiles);
+      const authenticationHealth = await assertClaimedBrowserJobStartAllowed({
+        projectId: schedule.projectId,
+        targetId: schedule.targetKind === "browser" ? schedule.targetId : undefined,
+        targetProfile,
+        browserCaseProfile: targetProfile?.browserCaseProfile,
+      });
       const contexts = matrix.cases.map((item) => ({
         schemaVersion: 1 as const,
         actorId: "system:scheduler",
@@ -138,6 +145,7 @@ export async function runDueSchedules(
           variables: item.values,
           sensitiveInputNames: sensitiveInputNames(variables.value, item.values),
           ...(targetProfile ? { targetProfile } : {}),
+          ...(authenticationHealth ? { authenticationHealth } : {}),
           batchId: matrix.id,
           caseIndex: item.index,
           caseCount: matrix.cases.length,

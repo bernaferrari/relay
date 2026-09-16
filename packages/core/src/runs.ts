@@ -15,6 +15,7 @@ import {
   parseOptionalSourceRevision,
   type ActorKind,
   type ArtifactRefProjection,
+  type BrowserAuthenticationHealth,
   type BrowserCaseProfile,
   type EvidenceManifest,
   type ExecutionTargetRef,
@@ -97,6 +98,10 @@ export type PersistedRun = {
   /** Exact browser environment accepted with the Run. */
   browserCaseProfile?: BrowserCaseProfile;
   targetProfile?: TargetProfile;
+  /** Invoked Lane. Additive; older reports omit it. */
+  laneId?: string;
+  unsignedLaneId?: string;
+  authenticationHealth?: BrowserAuthenticationHealth;
   status: string;
   healed?: boolean;
   healMessage?: string;
@@ -347,6 +352,8 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     },
     executionTarget: executionTarget ?? null,
     browserCaseProfile: job.browserCaseProfile ?? null,
+    laneId: job.laneId ?? null,
+    unsignedLaneId: job.unsignedLaneId ?? null,
     recipe: job.recipeSnapshot ?? null,
     recipeGraph: job.recipeGraph ?? null,
     variables: job.resolvedInputs,
@@ -364,6 +371,11 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     executionTarget,
     browserCaseProfile: job.browserCaseProfile,
     targetProfile: job.targetProfile,
+    ...(job.laneId ? { laneId: job.laneId } : {}),
+    ...(job.unsignedLaneId ? { unsignedLaneId: job.unsignedLaneId } : {}),
+    ...(job.authenticationHealth
+      ? { authenticationHealth: structuredClone(job.authenticationHealth) }
+      : {}),
     ...(job.sourceRevision ? { sourceRevision: job.sourceRevision } : {}),
     status: job.status,
     healed: job.healed,

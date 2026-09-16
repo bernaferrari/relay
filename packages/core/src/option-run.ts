@@ -27,6 +27,7 @@ import { attachExpectedLabels, appStepExpectedLabels } from "./semantic-readines
 import { prepareCasePlan, redactCasePlan, type PreparedCasePlan } from "./case-plan.js";
 import { enqueueJob, type EnqueueJobInput, type TestJob } from "./session.js";
 import { currentOperationContext } from "./operation-context.js";
+import { assertClaimedBrowserJobStartAllowed } from "./browser-auth-health.js";
 import {
   OPTION_NONE,
   navStepsToRecipe,
@@ -189,9 +190,7 @@ export function optionSetNeedsRecordedPicker(set: Pick<OptionRunSet, "kind" | "a
   if (set.apply.kind === "appLocale" || set.apply.kind === "toggle") return false;
   if (set.kind !== "account" || set.apply.kind !== "list") return true;
   return Boolean(
-    set.apply.inConnectionId?.trim() ||
-      set.apply.entryPath?.length ||
-      set.apply.pickerPath?.length,
+    set.apply.inConnectionId?.trim() || set.apply.entryPath?.length || set.apply.pickerPath?.length,
   );
 }
 
@@ -624,6 +623,14 @@ export async function startOptionRecipeRun(input: {
   const projectId = input.projectId?.trim() || operation?.projectId || "default";
   const ownerId = input.ownerId?.trim() || operation?.actorId;
   const title = input.title?.trim() || `${body.title} · across`;
+  const browserTargetId =
+    input.browserTargetId?.trim() || (input.targetKind === "browser" ? targetId : undefined);
+  const authenticationHealth = await assertClaimedBrowserJobStartAllowed({
+    projectId,
+    targetId: browserTargetId,
+    targetProfile: input.targetProfile,
+    browserCaseProfile: input.targetProfile?.browserCaseProfile,
+  });
   const safeMatrix = redactCasePlan(matrix, []);
 
   const requestedIndexes = input.caseIndexes
@@ -649,6 +656,7 @@ export async function startOptionRecipeRun(input: {
         targetKind: input.targetKind ?? "device",
         browserTargetId: input.browserTargetId,
         targetProfile: input.targetProfile,
+        ...(authenticationHealth ? { authenticationHealth } : {}),
         variables: item.values,
         recipeSnapshot: root,
         recipeGraph,

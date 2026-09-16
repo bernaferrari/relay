@@ -21,6 +21,7 @@ import {
   hardStopDeviceSession,
 } from "./control.js";
 import { readRecipe, freezeRecipeExecution, describeRecipeStep, glyphsForStep } from "./recipes.js";
+import { applyCoverageOutcomeToTrace } from "./coverage-step-outcome.js";
 import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
 import type { RecipeRuntimeState, RecipeStepContext } from "./recipe-runner-context.js";
 import { finalizeDeferredChecksForJob } from "./session-campaign-finalization.js";
@@ -44,7 +45,7 @@ import {
   createJobLeaseValidator,
   failedCampaignChecks,
 } from "./session-job-support.js";
-import type { EnqueueJobInput, TestJob } from "./session-contract.js";
+import type { EnqueueJobInput, RetryEnqueueOptions, TestJob } from "./session-contract.js";
 import { isTargetUnavailableError } from "./target-unavailable.js";
 import { humanInterventionNeedsReproof } from "./job-intervention.js";
 import { captureAutomaticState } from "./session-automatic-evidence.js";
@@ -74,6 +75,11 @@ import {
   type DeferredSessionJobBatch,
   type SessionBatchInput,
 } from "./session-batch-admission.js";
+import { AccountNeedsReloginError } from "./browser-auth-health.js";
+import {
+  admitClaimedBrowserJobBatch,
+  assertClaimedBrowserExecutionAllowed,
+} from "./session-claimed-browser-admission.js";
 import { commitTerminalSessionRun } from "./session-terminal-persistence.js";
 import { shutdownSessionExecutions } from "./session-execution-shutdown.js";
 import {
@@ -100,7 +106,13 @@ import { parseAppMapTestExecutionIntentArtifact } from "./app-map-test-execution
 import { attachDestinationRepairProposals } from "./session-repair-attachment.js";
 import { automaticEvidencePhases } from "./session-evidence-phases.js";
 export { automaticEvidencePhases } from "./session-evidence-phases.js";
-export type { EnqueueJobInput, JobErrorCode, JobStatus, TestJob } from "./session-contract.js";
+export type {
+  EnqueueJobInput,
+  JobErrorCode,
+  JobStatus,
+  RetryEnqueueOptions,
+  TestJob,
+} from "./session-contract.js";
 export { summarizeJob } from "./session-summary.js";
 export { captureAutomaticState } from "./session-automatic-evidence.js";
 export { replayInputFromPersistedRun } from "./session-job-factory.js";
@@ -166,6 +178,7 @@ function setOutcome(job: TestJob): void {
 export function replayPersistedRun(
   run: PersistedRun,
   mode: PersistedReplayMode = "saved-steps",
+  options?: RetryEnqueueOptions,
 ): TestJob {
   if (mode === "same-configuration") {
     throw new Error(
@@ -173,7 +186,13 @@ export function replayPersistedRun(
     );
   }
   requireScopedAppMapTestExecutionSource(appMapTestExecutionSourceFromRun(run));
-  return enqueueJob({ ...replayInputFromPersistedRun(run, mode), retryOf: run.id });
+  return enqueueJob({
+    ...replayInputFromPersistedRun(run, mode),
+    retryOf: run.id,
+    ...(options?.authenticationHealth
+      ? { authenticationHealth: structuredClone(options.authenticationHealth) }
+      : {}),
+  });
 }
 
 export { prepareSameConfigurationReplay };
@@ -200,7 +219,7 @@ export function jobForTransport(job: TestJob): TestJob {
 
 export function prepareJobBatch(inputs: readonly SessionBatchInput[]): DeferredSessionJobBatch {
   requireOperationContext();
-  return prepareSessionJobBatch(inputs, {
+  return prepareSessionJobBatch(admitClaimedBrowserJobBatch(inputs), {
     createJob: (input) => makeJob(input),
     validateJob: (job) => {
       requireScopedAppMapTestExecutionSource(appMapTestExecutionSourceFromJob(job));
@@ -286,11 +305,16 @@ export function enqueueJob(input: EnqueueJobInput): TestJob {
 }
 
 /** Re-run a failed (or any) job — success after failure marks healed. */
-export function retryJob(id: string): TestJob {
+export function retryJob(id: string, options?: RetryEnqueueOptions): TestJob {
   const parent = jobRegistry.get(id);
   if (!parent) throw new Error(`Unknown job: ${id}`);
   requireScopedAppMapTestExecutionSource(appMapTestExecutionSourceFromJob(parent));
-  return enqueueJob(retryInputFromJob(parent));
+  return enqueueJob({
+    ...retryInputFromJob(parent),
+    ...(options?.authenticationHealth
+      ? { authenticationHealth: structuredClone(options.authenticationHealth) }
+      : {}),
+  });
 }
 
 const commitTerminalRun = (job: TestJob, log: (line: string) => void) =>
@@ -460,6 +484,8 @@ export async function resumeJob(id: string): Promise<TestJob> {
   if (humanInterventionNeedsReproof(job)) {
     throw new Error("Cannot resume after manual intervention until the target state is re-proven");
   }
+  const authenticationHealth = await assertClaimedBrowserExecutionAllowed(job);
+  if (authenticationHealth) job.authenticationHealth = authenticationHealth;
   setDurableSessionPaused(job.id, false);
   requestResume(id);
   job.status = "running";
@@ -495,9 +521,10 @@ export async function runRecipeSteps(
   if (!recipe) throw new Error(`recipe not found: ${recipeId}`);
   if (!job.recipeSnapshot) job.recipeSnapshot = structuredClone(recipe);
   job.resolvedInputs = { ...recipe.variables, ...job.resolvedInputs };
-  const destEndRecipeIds = parseAppMapTestExecutionIntentArtifact(
+  const executionIntent = parseAppMapTestExecutionIntentArtifact(
     job.artifacts.find((artifact) => artifact.kind === "app-map-test-execution-intent"),
-  )?.plan.destEndRecipeIds;
+  );
+  const destEndRecipeIds = executionIntent?.plan.destEndRecipeIds;
   const runtime: RecipeRuntimeState = {
     ...(destEndRecipeIds?.length ? { destEndRecipeIds } : {}),
   };
@@ -545,6 +572,7 @@ export async function runRecipeSteps(
           }
         },
       });
+      applyCoverageOutcomeToTrace(ts, job.artifacts.slice(artifactStart));
       if (evidencePhases.includes("after"))
         await captureAutomaticState(job, device, ts, "after", pushLog, runtime);
       finishCheckedStep(ts, resolvedStep.check?.id, job.artifacts.slice(artifactStart));
@@ -570,6 +598,13 @@ export async function runRecipeSteps(
       job,
       recipeGraph: job.recipeGraph,
       runtime,
+      captureReview: {
+        ...(executionIntent?.plan.test.id ? { requirementId: executionIntent.plan.test.id } : {}),
+        moduleCalls: new Map(),
+      },
+      ...(executionIntent?.plan.plannedSlots
+        ? { plannedSlots: [...executionIntent.plan.plannedSlots] }
+        : {}),
     });
   }
   finalizeDeferredChecksForJob(job, pushLog, runtime);
@@ -584,6 +619,19 @@ async function executeJob(id: string, workerInstanceId?: string): Promise<void> 
     throw new Error(message);
   }
   if (jobRegistry.get(id)?.status === "cancelled") return;
+
+  try {
+    const authenticationHealth = await assertClaimedBrowserExecutionAllowed(job);
+    if (jobRegistry.get(id)?.status === "cancelled") return;
+    if (authenticationHealth) job.authenticationHealth = authenticationHealth;
+  } catch (error) {
+    if (jobRegistry.get(id)?.status === "cancelled") return;
+    if (error instanceof AccountNeedsReloginError) {
+      await finishPreExecutionFailure(job, error.message);
+      return;
+    }
+    throw error;
+  }
 
   const executionIntent = await revalidateAppMapTestExecutionSource(
     appMapTestExecutionSourceFromJob(job),
@@ -932,6 +980,11 @@ export async function runJobSync(input: EnqueueJobInput): Promise<TestJob> {
     input.recipe && (!input.recipeSnapshot || !input.recipeGraph)
       ? await freezeRecipeExecution(input.recipe)
       : undefined;
-  const job = enqueueJob({ ...input, ...frozen });
+  const merged = { ...input, ...frozen };
+  const authenticationHealth = await assertClaimedBrowserExecutionAllowed(merged);
+  const job = enqueueJob({
+    ...merged,
+    ...(authenticationHealth ? { authenticationHealth } : {}),
+  });
   return waitForJobCompletion(job.id);
 }

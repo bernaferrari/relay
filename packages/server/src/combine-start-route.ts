@@ -1,5 +1,5 @@
 import http from "node:http";
-import type { SourceRevision } from "@relay/protocol";
+import type { SourceRevision, BrowserAuthenticationHealth } from "@relay/protocol";
 import type {
   AppMapCapturePolicy,
   AppMapCombine,
@@ -39,6 +39,7 @@ import {
   accountReloginFindingsReport,
   persistAccountReloginPlanResult,
   prepareAppMapCombineCells,
+  preparedCellsFixtureStartBlocker,
   queueablePreparedCombineCells,
   readAppMap,
   listTargets,
@@ -259,6 +260,8 @@ async function executeCombineStartUnlocked(
     }
   }
   const unsignedLaneId = combineStartAdmissionLaneId(body);
+  const invokedLaneId = body.laneId?.trim() || undefined;
+  const fixtureHealthByReference = new Map<string, BrowserAuthenticationHealth>();
   if (combine) {
     const active = await findActiveCombineCampaignForCombine(
       scope.projectId,
@@ -346,6 +349,7 @@ async function executeCombineStartUnlocked(
           ? { forceRecaptureSurfaceScreenIds: forceRecaptureScreenIds }
           : {}),
       },
+      ...(invokedLaneId ? { laneId: invokedLaneId } : {}),
     };
     const prepared = assertPreparedCombineCells(
       await (body.profileTargets?.length
@@ -409,10 +413,22 @@ async function executeCombineStartUnlocked(
                       "Use the exact saved account fixture revision, or capture a matching runtime profile before running.",
                   });
                 }
+                const attached = await attachBrowserAuthenticationHealth(listed);
+                for (const fixture of attached) {
+                  fixtureHealthByReference.set(fixture.reference, fixture.health);
+                }
+                const claimedReference =
+                  (profileTarget.account?.kind === "fixture"
+                    ? profileTarget.account.reference
+                    : undefined) ?? saved.authenticationFixtureId;
                 const accountBlocker = planAccountStartBlocker({
                   account: profileTarget.account,
                   savedFixtureReference: saved.authenticationFixtureId,
-                  fixtures: await attachBrowserAuthenticationHealth(listed),
+                  fixtures: attached,
+                  readyCount: attached.filter(
+                    (fixture) =>
+                      fixture.reference === claimedReference && fixture.health.status === "ready",
+                  ).length,
                 });
                 if (accountBlocker) {
                   const persisted = await persistAccountReloginPlanResult({
@@ -537,6 +553,44 @@ async function executeCombineStartUnlocked(
         reason ? { code: "UNSUPPORTED_PLATFORM" } : {},
       );
     }
+    const cellAccountBlocker = await preparedCellsFixtureStartBlocker({
+      projectId: scope.projectId,
+      cells: selectedToQueue,
+    });
+    if (cellAccountBlocker) {
+      const blocked =
+        selectedToQueue.find((cell) =>
+          cell.selectedRuntimeTargetProfile.browserCaseProfile?.authenticationFixtureId?.trim(),
+        ) ?? selectedToQueue[0]!;
+      const persisted = await persistAccountReloginPlanResult({
+        projectId: scope.projectId,
+        ownerId: currentOperationContext()?.actorId,
+        appMapId: map.id,
+        combineId: scopedCombine.id,
+        appMapRevision: map.revision,
+        testIds: scopedCombine.testIds,
+        targetProfileId: blocked.targetProfileId,
+        detail: cellAccountBlocker,
+        target:
+          blocked.executionTarget.platform === "ios" || blocked.executionTarget.platform === "android"
+            ? {
+                kind: "device" as const,
+                id: blocked.executionTarget.targetId,
+                platform: blocked.executionTarget.platform,
+              }
+            : {
+                kind: "browser" as const,
+                id: blocked.executionTarget.targetId,
+                platform: "browser",
+              },
+      }).catch(() => undefined);
+      throw new HttpError(409, cellAccountBlocker, {
+        code: "ACCOUNT_NEEDS_RELOGIN",
+        recovery: "Open Sign-ins, complete OAuth, then Refresh.",
+        findings: persisted?.findings ?? accountReloginFindingsReport({ detail: cellAccountBlocker }),
+        ...(persisted ? { batchId: persisted.batchId } : {}),
+      });
+    }
     if (hasExplicitCellTargets && !body.localAdmission) {
       throw new HttpError(
         409,
@@ -552,6 +606,12 @@ async function executeCombineStartUnlocked(
       devices: await runtime.listDevices().catch(() => []),
       targets: await listTargets(),
     });
+    const requestedFixture = body.profileTargets
+      ?.map((target) => (target.account?.kind === "fixture" ? target.account.reference : undefined))
+      .find((reference): reference is string => Boolean(reference));
+    const authenticationHealth = requestedFixture
+      ? fixtureHealthByReference.get(requestedFixture)
+      : undefined;
     const stageCells = (acceptedAdmission?: LocalCombineCampaignAdmission) =>
       stagePreparedAppMapCombineCells({
         cells: selectedToQueue,
@@ -568,6 +628,8 @@ async function executeCombineStartUnlocked(
         targetForCell: (cell) => cell.executionTarget,
         operationContextForCell: acceptedAdmission?.operationContextForCell,
         unsignedLaneId,
+        ...(invokedLaneId ? { laneId: invokedLaneId } : {}),
+        ...(authenticationHealth ? { authenticationHealth } : {}),
         queuedTargetProfile: (cell, executionTarget) => {
           const queued = queuedAppMapTestTargetProfile({
             runtimeTargetProfile: cell.selectedRuntimeTargetProfile,
@@ -744,6 +806,7 @@ async function executeCombineStartUnlocked(
           strategy: body.strategy ?? scopedCombine.strategy,
           seed: prepared.matrix.seed,
           title: body.title?.trim() || scopedCombine.name,
+          ...(invokedLaneId ? { laneId: invokedLaneId } : {}),
           ...(unsignedLaneId ? { unsignedLaneId } : {}),
           ...(repeat ? { repeat } : {}),
           ...(admission

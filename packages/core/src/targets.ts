@@ -7,7 +7,11 @@ import type {
   TargetKind,
   TargetPreflight,
 } from "@relay/protocol";
-import { compileBrowserEnvironment, validateBrowserEnvironment } from "@relay/protocol";
+import {
+  browserLanePlaywrightUserDataName,
+  compileBrowserEnvironment,
+  validateBrowserEnvironment,
+} from "@relay/protocol";
 import type { BrowserEnvironmentInput, BrowserViewport } from "@relay/protocol";
 import { chromium, firefox, webkit } from "playwright-core";
 import type { BrowserType } from "playwright-core";
@@ -36,10 +40,10 @@ export function browserProfileDir(targetId: string, unsignedLaneId?: string): st
   const root = join(targetRoot(), ".relay", "browser-profiles");
   const lane = unsignedLaneId?.trim();
   if (!lane) return join(root, targetId);
-  if (!SAFE_TARGET_ID.test(lane)) {
-    throw new Error("Lane identifier is not a safe browser profile path");
+  if (lane.includes("persist:lane:")) {
+    throw new Error("Playwright user-data cannot reuse an Electron partition");
   }
-  return join(root, `${targetId}__lane_${lane}`);
+  return join(root, browserLanePlaywrightUserDataName(targetId, lane));
 }
 
 async function removeBrowserProfileDirs(targetId: string): Promise<void> {

@@ -1,16 +1,21 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { GROK_WEB_APP_POLICY } from "./app-identity-policy.js";
 import {
+  AccountNeedsReloginError,
+  assertClaimedBrowserJobStartAllowed,
   attachBrowserAuthenticationHealth,
+  claimedBrowserJobStartBlocker,
+  claimedFixtureStartBlocker,
   classifyBrowserAuthenticationHealth,
   planAccountHealthBlocker,
   planAccountStartBlocker,
   probeBrowserAuthenticationFixture,
   probeScheduledPlanAccountHealth,
+  retryAuthenticationHealthStamp,
   signedInFromPage,
 } from "./browser-auth-health.js";
 import { saveBrowserAuthenticationFixture } from "./browser-authentication-fixtures.js";
@@ -43,6 +48,114 @@ test("expired and revoked fixtures fail closed before a live page probe", () => 
   assert.match(planAccountHealthBlocker(expired) ?? "", /Refresh/u);
   const revoked = classifyBrowserAuthenticationHealth({ name: "Member", revokedAt: 1 }, 20);
   assert.equal(revoked.status, "revoked");
+  assert.match(planAccountHealthBlocker(revoked) ?? "", /revoked/u);
+});
+
+test("Plan start fails closed on error, revoked, and readyCount 0 fixture health", () => {
+  assert.match(
+    planAccountHealthBlocker({
+      status: "error",
+      checkedAt: 1,
+      detail: "SuperGrok did not show a signed-in marker.",
+    }) ?? "",
+    /signed-in marker/u,
+  );
+  assert.match(
+    planAccountHealthBlocker(
+      { status: "ready", checkedAt: 1, signedIn: true, detail: "SuperGrok is signed in." },
+      { readyCount: 0 },
+    ) ?? "",
+    /Refresh/u,
+  );
+  assert.equal(
+    planAccountHealthBlocker({
+      status: "ready",
+      checkedAt: 1,
+      signedIn: true,
+      detail: "SuperGrok is signed in.",
+    }),
+    undefined,
+  );
+  assert.match(
+    planAccountStartBlocker({
+      account: {
+        kind: "fixture",
+        reference: "authfx:7189423f-193e-45ed-b674-154505cc5107:1",
+      },
+      fixtures: [
+        {
+          reference: "authfx:7189423f-193e-45ed-b674-154505cc5107:1",
+          health: { status: "error", checkedAt: 1, detail: "lab probe failed" },
+        },
+      ],
+      readyCount: 0,
+    }) ?? "",
+    /lab probe failed/u,
+  );
+  assert.equal(
+    planAccountStartBlocker({
+      account: { kind: "signed-out" },
+      fixtures: [
+        {
+          reference: "authfx:7189423f-193e-45ed-b674-154505cc5107:1",
+          health: { status: "error", checkedAt: 1, detail: "lab probe failed" },
+        },
+      ],
+      readyCount: 0,
+    }),
+    undefined,
+  );
+  assert.equal(
+    planAccountStartBlocker({
+      fixtures: [
+        {
+          reference: "authfx:7189423f-193e-45ed-b674-154505cc5107:1",
+          health: { status: "error", checkedAt: 1, detail: "lab probe failed" },
+        },
+      ],
+    }),
+    undefined,
+  );
+  assert.match(
+    planAccountStartBlocker({
+      savedFixtureReference: "authfx:7189423f-193e-45ed-b674-154505cc5107:1",
+      fixtures: [
+        {
+          reference: "authfx:7189423f-193e-45ed-b674-154505cc5107:1",
+          health: { status: "error", checkedAt: 1, detail: "lab probe failed" },
+        },
+      ],
+      readyCount: 0,
+    }) ?? "",
+    /lab probe failed/u,
+  );
+  assert.equal(
+    planAccountStartBlocker({
+      account: { kind: "fixture", accountId: "acct-a", accountRevision: "1" },
+      fixtures: [],
+      readyCount: 0,
+    }),
+    undefined,
+  );
+  for (const health of [
+    { status: "expired" as const, checkedAt: 1, detail: "expired" },
+    { status: "needs-relogin" as const, checkedAt: 1, signedIn: false, detail: "signed out" },
+    { status: "revoked" as const, checkedAt: 1, detail: "revoked" },
+    { status: "ready" as const, checkedAt: 1, signedIn: false, detail: "signed out" },
+  ]) {
+    assert.match(
+      planAccountStartBlocker({
+        savedFixtureReference: "authfx:7189423f-193e-45ed-b674-154505cc5107:1",
+        fixtures: [
+          {
+            reference: "authfx:7189423f-193e-45ed-b674-154505cc5107:1",
+            health,
+          },
+        ],
+      }) ?? "",
+      /expired|signed out|revoked/u,
+    );
+  }
 });
 
 test("a signed-out live page is needs-relogin, not a product failure", async () => {
@@ -78,7 +191,7 @@ test("a signed-out live page is needs-relogin, not a product failure", async () 
       }) ?? "",
       /Refresh/u,
     );
-    assert.equal(
+    assert.match(
       planAccountStartBlocker({
         account: { kind: "fixture", reference: saved.reference },
         fixtures: [
@@ -87,8 +200,8 @@ test("a signed-out live page is needs-relogin, not a product failure", async () 
             health: { status: "error", checkedAt: 1, detail: "Chrome missing" },
           },
         ],
-      }),
-      undefined,
+      }) ?? "",
+      /Chrome missing/u,
     );
   } finally {
     if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
@@ -131,6 +244,183 @@ test("a scheduled Plan probes grok.com cookies before the unattended start", asy
     });
     assert.equal(health.length, 1);
     assert.equal(health[0]?.status, "needs-relogin");
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a claimed signed-in fixture with remembered error health fails closed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-claimed-fixture-start-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  try {
+    const saved = await saveBrowserAuthenticationFixture({
+      projectId: "mobile",
+      targetId: "shop-web",
+      name: "SuperGrok",
+      createdBy: "human:qa",
+      storageState: {
+        cookies: [],
+        origins: [{ origin: "https://example.test", localStorage: [] }],
+      },
+    });
+    await mkdir(join(root, ".relay"), { recursive: true });
+    await writeFile(
+      join(root, ".relay", "browser-auth-health.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        entries: {
+          [saved.reference]: { status: "error", checkedAt: 1, detail: "lab probe failed" },
+        },
+      })}\n`,
+    );
+    assert.match(
+      (await claimedFixtureStartBlocker({
+        projectId: "mobile",
+        targetId: "shop-web",
+        account: {
+          kind: "fixture",
+          accountId: saved.id,
+          accountRevision: String(saved.revision),
+          reference: saved.reference,
+        },
+        savedFixtureReference: saved.reference,
+      })) ?? "",
+      /lab probe failed/u,
+    );
+    assert.match(
+      (await claimedFixtureStartBlocker({
+        projectId: "mobile",
+        targetId: "shop-web",
+        savedFixtureReference: saved.reference,
+      })) ?? "",
+      /lab probe failed/u,
+    );
+    assert.equal(
+      await claimedFixtureStartBlocker({
+        projectId: "mobile",
+        targetId: "shop-web",
+        account: { kind: "signed-out" },
+        savedFixtureReference: saved.reference,
+      }),
+      undefined,
+    );
+    assert.equal(
+      await claimedFixtureStartBlocker({
+        projectId: "mobile",
+        targetId: "shop-web",
+      }),
+      undefined,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("retry stamp uses remembered ready and will not drop parent blocked health to SuperGrok", () => {
+  const blocked = {
+    status: "error" as const,
+    checkedAt: 1,
+    detail: "lab probe failed",
+  };
+  const ready = {
+    status: "ready" as const,
+    checkedAt: 2,
+    signedIn: true,
+    detail: "SuperGrok is signed in.",
+  };
+  const refreshed = retryAuthenticationHealthStamp({ parent: blocked, remembered: ready });
+  assert.equal(refreshed.blocker, undefined);
+  assert.equal(refreshed.authenticationHealth?.status, "ready");
+  const dropped = retryAuthenticationHealthStamp({ parent: blocked });
+  assert.match(dropped.blocker ?? "", /lab probe failed/u);
+  assert.equal(dropped.authenticationHealth, undefined);
+  const staleReady = retryAuthenticationHealthStamp({
+    parent: ready,
+    remembered: blocked,
+  });
+  assert.match(staleReady.blocker ?? "", /lab probe failed/u);
+  for (const status of ["expired", "needs-relogin", "revoked"] as const) {
+    assert.match(
+      retryAuthenticationHealthStamp({
+        parent: { status, checkedAt: 1, detail: `${status} fixture` },
+      }).blocker ?? "",
+      new RegExp(status === "revoked" ? "revoked" : status, "u"),
+    );
+  }
+  assert.match(
+    retryAuthenticationHealthStamp({
+      parent: { status: "ready", checkedAt: 1, signedIn: false, detail: "signed out" },
+    }).blocker ?? "",
+    /signed out/u,
+  );
+});
+
+test("claimed browser job start blocks SuperGrok identity and leaves unsigned unbound", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-claimed-browser-job-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  try {
+    const saved = await saveBrowserAuthenticationFixture({
+      projectId: "mobile",
+      targetId: "shop-web",
+      name: "SuperGrok",
+      createdBy: "human:qa",
+      storageState: {
+        cookies: [],
+        origins: [{ origin: "https://example.test", localStorage: [] }],
+      },
+    });
+    await mkdir(join(root, ".relay"), { recursive: true });
+    await writeFile(
+      join(root, ".relay", "browser-auth-health.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        entries: {
+          [saved.reference]: { status: "error", checkedAt: 1, detail: "lab probe failed" },
+        },
+      })}\n`,
+    );
+    const blocked = await claimedBrowserJobStartBlocker({
+      projectId: "mobile",
+      targetId: "shop-web",
+      browserCaseProfile: { authenticationFixtureId: saved.reference },
+      parentAuthenticationHealth: {
+        status: "ready",
+        checkedAt: 1,
+        signedIn: true,
+        detail: "stale SuperGrok",
+      },
+    });
+    assert.match(blocked.blocker ?? "", /lab probe failed/u);
+    const unsigned = await claimedBrowserJobStartBlocker({
+      projectId: "mobile",
+      targetId: "shop-web",
+    });
+    assert.equal(unsigned.blocker, undefined);
+    assert.equal(unsigned.authenticationHealth, undefined);
+    const stub = await claimedBrowserJobStartBlocker({
+      projectId: "mobile",
+      targetId: "shop-web",
+      browserCaseProfile: { authenticationFixtureId: "member-session" },
+    });
+    assert.equal(stub.blocker, undefined);
+    await assert.rejects(
+      () =>
+        assertClaimedBrowserJobStartAllowed({
+          projectId: "mobile",
+          targetId: "shop-web",
+          browserCaseProfile: { authenticationFixtureId: saved.reference },
+        }),
+      (error: unknown) =>
+        error instanceof AccountNeedsReloginError &&
+        error.code === "ACCOUNT_NEEDS_RELOGIN" &&
+        /lab probe failed/u.test(error.detail),
+    );
   } finally {
     if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previous;

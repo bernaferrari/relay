@@ -185,6 +185,8 @@ export type CombineCampaign = {
     strategy?: "zip" | "cartesian" | "pairwise";
     seed: number;
     title?: string;
+    /** Invoked Lane, including fixture Lanes that omit unsignedLaneId. */
+    laneId?: string;
     /** Unsigned browser Lane that admitted this campaign. Distinct Lanes of
      * the same Plan may run concurrently; the same Lane still 409s. */
     unsignedLaneId?: string;

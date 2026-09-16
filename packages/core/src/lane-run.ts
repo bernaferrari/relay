@@ -34,6 +34,7 @@ export type LaneAwareCombineStartInput = {
 
 export type LaneInteractResolution = {
   serial: string;
+  laneId?: string;
   authenticationFixtureId?: string;
   unsignedLaneId?: string;
 };
@@ -170,6 +171,7 @@ export async function applyLaneToInteract(input: {
   });
   return {
     serial,
+    laneId: execution.laneId,
     ...(authenticationFixtureId ? { authenticationFixtureId } : {}),
     ...(unsignedLaneId ? { unsignedLaneId } : {}),
   };

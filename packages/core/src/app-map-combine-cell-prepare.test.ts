@@ -342,6 +342,70 @@ test("the frozen inputs artifact records an inherited profile id for audit", asy
   assert.equal(data.executionTarget, prepared.cells[0]!.executionTarget);
 });
 
+test("invoked --lane grok-lab is stamped on each Combine-cell child intent", async () => {
+  const inheritedId = "device:RQ8-1080x2340";
+  const map = mapWithProfiles([profile({ id: inheritedId, targetId: "RQ8" })]);
+  const prepared = await prepareAppMapCombineCells({
+    map,
+    combine: map.combines.locales!,
+    target: { targetId: "RQ8", platform: "android" },
+    laneId: "grok-lab",
+  });
+  assert.equal(prepared.cells[0]!.childIntent.laneId, "grok-lab");
+  assert.equal(prepared.cells[0]!.outerIntent.child.laneId, "grok-lab");
+  const unsigned = await prepareAppMapCombineCells({
+    map,
+    combine: map.combines.locales!,
+    target: { targetId: "RQ8", platform: "android" },
+    laneId: "grok-daily",
+  });
+  assert.equal(unsigned.cells[0]!.childIntent.laneId, "grok-daily");
+  assert.equal(unsigned.cells[0]!.outerIntent.child.laneId, "grok-daily");
+  const omitted = await prepareAppMapCombineCells({
+    map,
+    combine: map.combines.locales!,
+    target: { targetId: "RQ8", platform: "android" },
+  });
+  assert.equal(omitted.cells[0]!.childIntent.laneId, undefined);
+  const staged = runWithOperationContext(
+    {
+      schemaVersion: 1,
+      actorId: "human:planner",
+      actorKind: "human",
+      organizationId: "org",
+      projectId: "project",
+      operationId: "job.combine.start",
+      requestId: "combine-child-lane-test",
+      idempotencyKey: "combine-child-lane-test",
+      issuedAt: 1,
+    },
+    () =>
+      stagePreparedAppMapCombineCells({
+        cells: prepared.cells,
+        title: "Language × Prepare",
+        laneId: "grok-lab",
+        targetForCell: (cell) => cell.executionTarget,
+        queuedTargetProfile: (cell) => ({
+          ...cell.selectedRuntimeTargetProfile,
+          source: "device",
+          name: cell.selectedRuntimeTargetProfile.id,
+          capabilities: ["snapshot"],
+          observedAt: 1,
+        }),
+        projectId: "project",
+        ownerId: "human:planner",
+      }),
+  );
+  assert.equal(staged.jobs[0]!.laneId, "grok-lab");
+  const outer = staged.jobs[0]!.artifacts.find(
+    (artifact) => artifact.kind === "app-map-combine-cell-execution-intent",
+  );
+  assert.equal(
+    (outer?.data as { child?: { laneId?: string } } | undefined)?.child?.laneId,
+    "grok-lab",
+  );
+});
+
 test("an explicit per-cell binding wins over inheritance and is recorded as explicit", async () => {
   const map = mapWithProfiles([profile({ id: "device:RQ8-1080x2340", targetId: "RQ8" })]);
   const combine = map.combines.locales!;

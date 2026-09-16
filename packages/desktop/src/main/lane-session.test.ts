@@ -16,6 +16,10 @@ test("desktop partition is the same Lane identity the product UI uses", () => {
   );
   assert.notEqual(laneSessionPartition("seeded-member"), "id__lane_seeded-member");
   assert.throws(() => laneSessionPartition("../etc"), /not a safe Electron partition/);
+  assert.throws(
+    () => laneSessionPartition("grok-com__lane_grok-daily"),
+    /cannot reuse Playwright user-data/u,
+  );
 });
 
 test("reopening a Lane window navigates when the requested URL changed", () => {

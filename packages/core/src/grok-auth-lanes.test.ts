@@ -58,7 +58,11 @@ test("unsigned auth Lanes isolate Chrome user-data and scheduler keys", () => {
     }),
     undefined,
   );
-  assert.throws(() => browserProfileDir("grok-com", "../etc"), /not a safe browser profile path/);
+  assert.throws(() => browserProfileDir("grok-com", "../etc"), /not a safe browser session key/);
+  assert.throws(
+    () => browserProfileDir("grok-com", "persist:lane:grok-lab"),
+    /cannot reuse an Electron partition|not a safe/u,
+  );
   assert.equal(
     browserLaneTabSessionKey({ laneId: GROK_AUTH_GMAIL_LANE.id, targetId: "grok-com" }),
     "lane:grok-auth-gmail",
@@ -99,18 +103,24 @@ test("seeded grok-auth Lanes do not persist a fixture onto grok-com", async () =
       projectId: "default",
       laneId: GROK_AUTH_EMAIL_LANE.id,
     });
-    assert.deepEqual(email, { serial: "grok-com", unsignedLaneId: GROK_AUTH_EMAIL_LANE.id });
+    assert.deepEqual(email, {
+      serial: "grok-com",
+      laneId: GROK_AUTH_EMAIL_LANE.id,
+      unsignedLaneId: GROK_AUTH_EMAIL_LANE.id,
+    });
     const gmail = await applyLaneToInteract({
       projectId: "default",
       laneId: GROK_AUTH_GMAIL_LANE.id,
     });
     assert.equal(gmail.unsignedLaneId, GROK_AUTH_GMAIL_LANE.id);
+    assert.equal(gmail.laneId, GROK_AUTH_GMAIL_LANE.id);
     assert.equal(gmail.authenticationFixtureId, undefined);
     const lab = await applyLaneToInteract({
       projectId: "default",
       laneId: GROK_LAB_LANE.id,
     });
     assert.equal(lab.authenticationFixtureId, GROK_LAB_LANE.account.reference);
+    assert.equal(lab.laneId, GROK_LAB_LANE.id);
     assert.equal(lab.unsignedLaneId, undefined);
   });
 });

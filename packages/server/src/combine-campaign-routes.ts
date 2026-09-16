@@ -16,11 +16,13 @@ import {
   localExecutionTargetRef,
   prepareSelectedCombineCampaignResume,
   prepareAppMapCombineCells,
+  preparedCellsFixtureStartBlocker,
   projectCombineCampaign,
   reconcileCausalCombineRerun,
   readAppMap,
   readCombineCampaign,
   readPersistedRun,
+  accountReloginFindingsReport,
   buildRepeatFailureClusters,
   repeatFailureClusterCellIds,
   releaseDeviceLease,
@@ -305,6 +307,7 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           selectedCellIds: projected.execution.selectedCellIds,
           cellTargetBindings: targetBindingsForCampaign(projected),
           compileOptions: { reviewedDocumentOrigins },
+          ...(projected.execution.laneId ? { laneId: projected.execution.laneId } : {}),
         });
         const preparedById = new Map(
           prepared.cells.map((cell) => [
@@ -417,6 +420,17 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           (item) =>
             preparedById.get(item.executionCaseId ?? item.cellId) ?? preparedById.get(item.cellId)!,
         );
+        const resumeAccountBlocker = await preparedCellsFixtureStartBlocker({
+          projectId: scope.projectId,
+          cells: toQueue,
+        });
+        if (resumeAccountBlocker) {
+          throw new HttpError(409, resumeAccountBlocker, {
+            code: "ACCOUNT_NEEDS_RELOGIN",
+            recovery: "Open Sign-ins, complete OAuth, then Refresh.",
+            findings: accountReloginFindingsReport({ detail: resumeAccountBlocker }),
+          });
+        }
         resumedCellIds = new Set(pending.map((item) => item.executionCaseId ?? item.cellId));
         const observedTargetProfiles = buildTargetProfiles({
           devices: await (runtime.listDevices ?? listDevices)().catch(() => []),
@@ -444,6 +458,10 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
               }),
             projectId: scope.projectId,
             ownerId: currentOperationContext()!.actorId,
+            ...(projected.execution.laneId ? { laneId: projected.execution.laneId } : {}),
+            ...(projected.execution.unsignedLaneId
+              ? { unsignedLaneId: projected.execution.unsignedLaneId }
+              : {}),
           });
         if (localAdmission) {
           const admissionRequest = localCampaignAdmissionRequestForActiveWorkItems({

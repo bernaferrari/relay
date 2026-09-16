@@ -1,5 +1,6 @@
 import {
   buildTargetProfiles,
+  claimedBrowserJobStartBlocker,
   freezeRecipeExecution,
   listDevices,
   listDevicePools,
@@ -14,6 +15,7 @@ import {
 } from "@relay/core";
 import type { RequestContext } from "./security.js";
 import { admitTargetControl } from "./access-control.js";
+import { accountNeedsReloginHttpError } from "./claimed-browser-job-admission.js";
 import { HttpError } from "./http.js";
 import { acquireTargetLeasesAtomically } from "./target-lease-admission.js";
 
@@ -74,7 +76,6 @@ export async function enqueueCompatibilityBatch(
     targets: await runtime.listTargets(),
   });
   const expansion = resolveCompatibilityMatrix(matrix, profiles);
-  const frozenRecipe = await freezeBatchExecution(body);
   if (expansion.profiles.length === 0) {
     const details = expansion.excluded.map((item) => item.reason).join("; ");
     throw new HttpError(
@@ -82,6 +83,23 @@ export async function enqueueCompatibilityBatch(
       `Compatibility matrix “${matrix.name}” matched no targets${details ? ` (${details})` : ""}`,
     );
   }
+  const authenticationHealthByTarget = new Map<
+    string,
+    NonNullable<Awaited<ReturnType<typeof claimedBrowserJobStartBlocker>>["authenticationHealth"]>
+  >();
+  for (const profile of expansion.profiles) {
+    const result = await claimedBrowserJobStartBlocker({
+      projectId: scope.projectId,
+      targetId: profile.source === "browser" ? profile.targetId : undefined,
+      targetProfile: profile,
+      browserCaseProfile: profile.browserCaseProfile,
+    });
+    if (result.blocker) throw accountNeedsReloginHttpError(result.blocker);
+    if (result.authenticationHealth) {
+      authenticationHealthByTarget.set(profile.targetId, result.authenticationHealth);
+    }
+  }
+  const frozenRecipe = await freezeBatchExecution(body);
   const pools = await runtime.listDevicePools(scope.projectId);
   const repetitions = Math.min(
     Math.max(Math.floor(body.repetitions ?? 1), 1),
@@ -108,6 +126,7 @@ export async function enqueueCompatibilityBatch(
     (profile, profileIndex) =>
       Array.from({ length: repetitions }, (_, repetition) => {
         const lease = leases.get(profile.targetId);
+        const authenticationHealth = authenticationHealthByTarget.get(profile.targetId);
         return {
           input: {
             recipe: frozenRecipe.recipeSnapshot.id,
@@ -118,6 +137,7 @@ export async function enqueueCompatibilityBatch(
             targetKind: profile.source === "browser" ? "browser" : "device",
             ...(profile.source === "browser" ? { browserTargetId: profile.targetId } : {}),
             targetProfile: profile,
+            ...(authenticationHealth ? { authenticationHealth } : {}),
             prodAccountMatch: body.prodAccountMatch,
             batchId,
             caseIndex: profileIndex * repetitions + repetition,

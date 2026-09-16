@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { BrowserContextOptions } from "playwright-core";
@@ -81,6 +82,10 @@ function reference(id: string, revision: number): string {
   return `authfx:${id}:${revision}`;
 }
 
+export function isBrowserAuthenticationFixtureReference(value: string): boolean {
+  return FIXTURE_REFERENCE.test(value.trim());
+}
+
 function parseReference(value: string): { id: string; revision: number } {
   const match = FIXTURE_REFERENCE.exec(value);
   const revision = match ? Number(match[2]) : Number.NaN;
@@ -149,15 +154,28 @@ function parseMetadata(value: unknown): BrowserAuthenticationFixture {
   return Object.freeze(structuredClone(item as BrowserAuthenticationFixture));
 }
 
+function parseIndexFile(raw: string, projectId: string): BrowserAuthenticationFixture[] {
+  const parsed = JSON.parse(raw) as unknown;
+  if (!Array.isArray(parsed)) throw new Error("Browser authentication fixture index is invalid");
+  const fixtures = parsed.map(parseMetadata);
+  if (fixtures.some((fixture) => fixture.projectId !== projectId)) {
+    throw new Error("Browser authentication fixture index crossed its project scope");
+  }
+  return fixtures;
+}
+
 async function readIndex(projectId: string): Promise<BrowserAuthenticationFixture[]> {
   try {
-    const parsed = JSON.parse(await readFile(indexPath(projectId), "utf8")) as unknown;
-    if (!Array.isArray(parsed)) throw new Error("Browser authentication fixture index is invalid");
-    const fixtures = parsed.map(parseMetadata);
-    if (fixtures.some((fixture) => fixture.projectId !== projectId)) {
-      throw new Error("Browser authentication fixture index crossed its project scope");
-    }
-    return fixtures;
+    return parseIndexFile(await readFile(indexPath(projectId), "utf8"), projectId);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
+}
+
+function readIndexSync(projectId: string): BrowserAuthenticationFixture[] {
+  try {
+    return parseIndexFile(readFileSync(indexPath(projectId), "utf8"), projectId);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
@@ -283,6 +301,16 @@ export async function listBrowserAuthenticationFixtures(input: {
 }): Promise<BrowserAuthenticationFixture[]> {
   const fixtures = await readIndex(input.projectId);
   return fixtures.filter((fixture) => !input.targetId || fixture.targetId === input.targetId);
+}
+
+/** Sync listing for the job-batch admission backstop. Same index as the async list. */
+export function listBrowserAuthenticationFixturesSync(input: {
+  projectId: string;
+  targetId?: string;
+}): BrowserAuthenticationFixture[] {
+  return readIndexSync(input.projectId).filter(
+    (fixture) => !input.targetId || fixture.targetId === input.targetId,
+  );
 }
 
 export async function saveBrowserAuthenticationFixture(input: {

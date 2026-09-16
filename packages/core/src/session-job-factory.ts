@@ -17,7 +17,11 @@ import type { EnqueueJobInput, TestJob } from "./session-contract.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
 import { installRegisteredBuild, preflightRegisteredBuild } from "./builds.js";
 import type { Build } from "@relay/protocol";
-import { jobSchedulingTargetId, unsignedBrowserLaneId } from "./browser-account-lane.js";
+import {
+  invokedBrowserLaneId,
+  jobSchedulingTargetId,
+  unsignedBrowserLaneId,
+} from "./browser-account-lane.js";
 import { defaultTargetWorkerAssignment } from "./target-worker.js";
 import {
   executionTargetRefForJob,
@@ -205,6 +209,9 @@ export function replayInputFromPersistedRun(
     | "ownerId"
     | "executionTarget"
     | "sourceRevision"
+    | "laneId"
+    | "unsignedLaneId"
+    | "authenticationHealth"
   > & { artifacts?: PersistedRun["artifacts"] },
   mode: PersistedReplayMode = "saved-steps",
 ): EnqueueJobInput {
@@ -250,6 +257,11 @@ export function replayInputFromPersistedRun(
       browserCaseProfile: run.browserCaseProfile
         ? freezeBrowserCaseProfile(run.browserCaseProfile)
         : undefined,
+      ...(run.laneId ? { laneId: run.laneId } : {}),
+      ...(run.unsignedLaneId ? { unsignedLaneId: run.unsignedLaneId } : {}),
+      ...(run.authenticationHealth
+        ? { authenticationHealth: structuredClone(run.authenticationHealth) }
+        : {}),
       title: `${run.title ?? run.action} · replay`,
       variables: structuredClone(run.resolvedInputs),
       recipeSnapshot: structuredClone(run.recipeSnapshot),
@@ -276,6 +288,11 @@ export function replayInputFromPersistedRun(
     browserCaseProfile: run.browserCaseProfile
       ? freezeBrowserCaseProfile(run.browserCaseProfile)
       : undefined,
+    ...(run.laneId ? { laneId: run.laneId } : {}),
+    ...(run.unsignedLaneId ? { unsignedLaneId: run.unsignedLaneId } : {}),
+    ...(run.authenticationHealth
+      ? { authenticationHealth: structuredClone(run.authenticationHealth) }
+      : {}),
     ...(run.sourceRevision ? { sourceRevision: structuredClone(run.sourceRevision) } : {}),
     title: `${run.title ?? run.action} · replay`,
     variables: structuredClone(run.resolvedInputs),
@@ -332,7 +349,9 @@ export function retryInputFromJob(job: TestJob): EnqueueJobInput {
     caseCount: job.caseCount,
     targetProfile: job.targetProfile,
     browserCaseProfile: job.browserCaseProfile,
+    laneId: job.laneId,
     unsignedLaneId: job.unsignedLaneId,
+    authenticationHealth: job.authenticationHealth,
     sourceRevision: structuredClone(job.sourceRevision),
     hostWorkerId: job.hostWorkerId,
     hostWorkerCapacity: job.hostWorkerCapacity,
@@ -392,9 +411,14 @@ export function createSessionJob(
     ? freezeTargetProfile(suppliedTargetProfile)
     : undefined;
   const unsignedLaneId = unsignedBrowserLaneId({
-    laneId: input.unsignedLaneId ?? parent?.unsignedLaneId,
+    laneId: input.unsignedLaneId ?? parent?.unsignedLaneId ?? input.laneId ?? parent?.laneId,
     authenticationFixtureId: browserCaseProfile?.authenticationFixtureId,
   });
+  const laneId = invokedBrowserLaneId({
+    laneId: input.laneId ?? parent?.laneId,
+    unsignedLaneId: input.unsignedLaneId ?? parent?.unsignedLaneId ?? unsignedLaneId,
+  });
+  const authenticationHealth = input.authenticationHealth ?? parent?.authenticationHealth;
   if (
     browserCaseProfile &&
     selectedTargetProfile?.browserCaseProfile &&
@@ -449,7 +473,11 @@ export function createSessionJob(
     browserTargetId: targetContext.kind === "browser" ? targetContext.targetId : undefined,
     browserCaseProfile,
     targetProfile: selectedTargetProfile,
+    ...(laneId ? { laneId } : {}),
     ...(unsignedLaneId ? { unsignedLaneId } : {}),
+    ...(authenticationHealth
+      ? { authenticationHealth: structuredClone(authenticationHealth) }
+      : {}),
     sourceRevision: input.sourceRevision
       ? structuredClone(input.sourceRevision)
       : parent?.sourceRevision,

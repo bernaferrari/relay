@@ -20,6 +20,15 @@ export function unsignedBrowserLaneId(input: {
   return laneId || undefined;
 }
 
+/** Lane actually invoked on a job/intent. Fixture Lanes keep this even though
+ * unsignedLaneId is omitted so they do not share a signed-out scheduler slot. */
+export function invokedBrowserLaneId(input: {
+  laneId?: string;
+  unsignedLaneId?: string;
+}): string | undefined {
+  return input.laneId?.trim() || input.unsignedLaneId?.trim() || undefined;
+}
+
 /** Combine/Plan start identity that matches job unsignedLaneId. Fixture
  * accounts stay combine-wide so same-lane Repeat still 409s. */
 export function combineStartAdmissionLaneId(input: {

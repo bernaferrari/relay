@@ -10,6 +10,10 @@ import {
   validateRecipeSteps,
 } from "@relay/core";
 import { assertTargetControl } from "./access-control.js";
+import {
+  browserCaseProfileIfManaged,
+  rejectBlockedClaimedBrowserJob,
+} from "./claimed-browser-job-admission.js";
 import { HttpError, json, parseJsonBody } from "./http.js";
 import { iosMutationOutcomeUnknownPayload } from "./interaction-routes.js";
 import type { RequestContext } from "./security.js";
@@ -85,6 +89,12 @@ export async function handleStepRunRoute(context: {
   const serial = typeof body.serial === "string" ? body.serial.trim() : "";
   if (!serial) throw new HttpError(400, "serial is required");
   await runtime.assertTargetControl(context.scope, serial);
+  const browserCaseProfile = await browserCaseProfileIfManaged(serial);
+  await rejectBlockedClaimedBrowserJob({
+    projectId: context.scope.projectId,
+    targetId: browserCaseProfile ? serial : undefined,
+    browserCaseProfile,
+  });
 
   let steps: StepRun[];
   try {

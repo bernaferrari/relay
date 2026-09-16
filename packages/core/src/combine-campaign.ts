@@ -249,6 +249,10 @@ async function campaignEntries(projectId: string): Promise<string[]> {
   }
 }
 
+export async function listCombineCampaignIds(projectId: string): Promise<string[]> {
+  return campaignEntries(projectId);
+}
+
 /** Disk campaigns for one project. Callers that need live job status must project. */
 export async function listStoredCombineCampaigns(
   projectId: string,

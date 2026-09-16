@@ -89,6 +89,11 @@ import { createPreAuthenticatedRoute } from "./pre-authenticated-routes.js";
 import { handleJobRoute, type JobRouteRuntime } from "./job-routes.js";
 import { assertTargetControl } from "./access-control.js";
 import {
+  browserCaseProfileForAdmission,
+  browserCaseProfileIfManaged,
+  rejectBlockedClaimedBrowserJob,
+} from "./claimed-browser-job-admission.js";
+import {
   CORS_HEADERS,
   HttpError,
   json,
@@ -524,14 +529,39 @@ async function handleRequest(
       const body = (await parseJsonBody(req)) as {
         serial?: string;
         platform?: "android" | "ios";
+        targetKind?: "device" | "browser";
+        browserTargetId?: string;
         prodAccountMatch?: string;
         wait?: boolean;
       };
-      await assertTargetControl(scope, body.serial);
-      const job = enqueueJob({
+      const assertControl = jobRouteRuntime?.assertTargetControl ?? assertTargetControl;
+      const enqueue = jobRouteRuntime?.enqueueJob ?? enqueueJob;
+      const explicitBrowserId =
+        body.browserTargetId?.trim() ||
+        (body.targetKind === "browser" ? body.serial?.trim() : undefined);
+      await assertControl(scope, explicitBrowserId ?? body.serial);
+      const browserCaseProfile = explicitBrowserId
+        ? await browserCaseProfileForAdmission(explicitBrowserId)
+        : await browserCaseProfileIfManaged(body.serial);
+      const browserTargetId = explicitBrowserId ?? (browserCaseProfile ? body.serial : undefined);
+      const authenticationHealth = await rejectBlockedClaimedBrowserJob({
+        projectId: scope.projectId,
+        targetId: browserTargetId,
+        browserCaseProfile,
+      });
+      const job = enqueue({
         recipe: runMatch.id!,
-        serial: body.serial,
-        platform: body.platform ?? (await resolveJobDevicePlatform(body.serial)),
+        ...(browserCaseProfile
+          ? {
+              targetKind: "browser" as const,
+              browserTargetId,
+              browserCaseProfile,
+              ...(authenticationHealth ? { authenticationHealth } : {}),
+            }
+          : {
+              serial: body.serial,
+              platform: body.platform ?? (await resolveJobDevicePlatform(body.serial)),
+            }),
         prodAccountMatch: body.prodAccountMatch,
         projectId: scope.projectId,
         ownerId: currentOperationContext()!.actorId,

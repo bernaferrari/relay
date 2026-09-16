@@ -2,18 +2,22 @@ import type http from "node:http";
 import {
   AppMapCombineWorldError,
   AppMapCompileError,
+  currentOperationContext,
   bindRegisteredWebDeploymentToProof,
   accountFixtureIdsFromListed,
   bindRequestedBrowserIdentity,
   listBrowserAuthenticationFixtures,
   unsignedBrowserLaneId,
+  invokedBrowserLaneId,
+  rememberedBrowserAuthenticationHealth,
+  claimedFixtureStartBlocker,
+  claimedBrowserJobStartBlocker,
+  accountReloginFindingsReport,
   CasePlanError,
   buildTargetProfiles,
   compileAppMapConnection,
   compileAppMapFlow,
   findActiveCombineCampaignForCombine,
-  currentOperationContext,
-  enqueueJob,
   listDevices,
   listDeviceLeases,
   listTargets,
@@ -186,6 +190,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
           cell: body.cell,
           defaultTargetProfileId: body.targetProfileId,
           title: upserted.combine.name,
+          ...(body.laneId?.trim() ? { laneId: body.laneId.trim() } : {}),
           ...(body.sourceRevision ? { sourceRevision: body.sourceRevision } : {}),
           ...(body.repeatRecovery
             ? {
@@ -289,6 +294,21 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
         });
       }
     }
+    const savedFixtureReference =
+      runtimeTargetProfile?.browserCaseProfile?.authenticationFixtureId?.trim();
+    const accountBlocker = await claimedFixtureStartBlocker({
+      projectId: input.scope.projectId,
+      targetId,
+      ...(body.account ? { account: body.account } : {}),
+      ...(savedFixtureReference ? { savedFixtureReference } : {}),
+    });
+    if (accountBlocker) {
+      throw new HttpError(409, accountBlocker, {
+        code: "ACCOUNT_NEEDS_RELOGIN",
+        recovery: "Open Sign-ins, complete OAuth, then Refresh.",
+        findings: accountReloginFindingsReport({ detail: accountBlocker }),
+      });
+    }
     const plan = compiled.plan;
     const preflight = preflightCompiledAppMapTestOffline(
       plan,
@@ -334,7 +354,12 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     const queuedAt = Date.now();
     let executionIntent;
     try {
-      executionIntent = runtime.createAppMapTestExecutionIntent({ plan, recipeGraph, preflight });
+      executionIntent = runtime.createAppMapTestExecutionIntent({
+        plan,
+        recipeGraph,
+        preflight,
+        ...(body.laneId?.trim() ? { laneId: body.laneId.trim() } : {}),
+      });
     } catch (error) {
       throw new HttpError(
         409,
@@ -554,6 +579,14 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       authenticationFixtureId: targetProfile?.browserCaseProfile?.authenticationFixtureId,
       accountKind: body.account?.kind,
     });
+    const laneId = invokedBrowserLaneId({
+      laneId: body.laneId,
+      unsignedLaneId,
+    });
+    const fixtureReference = targetProfile?.browserCaseProfile?.authenticationFixtureId?.trim();
+    const authenticationHealth = fixtureReference
+      ? await rememberedBrowserAuthenticationHealth(fixtureReference)
+      : undefined;
     const job = runtime.enqueueJob({
       recipe: recipeSnapshot.id,
       title: recipeSnapshot.title,
@@ -564,7 +597,9 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       targetKind: executionTarget.kind,
       browserTargetId: executionTarget.kind === "browser" ? targetId : undefined,
       ...(targetProfile ? { targetProfile } : {}),
+      ...(laneId ? { laneId } : {}),
       ...(unsignedLaneId ? { unsignedLaneId } : {}),
+      ...(authenticationHealth ? { authenticationHealth } : {}),
       ...(queuedSourceRevision ? { sourceRevision: queuedSourceRevision } : {}),
       ...(proofEvidencePolicy ? { evidencePolicy: proofEvidencePolicy } : {}),
       artifacts: [
@@ -838,9 +873,22 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     targetKind === "browser"
       ? undefined
       : (body.platform ?? (await resolveJobDevicePlatform(body.serial)));
+  const flowAccount = await claimedBrowserJobStartBlocker({
+    projectId: input.scope.projectId,
+    targetId,
+    browserCaseProfile: targetProfile?.browserCaseProfile,
+    targetProfile,
+  });
+  if (flowAccount.blocker) {
+    throw new HttpError(409, flowAccount.blocker, {
+      code: "ACCOUNT_NEEDS_RELOGIN",
+      recovery: "Open Sign-ins, complete OAuth, then Refresh.",
+      findings: accountReloginFindingsReport({ detail: flowAccount.blocker }),
+    });
+  }
   const jobs = cases.map((item) => {
     const variables = { ...constantVariables, ...item.values };
-    return enqueueJob({
+    return runtime.enqueueJob({
       recipe: recipeSnapshot.id,
       title: cases.length > 1 ? `${recipeSnapshot.title} · ${item.name}` : recipeSnapshot.title,
       recipeSnapshot,
@@ -850,6 +898,9 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       targetKind,
       browserTargetId: body.browserTargetId,
       ...(targetProfile ? { targetProfile } : {}),
+      ...(flowAccount.authenticationHealth
+        ? { authenticationHealth: flowAccount.authenticationHealth }
+        : {}),
       variables,
       sensitiveInputNames: sensitiveInputNames(definitions.value, variables),
       ...(matrix

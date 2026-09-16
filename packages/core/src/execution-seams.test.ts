@@ -379,7 +379,35 @@ test("session factory freezes browser environment identity across queue and retr
     { findJob: () => undefined, toTransport: (value) => value },
   );
   assert.equal(parallel.unsignedLaneId, "grok-daily-b");
+  assert.equal(parallel.laneId, "grok-daily-b");
   assert.equal(parallel.workerId, "local:browser:target:chat%23signed-out%3Agrok-daily-b");
+
+  const labProfile: TargetProfile = {
+    ...targetProfile,
+    id: "browser:grok-com-1280x800-339a5a430a41",
+    browserCaseProfile: {
+      ...mutableProfile,
+      authenticationFixtureId: "authfx:7189423f-193e-45ed-b674-154505cc5107:1",
+    },
+  };
+  const lab = createSessionJob(
+    {
+      recipe: "browser-proof",
+      targetKind: "browser",
+      browserTargetId: "chat",
+      targetProfile: labProfile,
+      laneId: "grok-lab",
+    },
+    { findJob: () => undefined, toTransport: (value) => value },
+  );
+  assert.equal(lab.laneId, "grok-lab");
+  assert.equal(lab.unsignedLaneId, undefined);
+  const labRetry = createSessionJob(retryInputFromJob(lab), {
+    findJob: (id) => (id === lab.id ? lab : undefined),
+    toTransport: (value) => value,
+  });
+  assert.equal(labRetry.laneId, "grok-lab");
+  assert.equal(labRetry.unsignedLaneId, undefined);
 
   const retry = createSessionJob(retryInputFromJob(job), {
     findJob: (id) => (id === job.id ? job : undefined),

@@ -7,6 +7,9 @@ export function laneSessionPartition(laneId: string): string {
   if (!SAFE_LANE_ID.test(id)) {
     throw new Error("Lane identifier is not a safe Electron partition");
   }
+  if (id.includes("__lane_")) {
+    throw new Error("Electron partition cannot reuse Playwright user-data");
+  }
   return `persist:lane:${id}`;
 }
 

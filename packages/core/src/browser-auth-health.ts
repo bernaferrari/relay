@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
@@ -9,7 +10,9 @@ import { identityPolicyForTarget, type AppIdentityPolicy } from "./app-identity-
 import { findWorkspaceRoot } from "./workspace-root.js";
 import {
   browserAuthenticationStorageState,
+  isBrowserAuthenticationFixtureReference,
   listBrowserAuthenticationFixtures,
+  listBrowserAuthenticationFixturesSync,
 } from "./browser-authentication-fixtures.js";
 import { listedFixtureForAccount } from "./browser-execution-identity.js";
 
@@ -118,13 +121,14 @@ export function classifyBrowserAuthenticationHealth(
   };
 }
 
-export function planAccountHealthBlocker(health: BrowserAuthenticationHealth): string | undefined {
-  if (health.status === "ready" || health.status === "error") return undefined;
-  if (health.status === "needs-relogin" || health.status === "expired") {
-    return `${health.detail ?? "This sign-in needs re-login"} Open Sign-ins, complete OAuth, then Refresh.`;
-  }
+export function planAccountHealthBlocker(
+  health: BrowserAuthenticationHealth,
+  extra?: { readyCount?: number },
+): string | undefined {
+  const blocked = extra?.readyCount === 0 || health.signedIn === false || health.status !== "ready";
+  if (!blocked) return undefined;
   if (health.status === "revoked") return health.detail ?? "This sign-in is revoked.";
-  return health.detail ?? "This sign-in is not ready.";
+  return `${health.detail ?? "This sign-in is not ready."} Open Sign-ins, complete OAuth, then Refresh.`;
 }
 
 export function planAccountStartBlocker(input: {
@@ -141,10 +145,15 @@ export function planAccountStartBlocker(input: {
     reference: string;
     health: BrowserAuthenticationHealth;
   }[];
+  /** Claimed fixture ready count. Zero with a signed-in fixture fails closed. */
+  readyCount?: number;
 }): string | undefined {
-  if (input.account?.kind !== "fixture") return undefined;
+  if (input.account?.kind === "signed-out") return undefined;
+  const claimsSignedInFixture =
+    input.account?.kind === "fixture" || Boolean(input.savedFixtureReference?.trim());
+  if (!claimsSignedInFixture) return undefined;
   const listedMatch =
-    input.account.accountId && input.account.accountRevision
+    input.account?.kind === "fixture" && input.account.accountId && input.account.accountRevision
       ? listedFixtureForAccount(
           input.fixtures.map((item) => ({
             id: item.id ?? "",
@@ -159,31 +168,273 @@ export function planAccountStartBlocker(input: {
         )
       : undefined;
   const reference =
-    input.account.reference ??
-    listedMatch?.reference ??
-    (input.account.accountId && input.account.accountRevision
-      ? `authfx:${input.account.accountId}:${input.account.accountRevision}`
-      : undefined) ??
-    input.savedFixtureReference;
+    (input.account?.kind === "fixture" ? input.account.reference?.trim() : undefined) ||
+    listedMatch?.reference ||
+    input.savedFixtureReference?.trim();
   if (!reference) return undefined;
   const health = input.fixtures.find((item) => item.reference === reference)?.health;
+  if (input.readyCount === 0) {
+    return health
+      ? planAccountHealthBlocker(health, { readyCount: 0 })
+      : "No ready sign-in for this Plan. Open Sign-ins, complete OAuth, then Refresh.";
+  }
   return health ? planAccountHealthBlocker(health) : undefined;
+}
+
+/** Typed fail-close for enqueue paths that are not HTTP (scheduler, option-run). */
+export class AccountNeedsReloginError extends Error {
+  readonly code = "ACCOUNT_NEEDS_RELOGIN" as const;
+  constructor(readonly detail: string) {
+    super(`ACCOUNT_NEEDS_RELOGIN: ${detail}`);
+    this.name = "AccountNeedsReloginError";
+  }
+}
+
+/** Fail-closed start check for a Test/Lane/cell that claims a signed-in fixture. */
+export async function claimedFixtureStartBlocker(input: {
+  projectId: string;
+  targetId: string;
+  account?: {
+    kind: string;
+    reference?: string;
+    accountId?: string;
+    accountRevision?: string;
+  };
+  savedFixtureReference?: string;
+}): Promise<string | undefined> {
+  if (input.account?.kind === "signed-out") return undefined;
+  if (input.account?.kind !== "fixture" && !input.savedFixtureReference?.trim()) {
+    return undefined;
+  }
+  const listed = await listBrowserAuthenticationFixtures({
+    projectId: input.projectId,
+    targetId: input.targetId,
+  });
+  const attached = await attachBrowserAuthenticationHealth(listed);
+  const listedMatch =
+    input.account?.kind === "fixture" && input.account.accountId && input.account.accountRevision
+      ? listedFixtureForAccount(attached, {
+          accountId: input.account.accountId,
+          accountRevision: input.account.accountRevision,
+          ...(input.account.reference ? { reference: input.account.reference } : {}),
+        })
+      : undefined;
+  const claimed =
+    (input.account?.kind === "fixture" ? input.account.reference?.trim() : undefined) ||
+    listedMatch?.reference ||
+    input.savedFixtureReference?.trim();
+  return planAccountStartBlocker({
+    account: input.account,
+    savedFixtureReference: input.savedFixtureReference,
+    fixtures: attached,
+    readyCount: attached.filter(
+      (fixture) => fixture.reference === claimed && fixture.health.status === "ready",
+    ).length,
+  });
+}
+
+/** Remembered health wins. Parent blocked health cannot be dropped to SuperGrok. */
+export function retryAuthenticationHealthStamp(input: {
+  parent?: BrowserAuthenticationHealth;
+  remembered?: BrowserAuthenticationHealth;
+}): { blocker?: string; authenticationHealth?: BrowserAuthenticationHealth } {
+  if (input.remembered) {
+    const blocker = planAccountHealthBlocker(input.remembered);
+    if (blocker) return { blocker };
+    return { authenticationHealth: structuredClone(input.remembered) };
+  }
+  if (input.parent) {
+    const blocker = planAccountHealthBlocker(input.parent);
+    if (blocker) return { blocker };
+    return { authenticationHealth: structuredClone(input.parent) };
+  }
+  return {};
+}
+
+function claimedFixtureReference(input: {
+  browserCaseProfile?: { authenticationFixtureId?: string };
+  targetProfile?: { browserCaseProfile?: { authenticationFixtureId?: string } };
+}): string | undefined {
+  return (
+    input.browserCaseProfile?.authenticationFixtureId?.trim() ||
+    input.targetProfile?.browserCaseProfile?.authenticationFixtureId?.trim() ||
+    undefined
+  );
+}
+
+type ClaimedBrowserJobStartInput = {
+  projectId: string;
+  targetId?: string;
+  browserCaseProfile?: { authenticationFixtureId?: string };
+  targetProfile?: { browserCaseProfile?: { authenticationFixtureId?: string } };
+  parentAuthenticationHealth?: BrowserAuthenticationHealth;
+};
+
+function evaluateClaimedBrowserJobStart(input: {
+  savedFixtureReference: string;
+  fixtures: readonly { reference: string; health: BrowserAuthenticationHealth }[];
+  remembered?: BrowserAuthenticationHealth;
+  parentAuthenticationHealth?: BrowserAuthenticationHealth;
+}): { blocker?: string; authenticationHealth?: BrowserAuthenticationHealth } {
+  const known = input.fixtures.some((item) => item.reference === input.savedFixtureReference);
+  const listedBlocker =
+    known || isBrowserAuthenticationFixtureReference(input.savedFixtureReference)
+      ? planAccountStartBlocker({
+          savedFixtureReference: input.savedFixtureReference,
+          fixtures: input.fixtures,
+          readyCount: input.fixtures.filter(
+            (fixture) =>
+              fixture.reference === input.savedFixtureReference &&
+              fixture.health.status === "ready",
+          ).length,
+        })
+      : undefined;
+  const stamp = retryAuthenticationHealthStamp({
+    parent: input.parentAuthenticationHealth,
+    remembered: input.remembered,
+  });
+  if (listedBlocker) return { blocker: listedBlocker };
+  if (stamp.blocker) return { blocker: stamp.blocker };
+  return { authenticationHealth: stamp.authenticationHealth };
+}
+
+function attachRememberedHealth<
+  T extends Pick<BrowserAuthenticationFixture, "reference" | "name" | "expiresAt" | "revokedAt">,
+>(
+  fixtures: readonly T[],
+  remembered: HealthIndex,
+  now = Date.now(),
+): Array<T & { health: BrowserAuthenticationHealth }> {
+  return fixtures.map((fixture) => {
+    const stored = remembered[fixture.reference];
+    const health = classifyBrowserAuthenticationHealth(fixture, now, undefined);
+    if (health.status !== "ready") return { ...fixture, health };
+    return { ...fixture, health: stored ?? health };
+  });
+}
+
+/** Fail-closed enqueue check for flow/connection/job/retry/replay identities. */
+export async function claimedBrowserJobStartBlocker(
+  input: ClaimedBrowserJobStartInput,
+): Promise<{ blocker?: string; authenticationHealth?: BrowserAuthenticationHealth }> {
+  const savedFixtureReference = claimedFixtureReference(input);
+  if (!savedFixtureReference) return {};
+  const targetId = input.targetId?.trim();
+  const listed = targetId
+    ? await listBrowserAuthenticationFixtures({
+        projectId: input.projectId,
+        targetId,
+      })
+    : [];
+  const remembered = await readHealthIndex();
+  return evaluateClaimedBrowserJobStart({
+    savedFixtureReference,
+    fixtures: attachRememberedHealth(listed, remembered),
+    remembered: remembered[savedFixtureReference],
+    parentAuthenticationHealth: input.parentAuthenticationHealth,
+  });
+}
+
+/** Sync twin for prepareJobBatch. Same fail-closed rule as the async enqueue check. */
+export function claimedBrowserJobStartBlockerSync(input: ClaimedBrowserJobStartInput): {
+  blocker?: string;
+  authenticationHealth?: BrowserAuthenticationHealth;
+} {
+  const savedFixtureReference = claimedFixtureReference(input);
+  if (!savedFixtureReference) return {};
+  const targetId = input.targetId?.trim();
+  const listed = targetId
+    ? listBrowserAuthenticationFixturesSync({
+        projectId: input.projectId,
+        targetId,
+      })
+    : [];
+  const remembered = readHealthIndexSync();
+  return evaluateClaimedBrowserJobStart({
+    savedFixtureReference,
+    fixtures: attachRememberedHealth(listed, remembered),
+    remembered: remembered[savedFixtureReference],
+    parentAuthenticationHealth: input.parentAuthenticationHealth,
+  });
+}
+
+/** Throw instead of returning a blocker. Scheduler and option-run enqueue use this. */
+export async function assertClaimedBrowserJobStartAllowed(
+  input: ClaimedBrowserJobStartInput,
+): Promise<BrowserAuthenticationHealth | undefined> {
+  const result = await claimedBrowserJobStartBlocker(input);
+  if (result.blocker) throw new AccountNeedsReloginError(result.blocker);
+  return result.authenticationHealth;
+}
+
+/** Throw from sync job-batch admission so in-process enqueue cannot skip SuperGrok health. */
+export function assertClaimedBrowserJobStartAllowedSync(
+  input: ClaimedBrowserJobStartInput,
+): BrowserAuthenticationHealth | undefined {
+  const result = claimedBrowserJobStartBlockerSync(input);
+  if (result.blocker) throw new AccountNeedsReloginError(result.blocker);
+  return result.authenticationHealth;
+}
+
+/** Backstop so Combine-cell enqueue cannot skip a dead signed-in profile. */
+export async function preparedCellsFixtureStartBlocker(input: {
+  projectId: string;
+  cells: readonly {
+    executionTarget: { targetId: string; platform?: string };
+    selectedRuntimeTargetProfile?: {
+      browserCaseProfile?: { authenticationFixtureId?: string };
+    };
+  }[];
+}): Promise<string | undefined> {
+  for (const cell of input.cells) {
+    if (cell.executionTarget.platform && cell.executionTarget.platform !== "browser") continue;
+    const saved =
+      cell.selectedRuntimeTargetProfile?.browserCaseProfile?.authenticationFixtureId?.trim();
+    if (!saved) continue;
+    const blocker = await claimedFixtureStartBlocker({
+      projectId: input.projectId,
+      targetId: cell.executionTarget.targetId,
+      savedFixtureReference: saved,
+    });
+    if (blocker) return blocker;
+  }
+  return undefined;
+}
+
+function parseHealthIndex(raw: string): HealthIndex {
+  const parsed = JSON.parse(raw) as {
+    entries?: Record<string, unknown>;
+  };
+  if (!parsed.entries || typeof parsed.entries !== "object") return {};
+  const entries: HealthIndex = {};
+  for (const [reference, value] of Object.entries(parsed.entries)) {
+    const health = browserAuthenticationHealthSchema.safeParse(value);
+    if (health.success) entries[reference] = health.data;
+  }
+  return entries;
+}
+
+function healthIndexFromMissingFile(error: unknown): HealthIndex | undefined {
+  if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+  return undefined;
 }
 
 async function readHealthIndex(): Promise<HealthIndex> {
   try {
-    const parsed = JSON.parse(await readFile(healthPath(), "utf8")) as {
-      entries?: Record<string, unknown>;
-    };
-    if (!parsed.entries || typeof parsed.entries !== "object") return {};
-    const entries: HealthIndex = {};
-    for (const [reference, value] of Object.entries(parsed.entries)) {
-      const health = browserAuthenticationHealthSchema.safeParse(value);
-      if (health.success) entries[reference] = health.data;
-    }
-    return entries;
+    return parseHealthIndex(await readFile(healthPath(), "utf8"));
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    const missing = healthIndexFromMissingFile(error);
+    if (missing) return missing;
+    throw error;
+  }
+}
+
+function readHealthIndexSync(): HealthIndex {
+  try {
+    return parseHealthIndex(readFileSync(healthPath(), "utf8"));
+  } catch (error) {
+    const missing = healthIndexFromMissingFile(error);
+    if (missing) return missing;
     throw error;
   }
 }
@@ -208,13 +459,7 @@ export async function attachBrowserAuthenticationHealth<
   fixtures: readonly T[],
   now = Date.now(),
 ): Promise<Array<T & { health: BrowserAuthenticationHealth }>> {
-  const remembered = await readHealthIndex();
-  return fixtures.map((fixture) => {
-    const stored = remembered[fixture.reference];
-    const health = classifyBrowserAuthenticationHealth(fixture, now, undefined);
-    if (health.status !== "ready") return { ...fixture, health };
-    return { ...fixture, health: stored ?? health };
-  });
+  return attachRememberedHealth(fixtures, await readHealthIndex(), now);
 }
 
 export async function probeBrowserAuthenticationFixture(input: {

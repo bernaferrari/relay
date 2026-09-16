@@ -125,6 +125,7 @@ test("--lane interact resolves serial and fixture without a client overlay", asy
     });
     assert.equal(resolved.serial, "shop-web");
     assert.equal(resolved.authenticationFixtureId, "authfx:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:1");
+    assert.equal(resolved.laneId, "shop-lab");
     assert.equal(resolved.unsignedLaneId, undefined);
   });
 });

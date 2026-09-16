@@ -1,4 +1,5 @@
 import type {
+  BrowserAuthenticationHealth,
   BrowserCaseProfile,
   EvidenceCollectionPolicy,
   EvidenceManifest,
@@ -53,9 +54,15 @@ export type TestJob = {
   browserCaseProfile?: BrowserCaseProfile;
   /** Frozen facts used to select this run from a compatibility matrix. */
   targetProfile?: TargetProfile;
+  /** Invoked Lane (`--lane grok-lab`). Fixture Lanes keep this; unsignedLaneId
+   * stays the signed-out scheduler identity only. */
+  laneId?: string;
   /** Unsigned Lane identity so two signed-out grok.com Lanes do not share a
    * scheduler slot or Playwright session. Fixture Lanes omit this. */
   unsignedLaneId?: string;
+  /** Last remembered fixture health at enqueue. Capture-review fail-closes
+   * when this is not ready instead of labeling pixels as the saved account. */
+  authenticationHealth?: BrowserAuthenticationHealth;
   /** Immutable commit/build binding captured when the run was accepted.
    * Audit-grade provenance: every proof names the exact source it exercised. */
   sourceRevision?: SourceRevision;
@@ -145,8 +152,12 @@ export type EnqueueJobInput = {
   /** Exact browser environment frozen before the job enters the queue. */
   browserCaseProfile?: BrowserCaseProfile;
   targetProfile?: TargetProfile;
+  /** Invoked Lane. Kept on fixture jobs; unsignedLaneId is still stripped. */
+  laneId?: string;
   /** Distinct unsigned Lane for signed-out overlap. Ignored when a fixture is set. */
   unsignedLaneId?: string;
+  /** Remembered fixture health frozen with the job for capture-review labels. */
+  authenticationHealth?: BrowserAuthenticationHealth;
   /** Frozen at enqueue time into the run manifest; never rewritten. */
   sourceRevision?: SourceRevision;
   prodAccountMatch?: string;
@@ -172,4 +183,9 @@ export type EnqueueJobInput = {
   workerCapacity?: number;
   hostWorkerId?: string;
   hostWorkerCapacity?: number;
+};
+
+/** Fresh remembered health for retry/replay. Omitted keeps the parent/run stamp. */
+export type RetryEnqueueOptions = {
+  authenticationHealth?: BrowserAuthenticationHealth;
 };

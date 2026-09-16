@@ -1,14 +1,15 @@
 import { randomUUID } from "node:crypto";
 import {
   canonicalAppMapTestTupleIdentity,
+  type BrowserAuthenticationHealth,
   type ExecutionTargetRef,
+  type SourceRevision,
   type TargetProfile,
 } from "@relay/protocol";
 import { appMapCombineCellExecutionIntentArtifactKind } from "./app-map-combine-cell-intent.js";
 import type { PreparedAppMapCombineCell } from "./app-map-combine-cell-prepare.js";
 import { digestAppMapTestExecutionValue } from "./app-map-test-execution-intent.js";
 import { currentOperationContext, type OperationContext } from "./operation-context.js";
-import type { SourceRevision } from "@relay/protocol";
 import { prepareJobBatch, type EnqueueJobInput, type TestJob } from "./session.js";
 
 type QueuedCombineCellTarget = Extract<
@@ -86,6 +87,9 @@ export type EnqueuePreparedAppMapCombineCellsInput = {
   sourceRevision?: SourceRevision;
   /** Distinct unsigned Lane so signed-out Combine cells can overlap another unsigned Lane. */
   unsignedLaneId?: string;
+  /** Invoked Lane, including fixture Lanes that omit unsignedLaneId. */
+  laneId?: string;
+  authenticationHealth?: BrowserAuthenticationHealth;
 };
 
 export type StagedAppMapCombineCellBatch = {
@@ -130,7 +134,11 @@ export function stagePreparedAppMapCombineCells(
       // The job factory verifies they agree before the job becomes durable.
       executionTarget: structuredClone(target),
       targetProfile: input.queuedTargetProfile?.(cell, target),
+      ...(input.laneId ? { laneId: input.laneId } : {}),
       ...(input.unsignedLaneId ? { unsignedLaneId: input.unsignedLaneId } : {}),
+      ...(input.authenticationHealth
+        ? { authenticationHealth: structuredClone(input.authenticationHealth) }
+        : {}),
       ...(input.sourceRevision ? { sourceRevision: structuredClone(input.sourceRevision) } : {}),
       // Wrapper steps reference generated prefixes ({{v0_…}}, {{v0_…_label}});
       // without these inputs every template stays literal and the appLocale

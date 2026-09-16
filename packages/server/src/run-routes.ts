@@ -74,6 +74,10 @@ import { requireScopedAppMapTestExecution } from "./app-map-test-execution-guard
 import { applyRebasableAppMapMutation } from "./app-map-route-mutations.js";
 import { assertEnqueueExecutionTargetRouteControl } from "./execution-target-route-control.js";
 import { assertCurrentBrowserExecutionProfile } from "./browser-execution-profile-admission.js";
+import {
+  browserJobTargetId,
+  rejectBlockedClaimedBrowserJob,
+} from "./claimed-browser-job-admission.js";
 import { sendHumanInterventionReproofEvidence } from "./human-intervention-reproof-evidence.js";
 import { recordAudit, resolveCommandActor, type RequestContext } from "./security.js";
 import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
@@ -389,7 +393,17 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
         enqueue: repairInput,
         assertLocalTargetControl: runtime.assertTargetControl,
       });
-      const job = runtime.enqueueJob(repairInput);
+      const authenticationHealth = await rejectBlockedClaimedBrowserJob({
+        projectId: run.projectId ?? scope.projectId,
+        targetId: browserJobTargetId(run),
+        browserCaseProfile: repairInput.browserCaseProfile ?? run.browserCaseProfile,
+        targetProfile: repairInput.targetProfile ?? run.targetProfile,
+        parentAuthenticationHealth: run.authenticationHealth,
+      });
+      const job = runtime.enqueueJob({
+        ...repairInput,
+        ...(authenticationHealth ? { authenticationHealth } : {}),
+      });
       recordAudit(scope, {
         action: "run.repair.retry",
         resource: repair.id,

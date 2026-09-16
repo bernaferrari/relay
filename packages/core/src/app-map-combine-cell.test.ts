@@ -534,7 +534,7 @@ test("binding assessment rejects zero, duplicate, foreign, and missing coverage"
   assert.ok(foreign.issues.some((item) => item.code === "foreign-binding"));
 });
 
-function childFixture() {
+function childFixture(laneId?: string) {
   const root: Recipe = {
     id: "settings:smoke:root",
     title: "Smoke",
@@ -604,9 +604,57 @@ function childFixture() {
     returns: [],
     findings: [],
   };
-  const child = createAppMapTestExecutionIntent({ plan, recipeGraph, preflight });
+  const child = createAppMapTestExecutionIntent({
+    plan,
+    recipeGraph,
+    preflight,
+    ...(laneId ? { laneId } : {}),
+  });
   return { child, root, recipeGraph };
 }
+
+test("outer Combine cell intent preserves the invoked child laneId", () => {
+  const { child, root } = childFixture("grok-lab");
+  assert.equal(child.laneId, "grok-lab");
+  const wrapper = composeAppMapCombineCellWrapper({
+    cellId: appMapCombineCellId("smoke", { language: "en" }),
+    childRootId: root.id,
+    childGraph: child.recipeGraph,
+    sets: [
+      {
+        id: "language",
+        name: "Language",
+        kind: "language",
+        apply: { kind: "list", entryPath: [{ kind: "tap", target: { label: "Open" } }] },
+        options: [{ id: "en", identifier: "lang.en", label: "English" }],
+      },
+    ],
+    at: 1,
+  });
+  const intent = createAppMapCombineCellExecutionIntent({
+    cellId: appMapCombineCellId("smoke", { language: "en" }),
+    testId: "smoke",
+    values: { language: "en" },
+    selectedRuntimeTargetProfile: child.selectedRuntimeTargetProfile!,
+    child,
+    wrapperRoot: wrapper.root,
+    recipeGraph: wrapper.graph,
+    staticInputs: declaredCombineCellStaticInputs(
+      [
+        {
+          id: "language",
+          name: "Language",
+          kind: "language",
+          apply: { kind: "list", entryPath: [{ kind: "tap", target: { label: "Open" } }] },
+          options: [{ id: "en", identifier: "lang.en", label: "English" }],
+        },
+      ],
+      { language: "en" },
+    ),
+  });
+  assert.equal(intent.child.laneId, "grok-lab");
+  assert.equal(parseAppMapCombineCellExecutionIntent(intent)?.child.laneId, "grok-lab");
+});
 
 test("outer Combine cell intent recomputes cellId and rejects a substituted child graph", () => {
   const { child, root } = childFixture();
@@ -646,6 +694,7 @@ test("outer Combine cell intent recomputes cellId and rejects a substituted chil
       { language: "en" },
     ),
   });
+  assert.equal(intent.child.laneId, undefined);
   assert.equal(parseAppMapCombineCellExecutionIntent(intent)?.cell.cellId, intent.cell.cellId);
   assert.deepEqual(
     executionIntentProvenance([{ kind: intent.kind, data: intent }]),

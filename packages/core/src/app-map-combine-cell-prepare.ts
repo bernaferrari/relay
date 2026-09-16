@@ -554,6 +554,7 @@ async function prepareOneCell(input: {
   targetProfileIdSource: "explicit" | "inherited";
   compileOptions: AppMapTestCompileOptions;
   readAppMap?: (appMapId: string) => Promise<AppMap | null>;
+  laneId?: string;
 }): Promise<PreparedAppMapCombineCell> {
   const test = input.map.tests[input.cell.testId] as AppMapScenarioTest | undefined;
   if (!test) {
@@ -643,7 +644,13 @@ async function prepareOneCell(input: {
   const recipeGraph = Object.fromEntries(
     Object.values(compiled.graph).map((recipe) => [recipe.id, structuredClone(recipe)]),
   );
-  const childIntent = createAppMapTestExecutionIntent({ plan, recipeGraph, preflight });
+  const laneId = input.laneId?.trim();
+  const childIntent = createAppMapTestExecutionIntent({
+    plan,
+    recipeGraph,
+    preflight,
+    ...(laneId ? { laneId } : {}),
+  });
   const staticInputs = declaredCombineCellStaticInputs(input.sets, input.worldValues);
   const wrapper = composeAppMapCombineCellWrapper({
     cellId: input.cell.cellId,
@@ -703,6 +710,8 @@ export async function prepareAppMapCombineCells(input: {
   defaultTargetProfileId?: string;
   compileOptions?: AppMapTestCompileOptions;
   readAppMap?: (appMapId: string) => Promise<AppMap | null>;
+  /** Invoked Lane (`--lane grok-lab`). Stamped onto each child execution intent. */
+  laneId?: string;
 }): Promise<PreparedAppMapCombine> {
   const tests = input.combine.testIds.map((id) => {
     const test = input.map.tests?.[id];
@@ -852,6 +861,7 @@ export async function prepareAppMapCombineCells(input: {
         : "explicit",
       compileOptions: input.compileOptions ?? {},
       ...(input.readAppMap ? { readAppMap: input.readAppMap } : {}),
+      ...(input.laneId?.trim() ? { laneId: input.laneId.trim() } : {}),
     });
     prepared.push({
       ...preparedCell,
