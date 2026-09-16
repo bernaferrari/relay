@@ -22,10 +22,10 @@
   "attempt": 1,
   "counts": {
     "planned": 30,
-    "captured": 28,
+    "captured": 29,
     "blocked": 1,
-    "missing": 1,
-    "pending": 28,
+    "missing": 0,
+    "pending": 29,
     "accepted": 0
   },
   "slots": [
@@ -41,6 +41,8 @@
       "caption": "Home chrome",
       "testId": "test-grok-web-signed-in-home",
       "status": "captured",
+      "jobId": "a0b6380d-6bc9-4bf7-878c-714e6ddf7815",
+      "mapRevision": 890,
       "scenarioKind": "browser-approximation",
       "blocked": false
     },
@@ -91,6 +93,7 @@
       "testId": "test-grok-web-signed-in-dictation-inspect",
       "status": "captured",
       "jobId": "b1eead7a-775e-4569-bb30-d9d63fe94071",
+      "mapRevision": 896,
       "scenarioKind": "browser-approximation",
       "blocked": false
     },
@@ -141,6 +144,7 @@
       "testId": "test-grok-web-signed-in-sidebar",
       "status": "captured",
       "jobId": "b7c18573-1cc2-4fb5-92fe-2ec35aa86885",
+      "mapRevision": 897,
       "scenarioKind": "browser-approximation",
       "blocked": false
     },
@@ -156,8 +160,8 @@
       "caption": "Sidebar",
       "testId": "test-grok-android-sidebar",
       "status": "captured",
-      "jobId": "16e8fc06-bb9d-400b-9916-dc496c3096b9",
-      "mapRevision": 340,
+      "jobId": "de163986-c621-4fca-bb6a-bf1811f61ffe",
+      "mapRevision": 362,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -190,6 +194,8 @@
       "caption": "Attach",
       "testId": "test-grok-web-signed-in-attach",
       "status": "captured",
+      "jobId": "a11c41b4-c699-4c88-b551-eedf739bb1ea",
+      "mapRevision": 890,
       "scenarioKind": "browser-approximation",
       "blocked": false
     },
@@ -239,6 +245,8 @@
       "caption": "Settings",
       "testId": "test-grok-web-signed-in-settings",
       "status": "captured",
+      "jobId": "3787eb65-1523-4525-beb0-c310c28eaa10",
+      "mapRevision": 890,
       "scenarioKind": "browser-approximation",
       "blocked": false
     },
@@ -288,6 +296,8 @@
       "caption": "Imagine",
       "testId": "test-grok-web-signed-in-imagine",
       "status": "captured",
+      "jobId": "37014ba6-ae10-4e2a-b395-cc4cce72a6dc",
+      "mapRevision": 890,
       "scenarioKind": "browser-approximation",
       "blocked": false
     },
@@ -336,6 +346,7 @@
       "testId": "test-grok-web-signed-in-logo",
       "status": "captured",
       "jobId": "d8bf4385-97b1-4aee-9116-86cacc44b46e",
+      "mapRevision": 898,
       "scenarioKind": "browser-approximation",
       "blocked": false
     },
@@ -351,8 +362,8 @@
       "caption": "Logo",
       "testId": "test-grok-android-logo",
       "status": "captured",
-      "jobId": "c22f19eb-ba85-4201-a2f2-36f1c0f88c2d",
-      "mapRevision": 342,
+      "jobId": "1d9acbd6-214f-4544-b790-b1062db8f721",
+      "mapRevision": 361,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -386,6 +397,7 @@
       "testId": "test-grok-web-signed-in-composer-focus",
       "status": "captured",
       "jobId": "ded7d047-82a0-4d69-b80c-03cf781cab60",
+      "mapRevision": 901,
       "scenarioKind": "browser-approximation",
       "blocked": false
     },
@@ -434,7 +446,9 @@
       "attempt": 1,
       "caption": "Models",
       "testId": "test-grok-web-signed-in-model-iterate",
-      "status": "missing",
+      "status": "captured",
+      "jobId": "f5116f81-87d6-448e-9d7d-2c545a649218",
+      "mapRevision": 904,
       "scenarioKind": "browser-approximation",
       "blocked": false
     },
@@ -450,8 +464,8 @@
       "caption": "Models",
       "testId": "test-grok-android-models",
       "status": "captured",
-      "jobId": "e53e8f65-9284-45f2-8e5c-21aed9f8cee1",
-      "mapRevision": 353,
+      "jobId": "5310092a-e5cf-4cd0-9e55-3a98e91bd9a2",
+      "mapRevision": 364,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -485,6 +499,7 @@
       "testId": "test-grok-web-signed-in-private-chat",
       "status": "captured",
       "jobId": "2b2377c7-9e77-49a0-9aa1-e41299ec1831",
+      "mapRevision": 899,
       "scenarioKind": "browser-approximation",
       "blocked": false
     },
