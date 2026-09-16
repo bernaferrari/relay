@@ -185,47 +185,47 @@ export const RC23_SCREENSHOT_FIRST_CAPTURED_PENDING: readonly Rc23ScreenshotFirs
   {
     checkpointId: "home-chrome",
     platform: "ios",
-    jobId: "3754526f-bcf2-4818-838e-0adcb8596a0e",
+    jobId: "12e0cbef-46ef-4870-a2f0-3b76234e151f",
   },
   {
     checkpointId: "dictation",
     platform: "ios",
-    jobId: "ea3bfb8e-005a-4442-b78a-49b40c11ba23",
+    jobId: "a262c526-8156-4d68-9af1-b62a73c1154a",
   },
   {
     checkpointId: "sidebar",
     platform: "ios",
-    jobId: "345c2e67-8b32-49f3-9d9a-1876809d313d",
+    jobId: "81ab27a4-e987-4bff-92cd-56502485f990",
   },
   {
     checkpointId: "logo",
     platform: "ios",
-    jobId: "eb3512fd-48d5-415e-8cdc-d5a0ffedc77d",
+    jobId: "f67d37fe-8a92-4d20-92d7-a651313f0897",
   },
   {
     checkpointId: "composer-focus",
     platform: "ios",
-    jobId: "2e31db46-e93a-4b86-ab77-1f71917b110d",
+    jobId: "43ece456-a1ed-47af-be9a-9fb357829947",
   },
   {
     checkpointId: "attach",
     platform: "ios",
-    jobId: "679b39b7-fb38-41de-a5b9-661504f0eeb0",
+    jobId: "9fb29721-66f1-47a0-9330-2fe142341103",
   },
   {
     checkpointId: "models",
     platform: "ios",
-    jobId: "3cd34331-eacc-4f36-8a9d-6df00122a10d",
+    jobId: "04c08ecd-7089-40a6-8da7-47d45ef0c69c",
   },
   {
     checkpointId: "private-chat",
     platform: "ios",
-    jobId: "dd229b0b-918e-42eb-9e62-fab1851a1d8d",
+    jobId: "113c9510-4250-4cc9-b3bc-6873edc19928",
   },
   {
     checkpointId: "settings",
     platform: "ios",
-    jobId: "ec09b7ba-fe83-4fa4-b076-121bc713a99a",
+    jobId: "183110a2-ddf6-4f0f-9b26-5b750a928b52",
   },
   {
     checkpointId: "home-chrome",
