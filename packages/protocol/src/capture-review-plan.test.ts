@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { captureReviewId } from "./capture-review.js";
+import {
+  CAPTURE_REVIEW_DEST_PHASE,
+  CAPTURE_REVIEW_LEFTOVER_PHASE,
+  captureReviewId,
+  captureReviewSlotId,
+} from "./capture-review.js";
 import {
   captureReviewQueueItemKey,
   filterPlanCaptureReviewQueue,
@@ -95,10 +100,10 @@ test("a Plan queue aggregates captures across Runs without opening each Run", ()
   assert.equal(queue.items.length, 3);
   assert.equal(queue.summary.planned, 3);
   assert.equal(queue.summary.captured, 2);
-  assert.equal(queue.summary.missing, 1);
+  assert.equal(queue.summary.missing, 0);
   assert.equal(queue.summary.blocked, 1);
   assert.equal(queue.summary.pending, 2);
-  assert.equal(queue.items.filter((item) => item.status === "missing")[0]?.blocked, true);
+  assert.equal(queue.items.filter((item) => item.blocked)[0]?.status, "missing");
   assert.equal(new Set(queue.items.map((item) => item.runId)).size, 3);
 });
 
@@ -144,6 +149,104 @@ test("bulk Looks correct binds only the exact selected items", () => {
   );
 });
 
+test("duplicate Settings captions stay two Plan slots when only one image exists", () => {
+  const queue = resolvePlanCaptureReviewQueue([
+    {
+      runId: "run-settings",
+      recipeSteps: [
+        {
+          id: "settings-before-language",
+          kind: "screenshot",
+          caption: "Settings",
+          review: { mode: "later", lookFor: "English section list" },
+        },
+        {
+          id: "settings-after-language",
+          kind: "screenshot",
+          caption: "Settings",
+          review: { mode: "later", lookFor: "Arabic section list" },
+        },
+      ],
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "Settings",
+            framePath: "frames/001.png",
+            imageSha256: "same-pixels",
+            stepId: "settings-before-language",
+          },
+        },
+      ],
+    },
+  ]);
+  assert.equal(queue.summary.planned, 2);
+  assert.equal(queue.summary.captured, 1);
+  assert.equal(queue.summary.missing, 1);
+  assert.equal(queue.items[0]?.caption, "Settings");
+  assert.equal(queue.items[1]?.caption, "Settings");
+  assert.notEqual(queue.items[0]?.captureId, queue.items[1]?.captureId);
+  assert.equal(queue.items[0]?.checkpointId, "settings-before-language");
+  assert.equal(queue.items[1]?.checkpointId, "settings-after-language");
+});
+
+test("Plan dest-phase slots keep dest pixels when leftover Close/Back is also recorded", () => {
+  const dest = {
+    requirementId: "rc23-screenshot-first",
+    checkpointId: "logo",
+    caption: "Logo",
+    lookFor: "Speak home chrome",
+    stepId: "relay-test-logo-dest",
+    attempt: 1,
+    phase: CAPTURE_REVIEW_DEST_PHASE,
+    configuration: { app: "android" },
+  };
+  const leftoverHome = {
+    kind: "capture-review",
+    data: {
+      caption: dest.caption,
+      lookFor: dest.lookFor,
+      framePath: "frames/005.png",
+      imageSha256: "home-leftover",
+      stepId: dest.stepId,
+      checkpointId: dest.checkpointId,
+      attempt: 1,
+      phase: CAPTURE_REVIEW_LEFTOVER_PHASE,
+      configuration: dest.configuration,
+    },
+  };
+  const destWait = {
+    kind: "capture-review",
+    data: {
+      caption: dest.caption,
+      lookFor: dest.lookFor,
+      framePath: "frames/002.png",
+      imageSha256: "automations-settings",
+      stepId: dest.stepId,
+      slotId: captureReviewSlotId(dest),
+      checkpointId: dest.checkpointId,
+      attempt: 1,
+      phase: CAPTURE_REVIEW_DEST_PHASE,
+      configuration: dest.configuration,
+    },
+  };
+  const queue = resolvePlanCaptureReviewQueue([
+    {
+      runId: "run-logo",
+      plannedSlots: [dest],
+      artifacts: [leftoverHome, destWait],
+    },
+  ]);
+  assert.equal(queue.items.length, 1);
+  assert.equal(queue.items[0]?.status, "pending");
+  assert.equal(queue.items[0]?.phase, CAPTURE_REVIEW_DEST_PHASE);
+  assert.equal(queue.items[0]?.framePath, "frames/002.png");
+  assert.equal(queue.items[0]?.imageSha256, "automations-settings");
+  assert.notEqual(queue.items[0]?.framePath, "frames/005.png");
+  assert.equal(queue.summary.captured, 1);
+  assert.equal(queue.summary.missing, 0);
+});
+
 test("a missing Plan capture stays in the denominator and cannot be selected", () => {
   const queue = resolvePlanCaptureReviewQueue([
     capture("run-member", "frames/001.png", "aaa"),
@@ -171,7 +274,10 @@ test("Plan item keys stay unique when two Runs share identical PNG bytes", () =>
     captureReviewQueueItemKey(queue.items[0]!),
     captureReviewQueueItemKey(queue.items[1]!),
   );
-  assert.match(formatPlanCaptureReviewQueue(queue), /2 planned · 2\/2 captured/u);
+  assert.match(
+    formatPlanCaptureReviewQueue(queue),
+    /2 planned · 2 captured · 0 blocked · 0 missing/u,
+  );
   assert.match(formatPlanCaptureReviewQueue(queue), /Looks correct does not approve/u);
 });
 

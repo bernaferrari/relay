@@ -61,11 +61,12 @@ export type PlanCaptureReviewSelection = {
 export function summarizePlanCaptureReview(
   items: readonly PlanCaptureReviewItem[],
 ): PlanCaptureReviewSummary {
-  const summary = summarizeCaptureReview(items);
+  const blockedItems = items.filter((item) => item.blocked);
+  const summary = summarizeCaptureReview(items.filter((item) => !item.blocked));
   return {
     ...summary,
     planned: items.length,
-    blocked: items.filter((item) => item.blocked).length,
+    blocked: blockedItems.length,
   };
 }
 
@@ -220,7 +221,7 @@ export function selectedPlanCaptureReviewItems(
       (candidate) =>
         candidate.runId === selection.runId && candidate.captureId === selection.captureId,
     );
-    if (!item || item.status === "missing") continue;
+    if (!item || item.status === "missing" || item.blocked) continue;
     if (selection.imageSha256 && item.imageSha256 && selection.imageSha256 !== item.imageSha256) {
       continue;
     }

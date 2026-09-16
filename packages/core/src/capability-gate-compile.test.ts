@@ -130,6 +130,7 @@ test("compiled Android Home plannedSlot stays blocked when adb is empty", () => 
   );
   assert.equal(queue.summary.planned, planned.length);
   assert.equal(queue.summary.blocked, planned.length);
+  assert.equal(queue.summary.missing, 0);
   assert.equal(
     queue.items.every((item) => item.blocked && item.status === "missing"),
     true,

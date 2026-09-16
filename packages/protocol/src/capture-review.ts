@@ -1,7 +1,7 @@
 import type { BrowserAuthenticationHealth } from "./browser-authentication-fixture.js";
 import type { ActorKind } from "./coordination.js";
 import type { BrowserLaneSessionStoreKind } from "./browser-lane-session.js";
-import type { CaptureSequencePhase } from "./recipes.js";
+import type { CaptureRasterPolicy, CaptureSequencePhase } from "./recipes.js";
 
 export const CAPTURE_REVIEW_ACTIONS = ["accept", "report-issue", "need-more-evidence"] as const;
 export type CaptureReviewAction = (typeof CAPTURE_REVIEW_ACTIONS)[number];
@@ -192,6 +192,8 @@ export type CaptureReviewItem = {
   phase?: string;
   settled?: boolean;
   samples?: number;
+  stabilityMeasured?: boolean;
+  policy?: CaptureRasterPolicy;
   configuration?: CaptureReviewConfiguration;
   observed?: CaptureReviewObservedSession;
   masks?: CaptureReviewMask[];
@@ -361,12 +363,28 @@ export function captureReviewCoverageLine(summary: CaptureReviewSummary): string
   return `${summary.captured}/${total} captured`;
 }
 
-/** Planned / captured / blocked + pending review. Never "N tests passed". */
+/** Planned / captured / blocked / missing / pending / accepted. Never "N tests passed". */
 export function formatCaptureReviewCoverageSummary(
   summary: CaptureReviewSummary & { planned?: number; blocked?: number },
 ): string {
+  if (summary.planned !== undefined) {
+    const parts = [
+      `${summary.planned} planned`,
+      `${summary.captured} captured`,
+      `${summary.blocked ?? 0} blocked`,
+      `${summary.missing} missing`,
+      `${summary.pending} pending`,
+      `${summary.accepted} accepted`,
+    ];
+    if (summary.issue) parts.push(`${summary.issue} issue${summary.issue === 1 ? "" : "s"}`);
+    if (summary.needMoreEvidence) {
+      parts.push(
+        `${summary.needMoreEvidence} need${summary.needMoreEvidence === 1 ? "s" : ""} more evidence`,
+      );
+    }
+    return parts.join(" · ");
+  }
   const parts = [captureReviewCoverageLine(summary)];
-  if (summary.planned) parts.unshift(`${summary.planned} planned`);
   if (summary.pending) parts.push(`${summary.pending} pending review`);
   if (summary.accepted) parts.push(`${summary.accepted} accepted`);
   if (summary.issue) parts.push(`${summary.issue} issue${summary.issue === 1 ? "" : "s"}`);
@@ -856,6 +874,12 @@ function captureReviewArtifact(data: unknown): CaptureReviewItem | undefined {
     ...(typeof payload.settled === "boolean" ? { settled: payload.settled } : {}),
     ...(typeof payload.samples === "number" && Number.isFinite(payload.samples)
       ? { samples: payload.samples }
+      : {}),
+    ...(typeof payload.stabilityMeasured === "boolean"
+      ? { stabilityMeasured: payload.stabilityMeasured }
+      : {}),
+    ...(payload.policy === "fast" || payload.policy === "stable" || payload.policy === "sequence"
+      ? { policy: payload.policy }
       : {}),
     ...(configuration ? { configuration } : {}),
     ...(observed ? { observed } : {}),

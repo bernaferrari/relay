@@ -80,7 +80,7 @@ test("empty adb keeps an Android Home plannedSlot blocked in the denominator", (
   const queue = resolveGatedPlanCaptureReviewQueue([webHome, androidHome], inventory);
   assert.equal(queue.summary.planned, 2);
   assert.equal(queue.summary.captured, 1);
-  assert.equal(queue.summary.missing, 1);
+  assert.equal(queue.summary.missing, 0);
   assert.equal(queue.summary.blocked, 1);
   const android = queue.items.find((item) => item.runId === "android-home");
   assert.equal(android?.status, "missing");
@@ -177,6 +177,7 @@ test("iOS Imagine unresolved-step stays Unbound in the workbook denominator", ()
   });
   assert.equal(queue.summary.planned, 1);
   assert.equal(queue.summary.blocked, 1);
+  assert.equal(queue.summary.missing, 0);
   assert.equal(queue.items[0]?.status, "missing");
   assert.equal(queue.items[0]?.blocked, true);
   assert.equal(queue.items[0]?.checkpointId, "imagine");

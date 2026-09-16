@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { captureReviewSlotId } from "./capture-review.js";
+import { captureReviewSlotId, formatCaptureReviewCoverageSummary } from "./capture-review.js";
 import { selectedPlanCaptureReviewItems } from "./capture-review-plan.js";
 import {
   RC23_SCREENSHOT_FIRST_CAPTURED_PENDING,
@@ -16,18 +16,21 @@ import {
 
 test("RC-23 freezes ten dest-end checkpoints × three platforms = 30 unique slots", () => {
   assert.equal(RC23_SCREENSHOT_FIRST_CHECKPOINT_IDS.length, 10);
-  assert.deepEqual([...RC23_SCREENSHOT_FIRST_CHECKPOINT_IDS], [
-    "home-chrome",
-    "dictation",
-    "sidebar",
-    "attach",
-    "settings",
-    "imagine",
-    "logo",
-    "composer-focus",
-    "models",
-    "private-chat",
-  ]);
+  assert.deepEqual(
+    [...RC23_SCREENSHOT_FIRST_CHECKPOINT_IDS],
+    [
+      "home-chrome",
+      "dictation",
+      "sidebar",
+      "attach",
+      "settings",
+      "imagine",
+      "logo",
+      "composer-focus",
+      "models",
+      "private-chat",
+    ],
+  );
   const slots = materializeRc23ScreenshotFirstSlots();
   assert.equal(slots.length, 30);
   assert.equal(new Set(slots.map((slot) => captureReviewSlotId(slot))).size, 30);
@@ -78,6 +81,16 @@ test("30 planned; 29 captured + 1 blocked + 0 missing = 30; mixed 12 is not comp
   assert.equal(counts.missing, 0);
   assert.equal(counts.pending, 29);
   assert.equal(counts.accepted, 0);
+  assert.equal(queue.summary.planned, 30);
+  assert.equal(queue.summary.captured, 29);
+  assert.equal(queue.summary.blocked, 1);
+  assert.equal(queue.summary.missing, 0);
+  assert.equal(queue.summary.pending, 29);
+  assert.equal(queue.summary.accepted, 0);
+  assert.equal(
+    formatCaptureReviewCoverageSummary(queue.summary),
+    "30 planned · 29 captured · 1 blocked · 0 missing · 29 pending · 0 accepted",
+  );
   assert.equal(counts.captured + counts.blocked + counts.missing, 30);
   assert.notEqual(counts.captured, 12);
   assert.notEqual(counts.captured, 30);
@@ -94,6 +107,8 @@ test("iOS Imagine stays blocked Unbound in the denominator, not omitted", () => 
   const android = imagine.find((item) => item.configuration?.app === "android")!;
   assert.equal(ios.status, "missing");
   assert.equal(ios.blocked, true);
+  assert.equal(queue.summary.missing, 0);
+  assert.equal(queue.summary.blocked, 1);
   assert.equal(web.status, "pending");
   assert.equal(web.blocked, undefined);
   assert.equal(web.scenarioKind, "browser-approximation");
@@ -113,9 +128,8 @@ test("Looks correct cannot accept missing, including the blocked iOS Imagine slo
   assert.equal(missing.status, "missing");
   assert.equal(missing.blocked, true);
   assert.equal(
-    selectedPlanCaptureReviewItems(queue, [
-      { runId: missing.runId, captureId: missing.captureId },
-    ]).length,
+    selectedPlanCaptureReviewItems(queue, [{ runId: missing.runId, captureId: missing.captureId }])
+      .length,
     0,
   );
   const models = queue.items.find(

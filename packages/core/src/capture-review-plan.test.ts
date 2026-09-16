@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { captureReviewId } from "@relay/protocol";
+import {
+  CAPTURE_REVIEW_DEST_PHASE,
+  CAPTURE_REVIEW_LEFTOVER_PHASE,
+  captureReviewId,
+  captureReviewSlotId,
+} from "@relay/protocol";
 import { CaptureReviewError } from "./capture-review.js";
 import {
   applyPlanCaptureReviewDecisions,
@@ -49,16 +54,16 @@ test("Plan capture review aggregates Runs and keeps missing in the denominator",
     run("run-1", "frames/001.png", "aaa"),
     {
       id: "run-2",
-      status: "blocked",
-      outcome: "harness-failure",
+      status: "blocked" as const,
+      outcome: "harness-failure" as const,
       artifacts: [],
       recipeSnapshot: { steps: [settingsStep] },
     },
   ]);
   assert.equal(queue.summary.planned, 2);
   assert.equal(queue.summary.captured, 1);
-  assert.equal(queue.summary.missing, 1);
   assert.equal(queue.summary.blocked, 1);
+  assert.equal(queue.summary.missing, 0);
 });
 
 test("bulk Looks correct writes the existing capture-review store for exact items only", () => {
@@ -216,6 +221,39 @@ test("Looks correct on a Plan queue does not accept a missing recapture", () => 
   assert.equal(applied.queue.summary.missing, 1);
 });
 
+test("Looks correct cannot accept a blocked Plan slot that stays in the denominator", () => {
+  const captured = run("run-1", "frames/001.png", "aaa");
+  const imagineStep = {
+    id: "imagine",
+    kind: "screenshot",
+    caption: "Imagine",
+    review: { mode: "later" },
+  };
+  const blockedRun = {
+    id: "run-imagine",
+    status: "blocked" as const,
+    outcome: "harness-failure" as const,
+    artifacts: [],
+    recipeSnapshot: { steps: [imagineStep] },
+  };
+  const queue = captureReviewQueueForPlan([captured, blockedRun]);
+  assert.equal(queue.summary.planned, 2);
+  assert.equal(queue.summary.blocked, 1);
+  assert.equal(queue.summary.missing, 0);
+  const blocked = queue.items.find((item) => item.blocked);
+  assert.ok(blocked);
+  const applied = applyPlanCaptureReviewDecisions([captured, blockedRun], {
+    action: "accept",
+    actor: { id: "human:maria", kind: "human" },
+    items: [{ runId: "run-imagine", captureId: blocked.captureId }],
+  });
+  assert.equal(applied.results[0]?.status, "missing");
+  assert.match(applied.results[0]?.error ?? "", /blocked screenshot/u);
+  assert.equal(applied.queue.summary.accepted, 0);
+  assert.equal(applied.queue.summary.blocked, 1);
+  assert.equal(applied.queue.summary.pending, 1);
+});
+
 test("Plan capture review reads Combine cell child plannedSlots without a digest parse", () => {
   const queue = captureReviewQueueForPlan([
     {
@@ -249,6 +287,70 @@ test("Plan capture review reads Combine cell child plannedSlots without a digest
   assert.equal(queue.summary.captured, 0);
   assert.equal(queue.summary.missing, 1);
   assert.equal(queue.items[0]?.caption, "Home chrome");
+});
+
+test("Plan dest-phase identity is not overwritten by leftover Close/Back", () => {
+  const dest = {
+    requirementId: "rc23-screenshot-first",
+    checkpointId: "logo",
+    caption: "Logo",
+    lookFor: "Speak home chrome",
+    stepId: "relay-test-logo-dest",
+    attempt: 1,
+    phase: CAPTURE_REVIEW_DEST_PHASE,
+    configuration: { app: "android" },
+  };
+  const queue = captureReviewQueueForPlan([
+    {
+      id: "run-logo",
+      status: "ok",
+      artifacts: [
+        {
+          kind: "capture-review",
+          capturedAt: 1,
+          data: {
+            caption: dest.caption,
+            framePath: "frames/005.png",
+            imageSha256: "home-leftover",
+            stepId: dest.stepId,
+            checkpointId: dest.checkpointId,
+            attempt: 1,
+            phase: CAPTURE_REVIEW_LEFTOVER_PHASE,
+            configuration: dest.configuration,
+          },
+        },
+        {
+          kind: "capture-review",
+          capturedAt: 2,
+          data: {
+            caption: dest.caption,
+            framePath: "frames/002.png",
+            imageSha256: "automations-settings",
+            stepId: dest.stepId,
+            slotId: captureReviewSlotId(dest),
+            checkpointId: dest.checkpointId,
+            attempt: 1,
+            phase: CAPTURE_REVIEW_DEST_PHASE,
+            configuration: dest.configuration,
+          },
+        },
+        {
+          kind: "app-map-combine-cell-execution-intent",
+          capturedAt: 1,
+          data: {
+            digest: "not-a-canonical-intent",
+            child: { plan: { plannedSlots: [dest] } },
+          },
+        },
+      ],
+    },
+  ]);
+  assert.equal(queue.items.length, 1);
+  assert.equal(queue.items[0]?.phase, CAPTURE_REVIEW_DEST_PHASE);
+  assert.equal(queue.items[0]?.framePath, "frames/002.png");
+  assert.notEqual(queue.items[0]?.framePath, "frames/005.png");
+  assert.equal(queue.summary.captured, 1);
+  assert.equal(queue.summary.missing, 0);
 });
 
 test("unique Plan batch prefix selects the existing campaign", () => {

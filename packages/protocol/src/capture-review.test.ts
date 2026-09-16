@@ -62,8 +62,8 @@ test("eight intended captures stay pending until a person reviews the exact imag
   );
   assert.equal(captureReviewCoverageLine(queue.summary), "8/8 captured");
   assert.equal(
-    formatCaptureReviewCoverageSummary({ ...queue.summary, planned: 8 }),
-    "8 planned · 8/8 captured · 8 pending review",
+    formatCaptureReviewCoverageSummary({ ...queue.summary, planned: 8, blocked: 0 }),
+    "8 planned · 8 captured · 0 blocked · 0 missing · 8 pending · 0 accepted",
   );
   assert.deepEqual(queue.summary, {
     captured: 8,

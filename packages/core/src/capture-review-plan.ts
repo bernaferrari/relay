@@ -173,13 +173,16 @@ export function applyPlanCaptureReviewDecisions(
       });
       continue;
     }
-    if (item.status === "missing" || !selectedKeys.has(key)) {
+    if (item.blocked || item.status === "missing" || !selectedKeys.has(key)) {
+      const blocked = Boolean(item.blocked);
+      const missing = item.status === "missing";
       results.push({
         runId: selection.runId,
         captureId: selection.captureId,
-        status: item.status === "missing" ? "missing" : "conflict",
-        error:
-          item.status === "missing"
+        status: blocked || missing ? "missing" : "conflict",
+        error: blocked
+          ? "A blocked screenshot cannot be marked Looks correct"
+          : missing
             ? "A missing screenshot cannot be marked Looks correct"
             : "This decision does not match the image currently on screen",
       });
