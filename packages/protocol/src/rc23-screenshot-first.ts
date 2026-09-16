@@ -171,6 +171,11 @@ export const RC23_SCREENSHOT_FIRST_CAPTURED_PENDING: readonly Rc23ScreenshotFirs
     jobId: "ded7d047-82a0-4d69-b80c-03cf781cab60",
   },
   {
+    checkpointId: "models",
+    platform: "web",
+    jobId: "f5116f81-87d6-448e-9d7d-2c545a649218",
+  },
+  {
     checkpointId: "private-chat",
     platform: "web",
     jobId: "2b2377c7-9e77-49a0-9aa1-e41299ec1831",
@@ -228,7 +233,7 @@ export const RC23_SCREENSHOT_FIRST_CAPTURED_PENDING: readonly Rc23ScreenshotFirs
   {
     checkpointId: "sidebar",
     platform: "android",
-    jobId: "16e8fc06-bb9d-400b-9916-dc496c3096b9",
+    jobId: "de163986-c621-4fca-bb6a-bf1811f61ffe",
   },
   {
     checkpointId: "imagine",
@@ -238,7 +243,7 @@ export const RC23_SCREENSHOT_FIRST_CAPTURED_PENDING: readonly Rc23ScreenshotFirs
   {
     checkpointId: "logo",
     platform: "android",
-    jobId: "c22f19eb-ba85-4201-a2f2-36f1c0f88c2d",
+    jobId: "1d9acbd6-214f-4544-b790-b1062db8f721",
   },
   {
     checkpointId: "dictation",
@@ -258,7 +263,7 @@ export const RC23_SCREENSHOT_FIRST_CAPTURED_PENDING: readonly Rc23ScreenshotFirs
   {
     checkpointId: "models",
     platform: "android",
-    jobId: "e53e8f65-9284-45f2-8e5c-21aed9f8cee1",
+    jobId: "5310092a-e5cf-4cd0-9e55-3a98e91bd9a2",
   },
   {
     checkpointId: "private-chat",

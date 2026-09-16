@@ -69,20 +69,20 @@ test("two Settings captions on web vs iOS are two slots", () => {
   assert.equal(ios.configuration?.app, "ai.x.GrokApp");
 });
 
-test("30 planned; 28 captured + 1 blocked + 1 missing = 30; mixed 12 is not complete", () => {
+test("30 planned; 29 captured + 1 blocked + 0 missing = 30; mixed 12 is not complete", () => {
   const queue = resolveRc23ScreenshotFirstQueue();
   const counts = partitionRc23ScreenshotFirst(queue);
   assert.equal(counts.planned, 30);
-  assert.equal(counts.captured, 28);
+  assert.equal(counts.captured, 29);
   assert.equal(counts.blocked, 1);
-  assert.equal(counts.missing, 1);
-  assert.equal(counts.pending, 28);
+  assert.equal(counts.missing, 0);
+  assert.equal(counts.pending, 29);
   assert.equal(counts.accepted, 0);
   assert.equal(counts.captured + counts.blocked + counts.missing, 30);
   assert.notEqual(counts.captured, 12);
   assert.notEqual(counts.captured, 30);
   assert.notEqual(counts.planned, 13);
-  assert.equal(RC23_SCREENSHOT_FIRST_CAPTURED_PENDING.length, 28);
+  assert.equal(RC23_SCREENSHOT_FIRST_CAPTURED_PENDING.length, 29);
 });
 
 test("iOS Imagine stays blocked Unbound in the denominator, not omitted", () => {
@@ -102,21 +102,26 @@ test("iOS Imagine stays blocked Unbound in the denominator, not omitted", () => 
   assert.equal(android.scenarioKind, "physical");
 });
 
-test("Looks correct cannot accept missing, including the never-run web models slot", () => {
+test("Looks correct cannot accept missing, including the blocked iOS Imagine slot", () => {
   const queue = resolveRc23ScreenshotFirstQueue();
   const refusal = rc23LooksCorrectCannotAcceptMissing(queue);
-  assert.equal(refusal.missingAttempted, 2);
+  assert.equal(refusal.missingAttempted, 1);
   assert.equal(refusal.selected, 0);
   const missing = queue.items.find(
-    (item) => item.checkpointId === "models" && item.configuration?.browser === "grok-com",
+    (item) => item.checkpointId === "imagine" && item.configuration?.app === "ai.x.GrokApp",
   )!;
   assert.equal(missing.status, "missing");
+  assert.equal(missing.blocked, true);
   assert.equal(
     selectedPlanCaptureReviewItems(queue, [
       { runId: missing.runId, captureId: missing.captureId },
     ]).length,
     0,
   );
+  const models = queue.items.find(
+    (item) => item.checkpointId === "models" && item.configuration?.browser === "grok-com",
+  )!;
+  assert.equal(models.status, "pending");
   const captured = queue.items.find((item) => item.status === "pending")!;
   assert.equal(
     selectedPlanCaptureReviewItems(queue, [
