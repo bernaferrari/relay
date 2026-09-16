@@ -5,16 +5,27 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   coverByFindingSimilarlyNamedTest,
+  coverByRc23DestEnd,
   countWorkbookEvidencePackets,
   countWorkbookSuggestedQueues,
   evaluateWorkbookCoverage,
+  isRc23DestEndBinding,
   originalIsCovered,
   parseWorkbookCoverageManifest,
+  rc23DestEndSatisfiesOriginal,
+  rc23WorkbookBindingSlotId,
+  rc23WorkbookBoundOriginalIds,
   similarNamedTests,
   suggestedExecutionQueueForOriginal,
   workbookCoverageAfterCompileAttempts,
+  workbookOriginalObligationIdentity,
   WORKBOOK_EVIDENCE_PACKET_LABELS,
+  WORKBOOK_RC23_REQUIREMENT_ID,
   WORKBOOK_SURVIVAL_FAMILY_ID,
+  RC23_SCREENSHOT_FIRST_PLATFORM_CONFIGURATION,
+  RC23_SCREENSHOT_FIRST_REQUIREMENT_ID,
+  RC23_SCREENSHOT_FIRST_TESTS,
+  WORKBOOK_RC23_PLATFORM_CONFIGURATION,
 } from "@relay/protocol";
 import { parse } from "yaml";
 
@@ -42,7 +53,7 @@ const similarCatalog = [
 
 test("reviewed workbook freeze keeps 58 originals, 15 active families, and 5 exclusions", () => {
   const manifest = loadReviewedWorkbook();
-  assert.equal(manifest.revision, 2);
+  assert.equal(manifest.revision, 3);
   assert.equal(manifest.counts.originals, 58);
   assert.equal(manifest.counts.families, 17);
   assert.equal(manifest.counts.activeFamilies, 15);
@@ -55,10 +66,13 @@ test("reviewed workbook freeze keeps 58 originals, 15 active families, and 5 exc
   assert.deepEqual(report.excludedFamilyIds, ["S15", "S17"]);
   assert.deepEqual(report.excludedOriginalIds, [5, 18, 19, 20, 42]);
   assert.equal(report.excludedCount, 5);
-  assert.equal(report.boundCount, 0);
-  assert.equal(report.unboundCount, 53);
+  assert.equal(report.boundCount, 2);
+  assert.equal(report.unboundCount, 51);
   assert.equal(report.remainingBeforePlatformTierGates, 53);
-  assert.deepEqual(report.coveredOriginalIds, []);
+  assert.deepEqual(report.coveredOriginalIds, [4, 40]);
+  assert.deepEqual(rc23WorkbookBoundOriginalIds(), [4, 40]);
+  assert.equal(report.boundCount + report.unboundCount + report.excludedCount, 58);
+  assert.notEqual(report.boundCount, 53);
 });
 
 test("similarly named live Tests do not cover Customize Grok, Imagine, Dictation, or original 50", () => {
@@ -109,7 +123,10 @@ test("similarly named live Tests do not cover Customize Grok, Imagine, Dictation
     ),
     true,
   );
-  assert.equal(report.coveredOriginalIds.length, 0);
+  assert.equal(
+    [8, 37, 42, 50].every((id) => !report.coveredOriginalIds.includes(id)),
+    true,
+  );
 });
 
 test("grok-ios-daily 12/12 is not the 58-row workbook", () => {
@@ -123,6 +140,8 @@ test("grok-ios-daily 12/12 is not the 58-row workbook", () => {
   );
   const coverage = report.packCoverage.find((row) => row.packId === "grok-ios-daily");
   assert.deepEqual(coverage?.coveredOriginalIds, []);
+  assert.deepEqual(report.coveredOriginalIds, [4, 40]);
+  assert.equal(report.errors.length, 0);
   const imagine = manifest.notWorkbookPacks.find((row) => row.packId === "grok-ios-imagine");
   assert.deepEqual(imagine?.testIds, ["test-grok-ios-imagine"]);
 });
@@ -159,15 +178,14 @@ test("Customize Grok, Dictation, and original 50 conflicts stay unresolved", () 
 test("sequence capture does not bind workbook originals without kind:reviewed", () => {
   const manifest = loadReviewedWorkbook();
   const report = evaluateWorkbookCoverage(manifest, similarCatalog);
-  assert.equal(report.boundCount, 0);
-  assert.equal(report.unboundCount, 53);
+  assert.deepEqual(report.coveredOriginalIds, [4, 40]);
   const survival = manifest.originals.find((item) => item.family === "S16");
   assert.equal(survival?.status, "unbound");
   assert.equal(originalIsCovered(survival!), false);
   assert.equal(coverByFindingSimilarlyNamedTest(survival!, similarCatalog), false);
 });
 
-test("RC-13 every original has a packet; excluded keep packet+exclusion; unbound stay unbound", () => {
+test("RC-13 every original has a packet; excluded keep packet+exclusion; dest-end binds only 4 and 40", () => {
   const manifest = loadReviewedWorkbook();
   assert.equal(manifest.originals.length, 58);
   assert.equal(
@@ -188,9 +206,16 @@ test("RC-13 every original has a packet; excluded keep packet+exclusion; unbound
     true,
   );
   const report = evaluateWorkbookCoverage(manifest, similarCatalog);
-  assert.equal(report.boundCount, 0);
-  assert.equal(report.unboundCount, 53);
-  assert.equal(report.coveredOriginalIds.length, 0);
+  assert.equal(report.boundCount, 2);
+  assert.equal(report.unboundCount, 51);
+  assert.deepEqual(report.coveredOriginalIds, [4, 40]);
+  assert.equal(
+    manifest.originals.every((item) => {
+      const obligation = workbookOriginalObligationIdentity(item);
+      return obligation.requirementId === item.gqaId && obligation.caption === item.name;
+    }),
+    true,
+  );
   assert.equal(
     manifest.originals.every(
       (item) =>
@@ -243,7 +268,7 @@ test("RC-13 S16 cannot be single-view Fast UI; S11 download is receipt; S08 math
 test("RC-13 similarly named Test still does not cover originals 8, 37, 42, or 50", () => {
   const manifest = loadReviewedWorkbook();
   const report = evaluateWorkbookCoverage(manifest, similarCatalog);
-  assert.equal(report.boundCount, 0);
+  assert.deepEqual(report.coveredOriginalIds, [4, 40]);
   assert.equal(
     [8, 37, 42, 50].every((id) => !report.coveredOriginalIds.includes(id)),
     true,
@@ -262,8 +287,8 @@ test("RC-19 unresolved-step Imagine compile leaves original 37 unbound in the 53
     { testId: "test-grok-ios-imagine", errorCode: "unresolved-step" },
   ]);
   assert.equal(report.remainingBeforePlatformTierGates, 53);
-  assert.equal(report.boundCount, 0);
-  assert.equal(report.unboundCount, 53);
+  assert.equal(report.boundCount, 2);
+  assert.equal(report.unboundCount, 51);
   assert.equal(report.excludedCount, 5);
   assert.equal(report.unboundOriginalIds.includes(37), true);
   assert.equal(report.coveredOriginalIds.includes(37), false);
@@ -271,5 +296,94 @@ test("RC-19 unresolved-step Imagine compile leaves original 37 unbound in the 53
   assert.equal(imagine?.status, "unbound");
   assert.equal(originalIsCovered(imagine!), false);
   assert.equal(coverByFindingSimilarlyNamedTest(imagine!, similarCatalog), false);
+  assert.equal(coverByRc23DestEnd(imagine!, "imagine"), false);
   assert.match(imagine?.gates.join(" ") ?? "", /navigation\.tab\.imagine absent/u);
+});
+
+test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not auto-bind", () => {
+  const manifest = loadReviewedWorkbook();
+  assert.deepEqual(
+    WORKBOOK_RC23_PLATFORM_CONFIGURATION,
+    RC23_SCREENSHOT_FIRST_PLATFORM_CONFIGURATION,
+  );
+  assert.equal(WORKBOOK_RC23_REQUIREMENT_ID, RC23_SCREENSHOT_FIRST_REQUIREMENT_ID);
+  const attach = manifest.originals.find((item) => item.id === 4)!;
+  const settings = manifest.originals.find((item) => item.id === 40)!;
+  const composer = manifest.originals.find((item) => item.id === 6)!;
+  const send = manifest.originals.find((item) => item.id === 1)!;
+  const multiline = manifest.originals.find((item) => item.id === 2)!;
+  const models = manifest.originals.find((item) => item.id === 7)!;
+  const sidebar = manifest.originals.find((item) => item.id === 33)!;
+  const logo = manifest.originals.find((item) => item.id === 35)!;
+  const puppy = manifest.originals.find((item) => item.id === 54)!;
+  assert.equal(attach.status, "bound");
+  assert.equal(settings.status, "bound");
+  assert.equal(attach.evidencePacket, "view");
+  assert.equal(settings.evidencePacket, "view");
+  assert.equal(attach.bindings.length, 3);
+  assert.equal(settings.bindings.length, 3);
+  assert.equal(
+    attach.bindings.every((binding) => isRc23DestEndBinding(binding)),
+    true,
+  );
+  for (const platform of ["web", "android", "ios"] as const) {
+    const attachSlot = rc23WorkbookBindingSlotId("attach", platform);
+    const settingsSlot = rc23WorkbookBindingSlotId("settings", platform);
+    assert.match(attachSlot, /::attach::/u);
+    assert.notEqual(attachSlot, "Attach");
+    assert.notEqual(settingsSlot, "Settings");
+    assert.equal(coverByRc23DestEnd(attach, "attach", platform), true);
+    assert.equal(coverByRc23DestEnd(settings, "settings", platform), true);
+    assert.equal(
+      attach.bindings.some(
+        (binding) => binding.platform === platform && binding.slotId === attachSlot,
+      ),
+      true,
+    );
+    assert.equal(
+      settings.bindings.some(
+        (binding) => binding.platform === platform && binding.slotId === settingsSlot,
+      ),
+      true,
+    );
+    assert.equal(
+      RC23_SCREENSHOT_FIRST_TESTS.attach[platform],
+      attach.bindings.find((row) => row.platform === platform)?.testId,
+    );
+    assert.equal(
+      RC23_SCREENSHOT_FIRST_TESTS.settings[platform],
+      settings.bindings.find((row) => row.platform === platform)?.testId,
+    );
+  }
+  assert.equal(rc23DestEndSatisfiesOriginal("composer-focus", 1), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("composer-focus", 2), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("composer-focus", 6), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("models", 7), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("sidebar", 33), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("logo", 35), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("imagine", 37), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("imagine", 54), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("dictation", 42), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("private-chat", 4), false);
+  assert.equal(coverByFindingSimilarlyNamedTest(composer, similarCatalog), false);
+  assert.equal(send.status, "unbound");
+  assert.equal(multiline.status, "unbound");
+  assert.equal(composer.status, "unbound");
+  assert.equal(models.status, "unbound");
+  assert.equal(sidebar.status, "unbound");
+  assert.equal(logo.status, "unbound");
+  assert.equal(puppy.status, "unbound");
+  const slotsPath = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../../tests/coverage/rc23-screenshot-first-slots.json",
+  );
+  const slots = JSON.parse(readFileSync(slotsPath, "utf8")) as {
+    workbookBound: number;
+    workbookBoundOriginalIds?: number[];
+    requirementId: string;
+  };
+  assert.equal(slots.workbookBound, 2);
+  assert.deepEqual(slots.workbookBoundOriginalIds, [4, 40]);
+  assert.equal(slots.requirementId, "rc23-screenshot-first");
+  assert.equal(slots.requirementId.startsWith("GQA-"), false);
 });

@@ -2,17 +2,24 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   coverByFindingSimilarlyNamedTest,
+  coverByRc23DestEnd,
   evaluateWorkbookCoverage,
   originalIsCovered,
   parseWorkbookCoverageManifest,
+  rc23DestEndSatisfiesOriginal,
+  rc23WorkbookBoundOriginalIds,
   similarNamedTests,
   suggestedExecutionQueueForOriginal,
   workbookEvidencePolicyError,
+  workbookOriginalObligationIdentity,
+  workbookRc23BindingError,
   type WorkbookCoverageManifest,
   type WorkbookOriginal,
 } from "./workbook-coverage.js";
 
-function original(partial: Partial<WorkbookOriginal> & Pick<WorkbookOriginal, "id" | "name" | "status">): WorkbookOriginal {
+function original(
+  partial: Partial<WorkbookOriginal> & Pick<WorkbookOriginal, "id" | "name" | "status">,
+): WorkbookOriginal {
   const id = partial.id;
   const family = partial.family ?? "S99";
   const evidencePacket = partial.evidencePacket ?? "view";
@@ -67,7 +74,8 @@ function fixture(overrides: Partial<WorkbookCoverageManifest> = {}): WorkbookCov
         excludedFamilies: ["S15"],
         activeFamilies: 0,
         globallyExcludedOriginals: originals.filter((item) => item.status === "excluded").length,
-        remainingBeforePlatformTierGates: originals.filter((item) => item.status !== "excluded").length,
+        remainingBeforePlatformTierGates: originals.filter((item) => item.status !== "excluded")
+          .length,
       },
       conflicts: [
         {
@@ -120,21 +128,32 @@ const similarCatalog = [
   { id: "test-grok-ios-dictation", name: "Dictation inspect", appMapId: "grok-ios" },
   { id: "test-grok-ios-imagine", name: "Imagine", appMapId: "grok-ios" },
   { id: "test-grok-ios-settings", name: "Settings", appMapId: "grok-ios" },
-  { id: "test-grok-android-unrecorded-heavy-image-5", name: "UNRECORDED 5-image Heavy", appMapId: "grok-android" },
+  {
+    id: "test-grok-android-unrecorded-heavy-image-5",
+    name: "UNRECORDED 5-image Heavy",
+    appMapId: "grok-android",
+  },
 ];
 
 test("a similarly named Test does not mark an unbound original covered", () => {
   const manifest = fixture();
   const imagine = manifest.originals.find((item) => item.id === 37);
   assert.equal(imagine?.status, "unbound");
-  assert.equal(similarNamedTests(imagine!, similarCatalog).some((testRow) => testRow.id === "test-grok-ios-imagine"), true);
+  assert.equal(
+    similarNamedTests(imagine!, similarCatalog).some(
+      (testRow) => testRow.id === "test-grok-ios-imagine",
+    ),
+    true,
+  );
   assert.equal(coverByFindingSimilarlyNamedTest(imagine!, similarCatalog), false);
   assert.equal(originalIsCovered(imagine!), false);
   const report = evaluateWorkbookCoverage(manifest, similarCatalog);
   assert.equal(report.coveredOriginalIds.includes(37), false);
   assert.equal(report.unboundOriginalIds.includes(37), true);
   assert.equal(
-    report.nameCollisions.some((row) => row.originalId === 37 && row.testId === "test-grok-ios-imagine"),
+    report.nameCollisions.some(
+      (row) => row.originalId === 37 && row.testId === "test-grok-ios-imagine",
+    ),
     true,
   );
 });
@@ -150,7 +169,9 @@ test("excluded originals stay excluded even when a dest-end Test shares the name
   assert.equal(report.excludedOriginalIds.includes(42), true);
   assert.equal(report.coveredOriginalIds.includes(42), false);
   assert.equal(
-    report.nameCollisions.some((row) => row.originalId === 42 && row.testId === "test-grok-ios-dictation"),
+    report.nameCollisions.some(
+      (row) => row.originalId === 42 && row.testId === "test-grok-ios-dictation",
+    ),
     true,
   );
 });
@@ -159,7 +180,9 @@ test("unbound originals stay unbound when the catalog has a Settings Test", () =
   const manifest = fixture({
     originals: [original({ id: 40, name: "Settings inventory", status: "unbound" })],
   });
-  const report = evaluateWorkbookCoverage(manifest, [{ id: "test-grok-ios-settings", name: "Open Settings" }]);
+  const report = evaluateWorkbookCoverage(manifest, [
+    { id: "test-grok-ios-settings", name: "Open Settings" },
+  ]);
   assert.deepEqual(report.unboundOriginalIds, [40]);
   assert.deepEqual(report.coveredOriginalIds, []);
   assert.equal(report.boundCount, 0);
@@ -195,7 +218,9 @@ test("only an explicit reviewed binding can cover an original", () => {
       }),
     ],
   });
-  const report = evaluateWorkbookCoverage(bound, [{ id: "test-grok-web-signed-in-settings", name: "Open settings panel" }]);
+  const report = evaluateWorkbookCoverage(bound, [
+    { id: "test-grok-web-signed-in-settings", name: "Open settings panel" },
+  ]);
   assert.deepEqual(report.coveredOriginalIds, [40]);
   assert.equal(report.boundCount, 1);
   assert.equal(
@@ -363,11 +388,65 @@ test("S11 download needs screenshot+receipt; S08 math stays generated-output", (
   });
   assert.match(workbookEvidencePolicyError(mathWrong) ?? "", /generated-output for human review/u);
   assert.equal(
-    suggestedExecutionQueueForOriginal({ id: 16, family: "S11", evidencePacket: "screenshot-receipt" }),
+    suggestedExecutionQueueForOriginal({
+      id: 16,
+      family: "S11",
+      evidencePacket: "screenshot-receipt",
+    }),
     "live-output",
   );
   assert.equal(
-    suggestedExecutionQueueForOriginal({ id: 48, family: "S08", evidencePacket: "generated-output" }),
+    suggestedExecutionQueueForOriginal({
+      id: 48,
+      family: "S08",
+      evidencePacket: "generated-output",
+    }),
     "live-output",
   );
+});
+
+test("RC-23 dest-end table binds only orig 4 attach view and orig 40 settings view", () => {
+  assert.deepEqual(rc23WorkbookBoundOriginalIds(), [4, 40]);
+  assert.equal(rc23DestEndSatisfiesOriginal("attach", 4, "web"), true);
+  assert.equal(rc23DestEndSatisfiesOriginal("settings", 40, "ios"), true);
+  assert.equal(rc23DestEndSatisfiesOriginal("composer-focus", 1), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("composer-focus", 2), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("composer-focus", 6), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("models", 7), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("sidebar", 33), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("logo", 35), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("imagine", 37), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("imagine", 54), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("dictation", 42), false);
+  assert.equal(coverByRc23DestEnd({ id: 4 }, "attach"), true);
+  assert.equal(coverByRc23DestEnd({ id: 6 }, "composer-focus"), false);
+  const obligation = workbookOriginalObligationIdentity(
+    original({ id: 6, name: "Autocomplete / typeaheads", status: "unbound" }),
+  );
+  assert.equal(obligation.requirementId, "GQA-006");
+  assert.equal(obligation.caption, "Autocomplete / typeaheads");
+  assert.notEqual(obligation.requirementId, obligation.caption);
+});
+
+test("complete workbook cannot bind orig 6 via composer-focus dest-end", () => {
+  const error = workbookRc23BindingError([
+    {
+      id: 6,
+      status: "bound",
+      evidencePacket: "persistence",
+      bindings: [
+        {
+          kind: "reviewed",
+          appMapId: "grok-ios",
+          testId: "test-grok-ios-composer-focus",
+          reviewedAt: "2026-09-16",
+          note: "similar name must not cover typeahead persistence",
+          checkpointId: "composer-focus",
+          platform: "ios",
+          slotId: "rc23-screenshot-first::composer-focus::ai.x.GrokApp::::::1",
+        },
+      ],
+    },
+  ]);
+  assert.match(error ?? "", /bound original ids must be 4, 40/u);
 });

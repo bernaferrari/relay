@@ -1,13 +1,17 @@
 # Reviewed Grok QA coverage manifest (RC-09 freeze + RC-13 evidence packets / user review §3 and §6A).
 # Source workbook grok-qa-graph.xlsx is unchanged. This freeze corrects advertised
 # "16 live cases" to 15 active families. grok-ios-daily 12/12 is not this workbook.
-# Coverage is only an explicit reviewed Test binding. Similar names never cover.
+# Coverage is only an explicit reviewed dest-end binding whose Test executed that
+# original's causal action. Similar names never cover. Captions are display text;
+# obligations are plannedSlots identities (not "Attach" / "Settings").
 # Packets: view=single view, transition=before/after, screenshot-receipt=screenshot+file/link receipt,
 # persistence=before/restart/after, sequence=short temporal sequence, generated-output=declared phase.
 # suggestedExecutionQueue is Fast UI | live-output | stateful-survival — not a Test binding.
+# RC-23 dest-ends bind orig 4 (attach menu view) and orig 40 (settings inventory view) only.
+# Composer-focus does not cover S03. Imagine dest-end does not cover orig 37/54.
 schemaVersion: 1
 id: grok-qa-workbook
-revision: 2
+revision: 3
 reviewedAt: "2026-09-16"
 source:
   workbook: grok-qa-graph.xlsx
@@ -182,8 +186,7 @@ originals:
     evidencePacket: generated-output
     queue: "fast-ui"
     suggestedExecutionQueue: live-output
-    gates:
-      []
+    gates: []
     status: unbound
     bindings: []
   - id: 2
@@ -196,8 +199,7 @@ originals:
     evidencePacket: view
     queue: "fast-ui"
     suggestedExecutionQueue: fast-ui
-    gates:
-      []
+    gates: []
     status: unbound
     bindings: []
   - id: 3
@@ -210,8 +212,7 @@ originals:
     evidencePacket: transition
     queue: "fast-ui"
     suggestedExecutionQueue: fast-ui
-    gates:
-      []
+    gates: []
     status: unbound
     bindings: []
   - id: 4
@@ -226,8 +227,32 @@ originals:
     suggestedExecutionQueue: fast-ui
     gates:
       - "Platform menu inventory. File Connectors column itself is original 5 (globally skipped); upload still live."
-    status: unbound
-    bindings: []
+    status: bound
+    bindings:
+      - kind: reviewed
+        appMapId: grok-web
+        testId: test-grok-web-signed-in-attach
+        reviewedAt: "2026-09-16"
+        checkpointId: attach
+        platform: web
+        slotId: "rc23-screenshot-first::attach::grok-com::::::1"
+        note: "RC-23 dest-end opens the paperclip import menu (single view). Slot identity, not caption Attach. Not orig 5 File Connectors and not orig 53 upload analysis. Capture-review pending; not accepted."
+      - kind: reviewed
+        appMapId: grok-android
+        testId: test-grok-android-attach
+        reviewedAt: "2026-09-16"
+        checkpointId: attach
+        platform: android
+        slotId: "rc23-screenshot-first::attach::android::::::1"
+        note: "RC-23 dest-end opens Camera/Gallery/Files/Skills/Connectors (single view). Slot identity, not caption. Not orig 5/53. Capture-review pending; not accepted."
+      - kind: reviewed
+        appMapId: grok-ios
+        testId: test-grok-ios-attach
+        reviewedAt: "2026-09-16"
+        checkpointId: attach
+        platform: ios
+        slotId: "rc23-screenshot-first::attach::ai.x.GrokApp::::::1"
+        note: "RC-23 dest-end opens Camera/Photo or Video/Files/Connectors/Skills (single view). Slot identity, not caption. Not orig 5/53. Capture-review pending; not accepted."
   - id: 5
     gqaId: GQA-005
     name: "File Connectors (Drive / OneDrive)"
@@ -314,8 +339,7 @@ originals:
     evidencePacket: transition
     queue: "output"
     suggestedExecutionQueue: live-output
-    gates:
-      []
+    gates: []
     status: unbound
     bindings: []
   - id: 11
@@ -480,8 +504,7 @@ originals:
     evidencePacket: transition
     queue: "stateful"
     suggestedExecutionQueue: stateful-survival
-    gates:
-      []
+    gates: []
     status: unbound
     bindings: []
   - id: 22
@@ -690,8 +713,7 @@ originals:
     evidencePacket: transition
     queue: "fast-ui"
     suggestedExecutionQueue: fast-ui
-    gates:
-      []
+    gates: []
     status: unbound
     bindings: []
   - id: 37
@@ -748,8 +770,32 @@ originals:
     suggestedExecutionQueue: fast-ui
     gates:
       - "Do not test Enable Dictation (original 42). Do not tap App Language / Sign Out. Logged-out Light/Dark/System is not Account/Appearance."
-    status: unbound
-    bindings: []
+    status: bound
+    bindings:
+      - kind: reviewed
+        appMapId: grok-web
+        testId: test-grok-web-signed-in-settings
+        reviewedAt: "2026-09-16"
+        checkpointId: settings
+        platform: web
+        slotId: "rc23-screenshot-first::settings::grok-com::::::1"
+        note: "RC-23 dest-end opens Settings inventory (single view). Slot identity, not caption Settings. Does not tap App Language, Sign Out, or SuperGrok. Not orig 41/43/44. Capture-review pending; not accepted."
+      - kind: reviewed
+        appMapId: grok-android
+        testId: test-grok-android-settings
+        reviewedAt: "2026-09-16"
+        checkpointId: settings
+        platform: android
+        slotId: "rc23-screenshot-first::settings::android::::::1"
+        note: "RC-23 dest-end opens Settings inventory (single view). Slot identity, not caption. Does not tap App Language or Sign Out. Not orig 41/43/44. Capture-review pending; not accepted."
+      - kind: reviewed
+        appMapId: grok-ios
+        testId: test-grok-ios-settings
+        reviewedAt: "2026-09-16"
+        checkpointId: settings
+        platform: ios
+        slotId: "rc23-screenshot-first::settings::ai.x.GrokApp::::::1"
+        note: "RC-23 dest-end Settings peek inventory (single view). Slot identity, not caption. No Sign Out. Not orig 41/43/44. Capture-review pending; not accepted."
   - id: 41
     gqaId: GQA-041
     name: "App Language"
@@ -918,8 +964,7 @@ originals:
     evidencePacket: generated-output
     queue: "output"
     suggestedExecutionQueue: live-output
-    gates:
-      []
+    gates: []
     status: unbound
     bindings: []
   - id: 53

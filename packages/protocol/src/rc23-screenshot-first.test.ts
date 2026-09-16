@@ -6,6 +6,7 @@ import {
   RC23_SCREENSHOT_FIRST_CAPTURED_PENDING,
   RC23_SCREENSHOT_FIRST_CHECKPOINT_IDS,
   RC23_SCREENSHOT_FIRST_PLATFORMS,
+  RC23_SCREENSHOT_FIRST_PLATFORM_CONFIGURATION,
   RC23_SCREENSHOT_FIRST_REQUIREMENT_ID,
   RC23_SCREENSHOT_FIRST_TESTS,
   materializeRc23ScreenshotFirstSlots,
@@ -13,6 +14,13 @@ import {
   rc23LooksCorrectCannotAcceptMissing,
   resolveRc23ScreenshotFirstQueue,
 } from "./rc23-screenshot-first.js";
+import {
+  rc23DestEndSatisfiesOriginal,
+  rc23WorkbookBindingSlotId,
+  rc23WorkbookBoundOriginalIds,
+  WORKBOOK_RC23_PLATFORM_CONFIGURATION,
+  WORKBOOK_RC23_REQUIREMENT_ID,
+} from "./workbook-coverage.js";
 
 test("RC-23 freezes ten dest-end checkpoints × three platforms = 30 unique slots", () => {
   assert.equal(RC23_SCREENSHOT_FIRST_CHECKPOINT_IDS.length, 10);
@@ -142,5 +150,35 @@ test("Looks correct cannot accept missing, including the blocked iOS Imagine slo
       { runId: captured.runId, captureId: captured.captureId },
     ]).length,
     1,
+  );
+});
+
+test("RC-23 dest-ends bind GQA-004 and GQA-040 only; slot ids are not captions", () => {
+  assert.deepEqual(rc23WorkbookBoundOriginalIds(), [4, 40]);
+  assert.equal(WORKBOOK_RC23_REQUIREMENT_ID, RC23_SCREENSHOT_FIRST_REQUIREMENT_ID);
+  assert.deepEqual(
+    WORKBOOK_RC23_PLATFORM_CONFIGURATION,
+    RC23_SCREENSHOT_FIRST_PLATFORM_CONFIGURATION,
+  );
+  const slots = materializeRc23ScreenshotFirstSlots();
+  for (const platform of RC23_SCREENSHOT_FIRST_PLATFORMS) {
+    const attach = slots.find(
+      (slot) => slot.checkpointId === "attach" && slot.platform === platform,
+    )!;
+    assert.equal(attach.caption, "Attach");
+    assert.equal(attach.requirementId, RC23_SCREENSHOT_FIRST_REQUIREMENT_ID);
+    assert.equal(rc23WorkbookBindingSlotId("attach", platform), captureReviewSlotId(attach));
+    assert.notEqual(rc23WorkbookBindingSlotId("attach", platform), attach.caption);
+    assert.equal(rc23DestEndSatisfiesOriginal("attach", 4, platform), true);
+    assert.equal(rc23DestEndSatisfiesOriginal("settings", 40, platform), true);
+    assert.equal(rc23DestEndSatisfiesOriginal("composer-focus", 6, platform), false);
+    assert.equal(rc23DestEndSatisfiesOriginal("imagine", 37, platform), false);
+    assert.equal(rc23DestEndSatisfiesOriginal("models", 7, platform), false);
+    assert.equal(Boolean(RC23_SCREENSHOT_FIRST_TESTS.attach[platform]), true);
+    assert.equal(Boolean(RC23_SCREENSHOT_FIRST_TESTS.settings[platform]), true);
+  }
+  assert.equal(
+    slots.every((slot) => !slot.requirementId?.startsWith("GQA-")),
+    true,
   );
 });

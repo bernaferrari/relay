@@ -2,7 +2,9 @@
  * RC-23 screenshot-first freeze: ten dest-end checkpoints × web/android/ios
  * × attempt 1 = 30 planned slots. The mixed 13-cell inventory is history; it
  * cannot shrink this denominator. Requirement ids are not workbook GQA
- * originals. grok-ios-daily 12/12 does not fill these slots.
+ * originals. Dest-end view packets bind GQA-004 and GQA-040 only; similar
+ * names do not cover the other 51. grok-ios-daily 12/12 does not fill these
+ * slots.
  */
 
 import {
@@ -35,8 +37,7 @@ export const RC23_SCREENSHOT_FIRST_CHECKPOINT_IDS = [
   "private-chat",
 ] as const;
 
-export type Rc23ScreenshotFirstCheckpointId =
-  (typeof RC23_SCREENSHOT_FIRST_CHECKPOINT_IDS)[number];
+export type Rc23ScreenshotFirstCheckpointId = (typeof RC23_SCREENSHOT_FIRST_CHECKPOINT_IDS)[number];
 
 export const RC23_SCREENSHOT_FIRST_PLATFORMS = ["web", "android", "ios"] as const;
 
@@ -309,9 +310,7 @@ export function materializeRc23ScreenshotFirstSlots(): Rc23ScreenshotFirstSlot[]
   return slots;
 }
 
-function runPlatform(
-  platform: Rc23ScreenshotFirstPlatform,
-): "browser" | "android" | "ios" {
+function runPlatform(platform: Rc23ScreenshotFirstPlatform): "browser" | "android" | "ios" {
   return platform === "web" ? "browser" : platform;
 }
 
@@ -401,9 +400,10 @@ export function resolveRc23ScreenshotFirstQueue(input?: {
 }
 
 /** Looks correct cannot accept a missing slot, including iOS Imagine Unbound. */
-export function rc23LooksCorrectCannotAcceptMissing(
-  queue: PlanCaptureReviewQueue,
-): { selected: number; missingAttempted: number } {
+export function rc23LooksCorrectCannotAcceptMissing(queue: PlanCaptureReviewQueue): {
+  selected: number;
+  missingAttempted: number;
+} {
   const missing = queue.items.filter((item) => item.status === "missing");
   const selected = selectedPlanCaptureReviewItems(
     queue,

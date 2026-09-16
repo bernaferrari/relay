@@ -1,10 +1,10 @@
 # RC-23 screenshot-first inventory (2026-09-16)
 
-**Not a workbook binding.** This file does not cover, bind, or accept any grok-qa original. Workbook stays **0 bound / 53 unbound / 5 excluded** (`tests/coverage/grok-qa-workbook.v1.yaml`). Similarly named Tests do not cover. `grok-ios-daily` 12/12 is not this freeze. Agents cannot Looks-correct. **0 accepted.**
+**Not 53 covered.** RC-23 dest-ends bind **2** workbook originals as screenshot-first view packets: **GQA-004 attach menu** and **GQA-040 settings inventory**. Workbook is **2 bound / 51 unbound / 5 excluded** (`tests/coverage/grok-qa-workbook.v1.yaml` revision 3). Remaining-before-gates stays **53**. Similarly named Tests do not cover. `grok-ios-daily` 12/12 is not this freeze. Composer-focus inspect does not cover S03. iOS Imagine stays Unbound — orig 37 and image-generation rows stay unbound. Agents cannot Looks-correct. **0 accepted.**
 
 Language: **planned · captured · blocked · missing · pending review**. Dest-end `outcome:passed` is execution only. Looks correct cannot accept missing.
 
-Canonical freeze: `packages/protocol/src/rc23-screenshot-first.ts`. Slot identities: `tests/coverage/rc23-screenshot-first-slots.json`.
+Canonical freeze: `packages/protocol/src/rc23-screenshot-first.ts`. Slot identities: `tests/coverage/rc23-screenshot-first-slots.json`. Captions are display text; obligations are `plannedSlots` identities.
 
 ## Frozen denominator (10 × web/android/ios × attempt 1)
 
@@ -12,10 +12,10 @@ Canonical freeze: `packages/protocol/src/rc23-screenshot-first.ts`. Slot identit
 
 `29 + 1 + 0 = 30`. The mixed 13-cell count **cannot shrink this**. **29 captured jobs ≠ 30 complete.** Unsigned grok-daily Home/Settings are the same **web** slots as grok-lab — not a fourth configuration.
 
-| Source | Planned | Captured | Blocked | Missing | Pending | Accepted |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Frozen 10×3 attempt 1 | **30** | **29** | **1** | **0** | **29** | **0** |
-| Historical mixed cells (do not use) | 13 | 12 | 1 | 0 | 12 | 0 |
+| Source                              | Planned | Captured | Blocked | Missing | Pending | Accepted |
+| ----------------------------------- | ------: | -------: | ------: | ------: | ------: | -------: |
+| Frozen 10×3 attempt 1               |  **30** |   **29** |   **1** |   **0** |  **29** |    **0** |
+| Historical mixed cells (do not use) |      13 |       12 |       1 |       0 |      12 |        0 |
 
 ## Ten checkpoint ids
 
@@ -34,18 +34,39 @@ Dest-end on **at least one** platform (compile 2026-09-16, maps grok-web **r904*
 
 Left out of this ten: new-chat (dest-end exists), Search (Android-only companion; iOS Conversations is not grok.com Search).
 
-| Checkpoint | Web grok-lab (`browser:grok-com`) | Android `RQCY104BG8X` | iOS `ai.x.GrokApp` |
-| --- | --- | --- | --- |
-| home-chrome | captured pending `a0b6380d` | captured pending `ec54c62a` | captured pending `3754526f` |
-| dictation | captured pending `b1eead7a` (inspect; do not enable) | captured pending `81b51428` | captured pending `ea3bfb8e` (not orig 42) |
-| sidebar | captured pending `b7c18573` dest-end | captured pending `de163986` dest-end last-frame Automations+Settings **PASS** | captured pending `87c73e11` dest-end last-frame SuperGrok Plus Bernardo Ferrari + Automations + Settings gear **PASS** |
-| attach | captured pending `a11c41b4` | captured pending `6529ee13` | captured pending `c585dc28` dest-end last-frame Camera/Photo or Video/Files/Connectors/Skills **PASS** |
-| settings | captured pending `3787eb65` | captured pending `6290fd6f` (Appearance panel; not sidebar gear) | captured pending `5234cbf5` dest-end last-frame Settings + Bernardo Ferrari @bernaferrari SuperGrok Plus **PASS** |
-| imagine | captured pending `37014ba6` **browser-approximation** | captured pending `001be26c` | **blocked Unbound** |
-| logo | captured pending `d8bf4385` leftover inspect-skip | captured pending `1d9acbd6` dest-end last-frame Speak home **PASS** | captured pending `eb3512fd` (inspect wait-for) |
-| composer-focus | captured pending `ded7d047` inspect (`chat-input`; do not type) | captured pending `78a0127a` | captured pending `2e31db46` |
-| models | captured pending `f5116f81` dest-end last-frame Fast/Auto/Expert/Heavy sheet | captured pending `5310092a` dest-end last-frame Auto sheet Heavy **PASS** | captured pending `67eff67f` dest-end last-frame Fast sheet (Fast checked, Heavy/Expert/Auto/Build) **PASS** |
-| private-chat | captured pending `2b2377c7` dest-end | captured pending `5e78db0d` | captured pending `69f353ad` dest-end last-frame Private Chat + Temporary Chat AX **PASS** |
+## Workbook dest-end bindings (narrow)
+
+RC-23 `requirementId` stays `rc23-screenshot-first` — not a GQA original. Binding is a reviewed dest-end whose Test executed that original's causal action as a **single view** packet. Slot ids, not captions.
+
+| Original                     | Packet | RC-23 checkpoint | Platforms         | Not covered by this dest-end                                  |
+| ---------------------------- | ------ | ---------------- | ----------------- | ------------------------------------------------------------- |
+| GQA-004 attach / import menu | view   | `attach`         | web, android, ios | orig 5 File Connectors (excluded); orig 53 upload analysis    |
+| GQA-040 settings inventory   | view   | `settings`       | web, android, ios | orig 41 App Language; orig 43 SuperGrok row; orig 44 Sign Out |
+
+Explicit non-bindings (similar names / inspect / leftover skip do not cover):
+
+- `composer-focus` does not bind GQA-001 / GQA-002 / GQA-006 (no type, send, or typeahead persistence)
+- `models` does not bind GQA-007 / GQA-008 (inspect-only sheet is not Switch model or presets)
+- `sidebar` does not bind GQA-033 / GQA-034 / GQA-036 (open dest-end is not open+close, History expand, or New Chat from menu)
+- `logo` does not bind GQA-035 (leftover inspect-skip is not logo from Chat/Imagine/Voice/Projects/History)
+- `imagine` does not bind GQA-037 or image-generation GQA-016 / 017 / 050 / 054 / 055 (iOS Unbound; Android companion is not a workbook binding)
+- `dictation` does not bind GQA-042 (globally excluded)
+- `home-chrome` and `private-chat` have no workbook original
+
+**2 bound ≠ 53 covered.** 51 originals stay unbound with planned packets. 5 stay excluded.
+
+| Checkpoint     | Web grok-lab (`browser:grok-com`)                                            | Android `RQCY104BG8X`                                                         | iOS `ai.x.GrokApp`                                                                                                     |
+| -------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| home-chrome    | captured pending `a0b6380d`                                                  | captured pending `ec54c62a`                                                   | captured pending `3754526f`                                                                                            |
+| dictation      | captured pending `b1eead7a` (inspect; do not enable)                         | captured pending `81b51428`                                                   | captured pending `ea3bfb8e` (not orig 42)                                                                              |
+| sidebar        | captured pending `b7c18573` dest-end                                         | captured pending `de163986` dest-end last-frame Automations+Settings **PASS** | captured pending `87c73e11` dest-end last-frame SuperGrok Plus Bernardo Ferrari + Automations + Settings gear **PASS** |
+| attach         | captured pending `a11c41b4`                                                  | captured pending `6529ee13`                                                   | captured pending `c585dc28` dest-end last-frame Camera/Photo or Video/Files/Connectors/Skills **PASS**                 |
+| settings       | captured pending `3787eb65`                                                  | captured pending `6290fd6f` (Appearance panel; not sidebar gear)              | captured pending `5234cbf5` dest-end last-frame Settings + Bernardo Ferrari @bernaferrari SuperGrok Plus **PASS**      |
+| imagine        | captured pending `37014ba6` **browser-approximation**                        | captured pending `001be26c`                                                   | **blocked Unbound**                                                                                                    |
+| logo           | captured pending `d8bf4385` leftover inspect-skip                            | captured pending `1d9acbd6` dest-end last-frame Speak home **PASS**           | captured pending `eb3512fd` (inspect wait-for)                                                                         |
+| composer-focus | captured pending `ded7d047` inspect (`chat-input`; do not type)              | captured pending `78a0127a`                                                   | captured pending `2e31db46`                                                                                            |
+| models         | captured pending `f5116f81` dest-end last-frame Fast/Auto/Expert/Heavy sheet | captured pending `5310092a` dest-end last-frame Auto sheet Heavy **PASS**     | captured pending `67eff67f` dest-end last-frame Fast sheet (Fast checked, Heavy/Expert/Auto/Build) **PASS**            |
+| private-chat   | captured pending `2b2377c7` dest-end                                         | captured pending `5e78db0d`                                                   | captured pending `69f353ad` dest-end last-frame Private Chat + Temporary Chat AX **PASS**                              |
 
 Two captions named **Settings** on web vs iOS are **two slots** (`rc23-screenshot-first::settings::grok-com::::1` vs `…::ai.x.GrokApp::::1`).
 
@@ -53,7 +74,7 @@ Two captions named **Settings** on web vs iOS are **two slots** (`rc23-screensho
 
 Each slot is `requirementId × checkpointId × configuration/platform × attempt 1`.
 
-- `requirementId`: `rc23-screenshot-first` — **not** a GQA original. Workbook originals stay **0 bound**.
+- `requirementId`: `rc23-screenshot-first` — **not** a GQA original. Workbook originals bound by dest-end: **GQA-004** and **GQA-040** only. The other **51** stay unbound.
 - Platforms: web `{ browser: "grok-com" }` · android `{ app: "android" }` · ios `{ app: "ai.x.GrokApp" }`.
 - Lane/profile do not enter `slotId`. grok-lab is observed metadata.
 - Browser grok-lab Imagine = **browser-approximation**, not physical iOS/Android.
@@ -62,14 +83,14 @@ Each slot is `requirementId × checkpointId × configuration/platform × attempt
 
 **13 planned · 12 captured · 1 blocked · 12 pending · 0 accepted** — leftover unsigned + grok-lab + iOS chrome + Android 3-pack + iOS Imagine blocked. Keep as provenance only.
 
-| Source | Planned | Captured | Blocked | Pending | Accepted | Missing |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Web unsigned `2b45db8f` Home + Settings | 2 | 2 | 0 | 2 | 0 | 0 |
-| Web signed grok-lab `cf9f0260` Home/Attach/Imagine/Settings | 4 | 4 | 0 | 4 | 0 | 0 |
-| iOS chrome `78f13d43` Home/Dictation/Sidebar | 3 | 3 | 0 | 3 | 0 | 0 |
-| Android physical `RQCY104BG8X` Home/Sidebar/Imagine | 3 | 3 | 0 | 3 | 0 | 0 |
-| iOS Imagine Unbound | 1 | 0 | 1 | 0 | 0 | 0 |
-| **Live mixed total** | **13** | **12** | **1** | **12** | **0** | **0** |
+| Source                                                      | Planned | Captured | Blocked | Pending | Accepted | Missing |
+| ----------------------------------------------------------- | ------: | -------: | ------: | ------: | -------: | ------: |
+| Web unsigned `2b45db8f` Home + Settings                     |       2 |        2 |       0 |       2 |        0 |       0 |
+| Web signed grok-lab `cf9f0260` Home/Attach/Imagine/Settings |       4 |        4 |       0 |       4 |        0 |       0 |
+| iOS chrome `78f13d43` Home/Dictation/Sidebar                |       3 |        3 |       0 |       3 |        0 |       0 |
+| Android physical `RQCY104BG8X` Home/Sidebar/Imagine         |       3 |        3 |       0 |       3 |        0 |       0 |
+| iOS Imagine Unbound                                         |       1 |        0 |       1 |       0 |        0 |       0 |
+| **Live mixed total**                                        |  **13** |   **12** |   **1** |  **12** |    **0** |   **0** |
 
 Unsigned Home `9c7a40d9` / Settings `ab4823a9` do not add web slots. iOS Settings/Attach on `grok-ios-daily` batch `d7eafb3c` (**1054460ms** `dailyPack` only) do **not** fill this freeze — later leftover-tolerant dest-end jobs below do.
 
@@ -77,12 +98,12 @@ Unsigned Home `9c7a40d9` / Settings `ab4823a9` do not add web slots. iOS Setting
 
 ### Web signed — Lane grok-lab, Playwright chromium, unique profile + SuperGrok fixture
 
-| Cell | Job | Duration | Status |
-| --- | --- | ---: | --- |
-| Home | `a0b6380d-6bc9-4bf7-878c-714e6ddf7815` | 11805ms | captured pending |
-| Attach | `a11c41b4-c699-4c88-b551-eedf739bb1ea` | 14334ms | captured pending |
-| Imagine | `37014ba6-ae10-4e2a-b395-cc4cce72a6dc` | 14301ms | captured pending; **browser-approximation** |
-| Settings | `3787eb65-1523-4525-beb0-c310c28eaa10` | 16197ms | captured pending |
+| Cell     | Job                                    | Duration | Status                                      |
+| -------- | -------------------------------------- | -------: | ------------------------------------------- |
+| Home     | `a0b6380d-6bc9-4bf7-878c-714e6ddf7815` |  11805ms | captured pending                            |
+| Attach   | `a11c41b4-c699-4c88-b551-eedf739bb1ea` |  14334ms | captured pending                            |
+| Imagine  | `37014ba6-ae10-4e2a-b395-cc4cce72a6dc` |  14301ms | captured pending; **browser-approximation** |
+| Settings | `3787eb65-1523-4525-beb0-c310c28eaa10` |  16197ms | captured pending                            |
 
 Plan `cf9f0260-8be1-428a-85fc-b1453d4bcae6` cell span **57734ms**. Engine on disk is **chromium**. **Electron grok-lab is unproven; do not relabel this pack as Electron.** `persist:lane:grok-lab` is absent (Grok Bot Partitions has `sand-forever-box` only). Fail closed — do not treat grok-daily unsigned as SuperGrok.
 
@@ -90,25 +111,25 @@ Plan `cf9f0260-8be1-428a-85fc-b1453d4bcae6` cell span **57734ms**. Engine on dis
 
 Did **not** tap Try now / Dismiss / Sign Out. Fast identifier TAP only on models. Capture-review later / pending. Fixture `7189423f` health **ready** / signed in.
 
-| Cell | Job | Rev | Duration | Coverage | Status |
-| --- | --- | ---: | ---: | --- | --- |
-| Dictation inspect | `b1eead7a-775e-4569-bb30-d9d63fe94071` | r896 | 14736ms | inspect | captured pending |
-| Sidebar | `b7c18573-1cc2-4fb5-92fe-2ec35aa86885` | r897 | 15181ms | dest-end transition | captured pending |
-| Logo | `d8bf4385-97b1-4aee-9116-86cacc44b46e` | r898 | 8349ms | leftover inspect-skip | captured pending |
-| Private chat | `2b2377c7-9e77-49a0-9aa1-e41299ec1831` | r899 | 12241ms | dest-end transition | captured pending |
-| Composer focus | `ded7d047-82a0-4d69-b80c-03cf781cab60` | r901 | 11392ms | inspect `chat-input` | captured pending |
-| Models | `f5116f81-87d6-448e-9d7d-2c545a649218` | r904 | 10877ms | dest-end last-frame Fast/Build/Auto/Expert/Heavy | captured pending |
-| Models (prior) | `fc5c83d3-9cb1-49b2-b0b4-714af982a87e` | r899 | cancelled | transition SOS then cancel; radios never opened | not this slot |
+| Cell              | Job                                    |  Rev |  Duration | Coverage                                         | Status           |
+| ----------------- | -------------------------------------- | ---: | --------: | ------------------------------------------------ | ---------------- |
+| Dictation inspect | `b1eead7a-775e-4569-bb30-d9d63fe94071` | r896 |   14736ms | inspect                                          | captured pending |
+| Sidebar           | `b7c18573-1cc2-4fb5-92fe-2ec35aa86885` | r897 |   15181ms | dest-end transition                              | captured pending |
+| Logo              | `d8bf4385-97b1-4aee-9116-86cacc44b46e` | r898 |    8349ms | leftover inspect-skip                            | captured pending |
+| Private chat      | `2b2377c7-9e77-49a0-9aa1-e41299ec1831` | r899 |   12241ms | dest-end transition                              | captured pending |
+| Composer focus    | `ded7d047-82a0-4d69-b80c-03cf781cab60` | r901 |   11392ms | inspect `chat-input`                             | captured pending |
+| Models            | `f5116f81-87d6-448e-9d7d-2c545a649218` | r904 |   10877ms | dest-end last-frame Fast/Build/Auto/Expert/Heavy | captured pending |
+| Models (prior)    | `fc5c83d3-9cb1-49b2-b0b4-714af982a87e` | r899 | cancelled | transition SOS then cancel; radios never opened  | not this slot    |
 
 Prior leftover signed-in home (`b2dcd768…`) with Introducing Build Mode overlay no-op'd identifier TAP `{1001,302}`. Did **not** Dismiss. r904 dest-end: optional wait-for Introducing Build Mode timeout 0; identifier-only TAP `model-select-trigger`; dest-wait Auto/Expert/Heavy; no Close/Dismiss/Back. TAP opened the sheet (dialog went away as the menu opened — not a Dismiss tap). Dest `frames/002.png` and capture-review dest-phase `frames/003.png` are the open Fast/Build/Auto/Expert/Heavy sheet (Fast checked). Capture-review `pending` · `settled:false` · `policy:fast` · intended app `Grok.com` · account `authfx:7189423f-193e-45ed-b674-154505cc5107:1` SuperGrok signed-in · action Inspect model choices signed-in · screen model sheet. Observed lane `grok-lab` · profile `browser:grok-com-1280x800-339a5a430a41` · Playwright. Optional dest-phase (no Looks-correct): dictation inspect `frames/001.png` leftover home + mic (no capture-review artifact); sidebar dest collapsed `frames/002.png`, last `frames/005.png` expanded home + leftover dialog; logo last `frames/005.png` leftover home; private-chat dest **PASS** `frames/002.png` + last `frames/003.png` Private + history disclaimer; composer inspect `frames/001.png` leftover home + `chat-input`. Leftover after models: signed-in home `b2dcd768…` + Introducing Build Mode returned. Not accepted. Do not enqueue SuperGrok on Electron.
 
 ### iOS chrome — physical iPad, prime without relaunch
 
-| Cell | Job | Duration | Status |
-| --- | --- | ---: | --- |
-| Home | `3754526f-bcf2-4818-838e-0adcb8596a0e` r316 | 71141ms | captured pending; identity **PASS** `frames/003.png` SuperGrok Ask+Speak |
-| Dictation inspect | `ea3bfb8e-005a-4442-b78a-49b40c11ba23` r316 | 67137ms | captured pending; identity **PASS** `frames/003.png` SuperGrok Speak visible; did not toggle; not orig 42 |
-| Sidebar | `87c73e11-aab5-4fe9-ac84-ad5d3b78e449` r328 | 13501ms | captured pending; last-frame **PASS** `frames/003.png` SuperGrok Plus Bernardo Ferrari + Automations + Settings gear. No Close in recipe. Prior `345c2e67` r316 last-frame home after Close — not this slot |
+| Cell              | Job                                         | Duration | Status                                                                                                                                                                                                      |
+| ----------------- | ------------------------------------------- | -------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Home              | `3754526f-bcf2-4818-838e-0adcb8596a0e` r316 |  71141ms | captured pending; identity **PASS** `frames/003.png` SuperGrok Ask+Speak                                                                                                                                    |
+| Dictation inspect | `ea3bfb8e-005a-4442-b78a-49b40c11ba23` r316 |  67137ms | captured pending; identity **PASS** `frames/003.png` SuperGrok Speak visible; did not toggle; not orig 42                                                                                                   |
+| Sidebar           | `87c73e11-aab5-4fe9-ac84-ad5d3b78e449` r328 |  13501ms | captured pending; last-frame **PASS** `frames/003.png` SuperGrok Plus Bernardo Ferrari + Automations + Settings gear. No Close in recipe. Prior `345c2e67` r316 last-frame home after Close — not this slot |
 
 Plan `78f13d43-6783-43fa-b5cd-29e7e2b1d340` cell span **196019ms**. This is **not** chrome quote `86740566` **120703ms** and **not** daily `d7eafb3c` **1054460ms**. Capture-review `fast` · `settled:false` · `status:pending`. App `Grok` / header SuperGrok. Pixel account SuperGrok Plus. **0 accepted.**
 
@@ -116,14 +137,14 @@ Plan `78f13d43-6783-43fa-b5cd-29e7e2b1d340` cell span **196019ms**. This is **no
 
 Sequential from leftover signed-in Home (keyboard leftover mid-pack). Identifier then label. Preview before tap. Did **not** 12-pack, Imagine/Create Videos, Sign Out, or conversation-list walk. Fast tap only on models. Job JSON `account:signed-out` is Lane `unsignedLaneId=grok-ios-daily` — pixels are SuperGrok / Bernardo Ferrari.
 
-| Cell | Job | Rev | Duration | Coverage | Status |
-| --- | --- | ---: | ---: | --- | --- |
-| Logo | `eb3512fd-48d5-415e-8cdc-d5a0ffedc77d` | r317 | 7675ms | inspect wait-for | captured pending; identity **PASS** `frames/001.png` SuperGrok home Speak |
-| Composer focus | `2e31db46-e93a-4b86-ab77-1f71917b110d` | r318 | 53636ms | transition; grok-arrows-right inspect-skip | captured pending; identity **PASS** `frames/005.png` focused Ask Anything + keyboard |
-| Attach | `c585dc28-791d-4e9e-bf6a-1e861894ac2a` | r329 | 56616ms | dest-end; leftover camera skip | captured pending; last-frame **PASS** `frames/005.png` Camera/Photo or Video/Files/Connectors/Skills. No close in recipe. Prior `679b39b7` r319 last-frame home — not this slot |
-| Models | `67eff67f-9710-42e7-8e6e-70cbc828029e` | r330 | 15623ms | dest-end; Fast selector allowed | captured pending; last-frame **PASS** `frames/003.png` Fast sheet (Fast checked, Heavy/Expert/Auto/Build). Dest-wait Heavy; Fast fallback on selector only. Prior `3cd34331` r320 last-frame home — not this slot |
-| Private chat | `69f353ad-2a43-4559-876e-557d69424dc8` | r331 | 68519ms | dest-end; dest Temporary Chat | captured pending; last-frame **PASS** `frames/005.png` Private Chat + Temporary Chat AX. No exit tap. Prior `dd229b0b` r321 last-frame Speak home — not this slot |
-| Settings | `5234cbf5-d91e-4052-b825-7d2dae493fa1` | r332 | 48573ms | dest-end peek; dest `toolbar.close.button` wait | captured pending; last-frame **PASS** `frames/007.png` Settings + Bernardo Ferrari @bernaferrari SuperGrok Plus. No close tap, no Sign Out. Prior `ec09b7ba` r322 last-frame home — not this slot |
+| Cell           | Job                                    |  Rev | Duration | Coverage                                        | Status                                                                                                                                                                                                            |
+| -------------- | -------------------------------------- | ---: | -------: | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Logo           | `eb3512fd-48d5-415e-8cdc-d5a0ffedc77d` | r317 |   7675ms | inspect wait-for                                | captured pending; identity **PASS** `frames/001.png` SuperGrok home Speak                                                                                                                                         |
+| Composer focus | `2e31db46-e93a-4b86-ab77-1f71917b110d` | r318 |  53636ms | transition; grok-arrows-right inspect-skip      | captured pending; identity **PASS** `frames/005.png` focused Ask Anything + keyboard                                                                                                                              |
+| Attach         | `c585dc28-791d-4e9e-bf6a-1e861894ac2a` | r329 |  56616ms | dest-end; leftover camera skip                  | captured pending; last-frame **PASS** `frames/005.png` Camera/Photo or Video/Files/Connectors/Skills. No close in recipe. Prior `679b39b7` r319 last-frame home — not this slot                                   |
+| Models         | `67eff67f-9710-42e7-8e6e-70cbc828029e` | r330 |  15623ms | dest-end; Fast selector allowed                 | captured pending; last-frame **PASS** `frames/003.png` Fast sheet (Fast checked, Heavy/Expert/Auto/Build). Dest-wait Heavy; Fast fallback on selector only. Prior `3cd34331` r320 last-frame home — not this slot |
+| Private chat   | `69f353ad-2a43-4559-876e-557d69424dc8` | r331 |  68519ms | dest-end; dest Temporary Chat                   | captured pending; last-frame **PASS** `frames/005.png` Private Chat + Temporary Chat AX. No exit tap. Prior `dd229b0b` r321 last-frame Speak home — not this slot                                                 |
+| Settings       | `5234cbf5-d91e-4052-b825-7d2dae493fa1` | r332 |  48573ms | dest-end peek; dest `toolbar.close.button` wait | captured pending; last-frame **PASS** `frames/007.png` Settings + Bernardo Ferrari @bernaferrari SuperGrok Plus. No close tap, no Sign Out. Prior `ec09b7ba` r322 last-frame home — not this slot                 |
 
 iOS Imagine: compile `unresolved-step` (`navigation.tab.imagine` absent). **Blocked / Unbound.** Do not invent nav. Live dest-wait re-run **r328–r332** (sidebar no Close; attach no close; models dest-wait Heavy; private-chat dest Temporary Chat; settings dest close-button wait, no close tap). Leftover after re-run: closed signed-in Home, keyboard dismissed, Speak unique, visual fp `8521c88d…`, AX `511ae65c64463269`.
 
@@ -131,18 +152,18 @@ iOS Imagine: compile `unresolved-step` (`navigation.tab.imagine` absent). **Bloc
 
 Capture-review on disk is **fast** · `settled:false` · `samples:1` · `status:pending`. `observed.profileId` `device:RQCY104BG8X-1080x2340`. App log `ai.x.grok`. No saved Lane `grok-android` (serial). Account SuperGrok / Bernardo Ferrari on sidebar + Settings. **0 accepted. No Looks-correct.** Closed Settings leftover to sidebar then Ask home Speak unique before dest-end re-runs. Live leftover dest-wait: logo r359, sidebar r360, models dest-wait Heavy **optional r364** (Auto sheet is pixels-only; Heavy never in AX). Leftover after this pass: Ask home Speak unique.
 
-| Cell | Job | Duration | Status |
-| --- | --- | ---: | --- |
-| Home chrome | `ec54c62a-1de6-43ca-875a-0595c152b177` r339 | 9270ms | captured pending; identity **PASS** `frames/003.png` Ask+Imagine+Build+Speak |
-| Sidebar | `de163986-c621-4fca-bb6a-bf1811f61ffe` r362 | 9730ms | captured pending; last-frame **PASS** `frames/003.png` Automations+Settings SuperGrok / Bernardo Ferrari. No Close in recipe. Prior `16e8fc06` r340 last-frame home after Close — not this slot |
-| Imagine | `001be26c-3440-443f-ac03-06545a320999` r341 | 14681ms | captured pending; identity **PASS** `frames/005.png` Imagine + Type to imagine |
-| Logo | `1d9acbd6-214f-4544-b790-b1062db8f721` r361 | 10418ms | captured pending; last-frame **PASS** `frames/003.png` Ask home Speak unique (not Type to imagine). Prior `c22f19eb` r342 Imagine leftover — not this slot |
-| Dictation | `81b51428-9d40-401a-bffd-46121e962948` r349 | 9383ms | captured pending; identity **PASS** `frames/003.png` Ask home Speak visible; did not toggle |
-| Composer focus | `78a0127a-f0b0-45e0-b1b8-634489b62b39` r350 | 13169ms | captured pending; identity **PASS** `frames/005.png` focused Ask anything + keyboard; transition-executed |
-| Attach | `6529ee13-5d48-4db7-84da-d93783e74b47` r351 | 18436ms | captured pending; identity **PASS** `frames/006.png` Camera/Gallery/Files/Skills/Connectors (menu still up after Back) |
-| Models | `5310092a-e5cf-4cd0-9e55-3a98e91bd9a2` r364 | 23521ms | captured pending; last-frame **PASS** checkpoint/`frames/005.png` Auto sheet (Heavy/Expert/Fast, Auto checked). Dest-wait Heavy optional — sheet uninspectable. No Back in recipe. Jobs `78e87393` / `294e8d22` r363 dest-wait Heavy **required** failed (AX miss, pixels dest) — not this slot. Prior `e53e8f65` r353 last-frame home after Back — not this slot |
-| Private chat | `5e78db0d-1959-4cc1-b8ce-96848f371ce4` r354 | 13185ms | captured pending; identity **PASS** `frames/005.png` Private Chat + Temporary conversation |
-| Settings | `6290fd6f-7ae0-4490-b45f-a8f7cb394830` r357 | 15351ms | captured pending; identity **PASS** `frames/006.png` Settings + Appearance + SuperGrok. `settings_button` is transition. Job `5372fb33` r355 inspect-skipped on sidebar Settings gear — **not** this slot |
+| Cell           | Job                                         | Duration | Status                                                                                                                                                                                                                                                                                                                                                            |
+| -------------- | ------------------------------------------- | -------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Home chrome    | `ec54c62a-1de6-43ca-875a-0595c152b177` r339 |   9270ms | captured pending; identity **PASS** `frames/003.png` Ask+Imagine+Build+Speak                                                                                                                                                                                                                                                                                      |
+| Sidebar        | `de163986-c621-4fca-bb6a-bf1811f61ffe` r362 |   9730ms | captured pending; last-frame **PASS** `frames/003.png` Automations+Settings SuperGrok / Bernardo Ferrari. No Close in recipe. Prior `16e8fc06` r340 last-frame home after Close — not this slot                                                                                                                                                                   |
+| Imagine        | `001be26c-3440-443f-ac03-06545a320999` r341 |  14681ms | captured pending; identity **PASS** `frames/005.png` Imagine + Type to imagine                                                                                                                                                                                                                                                                                    |
+| Logo           | `1d9acbd6-214f-4544-b790-b1062db8f721` r361 |  10418ms | captured pending; last-frame **PASS** `frames/003.png` Ask home Speak unique (not Type to imagine). Prior `c22f19eb` r342 Imagine leftover — not this slot                                                                                                                                                                                                        |
+| Dictation      | `81b51428-9d40-401a-bffd-46121e962948` r349 |   9383ms | captured pending; identity **PASS** `frames/003.png` Ask home Speak visible; did not toggle                                                                                                                                                                                                                                                                       |
+| Composer focus | `78a0127a-f0b0-45e0-b1b8-634489b62b39` r350 |  13169ms | captured pending; identity **PASS** `frames/005.png` focused Ask anything + keyboard; transition-executed                                                                                                                                                                                                                                                         |
+| Attach         | `6529ee13-5d48-4db7-84da-d93783e74b47` r351 |  18436ms | captured pending; identity **PASS** `frames/006.png` Camera/Gallery/Files/Skills/Connectors (menu still up after Back)                                                                                                                                                                                                                                            |
+| Models         | `5310092a-e5cf-4cd0-9e55-3a98e91bd9a2` r364 |  23521ms | captured pending; last-frame **PASS** checkpoint/`frames/005.png` Auto sheet (Heavy/Expert/Fast, Auto checked). Dest-wait Heavy optional — sheet uninspectable. No Back in recipe. Jobs `78e87393` / `294e8d22` r363 dest-wait Heavy **required** failed (AX miss, pixels dest) — not this slot. Prior `e53e8f65` r353 last-frame home after Back — not this slot |
+| Private chat   | `5e78db0d-1959-4cc1-b8ce-96848f371ce4` r354 |  13185ms | captured pending; identity **PASS** `frames/005.png` Private Chat + Temporary conversation                                                                                                                                                                                                                                                                        |
+| Settings       | `6290fd6f-7ae0-4490-b45f-a8f7cb394830` r357 |  15351ms | captured pending; identity **PASS** `frames/006.png` Settings + Appearance + SuperGrok. `settings_button` is transition. Job `5372fb33` r355 inspect-skipped on sidebar Settings gear — **not** this slot                                                                                                                                                         |
 
 **job.get matches** `tests/grok-android.capacity.json` and `docs/GROK_DAILY_QA.md`: Home/Sidebar/Imagine cell span **52880ms** (`startedAt` 1789578927191 → `finishedAt` 1789578980071). This 7-Test leftover-tolerant fill is **not** copied into P50. Orchestrator wall **62226ms** is `cliWatchMs`, not cell span. Not the 19-test Plan.
 
@@ -152,6 +173,6 @@ Capture-review on disk is **fast** · `settled:false` · `samples:1` · `status:
 - **29 captured ≠ 30 complete.** Android logo/sidebar/models dest-end last frames are now **identity PASS** (r361/r362/r364). Web models last-frame is the open selector (`f5116f81` r904). iOS sidebar/attach/models/private-chat/settings dest-end last frames are now **identity PASS** (`87c73e11` r328 / `c585dc28` r329 / `67eff67f` r330 / `69f353ad` r331 / `5234cbf5` r332). **Not accepted.** iOS Imagine stays **blocked Unbound**.
 - No unfamiliar-QA vs agent (Package 3 Vite stranger still **blocked**; did not `pnpm dev:app`).
 - No bulk accept; capture-review pending. Looks correct cannot accept missing.
-- Workbook originals not executed (0/53/5).
+- Workbook originals: **2 bound / 51 unbound / 5 excluded**. Remaining-before-gates **53**. Not 53 covered.
 - OPENROUTER unset. grok-com `authenticationFixtureId` stays empty.
 - 19z5 stays open.

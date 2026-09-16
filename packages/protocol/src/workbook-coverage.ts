@@ -1,10 +1,13 @@
 /**
  * RC-09 / RC-13 coverage compiler. Coverage is only an explicit reviewed Test
- * binding. A similarly named Test, grok-ios-daily 12/12, or an Unbound Imagine
- * row never marks an original covered. Every original has a smallest-sufficient
- * evidence packet; that is not coverage.
+ * binding whose dest-end executed that original's causal action. A similarly
+ * named Test, grok-ios-daily 12/12, composer-focus inspect, or Unbound Imagine
+ * never marks an original covered. Every original has a smallest-sufficient
+ * evidence packet or an authorized exclusion; that packet is not coverage.
+ * Captions are display text; obligations are plannedSlots identities.
  */
 
+import { captureReviewSlotId, type CaptureReviewConfiguration } from "./capture-review.js";
 import { EXECUTION_QUEUES, type ExecutionQueue } from "./execution-queue.js";
 
 export const WORKBOOK_COVERAGE_SCHEMA_VERSION = 1 as const;
@@ -58,12 +61,182 @@ export const WORKBOOK_QUEUES = [
 ] as const;
 export type WorkbookQueue = (typeof WORKBOOK_QUEUES)[number];
 
+export const WORKBOOK_RC23_PLATFORMS = ["web", "android", "ios"] as const;
+export type WorkbookRc23Platform = (typeof WORKBOOK_RC23_PLATFORMS)[number];
+
+export const WORKBOOK_RC23_PLATFORM_CONFIGURATION = {
+  web: { browser: "grok-com" },
+  android: { app: "android" },
+  ios: { app: "ai.x.GrokApp" },
+} as const satisfies Record<WorkbookRc23Platform, CaptureReviewConfiguration>;
+
+export const WORKBOOK_RC23_REQUIREMENT_ID = "rc23-screenshot-first";
+
+export const WORKBOOK_RC23_APP_MAP_IDS: Record<WorkbookRc23Platform, string> = {
+  web: "grok-web",
+  android: "grok-android",
+  ios: "grok-ios",
+};
+
+/**
+ * Narrow dest-end table. An RC-23 checkpoint binds a GQA original only when
+ * the Test executed that original's causal action as a screenshot-first
+ * view / before-after packet. Captions are display text; slotId is identity.
+ */
+export type Rc23WorkbookDestEndBinding = {
+  checkpointId: string;
+  originalId: number;
+  evidencePacket: Extract<WorkbookEvidencePacket, "view" | "transition">;
+  platforms: readonly WorkbookRc23Platform[];
+  note: string;
+};
+
+export const RC23_WORKBOOK_DEST_END_BINDINGS: readonly Rc23WorkbookDestEndBinding[] = [
+  {
+    checkpointId: "attach",
+    originalId: 4,
+    evidencePacket: "view",
+    platforms: WORKBOOK_RC23_PLATFORMS,
+    note: "Dest-end opens the paperclip import menu (single view). Not orig 5 File Connectors and not orig 53 upload analysis.",
+  },
+  {
+    checkpointId: "settings",
+    originalId: 40,
+    evidencePacket: "view",
+    platforms: WORKBOOK_RC23_PLATFORMS,
+    note: "Dest-end opens Settings inventory (single view). Does not tap App Language, Sign Out, or SuperGrok. Not orig 41/43/44.",
+  },
+];
+
+/** Checkpoints that must not auto-bind similarly named originals. */
+export const RC23_WORKBOOK_NON_BINDINGS: readonly {
+  checkpointId: string;
+  originalIds: readonly number[];
+  reason: string;
+}[] = [
+  {
+    checkpointId: "home-chrome",
+    originalIds: [],
+    reason: "No workbook original is home-chrome inventory.",
+  },
+  {
+    checkpointId: "dictation",
+    originalIds: [42],
+    reason: "Inspect mic; orig 42 Enable Dictation is globally excluded.",
+  },
+  {
+    checkpointId: "sidebar",
+    originalIds: [33, 34, 36],
+    reason: "Open dest-end is not open+close, History expand, or New Chat from menu.",
+  },
+  {
+    checkpointId: "imagine",
+    originalIds: [16, 17, 37, 50, 54, 55],
+    reason:
+      "iOS Imagine Unbound; image-generation rows stay unbound; Android Imagine is a native companion, not a workbook binding.",
+  },
+  {
+    checkpointId: "logo",
+    originalIds: [35],
+    reason:
+      "Leftover inspect-skip / home wait-for is not logo from Chat/Imagine/Voice/Projects/History.",
+  },
+  {
+    checkpointId: "composer-focus",
+    originalIds: [1, 2, 6],
+    reason:
+      "Inspect/focus without typing does not cover send, multiline expand, or typeahead persistence.",
+  },
+  {
+    checkpointId: "models",
+    originalIds: [7, 8],
+    reason: "Inspect-only model sheet is not Switch model or presets.",
+  },
+  {
+    checkpointId: "private-chat",
+    originalIds: [],
+    reason: "No workbook original for private chat.",
+  },
+];
+
+const RC23_PLATFORM = new Set<string>(WORKBOOK_RC23_PLATFORMS);
+
+export function rc23WorkbookBoundOriginalIds(): number[] {
+  return [...new Set(RC23_WORKBOOK_DEST_END_BINDINGS.map((row) => row.originalId))].sort(
+    (left, right) => left - right,
+  );
+}
+
+export function rc23WorkbookNonBindingOriginalIds(): number[] {
+  return [...new Set(RC23_WORKBOOK_NON_BINDINGS.flatMap((row) => [...row.originalIds]))].sort(
+    (left, right) => left - right,
+  );
+}
+
+export function rc23WorkbookBindingSlotId(
+  checkpointId: string,
+  platform: WorkbookRc23Platform,
+): string {
+  return captureReviewSlotId({
+    requirementId: WORKBOOK_RC23_REQUIREMENT_ID,
+    checkpointId,
+    configuration: WORKBOOK_RC23_PLATFORM_CONFIGURATION[platform],
+    attempt: 1,
+  });
+}
+
+export function rc23DestEndSatisfiesOriginal(
+  checkpointId: string,
+  originalId: number,
+  platform?: WorkbookRc23Platform,
+): boolean {
+  return RC23_WORKBOOK_DEST_END_BINDINGS.some(
+    (row) =>
+      row.checkpointId === checkpointId &&
+      row.originalId === originalId &&
+      (platform === undefined || row.platforms.includes(platform)),
+  );
+}
+
+export function coverByRc23DestEnd(
+  original: Pick<WorkbookOriginal, "id">,
+  checkpointId: string,
+  platform?: WorkbookRc23Platform,
+): boolean {
+  return rc23DestEndSatisfiesOriginal(checkpointId, original.id, platform);
+}
+
+export function isRc23DestEndBinding(binding: Pick<WorkbookReviewedBinding, "slotId">): boolean {
+  const slotId = binding.slotId?.trim() ?? "";
+  return slotId.startsWith(`${WORKBOOK_RC23_REQUIREMENT_ID}::`);
+}
+
+/** Caption is display text. Obligation identity is GQA id + packet. */
+export function workbookOriginalObligationIdentity(
+  original: Pick<WorkbookOriginal, "gqaId" | "name" | "evidencePacket" | "status">,
+): {
+  requirementId: string;
+  caption: string;
+  evidencePacket: WorkbookEvidencePacket;
+  status: WorkbookOriginalStatus;
+} {
+  return {
+    requirementId: original.gqaId,
+    caption: original.name,
+    evidencePacket: original.evidencePacket,
+    status: original.status,
+  };
+}
+
 export type WorkbookReviewedBinding = {
   kind: "reviewed";
   appMapId: string;
   testId: string;
   reviewedAt: string;
   note: string;
+  slotId?: string;
+  checkpointId?: string;
+  platform?: WorkbookRc23Platform;
 };
 
 export type WorkbookExclusion = {
@@ -197,14 +370,20 @@ function num(value: unknown, label: string): number {
 }
 
 function strArr(value: unknown, label: string): string[] {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || item.trim() === "")) {
+  if (
+    !Array.isArray(value) ||
+    value.some((item) => typeof item !== "string" || item.trim() === "")
+  ) {
     throw new Error(`${label} must be a string array`);
   }
   return value.map((item) => item.trim());
 }
 
 function intArr(value: unknown, label: string): number[] {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "number" || !Number.isInteger(item))) {
+  if (
+    !Array.isArray(value) ||
+    value.some((item) => typeof item !== "number" || !Number.isInteger(item))
+  ) {
     throw new Error(`${label} must be an integer array`);
   }
   return value;
@@ -219,12 +398,25 @@ function parseBinding(raw: unknown, label: string): WorkbookReviewedBinding {
   if (raw.kind !== "reviewed") {
     throw new Error(`${label}.kind must be "reviewed" — similar names are not bindings`);
   }
+  const platformRaw = raw.platform;
+  let platform: WorkbookRc23Platform | undefined;
+  if (platformRaw !== undefined) {
+    if (typeof platformRaw !== "string" || !RC23_PLATFORM.has(platformRaw)) {
+      throw new Error(`${label}.platform must be web, android, or ios`);
+    }
+    platform = platformRaw as WorkbookRc23Platform;
+  }
   return {
     kind: "reviewed",
     appMapId: text(raw.appMapId, `${label}.appMapId`),
     testId: text(raw.testId, `${label}.testId`),
     reviewedAt: text(raw.reviewedAt, `${label}.reviewedAt`),
     note: text(raw.note, `${label}.note`),
+    ...(raw.slotId === undefined ? {} : { slotId: text(raw.slotId, `${label}.slotId`) }),
+    ...(raw.checkpointId === undefined
+      ? {}
+      : { checkpointId: text(raw.checkpointId, `${label}.checkpointId`) }),
+    ...(platform ? { platform } : {}),
   };
 }
 
@@ -254,12 +446,17 @@ function parseOriginal(raw: unknown, label: string): WorkbookOriginal {
   if (!QUEUE.has(queue)) throw new Error(`${label}.queue is invalid`);
   const suggested = text(raw.suggestedExecutionQueue, `${label}.suggestedExecutionQueue`);
   if (!SUGGESTED_QUEUE.has(suggested)) {
-    throw new Error(`${label}.suggestedExecutionQueue must be fast-ui, live-output, or stateful-survival`);
+    throw new Error(
+      `${label}.suggestedExecutionQueue must be fast-ui, live-output, or stateful-survival`,
+    );
   }
   const bindingsRaw = Array.isArray(raw.bindings) ? raw.bindings : [];
-  const bindings = bindingsRaw.map((item, index) => parseBinding(item, `${label}.bindings[${index}]`));
+  const bindings = bindingsRaw.map((item, index) =>
+    parseBinding(item, `${label}.bindings[${index}]`),
+  );
   const status = statusRaw as WorkbookOriginalStatus;
-  const exclusion = raw.exclusion === undefined ? undefined : parseExclusion(raw.exclusion, `${label}.exclusion`);
+  const exclusion =
+    raw.exclusion === undefined ? undefined : parseExclusion(raw.exclusion, `${label}.exclusion`);
   if (status === "excluded") {
     if (!exclusion) throw new Error(`${label} excluded original needs exclusion`);
     if (bindings.length > 0) {
@@ -310,7 +507,8 @@ function parseFamily(raw: unknown, label: string): WorkbookFamily {
 
 function parseConflict(raw: unknown, label: string): WorkbookConflict {
   if (!isRecord(raw)) throw new Error(`${label} must be an object`);
-  if (raw.status !== "unresolved") throw new Error(`${label}.status must stay unresolved until the owner decides`);
+  if (raw.status !== "unresolved")
+    throw new Error(`${label}.status must stay unresolved until the owner decides`);
   return {
     id: text(raw.id, `${label}.id`),
     originalIds: intArr(raw.originalIds, `${label}.originalIds`),
@@ -380,9 +578,13 @@ export function parseWorkbookCoverageManifest(
     }
     const activeFamilies = families.filter((family) => family.active);
     if (activeFamilies.length !== WORKBOOK_ACTIVE_FAMILY_COUNT) {
-      throw new Error(`active families must be ${WORKBOOK_ACTIVE_FAMILY_COUNT}, not ${activeFamilies.length}`);
+      throw new Error(
+        `active families must be ${WORKBOOK_ACTIVE_FAMILY_COUNT}, not ${activeFamilies.length}`,
+      );
     }
-    const excludedFamilyIds = families.filter((family) => !family.active).map((family) => family.id);
+    const excludedFamilyIds = families
+      .filter((family) => !family.active)
+      .map((family) => family.id);
     if (excludedFamilyIds.join() !== WORKBOOK_EXCLUDED_FAMILY_IDS.join()) {
       throw new Error("excluded families must be S15 and S17");
     }
@@ -416,13 +618,20 @@ export function parseWorkbookCoverageManifest(
     if (num(raw.counts.globallyExcludedOriginals, "counts.globallyExcludedOriginals") !== 5) {
       throw new Error("counts.globallyExcludedOriginals must be 5");
     }
-    if (num(raw.counts.remainingBeforePlatformTierGates, "counts.remainingBeforePlatformTierGates") !== 53) {
+    if (
+      num(
+        raw.counts.remainingBeforePlatformTierGates,
+        "counts.remainingBeforePlatformTierGates",
+      ) !== 53
+    ) {
       throw new Error("counts.remainingBeforePlatformTierGates must be 53");
     }
     for (const original of originals) {
       const policy = workbookEvidencePolicyError(original);
       if (policy) throw new Error(policy);
     }
+    const bindingError = workbookRc23BindingError(originals);
+    if (bindingError) throw new Error(bindingError);
   }
   return {
     schemaVersion: WORKBOOK_COVERAGE_SCHEMA_VERSION,
@@ -441,7 +650,10 @@ export function parseWorkbookCoverageManifest(
       families: num(raw.counts.families, "counts.families"),
       excludedFamilies: strArr(raw.counts.excludedFamilies, "counts.excludedFamilies"),
       activeFamilies: num(raw.counts.activeFamilies, "counts.activeFamilies"),
-      globallyExcludedOriginals: num(raw.counts.globallyExcludedOriginals, "counts.globallyExcludedOriginals"),
+      globallyExcludedOriginals: num(
+        raw.counts.globallyExcludedOriginals,
+        "counts.globallyExcludedOriginals",
+      ),
       remainingBeforePlatformTierGates: num(
         raw.counts.remainingBeforePlatformTierGates,
         "counts.remainingBeforePlatformTierGates",
@@ -455,7 +667,9 @@ export function parseWorkbookCoverageManifest(
 }
 
 export function originalIsCovered(original: WorkbookOriginal): boolean {
-  return original.status === "bound" && original.bindings.some((binding) => binding.kind === "reviewed");
+  return (
+    original.status === "bound" && original.bindings.some((binding) => binding.kind === "reviewed")
+  );
 }
 
 function distinctiveNeedles(original: WorkbookOriginal): readonly string[] {
@@ -489,8 +703,12 @@ export function evaluateWorkbookCoverage(
 ): WorkbookCoverageReport {
   const errors: string[] = [];
   const coveredOriginalIds = manifest.originals.filter(originalIsCovered).map((item) => item.id);
-  const unboundOriginalIds = manifest.originals.filter((item) => item.status === "unbound").map((item) => item.id);
-  const excludedOriginalIds = manifest.originals.filter((item) => item.status === "excluded").map((item) => item.id);
+  const unboundOriginalIds = manifest.originals
+    .filter((item) => item.status === "unbound")
+    .map((item) => item.id);
+  const excludedOriginalIds = manifest.originals
+    .filter((item) => item.status === "excluded")
+    .map((item) => item.id);
   const nameCollisions: WorkbookNameCollision[] = [];
   for (const original of manifest.originals) {
     for (const test of similarNamedTests(original, catalog)) {
@@ -507,7 +725,10 @@ export function evaluateWorkbookCoverage(
     const coveredByPack = manifest.originals
       .filter(
         (original) =>
-          originalIsCovered(original) && original.bindings.some((binding) => pack.testIds.includes(binding.testId)),
+          originalIsCovered(original) &&
+          original.bindings.some(
+            (binding) => pack.testIds.includes(binding.testId) && !isRc23DestEndBinding(binding),
+          ),
       )
       .map((item) => item.id);
     if (pack.packId === "grok-ios-daily" && coveredByPack.length > 0) {
@@ -525,7 +746,9 @@ export function evaluateWorkbookCoverage(
     originalCount: manifest.originals.length,
     familyCount: manifest.families.length,
     activeFamilyCount: manifest.families.filter((family) => family.active).length,
-    excludedFamilyIds: manifest.families.filter((family) => !family.active).map((family) => family.id),
+    excludedFamilyIds: manifest.families
+      .filter((family) => !family.active)
+      .map((family) => family.id),
     globallyExcludedCount: excludedOriginalIds.length,
     remainingBeforePlatformTierGates,
     boundCount,
@@ -551,7 +774,11 @@ export function suggestedExecutionQueueForOriginal(input: {
   family: string;
   evidencePacket: WorkbookEvidencePacket;
 }): ExecutionQueue {
-  if (input.family === WORKBOOK_SURVIVAL_FAMILY_ID || input.family === "S01" || input.family === "S15") {
+  if (
+    input.family === WORKBOOK_SURVIVAL_FAMILY_ID ||
+    input.family === "S01" ||
+    input.family === "S15"
+  ) {
     return "stateful-survival";
   }
   if (input.evidencePacket === "persistence" || input.id === 21) return "stateful-survival";
@@ -562,18 +789,77 @@ export function suggestedExecutionQueueForOriginal(input: {
   ) {
     return "live-output";
   }
-  if (input.family === "S06" || input.family === "S07" || input.family === "S17") return "live-output";
+  if (input.family === "S06" || input.family === "S07" || input.family === "S17")
+    return "live-output";
   return "fast-ui";
+}
+
+export function workbookRc23BindingError(
+  originals: readonly Pick<WorkbookOriginal, "id" | "status" | "evidencePacket" | "bindings">[],
+): string | undefined {
+  const expected = rc23WorkbookBoundOriginalIds();
+  const boundIds = originals
+    .filter((item) => item.status === "bound")
+    .map((item) => item.id)
+    .sort((left, right) => left - right);
+  if (boundIds.join() !== expected.join()) {
+    return `bound original ids must be ${expected.join(", ")} (RC-23 dest-end view packets), not ${boundIds.join(", ") || "none"}`;
+  }
+  const forbidden = new Set(rc23WorkbookNonBindingOriginalIds());
+  for (const original of originals) {
+    if (original.status !== "bound") continue;
+    if (forbidden.has(original.id)) {
+      return `original ${original.id} cannot bind an RC-23 dest-end that does not execute its causal action`;
+    }
+    const row = RC23_WORKBOOK_DEST_END_BINDINGS.find((item) => item.originalId === original.id);
+    if (!row) return `original ${original.id} has no RC-23 dest-end binding`;
+    if (original.evidencePacket !== row.evidencePacket) {
+      return `original ${original.id} packet must stay ${row.evidencePacket} for the dest-end binding`;
+    }
+    const platforms = new Set(row.platforms);
+    if (original.bindings.length !== row.platforms.length) {
+      return `original ${original.id} needs one dest-end binding per platform`;
+    }
+    for (const binding of original.bindings) {
+      if (!binding.slotId || !binding.checkpointId || !binding.platform) {
+        return `original ${original.id} obligations must be plannedSlots identities, not captions`;
+      }
+      if (binding.checkpointId !== row.checkpointId) {
+        return `original ${original.id} cannot bind checkpoint ${binding.checkpointId}`;
+      }
+      if (!platforms.has(binding.platform)) {
+        return `original ${original.id} cannot bind platform ${binding.platform}`;
+      }
+      if (!rc23DestEndSatisfiesOriginal(binding.checkpointId, original.id, binding.platform)) {
+        return `original ${original.id} dest-end does not execute that causal action`;
+      }
+      const expectedSlot = rc23WorkbookBindingSlotId(binding.checkpointId, binding.platform);
+      if (binding.slotId !== expectedSlot) {
+        return `original ${original.id} slotId must be ${expectedSlot}, not a caption`;
+      }
+      if (binding.appMapId !== WORKBOOK_RC23_APP_MAP_IDS[binding.platform]) {
+        return `original ${original.id} appMapId must match ${binding.platform}`;
+      }
+    }
+  }
+  return undefined;
 }
 
 export function workbookEvidencePolicyError(
   original: Pick<
     WorkbookOriginal,
-    "id" | "family" | "evidencePacket" | "suggestedExecutionQueue" | "status" | "exclusion" | "criteria"
+    | "id"
+    | "family"
+    | "evidencePacket"
+    | "suggestedExecutionQueue"
+    | "status"
+    | "exclusion"
+    | "criteria"
   >,
 ): string | undefined {
   const label = `original ${original.id}`;
-  if (!original.criteria.trim()) return `${label} must keep criteria text even when not auto-asserted`;
+  if (!original.criteria.trim())
+    return `${label} must keep criteria text even when not auto-asserted`;
   if (original.status === "excluded" && !original.exclusion) {
     return `${label} excluded original needs packet+exclusion`;
   }
@@ -585,16 +871,25 @@ export function workbookEvidencePolicyError(
       return `${label} S16 cannot be single-view Fast UI`;
     }
   }
-  if (original.id === WORKBOOK_DOWNLOAD_ORIGINAL_ID && original.evidencePacket !== "screenshot-receipt") {
+  if (
+    original.id === WORKBOOK_DOWNLOAD_ORIGINAL_ID &&
+    original.evidencePacket !== "screenshot-receipt"
+  ) {
     return `${label} S11 download needs screenshot+receipt`;
   }
   if (original.id === WORKBOOK_MATH_ORIGINAL_ID && original.evidencePacket !== "generated-output") {
     return `${label} S08 math stays generated-output for human review`;
   }
-  if (original.evidencePacket === "generated-output" && original.suggestedExecutionQueue === "fast-ui") {
+  if (
+    original.evidencePacket === "generated-output" &&
+    original.suggestedExecutionQueue === "fast-ui"
+  ) {
     return `${label} generated-output cannot suggest Fast UI`;
   }
-  if (original.evidencePacket === "persistence" && original.suggestedExecutionQueue !== "stateful-survival") {
+  if (
+    original.evidencePacket === "persistence" &&
+    original.suggestedExecutionQueue !== "stateful-survival"
+  ) {
     return `${label} before/restart/after must suggest stateful-survival`;
   }
   const expected = suggestedExecutionQueueForOriginal(original);
@@ -607,10 +902,9 @@ export function workbookEvidencePolicyError(
 export function countWorkbookEvidencePackets(
   originals: readonly Pick<WorkbookOriginal, "evidencePacket">[],
 ): Record<WorkbookEvidencePacket, number> {
-  const counts = Object.fromEntries(WORKBOOK_EVIDENCE_PACKETS.map((packet) => [packet, 0])) as Record<
-    WorkbookEvidencePacket,
-    number
-  >;
+  const counts = Object.fromEntries(
+    WORKBOOK_EVIDENCE_PACKETS.map((packet) => [packet, 0]),
+  ) as Record<WorkbookEvidencePacket, number>;
   for (const original of originals) counts[original.evidencePacket] += 1;
   return counts;
 }
@@ -618,7 +912,10 @@ export function countWorkbookEvidencePackets(
 export function countWorkbookSuggestedQueues(
   originals: readonly Pick<WorkbookOriginal, "suggestedExecutionQueue">[],
 ): Record<ExecutionQueue, number> {
-  const counts = Object.fromEntries(EXECUTION_QUEUES.map((queue) => [queue, 0])) as Record<ExecutionQueue, number>;
+  const counts = Object.fromEntries(EXECUTION_QUEUES.map((queue) => [queue, 0])) as Record<
+    ExecutionQueue,
+    number
+  >;
   for (const original of originals) counts[original.suggestedExecutionQueue] += 1;
   return counts;
 }
