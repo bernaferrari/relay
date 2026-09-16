@@ -18,7 +18,7 @@ import {
 } from "./device.js";
 import { now, publish } from "./events.js";
 import { attachJobFrame, getActiveJob } from "./session.js";
-import { observeScreenIdentity, observeVisualScreenFingerprint } from "./screen-identity.js";
+import { observeScreenIdentityForHost, observeVisualScreenFingerprint } from "./screen-identity.js";
 import { proposeVisualRows, type ProposedVisualRow } from "./visual-rows.js";
 import {
   androidSnapshotApplication,
@@ -538,7 +538,9 @@ export async function captureSnapshot(opts?: {
     );
     const serial = targetIdentity();
     publish({ type: "snapshot.captured", at: semanticCapturedAt, serial, nodeCount: nodes.length });
-    const observedIdentity = observeScreenIdentity(nodes);
+    const observedIdentity = observeScreenIdentityForHost(nodes, {
+      browserTargetId: context.kind === "browser" ? context.targetId : opts?.serial,
+    });
     let visualFingerprint: string | undefined;
     let proposedRows: ProposedVisualRow[] | undefined;
     if (opts?.includeVisual && (capture.inspectable === false || nodes.length === 0)) {
@@ -812,7 +814,9 @@ export async function captureScreenshot(opts?: {
     ) {
       try {
         semanticNodes ??= (await snapshotForTarget(target, false, "snapshot")).nodes;
-        const identity = observeScreenIdentity(semanticNodes);
+        const identity = observeScreenIdentityForHost(semanticNodes, {
+          browserTargetId: context.kind === "browser" ? context.targetId : opts?.serial,
+        });
         if (identity.fingerprint || visualFingerprint) {
           screenMatch = {
             fingerprint: identity.fingerprint || visualFingerprint!,

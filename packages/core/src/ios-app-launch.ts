@@ -152,6 +152,20 @@ export function resetGoIosTunnelInfoPortForTests(): void {
   cachedTunnelInfoPort = undefined;
 }
 
+export function resetGoIosTunnelChildForTests(): void {
+  tunnelChild = null;
+}
+
+function tunnelChildAlive(child: ChildProcess | null): boolean {
+  if (!child || child.exitCode != null || child.pid == null) return false;
+  try {
+    process.kill(child.pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function probeGoIosTunnelInfoPort(
   port: string,
   probe?: (port: string) => Promise<boolean>,
@@ -372,43 +386,69 @@ function tunnelLooksReady(listed: string): boolean {
   return /"udid"\s*:/.test(listed) || /userspaceTun/.test(listed) || /rsdPort/.test(listed);
 }
 
-export async function ensureGoIosTunnel(
-  input: { bin?: string; run?: CommandRunner } = {},
-): Promise<void> {
+export type EnsureGoIosTunnelInput = {
+  bin?: string;
+  run?: CommandRunner;
+  spawnTunnel?: typeof spawn;
+  probeInfoPort?: (port: string) => Promise<boolean>;
+};
+
+async function goIosTunnelListingLooksReady(
+  bin: string,
+  run: CommandRunner,
+  timeoutMs: number,
+): Promise<boolean> {
+  try {
+    const listed = await runGoIos(bin, ["tunnel", "ls"], timeoutMs, run);
+    return tunnelLooksReady(`${listed.stdout}\n${listed.stderr}`);
+  } catch {
+    return false;
+  }
+}
+
+async function goIosTunnelIsLive(
+  bin: string,
+  run: CommandRunner,
+  probeInfoPort?: (port: string) => Promise<boolean>,
+): Promise<boolean> {
+  const port = await rememberGoIosTunnelInfoPort({ probe: probeInfoPort });
+  if (!port) return false;
+  if (!(await probeGoIosTunnelInfoPort(port, probeInfoPort))) return false;
+  return goIosTunnelListingLooksReady(bin, run, 5_000);
+}
+
+function startGoIosTunnelChild(
+  bin: string,
+  spawnTunnel: typeof spawn,
+): ChildProcess {
+  const child = spawnTunnel(
+    bin,
+    ["tunnel", "start", "--userspace", "--tunnel-info-port", DEFAULT_TUNNEL_INFO_PORT],
+    {
+      stdio: "ignore",
+      env: { ...process.env, ENABLE_GO_IOS_AGENT: process.env.ENABLE_GO_IOS_AGENT || "user" },
+      detached: false,
+    },
+  );
+  // Keep the child on the server event loop. unref() let the userspace tunnel
+  // die while :8787 stayed up, then pixel recovery quarantined the iPad.
+  child.once("exit", () => {
+    if (tunnelChild === child) tunnelChild = null;
+  });
+  cachedTunnelInfoPort = DEFAULT_TUNNEL_INFO_PORT;
+  return child;
+}
+
+export async function ensureGoIosTunnel(input: EnsureGoIosTunnelInput = {}): Promise<void> {
   const bin = input.bin ?? (await resolveGoIosBinary());
   const run = input.run ?? defaultCommandRunner;
-  await rememberGoIosTunnelInfoPort();
-  try {
-    const listed = await runGoIos(bin, ["tunnel", "ls"], 5_000, run);
-    if (tunnelLooksReady(`${listed.stdout}\n${listed.stderr}`)) return;
-  } catch {
-    // start below
-  }
-  if (!tunnelChild || tunnelChild.exitCode != null) {
-    // Pin the info API on the go-ios default so clients stop needing 60105 folklore.
-    tunnelChild = spawn(
-      bin,
-      ["tunnel", "start", "--userspace", "--tunnel-info-port", DEFAULT_TUNNEL_INFO_PORT],
-      {
-        stdio: "ignore",
-        env: { ...process.env, ENABLE_GO_IOS_AGENT: process.env.ENABLE_GO_IOS_AGENT || "user" },
-        detached: false,
-      },
-    );
-    tunnelChild.unref?.();
-    tunnelChild.once("exit", () => {
-      if (tunnelChild?.exitCode != null) tunnelChild = null;
-    });
-    cachedTunnelInfoPort = DEFAULT_TUNNEL_INFO_PORT;
-  }
+  const spawnTunnel = input.spawnTunnel ?? spawn;
+  if (await goIosTunnelIsLive(bin, run, input.probeInfoPort)) return;
+  if (!tunnelChildAlive(tunnelChild)) tunnelChild = null;
+  if (!tunnelChild) tunnelChild = startGoIosTunnelChild(bin, spawnTunnel);
   const deadline = Date.now() + 12_000;
   while (Date.now() < deadline) {
-    try {
-      const listed = await runGoIos(bin, ["tunnel", "ls"], 4_000, run);
-      if (tunnelLooksReady(`${listed.stdout}\n${listed.stderr}`)) return;
-    } catch {
-      // keep waiting
-    }
+    if (await goIosTunnelIsLive(bin, run, input.probeInfoPort)) return;
     await new Promise((resolve) => setTimeout(resolve, 400));
   }
   throw new Error("go-ios tunnel did not become ready");
@@ -713,7 +753,7 @@ export async function captureIosPngViaGoIos(
     runGoIos(bin, ["screenshot", "--udid", serial, `--output=${path}`], timeoutMs, run);
   let result = await attempt();
   const text = `${result.stdout}\n${result.stderr}`;
-  if (result.exitCode !== 0 && /tunnel|ios17|rsd/i.test(text)) {
+  if (result.exitCode !== 0 && /tunnel|ios17|rsd|agent is not running/i.test(text)) {
     await ensureGoIosTunnel({ bin, run });
     result = await attempt();
   }

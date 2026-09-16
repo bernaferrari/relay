@@ -59,8 +59,18 @@ test("old 4 plus a new identified 4 is a distinct current-action response", () =
     boundary,
   );
   assert.equal(extracted.text, "4");
-  assert.match(extracted.responseId, /@new/u);
+  assert.match(extracted.responseId, /#1$/u);
+  assert.doesNotMatch(extracted.responseId, /@new|@old/u);
   assert.equal(extracted.initiatingActionId, "ask-1");
+});
+
+test("a reminted snapshot ref on the leftover 4 is not a new answer", () => {
+  const leftover = [turn("4", "@old")];
+  const boundary = captureResponseBoundary(leftover, "initiating-action", "ask-1");
+  assert.throws(
+    () => extractNewestCompletedAssistantTurn([turn("4", "@reminted")], TARGET, boundary),
+    /no verified new answer/u,
+  );
 });
 
 test("missing extract target does not fall back to the rest of the page", () => {
@@ -79,7 +89,7 @@ test("reordered history does not pick an older answer by screen Y", () => {
     boundary,
   );
   assert.equal(extracted.text, "5");
-  assert.match(extracted.responseId, /@new/u);
+  assert.doesNotMatch(extracted.responseId, /@new|@old/u);
 });
 
 test("without a boundary, quota plus a leftover completed turn is not current", () => {
@@ -106,4 +116,24 @@ test("without a boundary, two completed turns are not ordered by Y", () => {
 
 test("a single completed turn with no quota still extracts without a boundary", () => {
   assert.equal(extractNewestCompletedAssistantTurn([turn("5", "@only")], TARGET), "5");
+});
+
+test("an assistant turn that mentions free tier is not a quota banner", () => {
+  assert.equal(
+    extractNewestCompletedAssistantTurn(
+      [turn("Grok's free tier is enough for this question", "@new")],
+      TARGET,
+    ),
+    "Grok's free tier is enough for this question",
+  );
+});
+
+test("an assistant turn that mentions a reached limit is still a completed answer", () => {
+  assert.equal(
+    extractNewestCompletedAssistantTurn(
+      [turn("The limit reached last month was expected", "@new")],
+      TARGET,
+    ),
+    "The limit reached last month was expected",
+  );
 });

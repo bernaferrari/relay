@@ -1,6 +1,11 @@
 import type { ProductRunReport } from "@relay/product/run-journey";
-import type { EvidenceChannel, EvidenceChannelRecord, RunOutcome } from "@relay/protocol";
-import { parseOptionalRunTestStepEvidence } from "@relay/protocol";
+import type {
+  CaptureReviewDecision,
+  EvidenceChannel,
+  EvidenceChannelRecord,
+  RunOutcome,
+} from "@relay/protocol";
+import { parseOptionalRunTestStepEvidence, resolveCaptureReviewQueue } from "@relay/protocol";
 import type { RunTestStepEvidence } from "@relay/protocol";
 import { runOutcome } from "./run-outcome";
 import {
@@ -746,12 +751,31 @@ export function projectRunReport(
   const sourceRevision = record(run.sourceRevision);
   const browserProfile = record(run.browserCaseProfile);
   const targetProfile = record(run.targetProfile);
+  const viewport = record(browserProfile?.viewport);
+  const resolvedInputs = record(run.resolvedInputs);
+  const account = record(run.account);
   const executionContext = {
     ...(text(sourceRevision?.sha) ? { sourceRevision: text(sourceRevision?.sha) } : {}),
     ...(text(sourceRevision?.buildId) ? { buildId: text(sourceRevision?.buildId) } : {}),
     ...(text(browserProfile?.engine) ? { browser: text(browserProfile?.engine) } : {}),
     ...(text(targetProfile?.id) ? { targetProfileId: text(targetProfile?.id) } : {}),
     ...(text(run.appVersion) ? { appVersion: text(run.appVersion) } : {}),
+    ...(text(account?.name) || text(resolvedInputs?.account)
+      ? { account: text(account?.name) ?? text(resolvedInputs?.account) }
+      : {}),
+    ...(finite(viewport?.width) !== undefined && finite(viewport?.height) !== undefined
+      ? { viewport: `${viewport?.width}×${viewport?.height}` }
+      : {}),
+    ...(text(browserProfile?.locale) ||
+    text(resolvedInputs?.locale) ||
+    text(resolvedInputs?.language)
+      ? {
+          locale:
+            text(browserProfile?.locale) ??
+            text(resolvedInputs?.locale) ??
+            text(resolvedInputs?.language),
+        }
+      : {}),
   };
   const video = reportVideoMedia(runId, rawRun);
   const metricSeries = new Map<string, { at: number; value: number }[]>();
@@ -775,6 +799,13 @@ export function projectRunReport(
     reportDiagnosticEvents(rawEvidence),
     video?.clock ?? {},
   );
+  const captureReview = resolveCaptureReviewQueue({
+    artifacts: array(run.artifacts) as Array<{ kind?: string; data?: unknown }>,
+    decisions: Array.isArray(run.captureReviews)
+      ? (run.captureReviews as CaptureReviewDecision[])
+      : [],
+    recipeSteps: array(record(run.recipeSnapshot)?.steps),
+  });
   return {
     runId,
     ...(testId ? { testId } : {}),
@@ -797,5 +828,6 @@ export function projectRunReport(
     ...(stepEvidence === undefined ? {} : { stepEvidence }),
     ...(Object.keys(executionContext).length ? { executionContext } : {}),
     ...(evidenceUnavailable ? { evidenceUnavailable: true as const } : {}),
+    ...(captureReview.items.length ? { captureReview } : {}),
   };
 }

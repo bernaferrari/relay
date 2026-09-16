@@ -455,6 +455,14 @@ const validationRecipeStep = z.discriminatedUnion("kind", [
     .strict(),
   z
     .object({
+      kind: z.literal("extract"),
+      as: text("Variable name for the remembered reply"),
+      target: stepTarget,
+      role: z.enum(["user", "assistant", "system"]).optional(),
+    })
+    .strict(),
+  z
+    .object({
       kind: z.literal("evaluate-semantic"),
       input: text("Observed or extracted value"),
       criteria: z.array(text("Semantic criterion")).min(1).max(20),
@@ -499,6 +507,19 @@ const validationRecipeStep = z.discriminatedUnion("kind", [
         })
         .strict(),
       name: text("Human name for the ignored region").optional(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("screenshot"),
+      caption: z.string().optional(),
+      review: z
+        .object({
+          mode: z.literal("later"),
+          lookFor: z.string().optional(),
+        })
+        .strict()
+        .optional(),
     })
     .strict(),
 ]);

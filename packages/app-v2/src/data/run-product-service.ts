@@ -44,6 +44,7 @@ export type ProductVisualReviewResult = Pick<
   "decision" | "baseline"
 >;
 export type ProductVisualBaselineApproval = OperationOutput<"run.visual-baseline.update">;
+export type ProductCaptureReviewResult = OperationOutput<"run.capture.review">;
 export type RunProductService = {
   getTest(testId: string): Promise<ProductTestSummary | undefined>;
   listTestRuns?(testId: string): Promise<readonly ProductRunSummary[]>;
@@ -82,6 +83,7 @@ export type RunProductService = {
   approveVisualBaseline?(
     input: OperationInput<"run.visual-baseline.update">,
   ): Promise<ProductVisualBaselineApproval>;
+  reviewCapture?(input: OperationInput<"run.capture.review">): Promise<ProductCaptureReviewResult>;
   getReport(runId: string, canonical?: ProductRunReport): Promise<ProductRunReportOverview>;
   getRawEvidence(runId: string): Promise<unknown>;
   exportEvidence?(runId: string): Promise<RunEvidenceExportDocument>;
@@ -295,6 +297,9 @@ export function createRunProductService(platform: Platform): RunProductService {
     },
     async approveVisualBaseline(input) {
       return (await runtime()).client.invoke("run.visual-baseline.update", input);
+    },
+    async reviewCapture(input) {
+      return (await runtime()).client.invoke("run.capture.review", input);
     },
     async exportEvidence(runId) {
       const result = await (await runtime()).client.invoke("run.trace-pack.get", { runId });

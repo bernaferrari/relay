@@ -134,9 +134,11 @@ function assertBinding(step: AppMapScenarioTestStep, label: string): void {
               "assert-content",
               "assert-layout",
               "wait-response",
+              "extract",
               "evaluate-semantic",
               "evaluate-visual",
               "identity-ignore",
+              "screenshot",
             ] as unknown[]
           ).includes(objectValue(binding.step, `${label}.binding.step`).kind)
         ) {

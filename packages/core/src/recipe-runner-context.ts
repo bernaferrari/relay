@@ -276,6 +276,11 @@ export function invalidateVerifiedScreen(ctx: RecipeStepContext): void {
   }
 }
 
+function appMapIdFromJob(job?: TestJob): string | undefined {
+  const match = /^app-map:([^:]+):/u.exec(job?.action ?? job?.recipeId ?? "");
+  return match?.[1];
+}
+
 export function recipeScreenIdentityOptions(
   ctx: RecipeStepContext,
   extra?: RecipeRuntimeState["identityIgnoreRegions"],
@@ -285,7 +290,10 @@ export function recipeScreenIdentityOptions(
 } {
   const policy =
     ctx.runtime?.identityPolicy ??
-    identityPolicyForTarget({ browserTargetId: ctx.job?.browserTargetId });
+    identityPolicyForTarget({
+      browserTargetId: ctx.job?.browserTargetId,
+      appMapId: appMapIdFromJob(ctx.job),
+    });
   return {
     ignoreRegions: [...(ctx.runtime?.identityIgnoreRegions ?? []), ...(extra ?? [])],
     ...(policy ? { policy } : {}),

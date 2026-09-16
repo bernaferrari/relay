@@ -1,5 +1,10 @@
 export const VALIDATION_KIND_GROUPS = [
   {
+    id: "capture",
+    label: "Capture",
+    kinds: [{ value: "capture", label: "Screenshot for review" }],
+  },
+  {
     id: "check",
     label: "Check",
     kinds: [

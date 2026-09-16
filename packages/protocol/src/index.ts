@@ -33,6 +33,7 @@ export * from "./test-intent.js";
 export * from "./case-expansion.js";
 export * from "./execution-summary.js";
 export * from "./run-review.js";
+export * from "./capture-review.js";
 export * from "./campaign-repair.js";
 export * from "./combine-campaign.js";
 export * from "./plan-result-summary.js";

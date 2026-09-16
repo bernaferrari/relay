@@ -6,7 +6,7 @@ const ASSISTANT_SLOT =
   /^(?:assistant-message|assistant-output|last-reply-container|response-.+)$/iu;
 const USER_SLOT = /^(?:user-message)$/iu;
 const QUOTA =
-  /try again(?:\s+in|\s+later)?\b|\bbefore limit is gone\b|\blimit (?:is )?reached\b|\bminutes remaining\b|free tier/iu;
+  /try again(?:\s+in|\s+later)?\b|\bbefore limit is gone\b|\blimit (?:is )?reached\b|\bminutes remaining\b/iu;
 const ERROR_REPLY = /no answer generated|model\s+v?\d+\s+failed/iu;
 
 export type AssistantTurnObservation = "completed" | "quota" | "error";
@@ -75,15 +75,14 @@ function fnv1a(text: string): string {
   return (hash >>> 0).toString(16);
 }
 
-function assignIds(
-  items: readonly { slot: string; text: string; ref?: string },
-  kind: string,
-): string[] {
+function assignIds(items: readonly { slot: string; text: string }[], kind: string): string[] {
   const counts = new Map<string, number>();
   return items.map((item) => {
-    const key = item.ref?.trim()
-      ? `ref:${item.ref.trim()}`
-      : `${kind}:${item.slot}:${fnv1a(item.text)}`;
+    // Slot + content is the turn identity. Accessibility node refs are
+    // reminted across snapshots and must not make an unchanged leftover
+    // look like a new answer. Identical consecutive answers share the
+    // hash and are distinguished by occurrence (#0, #1, …).
+    const key = `${kind}:${item.slot}:${fnv1a(item.text)}`;
     const occurrence = counts.get(key) ?? 0;
     counts.set(key, occurrence + 1);
     return `${key}#${occurrence}`;
@@ -91,12 +90,12 @@ function assignIds(
 }
 
 function slotName(node: SnapshotNode): string {
-  return (node.identifier ?? node.role ?? node.ref ?? "node").trim() || "node";
+  return (node.identifier ?? node.role ?? "node").trim() || "node";
 }
 
 export function listQuotaObservations(nodes: readonly SnapshotNode[]): AssistantTurnRecord[] {
   const items = nodes.flatMap((node) => {
-    if (isUserEcho(node)) return [];
+    if (isUserEcho(node) || isAssistantSlot(node)) return [];
     const text = `${node.label ?? ""} ${node.value ?? ""} ${node.content ?? ""}`.trim();
     if (!text || turnObservation(text) === "completed") return [];
     return [
@@ -104,7 +103,6 @@ export function listQuotaObservations(nodes: readonly SnapshotNode[]): Assistant
         slot: slotName(node),
         text,
         observation: turnObservation(text),
-        ref: node.ref,
       },
     ];
   });
@@ -132,8 +130,8 @@ export function listAssistantTurns(
       {
         slot: slotName(node),
         text,
-        observation: turnObservation(text),
-        ref: node.ref,
+        // Assistant prose can discuss quotas without being the quota banner.
+        observation: "completed" as const,
       },
     ];
   });

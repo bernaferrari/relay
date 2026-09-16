@@ -732,7 +732,7 @@ export function compileAppMapScenarioTest(
           recipeSteps.push({ kind: "script", source: step.binding.source });
           break;
       }
-      if (step.capture) {
+      if (step.capture && recipeSteps.at(-1)?.kind !== "screenshot") {
         recipeSteps.push({ kind: "screenshot", caption: `step:${step.id}:${step.intent}` });
       }
       for (let index = start; index < recipeSteps.length; index += 1) {
@@ -864,7 +864,11 @@ export function compileAppMapScenarioTest(
     performance: compiledPerformance(rootRecipeId, graph),
     startup: options.entryCheckpointScreenId
       ? { mode: "verified-checkpoint", screenId: options.entryCheckpointScreenId }
-      : { mode: options.startupMode ?? "cold" },
+      : {
+          // Dest-end wait-for is leftover origin proof. Cold relaunch on iOS
+          // focuses the composer and wedges the long-lived XCTest runner.
+          mode: options.startupMode ?? (destEndRecipeIds.size ? "warm" : "cold"),
+        },
     ...(authoredTest.originApplication
       ? { originApplication: authoredTest.originApplication }
       : {}),

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   identifierNodesViaLiveIosRunnerListener,
   identifierPresentViaLiveIosRunnerListener,
+  IOS_BOUNDED_CHROME_IDENTIFIERS,
   isIosRunnerHostProbeTree,
   isIosSessionMissingSnapshotError,
   labelNodesViaLiveIosRunnerListener,
@@ -430,6 +431,46 @@ test("identifier presence uses the adopted listener instead of SDK find", async 
   }
 });
 
+test("a RUNNER_BUSY identifier query fails closed instead of falling through to another XCTest command", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-ios-live-busy-"));
+  const serial = "live-busy-ipad";
+  const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
+  await writeFile(
+    join(dir, `${serial}.json`),
+    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+  );
+  let snapshotCalls = 0;
+  const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
+    if (command.command === "snapshot") snapshotCalls += 1;
+    return {
+      ok: false,
+      error: {
+        code: "RUNNER_BUSY",
+        message:
+          "The iOS runner is still finishing a previous command that exceeded its execution watchdog (usually an accessibility capture on a heavy or animating screen).",
+      },
+    };
+  });
+  try {
+    await assert.rejects(
+      () =>
+        identifierPresentViaLiveIosRunnerListener({
+          serial,
+          identifier: "ask.toolbar.textfield",
+          appBundleId: "ai.x.GrokApp",
+        }),
+      /still finishing a previous command/u,
+    );
+    assert.equal(snapshotCalls, 0);
+  } finally {
+    restore();
+    if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+    else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 const SETTINGS_CLOSE_TREE = [
   {
     index: 9,
@@ -730,6 +771,483 @@ test("listener snapshot chrome includes unique SuperGrok labels omitted from the
       [{ ...compose, logicalCoordinates: true }],
     );
     assert.ok(nodes.some((node) => node.identifier === "ask.toolbar.textfield"));
+  } finally {
+    restore();
+    if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+    else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("listener snapshot chrome queries unique attach-sheet ids omitted from home n=7", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-ios-live-attach-ids-"));
+  const serial = "live-attach-ids-ipad";
+  const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
+  await writeFile(
+    join(dir, `${serial}.json`),
+    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+  );
+  const camera = {
+    identifier: "ask.toolbar.add.menu.camera",
+    label: "Camera",
+    type: "Button",
+    enabled: true,
+    hittable: true,
+    rect: { x: 220, y: 520, width: 180, height: 44 },
+  };
+  const idQueries: string[] = [];
+  const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
+    if (command.command === "querySelector") {
+      if (command.selectorKey === "id") {
+        idQueries.push(String(command.selectorValue));
+        if (command.selectorValue === "sidebar.open.button") {
+          return {
+            ok: true,
+            data: {
+              found: true,
+              nodes: [{ identifier: "sidebar.open.button", label: "Open sidebar" }],
+            },
+          };
+        }
+        if (command.selectorValue === "ask.toolbar.add.button") {
+          return {
+            ok: true,
+            data: {
+              found: true,
+              nodes: [{ identifier: "ask.toolbar.add.button", label: "Attach" }],
+            },
+          };
+        }
+        if (command.selectorValue === "ask.toolbar.add.menu.camera") {
+          return { ok: true, data: { found: true, nodes: [camera] } };
+        }
+        return { ok: true, data: { found: false, nodes: [] } };
+      }
+      return { ok: true, data: { found: false, nodes: [] } };
+    }
+    if (command.command === "snapshot") {
+      assert.equal(command.depth, 0);
+      return {
+        ok: true,
+        data: {
+          nodes: [
+            {
+              depth: 0,
+              type: "Application",
+              identifier: "ai.x.GrokApp",
+              rect: { x: 0, y: 0, width: 1112, height: 834 },
+            },
+          ],
+        },
+      };
+    }
+    throw new Error("conversation-depth snapshot must not run after chrome identifiers resolve");
+  });
+  try {
+    const nodes = await snapshotViaLiveIosRunnerListener({
+      serial,
+      appBundleId: "ai.x.GrokApp",
+      includeIdentifiers: ["ask.toolbar.add.menu.camera"],
+    });
+    assert.ok(idQueries.includes("ask.toolbar.add.menu.camera"));
+    assert.ok(idQueries.includes("sidebar.open.button"));
+    for (const identifier of [
+      "ask.toolbar.add.menu.photos",
+      "ask.toolbar.add.menu.files",
+      "ask.toolbar.add.menu.connectors",
+      "ask.toolbar.add.menu.skills",
+      "sidebar.settings.button",
+      "sidebar.search.field",
+    ] as const) {
+      assert.ok(IOS_BOUNDED_CHROME_IDENTIFIERS.includes(identifier));
+      assert.equal(idQueries.includes(identifier), false);
+    }
+    assert.equal(idQueries.filter((value) => value === "ask.toolbar.add.menu.camera").length, 1);
+    assert.deepEqual(
+      nodes.filter((node) => node.identifier === "ask.toolbar.add.menu.camera"),
+      [{ ...camera, logicalCoordinates: true }],
+    );
+  } finally {
+    restore();
+    if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+    else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("listener snapshot chrome queries only requested attach-sheet ids when + is absent", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-ios-live-attach-requested-"));
+  const serial = "live-attach-requested-ipad";
+  const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
+  await writeFile(
+    join(dir, `${serial}.json`),
+    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+  );
+  const camera = {
+    identifier: "ask.toolbar.add.menu.camera",
+    label: "Camera",
+    type: "Button",
+    enabled: true,
+    hittable: true,
+    rect: { x: 220, y: 520, width: 180, height: 44 },
+  };
+  const idQueries: string[] = [];
+  const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
+    if (command.command === "querySelector") {
+      if (command.selectorKey === "id") {
+        idQueries.push(String(command.selectorValue));
+        if (command.selectorValue === "ask.toolbar.add.menu.camera") {
+          return { ok: true, data: { found: true, nodes: [camera] } };
+        }
+        return { ok: true, data: { found: false, nodes: [] } };
+      }
+      return { ok: true, data: { found: false, nodes: [] } };
+    }
+    if (command.command === "snapshot") {
+      assert.equal(command.depth, 0);
+      return {
+        ok: true,
+        data: {
+          nodes: [
+            {
+              depth: 0,
+              type: "Application",
+              identifier: "ai.x.GrokApp",
+              rect: { x: 0, y: 0, width: 1112, height: 834 },
+            },
+          ],
+        },
+      };
+    }
+    throw new Error("conversation-depth snapshot must not run after chrome identifiers resolve");
+  });
+  try {
+    const nodes = await snapshotViaLiveIosRunnerListener({
+      serial,
+      appBundleId: "ai.x.GrokApp",
+      includeIdentifiers: ["ask.toolbar.add.menu.camera"],
+    });
+    assert.ok(idQueries.includes("ask.toolbar.add.menu.camera"));
+    for (const identifier of [
+      "ask.toolbar.add.menu.photos",
+      "ask.toolbar.add.menu.files",
+      "ask.toolbar.add.menu.connectors",
+      "ask.toolbar.add.menu.skills",
+    ] as const) {
+      assert.equal(idQueries.includes(identifier), false);
+    }
+    assert.deepEqual(
+      nodes.filter((node) => node.identifier === "ask.toolbar.add.menu.camera"),
+      [{ ...camera, logicalCoordinates: true }],
+    );
+  } finally {
+    restore();
+    if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+    else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("listener snapshot chrome skips attach, sidebar, and compose labels on closed home", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-ios-live-closed-home-skip-"));
+  const serial = "live-closed-home-skip-ipad";
+  const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
+  await writeFile(
+    join(dir, `${serial}.json`),
+    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+  );
+  const idQueries: string[] = [];
+  const labelQueries: string[] = [];
+  const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
+    if (command.command === "querySelector") {
+      if (command.selectorKey === "label") {
+        labelQueries.push(String(command.selectorValue));
+        return { ok: true, data: { found: false, nodes: [] } };
+      }
+      if (command.selectorKey === "id") {
+        idQueries.push(String(command.selectorValue));
+        if (command.selectorValue === "sidebar.open.button") {
+          return {
+            ok: true,
+            data: {
+              found: true,
+              nodes: [{ identifier: "sidebar.open.button", label: "Open sidebar" }],
+            },
+          };
+        }
+        if (command.selectorValue === "ask.toolbar.add.button") {
+          return {
+            ok: true,
+            data: {
+              found: true,
+              nodes: [{ identifier: "ask.toolbar.add.button", label: "Attach" }],
+            },
+          };
+        }
+        return { ok: true, data: { found: false, nodes: [] } };
+      }
+      return { ok: true, data: { found: false, nodes: [] } };
+    }
+    if (command.command === "snapshot") {
+      assert.equal(command.depth, 0);
+      return {
+        ok: true,
+        data: {
+          nodes: [
+            {
+              depth: 0,
+              type: "Application",
+              identifier: "ai.x.GrokApp",
+              rect: { x: 0, y: 0, width: 1112, height: 834 },
+            },
+          ],
+        },
+      };
+    }
+    throw new Error("conversation-depth snapshot must not run after chrome identifiers resolve");
+  });
+  try {
+    await snapshotViaLiveIosRunnerListener({
+      serial,
+      appBundleId: "ai.x.GrokApp",
+    });
+    assert.ok(idQueries.includes("sidebar.open.button"));
+    assert.ok(idQueries.includes("ask.toolbar.add.button"));
+    for (const identifier of [
+      "ask.toolbar.add.menu.camera",
+      "ask.toolbar.add.menu.photos",
+      "ask.toolbar.add.menu.files",
+      "ask.toolbar.add.menu.connectors",
+      "ask.toolbar.add.menu.skills",
+      "sidebar.settings.button",
+      "sidebar.search.field",
+    ] as const) {
+      assert.equal(idQueries.includes(identifier), false);
+    }
+    for (const label of [
+      "grok-compose",
+      "grok-arrows-right",
+      "grok-gear",
+      "grok-3-dots",
+    ] as const) {
+      assert.equal(labelQueries.includes(label), false);
+    }
+  } finally {
+    restore();
+    if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+    else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("requested chrome inspect queries only the tap target, not the home catalog", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-ios-live-requested-chrome-"));
+  const serial = "live-requested-chrome-ipad";
+  const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
+  await writeFile(
+    join(dir, `${serial}.json`),
+    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+  );
+  const compose = {
+    label: "grok-compose",
+    type: "Button",
+    enabled: true,
+    hittable: true,
+    rect: { x: 980, y: 760, width: 44, height: 44 },
+  };
+  const idQueries: string[] = [];
+  const labelQueries: string[] = [];
+  const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
+    if (command.command === "querySelector") {
+      if (command.selectorKey === "label") {
+        labelQueries.push(String(command.selectorValue));
+        if (command.selectorValue === "grok-compose") {
+          return { ok: true, data: { found: true, nodes: [compose] } };
+        }
+        return { ok: true, data: { found: false, nodes: [] } };
+      }
+      if (command.selectorKey === "id") {
+        idQueries.push(String(command.selectorValue));
+        return { ok: true, data: { found: false, nodes: [] } };
+      }
+      return { ok: true, data: { found: false, nodes: [] } };
+    }
+    if (command.command === "snapshot") {
+      assert.equal(command.depth, 0);
+      return {
+        ok: true,
+        data: {
+          nodes: [
+            {
+              depth: 0,
+              type: "Application",
+              identifier: "ai.x.GrokApp",
+              rect: { x: 0, y: 0, width: 1112, height: 834 },
+            },
+          ],
+        },
+      };
+    }
+    throw new Error("conversation-depth snapshot must not run for requested chrome inspect");
+  });
+  try {
+    const nodes = await snapshotViaLiveIosRunnerListener({
+      serial,
+      appBundleId: "ai.x.GrokApp",
+      requestedChromeOnly: true,
+      includeLabels: ["grok-compose"],
+    });
+    assert.deepEqual(labelQueries, ["grok-compose"]);
+    assert.deepEqual(idQueries, []);
+    assert.deepEqual(
+      nodes.filter((node) => node.label === "grok-compose"),
+      [{ ...compose, logicalCoordinates: true }],
+    );
+  } finally {
+    restore();
+    if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+    else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("listener snapshot chrome queries unique sidebar ids omitted from home n=7", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-ios-live-sidebar-ids-"));
+  const serial = "live-sidebar-ids-ipad";
+  const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
+  await writeFile(
+    join(dir, `${serial}.json`),
+    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+  );
+  const gear = {
+    identifier: "sidebar.settings.button",
+    label: "grok-gear",
+    type: "Button",
+    enabled: true,
+    hittable: true,
+    rect: { x: 24, y: 768, width: 44, height: 44 },
+  };
+  const idQueries: string[] = [];
+  const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
+    if (command.command === "querySelector") {
+      if (command.selectorKey === "id") {
+        idQueries.push(String(command.selectorValue));
+        if (command.selectorValue === "sidebar.settings.button") {
+          return { ok: true, data: { found: true, nodes: [gear] } };
+        }
+        return { ok: true, data: { found: false, nodes: [] } };
+      }
+      return { ok: true, data: { found: false, nodes: [] } };
+    }
+    if (command.command === "snapshot") {
+      assert.equal(command.depth, 0);
+      return {
+        ok: true,
+        data: {
+          nodes: [
+            {
+              depth: 0,
+              type: "Application",
+              identifier: "ai.x.GrokApp",
+              rect: { x: 0, y: 0, width: 1112, height: 834 },
+            },
+          ],
+        },
+      };
+    }
+    throw new Error("conversation-depth snapshot must not run after chrome identifiers resolve");
+  });
+  try {
+    const nodes = await snapshotViaLiveIosRunnerListener({
+      serial,
+      appBundleId: "ai.x.GrokApp",
+      includeIdentifiers: ["sidebar.settings.button"],
+    });
+    for (const identifier of ["sidebar.settings.button", "sidebar.search.field"] as const) {
+      assert.ok(IOS_BOUNDED_CHROME_IDENTIFIERS.includes(identifier));
+      assert.ok(idQueries.includes(identifier));
+    }
+    assert.equal(idQueries.filter((value) => value === "sidebar.settings.button").length, 1);
+    assert.deepEqual(
+      nodes.filter((node) => node.identifier === "sidebar.settings.button"),
+      [{ ...gear, logicalCoordinates: true }],
+    );
+  } finally {
+    restore();
+    if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+    else process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("listener snapshot chrome skips attach-sheet ids when unique sidebar gear is present", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-ios-live-sidebar-skip-attach-"));
+  const serial = "live-sidebar-skip-attach-ipad";
+  const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
+  process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
+  await writeFile(
+    join(dir, `${serial}.json`),
+    JSON.stringify({ runnerPid: process.pid, port: 50937 }),
+  );
+  const gear = {
+    identifier: "sidebar.settings.button",
+    label: "grok-gear",
+    type: "Button",
+    enabled: true,
+    hittable: true,
+    rect: { x: 24, y: 768, width: 44, height: 44 },
+  };
+  const idQueries: string[] = [];
+  const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
+    if (command.command === "querySelector") {
+      if (command.selectorKey === "id") {
+        idQueries.push(String(command.selectorValue));
+        if (command.selectorValue === "sidebar.settings.button") {
+          return { ok: true, data: { found: true, nodes: [gear] } };
+        }
+        return { ok: true, data: { found: false, nodes: [] } };
+      }
+      return { ok: true, data: { found: false, nodes: [] } };
+    }
+    if (command.command === "snapshot") {
+      assert.equal(command.depth, 0);
+      return {
+        ok: true,
+        data: {
+          nodes: [
+            {
+              depth: 0,
+              type: "Application",
+              identifier: "ai.x.GrokApp",
+              rect: { x: 0, y: 0, width: 1112, height: 834 },
+            },
+          ],
+        },
+      };
+    }
+    throw new Error("conversation-depth snapshot must not run after chrome identifiers resolve");
+  });
+  try {
+    await snapshotViaLiveIosRunnerListener({
+      serial,
+      appBundleId: "ai.x.GrokApp",
+    });
+    assert.ok(idQueries.includes("sidebar.settings.button"));
+    assert.ok(idQueries.includes("ask.toolbar.add.button"));
+    for (const identifier of [
+      "ask.toolbar.add.menu.camera",
+      "ask.toolbar.add.menu.photos",
+      "ask.toolbar.add.menu.files",
+      "ask.toolbar.add.menu.connectors",
+      "ask.toolbar.add.menu.skills",
+    ] as const) {
+      assert.equal(idQueries.includes(identifier), false);
+    }
   } finally {
     restore();
     if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;

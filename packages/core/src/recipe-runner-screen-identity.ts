@@ -1,10 +1,39 @@
+import type { ScreenIdentityObservation } from "@relay/protocol";
+import type { SnapshotNode } from "./device.js";
 import type { RecipeStep } from "./recipes.js";
 import type { TestJob } from "./session.js";
 import {
   compareScreenIdentity,
   localeNeutralStructureSignature,
   observeScreenIdentity,
+  type ObserveScreenIdentityOptions,
 } from "./screen-identity.js";
+
+/** Re-run the live host pack on taught observations so leftover chats taught
+ * without the pack still Jaccard-match grok-pack dest-screen. */
+export function reobserveScreenIdentities(
+  observations: readonly ScreenIdentityObservation[] | undefined,
+  options?: ObserveScreenIdentityOptions,
+): ScreenIdentityObservation[] {
+  return (observations ?? []).map((observation) =>
+    observeScreenIdentity(observation.nodes as SnapshotNode[], options),
+  );
+}
+
+export function expectedScreenFingerprints(
+  step: {
+    fingerprint: string;
+    aliases?: readonly string[];
+    observations?: readonly ScreenIdentityObservation[];
+  },
+  options?: ObserveScreenIdentityOptions,
+): Set<string> {
+  const expected = new Set([step.fingerprint, ...(step.aliases ?? [])]);
+  for (const hosted of reobserveScreenIdentities(step.observations, options)) {
+    if (hosted.fingerprint) expected.add(hosted.fingerprint);
+  }
+  return expected;
+}
 
 function isLocalizedRecipeJob(job?: TestJob): boolean {
   const locale = (job?.resolvedInputs?.language ?? job?.resolvedInputs?.locale ?? "")

@@ -30,6 +30,13 @@ import {
   type ProductRunReportOverview,
   type ReportEvidenceItem,
 } from "../data/run-product-service";
+import { CaptureReviewPanel } from "./run-capture-review-panel";
+import {
+  captureReviewCoverageLine,
+  type CaptureReviewAction,
+  type CaptureReviewItem,
+  type CaptureReviewMask,
+} from "@relay/protocol";
 
 type Report = ProductRunReportOverview;
 
@@ -43,6 +50,7 @@ export function RunWorkbench({
   onViewChange,
   captureIndex,
   onCaptureChange,
+  onReviewCapture,
 }: {
   report: Report;
   view?: string;
@@ -53,24 +61,33 @@ export function RunWorkbench({
   failureNotice?: ReactNode;
   footer?: ReactNode;
   onSelectStep(index: number): void;
+  onReviewCapture?(input: {
+    captureId: string;
+    action: CaptureReviewAction;
+    imageSha256?: string;
+  }): Promise<void>;
   renderEvidence?(section: Report["evidence"][number]): ReactNode;
 }) {
   const [requestedPanel, setRequestedPanel] = useState<
     "steps" | "captures" | "performance" | "details" | "video" | "logs"
   >(() =>
-    report.timeline.some((item) => item.framePaths?.length) ||
-    report.stepEvidence?.some((item) => item.evidence.framePaths.length) ||
-    !report.evidence.some(
-      (section) => section.id === "screenshot" && section.items.some((item) => item.media),
-    )
-      ? "steps"
-      : "captures",
+    report.captureReview?.items.length
+      ? "captures"
+      : report.timeline.some((item) => item.framePaths?.length) ||
+          report.stepEvidence?.some((item) => item.evidence.framePaths.length) ||
+          !report.evidence.some(
+            (section) => section.id === "screenshot" && section.items.some((item) => item.media),
+          )
+        ? "steps"
+        : "captures",
   );
   const setPanel = (value: typeof requestedPanel) => {
     setRequestedPanel(value);
     onViewChange?.(value);
   };
   const [localCapture, setLocalCapture] = useState(0);
+  const [showMasks, setShowMasks] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState(false);
   const requestedCapture =
     Number.isInteger(captureIndex) && captureIndex! >= 0 ? captureIndex! : localCapture;
   const setSelectedCapture = (index: number) => {
@@ -90,8 +107,16 @@ export function RunWorkbench({
     report.evidence
       .find((section) => section.id === "screenshot")
       ?.items.filter((item) => item.media) ?? [];
-  const selectedCapture = Math.min(requestedCapture, Math.max(0, allFrames.length - 1));
-  const capture = allFrames[selectedCapture];
+  const reviewItems = report.captureReview?.items ?? [];
+  const reviewMode = reviewItems.length > 0;
+  const selectedCapture = Math.min(
+    requestedCapture,
+    Math.max(0, (reviewMode ? reviewItems.length : allFrames.length) - 1),
+  );
+  const selectedReview = reviewItems[selectedCapture];
+  const capture = reviewMode
+    ? allFrames.find((item) => item.id === selectedReview?.framePath)
+    : allFrames[selectedCapture];
   const [playing, setPlaying] = useState(false);
   useEffect(() => {
     if (!playing || requestedPanel === "captures") return;
@@ -188,7 +213,9 @@ export function RunWorkbench({
         <div className="flex h-11 shrink-0 items-center justify-between px-4 text-xs text-muted-foreground">
           <span>
             {panel === "captures"
-              ? `Capture ${selectedCapture + 1} of ${allFrames.length}`
+              ? reviewMode && report.captureReview
+                ? `${captureReviewCoverageLine(report.captureReview.summary)} · ${report.captureReview.summary.pending} pending review`
+                : `Capture ${selectedCapture + 1} of ${allFrames.length}`
               : step.phase === "test"
                 ? `Test step ${report.timeline.slice(0, selectedStepIndex + 1).filter((item) => item.phase === "test").length} of ${report.timeline.filter((item) => item.phase === "test").length}`
                 : `Step ${selectedStepIndex + 1} of ${report.timeline.length}`}
@@ -273,6 +300,11 @@ export function RunWorkbench({
         <StepMedia
           key={`${report.runId}:${panel === "captures" ? capture?.id : step.id}`}
           frames={panel === "captures" ? (capture ? [capture] : []) : actionFrames}
+          masks={
+            panel === "captures" && showMasks && selectedReview?.masks?.length
+              ? selectedReview.masks
+              : undefined
+          }
           controls={
             panel !== "captures" && !actionFrames.length && allFrames.length ? (
               <Button size="sm" variant="ghost" onClick={() => setPanel("captures")}>
@@ -294,7 +326,7 @@ export function RunWorkbench({
           {(
             [
               ["steps", "Steps"],
-              ...(allFrames.length ? [["captures", "Captures"]] : []),
+              ...(allFrames.length || reviewMode ? [["captures", "Captures"]] : []),
               ...(report.performance?.length ? [["performance", "Performance"]] : []),
               ...(hasChecks ? [["details", "Checks"]] : []),
               ["logs", "Logs"],
@@ -421,36 +453,102 @@ export function RunWorkbench({
           viewportProps={{ "aria-label": "Step report", className: "overscroll-auto" }}
         >
           {panel === "captures" ? (
-            <div className="p-2">
-              <p className="px-3 py-2 text-xs text-muted-foreground">
-                All screenshots saved during this run.
-              </p>
-              <ul className="grid list-none gap-1">
-                {allFrames.map((item, index) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      aria-pressed={index === selectedCapture}
-                      className={`relay-interactive-row flex min-h-20 w-full items-center gap-3 rounded-md p-3 text-left focus-visible:outline-2 focus-visible:outline-ring ${index === selectedCapture ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
-                      onClick={() => setSelectedCapture(index)}
-                    >
-                      {item.media ? (
-                        <ReportImage
-                          media={item.media}
-                          alt=""
-                          className="h-16 w-20 rounded-sm object-contain"
-                          loading="lazy"
-                        />
-                      ) : null}
-                      <span className="grid min-w-0 gap-1">
-                        <span className="text-sm font-medium">{item.title}</span>
-                        <span className="text-xs text-muted-foreground">Capture {index + 1}</span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            reviewMode && report.captureReview ? (
+              <CaptureReviewPanel
+                queue={report.captureReview}
+                frames={allFrames}
+                selectedIndex={selectedCapture}
+                onSelect={setSelectedCapture}
+                busy={reviewBusy}
+                showMasks={showMasks}
+                onShowMasksChange={setShowMasks}
+                fallbackConfiguration={{
+                  ...(report.targetName ? { app: report.targetName } : {}),
+                  ...(report.executionContext?.account
+                    ? { account: report.executionContext.account }
+                    : {}),
+                  ...(report.executionContext?.browser
+                    ? { browser: report.executionContext.browser }
+                    : {}),
+                  ...(report.executionContext?.viewport
+                    ? { viewport: report.executionContext.viewport }
+                    : {}),
+                  ...(report.executionContext?.locale
+                    ? { locale: report.executionContext.locale }
+                    : {}),
+                  ...(report.executionContext?.buildId
+                    ? { build: report.executionContext.buildId }
+                    : report.executionContext?.appVersion
+                      ? { build: report.executionContext.appVersion }
+                      : {}),
+                }}
+                onReview={
+                  onReviewCapture
+                    ? async (action: CaptureReviewAction, item: CaptureReviewItem) => {
+                        setReviewBusy(true);
+                        try {
+                          await onReviewCapture({
+                            captureId: item.captureId,
+                            action,
+                            ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
+                          });
+                        } finally {
+                          setReviewBusy(false);
+                        }
+                      }
+                    : undefined
+                }
+                onReviewMany={
+                  onReviewCapture
+                    ? async (action: CaptureReviewAction, items: CaptureReviewItem[]) => {
+                        setReviewBusy(true);
+                        try {
+                          for (const item of items) {
+                            await onReviewCapture({
+                              captureId: item.captureId,
+                              action,
+                              ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
+                            });
+                          }
+                        } finally {
+                          setReviewBusy(false);
+                        }
+                      }
+                    : undefined
+                }
+              />
+            ) : (
+              <div className="p-2">
+                <p className="px-3 py-2 text-xs text-muted-foreground">
+                  All screenshots saved during this run.
+                </p>
+                <ul className="grid list-none gap-1">
+                  {allFrames.map((item, index) => (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        aria-pressed={index === selectedCapture}
+                        className={`relay-interactive-row flex min-h-20 w-full items-center gap-3 rounded-md p-3 text-left focus-visible:outline-2 focus-visible:outline-ring ${index === selectedCapture ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
+                        onClick={() => setSelectedCapture(index)}
+                      >
+                        {item.media ? (
+                          <ReportImage
+                            media={item.media}
+                            alt=""
+                            className="h-16 w-20 rounded-sm object-contain"
+                            loading="lazy"
+                          />
+                        ) : null}
+                        <span className="grid min-w-0 gap-1">
+                          <span className="text-sm font-medium">{item.title}</span>
+                          <span className="text-xs text-muted-foreground">Capture {index + 1}</span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
           ) : null}
           {panel === "video" && report.video ? (
             <div className="border-t border-border p-5">
@@ -509,6 +607,7 @@ function StepMedia({
   actionBounds,
   beforeFramePath,
   controls,
+  masks,
 }: {
   frames: readonly ReportEvidenceItem[];
   unlinked?: boolean;
@@ -516,6 +615,7 @@ function StepMedia({
   actionBounds?: Report["timeline"][number]["actionBounds"];
   beforeFramePath?: string;
   controls?: ReactNode;
+  masks?: readonly CaptureReviewMask[];
 }) {
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [selected, setSelected] = useState(() => {
@@ -552,6 +652,32 @@ function StepMedia({
               vectorEffect="non-scaling-stroke"
               rx="6"
             />
+          </svg>
+        ) : null}
+        {masks?.length && imageSize.width > 0 ? (
+          <svg
+            aria-label="Comparison masks"
+            className="pointer-events-none absolute inset-5 z-10 h-[calc(100%-2.5rem)] w-[calc(100%-2.5rem)]"
+            viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
+            preserveAspectRatio="xMidYMid meet"
+          >
+            {masks.map((mask, index) => {
+              const normalized = mask.width <= 1 && mask.height <= 1 && mask.x <= 1 && mask.y <= 1;
+              return (
+                <rect
+                  key={`${mask.name ?? "mask"}-${index}`}
+                  x={normalized ? mask.x * imageSize.width : mask.x}
+                  y={normalized ? mask.y * imageSize.height : mask.y}
+                  width={normalized ? mask.width * imageSize.width : mask.width}
+                  height={normalized ? mask.height * imageSize.height : mask.height}
+                  fill="#d97706"
+                  fillOpacity=".2"
+                  stroke="#b45309"
+                  strokeWidth="2"
+                  vectorEffect="non-scaling-stroke"
+                />
+              );
+            })}
           </svg>
         ) : null}
         {frame?.media && !failed ? (

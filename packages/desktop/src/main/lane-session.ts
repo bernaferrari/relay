@@ -17,3 +17,14 @@ export function laneTabSessionKey(laneId: string, targetId: string): string {
   }
   return `lane:${id}`;
 }
+
+/** Playwright headed Chrome user-data is a filesystem profile. Electron uses
+ * `persist:lane:<id>`. Same Lane id does not share cookies across those stores. */
+export function laneWindowNeedsNavigation(currentUrl: string, requestedUrl: string): boolean {
+  if (!currentUrl || currentUrl === "about:blank") return true;
+  try {
+    return new URL(currentUrl).href !== new URL(requestedUrl).href;
+  } catch {
+    return currentUrl !== requestedUrl;
+  }
+}

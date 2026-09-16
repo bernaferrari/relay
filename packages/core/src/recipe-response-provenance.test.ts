@@ -88,15 +88,8 @@ describe("current-action response provenance", () => {
     ]);
     const device = stubDevice([leftover, quota, quota]);
     const ctx: RecipeStepContext = { log: () => {}, job: owner, runtime: {} };
-    await runRecipeStep(
-      device,
-      { kind: "type", id: "ask-2plus2", text: "2+2" },
-      ctx,
-    );
-    await assert.rejects(
-      () => runRecipeStep(device, extract, ctx),
-      /no verified new answer/u,
-    );
+    await runRecipeStep(device, { kind: "type", id: "ask-2plus2", text: "2+2" }, ctx);
+    await assert.rejects(() => runRecipeStep(device, extract, ctx), /no verified new answer/u);
     assert.equal(owner.resolvedInputs.response, undefined);
   });
 
@@ -106,11 +99,7 @@ describe("current-action response provenance", () => {
     const next = grok([turn("4", "@old"), turn("5", "@new", 80)]);
     const device = stubDevice([leftover, leftover, leftover, next, next, next, next]);
     const ctx: RecipeStepContext = { log: () => {}, job: owner, runtime: {} };
-    await runRecipeStep(
-      device,
-      { kind: "type", id: "ask-next", text: "3+1" },
-      ctx,
-    );
+    await runRecipeStep(device, { kind: "type", id: "ask-next", text: "3+1" }, ctx);
     await runRecipeStep(
       device,
       {
@@ -126,11 +115,9 @@ describe("current-action response provenance", () => {
     const turnArtifact = owner.artifacts.find((item) => item.kind === "conversation-turn");
     const data = turnArtifact?.data as { responseId?: string; initiatingActionId?: string };
     assert.equal(data.initiatingActionId, "ask-next");
-    assert.match(String(data.responseId), /@new/u);
-    await assert.rejects(
-      () => runRecipeStep(device, assertFour, ctx),
-      /content assertion/u,
-    );
+    assert.doesNotMatch(String(data.responseId), /@new|@old/u);
+    assert.match(String(data.responseId), /turn:/u);
+    await assert.rejects(() => runRecipeStep(device, assertFour, ctx), /content assertion/u);
     const check = owner.artifacts.find((item) => item.kind === "content-assertion");
     assert.equal((check?.data as { passed?: boolean }).passed, false);
     assert.equal((check?.data as { responseId?: string }).responseId, data.responseId);
@@ -142,11 +129,7 @@ describe("current-action response provenance", () => {
     const next = grok([turn("4", "@old"), turn("4", "@new", 80)]);
     const device = stubDevice([leftover, leftover, leftover, next, next, next, next]);
     const ctx: RecipeStepContext = { log: () => {}, job: owner, runtime: {} };
-    await runRecipeStep(
-      device,
-      { kind: "type", id: "ask-again", text: "2+2" },
-      ctx,
-    );
+    await runRecipeStep(device, { kind: "type", id: "ask-again", text: "2+2" }, ctx);
     await runRecipeStep(
       device,
       {
@@ -161,6 +144,16 @@ describe("current-action response provenance", () => {
     await runRecipeStep(device, assertFour, ctx);
     assert.equal(owner.resolvedInputs.response, "4");
     assert.equal(contentAssertionPassed("4", "4", "number-equals"), true);
+  });
+
+  it("does not treat a reminted leftover ref as a new answer", async () => {
+    const owner = job();
+    const leftover = grok([turn("4", "@old")]);
+    const reminted = grok([turn("4", "@reminted")]);
+    const device = stubDevice([leftover, reminted, reminted]);
+    const ctx: RecipeStepContext = { log: () => {}, job: owner, runtime: {} };
+    await runRecipeStep(device, { kind: "type", id: "ask-again", text: "2+2" }, ctx);
+    await assert.rejects(() => runRecipeStep(device, extract, ctx), /no verified new answer/u);
   });
 
   it("does not let a semantic judge rescue a failed deterministic assertion", async () => {

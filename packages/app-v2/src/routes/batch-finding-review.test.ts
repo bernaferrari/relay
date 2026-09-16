@@ -188,9 +188,37 @@ describe("resolvePlanFindings", () => {
     ]);
   });
 
-  it("keeps a complete analysis with no findings when cells have no codes", () => {
+  it("keeps two analyzed findings from the same job", () => {
     const batch = batchReport();
-    batch.cases = batch.cases.map((item) => ({ ...item, findingCode: undefined, status: "passed" }));
+    const analysis = report([{ jobId: "job-a", locale: "en", status: "failed", frames: [] }]);
+    analysis.analysis.findings = [
+      finding({
+        id: "check-seats",
+        canonicalKey: "job:job-a",
+        code: "PRODUCT_ASSERTION",
+        detail: "seats",
+      }),
+      finding({
+        id: "check-save",
+        canonicalKey: "job:job-a",
+        code: "PRODUCT_ASSERTION",
+        detail: "save",
+      }),
+    ];
+    const resolved = resolvePlanFindings(batch, analysis);
+    expect(resolved.analysis.findings.map((item) => item.id)).toEqual([
+      "check-seats",
+      "check-save",
+      "cell-case-b",
+    ]);
+  });
+
+  it("keeps a complete analysis with no findings when cells have no codes", () => {
+    const source = batchReport();
+    const batch = {
+      ...source,
+      cases: source.cases.map((item) => ({ ...item, findingCode: undefined, status: "passed" as const })),
+    };
     const analysis = report([]);
     analysis.analysis.findings = [];
     expect(planFindingsAnalysisState(batch, analysis)).toBe("complete");

@@ -359,6 +359,41 @@ test("compiles visual and semantic assertion steps", () => {
   );
 });
 
+test("compiles capture-for-review as one screenshot without a judge", () => {
+  const current = fixture();
+  const work = scenario();
+  work.steps.push({
+    id: "capture-settings",
+    kind: "validation",
+    intent: "Capture settings for a person to review later",
+    capture: true,
+    binding: {
+      status: "resolved",
+      kind: "recipe-step",
+      step: {
+        kind: "screenshot",
+        caption: "Arabic account settings",
+        review: { mode: "later", lookFor: "Save is visible" },
+      },
+    },
+  });
+  const compiled = compileAppMapTest(current, work);
+  const screenshots = compiled.root.steps.filter((step) => step.kind === "screenshot");
+  assert.equal(screenshots.length, 1);
+  assert.deepEqual(screenshots[0], {
+    kind: "screenshot",
+    caption: "Arabic account settings",
+    review: { mode: "later", lookFor: "Save is visible" },
+    id: "relay-test-capture-settings-1",
+  });
+  assert.equal(
+    compiled.root.steps.some(
+      (step) => step.kind === "evaluate-visual" || step.kind === "evaluate-semantic",
+    ),
+    false,
+  );
+});
+
 test("compiles visual judge consensus onto evaluate-visual", () => {
   const current = fixture();
   const work = scenario();
@@ -1477,6 +1512,7 @@ test("dest-end mobile-data and app.background compile as coverage primitives", (
     true,
   );
   assert.ok(compiledMobile.plan.destEndRecipeIds?.length);
+  assert.equal(compiledMobile.plan.startup.mode, "warm");
 
   const background = destEndPrimitiveWork(map, "app-background", [
     {
@@ -1497,6 +1533,21 @@ test("dest-end mobile-data and app.background compile as coverage primitives", (
     ),
     true,
   );
+  assert.equal(compiledBackground.plan.startup.mode, "warm");
+});
+
+test("explicit cold startup still relaunches dest-end Tests", () => {
+  const map = fixture();
+  const work = destEndPrimitiveWork(map, "mobile-data", [
+    {
+      id: "toggle-data",
+      kind: "steps",
+      steps: [{ kind: "wait-for", target: { label: "Google search" } }],
+    },
+  ]);
+  const compiled = compileAppMapTest(map, work, { startupMode: "cold" });
+  assert.ok(compiled.plan.destEndRecipeIds?.length);
+  assert.equal(compiled.plan.startup.mode, "cold");
 });
 
 test("dest-end browser offline compiles as a coverage primitive", () => {

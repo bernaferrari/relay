@@ -32,6 +32,8 @@ export type TraceFrameRef = {
   mime?: string;
   width?: number;
   height?: number;
+  /** Recipe/trace step that produced this frame. Comparison masks bind to it. */
+  stepId?: string;
 };
 
 /** A single operation observed inside a human-readable step. Unlike `glyphs`,

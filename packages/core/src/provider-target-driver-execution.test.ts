@@ -90,6 +90,28 @@ test("verified checkpoint startup does not relaunch the frozen Test origin", asy
   assert.equal(launches, 0);
 });
 
+test("later iOS combine cells skip cold relaunch so dest-end packs keep leftover chrome", async () => {
+  let launches = 0;
+  const logs: string[] = [];
+  await runColdAppMapStartup(
+    {
+      targetKind: "device",
+      platform: "ios",
+      caseIndex: 1,
+      targetContext: { kind: "device", platform: "ios", serial: "ipad" },
+    } as never,
+    {} as never,
+    "cold",
+    undefined,
+    (line) => logs.push(line),
+    async () => {
+      launches += 1;
+    },
+  );
+  assert.equal(launches, 0);
+  assert.match(logs[0] ?? "", /skip cold relaunch on later iOS combine cell/u);
+});
+
 test("warm startup preserves the current target and does not require an origin", async () => {
   let launches = 0;
   await runColdAppMapStartup(

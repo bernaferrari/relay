@@ -88,7 +88,13 @@ export function describeRecipeStep(step: RecipeStep): string {
     case "review":
       return `Needs review · ${step.capability}`;
     case "screenshot":
-      return step.caption ? `Screenshot · ${step.caption}` : "Screenshot";
+      return step.review?.mode === "later"
+        ? step.caption
+          ? `Capture for review · ${step.caption}`
+          : "Capture for review"
+        : step.caption
+          ? `Screenshot · ${step.caption}`
+          : "Screenshot";
     case "capture-surface":
       return `Capture full surface · ${step.screenTitle}`;
     case "tour":

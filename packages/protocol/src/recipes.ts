@@ -469,7 +469,15 @@ export type RecipeStep = RecipeStepMetadata &
         capability: string;
         reason: string;
       }
-    | { kind: "screenshot"; caption?: string }
+    | {
+        kind: "screenshot";
+        caption?: string;
+        /** Human review of this capture. Omitted means diagnostic/evidence only. */
+        review?: {
+          mode: "later";
+          lookFor?: string;
+        };
+      }
     | {
         /** Capture and compare one durable logical scroll surface after its
          * mapped destination has been reached. Raw viewports remain the

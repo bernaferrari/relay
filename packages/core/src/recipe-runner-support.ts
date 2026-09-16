@@ -29,7 +29,9 @@ import { TargetControlReservedError } from "./target-control.js";
 import { now } from "./events.js";
 import { describeTarget, type RecipeStep, type StepTarget } from "./recipes.js";
 import {
+  expectedScreenFingerprints,
   handoffShellIdentityMatch,
+  reobserveScreenIdentities,
   resilientScreenIdentityMatch,
 } from "./recipe-runner-screen-identity.js";
 import {
@@ -257,7 +259,11 @@ async function tapTarget(
   // take a fresh snapshot when the cached tree cannot resolve the target.
   const readBeforeTap = async () => {
     try {
-      return await snapshot(device);
+      return await snapshot(device, {
+        ...(selectedPlatform() === "ios" ? { requestedChromeOnly: true } : {}),
+        ...(target.identifier ? { includeIdentifiers: [target.identifier] } : {}),
+        ...(target.label ? { includeLabels: [target.label] } : {}),
+      });
     } catch (error) {
       if (isCancel(error)) throw error;
       throw new InputNotDispatchedError(
@@ -675,18 +681,19 @@ function isNotFoundOrTimeout(err: unknown): boolean {
  */
 async function targetPresent(device: Device, target: StepTarget): Promise<boolean> {
   if (target.identifier) {
+    let context;
     try {
-      const context = currentTargetContext();
-      if (context.kind === "device" && context.platform === "ios") {
-        const present = await identifierPresentViaLiveIosRunnerListener({
-          serial: context.serial,
-          identifier: target.identifier,
-          appBundleId: await rememberedTargetApplication(context),
-        });
-        if (present !== undefined) return present;
-      }
+      context = currentTargetContext();
     } catch {
-      // No target context — fall through to the SDK find / snapshot path.
+      context = undefined;
+    }
+    if (context?.kind === "device" && context.platform === "ios") {
+      const present = await identifierPresentViaLiveIosRunnerListener({
+        serial: context.serial,
+        identifier: target.identifier,
+        appBundleId: await rememberedTargetApplication(context),
+      });
+      if (present !== undefined) return present;
     }
   }
   const query = target.identifier
@@ -766,6 +773,8 @@ export {
   conditionalTargetPresent,
   isCancel,
   isNotFoundOrTimeout,
+  expectedScreenFingerprints,
+  reobserveScreenIdentities,
   resilientScreenIdentityMatch,
   handoffShellIdentityMatch,
   longPressRecordedTarget,

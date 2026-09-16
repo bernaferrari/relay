@@ -6,6 +6,7 @@ import {
   compileAppMapConnection,
   compileAppMapFlow,
 } from "./app-map-compiler.js";
+import { observeScreenIdentityForHost } from "./screen-identity.js";
 import { validateRecipeSteps } from "./recipe-validation.js";
 
 const at = 1_000;
@@ -635,6 +636,49 @@ test("compiles approved semantic variants for dynamic destination matching", () 
   }
 });
 
+test("grok dest-screen aliases leftover chats through the host pack", () => {
+  const map = fixture();
+  const leftover = [
+    { role: "h1", label: "What should we explore?" },
+    { role: "button", label: "Attach", identifier: "attach-button" },
+    { role: "a", label: "capital of cabo verde is praia" },
+  ];
+  const observation = {
+    fingerprint: "c".repeat(64),
+    nodes: leftover,
+    volatileSignals: [],
+  };
+  map.screens.home!.variantIds = ["home-lab"];
+  map.screenVariants["home-lab"] = {
+    ...entity("home-lab"),
+    screenId: "home",
+    targetProfile: {
+      id: "browser:grok-com",
+      targetId: "grok-com",
+      source: "browser",
+      platform: "browser",
+      name: "grok.com",
+      capabilities: [],
+      observedAt: at,
+    },
+    observation,
+    evidenceIds: [],
+  };
+  const hosted = observeScreenIdentityForHost(leftover, { browserTargetId: "grok-com" });
+  const plan = compileAppMapFlow(map, "checkout");
+  const destination = plan.recipes[plan.rootRecipeId]!.steps.at(-1);
+  assert.equal(destination?.kind, "expect-screen");
+  if (destination?.kind === "expect-screen") {
+    assert.equal(destination.fingerprint, "b".repeat(64));
+    assert.equal(destination.aliases?.includes(hosted.fingerprint), true);
+    assert.notEqual(hosted.fingerprint, observation.fingerprint);
+    assert.equal(
+      hosted.nodes.some((node) => node.label === "capital of cabo verde is praia"),
+      false,
+    );
+  }
+});
+
 test("compiled expectations retain every raw viewport absorbed into a logical screen", () => {
   const map = fixture();
   const currentObservation = {
@@ -697,7 +741,9 @@ test("compiled expectations retain every raw viewport absorbed into a logical sc
   assert.equal(destination?.kind, "expect-screen");
   if (destination?.kind === "expect-screen") {
     assert.deepEqual(destination.observations, [currentObservation, archivedObservation]);
-    assert.deepEqual(new Set(destination.aliases), new Set(["e".repeat(64), "f".repeat(64)]));
+    const aliases = new Set(destination.aliases);
+    assert.equal(aliases.has("e".repeat(64)), true);
+    assert.equal(aliases.has("f".repeat(64)), true);
   }
 });
 
@@ -768,6 +814,108 @@ test("compiles an authored upload connection without inventing a destination scr
     "tests/fixtures/sample.pdf",
   );
   assert.equal(steps[1]?.kind === "upload" ? steps[1].target?.label : undefined, "Upload a file");
+});
+
+test("dest-end skips origin wait and opener tap when leftover already shows dest chrome", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.actions = [
+    {
+      id: "open-sidebar",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { identifier: "composer" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { identifier: "sidebar.open" } },
+        { kind: "wait-for", target: { identifier: "sidebar.settings" }, timeoutMs: 8_000 },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  assert.deepEqual(
+    steps.map((step) => step.kind),
+    ["wait-for", "tap", "wait-for"],
+  );
+  assert.deepEqual(steps[0]?.when, {
+    target: { identifier: "sidebar.settings" },
+    condition: "absent",
+  });
+  assert.deepEqual(steps[1]?.when, {
+    target: { identifier: "sidebar.settings" },
+    condition: "absent",
+  });
+  assert.equal(steps[2]?.when, undefined);
+
+  const flow = compileAppMapFlow(map, "checkout");
+  const flowSteps = flow.recipes[flow.rootRecipeId]!.steps;
+  assert.deepEqual(flowSteps[0]?.when, {
+    target: { identifier: "sidebar.settings" },
+    condition: "absent",
+  });
+  assert.deepEqual(flowSteps[1]?.when, {
+    target: { identifier: "sidebar.settings" },
+    condition: "absent",
+  });
+});
+
+test("dest-end skips the whole open prefix when a peek leftover already shows dest chrome", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.actions = [
+    {
+      id: "settings-peek",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { identifier: "composer" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { identifier: "sidebar.open" } },
+        { kind: "tap", target: { identifier: "sidebar.settings" } },
+        { kind: "wait-for", target: { identifier: "toolbar.close" }, timeoutMs: 8_000 },
+        { kind: "wait-for", target: { label: "Customize Grok" }, timeoutMs: 8_000 },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  const destWhen = { target: { identifier: "toolbar.close" }, condition: "absent" as const };
+  assert.deepEqual(
+    steps.map((step) => step.kind),
+    ["wait-for", "tap", "tap", "wait-for", "wait-for"],
+  );
+  assert.deepEqual(steps[0]?.when, destWhen);
+  assert.deepEqual(steps[1]?.when, destWhen);
+  assert.deepEqual(steps[2]?.when, destWhen);
+  assert.equal(steps[3]?.when, undefined);
+  assert.equal(steps[4]?.when, undefined);
+});
+
+test("dest-end does not rewrite an opener that already has leftover policy", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.actions = [
+    {
+      id: "attach",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { identifier: "attach" }, timeoutMs: 8_000 },
+        {
+          kind: "tap",
+          target: { identifier: "attach" },
+          when: { target: { identifier: "camera" }, condition: "absent" },
+        },
+        { kind: "wait-for", target: { identifier: "camera" }, timeoutMs: 8_000 },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  assert.deepEqual(steps[0]?.when, undefined);
+  assert.deepEqual(steps[1]?.when, {
+    target: { identifier: "camera" },
+    condition: "absent",
+  });
 });
 
 test("in-place chrome actions keep wait-for as the origin proof", () => {

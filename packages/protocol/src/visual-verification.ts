@@ -66,6 +66,8 @@ export type VisualFrameMetadata = {
   sha256: string;
   width?: number;
   height?: number;
+  /** Recipe step that produced this frame. Visual ignore regions bind to it. */
+  stepId?: string;
 };
 
 export type VisualRunSnapshot = {

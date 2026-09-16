@@ -64,7 +64,10 @@ export function composerBands(
   if (!composer) return [];
   return nodes.flatMap((node) => {
     const rect = node.rect;
-    if (!rect || !composer.role.test(nodeRole(node))) return [];
+    if (!rect) return [];
+    const identifier = (node.identifier ?? "").trim();
+    const identified = Boolean(identifier && composer.inputIdentifier?.test(identifier));
+    if (!identified && !composer.role.test(nodeRole(node))) return [];
     return [
       {
         top: rect.y - composer.bandPx,

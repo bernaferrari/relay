@@ -15,6 +15,8 @@ import type {
 } from "@relay/protocol";
 import { createHash } from "node:crypto";
 import { validateAppMap } from "./app-map.js";
+import { observeScreenIdentityForHost } from "./screen-identity.js";
+import type { SnapshotNode } from "./device.js";
 import { semanticTargetMatches } from "./scroll-surface-semantic-index.js";
 import { compiledJudgeFields } from "./judge-assertion-fields.js";
 
@@ -122,6 +124,19 @@ export function screenExpectation(
       for (const alias of source.identity.aliases ?? []) aliases.add(alias);
     }
   }
+  for (const variant of [
+    ...screen.variantIds.map((variantId) => map.screenVariants[variantId]),
+    ...(archivedVariants ?? []),
+  ]) {
+    const nodes = variant?.observation?.nodes;
+    if (!nodes?.length) continue;
+    const hosted = observeScreenIdentityForHost(nodes as SnapshotNode[], {
+      appMapId: map.id,
+      browserTargetId: variant.targetProfile?.targetId,
+    });
+    if (hosted.fingerprint) aliases.add(hosted.fingerprint);
+  }
+  aliases.delete(screen.identity.fingerprint);
   const observations = [...observationsByFingerprint.values()];
   return {
     id: stepId,
@@ -227,6 +242,68 @@ function semanticRevealPlans(
     });
   }
   return plans;
+}
+
+function destEndOpenChromeTarget(step: RecipeStep): StepTarget | undefined {
+  if (step.kind === "wait-for") return step.target;
+  return undefined;
+}
+
+function destEndOpenFallbackTarget(step: RecipeStep): StepTarget | undefined {
+  if (step.kind === "tap") return step.target;
+  return undefined;
+}
+
+/** Dest-end wait-for origin + opener tap SOS when leftover is already the
+ * overlay (open sidebar hides the composer). Skip the open prefix when later
+ * dest chrome is already on screen — do not tap the opener, which would close
+ * it, and do not re-tap a peek that is already open. */
+function applyDestEndOpenLeftoverPolicy(
+  steps: RecipeStep[],
+  start = 0,
+  end = steps.length,
+): void {
+  const originIndex = steps.findIndex(
+    (step, index) =>
+      index >= start &&
+      index < end &&
+      step.kind === "wait-for" &&
+      step.optional !== true &&
+      step.when === undefined,
+  );
+  if (originIndex < 0 || originIndex + 1 >= end) return;
+  const origin = steps[originIndex];
+  const opener = steps[originIndex + 1];
+  if (origin?.kind !== "wait-for" || opener?.kind !== "tap" || opener.when) return;
+  let destIndex = -1;
+  let destTarget: StepTarget | undefined;
+  for (let index = originIndex + 2; index < end; index += 1) {
+    const later = destEndOpenChromeTarget(steps[index]!);
+    if (!later) continue;
+    if (semanticTargetMatches(later, origin.target)) continue;
+    if (semanticTargetMatches(later, opener.target)) continue;
+    destIndex = index;
+    destTarget = later;
+    break;
+  }
+  if (!destTarget) {
+    for (let index = originIndex + 2; index < end; index += 1) {
+      const later = destEndOpenFallbackTarget(steps[index]!);
+      if (!later) continue;
+      if (semanticTargetMatches(later, origin.target)) continue;
+      if (semanticTargetMatches(later, opener.target)) continue;
+      destIndex = index;
+      destTarget = later;
+      break;
+    }
+  }
+  if (!destTarget || destIndex < 0) return;
+  const when = { target: structuredClone(destTarget), condition: "absent" as const };
+  for (let index = originIndex; index < destIndex; index += 1) {
+    const step = steps[index]!;
+    if ((step.kind !== "wait-for" && step.kind !== "tap") || step.when) continue;
+    step.when = structuredClone(when);
+  }
 }
 
 function connectionActionsStartWithWaitFor(connection: Connection | undefined): boolean {
@@ -609,6 +686,8 @@ export function compileAppMapFlow(
         ownerKind: "connection",
         ownerId: connection.id,
       });
+    } else {
+      applyDestEndOpenLeftoverPolicy(root.steps, rangeStart);
     }
     connections.push({
       connectionIndex,
@@ -731,6 +810,8 @@ export function compileAppMapConnection(
       ownerId: connection.id,
     });
     root.steps.push(step);
+  } else {
+    applyDestEndOpenLeftoverPolicy(root.steps);
   }
   recipes[rootRecipeId] = root;
 

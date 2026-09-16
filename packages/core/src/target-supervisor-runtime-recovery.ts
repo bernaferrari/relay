@@ -11,6 +11,7 @@ import {
 import type { SupervisedTarget, TargetSupervisorStore } from "./target-supervisor-store.js";
 import { recoverTargetRuntime, type TargetRuntimeRecovery } from "./workspace-ios-session.js";
 import { probeLiveIosRunnerListener } from "./ios-runner-listener.js";
+import { ensureGoIosTunnel } from "./ios-app-launch.js";
 
 export type RecoveryMechanismResult = {
   readiness: TargetRuntimeReadiness;
@@ -184,6 +185,11 @@ export async function recoverSupervisedTargetRuntime(input: {
   mechanisms?: LocalTargetSupervisorRecoveryMechanisms;
 }): Promise<TargetRuntimeRecovery> {
   const before = input.store.health(input.target);
+  // Heal the userspace pixel tunnel before burning screenshot budget. Stale
+  // `tunnel ls` JSON after the agent died used to quarantine the iPad.
+  if (!input.mechanisms && input.target.kind === "ios") {
+    await ensureGoIosTunnel();
+  }
   const liveListener =
     input.target.kind === "ios" ? await probeLiveIosRunnerListener(input.target.id) : null;
   // A healthy testCommand listener is operator proof the last recover lied.

@@ -14,7 +14,7 @@ import { actionOwners } from "./validation.js";
 import { assertAddScreenInput, assertUpdateScreenInput, identifier } from "./validation-shapes.js";
 import { hasCurrentAuthoringSemantics } from "../authoring-observation-proof.js";
 import type { SnapshotNode } from "../device.js";
-import { observeScreenIdentity } from "../screen-identity.js";
+import { observeScreenIdentityForHost } from "../screen-identity.js";
 import type {
   AuthoringEvidence,
   AuthoringObservation,
@@ -359,7 +359,10 @@ export function observeAppMapScreenAlias(
       `Screen ${screenId} alias observation is empty; the target returned no accessibility tree`,
     );
   }
-  const fingerprint = observeScreenIdentity(nodes.slice(0, 256) as SnapshotNode[]).fingerprint;
+  const fingerprint = observeScreenIdentityForHost(nodes.slice(0, 256) as SnapshotNode[], {
+    appMapId: map.id,
+    browserTargetId: capture?.target.targetId,
+  }).fingerprint;
   let aliasesNow: string[] = [];
   let variant: ScreenVariant | undefined;
   const appMap = mutateAppMap(

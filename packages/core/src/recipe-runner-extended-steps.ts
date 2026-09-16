@@ -32,6 +32,8 @@ import {
   resolveSnapshotTargetRevealDirection,
 } from "./device-target-resolution.js";
 import {
+  expectedScreenFingerprints,
+  reobserveScreenIdentities,
   resilientScreenIdentityMatch,
   longPressRecordedTarget,
   tapRecordedTarget,
@@ -134,7 +136,6 @@ export async function runSemanticScrollStep(
   const performScroll = () =>
     step.direction === "down" ? scrollDown(device, step.amount) : scrollUp(device, step.amount);
   if (!step.until) return performScroll();
-  const expected = new Set([step.until.fingerprint, ...(step.until.aliases ?? [])]);
   const maxAttempts = step.maxAttempts ?? 12;
   let previousFingerprint: string | undefined;
   let repeated = 0;
@@ -144,12 +145,18 @@ export async function runSemanticScrollStep(
       await snapshot(device),
       recipeScreenIdentityOptions(ctx),
     );
+    const untilOptions = recipeScreenIdentityOptions(ctx);
+    const untilExpected = expectedScreenFingerprints(step.until, untilOptions);
+    const untilObservations = reobserveScreenIdentities(step.until.observations, untilOptions);
+    const untilCompare = untilObservations.length
+      ? untilObservations
+      : (step.until.observations ?? []);
     if (
-      screenIdentityMatches(expected, observed.fingerprint) ||
-      (step.until.observations ?? []).some(
+      screenIdentityMatches(untilExpected, observed.fingerprint) ||
+      untilCompare.some(
         (observation) => compareScreenIdentity(observed, observation).decision === "match",
       ) ||
-      resilientScreenIdentityMatch(observed, step.until.observations ?? [], ctx.job, {
+      resilientScreenIdentityMatch(observed, untilCompare, ctx.job, {
         allowDynamicShell: false,
       })
     ) {

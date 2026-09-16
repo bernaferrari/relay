@@ -44,6 +44,11 @@ import type {
 } from "./campaign-capacity-plan.js";
 import type { IosSessionOperationLifecycle, TargetRuntimeReadiness } from "./target-contract.js";
 import type { RunReview } from "./run-review.js";
+import type {
+  CaptureReviewAction,
+  CaptureReviewDecision,
+  CaptureReviewQueue,
+} from "./capture-review.js";
 import type { CampaignRepairOperationMap } from "./run-repair-operations.js";
 import type { RunShareOperationMap } from "./run-share.js";
 import type { TracePackExportResponse } from "./trace-pack.js";
@@ -750,6 +755,20 @@ type SpecificOperationMap = {
   "run.visual.review": {
     input: { runId: string; comparisonId: string; action: VisualReviewAction; note?: string };
     output: { decision: VisualReviewDecision; baseline: VisualBaseline | null };
+  };
+  "run.capture.review": {
+    input: {
+      runId: string;
+      captureId: string;
+      action: CaptureReviewAction;
+      imageSha256?: string;
+      note?: string;
+    };
+    output: {
+      run: OperationRecord;
+      queue: CaptureReviewQueue;
+      decision: CaptureReviewDecision;
+    };
   };
   "run.visual-policy.get": {
     input: { runId: string };

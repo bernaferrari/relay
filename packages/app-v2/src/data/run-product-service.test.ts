@@ -70,6 +70,35 @@ describe("run report projection", () => {
       expect.arrayContaining([expect.objectContaining({ id: "frames/final.png" })]),
     );
   });
+  it("projects capture-for-review without treating captured files as verified", () => {
+    const report = projectRunReport(
+      "capture-review",
+      {
+        artifacts: [
+          {
+            kind: "capture-review",
+            data: {
+              caption: "Arabic account settings",
+              lookFor: "Save is visible",
+              framePath: "frames/001.png",
+              imageSha256: "aaa",
+            },
+          },
+        ],
+        frames: [{ path: "frames/001.png", caption: "Arabic account settings" }],
+      },
+      { channels: { screenshot: { entries: 1 } } },
+    );
+    expect(report.captureReview?.summary).toEqual({
+      captured: 1,
+      missing: 0,
+      pending: 1,
+      accepted: 0,
+      issue: 0,
+      needMoreEvidence: 0,
+    });
+    expect(report.outcome).toBeUndefined();
+  });
   it("projects workflow-less active jobs without inventing workflow identity", () => {
     const state = projectWorkflowlessExecution(
       {

@@ -25,6 +25,13 @@ const { calls, invoke } = vi.hoisted(() => {
         baseline: { id: "baseline-1" },
       };
     }
+    if (id === "run.capture.review") {
+      return {
+        run: {},
+        queue: { items: [], summary: { captured: 1, missing: 0, pending: 0, accepted: 1, issue: 0, needMoreEvidence: 0 } },
+        decision: { captureId: "frames/001.png::aaa", action: "accept", decidedAt: 1, decidedBy: { id: "human:qa", kind: "human" } },
+      };
+    }
     if (id === "run.replay") return { job: { id: "replay-job-1", status: "queued" } };
     if (id === "job.get") return { job: { id: "replay-job-1", status: "ok", runId: "run-2" } };
     if (id === "job.cancel") return { job: { id: "replay-job-1", status: "cancelled" } };
@@ -80,12 +87,21 @@ describe("run report product operations", () => {
     await expect(
       service.approveVisualBaseline?.({ runId: "run-1", action: "approve-new-baseline" }),
     ).resolves.toMatchObject({ baseline: { id: "baseline-1" } });
+    await expect(
+      service.reviewCapture?.({
+        runId: "run-1",
+        captureId: "frames/001.png::aaa",
+        action: "accept",
+        imageSha256: "aaa",
+      }),
+    ).resolves.toMatchObject({ decision: { action: "accept" } });
     expect(calls.map(({ id }) => id)).toEqual([
       "run.visual.compare",
       "run.visual.review",
       "run.visual-policy.get",
       "run.visual-policy.update",
       "run.visual-baseline.update",
+      "run.capture.review",
     ]);
   });
 

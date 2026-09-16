@@ -198,7 +198,7 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_recover",
     "Recover the runner",
-    'When to use: XCTest/session is down; never reboot. Adopts a healthy live runner instead of killing it. Do not recover a ready iPad mid-pack. Example: {serial:"ipad"} adopts the live XCTest runner.',
+    'When to use: XCTest/session is down or iOS pixels lost the go-ios tunnel; never reboot. Adopts a healthy live runner and restores the userspace tunnel instead of killing either. Do not recover a ready iPad mid-pack. Example: {serial:"ipad"} adopts the live XCTest runner.',
     z.object({ serial: identifier }).strict(),
     rw,
   ),

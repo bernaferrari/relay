@@ -43,8 +43,8 @@ async function cachedScreenshotIsFresh(job: TestJob, cached: ScreenshotPayload):
       await rm(sampleDir, { recursive: true, force: true });
     }
   } catch {
-    // A failed probe is not evidence of change; keep the cache usable.
-    return true;
+    // A failed probe is not evidence of freshness. Recapture for a current frame.
+    return false;
   }
 }
 
@@ -62,8 +62,14 @@ export async function captureAutomaticState(
   let observedAt = observation?.observedAt ?? now();
   try {
     if (!snapshotNodes) {
-      snapshotNodes = await snapshot(device);
-      observedAt = now();
+      if (phase === "after" && job.platform === "ios") {
+        // Catalog snapshot after a Grok library open queries absent home ids
+        // and XCTest walks the conversation list until the runner dies.
+        snapshotNodes = [];
+      } else {
+        snapshotNodes = await snapshot(device);
+        observedAt = now();
+      }
     }
     job.artifacts.push({
       kind: "ui-tree",
@@ -102,7 +108,12 @@ export async function captureAutomaticState(
           step.frames.push({ ...existing });
         }
       } else {
-        const frame = await writeFramePng(job, cachedScreenshot.base64, `${phase} · ${step.title}`);
+        const frame = await writeFramePng(
+          job,
+          cachedScreenshot.base64,
+          `${phase} · ${step.title}`,
+          { stepId: step.id, capturedAt: cachedScreenshot.capturedAt },
+        );
         step.frames.push({ ...frame, base64: undefined });
         cachedScreenshot.framePath = frame.path;
       }
@@ -127,13 +138,19 @@ export async function captureAutomaticState(
     // One PNG. Dest-end chrome that already matched must not enter the
     // 4-sample / 500ms still loop (`captureSettledRaster`) — that is an
     // 8–16s tax per assertion on Android. Failures still get this frame.
-    const captured = { value: await captureRaster(), settled: true, samples: 1 };
+    const captured = { value: await captureRaster(), settled: false, samples: 1 };
     let bytes = captured.value;
     if (phase === "after") {
       job.artifacts.push({
         kind: "visual-settling",
         capturedAt: now(),
-        data: { stepId: step.id, phase, settled: captured.settled, samples: captured.samples },
+        data: {
+          stepId: step.id,
+          phase,
+          settled: captured.settled,
+          samples: captured.samples,
+          stabilityMeasured: false,
+        },
       });
     }
     if (job.platform === "ios") {
@@ -153,7 +170,9 @@ export async function captureAutomaticState(
       bytes = normalizeScreenshotToBounds(bytes, bounds, orientation);
     }
     const encoded = bytes.toString("base64");
-    const frame = await writeFramePng(job, encoded, `${phase} · ${step.title}`);
+    const frame = await writeFramePng(job, encoded, `${phase} · ${step.title}`, {
+      stepId: step.id,
+    });
     step.frames.push({ ...frame, base64: undefined });
     if (runtime) {
       const screenshot = {

@@ -596,9 +596,28 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
         break;
       }
       case "screenshot": {
+        let review: Extract<RecipeStep, { kind: "screenshot" }>["review"];
+        if (raw.review !== undefined) {
+          if (!isObject(raw.review)) {
+            throw stepErr(index, "screenshot.review must be an object");
+          }
+          if (raw.review.mode !== "later") {
+            throw stepErr(index, "screenshot.review.mode must be later");
+          }
+          if (raw.review.lookFor !== undefined && !isString(raw.review.lookFor)) {
+            throw stepErr(index, "screenshot.review.lookFor must be a string");
+          }
+          review = {
+            mode: "later",
+            ...(isString(raw.review.lookFor) && raw.review.lookFor.trim()
+              ? { lookFor: raw.review.lookFor.trim() }
+              : {}),
+          };
+        }
         const step: Extract<RecipeStep, { kind: "screenshot" }> = {
           kind: "screenshot",
           ...(raw.caption !== undefined && isString(raw.caption) ? { caption: raw.caption } : {}),
+          ...(review ? { review } : {}),
           ...(note ? { note } : {}),
         };
         out.push(step);

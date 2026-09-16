@@ -20,7 +20,7 @@ const policy: VisualComparisonPolicy = {
   updatedBy: { id: "relay-default", kind: "system" },
 };
 
-test("pixel identity-ignore regions normalize onto every frame", () => {
+test("unscoped identity-ignore does not leak onto later frames", () => {
   const regions = visualIgnoreRegionsFromIdentityArtifacts(
     [
       {
@@ -29,16 +29,56 @@ test("pixel identity-ignore regions normalize onto every frame", () => {
       },
     ],
     [
-      { index: 0, width: 1280, height: 800 },
-      { index: 1, width: 1280, height: 800 },
+      { index: 0, width: 1280, height: 800, stepId: "chat" },
+      { index: 1, width: 1280, height: 800, stepId: "settings" },
     ],
   );
-  assert.equal(regions.length, 2);
+  assert.equal(regions.length, 0);
+});
+
+test("identity-ignore bound to a frame stays on that frame", () => {
+  const regions = visualIgnoreRegionsFromIdentityArtifacts(
+    [
+      {
+        kind: "identity-ignore",
+        data: { name: "reply body", x: 0, y: 80, width: 1280, height: 640, frameIndex: 0 },
+      },
+    ],
+    [
+      { index: 0, width: 1280, height: 800, stepId: "chat" },
+      { index: 1, width: 1280, height: 800, stepId: "settings" },
+    ],
+  );
+  assert.equal(regions.length, 1);
   assert.equal(regions[0]?.mode, "ignore");
   assert.equal(regions[0]?.name, "reply body");
+  assert.equal(regions[0]?.frameIndex, 0);
   assert.equal(regions[0]?.y, 0.1);
   assert.equal(regions[0]?.height, 0.8);
-  assert.equal(regions[1]?.frameIndex, 1);
+});
+
+test("ui-tree ignore follows the capturing step, not a later Settings frame", () => {
+  const regions = visualIgnoreRegionsFromIdentityArtifacts(
+    [
+      {
+        kind: "ui-tree",
+        data: {
+          stepId: "chat",
+          nodes: [
+            { role: "article", label: "You", rect: { x: 80, y: 80, width: 40, height: 40 } },
+            { role: "article", label: "Grok", rect: { x: 80, y: 200, width: 400, height: 120 } },
+          ],
+        },
+      },
+    ],
+    [
+      { index: 0, width: 1280, height: 800, stepId: "chat" },
+      { index: 1, width: 1280, height: 800, stepId: "settings" },
+    ],
+  );
+  assert.equal(regions.length, 1);
+  assert.equal(regions[0]?.name, "reply body");
+  assert.equal(regions[0]?.frameIndex, 0);
 });
 
 test("already-normalized identity-ignore regions stay unit rectangles", () => {
@@ -232,6 +272,34 @@ test("chat-input identifier ignores the tight composer placeholder, not the view
   assert.ok((regions[0]?.height ?? 1) < 0.08);
   assert.ok((regions[0]?.y ?? 0) > 0.25);
   assert.ok((regions[0]?.y ?? 0) + (regions[0]?.height ?? 0) < 0.4);
+});
+
+test("a grok.com ui-tree covers a unique Build Mode intro dialog", () => {
+  const regions = visualIgnoreRegionsFromIdentityArtifacts(
+    [
+      {
+        kind: "ui-tree",
+        data: {
+          nodes: [
+            {
+              role: "dialog",
+              label: "Introducing Build Mode",
+              rect: { x: 824, y: 339, width: 320, height: 301 },
+            },
+            { role: "button", label: "Chat", rect: { x: 16, y: 80, width: 72, height: 32 } },
+          ],
+        },
+      },
+    ],
+    [{ index: 0, width: 1280, height: 800 }],
+  );
+  assert.equal(regions.length, 1);
+  assert.equal(regions[0]?.name, "intro overlay");
+  assert.equal(regions[0]?.mode, "ignore");
+  assert.equal(regions[0]?.x, 824 / 1280);
+  assert.equal(regions[0]?.y, 339 / 800);
+  assert.equal(regions[0]?.width, 320 / 1280);
+  assert.equal(regions[0]?.height, 301 / 800);
 });
 
 test("cookie banner stacks with composer placeholder and skips a reply-body column", () => {

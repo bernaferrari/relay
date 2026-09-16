@@ -230,6 +230,7 @@ async function snapshotFromLiveIosListenerIfReady(
     timeoutMs?: number;
     includeIdentifiers?: readonly string[];
     includeLabels?: readonly string[];
+    requestedChromeOnly?: boolean;
   },
 ): Promise<SnapshotNode[] | undefined> {
   if (context.kind !== "device" || context.platform !== "ios") return undefined;
@@ -242,6 +243,7 @@ async function snapshotFromLiveIosListenerIfReady(
     timeoutMs: opts?.timeoutMs,
     ...(opts?.includeIdentifiers?.length ? { includeIdentifiers: opts.includeIdentifiers } : {}),
     ...(opts?.includeLabels?.length ? { includeLabels: opts.includeLabels } : {}),
+    ...(opts?.requestedChromeOnly ? { requestedChromeOnly: true } : {}),
   });
 }
 
@@ -255,6 +257,7 @@ export async function snapshot(
     retryAttempts?: number;
     includeIdentifiers?: readonly string[];
     includeLabels?: readonly string[];
+    requestedChromeOnly?: boolean;
   },
 ): Promise<SnapshotNode[]> {
   const run = () =>

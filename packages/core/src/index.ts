@@ -20,6 +20,7 @@ export * from "./session.js";
 export * from "./workspace.js";
 export * from "./trace.js";
 export * from "./runs.js";
+export * from "./capture-review.js";
 export * from "./run-shares.js";
 export * from "./proof-report.js";
 export * from "./approval-policy.js";

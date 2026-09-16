@@ -3838,7 +3838,7 @@ describe("runRecipeStep expect-screen", () => {
     assert.equal(discarded.jobId, undefined);
   });
 
-  it("aborts expect-screen when pixels stay still instead of polling the timeout", async () => {
+  it("keeps polling expect-screen until the authored timeout when pixels stay still", async () => {
     let screenshots = 0;
     const visualFingerprint = "c".repeat(64);
     const started = Date.now();
@@ -3856,7 +3856,7 @@ describe("runRecipeStep expect-screen", () => {
               screenId: "search",
               screenTitle: "Search",
               fingerprint: "d".repeat(64),
-              timeoutMs: 90_000,
+              timeoutMs: 1_200,
             },
             {
               log: () => {},
@@ -3871,9 +3871,9 @@ describe("runRecipeStep expect-screen", () => {
             },
           ),
         ),
-      /pixels unchanged after \d+ms/,
+      /expect-screen: on “.*”, not “Search” after 1200ms/u,
     );
-    assert.ok(Date.now() - started < 4_000);
+    assert.ok(Date.now() - started >= 1_000);
     assert.ok(screenshots >= 2);
   });
 
@@ -4026,6 +4026,80 @@ describe("runRecipeStep expect-screen", () => {
       },
     );
     assert.deepEqual(lines, ["screen: reached Canvas"]);
+  });
+
+  it("proves grok signed-in home when leftover chats were taught without the pack", async () => {
+    const frame = {
+      role: "div",
+      rect: { x: 0, y: 0, width: 1280, height: 800 },
+      visibleToUser: true,
+    };
+    const seeAll = {
+      role: "button",
+      label: "See all",
+      rect: { x: 12, y: 360, width: 80, height: 32 },
+      hittable: true,
+      visibleToUser: true,
+    };
+    const chrome = [
+      { role: "h1", label: "What should we explore?", visibleToUser: true },
+      {
+        role: "button",
+        label: "Attach",
+        identifier: "attach-button",
+        hittable: true,
+        visibleToUser: true,
+      },
+      { role: "a", label: "Imagine", hittable: true, visibleToUser: true },
+      seeAll,
+      frame,
+    ];
+    const leftoverChat = {
+      role: "a",
+      label: "capital of cabo verde is praia",
+      rect: { x: 12, y: 400, width: 240, height: 36 },
+      hittable: true,
+      visibleToUser: true,
+    };
+    const taught = observeScreenIdentity([...chrome, leftoverChat]);
+    const live = [
+      ...chrome,
+      leftoverChat,
+      {
+        role: "a",
+        label: "Paris capital of France",
+        rect: { x: 12, y: 440, width: 240, height: 36 },
+        hittable: true,
+        visibleToUser: true,
+      },
+    ];
+    const lines: string[] = [];
+    await runRecipeStep(
+      stubDevice({ snapshot: () => Promise.resolve({ nodes: live }) }),
+      {
+        kind: "expect-screen",
+        screenId: "signed-in-home",
+        screenTitle: "Signed-in home",
+        fingerprint: taught.fingerprint,
+        observations: [taught],
+        timeoutMs: 250,
+      },
+      {
+        log: (line) => lines.push(line),
+        job: {
+          browserTargetId: "grok-com",
+          artifacts: [],
+          resolvedInputs: {},
+          action: "app-map:grok-web:test:home:root:r1",
+        } as TestJob,
+        runtime: {
+          identityIgnoreRegions: [
+            { name: "sidebar conversation titles", x: 0, y: 0.4, width: 0.24, height: 0.48 },
+          ],
+        },
+      },
+    );
+    assert.deepEqual(lines, ["screen: reached Signed-in home"]);
   });
 
   it("accepts an approved semantic variant when dynamic body content changes", async () => {

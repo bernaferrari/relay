@@ -378,7 +378,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         'relay device recover 00008110 --input \'{"reason":"control"}\'',
         "relay device recover RQCY104BG8X",
       ],
-      note: "iPad: first proves the existing XCTest session; only a failed proof gets one bounded runner repair. It never resets the app or restarts the iPad. Android: wake the screen and retry labels. Unlock still needs a person. Supplying recoveryFenceAssignmentId is local-host-only and records a new pixel/semantic/pixel proof before any durable fence is released.",
+      note: "iPad: first proves the existing XCTest session; only a failed proof gets one bounded runner repair. It never resets the app or restarts the iPad. A dead go-ios userspace tunnel is restored on this same recover — do not spawn `ios tunnel start` as a sidecar and do not reboot. Android: wake the screen and retry labels. Unlock still needs a person. Supplying recoveryFenceAssignmentId is local-host-only and records a new pixel/semantic/pixel proof before any durable fence is released.",
     }),
   ),
   mapped(

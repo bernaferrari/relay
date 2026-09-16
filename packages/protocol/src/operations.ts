@@ -70,6 +70,7 @@ import {
   string,
 } from "./operation-parser-primitives.js";
 import { VISUAL_REVIEW_ACTIONS } from "./visual-verification.js";
+import { CAPTURE_REVIEW_ACTIONS } from "./capture-review.js";
 export {
   projectRoleAllows,
   projectRoles,
@@ -581,6 +582,29 @@ const visualReviewOutputParser = objectParser<OperationOutput<"run.visual.review
   (input) => {
     record(input.decision, "visual review decision");
     if (input.baseline !== null) record(input.baseline, "visual review baseline");
+  },
+);
+
+const captureReviewInputParser = objectParser<OperationInput<"run.capture.review">>(
+  "capture review input",
+  (input) => {
+    string(input.runId, "capture review runId");
+    string(input.captureId, "capture review captureId");
+    const action = string(input.action, "capture review action");
+    if (!(CAPTURE_REVIEW_ACTIONS as readonly string[]).includes(action)) {
+      fail("capture review action", "is unsupported");
+    }
+    if (input.imageSha256 !== undefined) string(input.imageSha256, "capture review imageSha256");
+    if (input.note !== undefined) string(input.note, "capture review note");
+  },
+);
+
+const captureReviewOutputParser = objectParser<OperationOutput<"run.capture.review">>(
+  "capture review response",
+  (input) => {
+    record(input.run, "capture review run");
+    record(input.queue, "capture review queue");
+    record(input.decision, "capture review decision");
   },
 );
 
@@ -1231,6 +1255,18 @@ export const operationDefinitions = [
     input: visualReviewInputParser,
     output: visualReviewOutputParser,
   }),
+  command(
+    "run.capture.review",
+    "Review a captured screenshot",
+    "POST",
+    "/runs/:runId/capture-review",
+    {
+      category: "evidence",
+      confirmation: "confirm",
+      input: captureReviewInputParser,
+      output: captureReviewOutputParser,
+    },
+  ),
   query("run.visual-policy.get", "Get visual comparison policy", "/runs/:runId/visual-policy", {
     category: "evidence",
     input: visualPolicyGetInputParser,

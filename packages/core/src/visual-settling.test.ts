@@ -21,6 +21,22 @@ test("waits through animation even when the accessibility tree is already ready"
   assert.deepEqual(discarded, ["old", "transition", "new"]);
 });
 
+test("measured stability requires two matching frames", async () => {
+  let samples = 0;
+  const result = await captureSettledRaster({
+    capture: async () => {
+      samples += 1;
+      return "same";
+    },
+    bytes: (frame) => Buffer.from(frame),
+    wait: async () => {},
+  });
+  assert.equal(result.value, "same");
+  assert.equal(result.settled, true);
+  assert.ok(result.samples >= 2);
+  assert.ok(samples >= 2);
+});
+
 test("bounds continuously changing content without claiming it settled", async () => {
   let samples = 0;
   const result = await captureSettledRaster({

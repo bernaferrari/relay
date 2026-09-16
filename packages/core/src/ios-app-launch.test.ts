@@ -1,15 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { EventEmitter } from "node:events";
+import type { ChildProcess } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   IOS_COREDEVICE_PROBE_TIMEOUT_MS,
+  ensureGoIosTunnel,
   iosVisualVerificationDiagnostic,
   launchIosAppOutsideXctest,
   launchIosAppViaDevicectl,
   launchIosAppViaGoIos,
   probeIosCoreDevice,
+  resetGoIosTunnelChildForTests,
+  resetGoIosTunnelInfoPortForTests,
   resolveIosLaunchBundleId,
   type CommandResult,
   type CommandRunner,
@@ -679,5 +684,82 @@ test("equal before and after pixels on a settled screen stay a typed unchanged e
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+});
+
+function fakeTunnelChild(): ChildProcess {
+  const child = new EventEmitter() as ChildProcess;
+  Object.assign(child, { pid: 4242, exitCode: null });
+  return child;
+}
+
+async function withCleanTunnelEnv(run: () => Promise<void>): Promise<void> {
+  const previousRelay = process.env.RELAY_GO_IOS_TUNNEL_INFO_PORT;
+  const previousGo = process.env.GO_IOS_TUNNEL_INFO_PORT;
+  delete process.env.RELAY_GO_IOS_TUNNEL_INFO_PORT;
+  delete process.env.GO_IOS_TUNNEL_INFO_PORT;
+  resetGoIosTunnelInfoPortForTests();
+  resetGoIosTunnelChildForTests();
+  try {
+    await run();
+  } finally {
+    if (previousRelay === undefined) delete process.env.RELAY_GO_IOS_TUNNEL_INFO_PORT;
+    else process.env.RELAY_GO_IOS_TUNNEL_INFO_PORT = previousRelay;
+    if (previousGo === undefined) delete process.env.GO_IOS_TUNNEL_INFO_PORT;
+    else process.env.GO_IOS_TUNNEL_INFO_PORT = previousGo;
+    resetGoIosTunnelInfoPortForTests();
+    resetGoIosTunnelChildForTests();
+  }
+}
+
+test("a live go-ios info port plus tunnel ls does not spawn another tunnel", async () => {
+  await withCleanTunnelEnv(async () => {
+    let spawned = 0;
+    await ensureGoIosTunnel({
+      bin: "ios",
+      run: async (_file, args) => {
+        if (args[0] === "tunnel" && args[1] === "ls") {
+          return {
+            exitCode: 0,
+            stdout: '[{"udid":"ipad","userspaceTun":true}]',
+            stderr: "",
+          };
+        }
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+      probeInfoPort: async (port) => port === "28100",
+      spawnTunnel: () => {
+        spawned += 1;
+        return fakeTunnelChild();
+      },
+    });
+    assert.equal(spawned, 0);
+  });
+});
+
+test("stale tunnel ls without a live info port respawns the userspace tunnel", async () => {
+  await withCleanTunnelEnv(async () => {
+    let spawned = 0;
+    let infoUp = false;
+    await ensureGoIosTunnel({
+      bin: "ios",
+      run: async (_file, args) => {
+        if (args[0] === "tunnel" && args[1] === "ls") {
+          return {
+            exitCode: 0,
+            stdout: '[{"udid":"stale","userspaceTun":true}]',
+            stderr: "",
+          };
+        }
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+      probeInfoPort: async () => infoUp,
+      spawnTunnel: () => {
+        spawned += 1;
+        infoUp = true;
+        return fakeTunnelChild();
+      },
+    });
+    assert.equal(spawned, 1);
   });
 });

@@ -8,6 +8,7 @@ import type {
 import { layoutAssertionRecipeStep } from "./app-map-test-layout-assertion.js";
 import { appMapTestCompileFail } from "./app-map-test-compile-error.js";
 import { compiledJudgeFields } from "./judge-assertion-fields.js";
+import { screenExpectation } from "./app-map-compiler.js";
 
 export function assertionRecipeStep(
   map: AppMap,
@@ -33,24 +34,17 @@ export function assertionRecipeStep(
         `Screen ${assertion.screenId} has no approved identity`,
       );
     }
-    const observations = screen.variantIds.flatMap((variantId) => {
-      const observation = map.screenVariants[variantId]?.observation;
-      return observation?.nodes.length ? [structuredClone(observation)] : [];
-    });
-    return {
-      kind: "expect-screen",
-      screenId: screen.id,
-      screenTitle: screen.title,
-      fingerprint: screen.identity.fingerprint,
-      timeoutMs: 5_000,
-      ...(screen.identity.aliases?.length ? { aliases: [...screen.identity.aliases] } : {}),
-      ...(observations.length ? { observations } : {}),
-      ...(screen.identity.ignoreRegions?.length
-        ? {
-            ignoreRegions: screen.identity.ignoreRegions.map((region) => ({ ...region })),
-          }
-        : {}),
-    };
+    const compiled = screenExpectation(map, screen, `relay-test-${step.id}`);
+    if (compiled.kind !== "expect-screen") {
+      appMapTestCompileFail(
+        "missing-reference",
+        test,
+        step,
+        `Screen ${assertion.screenId} produced a malformed expectation`,
+      );
+    }
+    const { id: _id, evidenceSurface: _surface, expectedApp: _app, ...rest } = compiled;
+    return rest;
   }
   if (assertion.kind === "target") {
     return {

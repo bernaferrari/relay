@@ -347,6 +347,14 @@ describe("packaged recipe CRUD", () => {
 });
 
 describe("validateRecipeSteps", () => {
+  test("keeps a capture-for-review screenshot without requiring a judge", () => {
+    const step = {
+      kind: "screenshot" as const,
+      caption: "Arabic account settings",
+      review: { mode: "later" as const, lookFor: "Save is visible" },
+    };
+    assert.deepEqual(validateRecipeSteps([step]), [step]);
+  });
   test("retains complete reviewed external-effect provenance and rejects partial declarations", () => {
     const step = {
       kind: "tap" as const,
@@ -1400,6 +1408,14 @@ describe("describeRecipeStep", () => {
     assert.equal(
       describeRecipeStep({ kind: "screenshot", caption: "proof" }),
       "Screenshot · proof",
+    );
+    assert.equal(
+      describeRecipeStep({
+        kind: "screenshot",
+        caption: "Arabic account settings",
+        review: { mode: "later", lookFor: "Save is visible" },
+      }),
+      "Capture for review · Arabic account settings",
     );
     assert.equal(describeRecipeStep({ kind: "tour" }), "Tour visible rows");
     assert.equal(describeRecipeStep({ kind: "tour", depth: 0 }), "Tour visible rows");

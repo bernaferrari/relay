@@ -59,6 +59,8 @@ test("the fixture app serves server-issued Admin vs Member HTML, not a client co
     const settings = await read(new URL("/settings", url).href, cookieHeader(token!));
     assert.match(settings.text, /id="session-role">member/);
     assert.match(settings.text, new RegExp(`id="team-seats"[^>]*>${SEEDED_MEMBER_DEFECT_SEATS}`));
+    assert.match(settings.text, /id="save-settings"/);
+    assert.match(settings.text, /<body class="layout-defect">/);
     assert.doesNotMatch(settings.text, /Manage organization/);
     assert.doesNotMatch(settings.text, /Manage team permissions/);
 
@@ -66,6 +68,7 @@ test("the fixture app serves server-issued Admin vs Member HTML, not a client co
     const repaired = await read(new URL("/settings", url).href, cookieHeader(token!));
     assert.match(repaired.text, new RegExp(`id="team-seats"[^>]*>${SEEDED_MEMBER_EXPECTED_SEATS}`));
     assert.match(repaired.text, /Manage team permissions/);
+    assert.doesNotMatch(repaired.text, /<body class="layout-defect">/);
     assert.doesNotMatch(repaired.text, /Manage organization/);
 
     const adminIssued = await fetch(new URL("/session", url), {
@@ -85,6 +88,38 @@ test("the fixture app serves server-issued Admin vs Member HTML, not a client co
     const adminWhoami = await read(new URL("/whoami", url).href, cookieHeader(adminToken));
     assert.equal(JSON.parse(adminWhoami.text).role, "admin");
     assert.notEqual(JSON.parse(whoami.text).role, JSON.parse(adminWhoami.text).role);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
+
+test("Arabic Accept-Language and query lang render RTL settings with Save visible", async () => {
+  const { server, url } = await listenSeededMemberApp({ defect: true });
+  try {
+    const issued = await fetch(new URL("/session", url), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ role: "member" }),
+      redirect: "manual",
+    });
+    const token = /relay_session=([^;]+)/u.exec(issued.headers.get("set-cookie") ?? "")?.[1];
+    assert.ok(token);
+    const arabic = await fetch(new URL("/settings", url), {
+      headers: { cookie: cookieHeader(token!), "accept-language": "ar" },
+    });
+    const text = await arabic.text();
+    assert.match(text, /lang="ar"/);
+    assert.match(text, /dir="rtl"/);
+    assert.match(text, /حفظ/);
+    assert.match(text, /المقاعد المتبقية للفريق/);
+    const queried = await fetch(new URL("/settings?lang=en", url), {
+      headers: { cookie: cookieHeader(token!), "accept-language": "ar" },
+    });
+    const english = await queried.text();
+    assert.match(english, /lang="en"/);
+    assert.match(english, />Save</);
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),

@@ -418,6 +418,7 @@ function RunReport({
   runService: RunProductService;
   embedded?: boolean;
 }) {
+  const { queryClient } = useRouteContext({ from: "__root__" });
   const target = report.targetName ?? "the selected device or browser";
   const failure = report.outcome && report.outcome !== "passed" ? report.cause : undefined;
   const firstEvidenceIsDistinct = Boolean(
@@ -662,6 +663,16 @@ function RunReport({
                   search: (previous) => ({ ...previous, capture: String(capture) }),
                 });
             }}
+            onReviewCapture={
+              runService.reviewCapture
+                ? async (input) => {
+                    await runService.reviewCapture?.({ runId: report.runId, ...input });
+                    await queryClient.invalidateQueries({
+                      queryKey: runQueryKeys.report(report.runId),
+                    });
+                  }
+                : undefined
+            }
             selectedStepIndex={selectedStepIndex}
             failureNotice={failureNotice}
             footer={canInvestigate ? <IssueDraftButton source={{ kind: "run", report }} /> : null}

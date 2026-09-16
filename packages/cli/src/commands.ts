@@ -715,6 +715,37 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       note: "agent:* cannot accept a baseline. Confirm/Reject stay notes-only.",
     }),
   ),
+  mapped(
+    "run.capture.review",
+    path("run capture review", ["runId"], undefined, {
+      summary: "Record a human decision on one captured screenshot",
+      argumentHelp: [{ name: "runId", type: "string", description: "Persisted run identifier" }],
+      inputHelp: [
+        {
+          name: "captureId",
+          type: "string",
+          required: true,
+          description: "Capture identity from the Run captures panel",
+        },
+        {
+          name: "action",
+          type: '"accept" | "report-issue" | "need-more-evidence"',
+          required: true,
+          description: "Looks correct, report an issue, or ask for more evidence. Never a baseline.",
+        },
+        {
+          name: "imageSha256",
+          type: "string",
+          description: "Exact image hash shown in the review panel",
+        },
+        { name: "note", type: "string", description: "Optional reviewer note" },
+      ],
+      examples: [
+        'relay run capture review <run-id> --input \'{"captureId":"frames/001.png::abc","action":"accept","imageSha256":"abc"}\' --actor human:local-cli',
+      ],
+      note: "Looks correct does not approve a visual baseline. Capture-only review does not require an AI key.",
+    }),
+  ),
   mapped("run.visual-policy.get", path("run visual-policy get", ["runId"])),
   mapped("run.visual-policy.update", path("run visual-policy update", ["runId"])),
   mapped(

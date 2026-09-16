@@ -32,5 +32,7 @@ test("one Lane identity keys in-app tabs and Electron partitions together", () =
   );
   assert.equal(browserLaneTabSessionKey({ targetId: "grok-com" }), "lane:grok-com:signed-out");
   assert.equal(browserLaneElectronPartition("grok-auth-x-out"), "persist:lane:grok-auth-x-out");
+  assert.notEqual(browserLaneElectronPartition("seeded-member"), "id__lane_seeded-member");
+  assert.doesNotMatch(browserLaneElectronPartition("seeded-member"), /^[/\\]/u);
   assert.throws(() => assertSafeBrowserLaneId("../etc"), /not a safe browser session key/);
 });

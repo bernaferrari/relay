@@ -13,6 +13,7 @@ export const SEEDED_MEMBER_ROLES = ["admin", "member"] as const;
 
 export type SeededMemberRole = (typeof SEEDED_MEMBER_ROLES)[number];
 export type SeededMemberVisibleRole = SeededMemberRole | "signed-out";
+export type SeededMemberLocale = "en" | "ar";
 
 export type SeededMemberSession = {
   role: SeededMemberRole;
@@ -80,65 +81,115 @@ function seatsFor(role: SeededMemberVisibleRole, defectOn: boolean): number | un
   return defectOn ? SEEDED_MEMBER_DEFECT_SEATS : SEEDED_MEMBER_EXPECTED_SEATS;
 }
 
-function htmlPage(title: string, body: string): string {
+function htmlPage(
+  title: string,
+  body: string,
+  options: { locale?: SeededMemberLocale; bodyClass?: string } = {},
+): string {
+  const locale = options.locale ?? "en";
+  const bodyClass = options.bodyClass ? ` class="${options.bodyClass}"` : "";
   return `<!doctype html>
-<html lang="en">
+<html lang="${locale}" dir="${locale === "ar" ? "rtl" : "ltr"}">
 <head><meta charset="utf-8" /><title>${title}</title>
 <style>
-body{font:16px/1.4 sans-serif;margin:24px}
+body{font:16px/1.4 sans-serif;margin:24px;position:relative}
 a,button{display:inline-flex;align-items:center;min-width:44px;min-height:44px;padding:8px 12px}
-#team-seats,#session-role,#open-settings,#manage-team,#manage-org{display:inline-flex;align-items:center;min-width:44px;min-height:44px}
+#team-seats,#session-role,#open-settings,#manage-team,#manage-org,#save-settings{display:inline-flex;align-items:center;min-width:44px;min-height:44px}
+.seats-row{display:inline-flex;align-items:center;position:relative;min-height:44px;flex-wrap:wrap}
+.layout-defect #save-settings{position:absolute;inset-block-start:0;inset-inline-end:0;z-index:2}
+.layout-defect #team-seats{position:relative;z-index:1}
 </style>
 </head>
-<body>
+<body${bodyClass}>
 ${body}
 </body>
 </html>
 `;
 }
 
-export function renderSeededMemberHome(role: SeededMemberVisibleRole): string {
+export function seededMemberLocaleFromRequest(
+  request: http.IncomingMessage,
+  url: URL,
+): SeededMemberLocale {
+  const query = url.searchParams.get("lang")?.trim().toLowerCase();
+  if (query === "ar" || query === "en") return query;
+  const accept = request.headers["accept-language"] ?? "";
+  const first = accept.split(",")[0]?.trim() ?? "";
+  return /^ar(?:-|$)/iu.test(first) ? "ar" : "en";
+}
+
+export function renderSeededMemberHome(
+  role: SeededMemberVisibleRole,
+  locale: SeededMemberLocale = "en",
+): string {
   if (role === "signed-out") {
     return htmlPage(
-      "Sign in",
-      `<h1>Sign in</h1>
+      locale === "ar" ? "تسجيل الدخول" : "Sign in",
+      locale === "ar"
+        ? `<h1>تسجيل الدخول</h1>
+<p id="session-role">signed-out</p>
+<p>جلسات المسؤول والعضو صادرة من الخادم. تسجيل الخروج ليس عضواً.</p>
+<form method="POST" action="/session">
+<button type="submit" name="role" value="member">متابعة كعضو</button>
+<button type="submit" name="role" value="admin">متابعة كمسؤول</button>
+</form>`
+        : `<h1>Sign in</h1>
 <p id="session-role">signed-out</p>
 <p>Server-issued Admin and Member sessions are distinct. Signed-out is not Member.</p>
 <form method="POST" action="/session">
 <button type="submit" name="role" value="member">Continue as Member</button>
 <button type="submit" name="role" value="admin">Continue as Admin</button>
 </form>`,
+      { locale },
     );
   }
   return htmlPage(
-    "Workspace home",
-    `<h1>Workspace home</h1>
+    locale === "ar" ? "الصفحة الرئيسية لمساحة العمل" : "Workspace home",
+    locale === "ar"
+      ? `<h1>الصفحة الرئيسية لمساحة العمل</h1>
+<p>مسجّل الدخول كـ <span id="session-role">${role}</span></p>
+<nav><a id="open-settings" href="/settings">الإعدادات</a></nav>`
+      : `<h1>Workspace home</h1>
 <p>Signed in as <span id="session-role">${role}</span></p>
 <nav><a id="open-settings" href="/settings">Settings</a></nav>`,
+    { locale },
   );
 }
 
 export function renderSeededMemberSettings(
   role: SeededMemberVisibleRole,
   defectOn: boolean,
+  locale: SeededMemberLocale = "en",
 ): string {
-  if (role === "signed-out") return renderSeededMemberHome("signed-out");
+  if (role === "signed-out") return renderSeededMemberHome("signed-out", locale);
   const seats = seatsFor(role, defectOn)!;
   const teamPermissions =
     role === "admin" || !defectOn
-      ? `<a id="manage-team" href="/settings/team">Manage team permissions</a>`
+      ? `<a id="manage-team" href="/settings/team">${locale === "ar" ? "إدارة أذونات الفريق" : "Manage team permissions"}</a>`
       : "";
   const organization =
-    role === "admin" ? `<a id="manage-org" href="/settings/org">Manage organization</a>` : "";
+    role === "admin"
+      ? `<a id="manage-org" href="/settings/org">${locale === "ar" ? "إدارة المؤسسة" : "Manage organization"}</a>`
+      : "";
+  const save = `<button type="button" id="save-settings">${locale === "ar" ? "حفظ" : "Save"}</button>`;
   return htmlPage(
-    "Workspace settings",
-    `<h1>Workspace settings</h1>
+    locale === "ar" ? "إعدادات مساحة العمل" : "Workspace settings",
+    locale === "ar"
+      ? `<h1>إعدادات مساحة العمل</h1>
+<p>الحساب <span id="session-role">${role}</span></p>
+<p class="seats-row"><span>المقاعد المتبقية للفريق</span>
+<span id="team-seats" aria-label="المقاعد المتبقية للفريق">${seats}</span>${save}</p>
+${teamPermissions}
+${organization}
+<a href="/">الرئيسية</a>`
+      : `<h1>Workspace settings</h1>
 <p>Account <span id="session-role">${role}</span></p>
-<p><span>Team seats remaining</span>
-<span id="team-seats" aria-label="Team seats remaining">${seats}</span></p>
+<p class="seats-row"><span>Team seats remaining</span>
+<span id="team-seats" aria-label="Team seats remaining">${seats}</span>${save}</p>
 ${teamPermissions}
 ${organization}
 <a href="/">Home</a>`,
+    { locale, ...(defectOn ? { bodyClass: "layout-defect" } : {}) },
   );
 }
 
@@ -213,17 +264,18 @@ export function createSeededMemberApp(input?: {
       }
       const session = sessionFrom(request);
       const role: SeededMemberVisibleRole = session?.role ?? "signed-out";
+      const locale = seededMemberLocaleFromRequest(request, url);
       if (url.pathname === "/whoami") {
         response.setHeader("content-type", "application/json");
-        response.end(JSON.stringify({ role, issuedAt: session?.issuedAt ?? null }));
+        response.end(JSON.stringify({ role, issuedAt: session?.issuedAt ?? null, locale }));
         return;
       }
       response.setHeader("content-type", "text/html; charset=utf-8");
       if (url.pathname === "/settings" || url.pathname.startsWith("/settings/")) {
-        response.end(renderSeededMemberSettings(role, defectOn));
+        response.end(renderSeededMemberSettings(role, defectOn, locale));
         return;
       }
-      response.end(renderSeededMemberHome(role));
+      response.end(renderSeededMemberHome(role, locale));
     })().catch(() => {
       if (!response.headersSent) response.statusCode = 500;
       response.end("fixture failed");

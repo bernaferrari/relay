@@ -7,6 +7,7 @@ import {
   unknownRecord,
 } from "./operation-schema-primitives.js";
 import { VISUAL_REVIEW_ACTIONS } from "./visual-verification.js";
+import { CAPTURE_REVIEW_ACTIONS } from "./capture-review.js";
 
 const runRef = z.object({ runId: identifier("Persisted Run identifier") }).strict();
 const replayRunRef = z
@@ -160,6 +161,15 @@ export const executionOperationSchemas = {
       runId: identifier("Persisted Run identifier"),
       comparisonId: identifier("Visual comparison identifier"),
       action: z.enum(VISUAL_REVIEW_ACTIONS),
+      note: z.string().optional(),
+    })
+    .strict(),
+  "run.capture.review": z
+    .object({
+      runId: identifier("Persisted Run identifier"),
+      captureId: identifier("Capture review identifier"),
+      action: z.enum(CAPTURE_REVIEW_ACTIONS),
+      imageSha256: z.string().optional(),
       note: z.string().optional(),
     })
     .strict(),

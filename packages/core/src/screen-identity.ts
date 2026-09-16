@@ -7,7 +7,7 @@ import type {
   SemanticField,
   VolatileSemanticKind,
 } from "@relay/protocol";
-import type { AppIdentityPolicy } from "./app-identity-policy.js";
+import { identityPolicyForTarget, type AppIdentityPolicy } from "./app-identity-policy.js";
 import type { SnapshotNode } from "./device.js";
 import {
   composerBands,
@@ -114,6 +114,8 @@ const CONSENT_LABEL =
   /^(?:reject all(?: cookies)?|accept all(?: cookies)?|cookies? settings|dismiss cookie notice|cookie policy|cookie notice)$/iu;
 const CONSENT_IDENTIFIER = /cookie[-_]?(?:banner|notice|consent)/iu;
 const CONSENT_COPY = /essential cookies|optional cookies help with performance/iu;
+const INTRO_OVERLAY_HEADING = /^introducing build mode$/iu;
+const INTRO_OVERLAY_COPY = /use build mode to create websites/iu;
 
 type MutableNormalization = {
   value: string;
@@ -310,6 +312,34 @@ function isConsentChromeNode(node: SnapshotNode): boolean {
   return CONSENT_LABEL.test(label) || CONSENT_LABEL.test(value);
 }
 
+/** Product-tour popovers (Build Mode intro) are leftover chrome, not a new screen. */
+function isIntroOverlayChromeNode(node: SnapshotNode): boolean {
+  const role = (node.role ?? node.type ?? "").trim().toLocaleLowerCase();
+  const label = compactCopy(node.label);
+  const value = compactCopy(node.value);
+  if (role === "dialog" && INTRO_OVERLAY_HEADING.test(label)) return true;
+  if (INTRO_OVERLAY_HEADING.test(label) || INTRO_OVERLAY_HEADING.test(value)) return true;
+  return INTRO_OVERLAY_COPY.test(label) || INTRO_OVERLAY_COPY.test(value);
+}
+
+function nodeCopyName(node: SnapshotNode): string {
+  return (compactCopy(node.label) || compactCopy(node.value)).toLocaleLowerCase();
+}
+
+function isIntroOverlayAccessory(node: SnapshotNode, nodes: readonly SnapshotNode[]): boolean {
+  const name = nodeCopyName(node);
+  if (name === "try now") return true;
+  if (name !== "dismiss") return false;
+  const rect = node.rect;
+  if (!rect) return false;
+  return nodes.some((other) => {
+    if (nodeCopyName(other) !== "try now") return false;
+    const otherRect = other.rect;
+    if (!otherRect) return false;
+    return Math.abs(otherRect.y - rect.y) <= 40;
+  });
+}
+
 function isSvgPaintNode(node: SnapshotNode): boolean {
   const role = (node.role ?? node.type ?? "").trim().toLocaleLowerCase();
   return role === "g" || role === "path";
@@ -391,6 +421,29 @@ function nodeOverlapsIgnoreRegion(
 }
 
 /**
+ * Apply the reviewed App pack for this host, then observe identity.
+ * Teaching and live expect-screen must share this so leftover chats and
+ * product-tour popovers cannot re-key a mapped screen.
+ */
+export function observeScreenIdentityForHost(
+  nodes: readonly SnapshotNode[],
+  host?: {
+    appMapId?: string;
+    browserTargetId?: string;
+    ignoreRegions?: ObserveScreenIdentityOptions["ignoreRegions"];
+  },
+): ScreenIdentityObservation {
+  const policy = identityPolicyForTarget({
+    appMapId: host?.appMapId,
+    browserTargetId: host?.browserTargetId,
+  });
+  return observeScreenIdentity(nodes, {
+    ...(host?.ignoreRegions ? { ignoreRegions: host.ignoreRegions } : {}),
+    ...(policy ? { policy } : {}),
+  });
+}
+
+/**
  * Converts a native accessibility snapshot into stable, visible semantics.
  * Geometry, references, traversal indexes, and screenshots are intentionally
  * excluded: they are observations of a screen, not its identity.
@@ -422,22 +475,32 @@ export function observeScreenIdentity(
   };
   const candidateNodes = applicationNodes.some((node) => node.bundleId) ? applicationNodes : nodes;
   const consentOverlay = candidateNodes.some((node) => isConsentChromeNode(node));
+  const introOverlay = candidateNodes.some((node) => isIntroOverlayChromeNode(node));
   const policy = options?.policy;
   const bodyBands = composerBands(candidateNodes, policy);
   const typedValues = typedComposerValues(candidateNodes);
   const historyLabels = conversationHistoryLabels(candidateNodes, policy);
   const conversationOpen = candidateNodes.some((node) => isConversationChromeNode(node, policy));
+  // Host packs already drop leftover chats, tours, and transcript. Geometric
+  // identity-ignore on those Tests punches remaining sidebar chrome ("See all")
+  // and re-keys dest-screen against taught fingerprints. Ignore regions stay
+  // for generic maps that have no pack.
+  const ignoredPixels = policy
+    ? []
+    : pixelIgnoreRegions(options?.ignoreRegions ?? [], nodes);
   const identityNodes = candidateNodes.filter(
     (node) =>
       (includeDeviceState || !bannerNode(node)) &&
       !isConsentChromeNode(node) &&
+      !isIntroOverlayChromeNode(node) &&
       !isSvgPaintNode(node) &&
       !(consentOverlay && isConsentOverlayAccessory(node)) &&
+      !(introOverlay && isIntroOverlayAccessory(node, candidateNodes)) &&
       !isLandmarkDumpNode(node) &&
       !isTypeaheadOrAnnouncerNode(node, typedValues) &&
       !isConversationHistoryNode(node, historyLabels, policy) &&
       !isDynamicContentBody(node, bodyBands, conversationOpen, policy) &&
-      !nodeOverlapsIgnoreRegion(node, pixelIgnoreRegions(options?.ignoreRegions ?? [], nodes)),
+      !nodeOverlapsIgnoreRegion(node, ignoredPixels),
   );
   const entries = nodes
     .filter((node) => identityNodes.includes(node))

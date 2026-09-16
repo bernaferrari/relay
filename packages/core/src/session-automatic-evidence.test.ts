@@ -127,24 +127,20 @@ test("cached iOS raster is reused while the sampled pixels still match", async (
   resetTargetRuntimeReadiness();
   const cachedBytes = fakePng("same-screen");
   const runtime = runtimeWithCachedRaster(cachedBytes.toString("base64"));
+  const originalCapturedAt = runtime.observation!.screenshot!.capturedAt;
+  const job = iosJob("fence-udid-1");
   const { device, screenshotCount } = stubDevice();
   try {
     await withFakeGoIos(
       () => fakePng("same-screen"),
       () =>
         runWithTargetContext({ kind: "device", platform: "ios", serial: "fence-udid-1" }, () =>
-          captureAutomaticState(
-            iosJob("fence-udid-1"),
-            device,
-            step("One"),
-            "before",
-            () => {},
-            runtime,
-          ),
+          captureAutomaticState(job, device, step("One"), "before", () => {}, runtime),
         ),
     );
     assert.equal(screenshotCount(), 0, "unchanged pixels must not force an SDK recapture");
     assert.equal(runtime.observation?.screenshot?.framePath !== undefined, true);
+    assert.equal(job.frames[0]?.capturedAt, originalCapturedAt);
   } finally {
     resetTargetRuntimeReadiness();
     if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
@@ -258,14 +254,54 @@ test("Android after evidence refreshes a cached before raster", async () => {
       job.artifacts.some(
         (artifact) =>
           artifact.kind === "visual-settling" &&
-          (artifact.data as { settled: boolean; samples: number }).settled &&
-          (artifact.data as { samples: number }).samples === 1,
+          (artifact.data as { settled: boolean; samples: number; stabilityMeasured?: boolean })
+            .settled === false &&
+          (artifact.data as { samples: number }).samples === 1 &&
+          (artifact.data as { stabilityMeasured?: boolean }).stabilityMeasured === false,
       ),
     );
   } finally {
     if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
     else process.env.RELAY_RUNS_DIR = previousRuns;
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a failed iOS freshness probe recaptures instead of certifying the cache", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-fence-probe-fail-"));
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  resetTargetRuntimeReadiness();
+  const runtime = runtimeWithCachedRaster(fakePng("cached").toString("base64"));
+  const { device, screenshotCount } = stubDevice();
+  const directory = await mkdtemp(join(tmpdir(), "relay-fence-bin-fail-"));
+  const bin = join(directory, "ios");
+  await writeFile(bin, "#!/bin/sh\nexit 1\n");
+  await chmod(bin, 0o755);
+  const previousBin = process.env.RELAY_GO_IOS_BIN;
+  process.env.RELAY_GO_IOS_BIN = bin;
+  try {
+    await runWithTargetContext(
+      { kind: "device", platform: "ios", serial: "fence-udid-probe" },
+      () =>
+        captureAutomaticState(
+          iosJob("fence-udid-probe"),
+          device,
+          step("Before"),
+          "before",
+          () => {},
+          runtime,
+        ),
+    );
+    assert.ok(screenshotCount() >= 1, "a failed freshness probe must recapture");
+  } finally {
+    if (previousBin === undefined) delete process.env.RELAY_GO_IOS_BIN;
+    else process.env.RELAY_GO_IOS_BIN = previousBin;
+    resetTargetRuntimeReadiness();
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    await rm(root, { recursive: true, force: true });
+    await rm(directory, { recursive: true, force: true });
   }
 });
 
@@ -290,7 +326,7 @@ test("UI-tree capture logs the runner message instead of [object Object]", async
   } as unknown as Device;
   try {
     await runWithTargetContext({ kind: "device", platform: "ios", serial: "tree-err-ipad" }, () =>
-      captureAutomaticState(iosJob("tree-err-ipad"), device, step("Wait"), "after", (line) =>
+      captureAutomaticState(iosJob("tree-err-ipad"), device, step("Wait"), "before", (line) =>
         logs.push(line),
       ),
     );
@@ -302,6 +338,38 @@ test("UI-tree capture logs the runner message instead of [object Object]", async
       logs.some((line) => line.includes("[object Object]")),
       false,
     );
+  } finally {
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("iOS after UI-tree skips catalog snapshot so an open library cannot kill the runner", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-after-skip-catalog-"));
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  let snapshots = 0;
+  const job = iosJob("after-skip-ipad");
+  const device = {
+    capture: {
+      snapshot: async () => {
+        snapshots += 1;
+        throw new Error("catalog snapshot must not run after an iOS mutation");
+      },
+      screenshot: async ({ path }: { path: string }) => {
+        await writeFile(path, fakePng("after-pixels"));
+        return { base64: fakePng("after-pixels").toString("base64") };
+      },
+    },
+  } as unknown as Device;
+  try {
+    await runWithTargetContext({ kind: "device", platform: "ios", serial: "after-skip-ipad" }, () =>
+      captureAutomaticState(job, device, step("Tap sidebar"), "after", () => {}),
+    );
+    assert.equal(snapshots, 0);
+    const tree = job.artifacts.find((artifact) => artifact.kind === "ui-tree");
+    assert.deepEqual(tree?.data?.nodes, []);
   } finally {
     if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
     else process.env.RELAY_RUNS_DIR = previousRuns;

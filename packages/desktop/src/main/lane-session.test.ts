@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { laneSessionPartition, laneTabSessionKey } from "./lane-session.ts";
+import {
+  laneSessionPartition,
+  laneTabSessionKey,
+  laneWindowNeedsNavigation,
+} from "./lane-session.ts";
 
 test("desktop partition is the same Lane identity the product UI uses", () => {
   assert.equal(laneSessionPartition("grok-auth-gmail"), "persist:lane:grok-auth-gmail");
@@ -10,5 +14,18 @@ test("desktop partition is the same Lane identity the product UI uses", () => {
     laneTabSessionKey("grok-auth-gmail", "grok-com"),
     laneTabSessionKey("grok-auth-email", "grok-com"),
   );
+  assert.notEqual(laneSessionPartition("seeded-member"), "id__lane_seeded-member");
   assert.throws(() => laneSessionPartition("../etc"), /not a safe Electron partition/);
+});
+
+test("reopening a Lane window navigates when the requested URL changed", () => {
+  assert.equal(
+    laneWindowNeedsNavigation("https://example.test/settings", "https://example.test/settings"),
+    false,
+  );
+  assert.equal(
+    laneWindowNeedsNavigation("https://example.test/home", "https://example.test/settings"),
+    true,
+  );
+  assert.equal(laneWindowNeedsNavigation("about:blank", "https://example.test/settings"), true);
 });

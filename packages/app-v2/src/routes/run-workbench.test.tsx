@@ -442,4 +442,51 @@ describe("RunWorkbench", () => {
     expect(host.textContent).toContain("Screenshot unavailable");
     expect(host.textContent).toContain("The saved image could not be loaded");
   });
+
+  it("moves the capture review sheet with arrow keys without calling the Run passed", () => {
+    const value: ProductRunReportOverview = {
+      ...report,
+      captureReview: {
+        items: [
+          {
+            captureId: "english",
+            caption: "Member · Desktop · English",
+            status: "pending",
+            framePath: "cart",
+            lookFor: "Save is visible",
+          },
+          {
+            captureId: "arabic",
+            caption: "Member · Compact · Arabic",
+            status: "pending",
+            framePath: "checkout",
+            lookFor: "Save is visible",
+          },
+        ],
+        summary: {
+          captured: 2,
+          missing: 0,
+          pending: 2,
+          accepted: 0,
+          issue: 0,
+          needMoreEvidence: 0,
+        },
+      },
+    };
+    const host = render(0, value);
+    expect(host.textContent).toContain("2/2 captured");
+    expect(host.textContent).toContain("2 pending review");
+    expect(host.textContent).not.toContain("passed");
+    const sheet = host.querySelector<HTMLElement>('[aria-label="Screenshot review"]')!;
+    expect(host.querySelector("p.text-sm.font-medium")?.textContent).toBe(
+      "Member · Desktop · English",
+    );
+    act(() => {
+      sheet.focus();
+      sheet.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    });
+    expect(host.querySelector("p.text-sm.font-medium")?.textContent).toBe(
+      "Member · Compact · Arabic",
+    );
+  });
 });

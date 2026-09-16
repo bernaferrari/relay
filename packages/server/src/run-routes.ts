@@ -49,6 +49,8 @@ import {
   getVisualComparisonPolicy,
   reviewVisualComparison,
   reviewPersistedRun,
+  reviewPersistedCapture,
+  CaptureReviewError,
   revokeRunShare,
   RunReviewError,
   updateVisualComparisonPolicy,
@@ -60,7 +62,13 @@ import {
   type CampaignRepairReconciliation,
   type EnqueueJobInput,
 } from "@relay/core";
-import type { CampaignRepairTarget, OperationInput, VisualRegion } from "@relay/protocol";
+import type {
+  CampaignRepairTarget,
+  CaptureReviewAction,
+  OperationInput,
+  VisualRegion,
+} from "@relay/protocol";
+import { CAPTURE_REVIEW_ACTIONS } from "@relay/protocol";
 import { assertTargetControl } from "./access-control.js";
 import { requireScopedAppMapTestExecution } from "./app-map-test-execution-guard.js";
 import { applyRebasableAppMapMutation } from "./app-map-route-mutations.js";
@@ -781,6 +789,58 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
             : error.code === "RUN_REVIEW_ACTOR_REQUIRED"
               ? 403
               : 409;
+        throw new HttpError(status, error.message, { code: error.code, recovery: error.recovery });
+      }
+      throw error;
+    }
+    return true;
+  }
+
+  const captureReviewMatch = matchPath(pathname, "/runs/:id/capture-review");
+  if (method === "POST" && captureReviewMatch) {
+    const run = await loadScopedRun(captureReviewMatch.id!, scope);
+    const body = (await parseJsonBody(request)) as {
+      captureId?: unknown;
+      action?: unknown;
+      imageSha256?: unknown;
+      note?: unknown;
+    };
+    if (typeof body.captureId !== "string" || !body.captureId.trim()) {
+      throw new HttpError(400, "captureId is required", {
+        code: "CAPTURE_REVIEW_ID_REQUIRED",
+        recovery: "Pass the captureId from the Run captures panel.",
+      });
+    }
+    if (!CAPTURE_REVIEW_ACTIONS.includes(body.action as CaptureReviewAction)) {
+      throw new HttpError(400, "Unknown capture review action", {
+        code: "CAPTURE_REVIEW_ACTION_INVALID",
+        recovery: `Choose one of: ${CAPTURE_REVIEW_ACTIONS.join(", ")}. Looks correct does not approve a visual baseline.`,
+      });
+    }
+    try {
+      const reviewed = await reviewPersistedCapture(runsRoot(), run, {
+        captureId: body.captureId.trim(),
+        action: body.action as CaptureReviewAction,
+        actor: reviewActor(context),
+        ...(typeof body.imageSha256 === "string" ? { imageSha256: body.imageSha256 } : {}),
+        ...(typeof body.note === "string" ? { note: body.note } : {}),
+      });
+      recordAudit(scope, {
+        action: `run.capture.review.${body.action}`,
+        resource: run.id,
+        result: "allow",
+      });
+      json(response, 200, reviewed);
+    } catch (error) {
+      if (error instanceof CaptureReviewError) {
+        const status =
+          error.code === "CAPTURE_REVIEW_NOT_FOUND"
+            ? 404
+            : error.code === "CAPTURE_REVIEW_ACTOR_REQUIRED"
+              ? 403
+              : error.code === "CAPTURE_REVIEW_MISSING" || error.code === "CAPTURE_REVIEW_CONFLICT"
+                ? 409
+                : 400;
         throw new HttpError(status, error.message, { code: error.code, recovery: error.recovery });
       }
       throw error;

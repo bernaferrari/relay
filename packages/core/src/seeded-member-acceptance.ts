@@ -30,6 +30,9 @@ export const SEEDED_MEMBER_EXTRACT_STEP_ID = "read-seats";
 export const SEEDED_MEMBER_CHECK_STEP_ID = "check-seats";
 export const SEEDED_MEMBER_SEATS_VARIABLE = "team_seats";
 export const SEEDED_MEMBER_VIEWPORT = { width: 900, height: 600 } as const;
+export const SEEDED_MEMBER_COMPACT_VIEWPORT = { width: 390, height: 844 } as const;
+export const SEEDED_MEMBER_CAPTURE_LOOK_FOR =
+  "Arabic text is readable, seats are not truncated, and Save is visible.";
 /** Shared with the unsigned saved target. Unique Member/Admin profiles overlay
  * a fixture only; they must not invent a different environmentRevision. */
 export const SEEDED_MEMBER_BROWSER_ENVIRONMENT = {
@@ -275,6 +278,89 @@ export function seededMemberSettingsTest(input?: {
     createdAt: at,
     updatedAt: at,
   };
+}
+
+export const SEEDED_MEMBER_CAPTURE_TEST_ID = "test-member-settings-capture";
+export const SEEDED_MEMBER_CAPTURE_STEP_ID = "capture-settings";
+
+export function seededMemberCaptureReviewTest(input?: {
+  scope?: SeededMemberScope;
+  at?: number;
+}): AppMapScenarioTest {
+  const scope = input?.scope ?? defaultScope;
+  const at = input?.at ?? 1;
+  return {
+    ...scope,
+    id: SEEDED_MEMBER_CAPTURE_TEST_ID,
+    name: "Member settings capture for review",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: SEEDED_MEMBER_OPEN_SETTINGS_STEP_ID,
+        kind: "instruction",
+        intent: "Open workspace settings as Member",
+        binding: {
+          status: "resolved",
+          kind: "connections",
+          connectionIds: [SEEDED_MEMBER_OPEN_SETTINGS_CONNECTION_ID],
+        },
+      },
+      {
+        id: SEEDED_MEMBER_CAPTURE_STEP_ID,
+        kind: "validation",
+        intent: "Capture settings for a person to review later",
+        binding: {
+          status: "resolved",
+          kind: "recipe-step",
+          step: {
+            kind: "screenshot",
+            caption: "Member account settings",
+            review: {
+              mode: "later",
+              lookFor: SEEDED_MEMBER_CAPTURE_LOOK_FOR,
+            },
+          },
+        },
+      },
+    ],
+    createdAt: at,
+    updatedAt: at,
+  };
+}
+
+export type SeededMemberCaptureConfiguration = {
+  role: "member" | "admin";
+  viewport: { id: "desktop" | "compact"; label: string; width: number; height: number };
+  locale: { id: "en" | "ar"; label: string; tag: string };
+  caption: string;
+  lookFor: string;
+};
+
+export function seededMemberCaptureConfigurations(): SeededMemberCaptureConfiguration[] {
+  const roles = [
+    { id: "member" as const, label: "Member" },
+    { id: "admin" as const, label: "Admin" },
+  ];
+  const viewports = [
+    { id: "desktop" as const, label: "Desktop", ...SEEDED_MEMBER_VIEWPORT },
+    { id: "compact" as const, label: "Compact", ...SEEDED_MEMBER_COMPACT_VIEWPORT },
+  ];
+  const locales = [
+    { id: "en" as const, label: "English", tag: "en-US" },
+    { id: "ar" as const, label: "Arabic", tag: "ar" },
+  ];
+  return roles.flatMap((role) =>
+    viewports.flatMap((viewport) =>
+      locales.map((locale) => ({
+        role: role.id,
+        viewport,
+        locale,
+        caption: `${role.label} · ${viewport.label} · ${locale.label}`,
+        lookFor: SEEDED_MEMBER_CAPTURE_LOOK_FOR,
+      })),
+    ),
+  );
 }
 
 export function seededMemberAccountVariable(

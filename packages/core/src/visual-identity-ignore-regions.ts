@@ -13,7 +13,10 @@ type FrameSize = {
   index: number;
   width?: number;
   height?: number;
+  stepId?: string;
 };
+
+type BoundPixelRegion = PixelRegion & { frameIndex?: number; stepId?: string };
 
 function finitePositive(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
@@ -120,6 +123,29 @@ function composerPlaceholderIgnoreFromSnapshot(
   return matches.length === 1 ? matches[0] : undefined;
 }
 
+/** Unique product-tour dialog. Composer placeholder rotation stays a separate mask. */
+function introOverlayIgnoreFromSnapshot(
+  data: unknown,
+  frame: { width: number; height: number },
+): PixelRegion | undefined {
+  if (!frame.width || !frame.height || frame.width <= 0 || frame.height <= 0) return undefined;
+  const matches: PixelRegion[] = [];
+  for (const node of snapshotNodes(data)) {
+    if (nodeRole(node) !== "dialog") continue;
+    if (!/introducing build mode/iu.test(nodeLabel(node))) continue;
+    const box = nodeBox(node);
+    if (!box) continue;
+    matches.push({
+      x: Number(box.x),
+      y: Number(box.y),
+      width: Number(box.width),
+      height: Number(box.height),
+      name: "intro overlay",
+    });
+  }
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
 function artifactsIncludePaywall(artifacts: readonly { kind?: string; data?: unknown }[]): boolean {
   return artifacts.some((artifact) => {
     if (artifact.kind !== "ui-tree") return false;
@@ -171,7 +197,10 @@ export function replyBodyIgnoreFromSnapshot(
     if (COMPOSER_ROLE.test(nodeRole(node))) {
       bottom = Math.min(bottom, Number(box.y));
     }
-    if (nodeRole(node) === "dialog" && /cookie/iu.test(String(node.label ?? ""))) {
+    if (
+      nodeRole(node) === "dialog" &&
+      /cookie|introducing build mode/iu.test(String(node.label ?? ""))
+    ) {
       bottom = Math.min(bottom, Number(box.y));
     }
   }
@@ -188,7 +217,7 @@ export function replyBodyIgnoreFromSnapshot(
   };
 }
 
-function identityIgnoreRegion(data: unknown): PixelRegion | undefined {
+function identityIgnoreRegion(data: unknown): BoundPixelRegion | undefined {
   if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
   const record = data as Record<string, unknown>;
   if (
@@ -207,7 +236,31 @@ function identityIgnoreRegion(data: unknown): PixelRegion | undefined {
     width: record.width,
     height: record.height,
     ...(typeof record.name === "string" && record.name.trim() ? { name: record.name.trim() } : {}),
+    ...(Number.isInteger(record.frameIndex) && (record.frameIndex as number) >= 0
+      ? { frameIndex: record.frameIndex as number }
+      : {}),
+    ...(typeof record.stepId === "string" && record.stepId.trim()
+      ? { stepId: record.stepId.trim() }
+      : {}),
   };
+}
+
+function artifactStepId(data: unknown): string | undefined {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
+  const stepId = (data as { stepId?: unknown }).stepId;
+  return typeof stepId === "string" && stepId.trim() ? stepId.trim() : undefined;
+}
+
+function framesForIgnore(ignore: BoundPixelRegion, frames: readonly FrameSize[]): FrameSize[] {
+  if (typeof ignore.frameIndex === "number") {
+    return frames.filter((frame) => frame.index === ignore.frameIndex);
+  }
+  if (ignore.stepId) {
+    return frames.filter((frame) => frame.stepId === ignore.stepId);
+  }
+  // Unscoped identity-ignore is identity-only. A single-frame run can still
+  // use it as a visual mask; later screens must not inherit it.
+  return frames.length === 1 ? [...frames] : [];
 }
 
 function alreadyNormalized(region: PixelRegion): boolean {
@@ -256,24 +309,29 @@ export function visualIgnoreRegionsFromIdentityArtifacts(
       return region ? [region] : [];
     }
     if (artifact.kind === "ui-tree") {
-      const frame = frames.find((item) => item.width && item.height);
+      const stepId = artifactStepId(artifact.data);
+      const frame =
+        (stepId ? frames.find((item) => item.stepId === stepId && item.width && item.height) : undefined) ??
+        (frames.length === 1 ? frames.find((item) => item.width && item.height) : undefined);
       if (!frame?.width || !frame.height) return [];
       const size = { width: frame.width, height: frame.height };
-      const extra: PixelRegion[] = [];
+      const extra: BoundPixelRegion[] = [];
       if (!paywall) {
         const composer = composerPlaceholderIgnoreFromSnapshot(artifact.data, size);
-        if (composer) extra.push(composer);
+        if (composer) extra.push({ ...composer, ...(stepId ? { stepId } : { frameIndex: frame.index }) });
       }
+      const intro = introOverlayIgnoreFromSnapshot(artifact.data, size);
+      if (intro) extra.push({ ...intro, ...(stepId ? { stepId } : { frameIndex: frame.index }) });
       if (!authored) {
         const reply = replyBodyIgnoreFromSnapshot(artifact.data, size);
-        if (reply) extra.push(reply);
+        if (reply) extra.push({ ...reply, ...(stepId ? { stepId } : { frameIndex: frame.index }) });
       }
       return extra;
     }
     return [];
   });
   for (const [ignoreIndex, ignore] of ignores.entries()) {
-    for (const frame of frames) {
+    for (const frame of framesForIgnore(ignore, frames)) {
       const normalized = normalizeRegion(ignore, frame);
       if (!normalized || normalized.width <= 0 || normalized.height <= 0) continue;
       regions.push({

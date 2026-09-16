@@ -1,4 +1,9 @@
-import type { EvidenceChannel, RunOutcome, RunTestStepEvidence } from "@relay/protocol";
+import type {
+  CaptureReviewQueue,
+  EvidenceChannel,
+  RunOutcome,
+  RunTestStepEvidence,
+} from "@relay/protocol";
 
 export type ReportEvidenceSection = {
   id: EvidenceChannel;
@@ -94,7 +99,11 @@ export type ProductRunReportOverview = {
     browser?: string;
     targetProfileId?: string;
     appVersion?: string;
+    account?: string;
+    viewport?: string;
+    locale?: string;
   };
+  captureReview?: CaptureReviewQueue;
 };
 
 /** Join authored-step evidence by its persisted trace identity. The numeric

@@ -14,7 +14,6 @@ import {
 } from "./recipe-response-boundary.js";
 import {
   captureStillScreenFingerprint,
-  stillScreenAbortMessage,
   stillScreenUnchanged,
 } from "./still-screen-wait.js";
 
@@ -199,14 +198,8 @@ export async function waitForResponseCompletion(
     if (!startedAt) {
       const fingerprint = await captureStillScreenFingerprint(device);
       if (stillScreenUnchanged(previousPixels, fingerprint)) {
-        const elapsedMs = capturedAt - beganAt;
-        throw new Error(
-          stillScreenAbortMessage({
-            kind: "wait-response",
-            expected: describeTarget(step.target),
-            elapsedMs,
-            timeoutMs,
-          }),
+        ctx.log(
+          `wait-response: pixels unchanged after ${capturedAt - beganAt}ms waiting for ${describeTarget(step.target)}`,
         );
       }
       previousPixels = fingerprint ?? previousPixels;

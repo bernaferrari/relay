@@ -550,6 +550,26 @@ test("run visual review round-trips approve-new-baseline", () => {
   assert.doesNotMatch(actionHelp?.type ?? "", /"approve" \| "reject"/u);
 });
 
+test("run capture review records Looks correct without a baseline action", () => {
+  assert.deepEqual(
+    resolveCommand(["run", "capture", "review", "run-8"], {
+      captureId: "frames/001.png::aaa",
+      action: "accept",
+      imageSha256: "aaa",
+    }),
+    {
+      operationId: "run.capture.review",
+      commandPath: "run capture review",
+      input: {
+        runId: "run-8",
+        captureId: "frames/001.png::aaa",
+        action: "accept",
+        imageSha256: "aaa",
+      },
+    },
+  );
+});
+
 test("one failed check is inspectable and selectively retryable", () => {
   assert.deepEqual(resolveCommand(["repair", "retry", "run-1", "usage"]), {
     operationId: "run.repair.retry",

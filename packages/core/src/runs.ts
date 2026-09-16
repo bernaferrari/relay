@@ -21,6 +21,7 @@ import {
   type FailureCategory,
   type RunOutcome,
   type RunReview,
+  type CaptureReviewDecision,
   type RunTestStepEvidence,
   type SourceRevision,
   type TargetProfile,
@@ -114,6 +115,8 @@ export type PersistedRun = {
   outcome?: RunOutcome;
   failureCategory?: FailureCategory;
   review?: RunReview;
+  /** Human screenshot review. Independent of execution outcome and visual baselines. */
+  captureReviews?: CaptureReviewDecision[];
   appVersion?: string;
   batchId?: string;
   caseIndex?: number;
@@ -161,7 +164,7 @@ export class RunReviewError extends Error {
 
 const finalizing = new Map<string, Promise<PersistedRun>>();
 type RunReviewResult = { run: PersistedRun; review: RunReview };
-const reviewing = new Map<string, Promise<RunReviewResult>>();
+const runWrites = new Map<string, Promise<unknown>>();
 const COMPLETE_MARKER = ".complete";
 
 function slug(s: string): string {
@@ -183,6 +186,65 @@ export function runsRoot(): string {
 function belongsToRunStore(root: string, dir: string): boolean {
   const path = relative(root, dir);
   return path !== "" && path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path);
+}
+
+export function persistedRunBelongsToStore(root: string, dir: string): boolean {
+  return belongsToRunStore(root, dir);
+}
+
+export function withRunWriteLock<T>(dir: string, work: () => Promise<T>): Promise<T> {
+  const previous = runWrites.get(dir) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(work);
+  runWrites.set(dir, next);
+  const clearLock = () => {
+    if (runWrites.get(dir) === next) runWrites.delete(dir);
+  };
+  void next.then(clearLock, clearLock);
+  return next as Promise<T>;
+}
+
+export async function readCompletedPersistedRun(dir: string): Promise<PersistedRun | null> {
+  return readCompletedRun(dir);
+}
+
+export async function persistPersistedRun(
+  root: string,
+  run: PersistedRun,
+  next: PersistedRun,
+  purpose = "review",
+): Promise<PersistedRun> {
+  if (!belongsToRunStore(root, run.dir)) {
+    throw new RunReviewError(
+      "RUN_REVIEW_UNAVAILABLE",
+      "This run is outside the configured Relay run store",
+      "Re-open the run from the current project before deciding its review.",
+    );
+  }
+  const json = JSON.stringify(next, null, 2);
+  const token = randomUUID();
+  const temporary = {
+    run: join(run.dir, `.run.json.${purpose}.${token}.tmp`),
+    marker: join(run.dir, `.complete.${purpose}.${token}.tmp`),
+  };
+  const digest = createHash("sha256").update(json).digest("hex");
+  try {
+    await Promise.all([
+      writeFile(temporary.run, json, { encoding: "utf8", flag: "wx" }),
+      writeFile(temporary.marker, JSON.stringify({ schemaVersion: 1, id: next.id, digest }), {
+        encoding: "utf8",
+        flag: "wx",
+      }),
+    ]);
+    await Promise.all(Object.values(temporary).map(syncPath));
+    await rename(temporary.run, join(run.dir, "run.json"));
+    await rename(temporary.marker, join(run.dir, COMPLETE_MARKER));
+    await syncPath(run.dir);
+    await indexRun(root, next as unknown as Record<string, unknown>).catch(() => undefined);
+  } finally {
+    await Promise.all(Object.values(temporary).map((path) => unlink(path).catch(() => undefined)));
+  }
+  next.dir = run.dir;
+  return next;
 }
 
 export function formatRunFolder(
@@ -218,6 +280,7 @@ export async function writeFramePng(
   job: TestJob,
   base64: string,
   caption: string,
+  options: { stepId?: string; capturedAt?: number } = {},
 ): Promise<TraceFrameRef> {
   if (!visualEvidenceAllowed()) {
     throw new Error("Visual evidence is disabled while redaction is enabled");
@@ -231,10 +294,11 @@ export async function writeFramePng(
   const frame: TraceFrameRef = {
     path: rel,
     caption,
-    capturedAt: now(),
+    capturedAt: options.capturedAt ?? now(),
     bytes: buf.byteLength,
     base64,
     mime: "image/png",
+    ...(options.stepId ? { stepId: options.stepId } : {}),
   };
   job.frames.push({ ...frame, base64: undefined });
   return frame;
@@ -711,31 +775,8 @@ async function persistRunReview(
   next: PersistedRun,
   review: RunReview,
 ): Promise<RunReviewResult> {
-  const json = JSON.stringify(next, null, 2);
-  const token = randomUUID();
-  const temporary = {
-    run: join(run.dir, `.run.json.review.${token}.tmp`),
-    marker: join(run.dir, `.complete.review.${token}.tmp`),
-  };
-  const digest = createHash("sha256").update(json).digest("hex");
-  try {
-    await Promise.all([
-      writeFile(temporary.run, json, { encoding: "utf8", flag: "wx" }),
-      writeFile(temporary.marker, JSON.stringify({ schemaVersion: 1, id: next.id, digest }), {
-        encoding: "utf8",
-        flag: "wx",
-      }),
-    ]);
-    await Promise.all(Object.values(temporary).map(syncPath));
-    await rename(temporary.run, join(run.dir, "run.json"));
-    await rename(temporary.marker, join(run.dir, COMPLETE_MARKER));
-    await syncPath(run.dir);
-    await indexRun(root, next as unknown as Record<string, unknown>).catch(() => undefined);
-  } finally {
-    await Promise.all(Object.values(temporary).map((path) => unlink(path).catch(() => undefined)));
-  }
-  next.dir = run.dir;
-  return { run: next, review };
+  const persisted = await persistPersistedRun(root, run, next, "review");
+  return { run: persisted, review };
 }
 
 /**
@@ -752,23 +793,11 @@ export function reviewPersistedRun(
     note?: string;
   },
 ): Promise<RunReviewResult> {
-  const key = run.dir;
-  const previous = reviewing.get(key) ?? Promise.resolve<RunReviewResult | undefined>(undefined);
-  const next = previous
-    .catch(() => undefined)
-    .then(async () => {
-      const latest = (await readCompletedRun(run.dir)) ?? run;
-      latest.dir = run.dir;
-      return reviewPersistedRunOnce(root, latest, input);
-    });
-  reviewing.set(key, next);
-  const clearLock = () => {
-    if (reviewing.get(key) === next) reviewing.delete(key);
-  };
-  // Use then(onFulfilled, onRejected) so cleanup itself never creates an
-  // unhandled rejected promise when a conflicting review is intentional.
-  void next.then(clearLock, clearLock);
-  return next;
+  return withRunWriteLock(run.dir, async () => {
+    const latest = (await readCompletedRun(run.dir)) ?? run;
+    latest.dir = run.dir;
+    return reviewPersistedRunOnce(root, latest, input);
+  });
 }
 
 export async function recipeStability(

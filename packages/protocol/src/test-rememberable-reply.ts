@@ -31,7 +31,6 @@ function bindingHasRememberableReply(step: AppMapScenarioTestStep): boolean {
   if (step.kind === "extraction") return true;
   const binding = step.binding;
   if (binding.status !== "resolved") return false;
-  if (binding.kind === "extract") return true;
   if (binding.kind === "assertion") return binding.assertion.kind === "semantic";
   if (binding.kind === "recipe-step") {
     const kind = binding.step.kind;

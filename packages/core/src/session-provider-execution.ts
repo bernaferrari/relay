@@ -55,6 +55,13 @@ export async function runColdAppMapStartup(
     openApp(target, app, { relaunch: true }),
 ): Promise<void> {
   if (startupMode !== "cold" || job.targetKind === "browser") return;
+  // Later iOS Combine cells share one XCTest process. Relaunching Grok between
+  // dest-end Tests focuses the composer (keyboard leftover) and queues AX
+  // behind abandoned watchdog work from the previous cell.
+  if (job.platform === "ios" && typeof job.caseIndex === "number" && job.caseIndex > 0) {
+    log("startup: skip cold relaunch on later iOS combine cell");
+    return;
+  }
   const app = originApplication;
   if (!app) {
     throw new Error("Choose a starting app in Test settings before using Restart app.");

@@ -92,7 +92,9 @@ export type AppMapValidationRecipeStep =
           | "assert-content"
           | "assert-layout"
           | "wait-response"
-          | "identity-ignore";
+          | "extract"
+          | "identity-ignore"
+          | "screenshot";
       }
     >
   | Extract<RecipeStep, { kind: "evaluate-semantic" | "evaluate-visual" }>;

@@ -509,6 +509,7 @@ async function snapshotRun(
       sha256: createHash("sha256").update(bytes).digest("hex"),
       width: dimensions.width,
       height: dimensions.height,
+      ...(frame.stepId ? { stepId: frame.stepId } : {}),
     });
   }
   const aggregateSha256 = createHash("sha256")

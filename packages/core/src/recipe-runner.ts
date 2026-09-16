@@ -79,8 +79,11 @@ import { assertRecipeStepPlatformSupport } from "./recipe-platform-support.js";
 import {
   boundRecipeWaitMs,
   captureStillScreenFingerprint,
+  RECIPE_TRANSIENT_PRESENCE_DRAIN_MS,
+  RECIPE_TRANSIENT_PRESENCE_SLEEP_MS,
   waitForTargetVisible,
 } from "./still-screen-wait.js";
+import { isIosRunnerWatchdogError } from "./ios-runtime-recovery.js";
 import {
   runAppBackgroundStep,
   runEvaluateVisualStep,
@@ -154,7 +157,10 @@ async function runRequiredRecipeStep(
       await sleep(step.ms, device);
       break;
     case "screenshot": {
-      await captureRecipeScreenshot(device, step.caption, ctx);
+      await captureRecipeScreenshot(device, step.caption, ctx, {}, {
+        ...(step.review ? { review: step.review } : {}),
+        ...(step.id ? { stepId: step.id } : {}),
+      });
       break;
     }
     case "capture-surface": {
@@ -181,6 +187,9 @@ async function runRequiredRecipeStep(
         kind: "wait-for",
         expected: describeTarget(target),
         log: ctx.log,
+        isTransientPresenceError: isIosRunnerWatchdogError,
+        transientBudgetMs: RECIPE_TRANSIENT_PRESENCE_DRAIN_MS,
+        transientSleepMs: RECIPE_TRANSIENT_PRESENCE_SLEEP_MS,
       });
       break;
     }
@@ -206,6 +215,9 @@ async function runRequiredRecipeStep(
             kind: "expect",
             expected: label,
             log: ctx.log,
+            isTransientPresenceError: isIosRunnerWatchdogError,
+            transientBudgetMs: RECIPE_TRANSIENT_PRESENCE_DRAIN_MS,
+            transientSleepMs: RECIPE_TRANSIENT_PRESENCE_SLEEP_MS,
           });
         } catch (err) {
           if (isCancel(err)) throw err;

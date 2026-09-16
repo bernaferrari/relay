@@ -159,7 +159,10 @@ export function runIdentityIgnoreStep(
   (ctx.job?.artifacts ?? ctx.artifacts)?.push({
     kind: "identity-ignore",
     capturedAt: now(),
-    data: region,
+    data: {
+      ...region,
+      frameIndex: ctx.job?.frames?.length ?? 0,
+    },
   });
   ctx.log(
     `identity-ignore: ${step.name ?? "region"} ${step.region.x},${step.region.y},${step.region.width},${step.region.height}`,

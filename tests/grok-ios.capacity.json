@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "packId": "grok-ios-chrome",
+  "provenance": "measured",
+  "measuredAt": "2026-09-15T23:19:50Z",
+  "sampleCount": 1,
+  "note": "Physical iPad Pro serial db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5. Quote is Plan grok-ios-chrome (3 dest-end Tests that start and return on closed SuperGrok home: home chrome, dictation inspect, sidebar open-close), not grok-ios-daily (16 Tests including Imagine Unbound + type hello / 3*5 / share-menu). Batch 86740566 3/3 ok, 0 findings, 3/3 frames, cell span 120703ms (~2.0 min). Jobs prime without relaunch; dest-end compiles warm so cold Restart app does not focus the composer between cells. Earlier grok-ios-chrome batch 647f1b50 0/3 HARNESS_FAILURE is not this quote: dest-end defaulted cold (keyboard leftover + XCTest watchdog) and dictation threw Choose a starting app. Parallelism is device count. Do not copy grok-ios-daily wall into this quote. Do not steal db0c9b7c…. grok-com authenticationFixtureId stays empty.",
+  "workItems": 3,
+  "serialPackWallClockP50Ms": 120703,
+  "serialPackWallClockP95Ms": 120703,
+  "parallelWallClockMs": {
+    "1": 120703,
+    "4": null,
+    "8": null
+  },
+  "assurance": "one-ipad-three-test-dest-end-chrome",
+  "batchId": "86740566-4b16-4ae6-bb32-1b456981f5b7",
+  "failedPriorBatchId": "647f1b50-a66a-4ac4-acf3-5a66b22be1dc",
+  "jobs": {
+    "test-grok-ios-home-chrome": "0b9869e3-1762-47de-9148-6f9248237965",
+    "test-grok-ios-dictation": "b9873208-7ed6-4f1b-b27f-7c508e22a4cd",
+    "test-grok-ios-sidebar": "65c47268-b324-436b-9d49-8cfea95fa989"
+  },
+  "cellDurationsMs": {
+    "test-grok-ios-home-chrome": 36633,
+    "test-grok-ios-dictation": 28151,
+    "test-grok-ios-sidebar": 55836
+  }
+}

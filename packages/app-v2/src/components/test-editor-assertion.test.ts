@@ -11,8 +11,9 @@ import {
 import { validationKindGroupsForEditor } from "./test-editor-checkpoint-kinds";
 
 describe("test editor assertions", () => {
-  it("groups Check, Wait, Judges, and Ignore region", () => {
+  it("groups Capture, Check, Wait, Judges, and Ignore region", () => {
     expect(VALIDATION_KIND_GROUPS.map((group) => group.label)).toEqual([
+      "Capture",
       "Check",
       "Wait",
       "Judges",
@@ -21,6 +22,7 @@ describe("test editor assertions", () => {
     expect(
       VALIDATION_KIND_GROUPS.flatMap((group) => group.kinds.map((kind) => kind.value)),
     ).toEqual([
+      "capture",
       "screen",
       "content",
       "wait-response",
@@ -36,7 +38,7 @@ describe("test editor assertions", () => {
       validationKindGroupsForEditor({ hasRememberableReply: false }).flatMap((group) =>
         group.kinds.map((kind) => kind.value),
       ),
-    ).toEqual(["screen", "content", "wait-response", "visual", "identity-ignore"]);
+    ).toEqual(["capture", "screen", "content", "wait-response", "visual", "identity-ignore"]);
     expect(
       validationKindGroupsForEditor({
         hasRememberableReply: false,
@@ -60,6 +62,21 @@ describe("test editor assertions", () => {
         kind: "semantic",
         input: "reply",
         criteria: ["Reply must mention a location"],
+      },
+    });
+    expect(
+      validationBindingFromDraft({
+        kind: "capture",
+        name: "Arabic account settings",
+        lookFor: "Save is visible",
+      }),
+    ).toEqual({
+      status: "resolved",
+      kind: "recipe-step",
+      step: {
+        kind: "screenshot",
+        caption: "Arabic account settings",
+        review: { mode: "later", lookFor: "Save is visible" },
       },
     });
     expect(
@@ -271,6 +288,25 @@ describe("test editor assertions", () => {
       }),
     ).toBe(
       "A visual judge will score this screenshot. Disagreement stays Needs review. Do not auto-accept.",
+    );
+    expect(
+      checkpointBindingCopy({
+        id: "step-capture",
+        kind: "validation",
+        intent: "Capture Arabic settings",
+        capture: true,
+        binding: {
+          status: "resolved",
+          kind: "recipe-step",
+          step: {
+            kind: "screenshot",
+            caption: "Arabic account settings",
+            review: { mode: "later", lookFor: "Save is visible" },
+          },
+        },
+      }),
+    ).toBe(
+      "Captures “Arabic account settings” for a person to review later. Does not approve a baseline.",
     );
   });
 });

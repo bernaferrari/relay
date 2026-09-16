@@ -23,7 +23,9 @@ export function browserLaneTabSessionKey(input: {
   return `lane:${target}:signed-out`;
 }
 
-/** Electron `session.fromPartition` key. Same Lane shares cookies across tabs. */
+/** Electron `session.fromPartition` key. Same Lane shares cookies across tabs.
+ * This is not Playwright user-data (`id__lane_<lane>`). Naming both stores
+ * after the Lane id is not cookie synchronization. */
 export function browserLaneElectronPartition(laneId: string): string {
   return `persist:lane:${assertSafeBrowserLaneId(laneId)}`;
 }

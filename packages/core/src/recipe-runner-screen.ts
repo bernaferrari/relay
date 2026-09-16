@@ -1,4 +1,5 @@
-import { describeSnapshotChrome } from "@relay/protocol";
+import { createHash } from "node:crypto";
+import { describeSnapshotChrome, type CaptureReviewConfiguration } from "@relay/protocol";
 import type { Device } from "./device.js";
 import { pressKey, pressLabel, scrollUp, sleep, snapshot, type SnapshotNode } from "./device.js";
 import { now } from "./events.js";
@@ -11,7 +12,9 @@ import {
   recipeScreenIdentityOptions,
 } from "./recipe-runner-context.js";
 import {
+  expectedScreenFingerprints,
   handoffShellIdentityMatch,
+  reobserveScreenIdentities,
   resilientScreenIdentityMatch,
 } from "./recipe-runner-support.js";
 import { screenIdentityMatches } from "./recipe-target-match.js";
@@ -46,7 +49,7 @@ import {
 } from "./destination-survey.js";
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 import { isTransientError } from "./retry.js";
-import { stillScreenAbortMessage, stillScreenUnchanged } from "./still-screen-wait.js";
+import { stillScreenTimeoutMessage, stillScreenUnchanged } from "./still-screen-wait.js";
 import type { DestinationRepairHint } from "./repair-proposal.js";
 import {
   getRecipeAndroidLocalization,
@@ -66,11 +69,42 @@ function observeStepIdentity(
   return observeScreenIdentity(nodes, recipeScreenIdentityOptions(ctx, extra));
 }
 
+function captureReviewConfigurationFromJob(
+  job: RecipeStepContext["job"],
+): CaptureReviewConfiguration | undefined {
+  if (!job) return undefined;
+  const viewport = job.browserCaseProfile?.viewport;
+  const account = job.resolvedInputs?.account?.trim() || job.resolvedInputs?.Account?.trim();
+  const locale =
+    job.resolvedInputs?.language?.trim() ||
+    job.resolvedInputs?.locale?.trim() ||
+    job.browserCaseProfile?.locale;
+  const configuration: CaptureReviewConfiguration = {
+    ...(job.deviceName?.trim() || job.browserTargetId?.trim()
+      ? { app: (job.deviceName ?? job.browserTargetId)!.trim() }
+      : {}),
+    ...(account ? { account } : {}),
+    ...(job.browserCaseProfile?.engine ? { browser: job.browserCaseProfile.engine } : {}),
+    ...(viewport ? { viewport: `${viewport.width}×${viewport.height}` } : {}),
+    ...(locale ? { locale } : {}),
+    ...(job.sourceRevision?.buildId?.trim()
+      ? { build: job.sourceRevision.buildId.trim() }
+      : job.appVersion?.trim()
+        ? { build: job.appVersion.trim() }
+        : {}),
+  };
+  return Object.keys(configuration).length ? configuration : undefined;
+}
+
 export async function captureRecipeScreenshot(
   device: Device,
   caption: string | undefined,
   ctx: RecipeStepContext,
   dependencies: { captureScreenshot?: typeof captureScreenshot } = {},
+  options: {
+    review?: { mode: "later"; lookFor?: string };
+    stepId?: string;
+  } = {},
 ): Promise<void> {
   const verified = currentVerifiedScreen(ctx.runtime);
   const observation = ctx.runtime?.observation;
@@ -100,8 +134,34 @@ export async function captureRecipeScreenshot(
   (ctx.job?.artifacts ?? ctx.artifacts)?.push({
     kind: "visual-settling",
     capturedAt: now(),
-    data: { settled: capture.settled, samples: capture.samples, framePath: screenshot.framePath },
+    data: {
+      settled: capture.settled,
+      samples: capture.samples,
+      stabilityMeasured: true,
+      framePath: screenshot.framePath,
+    },
   });
+  if (options.review?.mode === "later") {
+    const imageSha256 = createHash("sha256")
+      .update(Buffer.from(capture.value.base64, "base64"))
+      .digest("hex");
+    const configuration = captureReviewConfigurationFromJob(ctx.job);
+    (ctx.job?.artifacts ?? ctx.artifacts)?.push({
+      kind: "capture-review",
+      capturedAt: now(),
+      data: {
+        status: screenshot.framePath ? "pending" : "missing",
+        caption: caption ?? "screenshot",
+        ...(options.review.lookFor ? { lookFor: options.review.lookFor } : {}),
+        ...(screenshot.framePath ? { framePath: screenshot.framePath } : {}),
+        imageSha256,
+        ...(options.stepId ? { stepId: options.stepId } : {}),
+        settled: capture.settled,
+        samples: capture.samples,
+        ...(configuration ? { configuration } : {}),
+      },
+    });
+  }
   if (!capture.settled) ctx.log("Screenshot retained while the screen was still changing.");
   if (observation) observation.screenshot = screenshot;
   if (verified) verified.screenshot = screenshot;
@@ -242,7 +302,17 @@ export async function runExpectScreenStep(
     ctx.runtime.observation = undefined;
     markNavigationUnknown(ctx, `Verifying destination ${step.screenTitle}.`);
   }
-  const expected = new Set([step.fingerprint, ...(step.aliases ?? [])]);
+  const expected = expectedScreenFingerprints(
+    step,
+    recipeScreenIdentityOptions(ctx, step.ignoreRegions),
+  );
+  const hostedObservations = reobserveScreenIdentities(
+    step.observations,
+    recipeScreenIdentityOptions(ctx, step.ignoreRegions),
+  );
+  const compareObservations = hostedObservations.length
+    ? hostedObservations
+    : (step.observations ?? []);
   const prelude = mappedPreludeHost(step);
   const recoveryMaxAttempts =
     step.recovery?.strategy === "back" ? (step.recovery.maxAttempts ?? 6) : 0;
@@ -298,21 +368,16 @@ export async function runExpectScreenStep(
     const chrome = describeSnapshotChrome(nodes);
     observedTitle = chrome.header ?? chrome.app ?? "unknown";
     const observed = observeStepIdentity(nodes, ctx, step.ignoreRegions);
-    const semanticMatch = (step.observations ?? []).some(
+    const semanticMatch = compareObservations.some(
       (observation) => compareScreenIdentity(observed, observation).decision === "match",
     );
-    const resilientMatch = resilientScreenIdentityMatch(
-      observed,
-      step.observations ?? [],
-      ctx.job,
-      {
-        screenTitle: step.screenTitle,
-      },
-    );
+    const resilientMatch = resilientScreenIdentityMatch(observed, compareObservations, ctx.job, {
+      screenTitle: step.screenTitle,
+    });
     const handoffShellMatch =
       Boolean(step.expectedApp) &&
       foregroundApplicationBundle(nodes) === step.expectedApp &&
-      handoffShellIdentityMatch(observed, step.observations ?? []);
+      handoffShellIdentityMatch(observed, compareObservations);
     let localizedSemanticMatch = false;
     let hasLocalizedExpectation = false;
     // The translated expectation retains the taught app's resource ownership.
@@ -430,7 +495,6 @@ export async function runExpectScreenStep(
       ctx.log(
         `screen: pixels unchanged while waiting for ${step.screenTitle} (${stillScreenElapsedMs}ms)`,
       );
-      break;
     }
     lastMissVisualFingerprint = visualFingerprint ?? lastMissVisualFingerprint;
     if (Date.now() < deadline) await sleep(Math.min(400, deadline - Date.now()), device);
@@ -466,12 +530,13 @@ export async function runExpectScreenStep(
     }
     throw new Error(
       stillScreenElapsedMs !== undefined
-        ? stillScreenAbortMessage({
+        ? stillScreenTimeoutMessage({
             kind: "expect-screen",
             expected: step.screenTitle,
             observed: observedTitle,
             elapsedMs: stillScreenElapsedMs,
             timeoutMs: timeout,
+            pixelsUnchanged: true,
           })
         : `expect-screen: on “${observedTitle}”, not “${step.screenTitle}”`,
     );

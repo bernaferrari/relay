@@ -17,12 +17,16 @@ import {
   SEEDED_MEMBER_ACCIDENTAL_STEP_ID,
   SEEDED_MEMBER_ACCIDENTAL_STEP_REMOVE,
   SEEDED_MEMBER_BROWSER_ENVIRONMENT,
+  SEEDED_MEMBER_CAPTURE_TEST_ID,
+  SEEDED_MEMBER_CAPTURE_LOOK_FOR,
   SEEDED_MEMBER_CHECK_STEP_ID,
   SEEDED_MEMBER_LANE_ID,
   SEEDED_MEMBER_SEATS_VARIABLE,
   SEEDED_MEMBER_TARGET_ID,
   SEEDED_MEMBER_TEST_ID,
   SEEDED_MEMBER_VIEWPORT,
+  seededMemberCaptureConfigurations,
+  seededMemberCaptureReviewTest,
   seededMemberGraphTest,
   seededMemberLane,
   seededMemberProfileId,
@@ -166,6 +170,55 @@ test("the same number-equals 4 check rejects the seeded Member defect and Admin 
   );
   assert.equal(contentAssertionPassed("99", "4", "number-equals"), false);
   assert.equal(contentAssertionPassed("4", "4", "number-equals"), true);
+});
+
+test("capture-for-review compiles without a judge or AI credentials", () => {
+  const previous = process.env.OPENROUTER_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
+  try {
+    const map = buildSeededMemberAppMap({
+      memberFixtureReference: memberFx,
+      adminFixtureReference: adminFx,
+    });
+    const test = seededMemberCaptureReviewTest();
+    map.tests[SEEDED_MEMBER_CAPTURE_TEST_ID] = test;
+    const compiled = compileAppMapTest(map, test);
+    const screenshots = compiled.root.steps.filter((step) => step.kind === "screenshot");
+    assert.equal(screenshots.length, 1);
+    const screenshot = screenshots[0];
+    assert.equal(screenshot?.kind, "screenshot");
+    if (screenshot?.kind !== "screenshot") throw new Error("expected screenshot");
+    assert.equal(screenshot.caption, "Member account settings");
+    assert.deepEqual(screenshot.review, {
+      mode: "later",
+      lookFor: SEEDED_MEMBER_CAPTURE_LOOK_FOR,
+    });
+    assert.equal(
+      compiled.root.steps.some(
+        (step) => step.kind === "evaluate-visual" || step.kind === "evaluate-semantic",
+      ),
+      false,
+    );
+  } finally {
+    if (previous === undefined) delete process.env.OPENROUTER_API_KEY;
+    else process.env.OPENROUTER_API_KEY = previous;
+  }
+});
+
+test("eight capture configurations are labeled by account, viewport, and language", () => {
+  const cells = seededMemberCaptureConfigurations();
+  assert.equal(cells.length, 8);
+  assert.equal(new Set(cells.map((cell) => cell.caption)).size, 8);
+  assert.equal(
+    cells.some(
+      (cell) => cell.role === "admin" && cell.viewport.id === "compact" && cell.locale.id === "ar",
+    ),
+    true,
+  );
+  assert.equal(
+    cells.every((cell) => cell.lookFor === SEEDED_MEMBER_CAPTURE_LOOK_FOR),
+    true,
+  );
 });
 
 test("HTTP Test payload omits persistence fields and Lane maps a saved fixture", () => {

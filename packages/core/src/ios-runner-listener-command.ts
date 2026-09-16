@@ -76,13 +76,35 @@ export function isIosRunnerHostProbeTree(nodes: readonly SnapshotNode[]): boolea
   });
 }
 
-/** Home chrome only — never walk Grok conversation lists. */
-export const IOS_BOUNDED_CHROME_IDENTIFIERS = [
+/** Unique home chrome — never walk Grok conversation lists. */
+export const IOS_BOUNDED_HOME_CHROME_IDENTIFIERS = [
   "ask.toolbar.textfield",
   "sidebar.open.button",
   "toolbar.model.selector.button",
   "voice.speak.button",
   "ask.toolbar.add.button",
+] as const;
+
+/** Unique attach-sheet ids. Query only when `+` is present — XCTest id-miss on an open library walks the list. */
+export const IOS_BOUNDED_ATTACH_MENU_IDENTIFIERS = [
+  "ask.toolbar.add.menu.camera",
+  "ask.toolbar.add.menu.photos",
+  "ask.toolbar.add.menu.files",
+  "ask.toolbar.add.menu.connectors",
+  "ask.toolbar.add.menu.skills",
+] as const;
+
+/** Unique sidebar chrome omitted from home n=7. */
+export const IOS_BOUNDED_SIDEBAR_CHROME_IDENTIFIERS = [
+  "sidebar.settings.button",
+  "sidebar.search.field",
+] as const;
+
+/** Home chrome + unique attach-sheet / sidebar ids — never walk Grok conversation lists. */
+export const IOS_BOUNDED_CHROME_IDENTIFIERS = [
+  ...IOS_BOUNDED_HOME_CHROME_IDENTIFIERS,
+  ...IOS_BOUNDED_ATTACH_MENU_IDENTIFIERS,
+  ...IOS_BOUNDED_SIDEBAR_CHROME_IDENTIFIERS,
 ] as const;
 
 /** Unique SuperGrok chrome labels omitted from chrome-bounded snapshot. */
@@ -102,6 +124,15 @@ function iosRunnerCommandIsAmbiguous(result: LiveIosRunnerCommandResult): boolea
   const code = result.error && typeof result.error === "object" ? result.error.code : undefined;
   if (code === "AMBIGUOUS_MATCH") return true;
   return /AMBIGUOUS_MATCH|selector matched multiple/i.test(unknownErrorMessage(result.error, ""));
+}
+
+/** Abandoned AX work: refuse fast. Do not fall through to another XCTest command. */
+export function liveIosRunnerCommandIsBusy(result: LiveIosRunnerCommandResult): boolean {
+  const code = result.error && typeof result.error === "object" ? result.error.code : undefined;
+  if (code === "RUNNER_BUSY" || code === "RUNNER_WEDGED") return true;
+  return /RUNNER_BUSY|RUNNER_WEDGED|still finishing a previous command|execution watchdog|main thread has been stuck/i.test(
+    unknownErrorMessage(result.error, ""),
+  );
 }
 
 /** Depth-0 Application only — logical viewport for preview scale, not a list walk. */
@@ -162,6 +193,46 @@ async function snapshotIosDisambiguationTreeViaListener(
   return nodes;
 }
 
+async function snapshotRequestedIosChromeViaListener(
+  listener: LiveIosRunnerListener,
+  post: LiveIosRunnerCommandPost,
+  input: {
+    appBundleId?: string;
+    includeIdentifiers?: readonly string[];
+    includeLabels?: readonly string[];
+  },
+  timeoutMs: number,
+): Promise<SnapshotNode[]> {
+  const identifiers = await queryIosChromeSelectorsViaListener(
+    listener,
+    post,
+    {
+      selectorKey: "id",
+      values: chromeValuesToQuery([], input.includeIdentifiers),
+      ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+    },
+    timeoutMs,
+  );
+  const labels = await queryIosChromeSelectorsViaListener(
+    listener,
+    post,
+    {
+      selectorKey: "label",
+      values: chromeValuesToQuery([], input.includeLabels),
+      ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+    },
+    timeoutMs,
+  );
+  const chrome = [...identifiers, ...labels];
+  if (isIosRunnerHostProbeTree(chrome)) {
+    throw new Error(
+      "Live XCTest listener snapshot is AgentDeviceRunner Copy probe, not the product app",
+    );
+  }
+  const application = await snapshotIosApplicationRootViaListener(listener, post, input, timeoutMs);
+  return application ? [application, ...chrome] : chrome;
+}
+
 export async function snapshotViaLiveIosRunnerListener(input: {
   serial: string;
   interactiveOnly?: boolean;
@@ -169,6 +240,8 @@ export async function snapshotViaLiveIosRunnerListener(input: {
   timeoutMs?: number;
   includeIdentifiers?: readonly string[];
   includeLabels?: readonly string[];
+  /** Query only includeIdentifiers/includeLabels — never the home/library catalog. */
+  requestedChromeOnly?: boolean;
 }): Promise<SnapshotNode[]> {
   const listener = await probeLiveIosRunnerListener(input.serial);
   if (!listener) {
@@ -176,9 +249,16 @@ export async function snapshotViaLiveIosRunnerListener(input: {
   }
   const post = injectedPost ?? postLiveIosRunnerCommand;
   const timeoutMs = input.timeoutMs ?? 20_000;
+  if (input.requestedChromeOnly) {
+    return snapshotRequestedIosChromeViaListener(listener, post, input, timeoutMs);
+  }
+  const identifiers = await queryIosChromeIdentifiersViaListener(listener, post, input, timeoutMs);
+  const hamburgerPresent = chromeNodeHasIdentifier(identifiers, "sidebar.open.button");
   const chrome = [
-    ...(await queryIosChromeIdentifiersViaListener(listener, post, input, timeoutMs)),
-    ...(await queryIosChromeLabelsViaListener(listener, post, input, timeoutMs)),
+    ...identifiers,
+    ...(await queryIosChromeLabelsViaListener(listener, post, input, timeoutMs, {
+      includeDefaults: !hamburgerPresent,
+    })),
   ];
   if (chrome.length > 0) {
     if (isIosRunnerHostProbeTree(chrome)) {
@@ -235,6 +315,7 @@ async function queryIosChromeSelectorsViaListener(
   },
   timeoutMs: number,
 ): Promise<SnapshotNode[]> {
+  if (input.values.length === 0) return [];
   const nodes: SnapshotNode[] = [];
   const queryTimeout = Math.min(timeoutMs, IOS_CHROME_QUERY_TIMEOUT_MS);
   for (const value of input.values) {
@@ -263,22 +344,75 @@ async function queryIosChromeSelectorsViaListener(
   return nodes;
 }
 
+const IOS_ATTACH_MENU_IDENTIFIER_SET = new Set<string>(IOS_BOUNDED_ATTACH_MENU_IDENTIFIERS);
+const IOS_SIDEBAR_CHROME_IDENTIFIER_SET = new Set<string>(IOS_BOUNDED_SIDEBAR_CHROME_IDENTIFIERS);
+
+function chromeNodeHasIdentifier(nodes: readonly SnapshotNode[], identifier: string): boolean {
+  return nodes.some((node) => (node.identifier?.trim() || "") === identifier);
+}
+
+function isDeferredChromeIdentifier(value: string): boolean {
+  const trimmed = value.trim();
+  return (
+    IOS_ATTACH_MENU_IDENTIFIER_SET.has(trimmed) || IOS_SIDEBAR_CHROME_IDENTIFIER_SET.has(trimmed)
+  );
+}
+
 async function queryIosChromeIdentifiersViaListener(
   listener: LiveIosRunnerListener,
   post: LiveIosRunnerCommandPost,
   input: { appBundleId?: string; includeIdentifiers?: readonly string[] },
   timeoutMs: number,
 ): Promise<SnapshotNode[]> {
-  return queryIosChromeSelectorsViaListener(
+  const extra = input.includeIdentifiers ?? [];
+  const requestedAttach = extra.filter((value) => IOS_ATTACH_MENU_IDENTIFIER_SET.has(value.trim()));
+  const requestedSidebar = extra.filter((value) =>
+    IOS_SIDEBAR_CHROME_IDENTIFIER_SET.has(value.trim()),
+  );
+  const home = await queryIosChromeSelectorsViaListener(
     listener,
     post,
     {
       selectorKey: "id",
-      values: chromeValuesToQuery(IOS_BOUNDED_CHROME_IDENTIFIERS, input.includeIdentifiers),
+      values: chromeValuesToQuery(
+        IOS_BOUNDED_HOME_CHROME_IDENTIFIERS,
+        extra.filter((value) => !isDeferredChromeIdentifier(value)),
+      ),
       ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
     },
     timeoutMs,
   );
+  const hamburgerPresent = chromeNodeHasIdentifier(home, "sidebar.open.button");
+  const sidebarValues = hamburgerPresent
+    ? chromeValuesToQuery([], requestedSidebar)
+    : chromeValuesToQuery(IOS_BOUNDED_SIDEBAR_CHROME_IDENTIFIERS, requestedSidebar);
+  const sidebar =
+    sidebarValues.length === 0
+      ? []
+      : await queryIosChromeSelectorsViaListener(
+          listener,
+          post,
+          {
+            selectorKey: "id",
+            values: sidebarValues,
+            ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+          },
+          timeoutMs,
+        );
+  const attach =
+    requestedAttach.length === 0
+      ? []
+      : await queryIosChromeSelectorsViaListener(
+          listener,
+          post,
+          {
+            selectorKey: "id",
+            values: chromeValuesToQuery([], requestedAttach),
+            ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+          },
+          timeoutMs,
+        );
+  return [...home, ...sidebar, ...attach];
 }
 
 async function queryIosChromeLabelsViaListener(
@@ -286,13 +420,17 @@ async function queryIosChromeLabelsViaListener(
   post: LiveIosRunnerCommandPost,
   input: { appBundleId?: string; includeLabels?: readonly string[] },
   timeoutMs: number,
+  options?: { includeDefaults?: boolean },
 ): Promise<SnapshotNode[]> {
+  const defaults = options?.includeDefaults === false ? [] : IOS_BOUNDED_CHROME_LABELS;
+  const values = chromeValuesToQuery(defaults, input.includeLabels);
+  if (values.length === 0) return [];
   return queryIosChromeSelectorsViaListener(
     listener,
     post,
     {
       selectorKey: "label",
-      values: chromeValuesToQuery(IOS_BOUNDED_CHROME_LABELS, input.includeLabels),
+      values,
       ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
     },
     timeoutMs,
@@ -320,6 +458,14 @@ export async function identifierPresentViaLiveIosRunnerListener(input: {
     input.timeoutMs ?? IOS_CHROME_QUERY_TIMEOUT_MS,
   );
   if (result.ok === false) {
+    if (liveIosRunnerCommandIsBusy(result)) {
+      throw new Error(
+        liveIosRunnerFailureMessage(
+          result,
+          "The iOS runner is still finishing a previous command that exceeded its execution watchdog (usually an accessibility capture on a heavy or animating screen).",
+        ),
+      );
+    }
     if (!iosRunnerCommandIsAmbiguous(result)) return undefined;
     try {
       const tree = await snapshotIosDisambiguationTreeViaListener(listener, post, {
@@ -358,6 +504,14 @@ export async function identifierNodesViaLiveIosRunnerListener(input: {
     input.timeoutMs ?? IOS_CHROME_QUERY_TIMEOUT_MS,
   );
   if (result.ok === false) {
+    if (liveIosRunnerCommandIsBusy(result)) {
+      throw new Error(
+        liveIosRunnerFailureMessage(
+          result,
+          "The iOS runner is still finishing a previous command that exceeded its execution watchdog (usually an accessibility capture on a heavy or animating screen).",
+        ),
+      );
+    }
     if (!iosRunnerCommandIsAmbiguous(result)) return [];
     try {
       return await snapshotIosDisambiguationTreeViaListener(listener, post, {

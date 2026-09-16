@@ -97,6 +97,65 @@ test("sidebar history does not redefine signed-in home, even in the nav rail", (
   assert.ok(!second.nodes.some((node) => node.label === "generate 42 bird images"));
 });
 
+test("a Build Mode intro leftover does not redefine signed-in home with different chats", () => {
+  const overlay: SnapshotNode[] = [
+    {
+      role: "dialog",
+      label: "Introducing Build Mode",
+      identifier: "radix-_r_nh_",
+      rect: { x: 824, y: 339, width: 320, height: 301 },
+      visibleToUser: true,
+    },
+    {
+      role: "button",
+      label: "Try now",
+      rect: { x: 1058, y: 596, width: 74, height: 32 },
+      visibleToUser: true,
+    },
+    {
+      role: "button",
+      label: "Dismiss",
+      rect: { x: 828, y: 596, width: 72, height: 32 },
+      visibleToUser: true,
+    },
+  ];
+  const quiet = observe(signedInChrome(["3x5 equals 15"]));
+  const leftover = observe([...signedInChrome(["Paris capital of France"]), ...overlay]);
+  assert.equal(quiet.fingerprint, leftover.fingerprint);
+  assert.equal(compareScreenIdentity(quiet, leftover).decision, "match");
+  assert.ok(!leftover.nodes.some((node) => /introducing build mode/iu.test(node.label ?? "")));
+  assert.ok(!leftover.nodes.some((node) => node.label === "try now"));
+});
+
+test("a grok pack does not let sidebar identity-ignore punch remaining chrome", () => {
+  const frame: SnapshotNode = {
+    role: "div",
+    rect: { x: 0, y: 0, width: 1280, height: 800 },
+    visibleToUser: true,
+  };
+  const seeAll: SnapshotNode = {
+    role: "button",
+    label: "See all",
+    rect: { x: 12, y: 360, width: 80, height: 32 },
+    hittable: true,
+    visibleToUser: true,
+  };
+  const live = [...signedInChrome(["capital of cabo verde is praia"]), seeAll, frame];
+  const ignore = [
+    { name: "sidebar conversation titles", x: 0, y: 0.4, width: 0.24, height: 0.48 },
+  ];
+  const packed = observe(live);
+  const packedIgnored = observeScreenIdentity(live, {
+    policy: GROK_WEB_APP_POLICY,
+    ignoreRegions: ignore,
+  });
+  assert.equal(packed.fingerprint, packedIgnored.fingerprint);
+  assert.ok(packedIgnored.nodes.some((node) => node.label === "see all"));
+  const generic = observeScreenIdentity(live);
+  const genericIgnored = observeScreenIdentity(live, { ignoreRegions: ignore });
+  assert.notEqual(generic.fingerprint, genericIgnored.fingerprint);
+});
+
 function openConversationChrome(transcript: string): SnapshotNode[] {
   return [
     { role: "a", label: "Home page", hittable: true, visibleToUser: true },

@@ -59,23 +59,26 @@ export function planFindingsAnalysisState(
   return "complete";
 }
 
-function findingMergeKey(finding: CombineEvidenceFinding): string {
-  if (finding.canonicalKey.startsWith("job:")) return finding.canonicalKey;
-  return finding.canonicalKey || finding.id;
+function findingIdentity(finding: CombineEvidenceFinding): string {
+  if (finding.stableKey?.trim()) return finding.stableKey.trim();
+  return finding.id;
 }
 
 function mergePlanFindings(
   derived: CombineEvidenceAnalysisReport,
   analysis: CombineEvidenceAnalysisReport,
 ): CombineEvidenceAnalysisReport {
-  const byKey = new Map<string, CombineEvidenceFinding>();
-  for (const finding of derived.analysis.findings) {
-    byKey.set(findingMergeKey(finding), finding);
-  }
+  const byId = new Map<string, CombineEvidenceFinding>();
+  const jobsWithActual = new Set<string>();
   for (const finding of analysis.analysis.findings) {
-    byKey.set(findingMergeKey(finding), finding);
+    byId.set(findingIdentity(finding), finding);
+    if (finding.canonicalKey.startsWith("job:")) jobsWithActual.add(finding.canonicalKey);
   }
-  const findings = [...byKey.values()];
+  for (const finding of derived.analysis.findings) {
+    if (jobsWithActual.has(finding.canonicalKey)) continue;
+    byId.set(findingIdentity(finding), finding);
+  }
+  const findings = [...byId.values()];
   const critical = findings.filter((item) => item.severity === "critical").length;
   return {
     ...analysis,

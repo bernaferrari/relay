@@ -337,6 +337,67 @@ test("cookie consent chrome and landmark innerText dumps do not redefine a brows
   assert.ok(!withLiveBanner.nodes.some((node) => /essential cookies/iu.test(node.label ?? "")));
 });
 
+test("a Build Mode intro popover does not redefine signed-in home", () => {
+  const observe = observeGrok;
+  const chrome: SnapshotNode[] = [
+    { role: "button", label: "Chat", visibleToUser: true },
+    { role: "a", label: "Imagine", visibleToUser: true },
+    { role: "h1", label: "What should we explore?", visibleToUser: true },
+    { role: "textarea", label: "Ask Grok anything", visibleToUser: true },
+    { role: "button", label: "Attach", identifier: "attach-button", visibleToUser: true },
+    { role: "text", label: "Switch to Build Mode to create apps", visibleToUser: true },
+    { role: "p", label: "Finance", visibleToUser: true },
+    { role: "p", label: "Connect accounts to manage your finances in chat", visibleToUser: true },
+    {
+      role: "button",
+      label: "Dismiss",
+      rect: { x: 991, y: 382, width: 72, height: 32 },
+      visibleToUser: true,
+    },
+    { role: "button", label: "Upgrade", visibleToUser: true },
+  ];
+  const overlay: SnapshotNode[] = [
+    {
+      role: "dialog",
+      label: "Introducing Build Mode",
+      identifier: "radix-_r_nh_",
+      value:
+        "Introducing Build Mode\nUse Build Mode to create websites, games, apps, and interactive dashboards.\nTry now\nDismiss",
+      rect: { x: 824, y: 339, width: 320, height: 301 },
+      visibleToUser: true,
+    },
+    { role: "text", label: "Introducing Build Mode", visibleToUser: true },
+    {
+      role: "text",
+      label: "Use Build Mode to create websites, games, apps, and interactive dashboards.",
+      visibleToUser: true,
+    },
+    {
+      role: "button",
+      label: "Try now",
+      rect: { x: 1058, y: 596, width: 74, height: 32 },
+      visibleToUser: true,
+    },
+    { role: "text", label: "Try now", visibleToUser: true },
+    {
+      role: "button",
+      label: "Dismiss",
+      rect: { x: 828, y: 596, width: 72, height: 32 },
+      visibleToUser: true,
+    },
+    { role: "text", label: "Dismiss", rect: { x: 839, y: 607, width: 50, height: 10 }, visibleToUser: true },
+  ];
+  const quiet = observe(chrome);
+  const withOverlay = observe([...chrome, ...overlay]);
+  assert.equal(quiet.fingerprint, withOverlay.fingerprint);
+  assert.equal(compareScreenIdentity(quiet, withOverlay).decision, "match");
+  assert.ok(!withOverlay.nodes.some((node) => /introducing build mode/iu.test(node.label ?? "")));
+  assert.ok(!withOverlay.nodes.some((node) => node.label === "try now"));
+  assert.equal(withOverlay.nodes.filter((node) => node.label === "dismiss").length, 1);
+  assert.ok(withOverlay.nodes.some((node) => node.label === "finance"));
+  assert.ok(withOverlay.nodes.some((node) => node.label === "<placeholder>"));
+});
+
 test("typeahead suggestions do not redefine composer-with-prompt identity", () => {
   const observe = observeGrok;
   const chrome: SnapshotNode[] = [

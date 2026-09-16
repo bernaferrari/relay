@@ -98,7 +98,7 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
   "target.app.launch":
     " Launch is not the same as foreground. The result includes observed.app and observed.matched so a bounce (Chrome → Settings) is visible.",
   "target.recover":
-    " Not a first poke and not a wait loop. Adopt a healthy live XCTest runner; do not kill it and do not reboot. A missing XCTest session is not a failed launch.",
+    " Not a first poke and not a wait loop. Adopt a healthy live XCTest runner; do not kill it and do not reboot. Restores a dead go-ios userspace tunnel on the same recover — do not shell `ios tunnel start`. A missing XCTest session is not a failed launch.",
   "target.browser-auth.save":
     " Human-only. Open the managed Browser Device, complete sign-in or MFA, and review the current account before saving. Relay returns only non-secret metadata and an exact encrypted fixture reference.",
   "target.browser-auth.list":
@@ -476,6 +476,7 @@ const reviewOperations = [
   "run.visual.compare",
   "run.visual-baseline.update",
   "run.visual.review",
+  "run.capture.review",
   "run.pin.update",
 ] as const satisfies readonly OperationId[];
 

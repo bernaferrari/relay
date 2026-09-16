@@ -28,6 +28,9 @@ function validExpected(value: StepDraft["expected"]): boolean {
   if (value.kind === "identity-ignore") {
     return typeof value.name === "string" && typeof value.region === "string";
   }
+  if (value.kind === "capture") {
+    return typeof value.name === "string" && typeof value.lookFor === "string";
+  }
   return (
     value.kind === "content" &&
     typeof value.input === "string" &&

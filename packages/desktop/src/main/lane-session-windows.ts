@@ -1,5 +1,9 @@
 import { BrowserWindow, session } from "electron";
-import { laneSessionPartition, laneTabSessionKey } from "./lane-session.js";
+import {
+  laneSessionPartition,
+  laneTabSessionKey,
+  laneWindowNeedsNavigation,
+} from "./lane-session.js";
 
 const laneWindows = new Map<string, BrowserWindow>();
 
@@ -17,6 +21,9 @@ export async function openLaneBrowserTab(input: { url: string; laneId: string })
   if (existing && !existing.isDestroyed()) {
     existing.show();
     existing.focus();
+    if (laneWindowNeedsNavigation(existing.webContents.getURL(), parsed.toString())) {
+      await existing.loadURL(parsed.toString());
+    }
     return { partition, tabSessionKey };
   }
   const win = new BrowserWindow({
