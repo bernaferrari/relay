@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { captureReviewSlotId, resolveCaptureReviewQueue } from "@relay/protocol";
+import {
+  CAPTURE_REVIEW_DEST_PHASE,
+  CAPTURE_REVIEW_LEFTOVER_PHASE,
+  captureReviewSlotId,
+  resolveCaptureReviewQueue,
+} from "@relay/protocol";
 import type { Device } from "./device.js";
 import { captureRecipeScreenshot, runExpectScreenStep } from "./recipe-runner-screen.js";
 import { runWithTargetContext } from "./target-context.js";
@@ -16,7 +21,7 @@ function frame(text: string): ScreenshotPayload {
   };
 }
 
-test("explicit screenshot ignores cached pixels and retains the settled destination", async () => {
+test("explicit screenshot ignores cached pixels and takes one unmeasured Fast frame", async () => {
   const observation = {
     observedAt: 1,
     nodes: [{ role: "heading", label: "Destination" }],
@@ -38,15 +43,16 @@ test("explicit screenshot ignores cached pixels and retains the settled destinat
       },
     ),
   );
-  assert.equal(captures, 3);
-  assert.equal(observation.screenshot.base64, frame("destination").base64);
+  assert.equal(captures, 1);
+  assert.equal(observation.screenshot.base64, frame("transition").base64);
   assert.deepEqual(
     artifacts.map((item) => [
       item.kind,
-      (item.data as { settled: boolean; stabilityMeasured?: boolean }).settled,
+      (item.data as { settled: boolean; stabilityMeasured?: boolean; policy?: string }).settled,
       (item.data as { stabilityMeasured?: boolean }).stabilityMeasured,
+      (item.data as { policy?: string }).policy,
     ]),
-    [["visual-settling", true, true]],
+    [["visual-settling", false, false, "fast"]],
   );
 });
 
@@ -311,6 +317,49 @@ test("fast review capture takes one image and leaves stability unmeasured", asyn
     stabilityMeasured?: boolean;
   };
   assert.deepEqual([data.settled, data.samples, data.stabilityMeasured], [false, 1, false]);
+});
+
+test("review capture without policy is Fast and does not wait for matching screenshots", async () => {
+  const device = { command: { wait: async () => ({}) } } as unknown as Device;
+  const artifacts: { kind: string; capturedAt: number; data: unknown }[] = [];
+  let captures = 0;
+  await runWithTargetContext({ kind: "device", platform: "android", serial: "fixture" }, () =>
+    captureRecipeScreenshot(
+      device,
+      "Settings",
+      { artifacts, log: () => {} },
+      {
+        captureScreenshot: async () => {
+          captures += 1;
+          return { ...frame(String(captures)), framePath: "frames/001.png" };
+        },
+      },
+      { review: { mode: "later", lookFor: "Account section" }, stepId: "settings-dest" },
+    ),
+  );
+  assert.equal(captures, 1);
+  const settling = artifacts.find((item) => item.kind === "visual-settling")?.data as {
+    settled?: boolean;
+    samples?: number;
+    stabilityMeasured?: boolean;
+    policy?: string;
+  };
+  const review = artifacts.find((item) => item.kind === "capture-review")?.data as {
+    settled?: boolean;
+    samples?: number;
+    stabilityMeasured?: boolean;
+    policy?: string;
+  };
+  assert.ok(settling);
+  assert.ok(review);
+  assert.deepEqual(
+    [settling.settled, settling.samples, settling.stabilityMeasured, settling.policy],
+    [false, 1, false, "fast"],
+  );
+  assert.deepEqual(
+    [review.settled, review.samples, review.stabilityMeasured, review.policy],
+    [false, 1, false, "fast"],
+  );
 });
 
 test("sequence records the current named phase as one unmeasured image", async () => {
@@ -685,15 +734,17 @@ test(
     const review = artifacts.find((item) => item.kind === "capture-review");
     const tree = artifacts.find((item) => item.kind === "ui-tree");
     assert.equal((review?.data as { status?: string }).status, "pending");
-    assert.equal((review?.data as { stabilityMeasured?: boolean }).stabilityMeasured, undefined);
+    assert.equal((review?.data as { stabilityMeasured?: boolean }).stabilityMeasured, false);
+    assert.equal((review?.data as { policy?: string }).policy, "fast");
     assert.equal((tree?.data as { status?: string }).status, "failed");
     assert.ok((tree?.capturedAt ?? 0) > 1_000);
   },
 );
 
-test("stable review capture still requests a tree when none is cached", async () => {
+test("stable review capture still samples matching rasters", async () => {
   const artifacts: { kind: string; capturedAt: number; data: unknown }[] = [];
   let snapshots = 0;
+  let captures = 0;
   await runWithTargetContext({ kind: "device", platform: "android", serial: "fixture" }, () =>
     captureRecipeScreenshot(
       snapshotDevice(async () => {
@@ -703,18 +754,119 @@ test("stable review capture still requests a tree when none is cached", async ()
       "Settings",
       { artifacts, log: () => {}, job: matrixJob(artifacts) },
       {
-        captureScreenshot: async () => ({ ...frame("stable"), framePath: "frames/001.png" }),
+        captureScreenshot: async () => {
+          captures += 1;
+          return { ...frame("stable"), framePath: "frames/001.png" };
+        },
       },
       { review: { mode: "later", policy: "stable" } },
     ),
   );
+  assert.ok(captures >= 2);
   assert.equal(snapshots, 1);
   const settling = artifacts.find((item) => item.kind === "visual-settling");
-  assert.equal((settling?.data as { stabilityMeasured?: boolean }).stabilityMeasured, true);
+  const settlingData = settling?.data as {
+    stabilityMeasured?: boolean;
+    samples?: number;
+    settled?: boolean;
+    policy?: string;
+  };
+  assert.equal(settlingData.stabilityMeasured, true);
+  assert.ok((settlingData.samples ?? 0) >= 2);
+  assert.equal(settlingData.settled, true);
+  assert.equal(settlingData.policy, "stable");
   assert.equal(
     artifacts.some((item) => item.kind === "capture-review"),
     true,
   );
+});
+
+test("dest-phase Fast capture stays dest identity when leftover Close also captures", async () => {
+  const device = { command: { wait: async () => ({}) } } as unknown as Device;
+  const artifacts: { kind: string; capturedAt: number; data: unknown }[] = [];
+  let captures = 0;
+  const planned = [
+    {
+      checkpointId: "open-sidebar-dest",
+      caption: "Sidebar",
+      lookFor: "Automations",
+      attempt: 1,
+      phase: CAPTURE_REVIEW_DEST_PHASE,
+      stepId: "open-sidebar-dest",
+    },
+  ];
+  await runWithTargetContext({ kind: "device", platform: "android", serial: "fixture" }, () =>
+    captureRecipeScreenshot(
+      device,
+      "Sidebar",
+      { artifacts, log: () => {}, plannedSlots: [...planned] },
+      {
+        captureScreenshot: async () => {
+          captures += 1;
+          return { ...frame("automations"), framePath: "frames/002.png" };
+        },
+      },
+      {
+        review: {
+          mode: "later",
+          lookFor: "Automations",
+          phase: CAPTURE_REVIEW_DEST_PHASE,
+        },
+        stepId: "open-sidebar-dest",
+      },
+    ),
+  );
+  await runWithTargetContext({ kind: "device", platform: "android", serial: "fixture" }, () =>
+    captureRecipeScreenshot(
+      device,
+      "Home leftover",
+      { artifacts, log: () => {}, plannedSlots: [...planned] },
+      {
+        captureScreenshot: async () => {
+          captures += 1;
+          return { ...frame("home"), framePath: "frames/005.png" };
+        },
+      },
+      {
+        review: {
+          mode: "later",
+          lookFor: "Speak home chrome",
+          phase: CAPTURE_REVIEW_LEFTOVER_PHASE,
+        },
+        stepId: "open-sidebar-dest",
+      },
+    ),
+  );
+  assert.equal(captures, 2);
+  const dest = artifacts.find(
+    (item) =>
+      item.kind === "capture-review" &&
+      (item.data as { phase?: string }).phase === CAPTURE_REVIEW_DEST_PHASE,
+  )?.data as {
+    phase?: string;
+    framePath?: string;
+    stabilityMeasured?: boolean;
+    policy?: string;
+    samples?: number;
+  };
+  const leftover = artifacts.find(
+    (item) =>
+      item.kind === "capture-review" &&
+      (item.data as { phase?: string }).phase === CAPTURE_REVIEW_LEFTOVER_PHASE,
+  )?.data as { phase?: string; framePath?: string };
+  assert.equal(dest.phase, CAPTURE_REVIEW_DEST_PHASE);
+  assert.equal(dest.framePath, "frames/002.png");
+  assert.equal(dest.stabilityMeasured, false);
+  assert.equal(dest.policy, "fast");
+  assert.equal(dest.samples, 1);
+  assert.equal(leftover.phase, CAPTURE_REVIEW_LEFTOVER_PHASE);
+  assert.equal(leftover.framePath, "frames/005.png");
+  const queue = resolveCaptureReviewQueue({ plannedSlots: planned, artifacts });
+  assert.equal(queue.items.length, 1);
+  assert.equal(queue.items[0]?.phase, CAPTURE_REVIEW_DEST_PHASE);
+  assert.equal(queue.items[0]?.framePath, "frames/002.png");
+  assert.equal(queue.items[0]?.stabilityMeasured, false);
+  assert.equal(queue.items[0]?.policy, "fast");
 });
 
 test("expect-screen still fails closed when identity has no tree", async () => {

@@ -198,6 +198,18 @@ test("default dest-end chrome inspect is Fast UI and cannot claim S16 with a 10s
   );
 });
 
+test("dest-end capture-review stays Fast when the Test queue is live-output", () => {
+  const work = inspectTest();
+  work.executionQueue = "live-output";
+  const compiled = compileAppMapTest(queueMap({ "settings-inspect": work }), work);
+  assert.equal(compiled.plan.executionQueue, "live-output");
+  const screenshot = Object.values(compiled.graph)
+    .flatMap((recipe) => recipe.steps)
+    .find((step) => step.kind === "screenshot");
+  assert.equal(screenshot?.kind === "screenshot" ? screenshot.review?.policy : undefined, "fast");
+  assert.equal(screenshot?.kind === "screenshot" ? screenshot.review?.phase : undefined, "dest");
+});
+
 test("live-output compile rejects a loading placeholder as Sequence after", () => {
   const illegal = liveOutputTest();
   const step = illegal.steps[0]!;

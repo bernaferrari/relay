@@ -1,4 +1,10 @@
-import type { AppMap, AppMapScenarioTest, ExecutionQueue, RecipeStep } from "@relay/protocol";
+import type {
+  AppMap,
+  AppMapScenarioTest,
+  CaptureRasterPolicy,
+  ExecutionQueue,
+  RecipeStep,
+} from "@relay/protocol";
 import {
   CAPTURE_REVIEW_DEST_PHASE,
   destEndConnectionsAreChromeInspect,
@@ -89,19 +95,22 @@ export function assertCompiledExecutionQueue(
   }
 }
 
+/** Dest-end capture-review is Fast unless the checkpoint already opted into
+ *  Stable or Sequence. Queue (fast-ui / live-output / survival) is scheduling,
+ *  not raster policy — a live-output dest-end still takes one dest image. */
 export function destEndInspectScreenshotReview(
-  test: AppMapScenarioTest,
   lookFor: string,
-  destEndChromeInspect: boolean,
-): { mode: "later"; lookFor: string; phase: typeof CAPTURE_REVIEW_DEST_PHASE; policy?: "fast" } {
-  const queue = executionQueueForTest({
-    executionQueue: test.executionQueue,
-    destEndChromeInspect,
-  });
+  policy?: CaptureRasterPolicy,
+): {
+  mode: "later";
+  lookFor: string;
+  phase: typeof CAPTURE_REVIEW_DEST_PHASE;
+  policy: CaptureRasterPolicy;
+} {
   return {
     mode: "later",
     lookFor,
     phase: CAPTURE_REVIEW_DEST_PHASE,
-    ...(queue === "fast-ui" ? { policy: "fast" as const } : {}),
+    policy: policy === "stable" || policy === "sequence" ? policy : "fast",
   };
 }

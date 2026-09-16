@@ -175,6 +175,18 @@ export type HumanCheckpointReason =
 export type CaptureCoverage = "inspect" | "transition";
 /** Fast = one fresh image. Stable = 2–4 rasters. Sequence = named temporal phases. */
 export type CaptureRasterPolicy = "fast" | "stable" | "sequence";
+/** Ordinary UI checkpoints (menus, settings, composer, subscription chrome).
+ * Omitted policy is Fast so dest-end review does not pay the Stable loop. */
+export const DEFAULT_CAPTURE_RASTER_POLICY: CaptureRasterPolicy = "fast";
+
+export function resolvedCaptureRasterPolicy(policy?: CaptureRasterPolicy): CaptureRasterPolicy {
+  return policy ?? DEFAULT_CAPTURE_RASTER_POLICY;
+}
+
+/** Only Stable samples consecutive matching rasters. Fast/Sequence are one shot. */
+export function captureRasterPolicyMeasuresStability(policy?: CaptureRasterPolicy): boolean {
+  return resolvedCaptureRasterPolicy(policy) === "stable";
+}
 /** Named temporal frame for Sequence. Captions are labels; id is identity. */
 export type CaptureSequencePhase = {
   id: string;

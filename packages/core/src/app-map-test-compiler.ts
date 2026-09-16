@@ -34,7 +34,6 @@ import { attachMappedInboundPrelude } from "./app-map-test-inbound-prelude.js";
 import { leftoverWarmConfirmationSteps } from "./leftover-origin-recovery.js";
 import {
   assertCompiledExecutionQueue,
-  destEndChromeInspectForTest,
   destEndInspectScreenshotReview,
   resolvedExecutionQueue,
 } from "./execution-queue-compile.js";
@@ -785,11 +784,7 @@ export function compileAppMapScenarioTest(
           const screenshot: RecipeStep = {
             kind: "screenshot",
             caption: `step:${step.id}:${step.intent}`,
-            review: destEndInspectScreenshotReview(
-              test,
-              step.intent,
-              destEndChromeInspectForTest(map, test),
-            ),
+            review: destEndInspectScreenshotReview(step.intent),
             id: `relay-test-${step.id}-dest`,
           };
           if (destRecipe) insertDestEndCaptureReviewScreenshot(destRecipe, screenshot);

@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { captureSettledRaster } from "./visual-settling.js";
 
-test("waits through animation even when the accessibility tree is already ready", async () => {
+test("stable waits through animation even when the accessibility tree is already ready", async () => {
   const frames = ["old", "transition", "new", "new", "new"];
   const discarded: string[] = [];
   let elapsed = 0;
   const result = await captureSettledRaster({
+    policy: "stable",
     capture: async () => frames.shift()!,
     bytes: (frame) => Buffer.from(frame),
     discard: async (frame) => {
@@ -24,6 +25,7 @@ test("waits through animation even when the accessibility tree is already ready"
 test("measured stability requires two matching frames", async () => {
   let samples = 0;
   const result = await captureSettledRaster({
+    policy: "stable",
     capture: async () => {
       samples += 1;
       return "same";
@@ -40,6 +42,7 @@ test("measured stability requires two matching frames", async () => {
 test("bounds continuously changing content without claiming it settled", async () => {
   let samples = 0;
   const result = await captureSettledRaster({
+    policy: "stable",
     capture: async () => String(++samples),
     bytes: (frame) => Buffer.from(frame),
     wait: async () => {},
@@ -52,6 +55,7 @@ test("cleans up the last temporary frame when a later capture fails", async () =
   const discarded: string[] = [];
   await assert.rejects(
     captureSettledRaster({
+      policy: "stable",
       capture: async () => {
         if (++count === 2) throw new Error("disconnected");
         return "one";
@@ -71,6 +75,7 @@ test("slow captures exhaust the time budget without seven expensive probes", asy
   let clock = 0;
   let count = 0;
   const result = await captureSettledRaster({
+    policy: "stable",
     capture: async () => {
       clock += 1500;
       return String(++count);
@@ -124,6 +129,29 @@ test("sequence capture is one fresh image and does not use the stable loop", asy
   });
   assert.deepEqual(result, {
     value: "during",
+    settled: false,
+    samples: 1,
+    stabilityMeasured: false,
+  });
+  assert.equal(samples, 1);
+  assert.equal(waited, 0);
+});
+
+test("omitted policy is Fast: one fresh image and does not measure stability", async () => {
+  let samples = 0;
+  let waited = 0;
+  const result = await captureSettledRaster({
+    capture: async () => {
+      samples += 1;
+      return String(samples);
+    },
+    bytes: (frame) => Buffer.from(frame),
+    wait: async (ms) => {
+      waited += ms;
+    },
+  });
+  assert.deepEqual(result, {
+    value: "1",
     settled: false,
     samples: 1,
     stabilityMeasured: false,

@@ -19,6 +19,11 @@ import {
   resolveCaptureReviewQueue,
   summarizeCaptureReview,
 } from "./capture-review.js";
+import {
+  captureRasterPolicyMeasuresStability,
+  DEFAULT_CAPTURE_RASTER_POLICY,
+  resolvedCaptureRasterPolicy,
+} from "./recipes.js";
 
 test("arrow keys move the contact sheet without wrapping past the ends", () => {
   assert.equal(captureReviewAdvanceIndex(0, 8, "ArrowRight"), 1);
@@ -900,6 +905,18 @@ test("leftover inspect chrome does not mint a recapture attempt", () => {
   assert.equal(queue.summary.missing, 0);
 });
 
+test("omitted raster policy is Fast and only Stable measures matching screenshots", () => {
+  assert.equal(DEFAULT_CAPTURE_RASTER_POLICY, "fast");
+  assert.equal(resolvedCaptureRasterPolicy(undefined), "fast");
+  assert.equal(resolvedCaptureRasterPolicy("fast"), "fast");
+  assert.equal(resolvedCaptureRasterPolicy("stable"), "stable");
+  assert.equal(resolvedCaptureRasterPolicy("sequence"), "sequence");
+  assert.equal(captureRasterPolicyMeasuresStability(undefined), false);
+  assert.equal(captureRasterPolicyMeasuresStability("fast"), false);
+  assert.equal(captureRasterPolicyMeasuresStability("sequence"), false);
+  assert.equal(captureRasterPolicyMeasuresStability("stable"), true);
+});
+
 function destEndSlot() {
   return {
     requirementId: "rc23-screenshot-first",
@@ -964,6 +981,10 @@ test("dest-end dest-phase identity is dest wait-for pixels, not leftover Close l
       checkpointId: dest.checkpointId,
       attempt: 1,
       phase: CAPTURE_REVIEW_DEST_PHASE,
+      settled: false,
+      samples: 1,
+      stabilityMeasured: false,
+      policy: "fast",
       configuration: dest.configuration,
     },
   };
@@ -975,6 +996,8 @@ test("dest-end dest-phase identity is dest wait-for pixels, not leftover Close l
   assert.equal(queue.items[0]?.phase, CAPTURE_REVIEW_DEST_PHASE);
   assert.equal(queue.items[0]?.framePath, "frames/002.png");
   assert.equal(queue.items[0]?.imageSha256, "automations-settings");
+  assert.equal(queue.items[0]?.stabilityMeasured, false);
+  assert.equal(queue.items[0]?.policy, "fast");
   assert.notEqual(queue.items[0]?.framePath, "frames/005.png");
   assert.deepEqual(captureReviewIdentityFramePaths([leftoverHome, destWait]), ["frames/002.png"]);
 });

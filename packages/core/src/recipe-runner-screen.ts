@@ -4,6 +4,7 @@ import {
   captureReviewSlotId,
   describeSnapshotChrome,
   observedCaptureReviewAccount,
+  resolvedCaptureRasterPolicy,
   sequenceAfterIsPlaceholder,
   type CaptureReviewConfiguration,
   type CaptureReviewObservedSession,
@@ -243,8 +244,9 @@ export async function captureRecipeScreenshot(
   ) {
     throw new Error("Live-output Sequence after cannot be a loading placeholder");
   }
+  const policy = resolvedCaptureRasterPolicy(options.review?.policy);
   const capture = await captureSettledRaster({
-    policy: options.review?.policy,
+    policy,
     capture: () =>
       (dependencies.captureScreenshot ?? captureScreenshot)({
         device,
@@ -284,7 +286,7 @@ export async function captureRecipeScreenshot(
       samples: capture.samples,
       stabilityMeasured: capture.stabilityMeasured,
       framePath: screenshot.framePath,
-      ...(options.review?.policy ? { policy: options.review.policy } : {}),
+      policy,
       ...(phase ? { phase } : {}),
     },
   });
@@ -350,13 +352,16 @@ export async function captureRecipeScreenshot(
         ...((frozen?.phase ?? identity?.phase) ? { phase: frozen?.phase ?? identity?.phase } : {}),
         settled: capture.settled,
         samples: capture.samples,
-        ...(options.review.policy ? { policy: options.review.policy } : {}),
+        stabilityMeasured: capture.stabilityMeasured,
+        policy,
         ...(configuration ? { configuration } : {}),
         ...(observed ? { observed } : {}),
       },
     });
   }
-  if (!capture.settled) ctx.log("Screenshot retained while the screen was still changing.");
+  if (capture.stabilityMeasured && !capture.settled) {
+    ctx.log("Screenshot retained while the screen was still changing.");
+  }
   if (observation) observation.screenshot = screenshot;
   if (verified) verified.screenshot = screenshot;
   await collectOptionalReviewTree({
@@ -365,7 +370,7 @@ export async function captureRecipeScreenshot(
     screenshot,
     caption,
     nodes,
-    policy: options.review?.policy,
+    policy,
   });
 }
 

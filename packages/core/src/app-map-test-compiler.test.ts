@@ -2001,6 +2001,7 @@ test("dest-end leftover Close last-frame is not dest capture-review identity", (
   assert.ok(leftoverCloseIndex > destWaitIndex);
   assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.kind, "screenshot");
   assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.phase, "dest");
+  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.policy, "fast");
   assert.ok(leftoverCloseIndex > destWaitIndex + 1);
   assert.equal(compiled.plan.plannedSlots?.length, 1);
   assert.equal(compiled.plan.plannedSlots?.[0]?.phase, "dest");

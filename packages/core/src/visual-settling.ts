@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
+import { captureRasterPolicyMeasuresStability, type CaptureRasterPolicy } from "@relay/protocol";
 
-export type VisualCapturePolicy = "fast" | "stable" | "sequence";
+export type VisualCapturePolicy = CaptureRasterPolicy;
 
 /** Fast and Sequence each take one fresh image with no stability claim.
- *  Stable keeps the 500ms matching-raster loop. Sequence names its frames at
- *  the review layer; this helper never invents those phase names and never
- *  treats a 1-minute outage as a 10-second one. */
+ *  Omitted policy is Fast. Stable keeps the 500ms matching-raster loop.
+ *  Sequence names its frames at the review layer; this helper never invents
+ *  those phase names and never treats a 1-minute outage as a 10-second one. */
 export async function captureSettledRaster<T>(input: {
   capture(): Promise<T>;
   bytes(value: T): Uint8Array;
@@ -21,7 +22,7 @@ export async function captureSettledRaster<T>(input: {
   let previous: string | undefined;
   let matches = 0;
   try {
-    if (input.policy === "fast" || input.policy === "sequence") {
+    if (!captureRasterPolicyMeasuresStability(input.policy)) {
       const next = await input.capture();
       return { value: next, settled: false, samples: 1, stabilityMeasured: false };
     }
