@@ -278,8 +278,8 @@
       "caption": "Settings",
       "testId": "test-grok-ios-settings",
       "status": "captured",
-      "jobId": "183110a2-ddf6-4f0f-9b26-5b750a928b52",
-      "mapRevision": 338,
+      "jobId": "32b7deaf-a11e-4004-92c4-c4ba77fbcc68",
+      "mapRevision": 343,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -429,8 +429,8 @@
       "caption": "Composer focus",
       "testId": "test-grok-ios-composer-focus",
       "status": "captured",
-      "jobId": "43ece456-a1ed-47af-be9a-9fb357829947",
-      "mapRevision": 339,
+      "jobId": "56898725-7890-46b8-abd1-2b193cdf82b0",
+      "mapRevision": 344,
       "scenarioKind": "physical",
       "blocked": false
     },
