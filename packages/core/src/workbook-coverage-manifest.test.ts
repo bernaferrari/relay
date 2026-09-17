@@ -13,6 +13,7 @@ import {
   coverByUnrecordedHeavyOrFinanceDestEnd,
   coverByImagineDestEndOrUnrecordedHeavyImage,
   coverByImagineDestEndOrHistorySearch,
+  coverByHistoryDestEndOrCommandMenuSearch,
   coverByRc23DestEnd,
   countWorkbookEvidencePackets,
   countWorkbookSuggestedQueues,
@@ -44,6 +45,8 @@ import {
   WORKBOOK_IMAGE_ORIGINAL_IDS,
   WORKBOOK_IMAGE_SEARCH_FAMILY_ID,
   WORKBOOK_IMAGE_SEARCH_ORIGINAL_IDS,
+  WORKBOOK_HISTORY_FAMILY_ID,
+  WORKBOOK_HISTORY_ORIGINAL_IDS,
   WORKBOOK_EVIDENCE_PACKET_LABELS,
   WORKBOOK_RC23_REQUIREMENT_ID,
   WORKBOOK_MODELS_FAMILY_ID,
@@ -168,11 +171,36 @@ const similarCatalog = [
     name: "Open sidebar Search",
     appMapId: "grok-android",
   },
+  {
+    id: "test-grok-web-signed-in-open-conversation",
+    name: "Open existing sidebar conversation",
+    appMapId: "grok-web",
+  },
+  {
+    id: "test-grok-web-signed-in-older-chat",
+    name: "Older conversation",
+    appMapId: "grok-web",
+  },
+  {
+    id: "test-grok-web-signed-in-history-collapse",
+    name: "History collapse from Search preview",
+    appMapId: "grok-web",
+  },
+  {
+    id: "test-grok-web-signed-in-delete",
+    name: "Delete conversation",
+    appMapId: "grok-web",
+  },
+  {
+    id: "test-grok-web-signed-in-sidebar",
+    name: "Toggle sidebar",
+    appMapId: "grok-web",
+  },
 ];
 
 test("reviewed workbook freeze keeps 58 originals, 15 active families, and 5 exclusions", () => {
   const manifest = loadReviewedWorkbook();
-  assert.equal(manifest.revision, 14);
+  assert.equal(manifest.revision, 15);
   assert.equal(manifest.counts.originals, 58);
   assert.equal(manifest.counts.families, 17);
   assert.equal(manifest.counts.activeFamilies, 15);
@@ -1399,6 +1427,128 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     true,
   );
   assert.equal(coverByRc23DestEnd({ id: 49 }, "imagine"), false);
+  const historyFamily = manifest.originals.filter(
+    (item) => item.family === WORKBOOK_HISTORY_FAMILY_ID,
+  );
+  assert.deepEqual(
+    historyFamily.map((item) => item.id),
+    [...WORKBOOK_HISTORY_ORIGINAL_IDS],
+  );
+  assert.equal(
+    historyFamily.every(
+      (item) =>
+        item.status === "unbound" &&
+        item.requirementAction === "test-action" &&
+        (item.evidenceNeeded?.length ?? 0) > 0 &&
+        item.bindings.length === 0 &&
+        item.criteria.trim().length > 0 &&
+        coverByHistoryDestEndOrCommandMenuSearch(item) === false,
+    ),
+    true,
+  );
+  const olderKinds = new Set(
+    manifest.originals.find((item) => item.id === 21)?.evidenceNeeded?.map((item) => item.kind) ??
+      [],
+  );
+  assert.equal(
+    ["before", "after", "receipt"].every((kind) => olderKinds.has(kind)),
+    true,
+  );
+  assert.equal(
+    (manifest.originals
+      .find((item) => item.id === 21)
+      ?.evidenceNeeded?.filter((item) => item.kind === "receipt").length ?? 0) >= 2,
+    true,
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 21,
+      family: WORKBOOK_HISTORY_FAMILY_ID,
+      evidencePacket: "transition",
+    }),
+    "stateful-survival",
+  );
+  const expandKinds = new Set(
+    manifest.originals.find((item) => item.id === 34)?.evidenceNeeded?.map((item) => item.kind) ??
+      [],
+  );
+  assert.equal(expandKinds.has("receipt"), true);
+  assert.equal(expandKinds.has("view"), true);
+  const historySearchKinds = new Set(
+    manifest.originals.find((item) => item.id === 38)?.evidenceNeeded?.map((item) => item.kind) ??
+      [],
+  );
+  assert.equal(
+    ["before", "after", "receipt"].every((kind) => historySearchKinds.has(kind)),
+    true,
+  );
+  assert.equal(
+    (manifest.originals
+      .find((item) => item.id === 38)
+      ?.evidenceNeeded?.filter((item) => item.kind === "receipt").length ?? 0) >= 2,
+    true,
+  );
+  const deleteKinds = new Set(
+    manifest.originals.find((item) => item.id === 39)?.evidenceNeeded?.map((item) => item.kind) ??
+      [],
+  );
+  assert.equal(
+    ["before", "restart", "after", "receipt"].every((kind) => deleteKinds.has(kind)),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 21)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-open-conversation"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 21)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-older-chat"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 38)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-search"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 38)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-android-search"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 34)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-history-collapse"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 34)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-sidebar"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 39)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-delete"),
+    true,
+  );
+  assert.equal(coverByRc23DestEnd({ id: 21 }, "sidebar"), false);
+  assert.equal(coverByRc23DestEnd({ id: 34 }, "sidebar"), false);
+  assert.equal(coverByRc23DestEnd({ id: 38 }, "sidebar"), false);
+  assert.equal(coverByRc23DestEnd({ id: 39 }, "settings"), false);
   const slotsPath = join(
     dirname(fileURLToPath(import.meta.url)),
     "../../../tests/coverage/rc23-screenshot-first-slots.json",

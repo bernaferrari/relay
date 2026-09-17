@@ -8,7 +8,8 @@
  * S02 shell, S05 model/preset, S08 output-battery, S01 auth, S03
  * composer, S06 Auto-routing, S07 response-chrome, S09
  * single-agent tools + sources, S10 Heavy multi-agent, S11
- * image gen + edit + export, and S12 image search originals keep
+ * image gen + edit + export, S12 image search, and S13 history
+ * lifecycle originals keep
  * explicit test-action evidence-needed while remaining unbound.
  * Leftover Fast-checked is not a models Test. Inspect-only model
  * sheet is not Switch model, presets, or Auto Fast/Expert routing.
@@ -34,7 +35,12 @@
  * puppy, or Draw a hat. Imagine dest-end / iOS Imagine Unbound /
  * logged-out Imagine judged / leftover 3*5 / S11 image gen / S02
  * Imagine from menu / S10 Heavy / GQA-008 Create Videos / history
- * Command Menu search is not S12 Image search. Original criteria
+ * Command Menu search is not S12 Image search. Dest-end
+ * open-conversation / older-chat compile-blocked / Command Menu
+ * search / Android Search dest-end / history-collapse / leftover
+ * 3*5 / S12 Image search / draft delete-wrong-chat is not S13
+ * open older conversation, History expand, search history, or
+ * delete persistence. Original criteria
  * stay on the slot.
  */
 
@@ -67,6 +73,8 @@ export const WORKBOOK_IMAGE_FAMILY_ID = "S11";
 export const WORKBOOK_IMAGE_ORIGINAL_IDS = [16, 17, 50, 54, 55] as const;
 export const WORKBOOK_IMAGE_SEARCH_FAMILY_ID = "S12";
 export const WORKBOOK_IMAGE_SEARCH_ORIGINAL_IDS = [49] as const;
+export const WORKBOOK_HISTORY_FAMILY_ID = "S13";
+export const WORKBOOK_HISTORY_ORIGINAL_IDS = [21, 34, 38, 39] as const;
 export const WORKBOOK_MODELS_FAMILY_ID = "S05";
 export const WORKBOOK_MODELS_ORIGINAL_IDS = [7, 8] as const;
 export const WORKBOOK_OUTPUT_FAMILY_ID = "S08";
@@ -243,8 +251,9 @@ export const RC23_WORKBOOK_NON_BINDINGS: readonly {
   },
   {
     checkpointId: "sidebar",
-    originalIds: [33, 34, 36],
-    reason: "Open dest-end is not open+close, History expand, or New Chat from menu.",
+    originalIds: [21, 33, 34, 36],
+    reason:
+      "Open dest-end is not open+close, History expand, New Chat from menu, or open older conversation + send.",
   },
   {
     checkpointId: "imagine",
@@ -446,6 +455,19 @@ export function coverByImagineDestEndOrUnrecordedHeavyImage(
  * never cover S12. Find-3-images TAP + similar follow-up TAP
  * evidence is required. */
 export function coverByImagineDestEndOrHistorySearch(
+  original: Pick<WorkbookOriginal, "id" | "family">,
+): boolean {
+  void original;
+  return false;
+}
+
+/** Dest-end open-conversation (no new prompt), older-chat
+ * compile-blocked, Command Menu search / Android Search dest-end,
+ * history-collapse Hide Conversation Previews, leftover 3*5
+ * extract-15, S12 Image search, or draft delete-wrong-chat never
+ * cover S13. Open TAP + send, History expand TAP, keyword TAP +
+ * clear, and delete TAP + restart evidence is required. */
+export function coverByHistoryDestEndOrCommandMenuSearch(
   original: Pick<WorkbookOriginal, "id" | "family">,
 ): boolean {
   void original;
@@ -983,6 +1005,10 @@ function distinctiveNeedles(original: WorkbookOriginal): readonly string[] {
   if (original.id === 54) extra.push("puppy");
   if (original.id === 55) extra.push("hat");
   if (original.id === 49) extra.push("imagine", "3x5", "puppy", "download");
+  if (original.id === 21) extra.push("open-conversation", "older-chat", "3x5");
+  if (original.id === 34) extra.push("sidebar", "history-collapse");
+  if (original.id === 38) extra.push("command", "3x5");
+  if (original.id === 39) extra.push("delete");
   if (original.id === 14) extra.push("code", "snippet");
   if (original.id === 15) extra.push("markdown");
   if (original.id === 32) extra.push("coffee");
@@ -1328,6 +1354,14 @@ export function workbookEvidenceNeededError(
       return `${label} S12 needs explicit evidence-needed (find-3-images TAP, similar follow-up TAP, similar-to-object TAP)`;
     }
   }
+  if (original.family === WORKBOOK_HISTORY_FAMILY_ID) {
+    if (original.requirementAction !== "test-action") {
+      return `${label} S13 must be test-action — leftover dest-end open-conversation / Command Menu search / history-collapse / draft delete is not open older conversation, History expand, search history, or delete persistence`;
+    }
+    if (!original.evidenceNeeded || original.evidenceNeeded.length === 0) {
+      return `${label} S13 needs explicit evidence-needed (open older conversation TAP + send, History expand TAP, search keyword TAP + clear, delete TAP + restart)`;
+    }
+  }
   if (original.id === 7) {
     const switchKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
     for (const required of ["before", "after", "receipt"] as const) {
@@ -1538,6 +1572,48 @@ export function workbookEvidenceNeededError(
     const searchReceipts = original.evidenceNeeded?.filter((item) => item.kind === "receipt") ?? [];
     if (searchReceipts.length < 3) {
       return `${label} GQA-049 needs find-3-images TAP, similar TAP, and similar-to-object TAP receipts — leftover Imagine dest-end / S11 Draw a puppy / history search is not this original`;
+    }
+  }
+  if (original.id === 21) {
+    const olderKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    for (const required of ["before", "after", "receipt"] as const) {
+      if (!olderKinds.has(required)) {
+        return `${label} GQA-021 open older conversation TAP must execute — leftover dest-end open-conversation / older-chat compile-blocked is not this original — needs ${required} evidence`;
+      }
+    }
+    const olderReceipts = original.evidenceNeeded?.filter((item) => item.kind === "receipt") ?? [];
+    if (olderReceipts.length < 2) {
+      return `${label} GQA-021 needs open TAP and send TAP receipts — leftover dest-end open-conversation (no new prompt) is not this original`;
+    }
+  }
+  if (original.id === 34) {
+    const expandKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!expandKinds.has("receipt")) {
+      return `${label} GQA-034 History expand TAP must execute — leftover sidebar dest-end / history-collapse Hide Conversation Previews is not this original`;
+    }
+    if (!expandKinds.has("view")) {
+      return `${label} GQA-034 needs expanded History/Conversations view — leftover sidebar dest-end is not this original`;
+    }
+  }
+  if (original.id === 38) {
+    const historySearchKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    for (const required of ["before", "after", "receipt"] as const) {
+      if (!historySearchKinds.has(required)) {
+        return `${label} GQA-038 history search TAP must execute — leftover Command Menu search / Android Search dest-end is not this original — needs ${required} evidence`;
+      }
+    }
+    const historySearchReceipts =
+      original.evidenceNeeded?.filter((item) => item.kind === "receipt") ?? [];
+    if (historySearchReceipts.length < 2) {
+      return `${label} GQA-038 needs keyword TAP and clear TAP receipts — leftover Command Menu search / Android Search dest-end is not this original`;
+    }
+  }
+  if (original.id === 39) {
+    const deleteKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    for (const required of ["before", "restart", "after", "receipt"] as const) {
+      if (!deleteKinds.has(required)) {
+        return `${label} GQA-039 delete TAP must execute — leftover draft delete-wrong-chat is not this original — needs ${required} evidence`;
+      }
     }
   }
   if (!original.evidenceNeeded) return undefined;

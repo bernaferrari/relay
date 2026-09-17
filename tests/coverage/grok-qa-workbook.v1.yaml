@@ -73,9 +73,19 @@
 # menu / S10 Heavy / GQA-008 Create Videos / history Command Menu
 # search do not cover. Similar imagine/search/puppy names do not
 # cover. Leftover dest skip is only GQA-004/040 capture-view.
+# RC-35 S13 history-lifecycle packets stay unbound: explicit
+# test-action evidence-needed (open older conversation TAP + send,
+# History/Conversations expand TAP, search keyword TAP + clear,
+# delete TAP + restart). Dest-end open-conversation (no new prompt) /
+# older-chat compile-blocked / Command Menu search /
+# Android Search dest-end / history-collapse Hide Conversation
+# Previews / leftover 3*5 extract-15 / S12 Image search / draft
+# delete-wrong-chat do not cover. Similar history/search/delete/
+# older-chat names do not cover. Leftover dest skip is only
+# GQA-004/040 capture-view.
 schemaVersion: 1
 id: grok-qa-workbook
-revision: 14
+revision: 15
 reviewedAt: "2026-09-16"
 source:
   workbook: grok-qa-graph.xlsx
@@ -722,7 +732,25 @@ originals:
     evidencePacket: transition
     queue: "stateful"
     suggestedExecutionQueue: stateful-survival
-    gates: []
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-sidebar-older-conversation
+        note: "Fresh Fast image of the side menu/history list with an older conversation visible. Leftover dest-end first-sidebar-row / leftover 3*5 thread / grok-lab leftover b2dcd768 sidebar+Build Mode is not this before frame. Opening the menu is GQA-033, not this original. stabilityMeasured false."
+      - kind: receipt
+        id: tap-open-older-conversation
+        note: "TAP an older conversation from the sidebar actually executed (test-action). test-grok-web-signed-in-open-conversation dest-end first-sidebar-row (no new prompt) is not this original. test-grok-web-signed-in-older-chat unbound/compile-blocked (contains-4 false pass) is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: after
+        id: after-previous-messages-load
+        note: "Fresh Fast image where the old conversation opens and shows previous messages correctly. Leftover dest-end expect What should we explore? gone is not this after frame. stabilityMeasured false."
+      - kind: receipt
+        id: tap-send-new-prompt-in-older
+        note: "Type a new prompt in the same chat and send actually executed (test-action). Dest-end open-conversation without a composer prompt is not this original. leftover 3*5 extract-15 is not this original."
+      - kind: after
+        id: after-new-prompt-answered
+        note: "New prompts are successfully sent and responses are received. Human reviews original criterion. leftover 3*5 extract-15 / older-chat contains-4 is not this after frame. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
+    gates:
+      - "Leftover dest-end open-conversation / older-chat compile-blocked / leftover 3*5 extract-15 is not this original. Causal TAP must open an older conversation and send a new prompt. Similar open-conversation/older-chat names do not cover."
     status: unbound
     bindings: []
   - id: 22
@@ -991,8 +1019,17 @@ originals:
     evidencePacket: view
     queue: "stateful"
     suggestedExecutionQueue: fast-ui
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: receipt
+        id: tap-history-conversations-arrow
+        note: "TAP the arrow next to History (web) or Conversations (mobile) actually executed (test-action). Sidebar dest-end / leftover skip Toggle Sidebar / test-grok-web-signed-in-history-collapse Command Menu Hide Conversation Previews is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: view
+        id: history-conversations-expanded
+        note: "Fresh Fast image of History/Conversations expanded or collapsed correctly, recent chats listed with titles and timestamps, newest on top. History list removed on iOS (use Conversations). Sidebar dest-end open is not this view. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
     gates:
       - History list removed on iOS (use Conversations).
+      - "Leftover sidebar dest-end / history-collapse Hide Conversation Previews is not this original. Causal TAP must expand/collapse History or Conversations. Similar sidebar/history names do not cover."
     status: unbound
     bindings: []
   - id: 35
@@ -1082,8 +1119,26 @@ originals:
     evidencePacket: transition
     queue: "stateful"
     suggestedExecutionQueue: fast-ui
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-full-history-list
+        note: "Fresh Fast image of the history page/search field with the full chat list. Command Menu dest-end requiring Create New Private Chat is not this before frame. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
+      - kind: receipt
+        id: tap-type-history-keyword
+        note: "Type a keyword in the search field/history page actually executed (test-action). test-grok-web-signed-in-search Command Menu dest-end / test-grok-android-search dest-end wait Search without typing a keyword is not this original. S12 GQA-049 find-3-images is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: after
+        id: after-matching-chats-only
+        note: "Fresh Fast image where only matching chats are shown. Command Menu Create New Private Chat dest-end is not this after frame. leftover 3*5 extract-15 is not this original. stabilityMeasured false."
+      - kind: receipt
+        id: tap-clear-history-search
+        note: "Clear the search actually executed (test-action). Opening Search without typing+clear is not this original."
+      - kind: after
+        id: after-full-list-restored
+        note: "Fresh Fast image where clearing the search restores the full list. Human reviews original criterion. Command Menu dest-end / Android Search dest-end / S12 Image search is not this after frame. stabilityMeasured false."
     gates:
       - Search lives on history page.
+      - "Leftover Command Menu search / Android Search dest-end / leftover 3*5 extract-15 / S12 GQA-049 Image search is not this original. Causal TAP must type a keyword then clear so matching chats show and the full list restores. Similar search/history names do not cover."
     status: unbound
     bindings: []
   - id: 39
@@ -1096,8 +1151,23 @@ originals:
     evidencePacket: persistence
     queue: "stateful"
     suggestedExecutionQueue: stateful-survival
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-owned-disposable-chat
+        note: "Fresh Fast image of Conversations/History with an owned disposable chat visible. Not grok-lab SuperGrok 7189423f shared threads. leftover grok-lab b2dcd768 sidebar+Build Mode is not this before frame. stabilityMeasured false."
+      - kind: receipt
+        id: tap-delete-conversation-confirm
+        note: "Long press a chat, select Delete Conversation, and confirm actually executed (test-action). test-grok-web-signed-in-delete Search preview footer that toasted the wrong chat is not this original. Persist is still draft — do not create a new chat to delete on the shared fixture. Capture-view leftover skip is only GQA-004/040."
+      - kind: restart
+        id: force-close-reopen-after-delete
+        note: "Restart the app after delete. Post-restart observation is required. Leftover dest-end without restart is not this original."
+      - kind: after
+        id: after-deleted-chat-gone
+        note: "Deleted chat disappears from the conversation list and does not reappear after restarting the app. Human reviews original criterion. Search-preview wrong-chat toast is not this after frame. grok-lab leftover b2dcd768 is not this family. stabilityMeasured false."
     gates:
       - Owned disposable data. Post-restart observation required.
+      - "Leftover draft delete-wrong-chat / Search preview footer is not this original. Causal TAP must delete an owned disposable chat and observe it gone after restart. Similar delete names do not cover. Do not Sign Out."
     status: unbound
     bindings: []
   - id: 40

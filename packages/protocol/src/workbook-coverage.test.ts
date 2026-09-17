@@ -11,6 +11,7 @@ import {
   coverByUnrecordedHeavyOrFinanceDestEnd,
   coverByImagineDestEndOrUnrecordedHeavyImage,
   coverByImagineDestEndOrHistorySearch,
+  coverByHistoryDestEndOrCommandMenuSearch,
   coverByRc23DestEnd,
   destEndViewPacketMayLeftoverSkip,
   evaluateWorkbookCoverage,
@@ -43,6 +44,8 @@ import {
   WORKBOOK_IMAGE_ORIGINAL_IDS,
   WORKBOOK_IMAGE_SEARCH_FAMILY_ID,
   WORKBOOK_IMAGE_SEARCH_ORIGINAL_IDS,
+  WORKBOOK_HISTORY_FAMILY_ID,
+  WORKBOOK_HISTORY_ORIGINAL_IDS,
   WORKBOOK_MODELS_FAMILY_ID,
   WORKBOOK_MODELS_ORIGINAL_IDS,
   WORKBOOK_OUTPUT_FAMILY_ID,
@@ -3470,5 +3473,404 @@ test("S12 packets stay unbound and need find-3-images TAP plus similar follow-up
       evidencePacket: "sequence",
     }),
     "live-output",
+  );
+});
+
+test("S13 packets stay unbound and need open older conversation, History expand, search keyword, and delete TAP evidence", () => {
+  assert.deepEqual([...WORKBOOK_HISTORY_ORIGINAL_IDS], [21, 34, 38, 39]);
+  assert.deepEqual(requiredEvidenceNeededKinds("transition"), ["before", "after", "receipt"]);
+  assert.deepEqual(requiredEvidenceNeededKinds("view"), ["view"]);
+  assert.deepEqual(requiredEvidenceNeededKinds("persistence"), ["before", "restart", "after"]);
+  const missing = original({
+    id: 21,
+    name: "Open older conversation",
+    family: WORKBOOK_HISTORY_FAMILY_ID,
+    evidencePacket: "transition",
+    status: "unbound",
+  });
+  assert.match(
+    workbookEvidenceNeededError(missing) ?? "",
+    /S13 must be test-action|S13 needs explicit evidence-needed|open older conversation TAP/u,
+  );
+  const leftoverOpenDest = original({
+    id: 21,
+    name: "Open older conversation",
+    family: WORKBOOK_HISTORY_FAMILY_ID,
+    evidencePacket: "transition",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-sidebar-older-conversation",
+        note: "Sidebar visible. Leftover dest-end first-sidebar-row. No send TAP.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-open-older-conversation",
+        note: "Dest-end open-conversation. No new prompt.",
+      },
+      {
+        kind: "after",
+        id: "after-what-should-we-explore-gone",
+        note: "Leftover dest-end. No new prompt answered.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "The old conversation opens and shows previous messages correctly. New prompts are successfully sent and responses are received.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverOpenDest) ?? "",
+    /open TAP and send TAP receipts/u,
+  );
+  assert.equal(coverByHistoryDestEndOrCommandMenuSearch(leftoverOpenDest), false);
+  const olderChat = original({
+    id: 21,
+    name: "Open older conversation",
+    family: WORKBOOK_HISTORY_FAMILY_ID,
+    evidencePacket: "transition",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-sidebar-older-conversation",
+        note: "Older conversation visible. leftover dest-end is not this frame.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-open-older-conversation",
+        note: "TAP older conversation actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-previous-messages-load",
+        note: "Previous messages load. leftover dest-end is not this frame.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-new-prompt-in-older",
+        note: "Send a new prompt actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-new-prompt-answered",
+        note: "New prompt answered. leftover 3*5 / older-chat contains-4 is not this frame.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "The old conversation opens and shows previous messages correctly. New prompts are successfully sent and responses are received.",
+  });
+  assert.equal(workbookEvidenceNeededError(olderChat), undefined);
+  assert.equal(workbookEvidencePolicyError(olderChat), undefined);
+  assert.equal(originalIsCovered(olderChat), false);
+  assert.equal(coverByHistoryDestEndOrCommandMenuSearch(olderChat), false);
+  const olderObligation = workbookOriginalObligationIdentity(olderChat);
+  assert.equal(olderObligation.requirementId, "GQA-021");
+  assert.equal(olderObligation.caption, "Open older conversation");
+  assert.match(olderObligation.criteria, /previous messages correctly/u);
+  const leftoverHistoryCollapse = original({
+    id: 34,
+    name: "History / Conversations expand",
+    family: WORKBOOK_HISTORY_FAMILY_ID,
+    evidencePacket: "view",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "view",
+        id: "leftover-sidebar-dest-end",
+        note: "Sidebar dest-end. history-collapse Hide Conversation Previews. No arrow TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Section collapses/expands correctly. Recent chats listed with titles and timestamps, newest on top.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverHistoryCollapse) ?? "",
+    /History expand TAP must execute/u,
+  );
+  const historyExpand = original({
+    id: 34,
+    name: "History / Conversations expand",
+    family: WORKBOOK_HISTORY_FAMILY_ID,
+    evidencePacket: "view",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-history-conversations-arrow",
+        note: "TAP History/Conversations arrow actually executed.",
+      },
+      {
+        kind: "view",
+        id: "history-conversations-expanded",
+        note: "Expanded list with titles and timestamps. leftover sidebar dest-end is not this view.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Section collapses/expands correctly. Recent chats listed with titles and timestamps, newest on top.",
+  });
+  assert.equal(workbookEvidenceNeededError(historyExpand), undefined);
+  assert.equal(workbookEvidencePolicyError(historyExpand), undefined);
+  assert.equal(originalIsCovered(historyExpand), false);
+  const leftoverCommandMenu = original({
+    id: 38,
+    name: "Search history",
+    family: WORKBOOK_HISTORY_FAMILY_ID,
+    evidencePacket: "transition",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-command-menu",
+        note: "Command Menu dest-end. Create New Private Chat. No keyword typed.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-open-search-dest-end",
+        note: "Open Search dest-end. No keyword TAP or clear TAP.",
+      },
+      {
+        kind: "after",
+        id: "after-command-menu",
+        note: "Command Menu still open. Full list unrestored.",
+      },
+    ],
+    status: "unbound",
+    criteria: "Only matching chats are shown, and clearing the search restores the full list.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverCommandMenu) ?? "",
+    /keyword TAP and clear TAP receipts/u,
+  );
+  assert.equal(coverByHistoryDestEndOrCommandMenuSearch(leftoverCommandMenu), false);
+  const historySearch = original({
+    id: 38,
+    name: "Search history",
+    family: WORKBOOK_HISTORY_FAMILY_ID,
+    evidencePacket: "transition",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-full-history-list",
+        note: "Full history list. Command Menu dest-end is not this frame.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-type-history-keyword",
+        note: "Type a keyword actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-matching-chats-only",
+        note: "Only matching chats shown.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-clear-history-search",
+        note: "Clear search actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-full-list-restored",
+        note: "Full list restored. Command Menu dest-end / S12 Image search is not this frame.",
+      },
+    ],
+    status: "unbound",
+    criteria: "Only matching chats are shown, and clearing the search restores the full list.",
+  });
+  assert.equal(workbookEvidenceNeededError(historySearch), undefined);
+  assert.equal(workbookEvidencePolicyError(historySearch), undefined);
+  assert.equal(originalIsCovered(historySearch), false);
+  const leftoverDraftDelete = original({
+    id: 39,
+    name: "Delete conversation",
+    family: WORKBOOK_HISTORY_FAMILY_ID,
+    evidencePacket: "persistence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-search-preview",
+        note: "Search preview footer. Wrong chat toasted.",
+      },
+      {
+        kind: "after",
+        id: "after-wrong-chat",
+        note: "Draft delete-wrong-chat. No restart.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Deleted chat disappears from the conversation list and does not reappear after restarting the app.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverDraftDelete) ?? "",
+    /delete TAP must execute|needs restart evidence/u,
+  );
+  const deleteChat = original({
+    id: 39,
+    name: "Delete conversation",
+    family: WORKBOOK_HISTORY_FAMILY_ID,
+    evidencePacket: "persistence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-owned-disposable-chat",
+        note: "Owned disposable chat visible. Not grok-lab shared threads.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-delete-conversation-confirm",
+        note: "Delete Conversation confirm actually executed.",
+      },
+      {
+        kind: "restart",
+        id: "force-close-reopen-after-delete",
+        note: "Restart after delete.",
+      },
+      {
+        kind: "after",
+        id: "after-deleted-chat-gone",
+        note: "Deleted chat gone after restart. draft delete-wrong-chat is not this frame.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Deleted chat disappears from the conversation list and does not reappear after restarting the app.",
+  });
+  assert.equal(workbookEvidenceNeededError(deleteChat), undefined);
+  assert.equal(workbookEvidencePolicyError(deleteChat), undefined);
+  assert.equal(originalIsCovered(deleteChat), false);
+  const report = evaluateWorkbookCoverage(
+    fixture({ originals: [olderChat, historyExpand, historySearch, deleteChat] }),
+    [
+      {
+        id: "test-grok-web-signed-in-open-conversation",
+        name: "Open existing sidebar conversation",
+      },
+      { id: "test-grok-web-signed-in-older-chat", name: "Older conversation" },
+      { id: "test-grok-web-signed-in-search", name: "Search history" },
+      { id: "test-grok-android-search", name: "Open sidebar Search" },
+      {
+        id: "test-grok-web-signed-in-history-collapse",
+        name: "History collapse from Search preview",
+      },
+      { id: "test-grok-web-signed-in-delete", name: "Delete conversation" },
+      { id: "test-grok-web-signed-in-3x5", name: "Ask 3*5" },
+      { id: "test-grok-web-signed-in-sidebar", name: "Toggle sidebar" },
+    ],
+  );
+  assert.deepEqual(report.coveredOriginalIds, []);
+  assert.equal(report.unboundOriginalIds.includes(21), true);
+  assert.equal(report.unboundOriginalIds.includes(34), true);
+  assert.equal(report.unboundOriginalIds.includes(38), true);
+  assert.equal(report.unboundOriginalIds.includes(39), true);
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 21 && row.testId === "test-grok-web-signed-in-open-conversation",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 21 && row.testId === "test-grok-web-signed-in-older-chat",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 38 && row.testId === "test-grok-web-signed-in-search",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 38 && row.testId === "test-grok-android-search",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 34 && row.testId === "test-grok-web-signed-in-history-collapse",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 34 && row.testId === "test-grok-web-signed-in-sidebar",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 39 && row.testId === "test-grok-web-signed-in-delete",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 21 && row.testId === "test-grok-web-signed-in-3x5",
+    ),
+    true,
+  );
+  assert.equal(coverByFindingSimilarlyNamedTest(historySearch, []), false);
+  assert.equal(coverByRc23DestEnd({ id: 21 }, "sidebar"), false);
+  assert.equal(coverByRc23DestEnd({ id: 34 }, "sidebar"), false);
+  assert.equal(coverByRc23DestEnd({ id: 38 }, "sidebar"), false);
+  assert.equal(coverByRc23DestEnd({ id: 39 }, "settings"), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 21,
+      evidencePacket: "transition",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 34,
+      evidencePacket: "view",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 34, evidencePacket: "view" }), false);
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 38, evidencePacket: "transition" }), false);
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 21,
+      family: WORKBOOK_HISTORY_FAMILY_ID,
+      evidencePacket: "transition",
+    }),
+    "stateful-survival",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 34,
+      family: WORKBOOK_HISTORY_FAMILY_ID,
+      evidencePacket: "view",
+    }),
+    "fast-ui",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 38,
+      family: WORKBOOK_HISTORY_FAMILY_ID,
+      evidencePacket: "transition",
+    }),
+    "fast-ui",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 39,
+      family: WORKBOOK_HISTORY_FAMILY_ID,
+      evidencePacket: "persistence",
+    }),
+    "stateful-survival",
   );
 });
