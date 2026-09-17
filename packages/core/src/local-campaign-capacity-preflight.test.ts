@@ -321,7 +321,7 @@ test("treats a browser target as available without a ListedDevice row", () => {
   assert.match(preflight.targets[0]?.workerId ?? "", /local:browser:target:grok-web/);
 });
 
-test("three grok-com fixture lanes quote one-wave duration within 20% of the live 3-account pack", () => {
+test("three independent browser fixture slots overlap in one wave (scheduler math, not SuperGrok)", () => {
   const longPoleCellMs = 14_868;
   const measuredPackMs = 14_869;
   const preflight = preflightLocalCampaignCapacity({

@@ -22,13 +22,65 @@ function browserAccountLaneId(target: CombineProfileTargetInput): string | undef
   return browserAccountSchedulingKey(targetId, fixture);
 }
 
+/** Distinct signed-in fixtures asked for on a Plan. Unsigned / auth Lanes are not members. */
+export function requestedFixtureReferences(
+  profileTargets: readonly CombineProfileTargetInput[],
+): string[] {
+  const refs = new Set<string>();
+  for (const target of profileTargets) {
+    if (target.account?.kind !== "fixture") continue;
+    const reference =
+      target.account.reference?.trim() ||
+      `authfx:${target.account.accountId}:${target.account.accountRevision}`;
+    if (reference) refs.add(reference);
+  }
+  return [...refs];
+}
+
+function liveRequestedFixtureReferences(
+  requested: readonly string[],
+  liveFixtureReferences: readonly string[] | undefined,
+): string[] {
+  const live = new Set((liveFixtureReferences ?? []).map((ref) => ref.trim()).filter(Boolean));
+  return requested.filter((ref) => live.has(ref));
+}
+
+/**
+ * Concurrent SuperGrok duration stays blocked unless every requested fixture
+ * is live. One SuperGrok fixture cannot produce a 3-account SuperGrok quote.
+ * Distinct unsigned / auth Lanes are isolation, not SuperGrok members.
+ */
+export function quoteSuperGrokAccountPackDuration(input: {
+  checks: number;
+  profileTargets: readonly CombineProfileTargetInput[];
+  observed?: AppMapCombineObservedDuration;
+  liveFixtureReferences: readonly string[];
+}): BrowserAccountPackQuote | undefined {
+  const requested = requestedFixtureReferences(input.profileTargets);
+  if (requested.length < 2) return undefined;
+  const liveRequested = liveRequestedFixtureReferences(requested, input.liveFixtureReferences);
+  if (liveRequested.length < requested.length) return undefined;
+  return quoteBrowserAccountPackDuration({
+    checks: input.checks,
+    profileTargets: input.profileTargets,
+    observed: input.observed,
+    liveFixtureReferences: input.liveFixtureReferences,
+  });
+}
+
 export function quoteBrowserAccountPackDuration(input: {
   checks: number;
   profileTargets: readonly CombineProfileTargetInput[];
   observed?: AppMapCombineObservedDuration;
+  liveFixtureReferences?: readonly string[];
 }): BrowserAccountPackQuote | undefined {
   if (!input.observed || input.checks <= 0 || !input.profileTargets.length) return undefined;
   if (input.observed.workItemCount <= 0 || input.observed.durationMs <= 0) return undefined;
+  const requested = requestedFixtureReferences(input.profileTargets);
+  if (requested.length >= 2) {
+    const liveRequested = liveRequestedFixtureReferences(requested, input.liveFixtureReferences);
+    if (liveRequested.length < requested.length) return undefined;
+  }
   if (input.profileTargets.some((target) => !browserAccountLaneId(target))) return undefined;
   const lanes = [
     ...new Set(

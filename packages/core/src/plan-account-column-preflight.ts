@@ -1,5 +1,8 @@
 import type { AppMapCombinePreflightIssue, CombineProfileTargetInput } from "@relay/protocol";
-import { collectBrowserTargetAccountHealth } from "./browser-account-health-summary.js";
+import {
+  browserAuthenticationFixtureIsLive,
+  collectBrowserTargetAccountHealth,
+} from "./browser-account-health-summary.js";
 import { listDevices } from "./workspace-devices.js";
 
 function issue(
@@ -67,12 +70,11 @@ export function preflightRequestedPlanColumns(input: {
   return blockers;
 }
 
-/** Workspace facts for column preflight. Does not probe fixtures or load launchd. */
-export async function preflightRequestedPlanColumnsAgainstWorkspace(input: {
+/** Remembered live sign-ins. Unsigned / auth Lanes are not SuperGrok members. */
+export async function collectLiveFixtureReferences(input: {
   projectId: string;
   profileTargets: readonly CombineProfileTargetInput[];
-}): Promise<AppMapCombinePreflightIssue[]> {
-  if (!input.profileTargets.length) return [];
+}): Promise<string[]> {
   const browserTargetIds = [
     ...new Set(
       input.profileTargets
@@ -80,18 +82,33 @@ export async function preflightRequestedPlanColumnsAgainstWorkspace(input: {
         .filter((value): value is string => Boolean(value)),
     ),
   ];
-  let liveFixtureCount = 0;
+  const refs = new Set<string>();
   for (const targetId of browserTargetIds) {
     try {
       const collected = await collectBrowserTargetAccountHealth({
         projectId: input.projectId,
         targetId,
       });
-      liveFixtureCount += collected.summary.liveCount;
+      for (const fixture of collected.fixtures) {
+        if (browserAuthenticationFixtureIsLive(fixture) && fixture.reference.trim()) {
+          refs.add(fixture.reference.trim());
+        }
+      }
     } catch {
       // Remembered health unavailable is zero live fixtures, never a silent N-account pass.
     }
   }
+  return [...refs];
+}
+
+/** Workspace facts for column preflight. Does not probe fixtures or load launchd. */
+export async function preflightRequestedPlanColumnsAgainstWorkspace(input: {
+  projectId: string;
+  profileTargets: readonly CombineProfileTargetInput[];
+}): Promise<AppMapCombinePreflightIssue[]> {
+  if (!input.profileTargets.length) return [];
+  const liveFixtureReferences = await collectLiveFixtureReferences(input);
+  const liveFixtureCount = liveFixtureReferences.length;
   const needsDevices = input.profileTargets.some((target) => deviceColumn(target));
   const connectedSerials = needsDevices
     ? (await listDevices().catch(() => [])).map((device) => device.serial)

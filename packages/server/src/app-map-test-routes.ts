@@ -15,6 +15,7 @@ import {
   preflightAppMapCombine,
   quoteObservedCombinePackDuration,
   quoteBrowserAccountPackDuration,
+  collectLiveFixtureReferences,
   preflightRequestedPlanColumnsAgainstWorkspace,
   proposalConflictsSince,
   scenarioTestEditEntityKeys,
@@ -360,10 +361,15 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
       });
       if (observed) preflight.observedDuration = observed;
     }
+    const liveFixtureReferences = await collectLiveFixtureReferences({
+      projectId: scope.projectId,
+      profileTargets: body.profileTargets ?? [],
+    });
     const accountCapacity = quoteBrowserAccountPackDuration({
       checks: preflight.checks,
       profileTargets: body.profileTargets ?? [],
       observed: preflight.observedDuration,
+      liveFixtureReferences,
     });
     const columnBlockers = await preflightRequestedPlanColumnsAgainstWorkspace({
       projectId: scope.projectId,
