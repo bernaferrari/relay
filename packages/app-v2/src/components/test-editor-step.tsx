@@ -327,7 +327,6 @@ export function SelectedStepEditor({
           </Alert>
         ) : (
           <Button
-            variant="ghost"
             type="button"
             variant="destructive"
             disabled={busy}

@@ -335,7 +335,6 @@ export function EnvironmentPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-
                             onClick={() => {
                               revokeAccount.reset();
                               setRevokeFixture(fixture);

@@ -66,7 +66,6 @@ export function BatchReviewWorkspace({
             {(["queue", "matrix", "groups"] as const).map((item) => (
               <Button
                 key={item}
-                variant="ghost"
                 size="sm"
                 aria-pressed={view === item}
                 variant={view === item ? "secondary" : "ghost"}

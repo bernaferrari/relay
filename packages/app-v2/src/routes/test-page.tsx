@@ -394,7 +394,6 @@ export function TestPage() {
               aria-label="Evidence source"
             >
               <Button
-                variant="ghost"
                 size="sm"
                 aria-pressed={showRecording}
                 variant={showRecording ? "secondary" : "ghost"}
@@ -403,7 +402,6 @@ export function TestPage() {
                 Test definition
               </Button>
               <Button
-                variant="ghost"
                 size="sm"
                 aria-pressed={!showRecording}
                 disabled={!attachedRunId}

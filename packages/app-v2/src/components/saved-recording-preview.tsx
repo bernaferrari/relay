@@ -42,7 +42,6 @@ export function SavedRecordingPreview({
             <Button
               key={`${item.evidenceId}:${index}`}
               size="sm"
-              variant="ghost"
               aria-pressed={selected === index}
               variant={selected === index ? "secondary" : "ghost"}
               onClick={() => setSelected(index)}

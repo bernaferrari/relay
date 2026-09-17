@@ -260,7 +260,6 @@ function FindingReviewCard({
           </Button>
           <Button
             size="sm"
-            variant="outline"
             className="min-h-11"
             variant={decision === "reject" ? "secondary" : "outline"}
             aria-pressed={decision === "reject"}

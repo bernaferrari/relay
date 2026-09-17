@@ -15,6 +15,7 @@ import { compileAppMapTest } from "./map-work.js";
 import { reviewChecklistRows } from "./combine-evidence-review-checklist.js";
 import {
   coverageOutcomesFromArtifacts,
+  destLeftoverSkip,
   inspectSetupSkip,
   leftoverSkipForbidden,
 } from "./coverage-step-outcome.js";
@@ -129,12 +130,20 @@ function leftoverControl(identifier: string, label: string, y: number) {
   };
 }
 
-function leftoverNodes() {
+function leftoverOriginHomeNodes() {
   return [
     { role: "application", enabled: true, rect: { x: 0, y: 0, width: 1080, height: 2340 } },
     leftoverControl("sidebar-search", "Search", 80),
     leftoverControl("composer", "Composer", 150),
     leftoverControl("sidebar.settings", "Settings", 220),
+    leftoverControl("model-select-trigger", "Fast", 300),
+    leftoverControl("toggle-sidebar", "Toggle Sidebar", 40),
+  ];
+}
+
+function leftoverNodes() {
+  return [
+    ...leftoverOriginHomeNodes(),
     leftoverControl("settings.account", "Account", 290),
     {
       role: "button",
@@ -143,10 +152,26 @@ function leftoverNodes() {
       hittable: true,
       rect: { x: 40, y: 360, width: 280, height: 56 },
     },
+    leftoverControl("automations", "Automations", 196),
+    leftoverControl("heavy", "Heavy", 420),
+    {
+      role: "text",
+      label: "This chat won't appear in your history and will not be used to train models.",
+      enabled: true,
+      hittable: false,
+      rect: { x: 40, y: 500, width: 400, height: 24 },
+    },
   ];
 }
 
-function leftoverDevice(presses: string[]): Device {
+function leftoverOriginHomeDevice(presses: string[]): Device {
+  return leftoverDevice(presses, leftoverOriginHomeNodes());
+}
+
+function leftoverDevice(
+  presses: string[],
+  nodes: ReturnType<typeof leftoverNodes> = leftoverNodes(),
+): Device {
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
     "base64",
@@ -171,7 +196,7 @@ function leftoverDevice(presses: string[]): Device {
     },
     command: { wait: () => Promise.resolve({}), back: () => Promise.resolve({}) },
     capture: {
-      snapshot: () => Promise.resolve({ nodes: leftoverNodes() }),
+      snapshot: () => Promise.resolve({ nodes }),
       screenshot: async () => ({
         capturedAt: Date.now(),
         mime: "image/png",

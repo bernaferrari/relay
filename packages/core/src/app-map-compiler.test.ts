@@ -1003,14 +1003,121 @@ test("dest-end leftover skip is inspect-only and cannot prove a required Setting
   ];
   const plan = compileAppMapConnection(map, "open-home");
   const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  const destWhen = { target: { identifier: "settings.account" }, condition: "absent" as const };
   assert.deepEqual(
     steps.map((step) => step.kind),
     ["wait-for", "tap", "wait-for"],
   );
-  assert.equal(steps[0]?.when, undefined);
-  assert.equal(steps[1]?.when, undefined);
+  assert.deepEqual(steps[0]?.when, destWhen);
+  assert.deepEqual(steps[1]?.when, destWhen);
   assert.equal(steps[1]?.coverage, "transition");
+  assert.equal(steps[1]?.leftoverSkip, "dest");
   assert.equal(steps[2]?.when, undefined);
+  assert.equal(steps[2]?.leftoverSkip, undefined);
+});
+
+test("test-action dest leftover skip gates Toggle Sidebar on Automations dest chrome", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.coverage = "transition";
+  map.connections["open-home"]!.actions = [
+    {
+      id: "toggle-sidebar",
+      kind: "steps",
+      coverage: "transition",
+      steps: [
+        { kind: "wait-for", target: { identifier: "sidebar-header-search" }, timeoutMs: 30_000 },
+        { kind: "wait-for", target: { identifier: "sidebar-header-search" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { label: "Toggle Sidebar" }, coverage: "transition" },
+        {
+          kind: "expect",
+          target: { identifier: "sidebar-header-search" },
+          condition: "gone",
+          timeoutMs: 5_000,
+        },
+        { kind: "tap", target: { label: "Toggle Sidebar" }, coverage: "transition" },
+        { kind: "wait-for", target: { identifier: "sidebar-header-search" }, timeoutMs: 8_000 },
+        { kind: "wait-for", target: { label: "Automations" }, timeoutMs: 8_000 },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  const destWhen = { target: { label: "Automations" }, condition: "absent" as const };
+  assert.deepEqual(
+    steps.map((step) => step.kind),
+    ["wait-for", "wait-for", "tap", "expect", "tap", "wait-for", "wait-for"],
+  );
+  for (const step of steps.slice(0, 6)) {
+    assert.deepEqual(step?.when, destWhen);
+    if (step?.kind === "tap") {
+      assert.equal(step.leftoverSkip, "dest");
+      assert.equal(step.coverage, "transition");
+    }
+  }
+  assert.equal(steps[6]?.when, undefined);
+});
+
+test("test-action dest leftover skip uses last dest chrome so leftover Fast does not skip models", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.coverage = "transition";
+  map.connections["open-home"]!.actions = [
+    {
+      id: "open-models",
+      kind: "steps",
+      coverage: "transition",
+      steps: [
+        { kind: "wait-for", target: { identifier: "sidebar-header-search" }, timeoutMs: 30_000 },
+        { kind: "tap", target: { identifier: "model-select-trigger" }, coverage: "transition" },
+        { kind: "wait-for", target: { label: "Fast" }, timeoutMs: 8_000 },
+        { kind: "wait-for", target: { label: "Auto" }, timeoutMs: 8_000 },
+        { kind: "wait-for", target: { label: "Expert" }, timeoutMs: 8_000 },
+        { kind: "wait-for", target: { label: "Heavy" }, timeoutMs: 8_000 },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  const destWhen = { target: { label: "Heavy" }, condition: "absent" as const };
+  assert.deepEqual(steps[0]?.when, destWhen);
+  assert.deepEqual(steps[1]?.when, destWhen);
+  assert.equal(steps[1]?.leftoverSkip, "dest");
+  assert.deepEqual(steps[2]?.when, destWhen);
+  assert.deepEqual(steps[3]?.when, destWhen);
+  assert.deepEqual(steps[4]?.when, destWhen);
+  assert.equal(steps[5]?.when, undefined);
+});
+
+test("test-action dest leftover skip does not treat leftover Close/Back home as dest", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.coverage = "transition";
+  map.connections["open-home"]!.actions = [
+    {
+      id: "open-sheet",
+      kind: "steps",
+      coverage: "transition",
+      steps: [
+        { kind: "wait-for", target: { identifier: "composer" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { identifier: "open-sheet" }, coverage: "transition" },
+        { kind: "wait-for", target: { label: "Upload a file" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { label: "Close" } },
+        { kind: "wait-for", target: { label: "What should we explore?" }, timeoutMs: 8_000 },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  const destWhen = { target: { label: "Upload a file" }, condition: "absent" as const };
+  assert.deepEqual(steps[0]?.when, destWhen);
+  assert.deepEqual(steps[1]?.when, destWhen);
+  assert.equal(steps[2]?.when, undefined);
+  assert.equal(steps[3]?.when, undefined);
+  assert.equal(steps[4]?.when, undefined);
 });
 
 test("omitted dest-end coverage is test-action and does not leftover-skip Settings", () => {
