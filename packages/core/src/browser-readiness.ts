@@ -6,9 +6,8 @@ const DEFAULT_STABLE_FOR_MS = 250;
 /** Next.js and similar shells paint skip-links before the app hydrates. */
 export function browserContentLooksHydrated(text: string): boolean {
   const compact = text.replace(/\s+/gu, " ").trim().toLocaleLowerCase();
-  if (compact.length < 40) return false;
   const withoutSkip = compact.replace(/skip to (?:main )?content/gu, "").trim();
-  return withoutSkip.length >= 24;
+  return withoutSkip.length > 0 && !/^(?:loading|please wait)[.…! ]*$/u.test(withoutSkip);
 }
 
 /** Wait for rendered content, not network idle: chat streams and analytics may

@@ -13,3 +13,11 @@ test("skip-link shells are not treated as hydrated browser content", () => {
     true,
   );
 });
+
+test("short rendered pages are valid without an arbitrary copy length requirement", () => {
+  assert.equal(browserContentLooksHydrated("Sign in"), true);
+  assert.equal(browserContentLooksHydrated("fixture"), true);
+  assert.equal(browserContentLooksHydrated("Skip to content\nSettings"), true);
+  assert.equal(browserContentLooksHydrated("Loading…"), false);
+  assert.equal(browserContentLooksHydrated("Skip to main content\nPlease wait..."), false);
+});

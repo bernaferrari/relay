@@ -140,50 +140,55 @@ async function createSession(
             projectId: options.projectId,
           });
   }
-  const context = contextHandle.context;
-  const page = context.pages()[0] ?? (await context.newPage());
-  const session: BrowserSession = {
-    sessionId: crypto.randomUUID(),
-    context,
-    close: contextHandle.close,
-    page,
-    targetId,
-    purpose: options.mode,
-    profile: contextHandle.profile,
-    headless: options.headless ?? target.browser.headless ?? false,
-    recordVideo,
-    ...(recordingUnavailable ? { recordingUnavailable } : {}),
-    console: [],
-    network: [],
-    networkByRequest: new WeakMap(),
-    networkInclude: "summary",
-    networkPending: new Set(),
-    crashes: [],
-    pageErrors: [],
-    pageErrorsDropped: 0,
-    crashCapture: false,
-    consoleDropped: 0,
-    networkDropped: 0,
-    mutationVersion: 0,
-    traceStarted: false,
-    ...(options.unsignedLaneId ? { unsignedLaneId: options.unsignedLaneId } : {}),
-  };
-  context.on("page", (next) => attachBrowserEvidence(session, next));
-  if (options.mode === "proof") {
-    try {
-      await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
-      session.traceStarted = true;
-    } catch {
-      // Tracing is optional; other evidence channels remain useful.
+  try {
+    const context = contextHandle.context;
+    const page = context.pages()[0] ?? (await context.newPage());
+    const session: BrowserSession = {
+      sessionId: crypto.randomUUID(),
+      context,
+      close: contextHandle.close,
+      page,
+      targetId,
+      purpose: options.mode,
+      profile: contextHandle.profile,
+      headless: options.headless ?? target.browser.headless ?? false,
+      recordVideo,
+      ...(recordingUnavailable ? { recordingUnavailable } : {}),
+      console: [],
+      network: [],
+      networkByRequest: new WeakMap(),
+      networkInclude: "summary",
+      networkPending: new Set(),
+      crashes: [],
+      pageErrors: [],
+      pageErrorsDropped: 0,
+      crashCapture: false,
+      consoleDropped: 0,
+      networkDropped: 0,
+      mutationVersion: 0,
+      traceStarted: false,
+      ...(options.unsignedLaneId ? { unsignedLaneId: options.unsignedLaneId } : {}),
+    };
+    context.on("page", (next) => attachBrowserEvidence(session, next));
+    if (options.mode === "proof") {
+      try {
+        await context.tracing.start({ screenshots: true, snapshots: true, sources: false });
+        session.traceStarted = true;
+      } catch {
+        // Tracing is optional; other evidence channels remain useful.
+      }
     }
+    attachBrowserEvidence(session, page);
+    await installBrowserConsentOverlayHandler(page);
+    if (page.url() === "about:blank") {
+      await page.goto(target.browser.startUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+      await waitForBrowserContent(page);
+    }
+    return session;
+  } catch (error) {
+    await contextHandle.close().catch(() => undefined);
+    throw error;
   }
-  attachBrowserEvidence(session, page);
-  await installBrowserConsentOverlayHandler(page);
-  if (page.url() === "about:blank") {
-    await page.goto(target.browser.startUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
-    await waitForBrowserContent(page);
-  }
-  return session;
 }
 
 export { performBrowserFind } from "./browser-target-locator.js";
