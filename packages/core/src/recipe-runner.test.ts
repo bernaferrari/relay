@@ -3156,6 +3156,61 @@ describe("runRecipeStep conditional policy", () => {
     assert.equal(job.artifacts[0]?.kind, "conditional-step-skipped");
   });
 
+  it("skips a present-condition leftover tap when the accessibility tree is unreadable", async () => {
+    const logs: string[] = [];
+    const job = { artifacts: [] } as unknown as TestJob;
+    let pressed = false;
+    const device = stubDevice({
+      find: () => Promise.reject(new Error("find could not read the current accessibility tree")),
+      press: () => {
+        pressed = true;
+        return Promise.resolve();
+      },
+    });
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: { label: "grok-arrows-right" },
+        when: { target: { label: "grok-arrows-right" }, condition: "present" },
+      },
+      { log: (line) => logs.push(line), job },
+    );
+
+    assert.equal(pressed, false);
+    assert.match(logs[0] ?? "", /leftover opener unproven/);
+    assert.equal(job.artifacts[0]?.kind, "conditional-step-skipped");
+    assert.equal((job.artifacts[0]?.data as { observed?: string }).observed, "unreadable");
+  });
+
+  it("does not treat an unreadable tree as absent for a dest opener", async () => {
+    let pressed = false;
+    const device = stubDevice({
+      find: () => Promise.reject(new Error("find could not read the current accessibility tree")),
+      press: () => {
+        pressed = true;
+        return Promise.resolve();
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        runRecipeStep(
+          device,
+          {
+            kind: "tap",
+            coverage: "inspect",
+            target: { identifier: "ask.toolbar.add.button" },
+            when: { target: { identifier: "ask.toolbar.add.menu.camera" }, condition: "absent" },
+          },
+          noLog,
+        ),
+      /could not read the current accessibility tree/,
+    );
+    assert.equal(pressed, false);
+  });
+
   it("runs a step when its absent condition is true", async () => {
     let pressed = false;
     const device = stubDevice({

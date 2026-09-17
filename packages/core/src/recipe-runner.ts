@@ -6,6 +6,7 @@ import {
   clipboardExpectationError,
   conditionalTargetPresent,
   isCancel,
+  isAccessibilityTreeUnreadable,
   isNotFoundOrTimeout,
   readInput,
   resolvePointForDevice,
@@ -838,7 +839,30 @@ export async function runRecipeStep(
   ctx.runtime ??= {};
   if (step.when) {
     invalidateVerifiedScreen(ctx);
-    const present = await conditionalTargetPresent(device, step.when);
+    let present: boolean;
+    try {
+      present = await conditionalTargetPresent(device, step.when);
+    } catch (error) {
+      rethrowIosMutationOutcomeUnknown(error);
+      if (isCancel(error)) throw error;
+      if (step.when.condition === "present" && isAccessibilityTreeUnreadable(error)) {
+        const message = error instanceof Error ? error.message : String(error);
+        ctx.log(`conditional ${step.kind}: skipped — leftover opener unproven (${message})`);
+        ctx.job?.artifacts.push({
+          kind: "conditional-step-skipped",
+          capturedAt: now(),
+          data: {
+            stepId: step.id,
+            stepKind: step.kind,
+            condition: step.when.condition,
+            target: step.when.target,
+            observed: "unreadable",
+          },
+        });
+        return;
+      }
+      throw error;
+    }
     const shouldRun = step.when.condition === "present" ? present : !present;
     if (!shouldRun && leftoverSkipForbidden(step)) {
       // Coverage:transition leftover skip cannot prove the required opener.

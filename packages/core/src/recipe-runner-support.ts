@@ -672,6 +672,12 @@ function isNotFoundOrTimeout(err: unknown): boolean {
   return /\bno match\b|did not match|not found|timed out|timeout|pixels unchanged/i.test(msg);
 }
 
+/** XCTest/session cannot answer presence. Not "No match" and not dest-gone. */
+function isAccessibilityTreeUnreadable(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /could not read the current accessibility tree/i.test(msg);
+}
+
 /**
  * True if the target's identifier/ref/label/text strategy currently resolves. Unlike the
  * `exists` helper (which swallows every non-cancel error as `false`),
@@ -772,6 +778,7 @@ export {
   clipboardExpectationError,
   conditionalTargetPresent,
   isCancel,
+  isAccessibilityTreeUnreadable,
   isNotFoundOrTimeout,
   expectedScreenFingerprints,
   reobserveScreenIdentities,
