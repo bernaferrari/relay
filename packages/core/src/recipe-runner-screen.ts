@@ -12,6 +12,7 @@ import {
   type CaptureReviewPlannedSlot,
   type CaptureReviewSlotIdentity,
 } from "@relay/protocol";
+import { extractProbedAccountIdentity } from "./browser-auth-health.js";
 import type { Device } from "./device.js";
 import { pressKey, pressLabel, scrollUp, sleep, snapshot, type SnapshotNode } from "./device.js";
 import { now } from "./events.js";
@@ -120,9 +121,30 @@ function combineCellChildLaneId(
   return undefined;
 }
 
+function snapshotNodeIdentityLabels(nodes: readonly SnapshotNode[] | undefined): string[] {
+  if (!nodes?.length) return [];
+  const labels: string[] = [];
+  for (const node of nodes) {
+    for (const value of [node.label, node.content, node.value, node.identifier]) {
+      const text = value?.replace(/\s+/gu, " ").trim();
+      if (text) labels.push(text);
+    }
+  }
+  return labels;
+}
+
+function liveCaptureReviewIdentityFromNodes(
+  nodes: readonly SnapshotNode[] | undefined,
+): string | undefined {
+  const labels = snapshotNodeIdentityLabels(nodes);
+  if (labels.length === 0) return undefined;
+  return extractProbedAccountIdentity({ title: "", bodyText: labels.join("\n"), labels });
+}
+
 function captureReviewConfigurationFromJob(
   job: RecipeStepContext["job"],
   artifacts?: RecipeStepContext["artifacts"],
+  nodes?: readonly SnapshotNode[],
 ): {
   configuration?: CaptureReviewConfiguration;
   observed?: CaptureReviewObservedSession;
@@ -133,9 +155,10 @@ function captureReviewConfigurationFromJob(
     laneId:
       job.laneId || combineCellChildLaneId(job.artifacts) || combineCellChildLaneId(artifacts),
     unsignedLaneId: job.unsignedLaneId,
+    targetKind: job.targetKind,
     targetProfileId: job.targetProfile?.id,
     authenticationFixtureId: job.browserCaseProfile?.authenticationFixtureId,
-    liveIdentity: job.authenticationHealth?.identity,
+    liveIdentity: job.authenticationHealth?.identity || liveCaptureReviewIdentityFromNodes(nodes),
     resolvedAccount: job.resolvedInputs?.account?.trim() || job.resolvedInputs?.Account?.trim(),
     fixtureHealthStatus: job.authenticationHealth?.status,
     fixtureSignedIn: job.authenticationHealth?.signedIn,
@@ -319,7 +342,11 @@ export async function captureRecipeScreenshot(
     const imageSha256 = createHash("sha256")
       .update(Buffer.from(capture.value.base64, "base64"))
       .digest("hex");
-    const { configuration, observed } = captureReviewConfigurationFromJob(ctx.job, ctx.artifacts);
+    const { configuration, observed } = captureReviewConfigurationFromJob(
+      ctx.job,
+      ctx.artifacts,
+      nodes,
+    );
     const checkpointId = options.review.checkpointId ?? options.stepId;
     const cursor = ctx.captureReview;
     const family = checkpointId

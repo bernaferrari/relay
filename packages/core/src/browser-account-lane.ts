@@ -13,7 +13,10 @@ export function unsignedBrowserLaneId(input: {
   laneId?: string;
   authenticationFixtureId?: string;
   accountKind?: string;
+  /** Device Lanes are not signed-out grok.com scheduler identities. */
+  targetKind?: string;
 }): string | undefined {
+  if (input.targetKind !== undefined && input.targetKind !== "browser") return undefined;
   if (input.authenticationFixtureId?.trim()) return undefined;
   if (input.accountKind === "fixture") return undefined;
   const laneId = input.laneId?.trim();

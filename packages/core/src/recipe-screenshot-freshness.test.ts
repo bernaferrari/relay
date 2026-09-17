@@ -259,6 +259,53 @@ test("capture-review stamps live page identity, not SuperGrok or the fixture id"
   assert.equal(review.observed?.laneId, "grok-lab");
 });
 
+test("iOS leftover capture-review stamps BF identity, not signed-out grok-ios-daily", async () => {
+  const device = { command: { wait: async () => ({}) } } as unknown as Device;
+  const artifacts: { kind: string; capturedAt: number; data: unknown }[] = [];
+  await runWithTargetContext(
+    { kind: "device", platform: "ios", serial: "db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5" },
+    () =>
+      captureRecipeScreenshot(
+        device,
+        "Home chrome",
+        {
+          artifacts,
+          log: () => {},
+          runtime: {
+            observation: {
+              observedAt: 1,
+              nodes: [
+                { role: "button", label: "BF" },
+                { role: "text", label: "Bernardo Ferrari" },
+                { role: "button", label: "Speak" },
+              ],
+            },
+          },
+          job: {
+            laneId: "grok-ios-daily",
+            unsignedLaneId: "grok-ios-daily",
+            targetKind: "device",
+            deviceName: "iPad Pro 10.5",
+            resolvedInputs: { account: "SuperGrok" },
+            targetProfile: { id: "device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5" },
+          } as never,
+        },
+        { captureScreenshot: async () => ({ ...frame("ipad"), framePath: "frames/ipad.png" }) },
+        { review: { mode: "later", checkpointId: "home-chrome" } },
+      ),
+  );
+  const review = artifacts.find((item) => item.kind === "capture-review")?.data as {
+    configuration?: { account?: string; app?: string };
+    observed?: { laneId?: string };
+  };
+  assert.equal(review.configuration?.account, "Bernardo Ferrari");
+  assert.notEqual(review.configuration?.account, "signed-out");
+  assert.notEqual(review.configuration?.account, "SuperGrok");
+  assert.notEqual(review.configuration?.account, "grok-ios-daily");
+  assert.equal(review.observed?.laneId, "grok-ios-daily");
+  assert.equal(review.configuration?.app, "iPad Pro 10.5");
+});
+
 test("expired fixture capture-review is blocked, not SuperGrok", async () => {
   const device = { command: { wait: async () => ({}) } } as unknown as Device;
   const artifacts: { kind: string; capturedAt: number; data: unknown }[] = [];

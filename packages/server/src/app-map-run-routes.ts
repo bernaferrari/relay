@@ -578,6 +578,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
       laneId: body.laneId,
       authenticationFixtureId: targetProfile?.browserCaseProfile?.authenticationFixtureId,
       accountKind: body.account?.kind,
+      targetKind: executionTarget.kind,
     });
     const laneId = invokedBrowserLaneId({
       laneId: body.laneId,

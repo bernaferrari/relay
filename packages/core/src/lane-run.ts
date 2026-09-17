@@ -168,6 +168,7 @@ export async function applyLaneToInteract(input: {
     laneId: execution.laneId,
     authenticationFixtureId,
     accountKind: execution.account?.kind,
+    targetKind: execution.target.kind,
   });
   return {
     serial,

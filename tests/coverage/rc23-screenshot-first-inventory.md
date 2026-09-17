@@ -275,6 +275,7 @@ Capture-review on disk is **fast** · `settled:false` · `samples:1` · `status:
 - OPENROUTER unset. grok-com `authenticationFixtureId` stays empty.
 - Electron `persist:lane:grok-lab` still absent. P0.1 Playwright dest-end 3-pass is lane identity, not Electron. N-account health + concurrent grok-lab/grok-daily/grok-auth-email snapshots are isolation evidence, not Electron and not a freeze cell. Do not relabel grok-daily as SuperGrok.
 - Live leftover grok-lab `b2dcd768…` still has Introducing Build Mode (did not Dismiss). Health `7189423f` was ready without a page account name while AX showed `BF` / `Bernardo Ferrari`; probe+capture-review now use that live identity, not SuperGrok. Operator MCP health 502 on extra Electron keys is stripped, not a fixture pass.
+- iOS dest-end `account:signed-out` was Lane `unsignedLaneId=grok-ios-daily` (browser signed-out scheduler identity on a device Lane). New jobs omit that field; capture-review leftover BF / person identity wins over SuperGrok. Historical captured jobs are unchanged. Did not recapture dest-ends this session. iPad leftover still Home Speak unique `511ae65c…` with keyboard up.
 - 19z5 stays open.
 
 ### 2026-09-17 dest-phase recapture alignment (do not close 19z5; no Looks-correct; no visual accept)

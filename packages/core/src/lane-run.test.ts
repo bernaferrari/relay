@@ -130,6 +130,37 @@ test("--lane interact resolves serial and fixture without a client overlay", asy
   });
 });
 
+test("iOS device Lane interact keeps laneId and omits unsigned signed-out identity", async () => {
+  await withStateRoot(async () => {
+    await createAppMap({
+      organizationId: "local",
+      projectId: "default",
+      appMapId: "grok-ios",
+      name: "Grok iOS",
+    });
+    await saveLane({
+      projectId: "default",
+      id: "grok-ios-daily",
+      appMapId: "grok-ios",
+      target: {
+        kind: "device",
+        serial: "db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+        platform: "ios",
+      },
+      targetProfileId: "device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+      actorId: "agent:cursor",
+    });
+    const resolved = await applyLaneToInteract({
+      projectId: "default",
+      laneId: "grok-ios-daily",
+    });
+    assert.equal(resolved.serial, "db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5");
+    assert.equal(resolved.laneId, "grok-ios-daily");
+    assert.equal(resolved.unsignedLaneId, undefined);
+    assert.equal(resolved.authenticationFixtureId, undefined);
+  });
+});
+
 test("seed helper writes grok-daily, grok-auth, and grok-lab without touching grok-com fixture", async () => {
   await withStateRoot(async () => {
     await createAppMap({

@@ -93,10 +93,13 @@ export function liveCaptureReviewAccount(value?: string): string | undefined {
 }
 
 /** Account on the pixels, not a Lane-name overlay. Fixture identity wins;
- * unsigned/signed-out stays signed-out even when the Lane is named grok-lab. */
+ * unsigned/signed-out stays signed-out even when the Lane is named grok-lab.
+ * Device Lanes are not signed-out grok.com identities; leftover BF / person
+ * names win over SuperGrok and grok-ios-daily. */
 export function observedCaptureReviewAccount(input: {
   laneId?: string;
   unsignedLaneId?: string;
+  targetKind?: string;
   targetProfileId?: string;
   authenticationFixtureId?: string;
   fixtureName?: string;
@@ -111,6 +114,7 @@ export function observedCaptureReviewAccount(input: {
   const unsignedLaneId = input.unsignedLaneId?.trim() || undefined;
   const profileId = input.targetProfileId?.trim() || undefined;
   const fixture = input.authenticationFixtureId?.trim() || undefined;
+  const live = liveCaptureReviewAccount(input.liveIdentity);
   const observed: CaptureReviewObservedSession = {
     ...(laneId ? { laneId } : {}),
     ...(profileId ? { profileId } : {}),
@@ -120,17 +124,16 @@ export function observedCaptureReviewAccount(input: {
       return { account: BLOCKED_CAPTURE_REVIEW_ACCOUNT, observed };
     }
     return {
-      account:
-        liveCaptureReviewAccount(input.liveIdentity) ||
-        liveCaptureReviewAccount(input.fixtureName) ||
-        fixture,
+      account: live || liveCaptureReviewAccount(input.fixtureName) || fixture,
       observed,
     };
   }
-  if (input.signedOut === true || unsignedLaneId) {
+  if (live) return { account: live, observed };
+  const browserUnsigned = Boolean(unsignedLaneId) && input.targetKind !== "device";
+  if (input.signedOut === true || browserUnsigned) {
     return { account: "signed-out", observed };
   }
-  const resolved = input.resolvedAccount?.trim() || undefined;
+  const resolved = liveCaptureReviewAccount(input.resolvedAccount);
   return { ...(resolved ? { account: resolved } : {}), observed };
 }
 

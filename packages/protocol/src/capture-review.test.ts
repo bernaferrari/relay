@@ -108,6 +108,35 @@ test("unsigned grok-daily cannot be labeled grok-lab SuperGrok by overlay", () =
   assert.equal(labeled.observed.profileId, "browser:grok-com");
 });
 
+test("iOS leftover unsignedLaneId is not signed-out; live BF identity wins over SuperGrok", () => {
+  const labeled = observedCaptureReviewAccount({
+    laneId: "grok-ios-daily",
+    unsignedLaneId: "grok-ios-daily",
+    targetKind: "device",
+    targetProfileId: "device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+    liveIdentity: "Bernardo Ferrari",
+    resolvedAccount: "SuperGrok",
+  });
+  assert.equal(labeled.account, "Bernardo Ferrari");
+  assert.notEqual(labeled.account, "signed-out");
+  assert.notEqual(labeled.account, "SuperGrok");
+  assert.notEqual(labeled.account, "grok-ios-daily");
+  assert.equal(labeled.observed.laneId, "grok-ios-daily");
+});
+
+test("iOS device Lane without live identity omits SuperGrok instead of signed-out", () => {
+  const labeled = observedCaptureReviewAccount({
+    laneId: "grok-ios-daily",
+    unsignedLaneId: "grok-ios-daily",
+    targetKind: "device",
+    resolvedAccount: "SuperGrok",
+  });
+  assert.equal(labeled.account, undefined);
+  assert.notEqual(labeled.account, "signed-out");
+  assert.notEqual(labeled.account, "SuperGrok");
+  assert.equal(labeled.observed.laneId, "grok-ios-daily");
+});
+
 test("live page identity wins over SuperGrok fixture name on capture-review", () => {
   const labeled = observedCaptureReviewAccount({
     laneId: "grok-lab",

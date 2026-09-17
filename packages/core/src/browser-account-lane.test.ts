@@ -52,6 +52,14 @@ test("unsigned Lanes are distinct scheduler identities without a fixture", () =>
     undefined,
   );
   assert.equal(unsignedBrowserLaneId({ laneId: "grok-lab", accountKind: "fixture" }), undefined);
+  assert.equal(
+    unsignedBrowserLaneId({ laneId: "grok-ios-daily", targetKind: "device" }),
+    undefined,
+  );
+  assert.equal(
+    unsignedBrowserLaneId({ laneId: "grok-daily", targetKind: "browser" }),
+    "grok-daily",
+  );
   assert.equal(invokedBrowserLaneId({ laneId: "grok-lab" }), "grok-lab");
   assert.equal(invokedBrowserLaneId({ unsignedLaneId: "grok-daily" }), "grok-daily");
   assert.equal(combineStartAdmissionLaneId({ laneId: "grok-daily" }), "grok-daily");

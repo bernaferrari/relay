@@ -438,4 +438,18 @@ test("session factory freezes browser environment identity across queue and retr
       ),
     /does not match its frozen target profile/u,
   );
+
+  const ipad = createSessionJob(
+    {
+      recipe: "ios-dest-end",
+      targetKind: "device",
+      platform: "ios",
+      serial: "db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+      laneId: "grok-ios-daily",
+    },
+    { findJob: () => undefined, toTransport: (value) => value },
+  );
+  assert.equal(ipad.laneId, "grok-ios-daily");
+  assert.equal(ipad.unsignedLaneId, undefined);
+  assert.equal(ipad.targetKind, "device");
 });

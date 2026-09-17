@@ -413,6 +413,7 @@ export function createSessionJob(
   const unsignedLaneId = unsignedBrowserLaneId({
     laneId: input.unsignedLaneId ?? parent?.unsignedLaneId ?? input.laneId ?? parent?.laneId,
     authenticationFixtureId: browserCaseProfile?.authenticationFixtureId,
+    targetKind,
   });
   const laneId = invokedBrowserLaneId({
     laneId: input.laneId ?? parent?.laneId,
