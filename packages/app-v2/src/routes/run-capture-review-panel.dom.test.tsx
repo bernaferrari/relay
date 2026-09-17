@@ -187,4 +187,66 @@ describe("CaptureReviewPanel selection", () => {
     expect(host.textContent).not.toContain("Use as baseline");
     expect(host.textContent).not.toContain("Approve new baseline");
   });
+
+  it("dest-end Gallery selected image is dest wait-for, not leftover Close last-frame", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    act(() =>
+      root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <CaptureReviewPanel
+            queue={{
+              items: [
+                {
+                  captureId: "frames/003.png::dest-wait",
+                  caption: "Observe",
+                  status: "pending",
+                  lookFor: "What should we explore?",
+                  framePath: "frames/003.png",
+                  imageSha256: "dest-wait",
+                  phase: "dest",
+                  policy: "fast",
+                },
+              ],
+              summary: {
+                captured: 1,
+                missing: 0,
+                pending: 1,
+                accepted: 0,
+                issue: 0,
+                needMoreEvidence: 0,
+              },
+            }}
+            frames={[
+              {
+                id: "frames/003.png",
+                title: "Observe",
+                media: { kind: "image", src: "/runs/dest-end-observe/frames/003.png" },
+              },
+              {
+                id: "frames/004.png",
+                title: "after · Run saved Test",
+                media: { kind: "image", src: "/runs/dest-end-observe/frames/004.png" },
+              },
+            ]}
+            selectedIndex={0}
+            onSelect={() => undefined}
+            onReview={vi.fn()}
+            onReviewMany={vi.fn()}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Gallery");
+    expect(host.querySelector('[aria-label="Selected screenshot"] img')?.getAttribute("src")).toBe(
+      "/runs/dest-end-observe/frames/003.png",
+    );
+    expect(
+      host.querySelector('[aria-label="Selected screenshot"] img')?.getAttribute("src"),
+    ).not.toBe("/runs/dest-end-observe/frames/004.png");
+    expect(host.textContent).toContain("Observe");
+    expect(host.textContent).not.toContain("Captured result");
+  });
 });

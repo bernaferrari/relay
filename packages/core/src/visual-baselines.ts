@@ -5,6 +5,7 @@ import { PNG } from "pngjs";
 import {
   VISUAL_COMPARISON_CODES,
   VISUAL_REVIEW_ACTIONS,
+  captureReviewIdentityFramePaths,
   type VisualBaseline,
   type VisualComparison,
   type VisualComparisonCode,
@@ -456,6 +457,16 @@ function pngDimensions(
   return { width, height };
 }
 
+/** Dest-phase identity rasters only. Leftover Close last-frame cannot fill dest.
+ * Unphased runs (Android dest-wait) keep every PNG. */
+function visualSnapshotSourceFrames(
+  run: Pick<PersistedRun, "frames" | "artifacts">,
+): PersistedRun["frames"] {
+  const destIdentity = new Set(captureReviewIdentityFramePaths(run.artifacts ?? []));
+  if (!destIdentity.size) return run.frames;
+  return run.frames.filter((frame) => destIdentity.has(frame.path));
+}
+
 async function snapshotRun(
   run: Pick<
     PersistedRun,
@@ -470,10 +481,12 @@ async function snapshotRun(
     | "writtenAt"
     | "frames"
     | "dir"
+    | "artifacts"
   >,
   artifactDirectory?: { absolute: string; relative: string },
 ): Promise<VisualRunSnapshot> {
-  if (run.frames.length === 0) {
+  const sourceFrames = visualSnapshotSourceFrames(run);
+  if (sourceFrames.length === 0) {
     throw new VisualVerificationError(
       "VISUAL_RUN_HAS_NO_FRAMES",
       `Run ${run.id} has no PNG frames to compare`,
@@ -482,7 +495,7 @@ async function snapshotRun(
   }
   if (artifactDirectory) await mkdir(artifactDirectory.absolute, { recursive: true });
   const frames: VisualFrameMetadata[] = [];
-  for (const [index, frame] of run.frames.entries()) {
+  for (const [index, frame] of sourceFrames.entries()) {
     const file = safeFrameName(frame.path, index);
     let bytes: Buffer;
     try {

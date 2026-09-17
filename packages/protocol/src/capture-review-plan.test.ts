@@ -247,6 +247,61 @@ test("Plan dest-phase slots keep dest pixels when leftover Close/Back is also re
   assert.equal(queue.summary.missing, 0);
 });
 
+test("Plan dest identity filters and Gallery skip leftover Close last-frame", () => {
+  const dest = {
+    captureId: "frames/003.png::dest-wait",
+    caption: "Observe",
+    status: "pending" as const,
+    framePath: "frames/003.png",
+    imageSha256: "dest-wait",
+    checkpointId: "home-chrome",
+    phase: CAPTURE_REVIEW_DEST_PHASE,
+    runId: "run-observe",
+  };
+  const leftoverClose = {
+    captureId: "frames/004.png::close-leftover",
+    caption: "Close",
+    status: "pending" as const,
+    framePath: "frames/004.png",
+    imageSha256: "close-leftover",
+    checkpointId: "home-chrome",
+    phase: CAPTURE_REVIEW_LEFTOVER_PHASE,
+    runId: "run-observe",
+  };
+  const queue = {
+    items: [dest, leftoverClose],
+    summary: {
+      planned: 1,
+      captured: 1,
+      blocked: 0,
+      missing: 0,
+      pending: 1,
+      accepted: 0,
+      issue: 0,
+      needMoreEvidence: 0,
+    },
+  };
+  assert.deepEqual(planCaptureReviewFilterOptions(queue.items), {
+    screens: ["Observe"],
+    devices: [],
+    accounts: [],
+  });
+  const visible = filterPlanCaptureReviewQueue(queue);
+  assert.equal(visible.items.length, 1);
+  assert.equal(visible.items[0]?.framePath, "frames/003.png");
+  assert.notEqual(visible.items[0]?.framePath, "frames/004.png");
+  const destScreen = filterPlanCaptureReviewQueue(queue, { screen: "home-chrome" });
+  assert.equal(destScreen.items.length, 1);
+  assert.equal(destScreen.items[0]?.phase, CAPTURE_REVIEW_DEST_PHASE);
+  assert.equal(destScreen.items[0]?.framePath, "frames/003.png");
+  assert.equal(
+    selectedPlanCaptureReviewItems(queue, [
+      { runId: "run-observe", captureId: leftoverClose.captureId },
+    ]).length,
+    0,
+  );
+});
+
 test("a missing Plan capture stays in the denominator and cannot be selected", () => {
   const queue = resolvePlanCaptureReviewQueue([
     capture("run-member", "frames/001.png", "aaa"),

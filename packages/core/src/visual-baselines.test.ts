@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { PNG } from "pngjs";
+import { CAPTURE_REVIEW_DEST_PHASE, CAPTURE_REVIEW_LEFTOVER_PHASE } from "@relay/protocol";
 import type { PersistedRun } from "./runs.js";
 import {
   approveVisualBaseline,
@@ -214,6 +215,64 @@ test("comparison persists approved, latest, and deterministic frame diff metadat
     );
     const repeated = await compareVisualBaseline(root, latest);
     assert.equal(repeated.id, comparison.id, "comparison identity is idempotent for the evidence");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("visual review dest identity is dest wait-for, not leftover Close last-frame", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-visual-dest-identity-"));
+  try {
+    const destArtifacts = [
+      {
+        kind: "capture-review" as const,
+        capturedAt: 1,
+        data: {
+          caption: "Close",
+          framePath: "frames/002.png",
+          imageSha256: "close-leftover",
+          checkpointId: "observe",
+          attempt: 1,
+          phase: CAPTURE_REVIEW_LEFTOVER_PHASE,
+        },
+      },
+      {
+        kind: "capture-review" as const,
+        capturedAt: 2,
+        data: {
+          caption: "Observe",
+          framePath: "frames/001.png",
+          imageSha256: "dest-wait",
+          checkpointId: "observe",
+          attempt: 1,
+          phase: CAPTURE_REVIEW_DEST_PHASE,
+          policy: "fast",
+        },
+      },
+    ];
+    const latest = await runFixture(root, {
+      id: "dest-end",
+      projectId: "project-a",
+      serial: "pixel-1",
+      frames: [png("dest-wait"), png("leftover-close")],
+      artifacts: destArtifacts,
+    });
+    const comparison = await compareVisualBaseline(root, latest);
+    assert.equal(comparison.latest.frameCount, 1);
+    assert.deepEqual(
+      comparison.latest.frames.map((frame) => frame.path),
+      ["frames/001.png"],
+    );
+    assert.equal(
+      comparison.latest.frames.some((frame) => frame.path === "frames/002.png"),
+      false,
+    );
+    const approved = await approveVisualBaseline(root, latest, {
+      id: "human:local-cli",
+      kind: "human",
+    });
+    assert.equal(approved.approved.frameCount, 1);
+    assert.equal(approved.approved.frames[0]?.path, "frames/001.png");
   } finally {
     await rm(root, { recursive: true, force: true });
   }

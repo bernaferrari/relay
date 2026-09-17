@@ -544,4 +544,63 @@ describe("RunWorkbench", () => {
       expect(review).toHaveBeenLastCalledWith({ captureId: "english", action: "accept" });
     }
   });
+
+  it("dest-end selected capture is dest wait-for, not leftover Close last-frame", () => {
+    const value: ProductRunReportOverview = {
+      ...report,
+      captureReview: {
+        items: [
+          {
+            captureId: "frames/003.png::dest-wait",
+            caption: "Observe",
+            status: "pending",
+            framePath: "frames/003.png",
+            lookFor: "What should we explore?",
+            phase: "dest",
+            policy: "fast",
+          },
+        ],
+        summary: {
+          captured: 1,
+          missing: 0,
+          pending: 1,
+          accepted: 0,
+          issue: 0,
+          needMoreEvidence: 0,
+        },
+      },
+      evidence: [
+        {
+          id: "screenshot",
+          label: "Screenshots",
+          count: 2,
+          detail: "2 screenshots",
+          summary: "Persisted run screenshots",
+          inspectable: true,
+          items: [
+            {
+              id: "frames/003.png",
+              title: "Observe",
+              media: { kind: "image", src: "/dest-wait.png", width: 320, height: 200 },
+            },
+            {
+              id: "frames/004.png",
+              title: "after · Run saved Test",
+              media: { kind: "image", src: "/leftover-close.png", width: 320, height: 200 },
+            },
+          ],
+        },
+      ],
+    };
+    const host = render(0, value);
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Captures");
+    expect(host.querySelector(".relay-evidence-image-frame img")?.getAttribute("src")).toBe(
+      "/dest-wait.png",
+    );
+    expect(host.querySelector(".relay-evidence-image-frame img")?.getAttribute("src")).not.toBe(
+      "/leftover-close.png",
+    );
+    expect(host.textContent).toContain("Observe");
+    expect(host.textContent).not.toContain("Captured result");
+  });
 });

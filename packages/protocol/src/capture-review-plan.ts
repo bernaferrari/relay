@@ -1,5 +1,6 @@
 import {
   formatCaptureReviewCoverageSummary,
+  isCaptureReviewLeftoverPhase,
   resolveCaptureReviewQueue,
   summarizeCaptureReview,
   type CaptureReviewAction,
@@ -88,6 +89,7 @@ export function resolvePlanCaptureReviewQueue(
       plannedSlots: run.plannedSlots,
     });
     for (const item of queue.items) {
+      if (isCaptureReviewLeftoverPhase(item.phase)) continue;
       const device = item.configuration?.app || item.configuration?.browser || run.device;
       const account = item.configuration?.account;
       items.push({
@@ -135,6 +137,7 @@ export function planCaptureReviewItemMatchesFilter(
   filter?: PlanCaptureReviewFilter,
 ): boolean {
   if (!filter) return true;
+  if (isCaptureReviewLeftoverPhase(item.phase)) return false;
   if (filter.pending && item.status !== "pending") return false;
   if (filter.screen) {
     const screen = filter.screen;
@@ -165,16 +168,21 @@ export function planCaptureReviewItemMatchesFilter(
   return true;
 }
 
-/** Visible working set only. Coverage counts stay on the full Plan queue. */
+/** Visible dest identity only. Leftover Close last-frame is not dest.
+ * Coverage counts stay on the full Plan queue. */
 export function filterPlanCaptureReviewQueue(
   queue: PlanCaptureReviewQueue,
   filter?: PlanCaptureReviewFilter,
 ): PlanCaptureReviewQueue {
-  const parsed = parsePlanCaptureReviewFilter(filter ?? {});
-  if (!parsed) return queue;
-  return {
-    items: queue.items.filter((item) => planCaptureReviewItemMatchesFilter(item, parsed)),
+  const destIdentity = {
+    items: queue.items.filter((item) => !isCaptureReviewLeftoverPhase(item.phase)),
     summary: queue.summary,
+  };
+  const parsed = parsePlanCaptureReviewFilter(filter ?? {});
+  if (!parsed) return destIdentity;
+  return {
+    items: destIdentity.items.filter((item) => planCaptureReviewItemMatchesFilter(item, parsed)),
+    summary: destIdentity.summary,
   };
 }
 
@@ -187,6 +195,7 @@ export function planCaptureReviewFilterOptions(items: readonly PlanCaptureReview
   const devices = new Set<string>();
   const accounts = new Set<string>();
   for (const item of items) {
+    if (isCaptureReviewLeftoverPhase(item.phase)) continue;
     const screen = normalizedFilterValue(item.caption) || normalizedFilterValue(item.checkpointId);
     if (screen) screens.add(screen);
     const device =
