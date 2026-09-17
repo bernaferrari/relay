@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -9,7 +10,7 @@ import {
   digestAppMapTestExecutionValue,
 } from "./app-map-test-execution-intent.js";
 import { compileExecutionRisk } from "./execution-risk-compiler.js";
-import { persistRun } from "./runs.js";
+import { persistRun, readCompletedPersistedRun } from "./runs.js";
 import type { TestJob } from "./session.js";
 import type { Recipe } from "./recipes.js";
 import type { TraceStep } from "./trace.js";
@@ -162,6 +163,160 @@ test("persistRun stores stable authored-step evidence joins from the frozen inte
       testStepEvidence?: unknown[];
     };
     assert.equal(persisted.testStepEvidence?.[0] !== undefined, true);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("persisted leftover dest-end Observe last-frame overlays dest wait-for on read", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-run-dest-evidence-"));
+  const fixture = executionFixture();
+  fixture.plan.stepProvenance = [
+    {
+      recipeId: fixture.root.id,
+      stepIndex: 0,
+      recipeStepId: "relay-test-step-observe-1",
+      testId: "test",
+      testStepId: "step-observe",
+      bindingKind: "recipe-step",
+      referencedEntityIds: [],
+    },
+    {
+      recipeId: "observe-flow",
+      stepIndex: 0,
+      recipeStepId: "wait-explore",
+      testId: "test",
+      testStepId: "step-observe",
+      bindingKind: "recipe-step",
+      referencedEntityIds: [],
+    },
+  ];
+  fixture.preflight.planDigest = digestAppMapTestExecutionValue(fixture.plan);
+  const intent = createAppMapTestExecutionIntent({
+    plan: fixture.plan,
+    recipeGraph: { [fixture.root.id]: fixture.root },
+    preflight: fixture.preflight,
+  });
+  const leftover = {
+    schemaVersion: 1 as const,
+    testStepId: "step-observe",
+    recipeId: fixture.root.id,
+    recipeStepId: "relay-test-step-observe-1",
+    traceStepId: "trace-module",
+    traceStepIndex: 4,
+    occurrence: 1,
+    evidence: {
+      framePaths: ["frames/004.png"],
+      eventSequences: [],
+      artifactKinds: [],
+    },
+  };
+  const job = {
+    id: "run-dest-step-evidence",
+    action: fixture.root.id,
+    targetContext: { kind: "device", platform: "android", serial: "fixture" },
+    targetKind: "device",
+    serial: "fixture",
+    platform: "android",
+    status: "ok",
+    queuedAt: 1,
+    startedAt: 1,
+    finishedAt: 2,
+    attempts: 1,
+    logs: [],
+    steps: [
+      {
+        id: "trace-module",
+        index: 4,
+        recipeId: fixture.root.id,
+        recipeStepId: "relay-test-step-observe-1",
+        kind: "Replay",
+        tone: "acc",
+        title: "Run saved Test",
+        glyphs: [],
+        startedAt: 1,
+        finishedAt: 2,
+        durationMs: 1,
+        frames: [{ path: "frames/004.png", caption: "after · Run saved Test", capturedAt: 2 }],
+        log: "",
+      },
+      {
+        id: "trace-dest",
+        index: 8,
+        recipeId: "observe-flow",
+        recipeStepId: "relay-test-step-observe-dest",
+        kind: "Replay",
+        tone: "acc",
+        title: "Capture for review · step:step-observe:Observe",
+        glyphs: [],
+        startedAt: 1,
+        finishedAt: 2,
+        durationMs: 1,
+        frames: [{ path: "frames/003.png", caption: "step:step-observe:Observe", capturedAt: 1 }],
+        log: "",
+      },
+    ],
+    frames: [],
+    glyphs: [],
+    kind: "Replay",
+    tone: "acc",
+    title: "Test",
+    runDir: directory,
+    artifacts: [
+      { kind: "app-map-test-execution-intent", capturedAt: 1, data: intent },
+      {
+        kind: "capture-review",
+        capturedAt: 1,
+        data: {
+          caption: "step:step-observe:Observe",
+          framePath: "frames/003.png",
+          imageSha256: "dest-wait",
+          stepId: "relay-test-step-observe-dest",
+          phase: "dest",
+          policy: "fast",
+        },
+      },
+    ],
+    evidence: {
+      schemaVersion: 1,
+      runId: "run-dest-step-evidence",
+      target: { kind: "device", platform: "android", id: "fixture" },
+      startedAt: 1,
+      channels: {},
+      events: [],
+    },
+    evidencePolicy: { schemaVersion: 1, sensitive: {} },
+    resolvedInputs: {},
+  } as unknown as TestJob;
+  try {
+    const run = await persistRun(job);
+    assert.deepEqual(
+      run.testStepEvidence
+        ?.filter((item) => item.evidence.framePaths.length > 0)
+        .map((item) => item.evidence.framePaths),
+      [["frames/003.png"]],
+    );
+    const parsed = JSON.parse(await readFile(join(directory, "run.json"), "utf8")) as {
+      testStepEvidence?: unknown[];
+    };
+    parsed.testStepEvidence = [leftover];
+    const json = JSON.stringify(parsed, null, 2);
+    await writeFile(join(directory, "run.json"), json);
+    await writeFile(
+      join(directory, ".complete"),
+      JSON.stringify({
+        schemaVersion: 1,
+        id: job.id,
+        digest: createHash("sha256").update(json).digest("hex"),
+      }),
+    );
+    const overlaid = await readCompletedPersistedRun(directory);
+    assert.deepEqual(
+      overlaid?.testStepEvidence
+        ?.filter((item) => item.evidence.framePaths.length > 0)
+        .map((item) => item.evidence.framePaths),
+      [["frames/003.png"]],
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

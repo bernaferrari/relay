@@ -2035,6 +2035,12 @@ test("dest-end capture-true compiles a later-review screenshot into plannedSlots
   assert.equal(compiled.plan.plannedSlots?.[0]?.attempt, 1);
   assert.equal(compiled.plan.plannedSlots?.[0]?.phase, "dest");
   assert.equal(compiled.plan.plannedSlots?.[0]?.lookFor, instruction.intent);
+  const destProvenance = compiled.plan.stepProvenance.find(
+    (entry) => entry.recipeStepId === `relay-test-${instruction.id}-dest`,
+  );
+  assert.ok(destProvenance);
+  assert.equal(destProvenance.testStepId, instruction.id);
+  assert.equal(destEndRecipe!.steps[destProvenance.stepIndex]?.id, destProvenance.recipeStepId);
   assert.doesNotThrow(() =>
     createAppMapTestExecutionIntent({
       plan: compiled.plan,
@@ -2130,6 +2136,13 @@ test("dest-end leftover Close last-frame is not dest capture-review identity", (
   assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.phase, "dest");
   assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.policy, "fast");
   assert.ok(leftoverCloseIndex > destWaitIndex + 1);
+  const destProvenance = compiled.plan.stepProvenance.find(
+    (entry) => entry.recipeStepId === `relay-test-${instruction.id}-dest`,
+  );
+  assert.ok(destProvenance);
+  assert.equal(destProvenance.testStepId, instruction.id);
+  assert.equal(destEndRecipe!.steps[destProvenance.stepIndex]?.kind, "screenshot");
+  assert.equal(destEndRecipe!.steps[destProvenance.stepIndex]?.id, destProvenance.recipeStepId);
   assert.equal(compiled.plan.plannedSlots?.length, 1);
   assert.equal(compiled.plan.plannedSlots?.[0]?.phase, "dest");
   assert.equal(

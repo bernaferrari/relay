@@ -75,6 +75,15 @@ const MAX_COMPILED_STEPS = 4_096;
  * never costs more than one manual `device survey`. */
 const DESTINATION_SURVEY_MAX_SCROLLS = 4;
 
+function destEndCaptureScreenshot(step: AppMapScenarioTestStep): RecipeStep {
+  return {
+    kind: "screenshot",
+    caption: `step:${step.id}:${step.intent}`,
+    review: destEndInspectScreenshotReview(step.intent),
+    id: `relay-test-${step.id}-dest`,
+  };
+}
+
 function insertDestEndCaptureReviewScreenshot(
   recipe: { steps: RecipeStep[] },
   screenshot: RecipeStep,
@@ -84,6 +93,24 @@ function insertDestEndCaptureReviewScreenshot(
   if (destIndex < 0) return false;
   recipe.steps.splice(destIndex + 1, 0, structuredClone(screenshot));
   return true;
+}
+
+/** Stamp dest wait-for before provenance import so leftover Close last-frame
+ * does not inherit the dest screenshot's stepIndex. */
+function stampDestEndCaptureReviewScreenshots(
+  recipes: Iterable<{ id: string; steps: RecipeStep[] }>,
+  destRecipe: { id: string; steps: RecipeStep[] } | undefined,
+  destEndIds: ReadonlySet<string>,
+  screenshot: RecipeStep,
+): void {
+  const seen = new Set<string>();
+  const ordered = destRecipe ? [destRecipe, ...recipes] : [...recipes];
+  for (const recipe of ordered) {
+    if (seen.has(recipe.id)) continue;
+    if (destRecipe && recipe !== destRecipe && !destEndIds.has(recipe.id)) continue;
+    seen.add(recipe.id);
+    insertDestEndCaptureReviewScreenshot(recipe, screenshot);
+  }
 }
 
 export type AppMapTestCompileOptions = {
@@ -652,6 +679,14 @@ export function compileAppMapScenarioTest(
             for (const recipe of Object.values(instructionGraph)) {
               destEndRecipeIds.add(recipe.id);
             }
+            if (step.capture) {
+              stampDestEndCaptureReviewScreenshots(
+                Object.values(instructionGraph),
+                instructionGraph[plan.rootRecipeId],
+                destEndRecipeIds,
+                destEndCaptureScreenshot(step),
+              );
+            }
           }
           let cleanup: NonNullable<RecipeStep["check"]>["cleanup"];
           if (step.cleanup) {
@@ -796,22 +831,12 @@ export function compileAppMapScenarioTest(
         if (destEnd) {
           const destModule = recipeSteps.at(-1);
           const destRecipe = destModule?.kind === "module" ? graph[destModule.recipeId] : undefined;
-          const screenshot: RecipeStep = {
-            kind: "screenshot",
-            caption: `step:${step.id}:${step.intent}`,
-            review: destEndInspectScreenshotReview(step.intent),
-            id: `relay-test-${step.id}-dest`,
-          };
-          const seen = new Set<string>();
-          const destEndRecipes = destRecipe
-            ? [destRecipe, ...Object.values(graph)]
-            : Object.values(graph);
-          for (const recipe of destEndRecipes) {
-            if (seen.has(recipe.id)) continue;
-            if (recipe !== destRecipe && !destEndRecipeIds.has(recipe.id)) continue;
-            seen.add(recipe.id);
-            insertDestEndCaptureReviewScreenshot(recipe, screenshot);
-          }
+          stampDestEndCaptureReviewScreenshots(
+            Object.values(graph),
+            destRecipe,
+            destEndRecipeIds,
+            destEndCaptureScreenshot(step),
+          );
         } else {
           recipeSteps.push({
             kind: "screenshot",

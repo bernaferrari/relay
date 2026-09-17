@@ -7,7 +7,11 @@ import { join, basename, isAbsolute, relative, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type { TestJob } from "./session.js";
 import type { TraceFrameRef, TraceStep } from "./trace.js";
-import { executionIntentProvenance, projectRunTestStepEvidence } from "./run-test-step-evidence.js";
+import {
+  executionIntentProvenance,
+  overlayDestEndIdentityEvidence,
+  projectRunTestStepEvidence,
+} from "./run-test-step-evidence.js";
 import {
   assertExecutionTargetRef,
   parseBrowserCaseProfile,
@@ -461,7 +465,14 @@ async function readCompletedRun(dir: string): Promise<PersistedRun | null> {
     if (parsed.testStepEvidence !== undefined) {
       const testStepEvidence = parseOptionalRunTestStepEvidence(parsed.testStepEvidence);
       if (testStepEvidence === undefined) delete parsed.testStepEvidence;
-      else parsed.testStepEvidence = testStepEvidence;
+      else {
+        parsed.testStepEvidence = overlayDestEndIdentityEvidence({
+          items: testStepEvidence,
+          steps: parsed.steps ?? [],
+          provenance: executionIntentProvenance(parsed.artifacts ?? []),
+          artifacts: parsed.artifacts ?? [],
+        });
+      }
     }
     if (parsed.testStepEvidence === undefined) {
       const projected = projectRunTestStepEvidence({
