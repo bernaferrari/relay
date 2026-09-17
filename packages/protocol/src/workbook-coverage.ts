@@ -5,13 +5,15 @@
  * never marks an original covered. Every original has a smallest-sufficient
  * evidence packet or an authorized exclusion; that packet is not coverage.
  * Captions are display text; obligations are plannedSlots identities.
- * S02 shell, S05 model/preset, S08 output-battery, and S01 auth originals
- * keep explicit test-action evidence-needed while remaining unbound.
- * Leftover Fast-checked is not a models Test. Inspect-only model sheet
- * is not Switch model or presets. Leftover 3*5 extract-15 / Markdown
- * judge is not S08 generated-output coverage. Cloudflare Sign up /
- * weekly Continue-with-X pause / grok-lab leftover is not S01 coverage.
- * Original criteria stay on the slot.
+ * S02 shell, S05 model/preset, S08 output-battery, S01 auth, and S03
+ * composer originals keep explicit test-action evidence-needed while
+ * remaining unbound. Leftover Fast-checked is not a models Test.
+ * Inspect-only model sheet is not Switch model or presets. Leftover
+ * 3*5 extract-15 / Markdown judge is not S08 generated-output coverage.
+ * Cloudflare Sign up / weekly Continue-with-X pause / grok-lab leftover
+ * is not S01 coverage. Composer-focus inspect / send-hello paywall /
+ * multiline extract-15 is not S03 type+send, expand, or typeahead
+ * persistence. Original criteria stay on the slot.
  */
 
 import { captureReviewSlotId, type CaptureReviewConfiguration } from "./capture-review.js";
@@ -29,6 +31,8 @@ export const WORKBOOK_AUTH_FAMILY_ID = "S01";
 export const WORKBOOK_AUTH_ORIGINAL_IDS = [44, 45, 46, 47] as const;
 export const WORKBOOK_SHELL_FAMILY_ID = "S02";
 export const WORKBOOK_SHELL_ORIGINAL_IDS = [3, 33, 35, 36, 37] as const;
+export const WORKBOOK_COMPOSER_FAMILY_ID = "S03";
+export const WORKBOOK_COMPOSER_ORIGINAL_IDS = [1, 2, 6] as const;
 export const WORKBOOK_MODELS_FAMILY_ID = "S05";
 export const WORKBOOK_MODELS_ORIGINAL_IDS = [7, 8] as const;
 export const WORKBOOK_OUTPUT_FAMILY_ID = "S08";
@@ -327,6 +331,15 @@ export function coverByArithmeticOrMarkdownJudge(
 /** Cloudflare Sign up, weekly Continue-with-X pause, or grok-lab leftover
  * never cover S01. Isolated auth TAP evidence is required. */
 export function coverByCloudflareOrWeeklyAuthPause(
+  original: Pick<WorkbookOriginal, "id" | "family">,
+): boolean {
+  void original;
+  return false;
+}
+
+/** Composer-focus inspect, logged-out send-hello paywall, or 3*5
+ * multiline extract-15 never cover S03. Type+send TAP evidence is required. */
+export function coverByComposerFocusOrSendHello(
   original: Pick<WorkbookOriginal, "id" | "family">,
 ): boolean {
   void original;
@@ -826,7 +839,10 @@ function distinctiveNeedles(original: WorkbookOriginal): readonly string[] {
     .split(/[^a-z0-9]+/u)
     .filter((token) => token.length >= 5);
   const extra: string[] = [];
+  if (original.id === 1) extra.push("send-hello", "composer");
+  if (original.id === 2) extra.push("multiline", "composer");
   if (original.id === 5) extra.push("connector", "connectors");
+  if (original.id === 6) extra.push("typeahead", "autocomplete", "composer");
   if (original.id === 8) extra.push("preset", "presets", "customize");
   if (original.id === 33) extra.push("sidebar", "menu");
   if (original.id === 3 || original.id === 36) extra.push("new-chat", "newchat");
@@ -1116,6 +1132,14 @@ export function workbookEvidenceNeededError(
       return `${label} S01 needs explicit evidence-needed (isolated auth before/after, receipt, sequence)`;
     }
   }
+  if (original.family === WORKBOOK_COMPOSER_FAMILY_ID) {
+    if (original.requirementAction !== "test-action") {
+      return `${label} S03 must be test-action — leftover composer-focus inspect / send-hello paywall / multiline extract-15 is not type+send, expand, or typeahead persistence`;
+    }
+    if (!original.evidenceNeeded || original.evidenceNeeded.length === 0) {
+      return `${label} S03 needs explicit evidence-needed (send TAP, expanded composer view, typeahead persistence)`;
+    }
+  }
   if (original.id === 7) {
     const switchKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
     for (const required of ["before", "after", "receipt"] as const) {
@@ -1139,6 +1163,26 @@ export function workbookEvidenceNeededError(
     }
     if (!xKinds.has("sequence")) {
       return `${label} GQA-045/046 needs sequence evidence — one leftover sheet is not both X variants`;
+    }
+  }
+  if (original.id === 1) {
+    const sendKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    for (const required of ["before", "after", "receipt"] as const) {
+      if (!sendKinds.has(required)) {
+        return `${label} GQA-001 send TAP must execute — leftover composer-focus / send-hello paywall is not this original — needs ${required} evidence`;
+      }
+    }
+  }
+  if (original.id === 2) {
+    const expandKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!expandKinds.has("receipt")) {
+      return `${label} GQA-002 needs a multiline type TAP receipt — leftover composer-focus inspect is not this original`;
+    }
+  }
+  if (original.id === 6) {
+    const typeaheadKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!typeaheadKinds.has("receipt")) {
+      return `${label} GQA-006 needs a typeahead select TAP receipt — leftover composer-focus inspect is not this original`;
     }
   }
   if (!original.evidenceNeeded) return undefined;

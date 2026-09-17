@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   coverByArithmeticOrMarkdownJudge,
   coverByCloudflareOrWeeklyAuthPause,
+  coverByComposerFocusOrSendHello,
   coverByFindingSimilarlyNamedTest,
   coverByRc23DestEnd,
   destEndViewPacketMayLeftoverSkip,
@@ -22,6 +23,8 @@ import {
   workbookRc23BindingError,
   WORKBOOK_AUTH_FAMILY_ID,
   WORKBOOK_AUTH_ORIGINAL_IDS,
+  WORKBOOK_COMPOSER_FAMILY_ID,
+  WORKBOOK_COMPOSER_ORIGINAL_IDS,
   WORKBOOK_MODELS_FAMILY_ID,
   WORKBOOK_MODELS_ORIGINAL_IDS,
   WORKBOOK_OUTPUT_FAMILY_ID,
@@ -430,6 +433,36 @@ test("capture-view leftover skip is only GQA-004 attach and GQA-040 Settings inv
     workbookOriginalMayLeftoverSkip({
       id: 47,
       evidencePacket: "view",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    destEndViewPacketMayLeftoverSkip({ id: 1, evidencePacket: "generated-output" }),
+    false,
+  );
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 2, evidencePacket: "view" }), false);
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 6, evidencePacket: "persistence" }), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 1,
+      evidencePacket: "generated-output",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 2,
+      evidencePacket: "view",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 6,
+      evidencePacket: "persistence",
       requirementAction: "test-action",
     }),
     false,
@@ -1113,6 +1146,262 @@ test("S01 packets stay unbound and need isolated auth TAP evidence", () => {
       id: 44,
       family: WORKBOOK_AUTH_FAMILY_ID,
       evidencePacket: "transition",
+    }),
+    "stateful-survival",
+  );
+});
+
+test("S03 packets stay unbound and need type+send TAP evidence", () => {
+  assert.deepEqual([...WORKBOOK_COMPOSER_ORIGINAL_IDS], [1, 2, 6]);
+  assert.deepEqual(requiredEvidenceNeededKinds("generated-output"), ["after"]);
+  assert.deepEqual(requiredEvidenceNeededKinds("view"), ["view"]);
+  assert.deepEqual(requiredEvidenceNeededKinds("persistence"), ["before", "restart", "after"]);
+  const missing = original({
+    id: 1,
+    name: "Type and send a message",
+    family: WORKBOOK_COMPOSER_FAMILY_ID,
+    evidencePacket: "generated-output",
+    status: "unbound",
+  });
+  assert.match(
+    workbookEvidenceNeededError(missing) ?? "",
+    /S03 must be test-action|S03 needs explicit evidence-needed|send TAP must execute/u,
+  );
+  const leftoverFocus = original({
+    id: 1,
+    name: "Type and send a message",
+    family: WORKBOOK_COMPOSER_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "after",
+        id: "leftover-composer-focus",
+        note: "Leftover composer-focus inspect. No type or send TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria: "Message is entered and sent successfully.",
+  });
+  assert.match(workbookEvidenceNeededError(leftoverFocus) ?? "", /send TAP must execute/u);
+  assert.equal(coverByComposerFocusOrSendHello(leftoverFocus), false);
+  const send = original({
+    id: 1,
+    name: "Type and send a message",
+    family: WORKBOOK_COMPOSER_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-empty-composer",
+        note: "Empty composer. Leftover composer-focus inspect is not this frame.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-type-and-send",
+        note: "Type and send actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-message-sent",
+        note: "Message sent successfully. Send-hello paywall is not this frame.",
+      },
+    ],
+    status: "unbound",
+    criteria: "Message is entered and sent successfully.",
+  });
+  assert.equal(workbookEvidenceNeededError(send), undefined);
+  assert.equal(workbookEvidencePolicyError(send), undefined);
+  assert.equal(originalIsCovered(send), false);
+  assert.equal(coverByComposerFocusOrSendHello(send), false);
+  const obligation = workbookOriginalObligationIdentity(send);
+  assert.equal(obligation.requirementId, "GQA-001");
+  assert.equal(obligation.caption, "Type and send a message");
+  assert.equal(obligation.criteria, "Message is entered and sent successfully.");
+  const leftoverMultiline = original({
+    id: 2,
+    name: "Multiline composer",
+    family: WORKBOOK_COMPOSER_FAMILY_ID,
+    evidencePacket: "view",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "view",
+        id: "leftover-extract-15",
+        note: "3*5 multiline extract-15. No type TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Message is entered and sent successfully. Input box expands to show multiple lines of text.",
+  });
+  assert.match(workbookEvidenceNeededError(leftoverMultiline) ?? "", /multiline type TAP receipt/u);
+  const multiline = original({
+    id: 2,
+    name: "Multiline composer",
+    family: WORKBOOK_COMPOSER_FAMILY_ID,
+    evidencePacket: "view",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-type-multiline",
+        note: "Type a long message with line breaks actually executed.",
+      },
+      {
+        kind: "view",
+        id: "multiline-composer-expanded",
+        note: "Input box expanded. 3*5 extract-15 is leftover math, not this view.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Message is entered and sent successfully. Input box expands to show multiple lines of text.",
+  });
+  assert.equal(workbookEvidenceNeededError(multiline), undefined);
+  assert.equal(workbookEvidencePolicyError(multiline), undefined);
+  assert.equal(originalIsCovered(multiline), false);
+  const leftoverTypeahead = original({
+    id: 6,
+    name: "Autocomplete / typeaheads",
+    family: WORKBOOK_COMPOSER_FAMILY_ID,
+    evidencePacket: "persistence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-composer-focus",
+        note: "Composer-focus inspect. No typeahead TAP.",
+      },
+      {
+        kind: "restart",
+        id: "unused-restart",
+        note: "No force-close.",
+      },
+      {
+        kind: "after",
+        id: "after-composer-focus",
+        note: "Still inspect-only.",
+      },
+    ],
+    status: "unbound",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverTypeahead) ?? "",
+    /typeahead select TAP receipt/u,
+  );
+  const typeahead = original({
+    id: 6,
+    name: "Autocomplete / typeaheads",
+    family: WORKBOOK_COMPOSER_FAMILY_ID,
+    evidencePacket: "persistence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-typeaheads-on",
+        note: "Typeaheads on. Composer-focus inspect is not this frame.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-select-typeahead",
+        note: "Select a typeahead suggestion actually executed.",
+      },
+      {
+        kind: "restart",
+        id: "force-close-reopen",
+        note: "Force-close and reopen.",
+      },
+      {
+        kind: "after",
+        id: "after-typeaheads-stick",
+        note: "Typeaheads still on; selected query sent.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "The selected query is sent and the assistant responds. Typeaheads toggled on in Settings must stick after force-close and reopen.",
+  });
+  assert.equal(workbookEvidenceNeededError(typeahead), undefined);
+  assert.equal(workbookEvidencePolicyError(typeahead), undefined);
+  assert.equal(originalIsCovered(typeahead), false);
+  assert.equal(coverByComposerFocusOrSendHello(typeahead), false);
+  const report = evaluateWorkbookCoverage(fixture({ originals: [send, multiline, typeahead] }), [
+    { id: "test-grok-web-send-hello", name: "Send hello while logged out" },
+    { id: "test-grok-web-signed-in-multiline", name: "Ask 3*5 multiline" },
+    { id: "test-grok-ios-composer-focus", name: "Composer focus" },
+    { id: "test-grok-web-signed-in-composer-focus", name: "Composer focus" },
+  ]);
+  assert.deepEqual(report.coveredOriginalIds, []);
+  assert.equal(report.unboundOriginalIds.includes(1), true);
+  assert.equal(report.unboundOriginalIds.includes(2), true);
+  assert.equal(report.unboundOriginalIds.includes(6), true);
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 1 && row.testId === "test-grok-web-send-hello",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 2 && row.testId === "test-grok-web-signed-in-multiline",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 1 && row.testId === "test-grok-ios-composer-focus",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 6 && row.testId === "test-grok-ios-composer-focus",
+    ),
+    true,
+  );
+  assert.equal(coverByFindingSimilarlyNamedTest(send, []), false);
+  assert.equal(coverByRc23DestEnd({ id: 1 }, "composer-focus"), false);
+  assert.equal(coverByRc23DestEnd({ id: 2 }, "composer-focus"), false);
+  assert.equal(coverByRc23DestEnd({ id: 6 }, "composer-focus"), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 1,
+      evidencePacket: "generated-output",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 2,
+      evidencePacket: "view",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 1,
+      family: WORKBOOK_COMPOSER_FAMILY_ID,
+      evidencePacket: "generated-output",
+    }),
+    "live-output",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 2,
+      family: WORKBOOK_COMPOSER_FAMILY_ID,
+      evidencePacket: "view",
+    }),
+    "fast-ui",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 6,
+      family: WORKBOOK_COMPOSER_FAMILY_ID,
+      evidencePacket: "persistence",
     }),
     "stateful-survival",
   );

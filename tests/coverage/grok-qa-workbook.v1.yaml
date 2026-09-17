@@ -22,9 +22,14 @@
 # (isolated Sign Out / Continue with X / Sign Up). Cloudflare Sign up and
 # weekly Continue-with-X pause are not coverage. Similar sign-out/signup
 # names do not cover. Leftover dest skip is only GQA-004/040 capture-view.
+# RC-28 S03 composer packets stay unbound: explicit test-action evidence-needed
+# (type+send TAP, expanded composer view, typeahead persistence). Composer-focus
+# inspect, logged-out send-hello paywall, and 3*5 multiline extract-15 do not
+# cover. Similar send/multiline/composer names do not cover. Leftover dest skip
+# is only GQA-004/040 capture-view.
 schemaVersion: 1
 id: grok-qa-workbook
-revision: 7
+revision: 8
 reviewedAt: "2026-09-16"
 source:
   workbook: grok-qa-graph.xlsx
@@ -192,6 +197,17 @@ originals:
     evidencePacket: generated-output
     queue: "fast-ui"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-empty-composer
+        note: "Fresh live-output image of an empty or New Chat composer. Leftover composer-focus inspect (do not type), leftover conversation, logged-out send-hello paywall, and grok-lab leftover b2dcd768 sidebar+Build Mode are not this before frame. stabilityMeasured false."
+      - kind: receipt
+        id: tap-type-and-send
+        note: "Type a message in the main input and send actually executed (test-action). test-grok-web-send-hello paywall and leftover composer-focus inspect are not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: after
+        id: after-message-sent
+        note: "Generated output at a declared phase: message entered and sent successfully. Human reviews original criterion. Logged-out Continue your conversation paywall is not this after frame. test-grok-web-signed-in-3x5 extract-15 is S08, not S03. stabilityMeasured false."
     gates: []
     status: unbound
     bindings: []
@@ -205,6 +221,14 @@ originals:
     evidencePacket: view
     queue: "fast-ui"
     suggestedExecutionQueue: fast-ui
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: receipt
+        id: tap-type-multiline
+        note: "Type a long message with line breaks actually executed (test-action). Leftover composer-focus inspect (do not type) is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: view
+        id: multiline-composer-expanded
+        note: "Fresh Fast image of the input box expanded to show multiple lines of text. test-grok-web-signed-in-multiline extract-15 is leftover math, not this view. Sending is GQA-001, not this original. grok-lab leftover b2dcd768 is not this family. stabilityMeasured false."
     gates: []
     status: unbound
     bindings: []
@@ -298,6 +322,20 @@ originals:
     evidencePacket: persistence
     queue: "fast-ui"
     suggestedExecutionQueue: stateful-survival
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-typeaheads-on
+        note: "Fresh Fast image of a new chat with typeaheads toggled on in Settings. Leftover composer-focus inspect is not this before frame. SuperGrok or above. Skip Android. grok-lab leftover b2dcd768 is not this family. stabilityMeasured false."
+      - kind: receipt
+        id: tap-select-typeahead
+        note: "Type an incomplete query (e.g. Who was the) and TAP a typeahead suggestion actually executed (test-action). Capture-view leftover skip is only GQA-004/040."
+      - kind: restart
+        id: force-close-reopen
+        note: "Force-close and reopen the app after typeaheads were toggled on. Persistence is the packet — leftover composer is not this original."
+      - kind: after
+        id: after-typeaheads-stick
+        note: "Typeaheads still on after reopen; selected query sent and assistant responds. Human reviews original criterion. Composer-focus inspect is not this after frame. stabilityMeasured false."
     gates:
       - SuperGrok or above. Skip Android.
     status: unbound
