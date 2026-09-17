@@ -1,5 +1,5 @@
 import { ReportImage } from "../components/report-image";
-import { workspacePreviewSurface, workspaceToolsSurface } from "../components/workspace-surfaces";
+import { workspaceToolsSurface } from "../components/workspace-surfaces";
 import { RunLogPanel } from "../components/run-log-panel";
 /** @jsxImportSource react */
 import { RunPerformancePanel, performanceStepAt } from "../components/run-performance-panel";
@@ -32,11 +32,7 @@ import {
 } from "../data/run-product-service";
 import { CaptureReviewDecisions } from "./capture-review-decisions";
 import { CaptureReviewPanel } from "./run-capture-review-panel";
-import {
-  captureReviewCoverageLine,
-  type CaptureReviewAction,
-  type CaptureReviewItem,
-} from "@relay/protocol";
+import { type CaptureReviewAction, type CaptureReviewItem } from "@relay/protocol";
 
 type Report = ProductRunReportOverview;
 
@@ -235,56 +231,58 @@ export function RunWorkbench({
       className="grid h-full min-h-0 flex-1 min-w-0 gap-5 overflow-hidden max-[720px]:h-auto max-[720px]:overflow-visible min-[721px]:grid-cols-[minmax(0,55%)_minmax(0,1fr)]"
       aria-label="Run workbench"
     >
-      <div
-        className={`relative flex flex-col ${showingCapture ? "min-h-0 min-w-0 overflow-hidden rounded-xl bg-background/20" : workspacePreviewSurface}`}
-      >
-        <div
-          className={`${showingCapture ? "sr-only" : "flex h-11 shrink-0 items-center justify-between px-4 text-xs text-muted-foreground"}`}
-        >
+      <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-background/20">
+        <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 px-4 text-xs text-muted-foreground">
           <span>
             {showingCapture
-              ? reviewMode && report.captureReview
-                ? `${captureReviewCoverageLine(report.captureReview.summary)} · ${report.captureReview.summary.pending} pending review`
-                : `Capture ${selectedCapture + 1} of ${allFrames.length}`
+              ? `Capture ${selectedCapture + 1} of ${reviewMode ? reviewItems.length : allFrames.length}`
               : step.phase === "test"
                 ? `Test step ${report.timeline.slice(0, selectedStepIndex + 1).filter((item) => item.phase === "test").length} of ${report.timeline.filter((item) => item.phase === "test").length}`
                 : `Step ${selectedStepIndex + 1} of ${report.timeline.length}`}
           </span>
           <div
-            className={showingCapture ? "hidden" : "flex shrink-0 items-center gap-1"}
-            aria-label="Step playback"
+            className="flex shrink-0 items-center gap-1"
+            aria-label={showingCapture ? "Capture navigation" : "Step playback"}
           >
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label="Previous step"
-              disabled={selectedStepIndex === 0}
+              aria-label={showingCapture ? "Previous capture" : "Previous step"}
+              disabled={(showingCapture ? selectedCapture : selectedStepIndex) === 0}
               onClick={() => {
                 setPlaying(false);
-                onSelectStep(selectedStepIndex - 1);
+                if (showingCapture) setSelectedCapture(selectedCapture - 1);
+                else onSelectStep(selectedStepIndex - 1);
               }}
             >
               <ChevronLeft />
             </Button>
+            {!showingCapture ? (
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => {
+                  if (!playing && selectedStepIndex === report.timeline.length - 1) onSelectStep(0);
+                  setPlaying(!playing);
+                }}
+                aria-label={playing ? "Pause step playback" : "Play steps"}
+              >
+                {playing ? <Pause /> : <Play />}
+              </Button>
+            ) : null}
             <Button
               size="icon-sm"
               variant="ghost"
-              onClick={() => {
-                if (!playing && selectedStepIndex === report.timeline.length - 1) onSelectStep(0);
-                setPlaying(!playing);
-              }}
-              aria-label={playing ? "Pause step playback" : "Play steps"}
-            >
-              {playing ? <Pause /> : <Play />}
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Next step"
-              disabled={selectedStepIndex === report.timeline.length - 1}
+              aria-label={showingCapture ? "Next capture" : "Next step"}
+              disabled={
+                showingCapture
+                  ? selectedCapture === (reviewMode ? reviewItems.length : allFrames.length) - 1
+                  : selectedStepIndex === report.timeline.length - 1
+              }
               onClick={() => {
                 setPlaying(false);
-                onSelectStep(selectedStepIndex + 1);
+                if (showingCapture) setSelectedCapture(selectedCapture + 1);
+                else onSelectStep(selectedStepIndex + 1);
               }}
             >
               <ChevronRight />
@@ -319,13 +317,6 @@ export function RunWorkbench({
               </Button>
             </div>
           ) : null}
-          <span>
-            {showingCapture
-              ? "Saved screenshot"
-              : step.durationMs === undefined
-                ? timelineStateLabel(step.state)
-                : `${(step.durationMs / 1000).toFixed(1)}s · ${timelineStateLabel(step.state)}`}
-          </span>
         </div>
         <StepMedia
           key={`${report.runId}:${showingCapture ? capture?.id : step.id}`}
@@ -346,9 +337,7 @@ export function RunWorkbench({
           actionBounds={showingCapture ? undefined : step.actionBounds}
           beforeFramePath={showingCapture ? undefined : step.beforeFramePath}
           fill
-          captureOnly={showingCapture}
           reviewControlsForFrame={(frame) => {
-            if (!onReviewCapture) return undefined;
             const matches = frame
               ? reviewItems.filter(
                   (item) => item.framePath === frame.id && item.status !== "missing",
@@ -360,7 +349,37 @@ export function RunWorkbench({
                 : matches.length === 1
                   ? matches[0]
                   : undefined;
-            if (!item) return undefined;
+            if (!item || !onReviewCapture)
+              return (
+                <div className="flex min-h-10 flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {showingCapture
+                        ? frame
+                          ? "Saved screenshot"
+                          : "Capture unavailable"
+                        : "Step result"}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {showingCapture
+                        ? frame
+                          ? "Saved with this run"
+                          : "This screenshot is unavailable."
+                        : `${timelineStateLabel(step.state)}${step.durationMs === undefined ? "" : ` · ${(step.durationMs / 1000).toFixed(1)}s`}`}
+                    </p>
+                  </div>
+                  {!showingCapture && reviewMode ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="min-h-10"
+                      onClick={() => setPanel("captures")}
+                    >
+                      Review screenshots
+                    </Button>
+                  ) : null}
+                </div>
+              );
             return (
               <div className="grid w-full gap-2">
                 {reviewError ? (

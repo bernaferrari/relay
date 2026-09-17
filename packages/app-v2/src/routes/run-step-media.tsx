@@ -14,7 +14,6 @@ export function StepMedia({
   beforeFramePath,
   controls,
   masks,
-  captureOnly = false,
   reviewControlsForFrame,
 }: {
   frames: readonly ReportEvidenceItem[];
@@ -24,7 +23,6 @@ export function StepMedia({
   beforeFramePath?: string;
   controls?: ReactNode;
   masks?: readonly CaptureReviewMask[];
-  captureOnly?: boolean;
   reviewControlsForFrame?: (frame: ReportEvidenceItem | undefined) => ReactNode;
 }) {
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
@@ -45,12 +43,12 @@ export function StepMedia({
           if (img instanceof HTMLImageElement)
             setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
         }}
-        className={`relative flex items-center justify-center ${captureOnly ? "p-3" : "p-5"} ${fill ? "min-h-0 flex-1" : "min-h-64"}`}
+        className={`relative flex items-center justify-center ${fill ? "min-h-0 flex-1" : "min-h-64"}`}
       >
         {actionBounds && frame?.id === beforeFramePath && imageSize.width > 0 ? (
           <svg
             aria-label="Recorded tap target"
-            className={`pointer-events-none absolute z-10 ${captureOnly ? "inset-3 h-[calc(100%-1.5rem)] w-[calc(100%-1.5rem)]" : "inset-5 h-[calc(100%-2.5rem)] w-[calc(100%-2.5rem)]"}`}
+            className="pointer-events-none absolute inset-0 z-10 size-full"
             viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
             preserveAspectRatio="xMidYMid meet"
           >
@@ -68,7 +66,7 @@ export function StepMedia({
         {masks?.length && imageSize.width > 0 ? (
           <svg
             aria-label="Review overlays"
-            className={`pointer-events-none absolute z-10 ${captureOnly ? "inset-3 h-[calc(100%-1.5rem)] w-[calc(100%-1.5rem)]" : "inset-5 h-[calc(100%-2.5rem)] w-[calc(100%-2.5rem)]"}`}
+            className="pointer-events-none absolute inset-0 z-10 size-full"
             viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
             preserveAspectRatio="xMidYMid meet"
           >
@@ -97,7 +95,7 @@ export function StepMedia({
             frame={frame}
             className={
               fill
-                ? `h-full w-full object-contain ${captureOnly ? "rounded-lg max-[720px]:h-auto max-[720px]:max-h-[65dvh]" : ""}`
+                ? "h-full w-full object-contain max-[720px]:h-auto max-[720px]:max-h-[65dvh]"
                 : undefined
             }
             onError={() => setFailed(true)}

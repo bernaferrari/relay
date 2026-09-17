@@ -491,6 +491,14 @@ describe("RunWorkbench", () => {
     expect(host.textContent).toContain("2/2 captured");
     expect(host.textContent).toContain("2 pending review");
     expect(host.textContent).not.toContain("passed");
+    const previous = host.querySelector<HTMLButtonElement>('[aria-label="Previous capture"]')!;
+    const next = host.querySelector<HTMLButtonElement>('[aria-label="Next capture"]')!;
+    expect(previous.disabled).toBe(true);
+    act(() => next.click());
+    expect(host.textContent).toContain("Capture 2 of 2");
+    expect(next.disabled).toBe(true);
+    act(() => previous.click());
+    expect(host.textContent).toContain("Capture 1 of 2");
     const sheet = host.querySelector<HTMLElement>('[aria-label="Screenshot review"]')!;
     expect(host.querySelector("p.text-sm.font-semibold")?.textContent).toBe(
       "Member · Desktop · English",
