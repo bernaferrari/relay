@@ -251,7 +251,6 @@ function FindingReviewCard({
         <div className="flex flex-wrap items-center gap-2">
           <Button
             size="sm"
-            variant="outline"
             className="min-h-11"
             variant={decision === "confirm" ? "secondary" : "outline"}
             aria-pressed={decision === "confirm"}
