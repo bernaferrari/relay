@@ -66,9 +66,16 @@
 # / GQA-008 Create Videos preset do not cover. Similar imagine/puppy/
 # download/video/hat names do not cover. Leftover dest skip is only
 # GQA-004/040 capture-view.
+# RC-34 S12 image-search packets stay unbound: explicit test-action
+# evidence-needed (find-3-images TAP, similar TAP, similar-to-object
+# TAP). Imagine dest-end / iOS Imagine Unbound / logged-out Imagine
+# judged / leftover 3*5 extract-15 / S11 image gen / S02 Imagine from
+# menu / S10 Heavy / GQA-008 Create Videos / history Command Menu
+# search do not cover. Similar imagine/search/puppy names do not
+# cover. Leftover dest skip is only GQA-004/040 capture-view.
 schemaVersion: 1
 id: grok-qa-workbook
-revision: 13
+revision: 14
 reviewedAt: "2026-09-16"
 source:
   workbook: grok-qa-graph.xlsx
@@ -1315,8 +1322,23 @@ originals:
     evidencePacket: sequence
     queue: "output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: sequence
+        id: image-search-similar-followups
+        note: "Named live-output frames: first set of 3 New York images on-subject; then 3 more similar to the first (not a new random set); then similar to an object in one of them. Human reviews original criterion. Imagine dest-end / iOS Imagine Unbound / logged-out Imagine judged (do not require generated images) / leftover 3*5 extract-15 / S11 generate+download / Make Video / Heavy 5-image / Draw a puppy / Draw a hat / S02 Imagine from menu / S10 Heavy agents / GQA-008 Create Videos / history Command Menu search (GQA-038) is not this sequence. Capture-view leftover skip is only GQA-004/040. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
+      - kind: receipt
+        id: tap-send-find-three-images
+        note: "Type and send find 3 images of New York (or variation) actually executed (test-action). Leftover Imagine dest-end / iOS Imagine Unbound / logged-out Imagine judged / leftover 3*5 extract-15 / S11 Draw a puppy generate is not this original. History Command Menu search is GQA-038, not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: receipt
+        id: tap-send-three-more-similar
+        note: "Ask for 3 more similar to the first actually executed (test-action). A new random set is not this original. S11 Draw a hat / orig 50 Heavy 5-image edit is not this original."
+      - kind: receipt
+        id: tap-send-similar-to-object
+        note: "Ask for images similar to an object in one of them actually executed (test-action). Imagine dest-end feed without search follow-ups is not this original."
     gates:
       - Disabled on Free. SuperGrok+. Do not make this depend on image generation S11.
+      - "Leftover Imagine dest-end / iOS Imagine Unbound / logged-out Imagine judged / leftover 3*5 extract-15 / S11 image gen / S02 Imagine from menu / S10 Heavy / GQA-008 Create Videos / history Command Menu search is not this original. Causal TAP must send find-3-images then similar follow-ups. Similar imagine/search/puppy names do not cover."
     status: unbound
     bindings: []
   - id: 50

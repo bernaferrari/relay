@@ -7,9 +7,9 @@
  * Captions are display text; obligations are plannedSlots identities.
  * S02 shell, S05 model/preset, S08 output-battery, S01 auth, S03
  * composer, S06 Auto-routing, S07 response-chrome, S09
- * single-agent tools + sources, S10 Heavy multi-agent, and S11
- * image gen + edit + export originals keep explicit test-action
- * evidence-needed while remaining unbound.
+ * single-agent tools + sources, S10 Heavy multi-agent, S11
+ * image gen + edit + export, and S12 image search originals keep
+ * explicit test-action evidence-needed while remaining unbound.
  * Leftover Fast-checked is not a models Test. Inspect-only model
  * sheet is not Switch model, presets, or Auto Fast/Expert routing.
  * Leftover 3*5 extract-15 / Markdown judge is not S08 generated-output
@@ -31,7 +31,11 @@
  * / UNRECORDED orig 50 Heavy 5-image / leftover 3*5 / S02 Imagine
  * from menu / S10 Heavy agents / GQA-008 Create Videos preset is
  * not S11 image gen download, Make Video, five-image edit, Draw a
- * puppy, or Draw a hat. Original criteria stay on the slot.
+ * puppy, or Draw a hat. Imagine dest-end / iOS Imagine Unbound /
+ * logged-out Imagine judged / leftover 3*5 / S11 image gen / S02
+ * Imagine from menu / S10 Heavy / GQA-008 Create Videos / history
+ * Command Menu search is not S12 Image search. Original criteria
+ * stay on the slot.
  */
 
 import { captureReviewSlotId, type CaptureReviewConfiguration } from "./capture-review.js";
@@ -61,6 +65,8 @@ export const WORKBOOK_HEAVY_FAMILY_ID = "S10";
 export const WORKBOOK_HEAVY_ORIGINAL_IDS = [31, 57, 58] as const;
 export const WORKBOOK_IMAGE_FAMILY_ID = "S11";
 export const WORKBOOK_IMAGE_ORIGINAL_IDS = [16, 17, 50, 54, 55] as const;
+export const WORKBOOK_IMAGE_SEARCH_FAMILY_ID = "S12";
+export const WORKBOOK_IMAGE_SEARCH_ORIGINAL_IDS = [49] as const;
 export const WORKBOOK_MODELS_FAMILY_ID = "S05";
 export const WORKBOOK_MODELS_ORIGINAL_IDS = [7, 8] as const;
 export const WORKBOOK_OUTPUT_FAMILY_ID = "S08";
@@ -242,9 +248,9 @@ export const RC23_WORKBOOK_NON_BINDINGS: readonly {
   },
   {
     checkpointId: "imagine",
-    originalIds: [16, 17, 37, 50, 54, 55],
+    originalIds: [16, 17, 37, 49, 50, 54, 55],
     reason:
-      "iOS Imagine Unbound; image-generation rows stay unbound; Android Imagine is a native companion, not a workbook binding. Imagine dest-end is not generate+download, Make Video, five-image edit, Draw a puppy, or Draw a hat.",
+      "iOS Imagine Unbound; image-generation rows stay unbound; Android Imagine is a native companion, not a workbook binding. Imagine dest-end is not generate+download, Make Video, five-image edit, Draw a puppy, Draw a hat, or Image search.",
   },
   {
     checkpointId: "logo",
@@ -428,6 +434,18 @@ export function coverByUnrecordedHeavyOrFinanceDestEnd(
  * download / Make Video / Heavy 5-image edit / Draw a puppy / Draw a
  * hat TAP evidence is required. */
 export function coverByImagineDestEndOrUnrecordedHeavyImage(
+  original: Pick<WorkbookOriginal, "id" | "family">,
+): boolean {
+  void original;
+  return false;
+}
+
+/** Imagine dest-end, iOS Imagine Unbound, logged-out Imagine judged,
+ * leftover 3*5 extract-15, S11 image gen, S02 Imagine from menu,
+ * S10 Heavy, GQA-008 Create Videos, or history Command Menu search
+ * never cover S12. Find-3-images TAP + similar follow-up TAP
+ * evidence is required. */
+export function coverByImagineDestEndOrHistorySearch(
   original: Pick<WorkbookOriginal, "id" | "family">,
 ): boolean {
   void original;
@@ -964,6 +982,7 @@ function distinctiveNeedles(original: WorkbookOriginal): readonly string[] {
   if (original.id === 50) extra.push("heavy", "expert");
   if (original.id === 54) extra.push("puppy");
   if (original.id === 55) extra.push("hat");
+  if (original.id === 49) extra.push("imagine", "3x5", "puppy", "download");
   if (original.id === 14) extra.push("code", "snippet");
   if (original.id === 15) extra.push("markdown");
   if (original.id === 32) extra.push("coffee");
@@ -1086,6 +1105,7 @@ export function suggestedExecutionQueueForOriginal(input: {
     input.family === WORKBOOK_TOOLS_FAMILY_ID ||
     input.family === WORKBOOK_HEAVY_FAMILY_ID ||
     input.family === WORKBOOK_IMAGE_FAMILY_ID ||
+    input.family === WORKBOOK_IMAGE_SEARCH_FAMILY_ID ||
     input.family === "S17"
   )
     return "live-output";
@@ -1300,6 +1320,14 @@ export function workbookEvidenceNeededError(
       return `${label} S11 needs explicit evidence-needed (generate TAP, download TAP, Make Video TAP, Heavy/Expert 5-image edit TAP)`;
     }
   }
+  if (original.family === WORKBOOK_IMAGE_SEARCH_FAMILY_ID) {
+    if (original.requirementAction !== "test-action") {
+      return `${label} S12 must be test-action — leftover Imagine dest-end / iOS Imagine Unbound / logged-out Imagine judged / leftover 3*5 / history Command Menu search / S11 image gen is not Image search`;
+    }
+    if (!original.evidenceNeeded || original.evidenceNeeded.length === 0) {
+      return `${label} S12 needs explicit evidence-needed (find-3-images TAP, similar follow-up TAP, similar-to-object TAP)`;
+    }
+  }
   if (original.id === 7) {
     const switchKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
     for (const required of ["before", "after", "receipt"] as const) {
@@ -1500,6 +1528,16 @@ export function workbookEvidenceNeededError(
     const hatKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
     if (!hatKinds.has("receipt")) {
       return `${label} GQA-055 needs a Draw a hat send TAP receipt — leftover Imagine dest-end / orig 50 Heavy 5-image is not this original`;
+    }
+  }
+  if (original.id === 49) {
+    const searchKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!searchKinds.has("sequence")) {
+      return `${label} GQA-049 needs sequence evidence — leftover Imagine dest-end / history Command Menu search / leftover 3*5 is not this original`;
+    }
+    const searchReceipts = original.evidenceNeeded?.filter((item) => item.kind === "receipt") ?? [];
+    if (searchReceipts.length < 3) {
+      return `${label} GQA-049 needs find-3-images TAP, similar TAP, and similar-to-object TAP receipts — leftover Imagine dest-end / S11 Draw a puppy / history search is not this original`;
     }
   }
   if (!original.evidenceNeeded) return undefined;

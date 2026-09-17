@@ -12,6 +12,7 @@ import {
   coverByUnrecordedSourcesNewsOrPlugins,
   coverByUnrecordedHeavyOrFinanceDestEnd,
   coverByImagineDestEndOrUnrecordedHeavyImage,
+  coverByImagineDestEndOrHistorySearch,
   coverByRc23DestEnd,
   countWorkbookEvidencePackets,
   countWorkbookSuggestedQueues,
@@ -41,6 +42,8 @@ import {
   WORKBOOK_HEAVY_ORIGINAL_IDS,
   WORKBOOK_IMAGE_FAMILY_ID,
   WORKBOOK_IMAGE_ORIGINAL_IDS,
+  WORKBOOK_IMAGE_SEARCH_FAMILY_ID,
+  WORKBOOK_IMAGE_SEARCH_ORIGINAL_IDS,
   WORKBOOK_EVIDENCE_PACKET_LABELS,
   WORKBOOK_RC23_REQUIREMENT_ID,
   WORKBOOK_MODELS_FAMILY_ID,
@@ -155,11 +158,21 @@ const similarCatalog = [
     name: "Judge logged-out Imagine chrome",
     appMapId: "grok-web",
   },
+  {
+    id: "test-grok-web-signed-in-search",
+    name: "Search history",
+    appMapId: "grok-web",
+  },
+  {
+    id: "test-grok-android-search",
+    name: "Open sidebar Search",
+    appMapId: "grok-android",
+  },
 ];
 
 test("reviewed workbook freeze keeps 58 originals, 15 active families, and 5 exclusions", () => {
   const manifest = loadReviewedWorkbook();
-  assert.equal(manifest.revision, 13);
+  assert.equal(manifest.revision, 14);
   assert.equal(manifest.counts.originals, 58);
   assert.equal(manifest.counts.families, 17);
   assert.equal(manifest.counts.activeFamilies, 15);
@@ -189,12 +202,14 @@ test("similarly named live Tests do not cover Customize Grok, Imagine, Dictation
   assert.equal(byId.get(37)?.status, "unbound");
   assert.equal(byId.get(42)?.status, "excluded");
   assert.equal(byId.get(50)?.status, "unbound");
+  assert.equal(byId.get(49)?.status, "unbound");
   assert.equal(byId.get(48)?.status, "unbound");
   assert.equal(byId.get(51)?.status, "unbound");
   assert.equal(originalIsCovered(byId.get(8)!), false);
   assert.equal(originalIsCovered(byId.get(37)!), false);
   assert.equal(originalIsCovered(byId.get(42)!), false);
   assert.equal(originalIsCovered(byId.get(50)!), false);
+  assert.equal(originalIsCovered(byId.get(49)!), false);
   assert.equal(originalIsCovered(byId.get(48)!), false);
   assert.equal(originalIsCovered(byId.get(51)!), false);
   assert.equal(
@@ -378,8 +393,32 @@ test("similarly named live Tests do not cover Customize Grok, Imagine, Dictation
     true,
   );
   assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 49 && row.testId === "test-grok-web-signed-in-imagine",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 49 && row.testId === "test-grok-web-signed-in-search",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 49 && row.testId === "test-grok-android-search",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 49 && row.testId === "test-grok-web-signed-in-3x5",
+    ),
+    true,
+  );
+  assert.equal(
     [
-      8, 37, 42, 50, 48, 51, 44, 47, 1, 2, 6, 28, 29, 9, 10, 12, 13, 11, 30, 56, 16, 17, 54, 55,
+      8, 37, 42, 50, 48, 51, 44, 47, 1, 2, 6, 28, 29, 9, 10, 12, 13, 11, 30, 56, 16, 17, 54, 55, 49,
     ].every((id) => !report.coveredOriginalIds.includes(id)),
     true,
   );
@@ -638,6 +677,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
   assert.equal(rc23DestEndSatisfiesOriginal("imagine", 50), false);
   assert.equal(rc23DestEndSatisfiesOriginal("imagine", 54), false);
   assert.equal(rc23DestEndSatisfiesOriginal("imagine", 55), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("imagine", 49), false);
   assert.equal(rc23DestEndSatisfiesOriginal("dictation", 42), false);
   assert.equal(rc23DestEndSatisfiesOriginal("private-chat", 4), false);
   assert.equal(coverByFindingSimilarlyNamedTest(composer, similarCatalog), false);
@@ -1292,6 +1332,73 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
   assert.equal(coverByRc23DestEnd({ id: 50 }, "imagine"), false);
   assert.equal(coverByRc23DestEnd({ id: 54 }, "imagine"), false);
   assert.equal(coverByRc23DestEnd({ id: 55 }, "imagine"), false);
+  const imageSearchFamily = manifest.originals.filter(
+    (item) => item.family === WORKBOOK_IMAGE_SEARCH_FAMILY_ID,
+  );
+  assert.deepEqual(
+    imageSearchFamily.map((item) => item.id),
+    [...WORKBOOK_IMAGE_SEARCH_ORIGINAL_IDS],
+  );
+  assert.equal(
+    imageSearchFamily.every(
+      (item) =>
+        item.status === "unbound" &&
+        item.requirementAction === "test-action" &&
+        (item.evidenceNeeded?.length ?? 0) > 0 &&
+        item.bindings.length === 0 &&
+        item.criteria.trim().length > 0 &&
+        item.suggestedExecutionQueue === "live-output" &&
+        coverByImagineDestEndOrHistorySearch(item) === false,
+    ),
+    true,
+  );
+  const imageSearchKinds = new Set(
+    manifest.originals.find((item) => item.id === 49)?.evidenceNeeded?.map((item) => item.kind) ??
+      [],
+  );
+  assert.equal(imageSearchKinds.has("sequence"), true);
+  assert.equal(
+    (manifest.originals
+      .find((item) => item.id === 49)
+      ?.evidenceNeeded?.filter((item) => item.kind === "receipt").length ?? 0) >= 3,
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 49)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-imagine"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 49)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-search"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 49)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-android-search"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 49)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-3x5"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 49)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-android-unrecorded-heavy-image-5"),
+    true,
+  );
+  assert.equal(coverByRc23DestEnd({ id: 49 }, "imagine"), false);
   const slotsPath = join(
     dirname(fileURLToPath(import.meta.url)),
     "../../../tests/coverage/rc23-screenshot-first-slots.json",

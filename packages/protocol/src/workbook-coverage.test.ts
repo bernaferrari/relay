@@ -10,6 +10,7 @@ import {
   coverByUnrecordedSourcesNewsOrPlugins,
   coverByUnrecordedHeavyOrFinanceDestEnd,
   coverByImagineDestEndOrUnrecordedHeavyImage,
+  coverByImagineDestEndOrHistorySearch,
   coverByRc23DestEnd,
   destEndViewPacketMayLeftoverSkip,
   evaluateWorkbookCoverage,
@@ -40,6 +41,8 @@ import {
   WORKBOOK_HEAVY_ORIGINAL_IDS,
   WORKBOOK_IMAGE_FAMILY_ID,
   WORKBOOK_IMAGE_ORIGINAL_IDS,
+  WORKBOOK_IMAGE_SEARCH_FAMILY_ID,
+  WORKBOOK_IMAGE_SEARCH_ORIGINAL_IDS,
   WORKBOOK_MODELS_FAMILY_ID,
   WORKBOOK_MODELS_ORIGINAL_IDS,
   WORKBOOK_OUTPUT_FAMILY_ID,
@@ -629,6 +632,15 @@ test("capture-view leftover skip is only GQA-004 attach and GQA-040 Settings inv
     }),
     false,
   );
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 49, evidencePacket: "sequence" }), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 49,
+      evidencePacket: "sequence",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
 });
 
 test("S16 cannot be single-view Fast UI", () => {
@@ -711,6 +723,7 @@ test("RC-23 dest-end table binds only orig 4 attach view and orig 40 settings vi
   assert.equal(rc23DestEndSatisfiesOriginal("imagine", 50), false);
   assert.equal(rc23DestEndSatisfiesOriginal("imagine", 54), false);
   assert.equal(rc23DestEndSatisfiesOriginal("imagine", 55), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("imagine", 49), false);
   assert.equal(rc23DestEndSatisfiesOriginal("dictation", 42), false);
   assert.equal(coverByRc23DestEnd({ id: 4 }, "attach"), true);
   assert.equal(coverByRc23DestEnd({ id: 6 }, "composer-focus"), false);
@@ -3257,6 +3270,204 @@ test("S11 packets stay unbound and need generate, download, Make Video, five-ima
       id: 55,
       family: WORKBOOK_IMAGE_FAMILY_ID,
       evidencePacket: "generated-output",
+    }),
+    "live-output",
+  );
+});
+
+test("S12 packets stay unbound and need find-3-images TAP plus similar follow-up TAP evidence", () => {
+  assert.deepEqual([...WORKBOOK_IMAGE_SEARCH_ORIGINAL_IDS], [49]);
+  assert.deepEqual(requiredEvidenceNeededKinds("sequence"), ["sequence"]);
+  const missing = original({
+    id: 49,
+    name: "Image search",
+    family: WORKBOOK_IMAGE_SEARCH_FAMILY_ID,
+    evidencePacket: "sequence",
+    status: "unbound",
+  });
+  assert.match(
+    workbookEvidenceNeededError(missing) ?? "",
+    /S12 must be test-action|S12 needs explicit evidence-needed|find-3-images TAP/u,
+  );
+  const leftoverImagineDest = original({
+    id: 49,
+    name: "Image search",
+    family: WORKBOOK_IMAGE_SEARCH_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "leftover-imagine-dest-end",
+        note: "Leftover Imagine dest-end What should we imagine? No find-3-images TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria: "First set is on-subject. Follow-ups are actually similar, not a new random set.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverImagineDest) ?? "",
+    /find-3-images TAP, similar TAP, and similar-to-object TAP receipts/u,
+  );
+  assert.equal(coverByImagineDestEndOrHistorySearch(leftoverImagineDest), false);
+  const leftoverFirstSearchOnly = original({
+    id: 49,
+    name: "Image search",
+    family: WORKBOOK_IMAGE_SEARCH_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "first-set-only",
+        note: "First New York set. No similar follow-ups.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-find-three-images",
+        note: "Find 3 images of New York. No similar TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria: "First set is on-subject. Follow-ups are actually similar, not a new random set.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverFirstSearchOnly) ?? "",
+    /find-3-images TAP, similar TAP, and similar-to-object TAP receipts/u,
+  );
+  const leftoverTwoReceipts = original({
+    id: 49,
+    name: "Image search",
+    family: WORKBOOK_IMAGE_SEARCH_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "two-prompts",
+        note: "First set plus one similar follow-up. No similar-to-object TAP.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-find-three-images",
+        note: "Find 3 images of New York.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-three-more-similar",
+        note: "3 more similar to the first. No similar-to-object TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria: "First set is on-subject. Follow-ups are actually similar, not a new random set.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverTwoReceipts) ?? "",
+    /find-3-images TAP, similar TAP, and similar-to-object TAP receipts/u,
+  );
+  const imageSearch = original({
+    id: 49,
+    name: "Image search",
+    family: WORKBOOK_IMAGE_SEARCH_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "image-search-similar-followups",
+        note: "First set on-subject, then similar follow-ups, then similar to an object.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-find-three-images",
+        note: "Find 3 images of New York actually executed. leftover Imagine dest-end is not this original.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-three-more-similar",
+        note: "Ask for 3 more similar to the first actually executed.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-similar-to-object",
+        note: "Ask for images similar to an object actually executed.",
+      },
+    ],
+    status: "unbound",
+    criteria: "First set is on-subject. Follow-ups are actually similar, not a new random set.",
+  });
+  assert.equal(workbookEvidenceNeededError(imageSearch), undefined);
+  assert.equal(workbookEvidencePolicyError(imageSearch), undefined);
+  assert.equal(originalIsCovered(imageSearch), false);
+  assert.equal(coverByImagineDestEndOrHistorySearch(imageSearch), false);
+  const searchObligation = workbookOriginalObligationIdentity(imageSearch);
+  assert.equal(searchObligation.requirementId, "GQA-049");
+  assert.equal(searchObligation.caption, "Image search");
+  assert.match(searchObligation.criteria, /Follow-ups are actually similar/u);
+  const report = evaluateWorkbookCoverage(fixture({ originals: [imageSearch] }), [
+    { id: "test-grok-ios-imagine", name: "Imagine" },
+    { id: "test-grok-web-signed-in-imagine", name: "Open Imagine" },
+    { id: "test-grok-android-imagine", name: "Open Imagine" },
+    { id: "test-grok-web-logged-out-imagine-judged", name: "Judge logged-out Imagine chrome" },
+    { id: "test-grok-android-unrecorded-heavy-image-5", name: "UNRECORDED 5-image Heavy" },
+    { id: "test-grok-web-signed-in-3x5", name: "Ask 3*5" },
+    { id: "test-grok-web-signed-in-search", name: "Search history" },
+    { id: "test-grok-android-search", name: "Open sidebar Search" },
+  ]);
+  assert.deepEqual(report.coveredOriginalIds, []);
+  assert.equal(report.unboundOriginalIds.includes(49), true);
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 49 && row.testId === "test-grok-web-signed-in-imagine",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 49 && row.testId === "test-grok-ios-imagine",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 49 && row.testId === "test-grok-web-signed-in-search",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 49 && row.testId === "test-grok-android-search",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 49 && row.testId === "test-grok-web-signed-in-3x5",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 49 && row.testId === "test-grok-android-unrecorded-heavy-image-5",
+    ),
+    true,
+  );
+  assert.equal(coverByFindingSimilarlyNamedTest(imageSearch, []), false);
+  assert.equal(coverByRc23DestEnd({ id: 49 }, "imagine"), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 49,
+      evidencePacket: "sequence",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 49, evidencePacket: "sequence" }), false);
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 49,
+      family: WORKBOOK_IMAGE_SEARCH_FAMILY_ID,
+      evidencePacket: "sequence",
     }),
     "live-output",
   );
