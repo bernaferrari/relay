@@ -1112,6 +1112,14 @@ test("dest-end dest-phase identity is dest wait-for pixels, not leftover Close l
     ["frames/002.png"],
   );
   assert.deepEqual(
+    destIdentityReviewItems([
+      { caption: "Observe", framePath: "frames/003.png" },
+      { caption: "Close", framePath: "frames/004.png" },
+      { caption: "after · Run saved Test", framePath: "frames/005.png" },
+    ]).map((item) => item.framePath),
+    ["frames/003.png"],
+  );
+  assert.deepEqual(
     destIdentitySourceFrames(
       [{ path: "frames/002.png" }, { path: "frames/005.png" }, { path: "frames/004.png" }],
       [leftoverHome, destWait],

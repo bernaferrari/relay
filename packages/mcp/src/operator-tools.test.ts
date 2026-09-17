@@ -670,3 +670,65 @@ test("operator visual review dest identity never accepts leftover Close 004 as d
     false,
   );
 });
+
+test("operator advanced combine campaign dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+  const { invoker } = recordingInvoker((operationId) => {
+    if (operationId === "job.combine.campaign.get") {
+      return { campaign: { id: "camp-1", status: "ready-to-resume" } };
+    }
+    if (operationId === "job.combine.campaign.resume") {
+      return {
+        campaign: { id: "camp-1", status: "running" },
+        jobs: [leftoverDestEndJob],
+        cells: [{ cellId: "cell-1" }],
+      };
+    }
+    if (operationId === "job.combine.campaign.repeat.clusters") {
+      return {
+        schemaVersion: 1,
+        campaignId: "camp-1",
+        clusters: [
+          {
+            id: "cluster-1",
+            cases: [{ runId: leftoverDestEndJob.id, evidenceRefs: ["run:4b93702b"] }],
+          },
+        ],
+      };
+    }
+    return { ok: true };
+  });
+  const signal = new AbortController().signal;
+  const run = (operationId: string, input: Record<string, unknown>, confirmed = false) =>
+    invokeRelayOperatorTool({
+      name: "relay_advanced",
+      argumentsValue: { operationId, input },
+      confirmed,
+      invoker,
+      actorId: "agent:cursor",
+      signal,
+    });
+
+  const listed = (await run("job.combine.campaign.get", { batchId: "camp-1" })) as {
+    campaign?: { id?: string };
+    destIdentity?: unknown;
+  };
+  assert.equal(listed.campaign?.id, "camp-1");
+  assert.equal(listed.destIdentity, undefined);
+
+  const resumed = (await run("job.combine.campaign.resume", { batchId: "camp-1" }, true)) as {
+    campaign?: { id?: string };
+    jobs?: Array<{
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    }>;
+  };
+  assert.equal(resumed.campaign?.id, "camp-1");
+  assert.deepEqual(
+    resumed.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    resumed.jobs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});

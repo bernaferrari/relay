@@ -2208,6 +2208,122 @@ test("combine run --json dest identity is dest wait-for, not leftover Close 004 
   assert.equal(result.result?.jobs?.[0]?.frames, undefined);
 });
 
+test("combine campaign get --json keeps campaign; leftover Close 004 cannot fill dest", async () => {
+  const io = capture();
+  const code = await runCli(["combine", "campaign", "get", "camp-1", "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke(operationId) {
+        assert.equal(operationId, "job.combine.campaign.get");
+        return { campaign: { id: "camp-1", status: "ready-to-resume" } };
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: { campaign?: { id?: string }; destIdentity?: unknown };
+  };
+  assert.equal(result.result?.campaign?.id, "camp-1");
+  assert.equal(result.result?.destIdentity, undefined);
+});
+
+test("combine campaign resume --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+  const io = capture();
+  const leftoverJob = {
+    id: leftoverDestEndRun.id,
+    status: "ok",
+    frames: leftoverDestEndRun.frames,
+    artifacts: leftoverDestEndRun.artifacts,
+  };
+  const client: OperationInvoker = {
+    async invoke(operationId) {
+      if (operationId === "job.combine.campaign.resume") {
+        return {
+          campaign: { id: "camp-1", status: "running" },
+          jobs: [{ id: leftoverJob.id, status: "queued" }],
+          cells: [{ cellId: "cell-1" }],
+        };
+      }
+      if (operationId === "job.get") return { job: leftoverJob };
+      return {};
+    },
+    events: async () => {},
+  };
+  const code = await runCli(["combine", "campaign", "resume", "camp-1", "--json"], {
+    streams: io.streams,
+    createClient: () => client,
+    registerSignalHandlers: false,
+    pollIntervalMs: 0,
+    env: {},
+  });
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+      job?: {
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+      };
+      jobs?: Array<{
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+      }>;
+    };
+  };
+  const destPaths =
+    result.result?.destIdentity?.map((frame) => frame.path) ??
+    result.result?.job?.destIdentity?.map((frame) => frame.path) ??
+    result.result?.jobs?.[0]?.destIdentity?.map((frame) => frame.path);
+  assert.deepEqual(destPaths, ["frames/003.png"]);
+  assert.equal(
+    result.result?.captureReview?.some((item) => item.framePath === "frames/004.png") === true ||
+      result.result?.job?.captureReview?.some((item) => item.framePath === "frames/004.png") ===
+        true ||
+      result.result?.jobs?.some((job) =>
+        job.captureReview?.some((item) => item.framePath === "frames/004.png"),
+      ) === true,
+    false,
+  );
+});
+
+test("combine campaign failures --json keeps clusters; leftover Close 004 cannot fill dest", async () => {
+  const io = capture();
+  const code = await runCli(["combine", "campaign", "failures", "camp-1", "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke(operationId) {
+        assert.equal(operationId, "job.combine.campaign.repeat.clusters");
+        return {
+          schemaVersion: 1,
+          campaignId: "camp-1",
+          clusters: [
+            {
+              id: "cluster-1",
+              cases: [{ runId: leftoverDestEndRun.id, evidenceRefs: ["run:4b93702b"] }],
+            },
+          ],
+        };
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      campaignId?: string;
+      clusters?: Array<{ cases?: Array<{ evidenceRefs?: string[] }> }>;
+    };
+  };
+  assert.equal(result.result?.campaignId, "camp-1");
+  assert.deepEqual(result.result?.clusters?.[0]?.cases?.[0]?.evidenceRefs, ["run:4b93702b"]);
+});
+
 test("combine run carries the shared explicit local-admission contract unchanged", async () => {
   const io = capture();
   const calls: Array<{ operationId: OperationId; input: Record<string, unknown> }> = [];

@@ -945,3 +945,64 @@ test("job.combine.analysis dest identity drops leftover Close 004 finding frames
   );
   assert.equal(result.analysis?.findings?.[0]?.frame, "frames/003.png");
 });
+
+test("combine campaign get keeps campaign; leftover Close 004 cannot fill dest", () => {
+  const result = summarizeExecutionOperationResult("job.combine.campaign.get", {
+    campaign: { id: "camp-1", status: "ready-to-resume" },
+  }) as {
+    campaign?: { id?: string; status?: string };
+    job?: unknown;
+    destIdentity?: unknown;
+  };
+  assert.equal(result.campaign?.id, "camp-1");
+  assert.equal(result.campaign?.status, "ready-to-resume");
+  assert.equal(result.job, undefined);
+  assert.equal(result.destIdentity, undefined);
+});
+
+test("combine campaign resume dest identity is dest wait-for, not leftover Close 004 last-frame", () => {
+  const result = summarizeExecutionOperationResult("job.combine.campaign.resume", {
+    campaign: { id: "camp-1", status: "running" },
+    jobs: [leftoverDestEndJob],
+    cells: [{ cellId: "cell-1" }],
+    admission: { admitted: true },
+  }) as {
+    campaign?: { id?: string };
+    cells?: Array<{ cellId?: string }>;
+    admission?: { admitted?: boolean };
+    jobs?: Array<{
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    }>;
+  };
+  assert.equal(result.campaign?.id, "camp-1");
+  assert.equal(result.cells?.[0]?.cellId, "cell-1");
+  assert.equal(result.admission?.admitted, true);
+  assert.deepEqual(
+    result.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.jobs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
+test("combine campaign repeat clusters keep campaign id; leftover Close 004 cannot fill dest", () => {
+  const result = summarizeExecutionOperationResult("job.combine.campaign.repeat.clusters", {
+    schemaVersion: 1,
+    campaignId: "camp-1",
+    clusters: [
+      {
+        id: "cluster-1",
+        cases: [{ runId: leftoverDestEndJob.id, evidenceRefs: ["run:4b93702b"] }],
+      },
+    ],
+  }) as {
+    campaignId?: string;
+    clusters?: Array<{ id?: string; cases?: Array<{ evidenceRefs?: string[] }> }>;
+  };
+  assert.equal(result.campaignId, "camp-1");
+  assert.equal(result.clusters?.[0]?.id, "cluster-1");
+  assert.deepEqual(result.clusters?.[0]?.cases?.[0]?.evidenceRefs, ["run:4b93702b"]);
+});

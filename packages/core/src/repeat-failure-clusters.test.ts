@@ -154,6 +154,50 @@ test("clusters preserve independent cell evidence and review decisions", () => {
   );
 });
 
+test("leftover Close 004 last-frame cannot fill dest evidence refs", () => {
+  const destEnd = run({
+    id: "run-en",
+    artifacts: [
+      {
+        kind: "campaign-check-result",
+        capturedAt: 10,
+        data: {
+          id: "check-language",
+          title: "Language check",
+          status: "failed",
+          error: "Content assertion: expected translated title",
+          startedAt: 1,
+          finishedAt: 10,
+        },
+      },
+      {
+        kind: "capture-review",
+        capturedAt: 10,
+        data: {
+          caption: "Observe",
+          framePath: "frames/003.png",
+          phase: "dest",
+          policy: "fast",
+        },
+      },
+      {
+        kind: "capture-review",
+        capturedAt: 11,
+        data: { caption: "Close", framePath: "frames/004.png" },
+      },
+    ],
+  });
+  destEnd.frames = [
+    { path: "frames/003.png", caption: "Observe", capturedAt: 10 },
+    { path: "frames/004.png", caption: "after · Run saved Test", capturedAt: 11 },
+  ];
+  const report = buildRepeatFailureClusters(campaign(), [destEnd, run({ id: "run-pt" })]);
+  const refs = report.clusters[0]!.cases.find((item) => item.runId === "run-en")?.evidenceRefs;
+  assert.ok(refs?.includes("run:run-en"));
+  assert.ok(refs?.includes("run:run-en#frame:0"));
+  assert.equal(refs?.includes("run:run-en#frame:1"), false);
+});
+
 test("failure kind and target cohort filters are deterministic", () => {
   const input = campaign();
   input.cases[1]!.targetProfileId = "pixel-2";
