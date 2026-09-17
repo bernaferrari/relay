@@ -269,8 +269,10 @@ export function captureReviewQueueFrameKey(item: {
   return item.runId ? `${item.runId}::${item.framePath}` : item.framePath;
 }
 
+/** Human Plan capture-review list. Dest wait-for stays; leftover Close cannot fill dest. */
 export function formatPlanCaptureReviewQueue(queue: PlanCaptureReviewQueue): string {
-  const rows = queue.items.map((item) => {
+  const dest = filterPlanCaptureReviewQueue(queue);
+  const rows = dest.items.map((item) => {
     const attempt = item.attempt && item.attempt > 1 ? ` · attempt ${item.attempt}` : "";
     const blocked = item.blocked ? " · blocked" : "";
     const approximation =
@@ -282,11 +284,11 @@ export function formatPlanCaptureReviewQueue(queue: PlanCaptureReviewQueue): str
     return `${item.runId} · ${item.caption}${attempt} · ${item.status}${blocked}${approximation}${placeSuffix}`;
   });
   const shown =
-    queue.summary.planned && queue.items.length !== queue.summary.planned
-      ? [`Showing ${queue.items.length} of ${queue.summary.planned}`]
+    dest.summary.planned && dest.items.length !== dest.summary.planned
+      ? [`Showing ${dest.items.length} of ${dest.summary.planned}`]
       : [];
   return [
-    formatCaptureReviewCoverageSummary(queue.summary),
+    formatCaptureReviewCoverageSummary(dest.summary),
     ...shown,
     "Looks correct does not approve a visual baseline.",
     ...rows,

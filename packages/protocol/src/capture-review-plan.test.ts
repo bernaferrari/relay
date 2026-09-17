@@ -300,6 +300,10 @@ test("Plan dest identity filters and Gallery skip leftover Close last-frame", ()
     ]).length,
     0,
   );
+  const listed = formatPlanCaptureReviewQueue(queue);
+  assert.match(listed, /Observe/u);
+  assert.doesNotMatch(listed, /Close/u);
+  assert.doesNotMatch(listed, /frames\/004\.png/u);
 });
 
 test("Plan dest identity filters skip unphased leftover Close extras", () => {
@@ -352,6 +356,10 @@ test("Plan dest identity filters skip unphased leftover Close extras", () => {
     ]).length,
     0,
   );
+  const listed = formatPlanCaptureReviewQueue(queue);
+  assert.match(listed, /Observe/u);
+  assert.doesNotMatch(listed, /Close/u);
+  assert.doesNotMatch(listed, /frames\/004\.png/u);
 });
 
 test("a missing Plan capture stays in the denominator and cannot be selected", () => {

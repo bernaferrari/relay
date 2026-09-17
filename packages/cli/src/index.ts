@@ -745,9 +745,13 @@ export async function runCli(
           operationId === "job.combine.capture.review" &&
           parsed.config.output === "human"
         ) {
-          const queue = (result as { queue?: Parameters<typeof formatPlanCaptureReviewQueue>[0] })
-            .queue;
-          output.result(operationId, queue ? formatPlanCaptureReviewQueue(queue) : result);
+          const summarized = summarizeResult(operationId, result, input, commandPath) as {
+            queue?: Parameters<typeof formatPlanCaptureReviewQueue>[0];
+          };
+          output.result(
+            operationId,
+            summarized.queue ? formatPlanCaptureReviewQueue(summarized.queue) : summarized,
+          );
         } else {
           output.result(
             operationId,

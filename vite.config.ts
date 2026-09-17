@@ -39,6 +39,9 @@ export default defineConfig({
     ],
   },
   lint: {
+    // Oxlint-native plugins only. Setting `plugins` replaces the default set,
+    // which would otherwise include the ESLint-compat and unicorn ports.
+    plugins: ["oxc", "typescript"],
     jsPlugins: ["@shadcn/lint"],
     settings: {
       shadcn: {
@@ -50,6 +53,11 @@ export default defineConfig({
       },
     },
     rules: {
+      // ESLint-compat ports stay off. Lint is Oxlint + @shadcn/lint only.
+      "eslint/no-unused-vars": "off",
+      "eslint/no-unsafe-optional-chaining": "off",
+      "no-unused-vars": "off",
+      "no-unsafe-optional-chaining": "off",
       "shadcn/no-inline-styles": ["error", { allow: ["transform"] }],
       "shadcn/require-static-classes": "error",
       "shadcn/no-unknown-classes": "error",

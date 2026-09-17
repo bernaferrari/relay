@@ -907,6 +907,57 @@ test("plan capture review --json dest identity is dest wait-for 003, not leftove
   );
 });
 
+test("plan capture review dest identity is dest wait-for 003, not leftover Close 004 last-frame", async () => {
+  const io = capture();
+  const code = await runCli(["plan", "capture", "review", leftoverDestEndRun.id], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke(operationId) {
+        assert.equal(operationId, "job.combine.capture.review");
+        return {
+          queue: {
+            items: [
+              {
+                captureId: "frames/003.png::dest",
+                caption: "Observe",
+                status: "pending",
+                framePath: "frames/003.png",
+                phase: CAPTURE_REVIEW_DEST_PHASE,
+                runId: leftoverDestEndRun.id,
+              },
+              {
+                captureId: "frames/004.png::close-leftover",
+                caption: "Close",
+                status: "pending",
+                framePath: "frames/004.png",
+                runId: leftoverDestEndRun.id,
+              },
+            ],
+            summary: {
+              planned: 1,
+              captured: 2,
+              blocked: 0,
+              missing: 0,
+              pending: 2,
+              accepted: 0,
+              issue: 0,
+              needMoreEvidence: 0,
+            },
+          },
+        };
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  assert.match(io.stdout(), /Observe/u);
+  assert.doesNotMatch(io.stdout(), /Close/u);
+  assert.doesNotMatch(io.stdout(), /frames\/004\.png/u);
+});
+
 const snapshotTree = {
   serial: "pixel-9",
   bounds: { width: 834, height: 1112 },
