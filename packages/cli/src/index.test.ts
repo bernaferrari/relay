@@ -2434,6 +2434,151 @@ test("job retry --json dest identity is dest wait-for, not leftover Close 004 la
   );
 });
 
+test("job start/pause/resume/cancel --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+  const leftoverJob = {
+    id: leftoverDestEndRun.id,
+    status: "ok",
+    frames: leftoverDestEndRun.frames,
+    artifacts: leftoverDestEndRun.artifacts,
+  };
+  for (const argv of [
+    ["job", "pause", leftoverDestEndRun.id],
+    ["job", "resume", leftoverDestEndRun.id],
+    ["job", "cancel", leftoverDestEndRun.id],
+  ] as const) {
+    const io = capture();
+    const code = await runCli([...argv, "--json"], {
+      streams: io.streams,
+      createClient: () => ({
+        async invoke() {
+          return { job: leftoverJob };
+        },
+        events: async () => {},
+      }),
+      registerSignalHandlers: false,
+      env: {},
+    });
+    assert.equal(code, ExitCode.success, argv.join(" "));
+    const result = JSON.parse(io.stdout()) as {
+      result?: {
+        job?: {
+          destIdentity?: Array<{ path?: string }>;
+          captureReview?: Array<{ framePath?: string }>;
+        };
+      };
+    };
+    assert.deepEqual(
+      result.result?.job?.destIdentity?.map((frame) => frame.path),
+      ["frames/003.png"],
+    );
+    assert.equal(
+      result.result?.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+      false,
+      argv.join(" "),
+    );
+  }
+});
+
+test("repair retry --no-wait --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+  const io = capture();
+  const leftoverJob = {
+    id: leftoverDestEndRun.id,
+    status: "ok",
+    frames: leftoverDestEndRun.frames,
+    artifacts: leftoverDestEndRun.artifacts,
+  };
+  const code = await runCli(
+    ["repair", "retry", leftoverDestEndRun.id, "check-language", "--no-wait", "--json"],
+    {
+      streams: io.streams,
+      createClient: () => ({
+        async invoke(operationId) {
+          assert.equal(operationId, "run.repair.retry");
+          return {
+            repair: {
+              schemaVersion: 1,
+              id: "repair-1",
+              source: { runId: leftoverDestEndRun.id, checkId: "check-language" },
+            },
+            job: leftoverJob,
+          };
+        },
+        events: async () => {},
+      }),
+      registerSignalHandlers: false,
+      env: {},
+    },
+  );
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      repair?: { id?: string };
+      job?: {
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+      };
+    };
+  };
+  assert.equal(result.result?.repair?.id, "repair-1");
+  assert.deepEqual(
+    result.result?.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.result?.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
+test("run review --json dest identity is dest wait-for 003, not leftover Close 004 last-frame", async () => {
+  const io = capture();
+  const code = await runCli(
+    [
+      "run",
+      "review",
+      leftoverDestEndRun.id,
+      "--input",
+      '{"action":"approve"}',
+      "--confirm",
+      "--json",
+    ],
+    {
+      streams: io.streams,
+      createClient: () => ({
+        async invoke(operationId) {
+          assert.equal(operationId, "run.review");
+          return {
+            review: { status: "approved", action: "approve" },
+            run: leftoverDestEndRun,
+          };
+        },
+        events: async () => {},
+      }),
+      registerSignalHandlers: false,
+      env: {},
+    },
+  );
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      review?: { status?: string };
+      run?: {
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+      };
+    };
+  };
+  assert.equal(result.result?.review?.status, "approved");
+  assert.deepEqual(
+    result.result?.run?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.result?.run?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
 test("combine run carries the shared explicit local-admission contract unchanged", async () => {
   const io = capture();
   const calls: Array<{ operationId: OperationId; input: Record<string, unknown> }> = [];

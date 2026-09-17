@@ -819,3 +819,110 @@ test("operator advanced job retry dest identity is dest wait-for, not leftover C
     false,
   );
 });
+
+test("operator advanced job pause dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+  const { invoker } = recordingInvoker((operationId) => {
+    assert.equal(operationId, "job.pause");
+    return { job: leftoverDestEndJob };
+  });
+  const paused = (await invokeRelayOperatorTool({
+    name: "relay_advanced",
+    argumentsValue: {
+      operationId: "job.pause",
+      input: { jobId: leftoverDestEndJob.id },
+    },
+    confirmed: true,
+    invoker,
+    actorId: "agent:cursor",
+    signal: new AbortController().signal,
+  })) as {
+    job?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+  };
+  assert.deepEqual(
+    paused.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    paused.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
+test("operator advanced repair retry dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+  const { invoker } = recordingInvoker((operationId) => {
+    assert.equal(operationId, "run.repair.retry");
+    return {
+      repair: {
+        schemaVersion: 1,
+        id: "repair-1",
+        source: { runId: leftoverDestEndJob.id, checkId: "check-language" },
+      },
+      job: leftoverDestEndJob,
+    };
+  });
+  const retried = (await invokeRelayOperatorTool({
+    name: "relay_advanced",
+    argumentsValue: {
+      operationId: "run.repair.retry",
+      input: { runId: leftoverDestEndJob.id, checkId: "check-language" },
+    },
+    confirmed: true,
+    invoker,
+    actorId: "agent:cursor",
+    signal: new AbortController().signal,
+  })) as {
+    repair?: { id?: string };
+    job?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+  };
+  assert.equal(retried.repair?.id, "repair-1");
+  assert.deepEqual(
+    retried.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    retried.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
+test("operator advanced run review dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+  const { invoker } = recordingInvoker((operationId) => {
+    assert.equal(operationId, "run.review");
+    return {
+      review: { status: "approved", action: "approve" },
+      run: leftoverDestEndJob,
+    };
+  });
+  const reviewed = (await invokeRelayOperatorTool({
+    name: "relay_advanced",
+    argumentsValue: {
+      operationId: "run.review",
+      input: { runId: leftoverDestEndJob.id, action: "approve" },
+    },
+    confirmed: true,
+    invoker,
+    actorId: "human:local-cli",
+    signal: new AbortController().signal,
+  })) as {
+    review?: { status?: string };
+    run?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+  };
+  assert.equal(reviewed.review?.status, "approved");
+  assert.deepEqual(
+    reviewed.run?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    reviewed.run?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});

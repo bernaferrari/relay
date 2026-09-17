@@ -606,6 +606,15 @@ function summarizeRunGet(response: Record<string, unknown>): unknown {
   return { run: summarizePersistedRun(run) };
 }
 
+/** Deferred run review keeps the decision. Leftover Close last-frame cannot fill dest. */
+function summarizeRunReview(response: Record<string, unknown>): unknown {
+  const run = object(response.run);
+  return {
+    ...response,
+    ...(run ? { run: summarizePersistedRun(run) } : {}),
+  };
+}
+
 function summarizeRunCaptureReview(response: Record<string, unknown>): unknown {
   const run = object(response.run);
   const queue = object(response.queue);
@@ -778,6 +787,7 @@ function isAttachedJobOperation(operationId: string): boolean {
     operationId === "app-map.test.run" ||
     operationId === "app-map.connection.run" ||
     operationId === "run.replay" ||
+    operationId === "run.repair.retry" ||
     operationId.startsWith("workflow.")
   );
 }
@@ -808,6 +818,7 @@ export function summarizeExecutionOperationResult(operationId: string, result: u
   if (!response) return result;
   if (operationId === "step.run") return summarizeStandaloneStep(response);
   if (operationId === "run.get") return summarizeRunGet(response);
+  if (operationId === "run.review") return summarizeRunReview(response);
   if (operationId === "run.evidence.get") return summarizeRunEvidence(response);
   if (operationId === "run.capture.review") return summarizeRunCaptureReview(response);
   if (operationId === "run.story.get") return summarizeRunStory(response);

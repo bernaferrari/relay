@@ -1148,3 +1148,68 @@ test("job retry dest identity is dest wait-for, not leftover Close 004 last-fram
     false,
   );
 });
+
+test("job start/pause/resume/cancel dest identity is dest wait-for, not leftover Close 004 last-frame", () => {
+  for (const operationId of ["job.start", "job.pause", "job.resume", "job.cancel"] as const) {
+    const result = summarizeExecutionOperationResult(operationId, {
+      job: leftoverDestEndJob,
+    }) as {
+      job?: {
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+      };
+    };
+    assert.deepEqual(
+      result.job?.destIdentity?.map((frame) => frame.path),
+      ["frames/003.png"],
+    );
+    assert.equal(
+      result.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+      false,
+    );
+  }
+});
+
+test("run.repair.retry keeps repair; leftover Close 004 cannot fill dest", () => {
+  const result = summarizeExecutionOperationResult("run.repair.retry", {
+    repair: { schemaVersion: 1, id: "repair-1", source: { runId: leftoverDestEndJob.id } },
+    job: leftoverDestEndJob,
+  }) as {
+    repair?: { id?: string };
+    job?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+  };
+  assert.equal(result.repair?.id, "repair-1");
+  assert.deepEqual(
+    result.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
+test("run.review dest identity is dest wait-for 003, not leftover Close 004 last-frame", () => {
+  const result = summarizeExecutionOperationResult("run.review", {
+    review: { status: "approved", action: "approve" },
+    run: leftoverDestEndJob,
+  }) as {
+    review?: { status?: string };
+    run?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+  };
+  assert.equal(result.review?.status, "approved");
+  assert.deepEqual(
+    result.run?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.run?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
