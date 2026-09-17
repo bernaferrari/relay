@@ -292,6 +292,39 @@ test("writeRunOutDir dest checkpoint is dest wait-for 003, not leftover Close 00
   }
 });
 
+test("writeRunOutDir listed destIdentity leftover Close 004 cannot fill dest checkpoint", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-cli-out-listed-004-"));
+  const runDir = join(root, "job-run");
+  const outDir = join(root, "out");
+  try {
+    await mkdir(join(runDir, "frames"), { recursive: true });
+    await writeFile(join(runDir, "frames", "003.png"), overlayBytes);
+    await writeFile(join(runDir, "frames", "004.png"), pngBytes);
+    await writeRunOutDir({
+      dir: outDir,
+      envelope: {
+        type: "result",
+        ok: true,
+        result: {
+          job: {
+            id: "4b93702b-listed-004",
+            resources: { runDir },
+            destIdentity: [
+              { path: "frames/003.png", caption: "Observe" },
+              { path: "frames/004.png", caption: "Close" },
+            ],
+          },
+        },
+      },
+      stderr: "",
+    });
+    assert.deepEqual(await readFile(join(outDir, "checkpoint.png")), overlayBytes);
+    assert.notDeepEqual(await readFile(join(outDir, "checkpoint.png")), pngBytes);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("writeRunOutDir reads dest wait-for from run.json when the job summary omitted artifacts", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-cli-out-summarized-"));
   const runDir = join(root, "job-run");

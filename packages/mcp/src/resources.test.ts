@@ -1476,6 +1476,98 @@ test("run resource dest identity is dest wait-for 003, not leftover Close 004 la
   }
 });
 
+test("runs collection dest identity is dest wait-for 003, not leftover Close 004", async () => {
+  const session = await connectMcp(
+    fixtureInvoker({
+      "run.list": {
+        runs: [
+          {
+            id: "4b93702b",
+            action: "observe",
+            destIdentity: [
+              { path: "frames/003.png", caption: "Observe" },
+              { path: "frames/004.png", caption: "Close" },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", { uri: relayMcpResourceUris.runs }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      data: {
+        runs?: Array<{ destIdentity?: Array<{ relativeName?: string; caption?: string }> }>;
+      };
+    };
+    assert.deepEqual(envelope.data.runs?.[0]?.destIdentity, [
+      { relativeName: "frames/003.png", caption: "Observe" },
+    ]);
+    assert.doesNotMatch(content.text, /frames\/004\.png/);
+  } finally {
+    await session.close();
+  }
+});
+
+test("trace-pack resource pre-listed destIdentity leftover Close 004 cannot fill dest", async () => {
+  const destIdentity = [
+    { path: "frames/003.png", caption: "Observe" },
+    { path: "frames/004.png", caption: "Close" },
+  ];
+  const session = await connectMcp(
+    fixtureInvoker({
+      "run.trace-pack.get": {
+        destIdentity,
+        tracePack: {
+          schemaVersion: 1,
+          kind: "relay-trace-pack",
+          digest: `sha256:${"a".repeat(64)}`,
+          createdAt: 123,
+          source: {
+            runId: "4b93702b",
+            runSchemaVersion: 5,
+            status: "ok",
+            action: "observe",
+            inputDigest: "b".repeat(64),
+            writtenAt: 123,
+          },
+          redaction: { status: "applied-at-persistence", redactedChannels: [] },
+          completeness: { status: "complete", channels: {}, missing: [], artifacts: [] },
+          objects: [
+            {
+              path: "run.json",
+              kind: "frozen-run",
+              mediaType: "application/json",
+              encoding: "json",
+              digest: `sha256:${"a".repeat(64)}`,
+              bytes: 2,
+              content: { destIdentity },
+            },
+          ],
+        },
+      },
+    }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", {
+        uri: relayMcpResourceUris.runTracePack.replace("{runId}", "4b93702b"),
+      }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      data: { destIdentity?: Array<{ relativeName?: string; caption?: string }> };
+    };
+    assert.deepEqual(envelope.data.destIdentity, [
+      { relativeName: "frames/003.png", caption: "Observe" },
+    ]);
+    assert.doesNotMatch(content.text, /frames\/004\.png/);
+  } finally {
+    await session.close();
+  }
+});
+
 test("run evidence resource dest identity is dest wait-for, not leftover Close 004", async () => {
   const session = await connectMcp(
     fixtureInvoker({

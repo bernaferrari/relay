@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { summarizeExecutionOperationResult } from "./execution-summary.js";
+import {
+  compactExecutionDestIdentityFallback,
+  summarizeExecutionOperationResult,
+} from "./execution-summary.js";
 import { CAPTURE_REVIEW_DEST_PHASE } from "./capture-review.js";
 
 test("job.get keeps a useful tail of logs for agents watching a tour", () => {
@@ -1344,4 +1347,104 @@ test("run.replay.offline keeps report; leftover Close 004 cannot fill dest", () 
     result.report?.captureReview?.some((item) => item.framePath === "frames/004.png"),
     false,
   );
+});
+
+test("run.list leftover Close 004 cannot fill dest identity", () => {
+  const result = summarizeExecutionOperationResult("run.list", {
+    runs: [
+      {
+        id: leftoverDestEndJob.id,
+        destIdentity: [
+          { path: "frames/003.png", caption: "Observe" },
+          { path: "frames/004.png", caption: "Close" },
+        ],
+      },
+    ],
+  }) as {
+    runs?: Array<{ destIdentity?: Array<{ path?: string; caption?: string }> }>;
+  };
+  assert.deepEqual(result.runs?.[0]?.destIdentity, [
+    { path: "frames/003.png", caption: "Observe" },
+  ]);
+});
+
+test("run.trace-pack.get pre-listed destIdentity leftover Close 004 cannot fill dest", () => {
+  const destIdentity = [
+    { path: "frames/003.png", caption: "Observe" },
+    { path: "frames/004.png", caption: "Close" },
+  ];
+  const result = summarizeExecutionOperationResult("run.trace-pack.get", {
+    destIdentity,
+    tracePack: {
+      digest: "sha256:abc",
+      objects: [
+        {
+          kind: "frozen-run",
+          path: "run.json",
+          content: { destIdentity },
+        },
+      ],
+    },
+  }) as { destIdentity?: Array<{ path?: string; caption?: string }> };
+  assert.deepEqual(result.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+});
+
+test("compact MCP fallback dest identity is dest wait-for 003, not leftover Close 004", () => {
+  const compact = compactExecutionDestIdentityFallback({ job: leftoverDestEndJob }, "job.get") as {
+    destIdentity?: Array<{ path?: string }>;
+    job?: { destIdentity?: Array<{ path?: string }> };
+  };
+  assert.deepEqual(
+    compact.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.deepEqual(
+    compact.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+});
+
+test("compact MCP fallback unwraps operator wait leftover Close 004 dest identity", () => {
+  const compact = compactExecutionDestIdentityFallback({
+    type: "result",
+    ok: true,
+    operationId: "job.get",
+    result: summarizeExecutionOperationResult("job.get", { job: leftoverDestEndJob }),
+  }) as {
+    destIdentity?: Array<{ path?: string }>;
+    job?: { destIdentity?: Array<{ path?: string }> };
+  };
+  assert.deepEqual(
+    compact.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.deepEqual(
+    compact.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+});
+
+test("compact MCP fallback run.list leftover Close 004 cannot fill dest", () => {
+  const compact = compactExecutionDestIdentityFallback(
+    {
+      runs: [
+        {
+          id: leftoverDestEndJob.id,
+          destIdentity: [
+            { path: "frames/003.png", caption: "Observe" },
+            { path: "frames/004.png", caption: "Close" },
+          ],
+        },
+      ],
+    },
+    "run.list",
+  ) as {
+    runs?: Array<{ destIdentity?: Array<{ path?: string; caption?: string }> }>;
+  };
+  assert.deepEqual(compact.runs?.[0]?.destIdentity, [
+    { path: "frames/003.png", caption: "Observe" },
+  ]);
+  assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
 });

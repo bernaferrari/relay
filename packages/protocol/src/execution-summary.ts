@@ -701,11 +701,166 @@ function summarizeTracePackEnvelope(response: Record<string, unknown>): unknown 
   const objects = Array.isArray(pack?.objects) ? pack.objects : [];
   const frozen = objects.map(object).find((item) => item?.kind === "frozen-run");
   const content = object(frozen?.content);
-  if (!content) return response;
-  const artifacts = artifactRecords(content.artifacts);
-  if (!captureReviewIdentityFramePaths(artifacts).length) return response;
-  const destIdentity = compactDestIdentity(listedFrames(content.frames), artifacts);
-  return destIdentity.length ? { destIdentity, ...response } : response;
+  const projected = destIdentityProjection({
+    ...content,
+    destIdentity: content?.destIdentity ?? response.destIdentity,
+  });
+  return projected.destIdentity?.length
+    ? { ...response, destIdentity: projected.destIdentity }
+    : response;
+}
+
+function summarizeRunList(response: Record<string, unknown>): unknown {
+  if (!Array.isArray(response.runs)) return response;
+  return {
+    ...response,
+    runs: response.runs.map((item) => {
+      const run = object(item);
+      if (!run) return item;
+      const projected = destIdentityProjection(run);
+      const { destIdentity: _listed, ...rest } = run;
+      return {
+        ...rest,
+        ...(projected.destIdentity ? { destIdentity: projected.destIdentity } : {}),
+      };
+    }),
+  };
+}
+
+function destIdentityFromEnvelope(
+  record: Record<string, unknown>,
+): { path: string; caption?: string }[] {
+  const inner = object(record.result);
+  const visual = destIdentityVisualFrames([
+    ...listedDestIdentity(record.destIdentity),
+    ...listedDestIdentity(object(record.job)?.destIdentity),
+    ...listedDestIdentity(object(record.run)?.destIdentity),
+    ...listedDestIdentity(object(record.evidence)?.destIdentity),
+    ...listedDestIdentity(object(record.report)?.destIdentity),
+    ...listedDestIdentity(object(record.story)?.destIdentity),
+    ...listedDestIdentity(inner?.destIdentity),
+    ...listedDestIdentity(object(inner?.job)?.destIdentity),
+    ...listedDestIdentity(object(inner?.run)?.destIdentity),
+    ...listedDestIdentity(object(inner?.evidence)?.destIdentity),
+    ...listedDestIdentity(object(inner?.report)?.destIdentity),
+    ...listedDestIdentity(object(inner?.story)?.destIdentity),
+  ]);
+  if (visual.length) return visual;
+  const nested =
+    object(record.job) ??
+    object(record.run) ??
+    object(record.report) ??
+    object(record.evidence) ??
+    object(inner?.job) ??
+    object(inner?.run) ??
+    object(inner?.report) ??
+    object(inner?.evidence) ??
+    inner;
+  return nested ? (destIdentityProjection(nested).destIdentity ?? []) : [];
+}
+
+function compactIdStatus(
+  record: Record<string, unknown>,
+  destIdentity: { path: string; caption?: string }[],
+): Record<string, unknown> {
+  return {
+    ...(typeof record.id === "string" ? { id: record.id } : {}),
+    ...(typeof record.status === "string" ? { status: record.status } : {}),
+    ...(typeof record.outcome === "string" ? { outcome: record.outcome } : {}),
+    ...(destIdentity.length ? { destIdentity } : {}),
+  };
+}
+
+function compactListedRecords(
+  items: unknown,
+  destIdentity: { path: string; caption?: string }[],
+): Record<string, unknown>[] | undefined {
+  if (!Array.isArray(items)) return undefined;
+  const listed = items.slice(0, 8).flatMap((item) => {
+    const nested = object(item);
+    if (!nested) return [];
+    const nestedDest = destIdentityFromEnvelope(nested);
+    return [compactIdStatus(nested, nestedDest.length ? nestedDest : destIdentity)];
+  });
+  return listed.length ? listed : undefined;
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value) return value;
+  }
+  return undefined;
+}
+
+/** MCP text-limit fallback. Dest wait-for Fast stays; leftover Close cannot fill dest. */
+export function compactExecutionDestIdentityFallback(
+  result: unknown,
+  operationId?: string,
+): unknown {
+  const summarized = operationId ? summarizeExecutionOperationResult(operationId, result) : result;
+  const record = object(summarized) ?? object(result);
+  if (!record) {
+    return {
+      truncated: true,
+      message: "Relay result omitted from text because it exceeds the MCP text limit.",
+    };
+  }
+  const inner = object(record.result);
+  const destIdentity = destIdentityFromEnvelope(record);
+  const run = object(record.run) ?? object(inner?.run);
+  const job = object(record.job) ?? object(inner?.job);
+  const evidence = object(record.evidence) ?? object(inner?.evidence);
+  const report = object(record.report) ?? object(inner?.report);
+  const story = object(record.story) ?? object(inner?.story);
+  const id = firstString(
+    run?.id,
+    job?.id,
+    evidence?.runId,
+    report?.runId,
+    story?.runId,
+    record.id,
+    inner?.id,
+  );
+  const jobs =
+    compactListedRecords(record.jobs, destIdentity) ??
+    compactListedRecords(inner?.jobs, destIdentity);
+  const runs =
+    compactListedRecords(record.runs, destIdentity) ??
+    compactListedRecords(inner?.runs, destIdentity);
+  return {
+    truncated: true,
+    message: "Relay result omitted from text because it exceeds the MCP text limit.",
+    ...(destIdentity.length ? { destIdentity } : {}),
+    ...(id ? { resource: { uri: `relay://runs/${encodeURIComponent(id)}` } } : {}),
+    ...(job ? { job: compactIdStatus(job, destIdentity) } : {}),
+    ...(jobs ? { jobs } : {}),
+    ...(runs ? { runs } : {}),
+    ...(run ? { run: compactIdStatus(run, destIdentity) } : {}),
+    ...(report
+      ? {
+          report: {
+            ...(typeof report.mode === "string" ? { mode: report.mode } : {}),
+            ...(destIdentity.length ? { destIdentity } : {}),
+          },
+        }
+      : {}),
+    ...(evidence
+      ? {
+          evidence: {
+            ...(typeof evidence.runId === "string" ? { runId: evidence.runId } : {}),
+            ...(destIdentity.length ? { destIdentity } : {}),
+          },
+        }
+      : {}),
+    ...(story
+      ? {
+          story: {
+            ...(typeof story.runId === "string" ? { runId: story.runId } : {}),
+            ...(destIdentity.length ? { destIdentity } : {}),
+          },
+        }
+      : {}),
+  };
 }
 
 /** Keep logs/network on MCP evidence resources. Hoist dest wait-for and drop leftover 004. */
@@ -839,6 +994,7 @@ export function summarizeExecutionOperationResult(operationId: string, result: u
   if (!response) return result;
   if (operationId === "step.run") return summarizeStandaloneStep(response);
   if (operationId === "run.get") return summarizeRunGet(response);
+  if (operationId === "run.list") return summarizeRunList(response);
   if (operationId === "run.review") return summarizeRunReview(response);
   if (operationId === "run.replay.offline") return summarizeOfflineReplay(response);
   if (operationId === "run.evidence.get") return summarizeRunEvidence(response);

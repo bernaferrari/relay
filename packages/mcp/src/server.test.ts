@@ -1826,6 +1826,93 @@ test("compact offline replay tool dest identity is dest wait-for 003, not leftov
   }
 });
 
+const leftoverDestEndJob = {
+  id: "4b93702b",
+  status: "ok",
+  frames: [
+    { path: "frames/003.png", caption: "Observe" },
+    { path: "frames/004.png", caption: "after · Run saved Test" },
+  ],
+  artifacts: [
+    {
+      kind: "capture-review",
+      data: {
+        caption: "Observe",
+        framePath: "frames/003.png",
+        phase: "dest",
+        policy: "fast",
+      },
+    },
+    {
+      kind: "capture-review",
+      data: { caption: "Close", framePath: "frames/004.png" },
+    },
+  ],
+};
+
+test("compact job.get dest identity is dest wait-for 003, not leftover Close 004", async () => {
+  const logs = Array.from({ length: 24 }, () => "x".repeat(500));
+  const session = await connectMcp({
+    async invoke(operationId) {
+      assert.equal(operationId, "job.get");
+      return { job: { ...leftoverDestEndJob, logs } };
+    },
+  });
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_job_get",
+        arguments: { jobId: leftoverDestEndJob.id },
+      }),
+    );
+    const compact = result.structuredContent?.result as {
+      truncated?: boolean;
+      destIdentity?: Array<{ path?: string; caption?: string }>;
+      job?: { destIdentity?: Array<{ path?: string }> };
+    };
+    assert.equal(compact.truncated, true);
+    assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+    assert.deepEqual(compact.job?.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+    assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
+  } finally {
+    await session.close();
+  }
+});
+
+test("compact operator wait dest identity is dest wait-for 003, not leftover Close 004", async () => {
+  const logs = Array.from({ length: 24 }, () => "x".repeat(500));
+  const session = await connectMcp(
+    {
+      async invoke(operationId) {
+        assert.equal(operationId, "job.get");
+        return { job: { ...leftoverDestEndJob, logs } };
+      },
+    },
+    "operator",
+  );
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_wait",
+        arguments: { jobId: leftoverDestEndJob.id },
+      }),
+    );
+    const compact = result.structuredContent?.result as {
+      truncated?: boolean;
+      destIdentity?: Array<{ path?: string; caption?: string }>;
+      job?: { destIdentity?: Array<{ path?: string }> };
+    };
+    assert.equal(compact.truncated, true);
+    assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+    assert.deepEqual(compact.job?.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+    assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
+  } finally {
+    await session.close();
+  }
+});
+
 test("returns screenshots as native PNG content without path or base64 metadata leaks", async () => {
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",

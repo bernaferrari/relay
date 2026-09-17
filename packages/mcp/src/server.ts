@@ -1,6 +1,7 @@
 import { McpServer, type CallToolResult } from "@modelcontextprotocol/server";
 import { RelayClient } from "@relay/client";
 import {
+  compactExecutionDestIdentityFallback,
   operationDefinition,
   operationDefinitions,
   parseAuthoringSessionResponse,
@@ -356,6 +357,35 @@ function compactTracePackToolResult(result: unknown, runId: string): unknown {
   };
 }
 
+function compactExecutionDestIdentityOperation(operationId: string): boolean {
+  return (
+    operationId === "run.get" ||
+    operationId === "run.list" ||
+    operationId === "run.review" ||
+    operationId === "run.evidence.get" ||
+    operationId === "run.story.get" ||
+    operationId === "run.trace-pack.get" ||
+    operationId === "run.capture.review" ||
+    operationId === "run.replay" ||
+    operationId === "run.repair.retry" ||
+    operationId.startsWith("job.") ||
+    operationId === "app-map.flow.run" ||
+    operationId === "app-map.test.run" ||
+    operationId === "app-map.connection.run" ||
+    operationId.startsWith("workflow.")
+  );
+}
+
+function operatorDestIdentityFallbackName(name: string): boolean {
+  return (
+    name === "relay_wait" ||
+    name === "relay_run" ||
+    name === "relay_plan_run" ||
+    name === "relay_evidence" ||
+    name === "relay_advanced"
+  );
+}
+
 /** A complete Authoring Session can contain many immutable screenshots and
  * trees. Keep the MCP tool response small while giving an agent a stable
  * resource URI for the full offline record instead of an opaque truncation. */
@@ -622,7 +652,9 @@ async function invokeRelayTool(
         ? compactOfflineReplayToolResult(summarized)
         : descriptor.operationId === "authoring.session.get"
           ? compactAuthoringSessionToolResult(summarized)
-          : undefined;
+          : compactExecutionDestIdentityOperation(descriptor.operationId)
+            ? compactExecutionDestIdentityFallback(summarized, descriptor.operationId)
+            : undefined;
     return normalResult(summarized, fallback);
   } catch {
     return errorResult(
@@ -766,7 +798,12 @@ function registerRelayOperatorTool(
           profile,
         });
         if (operatorResultIsPng(descriptor.name, result)) return screenshotResult(result);
-        return normalResult(result);
+        return normalResult(
+          result,
+          operatorDestIdentityFallbackName(descriptor.name)
+            ? compactExecutionDestIdentityFallback(result)
+            : undefined,
+        );
       } catch (error) {
         return errorResult(relayMcpError(descriptor.name, error, recoveryOptions));
       }

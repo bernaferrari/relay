@@ -5,6 +5,7 @@ import {
   captureReviewIdentityFramePaths,
   captureReviewLeftoverLastFramePaths,
   destIdentityCheckpointFramePaths,
+  isCaptureReviewLeftoverCaption,
 } from "@relay/protocol";
 
 const PNG = /\.png$/iu;
@@ -161,7 +162,9 @@ function destIdentitySummaryPaths(job: Record<string, unknown>): string[] {
     if (typeof item === "string" && item.trim()) return [item.trim()];
     const record = asRecord(item);
     const path = typeof record?.path === "string" ? record.path.trim() : "";
-    return path ? [path] : [];
+    const caption = typeof record?.caption === "string" ? record.caption : undefined;
+    if (!path || isCaptureReviewLeftoverCaption(caption)) return [];
+    return [path];
   });
 }
 

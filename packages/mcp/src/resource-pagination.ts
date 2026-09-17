@@ -6,7 +6,7 @@ import {
   ResourceTemplate,
   type Variables,
 } from "@modelcontextprotocol/server";
-import type { OperationId } from "@relay/protocol";
+import { isCaptureReviewLeftoverCaption, type OperationId } from "@relay/protocol";
 import type { OperationInvoker } from "./server.js";
 import { readResult, relayMcpResourceMimeType } from "./resource-encoding.js";
 import type { RelayMcpProfile, RelayMcpToolDescriptor } from "./tools.js";
@@ -219,6 +219,46 @@ export function scalarFields(value: unknown): Record<string, unknown> {
   );
 }
 
+function destIdentityCollectionEntries(value: unknown): Record<string, string>[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const rec = object(entry);
+    const caption = typeof rec.caption === "string" ? rec.caption.slice(0, 160) : undefined;
+    if (isCaptureReviewLeftoverCaption(caption)) return [];
+    const relativeName =
+      typeof rec.relativeName === "string"
+        ? rec.relativeName.slice(0, 160)
+        : typeof rec.path === "string"
+          ? rec.path.slice(0, 160)
+          : undefined;
+    if (
+      relativeName &&
+      (relativeName.startsWith("/") ||
+        relativeName.includes("\\") ||
+        relativeName.split("/").some((segment) => segment === "." || segment === ".."))
+    ) {
+      return caption ? [{ caption }] : [];
+    }
+    return relativeName || caption
+      ? [{ ...(relativeName ? { relativeName } : {}), ...(caption ? { caption } : {}) }]
+      : [];
+  });
+}
+
+function projectRunListDestIdentity(value: unknown): unknown {
+  const record = object(value);
+  if (!Array.isArray(record.runs)) return value;
+  return {
+    ...record,
+    runs: record.runs.map((item) => {
+      const run = object(item);
+      if (!Array.isArray(run.destIdentity)) return item;
+      const destIdentity = destIdentityCollectionEntries(run.destIdentity);
+      const { destIdentity: _drop, ...rest } = run;
+      return destIdentity.length ? { ...rest, destIdentity } : rest;
+    }),
+  };
+}
 function boundedCollectionItem(value: unknown, kind: "app-map" | "run" | "session"): unknown {
   const item = object(value);
   if (kind === "app-map") {
@@ -235,29 +275,7 @@ function boundedCollectionItem(value: unknown, kind: "app-map" | "run" | "sessio
     };
   }
   if (kind === "run") {
-    const destIdentity = Array.isArray(item.destIdentity)
-      ? item.destIdentity.slice(0, 8).flatMap((entry) => {
-          const rec = object(entry);
-          const caption = typeof rec.caption === "string" ? rec.caption.slice(0, 160) : undefined;
-          const relativeName =
-            typeof rec.relativeName === "string"
-              ? rec.relativeName.slice(0, 160)
-              : typeof rec.path === "string"
-                ? rec.path.slice(0, 160)
-                : undefined;
-          if (
-            relativeName &&
-            (relativeName.startsWith("/") ||
-              relativeName.includes("\\") ||
-              relativeName.split("/").some((segment) => segment === "." || segment === ".."))
-          ) {
-            return caption ? [{ caption }] : [];
-          }
-          return relativeName || caption
-            ? [{ ...(relativeName ? { relativeName } : {}), ...(caption ? { caption } : {}) }]
-            : [];
-        })
-      : undefined;
+    const destIdentity = destIdentityCollectionEntries(item.destIdentity).slice(0, 8);
     return {
       ...(typeof item.id === "string" ? { id: item.id } : {}),
       ...(typeof item.action === "string" ? { action: item.action.slice(0, 160) } : {}),
@@ -266,7 +284,7 @@ function boundedCollectionItem(value: unknown, kind: "app-map" | "run" | "sessio
       ...(typeof item.outcome === "string" ? { outcome: item.outcome } : {}),
       ...(typeof item.writtenAt === "number" ? { writtenAt: item.writtenAt } : {}),
       ...(typeof item.updatedAt === "number" ? { updatedAt: item.updatedAt } : {}),
-      ...(destIdentity?.length ? { destIdentity } : {}),
+      ...(destIdentity.length ? { destIdentity } : {}),
     };
   }
   return {
@@ -633,7 +651,8 @@ export function registerStaticResource(
       sourceCount > relayMcpResourcePageSize ||
       requestedUri.searchParams.has("cursor") ||
       hasBackendContinuation;
-    return readResult(requestedUri, scope.projectId, name, isPaged ? page : value, page);
+    const projected = collection.kind === "run" ? projectRunListDestIdentity(value) : value;
+    return readResult(requestedUri, scope.projectId, name, isPaged ? page : projected, page);
   };
   server.registerResource(name, uri, config, async (requestedUri, context) =>
     readCallback(requestedUri, context.mcpReq.signal),

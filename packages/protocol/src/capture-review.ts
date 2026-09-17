@@ -288,7 +288,16 @@ export function destIdentityCheckpointFramePaths(
   if (dest.length) return [...new Set(dest)];
   const leftover = new Set(captureReviewLeftoverLastFramePaths(frames, artifacts));
   const usable = leftover.size ? frames.filter((frame) => !leftover.has(frame.path)) : frames;
-  return [...new Set(usable.map((frame) => frame.path))];
+  const destCaptions = usable.filter((frame) => !isCaptureReviewLeftoverCaption(frame.caption));
+  const leftoverCaptions = usable.filter((frame) => isCaptureReviewLeftoverCaption(frame.caption));
+  const waitFor = destCaptions.length && leftoverCaptions.length ? destCaptions : usable;
+  return [
+    ...new Set(
+      waitFor
+        .filter((frame) => !isCaptureReviewLeftoverCaption(frame.caption))
+        .map((frame) => frame.path),
+    ),
+  ];
 }
 
 /** Dest-phase slot cards when dest identity exists. Leftover Close extras cannot fill dest

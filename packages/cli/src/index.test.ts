@@ -2620,6 +2620,41 @@ test("job list --json dest identity is dest wait-for, not leftover Close 004 las
   );
 });
 
+test("run list --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+  const io = capture();
+  const code = await runCli(["run", "list", "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke(operationId) {
+        assert.equal(operationId, "run.list");
+        return {
+          runs: [
+            {
+              id: leftoverDestEndRun.id,
+              destIdentity: [
+                { path: "frames/003.png", caption: "Observe" },
+                { path: "frames/004.png", caption: "Close" },
+              ],
+            },
+          ],
+        };
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      runs?: Array<{ destIdentity?: Array<{ path?: string; caption?: string }> }>;
+    };
+  };
+  assert.deepEqual(result.result?.runs?.[0]?.destIdentity, [
+    { path: "frames/003.png", caption: "Observe" },
+  ]);
+});
+
 test("flow run --no-wait --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
   const io = capture();
   const leftoverJob = {

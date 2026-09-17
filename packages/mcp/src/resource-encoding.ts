@@ -4,9 +4,9 @@ import {
   type ReadResourceResult,
 } from "@modelcontextprotocol/server";
 import {
-  captureReviewIdentityFramePaths,
   captureReviewLeftoverLastFramePaths,
   destIdentityCheckpointFramePaths,
+  isCaptureReviewLeftoverCaption,
 } from "@relay/protocol";
 
 export const relayMcpResourceByteLimit = 32_768;
@@ -107,15 +107,27 @@ function frozenRunContent(value: unknown): Record<string, unknown> | undefined {
 
 function destIdentityRelativeNames(value: unknown): { relativeName: string; caption?: string }[] {
   const frozen = frozenRunContent(value);
-  if (!frozen) return [];
-  const frames = listedFrames(frozen.frames);
-  const artifacts = artifactRecords(frozen.artifacts);
-  if (!captureReviewIdentityFramePaths(artifacts).length) return [];
+  const envelope = object(value);
+  const frames = listedFrames(frozen?.frames);
+  const artifacts = artifactRecords(frozen?.artifacts);
+  const destPaths = destIdentityCheckpointFramePaths(frames, artifacts);
+  const listed = destPaths.length
+    ? destPaths.map((path) => {
+        const frame = frames.find((item) => item.path === path);
+        return { path, ...(frame?.caption ? { caption: frame.caption } : {}) };
+      })
+    : listedFrames(frozen?.destIdentity ?? envelope.destIdentity).filter(
+        (frame) => !isCaptureReviewLeftoverCaption(frame.caption),
+      );
   const byPath = new Map(frames.map((frame) => [frame.path, frame]));
-  return destIdentityCheckpointFramePaths(frames, artifacts).flatMap((path) => {
-    const relativeName = boundedRelativeName(path);
+  const seen = new Set<string>();
+  return listed.flatMap((frame) => {
+    if (seen.has(frame.path)) return [];
+    seen.add(frame.path);
+    const relativeName = boundedRelativeName(frame.path);
     if (!relativeName) return [];
-    const caption = byPath.get(path)?.caption;
+    const caption = frame.caption ?? byPath.get(frame.path)?.caption;
+    if (isCaptureReviewLeftoverCaption(caption)) return [];
     return [{ relativeName, ...(caption ? { caption } : {}) }];
   });
 }
@@ -135,7 +147,7 @@ function leftoverRelativeNames(value: unknown): Set<string> {
 
 export function hoistTracePackDestIdentity(value: unknown): unknown {
   const destIdentity = destIdentityRelativeNames(value);
-  return destIdentity.length ? { destIdentity, ...object(value) } : value;
+  return destIdentity.length ? { ...object(value), destIdentity } : value;
 }
 export function rewriteDestIdentityRelativeNames(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(rewriteDestIdentityRelativeNames);

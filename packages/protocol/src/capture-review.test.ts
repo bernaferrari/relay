@@ -1174,6 +1174,19 @@ test("unphased leftover Close 004 last-frame cannot fill dest checkpoint", () =>
   );
 });
 
+test("leftover Close captions cannot fill dest checkpoint without dest-phase artifacts", () => {
+  assert.deepEqual(
+    destIdentityCheckpointFramePaths(
+      [
+        { path: "frames/003.png", caption: "Observe" },
+        { path: "frames/004.png", caption: "after · Run saved Test" },
+      ],
+      [{ kind: "capture-review", data: { caption: "Close", framePath: "frames/004.png" } }],
+    ),
+    ["frames/003.png"],
+  );
+});
+
 test("dest-phase leftover Close still cannot bind dest", () => {
   const dest = destEndSlot();
   const leftoverClose = {
