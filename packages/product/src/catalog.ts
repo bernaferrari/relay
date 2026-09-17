@@ -125,6 +125,7 @@ export type ProductRunExecutionIdentity = {
   deviceId?: string;
   dataSetId?: string;
   accountId?: string;
+  startupMode?: "warm" | "cold" | "verified-checkpoint";
 };
 
 export type ProductRunDetail = ProductRunSummary & {
@@ -362,23 +363,36 @@ function executionIdentityFromRun(
   let appMapRevision = Number.isSafeInteger(candidate.appMapRevision)
     ? (candidate.appMapRevision as number)
     : undefined;
-  if (appMapRevision === undefined && Array.isArray(candidate.artifacts)) {
+  let startupMode: ProductRunExecutionIdentity["startupMode"];
+  if (Array.isArray(candidate.artifacts)) {
     for (const artifact of candidate.artifacts) {
       if (!artifact || typeof artifact !== "object") continue;
       const value = artifact as { kind?: unknown; data?: unknown };
       if (value.kind !== "app-map-test-execution-intent" || !value.data) continue;
-      const sourcePlan =
+      const data =
         typeof value.data === "object" && !Array.isArray(value.data)
-          ? (value.data as { sourcePlan?: unknown }).sourcePlan
+          ? (value.data as { sourcePlan?: unknown; plan?: unknown })
           : undefined;
-      const revision =
-        typeof sourcePlan === "object" && sourcePlan !== null && !Array.isArray(sourcePlan)
-          ? (sourcePlan as { appMapRevision?: unknown }).appMapRevision
-          : undefined;
-      if (Number.isSafeInteger(revision)) {
-        appMapRevision = revision as number;
-        break;
+      if (!data) continue;
+      if (appMapRevision === undefined) {
+        const revision =
+          typeof data.sourcePlan === "object" &&
+          data.sourcePlan !== null &&
+          !Array.isArray(data.sourcePlan)
+            ? (data.sourcePlan as { appMapRevision?: unknown }).appMapRevision
+            : undefined;
+        if (Number.isSafeInteger(revision)) appMapRevision = revision as number;
       }
+      if (!startupMode) {
+        const mode =
+          typeof data.plan === "object" && data.plan !== null && !Array.isArray(data.plan)
+            ? (data.plan as { startup?: { mode?: unknown } }).startup?.mode
+            : undefined;
+        if (mode === "warm" || mode === "cold" || mode === "verified-checkpoint") {
+          startupMode = mode;
+        }
+      }
+      if (appMapRevision !== undefined && startupMode) break;
     }
   }
   const executionIdentity: ProductRunExecutionIdentity = {
@@ -398,6 +412,7 @@ function executionIdentityFromRun(
     ...(typeof candidate.accountId === "string" && candidate.accountId
       ? { accountId: candidate.accountId }
       : {}),
+    ...(startupMode ? { startupMode } : {}),
   };
   return Object.keys(executionIdentity).length ? executionIdentity : undefined;
 }

@@ -20,11 +20,23 @@ export type StabilityCohortSample = {
   readonly startupMode?: string;
 };
 
+const KNOWN_START_STATES = new Set(["warm", "cold", "verified-checkpoint"]);
+
+export function knownStabilityStartState(
+  value: string | undefined,
+): "warm" | "cold" | "verified-checkpoint" | undefined {
+  const start = value?.trim();
+  if (!start || !KNOWN_START_STATES.has(start)) return undefined;
+  return start as "warm" | "cold" | "verified-checkpoint";
+}
+
 export function stabilityCohortKey(sample: StabilityCohortSample): string | undefined {
   const values = STABILITY_COHORT_FIELDS.map((field) => sample[field]);
   if (values.some((value) => value === undefined || value === "")) return undefined;
-  // Known start states stay in their own cohort. Unknown start does not mix with warm/cold.
-  return [...values, sample.startupMode ?? ""].join("\u0000");
+  const start = knownStabilityStartState(sample.startupMode);
+  // Unknown start stays out. Warm and cold never share a flake cohort.
+  if (!start) return undefined;
+  return [...values, start].join("\u0000");
 }
 
 export function groupComparableStabilitySamples<T extends StabilityCohortSample>(

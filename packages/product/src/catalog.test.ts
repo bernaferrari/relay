@@ -406,6 +406,44 @@ test("Run detail recovers Test identity from the immutable execution artifact", 
   assert.equal(detail.testName, "Checkout");
 });
 
+test("Run execution identity keeps warm and cold start states and leaves unknown start out", () => {
+  const warm = productRunDetail(
+    run({
+      id: "run-warm",
+      action: "test.run",
+      status: "ok",
+      queuedAt: 1,
+      artifacts: [
+        {
+          kind: "app-map-test-execution-intent",
+          data: {
+            sourcePlan: { appMapId: "app-one", testId: "ready", appMapRevision: 12 },
+            plan: { startup: { mode: "warm" } },
+          },
+        },
+      ],
+    } as never),
+  );
+  assert.equal(warm.executionIdentity?.startupMode, "warm");
+  assert.equal(warm.executionIdentity?.appMapRevision, 12);
+
+  const unknown = productRunDetail(
+    run({
+      id: "run-unknown",
+      action: "test.run",
+      status: "ok",
+      queuedAt: 1,
+      artifacts: [
+        {
+          kind: "app-map-test-execution-intent",
+          data: { sourcePlan: { appMapId: "app-one", testId: "ready", appMapRevision: 12 } },
+        },
+      ],
+    } as never),
+  );
+  assert.equal(unknown.executionIdentity?.startupMode, undefined);
+});
+
 test("Run detail exposes stable authored-step evidence and keeps legacy Runs empty", () => {
   const detail = productRunDetail(
     run({

@@ -168,6 +168,7 @@ export function stabilitySampleFromRun(run: ProductRunSummary): ProductStability
     ...(execution?.buildId ? { buildId: execution.buildId } : {}),
     ...(execution?.accountId ? { accountId: execution.accountId } : {}),
     ...(execution?.dataSetId ? { dataSetId: execution.dataSetId } : {}),
+    ...(execution?.startupMode ? { startupMode: execution.startupMode } : {}),
     ...(run.outcome ? { outcome: run.outcome } : {}),
     status: run.status,
     queuedAt: run.queuedAt,

@@ -47,6 +47,7 @@ describe("stability product service", () => {
           targetProfileId: "chrome-admin",
           accountId: "acct-admin",
           dataSetId: "default",
+          startupMode: "warm",
         },
       },
     ]);
@@ -57,6 +58,7 @@ describe("stability product service", () => {
       environmentId: "chrome-admin",
       accountId: "acct-admin",
       dataSetId: "default",
+      startupMode: "warm",
     });
   });
 
@@ -161,6 +163,80 @@ describe("stability product service", () => {
     ]);
     expect(summary.recommendations[0]?.summary).toContain("same Test revision, build, target");
     expect([...flakyTestIdsFromStability(summary)]).toEqual(["test-1"]);
+  });
+
+  it("does not call mixed outcomes flaky when the start state is unknown", () => {
+    const cohort = {
+      testRevision: 12,
+      buildId: "build-92",
+      targetProfileId: "env-1",
+      environmentId: "env-1",
+      accountId: "acct-admin",
+      dataSetId: "default",
+    };
+    const summary = summarizeProductStability({
+      samples: [
+        {
+          id: "run-1",
+          runId: "run-1",
+          appMapId: "app-1",
+          testId: "test-1",
+          outcome: "passed",
+          queuedAt: 1,
+          ...cohort,
+        },
+        {
+          id: "run-2",
+          runId: "run-2",
+          appMapId: "app-1",
+          testId: "test-1",
+          outcome: "product-failure",
+          queuedAt: 2,
+          ...cohort,
+        },
+      ],
+      historyComplete: true,
+    });
+    expect(summary.signals.some((signal) => signal.kind === "possible-flakiness")).toBe(false);
+    expect([...flakyTestIdsFromStability(summary)]).toEqual([]);
+  });
+
+  it("does not mix warm and cold start states into one flake label", () => {
+    const cohort = {
+      testRevision: 12,
+      buildId: "build-92",
+      targetProfileId: "env-1",
+      environmentId: "env-1",
+      accountId: "acct-admin",
+      dataSetId: "default",
+    };
+    const summary = summarizeProductStability({
+      samples: [
+        {
+          id: "run-warm",
+          runId: "run-warm",
+          appMapId: "app-1",
+          testId: "test-1",
+          outcome: "passed",
+          queuedAt: 1,
+          ...cohort,
+          startupMode: "warm",
+        },
+        {
+          id: "run-cold",
+          runId: "run-cold",
+          appMapId: "app-1",
+          testId: "test-1",
+          outcome: "product-failure",
+          queuedAt: 2,
+          ...cohort,
+          startupMode: "cold",
+        },
+      ],
+      historyComplete: true,
+    });
+    expect(summary.signals.some((signal) => signal.kind === "possible-flakiness")).toBe(false);
+    expect([...flakyTestIdsFromStability(summary)]).toEqual([]);
   });
 
   it("fails closed when history is partial, outcomes are non-terminal, or identity is legacy", () => {
