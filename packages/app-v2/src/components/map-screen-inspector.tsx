@@ -63,8 +63,8 @@ export function ScreenInspector({
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label="Update capture"
-              title="Update capture"
+              aria-label="Update screen"
+              title="Update this screen"
               onClick={onRefresh}
             >
               <RefreshCw />

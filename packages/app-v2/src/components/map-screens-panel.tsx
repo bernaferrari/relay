@@ -20,11 +20,11 @@ export function MapScreensPanel({
     screen.title.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()),
   );
   return (
-    <section className="min-h-0 flex-1 overflow-auto bg-card" aria-label="Captured screens">
+    <section className="min-h-0 flex-1 overflow-auto bg-card" aria-label="Map screens">
       <div className="mx-auto max-w-7xl px-6 py-8 sm:px-8">
         <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-baseline gap-3">
-            <h2 className="text-xl font-semibold tracking-tight">Captured screens</h2>
+            <h2 className="text-xl font-semibold tracking-tight">Screens</h2>
             <span className="text-xs tabular-nums text-muted-foreground" role="status">
               {search ? `${matches.length} of ${screens.length}` : screens.length}
             </span>
@@ -32,7 +32,7 @@ export function MapScreensPanel({
           <Input
             type="search"
             className="w-full sm:w-72"
-            aria-label="Search captured screens"
+            aria-label="Search screens"
             placeholder="Find a screen…"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -74,11 +74,11 @@ export function MapScreensPanel({
           </div>
         ) : (
           <EmptyState
-            title={screens.length ? "No matching screens" : "No captured screens yet"}
+            title={screens.length ? "No matching screens" : "No screens yet"}
             detail={
               screens.length
                 ? "Try another screen name."
-                : "Record a test to capture your app’s screens."
+                : "Record a Test to add screens to this Map."
             }
           />
         )}

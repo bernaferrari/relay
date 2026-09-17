@@ -56,8 +56,9 @@ export function MapScreenRefreshDialog({
         <DialogHeader className="pr-8">
           <DialogTitle>Update {screen.title}</DialogTitle>
           <DialogDescription>
-            Open this screen on your device, then capture its updated appearance. Its connections
-            stay in place.
+            Open this screen on your device, then update its saved appearance. Its connections stay
+            in place. This is Map authoring, not a Checkpoint Capture, and does not accept a visual
+            baseline.
           </DialogDescription>
         </DialogHeader>
         <div className="flex items-end gap-3">
@@ -86,7 +87,11 @@ export function MapScreenRefreshDialog({
             }}
           >
             {capture.data ? <RefreshCw /> : <Camera />}
-            {capture.isPending ? "Capturing…" : capture.data ? "Capture again" : "Capture screen"}
+            {capture.isPending
+              ? "Updating…"
+              : capture.data
+                ? "Preview again"
+                : "Preview appearance"}
           </Button>
         </div>
         {targets.data?.length === 0 ? (
@@ -104,7 +109,7 @@ export function MapScreenRefreshDialog({
             </div>
           </figure>
           <figure className="min-w-0 space-y-2">
-            <figcaption className="text-xs text-muted-foreground">New capture</figcaption>
+            <figcaption className="text-xs text-muted-foreground">Updated appearance</figcaption>
             <div className="flex h-[min(46vh,400px)] items-center justify-center">
               {capture.data && !capture.isPending ? (
                 <MapScreenPreview
@@ -121,8 +126,8 @@ export function MapScreenRefreshDialog({
                 >
                   <Camera className="size-6" />
                   {capture.isPending
-                    ? "Capturing the current device screen…"
-                    : "Capture the device screen to compare"}
+                    ? "Updating the current device appearance…"
+                    : "Preview the device appearance to compare"}
                 </div>
               )}
             </div>
@@ -132,11 +137,11 @@ export function MapScreenRefreshDialog({
           <p role="alert" className="text-sm text-destructive">
             {error instanceof Error
               ? error.message
-              : "Could not update this screen. Capture it again to retry."}
+              : "Could not update this screen. Preview it again to retry."}
           </p>
         ) : null}
         <footer className="flex items-center justify-between gap-4 border-t border-border pt-4">
-          <p className="text-xs text-muted-foreground">Previous captures remain available.</p>
+          <p className="text-xs text-muted-foreground">Previous versions remain available.</p>
           <div className="flex gap-2">
             <Button variant="ghost" disabled={busy} onClick={onClose}>
               Cancel

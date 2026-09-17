@@ -119,7 +119,7 @@ export function AppPage() {
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
                   <h2 id="screens-heading" className="mt-1 text-lg font-semibold tracking-tight">
-                    Captured screens
+                    Screens
                   </h2>
                 </div>
                 {app.data.screens.length > 4 ? (
@@ -150,7 +150,7 @@ export function AppPage() {
                         </DialogTrigger>
                         <DialogContent className="sm:max-w-2xl motion-reduce:animate-none">
                           <DialogTitle className="pr-8">{screen.title}</DialogTitle>
-                          <DialogDescription>Captured screen</DialogDescription>
+                          <DialogDescription>Saved Map appearance</DialogDescription>
                           <div className="h-[min(70dvh,760px)] min-h-0">
                             <MapScreenPreview
                               uri={screen.screenshotUri}

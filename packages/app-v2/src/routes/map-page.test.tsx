@@ -507,11 +507,13 @@ it("prepares screen refresh with canonical target fields and waits for a visible
   };
   await act(async () => document.querySelector<HTMLButtonElement>(".relay-map-screen")!.click());
   await act(async () =>
-    document.querySelector<HTMLButtonElement>('button[aria-label="Update capture"]')!.click(),
+    document.querySelector<HTMLButtonElement>('button[aria-label="Update screen"]')!.click(),
   );
   for (let i = 0; i < 5; i++)
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
-  await click("Capture screen");
+  expect(document.body.textContent).toContain("does not accept a visual baseline");
+  expect(document.body.textContent).not.toContain("Capture screen");
+  await click("Preview appearance");
   for (let i = 0; i < 5; i++)
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
   expect(prepared).toEqual([
@@ -532,7 +534,7 @@ it("prepares screen refresh with canonical target fields and waits for a visible
 it("opens every captured screen in a directly linked gallery and focuses the chosen screen on the map", async () => {
   const { history } = await render(undefined, undefined, "/apps/shop/map?view=screens");
   expect(document.querySelector(".relay-map-canvas")).toBeNull();
-  expect(document.querySelector('[aria-label="Captured screens"]')).not.toBeNull();
+  expect(document.querySelector('[aria-label="Map screens"]')).not.toBeNull();
   expect(document.querySelectorAll('button[aria-label^="Preview "]')).toHaveLength(
     overview.screens.length,
   );
@@ -542,7 +544,7 @@ it("opens every captured screen in a directly linked gallery and focuses the cho
   await act(async () => button("Open in map").click());
   expect(document.querySelector(".relay-map-canvas")).not.toBeNull();
   expect(history.location.search).not.toContain("view=screens");
-  expect(document.querySelector('[aria-label="Captured screens"]')).toBeNull();
+  expect(document.querySelector('[aria-label="Map screens"]')).toBeNull();
 });
 
 it("opens a path screen preview without redundant caption text", async () => {
