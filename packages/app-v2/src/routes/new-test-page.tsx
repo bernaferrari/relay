@@ -103,7 +103,8 @@ export function NewTestPage() {
     retry: false,
   });
   async function adoptBrowser(targetId: string) {
-    setTargetId(targetId);
+    chooseTarget(targetId);
+    setNewBrowserOpen(false);
     await queryClient.invalidateQueries({ queryKey: recordingQueryKeys.targets });
     await targets.refetch();
   }
@@ -142,13 +143,11 @@ export function NewTestPage() {
     targets.isSuccess,
   ]);
   useEffect(() => {
-    if (!draftRestored || targetId || !targets.data) return;
+    if (!draftRestored || targetId || !targets.data || newBrowserOpen) return;
     const available = targets.data.targetOptions;
-    const devices = available.filter((target) => target.kind === "device");
-    const preferred =
-      devices.length === 1 ? devices[0] : available.length === 1 ? available[0] : undefined;
+    const preferred = available.length === 1 ? available[0] : undefined;
     if (preferred) setTargetId(preferred.targetId);
-  }, [draftRestored, targetId, targets.data]);
+  }, [draftRestored, targetId, targets.data, newBrowserOpen]);
   const activePointer = useQuery({
     queryKey: recordingQueryKeys.reconciledPointer,
     queryFn: async () => {
@@ -212,6 +211,7 @@ export function NewTestPage() {
     if (search.view === "review") return;
     if (!selectedTarget || !previewCanvas.current || !productService.previewTarget) {
       setPreviewStatus("idle");
+      setPreviewIssue(undefined);
       return;
     }
     let disposed = false;
@@ -346,6 +346,18 @@ export function NewTestPage() {
                 ? "Open the selected app first"
                 : "Start recording";
 
+  function chooseTarget(nextTargetId: string) {
+    setTargetId(nextTargetId);
+    void navigate({
+      to: "/tests/new",
+      replace: true,
+      search: {
+        ...search,
+        target: nextTargetId || undefined,
+      },
+    });
+  }
+
   function chooseApp(nextAppId: string) {
     setAppId(nextAppId);
     void navigate({
@@ -434,7 +446,7 @@ export function NewTestPage() {
                 <div className="grid gap-1">
                   <h2 className="text-sm font-medium">Recording setup</h2>
                   <p className="text-xs leading-relaxed text-muted-foreground">
-                    Choose your app and device. Open the starting screen in the preview.
+                    Choose where to save this Test and where to record it.
                   </p>
                 </div>
                 {startsFromPath ? (
@@ -463,7 +475,7 @@ export function NewTestPage() {
                   service={deviceService}
                   onStarted={async (serial) => {
                     await targets.refetch();
-                    setTargetId(serial);
+                    chooseTarget(serial);
                   }}
                   value={targetId}
                   options={(targets.data?.targetOptions ?? []).map((target) => {
@@ -473,8 +485,21 @@ export function NewTestPage() {
                       label: label.detail ? `${label.title} · ${label.detail}` : label.title,
                     };
                   })}
-                  onChange={setTargetId}
+                  onChange={(value) => {
+                    setNewBrowserOpen(false);
+                    chooseTarget(value);
+                  }}
                 />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    chooseTarget("");
+                    setNewBrowserOpen(true);
+                  }}
+                >
+                  New browser
+                </Button>
                 {selectedTarget?.kind === "device" ? (
                   <InstalledAppChoice
                     service={deviceService}
@@ -493,7 +518,7 @@ export function NewTestPage() {
                   className="text-sm leading-5 text-muted-foreground"
                 >
                   {formReady
-                    ? "Ready. Record your actions, then add checkpoints for what should be true."
+                    ? "Ready to record. Capture screenshots along the way for review."
                     : startHint}
                 </p>
                 <Button
@@ -578,7 +603,7 @@ export function NewTestPage() {
                       </Button>
                     </div>
                   </div>
-                ) : noTargets ? (
+                ) : noTargets || newBrowserOpen ? (
                   <BrowserSetup
                     browsers={savedBrowsers.data ?? []}
                     browserUrl={browserUrl}
@@ -612,7 +637,9 @@ function friendlyPreviewIssue(message: string): string {
   if (/view only|locked|unlock/iu.test(message)) {
     return "Keep the Device connected and unlocked, then reconnect.";
   }
-  if (/packet|transport|codec|decode|base64|operation|targetid/iu.test(message)) {
+  if (
+    /packet|transport|codec|decode|base64|operation|targetid|502|503|fetch|gateway/iu.test(message)
+  ) {
     return "Relay could not show the live view. Reconnect, then try again.";
   }
   return message;

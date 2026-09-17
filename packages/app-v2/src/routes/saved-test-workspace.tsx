@@ -35,12 +35,7 @@ export function SavedTestWorkspace({
           {inspector ? (
             <Popover open={settingsOpen} onOpenChange={onSettingsOpenChange}>
               <PopoverTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    className="h-auto w-full justify-start"
-                  />
-                }
+                render={<Button variant="ghost" className="h-auto w-full justify-start" />}
               >
                 <SlidersHorizontal className="size-4 text-muted-foreground" />
                 <span>Run settings</span>

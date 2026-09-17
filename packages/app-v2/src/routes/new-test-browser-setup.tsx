@@ -124,7 +124,7 @@ export function BrowserSetup({
           disabled={checking}
           onClick={onCheckAgain}
         >
-          {checking ? "Checking for devices…" : "No device connected · Check again"}
+          {checking ? "Checking for devices…" : "Refresh devices"}
         </button>
       </div>
     </div>

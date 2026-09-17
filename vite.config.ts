@@ -55,9 +55,7 @@ export default defineConfig({
       "shadcn/no-restyle": [
         "error",
         {
-          // Default: any recognized component may take any class.
-          // Button is the only primitive that owns its appearance.
-          deny: ["__relay-no-restyle-placeholder__"],
+          allow: ["*"],
           contracts: [
             {
               pattern: "^Button$",

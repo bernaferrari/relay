@@ -72,9 +72,9 @@ export function RecordingDeviceChoice({
           Starting {boot.variables}… Waiting for Android.
         </p>
       ) : null}
-      {boot.error || inventory.error ? (
+      {boot.error ? (
         <p role="alert" className="text-xs text-destructive">
-          {(boot.error ?? inventory.error)?.message}
+          {boot.error.message}
         </p>
       ) : null}
     </div>

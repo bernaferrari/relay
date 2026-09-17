@@ -252,7 +252,14 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
   tokens["text-on-brand-weaker"] = on(brandb);
   tokens["text-on-brand-strong"] = on(brandh);
 
-  tokens["button-primary-base"] = primary[8];
+  // Filled actions use ink, not the loud primary hue. Theme injection used
+  // to overwrite shadcn-nova buttons with electric blue and leave
+  // --button-primary-foreground / hover / active on a different family.
+  const primaryFill = neutral[11];
+  tokens["button-primary-base"] = primaryFill;
+  tokens["button-primary-hover"] = shift(primaryFill, { l: isDark ? 0.03 : 0.05 });
+  tokens["button-primary-active"] = shift(primaryFill, { l: isDark ? -0.05 : -0.04 });
+  tokens["button-primary-foreground"] = on(primaryFill);
   tokens["button-secondary-base"] = isDark ? neutral[2] : neutral[0];
   tokens["button-secondary-hover"] = isDark ? neutral[3] : neutral[1];
   tokens["button-ghost-hover"] = neutralAlpha[1];

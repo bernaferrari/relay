@@ -233,7 +233,15 @@ function SessionRow({
           </strong>
           <Badge
             variant={sessionBadgeVariant(sessionVariant(session))}
-            className={sessionBadgeClasses[sessionVariant(session)]}
+            className={
+              sessionVariant(session) === "success"
+                ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
+                : sessionVariant(session) === "warning"
+                  ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                  : sessionVariant(session) === "danger"
+                    ? "bg-red-500/15 text-red-700 dark:text-red-300"
+                    : undefined
+            }
           >
             {sessionStateLabel(session.state)}
           </Badge>
@@ -287,13 +295,6 @@ function sessionBadgeVariant(tone: ReturnType<typeof sessionVariant>): "default"
   if (tone === "success") return "default";
   return "secondary";
 }
-
-const sessionBadgeClasses = {
-  success: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
-  warning: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
-  danger: "bg-red-500/15 text-red-700 dark:text-red-300",
-  secondary: undefined,
-} as const;
 
 function relativeTime(value: number, now: number): string {
   const ageMs = Math.max(0, now - value);

@@ -6,13 +6,13 @@
     "palette": {
       "neutral": "#F6F7F9",
       "ink": "#1D1F27",
-      "primary": "#1D4AFF",
+      "primary": "#1D1F27",
       "accent": "#F7A501",
       "success": "#2F9E6B",
       "warning": "#C47E00",
       "error": "#D4430F",
       "info": "#318795",
-      "interactive": "#1D4AFF",
+      "interactive": "#3A4F73",
       "diffAdd": "#4db380",
       "diffDelete": "#f52a65"
     }
@@ -21,13 +21,13 @@
     "palette": {
       "neutral": "#1D1F27",
       "ink": "#EEEFE9",
-      "primary": "#1D4AFF",
+      "primary": "#EEEFE9",
       "accent": "#F7A501",
       "success": "#42D392",
       "warning": "#F7A501",
       "error": "#F54E00",
       "info": "#7dcfff",
-      "interactive": "#4C7DFF",
+      "interactive": "#B7C3D8",
       "diffAdd": "#41a6b5",
       "diffDelete": "#c34043"
     }

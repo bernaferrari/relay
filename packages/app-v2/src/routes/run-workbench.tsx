@@ -406,260 +406,262 @@ export function RunWorkbench({
         />
       </div>
       <div className={workspaceToolsSurface}>
-      <Tabs
-        value={panel}
-        onValueChange={(value) => setPanel(value as typeof panel)}
-        className="gap-0"
-      >
-        <TabsList
-          variant="line"
-          className="w-full shrink-0 justify-start overflow-x-auto border-b border-border px-3 group-data-horizontal/tabs:h-12"
-          aria-label="Step views"
+        <Tabs
+          value={panel}
+          onValueChange={(value) => setPanel(value as typeof panel)}
+          className="gap-0"
         >
-          {(
-            [
-              ["steps", "Steps"],
-              ...(allFrames.length || reviewMode ? [["captures", "Captures"]] : []),
-              ...(report.performance?.length ? [["performance", "Performance"]] : []),
-              ...(hasChecks ? [["details", "Checks"]] : []),
-              ["logs", "Logs"],
-              ...(report.video ? [["video", "Video"]] : []),
-            ] as const
-          ).map(([value, label]) => (
-            <TabsTrigger key={value} value={value} className="min-h-10 flex-none px-3">
-              {label}
-              {value === "steps" ? (
-                <span className="ml-1 text-xs tabular-nums text-muted-foreground">
-                  {report.timeline.length - setupCount || report.timeline.length}
-                </span>
-              ) : null}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        <TabsContent value={panel} className="flex min-h-0 flex-1 flex-col">
-          {panel === "steps" ? (
-            <aside className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <ScrollArea
-                className="min-h-0 flex-1"
-                viewportProps={{ "aria-label": "Recorded steps", className: "overscroll-auto" }}
-              >
-                {setupCount && setupCount < report.timeline.length ? (
-                  <button
-                    type="button"
-                    className="mx-2 mt-2 flex min-h-10 items-center gap-2 rounded-md px-3 text-xs text-muted-foreground hover:bg-muted focus-visible:outline-2"
-                    aria-expanded={setupVisible}
-                    onClick={() => {
-                      setShowSetup(!setupVisible);
-                      if (setupVisible && report.timeline[selectedStepIndex]?.phase === "setup")
-                        onSelectStep(report.timeline.findIndex((item) => item.phase !== "setup"));
-                    }}
-                  >
-                    {setupVisible ? "Hide setup" : "Show setup"}
-                    <span className="tabular-nums">{setupCount} steps</span>
-                  </button>
-                ) : null}
-                <ol className="relay-test-readable-steps grid list-none gap-1 p-2 pb-4">
-                  {report.timeline.map((item, index) => {
-                    if (!visibleIndexes.includes(index)) return null;
-                    const Icon =
-                      item.state === "passed" || item.state === "recovered"
-                        ? Check
-                        : item.state === "failed"
-                          ? CircleAlert
-                          : Circle;
-                    return (
-                      <li key={item.id}>
-                        <button
-                          type="button"
-                          data-step-index={index}
-                          aria-current={index === selectedStepIndex ? "step" : undefined}
-                          aria-pressed={index === selectedStepIndex}
-                          className={`relay-interactive-row relative grid min-h-12 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-accent text-foreground ring-1 ring-inset ring-border" : "text-muted-foreground"}`}
-                          onClick={() => onSelectStep(index)}
-                          onKeyDown={(event) => {
-                            const next =
-                              event.key === "ArrowDown"
-                                ? visibleIndexes[
-                                    Math.min(
-                                      visibleIndexes.length - 1,
-                                      visibleIndexes.indexOf(index) + 1,
-                                    )
-                                  ]
-                                : event.key === "ArrowUp"
-                                  ? visibleIndexes[Math.max(0, visibleIndexes.indexOf(index) - 1)]
-                                  : event.key === "Home"
-                                    ? visibleIndexes[0]
-                                    : event.key === "End"
-                                      ? visibleIndexes.at(-1)
-                                      : undefined;
-                            if (next === undefined) return;
-                            event.preventDefault();
-                            onSelectStep(next);
-                            const buttons = event.currentTarget
-                              .closest("ol")
-                              ?.querySelectorAll<HTMLButtonElement>("button[aria-pressed]");
-                            Array.from(buttons ?? [])
-                              .find((button) => button.dataset.stepIndex === String(next))
-                              ?.focus();
-                          }}
-                        >
-                          <span className="text-xs tabular-nums">
-                            {item.phase === "test"
-                              ? report.timeline
-                                  .slice(0, index + 1)
-                                  .filter((step) => step.phase === "test").length
-                              : index + 1}
-                          </span>
-                          <span className="min-w-0">
-                            <strong className="flex items-center gap-2 text-sm font-medium leading-5">
-                              <StepActionIcon title={item.title} />
-                              <span>{item.title}</span>
-                            </strong>
-                            <span className="sr-only">{timelineStateLabel(item.state)}</span>
-                          </span>
-                          <Icon
-                            aria-hidden="true"
-                            className={`size-4 ${item.state === "failed" ? "text-[var(--text-critical-base)]" : item.state === "passed" ? "text-[var(--text-success-base)]" : ""}`}
-                          />
-                        </button>
-                        {index === selectedStepIndex &&
-                        item.state === "failed" &&
-                        index === failureIndexes.at(-1) &&
-                        failureNotice ? (
-                          <div className="pt-0.5">{failureNotice}</div>
-                        ) : null}
-                      </li>
-                    );
-                  })}
-                </ol>
-              </ScrollArea>
-            </aside>
-          ) : null}
-          {panel === "logs" ? <RunLogPanel logs={logs} /> : null}
-          <ScrollArea
-            className={panel === "steps" || panel === "logs" ? "hidden" : "min-h-0 flex-1"}
-            viewportProps={{ "aria-label": "Step report", className: "overscroll-auto" }}
+          <TabsList
+            variant="line"
+            className="w-full shrink-0 justify-start overflow-x-auto border-b border-border px-3 group-data-horizontal/tabs:h-12"
+            aria-label="Step views"
           >
-            {panel === "captures" ? (
-              reviewMode && report.captureReview ? (
-                <CaptureReviewPanel
-                  queue={report.captureReview}
-                  showImage={false}
-                  fallbackTitle={report.title}
-                  frames={allFrames}
-                  selectedIndex={selectedCapture}
-                  onSelect={setSelectedCapture}
-                  busy={reviewBusy}
-                  onReviewMany={
-                    onReviewCapture
-                      ? (action, items) => void reviewCaptures(action, items)
-                      : undefined
-                  }
-                  showMasks={showMasks}
-                  onShowMasksChange={setShowMasks}
-                  fallbackConfiguration={{
-                    ...(report.targetName ? { app: report.targetName } : {}),
-                    ...(report.executionContext?.account
-                      ? { account: report.executionContext.account }
-                      : {}),
-                    ...(report.executionContext?.browser
-                      ? { browser: report.executionContext.browser }
-                      : {}),
-                    ...(report.executionContext?.viewport
-                      ? { viewport: report.executionContext.viewport }
-                      : {}),
-                    ...(report.executionContext?.locale
-                      ? { locale: report.executionContext.locale }
-                      : {}),
-                    ...(report.executionContext?.buildId
-                      ? { build: report.executionContext.buildId }
-                      : report.executionContext?.appVersion
-                        ? { build: report.executionContext.appVersion }
+            {(
+              [
+                ["steps", "Steps"],
+                ...(allFrames.length || reviewMode ? [["captures", "Captures"]] : []),
+                ...(report.performance?.length ? [["performance", "Performance"]] : []),
+                ...(hasChecks ? [["details", "Checks"]] : []),
+                ["logs", "Logs"],
+                ...(report.video ? [["video", "Video"]] : []),
+              ] as const
+            ).map(([value, label]) => (
+              <TabsTrigger key={value} value={value} className="min-h-10 flex-none px-3">
+                {label}
+                {value === "steps" ? (
+                  <span className="ml-1 text-xs tabular-nums text-muted-foreground">
+                    {report.timeline.length - setupCount || report.timeline.length}
+                  </span>
+                ) : null}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          <TabsContent value={panel} className="flex min-h-0 flex-1 flex-col">
+            {panel === "steps" ? (
+              <aside className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <ScrollArea
+                  className="min-h-0 flex-1"
+                  viewportProps={{ "aria-label": "Recorded steps", className: "overscroll-auto" }}
+                >
+                  {setupCount && setupCount < report.timeline.length ? (
+                    <button
+                      type="button"
+                      className="mx-2 mt-2 flex min-h-10 items-center gap-2 rounded-md px-3 text-xs text-muted-foreground hover:bg-muted focus-visible:outline-2"
+                      aria-expanded={setupVisible}
+                      onClick={() => {
+                        setShowSetup(!setupVisible);
+                        if (setupVisible && report.timeline[selectedStepIndex]?.phase === "setup")
+                          onSelectStep(report.timeline.findIndex((item) => item.phase !== "setup"));
+                      }}
+                    >
+                      {setupVisible ? "Hide setup" : "Show setup"}
+                      <span className="tabular-nums">{setupCount} steps</span>
+                    </button>
+                  ) : null}
+                  <ol className="relay-test-readable-steps grid list-none gap-1 p-2 pb-4">
+                    {report.timeline.map((item, index) => {
+                      if (!visibleIndexes.includes(index)) return null;
+                      const Icon =
+                        item.state === "passed" || item.state === "recovered"
+                          ? Check
+                          : item.state === "failed"
+                            ? CircleAlert
+                            : Circle;
+                      return (
+                        <li key={item.id}>
+                          <button
+                            type="button"
+                            data-step-index={index}
+                            aria-current={index === selectedStepIndex ? "step" : undefined}
+                            aria-pressed={index === selectedStepIndex}
+                            className={`relay-interactive-row relative grid min-h-12 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-accent text-foreground ring-1 ring-inset ring-border" : "text-muted-foreground"}`}
+                            onClick={() => onSelectStep(index)}
+                            onKeyDown={(event) => {
+                              const next =
+                                event.key === "ArrowDown"
+                                  ? visibleIndexes[
+                                      Math.min(
+                                        visibleIndexes.length - 1,
+                                        visibleIndexes.indexOf(index) + 1,
+                                      )
+                                    ]
+                                  : event.key === "ArrowUp"
+                                    ? visibleIndexes[Math.max(0, visibleIndexes.indexOf(index) - 1)]
+                                    : event.key === "Home"
+                                      ? visibleIndexes[0]
+                                      : event.key === "End"
+                                        ? visibleIndexes.at(-1)
+                                        : undefined;
+                              if (next === undefined) return;
+                              event.preventDefault();
+                              onSelectStep(next);
+                              const buttons = event.currentTarget
+                                .closest("ol")
+                                ?.querySelectorAll<HTMLButtonElement>("button[aria-pressed]");
+                              Array.from(buttons ?? [])
+                                .find((button) => button.dataset.stepIndex === String(next))
+                                ?.focus();
+                            }}
+                          >
+                            <span className="text-xs tabular-nums">
+                              {item.phase === "test"
+                                ? report.timeline
+                                    .slice(0, index + 1)
+                                    .filter((step) => step.phase === "test").length
+                                : index + 1}
+                            </span>
+                            <span className="min-w-0">
+                              <strong className="flex items-center gap-2 text-sm font-medium leading-5">
+                                <StepActionIcon title={item.title} />
+                                <span>{item.title}</span>
+                              </strong>
+                              <span className="sr-only">{timelineStateLabel(item.state)}</span>
+                            </span>
+                            <Icon
+                              aria-hidden="true"
+                              className={`size-4 ${item.state === "failed" ? "text-[var(--text-critical-base)]" : item.state === "passed" ? "text-[var(--text-success-base)]" : ""}`}
+                            />
+                          </button>
+                          {index === selectedStepIndex &&
+                          item.state === "failed" &&
+                          index === failureIndexes.at(-1) &&
+                          failureNotice ? (
+                            <div className="pt-0.5">{failureNotice}</div>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </ScrollArea>
+              </aside>
+            ) : null}
+            {panel === "logs" ? <RunLogPanel logs={logs} /> : null}
+            <ScrollArea
+              className={panel === "steps" || panel === "logs" ? "hidden" : "min-h-0 flex-1"}
+              viewportProps={{ "aria-label": "Step report", className: "overscroll-auto" }}
+            >
+              {panel === "captures" ? (
+                reviewMode && report.captureReview ? (
+                  <CaptureReviewPanel
+                    queue={report.captureReview}
+                    showImage={false}
+                    fallbackTitle={report.title}
+                    frames={allFrames}
+                    selectedIndex={selectedCapture}
+                    onSelect={setSelectedCapture}
+                    busy={reviewBusy}
+                    onReviewMany={
+                      onReviewCapture
+                        ? (action, items) => void reviewCaptures(action, items)
+                        : undefined
+                    }
+                    showMasks={showMasks}
+                    onShowMasksChange={setShowMasks}
+                    fallbackConfiguration={{
+                      ...(report.targetName ? { app: report.targetName } : {}),
+                      ...(report.executionContext?.account
+                        ? { account: report.executionContext.account }
                         : {}),
+                      ...(report.executionContext?.browser
+                        ? { browser: report.executionContext.browser }
+                        : {}),
+                      ...(report.executionContext?.viewport
+                        ? { viewport: report.executionContext.viewport }
+                        : {}),
+                      ...(report.executionContext?.locale
+                        ? { locale: report.executionContext.locale }
+                        : {}),
+                      ...(report.executionContext?.buildId
+                        ? { build: report.executionContext.buildId }
+                        : report.executionContext?.appVersion
+                          ? { build: report.executionContext.appVersion }
+                          : {}),
+                    }}
+                  />
+                ) : (
+                  <div className="p-2">
+                    <p className="px-3 py-2 text-xs text-muted-foreground">
+                      All screenshots saved during this run.
+                    </p>
+                    <ul className="grid list-none gap-1">
+                      {allFrames.map((item, index) => (
+                        <li key={item.id}>
+                          <button
+                            type="button"
+                            aria-pressed={index === selectedCapture}
+                            className={`relay-interactive-row flex min-h-20 w-full items-center gap-3 rounded-md p-3 text-left focus-visible:outline-2 focus-visible:outline-ring ${index === selectedCapture ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
+                            onClick={() => setSelectedCapture(index)}
+                          >
+                            {item.media ? (
+                              <ReportImage
+                                media={item.media}
+                                alt=""
+                                className="h-16 w-20 rounded-sm object-contain"
+                                loading="lazy"
+                              />
+                            ) : null}
+                            <span className="grid min-w-0 gap-1">
+                              <span className="text-sm font-medium">{item.title}</span>
+                              <span className="text-xs text-muted-foreground">
+                                Capture {index + 1}
+                              </span>
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )
+              ) : null}
+              {panel === "video" && report.video ? (
+                <div className="border-t border-border p-5">
+                  <ReportVideoInspector
+                    video={report.video}
+                    diagnostics={report.diagnostics}
+                    interval={traceVideoInterval(step, report.video.clock)}
+                  />
+                </div>
+              ) : null}
+              {panel === "performance" && report.performance?.length ? (
+                <RunPerformancePanel
+                  series={report.performance}
+                  timeline={report.timeline}
+                  step={step}
+                  onSeek={(at) => {
+                    const matched = performanceStepAt(report.timeline, at);
+                    const index = matched ? report.timeline.indexOf(matched) : -1;
+                    if (index >= 0) onSelectStep(index);
                   }}
                 />
-              ) : (
-                <div className="p-2">
-                  <p className="px-3 py-2 text-xs text-muted-foreground">
-                    All screenshots saved during this run.
-                  </p>
-                  <ul className="grid list-none gap-1">
-                    {allFrames.map((item, index) => (
-                      <li key={item.id}>
-                        <button
-                          type="button"
-                          aria-pressed={index === selectedCapture}
-                          className={`relay-interactive-row flex min-h-20 w-full items-center gap-3 rounded-md p-3 text-left focus-visible:outline-2 focus-visible:outline-ring ${index === selectedCapture ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
-                          onClick={() => setSelectedCapture(index)}
-                        >
-                          {item.media ? (
-                            <ReportImage
-                              media={item.media}
-                              alt=""
-                              className="h-16 w-20 rounded-sm object-contain"
-                              loading="lazy"
-                            />
-                          ) : null}
-                          <span className="grid min-w-0 gap-1">
-                            <span className="text-sm font-medium">{item.title}</span>
-                            <span className="text-xs text-muted-foreground">
-                              Capture {index + 1}
-                            </span>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )
-            ) : null}
-            {panel === "video" && report.video ? (
-              <div className="border-t border-border p-5">
-                <ReportVideoInspector
-                  video={report.video}
-                  diagnostics={report.diagnostics}
-                  interval={traceVideoInterval(step, report.video.clock)}
-                />
-              </div>
-            ) : null}
-            {panel === "performance" && report.performance?.length ? (
-              <RunPerformancePanel
-                series={report.performance}
-                timeline={report.timeline}
-                step={step}
-                onSeek={(at) => {
-                  const matched = performanceStepAt(report.timeline, at);
-                  const index = matched ? report.timeline.indexOf(matched) : -1;
-                  if (index >= 0) onSelectStep(index);
-                }}
-              />
-            ) : null}
-            {panel === "details" ? (
-              <dl className="grid gap-5 px-5 py-4">
-                <div>
-                  <dt className="text-xs font-medium text-muted-foreground">Expected</dt>
-                  <dd className="mt-1 text-sm leading-6">{step.expected}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium text-muted-foreground">Observed</dt>
-                  <dd className="mt-1 text-sm leading-6">
-                    {step.observed?.trim() || "No observation was retained for this check."}
-                  </dd>
-                </div>
-                {step.state === "failed" && step.log?.trim() && step.log !== step.observed ? (
+              ) : null}
+              {panel === "details" ? (
+                <dl className="grid gap-5 px-5 py-4">
                   <div>
-                    <dt className="text-xs font-medium text-muted-foreground">Failure details</dt>
-                    <dd className="mt-1 whitespace-pre-wrap text-sm leading-6">{step.log}</dd>
+                    <dt className="text-xs font-medium text-muted-foreground">Expected</dt>
+                    <dd className="mt-1 text-sm leading-6">{step.expected}</dd>
                   </div>
-                ) : null}
-              </dl>
-            ) : null}
-          </ScrollArea>
-        </TabsContent>
-        {footer ? (
-          <div className="flex shrink-0 justify-end border-t border-border px-4 py-2">{footer}</div>
-        ) : null}
-      </Tabs>
+                  <div>
+                    <dt className="text-xs font-medium text-muted-foreground">Observed</dt>
+                    <dd className="mt-1 text-sm leading-6">
+                      {step.observed?.trim() || "No observation was retained for this check."}
+                    </dd>
+                  </div>
+                  {step.state === "failed" && step.log?.trim() && step.log !== step.observed ? (
+                    <div>
+                      <dt className="text-xs font-medium text-muted-foreground">Failure details</dt>
+                      <dd className="mt-1 whitespace-pre-wrap text-sm leading-6">{step.log}</dd>
+                    </div>
+                  ) : null}
+                </dl>
+              ) : null}
+            </ScrollArea>
+          </TabsContent>
+          {footer ? (
+            <div className="flex shrink-0 justify-end border-t border-border px-4 py-2">
+              {footer}
+            </div>
+          ) : null}
+        </Tabs>
       </div>
     </section>
   );

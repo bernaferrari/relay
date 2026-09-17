@@ -153,7 +153,9 @@ export function CaptureReviewPanel({
           return;
         if (
           target instanceof Element &&
-          target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]')
+          target.closest(
+            'input, textarea, select, button, a, [role="tab"], [role="combobox"], [contenteditable="true"], [role="dialog"]',
+          )
         )
           return;
         const next = captureReviewAdvanceIndex(selectedIndex, queue.items.length, event.key);
@@ -376,9 +378,13 @@ export function CaptureReviewPanel({
           {showImage || selected.status !== "pending" ? (
             <p className="text-xs text-muted-foreground">
               {selectedMeta.blocked
-                ? "Blocked — this slot stays in the planned count and cannot be marked Looks correct."
+                ? onReviewMany
+                  ? "Capture blocked. Open Runs and problems to resolve the device or setup issue before rerunning."
+                  : "Capture blocked. Check this run’s steps, resolve the device or setup issue, then set up another run."
                 : selected.status === "missing"
-                  ? "This screenshot was not captured."
+                  ? onReviewMany
+                    ? "This screenshot was not captured. Open Runs and problems to see what stopped it, then rerun the affected case."
+                    : "This screenshot was not captured. Check the run’s steps, then set up another run to collect it."
                   : selected.status === "accepted"
                     ? "Looks correct — this does not approve a visual baseline."
                     : selected.status === "issue"

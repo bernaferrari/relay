@@ -290,7 +290,6 @@ export function HomePage() {
                 render={<Link to="/runs" search={{ app: appScope || undefined }} />}
                 variant="ghost"
                 size="sm"
-                className="gap-1"
               >
                 View all <ArrowRight className="size-4" aria-hidden="true" />
               </Button>

@@ -150,11 +150,7 @@ export function RecoveryState({
   if (layout === "centered") {
     return (
       <Empty
-        className={classNames(
-          "relay-recovery-state",
-          "relay-recovery-state--centered",
-          className,
-        )}
+        className={classNames("relay-recovery-state", "relay-recovery-state--centered", className)}
         role="alert"
       >
         <EmptyHeader>
@@ -187,7 +183,12 @@ export function OutcomeMark({ outcome }: { outcome: OutcomeValue }) {
   const presentation = outcomePresentation(outcome);
   return (
     <Badge
-      className={classNames("relay-outcome-mark", outcomeBadgeClasses[presentation.tone])}
+      className={classNames(
+        "relay-outcome-mark",
+        presentation.tone === "success" &&
+          "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
+        presentation.tone === "notice" && "bg-amber-500/15 text-amber-800 dark:text-amber-300",
+      )}
       variant={outcomeBadgeVariant(presentation.tone)}
     >
       <presentation.icon aria-hidden="true" />
@@ -204,7 +205,10 @@ export function ReadinessMark({ status, name }: { status: ReadinessValue; name?:
       : { label, icon: CircleHelp, tone: "notice" as const };
   return (
     <Badge
-      className={classNames("relay-readiness-mark", outcomeBadgeClasses[presentation.tone])}
+      className={classNames(
+        "relay-readiness-mark",
+        presentation.tone === "notice" && "bg-amber-500/15 text-amber-800 dark:text-amber-300",
+      )}
       variant={outcomeBadgeVariant(presentation.tone)}
     >
       <presentation.icon aria-hidden="true" />
@@ -220,13 +224,6 @@ function outcomeBadgeVariant(
   if (tone === "success") return "default";
   return "secondary";
 }
-
-const outcomeBadgeClasses = {
-  success: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
-  notice: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
-  danger: "",
-  quiet: "",
-} as const;
 
 function outcomePresentation(outcome: OutcomeValue): {
   label: string;

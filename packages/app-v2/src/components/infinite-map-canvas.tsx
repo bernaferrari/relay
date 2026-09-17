@@ -908,9 +908,7 @@ export function InfiniteMapCanvas({
             Use arrow keys to move, plus and minus to zoom, F to fit the map, Shift F to focus a
             selected screen, Space to pan, or 0 to reset the view. Tab to visit each screen.
           </span>
-          <div
-            className="relay-map-world absolute inset-0 origin-top-left translate-x-12 translate-y-16"
-          >
+          <div className="relay-map-world absolute inset-0 origin-top-left translate-x-12 translate-y-16">
             {alignmentGuides.map((guide, index) => (
               <div
                 key={index}

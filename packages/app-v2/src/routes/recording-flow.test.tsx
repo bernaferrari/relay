@@ -474,6 +474,27 @@ describe("record, review, replay, and save", () => {
     expect(button("Start recording").disabled).toBe(true);
   });
 
+  it("offers a new recording instead of replaying zero saved steps", async () => {
+    const empty = state("reviewing", ["inspect", "replay", "approve"]);
+    empty.snapshot!.review!.actions = [];
+    empty.snapshot!.review!.actionCount = 0;
+    const fake = fakeService(empty);
+    fake.service.cancel = async () => {
+      fake.calls.push("cancel-empty");
+      return state("cancelled", []);
+    };
+    const { history } = await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(document.body.textContent).not.toContain("Replay on Pixel");
+    expect(document.body.textContent).not.toContain("Save Test");
+    await click(button("Start new recording"));
+    expect(fake.calls).toContain("cancel-empty");
+    expect(history.location.pathname).toBe("/tests/new");
+  });
+
   it("starts a browser on this page instead of sending the user away", async () => {
     const fake = fakeService();
     const ready = {
@@ -542,6 +563,83 @@ describe("record, review, replay, and save", () => {
     await fill(url, "https://checkout.example");
     await click(button("Start a browser"));
     expect(history.location.pathname).toBe("/tests/new");
+    expect(created).toEqual(["https://checkout.example/"]);
+    expect(document.querySelector('[aria-label="Record on"]')?.textContent).toContain(
+      "checkout.example",
+    );
+    expect(button("Start recording").disabled).toBe(false);
+  });
+
+  it("can create a browser with a connected device and preserves it in the URL", async () => {
+    const fake = fakeService();
+    const ready = {
+      kind: "browser" as const,
+      platform: "browser" as const,
+      targetId: "browser-checkout",
+    };
+    fake.service.connect = async () =>
+      fake.calls.includes("create-browser")
+        ? { status: "target-selection", targets: [ready], selectedTarget: ready }
+        : { status: "target-selection", targets: [target], selectedTarget: target };
+    fake.service.presentTargets = async (selected) =>
+      selected.map((item) => ({
+        ...item,
+        name: "checkout.example",
+        detail: "Managed browser · Ready",
+      }));
+    const created: string[] = [];
+    const { history } = await renderJourney(
+      "/tests/new?app=app-1",
+      fake.service,
+      platformWithStorage().platform,
+      undefined,
+      {
+        listSpaces: async () => [],
+        createSpace: async (input) => {
+          fake.calls.push("create-browser");
+          created.push(input.startUrl);
+          return {
+            id: "browser-checkout",
+            name: input.name,
+            startUrl: input.startUrl,
+            createdAt: 1,
+            updatedAt: 1,
+            profileRetention: "ephemeral",
+            persistent: false,
+            source: { kind: "managed-browser-target", id: "browser-checkout" },
+          };
+        },
+        openSpace: async () => ({
+          targetId: "browser-checkout",
+          name: "checkout.example",
+          url: "https://checkout.example",
+        }),
+        removeSpace: async () => undefined,
+        listAuthenticationFixtures: async () => [],
+        saveAuthenticationFixture: async () => {
+          throw new Error("unused");
+        },
+        refreshAuthenticationFixture: async () => {
+          throw new Error("unused");
+        },
+        revokeAuthenticationFixture: async () => {
+          throw new Error("unused");
+        },
+        listCompareSets: async () => [],
+        saveCompareSet: async () => {
+          throw new Error("unused");
+        },
+        removeCompareSet: async () => undefined,
+      },
+    );
+
+    await click(button("New browser"));
+    const url = document.querySelector<HTMLInputElement>("#record-browser-url");
+    if (!url) throw new Error("Website field not found");
+    await fill(url, "https://checkout.example");
+    await click(button("Start a browser"));
+    expect(history.location.pathname).toBe("/tests/new");
+    expect(history.location.search).toContain("target=browser-checkout");
     expect(created).toEqual(["https://checkout.example/"]);
     expect(document.querySelector('[aria-label="Record on"]')?.textContent).toContain(
       "checkout.example",
@@ -966,7 +1064,7 @@ describe("record, review, replay, and save", () => {
     expect(button("Start recording").disabled).toBe(false);
   });
 
-  it("replaces an unavailable remembered emulator with the connected phone among browsers", async () => {
+  it("asks for a destination when the remembered device is gone and several targets are ready", async () => {
     const fake = fakeService();
     const phone = { kind: "device", platform: "android", targetId: "samsung-phone" } as const;
     const browser = { kind: "browser", platform: "browser", targetId: "browser-one" } as const;
@@ -981,13 +1079,11 @@ describe("record, review, replay, and save", () => {
     });
     await renderJourney("/tests/new", fake.service, storage.platform);
     expect(document.querySelector('[aria-label="Record on"]')?.textContent).toContain(
-      "samsung-phone",
+      "Choose a device or browser",
     );
     expect(document.body.textContent).not.toContain("Your selected device isn’t ready");
-    await click(button("Start recording"));
-    expect(
-      fake.calls.some((call) => call.startsWith("begin:") && call.endsWith(":samsung-phone")),
-    ).toBe(true);
+    expect(button("Start recording").disabled).toBe(true);
+    expect(fake.calls.some((call) => call.startsWith("begin:"))).toBe(false);
   });
 
   it("does not replace an explicitly requested unavailable device with a different phone", async () => {

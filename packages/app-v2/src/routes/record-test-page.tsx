@@ -576,10 +576,10 @@ function RecordingWorkspace({
           <AuthoringWorkspace
             tools={
               <aside
-                className="grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-border bg-card h-full"
+                className="grid h-full min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden"
                 aria-labelledby="capture-timeline-title"
               >
-                <div className="flex items-center justify-between gap-3 border-b border-border p-3.5">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-1 pb-2">
                   <h2 id="capture-timeline-title" className="text-[13px] font-medium">
                     Recorded steps
                     {liveInputBusy || action.isPending ? (

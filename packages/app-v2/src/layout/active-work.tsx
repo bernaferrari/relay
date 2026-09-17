@@ -263,15 +263,15 @@ function ActivityCenter({
                     onClick={() => openItem(item)}
                   >
                     <span className="grid w-full grid-cols-[1rem_minmax(0,1fr)] items-center gap-3 px-2.5 py-2">
-                    <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
-                    <span className="grid min-w-0">
-                      <strong className="truncate text-sm font-medium text-foreground">
-                        {item.title}
-                      </strong>
-                      <small className="truncate text-xs font-normal text-muted-foreground">
-                        {item.status}
-                      </small>
-                    </span>
+                      <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
+                      <span className="grid min-w-0">
+                        <strong className="truncate text-sm font-medium text-foreground">
+                          {item.title}
+                        </strong>
+                        <small className="truncate text-xs font-normal text-muted-foreground">
+                          {item.status}
+                        </small>
+                      </span>
                     </span>
                   </Button>
                 );

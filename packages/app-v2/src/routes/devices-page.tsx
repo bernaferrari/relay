@@ -162,30 +162,26 @@ function AvailableSection({
   }, [searchActive]);
   const headingId = useId();
   return (
-    <Collapsible
-      open={open}
-      onOpenChange={setOpen}
-      className={`${libraryRowSurface} overflow-hidden rounded-xl border border-border bg-card`}
-    >
-      <CollapsibleTrigger
-        className="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-[13px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-      >
-        <ChevronRight
-          className={`size-4 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
-          aria-hidden="true"
-        />
-        <span id={headingId}>{title}</span>
-        <Badge
-          variant="secondary"
-          className="h-auto bg-transparent px-0 text-xs font-normal tabular-nums text-muted-foreground"
-        >
-          {devices.length}
-        </Badge>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="border-t border-border">
-        <DeviceSection title="" devices={devices} returnTo={returnTo} bordered={false} />
-      </CollapsibleContent>
-    </Collapsible>
+    <div className={`${libraryRowSurface} overflow-hidden rounded-xl border border-border bg-card`}>
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <CollapsibleTrigger className="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-[13px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+          <ChevronRight
+            className={`size-4 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
+            aria-hidden="true"
+          />
+          <span id={headingId}>{title}</span>
+          <Badge
+            variant="secondary"
+            className="h-auto bg-transparent px-0 text-xs font-normal tabular-nums text-muted-foreground"
+          >
+            {devices.length}
+          </Badge>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="border-t border-border">
+          <DeviceSection title="" devices={devices} returnTo={returnTo} bordered={false} />
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
   );
 }
 

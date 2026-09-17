@@ -134,6 +134,21 @@ export function ReviewRecordingPage({
     },
   });
 
+  const restartEmpty = useMutation({
+    mutationFn: async () => {
+      if (!productService.cancel)
+        throw new Error("Starting over is unavailable. Return to Tests and try again.");
+      const result = await productService.cancel();
+      if (result.snapshot?.stage !== "cancelled")
+        throw new Error("Could not close the empty recording. Try again.");
+      await clearWorkflowPointerIfCurrent(platform, workflowId);
+      queryClient.setQueryData(recordingQueryKeys.pointer, null);
+      queryClient.setQueryData(recordingQueryKeys.reconciledPointer, null);
+    },
+    onSuccess: () =>
+      navigate({ to: "/tests/new", search: { app: recording.data?.snapshot?.frozen?.appMapId } }),
+  });
+
   const leaveDraft = useMutation({
     mutationFn: async () => {
       await nameWrites.current;
@@ -177,7 +192,7 @@ export function ReviewRecordingPage({
     (action, index) => actions.indexOf(action) === actions.indexOf(selectedActions[0]!) + index,
   );
   const canEdit = allowed.has("edit") && !transition.isPending;
-  const canApprove = allowed.has("approve");
+  const canApprove = allowed.has("approve") && actions.length > 0;
   const committedTestId = snapshot?.authoring?.committedTestId;
   const saved = reviewReady && snapshot?.stage === "committed";
   const {
@@ -340,6 +355,12 @@ export function ReviewRecordingPage({
         actions={
           reviewReady ? (
             <>
+              {!actions.length && productService.cancel ? (
+                <Button onClick={() => restartEmpty.mutate()} disabled={restartEmpty.isPending}>
+                  {restartEmpty.isPending ? "Starting over…" : "Start new recording"}
+                </Button>
+              ) : null}
+              {restartEmpty.error ? <p role="alert">{restartEmpty.error.message}</p> : null}
               {editing ? (
                 <div className="flex items-center gap-2" aria-label="Edit history">
                   <Button
@@ -370,7 +391,7 @@ export function ReviewRecordingPage({
               >
                 {editing ? "Done editing" : "Edit steps"}
               </Button>
-              {allowed.has("replay") ? (
+              {allowed.has("replay") && actions.length > 0 ? (
                 <Button
                   variant={canApprove ? "ghost" : "default"}
                   title={
@@ -382,7 +403,7 @@ export function ReviewRecordingPage({
                   disabled={transition.isPending}
                 >
                   <RotateCcw aria-hidden="true" />
-                  {transition.isPending ? "Replaying…" : `Replay on ${replayDeviceName}`}
+                  {transition.isPending && transition.variables?.action === "replay" ? "Replaying…" : `Replay on ${replayDeviceName}`}
                 </Button>
               ) : null}
               {canApprove ? (
@@ -447,7 +468,9 @@ export function ReviewRecordingPage({
                 ? "Recording captured. Ready to save."
                 : review?.latestReplay
                   ? replayDetail(review.latestReplay.outcome, canApprove)
-                  : `Replay runs these steps on ${replayDeviceName} before saving.`}
+                  : actions.length
+                    ? `Replay runs these steps on ${replayDeviceName} before saving.`
+                    : "No actions were recorded. Start a new recording to capture your Test."}
             </p>
           </div>
         ) : null}

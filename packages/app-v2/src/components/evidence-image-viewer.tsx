@@ -115,9 +115,7 @@ export function EvidenceImageViewer({
                 zoom === 0 ? "max-h-full max-w-full object-contain" : "w-(--zoom-width) max-w-none"
               }
               style={
-                zoom
-                  ? ({ "--zoom-width": `${imageWidth! * zoom}px` } as CSSProperties)
-                  : undefined
+                zoom ? ({ "--zoom-width": `${imageWidth! * zoom}px` } as CSSProperties) : undefined
               }
               onError={onError}
             />

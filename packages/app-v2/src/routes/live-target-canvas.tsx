@@ -285,8 +285,8 @@ export function LiveTargetCanvas({
       <div
         className={
           rail
-            ? "grid gap-2 border-t border-border p-3"
-            : "flex items-center justify-between gap-4 border-t border-border p-3 max-[700px]:grid"
+            ? "grid min-w-0 grid-cols-1 gap-2 border-t border-border p-2"
+            : "grid min-w-0 grid-cols-1 gap-2 border-t border-border p-2"
         }
       >
         {showTargetDetails ? (
@@ -342,7 +342,7 @@ export function LiveTargetCanvas({
             Text to type into the focused field
           </label>
           <Input
-            className="h-11 rounded-full pr-14"
+            className="min-w-0 flex-1"
             id={textInputId}
             value={text}
             onChange={(event) => setText(event.currentTarget.value)}
@@ -359,8 +359,8 @@ export function LiveTargetCanvas({
           />
           <Button
             type="button"
-            size="icon-sm"
-            className="-ml-12 mr-1 shrink-0"
+            size="icon"
+            variant="secondary"
             aria-label="Type text into app"
             title="Type text into the focused field"
             disabled={!text || !streaming || busy}

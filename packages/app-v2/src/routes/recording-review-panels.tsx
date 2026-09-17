@@ -347,7 +347,7 @@ export function RecordingActionsPanel({
       ) : (
         <EmptyState
           title="No steps yet"
-          detail="Go back to recording and interact with the app before saving this Test."
+          detail="Start a new recording and interact with the app to add steps."
         />
       )}
     </section>
