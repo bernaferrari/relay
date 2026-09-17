@@ -3156,6 +3156,114 @@ describe("runRecipeStep conditional policy", () => {
     assert.equal(job.artifacts[0]?.kind, "conditional-step-skipped");
   });
 
+  it("skips leftover timeout-0 inspect peek without reading the tree", async () => {
+    const logs: string[] = [];
+    const job = { artifacts: [] } as unknown as TestJob;
+    let finds = 0;
+    const device = stubDevice({
+      find: () => {
+        finds += 1;
+        return Promise.reject(new Error("find could not read the current accessibility tree"));
+      },
+    });
+    const ctx = { log: (line: string) => logs.push(line), job, runtime: {} };
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "wait-for",
+        optional: true,
+        timeoutMs: 0,
+        target: { label: "grok-arrows-right" },
+      },
+      ctx,
+    );
+
+    assert.equal(finds, 0);
+    assert.equal(ctx.runtime.leftoverInspectUnproven, true);
+    assert.match(logs[0] ?? "", /leftover inspect peek does not read the tree/);
+    assert.equal(job.artifacts[0]?.kind, "optional-step-skipped");
+  });
+
+  it("skips leftover when:present tap without a find after leftover inspect peek", async () => {
+    const logs: string[] = [];
+    const job = { artifacts: [] } as unknown as TestJob;
+    let finds = 0;
+    let pressed = false;
+    const device = stubDevice({
+      find: () => {
+        finds += 1;
+        return Promise.reject(new Error("find could not read the current accessibility tree"));
+      },
+      press: () => {
+        pressed = true;
+        return Promise.resolve();
+      },
+    });
+    const ctx = { log: (line: string) => logs.push(line), job, runtime: {} };
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "wait-for",
+        optional: true,
+        timeoutMs: 0,
+        target: { label: "grok-arrows-right" },
+      },
+      ctx,
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "tap",
+        target: { label: "grok-arrows-right" },
+        when: { target: { label: "grok-arrows-right" }, condition: "present" },
+      },
+      ctx,
+    );
+
+    assert.equal(finds, 0);
+    assert.equal(pressed, false);
+    assert.equal(ctx.runtime.leftoverInspectUnproven, false);
+    assert.match(logs.at(-1) ?? "", /leftover opener unproven/);
+    assert.equal(job.artifacts.at(-1)?.kind, "conditional-step-skipped");
+    assert.equal((job.artifacts.at(-1)?.data as { observed?: string }).observed, "unproven");
+  });
+
+  it("lets dest-wait find after leftover inspect peek without a leftover tap", async () => {
+    let finds = 0;
+    const device = stubDevice({
+      find: () => {
+        finds += 1;
+        return Promise.resolve({});
+      },
+    });
+    const ctx = { log: () => {}, job: { artifacts: [] } as unknown as TestJob, runtime: {} };
+
+    await runRecipeStep(
+      device,
+      {
+        kind: "wait-for",
+        optional: true,
+        timeoutMs: 0,
+        target: { label: "Temporary Chat" },
+      },
+      ctx,
+    );
+    await runRecipeStep(
+      device,
+      {
+        kind: "wait-for",
+        target: { identifier: "voice.speak.button" },
+        timeoutMs: 8_000,
+      },
+      ctx,
+    );
+
+    assert.equal(finds, 1);
+    assert.equal(ctx.runtime.leftoverInspectUnproven, false);
+  });
+
   it("skips a present-condition leftover tap when the accessibility tree is unreadable", async () => {
     const logs: string[] = [];
     const job = { artifacts: [] } as unknown as TestJob;

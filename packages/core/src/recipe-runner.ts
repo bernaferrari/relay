@@ -831,12 +831,58 @@ async function runRequiredRecipeStep(
   }
 }
 
+function isLeftoverInspectPeek(step: RecipeStep): boolean {
+  return (
+    step.kind === "wait-for" &&
+    step.optional === true &&
+    step.timeoutMs === 0 &&
+    step.when === undefined
+  );
+}
+
 export async function runRecipeStep(
   device: Device,
   step: RecipeStep,
   ctx: RecipeStepContext,
 ): Promise<void> {
   ctx.runtime ??= {};
+  if (isLeftoverInspectPeek(step)) {
+    ctx.runtime.leftoverInspectUnproven = true;
+    ctx.log("optional wait-for: skipped — leftover inspect peek does not read the tree");
+    ctx.job?.artifacts.push({
+      kind: "optional-step-skipped",
+      capturedAt: now(),
+      data: {
+        stepId: step.id,
+        stepKind: step.kind,
+        message: "leftover inspect peek does not read the tree",
+      },
+    });
+    return;
+  }
+  if (ctx.runtime.leftoverInspectUnproven) {
+    if (step.when?.condition === "present") {
+      ctx.runtime.leftoverInspectUnproven = false;
+      ctx.log(
+        `conditional ${step.kind}: skipped — leftover opener unproven (leftover inspect peek did not read the tree)`,
+      );
+      ctx.job?.artifacts.push({
+        kind: "conditional-step-skipped",
+        capturedAt: now(),
+        data: {
+          stepId: step.id,
+          stepKind: step.kind,
+          condition: step.when.condition,
+          target: step.when.target,
+          observed: "unproven",
+        },
+      });
+      return;
+    }
+    if (step.optional !== true) {
+      ctx.runtime.leftoverInspectUnproven = false;
+    }
+  }
   if (step.when) {
     invalidateVerifiedScreen(ctx);
     let present: boolean;
