@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { replayInputFromPersistedRun, summarizeJob, type TestJob } from "./session.js";
+import { CAPTURE_REVIEW_DEST_PHASE } from "@relay/protocol";
 
 test("job summaries expose only the safe matrix identity needed by live review", () => {
   const job = {
@@ -112,6 +113,45 @@ test("job summaries discard malformed matrix values instead of trusting artifact
   } as unknown as TestJob;
 
   assert.deepEqual(summarizeJob(job).matrixCase?.values, { language: "it-IT" });
+});
+
+test("job summaries dest identity is dest wait-for 003, not leftover Close 004 last-frame", () => {
+  const job = {
+    id: "4b93702b",
+    action: "observe",
+    status: "ok",
+    queuedAt: 10,
+    platform: "browser",
+    targetKind: "browser",
+    logs: [],
+    frames: [
+      { path: "frames/003.png", caption: "Observe", capturedAt: 1 },
+      { path: "frames/004.png", caption: "after · Run saved Test", capturedAt: 2 },
+    ],
+    artifacts: [
+      {
+        kind: "capture-review",
+        capturedAt: 1,
+        data: {
+          caption: "Observe",
+          framePath: "frames/003.png",
+          phase: CAPTURE_REVIEW_DEST_PHASE,
+          policy: "fast",
+          status: "pending",
+        },
+      },
+      {
+        kind: "capture-review",
+        capturedAt: 2,
+        data: { caption: "Close", framePath: "frames/004.png" },
+      },
+    ],
+  } as unknown as TestJob;
+
+  assert.deepEqual(summarizeJob(job).destIdentity, [
+    { path: "frames/003.png", caption: "Observe" },
+  ]);
+  assert.equal(summarizeJob(job).frameCount, 2);
 });
 
 test("a persisted run can replay its frozen plan without consulting current authoring state", () => {

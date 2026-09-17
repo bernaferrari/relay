@@ -41,6 +41,7 @@ export type TestJob = {
   error?: string;
   result?: unknown;
   logs?: string[];
+  destIdentity?: Array<{ path?: string; caption?: string }>;
 };
 
 export type DeviceClient = {

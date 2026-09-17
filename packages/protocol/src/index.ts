@@ -245,6 +245,8 @@ export type JobSummary = {
     expectedScreenshots?: number;
   };
   frameCount: number;
+  /** Dest wait-for Fast identity. Leftover Close / Run saved Test last-frame cannot fill dest. */
+  destIdentity?: { path: string; caption?: string }[];
   evidenceComplete?: boolean;
   checks?: CampaignCheckSummary[];
   lastLogs?: string[];

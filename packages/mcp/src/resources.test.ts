@@ -1417,3 +1417,111 @@ test("runs without a repair-proposals artifact yield ResourceNotFound", async ()
     await session.close();
   }
 });
+
+test("run resource dest identity is dest wait-for 003, not leftover Close 004 last-frame", async () => {
+  const session = await connectMcp(
+    fixtureInvoker({
+      "run.get": {
+        run: {
+          id: "4b93702b",
+          status: "ok",
+          frames: [
+            { path: "frames/003.png", caption: "Observe" },
+            { path: "frames/004.png", caption: "after · Run saved Test" },
+          ],
+          artifacts: [
+            {
+              kind: "capture-review",
+              data: {
+                caption: "Observe",
+                framePath: "frames/003.png",
+                phase: "dest",
+                policy: "fast",
+                status: "pending",
+              },
+            },
+            {
+              kind: "capture-review",
+              data: { caption: "Close", framePath: "frames/004.png" },
+            },
+          ],
+        },
+      },
+    }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", {
+        uri: relayMcpResourceUris.run.replace("{runId}", "4b93702b"),
+      }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      data: {
+        run?: {
+          destIdentity?: Array<{ relativeName?: string; caption?: string; path?: string }>;
+          captureReview?: Array<{ framePath?: string }>;
+        };
+      };
+    };
+    assert.deepEqual(envelope.data.run?.destIdentity, [
+      { relativeName: "frames/003.png", caption: "Observe" },
+    ]);
+    assert.equal(
+      envelope.data.run?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+      false,
+    );
+    assert.doesNotMatch(content.text, /frames\/004\.png/);
+  } finally {
+    await session.close();
+  }
+});
+
+test("run evidence resource dest identity is dest wait-for, not leftover Close 004", async () => {
+  const session = await connectMcp(
+    fixtureInvoker({
+      "run.evidence.get": {
+        evidence: {
+          runId: "4b93702b",
+          schemaVersion: 1,
+          logs: [{ id: "log-1", message: "ok" }],
+          artifacts: [
+            {
+              kind: "capture-review",
+              data: { framePath: "frames/003.png", phase: "dest" },
+            },
+          ],
+          testStepEvidence: [
+            { testStepId: "step-observe", evidence: { framePaths: ["frames/003.png"] } },
+            { testStepId: "step-observe", evidence: { framePaths: ["frames/004.png"] } },
+          ],
+        },
+      },
+    }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", {
+        uri: relayMcpResourceUris.runEvidence.replace("{runId}", "4b93702b"),
+      }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      data: {
+        evidence?: {
+          destIdentity?: Array<{ relativeName?: string; path?: string }>;
+          testStepEvidence?: Array<{ evidence?: { framePaths?: string[] } }>;
+          logs?: Array<{ id?: string }>;
+        };
+      };
+    };
+    assert.deepEqual(envelope.data.evidence?.destIdentity, [{ relativeName: "frames/003.png" }]);
+    assert.equal(
+      envelope.data.evidence?.testStepEvidence?.some((item) =>
+        item.evidence?.framePaths?.includes("frames/004.png"),
+      ),
+      false,
+    );
+    assert.equal(envelope.data.evidence?.logs?.[0]?.id, "log-1");
+  } finally {
+    await session.close();
+  }
+});

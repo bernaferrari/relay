@@ -1,3 +1,4 @@
+import { destIdentityReviewItems, isCaptureReviewDestPhase } from "@relay/protocol";
 import { useState } from "react";
 import { Button } from "@relay/ui-react/components/button";
 import { initialRunStep } from "../data/run-timeline-selection";
@@ -36,9 +37,16 @@ export function EmbeddedRunResult({ report }: { report: ProductRunReportOverview
     : [];
   const paths = authoredFrames.length ? authoredFrames : (step?.framePaths ?? []);
   const frames = report.evidence.find((section) => section.id === "screenshot")?.items ?? [];
+  const destPath = destIdentityReviewItems(report.captureReview?.items ?? []).find((item) =>
+    isCaptureReviewDestPhase(item.phase),
+  )?.framePath;
+  const lastPath = paths.at(-1);
+  const thumbId = destPath ?? lastPath;
   const frame = step
-    ? frames.find((item) => item.id === paths.at(-1) && item.media)
-    : frames.filter((item) => item.media).at(-1);
+    ? frames.find((item) => item.id === thumbId && item.media)
+    : destPath
+      ? frames.find((item) => item.id === destPath && item.media)
+      : frames.filter((item) => item.media).at(-1);
   const Icon = passed ? CheckCircle2 : CircleAlert;
   return (
     <section className="flex h-full min-h-0 flex-col gap-4 p-4" aria-label="Run result">

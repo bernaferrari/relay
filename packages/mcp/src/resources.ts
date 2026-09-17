@@ -4,6 +4,7 @@ import {
   ResourceTemplate,
   type Variables,
 } from "@modelcontextprotocol/server";
+import { projectDestIdentityOnEvidence, summarizeExecutionOperationResult } from "@relay/protocol";
 import type { OperationInvoker } from "./server.js";
 import {
   arrayField,
@@ -29,8 +30,10 @@ import { compactOfflineReplayResource } from "./offline-replay-result.js";
 import { registerDiffImpactResource } from "./diff-impact-resource.js";
 import { registerRepairProposalsResource } from "./repair-proposals-resource.js";
 import {
+  hoistTracePackDestIdentity,
   readResult,
   relayMcpResourceMimeType,
+  rewriteDestIdentityRelativeNames,
   tracePackResourceManifest,
 } from "./resource-encoding.js";
 export {
@@ -253,7 +256,12 @@ export function registerRelayResources(
             { runId },
             { signal: context.mcpReq.signal },
           );
-          return readResult(uri, scope.projectId, "run", result);
+          return readResult(
+            uri,
+            scope.projectId,
+            "run",
+            rewriteDestIdentityRelativeNames(summarizeExecutionOperationResult("run.get", result)),
+          );
         } catch {
           throw new ResourceNotFoundError(uri.href);
         }
@@ -279,21 +287,23 @@ export function registerRelayResources(
           { runId, limit: 2_000 },
           { signal: context.mcpReq.signal },
         );
-        const evidence = object(result).evidence;
-        const paged = evidencePage(evidence, uri, scope, profile);
-        const pagedResult = {
-          ...scalarFields(result),
-          evidence: paged,
+        const projected = rewriteDestIdentityRelativeNames({
+          ...object(result),
+          evidence: projectDestIdentityOnEvidence(object(result).evidence),
+        }) as Record<string, unknown>;
+        const evidenceRecord = object(projected.evidence);
+        const destIdentity = evidenceRecord.destIdentity;
+        const { destIdentity: _destIdentity, ...evidenceWithoutDest } = evidenceRecord;
+        const paged = evidencePage(evidenceWithoutDest, uri, scope, profile);
+        const evidence = {
+          ...paged,
+          ...(Array.isArray(destIdentity) && destIdentity.length ? { destIdentity } : {}),
         };
-        const hasContinuation =
-          uri.searchParams.has("cursor") || Object.hasOwn(object(paged.pagination), "nextCursor");
-        return readResult(
-          uri,
-          scope.projectId,
-          "run-evidence",
-          hasContinuation ? pagedResult : result,
-          pagedResult,
-        );
+        const pagedResult = {
+          ...scalarFields(projected),
+          evidence,
+        };
+        return readResult(uri, scope.projectId, "run-evidence", pagedResult);
       } catch {
         throw new ResourceNotFoundError(uri.href);
       }
@@ -329,8 +339,12 @@ export function registerRelayResources(
             { runId },
             { signal: context.mcpReq.signal },
           );
-          return readResult(uri, scope.projectId, "run-trace-pack", result, {
+          const hoisted = hoistTracePackDestIdentity(result);
+          return readResult(uri, scope.projectId, "run-trace-pack", hoisted, {
             resourceUri: uri.href,
+            ...(Array.isArray(object(hoisted).destIdentity)
+              ? { destIdentity: object(hoisted).destIdentity }
+              : {}),
             tracePack: tracePackResourceManifest(result),
           });
         } catch {

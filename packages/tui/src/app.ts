@@ -4,6 +4,7 @@
 import { theme, banner, colorStatus, hint } from "./theme.js";
 import { selectIndex, confirm, statusLine, type SelectItem } from "./select.js";
 import { createClient, type DeviceClient } from "./client.js";
+import { destIdentityHistoryCaption } from "./dest-identity-history.js";
 
 export type TuiOptions = {
   serverUrl?: string;
@@ -289,7 +290,11 @@ export async function runApp(opts: TuiOptions = {}): Promise<void> {
       for (const j of jobs.slice(0, 20)) {
         const id = theme.muted(j.id.slice(0, 8));
         const err = j.error ? theme.error(`  ${j.error}`) : "";
-        console.log(`  ${colorStatus(j.status.padEnd(10))}  ${j.action.padEnd(24)}  ${id}${err}`);
+        const dest = destIdentityHistoryCaption(j.destIdentity);
+        const destHint = dest ? theme.muted(`  ${dest}`) : "";
+        console.log(
+          `  ${colorStatus(j.status.padEnd(10))}  ${j.action.padEnd(24)}  ${id}${err}${destHint}`,
+        );
       }
       console.log("");
       continue;

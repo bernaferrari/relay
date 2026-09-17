@@ -77,13 +77,27 @@ function compactCaptureReviewItem(
   };
 }
 
+function listedDestIdentity(value: unknown): { path: string; caption?: string }[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item === "string" && item.trim()) return [{ path: item.trim() }];
+    const record = object(item);
+    if (!record) return [];
+    const path = typeof record.path === "string" ? record.path.trim() : "";
+    if (!path) return [];
+    const caption = typeof record.caption === "string" ? record.caption : undefined;
+    return [{ path, ...(caption ? { caption } : {}) }];
+  });
+}
+
 function destIdentityProjection(record: Record<string, unknown>): {
   destIdentity?: { path: string; caption?: string }[];
   captureReview?: Record<string, unknown>[];
 } {
   const artifacts = artifactRecords(record.artifacts);
   const frames = listedFrames(record.frames);
-  const destIdentity = compactDestIdentity(frames, artifacts);
+  const computed = compactDestIdentity(frames, artifacts);
+  const destIdentity = computed.length ? computed : listedDestIdentity(record.destIdentity);
   const destPaths = new Set(destIdentity.map((frame) => frame.path));
   const leftover = new Set(captureReviewLeftoverLastFramePaths(frames, artifacts));
   const queue = resolveCaptureReviewQueue({
@@ -430,6 +444,76 @@ function summarizeRunCaptureReview(response: Record<string, unknown>): unknown {
   };
 }
 
+function compactStoryBeat(value: unknown): Record<string, unknown> {
+  const beat = object(value);
+  if (!beat) return {};
+  return {
+    ...(typeof beat.kind === "string" ? { kind: beat.kind } : {}),
+    ...(typeof beat.text === "string" ? { text: boundedText(beat.text, 400) } : {}),
+    ...(typeof beat.evidence === "string" ? { evidence: boundedText(beat.evidence, 400) } : {}),
+    ...(typeof beat.at === "number" ? { at: beat.at } : {}),
+  };
+}
+
+function summarizeRunStory(response: Record<string, unknown>): unknown {
+  const story = object(response.story) ?? response;
+  const beats = Array.isArray(story.beats) ? story.beats : [];
+  const destIdentity = beats.flatMap((item) => {
+    const beat = object(item);
+    if (beat?.kind !== "dest-identity") return [];
+    const evidence = typeof beat.evidence === "string" ? beat.evidence.trim() : "";
+    return evidence ? [{ path: evidence }] : [];
+  });
+  const destPaths = new Set(destIdentity.map((item) => item.path));
+  const visible = destPaths.size
+    ? beats.filter((item) => {
+        const beat = object(item);
+        const evidence = typeof beat?.evidence === "string" ? beat.evidence : undefined;
+        if (beat?.kind === "dest-identity") return true;
+        if (evidence && destPaths.has(evidence)) return true;
+        if (evidence && /(?:^|\/)frames\/\d+\.png$/u.test(evidence)) return false;
+        return true;
+      })
+    : beats;
+  return {
+    story: {
+      ...(typeof story.runId === "string" ? { runId: story.runId } : {}),
+      ...(typeof story.title === "string" ? { title: boundedText(story.title) } : {}),
+      ...(typeof story.summary === "string" ? { summary: boundedText(story.summary) } : {}),
+      ...(typeof story.outcome === "string" ? { outcome: story.outcome } : {}),
+      ...(destIdentity.length ? { destIdentity } : {}),
+      beats: visible.slice(0, 80).map(compactStoryBeat),
+    },
+  };
+}
+
+function summarizeTracePackEnvelope(response: Record<string, unknown>): unknown {
+  const pack = object(response.tracePack);
+  const objects = Array.isArray(pack?.objects) ? pack.objects : [];
+  const frozen = objects.map(object).find((item) => item?.kind === "frozen-run");
+  const content = object(frozen?.content);
+  if (!content) return response;
+  const artifacts = artifactRecords(content.artifacts);
+  if (!captureReviewIdentityFramePaths(artifacts).length) return response;
+  const destIdentity = compactDestIdentity(listedFrames(content.frames), artifacts);
+  return destIdentity.length ? { destIdentity, ...response } : response;
+}
+
+/** Keep logs/network on MCP evidence resources. Hoist dest wait-for and drop leftover 004. */
+export function projectDestIdentityOnEvidence(evidence: unknown): unknown {
+  const record = object(evidence);
+  if (!record) return evidence;
+  const projected = summarizeRunEvidence({ evidence: record }) as {
+    evidence?: { destIdentity?: unknown; testStepEvidence?: unknown };
+  };
+  const dest = projected.evidence;
+  return {
+    ...record,
+    ...(dest?.destIdentity ? { destIdentity: dest.destIdentity } : {}),
+    ...(dest?.testStepEvidence !== undefined ? { testStepEvidence: dest.testStepEvidence } : {}),
+  };
+}
+
 function summarizeRunEvidence(response: Record<string, unknown>): unknown {
   const evidence = object(response.evidence) ?? response;
   if (!evidence) return response;
@@ -509,6 +593,8 @@ export function summarizeExecutionOperationResult(operationId: string, result: u
   if (operationId === "run.get") return summarizeRunGet(response);
   if (operationId === "run.evidence.get") return summarizeRunEvidence(response);
   if (operationId === "run.capture.review") return summarizeRunCaptureReview(response);
+  if (operationId === "run.story.get") return summarizeRunStory(response);
+  if (operationId === "run.trace-pack.get") return summarizeTracePackEnvelope(response);
   if (operationId !== "app-map.flow.run" && !operationId.startsWith("job.")) return result;
   if (operationId.endsWith(".export")) return summarizePackExport(response);
   if (operationId.endsWith(".analysis")) return summarizeLocaleAnalysis(response);

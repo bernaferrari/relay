@@ -573,3 +573,85 @@ test("Plan capture review summary keeps dest wait-for, not leftover Close last-f
   assert.equal(result.queue?.items?.[0]?.framePath, "frames/003.png");
   assert.equal(result.queue?.items?.[0]?.phase, CAPTURE_REVIEW_DEST_PHASE);
 });
+
+test("job.list dest identity is dest wait-for 003 when the HTTP summary omitted frames", () => {
+  const result = summarizeExecutionOperationResult("job.list", {
+    jobs: [
+      {
+        id: "4b93702b",
+        status: "ok",
+        action: "observe",
+        queuedAt: 1,
+        frameCount: 2,
+        destIdentity: [{ path: "frames/003.png", caption: "Observe" }],
+      },
+    ],
+  }) as { jobs?: Array<{ destIdentity?: Array<{ path?: string; caption?: string }> }> };
+  assert.deepEqual(result.jobs?.[0]?.destIdentity, [
+    { path: "frames/003.png", caption: "Observe" },
+  ]);
+});
+
+test("run.story.get dest identity is dest wait-for, not leftover Close 004", () => {
+  const result = summarizeExecutionOperationResult("run.story.get", {
+    story: {
+      runId: "4b93702b",
+      title: "Open grok.com signed-in",
+      summary: "2 reviewed beats",
+      beats: [
+        { kind: "dest-identity", text: "Dest wait-for Fast", evidence: "frames/003.png", at: 1 },
+        { kind: "screenshot", text: "after · Run saved Test", evidence: "frames/004.png", at: 2 },
+      ],
+    },
+  }) as {
+    story?: {
+      destIdentity?: Array<{ path?: string }>;
+      beats?: Array<{ evidence?: string; kind?: string }>;
+    };
+  };
+  assert.deepEqual(result.story?.destIdentity, [{ path: "frames/003.png" }]);
+  assert.equal(
+    result.story?.beats?.some((beat) => beat.evidence === "frames/004.png"),
+    false,
+  );
+  assert.equal(
+    result.story?.beats?.some((beat) => beat.kind === "dest-identity"),
+    true,
+  );
+});
+
+test("run.trace-pack.get dest identity is dest wait-for, not leftover Close 004", () => {
+  const result = summarizeExecutionOperationResult("run.trace-pack.get", {
+    tracePack: {
+      digest: "sha256:abc",
+      objects: [
+        {
+          kind: "frozen-run",
+          path: "run.json",
+          content: {
+            frames: [
+              { path: "frames/003.png", caption: "Observe" },
+              { path: "frames/004.png", caption: "after · Run saved Test" },
+            ],
+            artifacts: [
+              {
+                kind: "capture-review",
+                data: {
+                  caption: "Observe",
+                  framePath: "frames/003.png",
+                  phase: CAPTURE_REVIEW_DEST_PHASE,
+                  policy: "fast",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    },
+  }) as { destIdentity?: Array<{ path?: string }>; tracePack?: { objects?: unknown[] } };
+  assert.deepEqual(
+    result.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(result.tracePack?.objects?.length, 1);
+});

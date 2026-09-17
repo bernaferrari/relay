@@ -3,6 +3,11 @@ import {
   ProtocolErrorCode,
   type ReadResourceResult,
 } from "@modelcontextprotocol/server";
+import {
+  captureReviewIdentityFramePaths,
+  captureReviewLeftoverLastFramePaths,
+  destIdentityCheckpointFramePaths,
+} from "@relay/protocol";
 
 export const relayMcpResourceByteLimit = 32_768;
 export const relayMcpResourceMimeType = "application/json";
@@ -72,6 +77,96 @@ function arrayField(value: unknown, field: string): unknown[] {
   return Array.isArray(items) ? items : [];
 }
 
+function listedFrames(value: unknown): { path: string; caption?: string }[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item === "string" && item.trim()) return [{ path: item.trim() }];
+    const record = object(item);
+    const path = typeof record.path === "string" ? record.path.trim() : "";
+    if (!path) return [];
+    const caption = typeof record.caption === "string" ? record.caption : undefined;
+    return [{ path, ...(caption ? { caption } : {}) }];
+  });
+}
+
+function artifactRecords(value: unknown): { kind?: string; data?: unknown }[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const record = object(item);
+    return record.kind || record.data !== undefined ? [record] : [];
+  });
+}
+
+function frozenRunContent(value: unknown): Record<string, unknown> | undefined {
+  const frozen = arrayField(object(object(value).tracePack), "objects")
+    .map(object)
+    .find((item) => item.kind === "frozen-run");
+  const content = object(frozen?.content);
+  return Object.keys(content).length ? content : undefined;
+}
+
+function destIdentityRelativeNames(value: unknown): { relativeName: string; caption?: string }[] {
+  const frozen = frozenRunContent(value);
+  if (!frozen) return [];
+  const frames = listedFrames(frozen.frames);
+  const artifacts = artifactRecords(frozen.artifacts);
+  if (!captureReviewIdentityFramePaths(artifacts).length) return [];
+  const byPath = new Map(frames.map((frame) => [frame.path, frame]));
+  return destIdentityCheckpointFramePaths(frames, artifacts).flatMap((path) => {
+    const relativeName = boundedRelativeName(path);
+    if (!relativeName) return [];
+    const caption = byPath.get(path)?.caption;
+    return [{ relativeName, ...(caption ? { caption } : {}) }];
+  });
+}
+
+function leftoverRelativeNames(value: unknown): Set<string> {
+  const frozen = frozenRunContent(value);
+  if (!frozen) return new Set();
+  return new Set(
+    captureReviewLeftoverLastFramePaths(
+      listedFrames(frozen.frames),
+      artifactRecords(frozen.artifacts),
+    )
+      .map((path) => boundedRelativeName(path))
+      .filter((path): path is string => Boolean(path)),
+  );
+}
+
+export function hoistTracePackDestIdentity(value: unknown): unknown {
+  const destIdentity = destIdentityRelativeNames(value);
+  return destIdentity.length ? { destIdentity, ...object(value) } : value;
+}
+export function rewriteDestIdentityRelativeNames(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(rewriteDestIdentityRelativeNames);
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  const next: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(record)) {
+    if (key === "destIdentity" && Array.isArray(item)) {
+      next[key] = item.map((entry) => {
+        if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
+        const rec = entry as Record<string, unknown>;
+        const path = typeof rec.path === "string" ? rec.path : undefined;
+        const caption = typeof rec.caption === "string" ? rec.caption : undefined;
+        const relativeName =
+          typeof rec.relativeName === "string"
+            ? rec.relativeName
+            : path
+              ? boundedRelativeName(path)
+              : undefined;
+        return {
+          ...(relativeName ? { relativeName } : {}),
+          ...(caption ? { caption } : {}),
+        };
+      });
+      continue;
+    }
+    next[key] = rewriteDestIdentityRelativeNames(item);
+  }
+  return next;
+}
+
 /**
  * Stable, decision-useful metadata for a TracePack that is too large to put
  * in an MCP tool result or resource response. The scoped
@@ -92,7 +187,18 @@ export function tracePackResourceManifest(value: unknown): Record<string, unknow
     .map((item) => boundedString(item, 160))
     .filter((item): item is string => item !== undefined)
     .slice(0, 100);
-  const objectManifest = objects.slice(0, 100).map((item) => {
+  const destIdentity = destIdentityRelativeNames(value);
+  const leftover = leftoverRelativeNames(value);
+  const destPaths = new Set(destIdentity.map((item) => item.relativeName));
+  const visibleObjects =
+    leftover.size && destIdentity.length
+      ? objects.filter((item) => {
+          const relativeName = boundedRelativeName(item.path);
+          if (!relativeName || destPaths.has(relativeName)) return true;
+          return !leftover.has(relativeName);
+        })
+      : objects;
+  const objectManifest = visibleObjects.slice(0, 100).map((item) => {
     const relativeName = boundedRelativeName(item.path);
     const kind = boundedString(item.kind, 40);
     const mediaType = boundedString(item.mediaType, 120);
@@ -129,6 +235,7 @@ export function tracePackResourceManifest(value: unknown): Record<string, unknow
     ...(createdAt !== undefined ? { createdAt } : {}),
     ...(packBytes !== undefined ? { serializedBytes: packBytes } : {}),
     objectCount: objects.length,
+    ...(destIdentity.length ? { destIdentity } : {}),
     ...(objects.length > objectManifest.length
       ? { remainingObjectCount: objects.length - objectManifest.length }
       : {}),

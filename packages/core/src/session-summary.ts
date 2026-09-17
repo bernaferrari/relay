@@ -1,5 +1,7 @@
 import {
   canonicalAppMapCombineCellValues,
+  captureReviewIdentityFramePaths,
+  destIdentityCheckpointFramePaths,
   parseAppMapTestTupleIdentity,
   describeCoverageStepReasons,
   type CampaignCheckSummary,
@@ -7,6 +9,22 @@ import {
   type JobSummary,
 } from "@relay/protocol";
 import type { TestJob } from "./session-contract.js";
+
+function jobDestIdentity(job: TestJob): JobSummary["destIdentity"] {
+  const dest = captureReviewIdentityFramePaths(job.artifacts);
+  if (!dest.length) return undefined;
+  const frames = job.frames.map((frame) => ({
+    path: frame.path,
+    ...(frame.caption ? { caption: frame.caption } : {}),
+  }));
+  const paths = destIdentityCheckpointFramePaths(frames, job.artifacts);
+  if (!paths.length) return undefined;
+  const byPath = new Map(frames.map((frame) => [frame.path, frame]));
+  return paths.map((path) => {
+    const frame = byPath.get(path);
+    return frame?.caption ? { path, caption: frame.caption } : { path };
+  });
+}
 
 function summarizeMatrixCase(data: unknown): JobSummary["matrixCase"] {
   if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
@@ -96,6 +114,7 @@ export function summarizeJob(job: TestJob): JobSummary {
       },
     ];
   });
+  const destIdentity = jobDestIdentity(job);
   return {
     id: job.id,
     action: job.action,
@@ -118,6 +137,7 @@ export function summarizeJob(job: TestJob): JobSummary {
     caseCount: job.caseCount,
     ...(matrixCase ? { matrixCase } : {}),
     frameCount: job.frames.length,
+    ...(destIdentity?.length ? { destIdentity } : {}),
     evidenceComplete: Boolean(job.evidence?.finishedAt),
     ...(checks.length ? { checks } : {}),
     ...(lastLogs.length ? { lastLogs } : {}),

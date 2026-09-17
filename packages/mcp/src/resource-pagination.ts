@@ -235,6 +235,29 @@ function boundedCollectionItem(value: unknown, kind: "app-map" | "run" | "sessio
     };
   }
   if (kind === "run") {
+    const destIdentity = Array.isArray(item.destIdentity)
+      ? item.destIdentity.slice(0, 8).flatMap((entry) => {
+          const rec = object(entry);
+          const caption = typeof rec.caption === "string" ? rec.caption.slice(0, 160) : undefined;
+          const relativeName =
+            typeof rec.relativeName === "string"
+              ? rec.relativeName.slice(0, 160)
+              : typeof rec.path === "string"
+                ? rec.path.slice(0, 160)
+                : undefined;
+          if (
+            relativeName &&
+            (relativeName.startsWith("/") ||
+              relativeName.includes("\\") ||
+              relativeName.split("/").some((segment) => segment === "." || segment === ".."))
+          ) {
+            return caption ? [{ caption }] : [];
+          }
+          return relativeName || caption
+            ? [{ ...(relativeName ? { relativeName } : {}), ...(caption ? { caption } : {}) }]
+            : [];
+        })
+      : undefined;
     return {
       ...(typeof item.id === "string" ? { id: item.id } : {}),
       ...(typeof item.action === "string" ? { action: item.action.slice(0, 160) } : {}),
@@ -243,6 +266,7 @@ function boundedCollectionItem(value: unknown, kind: "app-map" | "run" | "sessio
       ...(typeof item.outcome === "string" ? { outcome: item.outcome } : {}),
       ...(typeof item.writtenAt === "number" ? { writtenAt: item.writtenAt } : {}),
       ...(typeof item.updatedAt === "number" ? { updatedAt: item.updatedAt } : {}),
+      ...(destIdentity?.length ? { destIdentity } : {}),
     };
   }
   return {
