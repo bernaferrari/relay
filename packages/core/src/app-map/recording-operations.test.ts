@@ -774,7 +774,9 @@ test("screenshot-only Tests retain their reviewed name and recording image", () 
     (step) => step.kind === "screenshot" && step.review,
   );
   assert.equal(reviewSteps.length, 1);
-  assert.equal(reviewSteps[0]?.review?.lookFor, "Signed-out home");
+  const reviewStep = reviewSteps[0];
+  assert.ok(reviewStep?.kind === "screenshot");
+  assert.equal(reviewStep.review?.lookFor, "Signed-out home");
   assert.equal(compiled.plan.plannedSlots?.length, 1);
 });
 

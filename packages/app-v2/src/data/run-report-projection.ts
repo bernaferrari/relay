@@ -1,6 +1,7 @@
 import type { ProductRunReport } from "@relay/product/run-journey";
 import type {
   CaptureReviewDecision,
+  CaptureReviewPlannedSlot,
   EvidenceChannel,
   EvidenceChannelRecord,
   RunOutcome,
@@ -807,12 +808,26 @@ export function projectRunReport(
     reportDiagnosticEvents(rawEvidence),
     video?.clock ?? {},
   );
+  const runArtifacts = array(run.artifacts) as Array<{ kind?: string; data?: unknown }>;
+  const execution = runArtifacts.find((item) => item.kind === "app-map-test-execution-intent");
+  const cellExecution = runArtifacts.find(
+    (item) => item.kind === "app-map-combine-cell-execution-intent",
+  );
+  const frozenPlan =
+    record(record(execution?.data)?.plan) ??
+    record(record(record(cellExecution?.data)?.child)?.plan);
   const captureReview = resolveCaptureReviewQueue({
-    artifacts: array(run.artifacts) as Array<{ kind?: string; data?: unknown }>,
+    artifacts: runArtifacts,
     decisions: Array.isArray(run.captureReviews)
       ? (run.captureReviews as CaptureReviewDecision[])
       : [],
     recipeSteps: array(record(run.recipeSnapshot)?.steps),
+    recipes: (record(run.recipeGraph) ?? record(record(run.recipeSnapshot)?.recipes)) as
+      | Record<string, { steps?: readonly unknown[] }>
+      | undefined,
+    plannedSlots: Array.isArray(frozenPlan?.plannedSlots)
+      ? (frozenPlan.plannedSlots as CaptureReviewPlannedSlot[])
+      : undefined,
   });
   return {
     runId,

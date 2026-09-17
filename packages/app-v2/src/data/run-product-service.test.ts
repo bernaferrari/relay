@@ -70,6 +70,26 @@ describe("run report projection", () => {
       expect.arrayContaining([expect.objectContaining({ id: "frames/final.png" })]),
     );
   });
+  it("uses frozen capture slots instead of inventing missing checkpoints for modules", () => {
+    const slot = { checkpointId: "home", stepId: "home", caption: "Home", attempt: 1 };
+    const report = projectRunReport(
+      "recorded-run",
+      {
+        recipeSnapshot: { steps: [{ kind: "module", recipeId: "navigate" }] },
+        artifacts: [
+          { kind: "app-map-test-execution-intent", data: { plan: { plannedSlots: [slot] } } },
+          {
+            kind: "capture-review",
+            data: { ...slot, framePath: "frames/home.png", imageSha256: "abc" },
+          },
+        ],
+      },
+      { channels: {} },
+    );
+    expect(report.captureReview?.items).toHaveLength(1);
+    expect(report.captureReview?.summary).toMatchObject({ captured: 1, missing: 0, pending: 1 });
+  });
+
   it("projects capture-for-review without treating captured files as verified", () => {
     const report = projectRunReport(
       "capture-review",
