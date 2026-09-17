@@ -1,6 +1,6 @@
 import { ApiError } from "@relay/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
-import { RC23_SCREENSHOT_FIRST_TESTS } from "@relay/protocol";
+import { CAPTURE_REVIEW_DEST_PHASE, RC23_SCREENSHOT_FIRST_TESTS } from "@relay/protocol";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -421,5 +421,127 @@ test("operator role or consent 403 keeps the original message", async () => {
       assert.doesNotMatch(error.message, /held by/u);
       return true;
     },
+  );
+});
+
+const leftoverDestEndJob = {
+  id: "4b93702b",
+  status: "ok",
+  frames: [
+    { path: "frames/003.png", caption: "Observe" },
+    { path: "frames/004.png", caption: "after · Run saved Test" },
+  ],
+  artifacts: [
+    {
+      kind: "capture-review",
+      data: {
+        caption: "Observe",
+        framePath: "frames/003.png",
+        phase: CAPTURE_REVIEW_DEST_PHASE,
+        policy: "fast",
+      },
+    },
+    {
+      kind: "capture-review",
+      data: { caption: "Close", framePath: "frames/004.png" },
+    },
+  ],
+};
+
+test("operator wait/run/evidence/advanced dest identity is dest wait-for, not leftover Close 004", async () => {
+  const { invoker } = recordingInvoker((operationId) => {
+    if (operationId === "job.get") return { job: leftoverDestEndJob };
+    if (operationId === "app-map.test.run") return { job: leftoverDestEndJob };
+    if (operationId === "run.evidence.get") {
+      return {
+        evidence: {
+          runId: leftoverDestEndJob.id,
+          artifacts: leftoverDestEndJob.artifacts,
+          testStepEvidence: [
+            { testStepId: "step-observe", evidence: { framePaths: ["frames/003.png"] } },
+            { testStepId: "step-observe", evidence: { framePaths: ["frames/004.png"] } },
+          ],
+        },
+      };
+    }
+    return { ok: true };
+  });
+  const signal = new AbortController().signal;
+  const run = (
+    name: RelayOperatorToolDescriptor["name"],
+    argumentsValue: Record<string, unknown>,
+  ) =>
+    invokeRelayOperatorTool({
+      name,
+      argumentsValue,
+      confirmed: false,
+      invoker,
+      actorId: "agent:cursor",
+      signal,
+      pollIntervalMs: 0,
+    });
+
+  const waited = (await run("relay_wait", { jobId: leftoverDestEndJob.id })) as {
+    result?: {
+      job?: {
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+      };
+    };
+  };
+  assert.deepEqual(
+    waited.result?.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    waited.result?.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+
+  const started = (await run("relay_run", example("relay_run"))) as {
+    job?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+  };
+  assert.deepEqual(
+    started.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    started.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+
+  const evidence = (await run("relay_evidence", { runId: leftoverDestEndJob.id })) as {
+    evidence?: {
+      destIdentity?: Array<{ path?: string }>;
+      testStepEvidence?: Array<{ evidence?: { framePaths?: string[] } }>;
+    };
+  };
+  assert.deepEqual(evidence.evidence?.destIdentity, [{ path: "frames/003.png" }]);
+  assert.equal(
+    evidence.evidence?.testStepEvidence?.some((item) =>
+      item.evidence?.framePaths?.includes("frames/004.png"),
+    ),
+    false,
+  );
+
+  const advanced = (await run("relay_advanced", {
+    operationId: "job.get",
+    input: { jobId: leftoverDestEndJob.id },
+  })) as {
+    job?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+  };
+  assert.deepEqual(
+    advanced.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    advanced.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
   );
 });

@@ -655,3 +655,71 @@ test("run.trace-pack.get dest identity is dest wait-for, not leftover Close 004"
   );
   assert.equal(result.tracePack?.objects?.length, 1);
 });
+
+const leftoverDestEndJob = {
+  id: "4b93702b",
+  status: "ok",
+  frames: [
+    { path: "frames/003.png", caption: "Observe" },
+    { path: "frames/004.png", caption: "after · Run saved Test" },
+  ],
+  artifacts: [
+    {
+      kind: "capture-review",
+      data: {
+        caption: "Observe",
+        framePath: "frames/003.png",
+        phase: CAPTURE_REVIEW_DEST_PHASE,
+        policy: "fast",
+      },
+    },
+    {
+      kind: "capture-review",
+      data: { caption: "Close", framePath: "frames/004.png" },
+    },
+  ],
+};
+
+test("app-map.test.run dest identity is dest wait-for, not leftover Close 004 last-frame", () => {
+  const result = summarizeExecutionOperationResult("app-map.test.run", {
+    workflowId: "wf-1",
+    job: leftoverDestEndJob,
+  }) as {
+    workflowId?: string;
+    job?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+  };
+  assert.equal(result.workflowId, "wf-1");
+  assert.deepEqual(
+    result.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
+test("workflow.transition dest identity is dest wait-for, not leftover Close 004 last-frame", () => {
+  const result = summarizeExecutionOperationResult("workflow.transition", {
+    workflow: { workflowId: "wf-1", status: "terminal" },
+    job: leftoverDestEndJob,
+  }) as {
+    workflow?: { workflowId?: string };
+    job?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+  };
+  assert.equal(result.workflow?.workflowId, "wf-1");
+  assert.deepEqual(
+    result.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});

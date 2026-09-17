@@ -773,9 +773,7 @@ export async function invokeRelayOperatorTool(input: {
         ? await invoker.invoke("job.combine.export", { batchId }, { signal })
         : undefined;
     const last = waited.at(-1);
-    const lastProjected = last
-      ? summarizeExecutionOperationResult("job.get", last)
-      : undefined;
+    const lastProjected = last ? summarizeExecutionOperationResult("job.get", last) : undefined;
     const lastJob = object(object(lastProjected)?.job) ?? lastProjected;
     return {
       type: "result",
@@ -790,7 +788,7 @@ export async function invokeRelayOperatorTool(input: {
           })
         : true,
       operationId: "job.combine.start",
-      result: summarizeExecutionOperationResult("job.combine.start", started),
+      result: started,
       ...(lastJob ? { job: lastJob } : {}),
       ...(findings !== undefined
         ? { findings: summarizeExecutionOperationResult("job.combine.analysis", findings) }
