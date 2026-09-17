@@ -723,6 +723,9 @@ export class TargetSupervisor {
       else this.state.pixels.state = "delayed";
       delete this.state.recovery;
       this.state.needsHuman = false;
+      if (!this.state.input.pending) {
+        delete this.state.input.blockedReason;
+      }
       this.record(
         "RECOVERY_COMPLETED",
         `Recovery step ${active.stage} completed; fresh proof is still required.`,

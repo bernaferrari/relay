@@ -327,3 +327,20 @@ test("a recovery interrupted by restart stops for an explicit human decision", (
   assert.equal(health.overall, "needs-human");
   assert.match(health.input.reason ?? "", /Recovery crossed restart/u);
 });
+
+test("explicit recover after a restart-crossed recovery unblocks input", () => {
+  const { clock, supervisor } = started();
+  supervisor.transition({ kind: "pixels.unavailable", reason: "Transport stopped" });
+  supervisor.transition({ kind: "recovery.requested", channel: "pixels" });
+  const restarted = TargetSupervisor.rehydrate(supervisor.checkpoint(), { clock });
+  restarted.transition({ kind: "recovery.requested", channel: "semantics" });
+  const recovered = restarted.transition({
+    kind: "recovery.step-completed",
+    channel: "semantics",
+    stage: "refresh-semantics",
+    outcome: "succeeded",
+  });
+  assert.equal(recovered.health.input.state, "ready");
+  assert.equal(recovered.health.input.reason, undefined);
+  assert.equal(recovered.health.recovery, undefined);
+});
