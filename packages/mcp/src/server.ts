@@ -368,6 +368,10 @@ function compactExecutionDestIdentityOperation(operationId: string): boolean {
     operationId === "run.capture.review" ||
     operationId === "run.replay" ||
     operationId === "run.repair.retry" ||
+    operationId === "run.visual.compare" ||
+    operationId === "run.visual-baseline.update" ||
+    operationId === "run.visual.review" ||
+    operationId === "run.visual-policy.update" ||
     operationId.startsWith("job.") ||
     operationId === "app-map.flow.run" ||
     operationId === "app-map.test.run" ||
@@ -382,6 +386,9 @@ function operatorDestIdentityFallbackName(name: string): boolean {
     name === "relay_run" ||
     name === "relay_plan_run" ||
     name === "relay_evidence" ||
+    name === "relay_findings" ||
+    name === "relay_visual_compare" ||
+    name === "relay_visual_review" ||
     name === "relay_advanced"
   );
 }

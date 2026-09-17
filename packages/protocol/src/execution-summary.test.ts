@@ -1448,3 +1448,77 @@ test("compact MCP fallback run.list leftover Close 004 cannot fill dest", () => 
   ]);
   assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
 });
+
+test("compact MCP fallback visual compare dest identity is dest wait-for 003, not leftover Close 004", () => {
+  const compact = compactExecutionDestIdentityFallback(
+    {
+      comparison: {
+        latest: {
+          frames: [
+            { path: "frames/003.png", caption: "Observe" },
+            { path: "frames/004.png", caption: "after · Run saved Test" },
+          ],
+        },
+      },
+    },
+    "run.visual.compare",
+  ) as { destIdentity?: Array<{ path?: string; caption?: string }> };
+  assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+  assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+});
+
+test("compact MCP fallback visual review leftover Close 004 cannot fill dest", () => {
+  const compact = compactExecutionDestIdentityFallback(
+    {
+      comparison: {
+        latest: {
+          frames: leftoverDestEndJob.frames,
+        },
+      },
+      decision: { action: "keep-baseline" },
+    },
+    "run.visual.review",
+  ) as { destIdentity?: Array<{ path?: string }> };
+  assert.deepEqual(
+    compact.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+});
+
+test("compact MCP fallback visual-baseline update leftover Close 004 cannot fill dest", () => {
+  const compact = compactExecutionDestIdentityFallback(
+    {
+      comparison: {
+        latest: { frames: leftoverDestEndJob.frames },
+        baseline: { approved: { frames: leftoverDestEndJob.frames } },
+      },
+      baseline: { approved: { frames: leftoverDestEndJob.frames } },
+    },
+    "run.visual-baseline.update",
+  ) as { destIdentity?: Array<{ path?: string }> };
+  assert.deepEqual(
+    compact.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+});
+
+test("compact MCP fallback findings leftover Close 004 cannot fill dest", () => {
+  const compact = compactExecutionDestIdentityFallback(
+    {
+      batchId: "dest-004",
+      cases: [
+        {
+          frames: [
+            { framePath: "frames/003.png", caption: "Observe" },
+            { framePath: "frames/004.png", caption: "after · Run saved Test" },
+          ],
+        },
+      ],
+    },
+    "job.combine.analysis",
+  ) as { destIdentity?: Array<{ path?: string; caption?: string }> };
+  assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+  assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+});

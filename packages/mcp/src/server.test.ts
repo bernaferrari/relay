@@ -1913,6 +1913,204 @@ test("compact operator wait dest identity is dest wait-for 003, not leftover Clo
   }
 });
 
+const leftoverVisualComparison = {
+  padding: "x".repeat(relayMcpTextLimit),
+  comparison: {
+    latest: {
+      frames: leftoverDestEndJob.frames,
+      frameCount: leftoverDestEndJob.frames.length,
+    },
+  },
+};
+
+test("compact visual compare dest identity is dest wait-for 003, not leftover Close 004", async () => {
+  const session = await connectMcp({
+    async invoke(operationId) {
+      assert.equal(operationId, "run.visual.compare");
+      return leftoverVisualComparison;
+    },
+  });
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_run_visual_compare",
+        arguments: { runId: leftoverDestEndJob.id },
+      }),
+    );
+    const compact = result.structuredContent?.result as {
+      truncated?: boolean;
+      destIdentity?: Array<{ path?: string; caption?: string }>;
+    };
+    assert.equal(compact.truncated, true);
+    assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+    assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
+  } finally {
+    await session.close();
+  }
+});
+
+test("compact visual review leftover Close 004 cannot fill dest", async () => {
+  const session = await connectMcp({
+    async invoke(operationId) {
+      assert.equal(operationId, "run.visual.review");
+      return leftoverVisualComparison;
+    },
+  });
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_run_visual_review",
+        arguments: {
+          runId: leftoverDestEndJob.id,
+          comparisonId: "visual-comparison-leftover",
+          action: "keep-baseline",
+          confirm: true,
+        },
+      }),
+    );
+    const compact = result.structuredContent?.result as {
+      truncated?: boolean;
+      destIdentity?: Array<{ path?: string; caption?: string }>;
+    };
+    assert.equal(compact.truncated, true);
+    assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+    assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
+  } finally {
+    await session.close();
+  }
+});
+
+test("compact visual-baseline update leftover Close 004 cannot fill dest", async () => {
+  const session = await connectMcp({
+    async invoke(operationId) {
+      assert.equal(operationId, "run.visual-baseline.update");
+      return leftoverVisualComparison;
+    },
+  });
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_run_visual_baseline_update",
+        arguments: {
+          runId: leftoverDestEndJob.id,
+          action: "approve-new-baseline",
+          confirm: true,
+        },
+      }),
+    );
+    const compact = result.structuredContent?.result as {
+      truncated?: boolean;
+      destIdentity?: Array<{ path?: string; caption?: string }>;
+    };
+    assert.equal(compact.truncated, true);
+    assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+    assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
+  } finally {
+    await session.close();
+  }
+});
+
+test("compact operator visual compare dest identity is dest wait-for 003, not leftover Close 004", async () => {
+  const session = await connectMcp(
+    {
+      async invoke(operationId) {
+        assert.equal(operationId, "run.visual.compare");
+        return leftoverVisualComparison;
+      },
+    },
+    "operator",
+  );
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_visual_compare",
+        arguments: { runId: leftoverDestEndJob.id },
+      }),
+    );
+    const compact = result.structuredContent?.result as {
+      truncated?: boolean;
+      destIdentity?: Array<{ path?: string; caption?: string }>;
+    };
+    assert.equal(compact.truncated, true);
+    assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+    assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
+  } finally {
+    await session.close();
+  }
+});
+
+test("compact operator findings leftover Close 004 cannot fill dest", async () => {
+  const session = await connectMcp(
+    {
+      async invoke(operationId) {
+        assert.equal(operationId, "job.combine.analysis");
+        return {
+          batchId: leftoverDestEndJob.id,
+          locales: ["en"],
+          coverage: { frames: 2, inspectedFrames: 2 },
+          cases: [
+            {
+              jobId: leftoverDestEndJob.id,
+              locale: "en",
+              status: "ok",
+              frames: [
+                {
+                  framePath: "frames/003.png",
+                  caption: "Observe",
+                  canonicalKey: "frame-001",
+                  inspected: true,
+                },
+                {
+                  framePath: "frames/004.png",
+                  caption: "after · Run saved Test",
+                  canonicalKey: "frame-002",
+                  inspected: true,
+                },
+              ],
+            },
+          ],
+          analysis: {
+            baselineLocale: "en",
+            critical: 0,
+            warnings: 40,
+            affectedScreens: 1,
+            findings: Array.from({ length: 40 }, (_, index) => ({
+              id: `finding-${index}`,
+              code: "POSSIBLE_TEXT_CLIPPED",
+              locale: "en",
+              canonicalKey: index === 1 ? "frame-002" : "frame-001",
+              detail: "x".repeat(300),
+            })),
+          },
+        };
+      },
+    },
+    "operator",
+  );
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_findings",
+        arguments: { batchId: leftoverDestEndJob.id },
+      }),
+    );
+    const compact = result.structuredContent?.result as {
+      truncated?: boolean;
+      destIdentity?: Array<{ path?: string; caption?: string }>;
+    };
+    assert.equal(compact.truncated, true);
+    assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+    assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
+  } finally {
+    await session.close();
+  }
+});
+
 test("returns screenshots as native PNG content without path or base64 metadata leaks", async () => {
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",

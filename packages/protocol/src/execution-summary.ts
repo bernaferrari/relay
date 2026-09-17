@@ -727,6 +727,24 @@ function summarizeRunList(response: Record<string, unknown>): unknown {
   };
 }
 
+function comparisonListedFrames(value: unknown): { path: string; caption?: string }[] {
+  const comparison = object(value);
+  const latest = object(comparison?.latest);
+  const approved = object(comparison?.approved);
+  const baselineApproved = object(object(comparison?.baseline)?.approved);
+  return [
+    ...listedFrames(latest?.frames),
+    ...listedFrames(approved?.frames),
+    ...listedFrames(baselineApproved?.frames),
+  ];
+}
+
+function analysisListedFrames(value: unknown): { path: string; caption?: string }[] {
+  return Array.isArray(value)
+    ? value.flatMap((item) => analysisCaseFrames(object(item)?.frames))
+    : [];
+}
+
 function destIdentityFromEnvelope(
   record: Record<string, unknown>,
 ): { path: string; caption?: string }[] {
@@ -744,6 +762,10 @@ function destIdentityFromEnvelope(
     ...listedDestIdentity(object(inner?.evidence)?.destIdentity),
     ...listedDestIdentity(object(inner?.report)?.destIdentity),
     ...listedDestIdentity(object(inner?.story)?.destIdentity),
+    ...comparisonListedFrames(record.comparison),
+    ...comparisonListedFrames(inner?.comparison),
+    ...analysisListedFrames(record.cases),
+    ...analysisListedFrames(inner?.cases),
   ]);
   if (visual.length) return visual;
   const nested =
@@ -792,7 +814,8 @@ function firstString(...values: unknown[]): string | undefined {
   return undefined;
 }
 
-/** MCP text-limit fallback. Dest wait-for Fast stays; leftover Close cannot fill dest. */
+/** MCP text-limit fallback. Dest wait-for Fast stays; leftover Close cannot fill dest,
+ * including oversized visual compare/review/baseline and findings envelopes. */
 export function compactExecutionDestIdentityFallback(
   result: unknown,
   operationId?: string,
