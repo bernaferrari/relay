@@ -236,6 +236,7 @@ const combineEvidenceFindingSchema = z
     locale: z.string(),
     baselineLocale: z.string(),
     stableKey: z.string().optional(),
+    testId: z.string().min(1).optional(),
     expected: z.string().optional(),
     observed: z.string().optional(),
     detail: z.string(),

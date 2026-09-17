@@ -1,5 +1,7 @@
 import {
   planFindingsSummaryLines,
+  planFindingIsFlaky,
+  planFindingTestId,
   type CombineEvidenceAnalysisReport,
   type CombineEvidenceFinding,
   type CombineTriageStatus,
@@ -125,8 +127,12 @@ export function accountReloginFindingsReport(input: {
   };
 }
 
-function findingBlock(finding: CombineEvidenceFinding): string {
+function findingBlock(
+  finding: CombineEvidenceFinding,
+  flakyTestIds?: ReadonlySet<string>,
+): string {
   const proposal = proposePlanFinding(finding);
+  const testId = planFindingTestId(finding);
   const lines = [
     `### ${finding.severity === "critical" ? "Critical" : "Warning"} · ${finding.code}`,
     "",
@@ -135,6 +141,12 @@ function findingBlock(finding: CombineEvidenceFinding): string {
     `- **locale:** ${finding.locale} (baseline ${finding.baselineLocale})`,
     `- **confidence:** ${finding.confidence}`,
   ];
+  if (testId) lines.push(`- **Test:** ${testId}`);
+  if (flakyTestIds && planFindingIsFlaky(finding, flakyTestIds)) {
+    lines.push(
+      "- **Stability:** Flaky. Same Test passed and failed on comparable history. This label never skips a run or accepts a visual baseline.",
+    );
+  }
   if (finding.expected !== undefined) lines.push(`- **expected:** ${finding.expected}`);
   if (finding.observed !== undefined) lines.push(`- **observed:** ${finding.observed}`);
   lines.push(`- **detail:** ${finding.detail}`);

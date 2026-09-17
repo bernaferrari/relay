@@ -816,6 +816,12 @@ export function compileAppMapScenarioTest(
           recipeSteps.push({
             kind: "screenshot",
             caption: `step:${step.id}:${step.intent}`,
+            // Reviewed recordings produce reviewable checkpoints. Older diagnostic
+            // capture flags retain their existing evidence-only meaning.
+            ...(step.binding.kind === "connections" &&
+            step.binding.connectionIds.some((id) => map.connections[id]?.recordingSource)
+              ? { review: { mode: "later" as const, lookFor: step.intent } }
+              : {}),
           });
         }
       }

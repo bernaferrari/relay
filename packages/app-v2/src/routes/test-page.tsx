@@ -12,6 +12,7 @@ import {
 } from "../data/use-persisted-run-configuration";
 import { WorkbenchPage } from "../components/page-layout";
 import { Button } from "@relay/ui-react/components/button";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@relay/ui-react/components/tabs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Camera, ChevronLeft, History } from "lucide-react";
@@ -393,288 +394,276 @@ export function TestPage() {
       ) : null}
 
       {!test.isPending && test.data ? (
-        <>
-          <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-2">
-            <div
-              className="flex gap-1 rounded-lg bg-muted p-1"
-              role="group"
-              aria-label="Evidence source"
-            >
-              <Button
-                size="sm"
-                aria-pressed={showRecording}
-                variant={showRecording ? "secondary" : "ghost"}
-                onClick={() => selectSource("definition")}
-              >
-                Test definition
-              </Button>
-              <Button
-                size="sm"
-                aria-pressed={!showRecording}
-                disabled={!attachedRunId}
-                variant={!showRecording ? "secondary" : "ghost"}
-                onClick={() => selectSource("run")}
-              >
-                Run evidence
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {showRecording ? "Current saved steps" : "Historical execution · saved with this run"}
-            </p>
+        <Tabs
+          value={showRecording ? "definition" : "run"}
+          onValueChange={(value) => selectSource(value === "run" ? "run" : "definition")}
+          className="min-h-0 flex-1 gap-0"
+        >
+          <div className="shrink-0 border-b border-border px-4">
+            <TabsList variant="line" aria-label="Test views" className="h-11">
+              <TabsTrigger value="definition" className="px-4">
+                Test
+              </TabsTrigger>
+              <TabsTrigger value="run" disabled={!attachedRunId} className="px-4">
+                Result
+              </TabsTrigger>
+            </TabsList>
           </div>
           {!showRecording && attachedRunId ? (
-            <div className="min-h-0 flex-1 overflow-auto p-3">
+            <TabsContent value="run" className="min-h-0 overflow-auto p-3">
               <RunInspection key={attachedRunId} runId={attachedRunId} testId={testId} embedded />
-            </div>
+            </TabsContent>
           ) : (
-            <SavedTestWorkspace
-              settingsOpen={settingsOpen}
-              onSettingsOpenChange={setSettingsOpen}
-              deviceName={targets.data?.find((target) => target.targetId === targetId)?.name}
-              outline={
-                <section
-                  className="relay-test-overview min-w-0 p-3"
-                  aria-labelledby="test-overview-title"
-                  onKeyDown={(event) => {
-                    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-                    const buttons = [
-                      ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
-                        "button[data-step-id]",
-                      ),
-                    ];
-                    if (!buttons.length) return;
-                    event.preventDefault();
-                    const focused = buttons.findIndex(
-                      (button) => button === document.activeElement,
-                    );
-                    const selected = buttons.findIndex(
-                      (button) => button.dataset.stepId === selectedEvidenceStep?.id,
-                    );
-                    const current = focused >= 0 ? focused : selected;
-                    const next =
-                      event.key === "Home"
-                        ? 0
-                        : event.key === "End"
-                          ? buttons.length - 1
-                          : Math.max(
-                              0,
-                              Math.min(
-                                buttons.length - 1,
-                                current + (event.key === "ArrowDown" ? 1 : -1),
-                              ),
-                            );
-                    buttons[next]!.focus({ preventScroll: true });
-                    buttons[next]!.click();
-                    buttons[next]!.scrollIntoView({ block: "nearest" });
-                  }}
-                >
-                  <h2
-                    id="test-overview-title"
-                    tabIndex={0}
-                    className="mb-2 text-[13px] font-medium text-muted-foreground"
+            <TabsContent value="definition" className="flex min-h-0 flex-col">
+              <SavedTestWorkspace
+                settingsOpen={settingsOpen}
+                onSettingsOpenChange={setSettingsOpen}
+                deviceName={targets.data?.find((target) => target.targetId === targetId)?.name}
+                outline={
+                  <section
+                    className="relay-test-overview min-w-0 p-3"
+                    aria-labelledby="test-overview-title"
+                    onKeyDown={(event) => {
+                      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+                      const buttons = [
+                        ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+                          "button[data-step-id]",
+                        ),
+                      ];
+                      if (!buttons.length) return;
+                      event.preventDefault();
+                      const focused = buttons.findIndex(
+                        (button) => button === document.activeElement,
+                      );
+                      const selected = buttons.findIndex(
+                        (button) => button.dataset.stepId === selectedEvidenceStep?.id,
+                      );
+                      const current = focused >= 0 ? focused : selected;
+                      const next =
+                        event.key === "Home"
+                          ? 0
+                          : event.key === "End"
+                            ? buttons.length - 1
+                            : Math.max(
+                                0,
+                                Math.min(
+                                  buttons.length - 1,
+                                  current + (event.key === "ArrowDown" ? 1 : -1),
+                                ),
+                              );
+                      buttons[next]!.focus({ preventScroll: true });
+                      buttons[next]!.click();
+                      buttons[next]!.scrollIntoView({ block: "nearest" });
+                    }}
                   >
-                    {outlineCopy.title}
-                  </h2>
-                  {outlineCopy.hint ? (
-                    <p className="mb-2 text-xs text-muted-foreground">{outlineCopy.hint}</p>
-                  ) : null}
-                  {test.data.steps?.length ? (
-                    <ol className="relay-test-readable-steps mt-3 grid list-none gap-1 p-0">
-                      {test.data.steps.map((step, index) => (
-                        <ReadableStep
-                          key={step.id}
-                          step={step}
-                          number={String(index + 1)}
-                          selectedId={selectedEvidenceStep?.id}
-                          onSelect={(id) => {
-                            setEvidenceStepId(id);
-                          }}
-                        />
-                      ))}
-                    </ol>
-                  ) : (
-                    <p className="relay-test-no-steps mt-4 text-sm text-muted-foreground">
-                      This Test has no reviewed steps yet.
-                    </p>
-                  )}
-                </section>
-              }
-              stage={
-                <div className="flex h-full min-h-0 flex-col">
-                  <p className="border-b border-border px-4 py-3 text-xs text-muted-foreground">
-                    Recording preview
-                  </p>
-                  <div className="min-h-0 flex-1">
-                    {selectedEvidenceStep?.recordingFrames?.length ? (
-                      <TestStepEvidencePreview
-                        key={selectedEvidenceStep.id}
-                        step={selectedEvidenceStep}
-                        report={undefined}
-                        hasRuns={false}
-                        loading={false}
-                      />
+                    <h2
+                      id="test-overview-title"
+                      tabIndex={0}
+                      className="mb-2 text-[13px] font-medium text-muted-foreground"
+                    >
+                      {outlineCopy.title}
+                    </h2>
+                    {outlineCopy.hint ? (
+                      <p className="mb-2 text-xs text-muted-foreground">{outlineCopy.hint}</p>
+                    ) : null}
+                    {test.data.steps?.length ? (
+                      <ol className="relay-test-readable-steps mt-3 grid list-none gap-1 p-0">
+                        {test.data.steps.map((step, index) => (
+                          <ReadableStep
+                            key={step.id}
+                            step={step}
+                            number={String(index + 1)}
+                            selectedId={selectedEvidenceStep?.id}
+                            onSelect={(id) => {
+                              setEvidenceStepId(id);
+                            }}
+                          />
+                        ))}
+                      </ol>
                     ) : (
-                      <div className="grid h-full min-h-0 place-items-center overflow-auto px-6 py-5">
-                        <div className="grid max-w-sm justify-items-center gap-3 text-center">
-                          <div className="grid size-12 place-items-center rounded-2xl bg-muted">
-                            <Camera className="size-5 text-muted-foreground" aria-hidden="true" />
+                      <p className="relay-test-no-steps mt-4 text-sm text-muted-foreground">
+                        This Test has no reviewed steps yet.
+                      </p>
+                    )}
+                  </section>
+                }
+                stage={
+                  <div className="flex h-full min-h-0 flex-col">
+                    <p className="border-b border-border px-4 py-3 text-xs text-muted-foreground">
+                      Recording preview
+                    </p>
+                    <div className="min-h-0 flex-1">
+                      {selectedEvidenceStep?.recordingFrames?.length ? (
+                        <TestStepEvidencePreview
+                          key={selectedEvidenceStep.id}
+                          step={selectedEvidenceStep}
+                          report={undefined}
+                          hasRuns={false}
+                          loading={false}
+                        />
+                      ) : (
+                        <div className="grid h-full min-h-0 place-items-center overflow-auto px-6 py-5">
+                          <div className="grid max-w-sm justify-items-center gap-3 text-center">
+                            <div className="grid size-12 place-items-center rounded-2xl bg-muted">
+                              <Camera className="size-5 text-muted-foreground" aria-hidden="true" />
+                            </div>
+                            <div className="grid gap-1.5">
+                              <h2 className="text-base font-semibold">Preview this Test</h2>
+                              <p className="text-sm leading-relaxed text-muted-foreground">
+                                No recording reference was saved for this step. Run the Test to
+                                capture the app and review what happened.
+                              </p>
+                            </div>
+                            <Button
+                              variant="outline"
+                              onClick={runOrFocusSetup}
+                              disabled={start.isPending}
+                            >
+                              {canStart ? "Run and capture" : "Choose a device"}
+                            </Button>
                           </div>
-                          <div className="grid gap-1.5">
-                            <h2 className="text-base font-semibold">Preview this Test</h2>
-                            <p className="text-sm leading-relaxed text-muted-foreground">
-                              No recording reference was saved for this step. Run the Test to
-                              capture the app and review what happened.
-                            </p>
-                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                }
+                inspector={
+                  !activeRun && !targets.isError ? (
+                    <section
+                      ref={runSetupRef}
+                      id="test-run-setup"
+                      tabIndex={-1}
+                      className="min-w-0 scroll-mt-6 p-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/40 [&_select]:w-full [&_select]:min-w-0"
+                      aria-labelledby="test-run-setup-title"
+                    >
+                      <h2 id="test-run-setup-title" className="sr-only">
+                        Run setup
+                      </h2>
+                      <RunConfigurationComposer
+                        variant="plain"
+                        pairedWorkspaceLabel={
+                          paired.workspace.rows.length
+                            ? `Use saved workspace · ${paired.workspace.rows.length} paired configurations`
+                            : undefined
+                        }
+                        configuration={{
+                          values: {
+                            targetName: targets.data?.find((target) => target.targetId === targetId)
+                              ?.name,
+                          },
+                          validated: canStart,
+                          blockers: [
+                            ...(configuration.targetUnavailable
+                              ? [
+                                  {
+                                    id: "target",
+                                    label: "Saved target is unavailable",
+                                    detail: "Choose a ready device or browser to continue.",
+                                  },
+                                ]
+                              : []),
+                            ...(profileBlocker ? [profileBlocker] : []),
+                          ],
+                        }}
+                        targetOptions={targets.data?.map((target) => ({
+                          id: target.targetId,
+                          label: targetLabel(target).title,
+                          detail: targetLabel(target).detail,
+                        }))}
+                        selection={{ ...configuration.selection, targetProfileId: targetId }}
+                        onSelectionChange={(selection) => {
+                          const { targetProfileId: selectedTargetId, ...rest } = selection;
+                          configuration.setSelection({ ...rest, targetId: selectedTargetId });
+                        }}
+                        loading={configuration.loading || targets.isPending}
+                        error={scope.error ?? configuration.error}
+                        onRetry={scope.error ? scope.retry : configuration.retry}
+                      >
+                        {profiles.data?.length ? (
+                          <SelectField
+                            label="Profile"
+                            value={configuration.selection.savedProfileId ?? "automatic"}
+                            options={[
+                              { value: "automatic", label: "Automatic" },
+                              ...profiles.data.map((profile) => ({
+                                value: profile.id,
+                                label: `${profile.name}${profile.account ? ` · ${profile.account.name}` : ""}${profile.targetId && profile.targetId !== targetId ? " · other device" : ""}`,
+                              })),
+                            ]}
+                            onValueChange={(value) =>
+                              configuration.setSelection({
+                                ...configuration.selection,
+                                savedProfileId: value === "automatic" ? undefined : value,
+                              })
+                            }
+                          />
+                        ) : null}
+                        {builds.data?.length ? (
+                          <SelectField
+                            label="Build"
+                            value={configuration.selection.buildId ?? "current"}
+                            options={[
+                              { value: "current", label: "Current build" },
+                              ...builds.data
+                                .filter((build) => build.status === "ready" && build.sourceSha)
+                                .map((build) => ({
+                                  value: build.id,
+                                  label: `${build.name} · ${build.sourceSha?.slice(0, 12)}`,
+                                })),
+                            ]}
+                            onValueChange={(value) =>
+                              configuration.setSelection({
+                                ...configuration.selection,
+                                buildId: value === "current" ? undefined : value,
+                              })
+                            }
+                          />
+                        ) : null}
+                        <label className="flex min-h-11 items-center gap-2 text-sm">
+                          <Checkbox
+                            checked={configuration.selection.startupMode === "cold"}
+                            onCheckedChange={(checked) =>
+                              configuration.setSelection({
+                                ...configuration.selection,
+                                startupMode: checked ? "cold" : undefined,
+                              })
+                            }
+                          />
+                          Restart app before running
+                        </label>
+                        {targets.isPending ? (
+                          <PageLoading label="Finding devices…" />
+                        ) : !targets.data?.length ? (
+                          <EmptyState
+                            title="No device or browser is ready"
+                            detail="Connect a target to continue with this Test."
+                            action={
+                              <Link
+                                className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                                to="/devices"
+                              >
+                                View devices
+                              </Link>
+                            }
+                          />
+                        ) : null}
+                        <div className="flex justify-end border-t border-border pt-3">
                           <Button
-                            variant="outline"
-                            onClick={runOrFocusSetup}
-                            disabled={start.isPending}
+                            variant="default"
+                            onClick={() => start.mutate()}
+                            disabled={!canStart || start.isPending}
                           >
-                            {canStart ? "Run and capture" : "Choose a device"}
+                            {start.isPending ? "Starting…" : "Run Test"}
                           </Button>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              }
-              inspector={
-                !activeRun && !targets.isError ? (
-                  <section
-                    ref={runSetupRef}
-                    id="test-run-setup"
-                    tabIndex={-1}
-                    className="min-w-0 scroll-mt-6 p-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/40 [&_select]:w-full [&_select]:min-w-0"
-                    aria-labelledby="test-run-setup-title"
-                  >
-                    <h2 id="test-run-setup-title" className="sr-only">
-                      Run setup
-                    </h2>
-                    <RunConfigurationComposer
-                      variant="plain"
-                      pairedWorkspaceLabel={
-                        paired.workspace.rows.length
-                          ? `Use saved workspace · ${paired.workspace.rows.length} paired configurations`
-                          : undefined
-                      }
-                      configuration={{
-                        values: {
-                          targetName: targets.data?.find((target) => target.targetId === targetId)
-                            ?.name,
-                        },
-                        validated: canStart,
-                        blockers: [
-                          ...(configuration.targetUnavailable
-                            ? [
-                                {
-                                  id: "target",
-                                  label: "Saved target is unavailable",
-                                  detail: "Choose a ready device or browser to continue.",
-                                },
-                              ]
-                            : []),
-                          ...(profileBlocker ? [profileBlocker] : []),
-                        ],
-                      }}
-                      targetOptions={targets.data?.map((target) => ({
-                        id: target.targetId,
-                        label: targetLabel(target).title,
-                        detail: targetLabel(target).detail,
-                      }))}
-                      selection={{ ...configuration.selection, targetProfileId: targetId }}
-                      onSelectionChange={(selection) => {
-                        const { targetProfileId: selectedTargetId, ...rest } = selection;
-                        configuration.setSelection({ ...rest, targetId: selectedTargetId });
-                      }}
-                      loading={configuration.loading || targets.isPending}
-                      error={scope.error ?? configuration.error}
-                      onRetry={scope.error ? scope.retry : configuration.retry}
-                    >
-                      {profiles.data?.length ? (
-                        <SelectField
-                          label="Profile"
-                          value={configuration.selection.savedProfileId ?? "automatic"}
-                          options={[
-                            { value: "automatic", label: "Automatic" },
-                            ...profiles.data.map((profile) => ({
-                              value: profile.id,
-                              label: `${profile.name}${profile.account ? ` · ${profile.account.name}` : ""}${profile.targetId && profile.targetId !== targetId ? " · other device" : ""}`,
-                            })),
-                          ]}
-                          onValueChange={(value) =>
-                            configuration.setSelection({
-                              ...configuration.selection,
-                              savedProfileId: value === "automatic" ? undefined : value,
-                            })
-                          }
-                        />
-                      ) : null}
-                      {builds.data?.length ? (
-                        <SelectField
-                          label="Build"
-                          value={configuration.selection.buildId ?? "current"}
-                          options={[
-                            { value: "current", label: "Current build" },
-                            ...builds.data
-                              .filter((build) => build.status === "ready" && build.sourceSha)
-                              .map((build) => ({
-                                value: build.id,
-                                label: `${build.name} · ${build.sourceSha?.slice(0, 12)}`,
-                              })),
-                          ]}
-                          onValueChange={(value) =>
-                            configuration.setSelection({
-                              ...configuration.selection,
-                              buildId: value === "current" ? undefined : value,
-                            })
-                          }
-                        />
-                      ) : null}
-                      <label className="flex min-h-11 items-center gap-2 text-sm">
-                        <Checkbox
-                          checked={configuration.selection.startupMode === "cold"}
-                          onCheckedChange={(checked) =>
-                            configuration.setSelection({
-                              ...configuration.selection,
-                              startupMode: checked ? "cold" : undefined,
-                            })
-                          }
-                        />
-                        Restart app before running
-                      </label>
-                      {targets.isPending ? (
-                        <PageLoading label="Finding devices…" />
-                      ) : !targets.data?.length ? (
-                        <EmptyState
-                          title="No device or browser is ready"
-                          detail="Connect a target to continue with this Test."
-                          action={
-                            <Link
-                              className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
-                              to="/devices"
-                            >
-                              View devices
-                            </Link>
-                          }
-                        />
-                      ) : null}
-                      <div className="flex justify-end border-t border-border pt-3">
-                        <Button
-                          variant="default"
-                          onClick={() => start.mutate()}
-                          disabled={!canStart || start.isPending}
-                        >
-                          {start.isPending ? "Starting…" : "Run Test"}
-                        </Button>
-                      </div>
-                    </RunConfigurationComposer>
-                  </section>
-                ) : undefined
-              }
-            />
+                      </RunConfigurationComposer>
+                    </section>
+                  ) : undefined
+                }
+              />
+            </TabsContent>
           )}
-        </>
+        </Tabs>
       ) : null}
 
       <TestRunHistory

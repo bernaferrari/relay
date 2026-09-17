@@ -377,16 +377,18 @@ describe("Run and Report", () => {
       platformWithStorage().platform,
     );
     expect(document.querySelectorAll("button[data-step-id]")).toHaveLength(0);
-    expect(document.body.textContent).toContain("Historical execution");
-    await click(button("Test definition"));
+    expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      "Result",
+    );
+    await click(button("Test"));
     const steps = [...document.querySelectorAll<HTMLButtonElement>("button[data-step-id]")];
     expect(steps).toHaveLength(3);
     await click(steps[1]!);
-    expect(button("Test definition").getAttribute("aria-pressed")).toBe("true");
+    expect(button("Test").getAttribute("aria-selected")).toBe("true");
     expect(history.location.search).toContain("view=definition");
-    await click(button("Run evidence"));
+    await click(button("Result"));
     expect(document.querySelectorAll("button[data-step-id]")).toHaveLength(0);
-    await click(button("Test definition"));
+    await click(button("Test"));
     expect(
       document.querySelector('[data-step-id="step-check"]')?.getAttribute("aria-pressed"),
     ).toBe("true");
@@ -708,7 +710,7 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Open full report");
     expect(document.body.textContent).not.toContain("Investigate this failure");
     expect(document.body.textContent).toMatch(/\d+(?:\.\d+)?\s?s/);
-    expect(document.querySelectorAll('[role="tab"]')).toHaveLength(0);
+    expect([...document.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual(["Test", "Result"]);
     expect(storage.values.has("activeRunWorkflow")).toBe(false);
 
     const fullReport = [...document.querySelectorAll("a")].find((item) =>

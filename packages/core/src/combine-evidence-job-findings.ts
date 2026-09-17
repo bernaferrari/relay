@@ -9,6 +9,8 @@ export type JobOutcomeFindingSource = {
   error?: string;
   outcome?: string;
   failureCategory?: string;
+  /** Durable Test id when the job already knows it. Never inferred from title. */
+  testId?: string;
   artifacts?: readonly { kind?: string; data?: unknown }[];
 };
 
@@ -82,6 +84,14 @@ function screenLabelFor(job: JobOutcomeFindingSource, expected?: string): string
   return job.action;
 }
 
+function withJobTestId(
+  finding: CombineEvidenceFinding,
+  job: JobOutcomeFindingSource,
+): CombineEvidenceFinding {
+  const testId = job.testId?.trim();
+  return testId ? { ...finding, testId } : finding;
+}
+
 /** One finding per recipe/expect-screen product-failure, harness-failure, blocked, or cancelled cell. */
 export function jobOutcomeFindings<T extends JobOutcomeFindingSource>(
   jobs: readonly T[],
@@ -91,64 +101,84 @@ export function jobOutcomeFindings<T extends JobOutcomeFindingSource>(
   for (const job of jobs) {
     const locale = localeFor(job);
     if (isHarnessJobOutcome(job)) {
-      findings.push({
-        id: `harness-failure-${job.id}`,
-        code: "HARNESS_FAILURE",
-        severity: "critical",
-        confidence: "high",
-        canonicalKey: `job:${job.id}`,
-        screenLabel: screenLabelFor(job),
-        locale,
-        baselineLocale: locale,
-        detail: harnessDetail(job),
-      });
+      findings.push(
+        withJobTestId(
+          {
+            id: `harness-failure-${job.id}`,
+            code: "HARNESS_FAILURE",
+            severity: "critical",
+            confidence: "high",
+            canonicalKey: `job:${job.id}`,
+            screenLabel: screenLabelFor(job),
+            locale,
+            baselineLocale: locale,
+            detail: harnessDetail(job),
+          },
+          job,
+        ),
+      );
       continue;
     }
     if (isCancelledJobOutcome(job)) {
-      findings.push({
-        id: `user-cancelled-${job.id}`,
-        code: "USER_CANCELLED",
-        severity: "warning",
-        confidence: "high",
-        canonicalKey: `job:${job.id}`,
-        screenLabel: screenLabelFor(job),
-        locale,
-        baselineLocale: locale,
-        detail: job.error?.trim()
-          ? `Cancelled — ${job.error.trim()}. Operator cancellation is not an infra root cause.`
-          : "Cancelled by the operator. This is not an infra root cause.",
-      });
+      findings.push(
+        withJobTestId(
+          {
+            id: `user-cancelled-${job.id}`,
+            code: "USER_CANCELLED",
+            severity: "warning",
+            confidence: "high",
+            canonicalKey: `job:${job.id}`,
+            screenLabel: screenLabelFor(job),
+            locale,
+            baselineLocale: locale,
+            detail: job.error?.trim()
+              ? `Cancelled — ${job.error.trim()}. Operator cancellation is not an infra root cause.`
+              : "Cancelled by the operator. This is not an infra root cause.",
+          },
+          job,
+        ),
+      );
       continue;
     }
     if (isBlockedJobOutcome(job)) {
-      findings.push({
-        id: `blocked-${job.id}`,
-        code: "BLOCKED",
-        severity: "critical",
-        confidence: "high",
-        canonicalKey: `job:${job.id}`,
-        screenLabel: screenLabelFor(job),
-        locale,
-        baselineLocale: locale,
-        detail: job.error?.trim() || "This case could not run. Resolve blockers.",
-      });
+      findings.push(
+        withJobTestId(
+          {
+            id: `blocked-${job.id}`,
+            code: "BLOCKED",
+            severity: "critical",
+            confidence: "high",
+            canonicalKey: `job:${job.id}`,
+            screenLabel: screenLabelFor(job),
+            locale,
+            baselineLocale: locale,
+            detail: job.error?.trim() || "This case could not run. Resolve blockers.",
+          },
+          job,
+        ),
+      );
       continue;
     }
     if (!isProductAssertionJob(job)) continue;
     const sides = expectScreenSides(job.error);
-    findings.push({
-      id: `product-assertion-${job.id}`,
-      code: "PRODUCT_ASSERTION",
-      severity: "critical",
-      confidence: "high",
-      canonicalKey: `job:${job.id}`,
-      screenLabel: screenLabelFor(job, sides.expected),
-      locale,
-      baselineLocale: locale,
-      ...(sides.expected ? { expected: sides.expected } : {}),
-      ...(sides.observed ? { observed: sides.observed } : {}),
-      detail: job.error?.trim() || "Recipe product-failure.",
-    });
+    findings.push(
+      withJobTestId(
+        {
+          id: `product-assertion-${job.id}`,
+          code: "PRODUCT_ASSERTION",
+          severity: "critical",
+          confidence: "high",
+          canonicalKey: `job:${job.id}`,
+          screenLabel: screenLabelFor(job, sides.expected),
+          locale,
+          baselineLocale: locale,
+          ...(sides.expected ? { expected: sides.expected } : {}),
+          ...(sides.observed ? { observed: sides.observed } : {}),
+          detail: job.error?.trim() || "Recipe product-failure.",
+        },
+        job,
+      ),
+    );
   }
   return findings;
 }

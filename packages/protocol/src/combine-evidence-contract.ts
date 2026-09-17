@@ -33,6 +33,8 @@ export type CombineEvidenceFinding = {
   locale: string;
   baselineLocale: string;
   stableKey?: string;
+  /** Durable Test id. Screen labels and similar names are not identity. */
+  testId?: string;
   expected?: string;
   observed?: string;
   detail: string;

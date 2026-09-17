@@ -752,6 +752,7 @@ test("screenshot-only Tests retain their reviewed name and recording image", () 
       testId: "screenshot-test",
       testName: "Home capture",
       actions: [{ ...action(), steps: [], label: "Signed-out home" }],
+      before: observation("before", afterFingerprint, "before-evidence"),
       after: observation("after", afterFingerprint, "screenshot"),
       evidenceIds: ["screenshot"],
       evidenceById: { screenshot: { id: "screenshot", kind: "screenshot", capturedAt: 1, uri } },
@@ -765,6 +766,13 @@ test("screenshot-only Tests retain their reviewed name and recording image", () 
   assert.deepEqual(connection.recordingSource?.frames, [
     { evidenceId: "screenshot", uri, role: "after" },
   ]);
+  const compiled = compileAppMapScenarioTest(result.appMap, result.appMap.tests["screenshot-test"]!);
+  const reviewSteps = compiled.root.steps.filter(
+    (step) => step.kind === "screenshot" && step.review,
+  );
+  assert.equal(reviewSteps.length, 1);
+  assert.equal(reviewSteps[0]?.review?.lookFor, "Signed-out home");
+  assert.equal(compiled.plan.plannedSlots?.length, 1);
 });
 
 test("recorded commits cannot invent Relay-controlled capture provenance", () => {

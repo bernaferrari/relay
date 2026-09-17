@@ -206,3 +206,35 @@ test("merge recounts critical findings so empty locale analysis cannot hide a fa
   assert.equal(merged.critical, 1);
   assert.equal(merged.findings[0]?.code, "PRODUCT_ASSERTION");
 });
+
+test("job Test id is copied onto the finding and never invented from the title", () => {
+  const [withId] = jobOutcomeFindings(
+    [
+      {
+        id: "job-1",
+        action: "cell-home",
+        status: "error",
+        title: "Grok.com daily · login",
+        error: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+        outcome: "harness-failure",
+        testId: "test-grok-web-open",
+      },
+    ],
+    () => "en",
+  );
+  const [withoutId] = jobOutcomeFindings(
+    [
+      {
+        id: "job-2",
+        action: "cell-home",
+        status: "error",
+        title: "Grok.com daily · login",
+        error: "visual judge unavailable: OPENROUTER_API_KEY is not configured",
+        outcome: "harness-failure",
+      },
+    ],
+    () => "en",
+  );
+  assert.equal(withId?.testId, "test-grok-web-open");
+  assert.equal(withoutId?.testId, undefined);
+});
