@@ -83,9 +83,20 @@
 # delete-wrong-chat do not cover. Similar history/search/delete/
 # older-chat names do not cover. Leftover dest skip is only
 # GQA-004/040 capture-view.
+# RC-36 S14 App Language + SuperGrok row packets stay unbound:
+# explicit test-action evidence-needed (App Language TAP + persist,
+# SuperGrok row TAP + view). GQA-040 stays the RC-23 dest-end
+# settings inventory view. Settings dest-end / inspect-only
+# Language Selector (do not tap a language) / SuperGrok home
+# banner / hide-upsell inspect (do not tap Hide or Upgrade) /
+# logged-out Light/Dark/System / iOS App Language OS handoff
+# do not cover. Do not tap App Language in default capture. Do
+# not tap Upgrade / Try now / Dismiss / Sign Out. Similar
+# settings/language/banner/upsell names do not cover. Leftover
+# dest skip is only GQA-004/040 capture-view.
 schemaVersion: 1
 id: grok-qa-workbook
-revision: 15
+revision: 16
 reviewedAt: "2026-09-16"
 source:
   workbook: grok-qa-graph.xlsx
@@ -1218,8 +1229,26 @@ originals:
     evidencePacket: persistence
     queue: "fast-ui"
     suggestedExecutionQueue: stateful-survival
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-app-language-row
+        note: "Fresh Fast image of Settings with App Language visible at the current language. RC-23 Settings dest-end / inspect-only test-grok-web-signed-in-settings-language (do not tap a language) / logged-out Light/Dark/System is not this before frame. Do not tap App Language in default capture. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
+      - kind: receipt
+        id: tap-open-app-language
+        note: "TAP App Language (mobile) or Change language (web Account pane) actually executed (test-action). Isolated settings mutation. test-grok-web-signed-in-settings dest-end / test-grok-web-signed-in-settings-language inspect-only / test-grok-ios-presets do-not-tap App Language is not this original. iOS in-app App Language opens system Settings (handoff). YAML switch-language-grok-ios is a seed, not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: receipt
+        id: tap-choose-and-confirm-language
+        note: "Choose a new language and confirm actually executed (test-action). Inspect-only Language Selector extras-allow English is not this original. Do not tap Sign Out."
+      - kind: restart
+        id: force-close-reopen-after-language
+        note: "Force-close and reopen after the language change. Persistence is the packet — leftover Settings dest-end is not this original."
+      - kind: after
+        id: after-interface-language
+        note: "App interface updates to selected language. Human reviews original criterion. Isolated mutation. Android got App Language. iOS OS Settings handoff is not this after frame. grok-lab leftover b2dcd768 is not this family. stabilityMeasured false."
     gates:
       - "Android got App Language. Isolated settings mutation. Do not tap App Language in default capture."
+      - "Leftover Settings dest-end / inspect-only Language Selector (do not tap a language) / logged-out Light/Dark/System / iOS App Language OS handoff is not this original. Causal TAP must select a new language and confirm; interface must update after reopen. Similar settings/language names do not cover. Do not tap Sign Out."
     status: unbound
     bindings: []
   - id: 42
@@ -1250,8 +1279,17 @@ originals:
     evidencePacket: view
     queue: "fast-ui"
     suggestedExecutionQueue: fast-ui
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: receipt
+        id: tap-supergrok-row
+        note: "TAP SuperGrok actually executed (test-action). Do not tap Upgrade / Try now / Dismiss. RC-23 Settings dest-end / test-grok-web-signed-in-banner Upgrade on home / test-grok-web-signed-in-hide-upsell inspect (do not tap Hide or Upgrade) is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: view
+        id: subscription-or-upgrade-banner
+        note: "Fresh Fast image of subscription details or Upgrade banner. If subscribed, plan details at bottom; else upgrade banner with Upgrade. Do not tap Upgrade / Try now / Dismiss / Sign Out. Unlock extended capabilities SuperGrok Upgrade pill on home is not this view. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
     gates:
       - Do not tap Upgrade / Try now / Dismiss.
+      - "Leftover Settings dest-end / SuperGrok home banner / hide-upsell inspect / Unlock extended capabilities pill is not this original. Causal TAP must open the SuperGrok row. Links to subscription management stay on the view — do not tap Upgrade. Similar settings/banner/upsell names do not cover."
     status: unbound
     bindings: []
   - id: 44

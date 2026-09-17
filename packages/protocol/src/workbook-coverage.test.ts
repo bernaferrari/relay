@@ -12,6 +12,7 @@ import {
   coverByImagineDestEndOrUnrecordedHeavyImage,
   coverByImagineDestEndOrHistorySearch,
   coverByHistoryDestEndOrCommandMenuSearch,
+  coverBySettingsDestEndOrLanguageInspect,
   coverByRc23DestEnd,
   destEndViewPacketMayLeftoverSkip,
   evaluateWorkbookCoverage,
@@ -46,6 +47,8 @@ import {
   WORKBOOK_IMAGE_SEARCH_ORIGINAL_IDS,
   WORKBOOK_HISTORY_FAMILY_ID,
   WORKBOOK_HISTORY_ORIGINAL_IDS,
+  WORKBOOK_SETTINGS_FAMILY_ID,
+  WORKBOOK_SETTINGS_UNBOUND_ORIGINAL_IDS,
   WORKBOOK_MODELS_FAMILY_ID,
   WORKBOOK_MODELS_ORIGINAL_IDS,
   WORKBOOK_OUTPUT_FAMILY_ID,
@@ -3872,5 +3875,238 @@ test("S13 packets stay unbound and need open older conversation, History expand,
       evidencePacket: "persistence",
     }),
     "stateful-survival",
+  );
+});
+
+test("S14 packets stay unbound and need App Language persist and SuperGrok row TAP evidence", () => {
+  assert.deepEqual([...WORKBOOK_SETTINGS_UNBOUND_ORIGINAL_IDS], [41, 43]);
+  assert.equal(WORKBOOK_SETTINGS_FAMILY_ID, "S14");
+  assert.deepEqual(requiredEvidenceNeededKinds("persistence"), ["before", "restart", "after"]);
+  assert.deepEqual(requiredEvidenceNeededKinds("view"), ["view"]);
+  const missing = original({
+    id: 41,
+    name: "App Language",
+    family: WORKBOOK_SETTINGS_FAMILY_ID,
+    evidencePacket: "persistence",
+    status: "unbound",
+  });
+  assert.match(
+    workbookEvidenceNeededError(missing) ?? "",
+    /S14 must be test-action|S14 needs explicit evidence-needed|App Language TAP/u,
+  );
+  const leftoverLanguageInspect = original({
+    id: 41,
+    name: "App Language",
+    family: WORKBOOK_SETTINGS_FAMILY_ID,
+    evidencePacket: "persistence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-language-selector",
+        note: "Inspect-only Language Selector. Do not tap a language.",
+      },
+      {
+        kind: "after",
+        id: "after-english-extras-allow",
+        note: "Settings dest-end. No language confirm. No restart.",
+      },
+    ],
+    status: "unbound",
+    criteria: "App interface updates to selected language.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverLanguageInspect) ?? "",
+    /open TAP and confirm TAP receipts|needs restart evidence/u,
+  );
+  assert.equal(coverBySettingsDestEndOrLanguageInspect(leftoverLanguageInspect), false);
+  const appLanguage = original({
+    id: 41,
+    name: "App Language",
+    family: WORKBOOK_SETTINGS_FAMILY_ID,
+    evidencePacket: "persistence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-app-language-row",
+        note: "App Language visible. Settings dest-end is not this frame.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-open-app-language",
+        note: "TAP App Language actually executed.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-choose-and-confirm-language",
+        note: "Choose and confirm a new language actually executed.",
+      },
+      {
+        kind: "restart",
+        id: "force-close-reopen-after-language",
+        note: "Restart after language change.",
+      },
+      {
+        kind: "after",
+        id: "after-interface-language",
+        note: "Interface updated. inspect-only Language Selector is not this frame.",
+      },
+    ],
+    status: "unbound",
+    criteria: "App interface updates to selected language.",
+  });
+  assert.equal(workbookEvidenceNeededError(appLanguage), undefined);
+  assert.equal(workbookEvidencePolicyError(appLanguage), undefined);
+  assert.equal(originalIsCovered(appLanguage), false);
+  assert.equal(coverBySettingsDestEndOrLanguageInspect(appLanguage), false);
+  const languageObligation = workbookOriginalObligationIdentity(appLanguage);
+  assert.equal(languageObligation.requirementId, "GQA-041");
+  assert.equal(languageObligation.caption, "App Language");
+  assert.match(languageObligation.criteria, /selected language/u);
+  const leftoverBanner = original({
+    id: 43,
+    name: "SuperGrok subscription row",
+    family: WORKBOOK_SETTINGS_FAMILY_ID,
+    evidencePacket: "view",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "view",
+        id: "leftover-home-banner",
+        note: "Home Upgrade banner. hide-upsell inspect. No SuperGrok row TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Subscription details or Upgrade banner display correctly and links navigate to the correct subscription management page.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverBanner) ?? "",
+    /SuperGrok row TAP must execute/u,
+  );
+  const superGrokRow = original({
+    id: 43,
+    name: "SuperGrok subscription row",
+    family: WORKBOOK_SETTINGS_FAMILY_ID,
+    evidencePacket: "view",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-supergrok-row",
+        note: "TAP SuperGrok actually executed. Do not tap Upgrade.",
+      },
+      {
+        kind: "view",
+        id: "subscription-or-upgrade-banner",
+        note: "Plan details or upgrade banner. leftover home banner is not this view.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Subscription details or Upgrade banner display correctly and links navigate to the correct subscription management page.",
+  });
+  assert.equal(workbookEvidenceNeededError(superGrokRow), undefined);
+  assert.equal(workbookEvidencePolicyError(superGrokRow), undefined);
+  assert.equal(originalIsCovered(superGrokRow), false);
+  const report = evaluateWorkbookCoverage(fixture({ originals: [appLanguage, superGrokRow] }), [
+    { id: "test-grok-web-signed-in-settings", name: "Open settings panel" },
+    { id: "test-grok-web-signed-in-settings-language", name: "Settings Language" },
+    { id: "test-grok-ios-settings", name: "Open Settings" },
+    { id: "test-grok-android-settings", name: "Open Settings" },
+    { id: "test-grok-web-signed-in-banner", name: "SuperGrok banner" },
+    { id: "test-grok-web-signed-in-hide-upsell", name: "Inspect upsell" },
+    { id: "test-grok-ios-presets", name: "Customize Grok peek" },
+  ]);
+  assert.deepEqual(report.coveredOriginalIds, []);
+  assert.equal(report.unboundOriginalIds.includes(41), true);
+  assert.equal(report.unboundOriginalIds.includes(43), true);
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 41 && row.testId === "test-grok-web-signed-in-settings-language",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 41 && row.testId === "test-grok-web-signed-in-settings",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 41 && row.testId === "test-grok-ios-settings",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 41 && row.testId === "test-grok-android-settings",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 43 && row.testId === "test-grok-web-signed-in-banner",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 43 && row.testId === "test-grok-web-signed-in-hide-upsell",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 43 && row.testId === "test-grok-web-signed-in-settings",
+    ),
+    true,
+  );
+  assert.equal(coverByFindingSimilarlyNamedTest(appLanguage, []), false);
+  assert.equal(coverByRc23DestEnd({ id: 41 }, "settings"), false);
+  assert.equal(coverByRc23DestEnd({ id: 43 }, "settings"), false);
+  assert.equal(coverByRc23DestEnd({ id: 40 }, "settings"), true);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 41,
+      evidencePacket: "persistence",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 43,
+      evidencePacket: "view",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 43, evidencePacket: "view" }), false);
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 40, evidencePacket: "view" }), true);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 40,
+      evidencePacket: "view",
+    }),
+    true,
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 41,
+      family: WORKBOOK_SETTINGS_FAMILY_ID,
+      evidencePacket: "persistence",
+    }),
+    "stateful-survival",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 43,
+      family: WORKBOOK_SETTINGS_FAMILY_ID,
+      evidencePacket: "view",
+    }),
+    "fast-ui",
   );
 });

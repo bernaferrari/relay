@@ -14,6 +14,7 @@ import {
   coverByImagineDestEndOrUnrecordedHeavyImage,
   coverByImagineDestEndOrHistorySearch,
   coverByHistoryDestEndOrCommandMenuSearch,
+  coverBySettingsDestEndOrLanguageInspect,
   coverByRc23DestEnd,
   countWorkbookEvidencePackets,
   countWorkbookSuggestedQueues,
@@ -47,6 +48,8 @@ import {
   WORKBOOK_IMAGE_SEARCH_ORIGINAL_IDS,
   WORKBOOK_HISTORY_FAMILY_ID,
   WORKBOOK_HISTORY_ORIGINAL_IDS,
+  WORKBOOK_SETTINGS_FAMILY_ID,
+  WORKBOOK_SETTINGS_UNBOUND_ORIGINAL_IDS,
   WORKBOOK_EVIDENCE_PACKET_LABELS,
   WORKBOOK_RC23_REQUIREMENT_ID,
   WORKBOOK_MODELS_FAMILY_ID,
@@ -196,11 +199,31 @@ const similarCatalog = [
     name: "Toggle sidebar",
     appMapId: "grok-web",
   },
+  {
+    id: "test-grok-web-signed-in-settings-language",
+    name: "Settings Language",
+    appMapId: "grok-web",
+  },
+  {
+    id: "test-grok-android-settings",
+    name: "Open Settings",
+    appMapId: "grok-android",
+  },
+  {
+    id: "test-grok-web-signed-in-banner",
+    name: "SuperGrok banner",
+    appMapId: "grok-web",
+  },
+  {
+    id: "test-grok-web-signed-in-hide-upsell",
+    name: "Inspect upsell",
+    appMapId: "grok-web",
+  },
 ];
 
 test("reviewed workbook freeze keeps 58 originals, 15 active families, and 5 exclusions", () => {
   const manifest = loadReviewedWorkbook();
-  assert.equal(manifest.revision, 15);
+  assert.equal(manifest.revision, 16);
   assert.equal(manifest.counts.originals, 58);
   assert.equal(manifest.counts.families, 17);
   assert.equal(manifest.counts.activeFamilies, 15);
@@ -445,8 +468,21 @@ test("similarly named live Tests do not cover Customize Grok, Imagine, Dictation
     true,
   );
   assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 41 && row.testId === "test-grok-web-signed-in-settings-language",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 43 && row.testId === "test-grok-web-signed-in-banner",
+    ),
+    true,
+  );
+  assert.equal(
     [
       8, 37, 42, 50, 48, 51, 44, 47, 1, 2, 6, 28, 29, 9, 10, 12, 13, 11, 30, 56, 16, 17, 54, 55, 49,
+      41, 43,
     ].every((id) => !report.coveredOriginalIds.includes(id)),
     true,
   );
@@ -707,6 +743,9 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
   assert.equal(rc23DestEndSatisfiesOriginal("imagine", 55), false);
   assert.equal(rc23DestEndSatisfiesOriginal("imagine", 49), false);
   assert.equal(rc23DestEndSatisfiesOriginal("dictation", 42), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("settings", 41), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("settings", 43), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("settings", 44), false);
   assert.equal(rc23DestEndSatisfiesOriginal("private-chat", 4), false);
   assert.equal(coverByFindingSimilarlyNamedTest(composer, similarCatalog), false);
   assert.equal(send.status, "unbound");
@@ -1549,6 +1588,86 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
   assert.equal(coverByRc23DestEnd({ id: 34 }, "sidebar"), false);
   assert.equal(coverByRc23DestEnd({ id: 38 }, "sidebar"), false);
   assert.equal(coverByRc23DestEnd({ id: 39 }, "settings"), false);
+  const settingsFamily = manifest.originals.filter(
+    (item) => item.family === WORKBOOK_SETTINGS_FAMILY_ID,
+  );
+  assert.deepEqual(
+    settingsFamily.map((item) => item.id),
+    [40, ...WORKBOOK_SETTINGS_UNBOUND_ORIGINAL_IDS],
+  );
+  assert.equal(settingsFamily.find((item) => item.id === 40)?.status, "bound");
+  assert.equal(
+    settingsFamily
+      .filter((item) => item.id !== 40)
+      .every(
+        (item) =>
+          item.status === "unbound" &&
+          item.requirementAction === "test-action" &&
+          (item.evidenceNeeded?.length ?? 0) > 0 &&
+          item.bindings.length === 0 &&
+          item.criteria.trim().length > 0 &&
+          coverBySettingsDestEndOrLanguageInspect(item) === false,
+      ),
+    true,
+  );
+  const languageKinds = new Set(
+    manifest.originals.find((item) => item.id === 41)?.evidenceNeeded?.map((item) => item.kind) ??
+      [],
+  );
+  assert.equal(
+    ["before", "restart", "after", "receipt"].every((kind) => languageKinds.has(kind)),
+    true,
+  );
+  assert.equal(
+    (manifest.originals
+      .find((item) => item.id === 41)
+      ?.evidenceNeeded?.filter((item) => item.kind === "receipt").length ?? 0) >= 2,
+    true,
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 41,
+      family: WORKBOOK_SETTINGS_FAMILY_ID,
+      evidencePacket: "persistence",
+    }),
+    "stateful-survival",
+  );
+  const superGrokKinds = new Set(
+    manifest.originals.find((item) => item.id === 43)?.evidenceNeeded?.map((item) => item.kind) ??
+      [],
+  );
+  assert.equal(superGrokKinds.has("receipt"), true);
+  assert.equal(superGrokKinds.has("view"), true);
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 41)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-settings-language"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 41)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-settings"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 43)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-banner"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 43)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-hide-upsell"),
+    true,
+  );
+  assert.equal(coverByRc23DestEnd({ id: 41 }, "settings"), false);
+  assert.equal(coverByRc23DestEnd({ id: 43 }, "settings"), false);
   const slotsPath = join(
     dirname(fileURLToPath(import.meta.url)),
     "../../../tests/coverage/rc23-screenshot-first-slots.json",

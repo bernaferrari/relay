@@ -8,9 +8,10 @@
  * S02 shell, S05 model/preset, S08 output-battery, S01 auth, S03
  * composer, S06 Auto-routing, S07 response-chrome, S09
  * single-agent tools + sources, S10 Heavy multi-agent, S11
- * image gen + edit + export, S12 image search, and S13 history
- * lifecycle originals keep
+ * image gen + edit + export, S12 image search, S13 history
+ * lifecycle, and S14 App Language / SuperGrok row originals keep
  * explicit test-action evidence-needed while remaining unbound.
+ * GQA-040 Settings inventory stays the RC-23 dest-end view.
  * Leftover Fast-checked is not a models Test. Inspect-only model
  * sheet is not Switch model, presets, or Auto Fast/Expert routing.
  * Leftover 3*5 extract-15 / Markdown judge is not S08 generated-output
@@ -40,7 +41,9 @@
  * search / Android Search dest-end / history-collapse / leftover
  * 3*5 / S12 Image search / draft delete-wrong-chat is not S13
  * open older conversation, History expand, search history, or
- * delete persistence. Original criteria
+ * delete persistence. Settings dest-end / inspect-only Language
+ * Selector / SuperGrok home banner / hide-upsell inspect is not
+ * S14 App Language mutate or SuperGrok row. Original criteria
  * stay on the slot.
  */
 
@@ -75,6 +78,8 @@ export const WORKBOOK_IMAGE_SEARCH_FAMILY_ID = "S12";
 export const WORKBOOK_IMAGE_SEARCH_ORIGINAL_IDS = [49] as const;
 export const WORKBOOK_HISTORY_FAMILY_ID = "S13";
 export const WORKBOOK_HISTORY_ORIGINAL_IDS = [21, 34, 38, 39] as const;
+export const WORKBOOK_SETTINGS_FAMILY_ID = "S14";
+export const WORKBOOK_SETTINGS_UNBOUND_ORIGINAL_IDS = [41, 43] as const;
 export const WORKBOOK_MODELS_FAMILY_ID = "S05";
 export const WORKBOOK_MODELS_ORIGINAL_IDS = [7, 8] as const;
 export const WORKBOOK_OUTPUT_FAMILY_ID = "S08";
@@ -284,6 +289,12 @@ export const RC23_WORKBOOK_NON_BINDINGS: readonly {
     originalIds: [],
     reason: "No workbook original for private chat.",
   },
+  {
+    checkpointId: "settings",
+    originalIds: [41, 43, 44],
+    reason:
+      "Settings inventory dest-end does not tap App Language, SuperGrok, or Sign Out. GQA-040 stays the dest-end view.",
+  },
 ];
 
 const RC23_PLATFORM = new Set<string>(WORKBOOK_RC23_PLATFORMS);
@@ -468,6 +479,20 @@ export function coverByImagineDestEndOrHistorySearch(
  * cover S13. Open TAP + send, History expand TAP, keyword TAP +
  * clear, and delete TAP + restart evidence is required. */
 export function coverByHistoryDestEndOrCommandMenuSearch(
+  original: Pick<WorkbookOriginal, "id" | "family">,
+): boolean {
+  void original;
+  return false;
+}
+
+/** Settings dest-end inventory, inspect-only Language Selector (do not
+ * tap a language), SuperGrok home banner / hide-upsell inspect (do not
+ * tap Hide or Upgrade), logged-out Light/Dark/System, or iOS App
+ * Language OS handoff never cover S14 App Language mutate or SuperGrok
+ * row. TAP + persist / TAP SuperGrok view evidence is required. GQA-040
+ * stays the RC-23 dest-end view. Do not tap App Language in default
+ * capture. Do not tap Upgrade / Try now / Dismiss / Sign Out. */
+export function coverBySettingsDestEndOrLanguageInspect(
   original: Pick<WorkbookOriginal, "id" | "family">,
 ): boolean {
   void original;
@@ -1015,6 +1040,8 @@ function distinctiveNeedles(original: WorkbookOriginal): readonly string[] {
   if (original.id === 48) extra.push("3x5", "math");
   if (original.id === 51) extra.push("capital");
   if (original.id === 52) extra.push("greeting", "language");
+  if (original.id === 41) extra.push("settings-language", "settings");
+  if (original.id === 43) extra.push("banner", "upsell", "upgrade", "settings");
   if (original.id === 44) extra.push("sign-out", "signout");
   if (original.id === 45) extra.push("continue", "x-absent", "authorize");
   if (original.id === 46) extra.push("continue", "x-present", "x-app");
@@ -1362,6 +1389,14 @@ export function workbookEvidenceNeededError(
       return `${label} S13 needs explicit evidence-needed (open older conversation TAP + send, History expand TAP, search keyword TAP + clear, delete TAP + restart)`;
     }
   }
+  if (original.id === 41 || original.id === 43) {
+    if (original.requirementAction !== "test-action") {
+      return `${label} S14 must be test-action — leftover Settings dest-end / inspect-only Language Selector / SuperGrok banner is not App Language mutate or SuperGrok row`;
+    }
+    if (!original.evidenceNeeded || original.evidenceNeeded.length === 0) {
+      return `${label} S14 needs explicit evidence-needed (App Language TAP + persist, SuperGrok row TAP + view)`;
+    }
+  }
   if (original.id === 7) {
     const switchKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
     for (const required of ["before", "after", "receipt"] as const) {
@@ -1614,6 +1649,28 @@ export function workbookEvidenceNeededError(
       if (!deleteKinds.has(required)) {
         return `${label} GQA-039 delete TAP must execute — leftover draft delete-wrong-chat is not this original — needs ${required} evidence`;
       }
+    }
+  }
+  if (original.id === 41) {
+    const languageKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    for (const required of ["before", "restart", "after", "receipt"] as const) {
+      if (!languageKinds.has(required)) {
+        return `${label} GQA-041 App Language TAP must execute — leftover Settings dest-end / inspect-only Language Selector is not this original — needs ${required} evidence`;
+      }
+    }
+    const languageReceipts =
+      original.evidenceNeeded?.filter((item) => item.kind === "receipt") ?? [];
+    if (languageReceipts.length < 2) {
+      return `${label} GQA-041 needs open TAP and confirm TAP receipts — leftover inspect-only Language Selector (do not tap a language) is not this original`;
+    }
+  }
+  if (original.id === 43) {
+    const subKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!subKinds.has("receipt")) {
+      return `${label} GQA-043 SuperGrok row TAP must execute — leftover Settings dest-end / home banner / hide-upsell inspect is not this original`;
+    }
+    if (!subKinds.has("view")) {
+      return `${label} GQA-043 needs SuperGrok subscription/upgrade view — leftover Settings dest-end / Unlock extended capabilities pill is not this original`;
     }
   }
   if (!original.evidenceNeeded) return undefined;
