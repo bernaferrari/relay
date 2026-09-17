@@ -166,6 +166,30 @@ test("checklist rows use job canonical findings and ignore locale codes", () => 
   assert.equal(rows[1]?.afterPng, "logged-out/screenshots/001.png");
 });
 
+test("dest-phase identity is dest wait-for, not leftover Close last-frame", () => {
+  const rows = reviewChecklistRows({
+    cases: [
+      {
+        jobId: "job-sidebar",
+        name: "Sidebar",
+        status: "ok",
+        frames: [
+          "android/screenshots/001-001.png",
+          "android/screenshots/002-002.png",
+          "android/screenshots/003-005.png",
+        ],
+        destIdentityFrame: "frames/002.png",
+      },
+    ],
+    findings: [],
+    pendingReviewJobIds: new Set(["job-sidebar"]),
+  });
+  assert.equal(rows[0]?.status, "pending review");
+  assert.equal(rows[0]?.beforePng, "android/screenshots/001-001.png");
+  assert.equal(rows[0]?.afterPng, "android/screenshots/002-002.png");
+  assert.notEqual(rows[0]?.afterPng, "android/screenshots/003-005.png");
+});
+
 test("todo file items merge as unbound todo rows", () => {
   const rows = mergeReviewChecklistTodos(
     [

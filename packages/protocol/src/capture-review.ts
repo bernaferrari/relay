@@ -175,13 +175,30 @@ export function isCaptureReviewLeftoverPhase(phase?: string): boolean {
   return phase?.trim() === CAPTURE_REVIEW_LEFTOVER_PHASE;
 }
 
-/** Dest slots bind dest-phase pixels only. Leftover Close/Back cannot fill dest. */
+/** Dest slots bind dest-phase pixels only. Leftover Close/Back cannot fill dest,
+ * including unphased freeze slots (no `::dest` suffix). */
 function captureReviewFillsDestPhase(
   artifactPhase: string | undefined,
   slotPhase: string | undefined,
 ): boolean {
+  if (isCaptureReviewLeftoverPhase(artifactPhase) && !isCaptureReviewLeftoverPhase(slotPhase)) {
+    return false;
+  }
   if (!isCaptureReviewDestPhase(slotPhase)) return true;
   return isCaptureReviewDestPhase(artifactPhase) && !isCaptureReviewLeftoverPhase(artifactPhase);
+}
+
+function checkpointFamilyKey(item: { checkpointId?: string; stepId?: string }): string | undefined {
+  return item.checkpointId?.trim() || item.stepId?.trim() || undefined;
+}
+
+function sameCheckpointFamily(
+  left: { checkpointId?: string; stepId?: string },
+  right: { checkpointId?: string; stepId?: string },
+): boolean {
+  const leftKey = checkpointFamilyKey(left);
+  const rightKey = checkpointFamilyKey(right);
+  return Boolean(leftKey && rightKey && leftKey === rightKey);
 }
 
 /** Dest-end identity prefers dest-phase capture-review. Leftover Close/Back
@@ -1027,10 +1044,24 @@ function bindArtifactToSlots(
 function artifactImpersonatesDestSlot(
   artifact: CaptureReviewItem,
   slots: readonly CaptureReviewPlannedSlot[],
+  destArtifacts: readonly CaptureReviewItem[],
 ): boolean {
+  if (isCaptureReviewDestPhase(artifact.phase)) return false;
+  const destExists = destArtifacts.some((dest) => sameCheckpointFamily(artifact, dest));
+  if (destExists) {
+    return slots.some((slot) => {
+      if (
+        isCaptureReviewLeftoverPhase(slot.phase) &&
+        isCaptureReviewLeftoverPhase(artifact.phase)
+      ) {
+        return false;
+      }
+      if (artifact.slotId && artifact.slotId === captureReviewSlotId(slot)) return true;
+      return sameCheckpointFamily(artifact, slot);
+    });
+  }
   return slots.some((slot) => {
     if (!isCaptureReviewDestPhase(slot.phase)) return false;
-    if (isCaptureReviewDestPhase(artifact.phase)) return false;
     if (artifact.slotId && artifact.slotId === captureReviewSlotId(slot)) return true;
     const checkpoint = artifact.checkpointId ?? artifact.stepId;
     if (checkpoint && checkpoint === slot.checkpointId) return true;
@@ -1125,9 +1156,14 @@ export function resolveCaptureReviewQueue(input: {
     items.push(...planned.map(plannedItem));
     const bound = new Set<number>();
     const extras: CaptureReviewItem[] = [];
-    for (const artifact of artifacts) {
+    const destArtifacts = artifacts.filter((item) => isCaptureReviewDestPhase(item.phase));
+    const ordered = [
+      ...destArtifacts,
+      ...artifacts.filter((item) => !isCaptureReviewDestPhase(item.phase)),
+    ];
+    for (const artifact of ordered) {
       if (bindArtifactToSlots(artifact, items, planned, bound)) continue;
-      if (artifactImpersonatesDestSlot(artifact, planned)) continue;
+      if (artifactImpersonatesDestSlot(artifact, planned, destArtifacts)) continue;
       extras.push(artifact);
     }
     items.push(...extras);

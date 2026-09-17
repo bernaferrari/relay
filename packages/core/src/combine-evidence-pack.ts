@@ -17,7 +17,10 @@ import type {
   CombineEvidencePackManifest,
   CaptureReviewDecision,
 } from "@relay/protocol";
-import { formatCaptureReviewCoverageSummary } from "@relay/protocol";
+import {
+  formatCaptureReviewCoverageSummary,
+  captureReviewIdentityFramePaths,
+} from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import { pngDimensions } from "./ios-geometry.js";
 import { frameObservations } from "./frame-observation.js";
@@ -762,8 +765,16 @@ export async function exportCombineEvidencePack(input: {
       )
       .flatMap((item) => (item.runId ? [item.runId] : [])),
   );
+  const destIdentityByJob = new Map(
+    input.jobs.map((job) => [job.id, captureReviewIdentityFramePaths(job.artifacts ?? [])[0]]),
+  );
   const checklistRows = reviewChecklistRows({
-    cases: manifest.cases,
+    cases: manifest.cases.map((item) => ({
+      ...item,
+      ...(destIdentityByJob.get(item.jobId)
+        ? { destIdentityFrame: destIdentityByJob.get(item.jobId) }
+        : {}),
+    })),
     findings: analysis.findings,
     visualComparisonByJobId: await readVisualComparisonIdsByRunId(runsRoot()),
     todoItems: input.todoItems,

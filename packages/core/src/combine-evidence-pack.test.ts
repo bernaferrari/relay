@@ -833,3 +833,92 @@ test("capture-review export keeps 29 pending + 1 blocked Imagine distinct from p
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("pack checklist dest identity is dest wait-for, not leftover Close last-frame", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-pack-dest-identity-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = directory;
+  try {
+    const runDir = join(directory, "sidebar");
+    await mkdir(join(runDir, "frames"), { recursive: true });
+    await writeFile(join(runDir, "frames", "001.png"), "before");
+    await writeFile(join(runDir, "frames", "002.png"), "dest-wait");
+    await writeFile(join(runDir, "frames", "005.png"), "leftover-close");
+    const job = {
+      id: "job-sidebar-dest",
+      action: "rc23-screenshot-first",
+      title: "Sidebar",
+      status: "ok",
+      outcome: "passed",
+      batchId: "dest-identity",
+      runDir,
+      frames: [
+        { path: "frames/001.png", caption: "before", capturedAt: 1 },
+        { path: "frames/002.png", caption: "Sidebar dest", capturedAt: 2 },
+        { path: "frames/005.png", caption: "Close leftover", capturedAt: 3 },
+      ],
+      steps: [],
+      artifacts: [
+        {
+          kind: "app-map-test-execution-intent",
+          capturedAt: 1,
+          data: {
+            plan: {
+              plannedSlots: [
+                {
+                  requirementId: "rc23-screenshot-first",
+                  checkpointId: "sidebar",
+                  caption: "Sidebar",
+                  attempt: 1,
+                },
+              ],
+            },
+          },
+        },
+        {
+          kind: "capture-review",
+          capturedAt: 2,
+          data: {
+            caption: "Close",
+            framePath: "frames/005.png",
+            imageSha256: "close-leftover",
+            checkpointId: "sidebar",
+            attempt: 1,
+            phase: "leftover",
+          },
+        },
+        {
+          kind: "capture-review",
+          capturedAt: 3,
+          data: {
+            caption: "Sidebar",
+            framePath: "frames/002.png",
+            imageSha256: "dest-wait",
+            checkpointId: "sidebar",
+            attempt: 1,
+            phase: "dest",
+            policy: "fast",
+          },
+        },
+      ],
+      resolvedInputs: { locale: "sidebar" },
+      recipeId: "rc23-screenshot-first",
+    } as unknown as TestJob;
+    const pack = await exportCombineEvidencePack({
+      batchId: "dest-identity",
+      jobs: [job],
+      title: "Dest identity",
+    });
+    const checklist = JSON.parse(
+      await readFile(join(pack.rootDir, "checklist.json"), "utf8"),
+    ) as Array<{ afterPng?: string; beforePng?: string }>;
+    assert.equal(checklist.length, 1);
+    assert.match(checklist[0]?.afterPng ?? "", /002\.png$/u);
+    assert.doesNotMatch(checklist[0]?.afterPng ?? "", /005\.png$/u);
+    assert.notEqual(checklist[0]?.afterPng, checklist[0]?.beforePng);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
+});

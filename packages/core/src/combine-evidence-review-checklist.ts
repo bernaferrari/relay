@@ -6,7 +6,7 @@
  * page; the only accept path linked here is `relay run visual review`.
  */
 import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { CombineEvidenceFinding, CombineEvidenceFindingCode } from "@relay/protocol";
 
 export const REVIEW_CHECKLIST_STATUSES = [
@@ -46,6 +46,8 @@ export type ReviewChecklistCase = {
   status: string;
   frames: readonly string[];
   note?: string;
+  /** Dest-phase identity raster. Leftover Close last-frame cannot fill dest. */
+  destIdentityFrame?: string;
 };
 
 const JOB_FINDING_CODES: readonly CombineEvidenceFindingCode[] = [
@@ -87,13 +89,31 @@ export function visualReviewCommand(jobId: string): string {
   return `relay run visual review ${jobId}`;
 }
 
-export function reviewChecklistFramePair(frames: readonly string[]): {
+/** Match dest identity `frames/002.png` onto pack `002-002.png` / `002.png`. */
+export function reviewChecklistDestIdentityFrame(
+  frames: readonly string[],
+  destIdentityFrame?: string,
+): string | undefined {
+  const identity = destIdentityFrame?.trim();
+  if (!identity) return undefined;
+  const name = basename(identity);
+  return frames.find((path) => {
+    const pack = basename(path);
+    return pack === name || pack.endsWith(`-${name}`);
+  });
+}
+
+export function reviewChecklistFramePair(
+  frames: readonly string[],
+  destIdentityFrame?: string,
+): {
   beforePng?: string;
   afterPng?: string;
 } {
   const shots = frames.filter((path) => !/(?:^|\/)full\.png$/u.test(path));
   if (!shots.length) return {};
-  return { beforePng: shots[0], afterPng: shots.at(-1) };
+  const dest = reviewChecklistDestIdentityFrame(shots, destIdentityFrame);
+  return { beforePng: shots[0], afterPng: dest ?? shots.at(-1) };
 }
 
 /**
@@ -147,7 +167,7 @@ export function reviewChecklistRows(input: {
   };
   const rows = input.cases.map((item) => {
     const findingCode = jobFindingCodeForChecklist(input.findings, item.jobId);
-    const frames = reviewChecklistFramePair(item.frames);
+    const frames = reviewChecklistFramePair(item.frames, item.destIdentityFrame);
     const comparisonId = comparisonOf(item.jobId);
     return {
       id: item.jobId,

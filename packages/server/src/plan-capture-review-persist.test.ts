@@ -14,6 +14,7 @@ import {
   type TestJob,
 } from "@relay/core";
 import {
+  CAPTURE_REVIEW_LEFTOVER_PHASE,
   RC23_SCREENSHOT_FIRST_CAPTURED_PENDING,
   captureReviewSlotId,
   formatCaptureReviewCoverageSummary,
@@ -111,6 +112,27 @@ async function persistFreezeSlot(input: {
       },
       ...(hit
         ? [
+            ...(destPhase
+              ? [
+                  {
+                    kind: "capture-review",
+                    capturedAt: input.at,
+                    data: {
+                      caption: "Close",
+                      lookFor: "Leftover Close last-frame",
+                      framePath: "frames/005.png",
+                      imageSha256: "close-leftover",
+                      checkpointId: input.slot.checkpointId,
+                      stepId: input.slot.checkpointId,
+                      attempt: 1,
+                      requirementId: input.slot.requirementId,
+                      configuration: input.slot.configuration,
+                      slotId,
+                      phase: CAPTURE_REVIEW_LEFTOVER_PHASE,
+                    },
+                  },
+                ]
+              : []),
             {
               kind: "capture-review",
               capturedAt: input.at,
@@ -226,6 +248,16 @@ test(
         )?.phase,
         undefined,
       );
+      const webHome = pending.find(
+        (item) => item.checkpointId === "home-chrome" && item.configuration?.browser === "grok-com",
+      );
+      assert.equal(webHome?.framePath, "frames/home-chrome-web.png");
+      assert.notEqual(webHome?.framePath, "frames/005.png");
+      const iosHome = pending.find(
+        (item) => item.checkpointId === "home-chrome" && item.configuration?.app === "ai.x.GrokApp",
+      );
+      assert.equal(iosHome?.framePath, "frames/home-chrome-ios.png");
+      assert.notEqual(iosHome?.framePath, "frames/005.png");
 
       const exported = await reviewer.invoke("job.combine.export", { batchId: freezeBatchId });
       const html = await readFile(join(exported.rootDir, "index.html"), "utf8");

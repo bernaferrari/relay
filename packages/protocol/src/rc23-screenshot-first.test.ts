@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CAPTURE_REVIEW_LEFTOVER_PHASE,
   captureReviewIdentityFramePaths,
   captureReviewSlotId,
   formatCaptureReviewCoverageSummary,
@@ -181,6 +182,42 @@ test("freeze mapping stamps dest-phase on web/iOS artifacts; Android dest-wait s
   assert.equal(counts.missing, 0);
   assert.equal(counts.pending, 29);
   assert.equal(counts.accepted, 0);
+});
+
+test("freeze dest identity stays dest wait-for when leftover Close last-frame is also recorded", () => {
+  const runs = rc23ScreenshotFirstRuns();
+  const webHome = runs.find(
+    (run) =>
+      run.plannedSlots[0]?.checkpointId === "home-chrome" &&
+      run.plannedSlots[0]?.configuration?.browser === "grok-com",
+  )!;
+  const leftoverClose = {
+    kind: "capture-review",
+    data: {
+      caption: "Close",
+      framePath: "frames/005.png",
+      imageSha256: "close-leftover",
+      checkpointId: "home-chrome",
+      attempt: 1,
+      phase: CAPTURE_REVIEW_LEFTOVER_PHASE,
+      configuration: RC23_SCREENSHOT_FIRST_PLATFORM_CONFIGURATION.web,
+    },
+  };
+  const mixed = [...(webHome.artifacts ?? []), leftoverClose];
+  assert.deepEqual(captureReviewIdentityFramePaths(mixed), ["frames/home-chrome-web.png"]);
+  const queue = resolvePlanCaptureReviewQueue([
+    {
+      runId: webHome.runId,
+      plannedSlots: webHome.plannedSlots,
+      artifacts: mixed,
+    },
+  ]);
+  assert.equal(queue.items.length, 1);
+  assert.equal(queue.summary.planned, 1);
+  assert.equal(queue.items[0]?.status, "pending");
+  assert.equal(queue.items[0]?.framePath, "frames/home-chrome-web.png");
+  assert.notEqual(queue.items[0]?.framePath, "frames/005.png");
+  assert.equal(queue.items[0]?.phase, "dest");
 });
 
 test("30 planned; 29 captured + 1 blocked + 0 missing = 30; mixed 12 is not complete", () => {
