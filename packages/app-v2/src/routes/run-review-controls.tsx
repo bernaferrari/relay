@@ -68,10 +68,7 @@ export function RunReviewControls({
           Save your review decision or compare screenshots with the approved baseline.
         </DialogDescription>
         {service.review ? (
-          <div
-            className="relay-report-review-actions flex flex-wrap items-center gap-2"
-            aria-label="Run review decision"
-          >
+          <div className="flex flex-wrap items-center gap-2" aria-label="Run review decision">
             <Button
               size="sm"
               variant="outline"
@@ -99,7 +96,7 @@ export function RunReviewControls({
           </div>
         ) : null}
         {service.compareVisual ? (
-          <div className="relay-report-visual-review grid content-start justify-items-start gap-3">
+          <div className="grid content-start justify-items-start gap-3">
             <Button
               size="sm"
               variant="outline"
@@ -109,7 +106,7 @@ export function RunReviewControls({
               {compare.isPending ? "Comparing…" : "Compare screenshots"}
             </Button>
             {compare.data ? (
-              <div className="relay-report-visual-result grid gap-2 py-2">
+              <div className="grid gap-2 py-2">
                 <strong>{visualComparisonLabel(compare.data.code)}</strong>
                 <span>
                   {compare.data.diff.changedFrames} changed · {compare.data.diff.addedFrames} added
@@ -120,7 +117,7 @@ export function RunReviewControls({
                   {visualPendingCopy(compare.data.code)}
                 </p>
                 <div
-                  className="relay-report-review-actions flex flex-wrap items-center gap-2"
+                  className="flex flex-wrap items-center gap-2"
                   aria-label="Visual review decision"
                 >
                   <Button
@@ -156,17 +153,14 @@ export function RunReviewControls({
         ) : null}
         {reviewMessage ? (
           <p
-            className="relay-report-review-saved rounded-md bg-emerald-500/10 p-2 text-sm text-emerald-700 dark:text-emerald-300"
+            className="rounded-md bg-emerald-500/10 p-2 text-sm text-emerald-700 dark:text-emerald-300"
             role="status"
           >
             {reviewMessage}
           </p>
         ) : null}
         {problem ? (
-          <p
-            className="relay-settings-error mt-3 text-sm leading-relaxed text-destructive"
-            role="alert"
-          >
+          <p className="mt-3 text-sm leading-relaxed text-destructive" role="alert">
             {errorMessage(problem)}
           </p>
         ) : null}

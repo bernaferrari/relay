@@ -488,7 +488,7 @@ export function DevicePage() {
                   </h2>
                 </div>
                 <div className="grid gap-4">
-                  <div className="relay-form-field grid min-w-0 gap-2 text-sm [&>label]:font-medium">
+                  <div className="grid min-w-0 gap-2 text-sm [&>label]:font-medium">
                     {appControlsSupported ? (
                       <InstalledAppChoice
                         service={deviceService}
@@ -726,7 +726,7 @@ function DeviceLivePreview({
       aria-labelledby="device-live-title"
     >
       <div className="flex shrink-0 items-center justify-between gap-4 px-3 py-2">
-        <h2 className="text-[13px] font-medium" id="device-live-title">
+        <h2 className="text-sm font-medium" id="device-live-title">
           Live preview
         </h2>
         {status === "streaming" || (status === "idle" && !pending) ? (

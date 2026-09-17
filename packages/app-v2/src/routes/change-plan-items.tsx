@@ -11,9 +11,9 @@ export function VerificationItem({
 }) {
   const test = detail.names.tests[`${item.appId}:${item.testId}`] ?? humanize(item.testId);
   return (
-    <li className="relay-verification-item border-t border-border py-3 first:border-t-0 first:pt-0">
-      <strong className="block text-[15px] font-medium text-foreground">{test}</strong>
-      <span className="mt-0.5 block text-[13px] text-muted-foreground">
+    <li className="border-t border-border py-3 first:border-t-0 first:pt-0">
+      <strong className="block text-sm font-medium text-foreground">{test}</strong>
+      <span className="mt-0.5 block text-sm text-muted-foreground">
         {item.targetName} · {platformLabel(item.platform)}
       </span>
     </li>

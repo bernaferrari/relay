@@ -42,7 +42,7 @@ function versionLabel(device: ProductDevice): string | undefined {
   if (!device.osVersion) return undefined;
   return `${device.platform === "android" ? "Android" : device.platform === "ios" ? "iOS" : "Version"} ${device.osVersion}`;
 }
-const rowClass = "min-h-8 gap-2.5 px-2 text-[13px]";
+const rowClass = "min-h-8 gap-2.5 px-2 text-sm";
 
 export function DeviceDestinationButton({
   label: triggerLabel,
@@ -86,7 +86,7 @@ export function DeviceDestinationButton({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="relay-destination-trigger relay-electron-no-drag [-webkit-app-region:no-drag] inline-flex h-7 max-w-[12.5rem] items-center gap-1 rounded-md px-2.5 text-[13px] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
+        className="[-webkit-app-region:no-drag] inline-flex h-7 max-w-50 items-center gap-1 rounded-md px-2.5 text-sm text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
         aria-label={triggerLabel ?? `Device or browser: ${label}`}
       >
         <MonitorSmartphone className="size-3.5 shrink-0" aria-hidden="true" />
@@ -104,7 +104,7 @@ export function DeviceDestinationButton({
             if (!members.length) return null;
             return (
               <DropdownMenuGroup key={group}>
-                <DropdownMenuLabel className="px-2 pb-1 pt-2 text-[11px] font-medium">
+                <DropdownMenuLabel className="px-2 pb-1 pt-2 text-xs font-medium">
                   {group}
                 </DropdownMenuLabel>
                 {members.map((device) => {
@@ -122,7 +122,7 @@ export function DeviceDestinationButton({
                         {device.name}
                       </span>
                       {device.osVersion ? (
-                        <span className="text-[11px] text-muted-foreground">
+                        <span className="text-xs text-muted-foreground">
                           {versionLabel(device)}
                         </span>
                       ) : null}
@@ -155,7 +155,7 @@ export function DeviceDestinationButton({
                 <DropdownMenuSub key={group}>
                   <DropdownMenuSubTrigger className={rowClass}>
                     <span className="flex-1">{group}</span>
-                    <span className="text-[11px] text-muted-foreground">{members.length}</span>
+                    <span className="text-xs text-muted-foreground">{members.length}</span>
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent className="w-80 max-h-[min(360px,60dvh)] overflow-y-auto">
                     <DropdownMenuGroup>
@@ -169,7 +169,7 @@ export function DeviceDestinationButton({
                           }
                         >
                           <span className="min-w-0 flex-1 truncate">{device.name}</span>
-                          <span className="text-[11px] text-muted-foreground">
+                          <span className="text-xs text-muted-foreground">
                             {versionLabel(device) ??
                               (members.filter((other) => other.name === device.name).length > 1
                                 ? device.serial.slice(-6)

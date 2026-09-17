@@ -68,7 +68,7 @@ export function LiveTestEditorPane({
     >
       <div className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
-          <h2 id="live-editor-title" className="truncate text-[13px] font-medium">
+          <h2 id="live-editor-title" className="truncate text-sm font-medium">
             {session?.authoring.title ?? "Device"}
           </h2>
           {session ? (

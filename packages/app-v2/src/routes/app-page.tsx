@@ -53,7 +53,7 @@ export function AppPage() {
   }
 
   return (
-    <LibraryPage className="max-w-[1040px]">
+    <LibraryPage className="max-w-5xl">
       {loading ? <PageLoading label="Loading app overview…" /> : null}
       <RecordingProblem error={error} onRetry={retry} retrying={app.isFetching} />
       {app.data ? (

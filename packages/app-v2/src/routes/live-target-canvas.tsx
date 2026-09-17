@@ -213,7 +213,7 @@ export function LiveTargetCanvas({
       <div
         className={
           rail
-            ? "relative flex min-h-[320px] flex-1 items-center justify-center overflow-hidden bg-muted/40"
+            ? "relative flex min-h-80 flex-1 items-center justify-center overflow-hidden bg-muted/40"
             : "relative flex min-h-0 items-center justify-center overflow-visible p-3"
         }
       >

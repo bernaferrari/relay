@@ -58,37 +58,33 @@ export function AppShell({ platform }: { platform: Platform }) {
     <SidebarProvider
       open={navigationOpen}
       onOpenChange={setNavigationOpen}
-      className={classNames(
-        "relay-shell flex h-dvh min-w-0 overflow-hidden bg-sidebar",
-        immersive && "relay-shell--immersive",
-      )}
+      className={classNames(" flex h-dvh min-w-0 overflow-hidden bg-sidebar", immersive && "")}
       data-platform={platform.platform}
     >
       <a
-        className="relay-skip-link bg-primary text-primary-foreground fixed left-1/2 top-2 z-50 inline-flex min-h-11 -translate-x-1/2 -translate-y-[160%] items-center rounded-[var(--radius-md)] px-3 py-2 focus:translate-y-0"
+        className="bg-primary text-primary-foreground fixed left-1/2 top-2 z-50 inline-flex min-h-11 -translate-x-1/2 -translate-y-[160%] items-center rounded-md px-3 py-2 focus:translate-y-0"
         href="#main-content"
       >
         Skip to content
       </a>
       {!immersive ? <Sidebar /> : null}
       <div
-        className={`relay-workspace flex min-h-0 min-w-0 flex-1 flex-col bg-sidebar ${!immersive ? "min-[861px]:pt-[54px]" : ""}`}
+        className={`flex min-h-0 min-w-0 flex-1 flex-col bg-sidebar ${!immersive ? "min-[861px]:pt-14" : ""}`}
       >
         {!immersive ? (
           <header
-            className={`${platform.platform === "desktop" ? "pl-[82px]" : "pl-2.5"} relay-desktop-toolbar relay-electron-drag [-webkit-app-region:drag] fixed inset-x-0 top-0 z-30 hidden h-[54px] items-center gap-2 bg-sidebar pr-2.5 py-1.5 min-[861px]:flex`}
+            className={`${platform.platform === "desktop" ? "pl-20" : "pl-2.5"} [-webkit-app-region:drag] fixed inset-x-0 top-0 z-30 hidden h-14 items-center gap-2 bg-sidebar pr-2.5 py-1.5 min-[861px]:flex`}
             aria-label="Window navigation"
           >
             <SidebarTrigger
               aria-label="Toggle navigation"
               title="Show or hide navigation"
-              className="relay-electron-no-drag [-webkit-app-region:no-drag] size-8 shrink-0"
+              className="[-webkit-app-region:no-drag] size-8 shrink-0"
             />
-            <div className="relay-history-controls relay-electron-no-drag [-webkit-app-region:no-drag] inline-flex items-center gap-px">
+            <div className="[-webkit-app-region:no-drag] inline-flex items-center gap-px">
               <Button
                 size="icon-sm"
                 variant="ghost"
-                className="relay-history-button"
                 aria-label="Go back"
                 onClick={goBack}
                 disabled={!canGoBack}
@@ -98,7 +94,6 @@ export function AppShell({ platform }: { platform: Platform }) {
               <Button
                 size="icon-sm"
                 variant="ghost"
-                className="relay-history-button"
                 aria-label="Go forward"
                 onClick={() => router.history.forward()}
                 disabled={!historyAvailability.canGoForward}
@@ -108,7 +103,7 @@ export function AppShell({ platform }: { platform: Platform }) {
             </div>
             <button
               type="button"
-              className="relay-command-trigger relay-electron-no-drag [-webkit-app-region:no-drag] absolute left-0 inline-flex min-h-9 min-w-[220px] translate-x-(--command-x) items-center gap-2 rounded-[var(--radius-md)] border border-border bg-card px-2 py-0 pl-2.5 text-left text-xs text-muted-foreground transition-transform duration-200 ease-in-out motion-reduce:transition-none"
+              className="[-webkit-app-region:no-drag] absolute left-0 inline-flex min-h-9 min-w-56 translate-x-(--command-x) items-center gap-2 rounded-md border border-border bg-card px-2 py-0 pl-2.5 text-left text-xs text-muted-foreground transition-transform duration-200 ease-in-out motion-reduce:transition-none"
               style={
                 {
                   "--command-x": navigationOpen
@@ -123,7 +118,7 @@ export function AppShell({ platform }: { platform: Platform }) {
             >
               <Search className="size-3.5" aria-hidden="true" />
               <span>Search or run a command</span>
-              <kbd className="min-w-7 rounded-[var(--radius-sm)] border border-border bg-sidebar px-[5px] py-0.5 text-center text-[10px] leading-[1.4] text-muted-foreground">
+              <kbd className="min-w-7 rounded-sm border border-border bg-sidebar px-1.5 py-0.5 text-center text-xs leading-snug text-muted-foreground">
                 {modifierKey()} K
               </kbd>
             </button>
@@ -135,18 +130,15 @@ export function AppShell({ platform }: { platform: Platform }) {
         ) : null}
         <header
           className={[
-            "relay-mobile-header relay-electron-drag [-webkit-app-region:drag] flex min-h-12 items-center gap-2 border-b border-border bg-background px-2 min-[861px]:hidden",
-            platform.platform === "desktop" ? "min-h-[60px] pl-[82px]" : "",
+            " [-webkit-app-region:drag] flex min-h-12 items-center gap-2 border-b border-border bg-background px-2 min-[861px]:hidden",
+            platform.platform === "desktop" ? "min-h-[60px] pl-20" : "",
           ].join(" ")}
         >
-          <SidebarTrigger
-            className="relay-mobile-menu relay-electron-no-drag [-webkit-app-region:no-drag]"
-            aria-label="Open navigation"
-          />
+          <SidebarTrigger className="[-webkit-app-region:no-drag]" aria-label="Open navigation" />
           <Button
             size="icon-sm"
             variant="ghost"
-            className="relay-electron-no-drag [-webkit-app-region:no-drag] size-9"
+            className="[-webkit-app-region:no-drag] size-9"
             aria-label="Go back"
             onClick={goBack}
             disabled={!canGoBack}

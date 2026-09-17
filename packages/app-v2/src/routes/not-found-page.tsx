@@ -5,7 +5,7 @@ import { FormPage, PageHeader } from "../components/page-layout";
 
 export function NotFoundPage() {
   return (
-    <FormPage className="relay-not-found pt-[clamp(72px,14vh,144px)]">
+    <FormPage className="pt-[clamp(72px,14vh,144px)]">
       <PageHeader
         context="Not found"
         title="This page is not available"

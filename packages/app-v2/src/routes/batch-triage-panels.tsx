@@ -31,7 +31,7 @@ import {
 } from "./batch-triage";
 
 const reportLinkClass =
-  "inline-flex min-h-11 items-center gap-1 text-[13px] font-semibold text-foreground underline underline-offset-4";
+  "inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-foreground underline underline-offset-4";
 
 export function BatchFailureClusters({
   clusters,
@@ -48,15 +48,15 @@ export function BatchFailureClusters({
 }) {
   if (!clusters.length) return null;
   return (
-    <section className="relay-batch-clusters mt-8" aria-labelledby="batch-clusters-title">
-      <div className="grid max-w-[62ch] gap-1">
+    <section className="mt-8" aria-labelledby="batch-clusters-title">
+      <div className="grid max-w-prose gap-1">
         <h2
           id="batch-clusters-title"
-          className="text-[20px] font-semibold tracking-tight text-pretty text-foreground"
+          className="text-xl font-semibold tracking-tight text-pretty text-foreground"
         >
           Same failure
         </h2>
-        <p className="text-[13px] leading-5 text-muted-foreground">
+        <p className="text-sm leading-5 text-muted-foreground">
           <span className="sr-only">{batchClusterGroupCount(clusters.length)}. </span>
           Select a group to rerun the same cases.
         </p>
@@ -70,13 +70,9 @@ export function BatchFailureClusters({
             <li
               className={`grid min-h-14 grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-xl border border-border bg-card py-3.5 pr-3 pl-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] ${
                 product
-                  ? "border-l-[3px] border-l-border-critical-selected"
-                  : "border-l-[3px] border-l-border"
-              } ${
-                checked
-                  ? "bg-accent"
-                  : ""
-              }`}
+                  ? "border-l-4 border-l-border-critical-selected"
+                  : "border-l-4 border-l-border"
+              } ${checked ? "bg-accent" : ""}`}
               key={cluster.id}
             >
               <Checkbox
@@ -86,11 +82,11 @@ export function BatchFailureClusters({
                 aria-label={`Select ${copy.title} to rerun`}
               />
               <div className="grid min-w-0 gap-1">
-                <p className="text-[12px] leading-4 text-muted-foreground">{copy.lane}</p>
-                <strong className="text-[15px] font-semibold leading-5 text-pretty text-foreground">
+                <p className="text-xs leading-4 text-muted-foreground">{copy.lane}</p>
+                <strong className="text-sm font-semibold leading-5 text-pretty text-foreground">
                   {copy.title}
                 </strong>
-                <p className="text-[13px] leading-5 text-muted-foreground">{copy.meta}</p>
+                <p className="text-sm leading-5 text-muted-foreground">{copy.meta}</p>
               </div>
               <Link
                 className={`${reportLinkClass} col-start-2 sm:col-start-auto sm:justify-self-end`}
@@ -158,27 +154,24 @@ export function BatchResultMatrix({
     : [];
 
   return (
-    <section className="relay-batch-matrix mt-8 grid gap-3" aria-labelledby="batch-cases-title">
-      <h2
-        id="batch-cases-title"
-        className="text-[20px] font-semibold tracking-tight text-foreground"
-      >
+    <section className="mt-8 grid gap-3" aria-labelledby="batch-cases-title">
+      <h2 id="batch-cases-title" className="text-xl font-semibold tracking-tight text-foreground">
         Results
       </h2>
       {showMatrix ? (
-        <div className="relay-batch-matrix-scroll overflow-auto rounded-xl border border-border">
-          <table className="min-w-[560px] w-full border-separate border-spacing-0">
+        <div className="overflow-auto rounded-xl border border-border">
+          <table className="min-w-xl w-full border-separate border-spacing-0">
             <thead>
               <tr>
                 <th
-                  className="sticky left-0 z-[1] w-[190px] min-w-[140px] border-r border-b border-border bg-background p-3 text-left text-xs"
+                  className="sticky left-0 z-[1] w-48 min-w-36 border-r border-b border-border bg-background p-3 text-left text-xs"
                   scope="col"
                 >
                   Test
                 </th>
                 {matrix.columns.map((column) => (
                   <th
-                    className="min-w-[184px] border-r border-b border-border p-3 text-left text-xs"
+                    className="min-w-44 border-r border-b border-border p-3 text-left text-xs"
                     scope="col"
                     key={column.id}
                   >
@@ -186,7 +179,7 @@ export function BatchResultMatrix({
                       {column.label}
                     </strong>
                     {column.platform ? (
-                      <small className="mt-1 block text-[10px] text-muted-foreground">
+                      <small className="mt-1 block text-xs text-muted-foreground">
                         {platformLabel(column.platform)}
                       </small>
                     ) : null}
@@ -198,7 +191,7 @@ export function BatchResultMatrix({
               {rows.map((row) => (
                 <tr key={row.id}>
                   <th
-                    className="sticky left-0 z-[1] w-[190px] min-w-[140px] border-r border-b border-border bg-background p-3 text-left align-top"
+                    className="sticky left-0 z-[1] w-48 min-w-36 border-r border-b border-border bg-background p-3 text-left align-top"
                     scope="row"
                   >
                     <strong className="block text-pretty font-semibold text-foreground">
@@ -208,7 +201,7 @@ export function BatchResultMatrix({
                   {row.visibleCells.map(({ column, visible }) => (
                     <td
                       key={column.id}
-                      className="min-w-[184px] border-r border-b border-border p-3 align-top"
+                      className="min-w-44 border-r border-b border-border p-3 align-top"
                     >
                       {visible.length ? (
                         <div className="grid gap-2">
@@ -279,7 +272,7 @@ function PassedCases({
     return (
       <button
         type="button"
-        className="flex w-max items-center gap-1.5 border-t border-border pt-3 text-left text-[13px] text-muted-foreground hover:text-foreground"
+        className="flex w-max items-center gap-1.5 border-t border-border pt-3 text-left text-sm text-muted-foreground hover:text-foreground"
         onClick={onOpen}
       >
         {cases.length} passed
@@ -289,7 +282,7 @@ function PassedCases({
   }
   return (
     <div className="grid gap-1">
-      <p className="text-[11px] text-muted-foreground">{cases.length} passed</p>
+      <p className="text-xs text-muted-foreground">{cases.length} passed</p>
       <ul className="m-0 list-none p-0">
         {cases.map((item) => (
           <li key={item.id}>
@@ -339,7 +332,7 @@ function BatchCaseResult({
   const title = compact ? cellLabel : label;
   return (
     <div
-      className={`relay-batch-result grid items-center gap-3 ${
+      className={`grid items-center gap-3 ${
         compact
           ? "grid-cols-[minmax(0,1fr)_auto] px-1 py-1"
           : quiet
@@ -369,32 +362,32 @@ function BatchCaseResult({
           className={`grid min-w-0 gap-1 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${allowSelect ? "col-start-1 ml-8" : ""}`}
         >
           <strong
-            className={`truncate font-medium text-pretty text-foreground ${quiet ? "text-[13px]" : "text-[15px]"}`}
+            className={`truncate font-medium text-pretty text-foreground ${quiet ? "text-sm" : "text-sm"}`}
           >
             {title}
           </strong>
           {compact ? (
-            <small className="text-[12px] leading-4 text-muted-foreground">{label}</small>
+            <small className="text-xs leading-4 text-muted-foreground">{label}</small>
           ) : (
-            <small className="text-[12px] leading-4 text-muted-foreground">{cellLabel}</small>
+            <small className="text-xs leading-4 text-muted-foreground">{cellLabel}</small>
           )}
           {item.error && problem ? (
-            <small className="text-[13px] leading-5 text-muted-foreground">
+            <small className="text-sm leading-5 text-muted-foreground">
               {formatBatchCaseError(item.error)}
             </small>
           ) : null}
           {review ? (
-            <small className="text-[12px] leading-5 text-muted-foreground">{review}</small>
+            <small className="text-xs leading-5 text-muted-foreground">{review}</small>
           ) : null}
         </Link>
       ) : (
         <span className="grid min-w-0 gap-1">
-          <strong className="truncate text-[15px] font-medium text-pretty text-foreground">
+          <strong className="truncate text-sm font-medium text-pretty text-foreground">
             {title}
           </strong>
-          <small className="text-[12px] leading-4 text-muted-foreground">{cellLabel}</small>
+          <small className="text-xs leading-4 text-muted-foreground">{cellLabel}</small>
           {review ? (
-            <small className="text-[12px] leading-5 text-muted-foreground">{review}</small>
+            <small className="text-xs leading-5 text-muted-foreground">{review}</small>
           ) : null}
         </span>
       )}
@@ -402,7 +395,7 @@ function BatchCaseResult({
         {rerunnable && !allowSelect ? (
           <button
             type="button"
-            className="px-2 text-[13px] text-muted-foreground hover:text-foreground"
+            className="px-2 text-sm text-muted-foreground hover:text-foreground"
             disabled={rerunning}
             onClick={onRerun}
           >

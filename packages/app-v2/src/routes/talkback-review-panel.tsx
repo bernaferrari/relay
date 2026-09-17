@@ -152,7 +152,7 @@ export function TalkBackOverlay({
       {visible.map(({ item, box }) => (
         <div
           key={item.id}
-          className={`absolute left-(--box-left) top-(--box-top) h-(--box-height) w-(--box-width) rounded-[3px] border border-blue-500/50 ${item.id === hoveredId ? "border-blue-500 bg-blue-500/15 ring-1 ring-blue-500" : "bg-blue-500/[0.03]"}`}
+          className={`absolute left-(--box-left) top-(--box-top) h-(--box-height) w-(--box-width) rounded-sm border border-blue-500/50 ${item.id === hoveredId ? "border-blue-500 bg-blue-500/15 ring-1 ring-blue-500" : "bg-blue-500/[0.03]"}`}
           style={
             {
               "--box-left": `${box.left}px`,
@@ -168,7 +168,7 @@ export function TalkBackOverlay({
                 {item.name || item.text || item.description || "No label"}
               </span>
               {item.role ? (
-                <code className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] font-normal text-muted-foreground">
+                <code className="shrink-0 rounded bg-muted px-1 py-0.5 text-xs font-normal text-muted-foreground">
                   {item.role}
                 </code>
               ) : null}

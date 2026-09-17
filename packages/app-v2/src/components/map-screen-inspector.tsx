@@ -255,7 +255,7 @@ function Connections({
   const Icon = outgoing ? ArrowUpRight : ArrowDownLeft;
   return (
     <div className="space-y-1">
-      <h3 className="flex items-center gap-2 pb-1 text-[11px] font-medium text-muted-foreground">
+      <h3 className="flex items-center gap-2 pb-1 text-xs font-medium text-muted-foreground">
         <Icon className="size-3.5 text-muted-foreground" />
         {title}
       </h3>
@@ -267,7 +267,7 @@ function Connections({
             <span className="min-w-0 flex-1">
               <span className="block truncate font-medium">{name}</span>
               {!isRoutineReturn(path) && path.label !== name ? (
-                <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
+                <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                   {path.label}
                 </span>
               ) : null}

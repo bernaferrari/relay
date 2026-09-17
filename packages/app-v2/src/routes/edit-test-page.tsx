@@ -521,7 +521,6 @@ function TestEditorDocument() {
 
   return (
     <WorkbenchPage
-      className="relay-test-editor-page"
       onKeyDown={(event) => {
         const target = event.target as HTMLElement;
         const typing =
@@ -637,10 +636,7 @@ function TestEditorDocument() {
           title="This Test is not available"
           detail="It may have been removed or may belong to another app. Choose a saved Test to continue."
           action={
-            <Link
-              className={productLinkClassName}
-              to="/tests"
-            >
+            <Link className={productLinkClassName} to="/tests">
               Browse saved Tests
             </Link>
           }

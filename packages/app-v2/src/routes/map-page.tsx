@@ -111,7 +111,7 @@ export function MapPage() {
   return (
     <section className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
       <header
-        className={`[-webkit-app-region:drag] flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border px-4 ${platform.platform === "desktop" ? "pl-[82px]" : ""}`}
+        className={`[-webkit-app-region:drag] flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border px-4 ${platform.platform === "desktop" ? "pl-20" : ""}`}
       >
         <div className="[-webkit-app-region:no-drag] flex min-w-0 items-center gap-3">
           <Button
@@ -228,11 +228,7 @@ export function MapPage() {
                   title="No known screens yet"
                   detail="Record a Test to give Relay a starting point for exploration."
                   action={
-                    <Link
-                      className={productLinkClassName}
-                      to="/tests/new"
-                      search={{ app: appId }}
-                    >
+                    <Link className={productLinkClassName} to="/tests/new" search={{ app: appId }}>
                       Record a Test
                     </Link>
                   }
@@ -320,7 +316,7 @@ export function MapPage() {
                       ))}
                   </ul>
                 ) : (
-                  <p className="relay-context-empty rounded-lg border border-dashed border-border p-5 text-sm text-muted-foreground">
+                  <p className="rounded-lg border border-dashed border-border p-5 text-sm text-muted-foreground">
                     No proposal needs a decision.
                   </p>
                 )}
@@ -333,7 +329,7 @@ export function MapPage() {
       map.data &&
       (map.data.screens.length > visibleScreens.length ||
         map.data.paths.length > visiblePaths.length) ? (
-        <p className="relay-action-hint mt-2 text-xs leading-5 text-muted-foreground">
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">
           Canvas shows the first {visibleScreens.length} screens and {visiblePaths.length} paths.
           Use the searchable path list to review all known paths.
         </p>

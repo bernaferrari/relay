@@ -63,7 +63,7 @@ export function MapScreenPreview({
           draggable={false}
           src={url}
           alt={title}
-          className={`${loadedUrl === url ? "" : "invisible"} max-h-full w-auto max-w-full rounded-[4px] object-contain ${thumbnail && !interactive ? "" : "outline outline-1 outline-offset-2"} ${thumbnail && !interactive ? "" : selected ? "outline-blue-400" : "outline-transparent hover:outline-blue-400/50 group-hover/map-screen:outline-blue-400/50 group-focus-visible/map-screen:outline-blue-400"}`}
+          className={`${loadedUrl === url ? "" : "invisible"} max-h-full w-auto max-w-full rounded object-contain ${thumbnail && !interactive ? "" : "outline outline-1 outline-offset-2"} ${thumbnail && !interactive ? "" : selected ? "outline-blue-400" : "outline-transparent hover:outline-blue-400/50 group-hover/map-screen:outline-blue-400/50 group-focus-visible/map-screen:outline-blue-400"}`}
           loading="lazy"
           onLoad={(event) => {
             setLoadedUrl(url);

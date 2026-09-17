@@ -141,7 +141,7 @@ const defaultRecordingService = {
                     durationMs: 1_200,
                     evidenceCount: 2,
                     proofStatus: "verified" as const,
-                    captureProof: "relay-controlled" as const,
+                    captureProof: "" as const,
                   },
                   {
                     id: "apply-code",
@@ -153,7 +153,7 @@ const defaultRecordingService = {
                     durationMs: 3_600,
                     evidenceCount: 3,
                     proofStatus: "verified" as const,
-                    captureProof: "relay-controlled" as const,
+                    captureProof: "" as const,
                   },
                   {
                     id: "review-total",
@@ -166,7 +166,7 @@ const defaultRecordingService = {
                     durationMs: 300,
                     evidenceCount: 1,
                     proofStatus: "pixels-only" as const,
-                    captureProof: "relay-controlled" as const,
+                    captureProof: "" as const,
                   },
                   {
                     id: "place-order",
@@ -178,7 +178,7 @@ const defaultRecordingService = {
                     durationMs: 2_700,
                     evidenceCount: 2,
                     proofStatus: "verified" as const,
-                    captureProof: "relay-controlled" as const,
+                    captureProof: "" as const,
                   },
                 ],
                 timeline: {
@@ -679,7 +679,7 @@ const fixtureSession = {
   appName: "Checkout",
   actorId: "human:fixture",
   actorKind: "human" as const,
-  captureProvenance: "relay-controlled" as const,
+  captureProvenance: "" as const,
   createdAt: VISUAL_NOW - 720_000,
   updatedAt: VISUAL_NOW - 30_000,
   lease: {

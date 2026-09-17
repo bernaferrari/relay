@@ -35,7 +35,7 @@ export function EvidenceImageViewer({
         alt={frame.title}
         width={frame.media.width}
         height={frame.media.height}
-        className={className ?? "max-h-[28rem] w-full max-w-full object-contain"}
+        className={className ?? "max-h-96 w-full max-w-full object-contain"}
         onError={onError}
         onLoad={(event) =>
           setNaturalSize({ src: frame.media!.src, width: event.currentTarget.naturalWidth })

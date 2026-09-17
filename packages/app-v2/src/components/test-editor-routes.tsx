@@ -48,13 +48,13 @@ export function TestEditorRoutes({
               </span>
             </strong>
             {item.reason ? (
-              <p className="text-[11px] leading-snug text-muted-foreground">{item.reason}</p>
+              <p className="text-xs leading-snug text-muted-foreground">{item.reason}</p>
             ) : null}
           </li>
         ))}
       </ul>
       {nativeNotice ? (
-        <p className="text-[11px] leading-snug text-muted-foreground">{nativeNotice}</p>
+        <p className="text-xs leading-snug text-muted-foreground">{nativeNotice}</p>
       ) : null}
     </section>
   );

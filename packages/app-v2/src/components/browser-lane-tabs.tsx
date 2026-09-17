@@ -100,16 +100,16 @@ export function BrowserLaneTabs({
   if (!isolated.length) return null;
 
   return (
-    <section className="relay-browser-lane-tabs mt-4" aria-labelledby="browser-lane-tabs-title">
+    <section className="mt-4" aria-labelledby="browser-lane-tabs-title">
       <div className="flex items-end justify-between gap-3">
         <div>
           <h2
             id="browser-lane-tabs-title"
-            className="text-[13px] font-medium tracking-[-0.01em] text-foreground"
+            className="text-sm font-medium tracking-tight text-foreground"
           >
             Saved configurations
           </h2>
-          <p className="mt-0.5 max-w-[42ch] text-[12px] leading-5 text-muted-foreground">
+          <p className="mt-0.5 max-w-prose text-xs leading-5 text-muted-foreground">
             Each tab is one Lane. Same Lane shares cookies. Different Lanes never do.
           </p>
         </div>
@@ -117,7 +117,7 @@ export function BrowserLaneTabs({
       <div
         role="tablist"
         aria-label="Saved configurations"
-        className="mt-3 flex flex-wrap gap-1.5 rounded-[14px] border border-border bg-muted/55 p-1"
+        className="mt-3 flex flex-wrap gap-1.5 rounded-xl border border-border bg-muted/55 p-1"
       >
         {isolated.map((lane) => {
           const host = browserLaneHostIdentity({
@@ -139,7 +139,7 @@ export function BrowserLaneTabs({
               title={blocker}
               disabled={disabled || Boolean(blocker)}
               onClick={() => openLane(lane)}
-              className="relative min-h-9 rounded-[10px] px-3 text-[12.5px] font-medium tracking-[-0.01em] text-muted-foreground transition-[color,background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 active:scale-[0.97] disabled:opacity-50 aria-selected:bg-[var(--background)] aria-selected:text-foreground aria-selected:shadow-[0_1px_0_color-mix(in_srgb,var(--foreground)_8%,transparent)]"
+              className="relative min-h-9 rounded-lg px-3 text-sm font-medium tracking-tight text-muted-foreground transition-colors duration-150 ease-out hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 active:scale-95 disabled:opacity-50 aria-selected:bg-background aria-selected:text-foreground aria-selected:shadow-sm"
             >
               {browserLaneTabLabel(lane.id)}
             </button>
@@ -147,7 +147,7 @@ export function BrowserLaneTabs({
         })}
       </div>
       {tabs.length ? (
-        <p className="mt-2 text-[12px] text-muted-foreground">
+        <p className="mt-2 text-xs text-muted-foreground">
           Open {tabs.filter((tab) => tab.tabSessionKey === activeKey)[0]?.label ?? "this Lane"} in
           Relay. CLI uses the same id as <code className="font-mono">--lane</code>.
         </p>

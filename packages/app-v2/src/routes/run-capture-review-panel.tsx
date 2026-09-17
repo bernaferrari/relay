@@ -288,7 +288,7 @@ export function CaptureReviewPanel({
                 <button
                   type="button"
                   aria-pressed={index === selectedIndex}
-                  className={`${gallery ? "" : "relay-interactive-row cursor-pointer hover:bg-accent"} flex min-h-20 w-full gap-3 rounded-lg text-left transition-colors focus-visible:outline-2 ${gallery ? "flex-col overflow-hidden pb-1" : "items-center py-2 pl-10 pr-3"} ${index === selectedIndex ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
+                  className={`${gallery ? "" : " cursor-pointer hover:bg-accent"} flex min-h-20 w-full gap-3 rounded-lg text-left transition-colors focus-visible:outline-2 ${gallery ? "flex-col overflow-hidden pb-1" : "items-center py-2 pl-10 pr-3"} ${index === selectedIndex ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
                   onClick={() => onSelect(index)}
                 >
                   {thumb?.media ? (
@@ -303,7 +303,7 @@ export function CaptureReviewPanel({
                     />
                   ) : (
                     <span
-                      className={`flex shrink-0 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground ${gallery ? "aspect-[4/3] w-full" : "h-16 w-20"}`}
+                      className={`flex shrink-0 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground ${gallery ? "aspect-4/3 w-full" : "h-16 w-20"}`}
                     >
                       {blocked ? "Blocked" : "Missing"}
                     </span>

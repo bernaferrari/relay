@@ -18,7 +18,7 @@ export function RunLoading() {
       </div>
       <div
         aria-hidden="true"
-        className="grid min-h-[360px] grid-cols-1 gap-px bg-border/40 md:grid-cols-[minmax(0,1fr)_320px]"
+        className="grid min-h-90 grid-cols-1 gap-px bg-border/40 md:grid-cols-[minmax(0,1fr)_320px]"
       >
         <div className="flex items-center justify-center bg-background/80 p-8">
           <div className="h-64 w-32 rounded-xl bg-muted/70 ring-1 ring-inset ring-border/50" />

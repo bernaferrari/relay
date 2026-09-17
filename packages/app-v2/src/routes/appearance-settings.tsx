@@ -25,7 +25,7 @@ const schemes = [
 ] as const;
 
 const radioCardClassName =
-  "relative grid w-full min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_20px] gap-2 rounded-lg border border-border bg-card p-1.5 pb-3 text-card-foreground outline-none transition-[border-color,background-color,box-shadow,transform] duration-150 ease-out hover:bg-muted/50 active:scale-[0.96] has-data-checked:border-foreground has-data-checked:bg-muted has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50 max-[620px]:grid-cols-[minmax(0,1fr)_20px]";
+  "relative grid w-full min-w-0 cursor-pointer grid-cols-[minmax(0,1fr)_20px] gap-2 rounded-lg border border-border bg-card p-1.5 pb-3 text-card-foreground outline-none transition-[border-color,background-color,box-shadow,transform] duration-150 ease-out hover:bg-muted/50 active:scale-95 has-data-checked:border-foreground has-data-checked:bg-muted has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50 max-[620px]:grid-cols-[minmax(0,1fr)_20px]";
 
 function SchemePreview({ value }: { value: ColorSchemePreference }) {
   const pane = (tone: "light" | "dark") =>
@@ -42,7 +42,7 @@ function SchemePreview({ value }: { value: ColorSchemePreference }) {
       : "bg-[var(--relay-preview-light-line)]";
   return (
     <span
-      className="relative block h-[86px] w-full overflow-hidden rounded-[10px] border border-border"
+      className="relative block h-22 w-full overflow-hidden rounded-lg border border-border"
       aria-hidden="true"
     >
       {value === "system" ? (
@@ -59,9 +59,7 @@ function SchemePreview({ value }: { value: ColorSchemePreference }) {
           <span className={`absolute inset-0 ${pane(value)}`} />
           <span className={`absolute inset-y-0 left-0 w-[30%] ${rail(value)}`} />
           <span className={`absolute right-3 top-5 h-2 w-[48%] rounded-full ${line(value)}`} />
-          <span
-            className={`absolute right-3 top-9 h-[26px] w-[58%] rounded-[5px] ${rail(value)}`}
-          />
+          <span className={`absolute right-3 top-9 h-6.5 w-[58%] rounded-sm ${rail(value)}`} />
         </>
       )}
     </span>
@@ -175,7 +173,7 @@ export function AppearanceSettings() {
         </RadioGroup>
 
         <SettingsGroup title="Live view" id="accessibility-names">
-          <p className="mb-3 max-w-[52ch] text-[13px] leading-5 text-muted-foreground">
+          <p className="mb-3 max-w-prose text-sm leading-5 text-muted-foreground">
             Show the accessibility name of each control on the live view. TalkBack and VoiceOver
             stay off.
           </p>
@@ -189,7 +187,7 @@ export function AppearanceSettings() {
           >
             {ACCESSIBILITY_LABEL_MODE_OPTIONS.map((option) => (
               <FieldLabel key={option.value} className={radioCardClassName}>
-                <span className="col-span-2 grid min-h-[86px] content-center gap-1 px-1 py-3">
+                <span className="col-span-2 grid min-h-22 content-center gap-1 px-1 py-3">
                   <span className="font-medium text-foreground">{option.label}</span>
                   <span className="text-muted-foreground">{option.description}</span>
                 </span>
@@ -200,7 +198,7 @@ export function AppearanceSettings() {
         </SettingsGroup>
 
         {problem ? (
-          <div role="alert" className="grid gap-2 text-[13px] text-muted-foreground">
+          <div role="alert" className="grid gap-2 text-sm text-muted-foreground">
             <p>{problem}</p>
             {saveState === "failed" ? (
               <Button

@@ -92,7 +92,7 @@ export function createChangeProductService(platform: Platform): ChangeProductSer
         await journey.approve({
           changeId,
           expectedVersion,
-          decisionId: `relay-ui-${changeId}-${expectedVersion}`.slice(0, 256),
+          decisionId: `${changeId}-${expectedVersion}`.slice(0, 256),
           reason: "Reviewed and approved in Relay.",
           confirm: true,
         }),

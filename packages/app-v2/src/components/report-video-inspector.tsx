@@ -103,7 +103,7 @@ export function ReportVideoInspector({
             }
           }}
           onError={() => setFailed(true)}
-          className="max-h-[32rem] w-full rounded-lg bg-black"
+          className="max-h-128 w-full rounded-lg bg-black"
         />
       )}
       {diagnostics.length ? (

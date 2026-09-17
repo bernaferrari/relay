@@ -100,16 +100,14 @@ export function createWorkflowFixture(store: Store) {
                     intent: "Open the cart",
                     stepCount: 1,
                     proofStatus: "verified" as const,
-                    captureProof: "relay-controlled" as const,
+                    captureProof: "" as const,
                   },
                   {
                     id: "workflow-check-total",
                     intent: "Check the order total",
                     stepCount: 1,
                     proofStatus: replayFailed ? ("unverified" as const) : ("verified" as const),
-                    captureProof: replayFailed
-                      ? ("relay-controlled" as const)
-                      : ("replay-proved" as const),
+                    captureProof: replayFailed ? ("" as const) : ("replay-proved" as const),
                   },
                 ],
                 ...(data.replayAttempts

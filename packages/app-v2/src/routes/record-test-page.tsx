@@ -512,7 +512,7 @@ function RecordingWorkspace({
               <DialogTrigger
                 render={
                   <Button
-                    className="inline-flex w-fit relay-electron-no-drag [-webkit-app-region:no-drag]"
+                    className="inline-flex w-fit [-webkit-app-region:no-drag]"
                     variant="ghost"
                     size="sm"
                   />
@@ -524,7 +524,7 @@ function RecordingWorkspace({
             actions={
               <>
                 <Button
-                  className="relay-electron-no-drag [-webkit-app-region:no-drag]"
+                  className="[-webkit-app-region:no-drag]"
                   variant="default"
                   size="sm"
                   onClick={() =>
@@ -580,7 +580,7 @@ function RecordingWorkspace({
                 aria-labelledby="capture-timeline-title"
               >
                 <div className="flex items-center justify-between gap-3 border-b border-border px-1 pb-2">
-                  <h2 id="capture-timeline-title" className="text-[13px] font-medium">
+                  <h2 id="capture-timeline-title" className="text-sm font-medium">
                     Recorded steps
                     {liveInputBusy || action.isPending ? (
                       <LoaderCircle
@@ -639,7 +639,7 @@ function RecordingWorkspace({
                     <RecordingActionList actions={recordedActions} />
                   </ScrollArea>
                 ) : (
-                  <div className="grid min-h-[180px] place-items-center px-4 text-center text-sm text-muted-foreground">
+                  <div className="grid min-h-44 place-items-center px-4 text-center text-sm text-muted-foreground">
                     <p>
                       {captureReady ? "Taps and typing appear here." : "No recorded steps yet."}
                     </p>

@@ -23,12 +23,12 @@ export function ReportTimeline({
             key={item.id}
             className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-baseline gap-x-3 border-b border-border py-3"
           >
-            <span className="text-[12px] tabular-nums text-muted-foreground" aria-hidden="true">
+            <span className="text-xs tabular-nums text-muted-foreground" aria-hidden="true">
               {index + 1}
             </span>
             <span className="grid min-w-0 gap-0.5">
-              <strong className="text-[13px] font-medium">{item.title}</strong>
-              <small className="text-[12px] text-muted-foreground">
+              <strong className="text-sm font-medium">{item.title}</strong>
+              <small className="text-xs text-muted-foreground">
                 {timelineStateLabel(item.state)}
                 {item.evidenceCount
                   ? ` · ${item.evidenceCount} ${item.evidenceCount === 1 ? "screenshot" : "screenshots"}`
@@ -36,7 +36,7 @@ export function ReportTimeline({
               </small>
             </span>
             {item.durationMs !== undefined ? (
-              <span className="text-[12px] tabular-nums text-muted-foreground">
+              <span className="text-xs tabular-nums text-muted-foreground">
                 {formatDuration(item.durationMs)}
               </span>
             ) : null}
@@ -88,19 +88,19 @@ export function EvidencePreview({
                 </span>
               ) : null}
               <span className="grid min-w-0 gap-0.5">
-                <strong className="text-[13px] font-medium">{item.title}</strong>
+                <strong className="text-sm font-medium">{item.title}</strong>
                 {item.detail ? (
-                  <span className="text-[12px] text-muted-foreground">{item.detail}</span>
+                  <span className="text-xs text-muted-foreground">{item.detail}</span>
                 ) : null}
                 {item.meta ? (
-                  <small className="text-[12px] text-muted-foreground">{item.meta}</small>
+                  <small className="text-xs text-muted-foreground">{item.meta}</small>
                 ) : null}
               </span>
             </li>
           ))}
         </ol>
       ) : (
-        <p className="py-6 text-[13px] text-muted-foreground">
+        <p className="py-6 text-sm text-muted-foreground">
           This evidence was saved, but it does not have a readable preview.
         </p>
       )}

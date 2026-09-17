@@ -113,7 +113,7 @@ export function RunsPage() {
 
   return (
     <LibraryPage
-      className="relay-library-page relay-runs-page mx-auto flex min-h-full w-full max-w-[1040px] flex-col"
+      className="mx-auto flex min-h-full w-full max-w-5xl flex-col"
       onClickCapture={returnFocus.onClickCapture}
     >
       <PageHeader
@@ -124,10 +124,7 @@ export function RunsPage() {
       <LibraryToolbar
         label="Filter Runs"
         tabs={
-          <Tabs
-            value={view}
-            onValueChange={(next) => setView(next as RunView)}
-          >
+          <Tabs value={view} onValueChange={(next) => setView(next as RunView)}>
             <TabsList variant="line" className="h-9 justify-start" aria-label="Run view">
               {runViews.map((item) => (
                 <TabsTrigger key={item.id} value={item.id}>
@@ -194,13 +191,9 @@ export function RunsPage() {
       ) : null}
 
       {runs.data !== undefined && visibleRuns.length ? (
-        <section
-          id="run-history-results"
-          className="relay-library-results mt-3"
-          aria-labelledby="run-history-title"
-        >
-          <div className="relay-library-results-heading flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
-            <h2 id="run-history-title" className="text-[13px] font-semibold">
+        <section id="run-history-results" className="mt-3" aria-labelledby="run-history-title">
+          <div className="flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
+            <h2 id="run-history-title" className="text-sm font-semibold">
               {visibleRuns.length === 1 ? "1 Result" : `${visibleRuns.length} Results`}
             </h2>
             <span className="text-xs text-muted-foreground" aria-live="polite">
@@ -230,10 +223,7 @@ export function RunsPage() {
               title="No results yet"
               detail="Open a saved Test and run it on a Device or Browser."
               action={
-                <Link
-                  className={productLinkClassName}
-                  to="/tests"
-                >
+                <Link className={productLinkClassName} to="/tests">
                   Browse saved Tests
                 </Link>
               }
@@ -256,14 +246,14 @@ function RunRow({
   const title = plan ? run.title : (run.testName ?? run.title);
   const device = run.targetName ?? platformName(run.platform);
   const cause = planResultListCause(run);
-  const className = `relay-run-row ${libraryRowSurface} ${libraryRowContent} grid-cols-[minmax(0,1fr)_100px]`;
+  const className = ` ${libraryRowSurface} ${libraryRowContent} grid-cols-[minmax(0,1fr)_100px]`;
   const body = (
     <>
-      <span className="relay-library-row-main grid min-w-0 gap-1">
+      <span className="grid min-w-0 gap-1">
         <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-foreground">
           {title}
         </strong>
-        <span className="relay-run-row-context flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">
+        <span className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">
           <OutcomeMark outcome={run.outcome ?? phaseOutcome(run)} />
           <span className="truncate">
             {[device, cause].filter(Boolean).join(" · ") || (plan ? "Plan Result" : "Saved Run")}
@@ -273,7 +263,7 @@ function RunRow({
           ) : null}
         </span>
       </span>
-      <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1 tabular-nums">
+      <span className="grid min-w-0 justify-items-start gap-1 tabular-nums">
         <strong className="text-xs font-semibold text-foreground">
           {plan && run.caseCount
             ? `${run.caseCount} Tests`

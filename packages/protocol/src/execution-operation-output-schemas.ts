@@ -174,6 +174,9 @@ const jobSummarySchema = z
       .strict()
       .optional(),
     frameCount: z.number(),
+    destIdentity: z
+      .array(z.object({ path: z.string(), caption: z.string().optional() }).strict())
+      .optional(),
     evidenceComplete: z.boolean().optional(),
     checks: z.array(campaignCheckSchema).optional(),
     lastLogs: z.array(z.string()).optional(),

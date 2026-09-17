@@ -372,7 +372,7 @@ export function NewTestPage() {
   }
 
   return (
-    <WorkbenchPage className="relay-new-test-page flex h-full min-h-0 w-full flex-col overflow-hidden bg-card !p-0">
+    <WorkbenchPage className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-card !p-0">
       <form id="new-test-form" className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
         <AuthoringHeader
           phase="setup"
@@ -385,7 +385,7 @@ export function NewTestPage() {
         />
 
         {blocksNewRecording ? (
-          <Alert className="relay-resume-recording max-w-3xl" variant="default">
+          <Alert className="max-w-3xl" variant="default">
             <CircleDot />
             <AlertTitle>
               {begin.data?.recovery
@@ -534,7 +534,7 @@ export function NewTestPage() {
             }
             stage={
               <div
-                className="relay-prerecord-workspace flex h-full min-h-0 w-full overflow-hidden bg-background/40"
+                className="flex h-full min-h-0 w-full overflow-hidden bg-background/40"
                 aria-label="Recording stage"
               >
                 {selectedTarget ? (

@@ -289,7 +289,7 @@ export function TestPage() {
   }
 
   return (
-    <WorkbenchPage className="relay-test-page flex h-full min-h-0 flex-col overflow-auto !p-0">
+    <WorkbenchPage className="flex h-full min-h-0 flex-col overflow-auto !p-0">
       <AuthoringHeader
         back={
           <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost" size="sm">
@@ -384,10 +384,7 @@ export function TestPage() {
           title="This Test is not available"
           detail="It may have been removed or may belong to another app. Choose a saved Test to continue."
           action={
-            <Link
-              className={productLinkClassName}
-              to="/tests"
-            >
+            <Link className={productLinkClassName} to="/tests">
               Browse saved Tests
             </Link>
           }
@@ -422,7 +419,7 @@ export function TestPage() {
                 deviceName={targets.data?.find((target) => target.targetId === targetId)?.name}
                 outline={
                   <section
-                    className="relay-test-overview min-w-0 p-3"
+                    className="min-w-0 p-3"
                     aria-labelledby="test-overview-title"
                     onKeyDown={(event) => {
                       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
@@ -460,7 +457,7 @@ export function TestPage() {
                     <h2
                       id="test-overview-title"
                       tabIndex={0}
-                      className="mb-2 text-[13px] font-medium text-muted-foreground"
+                      className="mb-2 text-sm font-medium text-muted-foreground"
                     >
                       {outlineCopy.title}
                     </h2>
@@ -482,7 +479,7 @@ export function TestPage() {
                         ))}
                       </ol>
                     ) : (
-                      <p className="relay-test-no-steps mt-4 text-sm text-muted-foreground">
+                      <p className="mt-4 text-sm text-muted-foreground">
                         This Test has no reviewed steps yet.
                       </p>
                     )}
@@ -639,10 +636,7 @@ export function TestPage() {
                             title="No device or browser is ready"
                             detail="Connect a target to continue with this Test."
                             action={
-                              <Link
-                                className={productLinkClassName}
-                                to="/devices"
-                              >
+                              <Link className={productLinkClassName} to="/devices">
                                 View devices
                               </Link>
                             }

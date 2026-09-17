@@ -40,16 +40,16 @@ describe("PageHeader", () => {
 
     const context = host.querySelector(".relay-workspace-context");
     expect(context?.textContent).toBe("Tests");
-    expect(context?.className).toContain("text-[11px]");
+    expect(context?.className).toContain("text-xs");
 
     const title = host.querySelector("h1");
     expect(title?.textContent).toBe("Record a Test");
-    expect(title?.className).toContain("text-[28px]");
+    expect(title?.className).toContain("text-3xl");
     expect(host.querySelector(".relay-workspace-title-row")?.className).toContain("mt-1");
 
     const description = host.querySelector(".relay-page-description");
     expect(description?.textContent).toBe("Choose an app and a device, then start.");
-    expect(description?.className).toContain("text-[13px]");
+    expect(description?.className).toContain("text-sm");
     expect(description?.className).toContain("mt-1.5");
   });
 
@@ -64,7 +64,7 @@ describe("PageHeader", () => {
     const withCrumbs = await render(
       <PageHeader
         context={
-          <nav className="relay-breadcrumbs text-[11px] leading-4" aria-label="Breadcrumb">
+          <nav className="relay-breadcrumbs text-xs leading-4" aria-label="Breadcrumb">
             Tests / Record
           </nav>
         }
@@ -73,10 +73,8 @@ describe("PageHeader", () => {
       />,
     );
 
-    expect(withName.querySelector(".relay-workspace-context")?.className).toContain("text-[11px]");
-    expect(withCrumbs.querySelector(".relay-workspace-context")?.className).toContain(
-      "text-[11px]",
-    );
+    expect(withName.querySelector(".relay-workspace-context")?.className).toContain("text-xs");
+    expect(withCrumbs.querySelector(".relay-workspace-context")?.className).toContain("text-xs");
     expect(withName.querySelector(".relay-workspace-title-row")?.className).toContain("mt-1");
     expect(withCrumbs.querySelector(".relay-workspace-title-row")?.className).toContain("mt-1");
     expect(withName.querySelector(".relay-workspace-header")?.className).toContain("mb-6");

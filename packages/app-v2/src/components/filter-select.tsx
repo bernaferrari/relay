@@ -61,9 +61,7 @@ export function SelectField({
         <SelectTrigger
           id={id}
           className={
-            compact
-              ? "w-auto min-w-[8.75rem]"
-              : "w-full min-w-0 [&_[data-slot=select-value]]:truncate"
+            compact ? "w-auto min-w-35" : "w-full min-w-0 [&_[data-slot=select-value]]:truncate"
           }
           aria-label={label}
         >

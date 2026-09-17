@@ -15,7 +15,7 @@ export function ReadableStep({
       className="grid grid-cols-[28px_minmax(0,1fr)] rounded-md px-2 data-[selected=true]:bg-accent/60"
       data-selected={selectedId === step.id}
     >
-      <span className="grid place-items-center text-[11px] tabular-nums text-muted-foreground">
+      <span className="grid place-items-center text-xs tabular-nums text-muted-foreground">
         {number}
       </span>
       <button
@@ -25,7 +25,7 @@ export function ReadableStep({
         data-step-id={step.id}
         onClick={() => onSelect(step.id)}
       >
-        <strong className="block text-[13px] font-medium">{step.label ?? step.intent}</strong>
+        <strong className="block text-sm font-medium">{step.label ?? step.intent}</strong>
         {step.status === "needs-review" ? (
           <small className="mt-0.5 block text-xs text-muted-foreground">Needs setup</small>
         ) : null}

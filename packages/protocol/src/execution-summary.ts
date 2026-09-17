@@ -757,6 +757,16 @@ function isAttachedJobOperation(operationId: string): boolean {
   );
 }
 
+/** Combine campaign JSON keeps campaign/cells. Resume jobs keep dest wait-for Fast;
+ * leftover Close last-frame cannot fill dest. */
+function summarizeCombineCampaign(response: Record<string, unknown>): unknown {
+  const jobs = Array.isArray(response.jobs) ? response.jobs.map(summarizeJob) : undefined;
+  return {
+    ...response,
+    ...(jobs !== undefined ? { jobs } : {}),
+  };
+}
+
 /** Bounded command/MCP projection for execution jobs. Full traces remain in
  * run resources and TracePacks where they can be queried deliberately. */
 export function summarizeExecutionOperationResult(operationId: string, result: unknown): unknown {
@@ -782,6 +792,7 @@ export function summarizeExecutionOperationResult(operationId: string, result: u
       : projectAttachedJobResult(response);
   }
   if (operationId !== "app-map.flow.run" && !operationId.startsWith("job.")) return result;
+  if (operationId.startsWith("job.combine.campaign.")) return summarizeCombineCampaign(response);
   if (operationId.endsWith(".export")) return summarizePackExport(response);
   if (operationId.endsWith(".analysis")) return summarizeLocaleAnalysis(response);
   if (operationId.includes(".capture.review")) return summarizePlanCaptureReview(response);

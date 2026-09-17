@@ -102,7 +102,7 @@ export function MapAccessibilityOverlay({
   if (!rect) return null;
   if (!controls.length)
     return (
-      <span className="pointer-events-none absolute left-1/2 top-full mt-2 w-max max-w-full -translate-x-1/2 rounded bg-background/90 px-2 py-1 text-center text-[10px] text-muted-foreground">
+      <span className="pointer-events-none absolute left-1/2 top-full mt-2 w-max max-w-full -translate-x-1/2 rounded bg-background/90 px-2 py-1 text-center text-xs text-muted-foreground">
         {!uri || !load
           ? "No saved accessibility tree"
           : tree.isPending

@@ -908,7 +908,11 @@ export function InfiniteMapCanvas({
             Use arrow keys to move, plus and minus to zoom, F to fit the map, Shift F to focus a
             selected screen, Space to pan, or 0 to reset the view. Tab to visit each screen.
           </span>
-          <div className="relay-map-world absolute inset-0 origin-top-left translate-x-12 translate-y-16">
+          <div
+            ref={worldRef}
+            className="relay-map-world absolute inset-0 origin-top-left"
+            style={{ transform: "translate3d(48px, 64px, 0) scale(1)" }}
+          >
             {alignmentGuides.map((guide, index) => (
               <div
                 key={index}
@@ -1046,11 +1050,11 @@ export function InfiniteMapCanvas({
                   }
                 >
                   <span
-                    className={`flex h-5 w-full shrink-0 items-end justify-center text-center text-[13px] font-medium leading-tight ${selectedNode ? "text-blue-400" : "text-muted-foreground"}`}
+                    className={`flex h-5 w-full shrink-0 items-end justify-center text-center text-sm font-medium leading-tight ${selectedNode ? "text-blue-400" : "text-muted-foreground"}`}
                   >
                     <MapFrameTitle title={screen.title} />
                   </span>
-                  <div className="relative h-[300px] w-full shrink-0">
+                  <div className="relative h-72 w-full shrink-0">
                     <MapScreenPreview
                       dimensions={imageDimensions.get(screen.id)}
                       selected={selectedNode}
@@ -1120,7 +1124,7 @@ export function InfiniteMapCanvas({
                       type="button"
                       aria-label={`Inspect ${path.label} to ${path.toTitle ?? "previous screen"}`}
                       aria-pressed={selectedPathId === path.id}
-                      className="flex max-w-full items-center gap-1 rounded px-2 py-1 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring aria-pressed:bg-accent"
+                      className="flex max-w-full items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring aria-pressed:bg-accent"
                       onClick={() => {
                         setSelectedPathId((current) => (current === path.id ? undefined : path.id));
                         setSelectedScreenId(screen.id);

@@ -67,7 +67,7 @@ export function AppsPage() {
   }
 
   return (
-    <LibraryPage className="max-w-[1040px]">
+    <LibraryPage className="max-w-5xl">
       <PageHeader
         context="Workspace"
         title="Apps"
@@ -78,7 +78,7 @@ export function AppsPage() {
               <Plus aria-hidden="true" /> Add App
             </DialogTrigger>
 
-            <DialogContent showCloseButton={false} className="">
+            <DialogContent showCloseButton={false}>
               <DialogTitle>Add an App</DialogTitle>
               <DialogDescription>
                 Give the app a clear name. Relay will create its saved Map, then take you directly
@@ -128,7 +128,6 @@ export function AppsPage() {
       {loading ? <PageLoading label="Loading apps…" /> : null}
       {error ? (
         <RecoveryState
-          className="relay-apps-recovery"
           layout="centered"
           title="Relay is not connected"
           detail="Start Relay, then try loading your apps again."
@@ -148,7 +147,6 @@ export function AppsPage() {
       ) : null}
       {!loading && !error && secondaryError ? (
         <RecoveryState
-          className="relay-apps-recovery"
           title="Some App activity is unavailable"
           detail="The App list is available. Test and Run counts will return when Relay reconnects."
           action={
@@ -192,7 +190,7 @@ export function AppsPage() {
                   className={`${libraryRowSurface} group flex min-h-24 items-center gap-4 rounded-xl border border-border bg-card p-5 text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring`}
                 >
                   <span
-                    className="grid size-[38px] place-items-center rounded-md border border-border bg-background text-[13px] font-semibold text-foreground"
+                    className="grid size-10 place-items-center rounded-md border border-border bg-background text-sm font-semibold text-foreground"
                     aria-hidden="true"
                   >
                     {app.name.slice(0, 1).toLocaleUpperCase()}

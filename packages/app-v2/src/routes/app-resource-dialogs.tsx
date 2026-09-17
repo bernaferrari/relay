@@ -44,7 +44,7 @@ export function VersionRow({
   onEdit(): void;
 }) {
   return (
-    <li className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:grid-cols-[36px_minmax(0,1fr)_auto]">
+    <li className="grid min-h-16 grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-2.5 max-[780px]:grid-cols-[36px_minmax(0,1fr)_auto]">
       <span
         className="grid size-9 place-items-center rounded-md border border-border bg-background text-foreground"
         aria-hidden="true"
@@ -60,7 +60,7 @@ export function VersionRow({
         </small>
       </span>
       <span
-        className={`inline-flex min-h-6 items-center rounded-full bg-background px-2.5 text-[11px] font-semibold capitalize text-muted-foreground`}
+        className={`inline-flex min-h-6 items-center rounded-full bg-background px-2.5 text-xs font-semibold capitalize text-muted-foreground`}
       >
         {statusLabel(version.status)}
       </span>
@@ -68,7 +68,7 @@ export function VersionRow({
         Updated {shortDate(version.updatedAt)}
       </time>
       {canEdit ? (
-        <span className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-[11px] max-[780px]:col-start-2 max-[780px]:col-end-[-1]">
+        <span className="grid min-h-16 grid-cols-[36px_minmax(0,1fr)_auto_minmax(110px,auto)] items-center gap-3 px-3.5 py-2.5 max-[780px]:col-start-2 max-[780px]:col-end-[-1]">
           <Button size="sm" variant="ghost" onClick={onEdit} aria-label={`Edit ${version.name}`}>
             Edit
           </Button>

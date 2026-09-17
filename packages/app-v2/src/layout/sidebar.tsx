@@ -35,11 +35,11 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
   };
 
   return (
-    <SharedSidebarContent className="relay-sidebar-body flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain px-3 pb-3 [scrollbar-gutter:auto]">
+    <SharedSidebarContent className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain px-3 pb-3 [scrollbar-gutter:auto]">
       <AppSwitcher />
-      <SidebarGroup className="relay-sidebar-group flex-none pt-1.5">
-        <nav className="relay-nav flex flex-col gap-0.5" aria-label={label}>
-          <SidebarMenu className="relay-sidebar-menu m-0 grid list-none gap-0.5 p-0">
+      <SidebarGroup className="flex-none pt-1.5">
+        <nav className="flex flex-col gap-0.5" aria-label={label}>
+          <SidebarMenu className="m-0 grid list-none gap-0.5 p-0">
             {primaryDestinations.map((item) => {
               const active = isSidebarItemActive(pathname, item.to);
               return (
@@ -55,13 +55,12 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
                     isActive={active}
                     aria-current={active ? "page" : undefined}
                     className={classNames(
-                      "relay-nav-link focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-foreground",
-                      active &&
-                        "relay-nav-link--active bg-accent font-semibold text-foreground shadow-none",
+                      " focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-foreground",
+                      active && " bg-accent font-semibold text-foreground shadow-none",
                     )}
                   >
                     <item.icon
-                      className={`h-[17px] w-[17px] shrink-0 text-muted-foreground${active ? " text-foreground" : ""}`}
+                      className={`size-4 shrink-0 text-muted-foreground${active ? " text-foreground" : ""}`}
                       aria-hidden="true"
                     />
                     <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
@@ -74,23 +73,23 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
           </SidebarMenu>
         </nav>
       </SidebarGroup>
-      <SidebarFooter className="relay-sidebar-footer mt-auto pt-2.5">
+      <SidebarFooter className="mt-auto pt-2.5">
         <ActiveWork />
         <nav
-          className="relay-nav relay-nav--secondary flex flex-col gap-0.5 border-t border-border pt-2.5"
+          className="flex flex-col gap-0.5 border-t border-border pt-2.5"
           aria-label={`${label} settings`}
         >
           <SidebarMenuButton
             render={<Link to="/changes" onClick={closeMobileNavigation} />}
             isActive={pathname.startsWith("/changes")}
             className={classNames(
-              "relay-nav-link focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-foreground",
+              " focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-foreground",
               pathname.startsWith("/changes") &&
-                "relay-nav-link--active bg-accent font-semibold text-foreground shadow-none",
+                " bg-accent font-semibold text-foreground shadow-none",
             )}
           >
             <GitCompare
-              className={`h-[17px] w-[17px] shrink-0 text-muted-foreground${pathname.startsWith("/changes") ? " text-foreground" : ""}`}
+              className={`size-4 shrink-0 text-muted-foreground${pathname.startsWith("/changes") ? " text-foreground" : ""}`}
               aria-hidden="true"
             />
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Changes</span>
@@ -99,13 +98,12 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
             render={<Link to="/settings/general" onClick={closeMobileNavigation} />}
             isActive={settingsActive}
             className={classNames(
-              "relay-nav-link focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-foreground",
-              settingsActive &&
-                "relay-nav-link--active bg-accent font-semibold text-foreground shadow-none",
+              " focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-foreground",
+              settingsActive && " bg-accent font-semibold text-foreground shadow-none",
             )}
           >
             <Settings
-              className={`h-[17px] w-[17px] shrink-0 text-muted-foreground${settingsActive ? " text-foreground" : ""}`}
+              className={`size-4 shrink-0 text-muted-foreground${settingsActive ? " text-foreground" : ""}`}
               aria-hidden="true"
             />
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
@@ -121,10 +119,10 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
 export function Sidebar() {
   return (
     <SharedSidebar
-      className="relay-sidebar border-r-0! hidden h-full w-(--sidebar-width) bg-sidebar min-[861px]:flex"
+      className="border-r-0! hidden h-full w-(--sidebar-width) bg-sidebar min-[861px]:flex"
       aria-label="Relay navigation"
     >
-      <SidebarHeader aria-hidden="true" className="h-[54px] shrink-0 p-0" />
+      <SidebarHeader aria-hidden="true" className="h-14 shrink-0 p-0" />
       <SidebarContent />
     </SharedSidebar>
   );

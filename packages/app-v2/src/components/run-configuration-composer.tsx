@@ -81,7 +81,7 @@ export function RunConfigurationComposer({
     });
   }
   const optionCopy = (option: RunConfigurationOption) => (
-    <span className="relay-config-option-copy grid min-w-0 flex-1 gap-[3px] wrap-anywhere [&_strong]:text-[13px] [&_strong]:font-medium [&_small]:text-xs [&_small]:text-muted-foreground">
+    <span className="grid min-w-0 flex-1 gap-0.5 wrap-anywhere [&_strong]:text-sm [&_strong]:font-medium [&_small]:text-xs [&_small]:text-muted-foreground">
       <strong data-slot="run-target-title" className="flex items-center gap-2">
         {option.locale ? (
           <span
@@ -101,15 +101,15 @@ export function RunConfigurationComposer({
   return (
     <section
       aria-label="Run configuration"
-      className={`relay-run-configuration grid min-w-0 gap-3 ${variant === "panel" ? "rounded-xl border border-border bg-card p-5" : ""}`}
+      className={`grid min-w-0 gap-3 ${variant === "panel" ? "rounded-xl border border-border bg-card p-5" : ""}`}
     >
       {title !== null ? (
-        <h2 id={titleId} className="text-[13px] font-medium text-muted-foreground">
+        <h2 id={titleId} className="text-sm font-medium text-muted-foreground">
           {title ?? (configuration.frozen ? "Recorded configuration" : "Run on")}
         </h2>
       ) : null}
       {configuration.frozen ? (
-        <dl className="relay-config-facts m-0 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-4 [&_dt]:text-xs [&_dt]:text-muted-foreground [&_dd]:mt-1 [&_dd]:text-[13px] [&_dd]:wrap-anywhere">
+        <dl className="m-0 grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-4 [&_dt]:text-xs [&_dt]:text-muted-foreground [&_dd]:mt-1 [&_dd]:text-sm [&_dd]:wrap-anywhere">
           {facts.map(([label, value]) => (
             <div key={label}>
               <dt>{label}</dt>
@@ -121,7 +121,7 @@ export function RunConfigurationComposer({
       {error ? (
         <div
           role="alert"
-          className="m-0 rounded-lg border border-border p-3 text-[13px] [&_p]:mt-1 [&_p]:mb-2"
+          className="m-0 rounded-lg border border-border p-3 text-sm [&_p]:mt-1 [&_p]:mb-2"
         >
           <p>{error}</p>
           {onRetry ? (
@@ -136,13 +136,13 @@ export function RunConfigurationComposer({
           {multipleTargets ? (
             <fieldset
               disabled={loading}
-              className="relay-config-options grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-1.5 [&_legend]:text-[13px] [&_legend]:font-semibold"
+              className="grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-1.5 [&_legend]:text-sm [&_legend]:font-semibold"
             >
               <legend>Where to run</legend>
               {targetOptions.map((option) => (
                 <FieldLabel
                   key={option.id}
-                  className="relay-config-option flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-3 border-b border-border py-2.5 has-data-checked:[&_[data-slot=run-target-title]]:text-foreground last:border-b-0"
+                  className="flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-3 border-b border-border py-2.5 has-data-checked:[&_[data-slot=run-target-title]]:text-foreground last:border-b-0"
                 >
                   {optionCopy(option)}
                   <Checkbox
@@ -169,7 +169,7 @@ export function RunConfigurationComposer({
       {dataSetOptions && onSelectionChange ? (
         <fieldset
           disabled={loading}
-          className="relay-config-options grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-1.5 [&_legend]:text-[13px] [&_legend]:font-semibold"
+          className="grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-1.5 [&_legend]:text-sm [&_legend]:font-semibold"
         >
           <legend className="w-full">
             <span className="flex items-center justify-between gap-3">
@@ -215,7 +215,7 @@ export function RunConfigurationComposer({
               {filteredValues?.map((option) => (
                 <FieldLabel
                   key={option.id}
-                  className="relay-interactive-row flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-accent has-data-checked:bg-accent"
+                  className="flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-accent has-data-checked:bg-accent"
                 >
                   {optionCopy(option)}
                   <Checkbox
@@ -238,7 +238,7 @@ export function RunConfigurationComposer({
       ) : null}
       {configuration.blockers?.length ? (
         <div
-          className="m-0 rounded-lg border border-border p-3 text-[13px] [&_p]:mt-1 [&_p]:mb-2"
+          className="m-0 rounded-lg border border-border p-3 text-sm [&_p]:mt-1 [&_p]:mb-2"
           role="alert"
         >
           <ul>

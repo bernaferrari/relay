@@ -291,10 +291,17 @@ export function destIdentityCheckpointFramePaths(
   return [...new Set(usable.map((frame) => frame.path))];
 }
 
-/** Dest-phase slot cards when dest identity exists. Leftover Close extras cannot fill dest. */
-export function destIdentityReviewItems<T extends { phase?: string }>(items: readonly T[]): T[] {
+/** Dest-phase slot cards when dest identity exists. Leftover Close extras cannot fill dest
+ * even without leftover-phase. */
+export function destIdentityReviewItems<T extends { phase?: string; caption?: string }>(
+  items: readonly T[],
+): T[] {
   const dest = items.filter((item) => isCaptureReviewDestPhase(item.phase));
-  return dest.length ? dest : items.filter((item) => !isCaptureReviewLeftoverPhase(item.phase));
+  if (dest.length) return dest;
+  return items.filter(
+    (item) =>
+      !isCaptureReviewLeftoverPhase(item.phase) && !isCaptureReviewLeftoverCaption(item.caption),
+  );
 }
 
 /** Stable planned capture identity. Caption is display text only. */

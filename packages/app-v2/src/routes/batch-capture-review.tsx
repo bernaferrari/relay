@@ -166,7 +166,7 @@ export function PlanCaptureReviewSection({
     });
   };
   return (
-    <section className="relay-batch-capture-review mt-4 grid gap-4">
+    <section className="mt-4 grid gap-4">
       <h2 className="sr-only">Screenshot review</h2>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm tabular-nums text-muted-foreground">
         <span>

@@ -41,7 +41,7 @@ export function LibrarySearch({
   placeholder: string;
 }) {
   return (
-    <div data-slot="library-search-control" className="relative min-w-[16rem] flex-1">
+    <div data-slot="library-search-control" className="relative min-w-64 flex-1">
       <Search
         className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
         aria-hidden="true"

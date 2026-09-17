@@ -349,10 +349,10 @@ function AdvancedSettings() {
         {connection.data ? (
           <form className="grid gap-2" onSubmit={saveConnection}>
             <Field className="grid gap-2">
-              <FieldLabel htmlFor="relay-server-url">Server URL</FieldLabel>
+              <FieldLabel htmlFor="">Server URL</FieldLabel>
               <div className="flex items-center gap-2">
                 <Input
-                  id="relay-server-url"
+                  id=""
                   type="url"
                   value={url}
                   required

@@ -42,9 +42,9 @@ export function errorMessage(error: unknown): string {
 
 export function PageLoading({ label }: { label: string }) {
   return (
-    <div className="mt-[34px] grid max-w-[848px] gap-[18px]" role="status" aria-live="polite">
+    <div className="mt-8 grid max-w-4xl gap-4" role="status" aria-live="polite">
       <span className="relay-visually-hidden sr-only">{label}</span>
-      <div className="grid max-w-[400px] gap-2" aria-hidden="true">
+      <div className="grid max-w-sm gap-2" aria-hidden="true">
         <Skeleton className="h-4 w-[34%]" />
         <Skeleton className="h-3 w-[78%]" />
       </div>
@@ -117,7 +117,7 @@ export function RecordingProblem({
       : undefined;
   return (
     <RecoveryState
-      className={`relay-recording-problem ${layout === "centered" ? "m-0 w-full max-w-none flex-1 justify-center border-0" : "mt-7 max-w-[640px]"}${className ? ` ${className}` : ""}`}
+      className={`relay-recording-problem ${layout === "centered" ? "m-0 w-full max-w-none flex-1 justify-center border-0" : "mt-7 max-w-2xl"}${className ? ` ${className}` : ""}`}
       title={publicRecovery?.title ?? "Relay could not complete this request"}
       detail={publicRecovery?.detail ?? errorMessage(error)}
       recovery={publicRecovery?.recovery}

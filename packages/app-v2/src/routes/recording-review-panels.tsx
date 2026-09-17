@@ -179,7 +179,7 @@ export function RecordingEvidencePanel({
                 {hovered?.id === control.id ? (
                   <span className="absolute bottom-full start-0 mb-1 flex max-w-64 items-center gap-2 rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-sm">
                     <span className="truncate">{control.name}</span>
-                    <code className="text-[10px] text-muted-foreground">{control.role}</code>
+                    <code className="text-xs text-muted-foreground">{control.role}</code>
                   </span>
                 ) : null}
               </div>
@@ -193,10 +193,10 @@ export function RecordingEvidencePanel({
         ) : (
           <div className="grid max-w-[22ch] justify-items-center gap-2 p-6 text-center text-muted-foreground">
             <Target aria-hidden="true" />
-            <strong className="text-[13px] text-foreground">
+            <strong className="text-sm text-foreground">
               {action ? "No visual frame for this moment" : "Select an action"}
             </strong>
-            <span className="text-[11px] leading-normal">
+            <span className="text-xs leading-normal">
               {action
                 ? "Choose another step or switch between Before and After."
                 : "Its before and after frames will appear here."}
@@ -278,7 +278,7 @@ export function RecordingActionsPanel({
             <strong className="text-xs">
               {optimization.suggestions.length} suggested improvements
             </strong>
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               Select a suggestion to inspect its step.
             </span>
           </div>
@@ -294,7 +294,7 @@ export function RecordingActionsPanel({
           ))}
         </div>
       ) : editing && optimization.isFetched ? (
-        <p className="border-b border-border p-3 text-[11px] text-muted-foreground" role="status">
+        <p className="border-b border-border p-3 text-xs text-muted-foreground" role="status">
           No improvements suggested for these steps.
         </p>
       ) : null}
@@ -308,7 +308,7 @@ export function RecordingActionsPanel({
               const selected = selectedActionIds.includes(step.id);
               return (
                 <li
-                  className={`relay-review-step grid min-h-[52px] grid-cols-[auto_28px_minmax(0,1fr)] items-center gap-2 border-t border-border py-2 ${selected ? "bg-muted/60" : ""}`}
+                  className={`grid min-h-13 grid-cols-[auto_28px_minmax(0,1fr)] items-center gap-2 border-t border-border py-2 ${selected ? "bg-muted/60" : ""}`}
                   key={step.id}
                 >
                   {selecting ? (

@@ -33,14 +33,14 @@ export function ChangePublicationStatus({ detail }: { detail: ProductChangeDetai
   const presentation = publicationPresentation(publication.status);
   return (
     <section
-      className="relay-change-publication mt-6 max-w-[60ch]"
+      className="relay-change-publication mt-6 max-w-prose"
       aria-labelledby="publication-status-title"
     >
-      <h2 id="publication-status-title" className="text-[15px] font-medium">
+      <h2 id="publication-status-title" className="text-sm font-medium">
         {presentation.title}
       </h2>
-      <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{presentation.detail}</p>
-      <div className="relay-publication-status mt-2 flex min-h-11 flex-wrap items-center gap-x-3.5 gap-y-2.5">
+      <p className="mt-1 text-sm leading-5 text-muted-foreground">{presentation.detail}</p>
+      <div className="mt-2 flex min-h-11 flex-wrap items-center gap-x-3.5 gap-y-2.5">
         {publication.detailsUrl ? (
           <a href={publication.detailsUrl} target="_blank" rel="noreferrer">
             Open GitHub check
@@ -73,7 +73,7 @@ export function ChangeAuditDetails({ detail }: { detail: ProductChangeDetail }) 
   ];
   return (
     <Collapsible className="relay-change-audit mt-8">
-      <CollapsibleTrigger className="group flex items-center gap-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground">
+      <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
         Audit details
         <ChevronDown className="size-3.5 opacity-70 transition-transform group-aria-expanded:rotate-180" />
       </CollapsibleTrigger>
@@ -81,8 +81,8 @@ export function ChangeAuditDetails({ detail }: { detail: ProductChangeDetail }) 
         <dl className="grid gap-x-6 gap-y-2.5 sm:grid-cols-[7.5rem_minmax(0,1fr)]">
           {facts.map(([label, value]) => (
             <div key={label} className="grid gap-0.5 sm:contents">
-              <dt className="text-[11px] leading-5 text-muted-foreground">{label}</dt>
-              <dd className="min-w-0 break-all font-mono text-[12px] leading-5">{value}</dd>
+              <dt className="text-xs leading-5 text-muted-foreground">{label}</dt>
+              <dd className="min-w-0 break-all font-mono text-xs leading-5">{value}</dd>
             </div>
           ))}
         </dl>
@@ -92,7 +92,7 @@ export function ChangeAuditDetails({ detail }: { detail: ProductChangeDetail }) 
             <ul>
               {details.publications.map((publication) => (
                 <li key={publication.id}>
-                  <dl className="relay-publication-facts grid grid-cols-2 gap-3 border-t border-border pt-3 text-xs sm:grid-cols-3">
+                  <dl className="grid grid-cols-2 gap-3 border-t border-border pt-3 text-xs sm:grid-cols-3">
                     <div>
                       <dt>Status</dt>
                       <dd>{publicationLabel(publication.status)}</dd>
@@ -215,7 +215,7 @@ export function ChangeSectionHeader({
   return (
     <header className="flex items-start justify-between gap-3">
       <div>
-        <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {eyebrow}
         </p>
         <h2 id={id}>{title}</h2>

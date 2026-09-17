@@ -50,7 +50,7 @@ export type BreadcrumbItem =
 export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
   return (
     <nav
-      className="relay-breadcrumbs text-[11px] leading-4 text-muted-foreground"
+      className="relay-breadcrumbs text-xs leading-4 text-muted-foreground"
       aria-label="Breadcrumb"
     >
       <ol className="m-0 flex min-w-0 list-none items-center gap-1.5 p-0">
@@ -60,7 +60,7 @@ export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
             <li className="inline-flex min-w-0 items-center gap-1.5" key={`${item.label}:${index}`}>
               {index ? (
                 <ChevronRight
-                  className="relay-breadcrumb-separator size-3 shrink-0 text-muted-foreground"
+                  className="size-3 shrink-0 text-muted-foreground"
                   aria-hidden="true"
                 />
               ) : null}
@@ -113,9 +113,9 @@ export function EmptyState({
   return (
     <Empty
       className={classNames(
-        "relay-empty-state",
-        tone === "notice" ? "relay-empty-state--notice" : "relay-empty-state--quiet",
-        layout === "filtered" ? "relay-empty-state--filtered" : "relay-empty-state--default",
+        "",
+        tone === "notice" ? "" : "",
+        layout === "filtered" ? "relay-empty-state--filtered" : "",
       )}
     >
       <EmptyHeader>
@@ -125,7 +125,7 @@ export function EmptyState({
         <EmptyTitle>{title}</EmptyTitle>
         <EmptyDescription>{detail}</EmptyDescription>
       </EmptyHeader>
-      {action ? <EmptyContent className="relay-empty-state-action">{action}</EmptyContent> : null}
+      {action ? <EmptyContent>{action}</EmptyContent> : null}
     </Empty>
   );
 }
@@ -151,7 +151,7 @@ export function RecoveryState({
     return (
       <section
         className={classNames(
-          "relay-recovery-state relay-recovery-state--centered flex min-w-0 flex-1 items-center justify-center px-5 py-10",
+          " relay-recovery-state--centered flex min-w-0 flex-1 items-center justify-center px-5 py-10",
           className,
         )}
         role="alert"
@@ -180,7 +180,7 @@ export function RecoveryState({
   return (
     <section
       className={classNames(
-        "relay-recovery-state relay-recovery-state--compact flex shrink-0 items-start gap-3 rounded-xl border border-border bg-muted/40 p-4",
+        " flex shrink-0 items-start gap-3 rounded-xl border border-border bg-muted/40 p-4",
         className,
       )}
       role="alert"
@@ -190,7 +190,7 @@ export function RecoveryState({
         <div className="min-w-0 flex-1 basis-48">
           <h2 className="text-sm font-medium text-foreground">{title}</h2>
           {supportingText ? (
-            <p className="mt-1 max-w-[60ch] text-sm leading-5 text-muted-foreground">
+            <p className="mt-1 max-w-prose text-sm leading-5 text-muted-foreground">
               {supportingText}
             </p>
           ) : null}
@@ -228,7 +228,7 @@ export function ReadinessMark({ status, name }: { status: ReadinessValue; name?:
   return (
     <Badge
       className={classNames(
-        "relay-readiness-mark",
+        "",
         presentation.tone === "notice" && "bg-amber-500/15 text-amber-800 dark:text-amber-300",
       )}
       variant={outcomeBadgeVariant(presentation.tone)}

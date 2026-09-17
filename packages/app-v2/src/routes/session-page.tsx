@@ -147,7 +147,7 @@ export function SessionPage() {
   }
 
   return (
-    <LibraryPage className="max-w-[1120px]">
+    <LibraryPage className="max-w-5xl">
       {value ? (
         <PageHeader
           crumbs={[{ label: "Live", to: "/sessions" }, { label: value.title }]}
@@ -197,7 +197,7 @@ export function SessionPage() {
                       <DialogDescription>
                         The device is released. Saved evidence stays.
                       </DialogDescription>
-                      <div className="relay-form-actions flex flex-wrap items-center gap-2.5 relay-form-actions--end">
+                      <div className="flex flex-wrap items-center gap-2.5 ">
                         <DialogClose render={<Button variant="ghost">Keep session</Button>} />
                         <Button
                           className="relay-session-end-button"
@@ -233,7 +233,7 @@ export function SessionPage() {
           >
             Couldn’t load this Session
           </h1>
-          <p className="mt-2 max-w-[48ch] text-sm leading-6 text-muted-foreground">
+          <p className="mt-2 max-w-prose text-sm leading-6 text-muted-foreground">
             Relay couldn’t retrieve this session. It may have expired or the link may no longer be
             valid.
           </p>
@@ -281,7 +281,7 @@ export function SessionPage() {
             data-slot="live-device-rail"
           >
             <div className="flex items-center justify-between gap-3 border-b border-border px-3.5 py-2.5">
-              <h2 id="session-stage-title" className="text-[13px] font-medium">
+              <h2 id="session-stage-title" className="text-sm font-medium">
                 {canControl ? "Live target" : "Target unavailable"}
               </h2>
               {canControl && liveStatus === "degraded" ? (
@@ -337,8 +337,8 @@ export function SessionPage() {
                 ) : null}
               </div>
             ) : (
-              <div className="grid min-h-[280px] flex-1 place-items-center content-center gap-4 px-5 py-8 text-center text-sm leading-relaxed text-muted-foreground">
-                <p className="max-w-[46ch]">{sessionAvailability(value)}</p>
+              <div className="grid min-h-70 flex-1 place-items-center content-center gap-4 px-5 py-8 text-center text-sm leading-relaxed text-muted-foreground">
+                <p className="max-w-prose">{sessionAvailability(value)}</p>
                 <div className="flex flex-wrap items-center justify-center gap-2">
                   {isActiveSession(value) ? (
                     <Button onClick={() => refresh.mutate()} disabled={refresh.isPending}>
@@ -376,7 +376,7 @@ export function SessionPage() {
           </section>
           <aside className="grid min-w-0 gap-6" aria-label="Session context">
             {canControl ? (
-              <p className="max-w-[52ch] text-sm leading-6 text-muted-foreground">
+              <p className="max-w-prose text-sm leading-6 text-muted-foreground">
                 {value.state === "recording"
                   ? "Recording · captured actions are saved"
                   : "Live · Not recording"}
@@ -420,7 +420,7 @@ export function SessionPage() {
                   </dd>
                 </div>
               </dl>
-              <Collapsible className="mt-[18px]">
+              <Collapsible className="mt-4">
                 <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
                   Audit details
                 </CollapsibleTrigger>
@@ -448,7 +448,7 @@ export function SessionPage() {
               className="rounded-xl border border-border bg-card p-5"
               aria-labelledby="session-activity-title"
             >
-              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Activity
               </p>
               <h2 id="session-activity-title">Recent operations</h2>
@@ -478,7 +478,7 @@ export function SessionPage() {
                     ))}
                 </ol>
               ) : (
-                <p className="-empty">No project activity is available to this role.</p>
+                <p>No project activity is available to this role.</p>
               )}
             </section>
           </aside>

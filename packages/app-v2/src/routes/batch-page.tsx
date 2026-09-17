@@ -257,7 +257,7 @@ export function BatchPage() {
   }
 
   return (
-    <LibraryPage className="relay-batch-page">
+    <LibraryPage>
       <PageHeader
         crumbs={[{ label: "Results", to: "/runs" }, { label: report?.title ?? "Plan run" }]}
         title={report?.title ?? "Plan run"}
@@ -299,7 +299,7 @@ export function BatchPage() {
           <BatchResultSummary report={report} />
           {active ? (
             <div
-              className="relay-batch-active mt-5 flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground"
+              className="mt-5 flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground"
               role="status"
             >
               <span className="size-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
@@ -316,14 +316,14 @@ export function BatchPage() {
           ) : null}
 
           {canContinue ? (
-            <section className="relay-batch-next-step mt-5 rounded-xl border border-border border-l-[3px] border-l-border-interactive-base bg-card p-5">
-              <h2 className="text-[20px] font-semibold tracking-tight text-foreground">
+            <section className="mt-5 rounded-xl border border-border border-l-4 border-l-border-interactive-base bg-card p-5">
+              <h2 className="text-xl font-semibold tracking-tight text-foreground">
                 Review before continuing
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 Check the representative Run before Relay starts the remaining cases.
               </p>
-              <div className="relay-form-actions mt-3 flex flex-wrap items-center gap-2.5">
+              <div className="mt-3 flex flex-wrap items-center gap-2.5">
                 <Button
                   variant="default"
                   onClick={() => continueRun.mutate()}
@@ -372,10 +372,7 @@ export function BatchPage() {
                 groups={(inspect) => (
                   <>
                     {hasProblems && clusters.isPending && !clusterValues.length ? (
-                      <p
-                        className="relay-batch-clusters-pending mt-8 text-sm text-muted-foreground"
-                        role="status"
-                      >
+                      <p className="mt-8 text-sm text-muted-foreground" role="status">
                         Grouping…
                       </p>
                     ) : null}
@@ -394,10 +391,7 @@ export function BatchPage() {
                     ) : null}
 
                     {clusters.isError ? (
-                      <p
-                        className="relay-batch-cluster-notice my-4 text-sm text-muted-foreground"
-                        role="status"
-                      >
+                      <p className="my-4 text-sm text-muted-foreground" role="status">
                         Failure grouping is unavailable. Cases are still listed below.
                       </p>
                     ) : null}
@@ -421,7 +415,7 @@ export function BatchPage() {
               />
 
               <div
-                className={`relay-batch-selection mt-4 grid gap-3 rounded-xl border border-border bg-background p-4 ${totalSelected ? "sticky bottom-0 z-10 shadow-md" : ""}`}
+                className={`mt-4 grid gap-3 rounded-xl border border-border bg-background p-4 ${totalSelected ? "sticky bottom-0 z-10 shadow-md" : ""}`}
                 role="region"
                 aria-label="Selected cases"
               >
@@ -491,7 +485,7 @@ export function BatchPage() {
 
           {report.export ? (
             <div
-              className="relay-batch-export-ready mt-1 flex flex-wrap items-center gap-3 text-xs font-semibold text-[var(--text-success-base)]"
+              className="mt-1 flex flex-wrap items-center gap-3 text-xs font-semibold text-[var(--text-success-base)]"
               role="status"
             >
               <p>Export ready: {report.export.jobIds.length} run artifacts prepared.</p>

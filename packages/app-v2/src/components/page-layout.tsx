@@ -8,7 +8,7 @@ function Page({ pattern, className = "", ...props }: PageProps & { pattern: stri
   return (
     <section
       {...props}
-      className={`relay-page relay-page-layout mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 ${pattern === "library" ? "max-w-[1440px]" : pattern === "form" ? "max-w-[1040px]" : "max-w-none"} ${className}`}
+      className={`mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 ${pattern === "library" ? "max-w-7xl" : pattern === "form" ? "max-w-5xl" : "max-w-none"} ${className}`}
       data-page-pattern={pattern}
     />
   );
@@ -47,7 +47,7 @@ export function PageHeader({
   return (
     <header className="relay-workspace-header mb-6">
       {eyebrow ? (
-        <div className="relay-workspace-context flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-4 text-muted-foreground">
+        <div className="relay-workspace-context flex flex-wrap gap-x-3 gap-y-1 text-xs leading-4 text-muted-foreground">
           {eyebrow}
         </div>
       ) : null}
@@ -55,7 +55,7 @@ export function PageHeader({
         className={`relay-workspace-title-row flex flex-wrap items-center justify-between gap-x-6 gap-y-3 ${eyebrow ? "mt-1" : ""}`}
       >
         <h1
-          className={`${titleHidden ? "relay-visually-hidden sr-only " : ""}min-w-0 flex-[1_1_240px] text-[28px] leading-8 font-semibold tracking-tight wrap-anywhere`}
+          className={`${titleHidden ? "relay-visually-hidden sr-only" : ""}min-w-0 min-w-60 flex-1 text-3xl leading-8 font-semibold tracking-tight wrap-anywhere`}
         >
           {title}
         </h1>
@@ -64,13 +64,11 @@ export function PageHeader({
         ) : null}
       </div>
       {description ? (
-        <p className="relay-page-description mt-1.5 max-w-[60ch] text-[13px] leading-5 text-muted-foreground">
+        <p className="relay-page-description mt-1.5 max-w-prose text-sm leading-5 text-muted-foreground">
           {description}
         </p>
       ) : null}
-      {children ? (
-        <div className="relay-workspace-header-footer mt-4 min-w-0">{children}</div>
-      ) : null}
+      {children ? <div className="mt-4 min-w-0">{children}</div> : null}
     </header>
   );
 }
@@ -89,7 +87,7 @@ export function WorkbenchPanes({
   const device = inspectorKind === "device";
   return (
     <div
-      className={`relay-workspace-panes grid items-start gap-4 max-[720px]:grid-cols-1 ${
+      className={`grid items-start gap-4 max-[720px]:grid-cols-1 ${
         inspector
           ? device
             ? "min-[900px]:grid-cols-[minmax(210px,0.7fr)_minmax(0,1fr)_360px]"
@@ -99,11 +97,11 @@ export function WorkbenchPanes({
       data-inspector={Boolean(inspector)}
       data-inspector-kind={inspector ? inspectorKind : undefined}
     >
-      <div className="relay-workspace-outline min-w-0">{outline}</div>
-      <div className="relay-workspace-stage min-w-0">{stage}</div>
+      <div className="min-w-0">{outline}</div>
+      <div className="min-w-0">{stage}</div>
       {inspector ? (
         <div
-          className={`relay-workspace-inspector min-w-0 ${
+          className={`min-w-0 ${
             device
               ? "max-[899px]:order-first min-[900px]:sticky min-[900px]:top-4"
               : "max-[1100px]:col-span-full"

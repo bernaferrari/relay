@@ -252,10 +252,7 @@ export function SuitePage() {
           title="Plan not found"
           detail="It may have been removed from this App."
           action={
-            <Link
-              className={productLinkClassName}
-              to="/suites"
-            >
+            <Link className={productLinkClassName} to="/suites">
               Back to Plans
             </Link>
           }
@@ -323,7 +320,7 @@ export function SuitePage() {
               className="min-w-0 rounded-xl border border-border bg-card p-4"
               aria-labelledby="suite-tests-title"
             >
-              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Coverage
               </p>
               <h2 id="suite-tests-title" className="mt-1 text-base font-semibold text-foreground">
@@ -584,10 +581,9 @@ export function SuitePage() {
                       : "Relay could not remove this Plan."}
                   </FieldError>
                 ) : null}
-                <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
+                <div className="flex flex-wrap items-center justify-end gap-2.5">
                   <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                   <Button
-                    className="relay-suite-remove-confirm"
                     variant="destructive"
                     onClick={() => remove.mutate()}
                     disabled={remove.isPending}
@@ -677,7 +673,7 @@ export function SuitePage() {
                       : "Relay could not save this Plan."}
                   </FieldError>
                 ) : null}
-                <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
+                <div className="flex flex-wrap items-center justify-end gap-2.5">
                   <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                   <Button
                     type="submit"

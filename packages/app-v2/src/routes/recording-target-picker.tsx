@@ -73,7 +73,7 @@ export function RecordingTargetPicker({
         <Target aria-hidden="true" /> Change target
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="flex max-h-[90dvh] w-[min(920px,calc(100vw-32px))] max-w-none flex-col gap-4 overflow-hidden sm:max-w-[920px]">
+        <DialogContent className="flex max-h-[90dvh] w-[min(920px,calc(100vw-32px))] max-w-none flex-col gap-4 overflow-hidden sm:max-w-5xl">
           <div>
             <DialogTitle>Change target</DialogTitle>
             <DialogDescription>
@@ -181,7 +181,7 @@ export function RecordingTargetPicker({
                             {control.name}
                           </span>
                           {control.role ? (
-                            <code className="max-w-24 truncate rounded bg-muted px-1 text-[10px] text-muted-foreground">
+                            <code className="max-w-24 truncate rounded bg-muted px-1 text-xs text-muted-foreground">
                               {control.role.split(".").at(-1)}
                             </code>
                           ) : null}

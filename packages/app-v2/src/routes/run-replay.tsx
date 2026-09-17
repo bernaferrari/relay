@@ -122,7 +122,7 @@ export function RunReplayAction({
             {replay.error instanceof Error ? replay.error.message : "Replay could not start."}
           </p>
         ) : null}
-        <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
+        <div className="flex flex-wrap items-center justify-end gap-2.5">
           <DialogClose
             render={
               <Button variant="ghost" disabled={replay.isPending}>

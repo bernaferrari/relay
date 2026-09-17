@@ -106,10 +106,7 @@ export function AppVersionsPage() {
               title="No registered versions"
               detail="No mobile build or web deployment has been registered in this workspace yet."
               action={
-                <Link
-                  className={productLinkClassName}
-                  to="/tests"
-                >
+                <Link className={productLinkClassName} to="/tests">
                   Open Tests
                 </Link>
               }
@@ -384,10 +381,7 @@ export function AppAccountsPage() {
                     {signInNow.isPending ? "Opening…" : "Open headed browser"}
                   </Button>
                 ) : (
-                  <Link
-                    className={productLinkClassName}
-                    to="/environments"
-                  >
+                  <Link className={productLinkClassName} to="/environments">
                     Open browsers
                   </Link>
                 )
@@ -448,7 +442,7 @@ function AppResourceFrame({
   children: React.ReactNode;
 }) {
   return (
-    <LibraryPage className="max-w-[1040px]">
+    <LibraryPage className="max-w-5xl">
       <PageHeader context="Workspace" title={title} description={description} actions={action} />
       {children}
     </LibraryPage>
@@ -466,7 +460,6 @@ function ResourceRecovery({
 }) {
   return (
     <RecoveryState
-      className="relay-apps-recovery"
       layout="centered"
       title="Could not load resources"
       detail={detail}
@@ -513,7 +506,7 @@ function AccountRow({
   const checkedAt = healthCheckedAt(account.fixture);
   const showActions = canProbe || canSignIn || canRefresh || (canRevoke && state !== "revoked");
   return (
-    <li className="grid min-h-[66px] grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3 px-3.5 py-[11px] sm:grid-cols-[36px_minmax(0,1fr)_auto_auto]">
+    <li className="grid min-h-16 grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-3 px-3.5 py-2.5 sm:grid-cols-[36px_minmax(0,1fr)_auto_auto]">
       <span
         className="grid size-9 place-items-center rounded-md border border-border bg-background text-foreground"
         aria-hidden="true"
@@ -527,11 +520,7 @@ function AccountRow({
         <small>
           {identity ? `Saved as ${account.fixture.name}` : account.fixture.name}
           {" · "}
-          <Link
-            to="/devices/$deviceId"
-            params={{ deviceId: account.target.id }}
-            className="relay-inline-link"
-          >
+          <Link to="/devices/$deviceId" params={{ deviceId: account.target.id }}>
             {account.target.name}
           </Link>
           {account.fixture.origins.length
@@ -541,7 +530,7 @@ function AccountRow({
         </small>
       </span>
       <span
-        className={`inline-flex min-h-6 items-center rounded-full bg-background px-2.5 text-[11px] font-semibold capitalize ${
+        className={`inline-flex min-h-6 items-center rounded-full bg-background px-2.5 text-xs font-semibold capitalize ${
           state === "ready" ? "text-muted-foreground" : "text-destructive"
         }`}
       >

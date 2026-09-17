@@ -142,7 +142,7 @@ export function RunPerformancePanel({
                   y={line + 3}
                   textAnchor="end"
                   fill="currentColor"
-                  className="text-[9px] text-muted-foreground"
+                  className="text-xs text-muted-foreground"
                 >
                   {(low + (ceiling - low) * (1 - index / 2)).toLocaleString(undefined, {
                     maximumFractionDigits: 1,
@@ -201,7 +201,7 @@ export function RunPerformancePanel({
                 tabIndex={0}
                 aria-label={`${metricLabel(metric.name)}: ${point.value}, ${((point.at - first) / 1000).toFixed(1)} seconds into samples`}
                 aria-pressed={selectedAt === point.at}
-                className="cursor-pointer outline-none [&:focus-visible>circle:last-child]:stroke-ring [&:focus-visible>circle:last-child]:stroke-[3]"
+                className="cursor-pointer outline-none [&:focus-visible>circle:last-child]:stroke-3 [&:focus-visible>circle:last-child]:stroke-ring"
                 onClick={() => inspect(index)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
@@ -280,7 +280,7 @@ export function RunPerformancePanel({
               y="121"
               textAnchor="start"
               fill="currentColor"
-              className="text-[10px] text-muted-foreground"
+              className="text-xs text-muted-foreground"
             >
               0:00
             </text>
@@ -289,7 +289,7 @@ export function RunPerformancePanel({
               y="121"
               textAnchor="end"
               fill="currentColor"
-              className="text-[10px] text-muted-foreground"
+              className="text-xs text-muted-foreground"
             >
               {Math.floor((last - first) / 60000)}:
               {String(Math.floor((last - first) / 1000) % 60).padStart(2, "0")}

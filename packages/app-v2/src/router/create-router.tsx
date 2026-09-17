@@ -168,18 +168,18 @@ function RootLayout() {
 function RoutePending() {
   return (
     <section
-      className="relay-page mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 relay-route-pending grid content-start gap-3"
+      className="mx-auto w-full px-[clamp(20px,3vw,40px)] pt-7 pb-10 grid content-start gap-3"
       role="status"
       aria-busy="true"
       aria-label="Loading page"
     >
       <span className="relay-visually-hidden sr-only">Loading page…</span>
-      <Skeleton className="relay-route-pending-eyebrow h-3 w-[72px]" />
-      <Skeleton className="relay-route-pending-title mt-0.5 h-[38px] w-[min(360px,58vw)]" />
-      <Skeleton className="relay-route-pending-description h-[18px] w-[min(520px,76vw)]" />
-      <div className="relay-route-pending-content mt-[34px] grid grid-cols-2 gap-3 max-[640px]:grid-cols-1">
-        <Skeleton className="h-28 rounded-[var(--radius-xl)]" />
-        <Skeleton className="h-28 rounded-[var(--radius-xl)]" />
+      <Skeleton className="h-3 w-18" />
+      <Skeleton className="mt-0.5 h-10 w-[min(360px,58vw)]" />
+      <Skeleton className="h-4.5 w-[min(520px,76vw)]" />
+      <div className="mt-8 grid grid-cols-2 gap-3 max-[640px]:grid-cols-1">
+        <Skeleton className="h-28 rounded-xl" />
+        <Skeleton className="h-28 rounded-xl" />
       </div>
     </section>
   );

@@ -20,7 +20,7 @@ export function RepairSection({
       <div className="flex items-center gap-2.5">
         <Sparkles aria-hidden="true" />
         <div>
-          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Review
           </p>
           <h2 id="repairs-title">Suggested repairs</h2>
@@ -89,7 +89,7 @@ export function HistorySection({ items }: { items: ProductTestEditorDocument["hi
       <div className="flex items-center gap-2.5">
         <History aria-hidden="true" />
         <div>
-          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Saved activity
           </p>
           <h2 id="history-title">History</h2>
@@ -105,7 +105,7 @@ export function HistorySection({ items }: { items: ProductTestEditorDocument["hi
               <CircleDot aria-hidden="true" />
               <div>
                 <strong className="block text-xs font-semibold">{item.summary}</strong>
-                <span className="mt-0.5 block text-[10px] text-muted-foreground">
+                <span className="mt-0.5 block text-xs text-muted-foreground">
                   {item.actorKind === "human" ? "You" : "Agent"} · {relativeTime(item.at)}
                 </span>
               </div>

@@ -71,10 +71,7 @@ export function TestStepEvidencePreview({
       aria-labelledby={titleId}
     >
       <header className="flex min-h-8 shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5">
-        <h3
-          id={titleId}
-          className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground"
-        >
+        <h3 id={titleId} className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
           {step.label ?? step.intent}
         </h3>
         {selected ? (
@@ -145,7 +142,7 @@ export function TestStepEvidencePreview({
         ) : null}
         {report ? (
           <Link
-            className="relay-inline-link inline-flex min-h-8 items-center text-xs font-semibold text-foreground underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
+            className="inline-flex min-h-8 items-center text-xs font-semibold text-foreground underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
             to="/runs/$runId"
             params={{ runId: report.runId }}
             search={{

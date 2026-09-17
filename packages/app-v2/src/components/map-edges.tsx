@@ -415,7 +415,7 @@ export function MapEdges({
   );
   return (
     <svg
-      className="relay-map-edges pointer-events-none absolute left-(--box-left) top-(--box-top) z-10 h-(--box-height) w-(--box-width) overflow-visible"
+      className="pointer-events-none absolute left-(--box-left) top-(--box-top) z-10 h-(--box-height) w-(--box-width) overflow-visible"
       aria-hidden="true"
       viewBox={`${edgeBounds.minX} ${edgeBounds.minY} ${edgeBounds.maxX - edgeBounds.minX} ${edgeBounds.maxY - edgeBounds.minY}`}
       style={
@@ -469,7 +469,7 @@ export function MapEdges({
         return (
           <g
             key={geometry.path.id}
-            className={`relay-map-edge [&>path]:fill-none [&>path]:stroke-current [&>path]:[stroke-linecap:round] [&>path]:stroke-[1.5] [&>path]:[vector-effect:non-scaling-stroke] [&>rect]:fill-popover [&>rect]:stroke-border [&>rect]:stroke-0 [&>rect]:[vector-effect:non-scaling-stroke] [&_text]:fill-current [&_text]:font-sans [&_text]:text-[10.5px] [&_text]:font-normal ${
+            className={`relay-map-edge [&>path]:fill-none [&>path]:stroke-current [&>path]:stroke-1.5 [&>rect]:fill-popover [&>rect]:stroke-border [&>rect]:stroke-0 [&_text]:fill-current [&_text]:font-sans [&_text]:text-xs [&_text]:font-normal ${
               state === "selected"
                 ? "text-blue-400"
                 : state === "muted"

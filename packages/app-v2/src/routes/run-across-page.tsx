@@ -257,7 +257,7 @@ export function RunAcrossPage() {
                   </small>
                 </div>
               ) : (
-                <p className="relay-action-hint mt-3 text-sm leading-relaxed text-muted-foreground">
+                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                   {target && missingDimensions.length
                     ? "Choose at least one value in each data group."
                     : "Choose at least one value and one ready device or browser."}

@@ -42,7 +42,7 @@ function recordValue(value: unknown): Record<string, unknown> | undefined {
 function SaveStatus({ state }: { state: SaveState }) {
   return (
     <span
-      className={`mt-0.5 inline-flex min-h-7 items-center gap-2 rounded-full bg-muted px-2.5 text-[11px] font-semibold text-muted-foreground ${
+      className={`mt-0.5 inline-flex min-h-7 items-center gap-2 rounded-full bg-muted px-2.5 text-xs font-semibold text-muted-foreground ${
         state === "saved"
           ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
           : state === "failed" || state === "unavailable"
@@ -91,7 +91,7 @@ export function SettingsFrame({
   }, [category, section]);
 
   return (
-    <LibraryPage className="max-w-[1080px]">
+    <LibraryPage className="max-w-5xl">
       <PageHeader
         context="Settings"
         title={copy.title}
@@ -120,8 +120,8 @@ export function SettingsFrame({
               to={item.path}
               className={
                 item.id === category
-                  ? "grid min-h-9 content-center rounded-md bg-muted px-2.5 text-[13px] font-medium text-foreground transition-colors"
-                  : "grid min-h-9 content-center rounded-md px-2.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                  ? "grid min-h-9 content-center rounded-md bg-muted px-2.5 text-sm font-medium text-foreground transition-colors"
+                  : "grid min-h-9 content-center rounded-md px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
               }
               aria-current={item.id === category ? "page" : undefined}
             >
@@ -129,10 +129,7 @@ export function SettingsFrame({
             </Link>
           ))}
         </nav>
-        <section
-          className="grid min-w-0 max-w-[36rem] gap-6 pb-6"
-          aria-label={`${copy.title} settings`}
-        >
+        <section className="grid min-w-0 max-w-xl gap-6 pb-6" aria-label={`${copy.title} settings`}>
           {children}
         </section>
       </div>
@@ -161,7 +158,7 @@ export function SettingsGroup({
         <div className="mb-2 flex min-h-6 items-center justify-between gap-3">
           {title ? (
             <h2
-              className="text-[11px] font-medium tracking-wide text-muted-foreground"
+              className="text-xs font-medium tracking-wide text-muted-foreground"
               id={id ? `${id}-title` : undefined}
             >
               {title}
@@ -194,11 +191,11 @@ export function SettingRow({
       id={id}
     >
       <div className="grid min-w-0 gap-0.5">
-        <h3 className="text-[13px] font-medium text-foreground">{title}</h3>
-        <p className="max-w-[52ch] text-[13px] leading-5 text-muted-foreground">{description}</p>
+        <h3 className="text-sm font-medium text-foreground">{title}</h3>
+        <p className="max-w-prose text-sm leading-5 text-muted-foreground">{description}</p>
       </div>
       {children ? (
-        <div className="flex shrink-0 items-center gap-2 text-[13px] text-muted-foreground">
+        <div className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
           {children}
         </div>
       ) : null}
@@ -241,13 +238,10 @@ export function ToggleRow({
       }}
     >
       <span className="grid min-w-0 gap-0.5">
-        <span id={titleId} className="text-[13px] font-medium text-foreground">
+        <span id={titleId} className="text-sm font-medium text-foreground">
           {title}
         </span>
-        <span
-          id={descriptionId}
-          className="max-w-[52ch] text-[13px] leading-5 text-muted-foreground"
-        >
+        <span id={descriptionId} className="max-w-prose text-sm leading-5 text-muted-foreground">
           {description}
         </span>
       </span>

@@ -1,5 +1,7 @@
 import {
+  destIdentityReviewItems,
   formatCaptureReviewCoverageSummary,
+  isCaptureReviewLeftoverCaption,
   isCaptureReviewLeftoverPhase,
   resolveCaptureReviewQueue,
   summarizeCaptureReview,
@@ -175,7 +177,7 @@ export function filterPlanCaptureReviewQueue(
   filter?: PlanCaptureReviewFilter,
 ): PlanCaptureReviewQueue {
   const destIdentity = {
-    items: queue.items.filter((item) => !isCaptureReviewLeftoverPhase(item.phase)),
+    items: destIdentityReviewItems(queue.items),
     summary: queue.summary,
   };
   const parsed = parsePlanCaptureReviewFilter(filter ?? {});
@@ -195,7 +197,9 @@ export function planCaptureReviewFilterOptions(items: readonly PlanCaptureReview
   const devices = new Set<string>();
   const accounts = new Set<string>();
   for (const item of items) {
-    if (isCaptureReviewLeftoverPhase(item.phase)) continue;
+    if (isCaptureReviewLeftoverPhase(item.phase) || isCaptureReviewLeftoverCaption(item.caption)) {
+      continue;
+    }
     const screen = normalizedFilterValue(item.caption) || normalizedFilterValue(item.checkpointId);
     if (screen) screens.add(screen);
     const device =

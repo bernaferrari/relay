@@ -65,7 +65,7 @@ export function RecordingScreenCapture({
               autoComplete="off"
             />
           </Field>
-          <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
+          <div className="flex flex-wrap items-center justify-end gap-2.5">
             <DialogClose render={<Button variant="ghost">Cancel</Button>} />
             <Button type="submit" variant="default" disabled={pending}>
               {pending ? "Saving…" : "Save"}

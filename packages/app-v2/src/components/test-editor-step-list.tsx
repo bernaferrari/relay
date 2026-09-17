@@ -62,7 +62,7 @@ export function TestEditorStepOutline({
           <h2 id="test-steps-title">Steps</h2>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2.5">
-          <span className="text-[11px] tabular-nums text-muted-foreground">
+          <span className="text-xs tabular-nums text-muted-foreground">
             {entries.length === 1 ? "1 step" : `${entries.length} steps`}
           </span>
           <Button size="sm" variant="outline" onClick={onAdd} disabled={busy}>
@@ -79,7 +79,7 @@ export function TestEditorStepOutline({
             <li key={entry.step.id} style={{ "--step-depth": entry.depth } as CSSProperties}>
               <div
                 id={`test-step-${entry.step.id}`}
-                className="grid min-h-14 min-w-0 grid-cols-[minmax(0,1fr)_36px] items-stretch rounded-lg border border-border bg-card transition-colors hover:border-input hover:bg-muted/40 data-[selected=true]:border-primary/40 data-[selected=true]:bg-primary/5 data-[selected=true]:shadow-[0_0_0_1px_color-mix(in_srgb,var(--primary)_10%,transparent)]"
+                className="grid min-h-14 min-w-0 grid-cols-[minmax(0,1fr)_36px] items-stretch rounded-lg border border-border bg-card transition-colors hover:border-input hover:bg-muted/40 data-[selected=true]:border-primary/40 data-[selected=true]:bg-primary/5"
                 data-selected={selectedStepId === entry.step.id}
                 draggable={!busy}
                 tabIndex={0}
@@ -116,14 +116,14 @@ export function TestEditorStepOutline({
                     className="size-4 cursor-grab text-muted-foreground"
                     aria-hidden="true"
                   />
-                  <span className="grid size-7 place-items-center rounded-full border border-border bg-background text-[10px] tabular-nums text-muted-foreground">
+                  <span className="grid size-7 place-items-center rounded-full border border-border bg-background text-xs tabular-nums text-muted-foreground">
                     {entry.number}
                   </span>
                   <span className="min-w-0">
                     <strong className="block overflow-hidden text-xs font-semibold break-words">
                       {entry.step.intent}
                     </strong>
-                    <small className="mt-0.5 block overflow-hidden text-[10px] text-muted-foreground break-words">
+                    <small className="mt-0.5 block overflow-hidden text-xs text-muted-foreground break-words">
                       {entry.placement ? `${branchLabel(entry.placement)} · ` : ""}
                       {stepKindLabel(entry.step)} ·{" "}
                       {stepReadinessLabel(entry.step, {
@@ -177,9 +177,7 @@ export function TestEditorStepOutline({
           routePlatformBlockers={routePlatformBlockers}
         />
         {compileBlockNotice ? (
-          <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-            {compileBlockNotice}
-          </p>
+          <p className="mt-2 text-xs leading-snug text-muted-foreground">{compileBlockNotice}</p>
         ) : null}
       </div>
     </section>

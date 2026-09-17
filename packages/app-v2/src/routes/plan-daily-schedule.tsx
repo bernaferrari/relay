@@ -59,10 +59,7 @@ export function PlanDailySchedule({
     onSave({ hour: value, timezone });
   }
   return (
-    <section
-      className="mt-8 border-t border-border pt-5"
-      aria-labelledby="plan-daily-title"
-    >
+    <section className="mt-8 border-t border-border pt-5" aria-labelledby="plan-daily-title">
       <h2 id="plan-daily-title" className="text-sm font-semibold text-foreground">
         Run daily
       </h2>
@@ -90,7 +87,9 @@ export function PlanDailySchedule({
           })}
         </ol>
       ) : (
-        <p className="mt-3 text-xs leading-5 text-muted-foreground">No daily run is scheduled yet.</p>
+        <p className="mt-3 text-xs leading-5 text-muted-foreground">
+          No daily run is scheduled yet.
+        </p>
       )}
       <form className="mt-3 flex flex-wrap items-end gap-3" onSubmit={submit}>
         <Field>

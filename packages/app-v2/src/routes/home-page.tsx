@@ -99,7 +99,7 @@ export function HomePage() {
   };
 
   return (
-    <LibraryPage className="flex min-h-full max-w-[1040px] flex-col">
+    <LibraryPage className="flex min-h-full max-w-5xl flex-col">
       <PageHeader
         context="Overview"
         title={selectedApp ? selectedApp.name : "Your workspace"}

@@ -40,7 +40,7 @@ export function BatchTriageControls({
     <div className="grid gap-3" aria-label="Review ownership">
       <div className="flex flex-wrap items-end gap-2">
         <SelectField
-          className="w-[11.5rem]"
+          className="w-46"
           label="Review status"
           value=""
           placeholder="Set status"

@@ -146,11 +146,11 @@ export function SelectedStepEditor({
       }}
     >
       <div className="flex items-center gap-2.5">
-        <span className="grid size-7 shrink-0 place-items-center rounded-full border border-border bg-background text-[10px] tabular-nums text-muted-foreground">
+        <span className="grid size-7 shrink-0 place-items-center rounded-full border border-border bg-background text-xs tabular-nums text-muted-foreground">
           {entry.number}
         </span>
         <div className="min-w-0">
-          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Selected step
           </p>
           <h2>{stepKindLabel(entry.step)}</h2>
@@ -243,7 +243,7 @@ export function SelectedStepEditor({
           rows={4}
         />
       </label>
-      <FieldLabel className="relay-editor-check flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50">
+      <FieldLabel className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50">
         <span className="grid min-w-0 flex-1 gap-0.5">
           <span className="text-sm font-medium text-foreground">
             Save screenshot after this step

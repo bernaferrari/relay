@@ -172,16 +172,14 @@ export function AppSwitcher() {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger
-          className="relay-app-switcher flex min-h-14 w-full items-center gap-3 rounded-lg border border-border/60 bg-sidebar-accent/40 px-3 py-2.5 text-left text-foreground transition-colors hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring motion-reduce:transition-none"
+          className="flex min-h-14 w-full items-center gap-3 rounded-lg border border-border/60 bg-sidebar-accent/40 px-3 py-2.5 text-left text-foreground transition-colors hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring motion-reduce:transition-none"
           aria-label={`App: ${contextName}`}
         >
-          <span className="relay-app-switcher-copy flex min-w-0 flex-1 flex-col gap-1">
-            <span className="relay-app-switcher-label text-xs font-normal leading-4 text-muted-foreground">
+          <span className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="text-xs font-normal leading-4 text-muted-foreground">
               {scope.kind === "workspace" ? "Workspace" : "App"}
             </span>
-            <span className="relay-app-switcher-name truncate text-sm font-medium leading-5">
-              {contextName}
-            </span>
+            <span className="truncate text-sm font-medium leading-5">{contextName}</span>
           </span>
           <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         </DropdownMenuTrigger>
@@ -219,15 +217,15 @@ export function AppSwitcher() {
             </DropdownMenuRadioGroup>
             {apps.isError ? (
               <DropdownMenuItem
-                className="relay-menu-note flex min-h-11 items-center px-2.5 text-xs text-muted-foreground"
+                className="flex min-h-11 items-center px-2.5 text-xs text-muted-foreground"
                 disabled
               >
                 Apps are temporarily unavailable
               </DropdownMenuItem>
             ) : null}
-            <DropdownMenuSeparator className="relay-menu-separator my-2 ml-1.5 mr-1.5 mt-2 h-px bg-border" />
+            <DropdownMenuSeparator className="my-2 ml-1.5 mr-1.5 mt-2 h-px bg-border" />
             <DropdownMenuItem
-              className="relay-menu-item focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex justify-between gap-4"
+              className="focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex justify-between gap-4"
               onClick={() => router.history.push("/apps")}
             >
               Manage apps
@@ -241,20 +239,18 @@ export function AppSwitcher() {
             render={<Link to="/apps/$appId/map" params={{ appId: selectedAppId }} />}
             isActive={/^\/apps\/[^/]+\/map/.test(location.pathname)}
             aria-current={/^\/apps\/[^/]+\/map/.test(location.pathname) ? "page" : undefined}
-            className="min-h-9 gap-2.5 px-[11px] text-[13px] font-medium"
+            className="min-h-9 gap-2.5 px-2.5 text-sm font-medium"
           >
-            <Map className="size-[17px] text-muted-foreground" aria-hidden="true" />
+            <Map className="size-4 text-muted-foreground" aria-hidden="true" />
             App map
           </SidebarMenuButton>
         ) : (
           <DropdownMenu>
             <DropdownMenuTrigger
-              render={
-                <SidebarMenuButton className="min-h-9 gap-2.5 px-[11px] text-[13px] font-medium" />
-              }
+              render={<SidebarMenuButton className="min-h-9 gap-2.5 px-2.5 text-sm font-medium" />}
               aria-label="App map"
             >
-              <Map className="size-[17px] text-muted-foreground" aria-hidden="true" />
+              <Map className="size-4 text-muted-foreground" aria-hidden="true" />
               <span className="flex-1 text-left">App map</span>
               <ChevronDown className="size-3 text-muted-foreground" aria-hidden="true" />
             </DropdownMenuTrigger>

@@ -196,28 +196,28 @@ export function SetupRow({
   return (
     <div className="border-b border-border py-3.5">
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-8 gap-y-0.5">
-        <h3 className="text-[13px] font-medium leading-5 text-foreground">{title}</h3>
+        <h3 className="text-sm font-medium leading-5 text-foreground">{title}</h3>
         <span
-          className={`pt-px text-right text-[12px] leading-5 ${statusClass(
+          className={`pt-px text-right text-xs leading-5 ${statusClass(
             loading ? "checking" : ready ? "ready" : "attention",
           )}`}
         >
           {status}
         </span>
         {detail ? (
-          <p className="max-w-[44ch] text-[13px] leading-5 text-muted-foreground">{detail}</p>
+          <p className="max-w-[44ch] text-sm leading-5 text-muted-foreground">{detail}</p>
         ) : (
           <span />
         )}
         {!loading && attention ? (
-          <div className="justify-self-end text-right [&_button]:h-auto [&_button]:px-0 [&_button]:text-[12px] [&_button]:text-foreground [&_button]:underline [&_button]:underline-offset-4 [&_button]:hover:bg-transparent">
+          <div className="justify-self-end text-right [&_button]:h-auto [&_button]:px-0 [&_button]:text-xs [&_button]:text-foreground [&_button]:underline [&_button]:underline-offset-4 [&_button]:hover:bg-transparent">
             {action}
           </div>
         ) : null}
       </div>
       {showChecks ? (
         <Collapsible className="group/setup mt-2">
-          <CollapsibleTrigger className="flex items-center gap-1 text-[12px] leading-4 text-muted-foreground transition-colors hover:text-foreground">
+          <CollapsibleTrigger className="flex items-center gap-1 text-xs leading-4 text-muted-foreground transition-colors hover:text-foreground">
             <ChevronRight
               className="size-3 transition-transform group-data-open/setup:rotate-90"
               aria-hidden="true"
@@ -233,11 +233,9 @@ export function SetupRow({
                     className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-8"
                     key={check.id}
                   >
-                    <span className="text-[12px] leading-5 text-muted-foreground">
-                      {check.label}
-                    </span>
+                    <span className="text-xs leading-5 text-muted-foreground">{check.label}</span>
                     <span
-                      className={`text-[12px] leading-5 ${statusClass(
+                      className={`text-xs leading-5 ${statusClass(
                         checkReady ? "ready" : "attention",
                       )}`}
                     >

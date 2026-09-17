@@ -394,7 +394,7 @@ describe("Devices", () => {
     await renderPath("/devices/ipad");
 
     const crumbs = document.querySelector(".relay-breadcrumbs");
-    expect(crumbs?.className).toContain("text-[11px]");
+    expect(crumbs?.className).toContain("text-xs");
     expect(crumbs?.className).not.toContain("mb-3");
     expect(crumbs?.querySelector("a")?.className).not.toContain("min-h-11");
     expect(document.querySelector("h1")?.textContent).toBe("Design iPad");

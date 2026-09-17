@@ -105,7 +105,7 @@ export function EnvironmentsPage() {
   }
 
   return (
-    <LibraryPage className="max-w-[1040px]">
+    <LibraryPage className="max-w-5xl">
       <PageHeader
         context="Workspace"
         title="Browsers"
@@ -140,7 +140,7 @@ export function EnvironmentsPage() {
                 <Plus aria-hidden="true" /> New browser
               </DialogTrigger>
 
-              <DialogContent showCloseButton={false} className="relay-environment-dialog">
+              <DialogContent showCloseButton={false}>
                 <DialogTitle>New browser</DialogTitle>
                 <DialogDescription>
                   Opens a browser you can record on and sign into.
@@ -176,7 +176,7 @@ export function EnvironmentsPage() {
                         : "Relay could not create this browser."}
                     </FieldError>
                   ) : null}
-                  <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
+                  <div className="flex flex-wrap items-center justify-end gap-2.5">
                     <DialogClose
                       render={
                         <Button

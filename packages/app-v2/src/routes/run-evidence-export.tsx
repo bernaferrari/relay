@@ -40,11 +40,7 @@ export function RunEvidenceExport({
         {exportRun.isPending ? "Preparing…" : "Export evidence"}
       </Button>
       {href && fileName ? (
-        <a
-          className={productLinkClassName}
-          href={href}
-          download={fileName}
-        >
+        <a className={productLinkClassName} href={href} download={fileName}>
           Save evidence pack
         </a>
       ) : null}

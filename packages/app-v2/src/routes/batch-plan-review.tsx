@@ -41,16 +41,16 @@ import {
 } from "./batch-result-view";
 
 const findingsLinkClass =
-  "relay-inline-link font-semibold text-foreground underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2";
+  " font-semibold text-foreground underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2";
 
 export function BatchResultSummary({ report }: { report: ProductBatchReport }) {
   const facts = batchResultFacts(report);
   const context = batchResultContext(report);
   return (
-    <div className="relay-batch-summary mt-1 flex max-w-[80ch] flex-wrap items-center gap-x-3 gap-y-1">
+    <div className="mt-1 flex max-w-prose flex-wrap items-center gap-x-3 gap-y-1">
       <p className="text-sm font-medium text-foreground">{batchResultHeadline(report)}</p>
-      {context ? <p className="text-[13px] leading-5 text-muted-foreground">{context}</p> : null}
-      <p className="flex flex-wrap gap-x-3 gap-y-1 text-[13px] leading-5 tabular-nums">
+      {context ? <p className="text-sm leading-5 text-muted-foreground">{context}</p> : null}
+      <p className="flex flex-wrap gap-x-3 gap-y-1 text-sm leading-5 tabular-nums">
         {facts.map((fact) => (
           <span
             key={fact.label}
@@ -84,7 +84,7 @@ export function BatchFindingsLead({
   if (count) return null;
   const empty = planFindingsEmptyCopy(report, { hasProblems: gridHasProblems });
   return (
-    <div className="relay-batch-findings-lead mt-5 max-w-[62ch]" role="status">
+    <div className="mt-5 max-w-prose" role="status">
       <RecoveryState
         title={empty[0]}
         detail={empty[1]}
@@ -94,7 +94,7 @@ export function BatchFindingsLead({
           </Link>
         }
       />
-      <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
+      <p className="mt-2 text-sm leading-5 text-muted-foreground">
         Confirm and Reject never accept a visual baseline. Review screenshots opens the Report and
         does not accept a baseline.
       </p>
@@ -121,10 +121,10 @@ export function BatchStabilityPanel({
     return null;
   }
   return (
-    <section className="relay-batch-stability mt-8" aria-labelledby="batch-stability-title">
+    <section className="mt-8" aria-labelledby="batch-stability-title">
       <h2
         id="batch-stability-title"
-        className="text-[20px] font-semibold tracking-tight text-foreground"
+        className="text-xl font-semibold tracking-tight text-foreground"
       >
         Stability
       </h2>
@@ -176,14 +176,14 @@ export function BatchFindingsPanel({
   const flakyCount = findings.filter((finding) => planFindingIsFlaky(finding, flakyTestIds)).length;
   const visible = visiblePlanFindings(findings, { hideFlaky, flakyTestIds });
   return (
-    <section className="relay-batch-findings mt-8" aria-labelledby="batch-findings-title">
+    <section className="mt-8" aria-labelledby="batch-findings-title">
       <h2
         id="batch-findings-title"
-        className="text-[20px] font-semibold tracking-tight text-foreground"
+        className="text-xl font-semibold tracking-tight text-foreground"
       >
         Findings
       </h2>
-      <p className="mt-1 max-w-[62ch] text-sm leading-6 text-muted-foreground">
+      <p className="mt-1 max-w-prose text-sm leading-6 text-muted-foreground">
         {findings.length} finding
         {findings.length === 1 ? "" : "s"} to review. Confirm and Reject never accept a visual
         baseline.
@@ -194,7 +194,7 @@ export function BatchFindingsPanel({
       {flakyCount ? (
         <Field
           orientation="horizontal"
-          className="mt-3 max-w-[62ch] min-h-14 items-center rounded-lg border border-border bg-card px-3 py-2.5"
+          className="mt-3 max-w-prose min-h-14 items-center rounded-lg border border-border bg-card px-3 py-2.5"
         >
           <FieldContent>
             <FieldLabel htmlFor="hide-flaky-tests">Hide flaky Tests</FieldLabel>
@@ -224,7 +224,7 @@ export function BatchFindingsPanel({
         ))}
       </ul>
       <details className="mt-3">
-        <summary className="cursor-pointer text-[13px] text-muted-foreground hover:text-foreground">
+        <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
           Copy as markdown
         </summary>
         <pre className="mt-2 overflow-auto whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
@@ -259,13 +259,11 @@ function FindingReviewCard({
   return (
     <li
       className={`grid gap-3 rounded-xl border border-border bg-card p-4 ${
-        product
-          ? "border-l-[3px] border-l-border-critical-selected"
-          : "border-l-[3px] border-l-border"
+        product ? "border-l-4 border-l-border-critical-selected" : "border-l-4 border-l-border"
       }`}
     >
       <div className="min-w-0">
-        <p className="text-[12px] leading-4 text-muted-foreground">
+        <p className="text-xs leading-4 text-muted-foreground">
           {planFindingLaneLabel(lane)}
           {product && finding.severity === "critical" ? " · Critical" : ""}
           {flaky ? " · Flaky" : ""}

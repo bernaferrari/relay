@@ -126,7 +126,7 @@ export function SuitesPage() {
   }
 
   return (
-    <LibraryPage className="max-w-[1080px]">
+    <LibraryPage className="max-w-5xl">
       <PageHeader
         title="Plans"
         description="Choose Tests to run together across devices and data sets."
@@ -283,7 +283,7 @@ export function SuitesPage() {
                         : "Relay could not save this Plan."}
                     </FieldError>
                   ) : null}
-                  <div className="relay-dialog-actions sticky bottom-0 border-t border-border bg-background pt-4 flex flex-wrap items-center justify-end gap-2.5">
+                  <div className="sticky bottom-0 border-t border-border bg-background pt-4 flex flex-wrap items-center justify-end gap-2.5">
                     <DialogClose
                       render={
                         <Button variant="ghost" disabled={createSuite.isPending}>
@@ -371,7 +371,7 @@ export function SuitesPage() {
             />
           ) : null}
           <ul
-            className="relay-library-list m-0 list-none overflow-hidden rounded-xl border border-border/60 p-0 [&>li+li]:border-t [&>li+li]:border-border/60 empty:hidden"
+            className="m-0 list-none overflow-hidden rounded-xl border border-border/60 p-0 [&>li+li]:border-t [&>li+li]:border-border/60 empty:hidden"
             aria-label="Plans"
           >
             {visibleSuites.map((suite) => {
@@ -433,10 +433,7 @@ export function SuitesPage() {
                 New Plan
               </Button>
             ) : (
-              <Link
-                className={productLinkClassName}
-                to="/apps"
-              >
+              <Link className={productLinkClassName} to="/apps">
                 Add an App first
               </Link>
             )

@@ -35,7 +35,7 @@ export function RunHistoryList({
 }) {
   if (runs.length <= RUN_HISTORY_VIRTUAL_THRESHOLD) {
     return (
-      <ul className="relay-library-list relay-run-list relative m-0 overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card p-0 list-none [&>li]:border-b [&>li]:border-border [&>li:last-child]:border-b-0">
+      <ul className="relative m-0 overflow-hidden rounded-xl border border-border bg-card p-0 list-none [&>li]:border-b [&>li]:border-border [&>li:last-child]:border-b-0">
         {runs.map((run, index) => (
           <li key={run.id}>{children(run, index)}</li>
         ))}
@@ -146,7 +146,7 @@ function WindowedRunHistory({
   }
 
   return (
-    <div className="relay-windowed-run-history relay-windowed-run-scroll">
+    <div className="relay-windowed-run-scroll">
       <p className="relay-visually-hidden sr-only" id="run-history-keyboard-help">
         This long history is windowed for performance. Use Up and Down to move one Report, Page Up
         and Page Down to move by a screen, and Home or End to jump to the first or last Report.
@@ -158,10 +158,10 @@ function WindowedRunHistory({
           "aria-describedby": "run-history-keyboard-help",
           className: "overscroll-contain",
         }}
-        className="overflow-auto h-[calc(100dvh-20rem)] min-h-64 max-h-[64rem] min-w-0 md:h-[calc(100dvh-22rem)] md:min-h-[30rem]"
+        className="overflow-auto h-[calc(100dvh-20rem)] min-h-64 max-h-screen min-w-0 md:h-[calc(100dvh-22rem)] md:min-h-120"
       >
         <ul
-          className="relay-library-list relay-run-list relative m-0 h-(--relay-windowed-run-list-height) overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card p-0 list-none [&>li]:border-b [&>li]:border-border [&>li:last-child]:border-b-0"
+          className="relative m-0 h-(--relay-windowed-run-list-height) overflow-hidden rounded-xl border border-border bg-card p-0 list-none [&>li]:border-b [&>li]:border-border [&>li:last-child]:border-b-0"
           style={
             {
               "--relay-windowed-run-list-height": `${runs.length * rowHeight}px`,
@@ -175,7 +175,7 @@ function WindowedRunHistory({
             return (
               <li
                 key={run.id}
-                className="absolute inset-x-0 top-0 h-[var(--relay-windowed-run-row-height)] translate-y-(--row-y) [&>a]:h-full"
+                className="absolute inset-x-0 top-0 h-(--relay-windowed-run-row-height) translate-y-(--row-y) [&>a]:h-full"
                 aria-posinset={index + 1}
                 aria-setsize={runs.length}
                 style={{ "--row-y": `${index * rowHeight}px` } as CSSProperties}

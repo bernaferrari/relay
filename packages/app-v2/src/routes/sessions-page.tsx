@@ -84,7 +84,7 @@ export function SessionsPage() {
   }
 
   return (
-    <LibraryPage className="relay-sessions-page flex min-h-full max-w-[1040px] flex-col">
+    <LibraryPage className="flex min-h-full max-w-5xl flex-col">
       <PageHeader
         context="Live"
         title="Live"
@@ -134,7 +134,7 @@ export function SessionsPage() {
       {!sessions.isPending && !sessions.isError && visible.length ? (
         <section className="mt-7" aria-labelledby="session-results-title">
           <div className="flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
-            <h2 className="text-[13px] font-semibold" id="session-results-title">
+            <h2 className="text-sm font-semibold" id="session-results-title">
               {visible.length === 1 ? "1 live" : `${visible.length} live`}
             </h2>
             <span className="text-xs text-muted-foreground" aria-live="polite">

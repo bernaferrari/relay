@@ -62,7 +62,7 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
         search={returnTo ? { returnTo } : undefined}
         className={`relay-device-row ${libraryRowSurface} ${libraryRowContent} grid-cols-[minmax(0,1fr)_auto]`}
       >
-        <span className="relay-library-row-main flex min-w-0 items-center gap-3">
+        <span className="flex min-w-0 items-center gap-3">
           <span
             className="flex size-8 shrink-0 items-center justify-center text-muted-foreground"
             aria-hidden="true"
@@ -115,17 +115,13 @@ function DeviceSection({
   const headingId = useId();
   return (
     <section
-      className={
-        bordered
-          ? "relay-library-results overflow-hidden rounded-xl border border-border bg-card"
-          : "relay-library-results"
-      }
+      className={bordered ? " overflow-hidden rounded-xl border border-border bg-card" : ""}
       aria-labelledby={title ? headingId : undefined}
       aria-label={!title ? "Available devices" : undefined}
     >
       {title ? (
-        <div className="relay-library-results-heading flex min-h-11 items-center gap-2 border-b border-border px-4 py-3">
-          <h2 id={headingId} className="text-[13px] font-semibold">
+        <div className="flex min-h-11 items-center gap-2 border-b border-border px-4 py-3">
+          <h2 id={headingId} className="text-sm font-semibold">
             {title}
           </h2>
           <Badge
@@ -136,7 +132,7 @@ function DeviceSection({
           </Badge>
         </div>
       ) : null}
-      <ul className="relay-library-list m-0 list-none p-0 [&>li]:border-b [&>li]:border-border/60 [&>li:last-child]:border-b-0">
+      <ul className="m-0 list-none p-0 [&>li]:border-b [&>li]:border-border/60 [&>li:last-child]:border-b-0">
         {devices.map((device) => (
           <DeviceRow key={device.id} device={device} returnTo={returnTo} />
         ))}
@@ -164,7 +160,7 @@ function AvailableSection({
   return (
     <div className={`${libraryRowSurface} overflow-hidden rounded-xl border border-border bg-card`}>
       <Collapsible open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger className="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-[13px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+        <CollapsibleTrigger className="flex min-h-11 w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
           <ChevronRight
             className={`size-4 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none ${open ? "rotate-90" : ""}`}
             aria-hidden="true"
@@ -227,7 +223,7 @@ export function DevicesPage() {
 
   return (
     <LibraryPage
-      className="relay-library-page relay-devices-page mx-auto flex min-h-full w-full max-w-[1040px] flex-col"
+      className="mx-auto flex min-h-full w-full max-w-5xl flex-col"
       onClickCapture={returnFocus.onClickCapture}
     >
       <PageHeader

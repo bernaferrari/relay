@@ -49,7 +49,7 @@ export function ChangesPage() {
   );
 
   return (
-    <LibraryPage className="relay-library-page relay-changes-page mx-auto w-full max-w-[1040px]">
+    <LibraryPage className="mx-auto w-full max-w-5xl">
       <PageHeader
         context="Changes"
         title="Change verification"
@@ -115,16 +115,16 @@ export function ChangesPage() {
       {changes.isPending ? <PageLoading label="Loading Changes…" /> : null}
 
       {!changes.isPending && !changes.isError && visible.length ? (
-        <section className="relay-library-results mt-7" aria-labelledby="changes-result-title">
-          <div className="relay-library-results-heading flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
-            <h2 id="changes-result-title" className="text-[13px] font-semibold">
+        <section className="mt-7" aria-labelledby="changes-result-title">
+          <div className="flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
+            <h2 id="changes-result-title" className="text-sm font-semibold">
               {visible.length === 1 ? "1 Change" : `${visible.length} Changes`}
             </h2>
             <span className="text-xs text-muted-foreground" aria-live="polite">
               {viewLabel(view)}
             </span>
           </div>
-          <ul className="relay-library-list m-0 overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card p-0 list-none [&>li]:border-b [&>li]:border-border [&>li:last-child]:border-b-0">
+          <ul className="m-0 overflow-hidden rounded-xl border border-border bg-card p-0 list-none [&>li]:border-b [&>li]:border-border [&>li:last-child]:border-b-0">
             {visible.map((change) => (
               <ChangeRow key={change.id} change={change} />
             ))}
@@ -177,7 +177,7 @@ function ChangeRow({ change }: { change: ProductChange }) {
         params={{ changeId: change.id }}
         className={`${libraryRowSurface} ${libraryRowContent} grid-cols-[minmax(220px,1fr)_minmax(118px,auto)_minmax(148px,.42fr)] max-[720px]:grid-cols-[minmax(0,1fr)_auto]`}
       >
-        <span className="relay-library-row-main grid min-w-0 gap-1">
+        <span className="grid min-w-0 gap-1">
           <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-foreground">
             {change.title}
           </strong>
@@ -200,7 +200,7 @@ function ChangeRow({ change }: { change: ProductChange }) {
             {status.label}
           </Badge>
         </span>
-        <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1 tabular-nums">
+        <span className="grid min-w-0 justify-items-start gap-1 tabular-nums">
           <strong className="text-xs font-semibold text-foreground">
             {relativeTime(change.updatedAt)}
           </strong>

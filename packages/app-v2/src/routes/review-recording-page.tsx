@@ -498,7 +498,7 @@ export function ReviewRecordingPage({
       />
 
       {leaveDraft.error ? (
-        <p role="alert" className="m-0 rounded-lg border border-border p-3 text-[13px]">
+        <p role="alert" className="m-0 rounded-lg border border-border p-3 text-sm">
           Could not confirm the saved draft. Your work is still open here. Try Back to Tests again
           when the connection returns.
         </p>
@@ -745,7 +745,7 @@ export function ReviewRecordingPage({
                           <DialogDescription>
                             This changes the steps and requires a new replay before saving.
                           </DialogDescription>
-                          <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
+                          <div className="flex flex-wrap items-center justify-end gap-2.5">
                             <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                             <Button
                               variant="destructive"

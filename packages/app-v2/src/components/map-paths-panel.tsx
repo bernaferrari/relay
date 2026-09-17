@@ -122,7 +122,7 @@ export function MapPathsPanel({
                 </Dialog>
                 <div className="min-w-0">
                   <header className="mb-3 flex min-h-8 items-center gap-3 border-b border-border/40 px-3 pb-3">
-                    <h3 className="min-w-0 flex-1 truncate text-[15px] font-semibold">
+                    <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">
                       {connections[0]!.fromTitle}
                     </h3>
                     <span className="shrink-0 text-xs tabular-nums text-muted-foreground">

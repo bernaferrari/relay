@@ -132,10 +132,7 @@ export function ChangePage() {
           title="This Change is not available"
           detail="It may have been replaced or removed. Return to Changes to see the current history."
           action={
-            <Link
-              className={productLinkClassName}
-              to="/changes"
-            >
+            <Link className={productLinkClassName} to="/changes">
               View Changes
             </Link>
           }
@@ -197,14 +194,14 @@ export function ChangePage() {
           <RecordingProblem recovery={detail.state.recovery} error={mutation.error} />
 
           <section
-            className="relay-change-verdict max-w-[60ch]"
+            className="relay-change-verdict max-w-prose"
             aria-labelledby="change-verdict-title"
           >
-            <h2 id="change-verdict-title" className="text-[13px] font-medium leading-5">
+            <h2 id="change-verdict-title" className="text-sm font-medium leading-5">
               {verdictTitle(current.status)}
             </h2>
             {verdictDetail(detail.state, details) ? (
-              <p className="mt-1 text-[13px] leading-5 text-muted-foreground">
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">
                 {verdictDetail(detail.state, details)}
               </p>
             ) : null}
@@ -213,10 +210,10 @@ export function ChangePage() {
 
           {details.delivery ? (
             <section
-              className="mt-5 max-w-[60ch] rounded-xl border border-border bg-card p-5"
+              className="mt-5 max-w-prose rounded-xl border border-border bg-card p-5"
               aria-labelledby="delivery-loop-title"
             >
-              <h2 id="delivery-loop-title" className="text-[15px] font-medium">
+              <h2 id="delivery-loop-title" className="text-sm font-medium">
                 {details.delivery.phase === "published"
                   ? "Merge result"
                   : details.delivery.phase === "re-verifying"
@@ -227,9 +224,7 @@ export function ChangePage() {
                         ? "New build required"
                         : "Verification"}
               </h2>
-              <p className="mt-1 text-[13px] text-muted-foreground">
-                {details.delivery.next.reason}
-              </p>
+              <p className="mt-1 text-sm text-muted-foreground">{details.delivery.next.reason}</p>
               <dl className="mt-3 grid gap-2 text-sm">
                 <div>
                   <dt className="text-xs text-muted-foreground">Original</dt>
@@ -271,16 +266,13 @@ export function ChangePage() {
           ) : null}
 
           {details.firstFailure ? (
-            <section
-              className="relay-change-first-failure mt-5 max-w-[60ch]"
-              aria-labelledby="first-failure-title"
-            >
-              <p className="text-[11px] text-muted-foreground">First problem</p>
-              <h2 id="first-failure-title" className="mt-1 text-[15px] font-medium">
+            <section className="mt-5 max-w-prose" aria-labelledby="first-failure-title">
+              <p className="text-xs text-muted-foreground">First problem</p>
+              <h2 id="first-failure-title" className="mt-1 text-sm font-medium">
                 {details.firstFailure.summary}
               </h2>
               <Link
-                className="mt-2 inline-flex text-[13px] text-muted-foreground hover:text-foreground"
+                className="mt-2 inline-flex text-sm text-muted-foreground hover:text-foreground"
                 to="/runs/$runId"
                 params={{ runId: details.firstFailure.runId }}
               >
@@ -296,7 +288,7 @@ export function ChangePage() {
               className="relay-change-attention mt-5 rounded-lg border border-red-500/40 bg-red-500/5 p-5"
               aria-labelledby="verification-paused-title"
             >
-              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Verification paused safely
               </p>
               <h2 id="verification-paused-title">
@@ -307,7 +299,7 @@ export function ChangePage() {
               <p>{details.execution.attention.reason}</p>
               {details.execution.attention.kind === "human-evidence" ? (
                 <form
-                  className="relay-human-evidence-form grid gap-3 rounded-lg border border-border bg-card p-4"
+                  className="grid gap-3 rounded-lg border border-border bg-card p-4"
                   onSubmit={(event: FormEvent<HTMLFormElement>) => {
                     event.preventDefault();
                     if (!humanEvidence.isPending && evidenceObservation.trim())
@@ -353,14 +345,14 @@ export function ChangePage() {
           ) : null}
 
           {details.verificationPlan.length ? (
-            <ol className="relay-verification-plan mt-6 max-w-[60ch] list-none p-0">
+            <ol className="relay-verification-plan mt-6 max-w-prose list-none p-0">
               {details.verificationPlan.map((item) => (
                 <VerificationItem key={item.id} item={item} detail={detail} />
               ))}
             </ol>
           ) : details.nextVerification?.reason && current.status === "planning" ? null : details
               .nextVerification?.reason ? (
-            <p className="mt-6 max-w-[60ch] text-[13px] text-muted-foreground">
+            <p className="mt-6 max-w-prose text-sm text-muted-foreground">
               {details.nextVerification.reason}
             </p>
           ) : null}
@@ -384,11 +376,11 @@ export function ChangePage() {
 function RepairContext({ packet }: { packet: ProductChangeRepairPacket }) {
   return (
     <section
-      className="relay-change-repair-context mt-5 grid max-w-[820px] gap-[18px] rounded-xl border border-border bg-card p-5 shadow-sm"
+      className="relay-change-repair-context mt-5 grid max-w-4xl gap-4 rounded-xl border border-border bg-card p-5 shadow-sm"
       aria-labelledby="repair-context-title"
     >
       <header>
-        <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Repair context
         </p>
         <h2 id="repair-context-title">Smallest useful fix</h2>
@@ -510,9 +502,9 @@ function RiskSection({
   empty: string;
 }) {
   return (
-    <section className="mt-6 max-w-[60ch]" aria-label={title}>
-      <h2 className="text-[15px] font-medium">{title}</h2>
-      <ul className="mt-2 list-none space-y-1 p-0 text-[13px] text-muted-foreground">
+    <section className="mt-6 max-w-prose" aria-label={title}>
+      <h2 className="text-sm font-medium">{title}</h2>
+      <ul className="mt-2 list-none space-y-1 p-0 text-sm text-muted-foreground">
         {values.map((value) => (
           <li key={value}>{value}</li>
         ))}

@@ -192,10 +192,7 @@ export function EnvironmentPage() {
           title="Browser not found"
           detail="It may have been removed from this workspace."
           action={
-            <Link
-              className={productLinkClassName}
-              to="/environments"
-            >
+            <Link className={productLinkClassName} to="/environments">
               Back to browsers
             </Link>
           }
@@ -312,7 +309,7 @@ export function EnvironmentPage() {
           <section className="mt-2" aria-labelledby="environment-account-title">
             <h2
               id="environment-account-title"
-              className="text-[13px] font-medium text-muted-foreground"
+              className="text-sm font-medium text-muted-foreground"
             >
               Sign-ins
             </h2>
@@ -327,11 +324,11 @@ export function EnvironmentPage() {
                       key={fixture.reference}
                     >
                       <span className="min-w-0 flex-1">
-                        <strong className="block text-[13px] font-medium wrap-anywhere">
+                        <strong className="block text-sm font-medium wrap-anywhere">
                           {fixture.name}
                         </strong>
                         {status ? (
-                          <small className="text-[12px] text-muted-foreground">{status}</small>
+                          <small className="text-xs text-muted-foreground">{status}</small>
                         ) : null}
                       </span>
                       {!fixture.revokedAt ? (
@@ -364,9 +361,7 @@ export function EnvironmentPage() {
                 })}
               </ul>
             ) : !fixtures.isPending ? (
-              <p className="mt-2 text-[13px] leading-5 text-muted-foreground">
-                No sign-in saved yet.
-              </p>
+              <p className="mt-2 text-sm leading-5 text-muted-foreground">No sign-in saved yet.</p>
             ) : null}
             {fixtures.error || saveAccount.error || refreshAccount.error || revokeAccount.error ? (
               <FieldError>
@@ -414,7 +409,7 @@ export function EnvironmentPage() {
                     : "Relay could not remove this browser."}
                 </FieldError>
               ) : null}
-              <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
+              <div className="flex flex-wrap items-center justify-end gap-2.5">
                 <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                 <Button
                   variant="destructive"
@@ -452,7 +447,7 @@ export function EnvironmentPage() {
                       : "Relay could not save this sign-in."}
                   </FieldError>
                 ) : null}
-                <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
+                <div className="flex flex-wrap items-center justify-end gap-2.5">
                   <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                   <Button
                     type="submit"
@@ -485,7 +480,7 @@ export function EnvironmentPage() {
                     : "Relay could not revoke this sign-in."}
                 </FieldError>
               ) : null}
-              <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
+              <div className="flex flex-wrap items-center justify-end gap-2.5">
                 <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                 <Button
                   variant="destructive"

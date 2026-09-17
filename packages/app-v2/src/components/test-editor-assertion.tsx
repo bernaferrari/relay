@@ -382,7 +382,7 @@ function ValidationKindGroups({
     <div className="grid gap-3">
       {groups.map((group) => (
         <fieldset key={group.id} className="grid gap-1">
-          <legend className="text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+          <legend className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {group.label}
           </legend>
           <div className="flex flex-wrap gap-1.5">
@@ -781,7 +781,7 @@ function RegionFrame({ region }: { region: string }) {
   const box = parsed ? regionToFractions(parsed) : undefined;
   return (
     <div
-      className="relative aspect-[16/10] w-full max-w-[220px] overflow-hidden rounded-md border border-border bg-muted/50"
+      className="relative aspect-video w-full max-w-56 overflow-hidden rounded-md border border-border bg-muted/50"
       aria-hidden="true"
     >
       <span className="pointer-events-none absolute inset-x-[7%] top-[8%] h-[10%] rounded-sm bg-foreground/10" />
@@ -798,7 +798,7 @@ function RegionFrame({ region }: { region: string }) {
           }
         />
       ) : (
-        <span className="pointer-events-none absolute inset-0 grid place-items-center text-[10px] text-muted-foreground">
+        <span className="pointer-events-none absolute inset-0 grid place-items-center text-xs text-muted-foreground">
           Enter x,y,w,h
         </span>
       )}

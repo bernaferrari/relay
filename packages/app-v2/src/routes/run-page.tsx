@@ -218,11 +218,7 @@ export function RunInspection({
           title="This Run belongs to another Test"
           detail="The copied result is still available, but it is not an attached report for this Test."
           action={
-            <Link
-              className={productLinkClassName}
-              to="/runs/$runId"
-              params={{ runId }}
-            >
+            <Link className={productLinkClassName} to="/runs/$runId" params={{ runId }}>
               Open the original Run
             </Link>
           }
@@ -280,7 +276,7 @@ export function RunInspection({
   if (problem || recovery) {
     if (embedded) return problemView;
     return (
-      <WorkbenchPage className="flex min-h-full max-w-[1120px] flex-col">
+      <WorkbenchPage className="flex min-h-full max-w-5xl flex-col">
         <PageHeader
           crumbs={[{ label: "Results", to: "/runs" }, { label: "Run" }]}
           title={snapshot?.title ?? "Run unavailable"}
@@ -295,7 +291,7 @@ export function RunInspection({
     const loadingView = <RunLoading />;
     if (embedded) return loadingView;
     return (
-      <WorkbenchPage className="max-w-[1120px]">
+      <WorkbenchPage className="max-w-5xl">
         <PageHeader
           crumbs={[{ label: "Results", to: "/runs" }, { label: "Run" }]}
           title={snapshot?.title ?? "Run details"}
@@ -348,7 +344,7 @@ export function RunInspection({
   }
 
   return (
-    <WorkbenchPage className="max-w-[1120px]">
+    <WorkbenchPage className="max-w-5xl">
       <PageHeader
         crumbs={[
           { label: "Results", to: "/runs" },
@@ -606,7 +602,7 @@ function RunReport({
     <Dialog>
       <DialogTrigger
         aria-label="Technical details"
-        className="relay-interactive-row flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+        className="flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
       >
         <CircleAlert className="size-4 shrink-0 text-destructive" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate">{heading}</span>
@@ -708,7 +704,7 @@ function RunReport({
             className="mt-5 rounded-xl border border-border bg-card p-5"
             aria-labelledby="first-evidence-title"
           >
-            <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {report.outcome === "passed" ? "What Relay verified" : "Evidence at this point"}
             </p>
             <h2 id="first-evidence-title">{report.firstEvidence.label}</h2>

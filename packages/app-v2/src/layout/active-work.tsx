@@ -111,7 +111,7 @@ export function ActivityCenterButton() {
       <Button
         variant="ghost"
         size="sm"
-        className="relay-electron-no-drag [-webkit-app-region:no-drag]"
+        className="[-webkit-app-region:no-drag]"
         onClick={() => setOpen(true)}
         aria-label={`Open Activity Center${unavailable ? ", unavailable" : items.length ? `, ${items.length} active` : ""}`}
       >
@@ -149,29 +149,26 @@ export function ActiveWork() {
   return (
     <>
       <section
-        className="relay-sidebar-active-work mb-2 grid gap-1 rounded-[var(--radius-lg)] border border-border bg-card p-[9px]"
+        className="mb-2 grid gap-1 rounded-lg border border-border bg-card p-2"
         aria-label="Active work"
       >
-        <div className="relay-sidebar-active-heading flex min-h-6 items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+        <div className="flex min-h-6 items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           <span>Active work</span>
-          <Badge variant="secondary" className="min-h-5 px-1.5 text-[9px]">
+          <Badge variant="secondary" className="min-h-5 px-1.5 text-xs">
             {items.length}
           </Badge>
         </div>
         <button
           type="button"
-          className="relay-sidebar-active-link grid min-h-11 w-full grid-cols-[16px_minmax(0,1fr)] items-center gap-[9px] rounded-[var(--radius-md)] border-0 bg-transparent p-1.5 text-left text-foreground"
+          className="grid min-h-11 w-full grid-cols-[16px_minmax(0,1fr)] items-center gap-2 rounded-md border-0 bg-transparent p-1.5 text-left text-foreground"
           onClick={() => router.history.push(primary.href)}
         >
-          <Icon
-            className="h-[15px] w-[15px] text-foreground"
-            aria-hidden="true"
-          />
+          <Icon className="size-3.5 size-3.5 text-foreground" aria-hidden="true" />
           <span className="grid min-w-0 gap-px">
-            <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-semibold">
+            <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-xs font-semibold">
               {primary.title}
             </strong>
-            <small className="overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-muted-foreground">
+            <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
               {primary.status} · {primary.detail}
             </small>
           </span>
@@ -179,7 +176,7 @@ export function ActiveWork() {
         {items.length > 1 ? (
           <button
             type="button"
-            className="relay-sidebar-active-all inline-flex min-h-9 items-center rounded-[var(--radius-sm)] border-0 bg-transparent px-1.5 text-[10px] font-semibold text-foreground"
+            className="inline-flex min-h-9 items-center rounded-sm border-0 bg-transparent px-1.5 text-xs font-semibold text-foreground"
             onClick={() => setOpen(true)}
           >
             View all {items.length} activities

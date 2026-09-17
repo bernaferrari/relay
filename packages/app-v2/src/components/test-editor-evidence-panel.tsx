@@ -20,7 +20,7 @@ export function TestEditorEvidencePanel({
       aria-label="Selected step evidence"
     >
       <div className="grid gap-1">
-        <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Evidence
         </p>
         <h2>{step ? "Latest proof for this step" : "Choose a step"}</h2>

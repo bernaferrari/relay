@@ -162,7 +162,7 @@ export function TestsPage() {
 
   return (
     <LibraryPage
-      className="relay-library-page relay-tests-page mx-auto flex min-h-full w-full max-w-[1040px] flex-col"
+      className="mx-auto flex min-h-full w-full max-w-5xl flex-col"
       onClickCapture={returnFocus.onClickCapture}
     >
       <PageHeader
@@ -268,8 +268,8 @@ export function TestsPage() {
       />
 
       {!tests.isPending && !tests.isError && visibleTests.length ? (
-        <section className="relay-library-results mt-3" aria-labelledby="saved-tests-title">
-          <div className="relay-library-results-heading flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
+        <section className="mt-3" aria-labelledby="saved-tests-title">
+          <div className="flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
             <h2 id="saved-tests-title" className="text-body font-semibold tabular-nums">
               {visibleTests.length === 1 ? "1 Test" : `${visibleTests.length} Tests`}
             </h2>
@@ -288,7 +288,7 @@ export function TestsPage() {
               </span>
             ) : null}
           </div>
-          <ul className="relay-library-list m-0 list-none overflow-hidden rounded-xl border border-border/60 p-0 [&>li]:border-b [&>li]:border-border/60 [&>li:last-child]:border-b-0">
+          <ul className="m-0 list-none overflow-hidden rounded-xl border border-border/60 p-0 [&>li]:border-b [&>li]:border-border/60 [&>li:last-child]:border-b-0">
             {visibleTests.map((test) => (
               <TestRow key={`${test.appMapId}:${test.id}`} test={test} />
             ))}
@@ -313,10 +313,7 @@ export function TestsPage() {
               title="Create your first test"
               detail="Open your app and record the steps you want to repeat."
               action={
-                <Link
-                  className={productLinkClassName}
-                  to="/tests/new"
-                >
+                <Link className={productLinkClassName} to="/tests/new">
                   New test
                 </Link>
               }
@@ -340,7 +337,7 @@ function TestRow({ test }: { test: ProductTestSummary }) {
           params={{ testId: test.id }}
           className="grid min-w-0 gap-2 px-4 py-3.5 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-6"
         >
-          <span className="relay-library-row-main grid min-w-0 gap-1">
+          <span className="grid min-w-0 gap-1">
             <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-foreground">
               {test.name}
             </strong>
@@ -358,7 +355,7 @@ function TestRow({ test }: { test: ProductTestSummary }) {
                 <span className="tabular-nums">{relativeTime(runTime(recent))}</span>
               </span>
             ) : (
-              <span className="relay-library-never-run">Not run yet</span>
+              <span>Not run yet</span>
             )}
           </span>
         </Link>
@@ -366,7 +363,7 @@ function TestRow({ test }: { test: ProductTestSummary }) {
           nativeButton={false}
           variant="ghost"
           size="sm"
-          className="relay-library-row-run min-h-10 justify-self-end"
+          className="min-h-10 justify-self-end"
           render={
             test.status === "needs-review" ? (
               <Link to="/tests/$testId/edit" params={{ testId: test.id }} />

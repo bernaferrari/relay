@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import { compareUtf8Bytewise } from "@relay/protocol";
+import {
+  captureReviewIdentityFramePaths,
+  captureReviewLeftoverLastFramePaths,
+  compareUtf8Bytewise,
+  isCaptureReviewLeftoverCaption,
+} from "@relay/protocol";
 import type {
   CombineCampaign,
   FailureCategory,
@@ -321,7 +326,17 @@ function signatureFor(run: PersistedRun): RepeatFailureSignature | undefined {
 function evidenceRefs(run: PersistedRun): string[] {
   const refs = [`run:${run.id}`];
   run.artifacts.forEach((_artifact, index) => refs.push(`run:${run.id}#artifact:${index}`));
-  run.frames.forEach((_frame, index) => refs.push(`run:${run.id}#frame:${index}`));
+  const frames = run.frames.map((frame) => ({
+    path: frame.path,
+    ...(frame.caption ? { caption: frame.caption } : {}),
+  }));
+  const leftover = new Set(captureReviewLeftoverLastFramePaths(frames, run.artifacts));
+  const dest = captureReviewIdentityFramePaths(run.artifacts);
+  run.frames.forEach((frame, index) => {
+    if (dest.length && leftover.has(frame.path)) return;
+    if (!dest.length && isCaptureReviewLeftoverCaption(frame.caption)) return;
+    refs.push(`run:${run.id}#frame:${index}`);
+  });
   return refs.slice(0, 128);
 }
 

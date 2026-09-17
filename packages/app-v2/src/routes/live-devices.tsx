@@ -14,11 +14,11 @@ export function LiveDevices({ devices }: { devices: readonly ProductDevice[] }) 
   return (
     <section className="mb-8" aria-labelledby="live-devices-title">
       <div className="mb-2 flex min-h-7 items-center justify-between gap-4">
-        <h2 id="live-devices-title" className="text-[13px] font-medium text-muted-foreground">
+        <h2 id="live-devices-title" className="text-sm font-medium text-muted-foreground">
           Devices & browsers
         </h2>
         <Link
-          className="text-[13px] text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           to="/devices"
         >
           View all
@@ -39,8 +39,8 @@ export function LiveDevices({ devices }: { devices: readonly ProductDevice[] }) 
                     <Icon className="size-3.5" aria-hidden="true" />
                   </span>
                   <span className="grid min-w-0 flex-1 gap-0.5">
-                    <strong className="truncate text-[13px] font-medium">{device.name}</strong>
-                    <span className="truncate text-[12px] text-muted-foreground">
+                    <strong className="truncate text-sm font-medium">{device.name}</strong>
+                    <span className="truncate text-xs text-muted-foreground">
                       {device.status === "ready"
                         ? "Connected"
                         : device.status === "needs-attention"
@@ -59,7 +59,7 @@ export function LiveDevices({ devices }: { devices: readonly ProductDevice[] }) 
           })}
         </ul>
       ) : (
-        <p className="text-[13px] text-muted-foreground">None connected.</p>
+        <p className="text-sm text-muted-foreground">None connected.</p>
       )}
     </section>
   );
