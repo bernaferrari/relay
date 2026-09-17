@@ -319,9 +319,18 @@ export async function listenSeededMemberApp(input?: {
   return { server, port: address.port, url: `http://127.0.0.1:${address.port}/`, app };
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (
+  import.meta.url &&
+  process.argv[1] &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
   const port = Number.parseInt(process.env.SEEDED_MEMBER_PORT ?? "8791", 10);
   const defect = process.env.SEEDED_MEMBER_DEFECT !== "0";
-  const { url } = await listenSeededMemberApp({ port, defect });
-  process.stderr.write(`seeded-member app listening at ${url} defect=${defect}\n`);
+  void listenSeededMemberApp({ port, defect }).then(
+    ({ url }) => process.stderr.write(`seeded-member app listening at ${url} defect=${defect}\n`),
+    (error: unknown) => {
+      console.error(error);
+      process.exitCode = 1;
+    },
+  );
 }

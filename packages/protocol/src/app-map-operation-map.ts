@@ -1,6 +1,7 @@
 import type { AuthoringTarget } from "./authoring.js";
 import type {
   AppMap,
+  AppMapEntity,
   AppMapBatchChange,
   AppMapCompiledConnectionRun,
   AppMapCompiledFlow,
@@ -504,7 +505,7 @@ export type AppMapOperationMap = {
       testId: string;
       expectedRevision: number;
       eventId?: string;
-      test: AppMapTest;
+      test: Omit<AppMapTest, keyof AppMapEntity | "surfaceBindings">;
     };
     output: { appMap: AppMap };
   };
