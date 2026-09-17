@@ -127,7 +127,7 @@ export function RecordingProblem({
         (onRetry && (recovery?.retryable ?? true) ? (
           <Button
             size={layout === "centered" ? "default" : "sm"}
-            variant={layout === "centered" ? "default" : "outline"}
+            variant="outline"
             onClick={onRetry}
             disabled={retrying}
           >

@@ -21,7 +21,7 @@ export function projectError(error: unknown): HumanError {
     if ([502, 503, 504].includes(error.status)) {
       return {
         title: "Relay is temporarily unavailable",
-        detail: "The service isn’t responding. Try again in a moment.",
+        detail: "Try again in a moment.",
         recovery: "If this continues, check that the Relay service is running.",
         retryable: true,
       };

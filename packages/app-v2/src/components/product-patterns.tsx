@@ -149,19 +149,31 @@ export function RecoveryState({
 
   if (layout === "centered") {
     return (
-      <Empty
-        className={classNames("relay-recovery-state", "relay-recovery-state--centered", className)}
+      <section
+        className={classNames(
+          "relay-recovery-state relay-recovery-state--centered flex min-w-0 flex-1 items-center justify-center px-5 py-10",
+          className,
+        )}
         role="alert"
       >
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <CircleAlert />
-          </EmptyMedia>
-          <EmptyTitle>{title}</EmptyTitle>
-          {supportingText ? <EmptyDescription>{supportingText}</EmptyDescription> : null}
-        </EmptyHeader>
-        {action ? <EmptyContent>{action}</EmptyContent> : null}
-      </Empty>
+        <div className="flex w-full max-w-sm items-start gap-4 rounded-2xl border border-border/60 bg-muted/25 p-5 sm:p-6">
+          <CircleAlert
+            className="mt-0.5 size-5 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <div className="grid min-w-0 flex-1 gap-4">
+            <div className="grid gap-1.5">
+              <h2 className="text-base font-medium leading-snug text-foreground">{title}</h2>
+              {supportingText ? (
+                <p className="max-w-[30ch] text-sm leading-relaxed text-muted-foreground">
+                  {supportingText}
+                </p>
+              ) : null}
+            </div>
+            {action ? <div className="flex flex-wrap items-center gap-2">{action}</div> : null}
+          </div>
+        </div>
+      </section>
     );
   }
 
