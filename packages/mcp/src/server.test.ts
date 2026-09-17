@@ -2111,6 +2111,128 @@ test("compact operator findings leftover Close 004 cannot fill dest", async () =
   }
 });
 
+test("compact operator plan_run nested findings leftover Close 004 cannot fill dest", async () => {
+  const session = await connectMcp(
+    {
+      async invoke(operationId) {
+        if (operationId === "job.combine.start") {
+          return {
+            job: { id: leftoverDestEndJob.id, status: "ok" },
+            campaign: { id: leftoverDestEndJob.id },
+          };
+        }
+        if (operationId === "job.get") {
+          return { job: { id: leftoverDestEndJob.id, status: "ok" } };
+        }
+        if (operationId === "job.combine.analysis") {
+          return {
+            padding: "x".repeat(relayMcpTextLimit),
+            batchId: leftoverDestEndJob.id,
+            locales: ["en"],
+            coverage: { frames: 2, inspectedFrames: 2 },
+            cases: [
+              {
+                jobId: leftoverDestEndJob.id,
+                locale: "en",
+                status: "ok",
+                frames: [
+                  { framePath: "frames/003.png", caption: "Observe" },
+                  { framePath: "frames/004.png", caption: "after · Run saved Test" },
+                ],
+              },
+            ],
+          };
+        }
+        if (operationId === "job.combine.export") {
+          return {
+            padding: "x".repeat(relayMcpTextLimit),
+            destIdentity: leftoverDestEndJob.frames,
+            cases: [{ frames: leftoverDestEndJob.frames }],
+          };
+        }
+        throw new Error(`unexpected ${operationId}`);
+      },
+    },
+    "operator",
+  );
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_plan_run",
+        arguments: {
+          appMapId: "grok-web",
+          combineId: "grok-hourly",
+          findings: true,
+          export: true,
+        },
+      }),
+    );
+    const compact = result.structuredContent?.result as {
+      truncated?: boolean;
+      destIdentity?: Array<{ path?: string; caption?: string }>;
+      findings?: { destIdentity?: Array<{ path?: string }> };
+    };
+    assert.equal(compact.truncated, true);
+    assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+    assert.deepEqual(
+      compact.findings?.destIdentity?.map((frame) => frame.path),
+      ["frames/003.png"],
+    );
+    assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
+  } finally {
+    await session.close();
+  }
+});
+
+test("compact capture-review leftover Close 004 cannot fill dest", async () => {
+  const leftoverCaptureReview = {
+    queue: {
+      padding: "x".repeat(relayMcpTextLimit),
+      items: [
+        {
+          captureId: "frames/003.png::dest",
+          caption: "Observe",
+          status: "pending",
+          framePath: "frames/003.png",
+          phase: "dest",
+        },
+        {
+          captureId: "frames/004.png::close-leftover",
+          caption: "Close",
+          status: "pending",
+          framePath: "frames/004.png",
+        },
+      ],
+      summary: { planned: 1, pending: 2 },
+    },
+  };
+  const session = await connectMcp({
+    async invoke(operationId) {
+      assert.equal(operationId, "job.combine.capture.review");
+      return leftoverCaptureReview;
+    },
+  });
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_job_combine_capture_review",
+        arguments: { batchId: leftoverDestEndJob.id },
+      }),
+    );
+    const compact = result.structuredContent?.result as {
+      truncated?: boolean;
+      destIdentity?: Array<{ path?: string; caption?: string }>;
+    };
+    assert.equal(compact.truncated, true);
+    assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+    assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+    assert.ok(String(result.content[0]?.text ?? "").length <= relayMcpTextLimit);
+  } finally {
+    await session.close();
+  }
+});
+
 test("returns screenshots as native PNG content without path or base64 metadata leaks", async () => {
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",

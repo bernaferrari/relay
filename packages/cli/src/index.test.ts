@@ -791,6 +791,122 @@ test("run visual review --json never accepts leftover Close 004 as dest", async 
   );
 });
 
+test("run capture review --json dest identity is dest wait-for 003, not leftover Close 004 last-frame", async () => {
+  const io = capture();
+  const code = await runCli(
+    [
+      "run",
+      "capture",
+      "review",
+      leftoverDestEndRun.id,
+      "--json",
+      "--input",
+      '{"captureId":"frames/003.png::dest","action":"accept","imageSha256":"dest"}',
+    ],
+    {
+      streams: io.streams,
+      createClient: () => ({
+        async invoke(operationId) {
+          assert.equal(operationId, "run.capture.review");
+          return {
+            run: leftoverDestEndRun,
+            queue: {
+              items: [
+                {
+                  captureId: "frames/003.png::dest",
+                  caption: "Observe",
+                  status: "pending",
+                  framePath: "frames/003.png",
+                  phase: CAPTURE_REVIEW_DEST_PHASE,
+                },
+                {
+                  captureId: "frames/004.png::close-leftover",
+                  caption: "Close",
+                  status: "pending",
+                  framePath: "frames/004.png",
+                },
+              ],
+            },
+            decision: { captureId: "frames/003.png::dest", action: "accept" },
+          };
+        },
+        events: async () => {},
+      }),
+      registerSignalHandlers: false,
+      env: {},
+    },
+  );
+
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      destIdentity?: Array<{ path?: string }>;
+      queue?: { items?: Array<{ framePath?: string }> };
+      decision?: { action?: string };
+    };
+  };
+  assert.equal(result.result?.decision?.action, "accept");
+  assert.deepEqual(
+    result.result?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.result?.queue?.items?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
+test("plan capture review --json dest identity is dest wait-for 003, not leftover Close 004 last-frame", async () => {
+  const io = capture();
+  const code = await runCli(["plan", "capture", "review", leftoverDestEndRun.id, "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke(operationId) {
+        assert.equal(operationId, "job.combine.capture.review");
+        return {
+          queue: {
+            items: [
+              {
+                captureId: "frames/003.png::dest",
+                caption: "Observe",
+                status: "pending",
+                framePath: "frames/003.png",
+                phase: CAPTURE_REVIEW_DEST_PHASE,
+              },
+              {
+                captureId: "frames/004.png::close-leftover",
+                caption: "Close",
+                status: "pending",
+                framePath: "frames/004.png",
+              },
+            ],
+            summary: { planned: 1, pending: 2 },
+          },
+        };
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      destIdentity?: Array<{ path?: string }>;
+      queue?: { items?: Array<{ framePath?: string }> };
+    };
+  };
+  assert.deepEqual(
+    result.result?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.result?.queue?.items?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
 const snapshotTree = {
   serial: "pixel-9",
   bounds: { width: 834, height: 1112 },

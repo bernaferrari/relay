@@ -571,7 +571,11 @@ test("Plan capture review summary keeps dest wait-for, not leftover Close last-f
       ],
       summary: { planned: 1, pending: 2 },
     },
-  }) as { queue?: { items?: Array<{ framePath?: string; phase?: string }> } };
+  }) as {
+    destIdentity?: Array<{ path?: string; caption?: string }>;
+    queue?: { items?: Array<{ framePath?: string; phase?: string }> };
+  };
+  assert.deepEqual(result.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
   assert.equal(result.queue?.items?.length, 1);
   assert.equal(result.queue?.items?.[0]?.framePath, "frames/003.png");
   assert.equal(result.queue?.items?.[0]?.phase, CAPTURE_REVIEW_DEST_PHASE);
@@ -1521,4 +1525,102 @@ test("compact MCP fallback findings leftover Close 004 cannot fill dest", () => 
   ) as { destIdentity?: Array<{ path?: string; caption?: string }> };
   assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
   assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+});
+
+test("compact MCP fallback nested findings leftover Close 004 cannot fill dest", () => {
+  const compact = compactExecutionDestIdentityFallback({
+    findings: {
+      batchId: leftoverDestEndJob.id,
+      destIdentity: leftoverDestEndJob.frames,
+      cases: [
+        {
+          frames: [
+            { framePath: "frames/003.png", caption: "Observe" },
+            { framePath: "frames/004.png", caption: "after · Run saved Test" },
+          ],
+        },
+      ],
+    },
+    export: {
+      destIdentity: leftoverDestEndJob.frames,
+      cases: [
+        {
+          frames: leftoverDestEndJob.frames,
+        },
+      ],
+    },
+  }) as {
+    destIdentity?: Array<{ path?: string; caption?: string }>;
+    findings?: { destIdentity?: Array<{ path?: string }> };
+    export?: { destIdentity?: Array<{ path?: string }> };
+  };
+  assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+  assert.deepEqual(
+    compact.findings?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.deepEqual(
+    compact.export?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+});
+
+test("compact MCP fallback capture-review queue leftover Close 004 cannot fill dest", () => {
+  const compact = compactExecutionDestIdentityFallback(
+    {
+      queue: {
+        items: [
+          {
+            captureId: "frames/003.png::dest",
+            caption: "Observe",
+            status: "pending",
+            framePath: "frames/003.png",
+            phase: CAPTURE_REVIEW_DEST_PHASE,
+          },
+          {
+            captureId: "frames/004.png::close-leftover",
+            caption: "Close",
+            status: "pending",
+            framePath: "frames/004.png",
+          },
+        ],
+        summary: { planned: 1, pending: 2 },
+      },
+    },
+    "job.combine.capture.review",
+  ) as { destIdentity?: Array<{ path?: string; caption?: string }> };
+  assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+  assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+});
+
+test("run.capture.review dest identity keeps dest wait-for from queue when run dest is omitted", () => {
+  const result = summarizeExecutionOperationResult("run.capture.review", {
+    queue: {
+      items: [
+        {
+          captureId: "frames/003.png::dest",
+          caption: "Observe",
+          status: "pending",
+          framePath: "frames/003.png",
+          phase: CAPTURE_REVIEW_DEST_PHASE,
+        },
+        {
+          captureId: "frames/004.png::close-leftover",
+          caption: "Close",
+          status: "pending",
+          framePath: "frames/004.png",
+        },
+      ],
+    },
+    decision: { captureId: "frames/003.png::dest", action: "accept" },
+  }) as {
+    destIdentity?: Array<{ path?: string; caption?: string }>;
+    queue?: { items?: Array<{ framePath?: string }> };
+  };
+  assert.deepEqual(result.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+  assert.equal(
+    result.queue?.items?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
 });

@@ -489,7 +489,9 @@ function summarizePlanCaptureReview(response: Record<string, unknown>): unknown 
         compactCaptureReviewItem(item as CaptureReviewItem & { runId?: string }),
       )
     : undefined;
+  const destIdentity = destItems ? destIdentityVisualFrames(listedReviewFrames(destItems)) : [];
   return {
+    ...(destIdentity.length ? { destIdentity } : {}),
     ...(queue
       ? {
           queue: {
@@ -643,8 +645,11 @@ function summarizeRunCaptureReview(response: Record<string, unknown>): unknown {
   const destItems = destIdentityReviewItems(items as CaptureReviewItem[]).map(
     compactCaptureReviewItem,
   );
+  const fromRun = run ? destIdentityProjection(run).destIdentity : undefined;
+  const fromQueue = destIdentityVisualFrames(listedReviewFrames(destItems));
+  const destIdentity = fromRun?.length ? fromRun : fromQueue;
   return {
-    ...(run ? { destIdentity: destIdentityProjection(run).destIdentity } : {}),
+    ...(destIdentity.length ? { destIdentity } : {}),
     queue: {
       ...queue,
       items: destItems,
@@ -745,6 +750,46 @@ function analysisListedFrames(value: unknown): { path: string; caption?: string 
     : [];
 }
 
+function listedReviewFrames(value: unknown): { path: string; caption?: string }[] {
+  const queue = object(value);
+  const items = Array.isArray(queue?.items) ? queue.items : Array.isArray(value) ? value : [];
+  return destIdentityReviewItems(
+    items.flatMap((item) => {
+      const record = object(item);
+      return record ? [record as CaptureReviewItem] : [];
+    }),
+  ).flatMap((item) => {
+    const path = listedFramePath(item.framePath) ?? listedFramePath(object(item)?.path);
+    if (!path) return [];
+    const caption = typeof item.caption === "string" ? item.caption : undefined;
+    return [{ path, ...(caption ? { caption } : {}) }];
+  });
+}
+
+function findingsListedFrames(value: unknown): { path: string; caption?: string }[] {
+  const findings = object(value);
+  if (!findings) return [];
+  const analysis = object(findings.analysis);
+  return [
+    ...listedDestIdentity(findings.destIdentity),
+    ...analysisListedFrames(findings.cases),
+    ...listedDestIdentity(analysis?.destIdentity),
+    ...analysisListedFrames(analysis?.cases),
+  ];
+}
+
+function exportListedFrames(value: unknown): { path: string; caption?: string }[] {
+  const exported = object(value);
+  if (!exported) return [];
+  const manifest = object(exported.manifest);
+  return [
+    ...listedDestIdentity(exported.destIdentity),
+    ...listedDestIdentity(manifest?.destIdentity),
+    ...analysisListedFrames(exported.cases),
+    ...analysisListedFrames(manifest?.cases),
+  ];
+}
+
 function destIdentityFromEnvelope(
   record: Record<string, unknown>,
 ): { path: string; caption?: string }[] {
@@ -766,6 +811,12 @@ function destIdentityFromEnvelope(
     ...comparisonListedFrames(inner?.comparison),
     ...analysisListedFrames(record.cases),
     ...analysisListedFrames(inner?.cases),
+    ...findingsListedFrames(record.findings),
+    ...findingsListedFrames(inner?.findings),
+    ...exportListedFrames(record.export),
+    ...exportListedFrames(inner?.export),
+    ...listedReviewFrames(record.queue),
+    ...listedReviewFrames(inner?.queue),
   ]);
   if (visual.length) return visual;
   const nested =
@@ -815,7 +866,8 @@ function firstString(...values: unknown[]): string | undefined {
 }
 
 /** MCP text-limit fallback. Dest wait-for Fast stays; leftover Close cannot fill dest,
- * including oversized visual compare/review/baseline and findings envelopes. */
+ * including oversized visual compare/review/baseline, nested plan_run findings/export,
+ * and capture-review queue envelopes. */
 export function compactExecutionDestIdentityFallback(
   result: unknown,
   operationId?: string,
@@ -835,6 +887,10 @@ export function compactExecutionDestIdentityFallback(
   const evidence = object(record.evidence) ?? object(inner?.evidence);
   const report = object(record.report) ?? object(inner?.report);
   const story = object(record.story) ?? object(inner?.story);
+  const findings = object(record.findings) ?? object(inner?.findings);
+  const exported = object(record.export) ?? object(inner?.export);
+  const findingsDest = findings ? destIdentityFromEnvelope(findings) : [];
+  const exportDest = exported ? destIdentityFromEnvelope(exported) : [];
   const id = firstString(
     run?.id,
     job?.id,
@@ -880,6 +936,26 @@ export function compactExecutionDestIdentityFallback(
           story: {
             ...(typeof story.runId === "string" ? { runId: story.runId } : {}),
             ...(destIdentity.length ? { destIdentity } : {}),
+          },
+        }
+      : {}),
+    ...(findings
+      ? {
+          findings: {
+            ...(typeof findings.batchId === "string" ? { batchId: findings.batchId } : {}),
+            ...(findingsDest.length || destIdentity.length
+              ? { destIdentity: findingsDest.length ? findingsDest : destIdentity }
+              : {}),
+          },
+        }
+      : {}),
+    ...(exported
+      ? {
+          export: {
+            ...(typeof exported.rootDir === "string" ? { rootDir: exported.rootDir } : {}),
+            ...(exportDest.length || destIdentity.length
+              ? { destIdentity: exportDest.length ? exportDest : destIdentity }
+              : {}),
           },
         }
       : {}),
