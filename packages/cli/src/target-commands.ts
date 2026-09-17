@@ -140,7 +140,7 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
         },
       ],
       examples: ["relay browser auth health grok-com --json"],
-      note: "Does not write authenticationFixtureId onto the saved browser environment. Concurrent N-account is unmeasured until more than one live fixture exists. Revoked lab A/B/C are not accounts.",
+      note: "Does not write authenticationFixtureId onto the saved browser environment. Concurrent N-account is unmeasured until more than one live fixture exists. Revoked lab A/B/C are not accounts. Electron persist:lane:grok-lab is a separate store from Playwright grok-lab; absent is blocked, not a SuperGrok pass.",
     }),
   ),
   mapped(

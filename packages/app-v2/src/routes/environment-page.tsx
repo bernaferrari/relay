@@ -95,6 +95,16 @@ export function EnvironmentPage() {
     queryFn: () => appResourcesService.listAccountLanes?.() ?? Promise.resolve([]),
     staleTime: 10_000,
   });
+  const accountHealth = useQuery({
+    queryKey: ["environments", profileId, "account-health"],
+    queryFn: () =>
+      appResourcesService.probeBrowserAccountHealth?.({
+        targetId: space!.id,
+        probe: false,
+      }) ?? Promise.resolve(undefined),
+    enabled: Boolean(space && appResourcesService.probeBrowserAccountHealth),
+    staleTime: 10_000,
+  });
   const openLane = useMutation({
     mutationFn: async (laneId: string) => {
       const session = await browserSpacesService.openSpace({
@@ -292,6 +302,9 @@ export function EnvironmentPage() {
             lanes={lanes.data ?? []}
             targetId={space.id}
             disabled={openLane.isPending}
+            electronGrokLabPartitionPresent={
+              accountHealth.data?.summary.electronGrokLabPartitionPresent
+            }
             onOpen={(tab) => openLane.mutate(tab.laneId)}
           />
 

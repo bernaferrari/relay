@@ -85,6 +85,8 @@ test("one live SuperGrok fixture is honest one-account, not a 3-account pack", (
   assert.equal(summary.readyCount, 1);
   assert.equal(summary.concurrentAccountsPossible, false);
   assert.equal(summary.concurrentReason, concurrentBrowserAccountCopy(1));
+  assert.equal(summary.electronGrokLabPartitionPresent, false);
+  assert.match(summary.electronGrokLabReason, /Playwright SuperGrok fixture is not Electron/u);
   assert.deepEqual(
     summary.lanes.map((lane) => `${lane.id}:${lane.schedulingKey}:${lane.kind}:${lane.live}`),
     [
@@ -115,6 +117,24 @@ test("three live fixtures are the only concurrent-account yes", () => {
   });
   assert.equal(summary.liveCount, 3);
   assert.equal(summary.concurrentAccountsPossible, true);
+  assert.equal(summary.electronGrokLabPartitionPresent, false);
+});
+
+test("Electron grok-lab health is explicit and not a Playwright pass", () => {
+  const absent = summarizeBrowserAccountHealth({
+    targetId: "grok-com",
+    fixtures: [{ reference: superGrok, health: { status: "ready" } }],
+    electronGrokLabPartitionPresent: false,
+  });
+  assert.equal(absent.electronGrokLabPartitionPresent, false);
+  assert.match(absent.electronGrokLabReason, /persist:lane:grok-lab is absent/u);
+  const present = summarizeBrowserAccountHealth({
+    targetId: "grok-com",
+    fixtures: [{ reference: superGrok, health: { status: "ready" } }],
+    electronGrokLabPartitionPresent: true,
+  });
+  assert.equal(present.electronGrokLabPartitionPresent, true);
+  assert.match(present.electronGrokLabReason, /persist:lane:grok-lab is present/u);
 });
 
 test("collect probes only live fixtures and never invents a second account", async () => {
@@ -147,6 +167,8 @@ test("collect probes only live fixtures and never invents a second account", asy
     assert.equal(collected.summary.concurrentAccountsPossible, false);
     assert.equal(collected.fixtures[0]?.health?.signedIn, true);
     assert.equal(collected.summary.concurrentReason, concurrentBrowserAccountCopy(1));
+    assert.equal(typeof collected.summary.electronGrokLabPartitionPresent, "boolean");
+    assert.match(collected.summary.electronGrokLabReason, /persist:lane:grok-lab/u);
   } finally {
     if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previous;

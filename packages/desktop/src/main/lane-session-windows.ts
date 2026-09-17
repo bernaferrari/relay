@@ -1,5 +1,7 @@
 import { BrowserWindow, session } from "electron";
 import {
+  assertElectronGrokLabTabAllowed,
+  electronGrokLabPartitionPresentOnDisk,
   laneSessionPartition,
   laneTabSessionKey,
   laneWindowNeedsNavigation,
@@ -15,6 +17,10 @@ export async function openLaneBrowserTab(input: { url: string; laneId: string })
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error("Lane tabs only open http(s) URLs");
   }
+  assertElectronGrokLabTabAllowed({
+    laneId: input.laneId,
+    partitionPresent: electronGrokLabPartitionPresentOnDisk(),
+  });
   const partition = laneSessionPartition(input.laneId);
   const tabSessionKey = laneTabSessionKey(input.laneId, parsed.host);
   const existing = laneWindows.get(partition);
@@ -50,6 +56,10 @@ export async function setLaneSessionCookie(input: {
   name: string;
   value: string;
 }): Promise<void> {
+  assertElectronGrokLabTabAllowed({
+    laneId: input.laneId,
+    partitionPresent: electronGrokLabPartitionPresentOnDisk(),
+  });
   const ses = session.fromPartition(laneSessionPartition(input.laneId));
   await ses.cookies.set({
     url: input.url,
@@ -62,6 +72,10 @@ export async function getLaneSessionCookies(input: {
   laneId: string;
   url: string;
 }): Promise<Array<{ name: string; value: string }>> {
+  assertElectronGrokLabTabAllowed({
+    laneId: input.laneId,
+    partitionPresent: electronGrokLabPartitionPresentOnDisk(),
+  });
   const ses = session.fromPartition(laneSessionPartition(input.laneId));
   const cookies = await ses.cookies.get({ url: input.url });
   return cookies.map((cookie) => ({ name: cookie.name, value: cookie.value }));

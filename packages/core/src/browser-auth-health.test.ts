@@ -427,3 +427,32 @@ test("claimed browser job start blocks SuperGrok identity and leaves unsigned un
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("Playwright grok-lab SuperGrok enqueue is not Electron persist:lane coverage", async () => {
+  const playwright = await claimedBrowserJobStartBlocker({
+    projectId: "default",
+    targetId: "grok-com",
+    laneId: "grok-lab",
+    sessionStore: "playwright-user-data",
+    electronGrokLabPartitionPresent: false,
+  });
+  assert.equal(playwright.blocker, undefined);
+
+  const electron = await claimedBrowserJobStartBlocker({
+    projectId: "default",
+    targetId: "grok-com",
+    laneId: "persist:lane:grok-lab",
+    sessionStore: "electron-partition",
+    electronGrokLabPartitionPresent: false,
+  });
+  assert.match(electron.blocker ?? "", /persist:lane:grok-lab is absent/u);
+
+  const mixed = await claimedBrowserJobStartBlocker({
+    projectId: "default",
+    targetId: "grok-com",
+    laneId: "persist:lane:grok-lab",
+    sessionStore: "playwright-user-data",
+    electronGrokLabPartitionPresent: false,
+  });
+  assert.match(mixed.blocker ?? "", /Playwright grok-lab SuperGrok is not Electron/u);
+});

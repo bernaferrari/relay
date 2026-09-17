@@ -8,6 +8,12 @@
  * and unsigned Grok are not that coverage.
  */
 
+import {
+  claimsElectronGrokLabSuperGrok,
+  ELECTRON_GROK_LAB_ABSENT_REASON,
+  PLAYWRIGHT_NOT_ELECTRON_GROK_LAB_REASON,
+  type BrowserLaneSessionStoreKind,
+} from "./browser-lane-session.js";
 import type {
   CaptureReviewConfiguration,
   CaptureReviewObservedSession,
@@ -61,6 +67,11 @@ export type CapabilityInventory = {
   testFlightBuildPresent?: boolean;
   /** Production entitlements observed on the installed Grok. Undefined or false is not coverage. */
   productionEntitlementPresent?: boolean;
+  /**
+   * Existing Electron `persist:lane:grok-lab` partition. Undefined or false is
+   * not coverage. Playwright grok-lab cookies are a different store.
+   */
+  electronGrokLabPartitionPresent?: boolean;
 };
 
 export type CapabilityGate = {
@@ -611,6 +622,33 @@ export function captureReviewScenarioKind(input: {
   return "physical";
 }
 
+export function electronGrokLabSuperGrokGate(input: {
+  inventory: CapabilityInventory;
+  laneId?: string;
+  sessionStore?: BrowserLaneSessionStoreKind;
+  observed?: CaptureReviewObservedSession;
+  presentation?: "embedded" | "external";
+}): CapabilityGate | undefined {
+  const store = input.observed?.sessionStore ?? input.sessionStore;
+  const lane = input.observed?.laneId ?? input.laneId;
+  if (
+    !claimsElectronGrokLabSuperGrok({
+      laneId: lane,
+      sessionStore: store,
+      presentation: input.presentation,
+    })
+  ) {
+    return undefined;
+  }
+  if (store === "playwright-user-data") {
+    return { kind: "nonapplicable", reason: PLAYWRIGHT_NOT_ELECTRON_GROK_LAB_REASON };
+  }
+  if (!inventoryHas(input.inventory.electronGrokLabPartitionPresent)) {
+    return { kind: "unsupported", reason: ELECTRON_GROK_LAB_ABSENT_REASON };
+  }
+  return undefined;
+}
+
 /** grok-lab / Electron persist:lane:grok-lab is a browser session, never physical Imagine. */
 export function physicalImagineClaim(input: {
   caption?: string;
@@ -690,6 +728,14 @@ export function capabilityGateForSlot(input: {
     approximation: input.approximation,
     kind: input.kind,
   });
+
+  const electronGrokLab = electronGrokLabSuperGrokGate({
+    inventory: input.inventory,
+    observed: input.observed,
+    laneId: input.observed?.laneId,
+    sessionStore: input.observed?.sessionStore,
+  });
+  if (electronGrokLab) return electronGrokLab;
 
   if (platform === "android" && input.inventory.adbDeviceCount === 0) {
     return {
@@ -786,6 +832,13 @@ export function capabilityGateForRun(
       reason: "adb is empty — Android combinations stay blocked in the denominator, not omitted",
     };
   }
+  const electronGrokLab = electronGrokLabSuperGrokGate({
+    inventory,
+    observed: run.observed,
+    laneId: run.observed?.laneId,
+    sessionStore: run.observed?.sessionStore,
+  });
+  if (electronGrokLab) return electronGrokLab;
   const slots = run.plannedSlots ?? [];
   for (const slot of slots) {
     const gate = capabilityGateForSlot({

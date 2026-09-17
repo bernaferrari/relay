@@ -68,6 +68,9 @@ const { calls, invoke } = vi.hoisted(() => {
           concurrentAccountsPossible: false,
           concurrentReason:
             "One live account. Concurrent N-account Plans need another saved sign-in.",
+          electronGrokLabPartitionPresent: false,
+          electronGrokLabReason:
+            "Electron persist:lane:grok-lab is absent. Playwright SuperGrok fixture is not Electron coverage.",
           lanes: [
             {
               id: "grok-lab",
@@ -151,6 +154,8 @@ describe("operational app resources product service", () => {
     const health = await service.probeBrowserAccountHealth({ targetId: "browser-1" });
     expect(health.summary.liveCount).toBe(1);
     expect(health.summary.concurrentAccountsPossible).toBe(false);
+    expect(health.summary.electronGrokLabPartitionPresent).toBe(false);
+    expect(health.summary.electronGrokLabReason).toMatch(/persist:lane:grok-lab is absent/);
     expect(await service.listAccountLanes()).toEqual([
       {
         id: "grok-lab",

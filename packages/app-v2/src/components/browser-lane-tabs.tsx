@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { browserLaneHostIdentity } from "@relay/protocol";
+import { browserLaneHostIdentity, electronGrokLabProductPathBlocker } from "@relay/protocol";
 import { Button } from "@relay/ui-react/components/button";
 import { useState } from "react";
 import type { ProductAccountLane } from "../data/app-resources-product-service";
@@ -55,15 +55,28 @@ export function createBrowserLaneTab(lane: ProductAccountLane): BrowserLaneTab {
   };
 }
 
+export function browserLaneTabOpenBlocker(input: {
+  laneId: string;
+  electronGrokLabPartitionPresent?: boolean;
+}): string | undefined {
+  return electronGrokLabProductPathBlocker({
+    laneId: input.laneId,
+    presentation: "embedded",
+    electronGrokLabPartitionPresent: input.electronGrokLabPartitionPresent,
+  });
+}
+
 export function BrowserLaneTabs({
   lanes,
   targetId,
   disabled,
   onOpen,
+  electronGrokLabPartitionPresent,
 }: {
   lanes: readonly ProductAccountLane[];
   targetId: string;
   disabled?: boolean;
+  electronGrokLabPartitionPresent?: boolean;
   onOpen: (tab: BrowserLaneTab) => void;
 }) {
   const isolated = isolatedBrowserLanesForTarget(lanes, targetId);
@@ -71,6 +84,11 @@ export function BrowserLaneTabs({
   const [activeKey, setActiveKey] = useState<string>();
 
   function openLane(lane: ProductAccountLane) {
+    const blocker = browserLaneTabOpenBlocker({
+      laneId: lane.id,
+      electronGrokLabPartitionPresent,
+    });
+    if (blocker) throw new Error(blocker);
     const next = createBrowserLaneTab(lane);
     const shared = tabs.find((tab) => tab.tabSessionKey === next.tabSessionKey);
     const tab = shared ?? next;
@@ -108,13 +126,18 @@ export function BrowserLaneTabs({
             authenticationFixtureId: lane.reference,
           });
           const selected = activeKey === host.tabSessionKey;
+          const blocker = browserLaneTabOpenBlocker({
+            laneId: lane.id,
+            electronGrokLabPartitionPresent,
+          });
           return (
             <button
               key={lane.id}
               type="button"
               role="tab"
               aria-selected={selected}
-              disabled={disabled}
+              title={blocker}
+              disabled={disabled || Boolean(blocker)}
               onClick={() => openLane(lane)}
               className="relative min-h-9 rounded-[10px] px-3 text-[12.5px] font-medium tracking-[-0.01em] text-muted-foreground transition-[color,background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:text-foreground focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 active:scale-[0.97] disabled:opacity-50 aria-selected:bg-[var(--background)] aria-selected:text-foreground aria-selected:shadow-[0_1px_0_color-mix(in_srgb,var(--foreground)_8%,transparent)]"
             >
@@ -133,7 +156,17 @@ export function BrowserLaneTabs({
           <Button
             variant="outline"
             size="sm"
-            disabled={disabled || !isolated[0]}
+            disabled={
+              disabled ||
+              !isolated[0] ||
+              Boolean(
+                isolated[0] &&
+                browserLaneTabOpenBlocker({
+                  laneId: isolated[0].id,
+                  electronGrokLabPartitionPresent,
+                }),
+              )
+            }
             onClick={() => isolated[0] && openLane(isolated[0])}
           >
             Open first configuration

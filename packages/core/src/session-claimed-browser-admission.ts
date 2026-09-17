@@ -13,6 +13,7 @@ type ClaimedBrowserJobIdentity = {
   serial?: string;
   targetKind?: string;
   platform?: string;
+  laneId?: string;
   targetContext?: { kind?: string; targetId?: string };
   executionTarget?: { kind?: string; identity?: { value: string } };
   browserCaseProfile?: TestJob["browserCaseProfile"];
@@ -33,6 +34,7 @@ function claimedBrowserAdmissionInput(job: ClaimedBrowserJobIdentity) {
   return {
     projectId: job.projectId?.trim() || currentOperationContext()?.projectId || "default",
     targetId: claimedBrowserTargetId(job),
+    laneId: job.laneId,
     browserCaseProfile: job.browserCaseProfile,
     targetProfile: job.targetProfile,
     parentAuthenticationHealth: job.authenticationHealth,

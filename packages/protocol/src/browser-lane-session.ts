@@ -119,3 +119,54 @@ export function browserLaneHostIdentity(input: {
     electronPartition: browserLaneElectronPartition(laneId),
   };
 }
+
+export const GROK_LAB_LANE_ID = "grok-lab";
+export const GROK_LAB_ELECTRON_PARTITION = "persist:lane:grok-lab";
+/** Chromium encodes `persist:lane:grok-lab` as this Partitions directory. */
+export const GROK_LAB_ELECTRON_PARTITION_DIR = "lane%3Agrok-lab";
+
+export function isGrokLabLaneId(laneId?: string): boolean {
+  const lane = laneId?.trim() ?? "";
+  return lane === GROK_LAB_LANE_ID || lane === GROK_LAB_ELECTRON_PARTITION;
+}
+
+/** In-app / Electron SuperGrok claim. Playwright `--lane grok-lab` is not this. */
+export function claimsElectronGrokLabSuperGrok(input: {
+  laneId?: string;
+  sessionStore?: BrowserLaneSessionStoreKind;
+  presentation?: "embedded" | "external";
+}): boolean {
+  const lane = input.laneId?.trim() ?? "";
+  if (!isGrokLabLaneId(lane)) return false;
+  if (lane === GROK_LAB_ELECTRON_PARTITION) return true;
+  if (input.sessionStore === "electron-partition") return true;
+  return input.presentation === "embedded";
+}
+
+export function electronGrokLabHealthReason(present: boolean): string {
+  if (present) return "Electron persist:lane:grok-lab is present.";
+  return "Electron persist:lane:grok-lab is absent. Playwright SuperGrok fixture is not Electron coverage.";
+}
+
+export const ELECTRON_GROK_LAB_ABSENT_REASON =
+  "Electron persist:lane:grok-lab is absent. Playwright SuperGrok fixture is not that store. Blocked in the denominator, not a pass. Do not invent the partition.";
+
+export const PLAYWRIGHT_NOT_ELECTRON_GROK_LAB_REASON =
+  "Playwright grok-lab SuperGrok is not Electron persist:lane:grok-lab coverage. Separate cookie stores.";
+
+/** Product-path preflight. Playwright `--lane grok-lab` stays allowed. */
+export function electronGrokLabProductPathBlocker(input: {
+  laneId?: string;
+  sessionStore?: BrowserLaneSessionStoreKind;
+  presentation?: "embedded" | "external";
+  electronGrokLabPartitionPresent?: boolean;
+}): string | undefined {
+  if (!claimsElectronGrokLabSuperGrok(input)) return undefined;
+  if (input.sessionStore === "playwright-user-data") {
+    return PLAYWRIGHT_NOT_ELECTRON_GROK_LAB_REASON;
+  }
+  if (input.electronGrokLabPartitionPresent !== true) {
+    return ELECTRON_GROK_LAB_ABSENT_REASON;
+  }
+  return undefined;
+}

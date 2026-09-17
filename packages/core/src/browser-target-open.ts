@@ -2,6 +2,8 @@ import {
   browserLaneElectronPartition,
   browserLaneTabSessionKey,
   compileBrowserEnvironment,
+  electronGrokLabProductPathBlocker,
+  isGrokLabLaneId,
   type BrowserCaseProfile,
 } from "@relay/protocol";
 import type { BrowserContext, Page } from "playwright-core";
@@ -15,6 +17,7 @@ import {
 import { attachBrowserEvidence } from "./browser-target-evidence.js";
 import { browserCaseProfileForTarget } from "./browser-case-profile-target.js";
 import { activePage, browserSessions, sessionFor, type BrowserSession } from "./browser-target.js";
+import { probeElectronGrokLabPartitionPresent } from "./electron-grok-lab-partition.js";
 import { readTarget } from "./targets.js";
 
 /** Server-owned Playwright handle; UI never receives it. */
@@ -153,6 +156,13 @@ export async function openBrowserTarget(
   const fixtureId = options.authenticationFixtureId?.trim();
   const unsignedLaneId = options.unsignedLaneId?.trim();
   const laneId = options.laneId?.trim() || unsignedLaneId;
+  const electronGrokLabPartitionPresent = probeElectronGrokLabPartitionPresent();
+  const electronBlocker = electronGrokLabProductPathBlocker({
+    laneId,
+    presentation: options.presentation,
+    electronGrokLabPartitionPresent,
+  });
+  if (electronBlocker) throw new Error(electronBlocker);
   const accountBound = Boolean(fixtureId || options.signedOut);
   const keepKey = accountBound
     ? browserLiveSessionKey({
@@ -201,7 +211,9 @@ export async function openBrowserTarget(
             targetId,
             authenticationFixtureId: fixtureId,
           }),
-          electronPartition: browserLaneElectronPartition(laneId),
+          ...(!isGrokLabLaneId(laneId) || electronGrokLabPartitionPresent
+            ? { electronPartition: browserLaneElectronPartition(laneId) }
+            : {}),
         }
       : {}),
     ...(unsignedLaneId ? { unsignedLaneId } : {}),

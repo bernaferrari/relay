@@ -3,9 +3,12 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   browserAuthenticationHealthSchema,
+  electronGrokLabProductPathBlocker,
   type BrowserAuthenticationFixture,
   type BrowserAuthenticationHealth,
+  type BrowserLaneSessionStoreKind,
 } from "@relay/protocol";
+import { probeElectronGrokLabPartitionPresent } from "./electron-grok-lab-partition.js";
 import { identityPolicyForTarget, type AppIdentityPolicy } from "./app-identity-policy.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
 import {
@@ -265,10 +268,24 @@ function claimedFixtureReference(input: {
 type ClaimedBrowserJobStartInput = {
   projectId: string;
   targetId?: string;
+  laneId?: string;
+  sessionStore?: BrowserLaneSessionStoreKind;
+  presentation?: "embedded" | "external";
+  electronGrokLabPartitionPresent?: boolean;
   browserCaseProfile?: { authenticationFixtureId?: string };
   targetProfile?: { browserCaseProfile?: { authenticationFixtureId?: string } };
   parentAuthenticationHealth?: BrowserAuthenticationHealth;
 };
+
+function electronGrokLabStartBlocker(input: ClaimedBrowserJobStartInput): string | undefined {
+  return electronGrokLabProductPathBlocker({
+    laneId: input.laneId,
+    sessionStore: input.sessionStore,
+    presentation: input.presentation,
+    electronGrokLabPartitionPresent:
+      input.electronGrokLabPartitionPresent ?? probeElectronGrokLabPartitionPresent(),
+  });
+}
 
 function evaluateClaimedBrowserJobStart(input: {
   savedFixtureReference: string;
@@ -317,6 +334,8 @@ function attachRememberedHealth<
 export async function claimedBrowserJobStartBlocker(
   input: ClaimedBrowserJobStartInput,
 ): Promise<{ blocker?: string; authenticationHealth?: BrowserAuthenticationHealth }> {
+  const electronBlocker = electronGrokLabStartBlocker(input);
+  if (electronBlocker) return { blocker: electronBlocker };
   const savedFixtureReference = claimedFixtureReference(input);
   if (!savedFixtureReference) return {};
   const targetId = input.targetId?.trim();
@@ -340,6 +359,8 @@ export function claimedBrowserJobStartBlockerSync(input: ClaimedBrowserJobStartI
   blocker?: string;
   authenticationHealth?: BrowserAuthenticationHealth;
 } {
+  const electronBlocker = electronGrokLabStartBlocker(input);
+  if (electronBlocker) return { blocker: electronBlocker };
   const savedFixtureReference = claimedFixtureReference(input);
   if (!savedFixtureReference) return {};
   const targetId = input.targetId?.trim();

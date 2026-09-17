@@ -8,6 +8,10 @@ import {
   browserLaneHostIdentity,
   browserLanePlaywrightUserDataName,
   browserLaneTabSessionKey,
+  claimsElectronGrokLabSuperGrok,
+  electronGrokLabProductPathBlocker,
+  GROK_LAB_ELECTRON_PARTITION,
+  isGrokLabLaneId,
 } from "./browser-lane-session.js";
 
 test("one Lane identity keys in-app tabs and Electron partitions together", () => {
@@ -63,5 +67,65 @@ test("Playwright user-data and Electron partitions are distinct stores even with
   assert.throws(
     () => browserLaneElectronPartition("grok-com__lane_grok-daily"),
     /cannot reuse Playwright user-data/u,
+  );
+});
+
+test("Playwright grok-lab SuperGrok is not an Electron persist:lane claim", () => {
+  assert.equal(isGrokLabLaneId("grok-lab"), true);
+  assert.equal(isGrokLabLaneId(GROK_LAB_ELECTRON_PARTITION), true);
+  assert.equal(isGrokLabLaneId("grok-daily"), false);
+  assert.equal(
+    claimsElectronGrokLabSuperGrok({
+      laneId: "grok-lab",
+      sessionStore: "playwright-user-data",
+    }),
+    false,
+  );
+  assert.equal(
+    electronGrokLabProductPathBlocker({
+      laneId: "grok-lab",
+      sessionStore: "playwright-user-data",
+      electronGrokLabPartitionPresent: false,
+    }),
+    undefined,
+  );
+  assert.equal(
+    claimsElectronGrokLabSuperGrok({
+      laneId: "persist:lane:grok-lab",
+      sessionStore: "electron-partition",
+    }),
+    true,
+  );
+  assert.match(
+    electronGrokLabProductPathBlocker({
+      laneId: "persist:lane:grok-lab",
+      sessionStore: "electron-partition",
+      electronGrokLabPartitionPresent: false,
+    }) ?? "",
+    /persist:lane:grok-lab is absent/u,
+  );
+  assert.match(
+    electronGrokLabProductPathBlocker({
+      laneId: "grok-lab",
+      presentation: "embedded",
+      electronGrokLabPartitionPresent: false,
+    }) ?? "",
+    /persist:lane:grok-lab is absent/u,
+  );
+  assert.equal(
+    electronGrokLabProductPathBlocker({
+      laneId: "persist:lane:grok-lab",
+      sessionStore: "electron-partition",
+      electronGrokLabPartitionPresent: true,
+    }),
+    undefined,
+  );
+  assert.match(
+    electronGrokLabProductPathBlocker({
+      laneId: "persist:lane:grok-lab",
+      sessionStore: "playwright-user-data",
+      electronGrokLabPartitionPresent: false,
+    }) ?? "",
+    /Playwright grok-lab SuperGrok is not Electron/u,
   );
 });

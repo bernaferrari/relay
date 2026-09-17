@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  assertElectronGrokLabTabAllowed,
+  electronGrokLabPartitionPresentOnDisk,
   laneSessionPartition,
   laneTabSessionKey,
   laneWindowNeedsNavigation,
@@ -32,4 +34,18 @@ test("reopening a Lane window navigates when the requested URL changed", () => {
     true,
   );
   assert.equal(laneWindowNeedsNavigation("about:blank", "https://example.test/settings"), true);
+});
+
+test("grok-lab Electron tab is refused when persist:lane:grok-lab is absent", () => {
+  assert.equal(electronGrokLabPartitionPresentOnDisk(["/tmp/no-such-electron-partitions"]), false);
+  assert.throws(
+    () => assertElectronGrokLabTabAllowed({ laneId: "grok-lab", partitionPresent: false }),
+    /persist:lane:grok-lab is absent/u,
+  );
+  assert.doesNotThrow(() =>
+    assertElectronGrokLabTabAllowed({ laneId: "grok-auth-gmail", partitionPresent: false }),
+  );
+  assert.doesNotThrow(() =>
+    assertElectronGrokLabTabAllowed({ laneId: "grok-lab", partitionPresent: true }),
+  );
 });

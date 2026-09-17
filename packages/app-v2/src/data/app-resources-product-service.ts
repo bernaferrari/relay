@@ -60,6 +60,8 @@ export type ProductBrowserAccountHealth = {
     concurrentAccountsPossible: boolean;
     concurrentReason: string;
     lanes: readonly ProductAccountLane[];
+    electronGrokLabPartitionPresent?: boolean;
+    electronGrokLabReason?: string;
   };
 };
 
@@ -316,6 +318,8 @@ export function createAppResourcesProductService(
             kind: lane.kind,
             ...(lane.kind === "fixture" ? { reference: lane.schedulingKey.split("#")[1] } : {}),
           })),
+          electronGrokLabPartitionPresent: result.summary.electronGrokLabPartitionPresent,
+          electronGrokLabReason: result.summary.electronGrokLabReason,
         },
       };
     },

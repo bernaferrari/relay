@@ -1,10 +1,12 @@
-import type {
-  BrowserAuthenticationFixture,
-  BrowserAuthenticationHealth,
-  Lane,
-  LaneSaveInput,
+import {
+  electronGrokLabHealthReason,
+  type BrowserAuthenticationFixture,
+  type BrowserAuthenticationHealth,
+  type Lane,
+  type LaneSaveInput,
 } from "@relay/protocol";
 import { browserAccountSchedulingKey, unsignedBrowserLaneId } from "./browser-account-lane.js";
+import { probeElectronGrokLabPartitionPresent } from "./electron-grok-lab-partition.js";
 import {
   attachBrowserAuthenticationHealth,
   probeBrowserAuthenticationFixture,
@@ -30,6 +32,8 @@ export type BrowserAccountHealthSummary = {
   concurrentAccountsPossible: boolean;
   concurrentReason: string;
   lanes: BrowserAccountHealthLane[];
+  electronGrokLabPartitionPresent: boolean;
+  electronGrokLabReason: string;
 };
 
 type FixtureHealthView = {
@@ -104,10 +108,12 @@ export function summarizeBrowserAccountHealth(input: {
   targetId: string;
   fixtures: readonly FixtureHealthView[];
   lanes?: readonly Pick<LaneSaveInput, "id" | "target" | "account">[];
+  electronGrokLabPartitionPresent?: boolean;
 }): BrowserAccountHealthSummary {
   const live = input.fixtures.filter(browserAuthenticationFixtureIsLive);
   const statuses = input.fixtures.map(statusOf);
   const liveCount = live.length;
+  const electronPresent = input.electronGrokLabPartitionPresent === true;
   return {
     liveCount,
     revokedCount: statuses.filter((status) => status === "revoked").length,
@@ -122,6 +128,8 @@ export function summarizeBrowserAccountHealth(input: {
       fixtures: input.fixtures,
       lanes: input.lanes ?? [],
     }),
+    electronGrokLabPartitionPresent: electronPresent,
+    electronGrokLabReason: electronGrokLabHealthReason(electronPresent),
   };
 }
 
@@ -175,6 +183,7 @@ export async function collectBrowserTargetAccountHealth(input: {
       targetId: input.targetId,
       fixtures,
       lanes,
+      electronGrokLabPartitionPresent: probeElectronGrokLabPartitionPresent(),
     }),
   };
 }

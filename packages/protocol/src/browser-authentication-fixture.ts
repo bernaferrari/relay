@@ -79,6 +79,8 @@ export const browserAccountHealthSummarySchema = z
     concurrentAccountsPossible: z.boolean(),
     concurrentReason: z.string().min(1).max(500),
     lanes: z.array(browserAccountHealthLaneSchema).max(64),
+    electronGrokLabPartitionPresent: z.boolean().optional(),
+    electronGrokLabReason: z.string().min(1).max(500).optional(),
   })
   .strict();
 

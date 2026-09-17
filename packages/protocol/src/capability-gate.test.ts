@@ -5,6 +5,7 @@ import {
   canCoverSignedDistribution,
   capabilityGateForRun,
   capabilityGateForSlot,
+  electronGrokLabSuperGrokGate,
   claimedDeviceEffects,
   claimedDistributionCapabilities,
   classifyIosHardware,
@@ -269,6 +270,77 @@ test("browser grok-lab Imagine is a labeled approximation, not physical iOS or A
   assert.equal(queue.items[0]?.configuration?.browser, "grok-com");
   assert.equal(queue.items[0]?.observed?.laneId, "grok-lab");
   assert.equal(queue.items[0]?.scenarioKind, "browser-approximation");
+});
+
+test("Playwright grok-lab SuperGrok is not Electron persist:lane:grok-lab coverage", () => {
+  const inventory = { adbDeviceCount: 0, electronGrokLabPartitionPresent: false };
+  const playwrightRun = {
+    runId: "playwright-lab",
+    platform: "browser" as const,
+    approximation: "browser" as const,
+    observed: { laneId: "grok-lab", sessionStore: "playwright-user-data" as const },
+    plannedSlots: [
+      {
+        checkpointId: "home",
+        caption: "Home",
+        attempt: 1,
+        configuration: { browser: "grok-com", account: "SuperGrok" },
+      },
+    ],
+    artifacts: [
+      {
+        kind: "capture-review" as const,
+        data: {
+          caption: "Home",
+          framePath: "frames/playwright-lab.png",
+          imageSha256: "pw",
+          checkpointId: "home",
+          configuration: { browser: "grok-com", account: "SuperGrok" },
+          observed: { laneId: "grok-lab", sessionStore: "playwright-user-data" as const },
+        },
+      },
+    ],
+  };
+  const playwrightQueue = resolveGatedPlanCaptureReviewQueue([playwrightRun], inventory);
+  assert.equal(playwrightQueue.summary.planned, 1);
+  assert.equal(playwrightQueue.summary.blocked, 0);
+  assert.equal(capabilityGateForRun(playwrightRun, inventory), undefined);
+
+  const mixed = electronGrokLabSuperGrokGate({
+    inventory,
+    laneId: "persist:lane:grok-lab",
+    sessionStore: "playwright-user-data",
+  });
+  assert.equal(mixed?.kind, "nonapplicable");
+  assert.match(mixed?.reason ?? "", /Playwright grok-lab SuperGrok is not Electron/u);
+
+  const electronRun = {
+    runId: "electron-lab",
+    platform: "browser" as const,
+    observed: { laneId: "persist:lane:grok-lab", sessionStore: "electron-partition" as const },
+    plannedSlots: [
+      {
+        checkpointId: "home",
+        caption: "Home",
+        attempt: 1,
+        configuration: { browser: "grok-com", account: "SuperGrok" },
+      },
+    ],
+  };
+  const electronGate = capabilityGateForRun(electronRun, inventory);
+  assert.equal(electronGate?.kind, "unsupported");
+  assert.match(electronGate?.reason ?? "", /persist:lane:grok-lab is absent/u);
+  const electronQueue = resolveGatedPlanCaptureReviewQueue([electronRun], inventory);
+  assert.equal(electronQueue.summary.planned, 1);
+  assert.equal(electronQueue.summary.blocked, 1);
+  assert.equal(electronQueue.summary.missing, 0);
+  assert.equal(electronQueue.items[0]?.blocked, true);
+
+  const present = capabilityGateForRun(electronRun, {
+    ...inventory,
+    electronGrokLabPartitionPresent: true,
+  });
+  assert.equal(present, undefined);
 });
 
 test("S16 60s dwell cannot be claimed by Fast UI 10s, and physical lock stays human-only", () => {

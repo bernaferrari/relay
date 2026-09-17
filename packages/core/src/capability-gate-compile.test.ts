@@ -3,6 +3,7 @@ import test from "node:test";
 import type { AppMap, AppMapEntity, AppMapScenarioTest, Connection, Screen } from "@relay/protocol";
 import {
   canCoverSignedDistribution,
+  capabilityGateForRun,
   claimedDistributionCapabilities,
   resolveGatedPlanCaptureReviewQueue,
 } from "@relay/protocol";
@@ -204,4 +205,41 @@ test("compiled leftover Settings is not signed-build coverage without a signed I
   assert.equal(signedQueue.summary.planned, leftover.length);
   assert.equal(signedQueue.summary.blocked, leftover.length);
   assert.equal(signedQueue.summary.missing, 0);
+});
+
+test("compiled Playwright grok-lab SuperGrok is not Electron persist:lane coverage", () => {
+  const compiled = compileAppMapTest(
+    map({ "test-grok-android-home-chrome": homeTest() }),
+    homeTest(),
+  );
+  const planned = (compiled.plan.plannedSlots ?? []).map((slot) => ({
+    ...slot,
+    configuration: { browser: "grok-com" as const, account: "SuperGrok" },
+  }));
+  assert.ok(planned.length >= 1);
+  const inventory = { adbDeviceCount: 0, electronGrokLabPartitionPresent: false };
+  const playwrightQueue = resolveGatedPlanCaptureReviewQueue(
+    [
+      {
+        runId: "playwright-lab",
+        platform: "browser",
+        observed: { laneId: "grok-lab", sessionStore: "playwright-user-data" },
+        plannedSlots: planned,
+      },
+    ],
+    inventory,
+  );
+  assert.equal(playwrightQueue.summary.blocked, 0);
+
+  const electronRun = {
+    runId: "electron-lab",
+    platform: "browser" as const,
+    observed: { laneId: "persist:lane:grok-lab", sessionStore: "electron-partition" as const },
+    plannedSlots: planned,
+  };
+  assert.equal(capabilityGateForRun(electronRun, inventory)?.kind, "unsupported");
+  const electronQueue = resolveGatedPlanCaptureReviewQueue([electronRun], inventory);
+  assert.equal(electronQueue.summary.planned, planned.length);
+  assert.equal(electronQueue.summary.blocked, planned.length);
+  assert.equal(electronQueue.summary.missing, 0);
 });

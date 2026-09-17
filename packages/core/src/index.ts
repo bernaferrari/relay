@@ -90,6 +90,7 @@ export * from "./browser-context.js";
 export * from "./browser-execution-identity.js";
 export * from "./browser-account-lane.js";
 export * from "./browser-account-health-summary.js";
+export * from "./electron-grok-lab-partition.js";
 export * from "./browser-authentication-fixtures.js";
 export * from "./browser-auth-health.js";
 export * from "./browser-auth-health-live.js";
