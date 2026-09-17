@@ -814,6 +814,34 @@ test("run.visual.compare dest identity is dest wait-for 003, not leftover Close 
   );
 });
 
+test("run.visual.review dest identity is dest wait-for 003, not leftover Close 004 last-frame", () => {
+  const result = summarizeExecutionOperationResult("run.visual.review", {
+    comparison: {
+      id: "visual-comparison-leftover",
+      latest: {
+        frames: [
+          { path: "frames/003.png", caption: "Observe" },
+          { path: "frames/004.png", caption: "after · Run saved Test" },
+        ],
+      },
+    },
+    decision: { action: "keep-baseline" },
+  }) as {
+    destIdentity?: Array<{ path?: string }>;
+    comparison?: { latest?: { frames?: Array<{ path?: string }> } };
+    decision?: { action?: string };
+  };
+  assert.equal(result.decision?.action, "keep-baseline");
+  assert.deepEqual(
+    result.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.comparison?.latest?.frames?.some((frame) => frame.path === "frames/004.png"),
+    false,
+  );
+});
+
 test("run.visual-baseline.update never accepts leftover Close 004 as dest", () => {
   const result = summarizeExecutionOperationResult("run.visual-baseline.update", {
     comparison: {

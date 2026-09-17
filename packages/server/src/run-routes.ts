@@ -700,6 +700,11 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
   const visualMatch = matchPath(pathname, "/runs/:id/visual-baseline");
   if (visualMatch) {
     const run = await loadScopedRun(visualMatch.id!, scope);
+    if (method === "GET") {
+      return guardVisualVerification(async () =>
+        json(response, 200, { comparison: await compareVisualBaseline(runsRoot(), run) }),
+      );
+    }
     if (method === "POST") {
       const body = (await parseJsonBody(request)) as { action?: unknown; note?: unknown };
       if (body.action !== "approve-new-baseline") {

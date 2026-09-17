@@ -173,6 +173,20 @@ test("run routes compare durable visual evidence and require explicit review dec
     assert.equal(comparison.latest.runId, "latest-run");
     assert.equal(comparison.diff.changedFrames, 1);
 
+    const comparedGet = await requestRoute("GET", "/runs/latest-run/visual-baseline");
+    const getComparison = comparedGet.value.comparison as {
+      code: string;
+      latest: { runId: string };
+    };
+    assert.equal(comparedGet.status, 200);
+    assert.equal(getComparison.code, comparison.code);
+    assert.equal(getComparison.latest.runId, "latest-run");
+    assert.equal(comparedGet.value.decision, undefined);
+    assert.equal(
+      (await getVisualBaseline(root, "sign-in", "pixel-1", "project-a"))?.runId,
+      "approved-run",
+    );
+
     const initialPolicy = await requestRoute("GET", "/runs/latest-run/visual-policy");
     assert.equal((initialPolicy.value.policy as { revision: number }).revision, 0);
     const policyUpdate = await requestRoute("PUT", "/runs/latest-run/visual-policy", {

@@ -630,3 +630,43 @@ test("operator visual compare dest identity is dest wait-for, not leftover Close
     false,
   );
 });
+
+test("operator visual review dest identity never accepts leftover Close 004 as dest", async () => {
+  const { invoker } = recordingInvoker((operationId) => {
+    assert.equal(operationId, "run.visual.review");
+    return {
+      comparison: {
+        latest: {
+          frames: leftoverDestEndJob.frames,
+          frameCount: leftoverDestEndJob.frames.length,
+        },
+      },
+      decision: { action: "keep-baseline" },
+    };
+  });
+  const reviewed = (await invokeRelayOperatorTool({
+    name: "relay_visual_review",
+    argumentsValue: {
+      runId: leftoverDestEndJob.id,
+      comparisonId: "visual-comparison-leftover",
+      action: "keep-baseline",
+    },
+    confirmed: true,
+    invoker,
+    actorId: "human:local-cli",
+    signal: new AbortController().signal,
+  })) as {
+    destIdentity?: Array<{ path?: string }>;
+    comparison?: { latest?: { frames?: Array<{ path?: string }> } };
+    decision?: { action?: string };
+  };
+  assert.equal(reviewed.decision?.action, "keep-baseline");
+  assert.deepEqual(
+    reviewed.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    reviewed.comparison?.latest?.frames?.some((frame) => frame.path === "frames/004.png"),
+    false,
+  );
+});

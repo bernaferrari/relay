@@ -203,6 +203,7 @@ function cliResourceSummaryOperationId(resourceId: string): string | undefined {
   if (resourceId === "run.get") return "run.get";
   if (resourceId === "run.evidence") return "run.evidence.get";
   if (resourceId === "run.story") return "run.story.get";
+  if (resourceId === "run.compare") return "run.visual.compare";
   return undefined;
 }
 
