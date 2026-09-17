@@ -496,7 +496,7 @@ export function RunWorkbench({
                             data-step-index={index}
                             aria-current={index === selectedStepIndex ? "step" : undefined}
                             aria-pressed={index === selectedStepIndex}
-                            className={`relay-interactive-row relative grid min-h-12 w-full grid-cols-[1rem_minmax(0,1fr)_1rem] items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-accent text-foreground ring-1 ring-inset ring-border" : "text-muted-foreground"}`}
+                            className={`relay-interactive-row relative grid min-h-12 w-full cursor-pointer grid-cols-[1rem_minmax(0,1fr)_1rem] items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${index === selectedStepIndex ? "bg-accent text-foreground ring-1 ring-inset ring-border" : "text-muted-foreground"}`}
                             onClick={() => onSelectStep(index)}
                             onKeyDown={(event) => {
                               const next =
@@ -611,7 +611,7 @@ export function RunWorkbench({
                           <button
                             type="button"
                             aria-pressed={index === selectedCapture}
-                            className={`relay-interactive-row flex min-h-20 w-full items-center gap-3 rounded-md p-3 text-left focus-visible:outline-2 focus-visible:outline-ring ${index === selectedCapture ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
+                            className={`relay-interactive-row flex min-h-20 w-full cursor-pointer items-center gap-3 rounded-md p-3 text-left transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring ${index === selectedCapture ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
                             onClick={() => setSelectedCapture(index)}
                           >
                             {item.media ? (

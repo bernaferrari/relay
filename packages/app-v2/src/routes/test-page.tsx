@@ -40,6 +40,7 @@ import { startOwnedTestRun, testStartRequests } from "../data/start-owned-test-r
 import { useTestDocumentReview } from "../data/test-document-surface";
 import { currentTestOutlineCopy } from "../data/workbench-step-selection";
 import { ReviewRecordingPage } from "./review-recording-page";
+import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/tests/$testId");
 
@@ -384,7 +385,7 @@ export function TestPage() {
           detail="It may have been removed or may belong to another app. Choose a saved Test to continue."
           action={
             <Link
-              className="{productLinkClassName}"
+              className={productLinkClassName}
               to="/tests"
             >
               Browse saved Tests
@@ -639,7 +640,7 @@ export function TestPage() {
                             detail="Connect a target to continue with this Test."
                             action={
                               <Link
-                                className="{productLinkClassName}"
+                                className={productLinkClassName}
                                 to="/devices"
                               >
                                 View devices

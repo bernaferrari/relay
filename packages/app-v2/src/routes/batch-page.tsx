@@ -34,6 +34,7 @@ import {
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { resolvePlanFindings } from "./batch-finding-review";
 import { PlanCaptureReviewSection } from "./batch-capture-review";
+import { productLinkClassName } from "../lib/class-names";
 import {
   flakyTestIdsFromStability,
   stabilitySamplesFromBatch,
@@ -504,7 +505,7 @@ export function BatchPage() {
               </Button>
               {downloadUrl ? (
                 <a
-                  className="{productLinkClassName}"
+                  className={productLinkClassName}
                   href={downloadUrl}
                   download={`relay-${batchId}.tar.gz`}
                 >

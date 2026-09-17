@@ -31,7 +31,7 @@ import {
 } from "./batch-triage";
 
 const reportLinkClass =
-  "inline-flex min-h-11 items-center gap-1 text-[13px] font-semibold text-foreground underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px] transition-[color] duration-150 ease-out hover:text-[var(--text-interactive-hover)]";
+  "inline-flex min-h-11 items-center gap-1 text-[13px] font-semibold text-foreground underline underline-offset-4";
 
 export function BatchFailureClusters({
   clusters,
@@ -74,7 +74,7 @@ export function BatchFailureClusters({
                   : "border-l-[3px] border-l-border"
               } ${
                 checked
-                  ? "bg-[color-mix(in_oklch,var(--surface-raised-strong)_90%,var(--text-strong)_10%)]"
+                  ? "bg-accent"
                   : ""
               }`}
               key={cluster.id}

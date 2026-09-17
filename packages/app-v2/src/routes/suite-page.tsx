@@ -31,6 +31,7 @@ import { usePairedConfigurationWorkspace } from "../data/use-paired-configuratio
 import { PlanDailySchedule } from "./plan-daily-schedule";
 import { PageLoading } from "./recording-shared";
 import { friendlySuiteIssue } from "../data/suite-preflight-copy";
+import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/apps/$appId/suites/$suiteId");
 
@@ -252,7 +253,7 @@ export function SuitePage() {
           detail="It may have been removed from this App."
           action={
             <Link
-              className="{productLinkClassName}"
+              className={productLinkClassName}
               to="/suites"
             >
               Back to Plans

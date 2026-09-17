@@ -31,6 +31,7 @@ import { IssueDraftButton } from "../components/issue-draft-button";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { VerificationItem } from "./change-plan-items";
 import { changesQueryKey } from "./changes-page";
+import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/changes/$changeId");
 const changeQueryKey = (changeId: string) => ["change", changeId] as const;
@@ -132,7 +133,7 @@ export function ChangePage() {
           detail="It may have been replaced or removed. Return to Changes to see the current history."
           action={
             <Link
-              className="{productLinkClassName}"
+              className={productLinkClassName}
               to="/changes"
             >
               View Changes

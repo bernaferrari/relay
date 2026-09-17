@@ -215,7 +215,7 @@ export function RunConfigurationComposer({
               {filteredValues?.map((option) => (
                 <FieldLabel
                   key={option.id}
-                  className="relay-interactive-row flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-3 rounded-md px-3 py-2 has-data-checked:bg-accent"
+                  className="relay-interactive-row flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-accent has-data-checked:bg-accent"
                 >
                   {optionCopy(option)}
                   <Checkbox

@@ -21,6 +21,7 @@ import {
   type VersionDraft,
 } from "./app-resource-dialogs";
 import { PageLoading } from "./recording-shared";
+import { productLinkClassName } from "../lib/class-names";
 import {
   accountHealthState,
   concurrentAccountCopy,
@@ -106,7 +107,7 @@ export function AppVersionsPage() {
               detail="No mobile build or web deployment has been registered in this workspace yet."
               action={
                 <Link
-                  className="{productLinkClassName}"
+                  className={productLinkClassName}
                   to="/tests"
                 >
                   Open Tests
@@ -384,7 +385,7 @@ export function AppAccountsPage() {
                   </Button>
                 ) : (
                   <Link
-                    className="{productLinkClassName}"
+                    className={productLinkClassName}
                     to="/environments"
                   >
                     Open browsers

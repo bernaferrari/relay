@@ -30,6 +30,7 @@ import { EmptyState, RecoveryState } from "../components/product-patterns";
 import { readSetupContinuation } from "../data/setup-continuation";
 import { BrowserLaneTabs } from "../components/browser-lane-tabs";
 import { PageLoading } from "./recording-shared";
+import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/environments/$profileId");
 
@@ -192,7 +193,7 @@ export function EnvironmentPage() {
           detail="It may have been removed from this workspace."
           action={
             <Link
-              className="{productLinkClassName}"
+              className={productLinkClassName}
               to="/environments"
             >
               Back to browsers

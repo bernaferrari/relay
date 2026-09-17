@@ -24,6 +24,7 @@ import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, ReadinessMark, RecoveryState } from "../components/product-patterns";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { PageLoading } from "./recording-shared";
+import { productLinkClassName } from "../lib/class-names";
 
 const SUITES_QUERY_KEY = ["suites"] as const;
 const routeApi = getRouteApi("/suites");
@@ -433,7 +434,7 @@ export function SuitesPage() {
               </Button>
             ) : (
               <Link
-                className="{productLinkClassName}"
+                className={productLinkClassName}
                 to="/apps"
               >
                 Add an App first

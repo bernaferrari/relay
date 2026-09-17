@@ -94,11 +94,6 @@
   --border-weak-base: var(--border);
   --button-primary-base: var(--primary);
   --button-primary-foreground: var(--primary-foreground);
-  --relay-overlay-menu: 90;
-  --relay-overlay-popover: 100;
-  --relay-overlay-dialog: 110;
-  --relay-overlay-tooltip: 120;
-  --relay-focus-ring: var(--ring);
   --font-family-sans: var(--font-sans);
 }
 

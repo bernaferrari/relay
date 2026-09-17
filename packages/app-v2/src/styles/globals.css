@@ -5,10 +5,6 @@
 @source "../../../ui-react/src/**/*.{ts,tsx}";
 
 :root {
-  --relay-sidebar-width: 256px;
-  --relay-page-max: 1180px;
-  --relay-focus-ring: var(--text-strong);
-  --product-accent-soft: color-mix(in oklch, var(--foreground) 11%, transparent);
   --relay-preview-light-canvas: oklch(0.985 0.002 250);
   --relay-preview-light-panel: oklch(0.94 0.004 250);
   --relay-preview-light-line: oklch(0.79 0.008 250);
@@ -38,49 +34,6 @@
   input,
   select {
     touch-action: manipulation;
-  }
-}
-
-/* One interaction treatment for navigable library and inspector rows. */
-@layer components {
-  .relay-library-row,
-  .relay-interactive-row,
-  .relay-library-row-shell {
-    transition:
-      background-color 150ms ease-out,
-      color 150ms ease-out;
-  }
-
-  .relay-library-row[href],
-  .relay-interactive-row {
-    cursor: pointer;
-  }
-
-  @media (hover: hover) {
-    .relay-library-row[href]:hover,
-    .relay-interactive-row:hover,
-    .relay-library-row-shell:hover {
-      background-color: var(--accent);
-    }
-
-    .relay-library-row:hover .relay-library-row-arrow {
-      color: var(--foreground);
-    }
-  }
-
-  .relay-library-row[href]:focus-visible,
-  .relay-interactive-row:focus-visible {
-    background-color: var(--accent);
-    outline: 2px solid var(--ring);
-    outline-offset: -2px;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .relay-library-row,
-    .relay-interactive-row,
-    .relay-library-row-shell {
-      transition: none;
-    }
   }
 }
 

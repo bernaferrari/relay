@@ -3,6 +3,7 @@ import { Button } from "@relay/ui-react/components/button";
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import type { RunEvidenceExportDocument } from "@relay/product/run-evidence-export";
+import { productLinkClassName } from "../lib/class-names";
 
 export function RunEvidenceExport({
   runId,
@@ -40,7 +41,7 @@ export function RunEvidenceExport({
       </Button>
       {href && fileName ? (
         <a
-          className="{productLinkClassName}"
+          className={productLinkClassName}
           href={href}
           download={fileName}
         >

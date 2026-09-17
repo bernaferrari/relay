@@ -33,6 +33,7 @@ import {
   type PendingCheckpointDraft,
 } from "./test-editor-route-helpers";
 import { useTestStepDrafts } from "./use-test-step-drafts";
+import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/tests/$testId/edit");
 
@@ -637,7 +638,7 @@ function TestEditorDocument() {
           detail="It may have been removed or may belong to another app. Choose a saved Test to continue."
           action={
             <Link
-              className="{productLinkClassName}"
+              className={productLinkClassName}
               to="/tests"
             >
               Browse saved Tests

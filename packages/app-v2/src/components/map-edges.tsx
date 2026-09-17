@@ -446,8 +446,8 @@ export function MapEdges({
                 state === "selected"
                   ? "var(--color-blue-400)"
                   : state === "muted"
-                    ? "color-mix(in oklch, var(--text-weak) 80%, var(--background) 20%)"
-                    : "var(--text-weak)"
+                    ? "color-mix(in oklch, var(--muted-foreground) 80%, var(--background) 20%)"
+                    : "var(--muted-foreground)"
               }
               strokeWidth="1.5"
               strokeLinecap="round"
@@ -473,7 +473,7 @@ export function MapEdges({
               state === "selected"
                 ? "text-blue-400"
                 : state === "muted"
-                  ? "text-[color-mix(in_oklch,var(--text-weak)_80%,var(--background)_20%)]"
+                  ? "text-muted-foreground/80"
                   : "text-muted-foreground"
             }`}
           >

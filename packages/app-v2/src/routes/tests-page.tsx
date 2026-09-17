@@ -17,6 +17,7 @@ import { readRunPointer } from "../data/run-pointer";
 import { readWorkflowPointer } from "../data/workflow-pointer";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
+import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/tests");
 
@@ -313,7 +314,7 @@ export function TestsPage() {
               detail="Open your app and record the steps you want to repeat."
               action={
                 <Link
-                  className="{productLinkClassName}"
+                  className={productLinkClassName}
                   to="/tests/new"
                 >
                   New test

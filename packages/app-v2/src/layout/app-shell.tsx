@@ -65,7 +65,7 @@ export function AppShell({ platform }: { platform: Platform }) {
       data-platform={platform.platform}
     >
       <a
-        className="relay-skip-link bg-primary text-primary-foreground fixed left-1/2 top-2 z-[var(--relay-overlay-tooltip)] inline-flex min-h-11 -translate-x-1/2 -translate-y-[160%] items-center rounded-[var(--radius-md)] px-3 py-2 focus:translate-y-0"
+        className="relay-skip-link bg-primary text-primary-foreground fixed left-1/2 top-2 z-50 inline-flex min-h-11 -translate-x-1/2 -translate-y-[160%] items-center rounded-[var(--radius-md)] px-3 py-2 focus:translate-y-0"
         href="#main-content"
       >
         Skip to content

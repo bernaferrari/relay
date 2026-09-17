@@ -1,5 +1,10 @@
 import { ApiError } from "@relay/client";
-import { operationDefinition, VISUAL_REVIEW_ACTIONS, type OperationId } from "@relay/protocol";
+import {
+  operationDefinition,
+  summarizeExecutionOperationResult,
+  VISUAL_REVIEW_ACTIONS,
+  type OperationId,
+} from "@relay/protocol";
 import * as z from "zod/v4";
 import { pngScreenshotRecord } from "./png-result.js";
 import { relayMcpExclusions, relayMcpTools } from "./tools.js";
@@ -524,7 +529,7 @@ function waitEnvelope(result: unknown): Record<string, unknown> {
     type: "result",
     ok: status === "ok" || status === "healed",
     operationId: "job.get",
-    result,
+    result: summarizeExecutionOperationResult("job.get", result),
   };
 }
 
@@ -615,7 +620,10 @@ async function invokeAdvanced(
     descriptor.requiresConfirmation ? { ...input, confirm: true } : input,
   ) as Record<string, unknown>;
   const { confirm: _confirm, ...operationInput } = validated;
-  return invokeWithAutoLease(invoker, descriptor.operationId, operationInput, signal);
+  return summarizeExecutionOperationResult(
+    descriptor.operationId,
+    await invokeWithAutoLease(invoker, descriptor.operationId, operationInput, signal),
+  );
 }
 
 /**
@@ -711,23 +719,26 @@ export async function invokeRelayOperatorTool(input: {
     });
   }
   if (input.name === "relay_run") {
-    return call(
+    return summarizeExecutionOperationResult(
       "app-map.test.run",
-      withLane(
-        {
-          appMapId: parsed.appMapId,
-          testId: parsed.testId,
-          ...(typeof parsed.expectedRevision === "number"
-            ? { expectedRevision: parsed.expectedRevision }
-            : {}),
-          ...(parsed.target ? { target: parsed.target } : {}),
-          ...(parsed.in ? { in: parsed.in } : {}),
-          ...(typeof parsed.lens === "string" ? { lens: parsed.lens } : {}),
-          ...(typeof parsed.executionMode === "string"
-            ? { executionMode: parsed.executionMode }
-            : {}),
-        },
-        parsed,
+      await call(
+        "app-map.test.run",
+        withLane(
+          {
+            appMapId: parsed.appMapId,
+            testId: parsed.testId,
+            ...(typeof parsed.expectedRevision === "number"
+              ? { expectedRevision: parsed.expectedRevision }
+              : {}),
+            ...(parsed.target ? { target: parsed.target } : {}),
+            ...(parsed.in ? { in: parsed.in } : {}),
+            ...(typeof parsed.lens === "string" ? { lens: parsed.lens } : {}),
+            ...(typeof parsed.executionMode === "string"
+              ? { executionMode: parsed.executionMode }
+              : {}),
+          },
+          parsed,
+        ),
       ),
     );
   }
@@ -762,6 +773,10 @@ export async function invokeRelayOperatorTool(input: {
         ? await invoker.invoke("job.combine.export", { batchId }, { signal })
         : undefined;
     const last = waited.at(-1);
+    const lastProjected = last
+      ? summarizeExecutionOperationResult("job.get", last)
+      : undefined;
+    const lastJob = object(object(lastProjected)?.job) ?? lastProjected;
     return {
       type: "result",
       ok: waited.length
@@ -775,10 +790,14 @@ export async function invokeRelayOperatorTool(input: {
           })
         : true,
       operationId: "job.combine.start",
-      result: started,
-      ...(last ? { job: object(object(last)?.job) ?? last } : {}),
-      ...(findings !== undefined ? { findings } : {}),
-      ...(exported !== undefined ? { export: exported } : {}),
+      result: summarizeExecutionOperationResult("job.combine.start", started),
+      ...(lastJob ? { job: lastJob } : {}),
+      ...(findings !== undefined
+        ? { findings: summarizeExecutionOperationResult("job.combine.analysis", findings) }
+        : {}),
+      ...(exported !== undefined
+        ? { export: summarizeExecutionOperationResult("job.combine.export", exported) }
+        : {}),
     };
   }
   if (input.name === "relay_wait") {
@@ -792,10 +811,16 @@ export async function invokeRelayOperatorTool(input: {
     return waitEnvelope(result);
   }
   if (input.name === "relay_findings") {
-    return invoker.invoke("job.combine.analysis", { batchId: parsed.batchId }, { signal });
+    return summarizeExecutionOperationResult(
+      "job.combine.analysis",
+      await invoker.invoke("job.combine.analysis", { batchId: parsed.batchId }, { signal }),
+    );
   }
   if (input.name === "relay_evidence") {
-    return invoker.invoke("run.evidence.get", { runId: parsed.runId }, { signal });
+    return summarizeExecutionOperationResult(
+      "run.evidence.get",
+      await invoker.invoke("run.evidence.get", { runId: parsed.runId }, { signal }),
+    );
   }
   if (input.name === "relay_visual_compare") {
     return invoker.invoke("run.visual.compare", { runId: parsed.runId }, { signal });

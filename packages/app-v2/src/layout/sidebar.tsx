@@ -121,7 +121,7 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
 export function Sidebar() {
   return (
     <SharedSidebar
-      className="relay-sidebar border-r-0! hidden h-full min-w-[var(--relay-sidebar-width)] w-[var(--relay-sidebar-width)] bg-sidebar min-[861px]:flex"
+      className="relay-sidebar border-r-0! hidden h-full w-(--sidebar-width) bg-sidebar min-[861px]:flex"
       aria-label="Relay navigation"
     >
       <SidebarHeader aria-hidden="true" className="h-[54px] shrink-0 p-0" />

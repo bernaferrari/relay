@@ -584,6 +584,16 @@ function summarizeStandaloneStep(response: Record<string, unknown>): unknown {
   };
 }
 
+/** Workflow / test-run envelopes keep their other fields; leftover Close last-frame
+ * cannot fill dest on the attached job. */
+function projectAttachedJobResult(response: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...response,
+    ...(response.job !== undefined ? { job: summarizeJob(response.job) } : {}),
+    ...(Array.isArray(response.jobs) ? { jobs: response.jobs.map(summarizeJob) } : {}),
+  };
+}
+
 /** Bounded command/MCP projection for execution jobs. Full traces remain in
  * run resources and TracePacks where they can be queried deliberately. */
 export function summarizeExecutionOperationResult(operationId: string, result: unknown): unknown {
@@ -595,6 +605,11 @@ export function summarizeExecutionOperationResult(operationId: string, result: u
   if (operationId === "run.capture.review") return summarizeRunCaptureReview(response);
   if (operationId === "run.story.get") return summarizeRunStory(response);
   if (operationId === "run.trace-pack.get") return summarizeTracePackEnvelope(response);
+  if (operationId === "app-map.test.run" || operationId.startsWith("workflow.")) {
+    return response.job === undefined && !Array.isArray(response.jobs)
+      ? result
+      : projectAttachedJobResult(response);
+  }
   if (operationId !== "app-map.flow.run" && !operationId.startsWith("job.")) return result;
   if (operationId.endsWith(".export")) return summarizePackExport(response);
   if (operationId.endsWith(".analysis")) return summarizeLocaleAnalysis(response);

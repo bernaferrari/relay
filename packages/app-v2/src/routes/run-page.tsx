@@ -52,6 +52,7 @@ import { RunReplayAction, RunReplayStatus } from "./run-replay";
 import { RunEvidenceExport } from "./run-evidence-export";
 import { attachedRunLinkTestId, attachedRunOwnership } from "../data/attached-run-ownership";
 import { EmbeddedRunResult } from "../components/embedded-run-result";
+import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/runs/$runId");
 
@@ -218,7 +219,7 @@ export function RunInspection({
           detail="The copied result is still available, but it is not an attached report for this Test."
           action={
             <Link
-              className="{productLinkClassName}"
+              className={productLinkClassName}
               to="/runs/$runId"
               params={{ runId }}
             >
@@ -605,7 +606,7 @@ function RunReport({
     <Dialog>
       <DialogTrigger
         aria-label="Technical details"
-        className="relay-interactive-row flex min-h-10 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted-foreground focus-visible:outline-2 focus-visible:outline-ring"
+        className="relay-interactive-row flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
       >
         <CircleAlert className="size-4 shrink-0 text-destructive" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate">{heading}</span>

@@ -15,6 +15,7 @@ import { catalogQueryKeys } from "../data/catalog-queries";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 import { collapsePlanResultRows, planResultListCause } from "./runs-plan-results";
+import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/runs");
 
@@ -230,7 +231,7 @@ export function RunsPage() {
               detail="Open a saved Test and run it on a Device or Browser."
               action={
                 <Link
-                  className="{productLinkClassName}"
+                  className={productLinkClassName}
                   to="/tests"
                 >
                   Browse saved Tests

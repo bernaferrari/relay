@@ -53,7 +53,7 @@
       "}";
     document.head.appendChild(style);
 
-    var bg = (css.match(/--background-base:\s*([^;]+);/) || [])[1];
+    var bg = (css.match(/--background:\s*([^;]+);/) || css.match(/--background-base:\s*([^;]+);/) || [])[1];
     if (bg) {
       bg = bg.trim();
       document.documentElement.style.backgroundColor = bg;

@@ -288,7 +288,7 @@ export function CaptureReviewPanel({
                 <button
                   type="button"
                   aria-pressed={index === selectedIndex}
-                  className={`${gallery ? "" : "relay-interactive-row"} flex min-h-20 w-full gap-3 rounded-lg text-left transition-colors focus-visible:outline-2 ${gallery ? "flex-col overflow-hidden pb-1" : "items-center py-2 pl-10 pr-3"} ${index === selectedIndex ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
+                  className={`${gallery ? "" : "relay-interactive-row cursor-pointer hover:bg-accent"} flex min-h-20 w-full gap-3 rounded-lg text-left transition-colors focus-visible:outline-2 ${gallery ? "flex-col overflow-hidden pb-1" : "items-center py-2 pl-10 pr-3"} ${index === selectedIndex ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
                   onClick={() => onSelect(index)}
                 >
                   {thumb?.media ? (

@@ -17,6 +17,7 @@ import { EmptyState } from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import type { ProductMapScreen } from "@relay/product/map-exploration";
 import { MapScreenRefreshDialog } from "../components/map-screen-refresh-dialog";
+import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/apps/$appId/map");
 
@@ -228,7 +229,7 @@ export function MapPage() {
                   detail="Record a Test to give Relay a starting point for exploration."
                   action={
                     <Link
-                      className="{productLinkClassName}"
+                      className={productLinkClassName}
                       to="/tests/new"
                       search={{ app: appId }}
                     >

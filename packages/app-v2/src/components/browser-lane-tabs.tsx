@@ -105,7 +105,7 @@ export function BrowserLaneTabs({
         <div>
           <h2
             id="browser-lane-tabs-title"
-            className="text-[13px] font-medium tracking-[-0.01em] text-[var(--text-primary)]"
+            className="text-[13px] font-medium tracking-[-0.01em] text-foreground"
           >
             Saved configurations
           </h2>
@@ -117,7 +117,7 @@ export function BrowserLaneTabs({
       <div
         role="tablist"
         aria-label="Saved configurations"
-        className="mt-3 flex flex-wrap gap-1.5 rounded-[14px] border border-[color-mix(in_srgb,var(--border)_80%,transparent)] bg-[color-mix(in_srgb,var(--surface-muted)_55%,transparent)] p-1"
+        className="mt-3 flex flex-wrap gap-1.5 rounded-[14px] border border-border bg-muted/55 p-1"
       >
         {isolated.map((lane) => {
           const host = browserLaneHostIdentity({
