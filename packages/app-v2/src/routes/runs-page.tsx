@@ -14,7 +14,7 @@ import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
-import { collapsePlanResultRows } from "./runs-plan-results";
+import { collapsePlanResultRows, planResultListCause } from "./runs-plan-results";
 
 const routeApi = getRouteApi("/runs");
 
@@ -233,7 +233,7 @@ function RunRow({
   const plan = Boolean(run.batchId);
   const title = plan ? run.title : (run.testName ?? run.title);
   const device = run.targetName ?? platformName(run.platform);
-  const cause = runCause(run);
+  const cause = planResultListCause(run);
   const className = `relay-run-row ${libraryRowSurface} ${libraryRowContent} grid-cols-[minmax(0,1fr)_100px]`;
   const body = (
     <>
@@ -300,16 +300,6 @@ function runView(value: unknown): RunView {
   return value === "latest" || value === "failed" || value === "needs-review" || value === "active"
     ? value
     : "all";
-}
-
-function runCause(run: ProductRunSummary): string | undefined {
-  if (run.phase === "failed" || run.outcome === "product-failure") return "Failed";
-  if (run.outcome === "harness-failure") return "Could not complete";
-  if (run.review?.status === "pending" || run.outcome === "uncertain") return "Needs review";
-  if (run.phase === "queued") return "Waiting to start";
-  if (run.phase === "running") return "In progress";
-  if (run.phase === "cancelled") return "Cancelled";
-  return undefined;
 }
 
 function runViewDescription(view: RunView, historyComplete: boolean) {

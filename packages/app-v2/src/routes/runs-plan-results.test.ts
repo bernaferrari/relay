@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProductRunSummary } from "@relay/product/catalog";
-import { collapsePlanResultRows, resultRowHref } from "./runs-plan-results";
+import { collapsePlanResultRows, planResultListCause, resultRowHref } from "./runs-plan-results";
 
 function run(
   input: Pick<ProductRunSummary, "id" | "title" | "phase" | "queuedAt"> &
@@ -60,6 +60,88 @@ describe("Plan Result rows", () => {
     expect(resultRowHref(rows[0]!)).toBe("/batches/batch-daily");
     expect(rows[1]?.id).toBe("run-solo");
     expect(resultRowHref(rows[1]!)).toBe("/runs/run-solo");
+  });
+
+  it("does not call an Infra Plan a product pass or a product failure", () => {
+    const rows = collapsePlanResultRows(
+      Array.from({ length: 8 }, (_, index) =>
+        run({
+          id: `run-judge-${index}`,
+          title: "Grok.com logged-out judged chrome · logged-out · Settings",
+          appName: "Grok.com daily",
+          phase: "failed",
+          outcome: "harness-failure",
+          queuedAt: index + 1,
+          batchId: "batch-judged",
+        }),
+      ),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.outcome).toBe("harness-failure");
+    expect(rows[0]?.outcome).not.toBe("product-failure");
+    expect(planResultListCause(rows[0]!)).toBe("Could not complete");
+    expect(planResultListCause(rows[0]!)).not.toBe("Failed");
+  });
+
+  it("one passed cell plus Infra cells stays Incomplete / harness, not a product pass", () => {
+    const rows = collapsePlanResultRows([
+      run({
+        id: "run-passed",
+        title: "Open grok.com logged-out",
+        appName: "Grok.com daily",
+        phase: "completed",
+        outcome: "passed",
+        queuedAt: 1,
+        batchId: "batch-incomplete",
+      }),
+      ...Array.from({ length: 7 }, (_, index) =>
+        run({
+          id: `run-infra-${index}`,
+          title: "Judged chrome",
+          appName: "Grok.com daily",
+          phase: "failed",
+          outcome: "harness-failure",
+          queuedAt: index + 2,
+          batchId: "batch-incomplete",
+        }),
+      ),
+    ]);
+    expect(rows[0]?.outcome).toBe("harness-failure");
+    expect(planResultListCause(rows[0]!)).toBe("Could not complete");
+  });
+
+  it("keeps a mixed Plan as a product failure when any cell is a product issue", () => {
+    const rows = collapsePlanResultRows([
+      run({
+        id: "run-ok",
+        title: "Open grok.com",
+        appName: "Grok.com daily",
+        phase: "completed",
+        outcome: "passed",
+        queuedAt: 1,
+        batchId: "batch-mixed",
+      }),
+      run({
+        id: "run-infra",
+        title: "Settings judged",
+        appName: "Grok.com daily",
+        phase: "failed",
+        outcome: "harness-failure",
+        queuedAt: 2,
+        batchId: "batch-mixed",
+      }),
+      run({
+        id: "run-fail",
+        title: "Send hello",
+        appName: "Grok.com daily",
+        phase: "failed",
+        outcome: "product-failure",
+        queuedAt: 3,
+        batchId: "batch-mixed",
+      }),
+    ]);
+    expect(rows[0]?.outcome).toBe("product-failure");
+    expect(planResultListCause(rows[0]!)).toBe("Failed");
   });
 
   it("keeps a Plan Result failed when any cell failed", () => {

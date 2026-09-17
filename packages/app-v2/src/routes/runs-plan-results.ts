@@ -66,14 +66,24 @@ function planResultOutcome(
   siblings: readonly ProductRunSummary[],
   phase: ProductRunPhase,
 ): ProductRunSummary["outcome"] {
-  if (siblings.some((item) => item.outcome === "product-failure" || item.phase === "failed")) {
-    return "product-failure";
-  }
+  if (siblings.some((item) => item.outcome === "product-failure")) return "product-failure";
   if (siblings.some((item) => item.outcome === "harness-failure")) return "harness-failure";
   if (siblings.some((item) => item.outcome === "uncertain" || item.review?.status === "pending")) {
     return "uncertain";
   }
   if (phase === "completed" && siblings.every((item) => item.outcome === "passed")) return "passed";
+  return undefined;
+}
+
+/** Results list copy. A failed phase is not a product pass when the cell is Infra. */
+export function planResultListCause(run: ProductRunSummary): string | undefined {
+  if (run.outcome === "product-failure") return "Failed";
+  if (run.outcome === "harness-failure") return "Could not complete";
+  if (run.review?.status === "pending" || run.outcome === "uncertain") return "Needs review";
+  if (run.phase === "queued") return "Waiting to start";
+  if (run.phase === "running") return "In progress";
+  if (run.phase === "cancelled") return "Cancelled";
+  if (run.phase === "failed") return "Could not complete";
   return undefined;
 }
 
