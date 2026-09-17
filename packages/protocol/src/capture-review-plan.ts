@@ -10,7 +10,9 @@ import {
 } from "./capture-review.js";
 
 export type PlanCaptureReviewItem = CaptureReviewItem & {
-  runId: string;
+  runId?: string;
+  /** Stable campaign obligation, including cases not dispatched yet. */
+  executionCaseId?: string;
   blocked?: boolean;
   device?: string;
   account?: string;
@@ -33,7 +35,8 @@ export type PlanCaptureReviewQueue = {
 };
 
 export type PlanCaptureReviewRunInput = {
-  runId: string;
+  runId?: string;
+  executionCaseId?: string;
   artifacts?: readonly { kind?: string; data?: unknown }[];
   decisions?: readonly CaptureReviewDecision[];
   recipeSteps?: readonly unknown[];
@@ -89,7 +92,8 @@ export function resolvePlanCaptureReviewQueue(
       const account = item.configuration?.account;
       items.push({
         ...item,
-        runId: run.runId,
+        ...(run.runId ? { runId: run.runId } : {}),
+        ...(run.executionCaseId ? { executionCaseId: run.executionCaseId } : {}),
         ...(run.blocked && item.status === "missing" ? { blocked: true } : {}),
         ...(device ? { device } : {}),
         ...(account ? { account } : {}),
@@ -232,8 +236,16 @@ export function selectedPlanCaptureReviewItems(
 }
 
 /** Unique across a Plan even when two Runs share a framePath hash. */
-export function captureReviewQueueItemKey(item: { captureId: string; runId?: string }): string {
-  return item.runId ? `${item.runId}::${item.captureId}` : item.captureId;
+export function captureReviewQueueItemKey(item: {
+  captureId: string;
+  runId?: string;
+  executionCaseId?: string;
+}): string {
+  return item.runId
+    ? `${item.runId}::${item.captureId}`
+    : item.executionCaseId
+      ? `case:${item.executionCaseId}::${item.captureId}`
+      : item.captureId;
 }
 
 export function captureReviewQueueFrameKey(item: {

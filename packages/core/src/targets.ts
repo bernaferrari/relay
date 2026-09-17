@@ -1,12 +1,8 @@
+import { BROWSER_TARGET_CAPABILITIES } from "./browser-target-capabilities.js";
 import { randomUUID } from "node:crypto";
 import { access, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type {
-  TargetCapability,
-  TargetDefinition,
-  TargetKind,
-  TargetPreflight,
-} from "@relay/protocol";
+import type { TargetDefinition, TargetKind, TargetPreflight } from "@relay/protocol";
 import {
   browserLanePlaywrightUserDataName,
   compileBrowserEnvironment,
@@ -206,17 +202,7 @@ export async function deleteTarget(id: string): Promise<void> {
 }
 
 /** Capabilities implemented by the managed Playwright adapter. */
-export const BROWSER_TARGET_CAPABILITIES: readonly TargetCapability[] = [
-  "snapshot",
-  "screenshot",
-  "recording",
-  "tap",
-  "type",
-  "scroll",
-  "clipboard",
-  "network",
-  "logs",
-];
+export { BROWSER_TARGET_CAPABILITIES } from "./browser-target-capabilities.js";
 
 export async function preflightTarget(target: TargetDefinition): Promise<TargetPreflight> {
   if (target.kind !== "browser" || !target.browser)

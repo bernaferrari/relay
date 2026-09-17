@@ -433,7 +433,9 @@ export function rc23LooksCorrectCannotAcceptMissing(queue: PlanCaptureReviewQueu
   const missing = queue.items.filter((item) => item.status === "missing");
   const selected = selectedPlanCaptureReviewItems(
     queue,
-    missing.map((item) => ({ runId: item.runId, captureId: item.captureId })),
+    missing.flatMap((item) =>
+      item.runId ? [{ runId: item.runId, captureId: item.captureId }] : [],
+    ),
   );
   return { selected: selected.length, missingAttempted: missing.length };
 }

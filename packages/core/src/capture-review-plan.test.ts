@@ -481,7 +481,7 @@ test("thirty explicitly selected Plan captures apply without waiting for more ge
     action: "accept",
     actor: { id: "human:maria", kind: "human" },
     items: queue.items.map((item) => ({
-      runId: item.runId,
+      runId: persistedRunId(item),
       captureId: item.captureId,
       ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
     })),
@@ -523,3 +523,8 @@ test("ambiguous Plan batch prefix does not pick a later campaign", () => {
       error instanceof CaptureReviewError && error.code === "CAPTURE_REVIEW_UNAVAILABLE",
   );
 });
+
+function persistedRunId(item: { runId?: string }): string {
+  assert.ok(item.runId, "This fixture must have a persisted Run");
+  return item.runId;
+}

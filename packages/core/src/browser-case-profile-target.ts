@@ -5,7 +5,7 @@ import {
   type TargetDefinition,
   type TargetProfile,
 } from "@relay/protocol";
-import { BROWSER_TARGET_CAPABILITIES } from "./targets.js";
+import { BROWSER_TARGET_CAPABILITIES } from "./browser-target-capabilities.js";
 import { unrecordedNativeRuntimeProfileIdIfMissing } from "./app-map-unrecorded-runtime-profile.js";
 
 /** Compile the exact browser environment represented by one saved target.

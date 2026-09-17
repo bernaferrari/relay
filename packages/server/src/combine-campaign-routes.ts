@@ -326,6 +326,7 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           prepared.cells.map((cell) => ({
             cellId: cell.cellId,
             testId: cell.testId,
+            plannedCaptures: structuredClone(cell.childIntent.plan.plannedSlots ?? []),
             childIntentDigest: digestAppMapTestExecutionValue(cell.childIntent),
             outerIntentDigest: cell.outerIntent.digest,
             wrapperGraphDigest: cell.outerIntent.wrapper.recipeGraphDigest,

@@ -1,9 +1,10 @@
-import type { AppMap } from "@relay/protocol";
+import type { AppMap, CaptureReviewPlannedSlot } from "@relay/protocol";
 import type { StoredCombineCampaign } from "./combine-campaign.js";
 
 export type PreparedCombineCellContract = {
   cellId: string;
   testId: string;
+  plannedCaptures?: readonly CaptureReviewPlannedSlot[];
   childIntentDigest: string;
   outerIntentDigest: string;
   wrapperGraphDigest: string;
@@ -70,6 +71,7 @@ export function reconcileCausalCombineRerun(
     const { jobId: _jobId, runId: _runId, error: _error, ...stable } = item;
     return {
       ...stable,
+      plannedCaptures: structuredClone(prepared.plannedCaptures),
       childIntentDigest: prepared.childIntentDigest,
       outerIntentDigest: prepared.outerIntentDigest,
       wrapperGraphDigest: prepared.wrapperGraphDigest,

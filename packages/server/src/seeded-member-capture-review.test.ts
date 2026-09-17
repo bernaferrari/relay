@@ -245,7 +245,7 @@ test(
             action: "accept",
             items: [
               {
-                runId: pendingItem.runId,
+                runId: persistedRunId(pendingItem),
                 captureId: pendingItem.captureId,
                 imageSha256: pendingItem.imageSha256,
               },
@@ -256,7 +256,7 @@ test(
       await assert.rejects(
         () =>
           impersonated.invoke("run.capture.review", {
-            runId: pendingItem.runId,
+            runId: persistedRunId(pendingItem),
             captureId: pendingItem.captureId,
             action: "accept",
             imageSha256: pendingItem.imageSha256,
@@ -269,12 +269,12 @@ test(
         action: "accept",
         items: [
           {
-            runId: pendingItem.runId,
+            runId: persistedRunId(pendingItem),
             captureId: pendingItem.captureId,
             imageSha256: pendingItem.imageSha256,
           },
-          { runId: missingItem.runId, captureId: missingItem.captureId },
-          { runId: blockedItem.runId, captureId: blockedItem.captureId },
+          { runId: persistedRunId(missingItem), captureId: missingItem.captureId },
+          { runId: persistedRunId(blockedItem), captureId: blockedItem.captureId },
         ],
       });
       const acceptedQueue = accepted.queue as PlanCaptureReviewQueue;
@@ -298,7 +298,7 @@ test(
       await assert.rejects(
         () =>
           reviewer.invoke("run.capture.review", {
-            runId: missingItem.runId,
+            runId: persistedRunId(missingItem),
             captureId: missingItem.captureId,
             action: "accept",
           }),
@@ -512,7 +512,7 @@ test(
             action: "accept",
             items: [
               {
-                runId: memberDesktopEn.runId,
+                runId: persistedRunId(memberDesktopEn),
                 captureId: memberDesktopEn.captureId,
                 imageSha256: memberDesktopEn.imageSha256,
               },
@@ -526,7 +526,7 @@ test(
         account: "Admin",
         items: [
           {
-            runId: memberDesktopEn.runId,
+            runId: persistedRunId(memberDesktopEn),
             captureId: memberDesktopEn.captureId,
             imageSha256: memberDesktopEn.imageSha256,
           },
@@ -539,7 +539,7 @@ test(
         action: "accept",
         items: [
           {
-            runId: memberDesktopEn.runId,
+            runId: persistedRunId(memberDesktopEn),
             captureId: memberDesktopEn.captureId,
             imageSha256: "stale",
           },
@@ -552,7 +552,7 @@ test(
         action: "report-issue",
         items: [
           {
-            runId: memberDesktopEn.runId,
+            runId: persistedRunId(memberDesktopEn),
             captureId: memberDesktopEn.captureId,
             imageSha256: memberDesktopEn.imageSha256,
             note: defectNote,
@@ -579,7 +579,7 @@ test(
         afterIssue.queue.items.find((item) => item.captureId === memberDesktopEn.captureId)?.note,
         defectNote,
       );
-      const persistedIssue = await readPersistedRun(memberDesktopEn.runId);
+      const persistedIssue = await readPersistedRun(persistedRunId(memberDesktopEn));
       assert.equal(persistedIssue?.outcome, "passed");
       assert.equal(persistedIssue?.captureReviews?.[0]?.note, defectNote);
 
@@ -600,7 +600,7 @@ test(
         .update("\n900x600")
         .digest("hex");
       assert.notEqual(repairedSha, memberDesktopEn.imageSha256);
-      const latest = await readPersistedRun(memberDesktopEn.runId);
+      const latest = await readPersistedRun(persistedRunId(memberDesktopEn));
       assert.ok(latest);
       const recaptured = structuredClone(latest);
       recaptured.artifacts = recaptured.artifacts.map((artifact) => {
@@ -629,7 +629,7 @@ test(
           action: "accept",
           items: [
             {
-              runId: repairedItem.runId,
+              runId: persistedRunId(repairedItem),
               captureId: repairedItem.captureId,
               imageSha256: memberDesktopEn.imageSha256,
             },
@@ -644,7 +644,7 @@ test(
           action: "accept",
           items: [
             {
-              runId: repairedItem.runId,
+              runId: persistedRunId(repairedItem),
               captureId: repairedItem.captureId,
               imageSha256: repairedSha,
             },
@@ -670,7 +670,7 @@ test(
       assert.equal(afterAccept.queue.summary.accepted, 1);
       assert.equal(afterAccept.queue.summary.pending, 7);
       assert.equal(afterAccept.queue.summary.planned, 8);
-      const persistedRepaired = await readPersistedRun(memberDesktopEn.runId);
+      const persistedRepaired = await readPersistedRun(persistedRunId(memberDesktopEn));
       assert.equal(persistedRepaired?.outcome, "passed");
       assert.equal(
         persistedRepaired?.captureReviews?.find((item) => item.captureId === repairedItem.captureId)
@@ -705,3 +705,8 @@ test(
     }
   },
 );
+
+function persistedRunId(item: { runId?: string }): string {
+  assert.ok(item.runId, "This fixture must have a persisted Run");
+  return item.runId;
+}

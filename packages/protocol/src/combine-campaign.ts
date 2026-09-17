@@ -1,3 +1,4 @@
+import type { CaptureReviewPlannedSlot } from "./capture-review.js";
 import type {
   CampaignCapacityCohortDurationEvidence,
   LocalCampaignCapacityPreflight,
@@ -92,6 +93,8 @@ export type CombineCampaignCase = {
    * the legacy campaign-wide target during resume.
    */
   target?: ExecutionTargetRef;
+  /** Frozen before dispatch so cases without a Run remain in review coverage. */
+  plannedCaptures?: readonly CaptureReviewPlannedSlot[];
   childIntentDigest: string;
   outerIntentDigest: string;
   wrapperGraphDigest: string;

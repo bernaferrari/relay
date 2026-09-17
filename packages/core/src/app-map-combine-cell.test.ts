@@ -19,7 +19,10 @@ import {
   reachableRecipeGraph,
 } from "./app-map-combine-cell-intent.js";
 import { unrecordedNativeRuntimeProfileId } from "./app-map-unrecorded-runtime-profile.js";
-import { queueablePreparedCombineCells } from "./app-map-combine-cell-run.js";
+import {
+  combineCampaignCaseFromPreparedCell,
+  queueablePreparedCombineCells,
+} from "./app-map-combine-cell-run.js";
 import {
   AppMapCombineCellContractError,
   assessAppMapCombineCellBindings,
@@ -1022,6 +1025,17 @@ test("prepares a language Variable Combine and a selector-free Test before targe
     ],
   });
   assert.equal(prepared.cells.length, 2);
+  const frozenCase = combineCampaignCaseFromPreparedCell(prepared.cells[0]!, {
+    index: 0,
+    phase: "coverage",
+    status: "pending",
+  });
+  assert.deepEqual(
+    frozenCase.plannedCaptures,
+    prepared.cells[0]!.childIntent.plan.plannedSlots ?? [],
+  );
+  assert.notEqual(frozenCase.plannedCaptures, prepared.cells[0]!.childIntent.plan.plannedSlots);
+
   assert.equal(prepared.selectedCells.length, 2);
   assert.ok(
     prepared.cells.every((cell) => cell.outerIntent.child.sourcePlan.testId === "script-only"),

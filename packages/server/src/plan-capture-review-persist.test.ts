@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
 import {
+  createCombineCampaign,
   getVisualBaseline,
   persistRun,
   readPersistedRun,
@@ -148,7 +149,7 @@ function reviewSelections(
   items: PlanCaptureReviewQueue["items"],
 ): Array<{ runId: string; captureId: string; imageSha256?: string }> {
   return items.map((item) => ({
-    runId: item.runId,
+    runId: persistedRunId(item),
     captureId: item.captureId,
     ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
   }));
@@ -236,7 +237,7 @@ test(
       const blockedAccept = await reviewer.invoke("job.combine.capture.review.apply", {
         batchId: freezeBatchId,
         action: "accept",
-        items: [{ runId: blocked[0]!.runId, captureId: blocked[0]!.captureId }],
+        items: [{ runId: persistedRunId(blocked[0]!), captureId: blocked[0]!.captureId }],
       });
       assert.equal(blockedAccept.results[0]?.status, "missing");
       assertFreezeCounts(blockedAccept.queue.summary);
@@ -292,7 +293,7 @@ test(
       assert.equal(afterAccept.queue.summary.missing, 0);
       assert.equal(afterAccept.queue.summary.planned, 30);
       for (const item of selected) {
-        const persisted = await readPersistedRun(item.runId);
+        const persisted = await readPersistedRun(persistedRunId(item));
         assert.equal(persisted?.outcome, "passed");
         assert.equal(persisted?.captureReviews?.[0]?.decidedBy.id, "human:reviewer");
       }
@@ -356,13 +357,13 @@ test(
         action: "accept",
         items: [
           {
-            runId: first.runId,
+            runId: persistedRunId(first),
             captureId: first.captureId,
             imageSha256: first.imageSha256,
             note,
           },
           {
-            runId: second.runId,
+            runId: persistedRunId(second),
             captureId: second.captureId,
             imageSha256: "stale",
           },
@@ -402,7 +403,7 @@ test(
           batchId,
           action: "accept",
           items: resumedQueue.items.map((item) => ({
-            runId: item.runId,
+            runId: persistedRunId(item),
             captureId: item.captureId,
             ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
           })),
@@ -418,9 +419,9 @@ test(
         resumed.queue.items.find((item) => item.captureId === first.captureId)?.note,
         note,
       );
-      assert.equal(
-        resumed.queue.items.find((item) => item.captureId === first.captureId)?.decidedBy?.id,
-        "human:maria",
+      assert.deepEqual(
+        resumed.queue.items.find((item) => item.captureId === first.captureId)?.decidedBy,
+        { id: "human:maria", kind: "human" },
       );
 
       const overwrite = await client(server.port, "human:alex", "human").invoke(
@@ -430,7 +431,7 @@ test(
           action: "report-issue",
           items: [
             {
-              runId: first.runId,
+              runId: persistedRunId(first),
               captureId: first.captureId,
               imageSha256: first.imageSha256,
               note: "alex should not win",
@@ -443,9 +444,9 @@ test(
         overwrite.queue.items.find((item) => item.captureId === first.captureId)?.note,
         note,
       );
-      assert.equal(
-        overwrite.queue.items.find((item) => item.captureId === first.captureId)?.decidedBy?.id,
-        "human:maria",
+      assert.deepEqual(
+        overwrite.queue.items.find((item) => item.captureId === first.captureId)?.decidedBy,
+        { id: "human:maria", kind: "human" },
       );
 
       await server.close();
@@ -463,7 +464,7 @@ test(
         afterRestart.queue.items.find((item) => item.captureId === first.captureId)?.note,
         note,
       );
-      const persistedFirst = await readPersistedRun(first.runId);
+      const persistedFirst = await readPersistedRun(persistedRunId(first));
       assert.equal(persistedFirst?.outcome, "passed");
       assert.equal(persistedFirst?.captureReviews?.[0]?.note, note);
       assert.equal(persistedFirst?.captureReviews?.[0]?.decidedBy.id, "human:maria");
@@ -488,3 +489,58 @@ test(
     }
   },
 );
+
+function persistedRunId(item: { runId?: string }): string {
+  assert.ok(item.runId, "This fixture must have a persisted Run");
+  return item.runId;
+}
+
+test("the review API lists frozen captures before any Run exists", async () => {
+  const batchId = "not-started-review";
+  await createCombineCampaign({
+    schemaVersion: 1,
+    id: batchId,
+    projectId,
+    appMapId: "map",
+    combineId: "plan",
+    sourceRevision: 1,
+    latestRevision: 1,
+    status: "running",
+    createdAt: 1,
+    updatedAt: 1,
+    lineage: [],
+    execution: { selectedCellIds: ["waiting", "blocked"], seed: 1 },
+    cases: ["waiting", "blocked"].map((cellId, index) => ({
+      index,
+      cellId,
+      testId: "settings",
+      world: cellId,
+      values: {},
+      targetProfileId: cellId,
+      childIntentDigest: "child",
+      outerIntentDigest: "outer",
+      wrapperGraphDigest: "graph",
+      staticInputDigest: "inputs",
+      phase: "coverage",
+      status: index ? "blocked" : "pending",
+      plannedCaptures: [{ checkpointId: "settings", caption: "Settings" }],
+    })),
+  });
+  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  try {
+    const { queue } = await client(server.port, "human:qa", "human").invoke(
+      "job.combine.capture.review",
+      { batchId },
+    );
+    assert.equal(queue.summary.planned, 2);
+    assert.equal(queue.summary.missing, 1);
+    assert.equal(queue.summary.blocked, 1);
+    assert.equal(
+      queue.items.every((item) => !item.runId),
+      true,
+    );
+  } finally {
+    await server.close();
+    resetControlDatabaseCache();
+  }
+});

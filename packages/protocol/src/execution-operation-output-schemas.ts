@@ -9,6 +9,22 @@ import { repeatPilotSpecSchema, repeatSpecSchema } from "./repeat-spec.js";
 import { repeatFailureClusterReportSchema } from "./repeat-failure.js";
 import { CAPTURE_REVIEW_STATUSES } from "./capture-review.js";
 
+const planCaptureReviewItemSchema = z
+  .object({
+    captureId: z.string(),
+    caption: z.string(),
+    status: z.enum(CAPTURE_REVIEW_STATUSES),
+    runId: z.string().min(1).optional(),
+    executionCaseId: z.string().min(1).optional(),
+  })
+  .passthrough()
+  .refine(
+    (item) => Boolean(item.runId) || (item.status === "missing" && Boolean(item.executionCaseId)),
+    {
+      message: "Captured evidence requires a Run; unstarted captures require a planned case.",
+    },
+  );
+
 const targetCapabilitySchema = z.enum([
   "snapshot",
   "screenshot",
@@ -792,16 +808,7 @@ export const executionOperationOutputSchemas = {
     .object({
       queue: z
         .object({
-          items: z.array(
-            z
-              .object({
-                captureId: z.string(),
-                caption: z.string(),
-                status: z.enum(CAPTURE_REVIEW_STATUSES),
-                runId: z.string(),
-              })
-              .passthrough(),
-          ),
+          items: z.array(planCaptureReviewItemSchema),
           summary: z
             .object({
               captured: z.number(),
@@ -822,16 +829,7 @@ export const executionOperationOutputSchemas = {
     .object({
       queue: z
         .object({
-          items: z.array(
-            z
-              .object({
-                captureId: z.string(),
-                caption: z.string(),
-                status: z.enum(CAPTURE_REVIEW_STATUSES),
-                runId: z.string(),
-              })
-              .passthrough(),
-          ),
+          items: z.array(planCaptureReviewItemSchema),
           summary: z
             .object({
               captured: z.number(),

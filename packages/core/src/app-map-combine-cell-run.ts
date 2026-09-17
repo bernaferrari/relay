@@ -254,6 +254,7 @@ export function combineCampaignCaseFromPreparedCell(
     values: cell.values,
     targetProfileId: cell.targetProfileId,
     target: structuredClone(cell.executionTarget),
+    plannedCaptures: structuredClone(cell.childIntent.plan.plannedSlots ?? []),
     childIntentDigest: digestAppMapTestExecutionValue(cell.childIntent),
     outerIntentDigest: cell.outerIntent.digest,
     wrapperGraphDigest: cell.outerIntent.wrapper.recipeGraphDigest,

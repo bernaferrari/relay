@@ -539,6 +539,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
           device: url.searchParams.get("device") ?? undefined,
           account: url.searchParams.get("account") ?? undefined,
         }),
+        scope.projectId,
       ),
     });
     return true;
@@ -582,6 +583,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
           }>,
           ...(filter ? { filter } : {}),
         },
+        scope.projectId,
       );
       recordAudit(scope, {
         action: `job.combine.capture.review.apply.${body.action}`,

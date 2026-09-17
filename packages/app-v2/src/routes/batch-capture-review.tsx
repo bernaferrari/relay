@@ -25,7 +25,7 @@ function planCaptureFrames(
   platform: Platform,
 ): ReportEvidenceItem[] {
   return items.flatMap((item) => {
-    if (!item.framePath || !FRAME_FILE.test(item.framePath)) return [];
+    if (!item.runId || !item.framePath || !FRAME_FILE.test(item.framePath)) return [];
     const path = `/runs/${encodeURIComponent(item.runId)}/${item.framePath}`;
     const id = captureReviewQueueFrameKey(item);
     if (!id) return [];
@@ -155,11 +155,13 @@ export function PlanCaptureReviewSection({
   const reviewItem = (action: CaptureReviewAction, items: PlanCaptureReviewItem[]) => {
     review.mutate({
       action,
-      items: items.map((item) => ({
-        runId: item.runId,
-        captureId: item.captureId,
-        ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
-      })),
+      items: items
+        .filter((item): item is PlanCaptureReviewItem & { runId: string } => Boolean(item.runId))
+        .map((item) => ({
+          runId: item.runId,
+          captureId: item.captureId,
+          ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
+        })),
     });
   };
   return (

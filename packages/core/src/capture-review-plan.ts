@@ -1,10 +1,11 @@
-import type { ActorKind } from "@relay/protocol";
+import type { ActorKind, CombineCampaign } from "@relay/protocol";
 import {
   filterPlanCaptureReviewQueue,
   parsePlanCaptureReviewFilter,
   planCaptureReviewItemMatchesFilter,
   selectedPlanCaptureReviewItems,
   resolvePlanCaptureReviewQueue,
+  summarizePlanCaptureReview,
   type CaptureReviewAction,
   type CaptureReviewDecision,
   type PlanCaptureReviewFilter,
@@ -16,7 +17,7 @@ import {
   assertHumanCaptureReviewActor,
   CaptureReviewError,
 } from "./capture-review.js";
-import { listCombineCampaignIds } from "./combine-campaign.js";
+import { listCombineCampaignIds, readCombineCampaign } from "./combine-campaign.js";
 import { executionIntentPlannedSlots } from "./run-test-step-evidence.js";
 import {
   listPersistedRuns,
@@ -80,7 +81,8 @@ export function resolveUniquePlanBatchId(
 
 async function knownPlanBatchIds(projectId = "default"): Promise<string[]> {
   const ids = new Set<string>(await listCombineCampaignIds(projectId));
-  for (const run of await listPersistedRuns(1_000)) {
+  for (const run of await listPersistedRuns(Number.MAX_SAFE_INTEGER)) {
+    if ((run.projectId ?? "default") !== projectId) continue;
     if (run.batchId) ids.add(run.batchId);
   }
   return [...ids];
@@ -123,6 +125,45 @@ export function captureReviewQueueForPlan(
       ...(deviceForRun(run) ? { device: deviceForRun(run)! } : {}),
     })),
   );
+}
+
+/** New campaigns retain every frozen obligation; retries overlay their current Run only. */
+export function captureReviewQueueForCampaign(
+  campaign: CombineCampaign | null,
+  runs: readonly PlanCaptureReviewRun[],
+): PlanCaptureReviewQueue {
+  if (!campaign || campaign.cases.some((item) => item.plannedCaptures === undefined))
+    return captureReviewQueueForPlan(runs);
+  const byId = new Map(runs.map((run) => [run.id, run]));
+  const scope = campaign.execution?.selectedExecutionCaseIds ?? campaign.execution?.selectedCellIds;
+  const selected = scope ? new Set(scope) : undefined;
+  const cases = campaign.cases.filter(
+    (item) =>
+      !selected ||
+      selected.has(
+        campaign.execution?.selectedExecutionCaseIds
+          ? (item.executionCaseId ?? item.cellId)
+          : item.cellId,
+      ),
+  );
+  const inputs = cases.map((item) => {
+    const run = byId.get(item.runId ?? item.jobId ?? "");
+    return {
+      executionCaseId: `${campaign.id}:${item.executionCaseId ?? item.cellId}`,
+      ...(run ? { runId: run.id, artifacts: run.artifacts, decisions: run.captureReviews } : {}),
+      plannedSlots: item.plannedCaptures,
+      blocked: run ? runIsBlocked(run) : ["blocked", "cancelled", "failed"].includes(item.status),
+      device: run ? deviceForRun(run) : item.target?.targetId,
+    };
+  });
+  const expected = resolvePlanCaptureReviewQueue(
+    inputs.map(({ artifacts: _artifacts, decisions: _decisions, ...input }) => input),
+  );
+  const keys = new Set(expected.items.map((item) => `${item.executionCaseId}::${item.slotId}`));
+  const items = resolvePlanCaptureReviewQueue(inputs).items.filter((item) =>
+    keys.has(`${item.executionCaseId}::${item.slotId}`),
+  );
+  return { items, summary: summarizePlanCaptureReview(items) };
 }
 
 export function applyPlanCaptureReviewDecisions(
@@ -255,19 +296,37 @@ export async function reviewPersistedPlanCaptures(
     actor: { id: string; kind: ActorKind };
     filter?: PlanCaptureReviewFilter;
   },
+  projectId = "default",
 ): Promise<PlanCaptureReviewApplyResult> {
   assertHumanCaptureReviewActor(
     input.actor,
     "A human must decide these screenshots",
     "Open the Plan captures panel and ask a person to mark Looks correct, Report issue, or Need more evidence.",
   );
-  const resolved = await resolvePersistedPlanBatchId(batchId);
-  const loaded = await listPersistedRuns(1_000, undefined, resolved);
+  const resolved = await resolvePersistedPlanBatchId(batchId, projectId);
+  const loaded = (await listPersistedRuns(Number.MAX_SAFE_INTEGER, undefined, resolved)).filter(
+    (run) => (run.projectId ?? "default") === projectId,
+  );
   const results: Array<PlanCaptureReviewItemResult | undefined> = Array.from({
     length: input.items.length,
   });
+  const campaign = await readCombineCampaign(projectId, resolved);
+  const visible = filterPlanCaptureReviewQueue(
+    captureReviewQueueForCampaign(campaign, loaded),
+    input.filter,
+  );
+  const visibleKeys = new Set(visible.items.map((item) => `${item.runId}::${item.captureId}`));
   const indexesByRun = new Map<string, number[]>();
   for (const [index, selection] of input.items.entries()) {
+    if (!visibleKeys.has(`${selection.runId}::${selection.captureId}`)) {
+      results[index] = {
+        runId: selection.runId,
+        captureId: selection.captureId,
+        status: "not-found",
+        error: "This screenshot is no longer in the Plan's current review queue.",
+      };
+      continue;
+    }
     const indexes = indexesByRun.get(selection.runId) ?? [];
     indexes.push(index);
     indexesByRun.set(selection.runId, indexes);
@@ -311,9 +370,14 @@ export async function reviewPersistedPlanCaptures(
       await persistPersistedRun(root, latest, persisted, "capture-review");
     });
   }
-  const refreshed = await listPersistedRuns(1_000, undefined, resolved);
+  const refreshed = (await listPersistedRuns(Number.MAX_SAFE_INTEGER, undefined, resolved)).filter(
+    (run) => (run.projectId ?? "default") === projectId,
+  );
   return {
-    queue: captureReviewQueueForPlan(refreshed.length ? refreshed : loaded),
+    queue: captureReviewQueueForCampaign(
+      await readCombineCampaign(projectId, resolved),
+      refreshed.length ? refreshed : loaded,
+    ),
     results: results.map((result, index) => {
       if (result) return result;
       const selection = input.items[index]!;
@@ -330,8 +394,16 @@ export async function reviewPersistedPlanCaptures(
 export async function captureReviewQueueForPersistedPlan(
   batchId: string,
   filter?: PlanCaptureReviewFilter,
+  projectId = "default",
 ): Promise<PlanCaptureReviewQueue> {
-  const resolved = await resolvePersistedPlanBatchId(batchId);
-  const queue = await listPersistedRuns(1_000, undefined, resolved).then(captureReviewQueueForPlan);
+  const resolved = await resolvePersistedPlanBatchId(batchId, projectId);
+  const [campaign, runs] = await Promise.all([
+    readCombineCampaign(projectId, resolved),
+    listPersistedRuns(Number.MAX_SAFE_INTEGER, undefined, resolved),
+  ]);
+  const queue = captureReviewQueueForCampaign(
+    campaign,
+    runs.filter((run) => (run.projectId ?? "default") === projectId),
+  );
   return filterPlanCaptureReviewQueue(queue, filter);
 }
