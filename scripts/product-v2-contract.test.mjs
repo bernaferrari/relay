@@ -92,3 +92,14 @@ test("repository verification and CI require Product V2 acceptance gates", async
   assert.match(scripts["test:browser:v2"], /^pnpm run ensure:acceptance:v2 && /u);
   assert.match(scripts["test:electron:v2"], /^pnpm run ensure:acceptance:v2 && /u);
 });
+
+test("local CI executes repository checks on a self-hosted runner", async () => {
+  const workflow = await readFile(new URL("../.github/workflows/local-ci.yml", import.meta.url), "utf8");
+  assert.match(workflow, /^    runs-on: \[self-hosted, macOS, relay-local-ci\]$/mu);
+  assert.match(workflow, /pnpm run check/u);
+  assert.match(workflow, /pnpm run check:architecture/u);
+  assert.match(workflow, /pnpm run test:architecture/u);
+  assert.doesNotMatch(workflow, /^    runs-on:.*ubuntu-latest/mu);
+  assert.doesNotMatch(workflow, /relay-golden-device/u);
+  assert.doesNotMatch(workflow, /pnpm dev:app/u);
+});

@@ -1,0 +1,46 @@
+name: Local CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    # GitHub-hosted ubuntu-latest jobs on this private repo are refused at
+    # assignment when payments fail or the spending limit blocks minutes
+    # (runner_id 0, steps []). Self-hosted compute is not billed as hosted
+    # minutes. This lane is repository verification only — not golden-device.
+    name: repository verification
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, macOS, relay-local-ci]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Toolchain
+        run: |
+          command -v node
+          node -v
+          command -v pnpm
+          pnpm -v
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Format, lint, and static checks
+        run: pnpm run check
+
+      - name: Validate architecture boundaries
+        run: pnpm run check:architecture
+
+      - name: Run architecture contract tests
+        run: pnpm run test:architecture
