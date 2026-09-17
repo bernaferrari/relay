@@ -9,8 +9,11 @@ import {
   recoverIosRuntime,
   recoverIosRuntimeSession,
   recordRepairStep,
+  runIosMutationWithAssistedSecondLook,
+  summarizeIosReadinessDurations,
   type IosRuntimeRecoveryDependencies,
 } from "./ios-runtime-recovery.js";
+import { IosMutationOutcomeUnknownError } from "./ios-mutation-policy.js";
 
 test("a watchdog cause routes to the targeted runner kill, not the shared daemon restart", async () => {
   let restarts = 0;
@@ -64,12 +67,41 @@ test("trusts a working runner when Apple's bounded health probe times out", asyn
     },
     async () => ({ app: "Grok" }),
     async () => "unavailable",
+    [
+      {
+        stage: "preview",
+        outcome: "failed",
+        durationMs: 0,
+        detail: "Live session probe failed.",
+      },
+      {
+        stage: "xctest-availability",
+        outcome: "failed",
+        durationMs: 15_000,
+        detail: "xcrun timed out",
+      },
+      {
+        stage: "accessibility-query",
+        outcome: "failed",
+        durationMs: 0,
+        detail: "Probe timeout is runner recovery, not product dwell.",
+      },
+      {
+        stage: "repair",
+        outcome: "attempted",
+        durationMs: 40,
+        detail: "Relay completed the single bounded repair attempt.",
+      },
+    ],
   );
 
   assert.equal(result.ready, true);
   assert.equal(result.session.status, "restored");
   assert.equal(result.session.app, "Grok");
   assert.match(result.summary, /health check timed out/i);
+  assert.equal(result.lifecycle.runnerRecoverMs, 15_040);
+  assert.ok(result.lifecycle.productReadyMs < 15_000);
+  assert.notEqual(result.lifecycle.productReadyMs, 15_000);
 });
 
 test("keeps recovery unavailable when runner confirmation also fails", async () => {
@@ -468,4 +500,77 @@ test("classifies XCTest watchdog busy/wedged as recoverable runner failures", ()
   );
   assert.equal(isRecoverableIosRuntimeError(new Error("RUNNER_WEDGED")), true);
   assert.equal(isIosRunnerWatchdogError(new Error("code signing failed")), false);
+});
+
+test("probe timeout is runner-recover ms, not product-ready dwell", () => {
+  assert.deepEqual(
+    summarizeIosReadinessDurations([
+      {
+        stage: "preview",
+        outcome: "failed",
+        durationMs: 15_000,
+        detail: "blob",
+      },
+      {
+        stage: "xctest-availability",
+        outcome: "failed",
+        durationMs: 15_000,
+        detail: "xcrun timed out",
+      },
+      {
+        stage: "accessibility-query",
+        outcome: "failed",
+        durationMs: 15_000,
+        detail: "must not count as dwell",
+      },
+      {
+        stage: "repair",
+        outcome: "attempted",
+        durationMs: 80,
+        detail: "kill runner",
+      },
+      {
+        stage: "post-repair-proof",
+        outcome: "passed",
+        durationMs: 25,
+        detail: "product AX",
+      },
+    ]),
+    { runnerRecoverMs: 15_080, productReadyMs: 25 },
+  );
+});
+
+test("assisted second look never replays an unknown TAP after watchdog or transport loss", async () => {
+  for (const message of [
+    "The iOS runner is still finishing a previous command that exceeded its execution watchdog",
+    "connection reset",
+  ]) {
+    let native = 0;
+    await assert.rejects(
+      () =>
+        runIosMutationWithAssistedSecondLook(
+          "ipad-no-replay",
+          "press",
+          async () => {
+            native += 1;
+            throw new Error(message);
+          },
+          {
+            assistedSecondLook: true,
+            captureFingerprint: async () => "unchanged",
+          },
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof IosMutationOutcomeUnknownError);
+        const secondLook = (
+          error as IosMutationOutcomeUnknownError & {
+            iosAssistedSecondLook?: { redispatched?: boolean };
+          }
+        ).iosAssistedSecondLook;
+        assert.equal(secondLook?.redispatched, false);
+        return true;
+      },
+    );
+    assert.equal(native, 1, message);
+  }
 });

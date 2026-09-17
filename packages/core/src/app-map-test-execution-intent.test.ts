@@ -309,3 +309,28 @@ test("canonical plans persist Fast UI queue quotes without treating them as unkn
     undefined,
   );
 });
+
+test("canonical plans persist dest-wait vs runner-recover iosReadiness", () => {
+  const ready = fixture();
+  ready.plan.iosReadiness = {
+    destWaitMs: 8_000,
+    runnerRecoverMs: 0,
+    productReadyMs: 8_000,
+  };
+  ready.preflight.planDigest = digestAppMapTestExecutionValue(ready.plan);
+  ready.preflight.executionRisk = compileExecutionRisk({
+    kind: "compiled-test",
+    test: ready.plan,
+  });
+  const intent = createAppMapTestExecutionIntent(ready);
+  assert.equal(intent.plan.iosReadiness?.destWaitMs, 8_000);
+  assert.equal(intent.plan.iosReadiness?.runnerRecoverMs, 0);
+  assert.equal(intent.plan.iosReadiness?.productReadyMs, 8_000);
+  assert.equal(
+    parseCanonicalAppMapTestPlan({
+      ...ready.plan,
+      iosReadiness: { destWaitMs: 8_000, productReadyMs: 8_000 },
+    }),
+    undefined,
+  );
+});

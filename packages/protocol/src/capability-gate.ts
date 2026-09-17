@@ -65,7 +65,43 @@ export type PlanCaptureReviewCapabilityRun = PlanCaptureReviewRunInput & {
   observed?: CaptureReviewObservedSession;
   executionQueue?: ExecutionQueue;
   declaredDwellMs?: number;
+  kind?: string;
 };
+
+export const IOS_HARDWARE_CLASSES = [
+  "physical-ipad",
+  "physical-iphone",
+  "simulator",
+  "unproven",
+] as const;
+export type IosHardwareClass = (typeof IOS_HARDWARE_CLASSES)[number];
+
+export function classifyIosHardware(input: {
+  kind?: string;
+  name?: string;
+  device?: string;
+  approximation?: "simulator" | "emulator" | "browser";
+}): IosHardwareClass {
+  if (input.approximation === "simulator") return "simulator";
+  const blob = `${input.kind ?? ""} ${input.name ?? ""} ${input.device ?? ""}`;
+  if (/simulator/iu.test(blob)) return "simulator";
+  if (/ipad/iu.test(blob)) return "physical-ipad";
+  if (/iphone|ipod/iu.test(blob)) return "physical-iphone";
+  return "unproven";
+}
+
+export function iosHardwareLabel(value: IosHardwareClass): string {
+  if (value === "physical-ipad") return "physical iPad";
+  if (value === "physical-iphone") return "physical iPhone";
+  if (value === "simulator") return "iOS simulator";
+  return "unproven iOS hardware";
+}
+
+/** iPad dest-ends do not cover iPhone or simulator. Unproven covers nothing. */
+export function iosHardwareCovers(observed: IosHardwareClass, claimed: IosHardwareClass): boolean {
+  if (observed === "unproven" || claimed === "unproven") return false;
+  return observed === claimed;
+}
 
 const ANDROID_APP = /^(android|com\.(x|twitter)\.android)/iu;
 const IOS_APP = /^(ios|ai\.x\.GrokApp)$/u;
@@ -173,6 +209,7 @@ export function capabilityGateForSlot(input: {
   approximation?: "simulator" | "emulator" | "browser";
   executionQueue?: ExecutionQueue;
   declaredDwellMs?: number;
+  kind?: string;
 }): CapabilityGate | undefined {
   const platform = captureReviewSlotPlatform({
     configuration: input.slot.configuration,
@@ -207,6 +244,25 @@ export function capabilityGateForSlot(input: {
       kind: "human-only",
       reason: "Physical lock/airplane/cellular remain UNRECORDED / human, not a 10s fake",
     };
+  }
+
+  if (platform === "ios") {
+    const observedClass = input.observed?.iosHardwareClass;
+    const claimedClass = classifyIosHardware({
+      device: input.device,
+      approximation: input.approximation,
+      kind: input.kind,
+    });
+    if (
+      observedClass &&
+      claimedClass !== "unproven" &&
+      !iosHardwareCovers(observedClass, claimedClass)
+    ) {
+      return {
+        kind: "nonapplicable",
+        reason: `${iosHardwareLabel(observedClass)} dest-end is not ${iosHardwareLabel(claimedClass)} coverage`,
+      };
+    }
   }
 
   if (input.executionQueue !== undefined || input.declaredDwellMs !== undefined) {
@@ -253,6 +309,7 @@ export function capabilityGateForRun(
       approximation: run.approximation,
       executionQueue: run.executionQueue,
       declaredDwellMs: run.declaredDwellMs,
+      kind: run.kind,
     });
     if (gate) return gate;
   }

@@ -69,6 +69,26 @@ export async function captureStillScreenFingerprint(device: Device): Promise<str
   }
 }
 
+export type WaitForReadinessTiming = {
+  destWaitMs: number;
+  runnerRecoverMs: number;
+  productReadyMs: number;
+};
+
+export function attachWaitForReadiness(error: unknown, timing: WaitForReadinessTiming): unknown {
+  if (!error || typeof error !== "object") return error;
+  try {
+    Object.defineProperty(error, "iosReadiness", {
+      configurable: true,
+      enumerable: true,
+      value: { ...timing },
+    });
+  } catch {
+    // Frozen errors keep their original identity.
+  }
+  return error;
+}
+
 export async function waitForTargetVisible(input: {
   present: () => Promise<boolean>;
   captureFingerprint: () => Promise<string | undefined>;
@@ -82,17 +102,25 @@ export async function waitForTargetVisible(input: {
   isTransientPresenceError?: (error: unknown) => boolean;
   transientBudgetMs?: number;
   transientSleepMs?: number;
-}): Promise<void> {
+}): Promise<WaitForReadinessTiming> {
   const now = input.now ?? Date.now;
-  const began = now();
   const timeoutMs = Math.max(0, input.timeoutMs);
-  const waitDeadline = began + timeoutMs;
   const transientBudgetMs = Math.max(0, input.transientBudgetMs ?? 0);
-  const busyDeadline = began + Math.max(timeoutMs, transientBudgetMs);
   const transientSleepMs = input.transientSleepMs ?? RECIPE_TRANSIENT_PRESENCE_SLEEP_MS;
+  let destWaitMs = 0;
+  let runnerRecoverMs = 0;
+  let mark = now();
   let previous: string | undefined;
   let sawUnchangedPixels = false;
   let lastTransient: unknown;
+
+  const charge = (bucket: "dest" | "recover") => {
+    const t = now();
+    const dt = Math.max(0, t - mark);
+    mark = t;
+    if (bucket === "recover") runnerRecoverMs += dt;
+    else destWaitMs += dt;
+  };
 
   const probe = async (): Promise<boolean | "busy"> => {
     try {
@@ -104,45 +132,63 @@ export async function waitForTargetVisible(input: {
     }
   };
 
-  while (now() < busyDeadline) {
+  while (true) {
     await cooperativeCheckpoint();
     const result = await probe();
-    if (result === true) return;
-    const elapsed = now() - began;
+    if (result === true) {
+      charge("dest");
+      return { destWaitMs, runnerRecoverMs, productReadyMs: destWaitMs };
+    }
     if (result === "busy") {
-      const remaining = busyDeadline - now();
-      if (remaining <= 0) break;
+      charge("recover");
+      if (runnerRecoverMs >= transientBudgetMs) break;
       input.log?.(
-        `${input.kind}: runner still finishing a previous command after ${elapsed}ms waiting for ${input.expected}`,
+        `${input.kind}: runner still finishing a previous command after ${runnerRecoverMs}ms waiting for ${input.expected}`,
       );
-      await input.sleep(Math.min(transientSleepMs, remaining));
+      const remaining = transientBudgetMs - runnerRecoverMs;
+      await input.sleep(Math.min(transientSleepMs, Math.max(1, remaining)));
+      charge("recover");
       continue;
     }
-    if (now() >= waitDeadline) break;
+    charge("dest");
+    if (destWaitMs >= timeoutMs) break;
     const fingerprint = await input.captureFingerprint();
+    charge("dest");
     if (stillScreenUnchanged(previous, fingerprint)) {
       sawUnchangedPixels = true;
       input.log?.(
-        `${input.kind}: pixels unchanged after ${elapsed}ms waiting for ${input.expected}`,
+        `${input.kind}: pixels unchanged after ${destWaitMs}ms waiting for ${input.expected}`,
       );
     }
     previous = fingerprint ?? previous;
-    const remaining = waitDeadline - now();
+    const remaining = timeoutMs - destWaitMs;
     if (remaining <= 0) break;
-    input.log?.(`${input.kind}: still waiting for ${input.expected} · ${elapsed}ms`);
+    input.log?.(`${input.kind}: still waiting for ${input.expected} · ${destWaitMs}ms`);
     await input.sleep(Math.min(RECIPE_WAIT_SLICE_MS, remaining));
+    charge("dest");
+    if (destWaitMs >= timeoutMs) break;
   }
 
-  if (lastTransient !== undefined && now() >= busyDeadline) {
-    throw lastTransient instanceof Error ? lastTransient : new Error(String(lastTransient));
+  if (
+    lastTransient !== undefined &&
+    runnerRecoverMs >= transientBudgetMs &&
+    destWaitMs < timeoutMs
+  ) {
+    throw attachWaitForReadiness(
+      lastTransient instanceof Error ? lastTransient : new Error(String(lastTransient)),
+      { destWaitMs, runnerRecoverMs, productReadyMs: 0 },
+    );
   }
-  throw new Error(
-    stillScreenTimeoutMessage({
-      kind: input.kind,
-      expected: input.expected,
-      elapsedMs: now() - began,
-      timeoutMs: input.timeoutMs,
-      pixelsUnchanged: sawUnchangedPixels,
-    }),
+  throw attachWaitForReadiness(
+    new Error(
+      stillScreenTimeoutMessage({
+        kind: input.kind,
+        expected: input.expected,
+        elapsedMs: destWaitMs,
+        timeoutMs: input.timeoutMs,
+        pixelsUnchanged: sawUnchangedPixels,
+      }),
+    ),
+    { destWaitMs, runnerRecoverMs, productReadyMs: 0 },
   );
 }

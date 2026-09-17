@@ -1,5 +1,9 @@
 import type { AppMapTestStartingState } from "./routine-effects.js";
-import type { ExecutionQueue, ExecutionQueueDurationQuote } from "./execution-queue.js";
+import type {
+  ExecutionQueue,
+  ExecutionQueueDurationQuote,
+  IosReadinessDurationQuote,
+} from "./execution-queue.js";
 import type { BrowserEngine } from "./browser-case-profile.js";
 import type {
   AppMapCapturePolicy,
@@ -624,6 +628,8 @@ export type AppMapCompiledTest = {
   /** Separate Fast UI / Live output / Stateful-survival duration quotes.
    * Never a three-minute workbook promise. */
   queueQuotes?: ExecutionQueueDurationQuote[];
+  /** Runner-recover vs dest-wait/product-ready. Probe timeout is not dwell. */
+  iosReadiness?: IosReadinessDurationQuote;
   startup: AppMapTestStartup;
   /** Explicit recording origin application, when the Test has one. */
   originApplication?: string;

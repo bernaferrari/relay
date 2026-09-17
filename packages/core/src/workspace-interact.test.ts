@@ -89,3 +89,40 @@ test("iOS point interact asks for recover when HID and XCTest both cannot press"
     setIosPixelTapForTests();
   }
 });
+
+test("iOS point interact never replays TAP after HID watchdog or transport loss", async () => {
+  for (const message of [
+    "connection reset",
+    "The iOS runner is still finishing a previous command that exceeded its execution watchdog",
+    "iOS point tap via CoreDevice HID failed. Do not retry the same XCTest press. no tunnel",
+  ]) {
+    let presses = 0;
+    setIosPixelTapForTests(async () => {
+      throw new Error(message);
+    });
+    const device = {
+      interactions: {
+        press: async () => {
+          presses += 1;
+        },
+      },
+    } as unknown as Device;
+    try {
+      await assert.rejects(
+        () =>
+          runWithTargetContext({ kind: "device", platform: "ios", serial: "db0c9b7c" }, () =>
+            interact({ kind: "point", x: 48, y: 72 }, { device, verifyIosScreenChange: false }),
+          ),
+        (error: unknown) => {
+          assert.ok(error instanceof IosMutationOutcomeUnknownError);
+          assert.equal(error.iosMutation.outcome, "outcome-unknown");
+          assert.equal(error.iosMutation.retry.decision, "blocked");
+          return true;
+        },
+      );
+      assert.equal(presses, 0, message);
+    } finally {
+      setIosPixelTapForTests();
+    }
+  }
+});

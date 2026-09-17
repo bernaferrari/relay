@@ -431,6 +431,17 @@ function canonicalPlannedCaptureSlots(value: unknown): boolean {
   return Array.isArray(value) && value.every(canonicalPlannedCaptureSlot);
 }
 
+function canonicalIosReadiness(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  return (
+    ownKeys(value, ["destWaitMs", "runnerRecoverMs", "productReadyMs"]) &&
+    integer(value.destWaitMs) &&
+    integer(value.runnerRecoverMs) &&
+    integer(value.productReadyMs)
+  );
+}
+
 function canonicalQueueQuotes(value: unknown): boolean {
   if (value === undefined) return true;
   if (!Array.isArray(value)) return false;
@@ -492,6 +503,7 @@ export function parseCanonicalAppMapTestPlan(value: unknown): AppMapCompiledTest
       "plannedSlots",
       "executionQueue",
       "queueQuotes",
+      "iosReadiness",
       "startup",
       "originApplication",
       "omittedSteps",
@@ -518,7 +530,8 @@ export function parseCanonicalAppMapTestPlan(value: unknown): AppMapCompiledTest
       value.executionQueue !== "fast-ui" &&
       value.executionQueue !== "live-output" &&
       value.executionQueue !== "stateful-survival") ||
-    !canonicalQueueQuotes(value.queueQuotes)
+    !canonicalQueueQuotes(value.queueQuotes) ||
+    !canonicalIosReadiness(value.iosReadiness)
   ) {
     return undefined;
   }

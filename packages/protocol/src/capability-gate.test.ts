@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   capabilityGateForRun,
+  capabilityGateForSlot,
+  classifyIosHardware,
   gatePlanCaptureReviewRuns,
+  iosHardwareCovers,
   physicalImagineClaim,
   resolveGatedPlanCaptureReviewQueue,
   workbookCoverageAfterCompileAttempts,
@@ -286,4 +289,61 @@ test("S16 60s dwell cannot be claimed by Fast UI 10s, and physical lock stays hu
   assert.equal(queue.summary.planned, 1);
   assert.equal(queue.summary.blocked, 1);
   assert.match(gate?.reason ?? "", /human/u);
+});
+
+test("physical iPad dest-end is not iPhone or simulator coverage", () => {
+  assert.equal(classifyIosHardware({ kind: "iPad Pro", name: "iPad Pro 10.5" }), "physical-ipad");
+  assert.equal(classifyIosHardware({ kind: "iPhone 16" }), "physical-iphone");
+  assert.equal(classifyIosHardware({ kind: "simulator", name: "iPad Pro" }), "simulator");
+  assert.equal(classifyIosHardware({ approximation: "simulator", device: "iPhone" }), "simulator");
+  assert.equal(classifyIosHardware({ name: "mystery apple" }), "unproven");
+  assert.equal(iosHardwareCovers("physical-ipad", "physical-ipad"), true);
+  assert.equal(iosHardwareCovers("physical-ipad", "physical-iphone"), false);
+  assert.equal(iosHardwareCovers("physical-ipad", "simulator"), false);
+  assert.equal(iosHardwareCovers("unproven", "physical-ipad"), false);
+
+  const inventory = { adbDeviceCount: 0, iosImagineTabPresent: false };
+  const settings = homeSlot("ios");
+  settings.checkpointId = "settings";
+  settings.caption = "Settings";
+  assert.equal(
+    capabilityGateForSlot({
+      slot: settings,
+      inventory,
+      platform: "ios",
+      observed: { iosHardwareClass: "physical-ipad" },
+      device: "iPhone",
+    })?.kind,
+    "nonapplicable",
+  );
+  assert.equal(
+    capabilityGateForSlot({
+      slot: settings,
+      inventory,
+      platform: "ios",
+      observed: { iosHardwareClass: "physical-ipad" },
+      approximation: "simulator",
+    })?.kind,
+    "nonapplicable",
+  );
+  assert.equal(
+    capabilityGateForSlot({
+      slot: settings,
+      inventory,
+      platform: "ios",
+      observed: { iosHardwareClass: "physical-ipad" },
+      device: "iPad",
+    }),
+    undefined,
+  );
+  assert.match(
+    capabilityGateForSlot({
+      slot: settings,
+      inventory,
+      platform: "ios",
+      observed: { iosHardwareClass: "unproven" },
+      device: "iPhone",
+    })?.reason ?? "",
+    /unproven/u,
+  );
 });

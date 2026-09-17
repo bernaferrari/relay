@@ -4,6 +4,7 @@ import type {
   CaptureRasterPolicy,
   ExecutionQueue,
   ExecutionQueueDurationQuote,
+  IosReadinessDurationQuote,
   RecipeStep,
 } from "@relay/protocol";
 import {
@@ -15,6 +16,7 @@ import {
 } from "@relay/protocol";
 import type { Recipe } from "./recipes.js";
 import { AppMapTestCompileError } from "./app-map-test-compile-error.js";
+import { boundRecipeWaitMs } from "./still-screen-wait.js";
 
 export function destEndChromeInspectForTest(map: AppMap, test: AppMapScenarioTest): boolean {
   const connections = test.steps.flatMap((step) => {
@@ -135,6 +137,37 @@ export function quoteCompiledTestDuration(
     ],
     1,
   );
+}
+
+/** Dest-wait / product-ready is authored wait-for time. Runner drain and
+ * probe timeout are not compiled product dwell. */
+export function compiledIosReadinessDurations(
+  graph: Readonly<Record<string, Recipe>>,
+  rootRecipeId: string,
+): IosReadinessDurationQuote {
+  let destWaitMs = 0;
+  const visit = (recipeId: string, stack: ReadonlySet<string>): void => {
+    if (stack.has(recipeId)) return;
+    const recipe = graph[recipeId];
+    if (!recipe) return;
+    const next = new Set(stack).add(recipeId);
+    for (const step of recipe.steps) {
+      if (step.kind === "wait-for") {
+        destWaitMs = Math.max(destWaitMs, boundRecipeWaitMs(step.timeoutMs));
+      }
+      if (step.kind === "module" || step.kind === "repeat") visit(step.recipeId, next);
+      if (step.kind === "branch") {
+        if (step.thenRecipeId) visit(step.thenRecipeId, next);
+        if (step.elseRecipeId) visit(step.elseRecipeId, next);
+      }
+    }
+  };
+  visit(rootRecipeId, new Set());
+  return {
+    destWaitMs,
+    runnerRecoverMs: 0,
+    productReadyMs: destWaitMs,
+  };
 }
 
 function screenshotUsesPlaceholderAsAfter(step: RecipeStep): boolean {

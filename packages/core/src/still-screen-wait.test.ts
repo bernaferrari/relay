@@ -8,7 +8,9 @@ import {
   stillScreenTimeoutMessage,
   stillScreenUnchanged,
   waitForTargetVisible,
+  type WaitForReadinessTiming,
 } from "./still-screen-wait.js";
+import { isIosRunnerPresenceDrainError } from "./ios-runtime-recovery.js";
 
 test("default wait-for budget is short and still-screen compare is exact", () => {
   assert.equal(RECIPE_WAIT_DEFAULT_MS, 8_000);
@@ -203,4 +205,71 @@ test("wait-for keeps polling while pixels change and returns when the target app
     expected: 'label "Library"',
   });
   assert.ok(presentCalls >= 3);
+});
+
+test("runner-busy drain is runner-recover ms, not dest-wait product-ready time", async () => {
+  let nowMs = 0;
+  let presentCalls = 0;
+  const timing = await waitForTargetVisible({
+    present: async () => {
+      presentCalls += 1;
+      if (presentCalls < 3) {
+        throw new Error(
+          "The iOS runner is still finishing a previous command that exceeded its execution watchdog",
+        );
+      }
+      return true;
+    },
+    captureFingerprint: async () => {
+      throw new Error("do not snapshot while the runner is busy");
+    },
+    sleep: async (ms) => {
+      nowMs += ms;
+    },
+    now: () => nowMs,
+    timeoutMs: 8_000,
+    kind: "wait-for",
+    expected: 'identifier "ask.toolbar.textfield"',
+    isTransientPresenceError: (error) =>
+      /still finishing a previous command/i.test(error instanceof Error ? error.message : ""),
+    transientBudgetMs: 45_000,
+    transientSleepMs: 2_000,
+  });
+  assert.equal(presentCalls, 3);
+  assert.ok(timing.runnerRecoverMs >= 4_000);
+  assert.ok(timing.destWaitMs < timing.runnerRecoverMs);
+  assert.equal(timing.productReadyMs, timing.destWaitMs);
+  assert.notEqual(timing.runnerRecoverMs, timing.productReadyMs);
+});
+
+test("a probe timeout drain is not product dwell", async () => {
+  let nowMs = 0;
+  await assert.rejects(
+    () =>
+      waitForTargetVisible({
+        present: async () => {
+          throw new Error("xcrun timed out");
+        },
+        captureFingerprint: async () => "still",
+        sleep: async (ms) => {
+          nowMs += ms;
+        },
+        now: () => nowMs,
+        timeoutMs: 8_000,
+        kind: "wait-for",
+        expected: 'identifier "ask.toolbar.textfield"',
+        isTransientPresenceError: isIosRunnerPresenceDrainError,
+        transientBudgetMs: 15_000,
+        transientSleepMs: 5_000,
+      }),
+    (error: unknown) => {
+      assert.match(error instanceof Error ? error.message : "", /xcrun timed out/u);
+      const timing = (error as { iosReadiness?: WaitForReadinessTiming }).iosReadiness;
+      assert.ok(timing);
+      assert.ok(timing.runnerRecoverMs >= 15_000);
+      assert.equal(timing.productReadyMs, 0);
+      assert.ok(timing.destWaitMs < 15_000);
+      return true;
+    },
+  );
 });

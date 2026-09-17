@@ -55,8 +55,57 @@ export type IosSessionLifecycleDiagnostic = {
   repairAttempts: 0 | 1;
   proofAttempts: 0 | 1;
   repairAttempted: boolean;
+  /** Runner kill / DDI remount / failed XCTest probe. Never dest-wait. */
+  runnerRecoverMs: number;
+  /** Successful product AX proof. A probe timeout is not product dwell. */
+  productReadyMs: number;
   steps: IosSessionLifecycleStep[];
 };
+
+/** Probe timeout and runner repair are not dest-wait / product-ready time. */
+export function summarizeIosReadinessDurations(steps: readonly IosSessionLifecycleStep[]): {
+  runnerRecoverMs: number;
+  productReadyMs: number;
+} {
+  let runnerRecoverMs = 0;
+  let productReadyMs = 0;
+  for (const step of steps) {
+    if (
+      step.stage === "repair" ||
+      (step.stage === "xctest-availability" && step.outcome === "failed")
+    ) {
+      runnerRecoverMs += Math.max(0, step.durationMs);
+      continue;
+    }
+    if (
+      (step.stage === "accessibility-query" || step.stage === "post-repair-proof") &&
+      step.outcome === "passed"
+    ) {
+      productReadyMs += Math.max(0, step.durationMs);
+    }
+  }
+  return { runnerRecoverMs, productReadyMs };
+}
+
+function recoverLifecycle(
+  outcome: IosSessionLifecycleDiagnostic["outcome"],
+  code: IosSessionLifecycleDiagnostic["code"],
+  repairAttempts: 0 | 1,
+  proofAttempts: 0 | 1,
+  steps: IosSessionLifecycleStep[],
+): IosSessionLifecycleDiagnostic {
+  return {
+    operation: "recover",
+    outcome,
+    code,
+    probeAttempts: 1,
+    repairAttempts,
+    proofAttempts,
+    repairAttempted: repairAttempts === 1,
+    ...summarizeIosReadinessDurations(steps),
+    steps,
+  };
+}
 
 /**
  * One bounded cleanup action inside the destructive repair (runner kill, DDI
@@ -87,25 +136,47 @@ function elapsed(startedAt: number): number {
 }
 
 function probeSteps(outcome: "passed" | "failed", durationMs: number, detail: string) {
+  const probeMs = Math.max(0, durationMs);
+  if (outcome === "passed") {
+    return [
+      {
+        stage: "preview",
+        outcome,
+        durationMs: 0,
+        detail,
+      },
+      {
+        stage: "xctest-availability",
+        outcome,
+        durationMs: 0,
+        detail: "The existing XCTest session answered the bounded probe.",
+      },
+      {
+        stage: "accessibility-query",
+        outcome,
+        durationMs: probeMs,
+        detail: "The bounded accessibility query returned interactive nodes.",
+      },
+    ] satisfies IosSessionLifecycleStep[];
+  }
   return [
-    { stage: "preview", outcome, durationMs, detail },
+    {
+      stage: "preview",
+      outcome,
+      durationMs: 0,
+      detail,
+    },
     {
       stage: "xctest-availability",
       outcome,
-      durationMs,
-      detail:
-        outcome === "passed"
-          ? "The existing XCTest session answered the bounded probe."
-          : "The existing XCTest session did not answer the bounded probe.",
+      durationMs: probeMs,
+      detail: "The existing XCTest session did not answer the bounded probe.",
     },
     {
       stage: "accessibility-query",
       outcome,
-      durationMs,
-      detail:
-        outcome === "passed"
-          ? "The bounded accessibility query returned interactive nodes."
-          : "Relay could not prove interactive accessibility from the bounded query.",
+      durationMs: 0,
+      detail: "Probe timeout is runner recovery, not product dwell.",
     },
   ] satisfies IosSessionLifecycleStep[];
 }
@@ -212,16 +283,7 @@ export async function recoverIosRuntimeSession(
           ? "Relay restored device control at the Home Screen."
           : "Relay restored the app that was active in this workspace.",
       },
-      lifecycle: {
-        operation: "recover",
-        outcome: "ready",
-        code: "IOS_SESSION_READY",
-        probeAttempts: 1,
-        repairAttempts: 0,
-        proofAttempts: 0,
-        repairAttempted: false,
-        steps,
-      },
+      lifecycle: recoverLifecycle("ready", "IOS_SESSION_READY", 0, 0, steps),
     };
   } catch (cause) {
     steps.push(
@@ -262,16 +324,7 @@ export async function recoverIosRuntimeSession(
         actions: [],
         summary: "The iPad automation session is unavailable. No further retries were started.",
         session: { status: "unavailable", detail },
-        lifecycle: {
-          operation: "recover",
-          outcome: "unavailable",
-          code: "IOS_SESSION_UNAVAILABLE",
-          probeAttempts: 1,
-          repairAttempts: 1,
-          proofAttempts: 0,
-          repairAttempted: true,
-          steps,
-        },
+        lifecycle: recoverLifecycle("unavailable", "IOS_SESSION_UNAVAILABLE", 1, 0, steps),
       };
     }
     return confirmIosRuntimeSession(host, inspect, diagnose, steps);
@@ -314,16 +367,7 @@ export async function confirmIosRuntimeSession(
           ? "Relay restored device control at the Home Screen."
           : "Relay restored the app that was active in this workspace.",
       },
-      lifecycle: {
-        operation: "recover",
-        outcome: "ready",
-        code: "IOS_SESSION_READY",
-        probeAttempts: 1,
-        repairAttempts: 1,
-        proofAttempts: 1,
-        repairAttempted: true,
-        steps,
-      },
+      lifecycle: recoverLifecycle("ready", "IOS_SESSION_READY", 1, 1, steps),
     };
   } catch (error) {
     const detail = await diagnose(error);
@@ -344,16 +388,7 @@ export async function confirmIosRuntimeSession(
         status: "unavailable",
         detail,
       },
-      lifecycle: {
-        operation: "recover",
-        outcome: "proof-required",
-        code: "IOS_SESSION_PROOF_REQUIRED",
-        probeAttempts: 1,
-        repairAttempts: 1,
-        proofAttempts: 1,
-        repairAttempted: true,
-        steps,
-      },
+      lifecycle: recoverLifecycle("proof-required", "IOS_SESSION_PROOF_REQUIRED", 1, 1, steps),
     };
   }
 }
@@ -419,6 +454,17 @@ export function isIosRunnerWatchdogError(error: unknown): boolean {
   return /still finishing a previous command|execution watchdog|main thread has been stuck|runner_busy|runner_wedged|RUNNER_BUSY|RUNNER_WEDGED/i.test(
     errorText(error),
   );
+}
+
+/** XCTest/devicectl probe timeout is runner recovery, not dest-wait dwell. */
+export function isIosPresenceProbeTimeout(error: unknown): boolean {
+  return /xcrun timed out|health check timed out|daemon request timed out|IosSnapshotTimedOutError|snapshot timed out|probe timeout/i.test(
+    `${errorText(error)}${error instanceof Error ? ` ${error.name}` : ""}`,
+  );
+}
+
+export function isIosRunnerPresenceDrainError(error: unknown): boolean {
+  return isIosRunnerWatchdogError(error) || isIosPresenceProbeTimeout(error);
 }
 
 function parseOwner(value: string): LockOwner | undefined {
@@ -805,10 +851,9 @@ function attachIosAssistedSecondLookDiagnostic(
 /**
  * Assisted second look after OutcomeUnknown (see ios-mutation-policy.ts):
  * compare a post-failure pixel fingerprint against the pre-dispatch baseline.
- * Only when the screen provably did not move may Relay issue exactly ONE
- * evidence-backed re-dispatch; otherwise this stops exactly as today.
- * Gated behind the explicit `assistedSecondLook` opt-in — the default
- * behavior is byte-for-byte the plain exact-once policy.
+ * TAP/point and watchdog or transport failures never redispatched. Other
+ * operations may issue exactly one evidence-backed re-dispatch only when the
+ * screen provably did not move. Gated behind `assistedSecondLook`.
  */
 export async function runIosMutationWithAssistedSecondLook<T>(
   serial: string,
@@ -831,14 +876,19 @@ export async function runIosMutationWithAssistedSecondLook<T>(
     }
     const current = await capture();
     const matchedBaseline = baseline !== undefined && baseline === current;
+    const tapOrPoint = operation === "press" || operation === "long-press";
+    const cause = error.cause ?? error;
+    const watchdogOrTransport =
+      isIosRunnerWatchdogError(cause) || isRecoverableIosRuntimeError(cause);
+    const redispatched = matchedBaseline && !tapOrPoint && !watchdogOrTransport;
     const diagnostic: IosAssistedSecondLookDiagnostic = {
       operation,
       ...(baseline !== undefined ? { baselineFingerprint: baseline } : {}),
       ...(current !== undefined ? { currentFingerprint: current } : {}),
       matchedBaseline,
-      redispatched: matchedBaseline,
+      redispatched,
     };
-    if (!matchedBaseline) {
+    if (!redispatched) {
       attachIosAssistedSecondLookDiagnostic(error, diagnostic);
       throw error;
     }

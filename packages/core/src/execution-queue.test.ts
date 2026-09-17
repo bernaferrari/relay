@@ -200,6 +200,20 @@ test("default dest-end chrome inspect is Fast UI and cannot claim S16 with a 10s
   );
 });
 
+test("compile dest-wait is product-ready time, not runner-recover or probe timeout", () => {
+  const compiled = compileAppMapTest(
+    queueMap({ "settings-inspect": inspectTest() }),
+    inspectTest(),
+  );
+  const readiness = compiled.plan.iosReadiness;
+  assert.ok(readiness);
+  assert.equal(readiness.destWaitMs, 8_000);
+  assert.equal(readiness.productReadyMs, 8_000);
+  assert.equal(readiness.runnerRecoverMs, 0);
+  assert.notEqual(readiness.productReadyMs, 15_000);
+  assert.notEqual(readiness.productReadyMs, 45_000);
+});
+
 test("dest-end capture-review stays Fast when the Test queue is live-output", () => {
   const work = inspectTest();
   work.executionQueue = "live-output";

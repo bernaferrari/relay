@@ -46,6 +46,8 @@ export type CaptureReviewObservedSession = {
   laneId?: string;
   profileId?: string;
   sessionStore?: BrowserLaneSessionStoreKind;
+  /** Fail-closed: unproven is not iPhone or simulator coverage. */
+  iosHardwareClass?: "physical-ipad" | "physical-iphone" | "simulator" | "unproven";
 };
 
 /** Capture-review account when a fixture is not ready to claim the pixels. */
@@ -105,6 +107,16 @@ export function formatCaptureReviewObservedSession(
   observed?: CaptureReviewObservedSession,
 ): string[] {
   if (!observed) return [];
+  const hardware =
+    observed.iosHardwareClass === "physical-ipad"
+      ? "physical iPad"
+      : observed.iosHardwareClass === "physical-iphone"
+        ? "physical iPhone"
+        : observed.iosHardwareClass === "simulator"
+          ? "iOS simulator"
+          : observed.iosHardwareClass === "unproven"
+            ? "iOS hardware unproven"
+            : undefined;
   return [
     observed.laneId,
     observed.profileId,
@@ -113,6 +125,7 @@ export function formatCaptureReviewObservedSession(
       : observed.sessionStore === "electron-partition"
         ? "Electron partition"
         : undefined,
+    hardware,
   ].filter((part): part is string => Boolean(part?.trim()));
 }
 

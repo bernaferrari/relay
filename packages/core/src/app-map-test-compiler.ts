@@ -35,6 +35,7 @@ import { attachMappedInboundPrelude } from "./app-map-test-inbound-prelude.js";
 import { leftoverWarmConfirmationSteps } from "./leftover-origin-recovery.js";
 import {
   assertCompiledExecutionQueue,
+  compiledIosReadinessDurations,
   destEndInspectScreenshotReview,
   quoteCompiledTestDuration,
   resolvedExecutionQueue,
@@ -901,6 +902,7 @@ export function compileAppMapScenarioTest(
   const executionQueue = resolvedExecutionQueue(map, test);
   assertCompiledExecutionQueue(test, graph, executionQueue);
   const queueQuotes = quoteCompiledTestDuration(root, graph, executionQueue);
+  const iosReadiness = compiledIosReadinessDurations(graph, rootRecipeId);
   const plan: AppMapCompiledTest = {
     schemaVersion: 1,
     appMapId: map.id,
@@ -951,6 +953,7 @@ export function compileAppMapScenarioTest(
     }),
     ...(executionQueue ? { executionQueue } : {}),
     ...(queueQuotes.length ? { queueQuotes } : {}),
+    iosReadiness,
     startup: options.entryCheckpointScreenId
       ? { mode: "verified-checkpoint", screenId: options.entryCheckpointScreenId }
       : {

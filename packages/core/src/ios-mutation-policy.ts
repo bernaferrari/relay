@@ -232,6 +232,23 @@ export function lastIosMutationAttemptDiagnostic(
   return value ? structuredClone(value) : undefined;
 }
 
+/**
+ * Record that one native iOS mutation already left Relay and must not be
+ * replayed. Used when the dispatch happened outside `runIosMutationOnce`
+ * (CoreDevice HID) and the acknowledgement was then lost.
+ */
+export async function stopUnknownIosMutation(
+  serial: string,
+  operation: IosMutationOperation,
+  error: unknown,
+): Promise<never> {
+  rethrowIosMutationOutcomeUnknown(error);
+  await runIosMutationOnce(serial, operation, async () => {
+    throw error;
+  });
+  throw error instanceof Error ? error : new Error(String(error));
+}
+
 /** A typed, reviewable stop rather than an optimistic second device command. */
 export class IosMutationOutcomeUnknownError extends Error {
   readonly iosMutation: IosMutationAttemptDiagnostic;

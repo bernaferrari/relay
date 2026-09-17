@@ -186,6 +186,21 @@ export const executionQueueDurationQuoteSchema = z
   })
   .strict();
 
+/** Compile/runtime: runner recovery is not dest-wait / product-ready dwell. */
+export type IosReadinessDurationQuote = {
+  destWaitMs: number;
+  runnerRecoverMs: number;
+  productReadyMs: number;
+};
+
+export const iosReadinessDurationQuoteSchema = z
+  .object({
+    destWaitMs: z.number(),
+    runnerRecoverMs: z.number(),
+    productReadyMs: z.number(),
+  })
+  .strict();
+
 /** Separate duration targets. Never a three-minute workbook promise. */
 export function quoteDeclaredExecutionQueues(
   members: readonly ExecutionQueueMemberQuote[],

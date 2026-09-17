@@ -89,7 +89,7 @@ import {
   RECIPE_TRANSIENT_PRESENCE_SLEEP_MS,
   waitForTargetVisible,
 } from "./still-screen-wait.js";
-import { isIosRunnerWatchdogError } from "./ios-runtime-recovery.js";
+import { isIosRunnerPresenceDrainError } from "./ios-runtime-recovery.js";
 import {
   runAppBackgroundStep,
   runEvaluateVisualStep,
@@ -212,7 +212,7 @@ async function runRequiredRecipeStep(
         kind: "wait-for",
         expected: describeTarget(target),
         log: ctx.log,
-        isTransientPresenceError: isIosRunnerWatchdogError,
+        isTransientPresenceError: isIosRunnerPresenceDrainError,
         transientBudgetMs: RECIPE_TRANSIENT_PRESENCE_DRAIN_MS,
         transientSleepMs: RECIPE_TRANSIENT_PRESENCE_SLEEP_MS,
       });
@@ -240,7 +240,7 @@ async function runRequiredRecipeStep(
             kind: "expect",
             expected: label,
             log: ctx.log,
-            isTransientPresenceError: isIosRunnerWatchdogError,
+            isTransientPresenceError: isIosRunnerPresenceDrainError,
             transientBudgetMs: RECIPE_TRANSIENT_PRESENCE_DRAIN_MS,
             transientSleepMs: RECIPE_TRANSIENT_PRESENCE_SLEEP_MS,
           });

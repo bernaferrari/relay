@@ -43,7 +43,12 @@ import {
   type IosSessionOperationDiagnostic,
 } from "./workspace-ios-session.js";
 import { rawKey, rawSwipe, rawTap } from "./workspace-android-raw.js";
-import { iosPointTapRecoverError, tapIosPointViaPixels } from "./workspace-ios-raw.js";
+import { stopUnknownIosMutation } from "./ios-mutation-policy.js";
+import {
+  iosPointTapRecoverError,
+  isIosHidUnavailable,
+  tapIosPointViaPixels,
+} from "./workspace-ios-raw.js";
 import { captureScreenshot, captureSnapshot, type ScreenshotPayload } from "./workspace-capture.js";
 import { invalidateTargetSemanticControl } from "./target-runtime-readiness.js";
 import { IosXCTestSessionUnavailableError, diagnoseIosRunnerError } from "./ios-device-adapter.js";
@@ -599,6 +604,12 @@ export async function interact(
             ...(bounds ? { width: bounds.width, height: bounds.height } : {}),
           });
         } catch (hidError) {
+          // HID absence is pre-dispatch: XCTest may send the first press.
+          // Timeout, transport drop, and watchdog after HID started are
+          // outcome-unknown — never a second TAP/point.
+          if (!isIosHidUnavailable(hidError)) {
+            await stopUnknownIosMutation(context.serial, "press", hidError);
+          }
           try {
             await pressPoint(target.device, input.x, input.y);
           } catch (xctestError) {
