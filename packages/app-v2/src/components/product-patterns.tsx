@@ -167,14 +167,24 @@ export function RecoveryState({
 
   return (
     <section
-      className={`relay-recovery-state relay-recovery-state--compact max-w-[60ch]${className ? ` ${className}` : ""}`}
+      className={classNames(
+        "relay-recovery-state relay-recovery-state--compact flex shrink-0 items-start gap-3 rounded-xl border border-border bg-muted/40 p-4",
+        className,
+      )}
       role="alert"
     >
-      <h2 className="text-[15px] font-medium text-foreground">{title}</h2>
-      {supportingText ? (
-        <p className="mt-1 text-[13px] leading-5 text-muted-foreground">{supportingText}</p>
-      ) : null}
-      {action ? <div className="mt-3">{action}</div> : null}
+      <CircleAlert className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-x-5 gap-y-3">
+        <div className="min-w-0 flex-1 basis-48">
+          <h2 className="text-sm font-medium text-foreground">{title}</h2>
+          {supportingText ? (
+            <p className="mt-1 max-w-[60ch] text-sm leading-5 text-muted-foreground">
+              {supportingText}
+            </p>
+          ) : null}
+        </div>
+        {action ? <div className="shrink-0">{action}</div> : null}
+      </div>
     </section>
   );
 }

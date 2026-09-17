@@ -135,6 +135,15 @@ test("browser transport failures become an actionable local-service error", () =
     assert.match(error.recovery, /try again/);
   }
 });
+test("temporary gateway failures offer retry guidance", () => {
+  for (const status of [502, 503, 504]) {
+    const error = projectError(new ApiError(status, "gateway failure", {}));
+    assert.equal(error.title, "Relay is temporarily unavailable");
+    assert.equal(error.retryable, true);
+    assert.match(error.detail, /Try again/);
+    assert.doesNotMatch(error.detail, /HTTP/);
+  }
+});
 test("projectError preserves structured server WorkflowProblem semantics", () => {
   const error = projectError(
     new ApiError(409, "opaque transport text", {

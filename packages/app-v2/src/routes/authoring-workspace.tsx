@@ -12,7 +12,7 @@ export function AuthoringWorkspace({
   inspector?: ReactNode;
 }) {
   return (
-    <div className="grid h-full min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(260px,32%)] gap-3 p-3 max-[760px]:grid-cols-1 max-[760px]:grid-rows-[minmax(0,1fr)_minmax(160px,.6fr)]">
+    <div className="grid h-full min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(260px,32%)] gap-3 p-3 max-[760px]:grid-cols-1 max-[760px]:min-h-[460px] max-[760px]:shrink-0 max-[760px]:grid-rows-[minmax(260px,1fr)_minmax(160px,.6fr)]">
       <div className={workspacePreviewSurface}>{stage}</div>
       <div className="flex min-h-0 min-w-0 flex-col gap-3">
         <div

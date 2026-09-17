@@ -348,6 +348,7 @@ export function TestPage() {
 
       {loading ? <PageLoading label="Loading the Test and available devices…" /> : null}
       <RecordingProblem
+        className="mx-4 my-3 !mt-3 !max-w-none"
         operation="run"
         error={test.error ?? targets.error ?? start.error}
         recovery={start.data?.recovery}
