@@ -32,6 +32,44 @@ test("expect-screen product-failure becomes a PRODUCT_ASSERTION finding", () => 
   assert.match(findings[0]?.detail ?? "", /expect-screen/);
 });
 
+test("evaluate-visual disagreement is JUDGE_UNCERTAIN and never a baseline accept", () => {
+  const findings = jobOutcomeFindings(
+    [
+      {
+        id: "judge-1",
+        action: "cell-home-judged",
+        status: "error",
+        title: "Grok.com logged-out judged chrome · logged-out · Judge logged-out home chrome",
+        error: "judge uncertain: judges disagree (openrouter: pass; openrouter: fail)",
+        outcome: "uncertain",
+        failureCategory: "judge-uncertainty",
+      },
+    ],
+    () => "logged-out",
+  );
+  assert.equal(findings[0]?.code, "JUDGE_UNCERTAIN");
+  assert.equal(findings[0]?.severity, "warning");
+  assert.match(findings[0]?.detail ?? "", /Needs review/u);
+  assert.match(findings[0]?.detail ?? "", /does not accept a visual baseline/u);
+  assert.doesNotMatch(findings[0]?.detail ?? "", /approve-new-baseline/iu);
+});
+
+test("a passing evaluate-visual cell is not a finding and does not accept a baseline", () => {
+  const findings = jobOutcomeFindings(
+    [
+      {
+        id: "judge-pass",
+        action: "cell-home-judged",
+        status: "ok",
+        title: "Judge logged-out home chrome",
+        outcome: "passed",
+      },
+    ],
+    () => "en",
+  );
+  assert.deepEqual(findings, []);
+});
+
 test("visual judge unavailable without OPENROUTER is HARNESS_FAILURE", () => {
   const findings = jobOutcomeFindings(
     [
@@ -49,6 +87,24 @@ test("visual judge unavailable without OPENROUTER is HARNESS_FAILURE", () => {
   );
   assert.equal(findings[0]?.code, "HARNESS_FAILURE");
   assert.match(findings[0]?.detail ?? "", /OPENROUTER_API_KEY/);
+});
+
+test("visual assertion fail stays PRODUCT_ASSERTION, not a baseline accept", () => {
+  const findings = jobOutcomeFindings(
+    [
+      {
+        id: "visual-fail",
+        action: "cell-home-judged",
+        status: "error",
+        error: "visual assertion: Composer is not empty",
+        outcome: "product-failure",
+        failureCategory: "visual-assertion",
+      },
+    ],
+    () => "en",
+  );
+  assert.equal(findings[0]?.code, "PRODUCT_ASSERTION");
+  assert.doesNotMatch(findings[0]?.detail ?? "", /approve-new-baseline/iu);
 });
 
 test("ok cells and harness failures stay typed", () => {

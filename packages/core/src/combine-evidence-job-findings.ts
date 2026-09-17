@@ -30,8 +30,20 @@ export function isBlockedJobOutcome(job: JobOutcomeFindingSource): boolean {
   return job.status === "blocked" || job.outcome === "blocked";
 }
 
+/** Dual-judge disagreement or an uncertain verdict. Never a silent pass or baseline accept. */
+export function isJudgeUncertainJob(job: JobOutcomeFindingSource): boolean {
+  if (isHarnessJobOutcome(job) || isCancelledJobOutcome(job) || isBlockedJobOutcome(job)) {
+    return false;
+  }
+  if (job.failureCategory === "judge-uncertainty") return true;
+  const error = job.error ?? "";
+  if (/judge unavailable/iu.test(error)) return false;
+  return /judge uncertain/iu.test(error);
+}
+
 export function isProductAssertionJob(job: JobOutcomeFindingSource): boolean {
   if (SKIP_STATUSES.has(job.status) || isHarnessJobOutcome(job)) return false;
+  if (isJudgeUncertainJob(job)) return false;
   if (job.outcome === "product-failure") return true;
   if (job.failureCategory === "deterministic-assertion") return true;
   return /expect-screen/iu.test(job.error ?? "");
@@ -153,6 +165,27 @@ export function jobOutcomeFindings<T extends JobOutcomeFindingSource>(
             locale,
             baselineLocale: locale,
             detail: job.error?.trim() || "This case could not run. Resolve blockers.",
+          },
+          job,
+        ),
+      );
+      continue;
+    }
+    if (isJudgeUncertainJob(job)) {
+      findings.push(
+        withJobTestId(
+          {
+            id: `judge-uncertain-${job.id}`,
+            code: "JUDGE_UNCERTAIN",
+            severity: "warning",
+            confidence: "medium",
+            canonicalKey: `job:${job.id}`,
+            screenLabel: screenLabelFor(job),
+            locale,
+            baselineLocale: locale,
+            detail: job.error?.trim()
+              ? `${job.error.trim()}. Needs review. This does not accept a visual baseline.`
+              : "The visual or semantic judge was uncertain. Needs review. This does not accept a visual baseline.",
           },
           job,
         ),

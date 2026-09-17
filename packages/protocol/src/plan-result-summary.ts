@@ -184,6 +184,7 @@ export function planResultCasesFromFindings(input: {
         entry.canonicalKey === `job:${item.jobId}` ||
         entry.id === `harness-failure-${item.jobId}` ||
         entry.id === `product-assertion-${item.jobId}` ||
+        entry.id === `judge-uncertain-${item.jobId}` ||
         entry.id === `user-cancelled-${item.jobId}` ||
         entry.id === `blocked-${item.jobId}`,
     );

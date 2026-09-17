@@ -28,7 +28,15 @@ export function planFindingLane(finding: CombineEvidenceFinding): PlanFindingLan
   ) {
     return "infra";
   }
-  if (finding.code === "USER_CANCELLED" || finding.code.startsWith("POSSIBLE_")) return "review";
+  if (
+    finding.code === "USER_CANCELLED" ||
+    finding.code === "JUDGE_UNCERTAIN" ||
+    finding.code === "VISUAL_CHANGED" ||
+    finding.code === "MANUAL_CHECKPOINT" ||
+    finding.code.startsWith("POSSIBLE_")
+  ) {
+    return "review";
+  }
   return "product";
 }
 
@@ -89,6 +97,13 @@ export function proposePlanFinding(finding: CombineEvidenceFinding): PlanFinding
       verdict: "reject",
       reason:
         "This case could not run. Resolve blockers. Coverage stays unverified. This still does not accept a visual baseline.",
+    };
+  }
+  if (finding.code === "JUDGE_UNCERTAIN") {
+    return {
+      verdict: "reject",
+      reason:
+        "The visual or semantic judge was uncertain. That is Needs review, not a product pass and not a baseline. This still does not accept a visual baseline.",
     };
   }
   if (finding.code === "PRODUCT_ASSERTION") {

@@ -192,6 +192,41 @@ test("expired sign-in is one Infra finding, not a product failure", () => {
   assert.doesNotMatch(markdown, /approve-new-baseline/i);
 });
 
+test("JUDGE_UNCERTAIN proposes Reject and never accepts a visual baseline", () => {
+  const proposal = proposePlanFinding({
+    id: "judge-uncertain-1",
+    code: "JUDGE_UNCERTAIN",
+    severity: "warning",
+    confidence: "medium",
+    canonicalKey: "job:judge-1",
+    screenLabel: "Home",
+    locale: "en",
+    baselineLocale: "en",
+    detail: "judge uncertain: judges disagree",
+  });
+  assert.equal(proposal.verdict, "reject");
+  assert.match(proposal.reason, /Needs review/u);
+  assert.doesNotMatch(proposal.reason, /approve-new-baseline/iu);
+  const markdown = renderPlanFindingsMarkdown(
+    report([
+      {
+        id: "judge-uncertain-1",
+        code: "JUDGE_UNCERTAIN",
+        severity: "warning",
+        confidence: "medium",
+        canonicalKey: "job:judge-1",
+        screenLabel: "Home",
+        locale: "en",
+        baselineLocale: "en",
+        detail: "judge uncertain: judges disagree",
+      },
+    ]),
+  );
+  assert.match(markdown, /JUDGE_UNCERTAIN/u);
+  assert.match(markdown, /does not accept a visual baseline/u);
+  assert.doesNotMatch(markdown, /approve-new-baseline/iu);
+});
+
 test("markdown names the Test and a flaky label without hiding the finding", () => {
   const markdown = renderPlanFindingsMarkdown(
     report([

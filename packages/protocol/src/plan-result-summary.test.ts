@@ -97,6 +97,32 @@ test("all harness-failure cells are incomplete coverage, never a product pass", 
   assert.doesNotMatch(lines.join("\n"), /All selected cases passed/u);
 });
 
+test("evaluate-visual uncertainty is Needs review, never a product pass or baseline", () => {
+  assert.equal(
+    classifyPlanResultCell({
+      status: "failed",
+      findingCode: "JUDGE_UNCERTAIN",
+      failureCategory: "judge-uncertainty",
+      outcome: "uncertain",
+    }),
+    "needs-review",
+  );
+  const lines = planFindingsSummaryLines({
+    cases: [{ jobId: "judge-1", status: "error" }],
+    findings: [
+      {
+        id: "judge-uncertain-judge-1",
+        canonicalKey: "job:judge-1",
+        code: "JUDGE_UNCERTAIN",
+      },
+    ],
+  });
+  assert.match(lines.join("\n"), /Incomplete — 0 of 1 planned cases verified/u);
+  assert.match(lines.join("\n"), /needs review/u);
+  assert.doesNotMatch(lines.join("\n"), /All selected cases passed/u);
+  assert.doesNotMatch(lines.join("\n"), /100%/u);
+});
+
 test("session-expired prose without a harness finding is not classified as infra", () => {
   assert.equal(
     classifyPlanResultCell({

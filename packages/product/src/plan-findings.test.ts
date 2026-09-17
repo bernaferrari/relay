@@ -157,6 +157,35 @@ test("morning review lanes stay Product vs Infra", () => {
     }),
     "infra",
   );
+  assert.equal(
+    planFindingLane({
+      id: "f-judge",
+      code: "JUDGE_UNCERTAIN",
+      severity: "warning",
+      confidence: "medium",
+      canonicalKey: "job:3",
+      screenLabel: "Home",
+      locale: "en",
+      baselineLocale: "en",
+      detail: "judges disagree",
+    }),
+    "review",
+  );
+  const judge = proposePlanFinding({
+    id: "f-judge",
+    code: "JUDGE_UNCERTAIN",
+    severity: "warning",
+    confidence: "medium",
+    canonicalKey: "job:3",
+    screenLabel: "Home",
+    locale: "en",
+    baselineLocale: "en",
+    detail: "judges disagree",
+  });
+  assert.equal(judge.verdict, "reject");
+  assert.match(judge.reason, /Needs review/u);
+  assert.doesNotMatch(judge.reason, /approve-new-baseline/iu);
+  assert.equal(planFindingReviewEffect("reject").visualReviewAction, null);
 });
 
 test("HARNESS_FAILURE from SOS/cancelled proposes Reject and never accepts a baseline", () => {

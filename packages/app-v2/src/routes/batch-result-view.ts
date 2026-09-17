@@ -266,6 +266,8 @@ export function formatBatchFindingCode(code: string): string {
   if (code === "ACCOUNT_NEEDS_RELOGIN") return "Sign-in";
   if (code === "BLOCKED") return "Blocked";
   if (code === "USER_CANCELLED") return "Cancelled";
+  if (code === "JUDGE_UNCERTAIN") return "Judge";
+  if (code === "VISUAL_CHANGED") return "Changed";
   if (code.startsWith("POSSIBLE_")) return "Needs review";
   return titleCaseIdentity(code);
 }

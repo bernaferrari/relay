@@ -31,6 +31,13 @@ function finding(jobId: string, code: CombineEvidenceFinding["code"]): CombineEv
   };
 }
 
+test("JUDGE_UNCERTAIN stays pending review and does not accept a baseline", () => {
+  assert.equal(
+    classifyReviewChecklistStatus({ status: "error", findingCode: "JUDGE_UNCERTAIN" }),
+    "pending review",
+  );
+});
+
 test("PRODUCT_ASSERTION is check failed, not classified from error prose", () => {
   assert.equal(
     classifyReviewChecklistStatus({ status: "error", findingCode: "PRODUCT_ASSERTION" }),

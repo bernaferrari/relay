@@ -50,6 +50,7 @@ export type ReviewChecklistCase = {
 
 const JOB_FINDING_CODES: readonly CombineEvidenceFindingCode[] = [
   "PRODUCT_ASSERTION",
+  "JUDGE_UNCERTAIN",
   "HARNESS_FAILURE",
   "USER_CANCELLED",
   "BLOCKED",
@@ -105,6 +106,7 @@ export function classifyReviewChecklistStatus(input: {
   captureReviewPending?: boolean;
 }): ReviewChecklistStatus {
   if (input.findingCode === "PRODUCT_ASSERTION") return "check failed";
+  if (input.findingCode === "JUDGE_UNCERTAIN") return "pending review";
   if (input.findingCode === "USER_CANCELLED") return "cancelled";
   if (
     input.findingCode === "HARNESS_FAILURE" ||

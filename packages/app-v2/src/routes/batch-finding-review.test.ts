@@ -262,4 +262,23 @@ describe("resolvePlanFindings", () => {
     expect(resolved.analysis.findings.every((item) => item.testId === undefined)).toBe(true);
     expect(planFindingTestId(resolved.analysis.findings[0]!)).toBeUndefined();
   });
+
+  it("keeps evaluate-visual uncertainty as a finding when analysis omitted it", () => {
+    const source = batchReport();
+    const batch = {
+      ...source,
+      cases: [
+        {
+          ...source.cases[0]!,
+          findingCode: "JUDGE_UNCERTAIN" as const,
+          error: "judge uncertain: judges disagree",
+        },
+      ],
+    };
+    const analysis = report([{ jobId: "job-a", locale: "en", status: "failed", frames: [] }]);
+    analysis.analysis.findings = [];
+    const resolved = resolvePlanFindings(batch, analysis);
+    expect(resolved.analysis.findings.map((item) => item.code)).toEqual(["JUDGE_UNCERTAIN"]);
+    expect(resolved.analysis.findings[0]?.detail).toContain("judges disagree");
+  });
 });

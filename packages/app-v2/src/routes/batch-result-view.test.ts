@@ -193,6 +193,7 @@ describe("Batch result presentation", () => {
     );
     expect(formatBatchFindingCode("HARNESS_FAILURE")).toBe("Harness");
     expect(formatBatchFindingCode("PRODUCT_ASSERTION")).toBe("Product check");
+    expect(formatBatchFindingCode("JUDGE_UNCERTAIN")).toBe("Judge");
     expect(formatBatchCaseError("causal failure in step-8be8bb50")).toBe("This check failed");
     expect(formatBatchCaseError("Timeout waiting for check-12")).toBe("Timeout waiting for");
   });

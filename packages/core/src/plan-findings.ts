@@ -69,6 +69,13 @@ export function proposePlanFinding(finding: CombineEvidenceFinding): PlanFinding
         "This case could not run. Resolve blockers. Coverage stays unverified. This still does not accept a visual baseline.",
     };
   }
+  if (finding.code === "JUDGE_UNCERTAIN") {
+    return {
+      verdict: "reject",
+      reason:
+        "The visual or semantic judge was uncertain. That is Needs review, not a product pass and not a baseline. This still does not accept a visual baseline.",
+    };
+  }
   if (finding.code === "PRODUCT_ASSERTION") {
     return {
       verdict: "confirm",
