@@ -9,9 +9,11 @@
  * composer, S06 Auto-routing, S07 response-chrome, S09
  * single-agent tools + sources, S10 Heavy multi-agent, S11
  * image gen + edit + export, S12 image search, S13 history
- * lifecycle, and S14 App Language / SuperGrok row originals keep
+ * lifecycle, S14 App Language / SuperGrok row, and S04 GQA-053
+ * upload analysis originals keep
  * explicit test-action evidence-needed while remaining unbound.
  * GQA-040 Settings inventory stays the RC-23 dest-end view.
+ * GQA-004 attach menu stays the RC-23 dest-end view.
  * Leftover Fast-checked is not a models Test. Inspect-only model
  * sheet is not Switch model, presets, or Auto Fast/Expert routing.
  * Leftover 3*5 extract-15 / Markdown judge is not S08 generated-output
@@ -43,7 +45,10 @@
  * open older conversation, History expand, search history, or
  * delete persistence. Settings dest-end / inspect-only Language
  * Selector / SuperGrok home banner / hide-upsell inspect is not
- * S14 App Language mutate or SuperGrok row. Original criteria
+ * S14 App Language mutate or SuperGrok row. Paperclip dest-end /
+ * 19z5.15/19z5.19 Upload a file compiles without YAML / iOS
+ * Files-app compile-block / logged-out upload chip / signed-in
+ * dest-end chip is not S04 GQA-053 upload analysis. Original criteria
  * stay on the slot.
  */
 
@@ -80,6 +85,8 @@ export const WORKBOOK_HISTORY_FAMILY_ID = "S13";
 export const WORKBOOK_HISTORY_ORIGINAL_IDS = [21, 34, 38, 39] as const;
 export const WORKBOOK_SETTINGS_FAMILY_ID = "S14";
 export const WORKBOOK_SETTINGS_UNBOUND_ORIGINAL_IDS = [41, 43] as const;
+export const WORKBOOK_ATTACH_FAMILY_ID = "S04";
+export const WORKBOOK_UPLOAD_ANALYSIS_ORIGINAL_ID = 53;
 export const WORKBOOK_MODELS_FAMILY_ID = "S05";
 export const WORKBOOK_MODELS_ORIGINAL_IDS = [7, 8] as const;
 export const WORKBOOK_OUTPUT_FAMILY_ID = "S08";
@@ -295,6 +302,12 @@ export const RC23_WORKBOOK_NON_BINDINGS: readonly {
     reason:
       "Settings inventory dest-end does not tap App Language, SuperGrok, or Sign Out. GQA-040 stays the dest-end view.",
   },
+  {
+    checkpointId: "attach",
+    originalIds: [5, 53],
+    reason:
+      "Paperclip dest-end is not File Connectors (excluded) or orig 53 upload analysis. GQA-004 stays the dest-end view. 19z5.15/19z5.19 Upload a file compiles without YAML and iOS Files-app compile-blocked is not GQA-053 coverage.",
+  },
 ];
 
 const RC23_PLATFORM = new Set<string>(WORKBOOK_RC23_PLATFORMS);
@@ -493,6 +506,20 @@ export function coverByHistoryDestEndOrCommandMenuSearch(
  * stays the RC-23 dest-end view. Do not tap App Language in default
  * capture. Do not tap Upgrade / Try now / Dismiss / Sign Out. */
 export function coverBySettingsDestEndOrLanguageInspect(
+  original: Pick<WorkbookOriginal, "id" | "family">,
+): boolean {
+  void original;
+  return false;
+}
+
+/** Paperclip dest-end, 19z5.15/19z5.19 Upload a file compiles without
+ * YAML, iOS Files-app compile-block (SHA 9b65f1b2f), logged-out upload
+ * chip, signed-in dest-end sample.pdf chip, or android-primitives
+ * Files dump never cover S04 GQA-053. Upload TAP + analysis send TAP
+ * + generated analysis (not a generic stub) evidence is required.
+ * GQA-004 stays the RC-23 dest-end attach menu. Orig 5 File
+ * Connectors stays excluded. Similar upload names do not cover. */
+export function coverByUploadCompileOrFilesAppBlock(
   original: Pick<WorkbookOriginal, "id" | "family">,
 ): boolean {
   void original;
@@ -1042,6 +1069,7 @@ function distinctiveNeedles(original: WorkbookOriginal): readonly string[] {
   if (original.id === 52) extra.push("greeting", "language");
   if (original.id === 41) extra.push("settings-language", "settings");
   if (original.id === 43) extra.push("banner", "upsell", "upgrade", "settings");
+  if (original.id === 53) extra.push("upload", "files-app", "attach");
   if (original.id === 44) extra.push("sign-out", "signout");
   if (original.id === 45) extra.push("continue", "x-absent", "authorize");
   if (original.id === 46) extra.push("continue", "x-present", "x-app");
@@ -1397,6 +1425,14 @@ export function workbookEvidenceNeededError(
       return `${label} S14 needs explicit evidence-needed (App Language TAP + persist, SuperGrok row TAP + view)`;
     }
   }
+  if (original.id === WORKBOOK_UPLOAD_ANALYSIS_ORIGINAL_ID) {
+    if (original.requirementAction !== "test-action") {
+      return `${label} S04 GQA-053 must be test-action — leftover attach dest-end / compile-without-YAML / iOS Files-app compile-block / logged-out upload chip is not upload analysis`;
+    }
+    if (!original.evidenceNeeded || original.evidenceNeeded.length === 0) {
+      return `${label} S04 GQA-053 needs explicit evidence-needed (upload TAP + analysis send TAP + generated analysis)`;
+    }
+  }
   if (original.id === 7) {
     const switchKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
     for (const required of ["before", "after", "receipt"] as const) {
@@ -1671,6 +1707,19 @@ export function workbookEvidenceNeededError(
     }
     if (!subKinds.has("view")) {
       return `${label} GQA-043 needs SuperGrok subscription/upgrade view — leftover Settings dest-end / Unlock extended capabilities pill is not this original`;
+    }
+  }
+  if (original.id === WORKBOOK_UPLOAD_ANALYSIS_ORIGINAL_ID) {
+    const uploadKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!uploadKinds.has("receipt")) {
+      return `${label} GQA-053 upload TAP must execute — leftover attach dest-end / 19z5.15/19z5.19 compile-without-YAML / iOS Files-app compile-block is not this original`;
+    }
+    if (!uploadKinds.has("after")) {
+      return `${label} GQA-053 needs after evidence — chip-only dest-end / logged-out upload chip is not this original`;
+    }
+    const uploadReceipts = original.evidenceNeeded?.filter((item) => item.kind === "receipt") ?? [];
+    if (uploadReceipts.length < 2) {
+      return `${label} GQA-053 needs upload TAP and analysis send TAP receipts — 19z5.15/19z5.19 Upload a file compiles without YAML / iOS Files-app compile-block / dest-end sample.pdf chip is not this original`;
     }
   }
   if (!original.evidenceNeeded) return undefined;

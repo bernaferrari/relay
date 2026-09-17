@@ -94,9 +94,19 @@
 # not tap Upgrade / Try now / Dismiss / Sign Out. Similar
 # settings/language/banner/upsell names do not cover. Leftover
 # dest skip is only GQA-004/040 capture-view.
+# RC-37 S04 GQA-053 upload analysis packets stay unbound:
+# explicit test-action evidence-needed (upload TAP + analysis
+# send TAP + generated analysis, not a generic stub). GQA-004
+# stays the RC-23 dest-end attach menu view. Orig 5 File
+# Connectors stays excluded. Paperclip dest-end / 19z5.15/19z5.19
+# Upload a file compiles without YAML / iOS Files-app
+# compile-block (SHA 9b65f1b2f) / logged-out upload chip /
+# signed-in dest-end sample.pdf chip / android-primitives Files
+# dump do not cover. Similar upload/attach names do not cover.
+# Leftover dest skip is only GQA-004/040 capture-view.
 schemaVersion: 1
 id: grok-qa-workbook
-revision: 16
+revision: 17
 reviewedAt: "2026-09-16"
 source:
   workbook: grok-qa-graph.xlsx
@@ -1534,8 +1544,20 @@ originals:
     evidencePacket: generated-output
     queue: "fast-ui"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: receipt
+        id: tap-upload-hashed-fixture
+        note: "TAP Upload a file with a hashed small pdf/docx/image fixture actually executed (test-action). GQA-004 paperclip dest-end / 19z5.15/19z5.19 Upload a file compiles without YAML / iOS Files-app compile-block (SHA 9b65f1b2f) / logged-out test-grok-web-upload chip / signed-in dest-end test-grok-web-signed-in-upload sample.pdf chip / test-android-upload-pdf primitives Files dump is not this original. Orig 5 File Connectors is excluded. Capture-view leftover skip is only GQA-004/040."
+      - kind: receipt
+        id: tap-send-file-analysis
+        note: "Send so Grok analyzes the attached hashed fixture actually executed (test-action). Chip-only dest-end without analysis YAML is not this original. Do not add Gmail/Drive plugins. Capture-view leftover skip is only GQA-004/040."
+      - kind: after
+        id: after-file-analysis
+        note: "Generated output at a declared phase: an accurate analysis of the file, not a generic stub. Human reviews original criterion. No analysis-quality judge. Chip-only leftover / logged-out upload chip / grok-lab leftover b2dcd768 sidebar+Build Mode is not this after frame. stabilityMeasured false."
     gates:
       - Hashed small fixtures. File Connectors setup is original 5 (skipped).
+      - "Leftover attach dest-end / 19z5.15/19z5.19 Upload a file compiles without YAML / iOS Files-app compile-block (SHA 9b65f1b2f) / logged-out upload chip / signed-in dest-end sample.pdf chip / android-primitives Files dump is not this original. Causal TAP must upload a hashed fixture and send so Grok analyzes it. Similar upload/attach names do not cover."
     status: unbound
     bindings: []
   - id: 54

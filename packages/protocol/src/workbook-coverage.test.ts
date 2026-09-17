@@ -13,6 +13,7 @@ import {
   coverByImagineDestEndOrHistorySearch,
   coverByHistoryDestEndOrCommandMenuSearch,
   coverBySettingsDestEndOrLanguageInspect,
+  coverByUploadCompileOrFilesAppBlock,
   coverByRc23DestEnd,
   destEndViewPacketMayLeftoverSkip,
   evaluateWorkbookCoverage,
@@ -49,6 +50,8 @@ import {
   WORKBOOK_HISTORY_ORIGINAL_IDS,
   WORKBOOK_SETTINGS_FAMILY_ID,
   WORKBOOK_SETTINGS_UNBOUND_ORIGINAL_IDS,
+  WORKBOOK_ATTACH_FAMILY_ID,
+  WORKBOOK_UPLOAD_ANALYSIS_ORIGINAL_ID,
   WORKBOOK_MODELS_FAMILY_ID,
   WORKBOOK_MODELS_ORIGINAL_IDS,
   WORKBOOK_OUTPUT_FAMILY_ID,
@@ -4108,5 +4111,169 @@ test("S14 packets stay unbound and need App Language persist and SuperGrok row T
       evidencePacket: "view",
     }),
     "fast-ui",
+  );
+});
+
+test("S04 GQA-053 packets stay unbound and need upload TAP plus analysis evidence", () => {
+  assert.equal(WORKBOOK_UPLOAD_ANALYSIS_ORIGINAL_ID, 53);
+  assert.equal(WORKBOOK_ATTACH_FAMILY_ID, "S04");
+  assert.deepEqual(requiredEvidenceNeededKinds("generated-output"), ["after"]);
+  const missing = original({
+    id: 53,
+    name: "Upload pdf / docx / image analysis",
+    family: WORKBOOK_ATTACH_FAMILY_ID,
+    evidencePacket: "generated-output",
+    status: "unbound",
+  });
+  assert.match(
+    workbookEvidenceNeededError(missing) ?? "",
+    /S04 GQA-053 must be test-action|S04 GQA-053 needs explicit evidence-needed|upload TAP/u,
+  );
+  const leftoverChip = original({
+    id: 53,
+    name: "Upload pdf / docx / image analysis",
+    family: WORKBOOK_ATTACH_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "after",
+        id: "leftover-sample-pdf-chip",
+        note: "Signed-in dest-end sample.pdf chip. No analysis send.",
+      },
+    ],
+    status: "unbound",
+    criteria: "Check for an accurate analysis of the file, not a generic stub.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverChip) ?? "",
+    /upload TAP must execute|upload TAP and analysis send TAP receipts/u,
+  );
+  assert.equal(coverByUploadCompileOrFilesAppBlock(leftoverChip), false);
+  const leftoverCompileOnly = original({
+    id: 53,
+    name: "Upload pdf / docx / image analysis",
+    family: WORKBOOK_ATTACH_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-upload-compiles-without-yaml",
+        note: "19z5.15/19z5.19 Upload a file compiles without YAML.",
+      },
+      {
+        kind: "after",
+        id: "after-chip-only",
+        note: "Composer chip. No analysis.",
+      },
+    ],
+    status: "unbound",
+    criteria: "Check for an accurate analysis of the file, not a generic stub.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverCompileOnly) ?? "",
+    /upload TAP and analysis send TAP receipts/u,
+  );
+  const uploadAnalysis = original({
+    id: 53,
+    name: "Upload pdf / docx / image analysis",
+    family: WORKBOOK_ATTACH_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-upload-hashed-fixture",
+        note: "TAP Upload a hashed fixture actually executed.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-file-analysis",
+        note: "Send so Grok analyzes the file actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-file-analysis",
+        note: "Accurate analysis, not a generic stub. Chip-only dest-end is not this frame.",
+      },
+    ],
+    status: "unbound",
+    criteria: "Check for an accurate analysis of the file, not a generic stub.",
+  });
+  assert.equal(workbookEvidenceNeededError(uploadAnalysis), undefined);
+  assert.equal(workbookEvidencePolicyError(uploadAnalysis), undefined);
+  assert.equal(originalIsCovered(uploadAnalysis), false);
+  assert.equal(coverByUploadCompileOrFilesAppBlock(uploadAnalysis), false);
+  const obligation = workbookOriginalObligationIdentity(uploadAnalysis);
+  assert.equal(obligation.requirementId, "GQA-053");
+  assert.equal(obligation.caption, "Upload pdf / docx / image analysis");
+  assert.match(obligation.criteria, /accurate analysis of the file/u);
+  assert.notEqual(obligation.criteria, "sample.pdf chip");
+  const report = evaluateWorkbookCoverage(fixture({ originals: [uploadAnalysis] }), [
+    { id: "test-grok-web-upload", name: "Upload a file while logged out" },
+    { id: "test-grok-web-signed-in-upload", name: "Upload a file dest-end chip" },
+    { id: "test-grok-web-logged-out-upload-judged", name: "Judge logged-out upload chrome" },
+    { id: "test-android-upload-pdf", name: "Upload pdf in Files" },
+    { id: "test-grok-web-signed-in-attach", name: "Open attach menu" },
+    { id: "test-grok-ios-upload", name: "iOS Files-app upload compile-block" },
+    { id: "test-grok-ios-attach", name: "Open attach menu" },
+  ]);
+  assert.deepEqual(report.coveredOriginalIds, []);
+  assert.equal(report.unboundOriginalIds.includes(53), true);
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 53 && row.testId === "test-grok-web-signed-in-upload",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 53 && row.testId === "test-grok-web-upload",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 53 && row.testId === "test-android-upload-pdf",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 53 && row.testId === "test-grok-ios-upload",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 53 && row.testId === "test-grok-web-signed-in-attach",
+    ),
+    true,
+  );
+  assert.equal(coverByFindingSimilarlyNamedTest(uploadAnalysis, []), false);
+  assert.equal(coverByRc23DestEnd({ id: 53 }, "attach"), false);
+  assert.equal(coverByRc23DestEnd({ id: 4 }, "attach"), true);
+  assert.equal(coverByRc23DestEnd({ id: 5 }, "attach"), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 53,
+      evidencePacket: "generated-output",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    destEndViewPacketMayLeftoverSkip({ id: 53, evidencePacket: "generated-output" }),
+    false,
+  );
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 4, evidencePacket: "view" }), true);
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 53,
+      family: WORKBOOK_ATTACH_FAMILY_ID,
+      evidencePacket: "generated-output",
+    }),
+    "live-output",
   );
 });

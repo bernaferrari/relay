@@ -15,6 +15,7 @@ import {
   coverByImagineDestEndOrHistorySearch,
   coverByHistoryDestEndOrCommandMenuSearch,
   coverBySettingsDestEndOrLanguageInspect,
+  coverByUploadCompileOrFilesAppBlock,
   coverByRc23DestEnd,
   countWorkbookEvidencePackets,
   countWorkbookSuggestedQueues,
@@ -50,6 +51,8 @@ import {
   WORKBOOK_HISTORY_ORIGINAL_IDS,
   WORKBOOK_SETTINGS_FAMILY_ID,
   WORKBOOK_SETTINGS_UNBOUND_ORIGINAL_IDS,
+  WORKBOOK_ATTACH_FAMILY_ID,
+  WORKBOOK_UPLOAD_ANALYSIS_ORIGINAL_ID,
   WORKBOOK_EVIDENCE_PACKET_LABELS,
   WORKBOOK_RC23_REQUIREMENT_ID,
   WORKBOOK_MODELS_FAMILY_ID,
@@ -219,11 +222,29 @@ const similarCatalog = [
     name: "Inspect upsell",
     appMapId: "grok-web",
   },
+  { id: "test-grok-web-upload", name: "Upload a file while logged out", appMapId: "grok-web" },
+  {
+    id: "test-grok-web-signed-in-upload",
+    name: "Upload a file dest-end chip",
+    appMapId: "grok-web",
+  },
+  {
+    id: "test-grok-web-logged-out-upload-judged",
+    name: "Judge logged-out upload chrome",
+    appMapId: "grok-web",
+  },
+  { id: "test-android-upload-pdf", name: "Upload pdf in Files", appMapId: "android-primitives" },
+  { id: "test-grok-web-signed-in-attach", name: "Open attach menu", appMapId: "grok-web" },
+  {
+    id: "test-grok-ios-upload",
+    name: "iOS Files-app upload compile-block",
+    appMapId: "grok-ios",
+  },
 ];
 
 test("reviewed workbook freeze keeps 58 originals, 15 active families, and 5 exclusions", () => {
   const manifest = loadReviewedWorkbook();
-  assert.equal(manifest.revision, 16);
+  assert.equal(manifest.revision, 17);
   assert.equal(manifest.counts.originals, 58);
   assert.equal(manifest.counts.families, 17);
   assert.equal(manifest.counts.activeFamilies, 15);
@@ -746,6 +767,8 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
   assert.equal(rc23DestEndSatisfiesOriginal("settings", 41), false);
   assert.equal(rc23DestEndSatisfiesOriginal("settings", 43), false);
   assert.equal(rc23DestEndSatisfiesOriginal("settings", 44), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("attach", 53), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("attach", 5), false);
   assert.equal(rc23DestEndSatisfiesOriginal("private-chat", 4), false);
   assert.equal(coverByFindingSimilarlyNamedTest(composer, similarCatalog), false);
   assert.equal(send.status, "unbound");
@@ -1668,6 +1691,64 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
   );
   assert.equal(coverByRc23DestEnd({ id: 41 }, "settings"), false);
   assert.equal(coverByRc23DestEnd({ id: 43 }, "settings"), false);
+  const uploadAnalysis = manifest.originals.find((item) => item.id === 53)!;
+  const attachMenu = manifest.originals.find((item) => item.id === 4)!;
+  const fileConnectors = manifest.originals.find((item) => item.id === 5)!;
+  assert.equal(uploadAnalysis.family, WORKBOOK_ATTACH_FAMILY_ID);
+  assert.equal(WORKBOOK_UPLOAD_ANALYSIS_ORIGINAL_ID, 53);
+  assert.equal(uploadAnalysis.status, "unbound");
+  assert.equal(attachMenu.status, "bound");
+  assert.equal(fileConnectors.status, "excluded");
+  assert.equal(uploadAnalysis.requirementAction, "test-action");
+  assert.equal(uploadAnalysis.bindings.length, 0);
+  assert.match(uploadAnalysis.criteria, /accurate analysis of the file/u);
+  assert.equal(coverByUploadCompileOrFilesAppBlock(uploadAnalysis), false);
+  assert.equal(coverByRc23DestEnd(uploadAnalysis, "attach"), false);
+  const uploadKinds = new Set(uploadAnalysis.evidenceNeeded?.map((item) => item.kind) ?? []);
+  assert.equal(uploadKinds.has("receipt"), true);
+  assert.equal(uploadKinds.has("after"), true);
+  assert.equal(
+    (uploadAnalysis.evidenceNeeded?.filter((item) => item.kind === "receipt").length ?? 0) >= 2,
+    true,
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 53,
+      family: WORKBOOK_ATTACH_FAMILY_ID,
+      evidencePacket: "generated-output",
+    }),
+    "live-output",
+  );
+  assert.equal(
+    similarNamedTests(uploadAnalysis, similarCatalog).some(
+      (row) => row.id === "test-grok-web-signed-in-upload",
+    ),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(uploadAnalysis, similarCatalog).some(
+      (row) => row.id === "test-grok-web-upload",
+    ),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(uploadAnalysis, similarCatalog).some(
+      (row) => row.id === "test-android-upload-pdf",
+    ),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(uploadAnalysis, similarCatalog).some(
+      (row) => row.id === "test-grok-ios-upload",
+    ),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(uploadAnalysis, similarCatalog).some(
+      (row) => row.id === "test-grok-web-signed-in-attach",
+    ),
+    true,
+  );
   const slotsPath = join(
     dirname(fileURLToPath(import.meta.url)),
     "../../../tests/coverage/rc23-screenshot-first-slots.json",
