@@ -9,9 +9,12 @@
 # suggestedExecutionQueue is Fast UI | live-output | stateful-survival — not a Test binding.
 # RC-23 dest-ends bind orig 4 (attach menu view) and orig 40 (settings inventory view) only.
 # Composer-focus does not cover S03. Imagine dest-end does not cover orig 37/54.
+# RC-24 S02 shell packets stay unbound: explicit test-action evidence-needed
+# (before/after + receipt; logo adds sequence). Similar sidebar/logo/imagine/new-chat
+# names do not cover. Leftover dest skip is only GQA-004/040 capture-view.
 schemaVersion: 1
 id: grok-qa-workbook
-revision: 3
+revision: 4
 reviewedAt: "2026-09-16"
 source:
   workbook: grok-qa-graph.xlsx
@@ -205,6 +208,17 @@ originals:
     evidencePacket: transition
     queue: "fast-ui"
     suggestedExecutionQueue: fast-ui
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-thread-with-pencil
+        note: "Fresh Fast image of a chat where the header New Chat pencil is visible after a message exists. Send is setup, not S03 coverage. stabilityMeasured false."
+      - kind: receipt
+        id: tap-header-pencil
+        note: "TAP the header pencil actually executed (test-action). Leftover empty chat or leftover skip is not this original."
+      - kind: after
+        id: after-empty-new-chat
+        note: "Fresh Fast image of a new empty chat with no previous history. stabilityMeasured false."
     gates: []
     status: unbound
     bindings: []
@@ -664,6 +678,23 @@ originals:
     evidencePacket: transition
     queue: "fast-ui"
     suggestedExecutionQueue: fast-ui
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-shell-closed
+        note: "Fresh Fast image of signed-in shell with the side menu closed. Leftover already-open sidebar (grok-lab Automations + Toggle Sidebar) is dest leftover, not this before frame. stabilityMeasured false."
+      - kind: receipt
+        id: tap-open-menu
+        note: "TAP Menu / Toggle Sidebar to open actually executed. Capture-view leftover skip is only GQA-004/040; GQA-033 cannot skip the opener even when leftover is dest."
+      - kind: after
+        id: after-menu-open
+        note: "Fresh Fast image of the open side menu showing platform destinations. Open dest-end without close is not this original. stabilityMeasured false."
+      - kind: receipt
+        id: tap-close-menu
+        note: "TAP X or swipe close actually executed. Similar-named sidebar Tests do not cover."
+      - kind: after
+        id: after-menu-closed
+        note: "Fresh Fast image of the side menu closed. stabilityMeasured false."
     gates:
       - "Build is web. Execute each required entry-point; do not replace a navigation test with an already-open screen."
     status: unbound
@@ -692,6 +723,20 @@ originals:
     evidencePacket: transition
     queue: "fast-ui"
     suggestedExecutionQueue: fast-ui
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-each-source
+        note: "Before each logo TAP, a fresh Fast image of that source surface (Chat, Imagine, Voice, Projects, History). Leftover inspect-skip / home wait-for is not this. stabilityMeasured false."
+      - kind: receipt
+        id: tap-logo-each-source
+        note: "Each source TAP must execute (test-action). One leftover home chrome frame is not five destinations."
+      - kind: after
+        id: after-new-chat-or-voice
+        note: "After each logo TAP, a fresh Fast image of new chat (or voice chat if speak/voice mode is on). stabilityMeasured false."
+      - kind: sequence
+        id: logo-from-destinations
+        note: "Named Fast frames for Chat, Imagine, Voice, Projects, and History. iOS Imagine source stays Unbound — do not invent navigation.tab.imagine."
     gates:
       - Logo path web-called-out. iOS Imagine Unbound.
     status: unbound
@@ -706,6 +751,17 @@ originals:
     evidencePacket: transition
     queue: "fast-ui"
     suggestedExecutionQueue: fast-ui
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-menu-open
+        note: "Fresh Fast image of the open side menu with New Chat visible. Opening the menu is GQA-033, not this original. stabilityMeasured false."
+      - kind: receipt
+        id: tap-new-chat-in-menu
+        note: "TAP New Chat in the side menu actually executed. Header pencil is GQA-003, not this original."
+      - kind: after
+        id: after-empty-new-chat
+        note: "Fresh Fast image of a fresh empty chat. Sending a new message is auxiliary generated-output, not S03 coverage from this packet. stabilityMeasured false."
     gates: []
     status: unbound
     bindings: []
@@ -719,6 +775,17 @@ originals:
     evidencePacket: transition
     queue: "fast-ui"
     suggestedExecutionQueue: fast-ui
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-menu-open
+        note: "Fresh Fast image of the open side menu with Imagine visible. Freeze imagine dest-end is not a workbook binding. stabilityMeasured false."
+      - kind: receipt
+        id: tap-imagine-from-menu
+        note: "TAP Imagine from the side menu actually executed. Leftover Imagine feed skip is not this original. Do not invent iOS navigation.tab.imagine."
+      - kind: after
+        id: after-imagine-feed
+        note: "Fresh Fast image of the Imagine feed. iOS Imagine stays Unbound. Image-generation originals 16/17/50/54/55 stay unbound. stabilityMeasured false."
     gates:
       - "iOS Imagine Unbound: navigation.tab.imagine absent. Do not invent the tab. Android Imagine exists as a native companion of signed-in web Imagine, not a workbook binding."
     status: unbound

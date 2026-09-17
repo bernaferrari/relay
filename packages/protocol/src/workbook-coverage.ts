@@ -5,10 +5,13 @@
  * never marks an original covered. Every original has a smallest-sufficient
  * evidence packet or an authorized exclusion; that packet is not coverage.
  * Captions are display text; obligations are plannedSlots identities.
+ * S02 shell originals keep explicit test-action evidence-needed (before/after,
+ * receipt, sequence) while remaining unbound.
  */
 
 import { captureReviewSlotId, type CaptureReviewConfiguration } from "./capture-review.js";
 import { EXECUTION_QUEUES, type ExecutionQueue } from "./execution-queue.js";
+import { isRequirementActionKind, type RequirementActionKind } from "./recipes.js";
 
 export const WORKBOOK_COVERAGE_SCHEMA_VERSION = 1 as const;
 export const WORKBOOK_ORIGINAL_COUNT = 58;
@@ -17,6 +20,8 @@ export const WORKBOOK_ACTIVE_FAMILY_COUNT = 15;
 export const WORKBOOK_EXCLUDED_FAMILY_IDS = ["S15", "S17"] as const;
 export const WORKBOOK_GLOBAL_EXCLUSION_IDS = [5, 18, 19, 20, 42] as const;
 export const WORKBOOK_SURVIVAL_FAMILY_ID = "S16";
+export const WORKBOOK_SHELL_FAMILY_ID = "S02";
+export const WORKBOOK_SHELL_ORIGINAL_IDS = [3, 33, 35, 36, 37] as const;
 export const WORKBOOK_MATH_ORIGINAL_ID = 48;
 export const WORKBOOK_DOWNLOAD_ORIGINAL_ID = 16;
 
@@ -42,6 +47,44 @@ export const WORKBOOK_EVIDENCE_PACKET_LABELS: Record<WorkbookEvidencePacket, str
 
 export const WORKBOOK_SURVIVAL_PACKETS = ["sequence", "persistence"] as const;
 export type WorkbookSurvivalPacket = (typeof WORKBOOK_SURVIVAL_PACKETS)[number];
+
+/** Smallest-sufficient packet pieces. Criteria text stays even when unbound. */
+export const WORKBOOK_EVIDENCE_NEEDED_KINDS = [
+  "before",
+  "after",
+  "receipt",
+  "sequence",
+  "view",
+  "restart",
+] as const;
+export type WorkbookEvidenceNeededKind = (typeof WORKBOOK_EVIDENCE_NEEDED_KINDS)[number];
+
+export type WorkbookEvidenceNeededItem = {
+  kind: WorkbookEvidenceNeededKind;
+  id: string;
+  note: string;
+};
+
+/** Packet → required evidence-needed kinds. Extra kinds (sequence on a
+ * transition) are allowed. This is not a reviewed Test binding. */
+export function requiredEvidenceNeededKinds(
+  packet: WorkbookEvidencePacket,
+): readonly WorkbookEvidenceNeededKind[] {
+  switch (packet) {
+    case "view":
+      return ["view"];
+    case "transition":
+      return ["before", "after", "receipt"];
+    case "screenshot-receipt":
+      return ["view", "receipt"];
+    case "persistence":
+      return ["before", "restart", "after"];
+    case "sequence":
+      return ["sequence"];
+    case "generated-output":
+      return ["after"];
+  }
+}
 
 export const WORKBOOK_ORIGINAL_STATUSES = ["bound", "unbound", "excluded"] as const;
 export type WorkbookOriginalStatus = (typeof WORKBOOK_ORIGINAL_STATUSES)[number];
@@ -120,6 +163,17 @@ export function destEndViewPacketMayLeftoverSkip(original: {
       (binding) => binding.originalId === original.id && binding.evidencePacket === "view",
     )
   );
+}
+
+/** Test-action never leftover-skips, even when leftover already is dest.
+ * Capture-view leftover skip stays GQA-004/040 only. */
+export function workbookOriginalMayLeftoverSkip(original: {
+  id: number;
+  evidencePacket: WorkbookEvidencePacket;
+  requirementAction?: RequirementActionKind;
+}): boolean {
+  if (original.requirementAction === "test-action") return false;
+  return destEndViewPacketMayLeftoverSkip(original);
 }
 
 /** Checkpoints that must not auto-bind similarly named originals. */
@@ -283,6 +337,11 @@ export type WorkbookOriginal = {
   status: WorkbookOriginalStatus;
   exclusion?: WorkbookExclusion;
   bindings: readonly WorkbookReviewedBinding[];
+  /** Capture-view may leftover-skip dest chrome only for GQA-004/040.
+   * Omitted dest-end stays test-action. */
+  requirementAction?: RequirementActionKind;
+  /** Explicit before/after, receipt, or sequence pieces. Presence is not coverage. */
+  evidenceNeeded?: readonly WorkbookEvidenceNeededItem[];
 };
 
 export type WorkbookFamily = {
@@ -449,6 +508,28 @@ function parseExclusion(raw: unknown, label: string): WorkbookExclusion {
   };
 }
 
+const EVIDENCE_NEEDED_KIND = new Set<string>(WORKBOOK_EVIDENCE_NEEDED_KINDS);
+
+function parseEvidenceNeededItem(raw: unknown, label: string): WorkbookEvidenceNeededItem {
+  if (!isRecord(raw)) throw new Error(`${label} must be an object`);
+  const kindRaw = text(raw.kind, `${label}.kind`);
+  if (!EVIDENCE_NEEDED_KIND.has(kindRaw)) {
+    throw new Error(`${label}.kind must be before, after, receipt, sequence, view, or restart`);
+  }
+  return {
+    kind: kindRaw as WorkbookEvidenceNeededKind,
+    id: text(raw.id, `${label}.id`),
+    note: text(raw.note, `${label}.note`),
+  };
+}
+
+function parseEvidenceNeeded(raw: unknown, label: string): WorkbookEvidenceNeededItem[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new Error(`${label} must be a non-empty array`);
+  }
+  return raw.map((item, index) => parseEvidenceNeededItem(item, `${label}[${index}]`));
+}
+
 function parseOriginal(raw: unknown, label: string): WorkbookOriginal {
   if (!isRecord(raw)) throw new Error(`${label} must be an object`);
   const id = num(raw.id, `${label}.id`);
@@ -486,6 +567,20 @@ function parseOriginal(raw: unknown, label: string): WorkbookOriginal {
   if (status === "unbound" && bindings.length > 0) {
     throw new Error(`${label} unbound original cannot carry bindings`);
   }
+  const evidenceNeeded =
+    raw.evidenceNeeded === undefined
+      ? undefined
+      : parseEvidenceNeeded(raw.evidenceNeeded, `${label}.evidenceNeeded`);
+  let requirementAction: RequirementActionKind | undefined;
+  if (raw.requirementAction !== undefined) {
+    if (
+      typeof raw.requirementAction !== "string" ||
+      !isRequirementActionKind(raw.requirementAction)
+    ) {
+      throw new Error(`${label}.requirementAction must be capture-view or test-action`);
+    }
+    requirementAction = raw.requirementAction;
+  }
   return {
     id,
     gqaId: text(raw.gqaId, `${label}.gqaId`),
@@ -501,6 +596,8 @@ function parseOriginal(raw: unknown, label: string): WorkbookOriginal {
     status,
     ...(exclusion ? { exclusion } : {}),
     bindings,
+    ...(requirementAction ? { requirementAction } : {}),
+    ...(evidenceNeeded ? { evidenceNeeded } : {}),
   };
 }
 
@@ -694,6 +791,9 @@ function distinctiveNeedles(original: WorkbookOriginal): readonly string[] {
   const extra: string[] = [];
   if (original.id === 5) extra.push("connector", "connectors");
   if (original.id === 8) extra.push("preset", "presets", "customize");
+  if (original.id === 33) extra.push("sidebar", "menu");
+  if (original.id === 3 || original.id === 36) extra.push("new-chat", "newchat");
+  if (original.id === 35) extra.push("logo");
   if (original.id === 37 || original.id === 16 || original.id === 17) extra.push("imagine");
   if (original.id === 42) extra.push("dictation");
   if (original.id === 50) extra.push("heavy", "expert");
@@ -869,6 +969,8 @@ export function workbookEvidencePolicyError(
     | "status"
     | "exclusion"
     | "criteria"
+    | "requirementAction"
+    | "evidenceNeeded"
   >,
 ): string | undefined {
   const label = `original ${original.id}`;
@@ -909,6 +1011,36 @@ export function workbookEvidencePolicyError(
   const expected = suggestedExecutionQueueForOriginal(original);
   if (original.suggestedExecutionQueue !== expected) {
     return `${label} suggestedExecutionQueue must be ${expected} for packet ${original.evidencePacket}`;
+  }
+  const needed = workbookEvidenceNeededError(original);
+  if (needed) return needed;
+  return undefined;
+}
+
+export function workbookEvidenceNeededError(
+  original: Pick<
+    WorkbookOriginal,
+    "id" | "family" | "evidencePacket" | "requirementAction" | "evidenceNeeded"
+  >,
+): string | undefined {
+  const label = `original ${original.id}`;
+  if (original.family === WORKBOOK_SHELL_FAMILY_ID) {
+    if (original.requirementAction !== "test-action") {
+      return `${label} S02 must be test-action — leftover dest skip is not open+close, logo from destinations, or New Chat`;
+    }
+    if (!original.evidenceNeeded || original.evidenceNeeded.length === 0) {
+      return `${label} S02 needs explicit evidence-needed (before/after, receipt, sequence)`;
+    }
+  }
+  if (!original.evidenceNeeded) return undefined;
+  const kinds = new Set(original.evidenceNeeded.map((item) => item.kind));
+  for (const required of requiredEvidenceNeededKinds(original.evidencePacket)) {
+    if (!kinds.has(required)) {
+      return `${label} ${original.evidencePacket} packet needs ${required} evidence`;
+    }
+  }
+  if (original.requirementAction === "test-action" && destEndViewPacketMayLeftoverSkip(original)) {
+    return `${label} GQA-004/040 leftover skip cannot be test-action`;
   }
   return undefined;
 }

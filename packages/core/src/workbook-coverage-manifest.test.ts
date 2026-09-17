@@ -21,6 +21,8 @@ import {
   workbookOriginalObligationIdentity,
   WORKBOOK_EVIDENCE_PACKET_LABELS,
   WORKBOOK_RC23_REQUIREMENT_ID,
+  WORKBOOK_SHELL_FAMILY_ID,
+  WORKBOOK_SHELL_ORIGINAL_IDS,
   WORKBOOK_SURVIVAL_FAMILY_ID,
   RC23_SCREENSHOT_FIRST_PLATFORM_CONFIGURATION,
   RC23_SCREENSHOT_FIRST_REQUIREMENT_ID,
@@ -53,7 +55,7 @@ const similarCatalog = [
 
 test("reviewed workbook freeze keeps 58 originals, 15 active families, and 5 exclusions", () => {
   const manifest = loadReviewedWorkbook();
-  assert.equal(manifest.revision, 3);
+  assert.equal(manifest.revision, 4);
   assert.equal(manifest.counts.originals, 58);
   assert.equal(manifest.counts.families, 17);
   assert.equal(manifest.counts.activeFamilies, 15);
@@ -372,6 +374,21 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
   assert.equal(sidebar.status, "unbound");
   assert.equal(logo.status, "unbound");
   assert.equal(puppy.status, "unbound");
+  const shell = manifest.originals.filter((item) => item.family === WORKBOOK_SHELL_FAMILY_ID);
+  assert.deepEqual(
+    shell.map((item) => item.id),
+    [...WORKBOOK_SHELL_ORIGINAL_IDS],
+  );
+  assert.equal(
+    shell.every(
+      (item) =>
+        item.status === "unbound" &&
+        item.requirementAction === "test-action" &&
+        (item.evidenceNeeded?.length ?? 0) > 0 &&
+        item.bindings.length === 0,
+    ),
+    true,
+  );
   const slotsPath = join(
     dirname(fileURLToPath(import.meta.url)),
     "../../../tests/coverage/rc23-screenshot-first-slots.json",

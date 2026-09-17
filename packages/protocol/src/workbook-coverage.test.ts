@@ -9,11 +9,16 @@ import {
   parseWorkbookCoverageManifest,
   rc23DestEndSatisfiesOriginal,
   rc23WorkbookBoundOriginalIds,
+  requiredEvidenceNeededKinds,
   similarNamedTests,
   suggestedExecutionQueueForOriginal,
+  workbookEvidenceNeededError,
   workbookEvidencePolicyError,
+  workbookOriginalMayLeftoverSkip,
   workbookOriginalObligationIdentity,
   workbookRc23BindingError,
+  WORKBOOK_SHELL_FAMILY_ID,
+  WORKBOOK_SHELL_ORIGINAL_IDS,
   type WorkbookCoverageManifest,
   type WorkbookOriginal,
 } from "./workbook-coverage.js";
@@ -353,6 +358,30 @@ test("capture-view leftover skip is only GQA-004 attach and GQA-040 Settings inv
   assert.equal(destEndViewPacketMayLeftoverSkip({ id: 35, evidencePacket: "transition" }), false);
   assert.equal(destEndViewPacketMayLeftoverSkip({ id: 43, evidencePacket: "view" }), false);
   assert.equal(destEndViewPacketMayLeftoverSkip({ id: 4, evidencePacket: "transition" }), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 33,
+      evidencePacket: "transition",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 4,
+      evidencePacket: "view",
+      requirementAction: "capture-view",
+    }),
+    true,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 4,
+      evidencePacket: "view",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
 });
 
 test("S16 cannot be single-view Fast UI", () => {
@@ -458,4 +487,70 @@ test("complete workbook cannot bind orig 6 via composer-focus dest-end", () => {
     },
   ]);
   assert.match(error ?? "", /bound original ids must be 4, 40/u);
+});
+
+test("S02 packets stay unbound and need test-action before/after plus receipt", () => {
+  assert.deepEqual([...WORKBOOK_SHELL_ORIGINAL_IDS], [3, 33, 35, 36, 37]);
+  assert.deepEqual(requiredEvidenceNeededKinds("transition"), ["before", "after", "receipt"]);
+  const missing = original({
+    id: 33,
+    name: "Open/close side menu",
+    family: WORKBOOK_SHELL_FAMILY_ID,
+    evidencePacket: "transition",
+    status: "unbound",
+  });
+  assert.match(
+    workbookEvidenceNeededError(missing) ?? "",
+    /S02 must be test-action|S02 needs explicit evidence-needed/u,
+  );
+  const packet = original({
+    id: 33,
+    name: "Open/close side menu",
+    family: WORKBOOK_SHELL_FAMILY_ID,
+    evidencePacket: "transition",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-shell-closed",
+        note: "Closed shell. Leftover open sidebar is dest leftover, not this frame.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-open-menu",
+        note: "TAP open actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-menu-open",
+        note: "Open menu destinations.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-close-menu",
+        note: "TAP close actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-menu-closed",
+        note: "Closed menu.",
+      },
+    ],
+    status: "unbound",
+  });
+  assert.equal(workbookEvidenceNeededError(packet), undefined);
+  assert.equal(workbookEvidencePolicyError(packet), undefined);
+  assert.equal(originalIsCovered(packet), false);
+  const report = evaluateWorkbookCoverage(fixture({ originals: [packet] }), [
+    { id: "test-grok-web-signed-in-sidebar", name: "Toggle sidebar" },
+  ]);
+  assert.deepEqual(report.coveredOriginalIds, []);
+  assert.equal(report.unboundOriginalIds.includes(33), true);
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 33 && row.testId === "test-grok-web-signed-in-sidebar",
+    ),
+    true,
+  );
+  assert.equal(coverByRc23DestEnd({ id: 33 }, "sidebar"), false);
 });
