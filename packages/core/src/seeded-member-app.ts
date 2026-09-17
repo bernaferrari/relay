@@ -59,7 +59,7 @@ export function verifySeededMemberSession(
   const role = parts[1];
   const issuedAt = Number(parts[2]);
   const digest = parts[3];
-  if (!ROLE_SET.has(role) || !Number.isSafeInteger(issuedAt) || !digest) return undefined;
+  if (!role || !ROLE_SET.has(role) || !Number.isSafeInteger(issuedAt) || !digest) return undefined;
   const body = `v1.${role}.${issuedAt}`;
   if (!equalHex(hmac(body, secret), digest)) return undefined;
   return { role: role as SeededMemberRole, issuedAt };

@@ -2,7 +2,7 @@ import type { AppMapScenarioTestStep, AppMapTestStepPlacement } from "@relay/pro
 import { type StepEntry } from "../components/test-editor-step";
 
 export type PendingCheckpointDraft = {
-  step: AppMapScenarioTestStep;
+  step: Extract<AppMapScenarioTestStep, { kind: "validation" }>;
   placement?: AppMapTestStepPlacement;
   index: number;
 };

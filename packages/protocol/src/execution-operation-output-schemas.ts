@@ -1,4 +1,5 @@
 import * as z from "zod/v4";
+import { captureReviewPlannedSlotSchema } from "./capture-review-schema.js";
 import { browserCaseProfileSchema } from "./browser-case-profile.js";
 import { combineCampaignAdmissionSchema } from "./campaign-capacity-operation-output-schemas.js";
 import {
@@ -545,6 +546,7 @@ export const combineCampaignSchema = z
             ])
             .optional(),
           target: executionTargetSchema.optional(),
+          plannedCaptures: z.array(captureReviewPlannedSlotSchema).optional(),
           childIntentDigest: z.string(),
           outerIntentDigest: z.string(),
           wrapperGraphDigest: z.string(),

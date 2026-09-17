@@ -980,8 +980,12 @@ test("dest-end leftover skip does not gate the Private Chat exit tap after dest 
   assert.equal(steps[4]?.when, undefined);
   assert.equal(steps[5]?.when, undefined);
   assert.equal(steps[6]?.when, undefined);
-  assert.deepEqual(steps[5]?.target, { label: "New temporary conversation" });
-  assert.deepEqual(steps[6]?.target, { identifier: "voice.speak.button" });
+  assert.deepEqual(steps[5]?.kind === "tap" ? steps[5].target : undefined, {
+    label: "New temporary conversation",
+  });
+  assert.deepEqual(steps[6]?.kind === "wait-for" ? steps[6].target : undefined, {
+    identifier: "voice.speak.button",
+  });
 });
 
 test("dest-end leftover skip is inspect-only and cannot prove a required Settings tap", () => {
@@ -1201,7 +1205,7 @@ test("coverage:transition unsigned Settings leftover dest skip gates TAP on Ligh
     steps.map((step) => step.kind),
     ["wait-for", "tap", "wait-for", "expect-set"],
   );
-  assert.deepEqual(steps[2]?.target, { label: "Light" });
+  assert.deepEqual(steps[2]?.kind === "wait-for" ? steps[2].target : undefined, { label: "Light" });
   const destWhen = { target: { label: "Light" }, condition: "absent" as const };
   assert.deepEqual(steps[0]?.when, destWhen);
   assert.deepEqual(steps[1]?.when, destWhen);
@@ -1232,7 +1236,9 @@ test("dest-end leftover skip keeps open-sidebar chrome when Settings unique wait
   const steps = plan.recipes[plan.rootRecipeId]!.steps;
   const sidebarWhen = { target: { identifier: "sidebar.settings" }, condition: "absent" as const };
   assert.deepEqual(
-    steps.map((step) => `${step.kind}:${step.target?.identifier ?? ""}`),
+    steps.map(
+      (step) => `${step.kind}:${("target" in step ? step.target?.identifier : undefined) ?? ""}`,
+    ),
     [
       "wait-for:composer",
       "tap:sidebar.open",
@@ -1373,7 +1379,8 @@ test("leftover conversation dest-screen still uses wait-for as the origin proof"
     steps.map((step) => step.kind),
     ["wait-for", "tap", "expect-screen"],
   );
-  assert.equal(steps.at(-1)?.kind === "expect-screen" ? steps.at(-1).screenId : undefined, "home");
+  const lastStep = steps.at(-1);
+  assert.equal(lastStep?.kind === "expect-screen" ? lastStep.screenId : undefined, "home");
 });
 
 test("dest-end Test/Flow skips origin expect-screen when wait-for is first", () => {

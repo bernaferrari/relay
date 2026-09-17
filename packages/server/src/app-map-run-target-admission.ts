@@ -49,7 +49,7 @@ export function assertReviewedBrowserTargetProfile(input: {
 }
 
 export function frozenEvidenceTargetProfileForTarget(input: {
-  target: Pick<OperationInput<"app-map.test.run">["target"], "targetId" | "platform">;
+  target: Pick<NonNullable<OperationInput<"app-map.test.run">["target"]>, "targetId" | "platform">;
   profiles: AppMapCompiledRuntimeTargetProfile[] | undefined;
 }): AppMapCompiledRuntimeTargetProfile | undefined {
   const profiles = [

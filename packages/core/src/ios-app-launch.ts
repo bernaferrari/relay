@@ -4,7 +4,7 @@
  * then the exclusive runner. When that path is wedged, launch still tests via
  * a short `devicectl` call or go-ios (after the iOS 17+ tunnel).
  */
-import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -389,7 +389,7 @@ function tunnelLooksReady(listed: string): boolean {
 export type EnsureGoIosTunnelInput = {
   bin?: string;
   run?: CommandRunner;
-  spawnTunnel?: typeof spawn;
+  spawnTunnel?: (command: string, args: string[], options: SpawnOptions) => ChildProcess;
   probeInfoPort?: (port: string) => Promise<boolean>;
 };
 
@@ -417,7 +417,10 @@ async function goIosTunnelIsLive(
   return goIosTunnelListingLooksReady(bin, run, 5_000);
 }
 
-function startGoIosTunnelChild(bin: string, spawnTunnel: typeof spawn): ChildProcess {
+function startGoIosTunnelChild(
+  bin: string,
+  spawnTunnel: NonNullable<EnsureGoIosTunnelInput["spawnTunnel"]>,
+): ChildProcess {
   const child = spawnTunnel(
     bin,
     ["tunnel", "start", "--userspace", "--tunnel-info-port", DEFAULT_TUNNEL_INFO_PORT],

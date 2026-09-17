@@ -123,18 +123,16 @@ export function seededMemberHomeVariant(input: {
     observation: {
       fingerprint: SEEDED_MEMBER_HOME_FINGERPRINT,
       nodes: [
-        { role: "heading", label: "Workspace home", visibleToUser: true },
+        { role: "heading", label: "Workspace home" },
         {
           role: "text",
           identifier: "session-role",
           label: input.role,
-          visibleToUser: true,
         },
         {
           role: "link",
           identifier: "open-settings",
           label: "Settings",
-          visibleToUser: true,
           hittable: true,
         },
       ],

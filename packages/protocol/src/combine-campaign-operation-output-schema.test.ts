@@ -177,3 +177,51 @@ test("Repeat failure clusters require immutable digest and retain per-cell evide
     /digest/u,
   );
 });
+
+test("campaign API preserves planned captures before a case has a Run", () => {
+  const plannedCaptures = [
+    {
+      checkpointId: "settings",
+      caption: "Settings",
+      configuration: { browser: "chromium", account: "member", locale: "en-US" },
+      invocation: "root/settings",
+      iteration: 0,
+      attempt: 1,
+      phase: "dest",
+      lookFor: "Member settings",
+      stepId: "capture-settings",
+      intervalMs: 0,
+    },
+  ];
+  const planned = {
+    ...campaign,
+    cases: [
+      {
+        index: 0,
+        cellId: "settings-member",
+        testId: "settings",
+        world: "Member",
+        values: {},
+        targetProfileId: "member",
+        childIntentDigest: "child",
+        outerIntentDigest: "outer",
+        wrapperGraphDigest: "graph",
+        staticInputDigest: "inputs",
+        phase: "pilot",
+        status: "pending",
+        plannedCaptures,
+      },
+    ],
+  };
+  const parsed = combineCampaignSchema.parse(planned);
+  assert.deepEqual(parsed.cases[0]?.plannedCaptures, plannedCaptures);
+  assert.equal(parsed.cases[0]?.runId, undefined);
+  assert.throws(
+    () =>
+      combineCampaignSchema.parse({
+        ...planned,
+        cases: [{ ...planned.cases[0], plannedCaptures: [{ caption: "No identity" }] }],
+      }),
+    /checkpointId/,
+  );
+});

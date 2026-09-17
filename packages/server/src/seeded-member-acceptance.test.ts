@@ -28,7 +28,7 @@ import {
   seededMemberAccountVariable,
   seededMemberCombine,
   seededMemberConnectionCreateInput,
-  seededMemberGraphTest,
+  seededMemberSettingsTest,
   seededMemberHomeVariant,
   seededMemberLane,
   seededMemberOpenSettingsConnection,
@@ -150,7 +150,7 @@ test(
           appMapId: SEEDED_MEMBER_APP_MAP_ID,
           testId: SEEDED_MEMBER_TEST_ID,
           expectedRevision: revision,
-          test: seededMemberGraphTest({ includeAccidental: true, scope }),
+          test: seededMemberSettingsTest({ includeAccidental: true, scope }),
         })
       ).appMap.revision;
       revision = (

@@ -596,6 +596,7 @@ export type AppMapOperationMap = {
       laneId?: string;
       expectedRevision?: number;
       target?: AuthoringTarget;
+      targetProfileId?: string;
       /** Optional explicit saved profile scope. Relay binds it to this exact
        * target before control, then preflights the same frozen plan it queues.
        * `ios` and `android` follow a linked native companion Test. */

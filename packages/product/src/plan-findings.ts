@@ -223,7 +223,7 @@ export function planFindingsHasFailedCases(report: CombineEvidenceAnalysisReport
 export function planFindingsEmptyCopy(
   report: CombineEvidenceAnalysisReport,
   grid?: { hasProblems?: boolean },
-): readonly string[] {
+): readonly [string, string, ...string[]] {
   const gridFailed = planFindingsHasFailedCases(report) || grid?.hasProblems;
   if (!report.analysis.findings.length && gridFailed) {
     return PLAN_FINDINGS_FAILED_CELL_GUIDANCE;

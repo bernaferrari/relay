@@ -392,7 +392,7 @@ test("overlay fixtures do not keep the unsigned browser profile id", () => {
     source: "browser" as const,
     platform: "browser" as const,
     name: "grok-com",
-    capabilities: [] as const,
+    capabilities: [],
     observedAt: 1,
     browserCaseProfile: compileBrowserEnvironment({
       engine: "chromium",

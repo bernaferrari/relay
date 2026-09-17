@@ -107,6 +107,7 @@ export type AppMapValidationRecipeStep =
           | "wait-response"
           | "extract"
           | "identity-ignore"
+          | "upload"
           | "screenshot";
       }
     >

@@ -145,7 +145,7 @@ export function screenExpectation(
     if (!nodes?.length) continue;
     const hosted = observeScreenIdentityForHost(nodes as SnapshotNode[], {
       appMapId: map.id,
-      browserTargetId: variant.targetProfile?.targetId,
+      browserTargetId: variant?.targetProfile?.targetId,
     });
     if (hosted.fingerprint) aliases.add(hosted.fingerprint);
   }

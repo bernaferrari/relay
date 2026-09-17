@@ -115,23 +115,23 @@ test("freeze mapping stamps dest-phase on web/iOS artifacts; Android dest-wait s
   const runs = rc23ScreenshotFirstRuns();
   const webHome = runs.find(
     (run) =>
-      run.plannedSlots[0]?.checkpointId === "home-chrome" &&
-      run.plannedSlots[0]?.configuration?.browser === "grok-com",
+      run.plannedSlots?.[0]?.checkpointId === "home-chrome" &&
+      run.plannedSlots?.[0]?.configuration?.browser === "grok-com",
   )!;
   const iosHome = runs.find(
     (run) =>
-      run.plannedSlots[0]?.checkpointId === "home-chrome" &&
-      run.plannedSlots[0]?.configuration?.app === "ai.x.GrokApp",
+      run.plannedSlots?.[0]?.checkpointId === "home-chrome" &&
+      run.plannedSlots?.[0]?.configuration?.app === "ai.x.GrokApp",
   )!;
   const androidHome = runs.find(
     (run) =>
-      run.plannedSlots[0]?.checkpointId === "home-chrome" &&
-      run.plannedSlots[0]?.configuration?.app === "android",
+      run.plannedSlots?.[0]?.checkpointId === "home-chrome" &&
+      run.plannedSlots?.[0]?.configuration?.app === "android",
   )!;
   const iosImagine = runs.find(
     (run) =>
-      run.plannedSlots[0]?.checkpointId === "imagine" &&
-      run.plannedSlots[0]?.configuration?.app === "ai.x.GrokApp",
+      run.plannedSlots?.[0]?.checkpointId === "imagine" &&
+      run.plannedSlots?.[0]?.configuration?.app === "ai.x.GrokApp",
   )!;
   assert.deepEqual(captureReviewIdentityFramePaths(webHome.artifacts ?? []), [
     "frames/home-chrome-web.png",
@@ -143,7 +143,7 @@ test("freeze mapping stamps dest-phase on web/iOS artifacts; Android dest-wait s
   assert.deepEqual(captureReviewIdentityFramePaths(iosImagine.artifacts ?? []), []);
   assert.equal(
     runs
-      .filter((run) => run.plannedSlots[0]?.configuration?.browser === "grok-com")
+      .filter((run) => run.plannedSlots?.[0]?.configuration?.browser === "grok-com")
       .every((run) =>
         (run.artifacts ?? []).some((artifact) => {
           const phase = (artifact.data as { phase?: string } | undefined)?.phase;
@@ -155,7 +155,7 @@ test("freeze mapping stamps dest-phase on web/iOS artifacts; Android dest-wait s
   );
   assert.equal(
     runs
-      .filter((run) => run.plannedSlots[0]?.configuration?.app === "ai.x.GrokApp")
+      .filter((run) => run.plannedSlots?.[0]?.configuration?.app === "ai.x.GrokApp")
       .filter((run) => (run.artifacts ?? []).length > 0)
       .every((run) =>
         (run.artifacts ?? []).some(
@@ -166,7 +166,7 @@ test("freeze mapping stamps dest-phase on web/iOS artifacts; Android dest-wait s
   );
   assert.equal(
     runs
-      .filter((run) => run.plannedSlots[0]?.configuration?.app === "android")
+      .filter((run) => run.plannedSlots?.[0]?.configuration?.app === "android")
       .every((run) =>
         (run.artifacts ?? []).every(
           (artifact) => (artifact.data as { phase?: string } | undefined)?.phase === undefined,
@@ -188,8 +188,8 @@ test("freeze dest identity stays dest wait-for when leftover Close last-frame is
   const runs = rc23ScreenshotFirstRuns();
   const webHome = runs.find(
     (run) =>
-      run.plannedSlots[0]?.checkpointId === "home-chrome" &&
-      run.plannedSlots[0]?.configuration?.browser === "grok-com",
+      run.plannedSlots?.[0]?.checkpointId === "home-chrome" &&
+      run.plannedSlots?.[0]?.configuration?.browser === "grok-com",
   )!;
   const leftoverClose = {
     kind: "capture-review",

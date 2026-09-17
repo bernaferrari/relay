@@ -3166,7 +3166,7 @@ describe("runRecipeStep conditional policy", () => {
         return Promise.reject(new Error("find could not read the current accessibility tree"));
       },
     });
-    const ctx = { log: (line: string) => logs.push(line), job, runtime: {} };
+    const ctx: RecipeStepContext = { log: (line: string) => logs.push(line), job, runtime: {} };
 
     await runRecipeStep(
       device,
@@ -3180,7 +3180,7 @@ describe("runRecipeStep conditional policy", () => {
     );
 
     assert.equal(finds, 0);
-    assert.equal(ctx.runtime.leftoverInspectUnproven, true);
+    assert.equal(ctx.runtime?.leftoverInspectUnproven, true);
     assert.match(logs[0] ?? "", /leftover inspect peek does not read the tree/);
     assert.equal(job.artifacts[0]?.kind, "optional-step-skipped");
   });
@@ -3200,7 +3200,7 @@ describe("runRecipeStep conditional policy", () => {
         return Promise.resolve();
       },
     });
-    const ctx = { log: (line: string) => logs.push(line), job, runtime: {} };
+    const ctx: RecipeStepContext = { log: (line: string) => logs.push(line), job, runtime: {} };
 
     await runRecipeStep(
       device,
@@ -3224,7 +3224,7 @@ describe("runRecipeStep conditional policy", () => {
 
     assert.equal(finds, 0);
     assert.equal(pressed, false);
-    assert.equal(ctx.runtime.leftoverInspectUnproven, false);
+    assert.equal(ctx.runtime?.leftoverInspectUnproven, false);
     assert.match(logs.at(-1) ?? "", /leftover opener unproven/);
     assert.equal(job.artifacts.at(-1)?.kind, "conditional-step-skipped");
     assert.equal((job.artifacts.at(-1)?.data as { observed?: string }).observed, "unproven");
@@ -3238,7 +3238,11 @@ describe("runRecipeStep conditional policy", () => {
         return Promise.resolve({});
       },
     });
-    const ctx = { log: () => {}, job: { artifacts: [] } as unknown as TestJob, runtime: {} };
+    const ctx: RecipeStepContext = {
+      log: () => {},
+      job: { artifacts: [] } as unknown as TestJob,
+      runtime: {},
+    };
 
     await runRecipeStep(
       device,
@@ -3261,7 +3265,7 @@ describe("runRecipeStep conditional policy", () => {
     );
 
     assert.equal(finds, 1);
-    assert.equal(ctx.runtime.leftoverInspectUnproven, false);
+    assert.equal(ctx.runtime?.leftoverInspectUnproven, false);
   });
 
   it("skips a present-condition leftover tap when the accessibility tree is unreadable", async () => {
@@ -3667,6 +3671,10 @@ describe("runRecipeStep expect-screen", () => {
   it("never lets a delayed pre-tap iOS tree satisfy a later expect-screen", async () => {
     const serial = "ios-delayed-expect-fence";
     let snapshotCalls = 0;
+    let snapshotStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      snapshotStarted = resolve;
+    });
     let releasePreTapTree!: (value: { nodes: typeof nodes }) => void;
     const preTapTree = new Promise<{ nodes: typeof nodes }>((resolve) => {
       releasePreTapTree = resolve;
@@ -3674,6 +3682,7 @@ describe("runRecipeStep expect-screen", () => {
     const device = stubDevice({
       snapshot: () => {
         snapshotCalls += 1;
+        snapshotStarted();
         return snapshotCalls === 1 ? preTapTree : Promise.resolve({ nodes: [] });
       },
       press: () => Promise.resolve({}),
@@ -3683,7 +3692,7 @@ describe("runRecipeStep expect-screen", () => {
     const delayedRead = runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
       snapshot(device),
     );
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await started;
 
     // The tap is acknowledged before the old traversal completes.
     await runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
@@ -3693,7 +3702,8 @@ describe("runRecipeStep expect-screen", () => {
     // An expect-screen for the old fingerprint must not pass by sharing that
     // delayed tree. It receives an honest unavailable semantic attempt until
     // XCTest settles, rather than opening an overlapping tree request.
-    await assert.rejects(
+    const rejectedOldRead = assert.rejects(delayedRead, IosSnapshotStaleAfterInputError);
+    const rejectedExpectation = assert.rejects(
       runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>
         runExpectScreenStep(
           device,
@@ -3714,10 +3724,10 @@ describe("runRecipeStep expect-screen", () => {
       ),
       /screen-inspection-unavailable:|expect-screen/u,
     );
+    await new Promise<void>((resolve) => setImmediate(resolve));
     assert.equal(snapshotCalls, 1, "post-tap expect must not overlap the old XCTest read");
-
     releasePreTapTree({ nodes });
-    await assert.rejects(delayedRead, IosSnapshotStaleAfterInputError);
+    await Promise.all([rejectedOldRead, rejectedExpectation]);
   });
 
   it("re-observes once after a transient Android AX timeout without retrying the transport three times", async () => {
@@ -4254,7 +4264,7 @@ describe("runRecipeStep expect-screen", () => {
           artifacts: [],
           resolvedInputs: {},
           action: "app-map:grok-web:test:home:root:r1",
-        } as TestJob,
+        } as unknown as TestJob,
         runtime: {
           identityIgnoreRegions: [
             { name: "sidebar conversation titles", x: 0, y: 0.4, width: 0.24, height: 0.48 },

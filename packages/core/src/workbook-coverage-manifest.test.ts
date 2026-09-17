@@ -811,7 +811,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     ),
     true,
   );
-  const switchKinds = new Set(models.evidenceNeeded?.map((item) => item.kind) ?? []);
+  const switchKinds = new Set<string>(models.evidenceNeeded?.map((item) => item.kind) ?? []);
   assert.equal(
     ["before", "after", "receipt"].every((kind) => switchKinds.has(kind)),
     true,
@@ -842,7 +842,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     ),
     true,
   );
-  const mathKinds = new Set(
+  const mathKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 48)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -882,7 +882,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     ),
     true,
   );
-  const signOutKinds = new Set(
+  const signOutKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 44)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -931,7 +931,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     ),
     true,
   );
-  const sendKinds = new Set(
+  const sendKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 1)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -939,7 +939,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     ["before", "after", "receipt"].every((kind) => sendKinds.has(kind)),
     true,
   );
-  const multilineKinds = new Set(
+  const multilineKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 2)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -947,7 +947,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     ["view", "receipt"].every((kind) => multilineKinds.has(kind)),
     true,
   );
-  const typeaheadKinds = new Set(
+  const typeaheadKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 6)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -997,7 +997,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     ),
     true,
   );
-  const autoFastKinds = new Set(
+  const autoFastKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 28)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1058,7 +1058,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     ),
     true,
   );
-  const toolbarKinds = new Set(
+  const toolbarKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 9)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1066,7 +1066,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     ["view", "receipt"].every((kind) => toolbarKinds.has(kind)),
     true,
   );
-  const chipKinds = new Set(
+  const chipKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 10)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1074,12 +1074,12 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     ["before", "after", "receipt"].every((kind) => chipKinds.has(kind)),
     true,
   );
-  const autoscrollKinds = new Set(
+  const autoscrollKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 12)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
   assert.equal(autoscrollKinds.has("sequence"), true);
-  const shareKinds = new Set(
+  const shareKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 13)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1138,7 +1138,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     ),
     true,
   );
-  const sourcesKinds = new Set(
+  const sourcesKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 11)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1149,7 +1149,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
       ?.evidenceNeeded?.filter((item) => item.kind === "receipt").length ?? 0) >= 2,
     true,
   );
-  const slackKinds = new Set(
+  const slackKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 30)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1160,7 +1160,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
       ?.evidenceNeeded?.filter((item) => item.kind === "receipt").length ?? 0) >= 2,
     true,
   );
-  const newsKinds = new Set(
+  const newsKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 56)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1235,7 +1235,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     ),
     true,
   );
-  const heavyKinds = new Set(
+  const heavyKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 31)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1246,7 +1246,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
       ?.evidenceNeeded?.filter((item) => item.kind === "receipt").length ?? 0) >= 2,
     true,
   );
-  const heavyNewsKinds = new Set(
+  const heavyNewsKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 57)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1257,7 +1257,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
       ?.evidenceNeeded?.filter((item) => item.kind === "receipt").length ?? 0) >= 2,
     true,
   );
-  const investmentKinds = new Set(
+  const investmentKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 58)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1340,7 +1340,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     ),
     true,
   );
-  const downloadKinds = new Set(
+  const downloadKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 16)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1364,13 +1364,13 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
       .find((item) => item.id === 50)
       ?.evidenceNeeded?.filter((item) => item.kind === "receipt").length ?? 0;
   assert.equal(fiveImageReceipts >= 2, true);
-  const puppyKinds = new Set(
+  const puppyKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 54)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
   assert.equal(puppyKinds.has("receipt"), true);
   assert.equal(puppyKinds.has("after"), true);
-  const hatKinds = new Set(
+  const hatKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 55)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1443,7 +1443,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     ),
     true,
   );
-  const imageSearchKinds = new Set(
+  const imageSearchKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 49)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1509,7 +1509,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     ),
     true,
   );
-  const olderKinds = new Set(
+  const olderKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 21)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1531,13 +1531,13 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     }),
     "stateful-survival",
   );
-  const expandKinds = new Set(
+  const expandKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 34)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
   assert.equal(expandKinds.has("receipt"), true);
   assert.equal(expandKinds.has("view"), true);
-  const historySearchKinds = new Set(
+  const historySearchKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 38)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1551,7 +1551,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
       ?.evidenceNeeded?.filter((item) => item.kind === "receipt").length ?? 0) >= 2,
     true,
   );
-  const deleteKinds = new Set(
+  const deleteKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 39)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1634,7 +1634,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
       ),
     true,
   );
-  const languageKinds = new Set(
+  const languageKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 41)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1656,7 +1656,7 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     }),
     "stateful-survival",
   );
-  const superGrokKinds = new Set(
+  const superGrokKinds = new Set<string>(
     manifest.originals.find((item) => item.id === 43)?.evidenceNeeded?.map((item) => item.kind) ??
       [],
   );
@@ -1705,7 +1705,9 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
   assert.match(uploadAnalysis.criteria, /accurate analysis of the file/u);
   assert.equal(coverByUploadCompileOrFilesAppBlock(uploadAnalysis), false);
   assert.equal(coverByRc23DestEnd(uploadAnalysis, "attach"), false);
-  const uploadKinds = new Set(uploadAnalysis.evidenceNeeded?.map((item) => item.kind) ?? []);
+  const uploadKinds = new Set<string>(
+    uploadAnalysis.evidenceNeeded?.map((item) => item.kind) ?? [],
+  );
   assert.equal(uploadKinds.has("receipt"), true);
   assert.equal(uploadKinds.has("after"), true);
   assert.equal(

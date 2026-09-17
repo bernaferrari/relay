@@ -42,7 +42,7 @@ export const activeRecordingState: ProductRecordingState = {
           durationMs: 1_000,
           evidenceCount: 1,
           proofStatus: "verified",
-          captureProof: "",
+          captureProof: "relay-controlled",
         },
       ],
       timeline: {

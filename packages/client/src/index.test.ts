@@ -204,7 +204,7 @@ test("parseRegisteredOperationOutput strips nested additive fixture health keys"
       if (issues.length > 0) {
         throw Object.assign(new Error("Unrecognized keys"), { issues });
       }
-      return value;
+      return body;
     },
   };
   const parsed = parseRegisteredOperationOutput(olderHealth, {
@@ -233,10 +233,10 @@ test("parseRegisteredOperationOutput strips nested additive fixture health keys"
       electronGrokLabReason: "Electron persist:lane:grok-lab is absent.",
     },
   });
-  assert.equal(parsed.summary.liveCount, 1);
-  assert.equal(parsed.fixtures[0]?.health?.signedIn, true);
+  assert.equal(parsed.summary?.liveCount, 1);
+  assert.equal(parsed.fixtures?.[0]?.health?.signedIn, true);
   assert.equal(
-    (parsed.fixtures[0]?.health as { identity?: unknown } | undefined)?.identity,
+    (parsed.fixtures?.[0]?.health as { identity?: unknown } | undefined)?.identity,
     undefined,
   );
   assert.equal(

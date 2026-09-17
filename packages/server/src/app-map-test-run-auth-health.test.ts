@@ -639,7 +639,7 @@ test("unsigned grok-daily Test.run still enqueues while SuperGrok health is erro
         testId: "script-only",
         laneId: "shop-daily",
       });
-      assert.ok(queued.job.id);
+      assert.ok(typeof queued.job.id === "string");
       assert.ok(queued.job.status === "queued" || queued.job.status === "running");
       assert.equal(queued.job.authenticationHealth, undefined);
       cancelJob(queued.job.id);
@@ -843,7 +843,7 @@ test("unsigned grok-daily flow.run still enqueues while SuperGrok health is erro
         browserTargetId: "shop-web",
         targetKind: "browser",
       });
-      assert.ok(queued.job.id);
+      assert.ok(typeof queued.job.id === "string");
       for (const job of (queued.jobs as Array<{ id?: string }>) ?? [queued.job]) {
         if (!job.id) continue;
         await drainJob(job.id);
@@ -912,8 +912,9 @@ test("unsigned job.start still queues while SuperGrok health is error", async ()
         browserTargetId: "shop-web",
         targetKind: "browser",
       });
-      assert.ok(queued.job.id);
+      assert.ok(typeof queued.job.id === "string");
       assert.equal(queued.job.authenticationHealth, undefined);
+      assert.ok(typeof queued.job.id === "string");
       await drainJob(queued.job.id);
     });
   } finally {
@@ -956,6 +957,7 @@ test("job.retry does not re-enqueue SuperGrok when parent or remembered health i
         browserTargetId: "shop-web",
         targetKind: "browser",
       });
+      assert.ok(typeof queued.job.id === "string");
       await drainJob(queued.job.id);
       await rememberHealth(root, saved.reference, {
         status: "error",
@@ -963,8 +965,9 @@ test("job.retry does not re-enqueue SuperGrok when parent or remembered health i
         detail: "lab probe failed",
       });
       const enqueueAfterStart = calls.enqueue;
+      const queuedJobId = queued.job.id;
       await assert.rejects(
-        () => client.invoke("job.retry", { jobId: queued.job.id }),
+        () => client.invoke("job.retry", { jobId: queuedJobId }),
         isAccountNeedsRelogin,
       );
       await assert.rejects(
@@ -1018,10 +1021,13 @@ test("job.retry of an actually-ready fixture proceeds and stamps remembered heal
         browserTargetId: "shop-web",
         targetKind: "browser",
       });
+      assert.ok(typeof queued.job.id === "string");
       await drainJob(queued.job.id);
       const retried = await client.invoke("job.retry", { jobId: queued.job.id });
-      assert.ok(retried.job.id);
-      assert.equal(retried.job.authenticationHealth?.status, "ready");
+      assert.ok(typeof retried.job.id === "string");
+      const health = retried.job.authenticationHealth;
+      assert.ok(health && typeof health === "object" && "status" in health);
+      assert.equal(health.status, "ready");
       assert.equal(calls.retry, 1);
       await drainJob(retried.job.id);
     });
@@ -1047,9 +1053,10 @@ test("unsigned job.retry still proceeds while SuperGrok health is error", async 
         browserTargetId: "shop-web",
         targetKind: "browser",
       });
+      assert.ok(typeof queued.job.id === "string");
       await drainJob(queued.job.id);
       const retried = await client.invoke("job.retry", { jobId: queued.job.id });
-      assert.ok(retried.job.id);
+      assert.ok(typeof retried.job.id === "string");
       await drainJob(retried.job.id);
     });
   } finally {
@@ -1485,7 +1492,7 @@ test("unsigned run.repair.retry still proceeds while SuperGrok health is error",
         runId: run.id,
         checkId: run.checkId,
       });
-      assert.ok(retried.job.id);
+      assert.ok(typeof retried.job.id === "string");
       assert.equal(calls.enqueue, 1);
       await drainJob(String(retried.job.id));
     });
@@ -1545,7 +1552,7 @@ test("unsigned action.run still queues while SuperGrok health is error", async (
           targetKind: "browser",
           wait: false,
         });
-        assert.ok(queued.job.id);
+        assert.ok(typeof queued.job.id === "string");
         assert.equal(
           (queued.job as { authenticationHealth?: unknown }).authenticationHealth,
           undefined,

@@ -1,3 +1,4 @@
+import { compileBrowserEnvironment } from "@relay/protocol";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -202,7 +203,10 @@ function browserFixtureJob(id: string, fixture: string): TestJob {
       platform: "browser",
       identity: { kind: "browser-target", value: "grok-com" },
     },
-    browserCaseProfile: { engine: "chromium", authenticationFixtureId: fixture },
+    browserCaseProfile: compileBrowserEnvironment({
+      engine: "chromium",
+      authenticationFixtureId: fixture,
+    }),
     action: "recipe:batch-admission",
     recipeId: "recipe:batch-admission",
     targetKind: "browser",

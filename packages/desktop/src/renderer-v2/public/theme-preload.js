@@ -13,7 +13,8 @@
     var root = document.documentElement;
     root.dataset.theme = "relay";
     root.dataset.colorScheme = mode;
-    root.dataset.colorSchemePreference = scheme === "light" || scheme === "dark" ? scheme : "system";
+    root.dataset.colorSchemePreference =
+      scheme === "light" || scheme === "dark" ? scheme : "system";
     root.classList.toggle("dark", isDark);
     root.style.colorScheme = mode;
     root.style.removeProperty("background-color");

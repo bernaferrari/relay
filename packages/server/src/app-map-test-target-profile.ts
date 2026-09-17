@@ -18,7 +18,7 @@ import { HttpError } from "./http.js";
 export function frozenTestRunTargetProfile(input: {
   map: AppMap;
   targetProfileId: string;
-  target: Pick<OperationInput<"app-map.test.run">["target"], "targetId" | "platform">;
+  target: Pick<NonNullable<OperationInput<"app-map.test.run">["target"]>, "targetId" | "platform">;
 }): AppMapCompiledRuntimeTargetProfile {
   const targetProfileId = input.targetProfileId.trim();
   const profiles = Object.values(input.map.screenVariants)
@@ -87,7 +87,10 @@ export function frozenTestRunTargetProfile(input: {
 export function queuedAppMapTestTargetProfile(input: {
   runtimeTargetProfile: AppMapCompiledRuntimeTargetProfile | undefined;
   observedTargetProfile: TargetProfile | undefined;
-  target: Pick<OperationInput<"app-map.test.run">["target"], "kind" | "targetId" | "platform">;
+  target: Pick<
+    NonNullable<OperationInput<"app-map.test.run">["target"]>,
+    "kind" | "targetId" | "platform"
+  >;
 }): TargetProfile | undefined {
   const saved = input.runtimeTargetProfile;
   if (!saved) return input.observedTargetProfile;

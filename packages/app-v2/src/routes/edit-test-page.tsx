@@ -461,7 +461,12 @@ function TestEditorDocument() {
             const patch = transaction.forward.find((item) => item.kind === "step.patch");
             if (!patch || patch.kind !== "step.patch") return;
             const binding = patch.patch.binding;
-            if (!binding || binding.status !== "resolved") return;
+            if (
+              !binding ||
+              binding.status !== "resolved" ||
+              (binding.kind !== "assertion" && binding.kind !== "recipe-step")
+            )
+              return;
             apply({
               label: "Added a checkpoint",
               forward: [

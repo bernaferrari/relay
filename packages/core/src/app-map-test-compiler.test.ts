@@ -2132,9 +2132,10 @@ test("dest-end leftover Close last-frame is not dest capture-review identity", (
   );
   assert.ok(destWaitIndex >= 0);
   assert.ok(leftoverCloseIndex > destWaitIndex);
-  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.kind, "screenshot");
-  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.phase, "dest");
-  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.policy, "fast");
+  const destCapture = destEndRecipe!.steps[destWaitIndex + 1];
+  assert.ok(destCapture?.kind === "screenshot");
+  assert.equal(destCapture.review?.phase, "dest");
+  assert.equal(destCapture.review?.policy, "fast");
   assert.ok(leftoverCloseIndex > destWaitIndex + 1);
   const destProvenance = compiled.plan.stepProvenance.find(
     (entry) => entry.recipeStepId === `relay-test-${instruction.id}-dest`,
@@ -2188,8 +2189,9 @@ test("dest-end dest-phase waits Settings unique chrome not open-sidebar leftover
   );
   assert.ok(sidebarWaitIndex >= 0);
   assert.ok(destWaitIndex > sidebarWaitIndex);
-  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.kind, "screenshot");
-  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.phase, "dest");
+  const destCapture = destEndRecipe!.steps[destWaitIndex + 1];
+  assert.ok(destCapture?.kind === "screenshot");
+  assert.equal(destCapture.review?.phase, "dest");
   assert.equal(destEndRecipe!.steps[sidebarWaitIndex + 1]?.kind, "tap");
   assert.deepEqual(destEndRecipe!.steps[0]?.when, {
     target: { identifier: "sidebar.settings" },
@@ -2229,9 +2231,10 @@ test("capture-view dest-end leftover Settings skips opener; dest-phase stays des
   );
   assert.ok(destWaitIndex >= 0);
   assert.equal(destEndRecipe!.steps[destWaitIndex]?.when, undefined);
-  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.kind, "screenshot");
-  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.phase, "dest");
-  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.policy, "fast");
+  const destCapture = destEndRecipe!.steps[destWaitIndex + 1];
+  assert.ok(destCapture?.kind === "screenshot");
+  assert.equal(destCapture.review?.phase, "dest");
+  assert.equal(destCapture.review?.policy, "fast");
 });
 
 test("test-action dest leftover skip gates Settings TAP on leftover dest chrome", () => {
@@ -2269,8 +2272,9 @@ test("test-action dest leftover skip gates Settings TAP on leftover dest chrome"
     (step) => step.kind === "wait-for" && step.target?.identifier === "settings.account",
   );
   assert.ok(destWaitIndex >= 0);
-  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.kind, "screenshot");
-  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.phase, "dest");
+  const destCapture = destEndRecipe!.steps[destWaitIndex + 1];
+  assert.ok(destCapture?.kind === "screenshot");
+  assert.equal(destCapture.review?.phase, "dest");
 });
 
 test("baked inspect leftover skip remapped to test-action dest leftover skips TAP", () => {
@@ -2385,8 +2389,9 @@ test("dest-end dest-phase waits focused composer chrome after the focus tap", ()
     (step) => step.kind === "wait-for" && step.target?.label === "Hide keyboard",
   );
   assert.ok(destWaitIndex >= 0);
-  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.kind, "screenshot");
-  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.phase, "dest");
+  const destCapture = destEndRecipe!.steps[destWaitIndex + 1];
+  assert.ok(destCapture?.kind === "screenshot");
+  assert.equal(destCapture.review?.phase, "dest");
   assert.equal(destEndRecipe!.steps[destWaitIndex - 1]?.kind, "tap");
 });
 
