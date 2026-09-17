@@ -55,20 +55,58 @@ function normalizeIdentityCandidate(value: string): string | undefined {
   return trimmed;
 }
 
+function collapseIdentityLine(value: string): string {
+  return value.replace(/\s+/gu, " ").trim();
+}
+
+function personNameCandidate(value: string): string | undefined {
+  const normalized = normalizeIdentityCandidate(value);
+  if (!normalized) return undefined;
+  if (!/^[A-Z][a-z]{1,30}(?: [A-Z][a-z]{1,30}){1,2}$/u.test(normalized)) return undefined;
+  return normalized;
+}
+
+function nameMatchesInitials(letters: string, name: string): boolean {
+  const words = name.split(/\s+/u);
+  if (letters.length !== words.length) return false;
+  return words.every((word, index) => word.startsWith(letters[index] ?? ""));
+}
+
+function identityFromInitialsAndName(letters: string, name: string): string | undefined {
+  const person = personNameCandidate(name);
+  if (!person || !nameMatchesInitials(letters, person)) return undefined;
+  return person;
+}
+
 /** Live page account name. Lane ids, SuperGrok, and saved fixture names are not identity. */
 export function extractProbedAccountIdentity(
   snapshot: BrowserAuthPageSnapshot,
   savedName?: string,
 ): string | undefined {
   const saved = savedName?.replace(/\s+/gu, " ").trim().toLocaleLowerCase();
-  const lines = [...(snapshot.labels ?? []), ...snapshot.bodyText.split(/\r?\n/u), snapshot.title];
+  const lines = [...(snapshot.labels ?? []), ...snapshot.bodyText.split(/\r?\n/u), snapshot.title]
+    .map(collapseIdentityLine)
+    .filter((line) => line.length > 0);
+  const accept = (value: string | undefined): string | undefined =>
+    value && value.toLocaleLowerCase() !== saved ? value : undefined;
+
   for (const raw of lines) {
     const profile = raw.match(/profile picture,\s*([^,]+)/iu);
-    const fromProfile = profile ? normalizeIdentityCandidate(profile[1] ?? "") : undefined;
-    if (fromProfile && fromProfile.toLocaleLowerCase() !== saved) return fromProfile;
-    const initials = raw.match(/^[A-Z]{1,3}\s+([A-Z][^\n,]{1,60})$/u);
-    const fromInitials = initials ? normalizeIdentityCandidate(initials[1] ?? "") : undefined;
-    if (fromInitials && fromInitials.toLocaleLowerCase() !== saved) return fromInitials;
+    const fromProfile = accept(normalizeIdentityCandidate(profile?.[1] ?? ""));
+    if (fromProfile) return fromProfile;
+    const initials = raw.match(/^([A-Z]{1,3}) (.+)$/u);
+    const fromInitials = accept(
+      identityFromInitialsAndName(initials?.[1] ?? "", initials?.[2] ?? ""),
+    );
+    if (fromInitials) return fromInitials;
+  }
+
+  const initialTokens = lines.filter((line) => /^[A-Z]{1,3}$/u.test(line));
+  for (const letters of initialTokens) {
+    for (const line of lines) {
+      const fromSplit = accept(identityFromInitialsAndName(letters, line));
+      if (fromSplit) return fromSplit;
+    }
   }
   return undefined;
 }

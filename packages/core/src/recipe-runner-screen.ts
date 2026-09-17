@@ -135,6 +135,7 @@ function captureReviewConfigurationFromJob(
     unsignedLaneId: job.unsignedLaneId,
     targetProfileId: job.targetProfile?.id,
     authenticationFixtureId: job.browserCaseProfile?.authenticationFixtureId,
+    liveIdentity: job.authenticationHealth?.identity,
     resolvedAccount: job.resolvedInputs?.account?.trim() || job.resolvedInputs?.Account?.trim(),
     fixtureHealthStatus: job.authenticationHealth?.status,
     fixtureSignedIn: job.authenticationHealth?.signedIn,

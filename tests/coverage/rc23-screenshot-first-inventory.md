@@ -274,6 +274,7 @@ Capture-review on disk is **fast** · `settled:false` · `samples:1` · `status:
 - Workbook originals: **2 bound / 51 unbound / 5 excluded**. Remaining-before-gates **53**. Not 53 covered. Similarly named Tests do not cover.
 - OPENROUTER unset. grok-com `authenticationFixtureId` stays empty.
 - Electron `persist:lane:grok-lab` still absent. P0.1 Playwright dest-end 3-pass is lane identity, not Electron. N-account health + concurrent grok-lab/grok-daily/grok-auth-email snapshots are isolation evidence, not Electron and not a freeze cell. Do not relabel grok-daily as SuperGrok.
+- Live leftover grok-lab `b2dcd768…` still has Introducing Build Mode (did not Dismiss). Health `7189423f` was ready without a page account name while AX showed `BF` / `Bernardo Ferrari`; probe+capture-review now use that live identity, not SuperGrok. Operator MCP health 502 on extra Electron keys is stripped, not a fixture pass.
 - 19z5 stays open.
 
 ### 2026-09-17 dest-phase recapture alignment (do not close 19z5; no Looks-correct; no visual accept)

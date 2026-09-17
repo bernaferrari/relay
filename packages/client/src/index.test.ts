@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ApiError, RelayClient } from "./index.js";
+import { operationDefinition } from "@relay/protocol";
+import { ApiError, parseRegisteredOperationOutput, RelayClient } from "./index.js";
 
 const health = {
   ok: true,
@@ -171,6 +172,58 @@ test("invoke derives path, query, and method from the operation registry", async
   assert.equal(
     requests[2]?.url,
     "https://relay.test/app-maps/checkout/tests/smoke/compile?entryCheckpointScreenId=settings",
+  );
+});
+
+test("invoke strips additive output keys instead of 502ing an older operator client", async () => {
+  const client = new RelayClient(
+    {
+      url: "https://relay.test",
+      auth: { type: "none" },
+      organizationId: "local",
+      projectId: "default",
+      actorId: "agent:cursor",
+      actorKind: "agent",
+    },
+    {
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            fixtures: [],
+            summary: {
+              liveCount: 1,
+              revokedCount: 14,
+              readyCount: 1,
+              needsReloginCount: 0,
+              expiredCount: 0,
+              errorCount: 0,
+              concurrentAccountsPossible: false,
+              concurrentReason: "One live account.",
+              lanes: [],
+              electronGrokLabPartitionPresent: false,
+              electronGrokLabReason: "Electron persist:lane:grok-lab is absent.",
+              futureAdditiveField: true,
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    },
+  );
+  const health = await client.invoke("target.browser-auth.health", {
+    targetId: "grok-com",
+    probe: false,
+  });
+  assert.equal(health.summary.liveCount, 1);
+  assert.equal(health.summary.electronGrokLabPartitionPresent, false);
+  assert.equal(
+    (health.summary as { futureAdditiveField?: unknown }).futureAdditiveField,
+    undefined,
+  );
+});
+
+test("parseRegisteredOperationOutput still fails closed on missing required fields", () => {
+  assert.throws(() =>
+    parseRegisteredOperationOutput(operationDefinition("system.health.get").output, { ok: true }),
   );
 });
 

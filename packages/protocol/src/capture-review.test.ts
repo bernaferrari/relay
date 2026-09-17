@@ -108,6 +108,36 @@ test("unsigned grok-daily cannot be labeled grok-lab SuperGrok by overlay", () =
   assert.equal(labeled.observed.profileId, "browser:grok-com");
 });
 
+test("live page identity wins over SuperGrok fixture name on capture-review", () => {
+  const labeled = observedCaptureReviewAccount({
+    laneId: "grok-lab",
+    targetProfileId: "browser:grok-com-1280x800-339a5a430a41",
+    authenticationFixtureId: labFixture,
+    fixtureName: "SuperGrok",
+    liveIdentity: "Bernardo Ferrari",
+    fixtureHealthStatus: "ready",
+    fixtureSignedIn: true,
+    resolvedAccount: "SuperGrok",
+  });
+  assert.equal(labeled.account, "Bernardo Ferrari");
+  assert.notEqual(labeled.account, "SuperGrok");
+  assert.notEqual(labeled.account, "grok-lab");
+  assert.equal(labeled.observed.laneId, "grok-lab");
+});
+
+test("ready fixture without live identity keeps fixture id, not SuperGrok name", () => {
+  const labeled = observedCaptureReviewAccount({
+    laneId: "grok-lab",
+    authenticationFixtureId: labFixture,
+    fixtureName: "SuperGrok",
+    fixtureHealthStatus: "ready",
+    fixtureSignedIn: true,
+    resolvedAccount: "SuperGrok",
+  });
+  assert.equal(labeled.account, labFixture);
+  assert.notEqual(labeled.account, "SuperGrok");
+});
+
 test("grok-lab fixture is the observed account, not a daily overlay or Lane name", () => {
   const labeled = observedCaptureReviewAccount({
     laneId: "grok-lab",

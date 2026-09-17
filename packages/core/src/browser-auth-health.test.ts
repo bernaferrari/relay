@@ -90,6 +90,52 @@ test("probe identity is the page account, not a Lane or SuperGrok stand-in", () 
   assert.doesNotMatch(signedIn.detail ?? "", /SuperGrok lab signed-in is signed in/u);
 });
 
+test("live leftover BF / Bernardo Ferrari chip is page identity, not SuperGrok", () => {
+  const grok = GROK_WEB_APP_POLICY;
+  const leftover = {
+    title: "Grok",
+    bodyText: "What should we explore?\nAsk Grok anything\nIntroducing Build Mode",
+    labels: [
+      "BF\nBernardo Ferrari",
+      "BF",
+      "Bernardo Ferrari",
+      "Introducing Build Mode",
+      "Dismiss",
+      "Paris: France's Capital",
+      "Best Local Coffee Shop Finder",
+    ],
+  };
+  assert.equal(
+    extractProbedAccountIdentity(leftover, "SuperGrok lab signed-in"),
+    "Bernardo Ferrari",
+  );
+  assert.equal(
+    extractProbedAccountIdentity({
+      title: "Grok",
+      bodyText: leftover.bodyText,
+      labels: leftover.labels.filter((label) => label !== "BF\nBernardo Ferrari"),
+    }),
+    "Bernardo Ferrari",
+  );
+  assert.equal(
+    extractProbedAccountIdentity({
+      title: "Grok",
+      bodyText: leftover.bodyText,
+      labels: ["BF", "Paris: France's Capital", "Introducing Build Mode"],
+    }),
+    undefined,
+  );
+  const classified = classifyBrowserAuthenticationHealth(
+    { name: "SuperGrok lab signed-in" },
+    20,
+    leftover,
+    grok,
+  );
+  assert.equal(classified.status, "ready");
+  assert.equal(classified.identity, "Bernardo Ferrari");
+  assert.match(classified.detail ?? "", /Signed in as Bernardo Ferrari/u);
+});
+
 test("expired and revoked fixtures fail closed before a live page probe", () => {
   const expired = classifyBrowserAuthenticationHealth({ name: "Member", expiresAt: 10 }, 20);
   assert.equal(expired.status, "expired");

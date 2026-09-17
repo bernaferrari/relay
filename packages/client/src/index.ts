@@ -52,6 +52,64 @@ function firstNonEmptyString(...values: unknown[]): string | undefined {
   return undefined;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function recordAtPath(
+  root: Record<string, unknown>,
+  path: readonly PropertyKey[],
+): Record<string, unknown> | undefined {
+  let current: unknown = root;
+  for (const key of path) {
+    if (!isRecord(current)) return undefined;
+    current = current[String(key)];
+  }
+  return isRecord(current) ? current : undefined;
+}
+
+/** Additive server fields must not 502 an older operator client. Missing required
+ * fields still fail closed. */
+export function parseRegisteredOperationOutput<T>(
+  schema: { parse: (value: unknown) => T },
+  body: unknown,
+): T {
+  let current = body;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      return schema.parse(current);
+    } catch (error) {
+      const stripped = stripUnrecognizedOperationKeys(current, error);
+      if (stripped === undefined) throw error;
+      current = stripped;
+    }
+  }
+  return schema.parse(current);
+}
+
+function stripUnrecognizedOperationKeys(value: unknown, error: unknown): unknown | undefined {
+  if (!isRecord(value) || !error || typeof error !== "object") return undefined;
+  const issues = (error as { issues?: unknown }).issues;
+  if (!Array.isArray(issues) || issues.length === 0) return undefined;
+  const clone = structuredClone(value) as Record<string, unknown>;
+  let changed = false;
+  for (const issue of issues) {
+    if (!isRecord(issue) || issue.code !== "unrecognized_keys" || !Array.isArray(issue.keys)) {
+      continue;
+    }
+    const path = Array.isArray(issue.path) ? issue.path : [];
+    const parent = path.length === 0 ? clone : recordAtPath(clone, path);
+    if (!parent) continue;
+    for (const key of issue.keys) {
+      if (typeof key === "string" && key in parent) {
+        delete parent[key];
+        changed = true;
+      }
+    }
+  }
+  return changed ? clone : undefined;
+}
+
 /** Prefer structured failure text over a bare HTTP status line. */
 export function httpErrorMessage(status: number, statusText: string, body: unknown): string {
   const fallback = `${status} ${statusText}`.trim() || String(status);
@@ -326,7 +384,7 @@ export class RelayClient {
     });
     if (registered) {
       try {
-        registered.definition.output.parse(response);
+        parseRegisteredOperationOutput(registered.definition.output, response);
       } catch (error) {
         throw new ApiError(
           502,
@@ -467,7 +525,7 @@ export class RelayClient {
           : undefined,
     );
     try {
-      return definition.output.parse(body);
+      return parseRegisteredOperationOutput(definition.output, body);
     } catch (error) {
       throw new ApiError(
         502,

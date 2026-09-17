@@ -217,6 +217,48 @@ test("grok-lab fixture capture keeps the fixture identity, not a daily overlay",
   assert.doesNotMatch(review.slotId ?? "", /browser:grok-com-1280x800/u);
 });
 
+test("capture-review stamps live page identity, not SuperGrok or the fixture id", async () => {
+  const device = { command: { wait: async () => ({}) } } as unknown as Device;
+  const artifacts: { kind: string; capturedAt: number; data: unknown }[] = [];
+  await runWithTargetContext({ kind: "browser", platform: "browser", targetId: "grok-com" }, () =>
+    captureRecipeScreenshot(
+      device,
+      "Home",
+      {
+        artifacts,
+        log: () => {},
+        job: {
+          laneId: "grok-lab",
+          resolvedInputs: { account: "SuperGrok" },
+          browserTargetId: "grok-com",
+          targetProfile: { id: "browser:grok-com-1280x800-339a5a430a41" },
+          browserCaseProfile: {
+            engine: "chromium",
+            authenticationFixtureId: labFixture,
+          },
+          authenticationHealth: {
+            status: "ready",
+            checkedAt: 1,
+            signedIn: true,
+            identity: "Bernardo Ferrari",
+            detail: "Signed in as Bernardo Ferrari.",
+          },
+        } as never,
+      },
+      { captureScreenshot: async () => ({ ...frame("named"), framePath: "frames/named.png" }) },
+      { review: { mode: "later", checkpointId: "home" } },
+    ),
+  );
+  const review = artifacts.find((item) => item.kind === "capture-review")?.data as {
+    configuration?: { account?: string };
+    observed?: { laneId?: string };
+  };
+  assert.equal(review.configuration?.account, "Bernardo Ferrari");
+  assert.notEqual(review.configuration?.account, "SuperGrok");
+  assert.notEqual(review.configuration?.account, labFixture);
+  assert.equal(review.observed?.laneId, "grok-lab");
+});
+
 test("expired fixture capture-review is blocked, not SuperGrok", async () => {
   const device = { command: { wait: async () => ({}) } } as unknown as Device;
   const artifacts: { kind: string; capturedAt: number; data: unknown }[] = [];

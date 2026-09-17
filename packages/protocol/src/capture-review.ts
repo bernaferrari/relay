@@ -65,6 +65,33 @@ export function fixtureCaptureReviewAccountIsBlocked(input: {
   return input.fixtureHealthStatus !== undefined && input.fixtureHealthStatus !== "ready";
 }
 
+const CAPTURE_REVIEW_ACCOUNT_STAND_INS = new Set([
+  "super grok",
+  "supergrok",
+  "grok-lab",
+  "grok-daily",
+  "grok-daily-b",
+  "grok-daily-c",
+  "grok-daily-d",
+  "grok-daily-e",
+  "grok-daily-f",
+  "grok-daily-g",
+  "grok-daily-h",
+  "grok-auth-email",
+  "grok-auth-gmail",
+  "grok-auth-x",
+  "grok-auth-x-out",
+]);
+
+/** Live page account name. Lane ids, SuperGrok, and saved fixture names are not identity. */
+export function liveCaptureReviewAccount(value?: string): string | undefined {
+  const trimmed = value?.replace(/\s+/gu, " ").trim();
+  if (!trimmed || trimmed.length > 80) return undefined;
+  const key = trimmed.toLocaleLowerCase();
+  if (CAPTURE_REVIEW_ACCOUNT_STAND_INS.has(key) || key.startsWith("grok-")) return undefined;
+  return trimmed;
+}
+
 /** Account on the pixels, not a Lane-name overlay. Fixture identity wins;
  * unsigned/signed-out stays signed-out even when the Lane is named grok-lab. */
 export function observedCaptureReviewAccount(input: {
@@ -73,6 +100,7 @@ export function observedCaptureReviewAccount(input: {
   targetProfileId?: string;
   authenticationFixtureId?: string;
   fixtureName?: string;
+  liveIdentity?: string;
   signedOut?: boolean;
   resolvedAccount?: string;
   fixtureHealthStatus?: BrowserAuthenticationHealth["status"];
@@ -92,7 +120,10 @@ export function observedCaptureReviewAccount(input: {
       return { account: BLOCKED_CAPTURE_REVIEW_ACCOUNT, observed };
     }
     return {
-      account: input.fixtureName?.trim() || fixture,
+      account:
+        liveCaptureReviewAccount(input.liveIdentity) ||
+        liveCaptureReviewAccount(input.fixtureName) ||
+        fixture,
       observed,
     };
   }

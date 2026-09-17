@@ -35,13 +35,15 @@ export async function inspectManagedBrowserAuthPage(input: {
       // Classify from whatever rendered; missing markers become health error.
     }
     const labels = await page.evaluate(() =>
-      [...document.querySelectorAll("button, [role='button'], a")]
-        .map((element) =>
-          (element.getAttribute("aria-label") || element.textContent || "")
-            .replace(/\s+/gu, " ")
-            .trim(),
-        )
-        .filter((text) => text.length > 0 && text.length < 120),
+      [...document.querySelectorAll("button, [role='button'], a, img, [aria-label]")]
+        .flatMap((element) => [
+          element.getAttribute("aria-label"),
+          element.getAttribute("alt"),
+          element.textContent,
+        ])
+        .map((value) => (value ?? "").replace(/\s+/gu, " ").trim())
+        .filter((text) => text.length > 0 && text.length < 120)
+        .filter((text, index, all) => all.indexOf(text) === index),
     );
     return {
       title: await page.title(),
