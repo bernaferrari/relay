@@ -4,7 +4,12 @@ import { planFindingIsFlaky, visiblePlanFindings } from "@relay/protocol";
 import type { ProductBatchReport } from "@relay/product/run-across";
 import { Button } from "@relay/ui-react/components/button";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
-import { FieldLabel } from "@relay/ui-react/components/field";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldLabel,
+} from "@relay/ui-react/components/field";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import {
@@ -97,11 +102,19 @@ export function BatchFindingsLead({
   );
 }
 
-export function BatchStabilityPanel({ report }: { report: ProductBatchReport }) {
-  const stability = summarizeProductStability({
-    samples: stabilitySamplesFromBatch(report),
-    historyComplete: false,
-  });
+export function BatchStabilityPanel({
+  report,
+  stability: incoming,
+}: {
+  report: ProductBatchReport;
+  stability?: ProductStabilitySummary;
+}) {
+  const stability =
+    incoming ??
+    summarizeProductStability({
+      samples: stabilitySamplesFromBatch(report),
+      historyComplete: false,
+    });
   const flake = stability.signals.find((signal) => itemKind(signal.kind));
   const recommendation = stability.recommendations[0];
   if (!flake && stability.trend !== "improving" && stability.trend !== "regressing") {
@@ -149,13 +162,19 @@ export function BatchFindingsPanel({
   actorId,
   notes,
   onNotes,
+  flakyTestIds = new Set(),
 }: {
   report: CombineEvidenceAnalysisReport;
   actorId?: string;
   notes: readonly BatchReviewNote[];
   onNotes(notes: readonly BatchReviewNote[]): void;
+  flakyTestIds?: ReadonlySet<string>;
 }) {
-  if (!report.analysis.findings.length) return null;
+  const [hideFlaky, setHideFlaky] = useState(false);
+  const findings = report.analysis.findings;
+  if (!findings.length) return null;
+  const flakyCount = findings.filter((finding) => planFindingIsFlaky(finding, flakyTestIds)).length;
+  const visible = visiblePlanFindings(findings, { hideFlaky, flakyTestIds });
   return (
     <section className="relay-batch-findings mt-8" aria-labelledby="batch-findings-title">
       <h2
@@ -165,12 +184,34 @@ export function BatchFindingsPanel({
         Findings
       </h2>
       <p className="mt-1 max-w-[62ch] text-sm leading-6 text-muted-foreground">
-        {report.analysis.findings.length} finding
-        {report.analysis.findings.length === 1 ? "" : "s"} to review. Confirm and Reject never
-        accept a visual baseline.
+        {findings.length} finding
+        {findings.length === 1 ? "" : "s"} to review. Confirm and Reject never accept a visual
+        baseline.
+        {flakyCount
+          ? ` ${flakyCount} flaky ${flakyCount === 1 ? "item sits" : "items sit"} at the bottom. Hiding them does not skip the next run.`
+          : ""}
       </p>
+      {flakyCount ? (
+        <Field
+          orientation="horizontal"
+          className="mt-3 max-w-[62ch] min-h-14 items-center rounded-lg border border-border bg-card px-3 py-2.5"
+        >
+          <FieldContent>
+            <FieldLabel htmlFor="hide-flaky-tests">Hide flaky Tests</FieldLabel>
+            <FieldDescription>
+              Display only. This does not skip a run or accept a visual baseline.
+            </FieldDescription>
+          </FieldContent>
+          <Checkbox
+            id="hide-flaky-tests"
+            checked={hideFlaky}
+            onCheckedChange={(checked) => setHideFlaky(checked === true)}
+            aria-label="Hide flaky Tests"
+          />
+        </Field>
+      ) : null}
       <ul className="mt-4 grid list-none gap-3 p-0">
-        {report.analysis.findings.map((finding) => (
+        {visible.map((finding) => (
           <FindingReviewCard
             key={finding.id}
             finding={finding}
@@ -178,6 +219,7 @@ export function BatchFindingsPanel({
             actorId={actorId}
             notes={notes}
             onNotes={onNotes}
+            flaky={planFindingIsFlaky(finding, flakyTestIds)}
           />
         ))}
       </ul>
@@ -186,7 +228,7 @@ export function BatchFindingsPanel({
           Copy as markdown
         </summary>
         <pre className="mt-2 overflow-auto whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
-          {renderPlanFindingsMarkdown(report)}
+          {renderPlanFindingsMarkdown(report, flakyTestIds)}
         </pre>
       </details>
     </section>
@@ -199,12 +241,14 @@ function FindingReviewCard({
   actorId,
   notes,
   onNotes,
+  flaky,
 }: {
   finding: CombineEvidenceFinding;
   report: CombineEvidenceAnalysisReport;
   actorId?: string;
   notes: readonly BatchReviewNote[];
   onNotes(notes: readonly BatchReviewNote[]): void;
+  flaky: boolean;
 }) {
   const runId = findingScreenshotRunId(finding, report);
   const proposal = proposePlanFinding(finding);
@@ -224,6 +268,7 @@ function FindingReviewCard({
         <p className="text-[12px] leading-4 text-muted-foreground">
           {planFindingLaneLabel(lane)}
           {product && finding.severity === "critical" ? " · Critical" : ""}
+          {flaky ? " · Flaky" : ""}
           {" · "}
           <span className="sr-only">{finding.code}</span>
           {formatBatchFindingCode(finding.code)}

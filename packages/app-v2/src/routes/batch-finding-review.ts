@@ -150,7 +150,7 @@ export function planFindingsFromBatch(
   report: ProductBatchReport,
   testNames: BatchTestNames = {},
 ): CombineEvidenceAnalysisReport {
-    const findings: CombineEvidenceFinding[] = [];
+  const findings: CombineEvidenceFinding[] = [];
   for (const item of report.cases) {
     const code = item.findingCode;
     if (!code) continue;

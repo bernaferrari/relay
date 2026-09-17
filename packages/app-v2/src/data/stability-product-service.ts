@@ -586,9 +586,7 @@ export function summarizeProductStability(
 }
 
 /** Test ids labelled flaky from a comparable Stability cohort. Mixed-outcomes is not flaky. */
-export function flakyTestIdsFromStability(
-  summary: ProductStabilitySummary,
-): ReadonlySet<string> {
+export function flakyTestIdsFromStability(summary: ProductStabilitySummary): ReadonlySet<string> {
   const ids = new Set<string>();
   for (const signal of summary.signals) {
     if (signal.kind !== "possible-flakiness") continue;

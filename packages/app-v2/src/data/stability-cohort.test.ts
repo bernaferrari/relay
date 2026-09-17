@@ -25,10 +25,11 @@ function sample(
 }
 
 describe("stability cohorts", () => {
-  it("refuses a cohort key when revision, build, target, account, data, or start state is missing", () => {
+  it("refuses a cohort key when revision, build, target, account, or data is missing", () => {
     expect(stabilityCohortKey(sample("run-1", { buildId: undefined }))).toBeUndefined();
     expect(stabilityCohortKey(sample("run-1", { accountId: undefined }))).toBeUndefined();
     expect(stabilityCohortKey(sample("run-1"))).toContain("checkout");
+    expect(stabilityCohortKey(sample("run-1", { startupMode: undefined }))).toContain("checkout");
   });
 
   it("groups only samples that share the full comparable identity", () => {
@@ -40,6 +41,18 @@ describe("stability cohorts", () => {
     expect([...groups.values()].map((group) => group.map((item) => item.id))).toEqual([
       ["run-1", "run-2"],
       ["run-3"],
+    ]);
+  });
+
+  it("does not mix a known start state with an unknown start state", () => {
+    const groups = groupComparableStabilitySamples([
+      sample("warm-1"),
+      sample("unknown-1", { startupMode: undefined }),
+      sample("unknown-2", { startupMode: undefined }),
+    ]);
+    expect([...groups.values()].map((group) => group.map((item) => item.id))).toEqual([
+      ["warm-1"],
+      ["unknown-1", "unknown-2"],
     ]);
   });
 });

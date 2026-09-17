@@ -34,6 +34,12 @@ import {
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { resolvePlanFindings } from "./batch-finding-review";
 import { PlanCaptureReviewSection } from "./batch-capture-review";
+import {
+  flakyTestIdsFromStability,
+  stabilitySamplesFromBatch,
+  stabilitySamplesFromRuns,
+  summarizeProductStability,
+} from "../data/stability-product-service";
 
 const routeApi = getRouteApi("/batches/$batchId");
 
@@ -130,12 +136,32 @@ export function BatchPage() {
     enabled: Boolean(report?.appMapId),
     staleTime: 60_000,
   });
+  const completeRuns = useQuery({
+    queryKey: ["runs-complete", report?.appMapId],
+    queryFn: () => catalogService.listRunsComplete!({ appMapId: report!.appMapId }),
+    enabled: Boolean(report?.appMapId && typeof catalogService.listRunsComplete === "function"),
+    staleTime: 15_000,
+  });
   const testNames = useMemo(
     () => Object.fromEntries((tests.data ?? []).map((item) => [item.id, item.name])),
     [tests.data],
   );
   const findingsReport =
     report && !active ? resolvePlanFindings(report, findings.data, testNames) : undefined;
+  const stability =
+    report && completeRuns.data
+      ? summarizeProductStability({
+          samples: stabilitySamplesFromRuns(completeRuns.data),
+          historyComplete: true,
+          scope: { appMapId: report.appMapId },
+        })
+      : report
+        ? summarizeProductStability({
+            samples: stabilitySamplesFromBatch(report),
+            historyComplete: false,
+          })
+        : undefined;
+  const flakyTestIds = stability ? flakyTestIdsFromStability(stability) : new Set<string>();
   const canContinue = report?.status === "ready-to-continue" || report?.status === "needs-review";
   const clusterValues = clusters.data?.clusters ?? [];
   const selectedClusterCases = selectedClusterCaseIds(clusterValues, selectedClusters);
@@ -449,6 +475,7 @@ export function BatchPage() {
                     report={findingsReport}
                     actorId={actorId}
                     notes={notes}
+                    flakyTestIds={flakyTestIds}
                     onNotes={(next) => {
                       setNotes(next);
                       void platform.storage.set(batchReviewNotesKey(batchId), JSON.stringify(next));
@@ -457,7 +484,7 @@ export function BatchPage() {
                 ) : null}
               </details>
 
-              <BatchStabilityPanel report={report} />
+              <BatchStabilityPanel report={report} stability={stability} />
             </TabsContent>
           </Tabs>
 

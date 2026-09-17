@@ -6,7 +6,6 @@ export const STABILITY_COHORT_FIELDS = [
   "targetProfileId",
   "accountId",
   "dataSetId",
-  "startupMode",
 ] as const;
 
 export type StabilityCohortField = (typeof STABILITY_COHORT_FIELDS)[number];
@@ -24,7 +23,8 @@ export type StabilityCohortSample = {
 export function stabilityCohortKey(sample: StabilityCohortSample): string | undefined {
   const values = STABILITY_COHORT_FIELDS.map((field) => sample[field]);
   if (values.some((value) => value === undefined || value === "")) return undefined;
-  return values.join("\u0000");
+  // Known start states stay in their own cohort. Unknown start does not mix with warm/cold.
+  return [...values, sample.startupMode ?? ""].join("\u0000");
 }
 
 export function groupComparableStabilitySamples<T extends StabilityCohortSample>(

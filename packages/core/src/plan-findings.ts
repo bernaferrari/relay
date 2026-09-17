@@ -127,10 +127,7 @@ export function accountReloginFindingsReport(input: {
   };
 }
 
-function findingBlock(
-  finding: CombineEvidenceFinding,
-  flakyTestIds?: ReadonlySet<string>,
-): string {
+function findingBlock(finding: CombineEvidenceFinding, flakyTestIds?: ReadonlySet<string>): string {
   const proposal = proposePlanFinding(finding);
   const testId = planFindingTestId(finding);
   const lines = [
