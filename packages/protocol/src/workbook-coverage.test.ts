@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   coverByArithmeticOrMarkdownJudge,
+  coverByCloudflareOrWeeklyAuthPause,
   coverByFindingSimilarlyNamedTest,
   coverByRc23DestEnd,
   destEndViewPacketMayLeftoverSkip,
@@ -19,6 +20,8 @@ import {
   workbookOriginalMayLeftoverSkip,
   workbookOriginalObligationIdentity,
   workbookRc23BindingError,
+  WORKBOOK_AUTH_FAMILY_ID,
+  WORKBOOK_AUTH_ORIGINAL_IDS,
   WORKBOOK_MODELS_FAMILY_ID,
   WORKBOOK_MODELS_ORIGINAL_IDS,
   WORKBOOK_OUTPUT_FAMILY_ID,
@@ -411,6 +414,24 @@ test("capture-view leftover skip is only GQA-004 attach and GQA-040 Settings inv
   );
   assert.equal(
     destEndViewPacketMayLeftoverSkip({ id: 14, evidencePacket: "generated-output" }),
+    false,
+  );
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 44, evidencePacket: "transition" }), false);
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 47, evidencePacket: "view" }), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 44,
+      evidencePacket: "transition",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 47,
+      evidencePacket: "view",
+      requirementAction: "test-action",
+    }),
     false,
   );
 });
@@ -854,5 +875,245 @@ test("S08 packets stay unbound and capture without arithmetic or Markdown judge"
       requirementAction: "test-action",
     }),
     false,
+  );
+});
+
+test("S01 packets stay unbound and need isolated auth TAP evidence", () => {
+  assert.deepEqual([...WORKBOOK_AUTH_ORIGINAL_IDS], [44, 45, 46, 47]);
+  assert.deepEqual(requiredEvidenceNeededKinds("transition"), ["before", "after", "receipt"]);
+  assert.deepEqual(requiredEvidenceNeededKinds("sequence"), ["sequence"]);
+  assert.deepEqual(requiredEvidenceNeededKinds("view"), ["view"]);
+  const missing = original({
+    id: 44,
+    name: "Sign Out",
+    family: WORKBOOK_AUTH_FAMILY_ID,
+    evidencePacket: "transition",
+    status: "unbound",
+  });
+  assert.match(
+    workbookEvidenceNeededError(missing) ?? "",
+    /S01 must be test-action|S01 needs explicit evidence-needed|Sign Out TAP must execute/u,
+  );
+  const leftoverLoggedOut = original({
+    id: 44,
+    name: "Sign Out",
+    family: WORKBOOK_AUTH_FAMILY_ID,
+    evidencePacket: "transition",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "after",
+        id: "leftover-logged-out-home",
+        note: "Leftover logged-out home. No Sign Out TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria: "User is signed out successfully and redirected to the login or onboarding screen.",
+  });
+  assert.match(workbookEvidenceNeededError(leftoverLoggedOut) ?? "", /Sign Out TAP must execute/u);
+  const signOut = original({
+    id: 44,
+    name: "Sign Out",
+    family: WORKBOOK_AUTH_FAMILY_ID,
+    evidencePacket: "transition",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-signed-in-with-sign-out",
+        note: "Signed-in Settings with Sign Out. Isolated fixture, not grok-lab SuperGrok.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-sign-out-confirm",
+        note: "TAP Sign Out and confirm actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-login-or-onboarding",
+        note: "Login or onboarding after successful sign-out. Cloudflare x.ai is not this frame.",
+      },
+    ],
+    status: "unbound",
+    criteria: "User is signed out successfully and redirected to the login or onboarding screen.",
+  });
+  assert.equal(workbookEvidenceNeededError(signOut), undefined);
+  assert.equal(workbookEvidencePolicyError(signOut), undefined);
+  assert.equal(originalIsCovered(signOut), false);
+  assert.equal(coverByCloudflareOrWeeklyAuthPause(signOut), false);
+  const obligation = workbookOriginalObligationIdentity(signOut);
+  assert.equal(obligation.requirementId, "GQA-044");
+  assert.equal(obligation.caption, "Sign Out");
+  assert.equal(
+    obligation.criteria,
+    "User is signed out successfully and redirected to the login or onboarding screen.",
+  );
+  const weeklyPause = original({
+    id: 45,
+    name: "Continue with X (sheet / X absent)",
+    family: WORKBOOK_AUTH_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "weekly-pause",
+        note: "Weekly Continue-with-X pause. No TAP.",
+      },
+    ],
+    status: "unbound",
+  });
+  assert.match(workbookEvidenceNeededError(weeklyPause) ?? "", /Continue with X TAP receipt/u);
+  const xAbsent = original({
+    id: 45,
+    name: "Continue with X (sheet / X absent)",
+    family: WORKBOOK_AUTH_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-continue-with-x-sheet",
+        note: "TAP Continue with X actually executed.",
+      },
+      {
+        kind: "sequence",
+        id: "x-absent-sheet-authorize",
+        note: "Welcome → x.com sheet → authorize. X-app-present is GQA-046.",
+      },
+    ],
+    status: "unbound",
+    criteria: "Grok will log in with X account. Session exists after authorize.",
+  });
+  assert.equal(workbookEvidenceNeededError(xAbsent), undefined);
+  assert.equal(originalIsCovered(xAbsent), false);
+  const xPresent = original({
+    id: 46,
+    name: "Continue with X (X app present)",
+    family: WORKBOOK_AUTH_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-continue-with-x-app",
+        note: "TAP Continue with X actually executed.",
+      },
+      {
+        kind: "sequence",
+        id: "x-app-authorize",
+        note: "Welcome → X app → authorize. One leftover sheet is not this original.",
+      },
+    ],
+    status: "unbound",
+  });
+  assert.equal(workbookEvidenceNeededError(xPresent), undefined);
+  const cloudflareSignup = original({
+    id: 47,
+    name: "Sign Up",
+    family: WORKBOOK_AUTH_FAMILY_ID,
+    evidencePacket: "view",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "leftover-cloudflare",
+        note: "Cloudflare x.ai. No Create your account view.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "The Create your account page opens with sign-up options, switch to sign-in, and terms/policy at the bottom.",
+  });
+  assert.match(workbookEvidenceNeededError(cloudflareSignup) ?? "", /view packet needs view/u);
+  const signUp = original({
+    id: 47,
+    name: "Sign Up",
+    family: WORKBOOK_AUTH_FAMILY_ID,
+    evidencePacket: "view",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-sign-up",
+        note: "TAP Sign Up actually executed.",
+      },
+      {
+        kind: "view",
+        id: "create-account-page",
+        note: "Create your account. Cloudflare x.ai is not this view.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "The Create your account page opens with sign-up options, switch to sign-in, and terms/policy at the bottom.",
+  });
+  assert.equal(workbookEvidenceNeededError(signUp), undefined);
+  assert.equal(workbookEvidencePolicyError(signUp), undefined);
+  assert.equal(originalIsCovered(signUp), false);
+  assert.equal(coverByCloudflareOrWeeklyAuthPause(signUp), false);
+  const report = evaluateWorkbookCoverage(
+    fixture({ originals: [signOut, xAbsent, xPresent, signUp] }),
+    [
+      { id: "test-grok-web-signed-in-sign-out", name: "Sign Out" },
+      { id: "test-grok-web-signup", name: "Sign Up" },
+      { id: "test-grok-web-weekly", name: "Continue with X weekly pause" },
+    ],
+  );
+  assert.deepEqual(report.coveredOriginalIds, []);
+  assert.equal(report.unboundOriginalIds.includes(44), true);
+  assert.equal(report.unboundOriginalIds.includes(45), true);
+  assert.equal(report.unboundOriginalIds.includes(46), true);
+  assert.equal(report.unboundOriginalIds.includes(47), true);
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 44 && row.testId === "test-grok-web-signed-in-sign-out",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 47 && row.testId === "test-grok-web-signup",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 45 && row.testId === "test-grok-web-weekly",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 46 && row.testId === "test-grok-web-weekly",
+    ),
+    true,
+  );
+  assert.equal(coverByFindingSimilarlyNamedTest(signOut, []), false);
+  assert.equal(coverByRc23DestEnd({ id: 44 }, "settings"), false);
+  assert.equal(coverByRc23DestEnd({ id: 47 }, "home-chrome"), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 44,
+      evidencePacket: "transition",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 47,
+      evidencePacket: "view",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 44,
+      family: WORKBOOK_AUTH_FAMILY_ID,
+      evidencePacket: "transition",
+    }),
+    "stateful-survival",
   );
 });

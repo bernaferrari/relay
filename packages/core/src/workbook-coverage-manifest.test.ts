@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+  coverByCloudflareOrWeeklyAuthPause,
   coverByFindingSimilarlyNamedTest,
   coverByRc23DestEnd,
   countWorkbookEvidencePackets,
@@ -20,6 +21,8 @@ import {
   workbookCoverageAfterCompileAttempts,
   workbookOriginalAllowsAutoJudge,
   workbookOriginalObligationIdentity,
+  WORKBOOK_AUTH_FAMILY_ID,
+  WORKBOOK_AUTH_ORIGINAL_IDS,
   WORKBOOK_EVIDENCE_PACKET_LABELS,
   WORKBOOK_RC23_REQUIREMENT_ID,
   WORKBOOK_MODELS_FAMILY_ID,
@@ -64,11 +67,14 @@ const similarCatalog = [
   { id: "test-grok-web-signed-in-3x5", name: "Ask 3*5", appMapId: "grok-web" },
   { id: "test-grok-web-signed-in-capital", name: "Ask Capital of France", appMapId: "grok-web" },
   { id: "test-grok-web-send-hello", name: "Send hello while logged out", appMapId: "grok-web" },
+  { id: "test-grok-web-signed-in-sign-out", name: "Sign Out", appMapId: "grok-web" },
+  { id: "test-grok-web-signup", name: "Sign Up", appMapId: "grok-web" },
+  { id: "test-grok-web-weekly", name: "Continue with X weekly pause", appMapId: "grok-web" },
 ];
 
 test("reviewed workbook freeze keeps 58 originals, 15 active families, and 5 exclusions", () => {
   const manifest = loadReviewedWorkbook();
-  assert.equal(manifest.revision, 6);
+  assert.equal(manifest.revision, 7);
   assert.equal(manifest.counts.originals, 58);
   assert.equal(manifest.counts.families, 17);
   assert.equal(manifest.counts.activeFamilies, 15);
@@ -155,7 +161,19 @@ test("similarly named live Tests do not cover Customize Grok, Imagine, Dictation
     true,
   );
   assert.equal(
-    [8, 37, 42, 50, 48, 51].every((id) => !report.coveredOriginalIds.includes(id)),
+    report.nameCollisions.some(
+      (row) => row.originalId === 44 && row.testId === "test-grok-web-signed-in-sign-out",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 47 && row.testId === "test-grok-web-signup",
+    ),
+    true,
+  );
+  assert.equal(
+    [8, 37, 42, 50, 48, 51, 44, 47].every((id) => !report.coveredOriginalIds.includes(id)),
     true,
   );
 });
@@ -308,7 +326,7 @@ test("RC-13 similarly named Test still does not cover originals 8, 37, 42, or 50
   const report = evaluateWorkbookCoverage(manifest, similarCatalog);
   assert.deepEqual(report.coveredOriginalIds, [4, 40]);
   assert.equal(
-    [8, 37, 42, 50, 48, 51].every((id) => !report.coveredOriginalIds.includes(id)),
+    [8, 37, 42, 50, 48, 51, 44, 47].every((id) => !report.coveredOriginalIds.includes(id)),
     true,
   );
   assert.equal(
@@ -496,6 +514,54 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     ).some((row) => row.id === "test-grok-web-signed-in-capital"),
     true,
   );
+  const authFamily = manifest.originals.filter((item) => item.family === WORKBOOK_AUTH_FAMILY_ID);
+  assert.deepEqual(
+    authFamily.map((item) => item.id),
+    [...WORKBOOK_AUTH_ORIGINAL_IDS],
+  );
+  assert.equal(
+    authFamily.every(
+      (item) =>
+        item.status === "unbound" &&
+        item.requirementAction === "test-action" &&
+        (item.evidenceNeeded?.length ?? 0) > 0 &&
+        item.bindings.length === 0 &&
+        item.criteria.trim().length > 0 &&
+        item.suggestedExecutionQueue === "stateful-survival" &&
+        coverByCloudflareOrWeeklyAuthPause(item) === false,
+    ),
+    true,
+  );
+  const signOutKinds = new Set(
+    manifest.originals.find((item) => item.id === 44)?.evidenceNeeded?.map((item) => item.kind) ??
+      [],
+  );
+  assert.equal(
+    ["before", "after", "receipt"].every((kind) => signOutKinds.has(kind)),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 44)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-sign-out"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 47)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signup"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 45)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-weekly"),
+    true,
+  );
+  assert.equal(coverByRc23DestEnd({ id: 44 }, "settings"), false);
   const slotsPath = join(
     dirname(fileURLToPath(import.meta.url)),
     "../../../tests/coverage/rc23-screenshot-first-slots.json",

@@ -5,11 +5,13 @@
  * never marks an original covered. Every original has a smallest-sufficient
  * evidence packet or an authorized exclusion; that packet is not coverage.
  * Captions are display text; obligations are plannedSlots identities.
- * S02 shell, S05 model/preset, and S08 output-battery originals keep
- * explicit test-action evidence-needed while remaining unbound. Leftover
- * Fast-checked is not a models Test. Inspect-only model sheet is not
- * Switch model or presets. Leftover 3*5 extract-15 / Markdown judge is
- * not S08 generated-output coverage. Original criteria stay on the slot.
+ * S02 shell, S05 model/preset, S08 output-battery, and S01 auth originals
+ * keep explicit test-action evidence-needed while remaining unbound.
+ * Leftover Fast-checked is not a models Test. Inspect-only model sheet
+ * is not Switch model or presets. Leftover 3*5 extract-15 / Markdown
+ * judge is not S08 generated-output coverage. Cloudflare Sign up /
+ * weekly Continue-with-X pause / grok-lab leftover is not S01 coverage.
+ * Original criteria stay on the slot.
  */
 
 import { captureReviewSlotId, type CaptureReviewConfiguration } from "./capture-review.js";
@@ -23,6 +25,8 @@ export const WORKBOOK_ACTIVE_FAMILY_COUNT = 15;
 export const WORKBOOK_EXCLUDED_FAMILY_IDS = ["S15", "S17"] as const;
 export const WORKBOOK_GLOBAL_EXCLUSION_IDS = [5, 18, 19, 20, 42] as const;
 export const WORKBOOK_SURVIVAL_FAMILY_ID = "S16";
+export const WORKBOOK_AUTH_FAMILY_ID = "S01";
+export const WORKBOOK_AUTH_ORIGINAL_IDS = [44, 45, 46, 47] as const;
 export const WORKBOOK_SHELL_FAMILY_ID = "S02";
 export const WORKBOOK_SHELL_ORIGINAL_IDS = [3, 33, 35, 36, 37] as const;
 export const WORKBOOK_MODELS_FAMILY_ID = "S05";
@@ -314,6 +318,15 @@ export function workbookOriginalAllowsAutoJudge(original: { family: string }): b
 
 /** Similar-name extract-15 / Markdown / Paris judges are not coverage. */
 export function coverByArithmeticOrMarkdownJudge(
+  original: Pick<WorkbookOriginal, "id" | "family">,
+): boolean {
+  void original;
+  return false;
+}
+
+/** Cloudflare Sign up, weekly Continue-with-X pause, or grok-lab leftover
+ * never cover S01. Isolated auth TAP evidence is required. */
+export function coverByCloudflareOrWeeklyAuthPause(
   original: Pick<WorkbookOriginal, "id" | "family">,
 ): boolean {
   void original;
@@ -828,6 +841,10 @@ function distinctiveNeedles(original: WorkbookOriginal): readonly string[] {
   if (original.id === 48) extra.push("3x5", "math");
   if (original.id === 51) extra.push("capital");
   if (original.id === 52) extra.push("greeting", "language");
+  if (original.id === 44) extra.push("sign-out", "signout");
+  if (original.id === 45) extra.push("continue", "x-absent", "authorize");
+  if (original.id === 46) extra.push("continue", "x-present", "x-app");
+  if (original.id === 47) extra.push("signup", "sign-up");
   return [...new Set([...fromName, ...extra])];
 }
 
@@ -921,7 +938,7 @@ export function suggestedExecutionQueueForOriginal(input: {
 }): ExecutionQueue {
   if (
     input.family === WORKBOOK_SURVIVAL_FAMILY_ID ||
-    input.family === "S01" ||
+    input.family === WORKBOOK_AUTH_FAMILY_ID ||
     input.family === "S15"
   ) {
     return "stateful-survival";
@@ -1091,12 +1108,37 @@ export function workbookEvidenceNeededError(
       return `${label} S08 generated-output needs after evidence — no arithmetic/Markdown judge`;
     }
   }
+  if (original.family === WORKBOOK_AUTH_FAMILY_ID) {
+    if (original.requirementAction !== "test-action") {
+      return `${label} S01 must be test-action — leftover Cloudflare / weekly pause / grok-lab signed-in is not Sign Out, Continue with X, or Sign Up`;
+    }
+    if (!original.evidenceNeeded || original.evidenceNeeded.length === 0) {
+      return `${label} S01 needs explicit evidence-needed (isolated auth before/after, receipt, sequence)`;
+    }
+  }
   if (original.id === 7) {
     const switchKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
     for (const required of ["before", "after", "receipt"] as const) {
       if (!switchKinds.has(required)) {
         return `${label} GQA-007 causal TAP must change selection — needs ${required} evidence`;
       }
+    }
+  }
+  if (original.id === 44) {
+    const signOutKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    for (const required of ["before", "after", "receipt"] as const) {
+      if (!signOutKinds.has(required)) {
+        return `${label} GQA-044 Sign Out TAP must execute — leftover logged-out home is not this original — needs ${required} evidence`;
+      }
+    }
+  }
+  if (original.id === 45 || original.id === 46) {
+    const xKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!xKinds.has("receipt")) {
+      return `${label} GQA-045/046 needs a Continue with X TAP receipt — weekly pause is not this original`;
+    }
+    if (!xKinds.has("sequence")) {
+      return `${label} GQA-045/046 needs sequence evidence — one leftover sheet is not both X variants`;
     }
   }
   if (!original.evidenceNeeded) return undefined;

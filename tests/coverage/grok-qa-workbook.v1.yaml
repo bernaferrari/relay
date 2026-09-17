@@ -18,9 +18,13 @@
 # RC-26 S08 output-battery packets stay unbound: generated-output capture
 # without arithmetic/Markdown/answer judge. Original criteria stay on the slot.
 # Leftover 3*5 extract-15 / capital extract-Paris is not coverage.
+# RC-27 S01 auth packets stay unbound: explicit test-action evidence-needed
+# (isolated Sign Out / Continue with X / Sign Up). Cloudflare Sign up and
+# weekly Continue-with-X pause are not coverage. Similar sign-out/signup
+# names do not cover. Leftover dest skip is only GQA-004/040 capture-view.
 schemaVersion: 1
 id: grok-qa-workbook
-revision: 6
+revision: 7
 reviewedAt: "2026-09-16"
 source:
   workbook: grok-qa-graph.xlsx
@@ -974,6 +978,17 @@ originals:
     evidencePacket: transition
     queue: "auth-isolated"
     suggestedExecutionQueue: stateful-survival
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-signed-in-with-sign-out
+        note: "Fresh Fast image of signed-in Settings/account with Sign Out visible. Isolated disposable fixture — not grok-lab SuperGrok 7189423f and not daily packs. Leftover grok-lab b2dcd768 sidebar+Build Mode is not this before frame. stabilityMeasured false."
+      - kind: receipt
+        id: tap-sign-out-confirm
+        note: "TAP Sign Out and confirm actually executed (test-action). Keep sign-out out of the default shared capture session. test-grok-web-signed-in-sign-out Cloudflare/x.ai is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: after
+        id: after-login-or-onboarding
+        note: "Fresh Fast image of login or onboarding after successful sign-out. Criteria stay human-review: User is signed out successfully and redirected. Cloudflare x.ai is not this after frame. stabilityMeasured false."
     gates:
       - "Keep sign-out out of the default shared capture session. Do not tap Sign Out in daily packs."
     status: unbound
@@ -988,6 +1003,20 @@ originals:
     evidencePacket: sequence
     queue: "auth-isolated"
     suggestedExecutionQueue: stateful-survival
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-welcome-x-absent
+        note: "Fresh Fast image of Welcome on an X-absent mobile fixture. grok-lab leftover b2dcd768 is signed-in SuperGrok, not Welcome. grok-auth-x-out Lane isolation is not this original. stabilityMeasured false."
+      - kind: receipt
+        id: tap-continue-with-x-sheet
+        note: "TAP Continue with X actually executed (test-action). Weekly Continue-with-X pause is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: sequence
+        id: x-absent-sheet-authorize
+        note: "Named frames: Welcome → x.com auth sheet (not X app) → Sign in → Authorize app → session exists. Human reviews original criterion. Isolated auth. X-app-present is GQA-046, not this original."
+      - kind: after
+        id: after-session-exists
+        note: "Session exists after authorize. Weekly pause resume is not this after frame. stabilityMeasured false."
     gates:
       - X-absent mobile fixture. Isolated auth.
     status: unbound
@@ -1002,6 +1031,20 @@ originals:
     evidencePacket: sequence
     queue: "auth-isolated"
     suggestedExecutionQueue: stateful-survival
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-welcome-x-present
+        note: "Fresh Fast image of Welcome on an X-installed mobile fixture. Leftover x.com sheet (X absent) is GQA-045, not this before frame. grok-lab leftover b2dcd768 is not Welcome. stabilityMeasured false."
+      - kind: receipt
+        id: tap-continue-with-x-app
+        note: "TAP Continue with X actually executed (test-action). Weekly Continue-with-X pause is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: sequence
+        id: x-app-authorize
+        note: "Named frames: Welcome → X app opens with x.com auth → Sign in → Authorize app → session exists. Both X variants on mobile are required. One leftover sheet is not this original."
+      - kind: after
+        id: after-session-exists
+        note: "Session exists after authorize from the X app. Human reviews original criterion. stabilityMeasured false."
     gates:
       - X-installed mobile fixture. Both X variants on mobile.
     status: unbound
@@ -1016,6 +1059,14 @@ originals:
     evidencePacket: view
     queue: "auth-isolated"
     suggestedExecutionQueue: stateful-survival
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: receipt
+        id: tap-sign-up
+        note: "TAP Sign Up on logged-out grok.com actually executed (test-action). test-grok-web-signup Cloudflare/x.ai is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: view
+        id: create-account-page
+        note: "Fresh Fast image of Create your account with sign-up options, switch to sign-in, and terms/policy. Criteria stay visible. Cloudflare-blocked x.ai is not this view. Logged-out Sign up currently Cloudflare-blocked / unbound — not a reviewed binding. stabilityMeasured false."
     gates:
       - "Web only. Logged-out Sign up currently Cloudflare-blocked / unbound on grok.com — not a reviewed binding."
     status: unbound
