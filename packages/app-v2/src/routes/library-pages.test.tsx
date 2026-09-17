@@ -258,6 +258,13 @@ describe("App overview", () => {
 });
 
 describe("Tests library", () => {
+  it("puts the library first and keeps failed results out of Resume work", async () => {
+    await render("/tests");
+    expect(document.querySelector('[aria-label="Morning review"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Resume work"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Filter Tests"]')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Results that need attention"]')).not.toBeNull();
+  });
   it("restores the collection scroll container and row focus after browser Back", async () => {
     const { history } = await render("/tests");
     const main = document.querySelector<HTMLElement>(".relay-main");
@@ -477,7 +484,10 @@ describe("Runs workspace", () => {
     expect(document.body.textContent).toContain("Open account");
     expect(document.body.textContent).toContain("Needs review");
     expect(document.body.textContent).toContain("In progress");
-    expect(document.body.textContent).toContain("Morning review");
+    expect(document.querySelector('[aria-label="Morning review"]')).not.toBeNull();
+    expect(
+      document.querySelector('[aria-label="Morning review"] details')?.hasAttribute("open"),
+    ).toBe(false);
     expect(document.body.textContent).toContain("Check Sign-ins");
     expect(document.body.textContent).toContain("Check live health");
     expect(document.body.textContent).toContain("Accounts health");

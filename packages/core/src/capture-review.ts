@@ -188,7 +188,7 @@ export function reviewPersistedCapture(
     return {
       run: persisted,
       queue: applied.queue,
-      decision: applied.captureReviews.at(-1)!,
+      decision: applied.captureReviews.find((decision) => decision.captureId === input.captureId)!,
     };
   });
 }

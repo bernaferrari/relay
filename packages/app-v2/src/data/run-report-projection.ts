@@ -316,16 +316,24 @@ function reportTimeline(
     const authoredStep = stepEvidence?.find((item) => item.traceStepId === text(step.id));
     const hasVisibleCapture =
       authoredStep &&
-      stepEvidence?.some(
-        (item) =>
-          item.testStepId === authoredStep.testStepId &&
-          item.traceStepId !== authoredStep.traceStepId &&
-          item.evidence.framePaths.length > 0 &&
-          array(record(rawRun)?.steps).some(
-            (other) =>
-              text(record(other)?.id) === item.traceStepId && humanStepTitle(record(other)?.title),
-          ),
-      );
+      array(record(rawRun)?.steps).some((other) => {
+        const candidate = record(other);
+        const candidateId = text(candidate?.id);
+        if (candidateId === authoredStep.traceStepId || !humanStepTitle(candidate?.title))
+          return false;
+        const captureStepId = /^Screenshot · step:([^:]+):/u.exec(
+          text(candidate?.title) ?? "",
+        )?.[1];
+        return (
+          captureStepId === authoredStep.testStepId ||
+          stepEvidence?.some(
+            (item) =>
+              item.testStepId === authoredStep.testStepId &&
+              item.traceStepId === candidateId &&
+              item.evidence.framePaths.length > 0,
+          )
+        );
+      });
     const title =
       humanStepTitle(step.title) ??
       (failed

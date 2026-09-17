@@ -1,14 +1,17 @@
 /** @jsxImportSource react */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CaptureReviewAction, PlanCaptureReviewItem } from "@relay/protocol";
 import {
   captureReviewQueueFrameKey,
+  captureReviewQueueItemKey,
   filterPlanCaptureReviewQueue,
   formatCaptureReviewCoverageSummary,
   parsePlanCaptureReviewFilter,
   planCaptureReviewFilterOptions,
 } from "@relay/protocol";
+import { Button } from "@relay/ui-react/components/button";
+import { captureReviewFeedback } from "./capture-review-feedback";
 import type { RunAcrossProductService } from "../data/run-across-product-service";
 import { productClientForPlatform } from "../data/product-client";
 import type { Platform } from "../platform/types";
@@ -46,18 +49,6 @@ function planCaptureFrames(
   });
 }
 
-function blockedCoverageNote(items: readonly PlanCaptureReviewItem[]): string {
-  const blocked = items.filter((item) => item.blocked);
-  if (blocked.length !== 1) return "";
-  const item = blocked[0]!;
-  const imagine =
-    item.checkpointId === "imagine" || item.caption.trim().toLowerCase() === "imagine";
-  if (!imagine) return "";
-  return item.configuration?.app === "ai.x.GrokApp"
-    ? " (iOS Imagine Unbound)"
-    : " (Imagine Unbound)";
-}
-
 export function PlanCaptureReviewSection({
   batchId,
   runAcrossService,
@@ -70,7 +61,7 @@ export function PlanCaptureReviewSection({
   streaming?: boolean;
 }) {
   const queryClient = useQueryClient();
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedKey, setSelectedKey] = useState<string>();
   const [pendingOnly, setPendingOnly] = useState(false);
   const [screen, setScreen] = useState("");
   const [place, setPlace] = useState("");
@@ -122,14 +113,45 @@ export function PlanCaptureReviewSection({
         : { screens: [], devices: [], accounts: [] },
     [queue],
   );
-  useEffect(() => {
-    setSelectedIndex(0);
-  }, [pendingOnly, screen, place]);
+  const selectedIndex = Math.max(
+    0,
+    visible?.items.findIndex((item) => captureReviewQueueItemKey(item) === selectedKey) ?? 0,
+  );
+  const feedback = useMemo(
+    () =>
+      review.data && review.variables
+        ? captureReviewFeedback(review.variables.items, review.data.results)
+        : undefined,
+    [review.data, review.variables],
+  );
   const frames = useMemo(
     () => (visible ? planCaptureFrames(visible.items, platform) : []),
     [visible, platform],
   );
-  if (!queue?.items.length) return null;
+  if (!runAcrossService.getCaptureReview) return null;
+  if (!queue)
+    return (
+      <section className="mt-5 rounded-xl border border-border p-5" aria-label="Screenshot review">
+        <h2 className="text-title font-semibold">Screenshot review</h2>
+        {captures.isError ? (
+          <div role="alert" className="mt-2 grid gap-2 text-sm">
+            <p>Screenshots could not be loaded. {captures.error.message}</p>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={captures.isFetching}
+              onClick={() => void captures.refetch()}
+            >
+              Retry loading screenshots
+            </Button>
+          </div>
+        ) : (
+          <p role="status" className="mt-2 text-sm text-muted-foreground">
+            Loading screenshots…
+          </p>
+        )}
+      </section>
+    );
   const reviewItem = (action: CaptureReviewAction, items: PlanCaptureReviewItem[]) => {
     review.mutate({
       action,
@@ -140,16 +162,65 @@ export function PlanCaptureReviewSection({
       })),
     });
   };
-  const blockedNote = blockedCoverageNote(queue.items);
   return (
     <section className="relay-batch-capture-review mt-5 rounded-xl border border-border bg-[var(--surface-raised-strong)]">
-      <h2 className="px-5 pt-4 text-[20px] font-semibold tracking-tight text-foreground">
+      <h2 className="px-5 pt-4 text-title font-semibold tracking-tight text-foreground">
         Screenshot review
       </h2>
       <p className="px-5 text-sm tabular-nums text-muted-foreground">
-        {formatCaptureReviewCoverageSummary(queue.summary)}
-        {blockedNote} · Looks correct does not approve a visual baseline.
+        {formatCaptureReviewCoverageSummary(queue.summary)}· Looks correct does not approve a visual
+        baseline.
       </p>
+      {captures.isError ? (
+        <div role="alert" className="flex flex-wrap items-center gap-2 px-5 pt-2 text-sm">
+          <p>Showing saved results. New captures could not be loaded.</p>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={captures.isFetching}
+            onClick={() => void captures.refetch()}
+          >
+            Refresh screenshots
+          </Button>
+        </div>
+      ) : null}
+      {review.isPending ? (
+        <p role="status" className="px-5 pt-2 text-sm">
+          Saving review…
+        </p>
+      ) : null}
+      {review.isError ? (
+        <p role="alert" className="px-5 pt-2 text-sm text-destructive">
+          Review could not be confirmed. {review.error.message} Refresh screenshots before retrying.
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-2"
+            disabled={captures.isFetching}
+            onClick={() => void captures.refetch()}
+          >
+            Refresh screenshots
+          </Button>
+        </p>
+      ) : null}
+      {!review.isPending && !review.isError && feedback ? (
+        <div className="px-5 pt-2 text-sm" role={feedback.failures.length ? "alert" : "status"}>
+          <p>
+            {feedback.savedKeys.length} of {review.variables?.items.length} review decisions saved.
+          </p>
+          {feedback.failures.length ? (
+            <ul className="mt-1 list-disc pl-5 text-muted-foreground">
+              {feedback.failures.map((failure) => (
+                <li key={failure.key}>
+                  {queue.items.find((item) => captureReviewQueueItemKey(item) === failure.key)
+                    ?.caption ?? "Screenshot"}
+                  : {failure.message}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
       {streaming ? (
         <p className="px-5 pt-1 text-xs text-muted-foreground">
           New captures appear here as they finish. Selection does not include later arrivals.
@@ -205,24 +276,36 @@ export function PlanCaptureReviewSection({
           </select>
         </label>
       </div>
-      <CaptureReviewPanel
-        queue={visible ?? queue}
-        frames={frames}
-        selectedIndex={selectedIndex}
-        onSelect={setSelectedIndex}
-        busy={review.isPending}
-        showCoverage={false}
-        onReview={
-          runAcrossService.reviewCaptures
-            ? (action, item) => reviewItem(action, [item as PlanCaptureReviewItem])
-            : undefined
-        }
-        onReviewMany={
-          runAcrossService.reviewCaptures
-            ? (action, items) => reviewItem(action, items as PlanCaptureReviewItem[])
-            : undefined
-        }
-      />
+      {!visible?.items.length ? (
+        <p role="status" className="p-5 text-sm text-muted-foreground">
+          {queue.items.length
+            ? "No screenshots match these filters. Try another screen or device, or turn off Pending."
+            : streaming
+              ? "Waiting for the first planned screenshots. New captures will appear here."
+              : "No screenshots are available for this Plan."}
+        </p>
+      ) : (
+        <CaptureReviewPanel
+          key={batchId}
+          reviewedItemKeys={feedback?.savedKeys}
+          queue={visible ?? queue}
+          frames={frames}
+          selectedIndex={selectedIndex}
+          onSelect={(index) => setSelectedKey(captureReviewQueueItemKey(visible.items[index]!))}
+          busy={review.isPending}
+          showCoverage={false}
+          onReview={
+            runAcrossService.reviewCaptures
+              ? (action, item) => reviewItem(action, [item as PlanCaptureReviewItem])
+              : undefined
+          }
+          onReviewMany={
+            runAcrossService.reviewCaptures
+              ? (action, items) => reviewItem(action, items as PlanCaptureReviewItem[])
+              : undefined
+          }
+        />
+      )}
     </section>
   );
 }

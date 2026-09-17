@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { RunTestStepEvidence } from "@relay/protocol";
-import { act } from "react";
+import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProductRunReportOverview } from "../data/run-product-service";
@@ -146,20 +146,30 @@ const report: ProductRunReportOverview = {
   ],
 };
 
-function render(selectedStepIndex = 0, value = report) {
+function render(
+  selectedStepIndex = 0,
+  value = report,
+  onReviewCapture?: ComponentProps<typeof RunWorkbench>["onReviewCapture"],
+) {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
   roots.push(root);
   const onSelectStep = (index: number) => {
     root.render(
-      <RunWorkbench report={value} selectedStepIndex={index} onSelectStep={onSelectStep} />,
+      <RunWorkbench
+        report={value}
+        selectedStepIndex={index}
+        onSelectStep={onSelectStep}
+        onReviewCapture={onReviewCapture}
+      />,
     );
   };
   act(() => {
     root.render(
       <RunWorkbench
         report={value}
+        onReviewCapture={onReviewCapture}
         selectedStepIndex={selectedStepIndex}
         onSelectStep={onSelectStep}
       />,
@@ -443,7 +453,7 @@ describe("RunWorkbench", () => {
     expect(host.textContent).toContain("The saved image could not be loaded");
   });
 
-  it("moves the capture review sheet with arrow keys without calling the Run passed", () => {
+  it("moves review with arrow keys and sends the image toolbar decision for the selected capture", async () => {
     const value: ProductRunReportOverview = {
       ...report,
       captureReview: {
@@ -473,20 +483,57 @@ describe("RunWorkbench", () => {
         },
       },
     };
-    const host = render(0, value);
+    const review = vi.fn(async () => undefined);
+    const host = render(0, value, review);
+    expect(host.querySelector('[role="tablist"][aria-label="Step views"]')).not.toBeNull();
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Captures");
+    expect(host.querySelector('[role="tabpanel"]')).not.toBeNull();
     expect(host.textContent).toContain("2/2 captured");
     expect(host.textContent).toContain("2 pending review");
     expect(host.textContent).not.toContain("passed");
     const sheet = host.querySelector<HTMLElement>('[aria-label="Screenshot review"]')!;
-    expect(host.querySelector("p.text-sm.font-medium")?.textContent).toBe(
+    expect(host.querySelector("p.text-sm.font-semibold")?.textContent).toBe(
       "Member · Desktop · English",
     );
     act(() => {
       sheet.focus();
       sheet.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
     });
-    expect(host.querySelector("p.text-sm.font-medium")?.textContent).toBe(
+    expect(host.querySelector("p.text-sm.font-semibold")?.textContent).toBe(
       "Member · Compact · Arabic",
     );
+    const bar = host.querySelector(
+      '.relay-evidence-image-frame [aria-label="Screenshot review decision"]',
+    )!;
+    expect(host.querySelectorAll('[aria-label="Screenshot review decision"]')).toHaveLength(1);
+    expect(
+      host.querySelector('[aria-label="Screenshot review"] img[alt="Checkout submitted"]'),
+    ).toBeNull();
+    const accept = [...bar.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Looks correct"),
+    )!;
+    await act(async () => accept.click());
+    expect(review).toHaveBeenCalledWith({ captureId: "arabic", action: "accept" });
+    act(() =>
+      [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+        .find((item) => item.textContent === "Logs")!
+        .click(),
+    );
+    expect(host.querySelector(".relay-evidence-image-frame img")?.getAttribute("alt")).toBe(
+      "Checkout submitted",
+    );
+    expect(host.querySelector('[aria-label="Screenshot review decision"]')).not.toBeNull();
+    for (const label of ["Steps", "Logs"]) {
+      const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((item) =>
+        item.textContent?.startsWith(label),
+      )!;
+      act(() => tab.click());
+      const decision = [
+        ...host.querySelectorAll<HTMLButtonElement>(".relay-evidence-image-frame button"),
+      ].find((item) => item.textContent?.includes("Looks correct"))!;
+      expect(decision).toBeDefined();
+      await act(async () => decision.click());
+      expect(review).toHaveBeenLastCalledWith({ captureId: "english", action: "accept" });
+    }
   });
 });

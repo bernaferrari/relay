@@ -1,3 +1,4 @@
+import { Terminal } from "lucide-react";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useMemo, useRef, useState } from "react";
@@ -20,29 +21,41 @@ export function RunLogPanel({ logs }: { logs: readonly ReportEvidenceItem[] }) {
   });
   return (
     <section className="flex min-h-0 flex-1 flex-col p-4" aria-label="Run logs">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <span className="text-xs text-muted-foreground">
-          {rows.length} of {logs.length} retained logs
-        </span>
-        {logs.length ? (
-          <input
-            aria-label="Filter logs"
-            placeholder="Filter logs…"
-            value={filter}
-            onChange={(event) => {
-              setFilter(event.target.value);
-              viewport.current?.scrollTo({ top: 0 });
-            }}
-            className="h-8 rounded-md border border-input bg-transparent px-3 text-sm"
-          />
-        ) : null}
-      </div>
+      {logs.length ? (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs text-muted-foreground">
+            {rows.length} of {logs.length} retained logs
+          </span>
+          {logs.length ? (
+            <input
+              aria-label="Filter logs"
+              placeholder="Filter logs…"
+              value={filter}
+              onChange={(event) => {
+                setFilter(event.target.value);
+                viewport.current?.scrollTo({ top: 0 });
+              }}
+              className="h-8 rounded-md border border-input bg-transparent px-3 text-sm"
+            />
+          ) : null}
+        </div>
+      ) : null}
       {!rows.length ? (
-        <p className="m-auto text-sm text-muted-foreground">
-          {logs.length
-            ? "No logs match this filter."
-            : "No device logs were retained for this run."}
-        </p>
+        <div className="flex items-start gap-4 py-6">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted/50 text-muted-foreground">
+            <Terminal className="size-5" aria-hidden="true" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-sm font-medium">
+              {logs.length ? "No matching entries" : "No logs recorded"}
+            </h3>
+            <p className="max-w-sm text-sm leading-6 text-muted-foreground">
+              {logs.length
+                ? "Try a different search or clear the filter."
+                : "This run saved screenshots and step results, but no device logs."}
+            </p>
+          </div>
+        </div>
       ) : (
         <ScrollArea
           className="min-h-0 flex-1"

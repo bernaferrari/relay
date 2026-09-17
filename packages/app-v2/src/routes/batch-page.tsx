@@ -284,6 +284,7 @@ export function BatchPage() {
             </div>
           ) : null}
           <PlanCaptureReviewSection
+            key={batchId}
             batchId={batchId}
             runAcrossService={runAcrossService}
             platform={platform}

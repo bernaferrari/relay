@@ -1082,7 +1082,7 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Language settings");
     expect(document.body.textContent).toContain("Test passed");
     expect(document.querySelector('[aria-label="Run evidence"]')).not.toBeNull();
-    expect(document.querySelectorAll('[role="tab"]')).toHaveLength(0);
+    expect(document.querySelector('[role="tablist"][aria-label="Step views"]')).not.toBeNull();
   });
 
   it("routes durable Run review decisions with the canonical Run identity", async () => {

@@ -405,7 +405,7 @@ describe("Home", () => {
     expect(document.body.textContent).not.toContain("Latest results");
     expect(document.body.textContent).not.toContain("Start with one journey");
   });
-  it("prioritizes an unsuccessful latest result over a saved test", async () => {
+  it("keeps failed results discoverable without presenting them as resumable work", async () => {
     const now = Date.now();
     await renderHome({
       apps: [{ id: "app", name: "Checkout" }],
@@ -437,8 +437,10 @@ describe("Home", () => {
         },
       ],
     });
-    expect(document.querySelector("#tests-resume-title")?.textContent).toBe("Payment failed");
-    expect(document.body.textContent).toContain("Failed on");
+    expect(document.querySelector("#tests-resume-title")).toBeNull();
+    expect(
+      document.querySelector("[aria-label='Results that need attention']")?.textContent,
+    ).toContain("1 result needs attention");
     expect(document.body.textContent).not.toContain("Ready to run");
     expect(document.querySelector("[data-page-pattern]")).toHaveProperty(
       "dataset.pagePattern",
@@ -499,9 +501,9 @@ describe("Home", () => {
       ],
     });
     expect(document.body.textContent).toContain("Pay");
-    expect(document.querySelector("#tests-resume-title")?.textContent).toContain("Pay");
+    expect(document.querySelector("#tests-resume-title")).toBeNull();
     expect(document.querySelector("[aria-label='Results that need attention']")?.textContent).toBe(
-      "2 results need attention",
+      "2 results need attention →",
     );
     expect(document.body.textContent).toContain("Sign in");
   });

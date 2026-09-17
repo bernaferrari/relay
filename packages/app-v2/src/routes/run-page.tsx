@@ -563,14 +563,16 @@ function RunReport({
         <Button
           nativeButton={false}
           render={<Link to="/tests/$testId" params={{ testId }} />}
-          variant={canInvestigate ? "ghost" : "default"}
+          variant="outline"
         >
           Set up another run
         </Button>
       ) : embedded ? null : (
         <RunReplayAction report={report} runService={runService} />
       )}
-      {!embedded && (runService.compareVisual || runService.review) ? (
+      {!embedded &&
+      !report.captureReview?.items.length &&
+      (runService.compareVisual || runService.review) ? (
         <Button variant="outline" size="sm" onClick={() => setRunDialog("review")}>
           Review screenshots
         </Button>

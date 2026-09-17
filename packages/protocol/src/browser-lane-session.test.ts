@@ -47,6 +47,8 @@ test("Playwright user-data and Electron partitions are distinct stores even with
     targetId: "grok-com",
   });
   const electron = browserLaneCookieStore({ kind: "electron-partition", laneId: "grok-lab" });
+  assert.equal(playwright.kind, "playwright-user-data");
+  assert.equal(electron.kind, "electron-partition");
   assert.equal(playwright.name, "grok-com__lane_grok-lab");
   assert.equal(electron.partition, "persist:lane:grok-lab");
   assert.notEqual(playwright.name, electron.partition);

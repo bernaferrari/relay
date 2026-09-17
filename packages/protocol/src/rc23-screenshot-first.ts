@@ -205,7 +205,7 @@ export const RC23_SCREENSHOT_FIRST_CAPTURED_PENDING: readonly Rc23ScreenshotFirs
   {
     checkpointId: "composer-focus",
     platform: "ios",
-    jobId: "43ece456-a1ed-47af-be9a-9fb357829947",
+    jobId: "56898725-7890-46b8-abd1-2b193cdf82b0",
   },
   {
     checkpointId: "attach",

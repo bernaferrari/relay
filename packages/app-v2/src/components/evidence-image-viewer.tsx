@@ -24,7 +24,10 @@ export function EvidenceImageViewer({
 }) {
   const [zoom, setZoom] = useState(0);
   const [open, setOpen] = useState(false);
+  const [naturalSize, setNaturalSize] = useState<{ src: string; width: number }>();
   if (!frame.media) return null;
+  const imageWidth =
+    frame.media.width ?? (naturalSize?.src === frame.media.src ? naturalSize.width : undefined);
   return (
     <>
       <ReportImage
@@ -34,6 +37,9 @@ export function EvidenceImageViewer({
         height={frame.media.height}
         className={className ?? "max-h-[28rem] w-full max-w-full object-contain"}
         onError={onError}
+        onLoad={(event) =>
+          setNaturalSize({ src: frame.media!.src, width: event.currentTarget.naturalWidth })
+        }
       />
       <Dialog
         open={open}
@@ -87,7 +93,7 @@ export function EvidenceImageViewer({
                 size="icon-sm"
                 variant="ghost"
                 aria-label="Zoom in"
-                disabled={zoom === 4}
+                disabled={zoom === 4 || !imageWidth}
                 onClick={() => setZoom((value) => Math.min(4, value + 1))}
               >
                 <Plus aria-hidden="true" />
@@ -106,7 +112,7 @@ export function EvidenceImageViewer({
               width={frame.media.width}
               height={frame.media.height}
               className={zoom === 0 ? "max-h-full max-w-full object-contain" : "max-w-none"}
-              style={zoom ? { width: (frame.media.width ?? 1024) * zoom } : undefined}
+              style={zoom ? { width: imageWidth! * zoom } : undefined}
               onError={onError}
             />
           </div>

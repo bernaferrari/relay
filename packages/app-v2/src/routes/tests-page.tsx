@@ -1,4 +1,4 @@
-import { libraryRowSurface, libraryRowContent } from "../components/library-row-styles";
+import { libraryRowSurface } from "../components/library-row-styles";
 /** @jsxImportSource react */
 import type { ProductTestSummary } from "@relay/product/catalog";
 import { Button } from "@relay/ui-react/components/button";
@@ -16,7 +16,6 @@ import { runQueryKeys } from "../data/run-queries";
 import { readRunPointer } from "../data/run-pointer";
 import { readWorkflowPointer } from "../data/workflow-pointer";
 import { PageLoading, RecordingProblem } from "./recording-shared";
-import { MorningReviewCard } from "./morning-review-card";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 
 const routeApi = getRouteApi("/tests");
@@ -82,10 +81,10 @@ export function TestsPage() {
       : !app || !recordingAppId || recordingAppId === app
         ? recording.data
         : undefined;
-  const resumeRunId =
-    !app || scopedRuns.some((item) => item.id === runPointer.data?.runId)
-      ? runPointer.data?.runId
-      : undefined;
+  const resumeRunId = scopedRuns.find(
+    (item) =>
+      item.id === runPointer.data?.runId && (item.phase === "running" || item.phase === "queued"),
+  )?.id;
   const apps = useMemo(
     () =>
       [...new Map((tests.data ?? []).map((test) => [test.appMapId, test.appName])).entries()].sort(
@@ -116,7 +115,6 @@ export function TestsPage() {
   const attentionRuns = homeAttentionRuns(scopedRuns).filter(
     (item) => !item.testId || visibleTestIds.has(item.testId),
   );
-  const resumeAttention = attentionRuns[0];
   const returnFocus = useCollectionReturnFocus("relay:focus:/tests", visibleTests, "/tests/");
   const resultLabel = resultContext(status, app, apps);
   const statusOptions = [
@@ -192,9 +190,7 @@ export function TestsPage() {
         }
       />
 
-      {tests.data?.length ? <MorningReviewCard /> : null}
-
-      {resumeRecordingId || resumeRunId || resumeAttention ? (
+      {resumeRecordingId || resumeRunId ? (
         <div
           className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3"
           aria-label="Resume work"
@@ -205,18 +201,14 @@ export function TestsPage() {
                 ? reviewing
                   ? "Your recording is ready to review"
                   : "Continue your test"
-                : resumeRunId
-                  ? "A Run is in progress"
-                  : (resumeAttention?.testName ?? resumeAttention?.title)}
+                : "A Run is in progress"}
             </strong>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {resumeRecordingId
                 ? reviewing
                   ? "Review the captured steps, then save your test."
                   : "Your captured steps are saved."
-                : resumeRunId
-                  ? "See how the current Run is going."
-                  : `Failed on ${resumeAttention?.targetName ?? "the Device"}.`}
+                : "See how the current Run is going."}
             </p>
           </div>
           {resumeRecordingId ? (
@@ -235,24 +227,8 @@ export function TestsPage() {
             >
               Open Run
             </Link>
-          ) : resumeAttention ? (
-            <Link
-              className="text-sm font-semibold text-[var(--text-interactive-base)]"
-              to="/runs/$runId"
-              params={{ runId: resumeAttention.id }}
-            >
-              Open result
-            </Link>
           ) : null}
         </div>
-      ) : null}
-
-      {attentionRuns.length > 1 ? (
-        <p className="mb-4 text-sm text-muted-foreground" aria-label="Results that need attention">
-          <Link to="/runs" className="hover:underline">
-            {attentionRuns.length} results need attention
-          </Link>
-        </p>
       ) : null}
 
       <LibraryToolbar
@@ -303,16 +279,25 @@ export function TestsPage() {
       {!tests.isPending && !tests.isError && visibleTests.length ? (
         <section className="relay-library-results mt-3" aria-labelledby="saved-tests-title">
           <div className="relay-library-results-heading flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
-            <h2 id="saved-tests-title" className="text-[13px] font-semibold">
+            <h2 id="saved-tests-title" className="text-body font-semibold tabular-nums">
               {visibleTests.length === 1 ? "1 Test" : `${visibleTests.length} Tests`}
             </h2>
-            {resultLabel ? (
+            {attentionRuns.length ? (
+              <Link
+                to="/runs"
+                className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+                aria-label="Results that need attention"
+              >
+                {attentionRuns.length}{" "}
+                {attentionRuns.length === 1 ? "result needs" : "results need"} attention →
+              </Link>
+            ) : resultLabel ? (
               <span className="text-xs text-[var(--text-weak)]" aria-live="polite">
                 {resultLabel}
               </span>
             ) : null}
           </div>
-          <ul className="relay-library-list m-0 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] p-0 [&>li]:border-b [&>li]:border-[var(--border-weak-base)] [&>li:last-child]:border-b-0">
+          <ul className="relay-library-list m-0 list-none overflow-hidden rounded-xl border border-border/60 p-0 [&>li]:border-b [&>li]:border-border/60 [&>li:last-child]:border-b-0">
             {visibleTests.map((test) => (
               <TestRow key={`${test.appMapId}:${test.id}`} test={test} />
             ))}
@@ -357,12 +342,12 @@ function TestRow({ test }: { test: ProductTestSummary }) {
   return (
     <li>
       <div
-        className={`group/test-row relative grid grid-cols-[minmax(0,1fr)_104px] items-center pr-3 ${libraryRowSurface}`}
+        className={`group/test-row relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pr-3 ${libraryRowSurface}`}
       >
         <Link
           to="/tests/$testId"
           params={{ testId: test.id }}
-          className={`${libraryRowContent} grid-cols-[minmax(180px,1fr)_minmax(94px,auto)_minmax(150px,.48fr)] max-[720px]:grid-cols-[minmax(0,1fr)_auto]`}
+          className="grid min-w-0 gap-2 px-4 py-3.5 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-6"
         >
           <span className="relay-library-row-main grid min-w-0 gap-1">
             <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-[var(--text-strong)]">
@@ -372,25 +357,17 @@ function TestRow({ test }: { test: ProductTestSummary }) {
               {test.appName} · {test.stepCount === 1 ? "1 step" : `${test.stepCount} steps`}
             </span>
           </span>
-          <span className="relay-library-row-status flex justify-start">
+          <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             {test.status !== "ready" ? (
               <ReadinessMark status={test.status} name={test.name} />
             ) : null}
-          </span>
-          <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1">
             {recent ? (
-              <>
+              <span className="inline-flex items-center gap-2">
                 <OutcomeMark outcome={recent.outcome ?? recent.phase} />
-                <small className="text-xs tabular-nums text-muted-foreground">
-                  {relativeTime(runTime(recent))}
-                </small>
-              </>
+                <span className="tabular-nums">{relativeTime(runTime(recent))}</span>
+              </span>
             ) : (
-              <>
-                <span className="relay-library-never-run text-xs font-semibold text-[var(--text-base)]">
-                  Not run yet
-                </span>
-              </>
+              <span className="relay-library-never-run">Not run yet</span>
             )}
           </span>
         </Link>
@@ -398,7 +375,7 @@ function TestRow({ test }: { test: ProductTestSummary }) {
           nativeButton={false}
           variant="ghost"
           size="sm"
-          className="relay-library-row-run min-h-9 justify-self-end rounded-md border border-transparent px-3 text-xs font-medium text-muted-foreground transition-[color,background-color,border-color] duration-150 group-hover/test-row:border-border group-hover/test-row:text-foreground hover:bg-background focus-visible:border-border motion-reduce:transition-none"
+          className="relay-library-row-run min-h-10 justify-self-end rounded-md border border-transparent px-3 text-xs font-medium text-muted-foreground transition-[color,background-color,border-color] duration-150 group-hover/test-row:border-border group-hover/test-row:text-foreground hover:bg-background focus-visible:border-border motion-reduce:transition-none"
           render={
             test.status === "needs-review" ? (
               <Link to="/tests/$testId/edit" params={{ testId: test.id }} />

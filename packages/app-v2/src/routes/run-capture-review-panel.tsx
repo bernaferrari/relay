@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@relay/ui-react/components/button";
 import {
   captureReviewAdvanceIndex,
@@ -14,6 +14,8 @@ import {
   type CaptureReviewItem,
   type CaptureReviewQueue,
 } from "@relay/protocol";
+import { CaptureReviewDecisions } from "./capture-review-decisions";
+import { EvidenceImageViewer } from "../components/evidence-image-viewer";
 import { ReportImage } from "../components/report-image";
 import type { ReportEvidenceItem } from "../data/run-product-service";
 
@@ -37,29 +39,9 @@ function planFields(item: CaptureReviewItem): {
   };
 }
 
-function blockedUnboundLabel(item: CaptureReviewItem): string | undefined {
-  const meta = planFields(item);
-  if (!meta.blocked) return undefined;
-  const imagine =
-    item.checkpointId === "imagine" || item.caption.trim().toLowerCase() === "imagine";
-  const ios = item.configuration?.app === "ai.x.GrokApp";
-  if (imagine && ios) return "iOS Imagine Unbound";
-  if (imagine) return "Imagine Unbound";
-  return undefined;
-}
-
 function previewPlace(item: CaptureReviewItem): string {
   const meta = planFields(item);
-  const unbound = blockedUnboundLabel(item);
-  return [
-    meta.device,
-    item.configuration?.account ?? meta.account,
-    unbound,
-    !unbound && meta.blocked ? "blocked" : undefined,
-    !meta.blocked && item.status === "missing" ? "missing" : undefined,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  return [meta.device, item.configuration?.account ?? meta.account].filter(Boolean).join(" · ");
 }
 
 function reviewable(item: CaptureReviewItem): boolean {
@@ -85,6 +67,9 @@ export function CaptureReviewPanel({
   showMasks,
   onShowMasksChange,
   showCoverage = true,
+  showImage = true,
+  fallbackTitle,
+  reviewedItemKeys,
 }: {
   queue: CaptureReviewQueue;
   frames: readonly ReportEvidenceItem[];
@@ -97,8 +82,17 @@ export function CaptureReviewPanel({
   showMasks?: boolean;
   onShowMasksChange?(show: boolean): void;
   showCoverage?: boolean;
+  showImage?: boolean;
+  fallbackTitle?: string;
+  reviewedItemKeys?: readonly string[];
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    if (!reviewedItemKeys?.length) return;
+    setSelectedIds(
+      (current) => new Set([...current].filter((key) => !reviewedItemKeys.includes(key))),
+    );
+  }, [reviewedItemKeys]);
   const selected = queue.items[Math.min(selectedIndex, Math.max(0, queue.items.length - 1))];
   const pendingIndices = queue.items.flatMap((item, index) =>
     item.status === "pending" && reviewable(item) && index !== selectedIndex ? [index] : [],
@@ -106,7 +100,6 @@ export function CaptureReviewPanel({
   const nextPendingIndex =
     pendingIndices.find((index) => index > selectedIndex) ?? pendingIndices[0];
   const selectedMeta = selected ? planFields(selected) : {};
-  const selectedBlocked = selected ? blockedUnboundLabel(selected) : undefined;
   const frame = selected
     ? frames.find(
         (item) => item.id === captureReviewQueueFrameKey({ ...selected, ...selectedMeta }),
@@ -128,14 +121,37 @@ export function CaptureReviewPanel({
       return next;
     });
   };
+  const caption = (item: CaptureReviewItem, index: number) => {
+    if (item.caption.startsWith("step:"))
+      return (
+        item.caption.split(":").slice(2).join(":") || fallbackTitle || `Checkpoint ${index + 1}`
+      );
+    if (item.caption.startsWith("app-map:"))
+      return fallbackTitle
+        ? `${fallbackTitle} · checkpoint ${index + 1}`
+        : `Checkpoint ${index + 1}`;
+    return item.caption;
+  };
   return (
     <div
-      className="grid gap-4 p-3 lg:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)] lg:items-start"
+      className={`grid gap-5 p-3 ${showImage ? "lg:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)] lg:items-start" : ""}`}
       tabIndex={0}
       aria-label="Screenshot review"
       onKeyDown={(event) => {
         const target = event.target;
-        if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+        if (
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey ||
+          event.shiftKey ||
+          event.defaultPrevented
+        )
+          return;
+        if (
+          target instanceof Element &&
+          target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"]')
+        )
+          return;
         const next = captureReviewAdvanceIndex(selectedIndex, queue.items.length, event.key);
         if (next === undefined) return;
         event.preventDefault();
@@ -148,16 +164,19 @@ export function CaptureReviewPanel({
             {captureReviewSummaryLine(queue)}
           </p>
         ) : null}
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={nextPendingIndex === undefined}
-          onClick={() => {
-            if (nextPendingIndex !== undefined) onSelect(nextPendingIndex);
-          }}
-        >
-          Next pending screenshot
-        </Button>
+        {nextPendingIndex !== undefined ? (
+          <Button
+            className="w-fit"
+            variant="ghost"
+            size="sm"
+            disabled={nextPendingIndex === undefined}
+            onClick={() => {
+              if (nextPendingIndex !== undefined) onSelect(nextPendingIndex);
+            }}
+          >
+            Next unreviewed
+          </Button>
+        ) : null}
         {onReviewMany && bulkItems.length > 1 ? (
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -171,7 +190,7 @@ export function CaptureReviewPanel({
           </div>
         ) : null}
         <ul
-          className="grid max-h-[min(70vh,36rem)] grid-cols-2 gap-2 overflow-y-auto p-0.5 md:grid-cols-1 xl:grid-cols-2"
+          className="grid max-h-[min(45vh,24rem)] gap-2 overflow-y-auto p-0.5"
           aria-label="Screenshots for review"
         >
           {queue.items.map((item, index) => {
@@ -183,8 +202,8 @@ export function CaptureReviewPanel({
             return (
               <li key={key} className="relative min-w-0">
                 {reviewable(item) ? (
-                  <label className="absolute start-0 top-0 z-10 flex size-8 items-center justify-center">
-                    <span className="sr-only">Select {item.caption}</span>
+                  <label className="absolute start-0 top-1/2 z-10 flex size-10 -translate-y-1/2 items-center justify-center">
+                    <span className="sr-only">Select {caption(item, index)}</span>
                     <input
                       type="checkbox"
                       className="size-3.5 accent-foreground"
@@ -197,26 +216,39 @@ export function CaptureReviewPanel({
                 <button
                   type="button"
                   aria-pressed={index === selectedIndex}
-                  className={`relay-interactive-row flex min-h-[8.5rem] w-full flex-col items-stretch gap-1.5 rounded-md p-2 text-left transition-colors focus-visible:outline-2 ${index === selectedIndex ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
+                  className={`relay-interactive-row flex min-h-20 w-full items-center gap-3 rounded-lg py-2 pl-10 pr-3 text-left transition-colors focus-visible:outline-2 ${index === selectedIndex ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
                   onClick={() => onSelect(index)}
                 >
                   {thumb?.media ? (
                     <ReportImage
                       media={thumb.media}
                       alt=""
-                      className="h-24 w-full rounded-sm bg-[var(--surface-base)] object-contain"
+                      className="h-16 w-20 shrink-0 rounded-md bg-muted/40 object-contain"
                     />
                   ) : (
-                    <span className="flex h-24 items-center justify-center text-xs text-muted-foreground">
-                      {blocked ? (blockedUnboundLabel(item) ?? "Blocked") : "Missing"}
+                    <span className="flex h-16 w-20 shrink-0 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground">
+                      {blocked ? "Blocked" : "Missing"}
                     </span>
                   )}
-                  <span className="w-full truncate text-xs font-medium">{item.caption}</span>
-                  {place ? (
-                    <span className="w-full truncate text-[11px] text-muted-foreground">
-                      {place}
+                  <span className="grid min-w-0 gap-1">
+                    <span className="truncate text-sm font-medium">{caption(item, index)}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {blocked
+                        ? "Blocked"
+                        : item.status === "missing"
+                          ? "Not captured"
+                          : item.status === "accepted"
+                            ? "Looks correct"
+                            : item.status === "issue"
+                              ? "Issue reported"
+                              : item.status === "need-more-evidence"
+                                ? "More evidence needed"
+                                : "Pending review"}
                     </span>
-                  ) : null}
+                    {place ? (
+                      <span className="truncate text-xs text-muted-foreground">{place}</span>
+                    ) : null}
+                  </span>
                 </button>
               </li>
             );
@@ -224,45 +256,58 @@ export function CaptureReviewPanel({
         </ul>
       </div>
       {selected ? (
-        <div className="grid min-w-0 gap-2">
-          <p className="text-sm font-medium">{selected.caption}</p>
-          {selectedMeta.runId ||
-          (selected.attempt && selected.attempt > 1) ||
-          selectedMeta.blocked ? (
+        <div
+          className={`grid min-w-0 gap-3 ${showImage ? "rounded-lg border border-border/60 p-4" : ""}`}
+        >
+          {caption(selected, selectedIndex) !== fallbackTitle ? (
+            <p className="text-sm font-semibold">{caption(selected, selectedIndex)}</p>
+          ) : null}
+          {showImage &&
+          (selectedMeta.device ||
+            fallbackConfiguration?.app ||
+            selected.configuration?.account ||
+            selectedMeta.account) ? (
             <p className="text-xs text-muted-foreground">
-              {[
-                selectedMeta.runId,
-                selected.attempt && selected.attempt > 1
-                  ? `attempt ${selected.attempt}`
-                  : undefined,
-                selectedBlocked,
-              ]
+              {[selectedMeta.device, selected.configuration?.account ?? selectedMeta.account]
                 .filter(Boolean)
                 .join(" · ")}
             </p>
           ) : null}
-          {configuration.length ? (
-            <p className="text-xs text-muted-foreground">{configuration.join(" · ")}</p>
-          ) : null}
-          {selected.lookFor ? (
+          {selected.lookFor && selected.lookFor !== fallbackTitle ? (
             <p className="text-sm text-muted-foreground">Look for: {selected.lookFor}</p>
           ) : null}
-          {selected.framePath ? (
-            <p className="text-xs text-muted-foreground">Full image: {selected.framePath}</p>
+          {selected.framePath ||
+          selectedMeta.runId ||
+          configuration.length ||
+          selected.caption !== caption(selected, selectedIndex) ? (
+            <details className="order-last text-xs text-muted-foreground">
+              <summary className="w-fit cursor-pointer py-1">Capture details</summary>
+              {configuration.length ? (
+                <p className="break-all">{configuration.join(" · ")}</p>
+              ) : null}
+              <p className="break-all">Capture: {selected.caption}</p>
+              {selectedMeta.runId ? <p className="break-all">Run: {selectedMeta.runId}</p> : null}
+              {selected.framePath ? (
+                <p className="break-all">Full image: {selected.framePath}</p>
+              ) : null}
+              {selected.attempt ? <p>Attempt {selected.attempt}</p> : null}
+            </details>
           ) : null}
-          <p className="text-xs text-muted-foreground">
-            {selectedMeta.blocked
-              ? `${selectedBlocked ?? "Blocked"} — this slot stays in the planned count and cannot be marked Looks correct.`
-              : selected.status === "missing"
-                ? "This screenshot was not captured."
-                : selected.status === "accepted"
-                  ? "Looks correct — this does not approve a visual baseline."
-                  : selected.status === "issue"
-                    ? "Reported as an issue. Execution and automated checks are unchanged."
-                    : selected.status === "need-more-evidence"
-                      ? "More evidence requested."
-                      : "A person will review later."}
-          </p>
+          {showImage || selected.status !== "pending" ? (
+            <p className="text-xs text-muted-foreground">
+              {selectedMeta.blocked
+                ? "Blocked — this slot stays in the planned count and cannot be marked Looks correct."
+                : selected.status === "missing"
+                  ? "This screenshot was not captured."
+                  : selected.status === "accepted"
+                    ? "Looks correct — this does not approve a visual baseline."
+                    : selected.status === "issue"
+                      ? "Reported as an issue. Execution and automated checks are unchanged."
+                      : selected.status === "need-more-evidence"
+                        ? "More evidence requested."
+                        : "Pending review"}
+            </p>
+          ) : null}
           {selected.masks?.length && onShowMasksChange ? (
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
               <input
@@ -275,45 +320,21 @@ export function CaptureReviewPanel({
             </label>
           ) : null}
           {onReview && reviewable(selected) ? (
-            <div className="flex flex-wrap gap-2" aria-label="Screenshot review decision">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={() => onReview("accept", selected)}
-              >
-                Looks correct
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => onReview("report-issue", selected)}
-              >
-                Report issue
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => onReview("need-more-evidence", selected)}
-              >
-                Need more evidence
-              </Button>
-            </div>
+            <CaptureReviewDecisions busy={busy} onReview={(action) => onReview(action, selected)} />
           ) : null}
-          {frame?.media ? (
-            <ReportImage
-              media={frame.media}
-              alt={selected.caption}
-              className="max-h-[min(70vh,42rem)] w-full max-w-full object-contain"
-            />
+          {showImage && frame?.media ? (
+            <div className="relative min-h-48 rounded-lg bg-muted/20 p-3">
+              <EvidenceImageViewer
+                key={frame.id}
+                frame={frame}
+                onError={() => undefined}
+                className="max-h-[min(70vh,42rem)] w-full max-w-full object-contain"
+              />
+            </div>
           ) : selectedMeta.blocked ? (
-            <p className="text-sm">{selectedBlocked ?? "Blocked"} — no screenshot to accept.</p>
+            <p className="text-sm">Blocked — no screenshot to accept.</p>
           ) : selected.status === "missing" ? (
             <p className="text-sm">No screenshot was saved for this checkpoint.</p>
-          ) : selected.framePath ? (
-            <p className="text-sm">Full image: {selected.framePath}</p>
           ) : null}
         </div>
       ) : null}

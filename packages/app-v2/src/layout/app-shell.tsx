@@ -149,7 +149,7 @@ export function AppShell({ platform }: { platform: Platform }) {
         </header>
         <main
           id="main-content"
-          className={`relay-main ${runWorkspace ? "min-[721px]:overflow-hidden" : ""} min-h-0 min-w-0 flex-1 bg-card focus:outline-none ${immersive ? "overflow-hidden" : "mr-2 mb-2 overflow-auto rounded-xl overscroll-contain [scrollbar-gutter:stable]"}`}
+          className={`relay-main ${runWorkspace ? "min-[721px]:overflow-hidden" : ""} min-h-0 min-w-0 flex-1 bg-card focus:outline-none ${immersive ? "overflow-hidden" : "overflow-auto overscroll-contain min-[861px]:mx-2 min-[861px]:mb-2 min-[861px]:rounded-xl [scrollbar-gutter:stable_both-edges]"}`}
           data-run-workspace={runWorkspace || undefined}
           style={runWorkspace ? { scrollbarGutter: "auto" } : undefined}
           tabIndex={-1}
