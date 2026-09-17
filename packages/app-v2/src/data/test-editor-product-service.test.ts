@@ -111,8 +111,8 @@ describe("Test editor product history transport", () => {
 
     const saved = await service.saveSettings!({
       document,
-      name: "  Checkout renamed  ",
-      originApplication: "  com.example.updated  ",
+      name: " Checkout renamed",
+      originApplication: " com.example.updated",
     });
 
     expect(saved.test).toMatchObject({

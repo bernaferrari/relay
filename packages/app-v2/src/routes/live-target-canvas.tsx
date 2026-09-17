@@ -219,7 +219,8 @@ export function LiveTargetCanvas({
       >
         <canvas
           ref={canvasRef}
-          className="relay-capture-live-target h-full max-h-full max-w-full min-h-0 min-w-0 object-contain"
+          data-slot="capture-live-target"
+          className="h-full max-h-full max-w-full min-h-0 min-w-0 object-contain"
           aria-label={`Interactive Device: ${targetTitle}`}
           aria-describedby={help ? helpId : undefined}
           tabIndex={streaming ? 0 : -1}
@@ -338,7 +339,7 @@ export function LiveTargetCanvas({
             </div>
           ) : null}
           {toolbar}
-          <label className="relay-visually-hidden sr-only" htmlFor={textInputId}>
+          <label className="sr-only" htmlFor={textInputId}>
             Text to type into the focused field
           </label>
           <Input

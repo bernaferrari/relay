@@ -1,16 +1,6 @@
-/* Apply the saved Relay theme before React mounts to avoid a color flash. */
+/* Apply the saved color scheme before React mounts to avoid a flash. */
 (function () {
   try {
-    var key = "relay-theme-id";
-    var themeId =
-      localStorage.getItem(key) || localStorage.getItem("grok-device-theme-id") || "relay";
-    if (themeId === "grok") themeId = "relay";
-    if (themeId === "oc-1") {
-      themeId = "oc-2";
-      localStorage.setItem(key, themeId);
-      localStorage.removeItem("relay-theme-css-light");
-      localStorage.removeItem("relay-theme-css-dark");
-    }
     var scheme =
       localStorage.getItem("relay-color-scheme") ||
       localStorage.getItem("relay:appearance.colorScheme") ||
@@ -20,41 +10,22 @@
       scheme === "dark" ||
       (scheme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
     var mode = isDark ? "dark" : "light";
-
-    document.documentElement.dataset.theme = themeId;
-    document.documentElement.dataset.colorScheme = mode;
-    document.documentElement.classList.toggle("dark", isDark);
-    document.documentElement.dataset.colorSchemePreference =
-      scheme === "light" || scheme === "dark" ? scheme : "system";
-    document.documentElement.style.backgroundColor = isDark ? "#080808" : "#fafafa";
-
-    var metas = document.querySelectorAll("meta[name='theme-color']");
-    if (metas.length > 0) metas[0].setAttribute("content", isDark ? "#080808" : "#fafafa");
-    if (themeId === "oc-2") return;
-
-    var css =
-      localStorage.getItem("relay-theme-css-" + mode) ||
-      localStorage.getItem("grok-device-theme-css-" + mode);
-    if (!css) return;
-    var style = document.createElement("style");
-    style.id = "relay-theme-preload";
-    style.textContent =
-      'html[data-color-scheme="' +
-      mode +
-      '"]{color-scheme:' +
-      mode +
-      ";--text-mix-blend-mode:" +
-      (isDark ? "plus-lighter" : "multiply") +
-      ";" +
-      css +
-      "}";
-    document.head.appendChild(style);
-
-    var bg = (css.match(/--background:\s*([^;]+);/) || css.match(/--background-base:\s*([^;]+);/) || [])[1];
-    if (bg) {
-      bg = bg.trim();
-      document.documentElement.style.backgroundColor = bg;
-      if (metas.length > 0) metas[0].setAttribute("content", bg);
-    }
+    var root = document.documentElement;
+    root.dataset.theme = "relay";
+    root.dataset.colorScheme = mode;
+    root.dataset.colorSchemePreference = scheme === "light" || scheme === "dark" ? scheme : "system";
+    root.classList.toggle("dark", isDark);
+    root.style.colorScheme = mode;
+    root.style.removeProperty("background-color");
+    var meta = document.querySelector("meta[name='theme-color']");
+    if (meta) meta.setAttribute("content", isDark ? "#252525" : "#ffffff");
+    localStorage.removeItem("relay-theme-css-light");
+    localStorage.removeItem("relay-theme-css-dark");
+    localStorage.removeItem("grok-device-theme-css-light");
+    localStorage.removeItem("grok-device-theme-css-dark");
+    var leftover = document.getElementById("relay-theme-preload");
+    if (leftover) leftover.remove();
+    leftover = document.getElementById("relay-theme");
+    if (leftover) leftover.remove();
   } catch {}
 })();

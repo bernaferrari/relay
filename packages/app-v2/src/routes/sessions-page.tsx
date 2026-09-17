@@ -235,11 +235,11 @@ function SessionRow({
             variant={sessionBadgeVariant(sessionVariant(session))}
             className={
               sessionVariant(session) === "success"
-                ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
+                ? "bg-success/15 text-success-foreground"
                 : sessionVariant(session) === "warning"
-                  ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                  ? "bg-warning/15 text-warning-foreground"
                   : sessionVariant(session) === "danger"
-                    ? "bg-red-500/15 text-red-700 dark:text-red-300"
+                    ? "bg-destructive/10 text-destructive"
                     : undefined
             }
           >

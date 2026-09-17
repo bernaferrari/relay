@@ -50,7 +50,8 @@ export function ScreenInspector({
   const outgoing = paths.filter((path) => path.fromScreenId === screen.id);
   return (
     <aside
-      className="relay-map-inspector absolute inset-y-0 right-0 z-10 flex w-72 max-w-full flex-col border-l border-border bg-card shadow-lg"
+      data-slot="map-inspector"
+      className="absolute inset-y-0 right-0 z-10 flex w-72 max-w-full flex-col border-l border-border bg-card shadow-lg"
       data-open={Boolean(activeScreen)}
       inert={!activeScreen}
       aria-hidden={!activeScreen}
@@ -134,7 +135,7 @@ export function ScreenInspector({
             ) : null}
             {screen.ignoreRegionNames?.length ? (
               <p className="text-xs leading-relaxed text-muted-foreground">
-                Ignores {screen.ignoreRegionNames.join(", ")}. Visual baselines compare chrome only.
+                Ignores {screen.ignoreRegionNames.join(",")}. Visual baselines compare chrome only.
               </p>
             ) : null}
             {variants.length > 1 ? (
@@ -193,7 +194,7 @@ export function ScreenInspector({
           </section>
           <section className="space-y-2 border-t border-border pt-4">
             <h3 className="text-xs font-medium">
-              Used in tests{" "}
+              Used in tests
               <span className="ml-1 text-muted-foreground">{screen.coveringTests.length}</span>
             </h3>
             {screen.coveringTests.length ? (

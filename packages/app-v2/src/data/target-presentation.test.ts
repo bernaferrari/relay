@@ -41,7 +41,7 @@ describe("target presentation", () => {
       "Managed browser 2",
       "Android emulator",
     ]);
-    expect(options.map(({ name }) => name).join(" ")).not.toMatch(/browser-one|emulator-5554/u);
+    expect(options.map(({ name }) => name).join("")).not.toMatch(/browser-one|emulator-5554/u);
   });
 });
 

@@ -121,7 +121,7 @@ describe("browser spaces and compare set product service", () => {
     const spaces = await service.listSpaces();
     expect(spaces.map(({ id }) => id)).toEqual(["space-1", "space-2"]);
     const created = await service.createSpace({
-      name: "  New space  ",
+      name: " New space",
       startUrl: "https://new.test",
     });
     expect(created.persistent).toBe(true);

@@ -267,7 +267,7 @@ describe("Tests library", () => {
   });
   it("restores the collection scroll container and row focus after browser Back", async () => {
     const { history } = await render("/tests");
-    const main = document.querySelector<HTMLElement>(".relay-main");
+    const main = document.querySelector<HTMLElement>("#main-content");
     if (!main) throw new Error("main scroll container not found");
     main.scrollTop = 384;
     const row = document.querySelector<HTMLAnchorElement>(
@@ -294,7 +294,7 @@ describe("Tests library", () => {
     expect(history.location.pathname).toBe("/tests/test-language-internal");
     expect(history.location.search).toBe("?setup=run");
     expect(history.location.hash).toBe("");
-    expect(document.querySelector(".relay-test-run-dialog")).toBeNull();
+    expect(document.querySelector('[data-slot="test-run-dialog"]')).toBeNull();
   });
 });
 
@@ -337,7 +337,6 @@ describe("Tests workspace", () => {
     const { history } = await render("/tests");
 
     const devices = document.querySelector<HTMLAnchorElement>('a[href="/devices"]');
-    expect(devices?.className).not.toContain("relay-nav-link--quiet");
     expect(devices?.textContent?.trim()).toBe("Devices");
     expect(devices?.hasAttribute("aria-disabled")).toBe(false);
     expect(document.querySelector('a[href="/tests/new"]')?.textContent).toBe("New Test");
@@ -379,8 +378,8 @@ describe("Tests workspace", () => {
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 1_100))));
     await settle();
 
-    const recovery = document.querySelector(".relay-recording-problem");
-    expect(recovery?.className).toContain("relay-recovery-state--centered");
+    const recovery = document.querySelector('[data-slot="recovery-centered"]');
+    expect(recovery).not.toBeNull();
     expect(recovery?.getAttribute("role")).toBe("alert");
     expect(recovery?.querySelectorAll("h2")).toHaveLength(1);
     expect(recovery?.textContent).toContain("The app could not reach the local Relay service.");
@@ -404,7 +403,7 @@ describe("Tests workspace", () => {
     expect(document.body.textContent).toContain(
       "Reusable steps that check your app. Run a Test to get a result.",
     );
-    expect(document.querySelectorAll(".relay-library-row-select")).toHaveLength(0);
+    expect(document.querySelectorAll('[data-slot="library-row-select"]')).toHaveLength(0);
     expect(document.body.textContent).not.toContain("Create Suite");
     expect(document.body.textContent).not.toContain("Save Suite");
     expect(document.body.textContent).not.toContain("Your selection spans Apps");
@@ -526,8 +525,8 @@ describe("Runs workspace", () => {
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 1_100))));
     await settle();
 
-    const recovery = document.querySelector(".relay-recording-problem");
-    expect(recovery?.className).toContain("relay-recovery-state--centered");
+    const recovery = document.querySelector('[data-slot="recovery-centered"]');
+    expect(recovery).not.toBeNull();
     expect(recovery?.getAttribute("role")).toBe("alert");
     expect(recovery?.querySelectorAll("h2")).toHaveLength(1);
     expect(recovery?.textContent).toContain("The app could not reach the local Relay service.");
@@ -618,7 +617,7 @@ describe("Runs workspace", () => {
     );
 
     const links = document.querySelectorAll<HTMLAnchorElement>("[data-run-index]");
-    expect(document.querySelector(".relay-windowed-run-scroll")).not.toBeNull();
+    expect(document.querySelector('[data-slot="windowed-run-scroll"]')).not.toBeNull();
     expect(links.length).toBeGreaterThan(0);
     expect(links.length).toBeLessThan(40);
     expect(links[0]?.getAttribute("href")).toBe("/runs/run-0");

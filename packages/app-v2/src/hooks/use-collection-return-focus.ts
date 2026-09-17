@@ -12,7 +12,7 @@ export function useCollectionReturnFocus(
   const remember = useCallback(
     (href: string) => {
       try {
-        const main = document.querySelector<HTMLElement>(".relay-main");
+        const main = document.querySelector<HTMLElement>("#main-content");
         sessionStorage.setItem(
           storageKey,
           JSON.stringify({ href, scrollTop: main?.scrollTop ?? 0 } satisfies ReturnFocusState),
@@ -50,7 +50,7 @@ export function useCollectionReturnFocus(
       second = requestAnimationFrame(() => {
         const anchor = document.querySelector<HTMLElement>(`a[href="${CSS.escape(saved.href)}"]`);
         if (!anchor) return;
-        const main = document.querySelector<HTMLElement>(".relay-main");
+        const main = document.querySelector<HTMLElement>("#main-content");
         if (main) main.scrollTop = saved.scrollTop;
         anchor.focus({ preventScroll: true });
         pending.current = undefined;

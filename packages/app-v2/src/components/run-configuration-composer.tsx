@@ -174,7 +174,7 @@ export function RunConfigurationComposer({
           <legend className="w-full">
             <span className="flex items-center justify-between gap-3">
               <span>
-                {languageChoices ? "Languages" : "Data set values"}{" "}
+                {languageChoices ? "Languages" : "Data set values"}
                 <span className="ml-2 text-xs font-normal text-muted-foreground">
                   {selection?.dataSetIds?.length ?? 0} selected
                 </span>

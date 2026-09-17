@@ -264,7 +264,6 @@ export function RunInspection({
 
   const problemView = (
     <RecordingProblem
-      className="relay-run-recovery"
       error={problem}
       recovery={recovery}
       onRetry={retry}
@@ -473,7 +472,7 @@ function RunReport({
             onOpenChange={setRawEvidenceOpen}
           />
         </DialogContent>
-      </Dialog>{" "}
+      </Dialog>
       <Dialog
         open={runDialog === "configuration"}
         onOpenChange={(open) => {

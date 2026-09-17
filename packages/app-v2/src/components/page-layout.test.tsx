@@ -33,21 +33,21 @@ describe("PageHeader", () => {
       />,
     );
 
-    const header = host.querySelector(".relay-workspace-header");
+    const header = host.querySelector('[data-slot="page-header"]');
     expect(header).not.toBeNull();
     expect(header?.className).toContain("mb-6");
     expect(header?.className).not.toContain("mt-3");
 
-    const context = host.querySelector(".relay-workspace-context");
+    const context = host.querySelector('[data-slot="page-context"]');
     expect(context?.textContent).toBe("Tests");
     expect(context?.className).toContain("text-xs");
 
     const title = host.querySelector("h1");
     expect(title?.textContent).toBe("Record a Test");
     expect(title?.className).toContain("text-3xl");
-    expect(host.querySelector(".relay-workspace-title-row")?.className).toContain("mt-1");
+    expect(host.querySelector('[data-slot="page-title-row"]')?.className).toContain("mt-1");
 
-    const description = host.querySelector(".relay-page-description");
+    const description = host.querySelector('[data-slot="page-description"]');
     expect(description?.textContent).toBe("Choose an app and a device, then start.");
     expect(description?.className).toContain("text-sm");
     expect(description?.className).toContain("mt-1.5");
@@ -64,7 +64,7 @@ describe("PageHeader", () => {
     const withCrumbs = await render(
       <PageHeader
         context={
-          <nav className="relay-breadcrumbs text-xs leading-4" aria-label="Breadcrumb">
+          <nav data-slot="breadcrumbs" className="text-xs leading-4" aria-label="Breadcrumb">
             Tests / Record
           </nav>
         }
@@ -73,12 +73,12 @@ describe("PageHeader", () => {
       />,
     );
 
-    expect(withName.querySelector(".relay-workspace-context")?.className).toContain("text-xs");
-    expect(withCrumbs.querySelector(".relay-workspace-context")?.className).toContain("text-xs");
-    expect(withName.querySelector(".relay-workspace-title-row")?.className).toContain("mt-1");
-    expect(withCrumbs.querySelector(".relay-workspace-title-row")?.className).toContain("mt-1");
-    expect(withName.querySelector(".relay-workspace-header")?.className).toContain("mb-6");
-    expect(withCrumbs.querySelector(".relay-workspace-header")?.className).toContain("mb-6");
+    expect(withName.querySelector('[data-slot="page-context"]')?.className).toContain("text-xs");
+    expect(withCrumbs.querySelector('[data-slot="page-context"]')?.className).toContain("text-xs");
+    expect(withName.querySelector('[data-slot="page-title-row"]')?.className).toContain("mt-1");
+    expect(withCrumbs.querySelector('[data-slot="page-title-row"]')?.className).toContain("mt-1");
+    expect(withName.querySelector('[data-slot="page-header"]')?.className).toContain("mb-6");
+    expect(withCrumbs.querySelector('[data-slot="page-header"]')?.className).toContain("mb-6");
   });
 
   it("aligns actions with the title instead of padding them past the eyebrow", async () => {
@@ -90,14 +90,14 @@ describe("PageHeader", () => {
       />,
     );
 
-    expect(host.querySelector(".relay-workspace-actions")?.className).not.toContain("pt-5");
+    expect(host.querySelector('[data-slot="page-actions"]')?.className).not.toContain("pt-5");
     expect(
-      host.querySelector(".relay-workspace-title-row")?.contains(host.querySelector("h1")),
+      host.querySelector('[data-slot="page-title-row"]')?.contains(host.querySelector("h1")),
     ).toBe(true);
     expect(
       host
-        .querySelector(".relay-workspace-title-row")
-        ?.contains(host.querySelector(".relay-workspace-actions")),
+        .querySelector('[data-slot="page-title-row"]')
+        ?.contains(host.querySelector('[data-slot="page-actions"]')),
     ).toBe(true);
   });
 });

@@ -60,7 +60,8 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
         to={isBrowser(device) ? "/environments/$profileId" : "/devices/$deviceId"}
         params={isBrowser(device) ? { profileId: device.id } : { deviceId: device.id }}
         search={returnTo ? { returnTo } : undefined}
-        className={`relay-device-row ${libraryRowSurface} ${libraryRowContent} grid-cols-[minmax(0,1fr)_auto]`}
+        data-slot="device-row"
+        className={`${libraryRowSurface} ${libraryRowContent} grid-cols-[minmax(0,1fr)_auto]`}
       >
         <span className="flex min-w-0 items-center gap-3">
           <span
@@ -78,19 +79,19 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
             </span>
           </span>
         </span>
-        <span className="relay-library-row-status flex min-w-20 items-center gap-2 text-xs text-muted-foreground">
+        <span
+          data-slot="library-row-status"
+          className="flex min-w-20 items-center gap-2 text-xs text-muted-foreground"
+        >
           {!stopped && device.status === "needs-attention" ? (
-            <CircleHelp
-              className="size-3.5 text-amber-600 dark:text-amber-400"
-              aria-hidden="true"
-            />
+            <CircleHelp className="size-3.5 text-warning-foreground" aria-hidden="true" />
           ) : (
             <span
               aria-hidden="true"
               className={
                 stopped
                   ? "size-1.5 shrink-0 rounded-full border border-muted-foreground/60"
-                  : "size-1.5 shrink-0 rounded-full bg-emerald-600 dark:bg-emerald-400"
+                  : "size-1.5 shrink-0 rounded-full bg-success"
               }
             />
           )}
@@ -272,7 +273,6 @@ export function DevicesPage() {
 
       {devices.isError ? (
         <RecoveryState
-          className="relay-devices-recovery"
           layout="centered"
           title="Relay could not check devices"
           detail="The local Relay service is not responding. Your saved Tests and device settings are safe."

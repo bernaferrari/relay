@@ -186,14 +186,14 @@ function ChangeRow({ change }: { change: ProductChange }) {
             {change.pullRequest ? ` · PR #${change.pullRequest}` : ""}
           </span>
         </span>
-        <span className="relay-library-row-status flex justify-start">
+        <span data-slot="library-row-status" className="flex justify-start">
           <Badge
             variant={changeBadgeVariant(status.tone)}
             className={
               status.tone === "success"
-                ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
+                ? "bg-success/15 text-success-foreground"
                 : status.tone === "notice"
-                  ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                  ? "bg-warning/15 text-warning-foreground"
                   : undefined
             }
           >

@@ -475,7 +475,7 @@ export function DevicePage() {
                 aria-live="polite"
               >
                 <strong className="font-medium">
-                  {recover.data.ready ? "Device is ready. " : "Device still needs attention. "}
+                  {recover.data.ready ? "Device is ready." : "Device still needs attention."}
                 </strong>
                 {recover.data.ready ? null : recover.data.summary}
               </p>
@@ -565,10 +565,7 @@ export function DevicePage() {
                             Applying language…
                           </p>
                         ) : localeSuccess ? (
-                          <p
-                            className="text-sm text-emerald-700 dark:text-emerald-400"
-                            role="status"
-                          >
+                          <p className="text-sm text-success-foreground" role="status">
                             Language updated: {localeLabel(localeSuccess)}
                           </p>
                         ) : null}

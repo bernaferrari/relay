@@ -52,7 +52,8 @@ export default defineConfig({
     rules: {
       "shadcn/no-inline-styles": ["error", { allow: ["transform"] }],
       "shadcn/require-static-classes": "error",
-      "shadcn/no-unknown-classes": ["error", { allow: ["relay-*"] }],
+      "shadcn/no-unknown-classes": "error",
+      "shadcn/no-raw-colors": "error",
       "shadcn/no-arbitrary-values": [
         "error",
         {
@@ -129,9 +130,22 @@ export default defineConfig({
         {
           allow: ["*"],
           contracts: [
+            { pattern: "^Button$", allow: ["layout", "[-webkit-app-region:*]"] },
             {
-              pattern: "^Button$",
-              allow: ["layout", "relay-*", "[-webkit-app-region:*]"],
+              pattern: "^Badge$",
+              allow: ["layout", "color", "typography", "spacing"],
+            },
+            {
+              pattern: "^Input$|^Textarea$",
+              allow: ["layout", "spacing", "typography", "color"],
+            },
+            {
+              pattern: "^Card(Header|Title|Description|Content|Footer)?$",
+              allow: ["layout", "spacing", "typography", "color"],
+            },
+            {
+              pattern: "^Alert$",
+              allow: ["layout", "spacing", "typography", "color", "shape"],
             },
           ],
         },

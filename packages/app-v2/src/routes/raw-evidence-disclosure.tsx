@@ -62,7 +62,7 @@ export function RawEvidenceDisclosure({
           {evidence.isPending ? <PageLoading label="Loading audit details…" /> : null}
           {evidence.isError ? (
             <div
-              className="flex items-center justify-between gap-3 rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm"
+              className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm"
               role="alert"
             >
               <p className="text-xs text-muted-foreground">

@@ -45,26 +45,35 @@ export function PageHeader({
 }) {
   const eyebrow = crumbs?.length ? <Breadcrumbs items={crumbs} /> : context;
   return (
-    <header className="relay-workspace-header mb-6">
+    <header data-slot="page-header" className="mb-6">
       {eyebrow ? (
-        <div className="relay-workspace-context flex flex-wrap gap-x-3 gap-y-1 text-xs leading-4 text-muted-foreground">
+        <div
+          data-slot="page-context"
+          className="flex flex-wrap gap-x-3 gap-y-1 text-xs leading-4 text-muted-foreground"
+        >
           {eyebrow}
         </div>
       ) : null}
       <div
-        className={`relay-workspace-title-row flex flex-wrap items-center justify-between gap-x-6 gap-y-3 ${eyebrow ? "mt-1" : ""}`}
+        data-slot="page-title-row"
+        className={`flex flex-wrap items-center justify-between gap-x-6 gap-y-3 ${eyebrow ? "mt-1" : ""}`}
       >
         <h1
-          className={`${titleHidden ? "relay-visually-hidden sr-only" : ""}min-w-0 min-w-60 flex-1 text-3xl leading-8 font-semibold tracking-tight wrap-anywhere`}
+          className={`${titleHidden ? "sr-only" : ""} min-w-0 min-w-60 flex-1 text-3xl leading-8 font-semibold tracking-tight wrap-anywhere`}
         >
           {title}
         </h1>
         {actions ? (
-          <div className="relay-workspace-actions flex flex-wrap items-center gap-2">{actions}</div>
+          <div data-slot="page-actions" className="flex flex-wrap items-center gap-2">
+            {actions}
+          </div>
         ) : null}
       </div>
       {description ? (
-        <p className="relay-page-description mt-1.5 max-w-prose text-sm leading-5 text-muted-foreground">
+        <p
+          data-slot="page-description"
+          className="mt-1.5 max-w-prose text-sm leading-5 text-muted-foreground"
+        >
           {description}
         </p>
       ) : null}

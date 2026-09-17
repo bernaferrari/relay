@@ -444,7 +444,7 @@ export function MapEdges({
               fill="none"
               stroke={
                 state === "selected"
-                  ? "var(--color-blue-400)"
+                  ? "var(--info)"
                   : state === "muted"
                     ? "color-mix(in oklch, var(--muted-foreground) 80%, var(--background) 20%)"
                     : "var(--muted-foreground)"
@@ -469,9 +469,10 @@ export function MapEdges({
         return (
           <g
             key={geometry.path.id}
-            className={`relay-map-edge [&>path]:fill-none [&>path]:stroke-current [&>path]:stroke-1.5 [&>rect]:fill-popover [&>rect]:stroke-border [&>rect]:stroke-0 [&_text]:fill-current [&_text]:font-sans [&_text]:text-xs [&_text]:font-normal ${
+            data-slot="map-edge"
+            className={`[&>path]:fill-transparent [&>path]:stroke-current [&>path]:stroke-1.5 [&>rect]:fill-popover [&>rect]:stroke-border [&>rect]:stroke-0 [&_text]:fill-current [&_text]:font-sans [&_text]:text-xs [&_text]:font-normal ${
               state === "selected"
-                ? "text-blue-400"
+                ? "text-info"
                 : state === "muted"
                   ? "text-muted-foreground/80"
                   : "text-muted-foreground"
@@ -486,7 +487,7 @@ export function MapEdges({
                     width={geometry.anchorRect.width}
                     height={geometry.anchorRect.height}
                     rx="3"
-                    className="fill-blue-500/15 stroke-blue-500"
+                    className="fill-info/15 stroke-info"
                     strokeWidth="1.5"
                   />
                 ) : null}
@@ -502,7 +503,7 @@ export function MapEdges({
               <path
                 d="M 0 -5 A 5 5 0 1 0 0 5 L 7 0 Z"
                 transform={`translate(${geometry.anchor.x} ${geometry.anchor.y}) rotate(${(positions.get(geometry.path.toScreenId ?? "")?.x ?? Infinity) < (positions.get(geometry.path.fromScreenId)?.x ?? 0) ? 180 : 0})`}
-                fill="var(--color-blue-500)"
+                fill="var(--info)"
                 stroke="var(--background)"
                 strokeWidth="1.5"
               />

@@ -194,7 +194,8 @@ export function ChangePage() {
           <RecordingProblem recovery={detail.state.recovery} error={mutation.error} />
 
           <section
-            className="relay-change-verdict max-w-prose"
+            data-slot="change-verdict"
+            className="max-w-prose"
             aria-labelledby="change-verdict-title"
           >
             <h2 id="change-verdict-title" className="text-sm font-medium leading-5">
@@ -230,8 +231,8 @@ export function ChangePage() {
                   <dt className="text-xs text-muted-foreground">Original</dt>
                   <dd>
                     {details.delivery.original.headSha.slice(0, 12)} ·{" "}
-                    {details.delivery.original.buildIds.join(", ") || "no build"} ·{" "}
-                    {details.delivery.original.testIds.join(", ") || "no Test"}
+                    {details.delivery.original.buildIds.join(",") || "no build"} ·{" "}
+                    {details.delivery.original.testIds.join(",") || "no Test"}
                   </dd>
                 </div>
                 {details.delivery.failureEvidence ? (
@@ -248,7 +249,7 @@ export function ChangePage() {
                     <dt className="text-xs text-muted-foreground">Replacement evidence</dt>
                     <dd>
                       {details.delivery.replacementEvidence.headSha.slice(0, 12)} · Runs{" "}
-                      {details.delivery.replacementEvidence.runIds.join(", ") || "none yet"}
+                      {details.delivery.replacementEvidence.runIds.join(",") || "none yet"}
                     </dd>
                   </div>
                 ) : null}
@@ -285,7 +286,8 @@ export function ChangePage() {
 
           {details.execution?.attention ? (
             <section
-              className="relay-change-attention mt-5 rounded-lg border border-red-500/40 bg-red-500/5 p-5"
+              data-slot="change-attention"
+              className="mt-5 rounded-lg border border-destructive/40 bg-destructive/5 p-5"
               aria-labelledby="verification-paused-title"
             >
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -345,7 +347,7 @@ export function ChangePage() {
           ) : null}
 
           {details.verificationPlan.length ? (
-            <ol className="relay-verification-plan mt-6 max-w-prose list-none p-0">
+            <ol data-slot="verification-plan" className="mt-6 max-w-prose list-none p-0">
               {details.verificationPlan.map((item) => (
                 <VerificationItem key={item.id} item={item} detail={detail} />
               ))}
@@ -376,14 +378,15 @@ export function ChangePage() {
 function RepairContext({ packet }: { packet: ProductChangeRepairPacket }) {
   return (
     <section
-      className="relay-change-repair-context mt-5 grid max-w-4xl gap-4 rounded-xl border border-border bg-card p-5 shadow-sm"
-      aria-labelledby="repair-context-title"
+      data-slot="change-repair-context"
+      className="mt-5 grid max-w-4xl gap-4 rounded-xl border border-border bg-card p-5 shadow-sm"
+      aria-labelledby="repair-context-base"
     >
       <header>
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Repair context
         </p>
-        <h2 id="repair-context-title">Smallest useful fix</h2>
+        <h2 id="repair-context-base">Smallest useful fix</h2>
         <p>{packet.firstCausalFailure}</p>
       </header>
       {packet.expected || packet.observed ? (

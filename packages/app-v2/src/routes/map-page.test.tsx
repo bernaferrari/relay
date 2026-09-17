@@ -133,16 +133,16 @@ describe("Map exploration", () => {
         ],
       }),
     });
-    expect(document.querySelectorAll(".relay-map-edge")).toHaveLength(1);
+    expect(document.querySelectorAll('[data-slot="map-edge"]')).toHaveLength(1);
     const control = document.querySelector<HTMLButtonElement>(
       'button[aria-label="Inspect Back to Home to Home"]',
     );
     expect(control).not.toBeNull();
     await act(async () => control?.click());
-    expect(document.querySelectorAll(".relay-map-edge")).toHaveLength(2);
+    expect(document.querySelectorAll('[data-slot="map-edge"]')).toHaveLength(2);
     expect(control?.getAttribute("aria-pressed")).toBe("true");
     await act(async () => control?.click());
-    expect(document.querySelectorAll(".relay-map-edge")).toHaveLength(1);
+    expect(document.querySelectorAll('[data-slot="map-edge"]')).toHaveLength(1);
   });
 
   it("lays out connected screens in reading order without cycling", () => {
@@ -224,14 +224,14 @@ describe("Map exploration", () => {
     expect(document.body.textContent).not.toContain("targetProfile");
     expect(document.querySelector('a[href="/tests/new?app=shop"]')).not.toBeNull();
 
-    const canvas = document.querySelector<HTMLElement>(".relay-map-canvas");
-    const world = document.querySelector<HTMLElement>(".relay-map-world");
+    const canvas = document.querySelector<HTMLElement>('[data-slot="map-canvas"]');
+    const world = document.querySelector<HTMLElement>('[data-slot="map-world"]');
     expect(canvas?.tabIndex).toBe(0);
-    expect(document.querySelectorAll(".relay-map-edge")).toHaveLength(1);
-    expect(document.querySelector(".relay-map-edge text")?.textContent).toBe("Open cart");
-    expect(document.querySelector(".relay-map-edge rect")).not.toBeNull();
+    expect(document.querySelectorAll('[data-slot="map-edge"]')).toHaveLength(1);
+    expect(document.querySelector('[data-slot="map-edge"] text')?.textContent).toBe("Open cart");
+    expect(document.querySelector('[data-slot="map-edge"] rect')).not.toBeNull();
     expect(
-      document.querySelector<HTMLElement>('.relay-map-screen[style*="left: 560px"]'),
+      document.querySelector<HTMLElement>('[data-slot="map-screen"][style*="left: 560px"]'),
     ).not.toBeNull();
     expect(document.body.textContent).not.toContain("Pan right");
 
@@ -239,7 +239,7 @@ describe("Map exploration", () => {
     const zoomIn = document.querySelector<HTMLButtonElement>('button[aria-label="Zoom in"]');
     await act(async () => zoomIn?.click());
     expect(world?.style.transform).not.toBe(initialTransform);
-    expect(document.querySelector(".relay-map-zoom")?.textContent).toMatch(/\d+%/);
+    expect(document.querySelector('[data-slot="map-zoom"]')?.textContent).toMatch(/\d+%/);
 
     const beforeKey = world?.style.transform;
     await act(async () =>
@@ -248,7 +248,7 @@ describe("Map exploration", () => {
     expect(world?.style.transform).not.toBe(beforeKey);
     expect(document.activeElement).toBe(canvas);
 
-    const home = [...document.querySelectorAll<HTMLButtonElement>(".relay-map-screen")].find(
+    const home = [...document.querySelectorAll<HTMLButtonElement>('[data-slot="map-screen"]')].find(
       (screen) => screen.textContent?.includes("Home"),
     );
     for (let index = 0; index < 20; index += 1) {
@@ -271,10 +271,14 @@ describe("Map exploration", () => {
       canvas?.dispatchEvent(pointerEvent("pointerdown", -10000, -10000));
       canvas?.dispatchEvent(pointerEvent("pointermove", 10000, 10000));
     });
-    expect(document.querySelectorAll('.relay-map-screen[aria-pressed="true"]')).toHaveLength(2);
+    expect(document.querySelectorAll('[data-slot="map-screen"][aria-pressed="true"]')).toHaveLength(
+      2,
+    );
     expect(document.body.textContent).toContain("2 screens selected");
     await act(async () => canvas?.dispatchEvent(pointerEvent("pointerup", 10000, 10000)));
-    expect(document.querySelectorAll('.relay-map-screen[aria-pressed="true"]')).toHaveLength(2);
+    expect(document.querySelectorAll('[data-slot="map-screen"][aria-pressed="true"]')).toHaveLength(
+      2,
+    );
     await act(async () =>
       document.querySelector<HTMLButtonElement>('button[aria-label="Hand tool"]')?.click(),
     );
@@ -311,18 +315,20 @@ describe("Map exploration", () => {
 
   it("temporarily pans with Space and explains connection direction", async () => {
     await render();
-    const canvas = document.querySelector<HTMLElement>(".relay-map-canvas")!;
+    const canvas = document.querySelector<HTMLElement>('[data-slot="map-canvas"]')!;
     await act(async () =>
       canvas.dispatchEvent(
-        new KeyboardEvent("keydown", { key: " ", code: "Space", bubbles: true, cancelable: true }),
+        new KeyboardEvent("keydown", { key: "", code: "Space", bubbles: true, cancelable: true }),
       ),
     );
     expect(canvas.dataset.tool).toBe("hand");
     await act(async () =>
-      window.dispatchEvent(new KeyboardEvent("keyup", { key: " ", code: "Space" })),
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: "", code: "Space" })),
     );
     expect(canvas.dataset.tool).toBe("select");
-    const home = document.querySelector<HTMLButtonElement>(".relay-map-screen")!;
+    const home = [...document.querySelectorAll<HTMLButtonElement>('[data-slot="map-screen"]')].find(
+      (screen) => screen.textContent?.includes("Home"),
+    )!;
     await act(async () => home.click());
     const inspector = document.querySelector('[aria-label="Screen details"]')!;
     expect(inspector.textContent).toContain("Continue to");
@@ -505,7 +511,11 @@ it("prepares screen refresh with canonical target fields and waits for a visible
         .click();
     });
   };
-  await act(async () => document.querySelector<HTMLButtonElement>(".relay-map-screen")!.click());
+  await act(async () =>
+    [...document.querySelectorAll<HTMLButtonElement>('[data-slot="map-screen"]')]
+      .find((screen) => screen.textContent?.includes("Home"))!
+      .click(),
+  );
   await act(async () =>
     document.querySelector<HTMLButtonElement>('button[aria-label="Update screen"]')!.click(),
   );
@@ -533,16 +543,16 @@ it("prepares screen refresh with canonical target fields and waits for a visible
 
 it("opens every captured screen in a directly linked gallery and focuses the chosen screen on the map", async () => {
   const { history } = await render(undefined, undefined, "/apps/shop/map?view=screens");
-  expect(document.querySelector(".relay-map-canvas")).toBeNull();
+  expect(document.querySelector('[data-slot="map-screen"]')).toBeNull();
   expect(document.querySelector('[aria-label="Map screens"]')).not.toBeNull();
-  expect(document.querySelectorAll('button[aria-label^="Preview "]')).toHaveLength(
+  expect(document.querySelectorAll('button[aria-label^="Preview"]')).toHaveLength(
     overview.screens.length,
   );
   await act(async () => button("Preview Home").click());
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Home");
   expect(history.location.search).toContain("view=screens");
   await act(async () => button("Open in map").click());
-  expect(document.querySelector(".relay-map-canvas")).not.toBeNull();
+  expect(document.querySelector('[data-slot="map-screen"]')).not.toBeNull();
   expect(history.location.search).not.toContain("view=screens");
   expect(document.querySelector('[aria-label="Map screens"]')).toBeNull();
 });
@@ -553,7 +563,7 @@ it("opens a path screen preview without redundant caption text", async () => {
   const dialog = document.querySelector('[role="dialog"]');
   expect(dialog?.textContent).toContain("Home");
   expect(dialog?.textContent).not.toContain("Captured screen");
-  expect(document.querySelector(".relay-map-canvas")).toBeNull();
+  expect(document.querySelector('[data-slot="map-canvas"]')).toBeNull();
   await act(async () => button("Open in map").click());
-  expect(document.querySelector(".relay-map-canvas")).not.toBeNull();
+  expect(document.querySelector('[data-slot="map-canvas"]')).not.toBeNull();
 });

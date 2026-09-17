@@ -16,7 +16,7 @@ export function accountHealthState(fixture: ProductBrowserAccount["fixture"]): S
 }
 
 export function signInStatusLabel(status: string): string {
-  return status.replace(/-/gu, " ").replace(/^./u, (letter) => letter.toLocaleUpperCase());
+  return status.replace(/-/gu, "").replace(/^./u, (letter) => letter.toLocaleUpperCase());
 }
 
 export function liveSignIns(

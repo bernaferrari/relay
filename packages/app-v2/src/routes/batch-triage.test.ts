@@ -176,7 +176,7 @@ describe("Batch triage presentation", () => {
       batchTriageMutation(
         batchTriageKeyboardCommand({
           key: "i",
-          selectedCaseIds: ["login-ios", " checkout-ios "],
+          selectedCaseIds: ["login-ios", " checkout-ios"],
           actorId: "human:qa",
         }),
       ),

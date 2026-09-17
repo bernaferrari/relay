@@ -152,10 +152,7 @@ export function RunReviewControls({
           </div>
         ) : null}
         {reviewMessage ? (
-          <p
-            className="rounded-md bg-emerald-500/10 p-2 text-sm text-emerald-700 dark:text-emerald-300"
-            role="status"
-          >
+          <p className="rounded-md bg-success/10 p-2 text-sm text-success-foreground" role="status">
             {reviewMessage}
           </p>
         ) : null}
@@ -210,5 +207,5 @@ export function visualIgnoreCopy(comparison: {
   const chrome = sandwich
     ? "One viewport of top and bottom chrome stays compared. Do not survey the feed."
     : "Chrome stays compared.";
-  return `${ignored.length} ignore region${ignored.length === 1 ? "" : "s"}${names.length ? ` (${names.join(", ")})` : ""}. ${chrome}`;
+  return `${ignored.length} ignore region${ignored.length === 1 ? "" : "s"}${names.length ? ` (${names.join(",")})` : ""}. ${chrome}`;
 }

@@ -31,7 +31,7 @@ describe("status marks", () => {
         <OutcomeMark outcome="running" />
       </>,
     );
-    const labels = [...host.querySelectorAll(".relay-outcome-mark")].map((item) =>
+    const labels = [...host.querySelectorAll('[data-slot="outcome-mark"]')].map((item) =>
       item.textContent?.replace(/\s+/g, " ").trim(),
     );
     expect(labels).toEqual(["Unknown result", "Unknown result", "Unknown result", "Running"]);
@@ -46,7 +46,9 @@ describe("status marks", () => {
         <OutcomeMark outcome="uncertain" />
       </>,
     );
-    const [ready, unbound, passed, needsReview] = [...host.querySelectorAll("[data-slot='badge']")];
+    const [ready, unbound, passed, needsReview] = [
+      ...host.querySelectorAll('[data-slot="outcome-mark"]'),
+    ];
     expect(ready?.textContent).toContain("Ready");
     expect(unbound?.textContent).toContain("Needs setup");
     expect(passed?.textContent).toContain("Passed");

@@ -179,7 +179,7 @@ function isTypingTarget(target: unknown): boolean {
   );
 }
 
-/** Authenticated actor only. The placeholder "me" is never a review owner. */
+/** Authenticated actor only. The placeholder"me" is never a review owner. */
 export function resolveTriageActor(actorId: string | undefined): string | undefined {
   const value = actorId?.trim();
   if (!value || value === "me") return undefined;

@@ -7,11 +7,11 @@ import { clampWindowBounds, parseWindowState, type PersistedWindowState } from "
 const root = dirname(fileURLToPath(import.meta.url));
 
 /**
- * Electron chrome plate — AgentBoard applyThemeCss hard plate.
- * Theme tokens paint the renderer; this only fills the native window flash.
+ * Native window flash before the renderer paints. Matches ui-react
+ * `--background` (light oklch(1 0 0), dark oklch(0.145 0 0)).
  */
-export const DARK_BG = "#080808";
-export const LIGHT_BG = "#fafafa";
+export const DARK_BG = "#252525";
+export const LIGHT_BG = "#ffffff";
 const DEFAULT_WINDOW_SIZE = { width: 1100, height: 760 };
 const WINDOW_STATE_DEBOUNCE_MS = 250;
 

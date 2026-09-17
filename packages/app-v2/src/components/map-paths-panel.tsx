@@ -29,7 +29,7 @@ export function MapPathsPanel({
   const query = search.trim().toLocaleLowerCase();
   const matches = paths.filter((path) =>
     [path.label, path.fromTitle, path.toTitle, ...path.coveringTests.map((test) => test.name)]
-      .join(" ")
+      .join("")
       .toLocaleLowerCase()
       .includes(query),
   );

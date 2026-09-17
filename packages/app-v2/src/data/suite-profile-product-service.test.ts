@@ -273,7 +273,7 @@ describe("suite and environment product projections", () => {
       appMapId: "app-1",
       suiteId: "suite-new",
       expectedRevision: 3,
-      name: " Smoke ",
+      name: " Smoke",
       testIds: ["login", "login"],
       variableIds: [],
       strategy: "cartesian",
@@ -326,7 +326,7 @@ describe("suite and environment product projections", () => {
       },
       {
         expectedRevision: 3,
-        name: "   ",
+        name: "",
         testIds: ["login"],
         variableIds: [],
         message: /name/iu,

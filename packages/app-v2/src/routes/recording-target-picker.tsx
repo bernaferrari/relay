@@ -115,7 +115,7 @@ export function RecordingTargetPicker({
                   />
                   {highlight && size ? (
                     <span
-                      className="pointer-events-none absolute left-(--box-left) top-(--box-top) h-(--box-height) w-(--box-width) rounded-sm border-2 border-blue-500 bg-blue-500/10"
+                      className="pointer-events-none absolute left-(--box-left) top-(--box-top) h-(--box-height) w-(--box-width) rounded-sm border-2 border-info bg-info/10"
                       style={
                         {
                           "--box-left": `${(highlight.rect.x / size.width) * 100}%`,

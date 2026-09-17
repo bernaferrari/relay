@@ -155,7 +155,7 @@ describe("App routes", () => {
     await settle();
 
     const alert = document.querySelector('[role="alert"]');
-    expect(alert?.classList.contains("relay-recovery-state--centered")).toBe(true);
+    expect(alert?.getAttribute("data-slot")).toBe("recovery-centered");
     expect(alert?.textContent).toContain("Relay is not connected");
     expect(alert?.textContent).toContain("Start Relay, then try loading your apps again.");
     expect(alert?.querySelectorAll("button")).toHaveLength(1);
@@ -539,7 +539,7 @@ describe("App routes", () => {
     await settle();
 
     const alert = document.querySelector('[role="alert"]');
-    expect(alert?.classList.contains("relay-recovery-state--centered")).toBe(true);
+    expect(alert?.getAttribute("data-slot")).toBe("recovery-centered");
     expect(alert?.textContent).toContain("Could not load resources");
     expect(alert?.textContent).toContain(`try loading ${subject} again`);
     expect(alert?.querySelectorAll("button")).toHaveLength(1);

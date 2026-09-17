@@ -276,7 +276,7 @@ export function formatBatchCaseError(error: string): string {
   return error
     .replace(ENGINE_SUMMARY, "This check failed")
     .replace(/\b(?:step[-:][0-9a-f]{6,}|check[-:]\d+)\b/giu, "")
-    .replace(/\s{2,}/gu, " ")
+    .replace(/\s{2,}/gu, "")
     .replace(/[·,;:\s]+$/u, "")
     .trim();
 }

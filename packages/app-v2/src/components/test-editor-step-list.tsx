@@ -20,7 +20,7 @@ function uniquePlatformBlockNotice(
 ): string | undefined {
   const reasons = [...new Set(Object.values(blockers ?? {}))];
   if (!reasons.length) return undefined;
-  return `Compile fails closed on the recorded route: ${reasons.join(" ")}`;
+  return `Compile fails closed on the recorded route: ${reasons.join("; ")}`;
 }
 
 export function TestEditorStepOutline({

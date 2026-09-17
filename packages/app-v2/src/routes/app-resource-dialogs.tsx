@@ -394,7 +394,7 @@ function platformLabel(platform: ProductAppVersion["platform"]): string {
 }
 
 function statusLabel(status: string): string {
-  return status.replace(/-/gu, " ").replace(/^./u, (letter) => letter.toLocaleUpperCase());
+  return status.replace(/-/gu, "").replace(/^./u, (letter) => letter.toLocaleUpperCase());
 }
 
 function shortDate(timestamp: number): string {

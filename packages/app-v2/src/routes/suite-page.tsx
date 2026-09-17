@@ -480,7 +480,7 @@ export function SuitePage() {
                 <div
                   className={`mt-4 grid gap-1 rounded-lg border p-3 text-xs ${
                     previewBlockers.length
-                      ? "border-border-critical-base bg-surface-critical-weak"
+                      ? "border-destructive bg-destructive/10"
                       : "border-border bg-muted/30"
                   }`}
                   role="status"

@@ -44,9 +44,9 @@ function SaveStatus({ state }: { state: SaveState }) {
     <span
       className={`mt-0.5 inline-flex min-h-7 items-center gap-2 rounded-full bg-muted px-2.5 text-xs font-semibold text-muted-foreground ${
         state === "saved"
-          ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
+          ? "bg-success/15 text-success-foreground"
           : state === "failed" || state === "unavailable"
-            ? "bg-red-500/10 text-red-700 dark:text-red-300"
+            ? "bg-destructive/10 text-destructive"
             : ""
       }`}
       aria-live="polite"
@@ -232,7 +232,7 @@ export function ToggleRow({
         if (!disabled) onChange(!checked);
       }}
       onKeyDown={(event) => {
-        if (disabled || (event.key !== " " && event.key !== "Enter")) return;
+        if (disabled || (event.key !== "" && event.key !== "Enter")) return;
         event.preventDefault();
         onChange(!checked);
       }}

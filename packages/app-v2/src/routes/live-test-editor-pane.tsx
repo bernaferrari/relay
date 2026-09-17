@@ -76,9 +76,9 @@ export function LiveTestEditorPane({
               variant="secondary"
               className={
                 status === "streaming"
-                  ? "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300"
+                  ? "bg-success/15 text-success-foreground"
                   : status === "degraded"
-                    ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+                    ? "bg-warning/15 text-warning-foreground"
                     : undefined
               }
             >
@@ -90,7 +90,7 @@ export function LiveTestEditorPane({
       {loading ? <PageLoading label="Opening the Device…" /> : null}
       {error ? (
         <p
-          className="m-3 rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm"
+          className="m-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm"
           role="alert"
         >
           {errorMessage(error)}

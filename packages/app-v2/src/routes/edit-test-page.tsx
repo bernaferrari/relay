@@ -442,7 +442,7 @@ function TestEditorDocument() {
     Boolean(editorDocument?.history.some((item) => item.eventType !== "test.redone"));
   const stepEditor = editorDocument ? (
     <aside
-      className={`${sessionId ? "" : "sticky top-0 "}min-w-0 rounded-xl border border-border bg-card shadow-sm`}
+      className={`${sessionId ? "" : "sticky top-0"}min-w-0 rounded-xl border border-border bg-card shadow-sm`}
       aria-label="Selected step editor"
     >
       {selected ? (

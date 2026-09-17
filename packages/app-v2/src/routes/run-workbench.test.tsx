@@ -511,7 +511,7 @@ describe("RunWorkbench", () => {
       "Member · Compact · Arabic",
     );
     const bar = host.querySelector(
-      '.relay-evidence-image-frame [aria-label="Screenshot review decision"]',
+      '[data-slot="evidence-image-frame"] [aria-label="Screenshot review decision"]',
     )!;
     expect(host.querySelectorAll('[aria-label="Screenshot review decision"]')).toHaveLength(1);
     expect(
@@ -527,7 +527,7 @@ describe("RunWorkbench", () => {
         .find((item) => item.textContent === "Logs")!
         .click(),
     );
-    expect(host.querySelector(".relay-evidence-image-frame img")?.getAttribute("alt")).toBe(
+    expect(host.querySelector('[data-slot="evidence-image-frame"] img')?.getAttribute("alt")).toBe(
       "Checkout submitted",
     );
     expect(host.querySelector('[aria-label="Screenshot review decision"]')).not.toBeNull();
@@ -537,7 +537,7 @@ describe("RunWorkbench", () => {
       )!;
       act(() => tab.click());
       const decision = [
-        ...host.querySelectorAll<HTMLButtonElement>(".relay-evidence-image-frame button"),
+        ...host.querySelectorAll<HTMLButtonElement>('[data-slot="evidence-image-frame"] button'),
       ].find((item) => item.textContent?.includes("Looks correct"))!;
       expect(decision).toBeDefined();
       await act(async () => decision.click());
@@ -601,12 +601,12 @@ describe("RunWorkbench", () => {
     };
     const host = render(0, value);
     expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Captures");
-    expect(host.querySelector(".relay-evidence-image-frame img")?.getAttribute("src")).toBe(
+    expect(host.querySelector('[data-slot="evidence-image-frame"] img')?.getAttribute("src")).toBe(
       "/dest-wait.png",
     );
-    expect(host.querySelector(".relay-evidence-image-frame img")?.getAttribute("src")).not.toBe(
-      "/leftover-close.png",
-    );
+    expect(
+      host.querySelector('[data-slot="evidence-image-frame"] img')?.getAttribute("src"),
+    ).not.toBe("/leftover-close.png");
     const thumbs = [...host.querySelectorAll('[aria-label="Screenshots for review"] img')].map(
       (img) => img.getAttribute("src"),
     );
@@ -674,7 +674,7 @@ describe("RunWorkbench", () => {
       (img) => img.getAttribute("src"),
     );
     expect(thumbs).toEqual(["/dest-wait.png"]);
-    expect(host.querySelector(".relay-evidence-image-frame img")?.getAttribute("src")).toBe(
+    expect(host.querySelector('[data-slot="evidence-image-frame"] img')?.getAttribute("src")).toBe(
       "/dest-wait.png",
     );
     expect(host.textContent).toContain("Observe");

@@ -199,7 +199,7 @@ export function RunAcrossPage() {
                               label: "Choose values for the remaining data groups",
                               detail: missingDimensions
                                 .map((dimension) => dimension.name)
-                                .join(", "),
+                                .join(","),
                             },
                           ]
                         : [],

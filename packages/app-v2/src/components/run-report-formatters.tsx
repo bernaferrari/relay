@@ -36,7 +36,17 @@ export function highlightJson(json: string): ReactNode[] {
     output.push(
       <span
         key={`${index}-${kind}`}
-        className={`relay-json-token relay-json-token--${kind} ${kind === "key" ? "text-sky-600 dark:text-sky-300" : kind === "string" ? "text-emerald-700 dark:text-emerald-300" : kind === "number" ? "text-amber-700 dark:text-amber-300" : "text-violet-600 dark:text-violet-300"}`}
+        data-slot="json-token"
+        data-kind={kind}
+        className={
+          kind === "key"
+            ? "text-info-foreground"
+            : kind === "string"
+              ? "text-success-foreground"
+              : kind === "number"
+                ? "text-warning-foreground"
+                : "text-chart-4"
+        }
       >
         {token}
       </span>,

@@ -472,7 +472,7 @@ export async function reconcileRecordingMutationAuthoritatively(input: {
 }
 
 /** Dispatch and evidence refresh are separate outcomes. A refresh failure must
- * not be treated as "the tap never happened." */
+ * not be treated as"the tap never happened." */
 export async function dispatchRecordingInput(input: {
   send: () => Promise<void>;
   refresh: () => Promise<void>;

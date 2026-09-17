@@ -1,15 +1,15 @@
-import relayThemeJson from "./themes/relay.json";
-import { resolveThemeVariant, themeToCss } from "./resolve";
-import type { DesktopTheme } from "./types";
-import { resolveThemeVariantV2, themeV2ToCss } from "./v2/resolve";
-
 export type RelayColorScheme = "light" | "dark" | "system";
 
-/** FOUC preload and ThemeProvider both read this unprefixed key. */
+/** FOUC preload and appearance settings both read this unprefixed key. */
 export const RELAY_COLOR_SCHEME_STORAGE_KEY = "relay-color-scheme";
 const THEME_STYLE_ID = "relay-theme";
 const PRELOAD_STYLE_ID = "relay-theme-preload";
-const relayTheme = relayThemeJson as DesktopTheme;
+const CACHED_THEME_CSS_KEYS = [
+  "relay-theme-css-light",
+  "relay-theme-css-dark",
+  "grok-device-theme-css-light",
+  "grok-device-theme-css-dark",
+] as const;
 
 export function resolvedColorScheme(preference: RelayColorScheme): "light" | "dark" {
   if (preference === "light" || preference === "dark") return preference;
@@ -18,32 +18,30 @@ export function resolvedColorScheme(preference: RelayColorScheme): "light" | "da
 }
 
 /**
- * Apply the Relay palette for a color-scheme preference. Tokens land on
- * `html[data-color-scheme]` so Light/Dark beat OS `prefers-color-scheme`.
+ * Apply Light/Dark for the React product. Chrome comes from ui-react
+ * globals.css via `.dark` / `data-color-scheme`. This does not inject a
+ * generated token sheet.
  */
 export function applyRelayColorScheme(preference: RelayColorScheme): "light" | "dark" {
   const mode = resolvedColorScheme(preference);
-  const variant = mode === "dark" ? relayTheme.dark : relayTheme.light;
-  const css = themeToCss(resolveThemeVariant(variant, mode === "dark"));
-  const v2 = themeV2ToCss(resolveThemeVariantV2(variant, mode === "dark"));
-  const background = mode === "dark" ? "#080808" : "#fafafa";
-  const style = ensureThemeStyle();
-  style.textContent = `html[data-color-scheme="${mode}"] {
-  color-scheme: ${mode};
-  --text-mix-blend-mode: ${mode === "dark" ? "plus-lighter" : "multiply"};
-  ${css}
-  ${v2}
-}`;
+  const isDark = mode === "dark";
+  const root = document.documentElement;
+
+  document.getElementById(THEME_STYLE_ID)?.remove();
   document.getElementById(PRELOAD_STYLE_ID)?.remove();
-  document.documentElement.dataset.theme = "relay";
-  document.documentElement.dataset.colorScheme = mode;
-  document.documentElement.dataset.colorSchemePreference = preference;
-  document.documentElement.classList.toggle("dark", mode === "dark");
-  document.documentElement.style.colorScheme = mode;
-  document.documentElement.style.backgroundColor = background;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", background);
+
+  root.dataset.theme = "relay";
+  root.dataset.colorScheme = mode;
+  root.dataset.colorSchemePreference = preference;
+  root.classList.toggle("dark", isDark);
+  root.style.colorScheme = mode;
+  root.style.removeProperty("background-color");
+  document
+    .querySelector('meta[name="theme-color"]')
+    ?.setAttribute("content", isDark ? "#252525" : "#ffffff");
+
   persistPreference(preference);
-  persistCachedCss(mode, css, v2);
+  clearCachedThemeCss();
   bindSystemPreferenceListener();
   return mode;
 }
@@ -56,9 +54,9 @@ function persistPreference(preference: RelayColorScheme): void {
   }
 }
 
-function persistCachedCss(mode: "light" | "dark", css: string, v2: string): void {
+function clearCachedThemeCss(): void {
   try {
-    localStorage.setItem(`relay-theme-css-${mode}`, `${css}\n  ${v2}`);
+    for (const key of CACHED_THEME_CSS_KEYS) localStorage.removeItem(key);
   } catch {
     /* Storage is optional in locked-down browser contexts. */
   }
@@ -84,16 +82,4 @@ function readStoredPreference(): RelayColorScheme {
   } catch {
     return "system";
   }
-}
-
-function ensureThemeStyle(): HTMLStyleElement {
-  const existing = document.getElementById(THEME_STYLE_ID);
-  if (existing instanceof HTMLStyleElement) {
-    document.head.appendChild(existing);
-    return existing;
-  }
-  const element = document.createElement("style");
-  element.id = THEME_STYLE_ID;
-  document.head.appendChild(element);
-  return element;
 }

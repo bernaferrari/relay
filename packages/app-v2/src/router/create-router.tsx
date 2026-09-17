@@ -173,7 +173,7 @@ function RoutePending() {
       aria-busy="true"
       aria-label="Loading page"
     >
-      <span className="relay-visually-hidden sr-only">Loading page…</span>
+      <span className="sr-only">Loading page…</span>
       <Skeleton className="h-3 w-18" />
       <Skeleton className="mt-0.5 h-10 w-[min(360px,58vw)]" />
       <Skeleton className="h-4.5 w-[min(520px,76vw)]" />

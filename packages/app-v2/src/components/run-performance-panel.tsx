@@ -173,7 +173,7 @@ export function RunPerformancePanel({
               points={`44,108 ${metric.points.map((point) => `${x(point.at)},${y(point.value)}`).join(" ")} 584,108`}
               fill="currentColor"
               opacity=".08"
-              className="text-[var(--text-info-base)]"
+              className="text-info-foreground"
             />
             <polyline
               points={metric.points.map((point) => `${x(point.at)},${y(point.value)}`).join(" ")}
@@ -181,7 +181,7 @@ export function RunPerformancePanel({
               stroke="currentColor"
               strokeWidth="2"
               vectorEffect="non-scaling-stroke"
-              className="text-[var(--text-info-base)]"
+              className="text-info-foreground"
             />
             {selectedAt !== undefined ? (
               <line
@@ -204,7 +204,7 @@ export function RunPerformancePanel({
                 className="cursor-pointer outline-none [&:focus-visible>circle:last-child]:stroke-3 [&:focus-visible>circle:last-child]:stroke-ring"
                 onClick={() => inspect(index)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
+                  if (event.key === "Enter" || event.key === "") {
                     event.preventDefault();
                     inspect(index);
                   }
@@ -234,7 +234,7 @@ export function RunPerformancePanel({
                       onSeek(item.startedAt! + Math.max(0, item.finishedAt! - item.startedAt!) / 2);
                     }}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
+                      if (event.key === "Enter" || event.key === "") {
                         event.preventDefault();
                         setSelectedAt(undefined);
                         onSeek(

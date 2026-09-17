@@ -167,8 +167,8 @@ export function errorMessage(error: unknown): string {
 }
 
 function statusClass(kind: "ready" | "attention" | "checking"): string {
-  if (kind === "ready") return "text-emerald-800 dark:text-emerald-300";
-  if (kind === "attention") return "text-amber-800 dark:text-amber-300";
+  if (kind === "ready") return "text-success-foreground";
+  if (kind === "attention") return "text-warning-foreground";
   return "text-muted-foreground";
 }
 

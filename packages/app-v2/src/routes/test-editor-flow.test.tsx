@@ -251,7 +251,7 @@ describe("Test editor", () => {
     harness.editor.edit = save;
     await click("Save step");
     expect(document.querySelector('[data-state="conflicted"]')).toBeNull();
-    expect(document.querySelector(".relay-editor-save-status")?.textContent).toBe("Saved");
+    expect(document.querySelector('[data-slot="editor-save-status"]')?.textContent).toBe("Saved");
   });
 
   it("does not erase local drafts when their storage read fails", async () => {
@@ -270,7 +270,7 @@ describe("Test editor", () => {
       },
     };
     await render(service().editor, undefined, failedStorage);
-    expect(document.querySelector(".relay-editor-save-status")?.textContent).toContain(
+    expect(document.querySelector('[data-slot="editor-save-status"]')?.textContent).toContain(
       "Could not restore local drafts",
     );
     expect(removed.some((key) => key.startsWith("test-editor-drafts:"))).toBe(false);
@@ -537,7 +537,7 @@ describe("Test editor", () => {
       "Visual judges, reply checks, and ignore regions live on a Checkpoint",
     );
     expect(document.body.textContent).toContain("Uses one saved path.");
-    expect(document.body.textContent).not.toContain('"kind": "connections"');
+    expect(document.body.textContent).not.toContain('"kind":"connections"');
     await click("Add checkpoint");
     expect(harness.edits).toEqual([]);
     expect(document.body.textContent).toContain("Not saved on this Test");

@@ -465,7 +465,7 @@ export function TestPage() {
                       <p className="mb-2 text-xs text-muted-foreground">{outlineCopy.hint}</p>
                     ) : null}
                     {test.data.steps?.length ? (
-                      <ol className="relay-test-readable-steps mt-3 grid list-none gap-1 p-0">
+                      <ol data-slot="test-readable-steps" className="mt-3 grid list-none gap-1 p-0">
                         {test.data.steps.map((step, index) => (
                           <ReadableStep
                             key={step.id}

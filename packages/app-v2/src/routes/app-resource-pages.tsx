@@ -519,14 +519,14 @@ function AccountRow({
         </strong>
         <small>
           {identity ? `Saved as ${account.fixture.name}` : account.fixture.name}
-          {" · "}
+          {" ·"}
           <Link to="/devices/$deviceId" params={{ deviceId: account.target.id }}>
             {account.target.name}
           </Link>
           {account.fixture.origins.length
-            ? ` · ${account.fixture.origins.slice(0, 2).join(", ")}`
+            ? ` · ${account.fixture.origins.slice(0, 2).join(",")}`
             : ""}
-          {bound.length ? ` · Lane ${bound.map((lane) => lane.id).join(", ")}` : ""}
+          {bound.length ? ` · Lane ${bound.map((lane) => lane.id).join(",")}` : ""}
         </small>
       </span>
       <span

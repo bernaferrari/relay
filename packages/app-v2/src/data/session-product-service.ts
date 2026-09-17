@@ -116,7 +116,7 @@ function boundedText(value: string | undefined, maxLength = 512): string | undef
   const normalized = [...value]
     .map((character) => {
       const codePoint = character.codePointAt(0) ?? 0;
-      return codePoint < 32 || codePoint === 127 ? " " : character;
+      return codePoint < 32 || codePoint === 127 ? "" : character;
     })
     .join("")
     .trim();

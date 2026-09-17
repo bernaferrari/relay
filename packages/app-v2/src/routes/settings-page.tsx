@@ -66,7 +66,7 @@ function GeneralSettings() {
           {connection.isPending ? (
             <span>Checking</span>
           ) : connection.isError ? (
-            <span className="text-amber-800 dark:text-amber-300">Unavailable</span>
+            <span className="text-warning-foreground">Unavailable</span>
           ) : null}
         </SettingRow>
         {platform.notify ? (
@@ -143,7 +143,7 @@ function EvidenceSettings() {
       ) : null}
       {error ? (
         <Alert
-          className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
+          className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm"
           variant="destructive"
           role="alert"
         >
@@ -232,7 +232,7 @@ function IntegrationsSettings() {
       ) : null}
       {connection.isError || (settingsService.integrations && integrations.error) ? (
         <Alert
-          className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
+          className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm"
           variant="destructive"
           role="alert"
         >
@@ -265,13 +265,11 @@ function IntegrationsSettings() {
               integration.state === "server-managed" ? null : (
                 <span
                   className={
-                    integration.state === "unavailable"
-                      ? "text-amber-800 dark:text-amber-300"
-                      : undefined
+                    integration.state === "unavailable" ? "text-warning-foreground" : undefined
                   }
                 >
                   {integration.state
-                    .replace(/-/gu, " ")
+                    .replace(/-/gu, "")
                     .replace(/^./u, (letter) => letter.toLocaleUpperCase())}
                 </span>
               )}
@@ -338,7 +336,7 @@ function AdvancedSettings() {
         {connection.isPending ? <PageLoading label="Loading the Relay address…" /> : null}
         {connection.isError ? (
           <Alert
-            className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
+            className="rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm"
             variant="destructive"
             role="alert"
           >
@@ -349,10 +347,10 @@ function AdvancedSettings() {
         {connection.data ? (
           <form className="grid gap-2" onSubmit={saveConnection}>
             <Field className="grid gap-2">
-              <FieldLabel htmlFor="">Server URL</FieldLabel>
+              <FieldLabel htmlFor="relay-server-url">Server URL</FieldLabel>
               <div className="flex items-center gap-2">
                 <Input
-                  id=""
+                  id="relay-server-url"
                   type="url"
                   value={url}
                   required

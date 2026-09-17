@@ -79,14 +79,14 @@ it("omits skipped conditional targets from the action timeline", () => {
       steps: [
         {
           id: "skipped",
-          title: 'Tap button label "Business"',
+          title: 'Tap button label"Business"',
           status: "ok",
-          log: 'conditional tap: skipped — button label "Business" is absent',
+          log: 'conditional tap: skipped — button label"Business" is absent',
           frames: [{ path: "unchanged.png" }],
         },
         {
           id: "actual",
-          title: 'Tap button label "Empresarial"',
+          title: 'Tap button label"Empresarial"',
           status: "ok",
           frames: [{ path: "business.png" }],
         },
@@ -209,7 +209,7 @@ it("dest-end Observe is dest wait-for, not leftover Run saved Test last-frame", 
         {
           id: "trace-wait",
           index: 6,
-          title: 'Wait for label "What should we explore?"',
+          title: 'Wait for label"What should we explore?"',
           status: "ok",
           frames: [],
         },

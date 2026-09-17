@@ -9,7 +9,7 @@ export const failedReport: ProductRunReportOverview = {
   durationMs: 12_480,
   category: "Browser connection",
   cause:
-    "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:4173/checkout\nCall log:\n  - navigating to the saved app address, waiting until load",
+    "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:4173/checkout\nCall log:\n - navigating to the saved app address, waiting until load",
   firstEvidence: {
     label: "Order confirmation was missing",
     detail:

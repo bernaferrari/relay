@@ -328,7 +328,7 @@ async function beginRecording() {
 }
 
 async function interactWithLiveTarget() {
-  const canvas = document.querySelector<HTMLCanvasElement>(".relay-capture-live-target");
+  const canvas = document.querySelector<HTMLCanvasElement>('[data-slot="capture-live-target"]');
   if (!canvas) throw new Error("Live target canvas not found");
   canvas.width = 320;
   canvas.height = 240;
@@ -1303,7 +1303,7 @@ describe("record, review, replay, and save", () => {
     });
     await renderJourney("/recordings/workflow-1", fake.service, platformWithStorage().platform);
     await click(button("Full page"));
-    expect(document.querySelector(".relay-recording-problem")).toBeNull();
+    expect(document.querySelector('[data-slot="recording-problem"]')).toBeNull();
     expect(button("Stop and review").disabled).toBe(false);
   });
 
@@ -1607,7 +1607,7 @@ describe("record, review, replay, and save", () => {
 });
 
 async function tapLiveTarget() {
-  const canvas = document.querySelector<HTMLCanvasElement>(".relay-capture-live-target");
+  const canvas = document.querySelector<HTMLCanvasElement>('[data-slot="capture-live-target"]');
   if (!canvas) throw new Error("Live target canvas not found");
   canvas.width = 320;
   canvas.height = 240;

@@ -270,7 +270,7 @@ export function TestsPage() {
       {!tests.isPending && !tests.isError && visibleTests.length ? (
         <section className="mt-3" aria-labelledby="saved-tests-title">
           <div className="flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
-            <h2 id="saved-tests-title" className="text-body font-semibold tabular-nums">
+            <h2 id="saved-tests-title" className="text-sm font-semibold tabular-nums">
               {visibleTests.length === 1 ? "1 Test" : `${visibleTests.length} Tests`}
             </h2>
             {attentionRuns.length ? (

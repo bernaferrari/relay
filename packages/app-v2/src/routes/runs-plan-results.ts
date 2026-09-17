@@ -49,7 +49,7 @@ function planResultRow(
 }
 
 function planResultListTitle(run: ProductRunSummary): string {
-  const fromJob = run.title.split(" · ")[0]?.trim();
+  const fromJob = run.title.split(" ·")[0]?.trim();
   if (fromJob && fromJob !== run.title && fromJob !== "Run Across") return fromJob;
   return `${run.appName ?? "Plan"} Result`;
 }

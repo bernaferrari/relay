@@ -145,9 +145,9 @@ function evidenceItems(
       return {
         id: text(frame.path) ?? `screenshot-${index}`,
         title: publicFrameCaption(frame.caption) ?? `Screenshot ${index + 1}`,
-        ...((text(frame.caption) ?? "").startsWith("before · ")
+        ...((text(frame.caption) ?? "").startsWith("before ·")
           ? { phase: "before" as const }
-          : (text(frame.caption) ?? "").startsWith("after · ")
+          : (text(frame.caption) ?? "").startsWith("after ·")
             ? { phase: "after" as const }
             : {}),
         ...(media ? { media } : {}),
@@ -271,7 +271,7 @@ function evidenceItems(
         channel,
         item: {
           id: `artifact-${index}`,
-          title: publicEvidenceText(artifact.summary) ?? sentenceCase(kind.replace(/[-_]+/gu, " ")),
+          title: publicEvidenceText(artifact.summary) ?? sentenceCase(kind.replace(/[-_]+/gu, "")),
           meta:
             finite(artifact.capturedAt) === undefined
               ? undefined
@@ -331,7 +331,7 @@ function reportTimeline(
     if (checkStatuses.size > 0 && text(step.title)?.startsWith("Screenshot · final:")) return [];
     const failed = step.status === "error" || step.tone === "fail";
     if (!failed && text(step.log)?.startsWith("conditional tap: skipped")) return [];
-    const generatedBranch = (text(step.title) ?? "").startsWith("Branch when ");
+    const generatedBranch = (text(step.title) ?? "").startsWith("Branch when");
     const hasCapture = array(step.frames).some((frame) => text(record(frame)?.path));
     if (generatedBranch && !failed && !hasCapture) return [];
     const authoredStep = stepEvidence?.find((item) => item.traceStepId === text(step.id));
@@ -663,7 +663,7 @@ function isTautologicalNavigationTitle(title: string): boolean {
   const normalize = (value: string) =>
     value
       .replace(/^(?:the|a|an)\s+/iu, "")
-      .replace(/[\s._-]+/gu, " ")
+      .replace(/[\s._-]+/gu, "")
       .trim()
       .toLocaleLowerCase();
   return normalize(from) === normalize(to);

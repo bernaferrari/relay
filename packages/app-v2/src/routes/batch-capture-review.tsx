@@ -133,7 +133,7 @@ export function PlanCaptureReviewSection({
   if (!queue)
     return (
       <section className="mt-5 rounded-xl border border-border p-5" aria-label="Screenshot review">
-        <h2 className="text-title font-semibold">Screenshot review</h2>
+        <h2 className="text-base font-semibold">Screenshot review</h2>
         {captures.isError ? (
           <div role="alert" className="mt-2 grid gap-2 text-sm">
             <p>Screenshots could not be loaded. {captures.error.message}</p>

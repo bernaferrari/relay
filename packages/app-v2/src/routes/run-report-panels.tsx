@@ -74,7 +74,8 @@ export function EvidencePreview({
             >
               {item.media ? (
                 <span
-                  className="relay-evidence-image-frame overflow-hidden rounded-md bg-muted"
+                  data-slot="evidence-image-frame"
+                  className="overflow-hidden rounded-md bg-muted"
                   aria-hidden="true"
                 >
                   <ReportImage

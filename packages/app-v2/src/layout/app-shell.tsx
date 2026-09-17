@@ -130,7 +130,7 @@ export function AppShell({ platform }: { platform: Platform }) {
         ) : null}
         <header
           className={[
-            " [-webkit-app-region:drag] flex min-h-12 items-center gap-2 border-b border-border bg-background px-2 min-[861px]:hidden",
+            "[-webkit-app-region:drag] flex min-h-12 items-center gap-2 border-b border-border bg-background px-2 min-[861px]:hidden",
             platform.platform === "desktop" ? "min-h-[60px] pl-20" : "",
           ].join(" ")}
         >
@@ -153,7 +153,7 @@ export function AppShell({ platform }: { platform: Platform }) {
         <main
           id="main-content"
           className={classNames(
-            "relay-main min-h-0 min-w-0 flex-1 bg-card focus:outline-none",
+            " min-h-0 min-w-0 flex-1 bg-card focus:outline-none",
             runWorkspace && "min-[721px]:overflow-hidden [scrollbar-gutter:auto]",
             immersive
               ? "overflow-hidden"

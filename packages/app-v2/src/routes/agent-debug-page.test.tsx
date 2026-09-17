@@ -214,7 +214,7 @@ describe("Agent Debug route", () => {
       devices: [productDevice("ready", "Ready Pixel", true, "android")],
     });
 
-    await fillTitle("  Checkout button is unreachable  ");
+    await fillTitle(" Checkout button is unreachable");
     await selectTarget("serial-ready");
     await clickStart();
 
@@ -237,7 +237,7 @@ describe("Agent Debug route", () => {
 
     const target = document.getElementById("agent-debug-target");
     expect(target?.textContent).toContain("Ready Pixel · android");
-    await fillTitle("  Investigate checkout  ");
+    await fillTitle(" Investigate checkout");
     await clickStart();
 
     expect(debugBug).toHaveBeenCalledWith({

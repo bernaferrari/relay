@@ -33,7 +33,8 @@ export function ChangePublicationStatus({ detail }: { detail: ProductChangeDetai
   const presentation = publicationPresentation(publication.status);
   return (
     <section
-      className="relay-change-publication mt-6 max-w-prose"
+      data-slot="change-publication"
+      className="mt-6 max-w-prose"
       aria-labelledby="publication-status-title"
     >
       <h2 id="publication-status-title" className="text-sm font-medium">
@@ -69,10 +70,10 @@ export function ChangeAuditDetails({ detail }: { detail: ProductChangeDetail }) 
     ["Plan digest", details.audit.planDigest ?? "Not available"],
     ["Decision digest", details.audit.decisionDigest ?? "Not available"],
     ["Requested by", details.audit.requestedBy],
-    ["Builds", details.audit.buildIds.length ? details.audit.buildIds.join(", ") : "None"],
+    ["Builds", details.audit.buildIds.length ? details.audit.buildIds.join(",") : "None"],
   ];
   return (
-    <Collapsible className="relay-change-audit mt-8">
+    <Collapsible data-slot="change-audit" className="mt-8">
       <CollapsibleTrigger className="group flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
         Audit details
         <ChevronDown className="size-3.5 opacity-70 transition-transform group-aria-expanded:rotate-180" />

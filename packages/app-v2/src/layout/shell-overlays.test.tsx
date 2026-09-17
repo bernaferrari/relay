@@ -296,7 +296,7 @@ describe("shell overlays", () => {
     expect(input?.className).toContain("bg-transparent");
     expect(input?.className).not.toContain("border-input");
     expect(input?.getAttribute("role")).toBe("combobox");
-    expect(input?.getAttribute("aria-controls")).toBe("relay-command-results");
+    expect(input?.getAttribute("aria-controls")).toBe("command-results");
     expect(input?.getAttribute("aria-autocomplete")).toBe("list");
     expect(input?.getAttribute("aria-expanded")).toBe("true");
     await act(async () => {

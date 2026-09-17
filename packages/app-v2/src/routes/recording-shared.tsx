@@ -43,7 +43,7 @@ export function errorMessage(error: unknown): string {
 export function PageLoading({ label }: { label: string }) {
   return (
     <div className="mt-8 grid max-w-4xl gap-4" role="status" aria-live="polite">
-      <span className="relay-visually-hidden sr-only">{label}</span>
+      <span className="sr-only">{label}</span>
       <div className="grid max-w-sm gap-2" aria-hidden="true">
         <Skeleton className="h-4 w-[34%]" />
         <Skeleton className="h-3 w-[78%]" />
@@ -81,7 +81,8 @@ export function RecordingProblem({
   if (recovery?.code === "mutation-outcome-unknown") {
     return (
       <div
-        className={`relay-recording-problem flex min-h-9 items-center justify-between gap-3 text-xs text-muted-foreground ${className ?? ""}`}
+        data-slot="recording-problem"
+        className={`flex min-h-9 items-center justify-between gap-3 text-xs text-muted-foreground ${className ?? ""}`}
         role="status"
       >
         <span>
@@ -117,7 +118,7 @@ export function RecordingProblem({
       : undefined;
   return (
     <RecoveryState
-      className={`relay-recording-problem ${layout === "centered" ? "m-0 w-full max-w-none flex-1 justify-center border-0" : "mt-7 max-w-2xl"}${className ? ` ${className}` : ""}`}
+      className={`${layout === "centered" ? "m-0 w-full max-w-none flex-1 justify-center border-0" : "mt-7 max-w-2xl"}${className ? ` ${className}` : ""}`}
       title={publicRecovery?.title ?? "Relay could not complete this request"}
       detail={publicRecovery?.detail ?? errorMessage(error)}
       recovery={publicRecovery?.recovery}

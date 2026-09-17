@@ -35,7 +35,8 @@ export function StepMedia({
   const reviewControls = reviewControlsForFrame?.(failed ? undefined : frame);
   return (
     <div
-      className={`relay-evidence-image-frame overflow-hidden bg-transparent ${fill ? "flex min-h-0 flex-1 flex-col" : ""}`}
+      data-slot="evidence-image-frame"
+      className={`overflow-hidden bg-transparent ${fill ? "flex min-h-0 flex-1 flex-col" : ""}`}
     >
       <div
         onLoadCapture={(event) => {
@@ -54,9 +55,7 @@ export function StepMedia({
           >
             <rect
               {...actionBounds}
-              fill="#3b82f6"
-              fillOpacity=".16"
-              stroke="#3b82f6"
+              className="fill-info/15 stroke-info"
               strokeWidth="3"
               vectorEffect="non-scaling-stroke"
               rx="6"
@@ -79,9 +78,7 @@ export function StepMedia({
                   y={normalized ? mask.y * imageSize.height : mask.y}
                   width={normalized ? mask.width * imageSize.width : mask.width}
                   height={normalized ? mask.height * imageSize.height : mask.height}
-                  fill="#d97706"
-                  fillOpacity=".2"
-                  stroke="#b45309"
+                  className="fill-warning/20 stroke-warning-foreground"
                   strokeWidth="2"
                   vectorEffect="non-scaling-stroke"
                 />

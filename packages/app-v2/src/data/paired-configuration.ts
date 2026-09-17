@@ -273,7 +273,7 @@ export function compileTestStarts(input: {
   const blocked = admitted.filter((item) => item.status === "blocked");
   if (blocked.length) {
     throw new TypeError(
-      blocked.map((item) => `${item.configuration.name}: ${item.reason}`).join(" "),
+      blocked.map((item) => `${item.configuration.name}: ${item.reason}`).join("; "),
     );
   }
   return admitted
@@ -452,7 +452,7 @@ export function admitLiveOpenPlan(
         .map(
           (item) => `${item.name}: ${item.coverage.kind === "blocked" ? item.coverage.reason : ""}`,
         )
-        .join(" "),
+        .join("; "),
     );
   }
   const plan = liveOpenPlan(workspace);

@@ -11,7 +11,7 @@ import type { ProductRunReportOverview } from "../data/run-report-model";
 /** A result in the test workspace. The separate report owns diagnostics. */
 export function EmbeddedRunResult({ report }: { report: ProductRunReportOverview }) {
   const passed = report.outcome === "passed";
-  const diagnostic = [report.cause, ...report.timeline.map((step) => step.log)].join(" ");
+  const diagnostic = [report.cause, ...report.timeline.map((step) => step.log)].join("");
   const inspectionUnavailable = /screen-inspection-unavailable:/iu.test(diagnostic);
   const mismatch = !inspectionUnavailable && /expect-screen:/iu.test(diagnostic);
   const title = passed

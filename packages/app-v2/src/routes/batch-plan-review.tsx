@@ -56,9 +56,9 @@ export function BatchResultSummary({ report }: { report: ProductBatchReport }) {
             key={fact.label}
             className={
               fact.tone === "critical"
-                ? "text-[var(--text-critical-base)]"
+                ? "text-destructive"
                 : fact.tone === "warning"
-                  ? "text-[var(--text-warning-base)]"
+                  ? "text-warning-foreground"
                   : "text-muted-foreground"
             }
           >
@@ -259,7 +259,7 @@ function FindingReviewCard({
   return (
     <li
       className={`grid gap-3 rounded-xl border border-border bg-card p-4 ${
-        product ? "border-l-4 border-l-border-critical-selected" : "border-l-4 border-l-border"
+        product ? "border-l-4 border-l-destructive" : "border-l-4 border-l-border"
       }`}
     >
       <div className="min-w-0">
@@ -267,7 +267,7 @@ function FindingReviewCard({
           {planFindingLaneLabel(lane)}
           {product && finding.severity === "critical" ? " · Critical" : ""}
           {flaky ? " · Flaky" : ""}
-          {" · "}
+          {" ·"}
           <span className="sr-only">{finding.code}</span>
           {formatBatchFindingCode(finding.code)}
         </p>
@@ -277,7 +277,7 @@ function FindingReviewCard({
       {finding.expected || finding.observed ? (
         <p className="text-xs leading-snug text-muted-foreground">
           {finding.expected ? `Expected ${finding.expected}` : null}
-          {finding.expected && finding.observed ? " · " : null}
+          {finding.expected && finding.observed ? " ·" : null}
           {finding.observed ? `saw ${finding.observed}` : null}
         </p>
       ) : null}

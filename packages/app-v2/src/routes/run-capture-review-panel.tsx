@@ -279,7 +279,7 @@ export function CaptureReviewPanel({
                     />
                     <span
                       aria-hidden="true"
-                      className="flex size-6 items-center justify-center rounded-full border border-black/20 bg-white/95 text-transparent shadow-sm transition-colors peer-checked:border-blue-600 peer-checked:bg-blue-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2"
+                      className="flex size-6 items-center justify-center rounded-full border border-black/20 bg-white/95 text-transparent shadow-sm transition-colors peer-checked:border-info peer-checked:bg-info peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-info peer-focus-visible:ring-offset-2"
                     >
                       <Check className="size-3.5" strokeWidth={2.5} />
                     </span>

@@ -50,7 +50,8 @@ export type BreadcrumbItem =
 export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
   return (
     <nav
-      className="relay-breadcrumbs text-xs leading-4 text-muted-foreground"
+      data-slot="breadcrumbs"
+      className="text-xs leading-4 text-muted-foreground"
       aria-label="Breadcrumb"
     >
       <ol className="m-0 flex min-w-0 list-none items-center gap-1.5 p-0">
@@ -111,22 +112,18 @@ export function EmptyState({
   icon?: LucideIcon;
 }) {
   return (
-    <Empty
-      className={classNames(
-        "",
-        tone === "notice" ? "" : "",
-        layout === "filtered" ? "relay-empty-state--filtered" : "",
-      )}
-    >
-      <EmptyHeader>
-        <EmptyMedia>
-          <Icon />
-        </EmptyMedia>
-        <EmptyTitle>{title}</EmptyTitle>
-        <EmptyDescription>{detail}</EmptyDescription>
-      </EmptyHeader>
-      {action ? <EmptyContent>{action}</EmptyContent> : null}
-    </Empty>
+    <div data-slot={layout === "filtered" ? "empty-filtered" : undefined}>
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant={tone === "notice" ? "icon" : "default"}>
+            <Icon />
+          </EmptyMedia>
+          <EmptyTitle>{title}</EmptyTitle>
+          <EmptyDescription>{detail}</EmptyDescription>
+        </EmptyHeader>
+        {action ? <EmptyContent>{action}</EmptyContent> : null}
+      </Empty>
+    </div>
   );
 }
 
@@ -150,8 +147,9 @@ export function RecoveryState({
   if (layout === "centered") {
     return (
       <section
+        data-slot="recovery-centered"
         className={classNames(
-          " relay-recovery-state--centered flex min-w-0 flex-1 items-center justify-center px-5 py-10",
+          "flex min-w-0 flex-1 items-center justify-center px-5 py-10",
           className,
         )}
         role="alert"
@@ -180,7 +178,7 @@ export function RecoveryState({
   return (
     <section
       className={classNames(
-        " flex shrink-0 items-start gap-3 rounded-xl border border-border bg-muted/40 p-4",
+        "flex shrink-0 items-start gap-3 rounded-xl border border-border bg-muted/40 p-4",
         className,
       )}
       role="alert"
@@ -205,11 +203,10 @@ export function OutcomeMark({ outcome }: { outcome: OutcomeValue }) {
   const presentation = outcomePresentation(outcome);
   return (
     <Badge
+      data-slot="outcome-mark"
       className={classNames(
-        "relay-outcome-mark",
-        presentation.tone === "success" &&
-          "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
-        presentation.tone === "notice" && "bg-amber-500/15 text-amber-800 dark:text-amber-300",
+        presentation.tone === "success" && "bg-success/15 text-success-foreground",
+        presentation.tone === "notice" && "bg-warning/15 text-warning-foreground",
       )}
       variant={outcomeBadgeVariant(presentation.tone)}
     >
@@ -227,9 +224,9 @@ export function ReadinessMark({ status, name }: { status: ReadinessValue; name?:
       : { label, icon: CircleHelp, tone: "notice" as const };
   return (
     <Badge
+      data-slot="outcome-mark"
       className={classNames(
-        "",
-        presentation.tone === "notice" && "bg-amber-500/15 text-amber-800 dark:text-amber-300",
+        presentation.tone === "notice" && "bg-warning/15 text-warning-foreground",
       )}
       variant={outcomeBadgeVariant(presentation.tone)}
     >

@@ -357,7 +357,7 @@ describe("Suite and Environment routes", () => {
       browserService: browserService({ createSpace: create }),
     });
     expect(document.querySelector("h1")?.textContent).toBe("Browsers");
-    expect(document.querySelector(".relay-workspace-context")?.textContent).toBe("Workspace");
+    expect(document.querySelector('[data-slot="page-context"]')?.textContent).toBe("Workspace");
     expect(document.body.textContent).toContain("Staging browser");
     expect(document.body.textContent).not.toContain("Fresh browser each session");
     expect(document.body.textContent).not.toContain("Open →");
@@ -401,9 +401,9 @@ describe("Suite and Environment routes", () => {
       }),
     });
     expect(document.querySelector("h1")?.textContent).toBe("Staging browser");
-    expect(document.querySelector(".relay-breadcrumbs")?.textContent).toContain("Browsers");
+    expect(document.querySelector('[data-slot="breadcrumbs"]')?.textContent).toContain("Browsers");
     expect(document.body.textContent).toContain("Staging account");
-    expect(document.querySelector(".relay-environment-accounts")?.textContent).not.toContain(
+    expect(document.querySelector('[data-slot="environment-accounts"]')?.textContent).not.toContain(
       "Available",
     );
     expect(document.body.textContent).not.toContain("Current checks");

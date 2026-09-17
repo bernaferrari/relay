@@ -21,7 +21,8 @@ export function EditorSaveStatus({ state, detail }: { state: EditorSaveState; de
   }[state];
   return (
     <span
-      className={`relay-editor-save-status inline-flex items-center gap-1.5 text-xs ${state === "failed" || state === "conflicted" ? "text-destructive" : "text-muted-foreground"}`}
+      data-slot="editor-save-status"
+      className={`inline-flex items-center gap-1.5 text-xs ${state === "failed" || state === "conflicted" ? "text-destructive" : "text-muted-foreground"}`}
       data-state={state}
       role="status"
       aria-live="polite"

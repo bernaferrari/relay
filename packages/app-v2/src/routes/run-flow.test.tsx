@@ -684,7 +684,7 @@ describe("Run and Report", () => {
     expect(document.body.textContent).not.toContain("emulator-5554");
     expect(document.body.textContent).toContain("No recording reference was saved for this step.");
     const savedSteps = [
-      ...document.querySelectorAll<HTMLButtonElement>(".relay-test-readable-steps button"),
+      ...document.querySelectorAll<HTMLButtonElement>('[data-slot="test-readable-steps"] button'),
     ];
     expect(savedSteps).toHaveLength(3);
     expect(savedSteps[0]?.getAttribute("aria-pressed")).toBe("true");
@@ -724,9 +724,9 @@ describe("Run and Report", () => {
     expect(history.location.pathname).toBe("/runs/run-1");
     expect(document.body.textContent).toContain("Test passed");
     expect(document.body.textContent).toContain("Language settings");
-    expect(document.querySelector<HTMLImageElement>(".relay-evidence-image-frame img")?.src).toBe(
-      "data:image/png;base64,iVBORw0KGgo=",
-    );
+    expect(
+      document.querySelector<HTMLImageElement>('[data-slot="evidence-image-frame"] img')?.src,
+    ).toBe("data:image/png;base64,iVBORw0KGgo=");
     expect(fake.calls).not.toContain("raw-evidence:run-1");
 
     await click(button("More run actions"));
@@ -738,13 +738,21 @@ describe("Run and Report", () => {
     expect(fake.calls).toContain("raw-evidence:run-1");
     const rawJson = document.querySelector('[aria-label="Raw evidence JSON"]');
     expect(rawJson?.textContent).toContain('\n  "channels": {\n');
-    expect(rawJson?.querySelector(".relay-json-token--key")?.textContent).toBe('"channels"');
-    expect(rawJson?.querySelector(".relay-json-token--string")?.textContent).toBe(
-      '"checkpoint.passed"',
+    expect(rawJson?.querySelector('[data-slot="json-token"][data-kind="key"]')?.textContent).toBe(
+      '"channels"',
     );
-    expect(rawJson?.querySelector(".relay-json-token--number")?.textContent).toBe("2");
-    expect(rawJson?.querySelector(".relay-json-token--boolean")?.textContent).toBe("true");
-    expect(rawJson?.querySelector(".relay-json-token--null")?.textContent).toBe("null");
+    expect(
+      rawJson?.querySelector('[data-slot="json-token"][data-kind="string"]')?.textContent,
+    ).toBe('"checkpoint.passed"');
+    expect(
+      rawJson?.querySelector('[data-slot="json-token"][data-kind="number"]')?.textContent,
+    ).toBe("2");
+    expect(
+      rawJson?.querySelector('[data-slot="json-token"][data-kind="boolean"]')?.textContent,
+    ).toBe("true");
+    expect(rawJson?.querySelector('[data-slot="json-token"][data-kind="null"]')?.textContent).toBe(
+      "null",
+    );
     expect(document.body.textContent).toContain("checkpoint.passed");
 
     await act(async () => history.back());
@@ -1001,15 +1009,13 @@ describe("Run and Report", () => {
     });
     await renderRun("/runs/run-1", fake.service, storage.platform);
 
-    const recovery = document.querySelector(".relay-run-recovery");
-    expect(recovery?.classList.contains("relay-recovery-state--centered")).toBe(true);
+    const recovery = document.querySelector('[data-slot="recovery-centered"]');
+    expect(recovery).not.toBeNull();
     expect(recovery?.textContent).toContain("Relay is not connected");
     expect(document.body.textContent).not.toContain("Restoring progress");
     expect(document.body.textContent).not.toContain("Loading the Run");
-    expect(document.querySelector('[data-slot="skeleton"]')).toBeNull();
-    expect(document.querySelector(".relay-run-progress")).toBeNull();
+    expect(document.querySelector('[data-slot="run-progress"]')).toBeNull();
     const recoveryHeading = document.querySelector("h1");
-    expect(recoveryHeading?.classList.contains("relay-visually-hidden")).toBe(true);
     expect(recoveryHeading?.classList.contains("sr-only")).toBe(true);
     expect(button("Try again")).not.toBeNull();
   });
@@ -1306,7 +1312,7 @@ describe("Run and Report", () => {
       outcome: "harness-failure",
       targetName: "Golden Chromium",
       cause:
-        "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:4173\nCall log:\n  - navigating",
+        "page.goto: net::ERR_CONNECTION_REFUSED at http://127.0.0.1:4173\nCall log:\n - navigating",
       category: "Browser connection",
       timeline: [],
       evidence: [],

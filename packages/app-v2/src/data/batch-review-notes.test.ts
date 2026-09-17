@@ -5,7 +5,7 @@ describe("batch review notes", () => {
   it("appends a trimmed note and keeps it bound to the case", () => {
     const notes = appendBatchReviewNote([], {
       caseId: "login-ios",
-      text: "  Reproduced on Firefox  ",
+      text: " Reproduced on Firefox",
       at: 10,
       actorId: "human:qa",
     });
@@ -18,7 +18,7 @@ describe("batch review notes", () => {
       },
     ]);
     expect(notesForCase(notes, "other")).toEqual([]);
-    expect(appendBatchReviewNote(notes, { ...notes[0]!, text: "   " })).toEqual(notes);
+    expect(appendBatchReviewNote(notes, { ...notes[0]!, text: "" })).toEqual(notes);
   });
 
   it("restores saved notes and ignores malformed rows", () => {

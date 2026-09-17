@@ -18,7 +18,7 @@ export function RecordingInputRecovery({
 }) {
   return (
     <div
-      className="mr-auto grid w-full min-w-0 gap-3 rounded-md bg-amber-500/5 p-3"
+      className="mr-auto grid w-full min-w-0 gap-3 rounded-md bg-warning/5 p-3"
       role="group"
       aria-label="Check the last interaction"
     >

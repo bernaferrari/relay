@@ -558,7 +558,7 @@ export function NewTestPage() {
                             else setPreviewAttempt((value) => value + 1);
                           }}
                         >
-                          <RotateCcw aria-hidden="true" />{" "}
+                          <RotateCcw aria-hidden="true" />
                           {reconnectPreview.isPending ? "Connecting…" : "Connect device"}
                         </Button>
                       ) : null}

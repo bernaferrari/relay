@@ -197,10 +197,10 @@ export function SessionPage() {
                       <DialogDescription>
                         The device is released. Saved evidence stays.
                       </DialogDescription>
-                      <div className="flex flex-wrap items-center gap-2.5 ">
+                      <div className="flex flex-wrap items-center gap-2.5">
                         <DialogClose render={<Button variant="ghost">Keep session</Button>} />
                         <Button
-                          className="relay-session-end-button"
+                          data-slot="session-end-button"
                           variant="outline"
                           onClick={() => end.mutate()}
                           disabled={end.isPending}

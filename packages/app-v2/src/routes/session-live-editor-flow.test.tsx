@@ -309,7 +309,7 @@ describe("live Session to Test editor", () => {
     expect(document.body.textContent).toContain("End this Live session?");
     expect(document.body.textContent).toContain("The device is released. Saved evidence stays.");
 
-    const confirm = document.querySelector<HTMLButtonElement>(".relay-session-end-button");
+    const confirm = document.querySelector<HTMLButtonElement>('[data-slot="session-end-button"]');
     expect(confirm).not.toBeNull();
     await act(async () => confirm!.click());
     await settle();

@@ -267,7 +267,7 @@ export function EnvironmentPage() {
                   onClick={() => void readiness.refetch()}
                   disabled={readiness.isFetching}
                 >
-                  <RotateCcw aria-hidden="true" />{" "}
+                  <RotateCcw aria-hidden="true" />
                   {readiness.isFetching ? "Checking…" : "Check again"}
                 </Button>
               }
@@ -289,7 +289,7 @@ export function EnvironmentPage() {
                   onClick={() => void readiness.refetch()}
                   disabled={readiness.isFetching}
                 >
-                  <RotateCcw aria-hidden="true" />{" "}
+                  <RotateCcw aria-hidden="true" />
                   {readiness.isFetching ? "Checking…" : "Check again"}
                 </Button>
               }
@@ -315,7 +315,7 @@ export function EnvironmentPage() {
             </h2>
             {fixtures.isPending ? <PageLoading label="Loading sign-ins…" /> : null}
             {fixtures.data?.length ? (
-              <ul className="relay-environment-accounts mt-2 grid list-none p-0">
+              <ul data-slot="environment-accounts" className="mt-2 grid list-none p-0">
                 {fixtures.data.map((fixture) => {
                   const status = signInStatus(fixture);
                   return (

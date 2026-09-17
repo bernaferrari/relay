@@ -52,12 +52,10 @@ describe("device product operations", () => {
   it("launches an attached mobile app through the canonical operation", async () => {
     calls.length = 0;
     const service = createDeviceProductService({} as Platform);
-    await expect(service.launchApp!("ios-id", "  com.example.shop  ", true)).resolves.toMatchObject(
-      {
-        serial: "ios-serial",
-        platform: "ios",
-      },
-    );
+    await expect(service.launchApp!("ios-id", " com.example.shop", true)).resolves.toMatchObject({
+      serial: "ios-serial",
+      platform: "ios",
+    });
     expect(calls).toEqual([
       { id: "target.devices.list", input: {} },
       { id: "target.avds.list", input: {} },

@@ -226,8 +226,8 @@ export function CommandPalette({
         showCloseButton={false}
         className="w-[min(560px,calc(100vw-32px))] max-h-[min(620px,calc(100dvh-48px))] gap-0 overflow-hidden rounded-xl p-0 shadow-[var(--shadow-lg)]"
       >
-        <DialogTitle className="relay-visually-hidden sr-only">Relay commands</DialogTitle>
-        <DialogDescription className="relay-visually-hidden sr-only">
+        <DialogTitle className="sr-only">Relay commands</DialogTitle>
+        <DialogDescription className="sr-only">
           Search destinations and common product actions.
         </DialogDescription>
         <div className="flex min-h-14 items-center gap-3 border-b border-border px-4">
@@ -237,7 +237,7 @@ export function CommandPalette({
             aria-label="Search commands"
             role="combobox"
             aria-autocomplete="list"
-            aria-controls=""
+            aria-controls="command-results"
             aria-expanded={commands.length > 0}
             placeholder="Search Relay…"
             value={query}
@@ -253,7 +253,12 @@ export function CommandPalette({
           </kbd>
         </div>
         <ScrollArea className="max-h-[min(480px,calc(100dvh-150px))] p-2">
-          <div id="" role="listbox" aria-label="Commands" className="flex flex-col gap-0.5">
+          <div
+            id="command-results"
+            role="listbox"
+            aria-label="Commands"
+            className="flex flex-col gap-0.5"
+          >
             {tests.isError ? (
               <div
                 className="grid gap-2 p-6 text-center text-sm text-muted-foreground"

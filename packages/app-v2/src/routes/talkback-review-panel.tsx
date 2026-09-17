@@ -152,7 +152,7 @@ export function TalkBackOverlay({
       {visible.map(({ item, box }) => (
         <div
           key={item.id}
-          className={`absolute left-(--box-left) top-(--box-top) h-(--box-height) w-(--box-width) rounded-sm border border-blue-500/50 ${item.id === hoveredId ? "border-blue-500 bg-blue-500/15 ring-1 ring-blue-500" : "bg-blue-500/[0.03]"}`}
+          className={`absolute left-(--box-left) top-(--box-top) h-(--box-height) w-(--box-width) rounded-sm border border-info/50 ${item.id === hoveredId ? "border-info bg-info/15 ring-1 ring-info" : "bg-info/5"}`}
           style={
             {
               "--box-left": `${box.left}px`,

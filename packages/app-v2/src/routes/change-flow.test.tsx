@@ -277,7 +277,7 @@ describe("Change verification", () => {
     const fake = fakeChangeService();
     const history = await renderChange("/changes?status=active", fake.service);
 
-    const empty = document.querySelector(".relay-empty-state--filtered");
+    const empty = document.querySelector('[data-slot="empty-filtered"]');
     expect(empty).not.toBeNull();
     expect(empty?.textContent).toContain("No Changes in progress");
     expect(empty?.textContent).toContain("There is nothing in this view right now.");
@@ -299,8 +299,8 @@ describe("Change verification", () => {
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 1_100))));
     await settle();
 
-    const recovery = document.querySelector(".mt-5");
-    expect(recovery?.className).toContain("relay-recovery-state--centered");
+    const recovery = document.querySelector('[data-slot="recovery-centered"]');
+    expect(recovery).not.toBeNull();
     expect(recovery?.getAttribute("role")).toBe("alert");
     expect(recovery?.textContent).toContain("Relay is offline");
     expect(recovery?.textContent?.match(/your work is safe/gi)).toHaveLength(1);
@@ -431,14 +431,14 @@ describe("Change verification", () => {
     });
     await renderChange("/changes/change-proof-private-id", fake.service);
 
-    const repair = document.querySelector(".relay-change-repair-context");
+    const repair = document.querySelector('[data-slot="change-repair-context"]');
     expect(repair?.textContent).toContain("Smallest useful fix");
     expect(repair?.textContent).toContain("The heading remains inside its layout bounds.");
     expect(repair?.textContent).toContain("The heading overlaps the action.");
     expect(repair?.textContent).toContain("src/i18n/ar.json");
     await click(button("Relevant logs (1)"));
     expect(repair?.textContent).toContain("layout assertion failed");
-    expect(document.querySelector(".relay-verification-plan")?.textContent).not.toContain(
+    expect(document.querySelector('[data-slot="verification-plan"]')?.textContent).not.toContain(
       "src/i18n/ar.json",
     );
   });
@@ -479,8 +479,8 @@ describe("Change verification", () => {
 
     expect(document.body.textContent).toContain("Human evidence is required");
     expect(document.body.textContent).toContain("Confirm the final layout");
-    const attention = document.querySelector(".relay-change-attention");
-    const plan = document.querySelector(".relay-verification-plan");
+    const attention = document.querySelector('[data-slot="change-attention"]');
+    const plan = document.querySelector('[data-slot="verification-plan"]');
     expect(
       attention && plan
         ? attention.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING
@@ -505,12 +505,14 @@ describe("Change verification", () => {
     const fake = fakeChangeService("proved");
     await renderChange("/changes/change-proof-private-id", fake.service);
 
-    const audit = document.querySelector(".relay-change-audit")!;
+    const audit = document.querySelector('[data-slot="change-audit"]')!;
     expect(audit.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
     await click(button("Audit details"));
     expect(audit.textContent).toContain("change-proof-private-id");
     expect(audit.textContent).toContain("sha256:");
-    expect(document.querySelector(".relay-change-verdict")?.textContent).not.toContain("sha256:");
+    expect(document.querySelector('[data-slot="change-verdict"]')?.textContent).not.toContain(
+      "sha256:",
+    );
   });
 
   it("shows bounded provider delivery diagnostics only inside Audit details", async () => {
@@ -562,11 +564,11 @@ describe("Change verification", () => {
     });
     await renderChange("/changes/change-proof-private-id", fake.service);
 
-    expect(document.querySelector(".relay-change-publication")?.textContent).not.toContain(
+    expect(document.querySelector('[data-slot="change-publication"]')?.textContent).not.toContain(
       "Provider failure",
     );
     await click(button("Audit details"));
-    const audit = document.querySelector(".relay-change-audit")!;
+    const audit = document.querySelector('[data-slot="change-audit"]')!;
     expect(audit.textContent).toContain("Provider failureProvider rejected delivery");
     expect(audit.textContent).toContain("Next retry2023-11-14T22:13:20.000Z");
     expect(audit.textContent).toContain("Attempts3 of 3");
@@ -600,7 +602,7 @@ describe("Change verification", () => {
     });
     await renderChange("/changes/change-proof-private-id", fake.service);
 
-    const verdict = document.querySelector(".relay-change-verdict");
+    const verdict = document.querySelector('[data-slot="change-verdict"]');
     expect(verdict?.textContent).toContain("Ready to merge");
     expect(verdict?.textContent).toContain("2 of 2 checks complete");
     expect(verdict?.textContent).not.toContain("Verdict");

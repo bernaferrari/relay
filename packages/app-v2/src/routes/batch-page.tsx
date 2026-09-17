@@ -316,7 +316,7 @@ export function BatchPage() {
           ) : null}
 
           {canContinue ? (
-            <section className="mt-5 rounded-xl border border-border border-l-4 border-l-border-interactive-base bg-card p-5">
+            <section className="mt-5 rounded-xl border border-border border-l-4 border-l-primary bg-card p-5">
               <h2 className="text-xl font-semibold tracking-tight text-foreground">
                 Review before continuing
               </h2>
@@ -485,7 +485,7 @@ export function BatchPage() {
 
           {report.export ? (
             <div
-              className="mt-1 flex flex-wrap items-center gap-3 text-xs font-semibold text-[var(--text-success-base)]"
+              className="mt-1 flex flex-wrap items-center gap-3 text-xs font-semibold text-success-foreground"
               role="status"
             >
               <p>Export ready: {report.export.jobIds.length} run artifacts prepared.</p>

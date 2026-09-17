@@ -127,9 +127,9 @@ export function MapAccessibilityOverlay({
           width={control.width * rect.width}
           height={control.height * rect.height}
           rx="2"
-          fill="var(--color-blue-500)"
+          fill="var(--info)"
           fillOpacity={hovered === index ? 0.2 : 0.03}
-          stroke="var(--color-blue-500)"
+          stroke="var(--info)"
           strokeOpacity={hovered === index ? 1 : 0.3}
           strokeWidth={hovered === index ? 1.5 : 0.75}
           vectorEffect="non-scaling-stroke"

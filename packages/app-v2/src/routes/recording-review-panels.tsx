@@ -166,7 +166,7 @@ export function RecordingEvidencePanel({
             {(showElements ? controls : hovered ? [hovered] : []).map((control) => (
               <div
                 key={control.id}
-                className="pointer-events-none absolute left-(--box-left) top-(--box-top) h-(--box-height) w-(--box-width) rounded-sm border border-blue-500 bg-blue-500/5"
+                className="pointer-events-none absolute left-(--box-left) top-(--box-top) h-(--box-height) w-(--box-width) rounded-sm border border-info bg-info/5"
                 style={
                   {
                     "--box-left": `${(control.rect.x / imageSize.width) * 100}%`,

@@ -69,9 +69,7 @@ export function BatchFailureClusters({
           return (
             <li
               className={`grid min-h-14 grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-xl border border-border bg-card py-3.5 pr-3 pl-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] ${
-                product
-                  ? "border-l-4 border-l-border-critical-selected"
-                  : "border-l-4 border-l-border"
+                product ? "border-l-4 border-l-destructive" : "border-l-4 border-l-border"
               } ${checked ? "bg-accent" : ""}`}
               key={cluster.id}
             >

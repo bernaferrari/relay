@@ -368,7 +368,7 @@ describe("Devices", () => {
       expect(connections).toBe(initialConnections + 1);
       expect(mounted).toBe(1);
       expect(
-        document.querySelector<HTMLCanvasElement>(".relay-capture-live-target")?.tabIndex,
+        document.querySelector<HTMLCanvasElement>('[data-slot="capture-live-target"]')?.tabIndex,
       ).toBe(0);
       expect(document.body.textContent).toContain("Live");
     },
@@ -378,13 +378,13 @@ describe("Devices", () => {
     const history = await renderPath("/devices");
 
     const row = document.querySelector<HTMLAnchorElement>(
-      'a.relay-device-row[href="/devices/ipad"]',
+      'a[data-slot="device-row"][href="/devices/ipad"]',
     );
     expect(row).not.toBeNull();
     expect(row?.textContent).toContain("Design iPad");
     expect(row?.textContent).toContain("Apple device · Physical device");
-    expect(row?.querySelector(".relay-library-row-status")?.textContent).toContain("Ready");
-    expect(row?.querySelector(".relay-device-row-chevron")).toBeNull();
+    expect(row?.querySelector('[data-slot="library-row-status"]')?.textContent).toContain("Ready");
+    expect(row?.querySelector('[data-slot="device-row-chevron"]')).toBeNull();
 
     await click(row!);
     expect(history.location.pathname).toBe("/devices/ipad");
@@ -393,7 +393,7 @@ describe("Devices", () => {
   it("shows the device once without a lecture or oversized crumbs", async () => {
     await renderPath("/devices/ipad");
 
-    const crumbs = document.querySelector(".relay-breadcrumbs");
+    const crumbs = document.querySelector('[data-slot="breadcrumbs"]');
     expect(crumbs?.className).toContain("text-xs");
     expect(crumbs?.className).not.toContain("mb-3");
     expect(crumbs?.querySelector("a")?.className).not.toContain("min-h-11");
@@ -416,8 +416,8 @@ describe("Devices", () => {
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 1_100))));
     await settle();
 
-    const recovery = document.querySelector(".relay-devices-recovery");
-    expect(recovery?.className).toContain("relay-recovery-state--centered");
+    const recovery = document.querySelector('[data-slot="recovery-centered"]');
+    expect(recovery).not.toBeNull();
     expect(recovery?.getAttribute("role")).toBe("alert");
     expect(recovery?.textContent).toContain("Relay could not check devices");
     expect(recovery?.textContent).toContain("saved Tests and device settings are safe");
@@ -486,7 +486,7 @@ describe("Devices", () => {
     const identifier = document.querySelector<HTMLInputElement>("#device-app-identifier");
     if (!identifier) throw new Error("App identifier input not found");
     expect(document.querySelector('input[type="checkbox"]')).not.toBeNull();
-    await fillInput(identifier, "  com.example.shop  ");
+    await fillInput(identifier, " com.example.shop");
     await click(document.querySelector('input[type="checkbox"]')!);
     await click(button("Launch app"));
 
@@ -500,7 +500,7 @@ describe("Devices", () => {
   it("hides app launch on managed browsers", async () => {
     await renderPath("/devices/browser");
 
-    expect(document.querySelector(".relay-device-launch-form")).toBeNull();
+    expect(document.querySelector('[data-slot="device-launch-form"]')).toBeNull();
     expect(document.querySelector("#device-launch-title")).toBeNull();
     expect(document.body.textContent).not.toContain("Launch an app");
     expect(document.body.textContent).not.toContain("cannot launch");

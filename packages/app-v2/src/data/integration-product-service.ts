@@ -91,7 +91,7 @@ function linesForRun(report: ProductRunReportOverview): {
     ...(clean(report.cause) ? [`Cause: ${clean(report.cause)}`] : []),
     ...(report.firstEvidence ? [`First evidence: ${clean(report.firstEvidence.label)}`] : []),
     ...(failures.length
-      ? [`Failed steps: ${bounded(failures.map((item) => item.title)).join(", ")}`]
+      ? [`Failed steps: ${bounded(failures.map((item) => item.title)).join(",")}`]
       : []),
     `Evidence channels: ${report.evidence.length}`,
   ];
@@ -110,9 +110,9 @@ function linesForBatch(report: ProductBatchReport): { id: string; lines: string[
     clean(report.report.detail),
     `Cases: ${report.completedCases}/${report.totalCases} completed`,
     ...(report.targetNames.length
-      ? [`Environments: ${bounded(report.targetNames, 10).join(", ")}`]
+      ? [`Environments: ${bounded(report.targetNames, 10).join(",")}`]
       : []),
-    ...(failed.length ? [`First failures: ${failed.join("; ")}`] : []),
+    ...(failed.length ? [`First failures: ${failed.join(";")}`] : []),
   ].filter(Boolean);
   return { id: report.id, lines, count: report.runIds.length };
 }
@@ -136,10 +136,10 @@ function linesForChange(details: ProductChangeDetails): {
         ]
       : []),
     ...(change.coverageGaps.length
-      ? [`Coverage gaps: ${bounded(change.coverageGaps).join(", ")}`]
+      ? [`Coverage gaps: ${bounded(change.coverageGaps).join(",")}`]
       : []),
     ...(change.residualRisk.length
-      ? [`Residual risk: ${bounded(change.residualRisk).join(", ")}`]
+      ? [`Residual risk: ${bounded(change.residualRisk).join(",")}`]
       : []),
     `Publications: ${details.publications.length}`,
   ].filter(Boolean);

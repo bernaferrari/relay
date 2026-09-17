@@ -566,7 +566,7 @@ export function InfiniteMapCanvas({
     if (
       event.code === "Space" &&
       (event.target === viewportRef.current ||
-        (event.target as HTMLElement).closest(".relay-map-screen"))
+        (event.target as HTMLElement).closest('[data-slot="map-screen"]'))
     ) {
       event.preventDefault();
       setSpacePan(true);
@@ -747,7 +747,8 @@ export function InfiniteMapCanvas({
           <span className="mx-1 h-5 w-px bg-border" />
           <MapControl label="Zoom out" icon={Minus} onClick={() => zoomBy(1 / 1.18)} />
           <span
-            className="relay-map-zoom w-12 text-center font-mono text-xs tabular-nums"
+            data-slot="map-zoom"
+            className="w-12 text-center font-mono text-xs tabular-nums"
             ref={zoomLabelRef}
             aria-live="polite"
           >
@@ -870,7 +871,8 @@ export function InfiniteMapCanvas({
         ) : null}
         <section
           data-tool={panningTool ? "hand" : "select"}
-          className="relay-map-canvas data-[tool=hand]:cursor-grab relative h-full min-h-0 w-full flex-1 overflow-hidden bg-[radial-gradient(var(--border)_1px,transparent_1px)] [background-size:20px_20px]"
+          data-slot="map-canvas"
+          className="data-[tool=hand]:cursor-grab relative h-full min-h-0 w-full flex-1 overflow-hidden bg-[radial-gradient(var(--border)_1px,transparent_1px)] [background-size:20px_20px]"
           aria-label="Screens and verified paths"
           aria-describedby="map-keyboard-help"
           tabIndex={0}
@@ -885,7 +887,7 @@ export function InfiniteMapCanvas({
           {marquee ? (
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute left-(--box-left) top-(--box-top) z-30 h-(--box-height) w-(--box-width) border border-blue-400 bg-blue-400/10"
+              className="pointer-events-none absolute left-(--box-left) top-(--box-top) z-30 h-(--box-height) w-(--box-width) border border-info bg-info/10"
               style={
                 {
                   "--box-left": `${marquee.x}px`,
@@ -904,20 +906,21 @@ export function InfiniteMapCanvas({
               {selectedIds.size} screens selected
             </span>
           ) : null}
-          <span className="relay-visually-hidden sr-only" id="map-keyboard-help">
+          <span className="sr-only" id="map-keyboard-help">
             Use arrow keys to move, plus and minus to zoom, F to fit the map, Shift F to focus a
             selected screen, Space to pan, or 0 to reset the view. Tab to visit each screen.
           </span>
           <div
             ref={worldRef}
-            className="relay-map-world absolute inset-0 origin-top-left"
+            data-slot="map-world"
+            className="absolute inset-0 origin-top-left"
             style={{ transform: "translate3d(48px, 64px, 0) scale(1)" }}
           >
             {alignmentGuides.map((guide, index) => (
               <div
                 key={index}
                 aria-hidden="true"
-                className="pointer-events-none absolute left-(--box-left) top-(--box-top) z-30 h-(--box-height) w-(--box-width) bg-blue-400"
+                className="pointer-events-none absolute left-(--box-left) top-(--box-top) z-30 h-(--box-height) w-(--box-width) bg-info"
                 style={
                   {
                     "--box-left": `${guide.axis === "x" ? guide.value : guide.from}px`,
@@ -947,7 +950,8 @@ export function InfiniteMapCanvas({
               return (
                 <button
                   type="button"
-                  className="relay-map-screen group/map-screen absolute left-(--box-left) top-(--box-top) flex h-(--box-height) w-(--box-width) flex-col gap-2 text-left focus-visible:outline-2 focus-visible:outline-ring"
+                  data-slot="map-screen"
+                  className="group/map-screen absolute left-(--box-left) top-(--box-top) flex h-(--box-height) w-(--box-width) flex-col gap-2 text-left focus-visible:outline-2 focus-visible:outline-ring"
                   key={screen.id}
                   aria-pressed={selectedNode}
                   onClick={(event) => {
@@ -1050,7 +1054,7 @@ export function InfiniteMapCanvas({
                   }
                 >
                   <span
-                    className={`flex h-5 w-full shrink-0 items-end justify-center text-center text-sm font-medium leading-tight ${selectedNode ? "text-blue-400" : "text-muted-foreground"}`}
+                    className={`flex h-5 w-full shrink-0 items-end justify-center text-center text-sm font-medium leading-tight ${selectedNode ? "text-info" : "text-muted-foreground"}`}
                   >
                     <MapFrameTitle title={screen.title} />
                   </span>

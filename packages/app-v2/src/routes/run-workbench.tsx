@@ -480,7 +480,7 @@ export function RunWorkbench({
                       <span className="tabular-nums">{setupCount} steps</span>
                     </button>
                   ) : null}
-                  <ol className="relay-test-readable-steps grid list-none gap-1 p-2 pb-4">
+                  <ol data-slot="test-readable-steps" className="grid list-none gap-1 p-2 pb-4">
                     {report.timeline.map((item, index) => {
                       if (!visibleIndexes.includes(index)) return null;
                       const Icon =
@@ -541,7 +541,7 @@ export function RunWorkbench({
                             </span>
                             <Icon
                               aria-hidden="true"
-                              className={`size-4 ${item.state === "failed" ? "text-[var(--text-critical-base)]" : item.state === "passed" ? "text-[var(--text-success-base)]" : ""}`}
+                              className={`size-4 ${item.state === "failed" ? "text-destructive" : item.state === "passed" ? "text-success-foreground" : ""}`}
                             />
                           </button>
                           {index === selectedStepIndex &&
