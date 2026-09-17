@@ -11,7 +11,12 @@ import {
   type AppMapTestCompileOptions,
   type CompiledAppMapTestForProfile,
 } from "@relay/core";
-import type { AppMap, AppMapCompiledRuntimeTargetProfile, AppMapScenarioTest, AuthoringTarget } from "@relay/protocol";
+import type {
+  AppMap,
+  AppMapCompiledRuntimeTargetProfile,
+  AppMapScenarioTest,
+  AuthoringTarget,
+} from "@relay/protocol";
 import { frozenEvidenceTargetProfileForTarget } from "./app-map-run-target-admission.js";
 import { frozenTestRunTargetProfile } from "./app-map-test-target-profile.js";
 import { HttpError } from "./http.js";
@@ -92,7 +97,10 @@ export async function prepareAppMapCompanionTestRun(input: {
   target: AuthoringTarget;
   targetProfileId?: string;
   projectId: string;
-  compileOptions: Omit<AppMapTestCompileOptions, "runtimeTargetProfile" | "reviewedDocumentOrigins">;
+  compileOptions: Omit<
+    AppMapTestCompileOptions,
+    "runtimeTargetProfile" | "reviewedDocumentOrigins"
+  >;
 }): Promise<{
   compiled: CompiledAppMapTestForProfile;
   executionMap: AppMap;

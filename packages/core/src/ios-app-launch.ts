@@ -417,10 +417,7 @@ async function goIosTunnelIsLive(
   return goIosTunnelListingLooksReady(bin, run, 5_000);
 }
 
-function startGoIosTunnelChild(
-  bin: string,
-  spawnTunnel: typeof spawn,
-): ChildProcess {
+function startGoIosTunnelChild(bin: string, spawnTunnel: typeof spawn): ChildProcess {
   const child = spawnTunnel(
     bin,
     ["tunnel", "start", "--userspace", "--tunnel-info-port", DEFAULT_TUNNEL_INFO_PORT],

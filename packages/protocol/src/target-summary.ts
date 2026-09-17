@@ -664,8 +664,7 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
     const nodes = Array.isArray(body.nodes) ? body.nodes : [];
     const chrome = describeSnapshotChrome(nodes);
     const treeApp = typeof body.treeApp === "string" ? body.treeApp.trim() : "";
-    const foregroundApp =
-      typeof body.foregroundApp === "string" ? body.foregroundApp.trim() : "";
+    const foregroundApp = typeof body.foregroundApp === "string" ? body.foregroundApp.trim() : "";
     const visualFingerprint =
       typeof body.visualFingerprint === "string" ? body.visualFingerprint : undefined;
     const pixelsChrome = describePixelsOnlySnapshotChrome({
@@ -674,8 +673,7 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
     });
     const namedApp = typeof body.app === "string" ? body.app.trim() : "";
     const namedHeader = typeof body.header === "string" ? body.header.trim() : "";
-    const app =
-      chrome.app || treeApp || foregroundApp || namedApp || pixelsChrome.app || undefined;
+    const app = chrome.app || treeApp || foregroundApp || namedApp || pixelsChrome.app || undefined;
     const header = chrome.header || namedHeader || pixelsChrome.header || undefined;
     const inspectable = body.inspectable !== false && nodes.length > 0;
     // A screen-identity digest is derived from accessibility semantics. In an

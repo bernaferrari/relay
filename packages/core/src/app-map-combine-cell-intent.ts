@@ -193,9 +193,7 @@ function companionChildMatchesCell(
 ): boolean {
   if (cellTestId === childTestId) return true;
   return Boolean(
-    companion &&
-      companion.requestedFrom.testId === cellTestId &&
-      companion.testId === childTestId,
+    companion && companion.requestedFrom.testId === cellTestId && companion.testId === childTestId,
   );
 }
 

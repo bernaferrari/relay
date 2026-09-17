@@ -6,7 +6,11 @@ import {
   runWithTargetContext,
   type Device,
 } from "@relay/core";
-import { compileBrowserEnvironment, type AuthoringSession, type AuthoringTarget } from "@relay/protocol";
+import {
+  compileBrowserEnvironment,
+  type AuthoringSession,
+  type AuthoringTarget,
+} from "@relay/protocol";
 import { fixtureCaptureReadiness } from "./authoring-fixture-ready.js";
 
 export type AuthoringDeviceOptions = {

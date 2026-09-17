@@ -17,7 +17,10 @@ test("leftover Settings/sidebar/Private Chat/signed-out block claiming Home", ()
   }
   assert.equal(leftoverContradictsFact(["settings"], "menu-closed"), true);
   assert.equal(leftoverContradictsFact(["signed-out"], "known-account"), true);
-  assert.equal(leftoverContradictsFact(["conversation-deleted"], "owned-conversation-available"), true);
+  assert.equal(
+    leftoverContradictsFact(["conversation-deleted"], "owned-conversation-available"),
+    true,
+  );
   assert.equal(leftoverContradictsFact(["prefs-mutated"], "language-theme-established"), true);
   assert.deepEqual(leftoverContradictedFacts([]), []);
 });

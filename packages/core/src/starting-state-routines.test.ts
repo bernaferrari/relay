@@ -52,7 +52,11 @@ function routine(id: string, effects: Routine["effects"]): Routine {
   };
 }
 
-function moduleTest(id: string, routineId: string, extra: Partial<AppMapScenarioTest> = {}): AppMapScenarioTest {
+function moduleTest(
+  id: string,
+  routineId: string,
+  extra: Partial<AppMapScenarioTest> = {},
+): AppMapScenarioTest {
   return {
     ...entity(id),
     name: id,
@@ -70,7 +74,11 @@ function moduleTest(id: string, routineId: string, extra: Partial<AppMapScenario
   };
 }
 
-function mapWith(routines: Record<string, Routine>, tests: Record<string, AppMapScenarioTest>, connections: Record<string, Connection> = {}): AppMap {
+function mapWith(
+  routines: Record<string, Routine>,
+  tests: Record<string, AppMapScenarioTest>,
+  connections: Record<string, Connection> = {},
+): AppMap {
   return {
     schemaVersion: 1,
     id: scope.appMapId,
@@ -191,7 +199,13 @@ test("inspect Settings leftover cannot leave the next Test claiming Home without
   assert.equal(intraIssues[0]?.code, "leftover-home-claim");
 
   assert.throws(
-    () => compileAppMapCombine(dirty, { ...entity("pack"), name: "pack", variableIds: [], testIds: ["inspect-settings", "claim-home"] }),
+    () =>
+      compileAppMapCombine(dirty, {
+        ...entity("pack"),
+        name: "pack",
+        variableIds: [],
+        testIds: ["inspect-settings", "claim-home"],
+      }),
     (error: unknown) =>
       error instanceof UnsafeStartingStateError && error.issueCode === "leftover-home-claim",
   );
@@ -340,7 +354,10 @@ test("browser Lane isolation is not server-side account isolation", () => {
   assert.equal(acrossLanes[0]?.code, "lane-is-not-account");
   assert.match(acrossLanes[0]?.message ?? "", /not server-side account isolation/u);
   assert.match(MUTATING_ROUTINE_PRESETS["sign-out"].accountIsolationNote, /Playwright/u);
-  assert.equal(MUTATING_ROUTINE_PRESETS["sign-out"].accountIsolationNote, BROWSER_LANE_ISOLATION_NOTE);
+  assert.equal(
+    MUTATING_ROUTINE_PRESETS["sign-out"].accountIsolationNote,
+    BROWSER_LANE_ISOLATION_NOTE,
+  );
 
   const laneOnly = {
     ...signOut,
@@ -364,6 +381,11 @@ test("Tests without declared effects still pack in graph order", () => {
   );
   assert.deepEqual(assessSequentialStartingState(map, ["a", "b"]), []);
   assert.doesNotThrow(() =>
-    compileAppMapCombine(map, { ...entity("pack"), name: "pack", variableIds: [], testIds: ["a", "b"] }),
+    compileAppMapCombine(map, {
+      ...entity("pack"),
+      name: "pack",
+      variableIds: [],
+      testIds: ["a", "b"],
+    }),
   );
 });

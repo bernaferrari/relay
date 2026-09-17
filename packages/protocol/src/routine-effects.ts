@@ -157,7 +157,11 @@ export function mutatingWorkMayShare(
   left: StartingStateShareContext,
   right: StartingStateShareContext,
 ): boolean {
-  if (left.testId === right.testId && left.accountId === right.accountId && left.laneId === right.laneId) {
+  if (
+    left.testId === right.testId &&
+    left.accountId === right.accountId &&
+    left.laneId === right.laneId
+  ) {
     return true;
   }
   const sharing = effectiveSharingPolicy(effects);
@@ -167,7 +171,8 @@ export function mutatingWorkMayShare(
     Boolean(left.accountId) && Boolean(right.accountId) && left.accountId === right.accountId;
   const distinctAccounts =
     Boolean(left.accountId) && Boolean(right.accountId) && left.accountId !== right.accountId;
-  const distinctLanes = Boolean(left.laneId) && Boolean(right.laneId) && left.laneId !== right.laneId;
+  const distinctLanes =
+    Boolean(left.laneId) && Boolean(right.laneId) && left.laneId !== right.laneId;
   const isolation = effects.accountIsolation ?? "browser-lane-only";
   if (isolation === "browser-lane-only" && sameAccount) return false;
   if (sharing === "isolated-account") return distinctAccounts;

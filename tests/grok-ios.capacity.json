@@ -42,10 +42,7 @@
       "8": null
     },
     "batchId": "d7eafb3c-4534-4027-8480-9d075ea4fb0f",
-    "failedPriorBatchIds": [
-      "99b06642",
-      "00b307de"
-    ],
+    "failedPriorBatchIds": ["99b06642", "00b307de"],
     "cliWatchMs": 1160364,
     "mapRevision": 314,
     "jobs": {

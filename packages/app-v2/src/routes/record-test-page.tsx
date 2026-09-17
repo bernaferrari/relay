@@ -443,12 +443,10 @@ function RecordingWorkspace({
     if (!allowed.has("stop") || action.isPending || stopWaitingForInput) return;
     setStopWaitingForInput(true);
     try {
-      const outcome = await liveInputOutcome.current.catch(
-        (): RecordingInputOutcome => ({
-          kind: "unknown",
-          message: "The last interaction did not finish cleanly.",
-        }),
-      );
+      const outcome = await liveInputOutcome.current.catch((): RecordingInputOutcome => ({
+        kind: "unknown",
+        message: "The last interaction did not finish cleanly.",
+      }));
       if (outcome.kind === "refresh-failed") {
         await recoverRecordingRefreshOnly();
       }

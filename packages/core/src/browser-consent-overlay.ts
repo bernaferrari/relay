@@ -54,7 +54,10 @@ export async function dismissBrowserConsentIfPresent(page: Page): Promise<void> 
   const dialog = cookieNotice(page);
   if ((await dialog.count()) === 0) return;
   await dismissCookieNotice(page);
-  await dialog.first().waitFor({ state: "hidden", timeout: 5_000 }).catch(() => undefined);
+  await dialog
+    .first()
+    .waitFor({ state: "hidden", timeout: 5_000 })
+    .catch(() => undefined);
   await page.waitForTimeout(400);
 }
 

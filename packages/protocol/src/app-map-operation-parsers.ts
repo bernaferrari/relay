@@ -275,7 +275,11 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     if (input.targetProfileId !== undefined) {
       string(input.targetProfileId, "Combine preflight targetProfileId");
     }
-    if (input.targetKind !== undefined && input.targetKind !== "device" && input.targetKind !== "browser") {
+    if (
+      input.targetKind !== undefined &&
+      input.targetKind !== "device" &&
+      input.targetKind !== "browser"
+    ) {
       fail("Combine preflight targetKind", "must be device or browser");
     }
     if (input.platform !== undefined && input.platform !== "android" && input.platform !== "ios") {

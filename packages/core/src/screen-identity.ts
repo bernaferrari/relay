@@ -485,9 +485,7 @@ export function observeScreenIdentity(
   // identity-ignore on those Tests punches remaining sidebar chrome ("See all")
   // and re-keys dest-screen against taught fingerprints. Ignore regions stay
   // for generic maps that have no pack.
-  const ignoredPixels = policy
-    ? []
-    : pixelIgnoreRegions(options?.ignoreRegions ?? [], nodes);
+  const ignoredPixels = policy ? [] : pixelIgnoreRegions(options?.ignoreRegions ?? [], nodes);
   const identityNodes = candidateNodes.filter(
     (node) =>
       (includeDeviceState || !bannerNode(node)) &&

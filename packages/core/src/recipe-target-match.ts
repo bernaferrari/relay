@@ -254,8 +254,7 @@ export function labelsForScope(nodes: SnapshotNode[], scope: StepTarget): string
   const seen = new Set<SnapshotNode>();
   for (const root of roots) {
     const linkedChildren = root.index !== undefined ? (byParent.get(root.index) ?? []) : [];
-    const optionDescendants =
-      root.index !== undefined ? linkedOptionDescendants(root.index) : [];
+    const optionDescendants = root.index !== undefined ? linkedOptionDescendants(root.index) : [];
     // Browser snapshots often assign an index but omit parentIndex. Empty
     // linked children must not skip rectangle containment or expect-set
     // sees an empty option set while the menu is visibly open. Nested Theme

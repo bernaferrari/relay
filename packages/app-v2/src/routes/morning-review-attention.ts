@@ -1,8 +1,4 @@
-import {
-  judgeProviderChecks,
-  labServerChecks,
-  operatorBuildChecks,
-} from "./settings-support";
+import { judgeProviderChecks, labServerChecks, operatorBuildChecks } from "./settings-support";
 
 export type MorningAttentionItem = {
   id: string;
@@ -18,9 +14,7 @@ const NATIVE_GROK =
   "Native Grok columns need recorded Android and iOS routes. A live phone or iPad pack owns the glass — do not Recover-kill or dump. The emulator cannot install Grok. iOS lock and airplane stay Blocked / UNRECORDED: unlock still needs a person, and airplane is an iOS Settings handoff, not settings airplane on the Grok runner. Do not fake a lock run.";
 
 /** Fail closed to the lab-Mac copy when setup payloads are missing. */
-export function morningAttentionItems(input: {
-  apple?: unknown;
-}): MorningAttentionItem[] {
+export function morningAttentionItems(input: { apple?: unknown }): MorningAttentionItem[] {
   const signed = operatorBuildChecks(input.apple)[0];
   const lab = labServerChecks(input.apple)[0];
   const judge = judgeProviderChecks(input.apple)[0];

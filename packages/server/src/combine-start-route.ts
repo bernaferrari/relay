@@ -572,7 +572,8 @@ async function executeCombineStartUnlocked(
         targetProfileId: blocked.targetProfileId,
         detail: cellAccountBlocker,
         target:
-          blocked.executionTarget.platform === "ios" || blocked.executionTarget.platform === "android"
+          blocked.executionTarget.platform === "ios" ||
+          blocked.executionTarget.platform === "android"
             ? {
                 kind: "device" as const,
                 id: blocked.executionTarget.targetId,
@@ -587,7 +588,8 @@ async function executeCombineStartUnlocked(
       throw new HttpError(409, cellAccountBlocker, {
         code: "ACCOUNT_NEEDS_RELOGIN",
         recovery: "Open Sign-ins, complete OAuth, then Refresh.",
-        findings: persisted?.findings ?? accountReloginFindingsReport({ detail: cellAccountBlocker }),
+        findings:
+          persisted?.findings ?? accountReloginFindingsReport({ detail: cellAccountBlocker }),
         ...(persisted ? { batchId: persisted.batchId } : {}),
       });
     }

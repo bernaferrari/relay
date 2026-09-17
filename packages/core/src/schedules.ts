@@ -90,10 +90,13 @@ function parseScheduledProfileTarget(raw: unknown): ScheduledPlanProfileTarget |
   const item = raw as Record<string, unknown>;
   const profileId = optionalTrimmed(item.profileId);
   const target = item.target;
-  if (!profileId || !target || typeof target !== "object" || Array.isArray(target)) return undefined;
+  if (!profileId || !target || typeof target !== "object" || Array.isArray(target))
+    return undefined;
   const record = target as Record<string, unknown>;
   const targetKind =
-    record.targetKind === "browser" || record.targetKind === "device" ? record.targetKind : undefined;
+    record.targetKind === "browser" || record.targetKind === "device"
+      ? record.targetKind
+      : undefined;
   const platform =
     record.platform === "android" || record.platform === "ios" || record.platform === "browser"
       ? record.platform

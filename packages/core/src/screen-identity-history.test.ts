@@ -141,9 +141,7 @@ test("a grok pack does not let sidebar identity-ignore punch remaining chrome", 
     visibleToUser: true,
   };
   const live = [...signedInChrome(["capital of cabo verde is praia"]), seeAll, frame];
-  const ignore = [
-    { name: "sidebar conversation titles", x: 0, y: 0.4, width: 0.24, height: 0.48 },
-  ];
+  const ignore = [{ name: "sidebar conversation titles", x: 0, y: 0.4, width: 0.24, height: 0.48 }];
   const packed = observe(live);
   const packedIgnored = observeScreenIdentity(live, {
     policy: GROK_WEB_APP_POLICY,

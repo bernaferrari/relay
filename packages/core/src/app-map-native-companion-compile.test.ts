@@ -49,10 +49,7 @@ function browserProfile(): TargetProfile {
   };
 }
 
-function emptyMap(
-  id: string,
-  extras: Partial<AppMap> = {},
-): AppMap {
+function emptyMap(id: string, extras: Partial<AppMap> = {}): AppMap {
   return {
     schemaVersion: 1,
     id,

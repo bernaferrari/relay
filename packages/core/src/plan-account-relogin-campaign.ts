@@ -124,7 +124,9 @@ export function blockedAccountReloginCampaign(
   };
 }
 
-export async function persistAccountReloginPlanResult(input: AccountReloginPlanPersistInput): Promise<{
+export async function persistAccountReloginPlanResult(
+  input: AccountReloginPlanPersistInput,
+): Promise<{
   batchId: string;
   findings: CombineEvidenceAnalysisReport;
 }> {

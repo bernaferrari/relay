@@ -1,9 +1,7 @@
 import type { ProductRunPhase, ProductRunSummary } from "@relay/product/catalog";
 
 /** One Results row per Plan grid; standalone Test Runs stay addressable. */
-export function collapsePlanResultRows(
-  runs: readonly ProductRunSummary[],
-): ProductRunSummary[] {
+export function collapsePlanResultRows(runs: readonly ProductRunSummary[]): ProductRunSummary[] {
   const seen = new Set<string>();
   const rows: ProductRunSummary[] = [];
   for (const run of runs) {

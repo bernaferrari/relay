@@ -121,10 +121,8 @@ export async function attachFilesOnPage(
         ),
         file,
       ),
-    tryLabelInput: (label) =>
-      setInputFilesQuietly(page.getByLabel(label, { exact: false }), file),
-    tryHiddenInput: () =>
-      setInputFilesQuietly(page.locator('input[type="file"]').first(), file),
+    tryLabelInput: (label) => setInputFilesQuietly(page.getByLabel(label, { exact: false }), file),
+    tryHiddenInput: () => setInputFilesQuietly(page.locator('input[type="file"]').first(), file),
     clickSemanticTarget: async (stepTarget) => {
       const locator = await locatorFor(page, browserUploadLocatorInput(stepTarget));
       await locator.click();

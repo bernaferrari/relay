@@ -157,7 +157,12 @@ describe("resolvePlanFindings", () => {
     const analysis = report([]);
     analysis.batchId = "other-batch";
     analysis.analysis.findings = [
-      finding({ id: "only-a", canonicalKey: "job:job-a", code: "PRODUCT_ASSERTION", detail: "rich A" }),
+      finding({
+        id: "only-a",
+        canonicalKey: "job:job-a",
+        code: "PRODUCT_ASSERTION",
+        detail: "rich A",
+      }),
     ];
     expect(planFindingsAnalysisState(batch, analysis)).toBe("failed");
     const resolved = resolvePlanFindings(batch, analysis);
@@ -169,9 +174,7 @@ describe("resolvePlanFindings", () => {
 
   it("replaces A with richer analysis and does not drop B", () => {
     const batch = batchReport();
-    const analysis = report([
-      { jobId: "job-a", locale: "en", status: "failed", frames: [] },
-    ]);
+    const analysis = report([{ jobId: "job-a", locale: "en", status: "failed", frames: [] }]);
     analysis.analysis.findings = [
       finding({
         id: "rich-a",
@@ -217,7 +220,11 @@ describe("resolvePlanFindings", () => {
     const source = batchReport();
     const batch = {
       ...source,
-      cases: source.cases.map((item) => ({ ...item, findingCode: undefined, status: "passed" as const })),
+      cases: source.cases.map((item) => ({
+        ...item,
+        findingCode: undefined,
+        status: "passed" as const,
+      })),
     };
     const analysis = report([]);
     analysis.analysis.findings = [];

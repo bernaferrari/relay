@@ -273,9 +273,7 @@ export function assessTransitionDeclaredSource(
       const transition =
         connection.coverage === "transition" ||
         connection.actions.some(
-          (action) =>
-            "coverage" in action &&
-            action.coverage === "transition",
+          (action) => "coverage" in action && action.coverage === "transition",
         );
       if (!transition) continue;
       if (connection.fromScreenId !== sourceScreenId) {
@@ -311,14 +309,12 @@ export function assessMutatingRoutineSharing(
       if (!right.test) continue;
       if (mutatingWorkMayShare(left.effects, left.placement, right.placement)) continue;
       const sameAccount =
-        left.placement.accountId &&
-        left.placement.accountId === right.placement.accountId;
+        left.placement.accountId && left.placement.accountId === right.placement.accountId;
       const distinctLanes =
         left.placement.laneId &&
         right.placement.laneId &&
         left.placement.laneId !== right.placement.laneId;
-      const code =
-        sameAccount && distinctLanes ? "lane-is-not-account" : "unsafe-sharing";
+      const code = sameAccount && distinctLanes ? "lane-is-not-account" : "unsafe-sharing";
       issues.push({
         code,
         message:

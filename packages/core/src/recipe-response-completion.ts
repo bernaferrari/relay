@@ -12,10 +12,7 @@ import {
   turnsAfterBoundary,
   type ResponseBoundary,
 } from "./recipe-response-boundary.js";
-import {
-  captureStillScreenFingerprint,
-  stillScreenUnchanged,
-} from "./still-screen-wait.js";
+import { captureStillScreenFingerprint, stillScreenUnchanged } from "./still-screen-wait.js";
 
 export function recordInitiatingResponseBoundary(
   nodes: readonly SnapshotNode[],
@@ -39,7 +36,10 @@ function currentActionStarted(
       (turn) => turn.observation === "completed",
     );
     const quota = quotasAfterBoundary(nodes, boundary);
-    return { started: completed.length > 0 || quota.length > 0, quotaOnly: completed.length === 0 && quota.length > 0 };
+    return {
+      started: completed.length > 0 || quota.length > 0,
+      quotaOnly: completed.length === 0 && quota.length > 0,
+    };
   }
   return {
     started: fallback.changedFromInitial || fallback.emptyToContent || fallback.idleReturned,
@@ -76,7 +76,8 @@ export async function waitForResponseCompletion(
   const leftoverComplete =
     Boolean(initialText && initiallyIdle && !completionTargetIsIdle) &&
     boundary?.source !== "initiating-action";
-  let startedAt: number | undefined = leftoverComplete || initialAction.started ? beganAt : undefined;
+  let startedAt: number | undefined =
+    leftoverComplete || initialAction.started ? beganAt : undefined;
   let quotaOnly = initialAction.quotaOnly;
   let stableSince: number | undefined = startedAt;
   let samples = 1;
@@ -104,7 +105,9 @@ export async function waitForResponseCompletion(
         stableForMs,
         timeoutMs,
         ...(step.maxMs !== undefined ? { maxMs: step.maxMs } : {}),
-        ...(boundary?.initiatingActionId ? { initiatingActionId: boundary.initiatingActionId } : {}),
+        ...(boundary?.initiatingActionId
+          ? { initiatingActionId: boundary.initiatingActionId }
+          : {}),
         samples,
         signals: lastSignals,
         observedCharacters: text.length,

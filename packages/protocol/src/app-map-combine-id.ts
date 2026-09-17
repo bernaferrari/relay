@@ -53,8 +53,8 @@ export function variableCanApply(
   if (variable.apply.kind !== "list") return false;
   const opens = Boolean(
     variable.apply.inConnectionId?.trim() ||
-      variable.apply.entryPath?.length ||
-      variable.apply.pickerPath?.length,
+    variable.apply.entryPath?.length ||
+    variable.apply.pickerPath?.length,
   );
   const returns = Boolean(
     variable.apply.outConnectionId?.trim() || variable.apply.exitPath?.length,

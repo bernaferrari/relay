@@ -1,5 +1,10 @@
 import { expect, it } from "vitest";
-import { operatorBuildChecks, labServerChecks, judgeProviderChecks, setupChecks } from "./settings-support";
+import {
+  operatorBuildChecks,
+  labServerChecks,
+  judgeProviderChecks,
+  setupChecks,
+} from "./settings-support";
 
 it("keeps Apple device checks separate from operator packaging", () => {
   const payload = {

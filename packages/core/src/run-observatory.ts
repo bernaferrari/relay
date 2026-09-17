@@ -340,66 +340,54 @@ function evidenceEvents(input: {
   crashes: Array<{ capturedAt: number; data: unknown }>;
   artifacts: RunEvidenceArtifactSummary[];
 }): RunEvidenceEvent[] {
-  const logEvents = input.logs.map(
-    (entry): RunEvidenceEvent => ({
-      id: `event:log:${entry.id}`,
-      at: entry.at ?? 0,
-      channel: "log",
-      tone:
-        entry.level === "error"
-          ? "critical"
-          : entry.level === "warn"
-            ? "warning"
-            : entry.level === "info"
-              ? "info"
-              : "neutral",
-      label: entry.source ?? entry.level,
-      detail: entry.message,
-      sourceId: entry.id,
-    }),
-  );
-  const networkEvents = input.network.map(
-    (entry): RunEvidenceEvent => ({
-      id: `event:network:${entry.id}`,
-      at: entry.at ?? 0,
-      channel: "network",
-      tone:
-        entry.result === "failure"
-          ? "critical"
-          : entry.result === "success"
-            ? "success"
+  const logEvents = input.logs.map((entry): RunEvidenceEvent => ({
+    id: `event:log:${entry.id}`,
+    at: entry.at ?? 0,
+    channel: "log",
+    tone:
+      entry.level === "error"
+        ? "critical"
+        : entry.level === "warn"
+          ? "warning"
+          : entry.level === "info"
+            ? "info"
             : "neutral",
-      label: [entry.method, entry.status].filter(Boolean).join(" ") || "Request",
-      ...(entry.url ? { detail: entry.url } : {}),
-      sourceId: entry.id,
-    }),
-  );
-  const performanceEvents = input.performance.map(
-    (sample): RunEvidenceEvent => ({
-      id: `event:performance:${sample.id}`,
-      at: sample.at ?? 0,
-      channel: "performance",
-      tone: "info",
-      label: sample.phase === "sample" ? "Performance sample" : `Performance ${sample.phase}`,
-      detail: Object.entries(sample.metrics)
-        .slice(0, 3)
-        .map(([key, value]) => `${key}: ${String(value)}`)
-        .join(" · "),
-      sourceId: sample.id,
-    }),
-  );
-  const crashEvents = input.crashes.map(
-    (artifact, index): RunEvidenceEvent => ({
-      id: `event:crash:${index + 1}`,
-      at: artifact.capturedAt,
-      channel: "crash",
-      tone: "critical",
-      label: "Crash",
-      detail:
-        text(record(artifact.data).message ?? record(artifact.data).error) ??
-        "The target reported a crash.",
-    }),
-  );
+    label: entry.source ?? entry.level,
+    detail: entry.message,
+    sourceId: entry.id,
+  }));
+  const networkEvents = input.network.map((entry): RunEvidenceEvent => ({
+    id: `event:network:${entry.id}`,
+    at: entry.at ?? 0,
+    channel: "network",
+    tone:
+      entry.result === "failure" ? "critical" : entry.result === "success" ? "success" : "neutral",
+    label: [entry.method, entry.status].filter(Boolean).join(" ") || "Request",
+    ...(entry.url ? { detail: entry.url } : {}),
+    sourceId: entry.id,
+  }));
+  const performanceEvents = input.performance.map((sample): RunEvidenceEvent => ({
+    id: `event:performance:${sample.id}`,
+    at: sample.at ?? 0,
+    channel: "performance",
+    tone: "info",
+    label: sample.phase === "sample" ? "Performance sample" : `Performance ${sample.phase}`,
+    detail: Object.entries(sample.metrics)
+      .slice(0, 3)
+      .map(([key, value]) => `${key}: ${String(value)}`)
+      .join(" · "),
+    sourceId: sample.id,
+  }));
+  const crashEvents = input.crashes.map((artifact, index): RunEvidenceEvent => ({
+    id: `event:crash:${index + 1}`,
+    at: artifact.capturedAt,
+    channel: "crash",
+    tone: "critical",
+    label: "Crash",
+    detail:
+      text(record(artifact.data).message ?? record(artifact.data).error) ??
+      "The target reported a crash.",
+  }));
   const artifactEvents = input.artifacts
     .filter(
       (artifact) =>
@@ -412,16 +400,14 @@ function evidenceEvents(input: {
           "performance-sample",
         ].includes(artifact.kind),
     )
-    .map(
-      (artifact, index): RunEvidenceEvent => ({
-        id: `event:artifact:${artifact.kind}:${index + 1}`,
-        at: artifact.capturedAt,
-        channel: "artifact",
-        tone: "neutral",
-        label: artifact.kind,
-        ...(artifact.summary ? { detail: artifact.summary } : {}),
-      }),
-    );
+    .map((artifact, index): RunEvidenceEvent => ({
+      id: `event:artifact:${artifact.kind}:${index + 1}`,
+      at: artifact.capturedAt,
+      channel: "artifact",
+      tone: "neutral",
+      label: artifact.kind,
+      ...(artifact.summary ? { detail: artifact.summary } : {}),
+    }));
   return [...logEvents, ...networkEvents, ...performanceEvents, ...crashEvents, ...artifactEvents]
     .filter((event) => Number.isFinite(event.at) && event.at > 0)
     .sort((left, right) => left.at - right.at || left.id.localeCompare(right.id));

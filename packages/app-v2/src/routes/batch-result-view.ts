@@ -180,7 +180,9 @@ export function batchClusterLane(
   members: readonly ProductBatchCase[] = [],
 ): string {
   if (members.length) {
-    const lanes = [...new Set(members.map((item) => resultCellLane(classifyProductResultCell(item))))];
+    const lanes = [
+      ...new Set(members.map((item) => resultCellLane(classifyProductResultCell(item)))),
+    ];
     if (lanes.length > 1) return "Mixed";
     if (lanes[0]) return lanes[0];
   }

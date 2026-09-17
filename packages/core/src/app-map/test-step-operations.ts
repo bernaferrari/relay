@@ -388,7 +388,14 @@ export function applyScenarioTestStepEdits(
           const keys = Object.keys(edit.patch);
           const unknown = keys.find(
             (key) =>
-              !["name", "capture", "family", "nativeRouteCompanions", "startingState", "executionQueue"].includes(key),
+              ![
+                "name",
+                "capture",
+                "family",
+                "nativeRouteCompanions",
+                "startingState",
+                "executionQueue",
+              ].includes(key),
           );
           if (unknown) {
             fail(
@@ -430,8 +437,7 @@ export function applyScenarioTestStepEdits(
           const base =
             edit.patch.nativeRouteCompanions === null
               ? (() => {
-                  const { nativeRouteCompanions: _companions, ...withoutCompanions } =
-                    withoutQueue;
+                  const { nativeRouteCompanions: _companions, ...withoutCompanions } = withoutQueue;
                   return withoutCompanions;
                 })()
               : withoutQueue;

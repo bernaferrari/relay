@@ -251,7 +251,10 @@ export async function preflightAppMapCombine(
           message: error.message,
           testId: error.testId,
         });
-      } else if (error instanceof AppMapTestCompileError && error.code === "unsafe-execution-queue") {
+      } else if (
+        error instanceof AppMapTestCompileError &&
+        error.code === "unsafe-execution-queue"
+      ) {
         blockers.push({
           code: "unsafe-execution-queue",
           message: error.message,

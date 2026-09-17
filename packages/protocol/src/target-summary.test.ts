@@ -563,14 +563,19 @@ test("interact preview digest drops base64 and stays small when HTTP has no PNG"
     ok: true,
     preview: true,
     mime: "image/png",
-    base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    base64:
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
     bytes: 70,
     width: 1,
     height: 1,
     inspectable: true,
     path: "/tmp/huge.png",
     nodes: [{ label: "private tree" }],
-    resolution: { method: "label", point: { x: 10, y: 20 }, bounds: { x: 1, y: 2, width: 3, height: 4 } },
+    resolution: {
+      method: "label",
+      point: { x: 10, y: 20 },
+      bounds: { x: 1, y: 2, width: 3, height: 4 },
+    },
   }) as Record<string, unknown>;
   assert.equal(withPng.preview, true);
   assert.equal(withPng.base64, undefined);

@@ -28,8 +28,23 @@ const { calls, invoke } = vi.hoisted(() => {
     if (id === "run.capture.review") {
       return {
         run: {},
-        queue: { items: [], summary: { captured: 1, missing: 0, pending: 0, accepted: 1, issue: 0, needMoreEvidence: 0 } },
-        decision: { captureId: "frames/001.png::aaa", action: "accept", decidedAt: 1, decidedBy: { id: "human:qa", kind: "human" } },
+        queue: {
+          items: [],
+          summary: {
+            captured: 1,
+            missing: 0,
+            pending: 0,
+            accepted: 1,
+            issue: 0,
+            needMoreEvidence: 0,
+          },
+        },
+        decision: {
+          captureId: "frames/001.png::aaa",
+          action: "accept",
+          decidedAt: 1,
+          decidedBy: { id: "human:qa", kind: "human" },
+        },
       };
     }
     if (id === "run.replay") return { job: { id: "replay-job-1", status: "queued" } };

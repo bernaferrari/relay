@@ -158,9 +158,7 @@ function applyBindings(
   }) as AppMapScenarioTestStep[];
 }
 
-export function unrecordedRouteMessage(
-  platform: "android" | "ios" | "browser",
-): string {
+export function unrecordedRouteMessage(platform: "android" | "ios" | "browser"): string {
   const label = platform === "browser" ? "Web" : platform === "android" ? "Android" : "iOS";
   return `No recorded ${label} route. Do not invent Grok Settings navigation.`;
 }

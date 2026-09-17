@@ -175,7 +175,9 @@ export async function captureAutomaticState(
             bytes = await readFile(temporary);
           } catch {
             const result = await device.capture.screenshot({ ...base(), path: temporary });
-            bytes = result.base64 ? Buffer.from(result.base64, "base64") : await readFile(temporary);
+            bytes = result.base64
+              ? Buffer.from(result.base64, "base64")
+              : await readFile(temporary);
           }
         } else {
           const result = await device.capture.screenshot({ ...base(), path: temporary });

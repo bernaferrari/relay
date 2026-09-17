@@ -28,13 +28,10 @@ type RegistryJob = {
 for (const count of [101, 200, 500]) {
   test(`retains all ${count} queued jobs until they become terminal`, () => {
     const registry = new JobRegistry<RegistryJob>(100);
-    const jobs = Array.from(
-      { length: count },
-      (_, index): RegistryJob => ({
-        id: `job-${index}`,
-        status: "queued",
-      }),
-    );
+    const jobs = Array.from({ length: count }, (_, index): RegistryJob => ({
+      id: `job-${index}`,
+      status: "queued",
+    }));
     for (const job of jobs) registry.remember(job);
 
     assert.equal(registry.size, count);

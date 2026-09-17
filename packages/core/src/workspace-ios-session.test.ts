@@ -445,7 +445,9 @@ test("recovery adopts a healthy testCommand listener instead of authorizing runn
     assert.ok("lifecycle" in result && result.lifecycle.repairAttempts === 1);
     assert.match(result.summary, /adopted the live XCTest runner/i);
     assert.match(result.summary, /not a reboot/i);
-    assert.ok(result.actions.some((action) => /healthy runner is not a recover-kill/i.test(action.detail)));
+    assert.ok(
+      result.actions.some((action) => /healthy runner is not a recover-kill/i.test(action.detail)),
+    );
   } finally {
     restoreRuntime();
     setLocalDeviceProvider(undefined);

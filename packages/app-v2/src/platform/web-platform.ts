@@ -93,9 +93,7 @@ export function createWebPlatform(
     },
     getServerUrl() {
       const stored = storage.get("serverUrl");
-      return stored instanceof Promise
-        ? stored.then((value) => resolve(value))
-        : resolve(stored);
+      return stored instanceof Promise ? stored.then((value) => resolve(value)) : resolve(stored);
     },
     async getServerConnection() {
       const url = await Promise.resolve(this.getServerUrl());

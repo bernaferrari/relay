@@ -15,9 +15,7 @@ function connectionIdsFromSteps(steps: readonly AppMapScenarioTestStep[]): strin
   return ids;
 }
 
-function variantHasOriginEvidence(
-  variant: AppMap["screenVariants"][string] | undefined,
-): boolean {
+function variantHasOriginEvidence(variant: AppMap["screenVariants"][string] | undefined): boolean {
   return Boolean(variant?.observation || variant?.rawAccessibilityTree);
 }
 
@@ -33,7 +31,10 @@ export function scenarioTestOriginMissingEvidence(
     const screen = map.screens[connection.fromScreenId];
     if (!screen) continue;
     const variantIds = screen.variantIds ?? [];
-    if (!variantIds.length || !variantIds.some((id) => variantHasOriginEvidence(map.screenVariants[id]))) {
+    if (
+      !variantIds.length ||
+      !variantIds.some((id) => variantHasOriginEvidence(map.screenVariants[id]))
+    ) {
       return { screenId: screen.id, title: screen.title };
     }
   }

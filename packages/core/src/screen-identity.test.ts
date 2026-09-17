@@ -385,7 +385,12 @@ test("a Build Mode intro popover does not redefine signed-in home", () => {
       rect: { x: 828, y: 596, width: 72, height: 32 },
       visibleToUser: true,
     },
-    { role: "text", label: "Dismiss", rect: { x: 839, y: 607, width: 50, height: 10 }, visibleToUser: true },
+    {
+      role: "text",
+      label: "Dismiss",
+      rect: { x: 839, y: 607, width: 50, height: 10 },
+      visibleToUser: true,
+    },
   ];
   const quiet = observe(chrome);
   const withOverlay = observe([...chrome, ...overlay]);

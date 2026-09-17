@@ -38,9 +38,7 @@ export type ResolvedAppMapTestForProfile = {
   nativeCompanion?: AppMapNativeCompanionCompile;
 };
 
-export function nativePlatformProfileAlias(
-  profileId: string,
-): "android" | "ios" | undefined {
+export function nativePlatformProfileAlias(profileId: string): "android" | "ios" | undefined {
   if (profileId === "android" || profileId === "ios") return profileId;
   return undefined;
 }
@@ -309,7 +307,9 @@ export async function compileAppMapTestForTargetProfile(input: {
   );
   const compiled = compileAppMapTest(resolved.map, resolved.test, {
     ...options,
-    ...(resolved.runtimeTargetProfile ? { runtimeTargetProfile: resolved.runtimeTargetProfile } : {}),
+    ...(resolved.runtimeTargetProfile
+      ? { runtimeTargetProfile: resolved.runtimeTargetProfile }
+      : {}),
   });
   return resolved.nativeCompanion
     ? { ...compiled, nativeCompanion: resolved.nativeCompanion }

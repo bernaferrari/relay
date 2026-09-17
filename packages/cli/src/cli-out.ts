@@ -188,11 +188,7 @@ function relativeFromRunDir(runDir: string, file: string): string {
   return rel;
 }
 
-async function copyNamed(
-  source: string,
-  dest: string,
-  copied: string[],
-): Promise<void> {
+async function copyNamed(source: string, dest: string, copied: string[]): Promise<void> {
   if (copied.length >= MAX_PNGS) return;
   if (copied.includes(dest)) return;
   await mkdir(dirname(dest), { recursive: true });

@@ -19,15 +19,19 @@ describe("morning attention", () => {
     expect(items.find((item) => item.id === "accounts")?.label).toBe("Accounts health");
     expect(items.find((item) => item.id === "accounts")?.detail).toMatch(/Check live health/u);
     expect(items.find((item) => item.id === "accounts")?.href).toBe("/accounts");
-    expect(items.find((item) => item.id === "native")?.detail).toMatch(/emulator cannot install Grok/u);
-    expect(items.find((item) => item.id === "native")?.detail).toMatch(/do not Recover-kill or dump/u);
+    expect(items.find((item) => item.id === "native")?.detail).toMatch(
+      /emulator cannot install Grok/u,
+    );
+    expect(items.find((item) => item.id === "native")?.detail).toMatch(
+      /do not Recover-kill or dump/u,
+    );
     expect(items.find((item) => item.id === "native")?.detail).toMatch(
       /iOS lock and airplane stay Blocked \/ UNRECORDED/u,
     );
-    expect(items.find((item) => item.id === "native")?.detail).toMatch(
-      /Do not fake a lock run/u,
+    expect(items.find((item) => item.id === "native")?.detail).toMatch(/Do not fake a lock run/u);
+    expect(items.find((item) => item.id === "lab-server")?.detail).toMatch(
+      /dev\.relay\.lab-server/u,
     );
-    expect(items.find((item) => item.id === "lab-server")?.detail).toMatch(/dev\.relay\.lab-server/u);
   });
 
   it("omits signed-desktop and judges when those payloads are ready", () => {

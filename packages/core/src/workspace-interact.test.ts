@@ -2,10 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { interact } from "./workspace-interact.js";
 import { IosMutationOutcomeUnknownError } from "./ios-mutation-policy.js";
-import {
-  IOS_POINT_TAP_RECOVER,
-  setIosPixelTapForTests,
-} from "./workspace-ios-raw.js";
+import { IOS_POINT_TAP_RECOVER, setIosPixelTapForTests } from "./workspace-ios-raw.js";
 import { runWithTargetContext } from "./target-context.js";
 import type { Device } from "./device.js";
 
@@ -24,8 +21,7 @@ test("iOS point interact uses CoreDevice HID when the helper lands", async () =>
   try {
     const result = await runWithTargetContext(
       { kind: "device", platform: "ios", serial: "db0c9b7c" },
-      () =>
-        interact({ kind: "point", x: 1112, y: 1010 }, { device, verifyIosScreenChange: false }),
+      () => interact({ kind: "point", x: 1112, y: 1010 }, { device, verifyIosScreenChange: false }),
     );
     assert.deepEqual(result.resolution, {
       method: "point",
@@ -54,10 +50,8 @@ test("iOS point interact falls back to XCTest when HID is absent from the DDI", 
     },
   } as unknown as Device;
   try {
-    await runWithTargetContext(
-      { kind: "device", platform: "ios", serial: "db0c9b7c" },
-      () =>
-        interact({ kind: "point", x: 1112, y: 1010 }, { device, verifyIosScreenChange: false }),
+    await runWithTargetContext({ kind: "device", platform: "ios", serial: "db0c9b7c" }, () =>
+      interact({ kind: "point", x: 1112, y: 1010 }, { device, verifyIosScreenChange: false }),
     );
     assert.equal(presses.length, 1);
     assert.equal((presses[0] as { x: number }).x, 1112);
@@ -79,13 +73,8 @@ test("iOS point interact asks for recover when HID and XCTest both cannot press"
   try {
     await assert.rejects(
       () =>
-        runWithTargetContext(
-          { kind: "device", platform: "ios", serial: "db0c9b7c" },
-          () =>
-            interact(
-              { kind: "point", x: 1112, y: 1010 },
-              { device, verifyIosScreenChange: false },
-            ),
+        runWithTargetContext({ kind: "device", platform: "ios", serial: "db0c9b7c" }, () =>
+          interact({ kind: "point", x: 1112, y: 1010 }, { device, verifyIosScreenChange: false }),
         ),
       (error: unknown) => {
         assert.ok(error instanceof Error);

@@ -147,11 +147,7 @@ test("default dest-end chrome inspect is Fast UI", () => {
         actions: [
           {
             kind: "steps",
-            steps: [
-              { kind: "wait-for" },
-              { kind: "tap" },
-              { kind: "wait-for" },
-            ],
+            steps: [{ kind: "wait-for" }, { kind: "tap" }, { kind: "wait-for" }],
           },
         ],
       },
@@ -165,10 +161,7 @@ test("default dest-end chrome inspect is Fast UI", () => {
         actions: [
           {
             kind: "steps",
-            steps: [
-              { kind: "wait-for" },
-              { kind: "settings", action: "off" },
-            ],
+            steps: [{ kind: "wait-for" }, { kind: "settings", action: "off" }],
           },
         ],
       },

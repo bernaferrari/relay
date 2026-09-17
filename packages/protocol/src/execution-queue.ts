@@ -45,10 +45,7 @@ export function executionQueueForTest(input: {
   return undefined;
 }
 
-export function recipeStepIsDeviceEffect(step: {
-  kind?: string;
-  action?: string;
-}): boolean {
+export function recipeStepIsDeviceEffect(step: { kind?: string; action?: string }): boolean {
   if (step.kind === "settings" || step.kind === "offline") return true;
   if (step.kind === "app" && (step.action === "background" || step.action === "close")) return true;
   if (step.kind === "device" && (step.action === "lock" || step.action === "unlock")) return true;

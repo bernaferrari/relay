@@ -249,7 +249,9 @@ function targetProfile(
   return profile;
 }
 
-function recordingCaptureFields(input: AppMapRecordingInput): Pick<
+function recordingCaptureFields(
+  input: AppMapRecordingInput,
+): Pick<
   AppMapScreenVariantCaptureInput,
   "target" | "targetProfile" | "evidenceUrisById" | "evidenceKindsById" | "evidenceById"
 > {

@@ -53,7 +53,10 @@ export function planFindingsAnalysisState(
 ): PlanFindingsAnalysisState {
   if (!analysis) return "pending";
   if (analysis.batchId !== report.id) return "failed";
-  if (analysis.coverage.frames > 0 && analysis.coverage.inspectedFrames < analysis.coverage.frames) {
+  if (
+    analysis.coverage.frames > 0 &&
+    analysis.coverage.inspectedFrames < analysis.coverage.frames
+  ) {
     return "incomplete";
   }
   return "complete";

@@ -294,46 +294,44 @@ function detailsOf(value: Inspect): ProductChangeDetails {
     change: changeOf(value.proof),
     history: (value.history ?? []).map(changeOf),
     publications: (
-      value.publicationOutbox.map(
-        (record): ProductChangePublication => ({
-          id: record.id,
-          status: record.status,
-          provider: record.provider,
-          attempts: record.attempts,
-          maxAttempts: record.maxAttempts,
-          ...(record.nextAttemptAt !== undefined ? { nextAttemptAt: record.nextAttemptAt } : {}),
-          ...(record.lastFailure ? { lastFailure: record.lastFailure } : {}),
-          ...(record.recovery
-            ? {
-                recovery: {
-                  requestId: record.recovery.requestId,
-                  requestDigest: record.recovery.requestDigest,
-                  requestedBy: record.recovery.requestedBy,
-                  requestedAt: record.recovery.requestedAt,
-                },
-              }
-            : {}),
-          ...(record.publishedAt !== undefined ? { publishedAt: record.publishedAt } : {}),
-          ...(record.receipt
-            ? {
-                receipt: {
-                  sequence: record.receipt.sequence,
-                  ...(record.receipt.proofVersion !== undefined
-                    ? { proofVersion: record.receipt.proofVersion }
-                    : {}),
-                  checkRunId: record.receipt.checkRunId,
-                  checkDigest: record.receipt.checkDigest,
-                  ...(record.receipt.status ? { status: record.receipt.status } : {}),
-                  ...(record.receipt.conclusion ? { conclusion: record.receipt.conclusion } : {}),
-                  ...(record.receipt.htmlUrl ? { htmlUrl: record.receipt.htmlUrl } : {}),
-                  publishedAt: record.receipt.publishedAt,
-                },
-              }
-            : {}),
-          canRetry: record.status === "retry" && record.attempts >= record.maxAttempts,
-          ...(record.receipt?.htmlUrl ? { detailsUrl: record.receipt.htmlUrl } : {}),
-        }),
-      ) as ProductChangePublication[]
+      value.publicationOutbox.map((record): ProductChangePublication => ({
+        id: record.id,
+        status: record.status,
+        provider: record.provider,
+        attempts: record.attempts,
+        maxAttempts: record.maxAttempts,
+        ...(record.nextAttemptAt !== undefined ? { nextAttemptAt: record.nextAttemptAt } : {}),
+        ...(record.lastFailure ? { lastFailure: record.lastFailure } : {}),
+        ...(record.recovery
+          ? {
+              recovery: {
+                requestId: record.recovery.requestId,
+                requestDigest: record.recovery.requestDigest,
+                requestedBy: record.recovery.requestedBy,
+                requestedAt: record.recovery.requestedAt,
+              },
+            }
+          : {}),
+        ...(record.publishedAt !== undefined ? { publishedAt: record.publishedAt } : {}),
+        ...(record.receipt
+          ? {
+              receipt: {
+                sequence: record.receipt.sequence,
+                ...(record.receipt.proofVersion !== undefined
+                  ? { proofVersion: record.receipt.proofVersion }
+                  : {}),
+                checkRunId: record.receipt.checkRunId,
+                checkDigest: record.receipt.checkDigest,
+                ...(record.receipt.status ? { status: record.receipt.status } : {}),
+                ...(record.receipt.conclusion ? { conclusion: record.receipt.conclusion } : {}),
+                ...(record.receipt.htmlUrl ? { htmlUrl: record.receipt.htmlUrl } : {}),
+                publishedAt: record.receipt.publishedAt,
+              },
+            }
+          : {}),
+        canRetry: record.status === "retry" && record.attempts >= record.maxAttempts,
+        ...(record.receipt?.htmlUrl ? { detailsUrl: record.receipt.htmlUrl } : {}),
+      })) as ProductChangePublication[]
     ).concat(
       value.publications
         .filter(

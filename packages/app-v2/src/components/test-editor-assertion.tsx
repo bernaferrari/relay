@@ -574,7 +574,8 @@ export function ValidationExpectationEditor({
             />
           </label>
           <p className="text-xs font-normal leading-normal text-muted-foreground">
-            YAML is not required. Wait for a reply, remember it, then add a semantic judge. Name this the same as Judge this text, usually <code>reply</code>.
+            YAML is not required. Wait for a reply, remember it, then add a semantic judge. Name
+            this the same as Judge this text, usually <code>reply</code>.
           </p>
         </>
       ) : null}

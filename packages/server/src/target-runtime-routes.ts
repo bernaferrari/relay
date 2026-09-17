@@ -281,8 +281,7 @@ async function resolveSupervisedRuntimeTarget(input: {
   const managedId = managedBrowserTargetIdFromSchedulingKey(input.serial);
   const browser = (await input.runtime.listTargets().catch(() => [])).find(
     (candidate) =>
-      candidate.kind === "browser" &&
-      (candidate.id === input.serial || candidate.id === managedId),
+      candidate.kind === "browser" && (candidate.id === input.serial || candidate.id === managedId),
   );
   if (browser) return { id: managedId ? input.serial : browser.id, platform: "browser" };
   throw new HttpError(404, `Target ${input.serial} is not connected`);

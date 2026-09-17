@@ -8,7 +8,9 @@ import {
 test("navigation-destroyed Playwright worlds are retried on the next document", async () => {
   assert.equal(
     isBrowserExecutionContextDestroyed(
-      new Error("locator.evaluateAll: Execution context was destroyed, most likely because of a navigation"),
+      new Error(
+        "locator.evaluateAll: Execution context was destroyed, most likely because of a navigation",
+      ),
     ),
     true,
   );

@@ -10,7 +10,9 @@ app.whenReady().then(async () => {
   await gmail.cookies.set({ url, name: "relay-lane", value: "gmail" });
   const gmailCookies = await gmail.cookies.get({ url });
   const emailCookies = await email.cookies.get({ url });
-  const present = gmailCookies.some((cookie) => cookie.name === "relay-lane" && cookie.value === "gmail");
+  const present = gmailCookies.some(
+    (cookie) => cookie.name === "relay-lane" && cookie.value === "gmail",
+  );
   const leaked = emailCookies.some((cookie) => cookie.name === "relay-lane");
   const result = {
     ok: present && !leaked,

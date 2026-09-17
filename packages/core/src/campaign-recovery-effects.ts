@@ -48,8 +48,7 @@ function walkRecipe(
   seen.add(recipeId);
   const recipe = graph[recipeId];
   if (!recipe) return;
-  for (const step of recipe.steps)
-    walkStep(graph, recipeId, step, excluded, destEnd, seen, found);
+  for (const step of recipe.steps) walkStep(graph, recipeId, step, excluded, destEnd, seen, found);
 }
 
 function walkStep(

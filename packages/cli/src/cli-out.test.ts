@@ -196,10 +196,7 @@ test("writeRunOutDir exports capture-review dest frame instead of flattening hom
       copied.some((path) => path.endsWith("checkpoint.png")),
       "checkpoint.png must be exported as the capture-review dest frame",
     );
-    assert.deepEqual(
-      await readFile(join(outDir, "ab4823a9", "frames", "003.png")),
-      overlayBytes,
-    );
+    assert.deepEqual(await readFile(join(outDir, "ab4823a9", "frames", "003.png")), overlayBytes);
     assert.deepEqual(await readFile(join(outDir, "9c7a40d9", "frames", "003.png")), pngBytes);
     assert.deepEqual(await readFile(join(outDir, "ab4823a9", "checkpoint.png")), overlayBytes);
   } finally {

@@ -23,8 +23,5 @@ test("six accounts on one browser stay six execution cases", () => {
     }),
   );
   assert.equal(new Set(ids).size, 6);
-  assert.notEqual(
-    ids[0],
-    combineExecutionCaseId({ cellId, targetProfileId: "grok-com" }),
-  );
+  assert.notEqual(ids[0], combineExecutionCaseId({ cellId, targetProfileId: "grok-com" }));
 });

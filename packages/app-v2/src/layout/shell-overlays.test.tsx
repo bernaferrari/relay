@@ -302,19 +302,16 @@ describe("shell overlays", () => {
   });
 
   it("searches tests beyond the first thirty catalog entries", async () => {
-    const tests = Array.from(
-      { length: 31 },
-      (_, index): ProductTestSummary => ({
-        id: `test-${index + 1}`,
-        name: index === 30 ? "Thirty-first checkout" : `Checkout ${index + 1}`,
-        appMapId: "app-1",
-        appName: "Checkout",
-        stepCount: 2,
-        status: "ready",
-        updatedAt: Date.now() - index,
-        href: `/tests/test-${index + 1}`,
-      }),
-    );
+    const tests = Array.from({ length: 31 }, (_, index): ProductTestSummary => ({
+      id: `test-${index + 1}`,
+      name: index === 30 ? "Thirty-first checkout" : `Checkout ${index + 1}`,
+      appMapId: "app-1",
+      appName: "Checkout",
+      stepCount: 2,
+      status: "ready",
+      updatedAt: Date.now() - index,
+      href: `/tests/test-${index + 1}`,
+    }));
     await renderShell({ tests });
     await act(async () => {
       window.dispatchEvent(
