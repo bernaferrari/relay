@@ -321,9 +321,14 @@ export function ReviewRecordingPage({
 
   useEffect(() => {
     if (saved && committedTestId) {
-      void navigate({ to: "/tests/$testId", params: { testId: committedTestId }, replace: true });
+      void navigate({
+        to: "/tests/$testId",
+        params: { testId: committedTestId },
+        search: { target: replayTarget?.targetId },
+        replace: true,
+      });
     }
-  }, [saved, committedTestId, navigate]);
+  }, [saved, committedTestId, replayTarget?.targetId, navigate]);
 
   if (saved) {
     return <PageLoading label="Opening the saved Test…" />;

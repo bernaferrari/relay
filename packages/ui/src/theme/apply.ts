@@ -38,6 +38,7 @@ export function applyRelayColorScheme(preference: RelayColorScheme): "light" | "
   document.documentElement.dataset.theme = "relay";
   document.documentElement.dataset.colorScheme = mode;
   document.documentElement.dataset.colorSchemePreference = preference;
+  document.documentElement.classList.toggle("dark", mode === "dark");
   document.documentElement.style.colorScheme = mode;
   document.documentElement.style.backgroundColor = background;
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", background);

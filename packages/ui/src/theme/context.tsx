@@ -167,6 +167,7 @@ function applyThemeCss(
   ensureThemeStyleElement().textContent = fullCss;
   document.documentElement.dataset.theme = themeId;
   document.documentElement.dataset.colorScheme = mode;
+  document.documentElement.classList.toggle("dark", isDark);
 
   // AgentBoard applyThemeCss: hard FOUC plate (theme tokens live in :root CSS)
   const background = isDark ? "#080808" : "#fafafa";

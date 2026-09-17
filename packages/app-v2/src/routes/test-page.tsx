@@ -50,6 +50,7 @@ export function TestPage() {
     step?: unknown;
     view?: unknown;
     setup?: unknown;
+    target?: unknown;
   };
   const reviewRecordingId = useTestDocumentReview(platform, search.view);
   const navigate = useNavigate({ from: "/tests/$testId" });
@@ -114,10 +115,13 @@ export function TestPage() {
     key: scope.key,
     targetOptions: targets.data?.map((target) => ({ id: target.targetId, label: target.name })),
   });
+  const recordingTargetId = typeof search.target === "string" ? search.target : undefined;
   useEffect(() => {
-    if (configuration.pristine && targets.data?.length === 1)
+    if (!configuration.pristine) return;
+    if (recordingTargetId) configuration.setSelection({ targetId: recordingTargetId });
+    else if (targets.data?.length === 1)
       configuration.setSelection({ targetId: targets.data[0]!.targetId });
-  }, [configuration.pristine, configuration.setSelection, targets.data]);
+  }, [configuration.pristine, configuration.setSelection, recordingTargetId, targets.data]);
   const targetId = configuration.selection.targetId ?? "";
   const targetReady = Boolean(targets.data?.some((target) => target.targetId === targetId));
   const admission = startConfigurationAdmission({
@@ -199,6 +203,7 @@ export function TestPage() {
   selectionRef.current = configuration.selection;
   useEffect(() => {
     if (configuration.loading || !targets.data?.length) return;
+    if (recordingTargetId && !configuration.restored && !configuration.edited) return;
     const decision = workspaceDestinationDecision({
       storedTargetId: workspaceDestination.data?.targetId,
       lastAppliedTargetId: appliedDestination.current,
@@ -222,6 +227,7 @@ export function TestPage() {
     configuration.setSelection,
     targets.data,
     workspaceDestination.data?.targetId,
+    recordingTargetId,
   ]);
 
   useEffect(() => {

@@ -22,6 +22,7 @@
     var mode = isDark ? "dark" : "light";
     document.documentElement.dataset.theme = themeId;
     document.documentElement.dataset.colorScheme = mode;
+    document.documentElement.classList.toggle("dark", isDark);
     document.documentElement.dataset.colorSchemePreference =
       scheme === "light" || scheme === "dark" ? scheme : "system";
     document.documentElement.style.backgroundColor = isDark ? "#080808" : "#fafafa";

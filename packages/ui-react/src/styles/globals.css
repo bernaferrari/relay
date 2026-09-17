@@ -3,7 +3,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:where([data-color-scheme="dark"], [data-color-scheme="dark"] *));
+@custom-variant dark (&:is(.dark *, [data-color-scheme="dark"] *));
 
 @theme inline {
   --font-sans: "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
@@ -25,6 +25,11 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -33,16 +38,16 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 :root {
-  color-scheme: light;
-  --relay-overlay-menu: 90;
-  --relay-overlay-popover: 100;
-  --relay-overlay-dialog: 110;
-  --relay-overlay-tooltip: 120;
-  --relay-focus-ring: var(--ring);
-  --font-family-sans: "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -62,6 +67,11 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -70,10 +80,30 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --background-base: var(--background);
+  --background-weak: var(--muted);
+  --surface-base: var(--secondary);
+  --surface-raised-strong: var(--card);
+  --surface-raised-stronger-non-alpha: var(--popover);
+  --text-strong: var(--foreground);
+  --text-base: var(--foreground);
+  --text-weak: var(--muted-foreground);
+  --text-weaker: var(--muted-foreground);
+  --text-interactive-base: var(--primary);
+  --border-base: var(--input);
+  --border-weak-base: var(--border);
+  --button-primary-base: var(--primary);
+  --button-primary-foreground: var(--primary-foreground);
+  --relay-overlay-menu: 90;
+  --relay-overlay-popover: 100;
+  --relay-overlay-dialog: 110;
+  --relay-overlay-tooltip: 120;
+  --relay-focus-ring: var(--ring);
+  --font-family-sans: var(--font-sans);
 }
 
+.dark,
 html[data-color-scheme="dark"] {
-  color-scheme: dark;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -92,6 +122,11 @@ html[data-color-scheme="dark"] {
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -102,42 +137,9 @@ html[data-color-scheme="dark"] {
   --sidebar-ring: oklch(0.556 0 0);
 }
 
-/* Older Relay utilities follow the shadcn tokens above. */
-html {
-  --background-base: var(--background);
-  --background-weak: var(--muted);
-  --background-strong: var(--background);
-  --background-stronger: var(--background);
-  --surface-base: var(--secondary);
-  --surface-base-hover: var(--accent);
-  --surface-base-active: var(--accent);
-  --surface-raised-strong: var(--card);
-  --surface-raised-strong-hover: var(--accent);
-  --surface-raised-stronger-non-alpha: var(--popover);
-  --input-base: var(--card);
-  --input-hover: var(--accent);
-  --input-disabled: var(--muted);
-  --text-strong: var(--foreground);
-  --text-base: var(--foreground);
-  --text-weak: var(--muted-foreground);
-  --text-weaker: var(--muted-foreground);
-  --text-interactive-base: var(--primary);
-  --text-interactive-hover: var(--foreground);
-  --border-base: var(--input);
-  --border-hover: var(--ring);
-  --border-weak-base: var(--border);
-  --border-weak-disabled: var(--border);
-  --button-primary-base: var(--primary);
-  --button-primary-foreground: var(--primary-foreground);
-}
-
 @layer base {
   * {
     @apply border-border outline-ring/50;
-  }
-
-  html {
-    @apply font-sans;
   }
 
   body {

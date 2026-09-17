@@ -528,6 +528,21 @@ describe("Run and Report", () => {
     expect(button("Run now").disabled).toBe(false);
   });
 
+  it("keeps the recording browser over a different workspace destination", async () => {
+    const fake = fakeRunService();
+    const stored = platformWithStorage({
+      [WORKSPACE_DESTINATION_KEY]: JSON.stringify({ targetId: "emulator-5554" }),
+    });
+    await renderRun("/tests/test-1?target=browser-golden", fake.service, stored.platform);
+    await openRunSettings();
+    expect(
+      document.querySelector<HTMLButtonElement>('button[aria-label="Device or browser"]')
+        ?.textContent,
+    ).toContain("Checkout browser");
+    await click(button("Run now"));
+    expect(fake.startInputs[0]).toMatchObject({ targetId: "browser-golden" });
+  });
+
   it("submits the visible build and cold-start choices", async () => {
     const fake = fakeRunService();
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
@@ -567,7 +582,7 @@ describe("Run and Report", () => {
     expect(fake.startInputs).toHaveLength(0);
   });
 
-  it("keeps a saved Test browser and profile when a workspace Pixel is remembered", async () => {
+  it("keeps a saved Test browser and profile over workspace and recording defaults", async () => {
     const fake = fakeRunService();
     fake.service.listProfiles = async () => [
       {
@@ -594,7 +609,7 @@ describe("Run and Report", () => {
         entity: "test-run:test-1",
       })]: saved,
     });
-    await renderRun("/tests/test-1", fake.service, storage.platform);
+    await renderRun("/tests/test-1?target=emulator-5554", fake.service, storage.platform);
     await openRunSettings();
 
     expect(
