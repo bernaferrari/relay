@@ -57,6 +57,19 @@ export function captureReviewSummaryLine(queue: {
   return formatCaptureReviewCoverageSummary(queue.summary);
 }
 
+function reviewShellClass(input: {
+  showCoverage: boolean;
+  showImage: boolean;
+  gallery: boolean;
+}): string {
+  const columns = !input.showImage
+    ? ""
+    : input.gallery
+      ? "lg:grid-cols-[minmax(0,1fr)_minmax(22rem,min(42rem,46%))] lg:items-start"
+      : "lg:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)] lg:items-start";
+  return `grid gap-5 ${input.showCoverage ? "p-3" : ""} ${columns}`.trim();
+}
+
 export function CaptureReviewPanel({
   queue,
   frames,
@@ -138,7 +151,7 @@ export function CaptureReviewPanel({
   };
   return (
     <div
-      className={`grid gap-5 ${showCoverage ? "p-3" : ""} ${showImage && !gallery ? "lg:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)] lg:items-start" : ""}`}
+      className={reviewShellClass({ showCoverage, showImage, gallery })}
       tabIndex={0}
       aria-label="Screenshot review"
       onKeyDown={(event) => {
@@ -164,7 +177,7 @@ export function CaptureReviewPanel({
         if (next !== selectedIndex) onSelect(next);
       }}
     >
-      <div className="grid min-w-0 gap-3">
+      <div className={`grid min-w-0 gap-3 ${gallery ? "order-2 lg:order-1" : ""}`}>
         {showCoverage ? (
           <p className="px-1 text-xs tabular-nums text-muted-foreground">
             {captureReviewSummaryLine(queue)}
@@ -179,14 +192,11 @@ export function CaptureReviewPanel({
               </TabsList>
             </Tabs>
             {bulkItems.length > 0 ? (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy}
-                onClick={() => onReviewMany("accept", bulkItems)}
-              >
-                Looks correct for {bulkItems.length} selected
-              </Button>
+              <CaptureReviewDecisions
+                busy={busy}
+                bulkCount={bulkItems.length}
+                onReview={(action) => onReviewMany(action, bulkItems)}
+              />
             ) : (
               <Button
                 size="sm"
@@ -214,38 +224,30 @@ export function CaptureReviewPanel({
             ) : null}
           </div>
         ) : null}
-        {!gallery && nextPendingIndex !== undefined ? (
+        {nextPendingIndex !== undefined ? (
           <Button
             className="w-fit"
             variant="ghost"
             size="sm"
             disabled={nextPendingIndex === undefined}
             onClick={() => {
-              if (nextPendingIndex !== undefined) {
-                onSelect(nextPendingIndex);
-                if (gallery) setLayout("detail");
-              }
+              if (nextPendingIndex !== undefined) onSelect(nextPendingIndex);
             }}
           >
             Next unreviewed
           </Button>
         ) : null}
         {onReviewMany && !showImage && bulkItems.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() => onReviewMany("accept", bulkItems)}
-            >
-              Looks correct for {bulkItems.length} selected
-            </Button>
-          </div>
+          <CaptureReviewDecisions
+            busy={busy}
+            bulkCount={bulkItems.length}
+            onReview={(action) => onReviewMany(action, bulkItems)}
+          />
         ) : null}
         <ul
           className={
             gallery
-              ? "grid grid-cols-1 items-start gap-x-5 gap-y-6 p-0.5 sm:grid-cols-2 xl:grid-cols-3"
+              ? "grid grid-cols-1 items-start gap-x-4 gap-y-5 p-0.5 sm:grid-cols-2"
               : "grid max-h-[min(45vh,24rem)] gap-2 overflow-y-auto p-0.5"
           }
           aria-label="Screenshots for review"
@@ -283,12 +285,9 @@ export function CaptureReviewPanel({
                 ) : null}
                 <button
                   type="button"
-                  aria-pressed={gallery ? undefined : index === selectedIndex}
-                  className={`${gallery ? "" : "relay-interactive-row"} flex min-h-20 w-full gap-3 rounded-lg text-left transition-colors focus-visible:outline-2 ${gallery ? "flex-col overflow-hidden pb-1" : "items-center py-2 pl-10 pr-3"} ${!gallery && index === selectedIndex ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
-                  onClick={() => {
-                    onSelect(index);
-                    if (gallery) setLayout("detail");
-                  }}
+                  aria-pressed={index === selectedIndex}
+                  className={`${gallery ? "" : "relay-interactive-row"} flex min-h-20 w-full gap-3 rounded-lg text-left transition-colors focus-visible:outline-2 ${gallery ? "flex-col overflow-hidden pb-1" : "items-center py-2 pl-10 pr-3"} ${index === selectedIndex ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
+                  onClick={() => onSelect(index)}
                 >
                   {thumb?.media ? (
                     <ReportImage
@@ -337,9 +336,10 @@ export function CaptureReviewPanel({
           })}
         </ul>
       </div>
-      {selected && !gallery ? (
+      {selected ? (
         <div
-          className={`grid min-w-0 gap-3 ${showImage ? "rounded-lg border border-border/60 p-4" : ""}`}
+          className={`grid min-w-0 gap-3 ${gallery ? "order-1 lg:order-2 lg:sticky lg:top-3" : ""} ${showImage ? "rounded-lg border border-border/60 p-4" : ""}`}
+          aria-label="Selected screenshot"
         >
           {caption(selected, selectedIndex) !== fallbackTitle ? (
             <p className="text-sm font-semibold">{caption(selected, selectedIndex)}</p>

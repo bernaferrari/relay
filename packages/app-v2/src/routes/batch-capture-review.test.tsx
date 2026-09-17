@@ -139,6 +139,12 @@ describe("Plan screenshot review filters", () => {
     expect(host.textContent).toContain("3 planned · 3 captured");
     expect(host.textContent).toContain("3 pending");
     expect(host.textContent).toContain("Looks correct does not approve a visual baseline.");
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Gallery");
+    expect(host.querySelector('[aria-label="Selected screenshot"]')).not.toBeNull();
+    expect(host.textContent).toContain("Report issue");
+    expect(host.textContent).toContain("Need more evidence");
+    expect(host.textContent).not.toContain("Use as baseline");
+    expect(host.textContent).not.toContain("Approve new baseline");
     const itemChecks = [
       ...host.querySelectorAll('ul[aria-label="Screenshots for review"] [role="checkbox"]'),
     ];
@@ -267,7 +273,7 @@ async function settleReview() {
 
 function button(host: HTMLElement, label: string) {
   const found = [...host.querySelectorAll("button")].find(
-    (item) => item.textContent?.trim() === label,
+    (item) => item.textContent?.replace(/\s+/g, " ").trim() === label,
   );
   if (!found) throw new Error(`Missing button: ${label}`);
   return found;
@@ -309,6 +315,26 @@ describe("Plan review acknowledgements", () => {
     await act(async () => button(host, "Looks correct for 3 selected").click());
     expect(save.mock.calls[0]?.[1].items).toHaveLength(3);
     expect(JSON.stringify(save.mock.calls)).not.toContain("later-run");
+  });
+
+  it("bulk Report issue and Need more evidence stay on the gallery", async () => {
+    const save = vi.fn(async () => ({
+      results: [],
+      queue: { items: [], summary: {} },
+    }));
+    const host = await render(save as unknown as RunAcrossProductService["reviewCaptures"]);
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Gallery");
+    await act(async () => button(host, "Select unreviewed").click());
+    await act(async () => button(host, "Report issue for 3 selected").click());
+    expect(save).toHaveBeenCalledWith(
+      "plan-1",
+      expect.objectContaining({
+        action: "report-issue",
+        items: expect.arrayContaining([expect.objectContaining({ runId: "run-member-settings" })]),
+      }),
+    );
+    expect(host.textContent).toContain("Need more evidence for 3 selected");
+    expect(host.textContent).not.toContain("Use as baseline");
   });
 
   it("shows a load error and allows retry instead of hiding the queue", async () => {

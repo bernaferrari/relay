@@ -6,15 +6,20 @@ export function CaptureReviewDecisions({
   busy,
   onReview,
   status,
+  bulkCount,
 }: {
   busy?: boolean;
   status?: string;
+  bulkCount?: number;
   onReview(action: CaptureReviewAction): void;
 }) {
+  const suffix = bulkCount ? ` for ${bulkCount} selected` : "";
   return (
     <div
       className="flex w-full flex-wrap items-center justify-between gap-x-5 gap-y-3"
-      aria-label="Screenshot review decision"
+      aria-label={
+        bulkCount ? `Screenshot review for ${bulkCount} selected` : "Screenshot review decision"
+      }
       aria-busy={busy}
     >
       {status ? (
@@ -29,11 +34,11 @@ export function CaptureReviewDecisions({
         <Button
           size="sm"
           className="min-h-10"
-          variant="default"
+          variant={bulkCount ? "outline" : "default"}
           disabled={busy}
           onClick={() => onReview("accept")}
         >
-          <Check className="size-4" aria-hidden="true" /> Looks correct
+          <Check className="size-4" aria-hidden="true" /> Looks correct{suffix}
         </Button>
         <Button
           size="sm"
@@ -42,7 +47,7 @@ export function CaptureReviewDecisions({
           disabled={busy}
           onClick={() => onReview("report-issue")}
         >
-          <Flag className="size-4" aria-hidden="true" /> Report issue
+          <Flag className="size-4" aria-hidden="true" /> Report issue{suffix}
         </Button>
         <Button
           size="sm"
@@ -51,7 +56,7 @@ export function CaptureReviewDecisions({
           disabled={busy}
           onClick={() => onReview("need-more-evidence")}
         >
-          <ImagePlus className="size-4" aria-hidden="true" /> Need more evidence
+          <ImagePlus className="size-4" aria-hidden="true" /> Need more evidence{suffix}
         </Button>
       </div>
     </div>
