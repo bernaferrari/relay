@@ -16,6 +16,7 @@ import {
   compileAppMapFlow,
   compileAppMapRoutine,
   destEndCaptureWaitForIndex,
+  destEndConnectionsForRequirement,
 } from "./app-map-compiler.js";
 import {
   compiledFlowGraphFromLiveCheckpoint,
@@ -197,6 +198,12 @@ export function compileAppMapScenarioTest(
       `Test ${test.id} does not belong to App Map ${map.id}`,
     );
   }
+  const compileMap = test.requirementAction
+    ? {
+        ...map,
+        connections: destEndConnectionsForRequirement(map.connections, test.requirementAction),
+      }
+    : map;
   const graph: Record<string, Recipe> = {};
   const provenance: AppMapTestStepProvenance[] = [];
   const destEndRecipeIds = new Set<string>();
@@ -469,9 +476,9 @@ export function compileAppMapScenarioTest(
           const flowId = `relay-test-${test.id}-${step.id}`;
           const plan = compileAppMapFlow(
             {
-              ...map,
+              ...compileMap,
               flows: {
-                ...map.flows,
+                ...compileMap.flows,
                 [flowId]: {
                   organizationId: map.organizationId,
                   projectId: map.projectId,
@@ -602,7 +609,10 @@ export function compileAppMapScenarioTest(
           let coldRecoveryRecipeId: string | undefined;
           const recoveryTransition = transitionDependencies.at(-1);
           if (campaignSetupSteps.length > 0 && recoveryTransition) {
-            const connectionPlan = compileAppMapConnection(map, recoveryTransition.connectionId);
+            const connectionPlan = compileAppMapConnection(
+              compileMap,
+              recoveryTransition.connectionId,
+            );
             for (const compiled of Object.values(connectionPlan.recipes)) {
               instructionGraph[compiled.id] = asRecipe(map, compiled);
             }

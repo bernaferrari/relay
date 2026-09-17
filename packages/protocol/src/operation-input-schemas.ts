@@ -420,6 +420,7 @@ export const operationInputSchemas = {
           description: z.string().optional(),
           parameters: z.array(unknownRecord).optional(),
           actions: z.array(unknownRecord).describe("Reusable action specifications"),
+          requirementAction: z.enum(["capture-view", "test-action"]).optional(),
           effects: routineEffectsSchema.optional(),
         })
         .strict(),

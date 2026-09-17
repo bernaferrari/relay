@@ -758,6 +758,14 @@ export function assertRoutine(routine: Routine, scope: AppMapScope, label: strin
       appMapFail("invalid-map", `${label}.parameters[${index}].required must be boolean`);
   });
   assertActions(routine.actions, `${label}.actions`);
+  if (routine.requirementAction !== undefined) {
+    if (
+      typeof routine.requirementAction !== "string" ||
+      (routine.requirementAction !== "capture-view" && routine.requirementAction !== "test-action")
+    ) {
+      appMapFail("invalid-map", `${label}.requirementAction is unsupported`);
+    }
+  }
   if (routine.effects !== undefined) assertRoutineEffects(routine.effects, `${label}.effects`);
 }
 

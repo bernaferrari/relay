@@ -9,7 +9,12 @@ import type {
 } from "./app-map.js";
 import type { CaptureReviewPlannedSlot } from "./capture-review.js";
 import type { ReviewedActionIntentBinding, ReviewedLogicalStateBinding } from "./product-intent.js";
-import type { HumanCheckpointReason, RecipeStep, StepTarget } from "./recipes.js";
+import type {
+  HumanCheckpointReason,
+  RecipeStep,
+  RequirementActionKind,
+  StepTarget,
+} from "./recipes.js";
 import type { RawAccessibilityTreeEvidence, ScrollSurfaceTestBinding } from "./scroll-surface.js";
 import type { TargetCapability, TargetProfile } from "./target-contract.js";
 
@@ -256,6 +261,9 @@ export type AppMapScenarioTest = AppMapEntity & {
   /** Fast UI / live output / stateful-survival. Dest-end chrome inspect
    * defaults to Fast UI. Absent is undeclared, never an S16 claim. */
   executionQueue?: ExecutionQueue;
+  /** Capture-view may reuse leftover dest chrome. Test-action must execute
+   * the named opener. Omitted dest-end navigation stays test-action. */
+  requirementAction?: RequirementActionKind;
   /** Logical surface coverage is independent from graph navigation. */
   surfaceBindings?: ScrollSurfaceTestBinding[];
   /** Optional exact validation receipt. Legacy Tests without a receipt retain
@@ -299,6 +307,7 @@ export type AppMapScenarioTestEdit =
         nativeRouteCompanions?: AppMapNativeRouteCompanion[] | null;
         startingState?: AppMapTestStartingState | null;
         executionQueue?: ExecutionQueue | null;
+        requirementAction?: RequirementActionKind | null;
       };
     }
   | {

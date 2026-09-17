@@ -271,6 +271,7 @@ export function assessTransitionDeclaredSource(
       const connection = map.connections[connectionId];
       if (!connection) continue;
       const transition =
+        test.requirementAction === "test-action" ||
         connection.coverage === "transition" ||
         connection.actions.some(
           (action) => "coverage" in action && action.coverage === "transition",

@@ -8,6 +8,7 @@ import type {
 import { APP_MAP_TEST_INTENT_LIMITS, APP_MAP_TEST_INTENT_SCHEMA_VERSION } from "@relay/protocol";
 import {
   isExecutionQueue,
+  isRequirementActionKind,
   isRoutineAccountIsolation,
   isRoutineLeftoverSurface,
   isRoutineSharingPolicy,
@@ -441,6 +442,7 @@ export function assertScenarioTest(test: AppMapScenarioTest, label: string): voi
       "validation",
       "startingState",
       "executionQueue",
+      "requirementAction",
       "createdAt",
       "updatedAt",
     ],
@@ -540,6 +542,14 @@ export function assertScenarioTest(test: AppMapScenarioTest, label: string): voi
   if (test.executionQueue !== undefined) {
     if (typeof test.executionQueue !== "string" || !isExecutionQueue(test.executionQueue)) {
       appMapFail("invalid-map", `${label}.executionQueue is unsupported`);
+    }
+  }
+  if (test.requirementAction !== undefined) {
+    if (
+      typeof test.requirementAction !== "string" ||
+      !isRequirementActionKind(test.requirementAction)
+    ) {
+      appMapFail("invalid-map", `${label}.requirementAction is unsupported`);
     }
   }
   if (test.validation !== undefined) {

@@ -9,11 +9,13 @@ import type {
   CaptureCoverage,
   Connection,
   RecipeStep,
+  RequirementActionKind,
   Routine,
   Screen,
   SemanticRevealPlan,
   StepTarget,
 } from "@relay/protocol";
+import { destEndCoverageForRequirement, leftoverSkipAllowedForCoverage } from "@relay/protocol";
 import { createHash } from "node:crypto";
 import { validateAppMap } from "./app-map.js";
 import { observeScreenIdentityForHost } from "./screen-identity.js";
@@ -81,6 +83,16 @@ function routineCompiler(map: AppMap, recipes: Record<string, AppMapCompiledReci
       actions: routine.actions,
       ensureRoutine,
     });
+    if (routine.requirementAction === "capture-view") {
+      applyDestEndOpenLeftoverPolicy(recipes[id]!.steps, 0, recipes[id]!.steps.length, "inspect");
+    } else if (routine.requirementAction === "test-action") {
+      applyDestEndOpenLeftoverPolicy(
+        recipes[id]!.steps,
+        0,
+        recipes[id]!.steps.length,
+        "transition",
+      );
+    }
   };
   return ensureRoutine;
 }
@@ -376,33 +388,32 @@ export function destEndCaptureWaitForIndex(
 /** Dest-end wait-for origin + opener tap SOS when leftover is already the
  * overlay (open sidebar hides the composer). Skip the open prefix when later
  * dest chrome is already on screen — do not tap the opener, which would close
- * it, and do not re-tap a peek that is already open. */
+ * it, and do not re-tap a peek that is already open. Capture-view only; omitted
+ * dest-end stays test-action so leftover Settings cannot prove the Settings tap. */
 function destEndLeftoverSkipAllowed(
   steps: RecipeStep[],
   start: number,
   end: number,
   coverage?: CaptureCoverage,
 ): boolean {
-  if (coverage === "transition") return false;
-  for (let index = start; index < end; index += 1) {
-    if (steps[index]?.coverage === "transition") return false;
-  }
-  return true;
+  const resolved = destEndCoverageForRequirement({
+    coverage,
+    actionCoverages: steps.slice(start, end).map((step) => step.coverage),
+  });
+  return leftoverSkipAllowedForCoverage(resolved);
 }
 
-function applyDestEndOpenLeftoverPolicy(
+function destEndOriginOpener(
   steps: RecipeStep[],
-  start = 0,
-  end = steps.length,
-  coverage?: CaptureCoverage,
-): void {
-  if (coverage) {
-    for (let index = start; index < end; index += 1) {
-      const step = steps[index];
-      if (step && !step.coverage) step.coverage = coverage;
+  start: number,
+  end: number,
+):
+  | {
+      originIndex: number;
+      origin: Extract<RecipeStep, { kind: "wait-for" }>;
+      opener: Extract<RecipeStep, { kind: "tap" }>;
     }
-  }
-  if (!destEndLeftoverSkipAllowed(steps, start, end, coverage)) return;
+  | undefined {
   const originIndex = steps.findIndex(
     (step, index) =>
       index >= start &&
@@ -411,24 +422,66 @@ function applyDestEndOpenLeftoverPolicy(
       step.optional !== true &&
       step.when === undefined,
   );
-  if (originIndex < 0 || originIndex + 1 >= end) return;
+  if (originIndex < 0 || originIndex + 1 >= end) return undefined;
   const origin = steps[originIndex];
   const opener = steps[originIndex + 1];
-  if (origin?.kind !== "wait-for" || opener?.kind !== "tap" || opener.when) return;
+  if (origin?.kind !== "wait-for" || opener?.kind !== "tap") return undefined;
+  return { originIndex, origin, opener };
+}
+
+function stampDestEndOpenerAsTestAction(steps: RecipeStep[], start: number, end: number): void {
+  const found = destEndOriginOpener(steps, start, end);
+  if (!found || found.opener.when) return;
+  if (!found.opener.coverage) found.opener.coverage = "transition";
+}
+
+function applyDestEndOpenLeftoverPolicy(
+  steps: RecipeStep[],
+  start = 0,
+  end = steps.length,
+  coverage?: CaptureCoverage,
+): void {
+  if (!destEndLeftoverSkipAllowed(steps, start, end, coverage)) {
+    stampDestEndOpenerAsTestAction(steps, start, end);
+    return;
+  }
+  const found = destEndOriginOpener(steps, start, end);
+  if (!found || found.opener.when) return;
   const destIndex = destEndDestinationWaitForIndex(steps, start, end);
-  if (destIndex <= originIndex + 1) return;
+  if (destIndex <= found.originIndex + 1) return;
   const destStep = steps[destIndex];
   const destTarget = destStep
     ? (destEndOpenChromeTarget(destStep) ?? destEndOpenFallbackTarget(destStep))
     : undefined;
   if (!destTarget) return;
   const when = { target: structuredClone(destTarget), condition: "absent" as const };
-  for (let index = originIndex; index < destIndex; index += 1) {
+  for (let index = found.originIndex; index < destIndex; index += 1) {
     const step = steps[index]!;
     if ((step.kind !== "wait-for" && step.kind !== "tap") || step.when) continue;
     step.when = structuredClone(when);
     if (!step.coverage) step.coverage = "inspect";
   }
+}
+
+export function destEndConnectionsForRequirement(
+  connections: AppMap["connections"],
+  requirementAction?: RequirementActionKind,
+): AppMap["connections"] {
+  if (!requirementAction) return connections;
+  let changed = false;
+  const next: AppMap["connections"] = { ...connections };
+  for (const [id, connection] of Object.entries(next)) {
+    if (connection.destination.kind !== "end") continue;
+    const resolved = destEndCoverageForRequirement({
+      requirementAction,
+      coverage: connection.coverage,
+      actionCoverages: connection.actions.map((action) => action.coverage),
+    });
+    if (resolved === connection.coverage) continue;
+    next[id] = { ...connection, coverage: resolved };
+    changed = true;
+  }
+  return changed ? next : connections;
 }
 
 function connectionActionsStartWithWaitFor(connection: Connection | undefined): boolean {

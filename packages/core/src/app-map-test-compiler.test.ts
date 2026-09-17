@@ -1976,6 +1976,7 @@ test("dest-end dest-phase screenshot is on warm confirmation leftover skip path"
       ],
     },
   ]);
+  work.requirementAction = "capture-view";
   const instruction = work.steps[0]!;
   work.steps = [
     {
@@ -2071,6 +2072,7 @@ test("dest-end dest-phase waits Settings unique chrome not open-sidebar leftover
       ],
     },
   ]);
+  work.requirementAction = "capture-view";
   const instruction = work.steps[0]!;
   work.steps = [{ ...instruction, capture: true }];
   const compiled = compileAppMapTest(map, work);
@@ -2099,6 +2101,80 @@ test("dest-end dest-phase waits Settings unique chrome not open-sidebar leftover
     target: { identifier: "sidebar.settings" },
     condition: "absent",
   });
+});
+
+test("capture-view dest-end leftover Settings skips opener; dest-phase stays dest pixels", () => {
+  const map = fixture();
+  const work = destEndPrimitiveWork(map, "settings-inventory", [
+    {
+      id: "settings-inventory",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { identifier: "composer" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { identifier: "sidebar.settings" } },
+        { kind: "wait-for", target: { identifier: "settings.account" }, timeoutMs: 8_000 },
+      ],
+    },
+  ]);
+  work.requirementAction = "capture-view";
+  const instruction = work.steps[0]!;
+  work.steps = [{ ...instruction, capture: true }];
+  const compiled = compileAppMapTest(map, work);
+  const destModule = compiled.graph[compiled.plan.rootRecipeId]!.steps.find(
+    (step) => step.kind === "module",
+  );
+  const destEndRecipe =
+    destModule?.kind === "module" ? compiled.graph[destModule.recipeId] : undefined;
+  assert.ok(destEndRecipe);
+  const destWhen = { target: { identifier: "settings.account" }, condition: "absent" as const };
+  assert.deepEqual(destEndRecipe!.steps[0]?.when, destWhen);
+  assert.deepEqual(destEndRecipe!.steps[1]?.when, destWhen);
+  assert.equal(destEndRecipe!.steps[1]?.coverage, "inspect");
+  const destWaitIndex = destEndRecipe!.steps.findIndex(
+    (step) => step.kind === "wait-for" && step.target?.identifier === "settings.account",
+  );
+  assert.ok(destWaitIndex >= 0);
+  assert.equal(destEndRecipe!.steps[destWaitIndex]?.when, undefined);
+  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.kind, "screenshot");
+  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.phase, "dest");
+  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.policy, "fast");
+});
+
+test("test-action dest-end from Home still taps Settings when leftover Settings chrome is present", () => {
+  const map = fixture();
+  const work = destEndPrimitiveWork(map, "open-settings-from-home", [
+    {
+      id: "open-settings",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { identifier: "composer" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { identifier: "sidebar.settings" } },
+        { kind: "wait-for", target: { identifier: "settings.account" }, timeoutMs: 8_000 },
+      ],
+    },
+  ]);
+  work.requirementAction = "test-action";
+  work.startingState = { sourceScreenId: "home" };
+  map.connections["open-settings-from-home"]!.fromScreenId = "home";
+  const instruction = work.steps[0]!;
+  work.steps = [{ ...instruction, capture: true }];
+  const compiled = compileAppMapTest(map, work);
+  const destModule = compiled.graph[compiled.plan.rootRecipeId]!.steps.find(
+    (step) => step.kind === "module",
+  );
+  const destEndRecipe =
+    destModule?.kind === "module" ? compiled.graph[destModule.recipeId] : undefined;
+  assert.ok(destEndRecipe);
+  assert.equal(destEndRecipe!.steps[0]?.when, undefined);
+  assert.equal(destEndRecipe!.steps[1]?.when, undefined);
+  assert.equal(destEndRecipe!.steps[1]?.kind, "tap");
+  assert.equal(destEndRecipe!.steps[1]?.coverage, "transition");
+  const destWaitIndex = destEndRecipe!.steps.findIndex(
+    (step) => step.kind === "wait-for" && step.target?.identifier === "settings.account",
+  );
+  assert.ok(destWaitIndex >= 0);
+  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.kind, "screenshot");
+  assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.phase, "dest");
 });
 
 test("dest-end dest-phase waits focused composer chrome after the focus tap", () => {

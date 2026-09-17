@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   coverByFindingSimilarlyNamedTest,
   coverByRc23DestEnd,
+  destEndViewPacketMayLeftoverSkip,
   evaluateWorkbookCoverage,
   originalIsCovered,
   parseWorkbookCoverageManifest,
@@ -344,6 +345,14 @@ test("original 50 Fast vs Heavy/Expert stays unresolved", () => {
   assert.equal(conflict?.status, "unresolved");
   assert.deepEqual(conflict?.originalIds, [50]);
   assert.equal(report.unboundOriginalIds.includes(50), true);
+});
+
+test("capture-view leftover skip is only GQA-004 attach and GQA-040 Settings inventory", () => {
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 4, evidencePacket: "view" }), true);
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 40, evidencePacket: "view" }), true);
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 35, evidencePacket: "transition" }), false);
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 43, evidencePacket: "view" }), false);
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 4, evidencePacket: "transition" }), false);
 });
 
 test("S16 cannot be single-view Fast UI", () => {

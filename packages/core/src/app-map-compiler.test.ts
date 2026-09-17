@@ -820,6 +820,7 @@ test("dest-end skips origin wait and opener tap when leftover already shows dest
   const map = fixture();
   map.connections["open-home"]!.destination = { kind: "end" };
   map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.coverage = "inspect";
   map.connections["open-home"]!.actions = [
     {
       id: "open-sidebar",
@@ -866,6 +867,7 @@ test("dest-end skips the whole open prefix when a peek leftover already shows de
   const map = fixture();
   map.connections["open-home"]!.destination = { kind: "end" };
   map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.coverage = "inspect";
   map.connections["open-home"]!.actions = [
     {
       id: "settings-peek",
@@ -897,6 +899,7 @@ test("dest-end leftover skip keeps optional close-home then uses Temporary Chat 
   const map = fixture();
   map.connections["open-home"]!.destination = { kind: "end" };
   map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.coverage = "inspect";
   map.connections["open-home"]!.actions = [
     {
       id: "private-chat",
@@ -940,6 +943,7 @@ test("dest-end leftover skip does not gate the Private Chat exit tap after dest 
   const map = fixture();
   map.connections["open-home"]!.destination = { kind: "end" };
   map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.coverage = "inspect";
   map.connections["open-home"]!.actions = [
     {
       id: "private-chat-round-trip",
@@ -1009,6 +1013,58 @@ test("dest-end leftover skip is inspect-only and cannot prove a required Setting
   assert.equal(steps[2]?.when, undefined);
 });
 
+test("omitted dest-end coverage is test-action and does not leftover-skip Settings", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.actions = [
+    {
+      id: "open-settings",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { identifier: "composer" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { identifier: "sidebar.settings" } },
+        { kind: "wait-for", target: { identifier: "settings.account" }, timeoutMs: 8_000 },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  assert.deepEqual(
+    steps.map((step) => step.kind),
+    ["wait-for", "tap", "wait-for"],
+  );
+  assert.equal(steps[0]?.when, undefined);
+  assert.equal(steps[1]?.when, undefined);
+  assert.equal(steps[1]?.coverage, "transition");
+  assert.equal(steps[2]?.when, undefined);
+});
+
+test("capture-view dest-end leftover Settings skips the opener", () => {
+  const map = fixture();
+  map.connections["open-home"]!.destination = { kind: "end" };
+  map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.coverage = "inspect";
+  map.connections["open-home"]!.actions = [
+    {
+      id: "settings-inventory",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { identifier: "composer" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { identifier: "sidebar.settings" } },
+        { kind: "wait-for", target: { identifier: "settings.account" }, timeoutMs: 8_000 },
+      ],
+    },
+  ];
+  const plan = compileAppMapConnection(map, "open-home");
+  const steps = plan.recipes[plan.rootRecipeId]!.steps;
+  const destWhen = { target: { identifier: "settings.account" }, condition: "absent" as const };
+  assert.deepEqual(steps[0]?.when, destWhen);
+  assert.deepEqual(steps[1]?.when, destWhen);
+  assert.equal(steps[1]?.coverage, "inspect");
+  assert.equal(steps[2]?.when, undefined);
+});
+
 test("coverage:transition unsigned Settings waits Light dest chrome and does not leftover-skip", () => {
   const map = fixture();
   map.connections["open-home"]!.destination = { kind: "end" };
@@ -1049,6 +1105,7 @@ test("dest-end leftover skip keeps open-sidebar chrome when Settings unique wait
   const map = fixture();
   map.connections["open-home"]!.destination = { kind: "end" };
   map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.coverage = "inspect";
   map.connections["open-home"]!.actions = [
     {
       id: "settings-peek",
@@ -1086,6 +1143,7 @@ test("dest-end leftover skip uses later wait-for dest chrome not a Settings labe
   const map = fixture();
   map.connections["open-home"]!.destination = { kind: "end" };
   map.connections["open-home"]!.caseStackId = undefined;
+  map.connections["open-home"]!.coverage = "inspect";
   map.connections["open-home"]!.actions = [
     {
       id: "settings-panel",

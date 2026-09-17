@@ -767,6 +767,7 @@ export const graphTest = z
     originApplication: z.string().trim().min(1).optional(),
     startingState: appMapTestStartingStateSchema.optional(),
     executionQueue: executionQueueSchema.optional(),
+    requirementAction: z.enum(["capture-view", "test-action"]).optional(),
     steps: z.array(graphTestStep).max(200),
     family: testFamily.optional(),
     nativeRouteCompanions: nativeRouteCompanions.optional(),
@@ -846,6 +847,7 @@ const testSemanticEdit = z.discriminatedUnion("kind", [
           nativeRouteCompanions: nativeRouteCompanions.nullable().optional(),
           startingState: appMapTestStartingStateSchema.nullable().optional(),
           executionQueue: executionQueueSchema.nullable().optional(),
+          requirementAction: z.enum(["capture-view", "test-action"]).nullable().optional(),
         })
         .strict()
         .refine((patch) => Object.keys(patch).length > 0, "Test patch must change a field"),

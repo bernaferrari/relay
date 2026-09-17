@@ -108,6 +108,20 @@ export const RC23_WORKBOOK_DEST_END_BINDINGS: readonly Rc23WorkbookDestEndBindin
   },
 ];
 
+/** Capture-view leftover skip is only GQA-004 attach and GQA-040 Settings
+ * inventory. Other view packets and every transition packet must tap. */
+export function destEndViewPacketMayLeftoverSkip(original: {
+  id: number;
+  evidencePacket: WorkbookEvidencePacket;
+}): boolean {
+  return (
+    original.evidencePacket === "view" &&
+    RC23_WORKBOOK_DEST_END_BINDINGS.some(
+      (binding) => binding.originalId === original.id && binding.evidencePacket === "view",
+    )
+  );
+}
+
 /** Checkpoints that must not auto-bind similarly named originals. */
 export const RC23_WORKBOOK_NON_BINDINGS: readonly {
   checkpointId: string;

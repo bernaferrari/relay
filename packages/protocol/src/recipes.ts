@@ -173,6 +173,43 @@ export type HumanCheckpointReason =
 /** Inspect may reuse an already-reached view. Transition must execute the
  * reviewed action from a known source — leftover skip cannot prove it. */
 export type CaptureCoverage = "inspect" | "transition";
+/** Capture-view may reuse leftover Settings/attach. Test-action must tap the
+ * named opener from a known source. Default dest-end navigation is test-action. */
+export const REQUIREMENT_ACTION_KINDS = ["capture-view", "test-action"] as const;
+export type RequirementActionKind = (typeof REQUIREMENT_ACTION_KINDS)[number];
+
+export function isRequirementActionKind(value: string): value is RequirementActionKind {
+  return value === "capture-view" || value === "test-action";
+}
+
+/** Capture-view compiles to inspect leftover skip. Omitted dest-end stays
+ * test-action so leftover Settings cannot prove the Settings tap. */
+export function captureCoverageFromRequirementAction(
+  kind?: RequirementActionKind,
+): CaptureCoverage {
+  return kind === "capture-view" ? "inspect" : "transition";
+}
+
+export function leftoverSkipAllowedForCoverage(coverage?: CaptureCoverage): boolean {
+  return coverage === "inspect";
+}
+
+/** Fail closed: any test-action / transition wins. Capture-view leftover skip
+ * needs an explicit inspect / capture-view requirement. */
+export function destEndCoverageForRequirement(input: {
+  requirementAction?: RequirementActionKind;
+  coverage?: CaptureCoverage;
+  actionCoverages?: readonly (CaptureCoverage | undefined)[];
+}): CaptureCoverage {
+  if (input.requirementAction === "test-action" || input.coverage === "transition") {
+    return "transition";
+  }
+  if (input.actionCoverages?.some((value) => value === "transition")) return "transition";
+  if (input.requirementAction === "capture-view" || input.coverage === "inspect") {
+    return "inspect";
+  }
+  return "transition";
+}
 /** Fast = one fresh image. Stable = 2–4 rasters. Sequence = named temporal phases. */
 export type CaptureRasterPolicy = "fast" | "stable" | "sequence";
 /** Ordinary UI checkpoints (menus, settings, composer, subscription chrome).

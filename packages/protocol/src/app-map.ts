@@ -4,6 +4,7 @@ import type {
   CaptureCoverage,
   RecipeParameter,
   RecipeStep,
+  RequirementActionKind,
   StepPoint,
   StepTarget,
 } from "./recipes.js";
@@ -557,6 +558,9 @@ export type Routine = AppMapEntity & {
   description?: string;
   parameters: RecipeParameter[];
   actions: ActionSpec[];
+  /** Capture-view may reuse leftover dest chrome. Test-action must execute
+   * the named opener. Omitted dest-end navigation stays test-action. */
+  requirementAction?: RequirementActionKind;
   /** Starting-state facts, leftover surfaces, and sharing policy. Absent
    * effects do not invent leftover Home or Settings. */
   effects?: RoutineEffects;
@@ -709,7 +713,7 @@ export type CreateConnectionInput = Pick<Connection, "id" | "fromScreenId" | "de
   >;
 
 export type SaveRoutineInput = Pick<Routine, "name" | "actions"> &
-  Partial<Pick<Routine, "description" | "parameters" | "effects">>;
+  Partial<Pick<Routine, "description" | "parameters" | "effects" | "requirementAction">>;
 
 export type SaveFlowInput = Pick<Flow, "name" | "startScreenId" | "connectionIds"> &
   Partial<Pick<Flow, "setup">>;

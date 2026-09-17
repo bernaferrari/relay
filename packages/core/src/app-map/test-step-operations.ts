@@ -395,6 +395,7 @@ export function applyScenarioTestStepEdits(
                 "nativeRouteCompanions",
                 "startingState",
                 "executionQueue",
+                "requirementAction",
               ].includes(key),
           );
           if (unknown) {
@@ -434,13 +435,21 @@ export function applyScenarioTestStepEdits(
                   return withoutQueue;
                 })()
               : withoutStarting;
+          const withoutRequirement =
+            edit.patch.requirementAction === null
+              ? (() => {
+                  const { requirementAction: _requirement, ...withoutRequirement } = withoutQueue;
+                  return withoutRequirement;
+                })()
+              : withoutQueue;
           const base =
             edit.patch.nativeRouteCompanions === null
               ? (() => {
-                  const { nativeRouteCompanions: _companions, ...withoutCompanions } = withoutQueue;
+                  const { nativeRouteCompanions: _companions, ...withoutCompanions } =
+                    withoutRequirement;
                   return withoutCompanions;
                 })()
-              : withoutQueue;
+              : withoutRequirement;
           return validated({
             ...base,
             ...(edit.patch.name !== undefined ? { name: edit.patch.name } : {}),
@@ -450,6 +459,9 @@ export function applyScenarioTestStepEdits(
               startingState: structuredClone(edit.patch.startingState),
             }),
             ...(edit.patch.executionQueue && { executionQueue: edit.patch.executionQueue }),
+            ...(edit.patch.requirementAction && {
+              requirementAction: edit.patch.requirementAction,
+            }),
             ...(edit.patch.nativeRouteCompanions && {
               nativeRouteCompanions: structuredClone(edit.patch.nativeRouteCompanions),
             }),
