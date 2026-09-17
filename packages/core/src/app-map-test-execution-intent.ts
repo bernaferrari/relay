@@ -474,6 +474,45 @@ function canonicalQueueQuotes(value: unknown): boolean {
   });
 }
 
+function canonicalRouteVariantConfigurations(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value)) return false;
+  return value.every((entry) => {
+    if (!isRecord(entry)) return false;
+    if (
+      !ownKeys(entry, [
+        "platform",
+        "configuration",
+        "testId",
+        "checkpointId",
+        "role",
+        "workItems",
+        "capacityFile",
+      ])
+    ) {
+      return false;
+    }
+    if (entry.platform !== "web" && entry.platform !== "android" && entry.platform !== "ios") {
+      return false;
+    }
+    if (
+      entry.configuration !== undefined &&
+      !canonicalCaptureReviewConfiguration(entry.configuration)
+    ) {
+      return false;
+    }
+    if (!isRecord(entry.configuration)) return false;
+    if (entry.testId !== undefined && !string(entry.testId)) return false;
+    if (entry.checkpointId !== undefined && !string(entry.checkpointId)) return false;
+    if (entry.role !== undefined && entry.role !== "compiled" && entry.role !== "companion") {
+      return false;
+    }
+    if (entry.workItems !== undefined && !integer(entry.workItems)) return false;
+    if (entry.capacityFile !== undefined && !string(entry.capacityFile)) return false;
+    return true;
+  });
+}
+
 /** The registered historical plan shape. This deliberately checks the
  * App-Map-Test discriminators, compiled root, and parsed recipe projection;
  * labels, recipe IDs, and opaque artifact fields never classify a legacy job
@@ -503,6 +542,7 @@ export function parseCanonicalAppMapTestPlan(value: unknown): AppMapCompiledTest
       "plannedSlots",
       "executionQueue",
       "queueQuotes",
+      "routeVariantConfigurations",
       "iosReadiness",
       "startup",
       "originApplication",
@@ -531,6 +571,7 @@ export function parseCanonicalAppMapTestPlan(value: unknown): AppMapCompiledTest
       value.executionQueue !== "live-output" &&
       value.executionQueue !== "stateful-survival") ||
     !canonicalQueueQuotes(value.queueQuotes) ||
+    !canonicalRouteVariantConfigurations(value.routeVariantConfigurations) ||
     !canonicalIosReadiness(value.iosReadiness)
   ) {
     return undefined;

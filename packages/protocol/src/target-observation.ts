@@ -38,6 +38,7 @@ export type TargetObservation = {
     capturedAt?: number;
     artifact: ArtifactRefProjection;
     source?: "sdk" | "android-system" | "pixels-only";
+    androidTreeBackend?: "helper" | "dump";
     inspectionState?: "active" | "keyguard" | "asleep" | "unavailable" | "unknown";
     fingerprint?: string;
     nodeCount: number;

@@ -16,6 +16,7 @@ export * from "./collaboration.js";
 export * from "./app-map.js";
 export * from "./routine-effects.js";
 export * from "./execution-queue.js";
+export * from "./route-variant-configuration.js";
 export * from "./product-intent.js";
 export * from "./connection-presentation.js";
 export * from "./connection-execution.js";

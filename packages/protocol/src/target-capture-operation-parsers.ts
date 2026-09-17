@@ -69,6 +69,12 @@ function assertScrollSurveySnapshot(value: unknown, label: string): void {
     fail(`${label} source`, "must be sdk, android-system, or pixels-only");
   }
   if (
+    snapshot.androidTreeBackend !== undefined &&
+    !["helper", "dump"].includes(String(snapshot.androidTreeBackend))
+  ) {
+    fail(`${label} androidTreeBackend`, "must be helper or dump");
+  }
+  if (
     snapshot.inspectionState !== undefined &&
     !["active", "keyguard", "asleep", "unavailable", "unknown"].includes(
       String(snapshot.inspectionState),

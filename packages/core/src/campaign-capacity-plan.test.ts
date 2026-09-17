@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   EXECUTION_QUEUE_DURATION_ASSUMPTION,
+  ROUTE_VARIANT_CONFIGURATION_ASSUMPTION,
   SURVIVAL_FAMILY_ID,
   SURVIVAL_REQUIRED_DWELL_MS,
   THREE_MINUTE_MS,
@@ -633,6 +634,7 @@ test("capacity JSON quotes Fast UI, Live output, and Stateful/survival separatel
   assert.notEqual(survival?.lowerBoundMs, THREE_MINUTE_MS);
   assert.notEqual(plan.parallel.estimatedDurationMs, THREE_MINUTE_MS);
   assert.ok(plan.assumptions.includes(EXECUTION_QUEUE_DURATION_ASSUMPTION));
+  assert.ok(plan.assumptions.includes(ROUTE_VARIANT_CONFIGURATION_ASSUMPTION));
   assert.equal(
     canCoverWorkbookFamily({
       executionQueue: "fast-ui",
@@ -649,4 +651,78 @@ test("capacity JSON quotes Fast UI, Live output, and Stateful/survival separatel
     }).ok,
     false,
   );
+});
+
+test("capacity JSON lists Android vs iOS vs web as separate route configurations", () => {
+  const plan = planCampaignCapacity({
+    workItems: 23,
+    workItemsByPlatform: { android: 3, ios: 12, browser: 8 },
+    estimatedWorkItemDurationMs: 5_000,
+    targets: [
+      {
+        targetId: "galaxy",
+        platform: "android",
+        availability: "available",
+        lease: "available",
+        workerId: "android-host",
+      },
+      {
+        targetId: "ipad",
+        platform: "ios",
+        availability: "available",
+        lease: "available",
+        workerId: "ios-host",
+      },
+      {
+        targetId: "grok-com",
+        platform: "browser",
+        availability: "available",
+        lease: "available",
+        workerId: "browser-host",
+      },
+    ],
+    workers: [
+      {
+        workerId: "android-host",
+        capacity: 1,
+        active: 0,
+        queued: 0,
+        activeTargets: [],
+        queuedTargets: [],
+      },
+      {
+        workerId: "ios-host",
+        capacity: 1,
+        active: 0,
+        queued: 0,
+        activeTargets: [],
+        queuedTargets: [],
+      },
+      {
+        workerId: "browser-host",
+        capacity: 8,
+        active: 0,
+        queued: 0,
+        activeTargets: [],
+        queuedTargets: [],
+      },
+    ],
+  });
+  assert.deepEqual(
+    plan.routeVariantConfigurations?.map((quote) => [
+      quote.platform,
+      quote.workItems,
+      quote.configuration,
+    ]),
+    [
+      ["web", 8, { browser: "grok-com" }],
+      ["android", 3, { app: "android" }],
+      ["ios", 12, { app: "ai.x.GrokApp" }],
+    ],
+  );
+  assert.equal(
+    plan.routeVariantConfigurations?.every((quote) => quote.testId === undefined),
+    true,
+  );
+  assert.ok(plan.assumptions.includes(ROUTE_VARIANT_CONFIGURATION_ASSUMPTION));
 });

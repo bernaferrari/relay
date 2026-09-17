@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   EXECUTION_QUEUE_DURATION_ASSUMPTION,
+  ROUTE_VARIANT_CONFIGURATION_ASSUMPTION,
   SURVIVAL_FAMILY_ID,
   SURVIVAL_REQUIRED_DWELL_MS,
   THREE_MINUTE_MS,
@@ -420,6 +421,15 @@ test("local capacity JSON quotes Fast UI, Live output, and Stateful/survival sep
   assert.ok(preflight.plan.queueQuotes?.every((quote) => quote.lowerBoundMs !== THREE_MINUTE_MS));
   assert.ok(preflight.assumptions.includes(EXECUTION_QUEUE_DURATION_ASSUMPTION));
   assert.ok(preflight.plan.assumptions.includes(EXECUTION_QUEUE_DURATION_ASSUMPTION));
+  assert.ok(preflight.assumptions.includes(ROUTE_VARIANT_CONFIGURATION_ASSUMPTION));
+  assert.ok(preflight.plan.assumptions.includes(ROUTE_VARIANT_CONFIGURATION_ASSUMPTION));
+  assert.deepEqual(
+    preflight.plan.routeVariantConfigurations?.map((quote) => [quote.platform, quote.workItems]),
+    [
+      ["android", 2],
+      ["ios", 1],
+    ],
+  );
   assert.equal(
     canCoverWorkbookFamily({
       executionQueue: "stateful-survival",

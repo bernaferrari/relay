@@ -370,6 +370,9 @@ export async function captureDurableTargetObservation(
         artifact: projectAuthoringEvidenceArtifact(semanticEvidence),
         ...(snapshot ? { capturedAt: snapshot.capturedAt } : {}),
         ...(snapshot?.source ? { source: snapshot.source } : {}),
+        ...(snapshot?.androidTreeBackend
+          ? { androidTreeBackend: snapshot.androidTreeBackend }
+          : {}),
         ...(snapshot?.inspectionState ? { inspectionState: snapshot.inspectionState } : {}),
         ...(snapshot?.screenIdentity.fingerprint
           ? { fingerprint: snapshot.screenIdentity.fingerprint }

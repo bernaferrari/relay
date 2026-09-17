@@ -1,5 +1,6 @@
 import type { TargetWorkerStatus } from "./target-runtime.js";
 import type { ExecutionQueueDurationQuote, ExecutionQueueMemberQuote } from "./execution-queue.js";
+import type { RouteVariantConfigurationQuote } from "./route-variant-configuration.js";
 
 /** A current scheduling fact about a concrete target, not a provider promise. */
 export type CampaignCapacityTargetAvailability = "available" | "unavailable" | "stale";
@@ -124,6 +125,9 @@ export type CampaignCapacityPlan = {
   /** Separate Fast UI / Live output / Stateful-survival duration quotes when
    * the caller declared queue members. Never a three-minute workbook promise. */
   queueQuotes?: ExecutionQueueDurationQuote[];
+  /** Android vs iOS vs web dest-ends as separate configurations. Captions
+   * are not one Test covering three platforms by name. */
+  routeVariantConfigurations?: RouteVariantConfigurationQuote[];
   /** Explicit estimator limits so consumers do not mistake this for a farm SLA. */
   assumptions: string[];
 };

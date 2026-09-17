@@ -221,6 +221,8 @@ export function parseAndroidUiSnapshot(xml: string): SnapshotNode[] {
 export type AndroidUiSnapshot = {
   nodes: SnapshotNode[];
   inspectionState: AndroidInspectionState;
+  /** Helper APK vs stock dump. Dump is last-resort only when the slot is free. */
+  treeBackend?: AndroidSnapshotBackend;
 };
 
 const ANDROID_SNAPSHOT_HELPER_PACKAGE = "com.callstack.agentdevice.snapshothelper";
@@ -294,6 +296,19 @@ const ANDROID_DUMP_PATH = "/data/local/tmp/relay-uidump.xml";
 const dumpBlockedSerials = new Set<string>();
 
 export type AndroidSnapshotBackend = "helper" | "dump";
+
+/** Honest optional-tree label. Dump is not a silent alias of helper. */
+export function androidOptionalTreeDegradationLabel(input: {
+  treeBackend?: AndroidSnapshotBackend;
+  inspectable?: boolean;
+}): string {
+  if (input.inspectable) {
+    return input.treeBackend === "dump" ? "android-dump" : "android-helper";
+  }
+  if (input.treeBackend === "helper") return "optional-tree empty (helper UiAutomation)";
+  if (input.treeBackend === "dump") return "optional-tree empty (uiautomator dump)";
+  return "optional-tree empty";
+}
 
 export type AndroidSnapshotOwnership = {
   /** Live helper / instrumentation process already registered UiAutomation. */
@@ -531,29 +546,31 @@ export async function captureAndroidUiSnapshotWithState(
     const backends = androidSnapshotCapturePlan(ownership);
     if (backends.length === 0) {
       // Live helper session already owns UiAutomation. Leave the slot alone
-      // so the SDK path can read the tree.
-      return { nodes: [], inspectionState };
+      // so the SDK path can read the tree. Do not start dump.
+      return { nodes: [], inspectionState, treeBackend: "helper" };
     }
     for (const backend of backends) {
       if (backend === "helper") {
         const helped = await dumpViaInstalledHelper(serial);
-        if (helped.length > 0) return { nodes: helped, inspectionState };
+        if (helped.length > 0) return { nodes: helped, inspectionState, treeBackend: "helper" };
         if (await androidSnapshotHelperProcessRunning(serial)) {
           dumpBlockedSerials.add(serial);
-          return { nodes: [], inspectionState };
+          return { nodes: [], inspectionState, treeBackend: "helper" };
         }
         continue;
       }
       if (await androidSnapshotHelperProcessRunning(serial)) {
         dumpBlockedSerials.add(serial);
-        return { nodes: [], inspectionState };
+        return { nodes: [], inspectionState, treeBackend: "helper" };
       }
       const dumped = await dumpViaUiAutomator(serial);
       if (dumped.blocked) {
         dumpBlockedSerials.add(serial);
-        return { nodes: [], inspectionState };
+        return { nodes: [], inspectionState, treeBackend: "dump" };
       }
-      if (dumped.nodes.length > 0) return { nodes: dumped.nodes, inspectionState };
+      if (dumped.nodes.length > 0) {
+        return { nodes: dumped.nodes, inspectionState, treeBackend: "dump" };
+      }
     }
     if (attempt === 2) return { nodes: [], inspectionState: "unavailable" };
     await new Promise((resolve) => setTimeout(resolve, 100));

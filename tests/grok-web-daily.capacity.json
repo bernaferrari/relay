@@ -2,6 +2,23 @@
   "schemaVersion": 1,
   "packId": "grok-web-daily",
   "provenance": "measured",
+  "routeVariantConfigurations": [
+    {
+      "platform": "web",
+      "configuration": { "browser": "grok-com" },
+      "capacityFile": "tests/grok-web-daily.capacity.json"
+    },
+    {
+      "platform": "android",
+      "configuration": { "app": "android" },
+      "capacityFile": "tests/grok-android.capacity.json"
+    },
+    {
+      "platform": "ios",
+      "configuration": { "app": "ai.x.GrokApp" },
+      "capacityFile": "tests/grok-ios.capacity.json"
+    }
+  ],
   "measuredAt": "2026-09-13T11:16:00Z",
   "sampleCount": 5,
   "note": "Serial logged-out grok.com Plan measured over five live 8-Test runs (batches below). Latest 8/8 is batch a01ab9ca-3d2a-457f-8d06-a998555794c7 after inherit browser:grok-com (not the unique signed-in profile): cell span 198919ms, upload long pole 51374ms, all eight jobs targetProfileId browser:grok-com, authenticationFixtureId empty. Earlier 8/8 1445e569-c818-4c13-bff4-9f990dbf5d5c cell span 195736ms. Upload remains the long pole (~49\u201358s). --budget 3m is too tight for this pack (CLI ~221s historically); use --budget 10m as a watch timeout, not a pack-duration promise. Two concurrent browser lanes are measured separately in twoLane (logged-out open + signed-in home chrome). That is not an eight-Test parallel quote and not 3-account. Two concurrent unsigned --lane grok-daily Open grok.com jobs serialized on grok-com#signed-out (signedOutSerialize, overlap 0). Two concurrent Open grok.com jobs on distinct unsigned Lanes grok-daily + grok-daily-b overlapped (unsignedTwoLane, overlap 9007ms, span 9547ms). Four concurrent Open grok.com jobs on grok-daily + grok-daily-b + grok-daily-c + grok-daily-d overlapped (unsignedFourLane, 4-way intersection overlap 11630ms, span 12897ms). Those are scheduler/session probes. An earlier four concurrent `plan run grok-web grok-web-daily` admitted one campaign (unsignedFourLanePlan) and 409'd the other three (ACTIVE_REPEAT_EXISTS on combine grok-web-daily). After Combine admission keyed unsigned Lanes, four concurrent full packs on those Lanes all admitted (unsignedFourLanePack): 4/4 8/8 ok, 0 findings, 17/17 frames, 4-way overlap 216356ms, wall/span 232540ms. parallelWallClockMs.4 is that wall. Eight concurrent full packs on grok-daily through grok-daily-h (unsignedEightLanePack): 8/8 8/8 ok, 0 findings, 17/17 frames, 8-way overlap 377286ms, wall/span 401137ms. parallelWallClockMs.8 is that wall. .12 stays null (host capacity 8). Empty findings are not a license to skip the next daily Plan. This is not the 60-case signed-in pack. Heavy, video, Expert web search, Continue with X, dictation, and camera stay on grok-web-weekly.",

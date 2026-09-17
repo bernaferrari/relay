@@ -311,6 +311,7 @@ export type TargetSnapshotDto = {
   bounds?: { width: number; height: number };
   inspectable: boolean;
   source: "sdk" | "android-system" | "pixels-only";
+  androidTreeBackend?: "helper" | "dump";
   inspectionState?: "active" | "keyguard" | "asleep" | "unavailable" | "unknown";
   foregroundApp?: string;
   app?: string;

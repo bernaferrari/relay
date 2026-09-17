@@ -649,6 +649,7 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
       nodes?: unknown;
       inspectable?: unknown;
       source?: unknown;
+      androidTreeBackend?: unknown;
       inspectionState?: unknown;
       screenIdentity?: { fingerprint?: unknown };
       visualFingerprint?: unknown;
@@ -717,6 +718,9 @@ export function summarizeTargetOperationResult(operationId: string, result: unkn
       bounds: body.bounds,
       inspectable,
       ...(typeof body.source === "string" ? { source: body.source } : {}),
+      ...(body.androidTreeBackend === "helper" || body.androidTreeBackend === "dump"
+        ? { androidTreeBackend: body.androidTreeBackend }
+        : {}),
       ...(typeof body.inspectionState === "string"
         ? { inspectionState: body.inspectionState }
         : {}),

@@ -1,5 +1,6 @@
 import type { RoutineEffects } from "./routine-effects.js";
 import type { ExecutionQueueDurationQuote } from "./execution-queue.js";
+import type { RouteVariantConfigurationQuote } from "./route-variant-configuration.js";
 import type {
   CaptureCoverage,
   RecipeParameter,
@@ -544,6 +545,9 @@ export type AppMapCombinePreflight = {
   /** Separate Fast UI / live output / stateful-survival duration targets when
    * members declare a queue. Not a three-minute workbook promise. */
   queueQuotes?: ExecutionQueueDurationQuote[];
+  /** Android vs iOS vs web dest-ends as separate configurations. Captions
+   * are not one Test covering three platforms by name. */
+  routeVariantConfigurations?: RouteVariantConfigurationQuote[];
   blockers: AppMapCombinePreflightIssue[];
   warnings: AppMapCombinePreflightIssue[];
   cells: AppMapCombineCellState[];

@@ -310,6 +310,45 @@ test("canonical plans persist Fast UI queue quotes without treating them as unkn
   );
 });
 
+test("canonical plans persist Android vs iOS vs web route configurations without treating them as unknown keys", () => {
+  const ready = fixture();
+  ready.plan.routeVariantConfigurations = [
+    {
+      platform: "web",
+      configuration: { browser: "grok-com" },
+      testId: "test-grok-web-signed-in-home",
+      role: "compiled",
+    },
+    {
+      platform: "android",
+      configuration: { app: "android" },
+      testId: "test-grok-android-home-chrome",
+      role: "companion",
+    },
+    {
+      platform: "ios",
+      configuration: { app: "ai.x.GrokApp" },
+      testId: "test-grok-ios-home-chrome",
+      role: "companion",
+    },
+  ];
+  ready.preflight.planDigest = digestAppMapTestExecutionValue(ready.plan);
+  ready.preflight.executionRisk = compileExecutionRisk({
+    kind: "compiled-test",
+    test: ready.plan,
+  });
+  const intent = createAppMapTestExecutionIntent(ready);
+  assert.equal(intent.plan.routeVariantConfigurations?.length, 3);
+  assert.equal(intent.plan.routeVariantConfigurations?.[1]?.platform, "android");
+  assert.equal(
+    parseCanonicalAppMapTestPlan({
+      ...ready.plan,
+      routeVariantConfigurations: [{ platform: "android" }],
+    }),
+    undefined,
+  );
+});
+
 test("canonical plans persist dest-wait vs runner-recover iosReadiness", () => {
   const ready = fixture();
   ready.plan.iosReadiness = {

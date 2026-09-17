@@ -4,6 +4,7 @@ import type {
   ExecutionQueueDurationQuote,
   IosReadinessDurationQuote,
 } from "./execution-queue.js";
+import type { RouteVariantConfigurationQuote } from "./route-variant-configuration.js";
 import type { BrowserEngine } from "./browser-case-profile.js";
 import type {
   AppMapCapturePolicy,
@@ -628,6 +629,9 @@ export type AppMapCompiledTest = {
   /** Separate Fast UI / Live output / Stateful-survival duration quotes.
    * Never a three-minute workbook promise. */
   queueQuotes?: ExecutionQueueDurationQuote[];
+  /** Android vs iOS vs web dest-ends as separate configurations. Captions
+   * are not one Test covering three platforms by name. */
+  routeVariantConfigurations?: RouteVariantConfigurationQuote[];
   /** Runner-recover vs dest-wait/product-ready. Probe timeout is not dwell. */
   iosReadiness?: IosReadinessDurationQuote;
   startup: AppMapTestStartup;

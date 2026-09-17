@@ -4,7 +4,10 @@ import type {
   AppMapCombinePreflight,
   AppMapCombinePreflightIssue,
 } from "@relay/protocol";
-import { quoteDeclaredExecutionQueues } from "@relay/protocol";
+import {
+  listDeclaredRouteVariantConfigurations,
+  quoteDeclaredExecutionQueues,
+} from "@relay/protocol";
 import type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
 import { AppMapTestCompileError } from "./app-map-test-compile-error.js";
 import { compileAppMapCombine, compileAppMapTest } from "./map-work.js";
@@ -327,23 +330,29 @@ export async function preflightAppMapCombine(
     }
   }
   let queueQuotes: AppMapCombinePreflight["queueQuotes"];
+  let routeVariantConfigurations: AppMapCombinePreflight["routeVariantConfigurations"];
   if (tests.length) {
-    const members = tests.flatMap((test) => {
+    const members: Array<{
+      executionQueue: NonNullable<ReturnType<typeof compileAppMapTest>["plan"]["executionQueue"]>;
+      workMs: number;
+      requiredDwellMs: number;
+    }> = [];
+    const routeMembers: NonNullable<AppMapCombinePreflight["routeVariantConfigurations"]> = [];
+    for (const test of tests) {
       try {
         const compiled = compileAppMapTest(map, test, compileOptions);
+        routeMembers.push(...(compiled.plan.routeVariantConfigurations ?? []));
         const queue = compiled.plan.executionQueue;
-        if (!queue) return [];
-        return [
-          {
-            executionQueue: queue,
-            workMs: estimateRecipeDuration(
-              compiled.root,
-              compiled.graph,
-              new Set([compiled.root.id]),
-            ),
-            requiredDwellMs: declaredDwellMsFromRecipeGraph(compiled.graph, compiled.root.id),
-          },
-        ];
+        if (!queue) continue;
+        members.push({
+          executionQueue: queue,
+          workMs: estimateRecipeDuration(
+            compiled.root,
+            compiled.graph,
+            new Set([compiled.root.id]),
+          ),
+          requiredDwellMs: declaredDwellMsFromRecipeGraph(compiled.graph, compiled.root.id),
+        });
       } catch (error) {
         if (error instanceof AppMapTestCompileError && error.code === "unsafe-execution-queue") {
           blockers.push({
@@ -352,15 +361,16 @@ export async function preflightAppMapCombine(
             testId: error.testId,
           });
         }
-        return [];
       }
-    });
+    }
     const worldCount = Math.max(1, worlds);
     const quoted = quoteDeclaredExecutionQueues(
       members.flatMap((member) => Array.from({ length: worldCount }, () => member)),
       1,
     );
     if (quoted.length) queueQuotes = quoted;
+    const listed = listDeclaredRouteVariantConfigurations(routeMembers);
+    if (listed.length) routeVariantConfigurations = listed;
   }
   return {
     ok: blockers.length === 0,
@@ -386,6 +396,7 @@ export async function preflightAppMapCombine(
     ...(expectedScreenshots !== undefined ? { expectedScreenshots } : {}),
     ...(estimatedDurationMs !== undefined ? { estimatedDurationMs } : {}),
     ...(queueQuotes ? { queueQuotes } : {}),
+    ...(routeVariantConfigurations ? { routeVariantConfigurations } : {}),
     blockers,
     warnings,
     cells,

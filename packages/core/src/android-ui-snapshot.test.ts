@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   androidInspectionState,
+  androidOptionalTreeDegradationLabel,
   androidScreenIsInspectable,
   androidSnapshotApplication,
   androidSnapshotCapturePlan,
@@ -198,5 +199,40 @@ test("does not inspect a keyguard or sleeping screen", () => {
       "screenState=SCREEN_STATE_ON\ninteractiveState=INTERACTIVE_STATE_AWAKE",
     ),
     true,
+  );
+});
+
+test("optional-tree degradation stays labeled helper vs dump and never dumps while helper is alive", () => {
+  assert.deepEqual(
+    androidSnapshotCapturePlan({
+      helperProcessRunning: true,
+      helperAvailable: true,
+      dumpBlocked: false,
+    }),
+    [],
+  );
+  assert.equal(
+    androidSnapshotCapturePlan({
+      helperProcessRunning: true,
+      helperAvailable: true,
+      dumpBlocked: false,
+    }).includes("dump"),
+    false,
+  );
+  assert.equal(
+    androidOptionalTreeDegradationLabel({ treeBackend: "helper", inspectable: true }),
+    "android-helper",
+  );
+  assert.equal(
+    androidOptionalTreeDegradationLabel({ treeBackend: "dump", inspectable: true }),
+    "android-dump",
+  );
+  assert.match(
+    androidOptionalTreeDegradationLabel({ treeBackend: "helper", inspectable: false }),
+    /helper UiAutomation/u,
+  );
+  assert.match(
+    androidOptionalTreeDegradationLabel({ treeBackend: "dump", inspectable: false }),
+    /uiautomator dump/u,
   );
 });

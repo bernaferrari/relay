@@ -14,6 +14,7 @@ import {
   executionQueueDurationQuoteSchema,
   executionQueueMemberQuoteSchema,
 } from "./execution-queue.js";
+import { routeVariantConfigurationQuoteSchema } from "./route-variant-configuration.js";
 
 const platform = z.enum(["android", "ios", "browser"]);
 const durationProvenance = z.enum(["observed-p50", "observed-p95", "supplied"]);
@@ -190,6 +191,7 @@ const campaignPlanSchema: z.ZodType<CampaignCapacityPlan> = z
     parallel: timeEstimateSchema.extend({ idealSpeedup: z.number().nullable() }),
     budget: budgetSchema.optional(),
     queueQuotes: z.array(executionQueueDurationQuoteSchema).optional(),
+    routeVariantConfigurations: z.array(routeVariantConfigurationQuoteSchema).optional(),
     assumptions: z.array(z.string()),
   })
   .strict();

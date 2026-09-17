@@ -1,5 +1,6 @@
 import {
   EXECUTION_QUEUE_DURATION_ASSUMPTION,
+  ROUTE_VARIANT_CONFIGURATION_ASSUMPTION,
   type CampaignCapacityCohortDurationEvidence,
   type CampaignCapacityDurationInput,
   type CampaignCapacityMeasurementAssurance,
@@ -433,6 +434,7 @@ export function preflightLocalCampaignCapacity(
       "Setup and recovery headroom are reserved once on the campaign critical path, not multiplied by every work item.",
       "A supplied or stale duration can size work, but cannot make the deadline achievable with current capacity.",
       EXECUTION_QUEUE_DURATION_ASSUMPTION,
+      ROUTE_VARIANT_CONFIGURATION_ASSUMPTION,
     ],
   };
 }

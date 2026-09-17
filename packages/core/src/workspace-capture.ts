@@ -28,6 +28,7 @@ import {
   captureAndroidInspectionState,
   captureAndroidUiSnapshotWithState,
   type AndroidInspectionState,
+  type AndroidSnapshotBackend,
 } from "./android-ui-snapshot.js";
 import { currentTargetContext, runWithTargetContext, targetIdentity } from "./target-context.js";
 import {
@@ -82,6 +83,8 @@ export type SnapshotPayload = {
   inspectable: boolean;
   /** Capture implementation, useful for diagnostics without leaking host details to UI logic. */
   source: "sdk" | "android-system" | "pixels-only";
+  /** Helper APK vs stock dump when Android degraded off the live SDK session. */
+  androidTreeBackend?: AndroidSnapshotBackend;
   inspectionState?: AndroidInspectionState;
   foregroundApp?: string;
   /** Product chrome when pixels or last launch can name the frame. */
@@ -284,6 +287,7 @@ type SnapshotCapture = Pick<
   | "nodes"
   | "inspectable"
   | "source"
+  | "androidTreeBackend"
   | "inspectionState"
   | "foregroundApp"
   | "treeApp"
@@ -369,6 +373,7 @@ async function snapshotForTarget(
         nodes,
         inspectable: true,
         source: "sdk",
+        androidTreeBackend: "helper",
         inspectionState,
         foregroundApp,
         treeApp,
@@ -384,6 +389,7 @@ async function snapshotForTarget(
           nodes,
           inspectable: true,
           source: "sdk",
+          androidTreeBackend: "helper",
           inspectionState,
           foregroundApp,
           treeApp,
@@ -397,6 +403,7 @@ async function snapshotForTarget(
         nodes: [],
         inspectable: false,
         source: "android-system",
+        androidTreeBackend: "helper",
         inspectionState,
         foregroundApp,
         bindingState: "unavailable",
@@ -411,10 +418,11 @@ async function snapshotForTarget(
   const foregroundNodes = androidSnapshotNodesForForeground(snapshot.nodes, foregroundApp);
   const inspectable = snapshot.inspectionState === "active" && foregroundNodes.length > 0;
   return {
-    ...snapshot,
     nodes: inspectable ? foregroundNodes : [],
     inspectable,
     source: "android-system",
+    inspectionState: snapshot.inspectionState,
+    ...(snapshot.treeBackend ? { androidTreeBackend: snapshot.treeBackend } : {}),
     foregroundApp,
     treeApp,
     bindingState: inspectable ? "matched" : "unavailable",

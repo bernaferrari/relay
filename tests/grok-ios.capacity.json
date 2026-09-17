@@ -2,6 +2,23 @@
   "schemaVersion": 1,
   "packId": "grok-ios-chrome",
   "provenance": "measured",
+  "routeVariantConfigurations": [
+    {
+      "platform": "web",
+      "configuration": { "browser": "grok-com" },
+      "capacityFile": "tests/grok-web-daily.capacity.json"
+    },
+    {
+      "platform": "android",
+      "configuration": { "app": "android" },
+      "capacityFile": "tests/grok-android.capacity.json"
+    },
+    {
+      "platform": "ios",
+      "configuration": { "app": "ai.x.GrokApp" },
+      "capacityFile": "tests/grok-ios.capacity.json"
+    }
+  ],
   "measuredAt": "2026-09-15T23:19:50Z",
   "sampleCount": 1,
   "note": "Physical iPad Pro serial db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5. Top-level quote is Plan grok-ios-chrome (3 dest-end Tests that start and return on closed SuperGrok home: home chrome, dictation inspect, sidebar open-close). Batch 86740566 3/3 ok, 0 findings, 3/3 frames, cell span 120703ms (~2.0 min). Jobs prime without relaunch; dest-end compiles warm so cold Restart app does not focus the composer between cells. Earlier grok-ios-chrome batch 647f1b50 0/3 HARNESS_FAILURE is not this quote: dest-end defaulted cold (keyboard leftover + XCTest watchdog) and dictation threw Choose a starting app. Do not copy grok-ios-daily wall into serialPackWallClockP50/P95. Honest 12-Test grok-ios-daily quote lives in dailyPack (batch d7eafb3c, cell span 1054460ms). Packs 99b06642 and 00b307de are not daily quotes. Parallelism is device count. Do not steal db0c9b7c…. grok-com authenticationFixtureId stays empty.",

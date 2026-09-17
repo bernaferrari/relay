@@ -50,6 +50,10 @@ import type { Recipe } from "./recipes.js";
 import { testWithSelectedRouteVariant } from "./app-map-test-route-variants.js";
 import { resolveScenarioTestCompileRoute } from "./app-map-test-compile-route.js";
 import { compiledTestFamilyProvenance } from "./app-map-test-family-provenance.js";
+import {
+  compileCaptureReviewConfiguration,
+  compiledRouteVariantConfigurations,
+} from "./route-variant-configuration-compile.js";
 import { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";
 import { assertionRecipeStep } from "./app-map-test-assertion.js";
 import { compiledGraphPlatformBlocker } from "./recipe-platform-support.js";
@@ -903,6 +907,16 @@ export function compileAppMapScenarioTest(
   assertCompiledExecutionQueue(test, graph, executionQueue);
   const queueQuotes = quoteCompiledTestDuration(root, graph, executionQueue);
   const iosReadiness = compiledIosReadinessDurations(graph, rootRecipeId);
+  const captureReviewConfiguration = compileCaptureReviewConfiguration(
+    map,
+    authoredTest,
+    selectedRouteTargetProfile,
+  );
+  const routeVariantConfigurations = compiledRouteVariantConfigurations(
+    map,
+    authoredTest,
+    selectedRouteTargetProfile,
+  );
   const plan: AppMapCompiledTest = {
     schemaVersion: 1,
     appMapId: map.id,
@@ -950,9 +964,11 @@ export function compileAppMapScenarioTest(
       recipeSteps: root.steps,
       recipes: graph,
       requirementId: test.id,
+      ...(captureReviewConfiguration ? { configuration: captureReviewConfiguration } : {}),
     }),
     ...(executionQueue ? { executionQueue } : {}),
     ...(queueQuotes.length ? { queueQuotes } : {}),
+    ...(routeVariantConfigurations.length ? { routeVariantConfigurations } : {}),
     iosReadiness,
     startup: options.entryCheckpointScreenId
       ? { mode: "verified-checkpoint", screenId: options.entryCheckpointScreenId }

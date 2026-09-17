@@ -10,7 +10,12 @@ import type {
   CampaignCapacityWorker,
   CampaignCapacityWorkerPlan,
 } from "@relay/protocol";
-import { EXECUTION_QUEUE_DURATION_ASSUMPTION, quoteDeclaredExecutionQueues } from "@relay/protocol";
+import {
+  EXECUTION_QUEUE_DURATION_ASSUMPTION,
+  quoteDeclaredExecutionQueues,
+  ROUTE_VARIANT_CONFIGURATION_ASSUMPTION,
+  routeVariantConfigurationsFromPlatformWork,
+} from "@relay/protocol";
 
 type HostState = NonNullable<CampaignCapacityWorker["host"]> & {
   key: string;
@@ -449,6 +454,9 @@ export function planCampaignCapacity(input: CampaignCapacityPlanInput): Campaign
   const queueQuotes = input.queueMembers?.length
     ? quoteDeclaredExecutionQueues(input.queueMembers, Math.max(1, slots.length))
     : [];
+  const routeVariantConfigurations = routeVariantConfigurationsFromPlatformWork(
+    input.workItemsByPlatform,
+  );
 
   return {
     workItems: input.workItems,
@@ -471,6 +479,11 @@ export function planCampaignCapacity(input: CampaignCapacityPlanInput): Campaign
     },
     ...(budget ? { budget } : {}),
     ...(queueQuotes.length ? { queueQuotes } : {}),
-    assumptions: [...ASSUMPTIONS, EXECUTION_QUEUE_DURATION_ASSUMPTION],
+    ...(routeVariantConfigurations.length ? { routeVariantConfigurations } : {}),
+    assumptions: [
+      ...ASSUMPTIONS,
+      EXECUTION_QUEUE_DURATION_ASSUMPTION,
+      ROUTE_VARIANT_CONFIGURATION_ASSUMPTION,
+    ],
   };
 }
