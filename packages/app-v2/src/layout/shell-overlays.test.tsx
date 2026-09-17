@@ -185,6 +185,26 @@ async function settle() {
 }
 
 describe("shell overlays", () => {
+  it("keeps narrow-screen destinations reachable and preserves the app when switching collections", async () => {
+    const history = await renderShell({ initialEntries: ["/tests?app=checkout"] });
+    const navigation = document.querySelector('nav[aria-label="Main navigation"]')!;
+    expect([...navigation.querySelectorAll("a")].map((link) => link.textContent)).toEqual([
+      "Tests",
+      "Plans",
+      "Results",
+      "Devices",
+    ]);
+    expect(navigation.querySelector('[aria-current="page"]')?.textContent).toBe("Tests");
+    const results = [...navigation.querySelectorAll("a")].find(
+      (link) => link.textContent === "Results",
+    )!;
+    await act(async () => results.click());
+    await settle();
+    expect(history.location.pathname).toBe("/runs");
+    expect(history.location.search).toContain("app=checkout");
+    expect(navigation.querySelector('[aria-current="page"]')?.textContent).toBe("Results");
+  });
+
   it("opens Activity Center and shows server-backed Runs and Changes", async () => {
     const run: ProductRunSummary = {
       id: "run-server",

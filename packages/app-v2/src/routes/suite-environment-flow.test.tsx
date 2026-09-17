@@ -268,6 +268,22 @@ describe("Suite and Environment routes", () => {
     expect(history.location.pathname).toBe("/apps/app-1/suites/suite-1");
   });
 
+  it("keeps Plan search in the URL and restores the list when cleared", async () => {
+    const { history } = await render("/suites");
+    await fill("plan-search", "does not match");
+    await settle();
+    expect(history.location.search).toContain("q=");
+    expect(document.body.textContent).toContain("No Plans match");
+    expect(document.querySelector('a[href="/apps/app-1/suites/suite-1"]')).toBeNull();
+    const clear = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "Clear search",
+    )!;
+    await act(async () => clear.click());
+    await settle();
+    expect(history.location.search).not.toContain("q=");
+    expect(document.querySelector('a[href="/apps/app-1/suites/suite-1"]')).not.toBeNull();
+  });
+
   it("keeps a blocked Suite pilot disabled and sends reviewed edits/removal through services", async () => {
     const calls = { save: [] as unknown[], remove: [] as unknown[], start: 0 };
     const service = suiteService({

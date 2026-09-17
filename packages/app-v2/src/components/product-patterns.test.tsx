@@ -48,7 +48,7 @@ describe("status marks", () => {
     );
     const [ready, unbound, passed, needsReview] = [...host.querySelectorAll("[data-slot='badge']")];
     expect(ready?.textContent).toContain("Ready");
-    expect(unbound?.textContent).toContain("Unbound");
+    expect(unbound?.textContent).toContain("Needs setup");
     expect(passed?.textContent).toContain("Passed");
     expect(needsReview?.textContent).toContain("Needs review");
     expect(ready?.className).not.toBe(passed?.className);
@@ -57,7 +57,7 @@ describe("status marks", () => {
     );
   });
 
-  it("names an unrecorded claimed control Unrecorded, not Unbound", async () => {
+  it("names an unrecorded claimed control Unrecorded, not Needs setup", async () => {
     const host = await render(
       <ReadinessMark
         status="needs-review"
@@ -65,7 +65,7 @@ describe("status marks", () => {
       />,
     );
     expect(host.textContent).toContain("Unrecorded");
-    expect(host.textContent).not.toContain("Unbound");
+    expect(host.textContent).not.toContain("Needs setup");
   });
 
   it("does not show Ready when the Test name is Imagine Speed even if status is ready", async () => {

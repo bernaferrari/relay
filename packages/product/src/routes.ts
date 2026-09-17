@@ -177,7 +177,7 @@ export const ROUTE_DEFINITIONS = [
     "app",
     "view",
   ]),
-  d("/suites", "/home", "Plans", "Plan", "suites", "create-suite", ["app", "status"]),
+  d("/suites", "/home", "Plans", "Plan", "suites", "create-suite", ["app", "status", "q"]),
   d("/apps/:appId/suites/:suiteId", "/suites", "Plan", "Plan", "suites", "run-suite", [
     "view",
     "target",

@@ -11,7 +11,7 @@ export type ReviewAction = NonNullable<
 export function proofLabel(proof: "verified" | "pixels-only" | "unresolved"): string {
   if (proof === "verified") return "Verified";
   if (proof === "pixels-only") return "Visual evidence";
-  return "Unbound";
+  return "Needs setup";
 }
 
 export function useEvidenceObjectUrl(

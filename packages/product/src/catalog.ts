@@ -19,10 +19,10 @@ export type ProductTestStatus = "ready" | "needs-review";
 export function productTestStatusLabel(
   status: ProductTestStatus,
   name?: string,
-): "Ready" | "Unbound" | "Unrecorded" {
+): "Ready" | "Needs setup" | "Unrecorded" {
   if (name && unrecordedProductName(name)) return "Unrecorded";
   if (status === "ready") return "Ready";
-  return "Unbound";
+  return "Needs setup";
 }
 
 export type ProductTestFilter = {

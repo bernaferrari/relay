@@ -172,7 +172,7 @@ test("share-menu with no origin variant is not Ready", () => {
   };
   const tests = projectProductTests([map]);
   assert.equal(tests[0]?.status, "needs-review");
-  assert.equal(productTestStatusLabel(tests[0]!.status, share.name), "Unbound");
+  assert.equal(productTestStatusLabel(tests[0]!.status, share.name), "Needs setup");
 });
 
 test("UNRECORDED and still-absent names stay Unrecorded, not Ready", () => {

@@ -484,30 +484,7 @@ describe("Runs workspace", () => {
     expect(document.body.textContent).toContain("Open account");
     expect(document.body.textContent).toContain("Needs review");
     expect(document.body.textContent).toContain("In progress");
-    expect(document.querySelector('[aria-label="Morning review"]')).not.toBeNull();
-    expect(
-      document.querySelector('[aria-label="Morning review"] details')?.hasAttribute("open"),
-    ).toBe(false);
-    expect(document.body.textContent).toContain("Check Sign-ins");
-    expect(document.body.textContent).toContain("Check live health");
-    expect(document.body.textContent).toContain("Accounts health");
-    expect(document.body.textContent).toContain("Neither accepts a screenshot baseline");
-    expect(document.body.textContent).toContain("Needs attention on this Mac");
-    expect(document.body.textContent).toContain("Signed desktop build");
-    expect(document.body.textContent).toContain("OPENROUTER_API_KEY");
-    expect(document.body.textContent).toContain("Grok.com logged-out judged chrome");
-    expect(document.body.textContent).toContain("grok-web-judged");
-    expect(document.body.textContent).toContain("not grok-web-daily");
-    expect(document.body.textContent).toContain("Weekly pauses stay off daily");
-    expect(
-      [...document.querySelectorAll('a[href="/suites"]')].some((link) =>
-        Boolean(link.textContent?.includes("Grok.com weekly manual")),
-      ),
-    ).toBe(true);
-    expect(document.body.textContent).toContain("emulator cannot install Grok");
-    expect(document.body.textContent).toContain("do not Recover-kill or dump");
-    expect(document.body.textContent).toContain("Lab Mac launchd stays unloaded");
-    expect(document.body.textContent).toContain("dev.relay.lab-server");
+    expect(document.querySelector('[aria-label="Morning review"]')).toBeNull();
     expect(document.body.textContent?.match(/2\.5 s/g)).toHaveLength(1);
     expect(document.body.textContent).not.toContain("run-passed-internal");
     expect(document.querySelector('a[href="/runs/run-passed-internal"]')).not.toBeNull();

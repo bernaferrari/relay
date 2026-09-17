@@ -336,7 +336,7 @@ export function RecordingActionsPanel({
                       <strong className="text-sm font-medium">{copy.title}</strong>
                     </span>
                     {step.proofStatus === "unresolved" ? (
-                      <p className="text-xs text-muted-foreground">Unbound</p>
+                      <p className="text-xs text-muted-foreground">Needs setup</p>
                     ) : null}
                   </button>
                 </li>

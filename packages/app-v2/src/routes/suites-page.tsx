@@ -16,8 +16,10 @@ import { productTestStatusLabel } from "@relay/product/catalog";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Layers3, Plus, RotateCcw } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import { useDeferredValue, useState, type FormEvent } from "react";
 import { SelectField } from "../components/filter-select";
+import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
+import { libraryRowSurface, libraryRowContent } from "../components/library-row-styles";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, ReadinessMark, RecoveryState } from "../components/product-patterns";
 import { recordingQueryKeys } from "../data/recording-queries";
@@ -41,8 +43,8 @@ export function SuitesPage() {
   const { suiteProfileService, productService, queryClient } = useRouteContext({
     from: "__root__",
   });
-  const navigate = useNavigate();
-  const search = routeApi.useSearch() as { app?: unknown };
+  const navigate = useNavigate({ from: "/suites" });
+  const search = routeApi.useSearch() as { app?: unknown; q?: unknown };
   const requestedApp = typeof search.app === "string" ? search.app : "";
   const [dialogOpen, setDialogOpen] = useState(false);
   const [appId, setAppId] = useState("");
@@ -88,16 +90,10 @@ export function SuitesPage() {
       });
     },
   });
-  const counts = useMemo(
-    () => ({
-      ready:
-        suites.data?.filter((suite) => suite.tests.every((test) => test.status === "ready"))
-          .length ?? 0,
-      review:
-        suites.data?.filter((suite) => suite.tests.some((test) => test.status === "needs-review"))
-          .length ?? 0,
-    }),
-    [suites.data],
+  const query = typeof search.q === "string" ? search.q : "";
+  const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
+  const visibleSuites = (suites.data ?? []).filter((suite) =>
+    `${suite.name} ${suite.appName}`.toLocaleLowerCase().includes(deferredQuery),
   );
 
   function resetCreate() {
@@ -131,14 +127,10 @@ export function SuitesPage() {
   return (
     <LibraryPage className="max-w-[1080px]">
       <PageHeader
-        context="Tests"
         title="Plans"
-        description="Groups of Tests you can run together every day."
+        description="Choose Tests to run together across devices and data sets."
         actions={
           <>
-            <Button nativeButton={false} render={<Link to="/environments" />} variant="outline">
-              Browsers
-            </Button>
             <Dialog
               open={dialogOpen}
               onOpenChange={(open) => {
@@ -336,40 +328,67 @@ export function SuitesPage() {
       ) : null}
       {!suites.isPending && !suites.error && suites.data ? (
         <>
-          <dl
-            className="my-7 grid grid-cols-3 border-y border-border py-4 max-[560px]:grid-cols-1"
-            aria-label="Plan status"
+          <LibraryToolbar
+            label="Filter Plans"
+            search={
+              <LibrarySearch
+                id="plan-search"
+                label="Search Plans"
+                placeholder="Search by Plan or app"
+                value={query}
+                onChange={(q) =>
+                  void navigate({
+                    search: (previous) => ({ ...previous, q: q || undefined }),
+                    replace: true,
+                  })
+                }
+              />
+            }
+          />
+          <div className="flex min-h-11 items-center justify-between gap-3 text-sm">
+            <h2 className="font-semibold">
+              {visibleSuites.length} {visibleSuites.length === 1 ? "Plan" : "Plans"}
+            </h2>
+          </div>
+          {suites.data.length > 0 && visibleSuites.length === 0 ? (
+            <EmptyState
+              title="No Plans match"
+              detail="Try another name or app."
+              action={
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    void navigate({
+                      search: (previous) => ({ ...previous, q: undefined }),
+                      replace: true,
+                    })
+                  }
+                >
+                  Clear search
+                </Button>
+              }
+            />
+          ) : null}
+          <ul
+            className="relay-library-list m-0 list-none overflow-hidden rounded-xl border border-border/60 p-0 [&>li+li]:border-t [&>li+li]:border-border/60 empty:hidden"
+            aria-label="Plans"
           >
-            <div>
-              <dt>Saved</dt>
-              <dd>{suites.data.length}</dd>
-            </div>
-            <div>
-              <dt>Ready</dt>
-              <dd>{counts.ready}</dd>
-            </div>
-            <div>
-              <dt>Unbound</dt>
-              <dd>{counts.review}</dd>
-            </div>
-          </dl>
-          <ul className="mt-5 grid list-none gap-2.5 p-0" aria-label="Plans">
-            {suites.data.map((suite) => {
+            {visibleSuites.map((suite) => {
               const needsReview = suite.tests.some((test) => test.status === "needs-review");
               return (
                 <li key={`${suite.appMapId}:${suite.id}`}>
                   <Link
-                    className="flex min-h-16 items-center gap-3 rounded-lg border border-border bg-card px-3 py-2.5 focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-[-2px]"
+                    className={`${libraryRowSurface} ${libraryRowContent} grid-cols-[auto_minmax(0,1fr)] gap-3`}
                     to="/apps/$appId/suites/$suiteId"
                     params={{ appId: suite.appMapId, suiteId: suite.id }}
                   >
                     <span
-                      className="grid size-[38px] place-items-center rounded-md border border-border bg-muted text-muted-foreground"
+                      className="grid size-9 shrink-0 place-items-center text-muted-foreground"
                       aria-hidden="true"
                     >
                       <Layers3 />
                     </span>
-                    <span className="grid min-w-0 gap-0.5">
+                    <span className="grid min-w-0 flex-1 gap-0.5">
                       <strong className="truncate text-sm font-semibold text-foreground">
                         {suite.name}
                       </strong>
@@ -380,9 +399,9 @@ export function SuitesPage() {
                           ? ` · ${suite.variableIds.length} Data ${suite.variableIds.length === 1 ? "set" : "sets"}`
                           : ""}
                       </small>
-                    </span>
-                    <span className="ml-auto shrink-0">
-                      <ReadinessMark status={needsReview ? "needs-review" : "ready"} />
+                      <span className="mt-1 flex items-center">
+                        <ReadinessMark status={needsReview ? "needs-review" : "ready"} />
+                      </span>
                     </span>
                   </Link>
                 </li>

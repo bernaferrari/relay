@@ -13,7 +13,6 @@ import { RunHistoryList, type RunHistoryRowInteraction } from "../components/run
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { PageLoading, RecordingProblem } from "./recording-shared";
-import { MorningReviewCard } from "./morning-review-card";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 import { collapsePlanResultRows } from "./runs-plan-results";
 
@@ -118,9 +117,8 @@ export function RunsPage() {
     >
       <PageHeader
         title="Results"
-        description="Review Test runs and Plan results, inspect failures, and decide what needs attention."
+        description="Review screenshots, investigate problems, and follow runs in progress."
       />
-      <MorningReviewCard />
 
       <LibraryToolbar
         label="Filter Runs"

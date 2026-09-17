@@ -120,7 +120,7 @@ export function TestsPage() {
   const statusOptions = [
     { value: "all", label: "All statuses" },
     { value: "ready", label: "Ready" },
-    { value: "needs-review", label: "Unbound" },
+    { value: "needs-review", label: "Needs setup" },
   ] as const;
   const resultOptions = [
     { value: "all", label: "All results" },
@@ -169,16 +169,6 @@ export function TestsPage() {
         description="Reusable steps that check your app. Run a Test to get a result."
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <nav className="flex items-center gap-1 text-sm" aria-label="Library">
-              <span className="rounded-md bg-muted px-2 py-1 font-semibold">Tests</span>
-              <Link
-                className="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground"
-                to="/suites"
-                search={app ? { app } : {}}
-              >
-                Plans
-              </Link>
-            </nav>
             <Button
               nativeButton={false}
               variant="default"
@@ -415,7 +405,7 @@ function matchesResult(test: ProductTestSummary, result: ResultFilter): boolean 
 function resultContext(status: TestFilter, app: string, apps: readonly [string, string][]) {
   if (app) return apps.find(([id]) => id === app)?.[1] ?? "Selected app";
   if (status === "ready") return "Ready to run";
-  if (status === "needs-review") return "Unbound";
+  if (status === "needs-review") return "Needs setup";
   return undefined;
 }
 

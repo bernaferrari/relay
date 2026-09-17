@@ -17,6 +17,7 @@ import { DeviceDestinationButton } from "./device-destination";
 import { RouteAnnouncer } from "./route-announcer";
 import { CommandPalette } from "./command-palette";
 import { Sidebar } from "./sidebar";
+import { MobileNavigation } from "./mobile-navigation";
 import {
   historyAvailabilityFlags,
   initialHistoryAvailability,
@@ -156,6 +157,7 @@ export function AppShell({ platform }: { platform: Platform }) {
         >
           <Outlet />
         </main>
+        {!immersive ? <MobileNavigation /> : null}
       </div>
       <RouteAnnouncer />
       <CommandPalette
