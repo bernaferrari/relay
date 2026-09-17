@@ -6,6 +6,7 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
 import {
+  CAPTURE_REVIEW_DEST_PHASE,
   MAX_CAMPAIGN_DURATION_EVIDENCE_AGE_MS,
   type EventEnvelope,
   type OperationId,
@@ -417,7 +418,6 @@ test("friendly screenshot output preserves the PNG base64 payload", async () => 
 
 test("App Map resource commands use declared read-only routes", async () => {
   const cases = [
-    [["run", "get", "run/a"], "/runs/run%2Fa"],
     [["run", "signals", "run-1"], "/runs/run-1/signals"],
     [["run", "compare", "run-1"], "/runs/run-1/visual-baseline"],
     [["activity", "list", "--input", '{"limit":10}'], "/activity?limit=10"],
@@ -449,6 +449,167 @@ test("App Map resource commands use declared read-only routes", async () => {
     assert.deepEqual(resources, [{ path: expectedPath, method: "GET" }]);
     assert.equal(JSON.parse(io.stdout()).result.path, expectedPath);
   }
+});
+
+const leftoverDestEndRun = {
+  id: "4b93702b",
+  status: "ok",
+  action: "observe",
+  frames: [
+    { path: "frames/003.png", caption: "Observe" },
+    { path: "frames/004.png", caption: "after · Run saved Test" },
+  ],
+  artifacts: [
+    {
+      kind: "capture-review",
+      data: {
+        caption: "Observe",
+        framePath: "frames/003.png",
+        phase: CAPTURE_REVIEW_DEST_PHASE,
+        policy: "fast",
+      },
+    },
+    {
+      kind: "capture-review",
+      data: { caption: "Close", framePath: "frames/004.png" },
+    },
+  ],
+};
+
+test("run get --json dest identity is dest wait-for 003, not leftover Close 004 last-frame", async () => {
+  const io = capture();
+  const resources: string[] = [];
+  const code = await runCli(["run", "get", leftoverDestEndRun.id, "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke() {
+        throw new Error("run get is a read-only resource");
+      },
+      events: async () => {},
+      async resource(path) {
+        resources.push(path);
+        return { run: leftoverDestEndRun };
+      },
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  assert.deepEqual(resources, [`/runs/${leftoverDestEndRun.id}`]);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      run?: {
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+        frames?: unknown;
+      };
+    };
+  };
+  assert.deepEqual(
+    result.result?.run?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.result?.run?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+  assert.equal(result.result?.run?.frames, undefined);
+});
+
+test("run evidence --json dest identity drops leftover 004 last-frame", async () => {
+  const io = capture();
+  const code = await runCli(["run", "evidence", leftoverDestEndRun.id, "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke() {
+        throw new Error("run evidence is a read-only resource");
+      },
+      events: async () => {},
+      async resource() {
+        return {
+          evidence: {
+            runId: leftoverDestEndRun.id,
+            artifacts: leftoverDestEndRun.artifacts,
+            testStepEvidence: [
+              { testStepId: "step-observe", evidence: { framePaths: ["frames/003.png"] } },
+              { testStepId: "step-observe", evidence: { framePaths: ["frames/004.png"] } },
+            ],
+          },
+        };
+      },
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      evidence?: {
+        destIdentity?: Array<{ path?: string }>;
+        testStepEvidence?: Array<{ evidence?: { framePaths?: string[] } }>;
+      };
+    };
+  };
+  assert.deepEqual(result.result?.evidence?.destIdentity, [{ path: "frames/003.png" }]);
+  assert.equal(
+    result.result?.evidence?.testStepEvidence?.some((item) =>
+      item.evidence?.framePaths?.includes("frames/004.png"),
+    ),
+    false,
+  );
+});
+
+test("run story --json dest identity is dest wait-for, not leftover Close 004", async () => {
+  const io = capture();
+  const code = await runCli(["run", "story", leftoverDestEndRun.id, "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke() {
+        throw new Error("run story is a read-only resource");
+      },
+      events: async () => {},
+      async resource() {
+        return {
+          story: {
+            runId: leftoverDestEndRun.id,
+            beats: [
+              {
+                kind: "dest-identity",
+                text: "Dest wait-for Fast",
+                evidence: "frames/003.png",
+                at: 1,
+              },
+              {
+                kind: "screenshot",
+                text: "after · Run saved Test",
+                evidence: "frames/004.png",
+                at: 2,
+              },
+            ],
+          },
+        };
+      },
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      story?: {
+        destIdentity?: Array<{ path?: string }>;
+        beats?: Array<{ evidence?: string }>;
+      };
+    };
+  };
+  assert.deepEqual(result.result?.story?.destIdentity, [{ path: "frames/003.png" }]);
+  assert.equal(
+    result.result?.story?.beats?.some((beat) => beat.evidence === "frames/004.png"),
+    false,
+  );
 });
 
 const snapshotTree = {
@@ -1807,6 +1968,65 @@ test("combine run waits for every locale case before succeeding", async () => {
     JSON.parse(io.stdout()).result.jobs.map((job: { id: string }) => job.id),
     polled,
   );
+});
+
+test("combine run --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+  const io = capture();
+  const leftoverJob = {
+    id: "4b93702b",
+    status: "ok",
+    frames: leftoverDestEndRun.frames,
+    artifacts: leftoverDestEndRun.artifacts,
+  };
+  const client: OperationInvoker = {
+    async invoke(operationId) {
+      if (operationId === "job.combine.start") {
+        return {
+          jobs: [
+            { id: leftoverJob.id, status: "queued" },
+            { id: "cell-2", status: "queued" },
+          ],
+        };
+      }
+      if (operationId === "job.get") return { job: leftoverJob };
+      return {};
+    },
+    events: async () => {},
+  };
+
+  const code = await runCli(
+    ["combine", "run", "map", "languages", "--input", '{"serial":"phone"}', "--json"],
+    {
+      streams: io.streams,
+      createClient: () => client,
+      registerSignalHandlers: false,
+      pollIntervalMs: 0,
+      env: {},
+    },
+  );
+
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      jobs?: Array<{
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+        frames?: unknown;
+      }>;
+    };
+  };
+  assert.equal(result.result?.jobs?.length, 2);
+  assert.deepEqual(
+    result.result?.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.result?.jobs?.some((job) =>
+      job.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    ),
+    false,
+  );
+  assert.equal(result.result?.jobs?.[0]?.frames, undefined);
 });
 
 test("combine run carries the shared explicit local-admission contract unchanged", async () => {

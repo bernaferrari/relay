@@ -545,3 +545,55 @@ test("operator wait/run/evidence/advanced dest identity is dest wait-for, not le
     false,
   );
 });
+
+test("operator plan run dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+  const { invoker } = recordingInvoker((operationId) => {
+    if (operationId === "job.combine.start") {
+      return {
+        campaign: { id: "camp-1" },
+        jobs: [{ id: leftoverDestEndJob.id, status: "queued" }],
+      };
+    }
+    if (operationId === "job.get") return { job: leftoverDestEndJob };
+    return { ok: true };
+  });
+  const plan = (await invokeRelayOperatorTool({
+    name: "relay_plan_run",
+    argumentsValue: example("relay_plan_run"),
+    confirmed: false,
+    invoker,
+    actorId: "agent:cursor",
+    signal: new AbortController().signal,
+    pollIntervalMs: 0,
+  })) as {
+    campaign?: unknown;
+    result?: { campaign?: { id?: string } };
+    job?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+    jobs?: Array<{
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    }>;
+  };
+  assert.equal(plan.result?.campaign?.id, "camp-1");
+  assert.deepEqual(
+    plan.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.deepEqual(
+    plan.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    plan.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+  assert.equal(
+    plan.jobs?.some((job) =>
+      job.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    ),
+    false,
+  );
+});

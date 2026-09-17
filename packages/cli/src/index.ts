@@ -199,6 +199,26 @@ function summarizeResult(
   return summarizeTargetOperationResult(operationId, inner);
 }
 
+function cliResourceSummaryOperationId(resourceId: string): string | undefined {
+  if (resourceId === "run.get") return "run.get";
+  if (resourceId === "run.evidence") return "run.evidence.get";
+  if (resourceId === "run.story") return "run.story.get";
+  return undefined;
+}
+
+function summarizeResourceResult(resourceId: string, result: unknown): unknown {
+  const operationId = cliResourceSummaryOperationId(resourceId);
+  return operationId ? summarizeExecutionOperationResult(operationId, result) : result;
+}
+
+function summarizedJobFromWatch(result: unknown): unknown {
+  const summarized = summarizeResult("job.get", result);
+  if (summarized && typeof summarized === "object" && "job" in summarized) {
+    return summarized.job;
+  }
+  return summarized;
+}
+
 function failureMessage(value: unknown, fallback: string): string {
   const bound = (message: string): string =>
     message.length <= 4_000 ? message : `${message.slice(0, 3_999)}…`;
@@ -617,7 +637,7 @@ export async function runCli(
       } else if (parsed.command === "resource") {
         output.progress(operationId, "invoking");
         const result = await readResource(client, parsed.resourcePath, abort.signal);
-        output.result(operationId, result);
+        output.result(operationId, summarizeResourceResult(operationId, result));
       } else if (parsed.behavior === "event-stream") {
         output.progress(operationId, "following");
         await client.events((event) => output.event(event), { signal: abort.signal });
@@ -665,11 +685,7 @@ export async function runCli(
             operationId,
             results.length === 1
               ? summarizeResult("job.get", results[0])
-              : {
-                  jobs: results.map((result) =>
-                    result && typeof result === "object" && "job" in result ? result.job : result,
-                  ),
-                },
+              : { jobs: results.map(summarizedJobFromWatch) },
           );
         }
         if (parsed.findings) {
@@ -685,7 +701,7 @@ export async function runCli(
               ? renderPlanFindingsMarkdown(
                   analysis as Parameters<typeof renderPlanFindingsMarkdown>[0],
                 )
-              : analysis,
+              : summarizeResult("job.combine.analysis", analysis),
           );
         }
         if (watchFailure) throw watchFailure;

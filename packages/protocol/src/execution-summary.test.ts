@@ -723,3 +723,50 @@ test("workflow.transition dest identity is dest wait-for, not leftover Close 004
     false,
   );
 });
+
+test("run.replay dest identity is dest wait-for, not leftover Close 004 last-frame", () => {
+  const result = summarizeExecutionOperationResult("run.replay", {
+    job: leftoverDestEndJob,
+  }) as {
+    job?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+  };
+  assert.deepEqual(
+    result.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
+test("app-map.connection.run dest identity is dest wait-for, not leftover Close 004 last-frame", () => {
+  const result = summarizeExecutionOperationResult("app-map.connection.run", {
+    plan: { appMapId: "grok-web", connectionId: "open-home" },
+    job: leftoverDestEndJob,
+    jobs: [leftoverDestEndJob],
+  }) as {
+    plan?: { appMapId?: string };
+    job?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+    jobs?: Array<{ destIdentity?: Array<{ path?: string }> }>;
+  };
+  assert.equal(result.plan?.appMapId, "grok-web");
+  assert.deepEqual(
+    result.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.deepEqual(
+    result.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
