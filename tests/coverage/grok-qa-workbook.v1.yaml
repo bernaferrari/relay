@@ -33,9 +33,16 @@
 # Fast-checked sheet, and Think harder YAML seed do not cover. Similar
 # auto/fast/expert/think-harder names do not cover. Leftover dest skip is
 # only GQA-004/040 capture-view.
+# RC-30 S07 response-chrome packets stay unbound: explicit test-action
+# evidence-needed (toolbar TAP, follow-up chip TAP, autoscroll sequence,
+# share TAP + copied-link receipt). Leftover 3*5 extract-15 toolbar
+# expect-set / dest-end toolbar-existing / More extras-forbid,
+# clipboard-denied share toast, and more-header chrome-only do not cover.
+# Similar toolbar/share/chip names do not cover. Leftover dest skip is
+# only GQA-004/040 capture-view.
 schemaVersion: 1
 id: grok-qa-workbook
-revision: 9
+revision: 10
 reviewedAt: "2026-09-16"
 source:
   workbook: grok-qa-graph.xlsx
@@ -409,8 +416,17 @@ originals:
     evidencePacket: screenshot-receipt
     queue: "output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: receipt
+        id: tap-response-toolbar-more
+        note: "TAP More (web) or a visible toolbar action (Android = no More) actually executed (test-action). Leftover 3*5 extract-15 toolbar expect-set / dest-end toolbar-existing / More extras-forbid / More-actions no-op is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: view
+        id: response-toolbar-quick-actions
+        note: "Fresh live-output image of the response toolbar. Web: Regen, Read Aloud, Copy, Create Share Link, Rating, More {Report Issue, Export PDF, Start Thread}. Android = no More. Start Thread is leftover chrome, not Thread coverage (18-20). TAP More verifies Copy Plaintext, Copy ID, and Report Issue. leftover 3*5 toolbar expect-set is not this view. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
     gates:
       - Start Thread is absent leftover chrome, not Thread coverage (originals 18-20).
+      - "Leftover 3*5 extract-15 toolbar expect-set / dest-end toolbar-existing / More extras-forbid is not this original. Causal TAP must open More (web)."
     status: unbound
     bindings: []
   - id: 10
@@ -423,7 +439,19 @@ originals:
     evidencePacket: transition
     queue: "output"
     suggestedExecutionQueue: live-output
-    gates: []
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-follow-up-chips
+        note: "Fresh live-output image of suggested follow-up chips below the message and toolbar. Leftover 3*5 extract-15 / dest-end toolbar-existing is not this before frame. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
+      - kind: receipt
+        id: tap-follow-up-chip
+        note: "TAP one suggested follow-up query actually executed (test-action). Leftover toolbar expect-set without a chip TAP is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: after
+        id: after-chip-query-answered
+        note: "Fresh live-output image where the query text is sent and the assistant responds to that query. Human reviews original criterion. leftover 3*5 extract-15 is not this after frame. stabilityMeasured false."
+    gates:
+      - "Leftover 3*5 toolbar dest-end without a chip TAP is not this original."
     status: unbound
     bindings: []
   - id: 11
@@ -450,8 +478,14 @@ originals:
     evidencePacket: sequence
     queue: "output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: sequence
+        id: no-autoscroll-beginning-visible
+        note: "Named live-output frames after the response has been generated: the beginning of the response is visible (should not autoscroll to the bottom). Human reviews original criterion. Leftover 3*5 extract-15 / toolbar dest-end is not this sequence. Capture-view leftover skip is only GQA-004/040. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
     gates:
       - Added 7/13.
+      - "Leftover 3*5 extract-15 is not this original. Beginning of the response must stay visible after generation."
     status: unbound
     bindings: []
   - id: 13
@@ -464,8 +498,17 @@ originals:
     evidencePacket: screenshot-receipt
     queue: "output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: receipt
+        id: tap-share-top-right
+        note: "TAP the share button in the top-right of the chat page actually executed (test-action). test-grok-web-signed-in-share leftover 3*5 clipboard-denied permission toast / Update share link is not this original. more-header chrome-only is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: view
+        id: copied-link-confirmation
+        note: "Fresh live-output image of copied-link confirmation and the correct share link copied. On iOS, ... next to New Chat opens Share Conversation & Delete Conversation. Headless clipboard-denied toast is not this view. leftover 3*5 extract-15 is not this original. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
     gates:
       - Share toast iOS-noted 4/13.
+      - "Leftover 3*5 share clipboard-denied toast / more-header chrome-only is not this original. Causal TAP must copy the share link."
     status: unbound
     bindings: []
   - id: 14

@@ -6,17 +6,20 @@
  * evidence packet or an authorized exclusion; that packet is not coverage.
  * Captions are display text; obligations are plannedSlots identities.
  * S02 shell, S05 model/preset, S08 output-battery, S01 auth, S03
- * composer, and S06 Auto-routing originals keep explicit test-action
- * evidence-needed while remaining unbound. Leftover Fast-checked is
- * not a models Test. Inspect-only model sheet is not Switch model,
- * presets, or Auto Fast/Expert routing. Leftover 3*5 extract-15 /
- * Markdown judge is not S08 generated-output coverage. Cloudflare
- * Sign up / weekly Continue-with-X pause / grok-lab leftover is not
- * S01 coverage. Composer-focus inspect / send-hello paywall /
+ * composer, S06 Auto-routing, and S07 response-chrome originals keep
+ * explicit test-action evidence-needed while remaining unbound. Leftover
+ * Fast-checked is not a models Test. Inspect-only model sheet is not
+ * Switch model, presets, or Auto Fast/Expert routing. Leftover 3*5
+ * extract-15 / Markdown judge is not S08 generated-output coverage.
+ * Cloudflare Sign up / weekly Continue-with-X pause / grok-lab leftover
+ * is not S01 coverage. Composer-focus inspect / send-hello paywall /
  * multiline extract-15 is not S03 type+send, expand, or typeahead
  * persistence. Model-iterate inspect / SuperGrok pricing TAP /
- * Think harder YAML seed is not S06 Auto routing. Original criteria
- * stay on the slot.
+ * Think harder YAML seed is not S06 Auto routing. Leftover 3*5
+ * toolbar expect-set / dest-end toolbar-existing / More extras-forbid
+ * / clipboard-denied share toast is not S07 Response toolbar,
+ * follow-up chips, autoscroll, or Share. Original criteria stay on
+ * the slot.
  */
 
 import { captureReviewSlotId, type CaptureReviewConfiguration } from "./capture-review.js";
@@ -38,6 +41,8 @@ export const WORKBOOK_COMPOSER_FAMILY_ID = "S03";
 export const WORKBOOK_COMPOSER_ORIGINAL_IDS = [1, 2, 6] as const;
 export const WORKBOOK_AUTO_FAMILY_ID = "S06";
 export const WORKBOOK_AUTO_ORIGINAL_IDS = [28, 29] as const;
+export const WORKBOOK_CHROME_FAMILY_ID = "S07";
+export const WORKBOOK_CHROME_ORIGINAL_IDS = [9, 10, 12, 13] as const;
 export const WORKBOOK_MODELS_FAMILY_ID = "S05";
 export const WORKBOOK_MODELS_ORIGINAL_IDS = [7, 8] as const;
 export const WORKBOOK_OUTPUT_FAMILY_ID = "S08";
@@ -355,6 +360,17 @@ export function coverByComposerFocusOrSendHello(
  * Think harder YAML seed never cover S06. Auto prompt + routing TAP
  * evidence is required. */
 export function coverByModelIterateOrPricingTap(
+  original: Pick<WorkbookOriginal, "id" | "family">,
+): boolean {
+  void original;
+  return false;
+}
+
+/** Leftover 3*5 extract-15 toolbar expect-set, dest-end toolbar-existing,
+ * More extras-forbid, clipboard-denied share toast, or more-header
+ * chrome-only never cover S07. Toolbar TAP, chip TAP, autoscroll
+ * sequence, and share TAP evidence is required. */
+export function coverByToolbarExpectSetOrShareToast(
   original: Pick<WorkbookOriginal, "id" | "family">,
 ): boolean {
   void original;
@@ -858,6 +874,10 @@ function distinctiveNeedles(original: WorkbookOriginal): readonly string[] {
   if (original.id === 2) extra.push("multiline", "composer");
   if (original.id === 5) extra.push("connector", "connectors");
   if (original.id === 6) extra.push("typeahead", "autocomplete", "composer");
+  if (original.id === 9) extra.push("toolbar", "more-header");
+  if (original.id === 10) extra.push("follow-up", "chip");
+  if (original.id === 12) extra.push("autoscroll");
+  if (original.id === 13) extra.push("share", "more-header");
   if (original.id === 28) extra.push("think-harder", "model-iterate");
   if (original.id === 29) extra.push("quick-answer", "model-iterate");
   if (original.id === 8) extra.push("preset", "presets", "customize");
@@ -984,7 +1004,11 @@ export function suggestedExecutionQueueForOriginal(input: {
   ) {
     return "live-output";
   }
-  if (input.family === WORKBOOK_AUTO_FAMILY_ID || input.family === "S07" || input.family === "S17")
+  if (
+    input.family === WORKBOOK_AUTO_FAMILY_ID ||
+    input.family === WORKBOOK_CHROME_FAMILY_ID ||
+    input.family === "S17"
+  )
     return "live-output";
   return "fast-ui";
 }
@@ -1165,6 +1189,14 @@ export function workbookEvidenceNeededError(
       return `${label} S06 needs explicit evidence-needed (Auto prompt TAP, Think harder / Quick answer routing)`;
     }
   }
+  if (original.family === WORKBOOK_CHROME_FAMILY_ID) {
+    if (original.requirementAction !== "test-action") {
+      return `${label} S07 must be test-action — leftover 3*5 toolbar expect-set / dest-end toolbar-existing / share clipboard-denied is not Response toolbar, follow-up chips, autoscroll, or Share`;
+    }
+    if (!original.evidenceNeeded || original.evidenceNeeded.length === 0) {
+      return `${label} S07 needs explicit evidence-needed (toolbar TAP, chip TAP, autoscroll sequence, share receipt)`;
+    }
+  }
   if (original.id === 7) {
     const switchKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
     for (const required of ["before", "after", "receipt"] as const) {
@@ -1234,6 +1266,32 @@ export function workbookEvidenceNeededError(
       original.evidenceNeeded?.filter((item) => item.kind === "receipt") ?? [];
     if (autoExpertReceipts.length < 2) {
       return `${label} GQA-029 needs send TAP and Quick answer TAP receipts — leftover Fast-checked / model-iterate is not this original`;
+    }
+  }
+  if (original.id === 9) {
+    const toolbarKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!toolbarKinds.has("receipt")) {
+      return `${label} GQA-009 TAP More must execute — leftover 3*5 toolbar expect-set / dest-end toolbar-existing is not this original`;
+    }
+  }
+  if (original.id === 10) {
+    const chipKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    for (const required of ["before", "after", "receipt"] as const) {
+      if (!chipKinds.has(required)) {
+        return `${label} GQA-010 follow-up chip TAP must execute — leftover 3*5 toolbar dest-end is not this original — needs ${required} evidence`;
+      }
+    }
+  }
+  if (original.id === 12) {
+    const autoscrollKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!autoscrollKinds.has("sequence")) {
+      return `${label} GQA-012 needs sequence evidence — leftover 3*5 extract-15 / autoscroll-unmeasured is not this original`;
+    }
+  }
+  if (original.id === 13) {
+    const shareKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!shareKinds.has("receipt")) {
+      return `${label} GQA-013 share TAP must execute — leftover 3*5 share toast / clipboard-denied / more-header chrome-only is not this original`;
     }
   }
   if (!original.evidenceNeeded) return undefined;

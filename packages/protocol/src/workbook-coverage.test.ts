@@ -6,6 +6,7 @@ import {
   coverByComposerFocusOrSendHello,
   coverByFindingSimilarlyNamedTest,
   coverByModelIterateOrPricingTap,
+  coverByToolbarExpectSetOrShareToast,
   coverByRc23DestEnd,
   destEndViewPacketMayLeftoverSkip,
   evaluateWorkbookCoverage,
@@ -28,6 +29,8 @@ import {
   WORKBOOK_COMPOSER_ORIGINAL_IDS,
   WORKBOOK_AUTO_FAMILY_ID,
   WORKBOOK_AUTO_ORIGINAL_IDS,
+  WORKBOOK_CHROME_FAMILY_ID,
+  WORKBOOK_CHROME_ORIGINAL_IDS,
   WORKBOOK_MODELS_FAMILY_ID,
   WORKBOOK_MODELS_ORIGINAL_IDS,
   WORKBOOK_OUTPUT_FAMILY_ID,
@@ -1675,6 +1678,331 @@ test("S06 packets stay unbound and need Auto routing TAP evidence", () => {
       id: 29,
       family: WORKBOOK_AUTO_FAMILY_ID,
       evidencePacket: "transition",
+    }),
+    "live-output",
+  );
+});
+
+test("S07 packets stay unbound and need toolbar, chip, autoscroll, and share TAP evidence", () => {
+  assert.deepEqual([...WORKBOOK_CHROME_ORIGINAL_IDS], [9, 10, 12, 13]);
+  assert.deepEqual(requiredEvidenceNeededKinds("screenshot-receipt"), ["view", "receipt"]);
+  assert.deepEqual(requiredEvidenceNeededKinds("transition"), ["before", "after", "receipt"]);
+  assert.deepEqual(requiredEvidenceNeededKinds("sequence"), ["sequence"]);
+  const missing = original({
+    id: 9,
+    name: "Response toolbar",
+    family: WORKBOOK_CHROME_FAMILY_ID,
+    evidencePacket: "screenshot-receipt",
+    status: "unbound",
+  });
+  assert.match(
+    workbookEvidenceNeededError(missing) ?? "",
+    /S07 must be test-action|S07 needs explicit evidence-needed|TAP More must execute/u,
+  );
+  const leftoverToolbarExpectSet = original({
+    id: 9,
+    name: "Response toolbar",
+    family: WORKBOOK_CHROME_FAMILY_ID,
+    evidencePacket: "screenshot-receipt",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "view",
+        id: "leftover-3x5-toolbar-expect-set",
+        note: "Leftover 3*5 extract-15 toolbar expect-set. No TAP More.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Web quick actions: Regen, Read Aloud, Copy, Create Share Link, Rating, More {Report Issue, Export PDF, Start Thread}. Android = no More.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverToolbarExpectSet) ?? "",
+    /TAP More must execute/u,
+  );
+  assert.equal(coverByToolbarExpectSetOrShareToast(leftoverToolbarExpectSet), false);
+  const toolbar = original({
+    id: 9,
+    name: "Response toolbar",
+    family: WORKBOOK_CHROME_FAMILY_ID,
+    evidencePacket: "screenshot-receipt",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-response-toolbar-more",
+        note: "TAP More actually executed. Leftover extras-forbid is not this original.",
+      },
+      {
+        kind: "view",
+        id: "response-toolbar-quick-actions",
+        note: "Toolbar quick actions visible. leftover 3*5 expect-set is not this view.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Web quick actions: Regen, Read Aloud, Copy, Create Share Link, Rating, More {Report Issue, Export PDF, Start Thread}. Android = no More.",
+  });
+  assert.equal(workbookEvidenceNeededError(toolbar), undefined);
+  assert.equal(workbookEvidencePolicyError(toolbar), undefined);
+  assert.equal(originalIsCovered(toolbar), false);
+  assert.equal(coverByToolbarExpectSetOrShareToast(toolbar), false);
+  const toolbarObligation = workbookOriginalObligationIdentity(toolbar);
+  assert.equal(toolbarObligation.requirementId, "GQA-009");
+  assert.equal(toolbarObligation.caption, "Response toolbar");
+  assert.match(toolbarObligation.criteria, /Regen, Read Aloud, Copy/u);
+  const leftoverChipSkip = original({
+    id: 10,
+    name: "Follow-up chips",
+    family: WORKBOOK_CHROME_FAMILY_ID,
+    evidencePacket: "transition",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-follow-up-chips",
+        note: "Chips visible. No chip TAP.",
+      },
+      {
+        kind: "after",
+        id: "after-leftover-toolbar",
+        note: "Leftover 3*5 toolbar dest-end. No chip TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria: "The query text is sent in the chat and the assistant responds to that query.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverChipSkip) ?? "",
+    /follow-up chip TAP must execute/u,
+  );
+  const chips = original({
+    id: 10,
+    name: "Follow-up chips",
+    family: WORKBOOK_CHROME_FAMILY_ID,
+    evidencePacket: "transition",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-follow-up-chips",
+        note: "Follow-up chips visible. leftover 3*5 toolbar dest-end is not this frame.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-follow-up-chip",
+        note: "TAP one follow-up chip actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-chip-query-answered",
+        note: "Query sent and assistant responds. leftover 3*5 extract-15 is not this frame.",
+      },
+    ],
+    status: "unbound",
+    criteria: "The query text is sent in the chat and the assistant responds to that query.",
+  });
+  assert.equal(workbookEvidenceNeededError(chips), undefined);
+  assert.equal(workbookEvidencePolicyError(chips), undefined);
+  assert.equal(originalIsCovered(chips), false);
+  const leftoverAutoscroll = original({
+    id: 12,
+    name: "No autoscroll",
+    family: WORKBOOK_CHROME_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "leftover-3x5-send",
+        note: "Leftover 3*5 extract-15. Autoscroll unmeasured.",
+      },
+    ],
+    status: "unbound",
+    criteria: "The response should not autoscroll to the bottom.",
+  });
+  assert.match(workbookEvidenceNeededError(leftoverAutoscroll) ?? "", /sequence evidence/u);
+  const autoscroll = original({
+    id: 12,
+    name: "No autoscroll",
+    family: WORKBOOK_CHROME_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "no-autoscroll-beginning-visible",
+        note: "Beginning of the response visible after generation. leftover 3*5 is not this sequence.",
+      },
+    ],
+    status: "unbound",
+    criteria: "The response should not autoscroll to the bottom.",
+  });
+  assert.equal(workbookEvidenceNeededError(autoscroll), undefined);
+  assert.equal(workbookEvidencePolicyError(autoscroll), undefined);
+  assert.equal(originalIsCovered(autoscroll), false);
+  const leftoverShareToast = original({
+    id: 13,
+    name: "Share conversation",
+    family: WORKBOOK_CHROME_FAMILY_ID,
+    evidencePacket: "screenshot-receipt",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "view",
+        id: "clipboard-denied-toast",
+        note: "Leftover 3*5 share clipboard-denied toast. No copied-link confirmation.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "A copied-link confirmation appears and the correct share link is copied. On iOS, ... next to New Chat opens Share Conversation & Delete Conversation.",
+  });
+  assert.match(workbookEvidenceNeededError(leftoverShareToast) ?? "", /share TAP must execute/u);
+  assert.equal(coverByToolbarExpectSetOrShareToast(leftoverShareToast), false);
+  const share = original({
+    id: 13,
+    name: "Share conversation",
+    family: WORKBOOK_CHROME_FAMILY_ID,
+    evidencePacket: "screenshot-receipt",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-share-top-right",
+        note: "TAP share top-right actually executed. clipboard-denied toast is not this original.",
+      },
+      {
+        kind: "view",
+        id: "copied-link-confirmation",
+        note: "Copied-link confirmation visible. more-header chrome-only is not this view.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "A copied-link confirmation appears and the correct share link is copied. On iOS, ... next to New Chat opens Share Conversation & Delete Conversation.",
+  });
+  assert.equal(workbookEvidenceNeededError(share), undefined);
+  assert.equal(workbookEvidencePolicyError(share), undefined);
+  assert.equal(originalIsCovered(share), false);
+  const shareObligation = workbookOriginalObligationIdentity(share);
+  assert.equal(shareObligation.requirementId, "GQA-013");
+  assert.match(shareObligation.criteria, /copied-link confirmation/u);
+  const report = evaluateWorkbookCoverage(
+    fixture({ originals: [toolbar, chips, autoscroll, share] }),
+    [
+      { id: "test-grok-web-signed-in-toolbar", name: "Ask 3*5 then toolbar" },
+      { id: "test-grok-web-signed-in-toolbar-existing", name: "Toolbar on an existing chat" },
+      { id: "test-grok-web-signed-in-share", name: "Ask 3*5 then share" },
+      { id: "test-grok-web-signed-in-more-header", name: "Header More on an existing chat" },
+      { id: "test-grok-web-signed-in-3x5", name: "Ask 3*5" },
+    ],
+  );
+  assert.deepEqual(report.coveredOriginalIds, []);
+  assert.equal(report.unboundOriginalIds.includes(9), true);
+  assert.equal(report.unboundOriginalIds.includes(10), true);
+  assert.equal(report.unboundOriginalIds.includes(12), true);
+  assert.equal(report.unboundOriginalIds.includes(13), true);
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 9 && row.testId === "test-grok-web-signed-in-toolbar",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 9 && row.testId === "test-grok-web-signed-in-toolbar-existing",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 9 && row.testId === "test-grok-web-signed-in-more-header",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 13 && row.testId === "test-grok-web-signed-in-share",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 13 && row.testId === "test-grok-web-signed-in-more-header",
+    ),
+    true,
+  );
+  assert.equal(coverByFindingSimilarlyNamedTest(toolbar, []), false);
+  assert.equal(coverByRc23DestEnd({ id: 9 }, "composer-focus"), false);
+  assert.equal(coverByRc23DestEnd({ id: 10 }, "models"), false);
+  assert.equal(coverByRc23DestEnd({ id: 12 }, "home-chrome"), false);
+  assert.equal(coverByRc23DestEnd({ id: 13 }, "settings"), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 9,
+      evidencePacket: "screenshot-receipt",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 10,
+      evidencePacket: "transition",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 12,
+      evidencePacket: "sequence",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 13,
+      evidencePacket: "screenshot-receipt",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    destEndViewPacketMayLeftoverSkip({ id: 9, evidencePacket: "screenshot-receipt" }),
+    false,
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 9,
+      family: WORKBOOK_CHROME_FAMILY_ID,
+      evidencePacket: "screenshot-receipt",
+    }),
+    "live-output",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 10,
+      family: WORKBOOK_CHROME_FAMILY_ID,
+      evidencePacket: "transition",
+    }),
+    "live-output",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 12,
+      family: WORKBOOK_CHROME_FAMILY_ID,
+      evidencePacket: "sequence",
+    }),
+    "live-output",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 13,
+      family: WORKBOOK_CHROME_FAMILY_ID,
+      evidencePacket: "screenshot-receipt",
     }),
     "live-output",
   );
