@@ -36,43 +36,99 @@
 }
 
 :root {
+  color-scheme: light;
   --relay-overlay-menu: 90;
   --relay-overlay-popover: 100;
   --relay-overlay-dialog: 110;
   --relay-overlay-tooltip: 120;
-  --relay-focus-ring: var(--text-strong);
+  --relay-focus-ring: var(--ring);
   --font-family-sans: "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --background: var(--background-base);
-  --foreground: var(--text-strong);
-  --card: var(--surface-raised-strong);
-  --card-foreground: var(--text-strong);
-  --popover: var(--surface-raised-stronger-non-alpha);
-  --popover-foreground: var(--text-strong);
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
   --primary: oklch(0.205 0 0);
   --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+html[data-color-scheme="dark"] {
+  color-scheme: dark;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+/* Older Relay utilities follow the shadcn tokens above. */
+html {
+  --background-base: var(--background);
+  --background-weak: var(--muted);
+  --background-strong: var(--background);
+  --background-stronger: var(--background);
+  --surface-base: var(--secondary);
+  --surface-base-hover: var(--accent);
+  --surface-base-active: var(--accent);
+  --surface-raised-strong: var(--card);
+  --surface-raised-strong-hover: var(--accent);
+  --surface-raised-stronger-non-alpha: var(--popover);
+  --input-base: var(--card);
+  --input-hover: var(--accent);
+  --input-disabled: var(--muted);
+  --text-strong: var(--foreground);
+  --text-base: var(--foreground);
+  --text-weak: var(--muted-foreground);
+  --text-weaker: var(--muted-foreground);
+  --text-interactive-base: var(--primary);
+  --text-interactive-hover: var(--foreground);
+  --border-base: var(--input);
+  --border-hover: var(--ring);
+  --border-weak-base: var(--border);
+  --border-weak-disabled: var(--border);
   --button-primary-base: var(--primary);
   --button-primary-foreground: var(--primary-foreground);
-  --button-primary-hover: oklch(0.269 0 0);
-  --button-primary-active: oklch(0.145 0 0);
-  --secondary: var(--surface-base);
-  --secondary-foreground: var(--text-strong);
-  --muted: var(--background-weak);
-  --muted-foreground: var(--text-weak);
-  --accent: var(--surface-base);
-  --accent-foreground: var(--text-strong);
-  --destructive: var(--text-critical-base);
-  --border: var(--border-weak-base);
-  --input: var(--border-base);
-  --ring: var(--border-hover);
-  --radius: 0.625rem;
-  --sidebar: var(--background-base);
-  --sidebar-foreground: var(--text-strong);
-  --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: var(--surface-base);
-  --sidebar-accent-foreground: var(--text-strong);
-  --sidebar-border: var(--border-weak-base);
-  --sidebar-ring: var(--border-hover);
 }
 
 @layer base {
@@ -87,73 +143,4 @@
   body {
     @apply bg-background text-foreground;
   }
-}
-
-/* Shadcn Base Nova (b0) foundations mapped onto Relay's public semantic tokens. */
-html[data-color-scheme="light"] {
-  color-scheme: light;
-  --background-base: oklch(1 0 0);
-  --background-weak: oklch(0.985 0 0);
-  --background-strong: oklch(1 0 0);
-  --background-stronger: oklch(1 0 0);
-  --surface-base: oklch(0.97 0 0);
-  --surface-base-hover: oklch(0.955 0 0);
-  --surface-base-active: oklch(0.94 0 0);
-  --surface-raised-strong: oklch(1 0 0);
-  --surface-raised-strong-hover: oklch(0.985 0 0);
-  --surface-raised-stronger-non-alpha: oklch(1 0 0);
-  --input-base: oklch(1 0 0);
-  --input-hover: oklch(0.985 0 0);
-  --input-disabled: oklch(0.97 0 0);
-  --text-strong: oklch(0.145 0 0);
-  --text-base: oklch(0.269 0 0);
-  --text-weak: oklch(0.439 0 0);
-  --text-weaker: oklch(0.556 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --button-primary-hover: oklch(0.269 0 0);
-  --button-primary-active: oklch(0.145 0 0);
-  --button-secondary-base: oklch(1 0 0);
-  --button-secondary-hover: oklch(0.97 0 0);
-  --button-ghost-hover: oklch(0.97 0 0);
-  --border-base: oklch(0.87 0 0);
-  --border-hover: oklch(0.708 0 0);
-  --border-weak-base: oklch(0.922 0 0);
-  --border-weak-disabled: oklch(0.94 0 0);
-  --text-interactive-base: oklch(0.269 0 0);
-  --text-interactive-hover: oklch(0.145 0 0);
-}
-
-html[data-color-scheme="dark"] {
-  color-scheme: dark;
-  --background-base: oklch(0.145 0 0);
-  --background-weak: oklch(0.205 0 0);
-  --background-strong: oklch(0.205 0 0);
-  --background-stronger: oklch(0.225 0 0);
-  --surface-base: oklch(0.269 0 0);
-  --surface-base-hover: oklch(0.3 0 0);
-  --surface-base-active: oklch(0.33 0 0);
-  --surface-raised-strong: oklch(0.205 0 0);
-  --surface-raised-strong-hover: oklch(0.245 0 0);
-  --surface-raised-stronger-non-alpha: oklch(0.205 0 0);
-  --input-base: oklch(0.205 0 0);
-  --input-hover: oklch(0.245 0 0);
-  --input-disabled: oklch(0.269 0 0);
-  --text-strong: oklch(0.985 0 0);
-  --text-base: oklch(0.922 0 0);
-  --text-weak: oklch(0.708 0 0);
-  --text-weaker: oklch(0.62 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --button-primary-hover: oklch(0.985 0 0);
-  --button-primary-active: oklch(0.87 0 0);
-  --button-secondary-base: oklch(0.269 0 0);
-  --button-secondary-hover: oklch(0.31 0 0);
-  --button-ghost-hover: oklch(0.269 0 0);
-  --border-base: oklch(1 0 0 / 15%);
-  --border-hover: oklch(1 0 0 / 28%);
-  --border-weak-base: oklch(1 0 0 / 10%);
-  --border-weak-disabled: oklch(1 0 0 / 8%);
-  --text-interactive-base: oklch(0.922 0 0);
-  --text-interactive-hover: oklch(0.985 0 0);
 }

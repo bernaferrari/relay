@@ -28,11 +28,6 @@
 
   body {
     overflow: hidden;
-    color: var(--text-strong);
-    background: var(--background-base);
-    font-family: var(--font-family-sans);
-    font-size: 14px;
-    line-height: 1.45;
     isolation: isolate;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
