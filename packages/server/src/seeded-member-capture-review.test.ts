@@ -1,24 +1,28 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
 import {
+  assertSeededMemberPng,
+  captureSeededMemberSettingsPng,
   getVisualBaseline,
   persistPersistedRun,
   persistRun,
+  readFrameFile,
   readPersistedRun,
   resetControlDatabaseCache,
   runsRoot,
+  seededMemberChromePath,
+  withSeededMemberBrowser,
   SEEDED_MEMBER_CAPTURE_LANGUAGE_CAPTION,
   SEEDED_MEMBER_CAPTURE_LANGUAGE_PHASE,
   SEEDED_MEMBER_CAPTURE_LOOK_FOR,
   SEEDED_MEMBER_CAPTURE_SETTINGS_PHASE,
   SEEDED_MEMBER_CAPTURE_STEP_ID,
   SEEDED_MEMBER_CAPTURE_TEST_ID,
-  SEEDED_MEMBER_DEFECT_SEATS,
   SEEDED_MEMBER_SESSION_COOKIE,
   SEEDED_MEMBER_TARGET_ID,
   listenSeededMemberApp,
@@ -363,8 +367,8 @@ test(
 
 test(
   "eight seeded capture configurations persist through Relay review, restart, repair, and export",
-  { timeout: 90_000 },
-  async () => {
+  { timeout: 120_000 },
+  async (t) => {
     const root = await mkdtemp(join(tmpdir(), "relay-seeded-eight-"));
     const previousRuns = process.env.RELAY_RUNS_DIR;
     const previousState = process.env.RELAY_STATE_DIR;
@@ -379,32 +383,44 @@ test(
     const { server: fixture, url, app } = await listenSeededMemberApp({ defect: true });
     let server: Awaited<ReturnType<typeof startServer>> | undefined;
     try {
+      const chromePath = await seededMemberChromePath();
+      if (!chromePath) {
+        if (
+          process.env.GOLDEN_ACCEPTANCE_MODE === "required" ||
+          process.env.RELAY_TEST_CHROME_PATH
+        ) {
+          throw new Error("Chrome is required for Seeded Member PNG capture acceptance");
+        }
+        t.skip("Google Chrome is not installed; HTML hashes are not PNG acceptance");
+        return;
+      }
       const cells = seededMemberCaptureConfigurations();
       assert.equal(cells.length, 8);
       const at = Date.now();
       const runIds: string[] = [];
+      const pngs = await withSeededMemberBrowser(chromePath, async (browser) => {
+        const captured: Buffer[] = [];
+        for (const cell of cells) {
+          captured.push(
+            await captureSeededMemberSettingsPng({
+              url,
+              role: cell.role,
+              viewport: { width: cell.viewport.width, height: cell.viewport.height },
+              locale: cell.locale.tag,
+              browser,
+            }),
+          );
+        }
+        return captured;
+      });
+      assert.equal(
+        new Set(pngs.map((png) => createHash("sha256").update(png).digest("hex"))).size,
+        8,
+      );
       for (const [index, cell] of cells.entries()) {
-        const token = mintSeededMemberSession(cell.role);
-        const settings = await fetch(new URL("/settings", url), {
-          headers: {
-            cookie: `${SEEDED_MEMBER_SESSION_COOKIE}=${token}`,
-            "accept-language": cell.locale.tag,
-          },
-        });
-        const html = await settings.text();
-        assert.match(html, new RegExp(`id="session-role">${cell.role}`));
-        assert.match(html, /id="save-settings"/);
-        assert.match(html, /layout-defect/);
-        if (cell.locale.id === "ar") {
-          assert.match(html, /dir="rtl"/);
-        }
-        if (cell.role === "member") {
-          assert.match(html, new RegExp(`id="team-seats"[^>]*>${SEEDED_MEMBER_DEFECT_SEATS}`));
-        }
-        const imageSha256 = createHash("sha256")
-          .update(html)
-          .update(`\n${cell.viewport.width}x${cell.viewport.height}`)
-          .digest("hex");
+        const png = pngs[index]!;
+        assertSeededMemberPng(png, cell.caption);
+        const imageSha256 = createHash("sha256").update(png).digest("hex");
         const id = `eight-${String(index).padStart(2, "0")}`;
         runIds.push(id);
         const slot = {
@@ -419,7 +435,7 @@ test(
             locale: cell.locale.tag,
           },
         };
-        await persistRun({
+        const persisted = await persistRun({
           id,
           projectId,
           ownerId: "agent:cursor",
@@ -482,6 +498,13 @@ test(
           caseIndex: index,
           caseCount: 8,
         } as unknown as TestJob);
+        const frameRel = `frames/${String(index + 1).padStart(3, "0")}.png`;
+        await mkdir(join(persisted.dir, "frames"), { recursive: true });
+        await writeFile(join(persisted.dir, frameRel), png);
+        const onDisk = await readFrameFile(persisted.dir, frameRel);
+        assert.ok(onDisk);
+        assertSeededMemberPng(onDisk, `${cell.caption} on disk`);
+        assert.equal(createHash("sha256").update(onDisk).digest("hex"), imageSha256);
       }
 
       server = await startServer({ host: "127.0.0.1", port: 0 });
@@ -595,10 +618,16 @@ test(
         })
       ).text();
       assert.doesNotMatch(repairedHtml, /<body class="layout-defect">/);
-      const repairedSha = createHash("sha256")
-        .update(repairedHtml)
-        .update("\n900x600")
-        .digest("hex");
+      const repairedPng = await withSeededMemberBrowser(chromePath, (browser) =>
+        captureSeededMemberSettingsPng({
+          url,
+          role: "member",
+          viewport: { width: 900, height: 600 },
+          locale: "en-US",
+          browser,
+        }),
+      );
+      const repairedSha = createHash("sha256").update(repairedPng).digest("hex");
       assert.notEqual(repairedSha, memberDesktopEn.imageSha256);
       const latest = await readPersistedRun(persistedRunId(memberDesktopEn));
       assert.ok(latest);
@@ -609,6 +638,13 @@ test(
         return { ...artifact, data: { ...data, imageSha256: repairedSha } };
       });
       await persistPersistedRun(runsRoot(), latest, recaptured, "capture-review");
+      const repairedFrame = String(memberDesktopEn.framePath ?? "frames/001.png");
+      await mkdir(join(latest.dir, "frames"), { recursive: true });
+      await writeFile(join(latest.dir, repairedFrame), repairedPng);
+      const repairedOnDisk = await readFrameFile(latest.dir, repairedFrame);
+      assert.ok(repairedOnDisk);
+      assertSeededMemberPng(repairedOnDisk, "repaired Member Desktop en-US");
+      assert.equal(createHash("sha256").update(repairedOnDisk).digest("hex"), repairedSha);
 
       server = await startServer({ host: "127.0.0.1", port: 0 });
       const afterRecapture = await client(server.port, "human:reviewer", "human").invoke(

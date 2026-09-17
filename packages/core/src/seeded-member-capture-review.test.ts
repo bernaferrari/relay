@@ -23,7 +23,7 @@ import { exportCombineEvidencePack } from "./combine-evidence-pack.js";
 import type { Device } from "./device.js";
 import { compileAppMapTest } from "./map-work.js";
 import { preflightCompiledAppMapTestOffline } from "./offline-test-preflight.js";
-import { persistRun, readCompletedPersistedRun, runsRoot } from "./runs.js";
+import { persistRun, readCompletedPersistedRun, readFrameFile, runsRoot } from "./runs.js";
 import {
   SEEDED_MEMBER_BROWSER_ENVIRONMENT,
   SEEDED_MEMBER_CAPTURE_LANGUAGE_CAPTION,
@@ -40,6 +40,12 @@ import {
 import { runRecipeSteps, type TestJob } from "./session.js";
 import { runWithTargetContext } from "./target-context.js";
 import { getVisualBaseline } from "./visual-baselines.js";
+import {
+  assertSeededMemberPng,
+  captureSeededMemberSettingsPng,
+  seededMemberChromePath,
+  withSeededMemberBrowser,
+} from "./seeded-member-capture-png.js";
 import {
   listenSeededMemberApp,
   mintSeededMemberSession,
@@ -67,7 +73,7 @@ function cookieHeader(token: string): string {
   return `${SEEDED_MEMBER_SESSION_COOKIE}=${token}`;
 }
 
-test("eight capture-only configurations stay pending without an AI key", async () => {
+test("eight capture-only HTML identities stay pending without claiming PNG acceptance", async () => {
   const previous = process.env.OPENROUTER_API_KEY;
   delete process.env.OPENROUTER_API_KEY;
   const { server, url, app } = await listenSeededMemberApp({ defect: true });
@@ -106,7 +112,7 @@ test("eight capture-only configurations stay pending without an AI key", async (
         data: {
           caption: cell.caption,
           lookFor: cell.lookFor,
-          framePath: `frames/${String(index + 1).padStart(3, "0")}.png`,
+          framePath: `frames/${String(index + 1).padStart(3, "0")}.html-identity`,
           imageSha256,
           configuration: {
             account: cell.role === "member" ? "Member" : "Admin",
@@ -327,11 +333,6 @@ test("live eight-cell screenshots keep viewport labels and the layout defect", a
   }
 });
 
-const TINY_PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-  "base64",
-);
-
 function seededSettingsDevice(png: Buffer): Device {
   const nodes = [
     {
@@ -396,42 +397,30 @@ test(
     process.env.RELAY_RUNS_DIR = join(root, "runs");
     process.env.RELAY_WORKSPACE_ROOT = root;
     const { server, url } = await listenSeededMemberApp({ defect: true });
-    let png = TINY_PNG;
     try {
-      try {
-        await access(CHROME);
-        const browser = await chromium.launch({ executablePath: CHROME, headless: true });
-        try {
-          const context = await browser.newContext({
-            viewport: { width: 900, height: 600 },
-            locale: "en-US",
-          });
-          await context.addCookies([
-            {
-              name: SEEDED_MEMBER_SESSION_COOKIE,
-              value: mintSeededMemberSession("member"),
-              url,
-            },
-          ]);
-          const page = await context.newPage();
-          await page.goto(new URL("/settings", url).href, { waitUntil: "networkidle" });
-          await page.locator("#save-settings").waitFor();
-          png = Buffer.from(await page.screenshot({ type: "png" }));
-          await context.close();
-        } finally {
-          await browser.close();
-        }
-      } catch (error) {
+      const chromePath = await seededMemberChromePath();
+      if (!chromePath) {
         if (
           process.env.GOLDEN_ACCEPTANCE_MODE === "required" ||
           process.env.RELAY_TEST_CHROME_PATH
         ) {
-          throw error;
+          throw new Error("Chrome is required for Seeded Member PNG capture acceptance");
         }
-        t.diagnostic(
-          `product path uses fixture PNG; Chrome unavailable: ${error instanceof Error ? error.message : error}`,
+        t.skip(
+          "Google Chrome is not installed; HTML hashes and 1×1 placeholders are not PNG acceptance",
         );
+        return;
       }
+      const png = await withSeededMemberBrowser(chromePath, (browser) =>
+        captureSeededMemberSettingsPng({
+          url,
+          role: "member",
+          viewport: { width: 900, height: 600 },
+          locale: "en-US",
+          browser,
+        }),
+      );
+      assertSeededMemberPng(png, "product-path Member settings");
 
       const map = buildSeededMemberAppMap({
         memberFixtureReference: "authfx:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:1",
@@ -509,10 +498,18 @@ test(
         slotId?: string;
         phase?: string;
         imageSha256?: string;
+        framePath?: string;
       };
       assert.equal(captured.phase, SEEDED_MEMBER_CAPTURE_SETTINGS_PHASE);
       assert.equal(captured.slotId, captureReviewSlotId(planned[0]!));
       assert.equal(typeof captured.imageSha256, "string");
+      const capturedPng = await readFrameFile(
+        persisted.dir,
+        captured.framePath ?? "frames/001.png",
+      );
+      assert.ok(capturedPng);
+      assertSeededMemberPng(capturedPng, "persisted product-path frame");
+      assert.equal(createHash("sha256").update(capturedPng).digest("hex"), captured.imageSha256);
 
       const queue = captureReviewQueueForRun(persisted);
       assert.equal(queue.summary.captured, 1);

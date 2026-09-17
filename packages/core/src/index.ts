@@ -122,6 +122,7 @@ export * from "./lane-run.js";
 export * from "./lane-seed.js";
 export * from "./seeded-member-app.js";
 export * from "./seeded-member-acceptance.js";
+export * from "./seeded-member-capture-png.js";
 export * from "./builds.js";
 export * from "./change-build-binding.js";
 export * from "./web-build-verification.js";
