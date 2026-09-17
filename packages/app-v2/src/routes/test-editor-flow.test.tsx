@@ -539,19 +539,16 @@ describe("Test editor", () => {
     expect(document.body.textContent).toContain("Uses one saved path.");
     expect(document.body.textContent).not.toContain('"kind": "connections"');
     await click("Add checkpoint");
-    const added = harness.edits.at(-1)?.[0];
-    expect(added?.kind).toBe("step.add");
-    if (added?.kind !== "step.add") throw new Error("Expected step.add");
-    expect(added.step.kind).toBe("validation");
-    expect(added.step.intent).toBe("Prove the result");
-    expect(added.step.capture).toBe(true);
-    expect(added.step.binding).toEqual({
-      status: "unresolved",
-      reason: "Choose what Relay should prove after this step.",
-    });
+    expect(harness.edits).toEqual([]);
+    expect(document.body.textContent).toContain("Not saved on this Test");
+    expect(document.body.textContent).toContain("does not accept a visual baseline");
     expect(document.body.textContent).toContain("Visual judge");
     await click("Visual judge");
     expect(document.body.textContent).toContain("Two independent judges must agree");
+    await click("Remove step");
+    await click("Remove step");
+    expect(harness.edits).toEqual([]);
+    expect(document.body.textContent).not.toContain("Not saved on this Test");
   });
 
   it("authors an upload checkpoint without YAML", async () => {
@@ -567,8 +564,9 @@ describe("Test editor", () => {
     await click("Save step");
     expect(harness.edits.at(-1)).toEqual([
       expect.objectContaining({
-        kind: "step.patch",
-        patch: expect.objectContaining({
+        kind: "step.add",
+        step: expect.objectContaining({
+          kind: "validation",
           binding: {
             status: "resolved",
             kind: "recipe-step",

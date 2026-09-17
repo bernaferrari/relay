@@ -27,7 +27,11 @@ import { useLatestTestReport } from "../hooks/use-latest-test-report";
 import { LiveTestEditorPane } from "./live-test-editor-pane";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { HistorySection, RepairSection } from "./test-editor-context-panels";
-import { collectStepEntries } from "./test-editor-route-helpers";
+import {
+  collectStepEntries,
+  insertPendingCheckpoint,
+  type PendingCheckpointDraft,
+} from "./test-editor-route-helpers";
 import { useTestStepDrafts } from "./use-test-step-drafts";
 
 const routeApi = getRouteApi("/tests/$testId/edit");
@@ -64,10 +68,13 @@ function TestEditorDocument() {
     enabled: Boolean(sessionId),
   });
   const editorDocument = liveEditor.data?.test ?? document.data;
-  const entries = useMemo(
-    () => collectStepEntries(editorDocument?.test.steps ?? []),
-    [editorDocument],
-  );
+  const [pendingCheckpoint, setPendingCheckpoint] = useState<PendingCheckpointDraft | null>(null);
+  const entries = useMemo(() => {
+    const saved = editorDocument?.test.steps ?? [];
+    return collectStepEntries(
+      pendingCheckpoint ? insertPendingCheckpoint(saved, pendingCheckpoint) : saved,
+    );
+  }, [editorDocument, pendingCheckpoint]);
   const requestedStepId = typeof search.step === "string" ? search.step : undefined;
   const selected =
     entries.find((entry) => entry.step.id === requestedStepId) ?? entries.at(0) ?? undefined;
@@ -139,6 +146,14 @@ function TestEditorDocument() {
               : {}),
           });
         }
+      }
+      if (
+        pendingCheckpoint &&
+        transaction.forward.some(
+          (item) => item.kind === "step.add" && item.step.id === pendingCheckpoint.step.id,
+        )
+      ) {
+        setPendingCheckpoint(null);
       }
       setSaveNotice("Saved");
       const nextSelection = selectAfterSave.current;
@@ -292,12 +307,26 @@ function TestEditorDocument() {
   }
 
   function addCheckpoint() {
-    addStepAt(
-      selected?.placement,
-      selected ? selected.index + 1 : entries.length,
-      "Added a checkpoint",
-      "validation",
-    );
+    if (pendingCheckpoint) {
+      selectStep(pendingCheckpoint.step.id);
+      return;
+    }
+    const id = `step-${globalThis.crypto?.randomUUID?.() ?? Date.now()}`;
+    setPendingCheckpoint({
+      step: {
+        id,
+        kind: "validation",
+        intent: "Prove the result",
+        capture: true,
+        binding: {
+          status: "unresolved",
+          reason: "Choose what Relay should prove after this step.",
+        },
+      },
+      ...(selected?.placement ? { placement: selected.placement } : {}),
+      index: selected ? selected.index + 1 : entries.length,
+    });
+    selectStep(id);
   }
 
   function addChildStep(entry: StepEntry, branch: "then" | "else" | "steps") {
@@ -405,7 +434,7 @@ function TestEditorDocument() {
   }
 
   const latestHistory = editorDocument?.history[0];
-  const hasUnsavedDrafts = Object.keys(stepDrafts).length > 0;
+  const hasUnsavedDrafts = Object.keys(stepDrafts).length > 0 || Boolean(pendingCheckpoint);
   const canRedo = latestHistory?.eventType === "test.undone" && Boolean(testEditorService.redo);
   const canUndo =
     Boolean(testEditorService.undo) &&
@@ -422,9 +451,60 @@ function TestEditorDocument() {
           draft={stepDrafts[selected.step.id]}
           onDraftChange={(draft) => updateStepDraft(selected.step.id, draft)}
           busy={edit.isPending}
-          onSave={apply}
-          onBind={(transaction) => apply(transaction)}
-          onRemove={() => removeStep(selected)}
+          unsavedCheckpoint={pendingCheckpoint?.step.id === selected.step.id}
+          onSave={(transaction) => {
+            if (pendingCheckpoint?.step.id !== selected.step.id) {
+              apply(transaction);
+              return;
+            }
+            const patch = transaction.forward.find((item) => item.kind === "step.patch");
+            if (!patch || patch.kind !== "step.patch") return;
+            const binding = patch.patch.binding;
+            if (!binding || binding.status !== "resolved") return;
+            apply({
+              label: "Added a checkpoint",
+              forward: [
+                {
+                  kind: "step.add",
+                  step: {
+                    ...pendingCheckpoint.step,
+                    ...(patch.patch.intent === undefined ? {} : { intent: patch.patch.intent }),
+                    ...(patch.patch.note === undefined
+                      ? {}
+                      : patch.patch.note === null
+                        ? { note: undefined }
+                        : { note: patch.patch.note }),
+                    ...(patch.patch.capture === undefined ? {} : { capture: patch.patch.capture }),
+                    binding,
+                  },
+                  ...(pendingCheckpoint.placement
+                    ? { placement: pendingCheckpoint.placement }
+                    : {}),
+                  index: pendingCheckpoint.index,
+                },
+              ],
+              reverse: [{ kind: "step.remove", stepId: pendingCheckpoint.step.id }],
+            });
+          }}
+          onBind={(transaction) => {
+            if (pendingCheckpoint?.step.id === selected.step.id) return;
+            apply(transaction);
+          }}
+          onRemove={() => {
+            if (pendingCheckpoint?.step.id === selected.step.id) {
+              const previous =
+                selected.siblingIds[selected.index - 1] ?? selected.placement?.parentStepId ?? null;
+              setPendingCheckpoint(null);
+              if (previous) selectStep(previous);
+              else
+                void navigate({
+                  search: (current) => ({ ...current, step: undefined }),
+                  replace: true,
+                });
+              return;
+            }
+            removeStep(selected);
+          }}
           onAddChild={(branch) => addChildStep(selected, branch)}
           platformBlocker={editorDocument.stepPlatformBlockers?.[selected.step.id]}
           hasRememberableReply={editorDocument.hasRememberableReply === true}

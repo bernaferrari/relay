@@ -53,6 +53,7 @@ export function SelectedStepEditor({
   draft,
   onDraftChange,
   busy,
+  unsavedCheckpoint = false,
   onSave,
   onBind,
   onRemove,
@@ -64,6 +65,7 @@ export function SelectedStepEditor({
   draft?: StepDraft;
   onDraftChange?(draft: StepDraft): void;
   busy: boolean;
+  unsavedCheckpoint?: boolean;
   onSave(transaction: EditTransaction): void;
   onBind(transaction: EditTransaction): void;
   onRemove(): void;
@@ -275,7 +277,18 @@ export function SelectedStepEditor({
           </div>
         </Alert>
       ) : null}
-      {entry.step.binding.status === "unresolved" ? (
+      {unsavedCheckpoint ? (
+        <Alert variant="default" className="grid grid-cols-[18px_minmax(0,1fr)] gap-2 p-2.5">
+          <AlertTriangle aria-hidden="true" />
+          <div>
+            <AlertTitle>Not saved on this Test</AlertTitle>
+            <AlertDescription>
+              Choose what Relay should prove, then Save step. An unbound Prove the result is not
+              compiled. This does not accept a visual baseline.
+            </AlertDescription>
+          </div>
+        </Alert>
+      ) : entry.step.binding.status === "unresolved" ? (
         <Alert variant="default" className="grid grid-cols-[18px_minmax(0,1fr)] gap-2 p-2.5">
           <AlertTriangle aria-hidden="true" />
           <div>
@@ -284,7 +297,7 @@ export function SelectedStepEditor({
           </div>
         </Alert>
       ) : null}
-      {entry.step.binding.status === "unresolved" ? (
+      {entry.step.binding.status === "unresolved" && !unsavedCheckpoint ? (
         <BindingRepair
           step={entry.step}
           candidates={entry.step.binding.candidates ?? []}
