@@ -19,6 +19,7 @@ import {
 import {
   canCoverWorkbookFamily,
   SURVIVAL_FAMILY_ID,
+  SURVIVAL_REQUIRED_DWELL_MS,
   type ExecutionQueue,
 } from "./execution-queue.js";
 import {
@@ -59,6 +60,33 @@ export type CapabilityGate = {
   reason: string;
 };
 
+/** Screenshot-first §8: lock / airplane / cellular / wifi / external-app-auth
+ * are named capabilities. A Settings screenshot does not imply them. */
+export const DEVICE_EFFECT_CAPABILITIES = [
+  "lock-screen",
+  "airplane",
+  "cellular",
+  "wifi",
+  "external-app-auth",
+] as const;
+export type DeviceEffectCapability = (typeof DEVICE_EFFECT_CAPABILITIES)[number];
+
+export const DEVICE_EFFECT_SUPPORT_STATUSES = [
+  "supported",
+  "unsupported",
+  "human-only",
+  "simulator-only",
+] as const;
+export type DeviceEffectSupportStatus = (typeof DEVICE_EFFECT_SUPPORT_STATUSES)[number];
+
+export type DeviceEffectSupport = {
+  capability: DeviceEffectCapability;
+  status: DeviceEffectSupportStatus;
+  /** Named primitive, or `none`. simctl status_bar is cosmetic, not a radio. */
+  primitive: string;
+  reason: string;
+};
+
 export type PlanCaptureReviewCapabilityRun = PlanCaptureReviewRunInput & {
   platform?: "android" | "ios" | "browser";
   approximation?: "simulator" | "emulator" | "browser";
@@ -66,6 +94,10 @@ export type PlanCaptureReviewCapabilityRun = PlanCaptureReviewRunInput & {
   executionQueue?: ExecutionQueue;
   declaredDwellMs?: number;
   kind?: string;
+  serial?: string;
+  family?: string;
+  /** Explicit device-effect claims. Caption text is not a capability. */
+  deviceEffects?: readonly DeviceEffectCapability[];
 };
 
 export const IOS_HARDWARE_CLASSES = [
@@ -76,13 +108,20 @@ export const IOS_HARDWARE_CLASSES = [
 ] as const;
 export type IosHardwareClass = (typeof IOS_HARDWARE_CLASSES)[number];
 
+/** Physical iPad Pro used by grok-ios. Not iPhone or simulator coverage. */
+export const LAB_PHYSICAL_IPAD_SERIAL = "db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5";
+
 export function classifyIosHardware(input: {
   kind?: string;
   name?: string;
   device?: string;
+  serial?: string;
   approximation?: "simulator" | "emulator" | "browser";
 }): IosHardwareClass {
   if (input.approximation === "simulator") return "simulator";
+  if (input.serial === LAB_PHYSICAL_IPAD_SERIAL || input.device === LAB_PHYSICAL_IPAD_SERIAL) {
+    return "physical-ipad";
+  }
   const blob = `${input.kind ?? ""} ${input.name ?? ""} ${input.device ?? ""}`;
   if (/simulator/iu.test(blob)) return "simulator";
   if (/ipad/iu.test(blob)) return "physical-ipad";
@@ -103,10 +142,244 @@ export function iosHardwareCovers(observed: IosHardwareClass, claimed: IosHardwa
   return observed === claimed;
 }
 
+const CHECKPOINT_DEVICE_EFFECTS: Record<string, DeviceEffectCapability> = {
+  lock: "lock-screen",
+  unlock: "lock-screen",
+  "lock-screen": "lock-screen",
+  airplane: "airplane",
+  cellular: "cellular",
+  "mobile-data": "cellular",
+  wifi: "wifi",
+  "external-app-auth": "external-app-auth",
+  "external-auth": "external-app-auth",
+};
+
+export function deviceEffectFromCheckpointId(
+  checkpointId?: string,
+): DeviceEffectCapability | undefined {
+  const key = checkpointId?.trim().toLowerCase();
+  if (!key) return undefined;
+  return CHECKPOINT_DEVICE_EFFECTS[key];
+}
+
+export function deviceEffectFromRecipeStep(step: {
+  kind?: string;
+  action?: string;
+  setting?: string;
+}): DeviceEffectCapability | undefined {
+  if (step.kind === "device" && (step.action === "lock" || step.action === "unlock")) {
+    return "lock-screen";
+  }
+  if (step.kind !== "settings") return undefined;
+  if (step.setting === "airplane") return "airplane";
+  if (step.setting === "mobile-data") return "cellular";
+  if (step.setting === "wifi") return "wifi";
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+export function deviceEffectsFromRecipeSteps(
+  steps: readonly unknown[] | undefined,
+): DeviceEffectCapability[] {
+  const found: DeviceEffectCapability[] = [];
+  for (const step of steps ?? []) {
+    if (!isRecord(step)) continue;
+    const effect = deviceEffectFromRecipeStep({
+      kind: typeof step.kind === "string" ? step.kind : undefined,
+      action: typeof step.action === "string" ? step.action : undefined,
+      setting: typeof step.setting === "string" ? step.setting : undefined,
+    });
+    if (effect && !found.includes(effect)) found.push(effect);
+  }
+  return found;
+}
+
+/** Caption / lookFor text is display only and is not a capability claim. */
+export function claimedDeviceEffects(input: {
+  checkpointId?: string;
+  deviceEffects?: readonly DeviceEffectCapability[];
+  recipeSteps?: readonly unknown[];
+}): DeviceEffectCapability[] {
+  const found: DeviceEffectCapability[] = [];
+  const push = (effect: DeviceEffectCapability | undefined): void => {
+    if (effect && !found.includes(effect)) found.push(effect);
+  };
+  for (const effect of input.deviceEffects ?? []) push(effect);
+  for (const effect of deviceEffectsFromRecipeSteps(input.recipeSteps)) push(effect);
+  push(deviceEffectFromCheckpointId(input.checkpointId));
+  return found;
+}
+
+const PHYSICAL_LOCK: DeviceEffectSupport = {
+  capability: "lock-screen",
+  status: "human-only",
+  primitive: "none",
+  reason:
+    "Physical lock/unlock remains human. CoreDevice `devicectl device info lockState` is read-only; XCTest and go-ios have no lock command. Unlock still needs a person. Do not reboot.",
+};
+
+const SIMULATOR_LOCK: DeviceEffectSupport = {
+  capability: "lock-screen",
+  status: "unsupported",
+  primitive: "none",
+  reason:
+    "lock-screen control is not supported by this iOS runner — including the simulator. Cmd-L is not a recipe.",
+};
+
+const PHYSICAL_AIRPLANE: DeviceEffectSupport = {
+  capability: "airplane",
+  status: "human-only",
+  primitive: "none",
+  reason:
+    "airplane on iOS is a Settings handoff, not settings airplane on the Grok runner. agent-device `settings` requires a simulator; XCTest stays on Grok unless Preferences is launched. A required 1-minute outage cannot become a 10-second outage.",
+};
+
+function simulatorStatusBar(capability: "airplane" | "wifi" | "cellular"): DeviceEffectSupport {
+  return {
+    capability,
+    status: "simulator-only",
+    primitive: "simctl status_bar override",
+    reason: `iOS simulator ${capability} is simctl status_bar cosmetic, not a radio outage, and is not physical iPad ${SURVIVAL_FAMILY_ID} coverage`,
+  };
+}
+
+const PHYSICAL_CELLULAR: DeviceEffectSupport = {
+  capability: "cellular",
+  status: "unsupported",
+  primitive: "none",
+  reason:
+    "settings mobile-data is only supported on Android (`adb shell svc data`). Relay has no iOS cellular primitive on iPad or iPhone. Do not invent radios.",
+};
+
+const PHYSICAL_WIFI: DeviceEffectSupport = {
+  capability: "wifi",
+  status: "human-only",
+  primitive: "none",
+  reason:
+    "Wifi/cell/airplane stay human on physical iOS. agent-device wifi is simulator status_bar only.",
+};
+
+const EXTERNAL_AUTH: DeviceEffectSupport = {
+  capability: "external-app-auth",
+  status: "human-only",
+  primitive: "none",
+  reason:
+    "External app authentication stays human (OAuth / Settings / Safari). A screenshot is not a recorded auth capability.",
+};
+
+function resolvedIosHardware(input: {
+  hardware: IosHardwareClass;
+  serial?: string;
+}): IosHardwareClass {
+  if (input.serial === LAB_PHYSICAL_IPAD_SERIAL) return "physical-ipad";
+  return input.hardware;
+}
+
+/** Actual Relay support. Physical iPad and iPhone share these primitives. */
+export function iosDeviceEffectSupport(input: {
+  hardware: IosHardwareClass;
+  serial?: string;
+  capability: DeviceEffectCapability;
+}): DeviceEffectSupport {
+  const hardware = resolvedIosHardware(input);
+  if (input.capability === "external-app-auth") return EXTERNAL_AUTH;
+  if (hardware === "simulator") {
+    if (input.capability === "lock-screen") return SIMULATOR_LOCK;
+    if (input.capability === "airplane") return simulatorStatusBar("airplane");
+    if (input.capability === "wifi") return simulatorStatusBar("wifi");
+    return simulatorStatusBar("cellular");
+  }
+  if (hardware === "unproven") {
+    return {
+      capability: input.capability,
+      status: "unsupported",
+      primitive: "none",
+      reason: `unproven iOS hardware cannot claim ${input.capability}`,
+    };
+  }
+  if (input.capability === "lock-screen") return PHYSICAL_LOCK;
+  if (input.capability === "airplane") return PHYSICAL_AIRPLANE;
+  if (input.capability === "cellular") return PHYSICAL_CELLULAR;
+  return PHYSICAL_WIFI;
+}
+
+export function iosDeviceEffectMatrix(input: {
+  hardware: IosHardwareClass;
+  serial?: string;
+}): DeviceEffectSupport[] {
+  return DEVICE_EFFECT_CAPABILITIES.map((capability) =>
+    iosDeviceEffectSupport({ ...input, capability }),
+  );
+}
+
+/** S16 on this iPad: 60s + stateful-survival is necessary and still not sufficient
+ * without a supported physical primitive. Simulator status-bar is not coverage. */
+export function canCoverPhysicalIpadSurvival(input: {
+  hardware: IosHardwareClass;
+  serial?: string;
+  capability: DeviceEffectCapability;
+  executionQueue?: ExecutionQueue;
+  declaredDwellMs?: number;
+}): { ok: true } | { ok: false; reason: string } {
+  const dwell = canCoverWorkbookFamily({
+    family: SURVIVAL_FAMILY_ID,
+    executionQueue: input.executionQueue,
+    declaredDwellMs: input.declaredDwellMs,
+  });
+  if (!dwell.ok) return dwell;
+  const hardware = resolvedIosHardware(input);
+  if (!iosHardwareCovers(hardware, "physical-ipad")) {
+    return {
+      ok: false,
+      reason: `${iosHardwareLabel(hardware)} ${input.capability} is not physical iPad ${SURVIVAL_FAMILY_ID} coverage`,
+    };
+  }
+  const support = iosDeviceEffectSupport({ ...input, hardware });
+  if (support.status !== "supported") {
+    return { ok: false, reason: support.reason };
+  }
+  return { ok: true };
+}
+
+function survivalEffectClaim(input: {
+  family?: string;
+  executionQueue?: ExecutionQueue;
+  declaredDwellMs?: number;
+}): boolean {
+  if (input.family === SURVIVAL_FAMILY_ID) return true;
+  if (input.executionQueue === "stateful-survival") return true;
+  return (input.declaredDwellMs ?? 0) >= SURVIVAL_REQUIRED_DWELL_MS;
+}
+
+function gateForDeviceEffect(input: {
+  support: DeviceEffectSupport;
+  claimed: IosHardwareClass;
+  family?: string;
+  executionQueue?: ExecutionQueue;
+  declaredDwellMs?: number;
+}): CapabilityGate | undefined {
+  if (input.support.status === "human-only") {
+    return { kind: "human-only", reason: input.support.reason };
+  }
+  if (input.support.status === "unsupported") {
+    return { kind: "unsupported", reason: input.support.reason };
+  }
+  if (input.support.status !== "simulator-only") return undefined;
+  if (input.claimed === "physical-ipad" || input.claimed === "physical-iphone") {
+    return { kind: "nonapplicable", reason: input.support.reason };
+  }
+  if (survivalEffectClaim(input)) {
+    return { kind: "nonapplicable", reason: input.support.reason };
+  }
+  return undefined;
+}
+
 const ANDROID_APP = /^(android|com\.(x|twitter)\.android)/iu;
 const IOS_APP = /^(ios|ai\.x\.GrokApp)$/u;
 const IMAGINE = /\bimagine\b/iu;
-const HUMAN_ONLY = /\b(lock|unlock|airplane|cellular|wifi|wi-?fi)\b/iu;
 
 export function captureReviewSlotPlatform(input: {
   configuration?: CaptureReviewConfiguration;
@@ -210,6 +483,10 @@ export function capabilityGateForSlot(input: {
   executionQueue?: ExecutionQueue;
   declaredDwellMs?: number;
   kind?: string;
+  serial?: string;
+  family?: string;
+  deviceEffects?: readonly DeviceEffectCapability[];
+  recipeSteps?: readonly unknown[];
 }): CapabilityGate | undefined {
   const platform = captureReviewSlotPlatform({
     configuration: input.slot.configuration,
@@ -218,11 +495,11 @@ export function capabilityGateForSlot(input: {
   });
   const label = slotLabel(input.slot);
   const imagine = IMAGINE.test(label);
-  const scenario = captureReviewScenarioKind({
-    platform,
+  const claimedClass = classifyIosHardware({
+    device: input.device,
+    serial: input.serial,
     approximation: input.approximation,
-    configuration: input.slot.configuration,
-    observed: input.observed,
+    kind: input.kind,
   });
 
   if (platform === "android" && input.inventory.adbDeviceCount === 0) {
@@ -239,20 +516,28 @@ export function capabilityGateForSlot(input: {
     };
   }
 
-  if (HUMAN_ONLY.test(label) && scenario === "physical") {
-    return {
-      kind: "human-only",
-      reason: "Physical lock/airplane/cellular remain UNRECORDED / human, not a 10s fake",
-    };
-  }
-
   if (platform === "ios") {
+    for (const capability of claimedDeviceEffects({
+      checkpointId: input.slot.checkpointId,
+      deviceEffects: input.deviceEffects,
+      recipeSteps: input.recipeSteps,
+    })) {
+      const support = iosDeviceEffectSupport({
+        hardware: claimedClass,
+        serial: input.serial ?? input.device,
+        capability,
+      });
+      const gate = gateForDeviceEffect({
+        support,
+        claimed: claimedClass,
+        family: input.family,
+        executionQueue: input.executionQueue,
+        declaredDwellMs: input.declaredDwellMs,
+      });
+      if (gate) return gate;
+    }
+
     const observedClass = input.observed?.iosHardwareClass;
-    const claimedClass = classifyIosHardware({
-      device: input.device,
-      approximation: input.approximation,
-      kind: input.kind,
-    });
     if (
       observedClass &&
       claimedClass !== "unproven" &&
@@ -310,6 +595,10 @@ export function capabilityGateForRun(
       executionQueue: run.executionQueue,
       declaredDwellMs: run.declaredDwellMs,
       kind: run.kind,
+      serial: run.serial,
+      family: run.family,
+      deviceEffects: run.deviceEffects,
+      recipeSteps: run.recipeSteps,
     });
     if (gate) return gate;
   }

@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  canCoverPhysicalIpadSurvival,
   capabilityGateForRun,
   capabilityGateForSlot,
+  claimedDeviceEffects,
   classifyIosHardware,
+  deviceEffectFromRecipeStep,
   gatePlanCaptureReviewRuns,
+  iosDeviceEffectMatrix,
+  iosDeviceEffectSupport,
   iosHardwareCovers,
+  LAB_PHYSICAL_IPAD_SERIAL,
   physicalImagineClaim,
   resolveGatedPlanCaptureReviewQueue,
   workbookCoverageAfterCompileAttempts,
@@ -273,6 +279,7 @@ test("S16 60s dwell cannot be claimed by Fast UI 10s, and physical lock stays hu
   const lock = {
     runId: "ios-lock",
     platform: "ios" as const,
+    serial: LAB_PHYSICAL_IPAD_SERIAL,
     plannedSlots: [
       {
         checkpointId: "lock",
@@ -288,11 +295,14 @@ test("S16 60s dwell cannot be claimed by Fast UI 10s, and physical lock stays hu
   const queue = resolveGatedPlanCaptureReviewQueue([lock], { adbDeviceCount: 0 });
   assert.equal(queue.summary.planned, 1);
   assert.equal(queue.summary.blocked, 1);
+  assert.equal(queue.summary.missing, 0);
+  assert.equal(queue.items[0]?.blocked, true);
   assert.match(gate?.reason ?? "", /human/u);
 });
 
 test("physical iPad dest-end is not iPhone or simulator coverage", () => {
   assert.equal(classifyIosHardware({ kind: "iPad Pro", name: "iPad Pro 10.5" }), "physical-ipad");
+  assert.equal(classifyIosHardware({ serial: LAB_PHYSICAL_IPAD_SERIAL }), "physical-ipad");
   assert.equal(classifyIosHardware({ kind: "iPhone 16" }), "physical-iphone");
   assert.equal(classifyIosHardware({ kind: "simulator", name: "iPad Pro" }), "simulator");
   assert.equal(classifyIosHardware({ approximation: "simulator", device: "iPhone" }), "simulator");
@@ -346,4 +356,206 @@ test("physical iPad dest-end is not iPhone or simulator coverage", () => {
     })?.reason ?? "",
     /unproven/u,
   );
+});
+
+test("airplane/lock are explicit capabilities; a Lock caption is not coverage", () => {
+  assert.equal(deviceEffectFromRecipeStep({ kind: "device", action: "lock" }), "lock-screen");
+  assert.equal(deviceEffectFromRecipeStep({ kind: "settings", setting: "airplane" }), "airplane");
+  assert.deepEqual(
+    claimedDeviceEffects({
+      checkpointId: "home-chrome",
+      recipeSteps: [{ kind: "wait-for" }],
+    }),
+    [],
+  );
+  const inventory = { adbDeviceCount: 0, iosImagineTabPresent: false };
+  const captionOnly = {
+    checkpointId: "home-chrome",
+    caption: "Lock screen / airplane / wifi chrome",
+    lookFor: "Wifi signal full.",
+    attempt: 1,
+    configuration: { app: "ai.x.GrokApp" as const },
+  };
+  assert.equal(
+    capabilityGateForSlot({
+      slot: captionOnly,
+      inventory,
+      platform: "ios",
+      serial: LAB_PHYSICAL_IPAD_SERIAL,
+    }),
+    undefined,
+  );
+  assert.equal(
+    capabilityGateForSlot({
+      slot: homeSlot("ios"),
+      inventory,
+      platform: "ios",
+      serial: LAB_PHYSICAL_IPAD_SERIAL,
+      recipeSteps: [{ kind: "device", action: "lock" }],
+    })?.kind,
+    "human-only",
+  );
+});
+
+test("this iPad serial has no lock/airplane/cellular primitive; simulator cannot cover S16", () => {
+  const ipad = iosDeviceEffectMatrix({
+    hardware: "physical-ipad",
+    serial: LAB_PHYSICAL_IPAD_SERIAL,
+  });
+  assert.equal(
+    ipad.every((row) => row.status !== "supported"),
+    true,
+  );
+  assert.equal(ipad.find((row) => row.capability === "lock-screen")?.status, "human-only");
+  assert.equal(ipad.find((row) => row.capability === "airplane")?.status, "human-only");
+  assert.equal(ipad.find((row) => row.capability === "cellular")?.status, "unsupported");
+  assert.equal(ipad.find((row) => row.capability === "external-app-auth")?.status, "human-only");
+  assert.equal(
+    iosDeviceEffectSupport({ hardware: "physical-iphone", capability: "cellular" }).status,
+    "unsupported",
+  );
+  assert.equal(
+    iosDeviceEffectSupport({ hardware: "simulator", capability: "airplane" }).status,
+    "simulator-only",
+  );
+  assert.equal(
+    iosDeviceEffectSupport({ hardware: "simulator", capability: "lock-screen" }).status,
+    "unsupported",
+  );
+  assert.match(
+    iosDeviceEffectSupport({ hardware: "simulator", capability: "airplane" }).primitive,
+    /status_bar/u,
+  );
+
+  assert.equal(
+    canCoverPhysicalIpadSurvival({
+      hardware: "simulator",
+      capability: "airplane",
+      executionQueue: "stateful-survival",
+      declaredDwellMs: 60_000,
+    }).ok,
+    false,
+  );
+  assert.equal(
+    canCoverPhysicalIpadSurvival({
+      hardware: "physical-ipad",
+      serial: LAB_PHYSICAL_IPAD_SERIAL,
+      capability: "lock-screen",
+      executionQueue: "stateful-survival",
+      declaredDwellMs: 60_000,
+    }).ok,
+    false,
+  );
+  const shortAirplane = canCoverPhysicalIpadSurvival({
+    hardware: "physical-ipad",
+    capability: "airplane",
+    executionQueue: "fast-ui",
+    declaredDwellMs: 10_000,
+  });
+  assert.equal(shortAirplane.ok, false);
+  assert.match(shortAirplane.ok ? "" : shortAirplane.reason, /S16/u);
+
+  const inventory = { adbDeviceCount: 0, iosImagineTabPresent: false };
+  const simulatorAirplane = {
+    runId: "sim-airplane",
+    platform: "ios" as const,
+    approximation: "simulator" as const,
+    executionQueue: "stateful-survival" as const,
+    declaredDwellMs: 60_000,
+    family: SURVIVAL_FAMILY_ID,
+    deviceEffects: ["airplane" as const],
+    plannedSlots: [
+      {
+        checkpointId: "airplane",
+        caption: "During airplane",
+        attempt: 1,
+        configuration: { app: "ai.x.GrokApp" as const },
+      },
+    ],
+    artifacts: [
+      {
+        kind: "capture-review",
+        data: {
+          caption: "During airplane",
+          framePath: "frames/sim-airplane.png",
+          imageSha256: "sim",
+          checkpointId: "airplane",
+          configuration: { app: "ai.x.GrokApp" },
+        },
+      },
+    ],
+  };
+  const simGate = capabilityGateForRun(simulatorAirplane, inventory);
+  assert.equal(simGate?.kind, "nonapplicable");
+  assert.match(simGate?.reason ?? "", /simulator/u);
+  const simQueue = resolveGatedPlanCaptureReviewQueue([simulatorAirplane], inventory);
+  assert.equal(simQueue.items[0]?.scenarioKind, "simulator-approximation");
+  assert.equal(
+    canCoverPhysicalIpadSurvival({
+      hardware: "simulator",
+      capability: "airplane",
+      executionQueue: "stateful-survival",
+      declaredDwellMs: 60_000,
+    }).ok,
+    false,
+  );
+
+  const physicalAirplane = {
+    runId: "ipad-airplane",
+    platform: "ios" as const,
+    serial: LAB_PHYSICAL_IPAD_SERIAL,
+    plannedSlots: [
+      {
+        checkpointId: "airplane",
+        caption: "Airplane",
+        attempt: 1,
+        configuration: { app: "ai.x.GrokApp" as const },
+      },
+    ],
+  };
+  const cellular = {
+    runId: "ipad-cellular",
+    platform: "ios" as const,
+    serial: LAB_PHYSICAL_IPAD_SERIAL,
+    plannedSlots: [
+      {
+        checkpointId: "cellular",
+        caption: "Cellular",
+        attempt: 1,
+        configuration: { app: "ai.x.GrokApp" as const },
+      },
+    ],
+  };
+  const auth = {
+    runId: "ipad-auth",
+    platform: "ios" as const,
+    serial: LAB_PHYSICAL_IPAD_SERIAL,
+    deviceEffects: ["external-app-auth" as const],
+    plannedSlots: [
+      {
+        checkpointId: "external-app-auth",
+        caption: "Sign in with Google",
+        attempt: 1,
+        configuration: { app: "ai.x.GrokApp" as const },
+      },
+    ],
+  };
+  const queue = resolveGatedPlanCaptureReviewQueue(
+    [simulatorAirplane, physicalAirplane, cellular, auth],
+    inventory,
+  );
+  assert.equal(queue.summary.planned, 4);
+  assert.equal(queue.items.length, 4);
+  assert.equal(
+    queue.items.every((item) => item.runId),
+    true,
+  );
+  const blockedUnsupported = queue.items.filter(
+    (item) => item.runId !== "sim-airplane" && item.blocked,
+  );
+  assert.equal(blockedUnsupported.length, 3);
+  assert.equal(queue.summary.missing, 0);
+  assert.equal(capabilityGateForRun(physicalAirplane, inventory)?.kind, "human-only");
+  assert.equal(capabilityGateForRun(cellular, inventory)?.kind, "unsupported");
+  assert.equal(capabilityGateForRun(auth, inventory)?.kind, "human-only");
 });
