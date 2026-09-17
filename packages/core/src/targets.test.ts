@@ -17,6 +17,7 @@ import {
   resetBrowserDeviceSessionsForTests,
 } from "./browser-device-session.js";
 import { createBrowserContextFactory } from "./browser-context.js";
+import { browserAccountSchedulingKey } from "./browser-account-lane.js";
 import {
   pressIdentifier,
   pressLabel,
@@ -222,7 +223,7 @@ test("in-app Browser Device sequences frames and rejects stale page input", asyn
       await deleteTarget(target.id);
       assert.ok(
         supervisor
-          .health({ id: target.id, kind: "browser" })
+          .health({ id: browserAccountSchedulingKey(target.id), kind: "browser" })
           .events.some(({ code }) => code === "INPUT_COMPLETED"),
       );
       resetBrowserDeviceSessionsForTests();
@@ -622,7 +623,7 @@ test("managed browser adapter supports canonical snapshots, clicks, video, and s
       );
       assert.ok(
         supervisor
-          .health({ id: target.id, kind: "browser" })
+          .health({ id: browserAccountSchedulingKey(target.id), kind: "browser" })
           .events.some(({ code }) => code === "INPUT_COMPLETED"),
       );
     });
