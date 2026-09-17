@@ -28,7 +28,8 @@ export type ValidationDraft =
   | { kind: "semantic"; input: string; criteria: string; requireAgreement: boolean }
   | { kind: "wait-response"; label: string; maxMs: string }
   | { kind: "extract"; as: string; label: string; role: "assistant" | "user" | "" }
-  | { kind: "identity-ignore"; name: string; region: string };
+  | { kind: "identity-ignore"; name: string; region: string }
+  | { kind: "upload"; file: string; label: string };
 
 function controlLabel(target: {
   label?: string;
@@ -95,6 +96,11 @@ export function checkpointBindingCopy(step: AppMapScenarioTestStep): string | un
   if (recipe.kind === "evaluate-visual")
     return "A visual judge will score this screenshot. Disagreement stays Needs review. Do not auto-accept.";
   if (recipe.kind === "evaluate-semantic") return "A semantic judge will score the reply.";
+  if (recipe.kind === "upload") {
+    return recipe.file
+      ? `Attaches ${recipe.file}. iOS compile-blocks without a recorded Files-app path. Not a Grok Files pass. Does not accept a visual baseline.`
+      : "Attaches a workspace file. iOS compile-blocks without a recorded Files-app path. Not a Grok Files pass. Does not accept a visual baseline.";
+  }
   return undefined;
 }
 
@@ -134,6 +140,13 @@ export function validationDraft(step: AppMapScenarioTestStep): ValidationDraft |
       kind: "identity-ignore",
       name: step.binding.step.name ?? "",
       region: `${region.x},${region.y},${region.width},${region.height}`,
+    };
+  }
+  if (step.binding.kind === "recipe-step" && step.binding.step.kind === "upload") {
+    return {
+      kind: "upload",
+      file: step.binding.step.file,
+      label: step.binding.step.target?.label ?? "",
     };
   }
   if (
@@ -181,6 +194,7 @@ export function validationDraft(step: AppMapScenarioTestStep): ValidationDraft |
 
 export function isValidationDraftReady(draft: ValidationDraft): boolean {
   if (draft.kind === "capture") return Boolean(draft.name.trim());
+  if (draft.kind === "upload") return Boolean(draft.file.trim());
   if (draft.kind === "screen") return Boolean(draft.screenId.trim());
   if (draft.kind === "visual") {
     if (!draft.criteria.trim()) return false;
@@ -248,6 +262,19 @@ export function validationBindingFromDraft(
         criteria: lines(draft.criteria),
         ...(region ? { region } : {}),
         ...(draft.requireAgreement ? { requireAgreement: true } : {}),
+      },
+    };
+  }
+  if (draft.kind === "upload") {
+    const file = draft.file.trim();
+    const label = draft.label.trim();
+    return {
+      status: "resolved",
+      kind: "recipe-step",
+      step: {
+        kind: "upload",
+        file,
+        ...(label ? { target: { label } } : {}),
       },
     };
   }
@@ -337,6 +364,7 @@ export function emptyValidationDraft(kind: ValidationDraft["kind"]): ValidationD
   if (kind === "extract") return { kind: "extract", as: "reply", label: "", role: "assistant" };
   if (kind === "identity-ignore")
     return { kind: "identity-ignore", name: "reply body", region: "" };
+  if (kind === "upload") return { kind: "upload", file: "tests/fixtures/sample.pdf", label: "" };
   return { kind: "content", input: "", expected: "", match: "contains" };
 }
 
@@ -398,7 +426,7 @@ export function ValidationExpectationEditor({
       <div className="grid gap-3">
         <p className="text-xs font-normal leading-normal text-muted-foreground">
           {canAdd
-            ? "Add a result after this step. Capture a screenshot for a person to review later, or add a check. Visual judges live here — not in YAML — and never auto-accept a baseline."
+            ? "Add a result after this step. Capture a screenshot for a person to review later, attach a workspace file, or add a check. Visual judges live here — not in YAML — and never auto-accept a baseline."
             : (bindingSummary ??
               "This checkpoint uses a reviewed structured assertion. Its readable binding remains available under Advanced.")}
         </p>
@@ -455,6 +483,33 @@ export function ValidationExpectationEditor({
           <p className="text-xs font-normal leading-normal text-muted-foreground">
             Current viewport. A person will review later. Capture succeeded is not the same as
             review accepted. Looks correct does not approve a visual baseline. No AI key required.
+          </p>
+        </>
+      ) : null}
+      {value.kind === "upload" ? (
+        <>
+          <label htmlFor="selected-step-expected-upload-file">
+            Workspace file
+            <Input
+              id="selected-step-expected-upload-file"
+              value={value.file}
+              onChange={(event) => onChange({ ...value, file: event.currentTarget.value })}
+              placeholder="tests/fixtures/sample.pdf"
+            />
+          </label>
+          <label htmlFor="selected-step-expected-upload-label">
+            Attach control
+            <Input
+              id="selected-step-expected-upload-label"
+              value={value.label}
+              onChange={(event) => onChange({ ...value, label: event.currentTarget.value })}
+              placeholder="Upload a file"
+            />
+          </label>
+          <p className="text-xs font-normal leading-normal text-muted-foreground">
+            Browser attaches this file. iOS compile-blocks until a Files-app path is recorded. An
+            Android primitive push is not a Grok Files pass. Confirm/Reject and a passing attach do
+            not accept a visual baseline.
           </p>
         </>
       ) : null}

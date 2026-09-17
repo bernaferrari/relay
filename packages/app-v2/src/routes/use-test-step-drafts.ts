@@ -25,11 +25,21 @@ function validExpected(value: StepDraft["expected"]): boolean {
   if (value.kind === "wait-response") {
     return typeof value.label === "string" && typeof value.maxMs === "string";
   }
+  if (value.kind === "extract") {
+    return (
+      typeof value.as === "string" &&
+      typeof value.label === "string" &&
+      (value.role === "assistant" || value.role === "user" || value.role === "")
+    );
+  }
   if (value.kind === "identity-ignore") {
     return typeof value.name === "string" && typeof value.region === "string";
   }
   if (value.kind === "capture") {
     return typeof value.name === "string" && typeof value.lookFor === "string";
+  }
+  if (value.kind === "upload") {
+    return typeof value.file === "string" && typeof value.label === "string";
   }
   return (
     value.kind === "content" &&

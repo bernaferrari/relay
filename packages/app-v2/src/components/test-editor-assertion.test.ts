@@ -11,9 +11,10 @@ import {
 import { validationKindGroupsForEditor } from "./test-editor-checkpoint-kinds";
 
 describe("test editor assertions", () => {
-  it("groups Capture, Check, Wait, Judges, and Ignore region", () => {
+  it("groups Capture, Attach, Check, Wait, Judges, and Ignore region", () => {
     expect(VALIDATION_KIND_GROUPS.map((group) => group.label)).toEqual([
       "Capture",
+      "Attach",
       "Check",
       "Wait",
       "Judges",
@@ -23,6 +24,7 @@ describe("test editor assertions", () => {
       VALIDATION_KIND_GROUPS.flatMap((group) => group.kinds.map((kind) => kind.value)),
     ).toEqual([
       "capture",
+      "upload",
       "screen",
       "content",
       "wait-response",
@@ -38,7 +40,15 @@ describe("test editor assertions", () => {
       validationKindGroupsForEditor({ hasRememberableReply: false }).flatMap((group) =>
         group.kinds.map((kind) => kind.value),
       ),
-    ).toEqual(["capture", "screen", "content", "wait-response", "visual", "identity-ignore"]);
+    ).toEqual([
+      "capture",
+      "upload",
+      "screen",
+      "content",
+      "wait-response",
+      "visual",
+      "identity-ignore",
+    ]);
     expect(
       validationKindGroupsForEditor({
         hasRememberableReply: false,
@@ -124,6 +134,28 @@ describe("test editor assertions", () => {
         requireAgreement: true,
       },
     });
+    expect(
+      validationBindingFromDraft({
+        kind: "upload",
+        file: "tests/fixtures/sample.pdf",
+        label: "Upload a file",
+      }),
+    ).toEqual({
+      status: "resolved",
+      kind: "recipe-step",
+      step: {
+        kind: "upload",
+        file: "tests/fixtures/sample.pdf",
+        target: { label: "Upload a file" },
+      },
+    });
+    expect(
+      isValidationDraftReady({
+        kind: "upload",
+        file: "",
+        label: "Upload a file",
+      }),
+    ).toBe(false);
     expect(
       validationBindingFromDraft({
         kind: "identity-ignore",
@@ -307,6 +339,21 @@ describe("test editor assertions", () => {
       }),
     ).toBe(
       "Captures “Arabic account settings” for a person to review later. Does not approve a baseline.",
+    );
+    expect(
+      checkpointBindingCopy({
+        id: "step-upload",
+        kind: "validation",
+        intent: "Attach a fixture",
+        capture: true,
+        binding: {
+          status: "resolved",
+          kind: "recipe-step",
+          step: { kind: "upload", file: "tests/fixtures/sample.pdf" },
+        },
+      }),
+    ).toBe(
+      "Attaches tests/fixtures/sample.pdf. iOS compile-blocks without a recorded Files-app path. Not a Grok Files pass. Does not accept a visual baseline.",
     );
   });
 });

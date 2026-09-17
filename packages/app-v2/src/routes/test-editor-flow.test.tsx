@@ -554,6 +554,31 @@ describe("Test editor", () => {
     expect(document.body.textContent).toContain("Two independent judges must agree");
   });
 
+  it("authors an upload checkpoint without YAML", async () => {
+    const harness = service();
+    await render(harness.editor, "/tests/test-checkout/edit?step=step-cart");
+    await click("Add checkpoint");
+    await click("Upload a file");
+    expect(document.body.textContent).toContain("not a Grok Files pass");
+    expect(document.body.textContent).toContain("do not accept a visual baseline");
+    expect(
+      document.querySelector<HTMLInputElement>("#selected-step-expected-upload-file")?.value,
+    ).toBe("tests/fixtures/sample.pdf");
+    await click("Save step");
+    expect(harness.edits.at(-1)).toEqual([
+      expect.objectContaining({
+        kind: "step.patch",
+        patch: expect.objectContaining({
+          binding: {
+            status: "resolved",
+            kind: "recipe-step",
+            step: { kind: "upload", file: "tests/fixtures/sample.pdf" },
+          },
+        }),
+      }),
+    ]);
+  });
+
   it("authors a visual judge with independent consensus without YAML", async () => {
     const source = structuredClone(initialDocument);
     const validation = source.test.steps.find((step) => step.id === "step-pay");

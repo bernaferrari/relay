@@ -89,6 +89,36 @@ test("browser recorded upload is not a compile-block", () => {
   assert.deepEqual(blockers, {});
 });
 
+const iosAuthoredUploadTest: Pick<AppMapScenarioTest, "steps"> = {
+  steps: [
+    {
+      id: "upload-pdf",
+      kind: "validation",
+      intent: "Attach a fixture",
+      binding: {
+        status: "resolved",
+        kind: "recipe-step",
+        step: { kind: "upload", file: "tests/fixtures/sample.pdf" },
+      },
+    },
+  ],
+};
+
+test("iOS authored upload checkpoint is a Files-app compile-block", () => {
+  const blockers = testStepPlatformBlockers(iosAuthoredUploadTest, { connections: {} }, ["ios"]);
+  assert.equal(
+    blockers["upload-pdf"],
+    "upload on iOS requires a reviewed Files-app handoff; disable this step or record that path",
+  );
+});
+
+test("browser authored upload checkpoint is not a compile-block", () => {
+  const blockers = testStepPlatformBlockers(iosAuthoredUploadTest, { connections: {} }, [
+    "browser",
+  ]);
+  assert.deepEqual(blockers, {});
+});
+
 test("mixed recorded platforms do not block when one route can run", () => {
   const blockers = testStepPlatformBlockers(androidOfflineTest, androidMap, ["android", "browser"]);
   assert.deepEqual(blockers, {});

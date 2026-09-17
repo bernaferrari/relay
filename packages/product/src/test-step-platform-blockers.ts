@@ -16,7 +16,11 @@ function recipeStepsFromTestStep(
   step: AppMapScenarioTestStep,
   map: Pick<AppMap, "connections">,
 ): readonly RecipeStep[] {
-  if (step.kind !== "instruction" || step.binding.status !== "resolved") return [];
+  if (step.binding.status !== "resolved") return [];
+  if (step.kind === "validation" && step.binding.kind === "recipe-step") {
+    return [step.binding.step];
+  }
+  if (step.kind !== "instruction" || step.binding.kind !== "connections") return [];
   return step.binding.connectionIds.flatMap((connectionId) => {
     const connection = map.connections[connectionId];
     if (!connection) return [];

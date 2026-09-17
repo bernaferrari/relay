@@ -359,6 +359,87 @@ test("compiles visual and semantic assertion steps", () => {
   );
 });
 
+test("compiles an authored upload checkpoint without a recorded connection", () => {
+  const current = fixture();
+  const work = scenario();
+  work.steps.push({
+    id: "upload-file",
+    kind: "validation",
+    intent: "Attach a fixture",
+    capture: true,
+    binding: {
+      status: "resolved",
+      kind: "recipe-step",
+      step: {
+        kind: "upload",
+        file: "tests/fixtures/sample.pdf",
+        target: { label: "Upload a file" },
+      },
+    },
+  });
+  const compiled = compileAppMapTest(current, work);
+  const root = compiled.graph[compiled.plan.rootRecipeId]!;
+  assert.deepEqual(
+    root.steps.find((step) => step.kind === "upload"),
+    {
+      kind: "upload",
+      file: "tests/fixtures/sample.pdf",
+      target: { label: "Upload a file" },
+      id: "relay-test-upload-file-1",
+    },
+  );
+});
+
+test("iOS authored upload checkpoint is a compile-time blocker", () => {
+  const map = fixture();
+  const iosProfile = {
+    id: "ipad",
+    targetId: "ipad-1",
+    source: "device",
+    platform: "ios",
+    name: "iPad",
+    capabilities: ["tap", "screenshot"],
+    observedAt: at,
+  } satisfies TargetProfile;
+  map.screens.home = { ...map.screens.home!, variantIds: ["ios-home"] };
+  map.screenVariants["ios-home"] = {
+    ...scope,
+    id: "ios-home",
+    screenId: "home",
+    targetProfile: iosProfile,
+    evidenceIds: [],
+    createdAt: at,
+    updatedAt: at,
+  };
+  const work = scenario();
+  work.steps.push({
+    id: "upload-file",
+    kind: "validation",
+    intent: "Attach a fixture",
+    capture: true,
+    binding: {
+      status: "resolved",
+      kind: "recipe-step",
+      step: { kind: "upload", file: "tests/fixtures/sample.pdf" },
+    },
+  });
+  assert.throws(
+    () =>
+      compileAppMapTest(map, work, {
+        runtimeTargetProfile: {
+          id: "ipad",
+          targetId: "ipad-1",
+          platform: "ios",
+          capabilities: ["screenshot", "tap"],
+        },
+      }),
+    (error: unknown) =>
+      error instanceof AppMapTestCompileError &&
+      error.code === "unsupported-platform" &&
+      /Files-app/u.test(error.message),
+  );
+});
+
 test("compiles capture-for-review as one screenshot without a judge", () => {
   const current = fixture();
   const work = scenario();
