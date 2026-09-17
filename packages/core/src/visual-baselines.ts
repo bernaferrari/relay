@@ -5,7 +5,7 @@ import { PNG } from "pngjs";
 import {
   VISUAL_COMPARISON_CODES,
   VISUAL_REVIEW_ACTIONS,
-  captureReviewIdentityFramePaths,
+  destIdentitySourceFrames,
   type VisualBaseline,
   type VisualComparison,
   type VisualComparisonCode,
@@ -462,9 +462,7 @@ function pngDimensions(
 function visualSnapshotSourceFrames(
   run: Pick<PersistedRun, "frames" | "artifacts">,
 ): PersistedRun["frames"] {
-  const destIdentity = new Set(captureReviewIdentityFramePaths(run.artifacts ?? []));
-  if (!destIdentity.size) return run.frames;
-  return run.frames.filter((frame) => destIdentity.has(frame.path));
+  return destIdentitySourceFrames(run.frames, run.artifacts);
 }
 
 async function snapshotRun(

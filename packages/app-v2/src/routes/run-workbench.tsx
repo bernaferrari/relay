@@ -25,14 +25,14 @@ import {
   MoveUpRight,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import {
-  framePathsForTraceStep,
-  type ProductRunReportOverview,
-  type ReportEvidenceItem,
-} from "../data/run-product-service";
+import { framePathsForTraceStep, type ProductRunReportOverview } from "../data/run-product-service";
 import { CaptureReviewDecisions } from "./capture-review-decisions";
 import { CaptureReviewPanel } from "./run-capture-review-panel";
-import { type CaptureReviewAction, type CaptureReviewItem } from "@relay/protocol";
+import {
+  type CaptureReviewAction,
+  type CaptureReviewItem,
+  isCaptureReviewLeftoverPhase,
+} from "@relay/protocol";
 
 type Report = ProductRunReportOverview;
 
@@ -108,7 +108,15 @@ export function RunWorkbench({
     report.evidence
       .find((section) => section.id === "screenshot")
       ?.items.filter((item) => item.media) ?? [];
-  const reviewItems = report.captureReview?.items ?? [];
+  const reviewItems = (report.captureReview?.items ?? []).filter(
+    (item) => !isCaptureReviewLeftoverPhase(item.phase),
+  );
+  const destFrameIds = new Set(
+    reviewItems.flatMap((item) => (item.framePath ? [item.framePath] : [])),
+  );
+  const destFrames = destFrameIds.size
+    ? allFrames.filter((item) => destFrameIds.has(item.id))
+    : allFrames;
   const reviewMode = reviewItems.length > 0;
   const selectedCapture = Math.min(
     requestedCapture,
@@ -543,10 +551,10 @@ export function RunWorkbench({
               {panel === "captures" ? (
                 reviewMode && report.captureReview ? (
                   <CaptureReviewPanel
-                    queue={report.captureReview}
+                    queue={{ ...report.captureReview, items: reviewItems }}
                     showImage={false}
                     fallbackTitle={report.title}
-                    frames={allFrames}
+                    frames={destFrames}
                     selectedIndex={selectedCapture}
                     onSelect={setSelectedCapture}
                     busy={reviewBusy}

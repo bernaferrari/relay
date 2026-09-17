@@ -219,6 +219,32 @@ export function captureReviewIdentityFramePaths(
   return dest;
 }
 
+/** Leftover Close / Run saved Test last-frame rasters. Dest identity stays dest. */
+export function captureReviewLeftoverFramePaths(
+  artifacts: readonly { kind?: string; data?: unknown }[],
+): string[] {
+  const leftover: string[] = [];
+  for (const artifact of artifacts) {
+    if (artifact.kind !== "capture-review") continue;
+    const payload = record(artifact.data);
+    const framePath = text(payload?.framePath);
+    if (!framePath || !isCaptureReviewLeftoverPhase(text(payload?.phase))) continue;
+    leftover.push(framePath);
+  }
+  return leftover;
+}
+
+/** Dest-phase identity rasters only. Leftover Close last-frame cannot fill dest.
+ * Unphased runs (Android dest-wait) keep every frame. */
+export function destIdentitySourceFrames<T extends { path: string }>(
+  frames: readonly T[],
+  artifacts?: readonly { kind?: string; data?: unknown }[],
+): T[] {
+  const destIdentity = new Set(captureReviewIdentityFramePaths(artifacts ?? []));
+  if (!destIdentity.size) return [...frames];
+  return frames.filter((frame) => destIdentity.has(frame.path));
+}
+
 /** Stable planned capture identity. Caption is display text only. */
 export type CaptureReviewSlotIdentity = {
   requirementId?: string;
@@ -1041,6 +1067,17 @@ function bindArtifactToSlots(
   return false;
 }
 
+function leftoverArtifactWithoutLeftoverSlot(
+  artifact: CaptureReviewItem,
+  slots: readonly CaptureReviewPlannedSlot[],
+  bound: Set<number>,
+): boolean {
+  if (!isCaptureReviewLeftoverPhase(artifact.phase)) return false;
+  return !slots.some(
+    (slot, index) => !bound.has(index) && isCaptureReviewLeftoverPhase(slot.phase),
+  );
+}
+
 function artifactImpersonatesDestSlot(
   artifact: CaptureReviewItem,
   slots: readonly CaptureReviewPlannedSlot[],
@@ -1164,11 +1201,17 @@ export function resolveCaptureReviewQueue(input: {
     for (const artifact of ordered) {
       if (bindArtifactToSlots(artifact, items, planned, bound)) continue;
       if (artifactImpersonatesDestSlot(artifact, planned, destArtifacts)) continue;
+      if (leftoverArtifactWithoutLeftoverSlot(artifact, planned, bound)) continue;
       extras.push(artifact);
     }
     items.push(...extras);
   } else {
-    items.push(...artifacts);
+    const destArtifacts = artifacts.filter((item) => isCaptureReviewDestPhase(item.phase));
+    items.push(
+      ...(destArtifacts.length
+        ? artifacts.filter((item) => !isCaptureReviewLeftoverPhase(item.phase))
+        : artifacts),
+    );
   }
   const reviewed = items.map((item) => overlayDecision(item, input.decisions ?? []));
   return { items: reviewed, summary: summarizeCaptureReview(reviewed) };

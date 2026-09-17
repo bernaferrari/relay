@@ -1,4 +1,5 @@
 import type { TestJob } from "./session-contract.js";
+import { captureReviewIdentityFramePaths } from "@relay/protocol";
 
 export type RunStoryBeat = {
   at: number;
@@ -69,14 +70,34 @@ export function buildRunStory(
     title?: string;
     status?: string;
     videoPath?: string;
-    frames?: { caption?: string }[];
+    frames?: { caption?: string; path?: string }[];
   },
 ): RunStory {
-  const beats = (run.artifacts ?? [])
-    .flatMap((artifact) => {
+  const destIdentity = captureReviewIdentityFramePaths(run.artifacts ?? []);
+  const destFrame = destIdentity[0];
+  const destArtifact = destFrame
+    ? (run.artifacts ?? []).find((artifact) => {
+        if (artifact.kind !== "capture-review") return false;
+        const data = object(artifact.data);
+        return data?.framePath === destFrame;
+      })
+    : undefined;
+  const beats = [
+    ...(run.artifacts ?? []).flatMap((artifact) => {
       const beat = beatFromArtifact(artifact);
       return beat ? [beat] : [];
-    })
+    }),
+    ...(destFrame
+      ? [
+          {
+            at: destArtifact?.capturedAt ?? 0,
+            kind: "dest-identity",
+            text: "Dest wait-for Fast",
+            evidence: destFrame,
+          } satisfies RunStoryBeat,
+        ]
+      : []),
+  ]
     .sort((left, right) => left.at - right.at)
     .slice(0, 80);
   const failed = beats.filter((beat) => /fail|stuck|blocked/i.test(beat.text));

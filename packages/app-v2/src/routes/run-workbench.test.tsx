@@ -338,7 +338,7 @@ describe("RunWorkbench", () => {
       zoom.click();
     });
     expect(dialog.textContent).toContain("100%");
-    expect(dialog.querySelector("img")?.style.width).toBe("320px");
+    expect(dialog.querySelector("img")?.style.getPropertyValue("--zoom-width")).toBe("320px");
   });
 
   it("selects the first persisted step and its joined media", () => {
@@ -559,6 +559,13 @@ describe("RunWorkbench", () => {
             phase: "dest",
             policy: "fast",
           },
+          {
+            captureId: "frames/004.png::close-leftover",
+            caption: "Close",
+            status: "pending",
+            framePath: "frames/004.png",
+            phase: "leftover",
+          },
         ],
         summary: {
           captured: 1,
@@ -600,6 +607,11 @@ describe("RunWorkbench", () => {
     expect(host.querySelector(".relay-evidence-image-frame img")?.getAttribute("src")).not.toBe(
       "/leftover-close.png",
     );
+    const thumbs = [...host.querySelectorAll('[aria-label="Screenshots for review"] img')].map(
+      (img) => img.getAttribute("src"),
+    );
+    expect(thumbs).toContain("/dest-wait.png");
+    expect(thumbs).not.toContain("/leftover-close.png");
     expect(host.textContent).toContain("Observe");
     expect(host.textContent).not.toContain("Captured result");
   });

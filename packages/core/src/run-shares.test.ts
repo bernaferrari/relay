@@ -157,6 +157,81 @@ test("creates a durable signed batch share and projects only bounded report evid
   }
 });
 
+test("share dest identity is dest wait-for, not leftover Close last-frame", () => {
+  const destRun: PersistedRun = {
+    ...run({ id: "run-dest", frames: 3, outcome: "passed" }),
+    frames: [
+      {
+        path: "frames/001.png",
+        caption: "Reach home",
+        capturedAt: 1,
+        mime: "image/png",
+        width: 100,
+        height: 200,
+      },
+      {
+        path: "frames/003.png",
+        caption: "Observe",
+        capturedAt: 3,
+        mime: "image/png",
+        width: 100,
+        height: 200,
+      },
+      {
+        path: "frames/004.png",
+        caption: "after · Run saved Test",
+        capturedAt: 4,
+        mime: "image/png",
+        width: 100,
+        height: 200,
+      },
+    ],
+    artifacts: [
+      {
+        kind: "capture-review",
+        capturedAt: 3,
+        data: {
+          caption: "Observe",
+          framePath: "frames/003.png",
+          phase: "dest",
+          policy: "fast",
+        },
+      },
+      {
+        kind: "capture-review",
+        capturedAt: 4,
+        data: {
+          caption: "Close",
+          framePath: "frames/004.png",
+          phase: "leftover",
+        },
+      },
+    ],
+  };
+  const report = buildRunShareReport(
+    {
+      schemaVersion: 1,
+      id: "share-dest",
+      runId: destRun.id,
+      runIds: [destRun.id],
+      projectId: "project-a",
+      title: "Dest identity",
+      createdAt: 1,
+      expiresAt: 2,
+      createdBy: "human:a",
+      frameCount: 1,
+    },
+    [destRun],
+  );
+  assert.equal(report.runs[0]!.frames.length, 1);
+  assert.equal(report.runs[0]!.frames[0]!.caption, "Observe");
+  assert.equal(report.totals.screenshots, 1);
+  assert.equal(
+    report.runs[0]!.frames.some((frame) => frame.caption === "after · Run saved Test"),
+    false,
+  );
+});
+
 test("revocation invalidates the bearer capability without deleting its audit summary", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-run-share-revoke-"));
   const at = 20_000;

@@ -9,6 +9,7 @@ import {
   type PersistedRun,
 } from "@relay/core";
 import type { RunShareReport, RunShareReportRun } from "@relay/protocol";
+import { destIdentitySourceFrames } from "@relay/protocol";
 import { CORS_HEADERS, json, matchPath } from "./http.js";
 
 const PUBLIC_HEADERS = {
@@ -19,9 +20,10 @@ const PUBLIC_HEADERS = {
 } as const;
 
 function shareableFrames(run: PersistedRun): PersistedRun["frames"] {
-  return run.frames.filter(
+  const pngs = run.frames.filter(
     (frame) => frame.mime === "image/png" || frame.path.toLowerCase().endsWith(".png"),
   );
+  return destIdentitySourceFrames(pngs, run.artifacts);
 }
 
 function escapeHtml(value: unknown): string {

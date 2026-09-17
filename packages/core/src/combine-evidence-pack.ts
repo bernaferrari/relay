@@ -20,6 +20,7 @@ import type {
 import {
   formatCaptureReviewCoverageSummary,
   captureReviewIdentityFramePaths,
+  captureReviewLeftoverFramePaths,
 } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import { pngDimensions } from "./ios-geometry.js";
@@ -341,9 +342,14 @@ function authoredFrames(job: CombineEvidenceCase): CombineEvidenceCase["frames"]
     // closed on the same mismatch.
     allowed = undefined;
   }
-  return (job.frames ?? []).filter(
-    (frame) => !isHarnessFrame(frame.caption) && (!allowed || allowed.has(basename(frame.path))),
-  );
+  const dest = captureReviewIdentityFramePaths(job.artifacts ?? []);
+  const leftover = new Set(captureReviewLeftoverFramePaths(job.artifacts ?? []));
+  return (job.frames ?? []).filter((frame) => {
+    if (isHarnessFrame(frame.caption)) return false;
+    if (allowed && !allowed.has(basename(frame.path))) return false;
+    if (dest.length && leftover.has(frame.path)) return false;
+    return true;
+  });
 }
 
 /**
@@ -634,6 +640,10 @@ export async function exportCombineEvidencePack(input: {
         .filter((frame) => isHarnessFrame(frame.caption))
         .map((frame) => basename(frame.path)),
     );
+    const destIdentity = captureReviewIdentityFramePaths(job.artifacts ?? []);
+    const leftoverNames = new Set(
+      captureReviewLeftoverFramePaths(job.artifacts ?? []).map((path) => basename(path)),
+    );
     if (job.runDir) {
       try {
         const frameDir = join(job.runDir, "frames");
@@ -643,6 +653,7 @@ export async function exportCombineEvidencePack(input: {
               name.endsWith(".png") &&
               name !== "full.png" &&
               !harness.has(name) &&
+              !(destIdentity.length && leftoverNames.has(name)) &&
               (!evidence.names || evidence.names.has(name)),
           )
           .sort();

@@ -4,7 +4,11 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { compileBrowserEnvironment, type BrowserProofEvidence } from "@relay/protocol";
+import {
+  compileBrowserEnvironment,
+  destIdentitySourceFrames,
+  type BrowserProofEvidence,
+} from "@relay/protocol";
 import { persistAuthoringEvidence } from "./authoring-evidence.js";
 import { analyzeTracePack, exportTracePack, verifyTracePack } from "./trace-pack.js";
 import type { PersistedRun } from "./runs.js";
@@ -904,4 +908,47 @@ test("degraded channels and invalid frame paths make completeness explicitly par
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("trace dest identity is dest wait-for, not leftover Close last-frame", () => {
+  const run = persistedRun();
+  run.frames = [
+    {
+      path: "frames/003.png",
+      caption: "Observe",
+      capturedAt: 3,
+      mime: "image/png",
+    },
+    {
+      path: "frames/004.png",
+      caption: "after · Run saved Test",
+      capturedAt: 4,
+      mime: "image/png",
+    },
+  ];
+  run.artifacts.push(
+    {
+      kind: "capture-review",
+      capturedAt: 3,
+      data: {
+        caption: "Observe",
+        framePath: "frames/003.png",
+        phase: "dest",
+        policy: "fast",
+      },
+    },
+    {
+      kind: "capture-review",
+      capturedAt: 4,
+      data: {
+        caption: "Close",
+        framePath: "frames/004.png",
+        phase: "leftover",
+      },
+    },
+  );
+  assert.deepEqual(
+    destIdentitySourceFrames(run.frames, run.artifacts).map((frame) => frame.path),
+    ["frames/003.png"],
+  );
 });

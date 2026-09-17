@@ -8,7 +8,7 @@ import type {
   RunShareReportRun,
   RunShareSummary,
 } from "@relay/protocol";
-import { failedStepFromTrace } from "@relay/protocol";
+import { destIdentitySourceFrames, failedStepFromTrace } from "@relay/protocol";
 import type { PersistedRun } from "./runs.js";
 import { redactText } from "./redaction.js";
 
@@ -228,9 +228,10 @@ function visibleToScope(record: RunShareRecord, scope: ShareScope): boolean {
 }
 
 function shareableFrames(run: PersistedRun): PersistedRun["frames"] {
-  return run.frames.filter(
+  const pngs = run.frames.filter(
     (frame) => frame.mime === "image/png" || frame.path.toLowerCase().endsWith(".png"),
   );
+  return destIdentitySourceFrames(pngs, run.artifacts);
 }
 /** Bounded, redacted reason a run stopped. Share reports expose status plus
  * this one headline — never logs, stack traces, or resolved inputs. */

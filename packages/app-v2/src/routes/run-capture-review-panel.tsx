@@ -11,6 +11,7 @@ import {
   formatCaptureReviewConfiguration,
   formatCaptureReviewCoverageSummary,
   formatCaptureReviewObservedSession,
+  isCaptureReviewLeftoverPhase,
   type CaptureReviewAction,
   type CaptureReviewConfiguration,
   type CaptureReviewItem,
@@ -110,8 +111,9 @@ export function CaptureReviewPanel({
       (current) => new Set([...current].filter((key) => !reviewedItemKeys.includes(key))),
     );
   }, [reviewedItemKeys]);
-  const selected = queue.items[Math.min(selectedIndex, Math.max(0, queue.items.length - 1))];
-  const pendingIndices = queue.items.flatMap((item, index) =>
+  const destItems = queue.items.filter((item) => !isCaptureReviewLeftoverPhase(item.phase));
+  const selected = destItems[Math.min(selectedIndex, Math.max(0, destItems.length - 1))];
+  const pendingIndices = destItems.flatMap((item, index) =>
     item.status === "pending" && reviewable(item) && index !== selectedIndex ? [index] : [],
   );
   const nextPendingIndex =
@@ -126,7 +128,7 @@ export function CaptureReviewPanel({
     ...formatCaptureReviewConfiguration(selected?.configuration ?? fallbackConfiguration),
     ...formatCaptureReviewObservedSession(selected?.observed),
   ];
-  const bulkItems = queue.items.filter((item) => {
+  const bulkItems = destItems.filter((item) => {
     const key = captureReviewQueueItemKey({ ...item, ...planFields(item) });
     return selectedIds.has(key) && reviewable(item);
   });
@@ -171,7 +173,7 @@ export function CaptureReviewPanel({
           )
         )
           return;
-        const next = captureReviewAdvanceIndex(selectedIndex, queue.items.length, event.key);
+        const next = captureReviewAdvanceIndex(selectedIndex, destItems.length, event.key);
         if (next === undefined) return;
         event.preventDefault();
         if (next !== selectedIndex) onSelect(next);
@@ -202,12 +204,12 @@ export function CaptureReviewPanel({
                 size="sm"
                 variant="ghost"
                 disabled={
-                  busy || !queue.items.some((item) => item.status === "pending" && reviewable(item))
+                  busy || !destItems.some((item) => item.status === "pending" && reviewable(item))
                 }
                 onClick={() =>
                   setSelectedIds(
                     new Set(
-                      queue.items
+                      destItems
                         .filter((item) => item.status === "pending" && reviewable(item))
                         .map(captureReviewQueueItemKey),
                     ),
@@ -252,7 +254,7 @@ export function CaptureReviewPanel({
           }
           aria-label="Screenshots for review"
         >
-          {queue.items.map((item, index) => {
+          {destItems.map((item, index) => {
             const identity = { ...item, ...planFields(item) };
             const key = captureReviewQueueItemKey(identity);
             const thumb = frames.find((frame) => frame.id === captureReviewQueueFrameKey(identity));

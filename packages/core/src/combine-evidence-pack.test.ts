@@ -909,6 +909,7 @@ test("pack checklist dest identity is dest wait-for, not leftover Close last-fra
       jobs: [job],
       title: "Dest identity",
     });
+    const html = await readFile(join(pack.rootDir, "index.html"), "utf8");
     const checklist = JSON.parse(
       await readFile(join(pack.rootDir, "checklist.json"), "utf8"),
     ) as Array<{ afterPng?: string; beforePng?: string }>;
@@ -916,6 +917,8 @@ test("pack checklist dest identity is dest wait-for, not leftover Close last-fra
     assert.match(checklist[0]?.afterPng ?? "", /002\.png$/u);
     assert.doesNotMatch(checklist[0]?.afterPng ?? "", /005\.png$/u);
     assert.notEqual(checklist[0]?.afterPng, checklist[0]?.beforePng);
+    assert.match(html, /002\.png/u);
+    assert.doesNotMatch(html, /005\.png/u);
   } finally {
     if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
     else process.env.RELAY_WORKSPACE_ROOT = previous;

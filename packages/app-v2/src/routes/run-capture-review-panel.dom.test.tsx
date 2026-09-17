@@ -209,6 +209,14 @@ describe("CaptureReviewPanel selection", () => {
                   phase: "dest",
                   policy: "fast",
                 },
+                {
+                  captureId: "frames/004.png::close-leftover",
+                  caption: "Close",
+                  status: "pending",
+                  framePath: "frames/004.png",
+                  imageSha256: "close-leftover",
+                  phase: "leftover",
+                },
               ],
               summary: {
                 captured: 1,
@@ -246,7 +254,13 @@ describe("CaptureReviewPanel selection", () => {
     expect(
       host.querySelector('[aria-label="Selected screenshot"] img')?.getAttribute("src"),
     ).not.toBe("/runs/dest-end-observe/frames/004.png");
+    const thumbs = [...host.querySelectorAll('[aria-label="Screenshots for review"] img')].map(
+      (img) => img.getAttribute("src"),
+    );
+    expect(thumbs).toContain("/runs/dest-end-observe/frames/003.png");
+    expect(thumbs).not.toContain("/runs/dest-end-observe/frames/004.png");
     expect(host.textContent).toContain("Observe");
     expect(host.textContent).not.toContain("Captured result");
+    expect(host.textContent).not.toMatch(/Close leftover|after · Run saved Test/u);
   });
 });

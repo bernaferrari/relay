@@ -7,6 +7,8 @@ import {
   captureReviewCoverageLine,
   captureReviewId,
   captureReviewIdentityFramePaths,
+  captureReviewLeftoverFramePaths,
+  destIdentitySourceFrames,
   captureReviewSlotFamilyId,
   captureReviewSlotId,
   CAPTURE_REVIEW_ACTIONS,
@@ -1090,6 +1092,14 @@ test("dest-end dest-phase identity is dest wait-for pixels, not leftover Close l
   assert.equal(queue.items[0]?.policy, "fast");
   assert.notEqual(queue.items[0]?.framePath, "frames/005.png");
   assert.deepEqual(captureReviewIdentityFramePaths([leftoverHome, destWait]), ["frames/002.png"]);
+  assert.deepEqual(captureReviewLeftoverFramePaths([leftoverHome, destWait]), ["frames/005.png"]);
+  assert.deepEqual(
+    destIdentitySourceFrames(
+      [{ path: "frames/002.png" }, { path: "frames/005.png" }, { path: "frames/004.png" }],
+      [leftoverHome, destWait],
+    ).map((frame) => frame.path),
+    ["frames/002.png"],
+  );
 });
 
 test("dest-phase leftover Close still cannot bind dest", () => {
@@ -1184,6 +1194,48 @@ test("leftover Close last-frame cannot fill unphased freeze dest when dest-phase
   assert.deepEqual(captureReviewIdentityFramePaths([leftoverClose, unphasedClose, destWait]), [
     "frames/002.png",
   ]);
+});
+
+test("leftover Close extra slot cannot fill dest identity cards", () => {
+  const dest = destEndSlot();
+  const leftoverClose = {
+    kind: "capture-review",
+    data: {
+      caption: "Close",
+      framePath: "frames/004.png",
+      imageSha256: "close-leftover",
+      checkpointId: "close-dismiss",
+      attempt: 1,
+      phase: CAPTURE_REVIEW_LEFTOVER_PHASE,
+      configuration: dest.configuration,
+    },
+  };
+  const destWait = {
+    kind: "capture-review",
+    data: {
+      caption: dest.caption,
+      lookFor: dest.lookFor,
+      framePath: "frames/003.png",
+      imageSha256: "dest-wait",
+      stepId: dest.stepId,
+      slotId: captureReviewSlotId(dest),
+      checkpointId: dest.checkpointId,
+      attempt: 1,
+      phase: CAPTURE_REVIEW_DEST_PHASE,
+      policy: "fast",
+      configuration: dest.configuration,
+    },
+  };
+  const queue = resolveCaptureReviewQueue({
+    plannedSlots: [dest],
+    artifacts: [leftoverClose, destWait],
+  });
+  assert.equal(queue.items.length, 1);
+  assert.equal(queue.items[0]?.framePath, "frames/003.png");
+  assert.equal(
+    queue.items.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
 });
 
 test("inspect-setup-skipped leftover Type to imagine is not dest captured for Speak home", () => {

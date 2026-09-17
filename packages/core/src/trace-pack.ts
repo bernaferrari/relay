@@ -11,6 +11,7 @@ import {
   type TracePackObject,
   type TracePackOfflineAnalysis,
 } from "@relay/protocol";
+import { destIdentitySourceFrames } from "@relay/protocol";
 import { replayPersistedRunOffline } from "./offline-run-replay.js";
 import type { PersistedRun } from "./runs.js";
 import {
@@ -364,6 +365,12 @@ export function frozenRunFromTracePack(value: unknown): PersistedRun {
     throw new Error("TracePack source identity does not match its frozen run");
   }
   return { ...structuredClone(run), dir: "" };
+}
+
+/** Dest wait-for identity from a frozen TracePack. Leftover Close last-frame cannot fill dest. */
+export function destIdentityFramesFromTracePack(value: unknown): string[] {
+  const run = frozenRunFromTracePack(value);
+  return destIdentitySourceFrames(run.frames ?? [], run.artifacts).map((frame) => frame.path);
 }
 
 /** Analyze frozen evidence without claiming a future-device pass. */
