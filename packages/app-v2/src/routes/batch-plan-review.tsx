@@ -1,8 +1,12 @@
 /** @jsxImportSource react */
 import type { CombineEvidenceAnalysisReport, CombineEvidenceFinding } from "@relay/protocol";
+import { planFindingIsFlaky, visiblePlanFindings } from "@relay/protocol";
 import type { ProductBatchReport } from "@relay/product/run-across";
 import { Button } from "@relay/ui-react/components/button";
+import { Checkbox } from "@relay/ui-react/components/checkbox";
+import { FieldLabel } from "@relay/ui-react/components/field";
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import {
   planFindingLane,
   planFindingLaneLabel,
@@ -11,6 +15,7 @@ import {
   proposePlanFinding,
   renderPlanFindingsMarkdown,
 } from "@relay/product/plan-findings";
+import type { ProductStabilitySummary } from "../data/stability-product-service";
 import {
   summarizeProductStability,
   stabilitySamplesFromBatch,

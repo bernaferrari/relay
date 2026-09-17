@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   assignCaptureReviewAttempt,
   captureReviewSlotId,
+  captureReviewSlotFamilyId,
   describeSnapshotChrome,
   observedCaptureReviewAccount,
   resolvedCaptureRasterPolicy,
@@ -180,6 +181,7 @@ function integerField(value: unknown): number | undefined {
 
 function capturedReviewIdentities(
   artifacts: readonly { kind?: string; data?: unknown }[] | undefined,
+  plannedSlots: readonly CaptureReviewPlannedSlot[] = [],
 ): CaptureReviewSlotIdentity[] {
   const identities: CaptureReviewSlotIdentity[] = [];
   for (const artifact of artifacts ?? []) {
@@ -192,7 +194,11 @@ function capturedReviewIdentities(
     if (!checkpointId) continue;
     const iteration = integerField(data?.iteration);
     const attempt = integerField(data?.attempt);
+    const frozen = plannedSlots.find(
+      (slot) => captureReviewSlotId(slot) === textField(data?.slotId),
+    );
     identities.push({
+      ...(frozen?.configuration ? { configuration: frozen.configuration } : {}),
       checkpointId,
       ...(textField(data?.requirementId) ? { requirementId: textField(data?.requirementId) } : {}),
       ...(textField(data?.invocation) ? { invocation: textField(data?.invocation) } : {}),
@@ -327,15 +333,38 @@ export async function captureRecipeScreenshot(
           ...(phase ? { phase } : {}),
         }
       : undefined;
-    const assigned = family
+    // Planned configuration is part of checkpoint identity; observed device
+    // metadata describes the image but must not create a second planned slot.
+    const plannedFamilies = family
+      ? new Map(
+          (ctx.plannedSlots ?? [])
+            .filter(
+              (slot) =>
+                captureReviewSlotFamilyId({ ...slot, configuration: undefined }) ===
+                captureReviewSlotFamilyId(family),
+            )
+            .map((slot) => [captureReviewSlotFamilyId(slot), slot]),
+        )
+      : undefined;
+    const plannedFamily =
+      plannedFamilies?.size === 1 ? [...plannedFamilies.values()][0] : undefined;
+    const captureFamily = family
+      ? {
+          ...family,
+          ...(plannedFamily?.configuration ? { configuration: plannedFamily.configuration } : {}),
+        }
+      : undefined;
+    const assigned = captureFamily
       ? assignCaptureReviewAttempt({
           plannedSlots: ctx.plannedSlots ?? [],
-          captured: capturedReviewIdentities(ctx.job?.artifacts ?? ctx.artifacts),
-          slot: family,
+          captured: capturedReviewIdentities(ctx.job?.artifacts ?? ctx.artifacts, ctx.plannedSlots),
+          slot: captureFamily,
         })
       : undefined;
     if (assigned) persistCaptureReviewPlannedSlots(ctx, assigned.plannedSlots);
-    const identity = family ? { ...family, attempt: assigned?.attempt ?? 1 } : undefined;
+    const identity = captureFamily
+      ? { ...captureFamily, attempt: assigned?.attempt ?? 1 }
+      : undefined;
     const computedSlotId = identity ? captureReviewSlotId(identity) : undefined;
     const frozen = computedSlotId
       ? ctx.plannedSlots?.find((slot) => captureReviewSlotId(slot) === computedSlotId)

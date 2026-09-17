@@ -534,6 +534,7 @@ test("a second capture of the same checkpoint occupies attempt 2", async () => {
       ...slot,
       attempt: 1,
       caption: "Settings",
+      configuration: { browser: "chromium" },
       lookFor: "Account section",
       stepId: "settings",
     },

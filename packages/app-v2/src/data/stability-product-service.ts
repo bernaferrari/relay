@@ -60,6 +60,8 @@ export type ProductStabilitySignal = {
   readonly summary: string;
   readonly runIds: readonly string[];
   readonly environmentId?: string;
+  /** Present on possible-flakiness when the comparable cohort has a Test id. */
+  readonly testId?: string;
 };
 
 export type ProductStabilityOwner = {
@@ -498,6 +500,7 @@ export function summarizeProductStability(
             "This Test passed and failed on the same revision, build, target, account, and starting state.",
           environmentId: group[0]!.environmentId ?? group[0]!.targetProfileId,
           runIds: signalRunIds(group),
+          ...(group[0]!.testId ? { testId: group[0]!.testId } : {}),
         });
       }
     }
@@ -580,6 +583,19 @@ export function summarizeProductStability(
     signals,
     recommendations: stabilityMaintenanceRecommendations(signals),
   };
+}
+
+/** Test ids labelled flaky from a comparable Stability cohort. Mixed-outcomes is not flaky. */
+export function flakyTestIdsFromStability(
+  summary: ProductStabilitySummary,
+): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const signal of summary.signals) {
+    if (signal.kind !== "possible-flakiness") continue;
+    const testId = signal.testId?.trim();
+    if (testId) ids.add(testId);
+  }
+  return ids;
 }
 
 export function createStabilityProductService(platform: Platform): StabilityProductService {

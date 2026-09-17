@@ -1,6 +1,6 @@
 import type { CombineEvidenceAnalysisReport, CombineEvidenceFinding } from "@relay/protocol";
 import { emptyPlanFindingsReport, type PlanFindingDecision } from "@relay/product/plan-findings";
-import type { ProductBatchReport } from "@relay/product/run-across";
+import type { ProductBatchCase, ProductBatchReport } from "@relay/product/run-across";
 import { notesForCase, type BatchReviewNote } from "../data/batch-review-notes";
 import {
   formatBatchTestLabel,
@@ -43,6 +43,25 @@ export function findingScreenshotRunId(
     if (jobId) return jobId;
   }
   return report.cases.find((item) => item.jobId && finding.id.includes(item.jobId))?.jobId;
+}
+
+function jobIdFromFinding(finding: CombineEvidenceFinding): string | undefined {
+  if (!finding.canonicalKey.startsWith("job:")) return undefined;
+  const jobId = finding.canonicalKey.slice("job:".length).trim();
+  return jobId || undefined;
+}
+
+/** Copy durable Test identity from the Result cell. Never invent from a label. */
+export function attachPlanFindingTestId(
+  finding: CombineEvidenceFinding,
+  cases: readonly ProductBatchCase[],
+): CombineEvidenceFinding {
+  if (finding.testId?.trim()) return finding;
+  const jobId = jobIdFromFinding(finding);
+  if (!jobId) return finding;
+  const match = cases.find((item) => item.runId === jobId);
+  const testId = match?.identity?.testId?.trim();
+  return testId ? { ...finding, testId } : finding;
 }
 
 export type PlanFindingsAnalysisState = "pending" | "incomplete" | "failed" | "complete";
@@ -108,22 +127,30 @@ export function resolvePlanFindings(
 ): CombineEvidenceAnalysisReport {
   const derived = planFindingsFromBatch(report, testNames);
   const state = planFindingsAnalysisState(report, analysis);
+  let resolved: CombineEvidenceAnalysisReport;
   if (!analysis || state === "failed") {
-    if (derived.analysis.findings.length) return derived;
-    return emptyPlanFindingsReport(report.id);
+    resolved = derived.analysis.findings.length ? derived : emptyPlanFindingsReport(report.id);
+  } else if (!analysis.analysis.findings.length && !derived.analysis.findings.length) {
+    resolved = analysis;
+  } else if (!analysis.analysis.findings.length) {
+    resolved = derived;
+  } else {
+    resolved = mergePlanFindings(derived, analysis);
   }
-  if (!analysis.analysis.findings.length && !derived.analysis.findings.length) {
-    return analysis;
-  }
-  if (!analysis.analysis.findings.length) return derived;
-  return mergePlanFindings(derived, analysis);
+  const findings = resolved.analysis.findings.map((finding) =>
+    attachPlanFindingTestId(finding, report.cases),
+  );
+  return {
+    ...resolved,
+    analysis: { ...resolved.analysis, findings },
+  };
 }
 
 export function planFindingsFromBatch(
   report: ProductBatchReport,
   testNames: BatchTestNames = {},
 ): CombineEvidenceAnalysisReport {
-  const findings: CombineEvidenceFinding[] = [];
+    const findings: CombineEvidenceFinding[] = [];
   for (const item of report.cases) {
     const code = item.findingCode;
     if (!code) continue;
@@ -131,7 +158,7 @@ export function planFindingsFromBatch(
       continue;
     }
     const jobId = item.runId?.trim();
-    const testId = item.identity?.testId;
+    const testId = item.identity?.testId?.trim();
     findings.push({
       id: `cell-${item.id}`,
       code,
@@ -145,6 +172,7 @@ export function planFindingsFromBatch(
           : formatBatchTestLabel(item.id),
       locale: item.world?.trim() || "en",
       baselineLocale: "en",
+      ...(testId ? { testId } : {}),
       detail: item.error?.trim() || "This case did not finish.",
     });
   }

@@ -3,6 +3,7 @@ import type { ProductRunSummary } from "@relay/product/catalog";
 import type { ProductBatchReport } from "@relay/product/run-across";
 import {
   attachStabilityClusterIds,
+  flakyTestIdsFromStability,
   stabilityMaintenanceRecommendations,
   stabilitySamplesFromBatch,
   stabilitySamplesFromRuns,
@@ -152,12 +153,14 @@ describe("stability product service", () => {
     expect(summary.signals).toEqual([
       expect.objectContaining({
         kind: "possible-flakiness",
+        testId: "test-1",
         summary:
           "This Test passed and failed on the same revision, build, target, account, and starting state.",
         runIds: ["run-1", "run-2"],
       }),
     ]);
     expect(summary.recommendations[0]?.summary).toContain("same Test revision, build, target");
+    expect([...flakyTestIdsFromStability(summary)]).toEqual(["test-1"]);
   });
 
   it("fails closed when history is partial, outcomes are non-terminal, or identity is legacy", () => {

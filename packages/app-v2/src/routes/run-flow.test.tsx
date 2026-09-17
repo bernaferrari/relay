@@ -710,7 +710,10 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Open full report");
     expect(document.body.textContent).not.toContain("Investigate this failure");
     expect(document.body.textContent).toMatch(/\d+(?:\.\d+)?\s?s/);
-    expect([...document.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual(["Test", "Result"]);
+    expect([...document.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
+      "Test",
+      "Result",
+    ]);
     expect(storage.values.has("activeRunWorkflow")).toBe(false);
 
     const fullReport = [...document.querySelectorAll("a")].find((item) =>

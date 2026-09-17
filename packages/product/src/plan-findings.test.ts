@@ -244,6 +244,30 @@ test("expired sign-in is one Infra finding, not a product failure", () => {
   assert.match(renderPlanFindingsMarkdown(report), /ACCOUNT_NEEDS_RELOGIN/u);
 });
 
+test("markdown names the Test and a flaky label without hiding the finding", () => {
+  const markdown = renderPlanFindingsMarkdown(
+    report([
+      {
+        id: "f-login",
+        code: "PRODUCT_ASSERTION",
+        severity: "critical",
+        confidence: "high",
+        canonicalKey: "job:job-1",
+        screenLabel: "Login",
+        locale: "en",
+        baselineLocale: "en",
+        testId: "login",
+        detail: "expect-screen missed",
+      },
+    ]),
+    new Set(["login"]),
+  );
+  assert.match(markdown, /\*\*Test:\*\* login/u);
+  assert.match(markdown, /\*\*Stability:\*\* Flaky/u);
+  assert.match(markdown, /never skips a run or accepts a visual baseline/u);
+  assert.match(markdown, /expect-screen missed/u);
+});
+
 test("expired Plan start exposes the persisted Result id", () => {
   assert.equal(
     accountReloginBatchIdFromError({

@@ -194,7 +194,10 @@ export function planFindingsEmptyCopy(report: CombineEvidenceAnalysisReport): re
 }
 
 /** Markdown an agent can review in about three minutes. Empty findings stay explicit. */
-export function renderPlanFindingsMarkdown(report: CombineEvidenceAnalysisReport): string {
+export function renderPlanFindingsMarkdown(
+  report: CombineEvidenceAnalysisReport,
+  flakyTestIds?: ReadonlySet<string>,
+): string {
   const findings = report.analysis.findings;
   const heading = [
     `# Plan findings — ${report.batchId}`,
@@ -209,5 +212,7 @@ export function renderPlanFindingsMarkdown(report: CombineEvidenceAnalysisReport
   if (!findings.length) {
     return [...heading, ...planFindingsEmptyCopy(report), ""].join("\n");
   }
-  return [...heading, ...findings.map(findingBlock)].join("\n\n");
+  return [...heading, ...findings.map((finding) => findingBlock(finding, flakyTestIds))].join(
+    "\n\n",
+  );
 }

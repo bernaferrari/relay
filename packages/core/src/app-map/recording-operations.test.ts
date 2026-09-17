@@ -766,7 +766,10 @@ test("screenshot-only Tests retain their reviewed name and recording image", () 
   assert.deepEqual(connection.recordingSource?.frames, [
     { evidenceId: "screenshot", uri, role: "after" },
   ]);
-  const compiled = compileAppMapScenarioTest(result.appMap, result.appMap.tests["screenshot-test"]!);
+  const compiled = compileAppMapScenarioTest(
+    result.appMap,
+    result.appMap.tests["screenshot-test"]!,
+  );
   const reviewSteps = compiled.root.steps.filter(
     (step) => step.kind === "screenshot" && step.review,
   );

@@ -7,6 +7,7 @@ import {
   planFindingsAnalysisState,
   resolvePlanFindings,
 } from "./batch-finding-review";
+import { planFindingTestId } from "@relay/protocol";
 
 const finding = (
   partial: Partial<CombineEvidenceFinding> & Pick<CombineEvidenceFinding, "id" | "canonicalKey">,
@@ -230,5 +231,35 @@ describe("resolvePlanFindings", () => {
     analysis.analysis.findings = [];
     expect(planFindingsAnalysisState(batch, analysis)).toBe("complete");
     expect(resolvePlanFindings(batch, analysis).analysis.findings).toEqual([]);
+  });
+
+  it("copies durable Test identity from the Result cell onto analyzed findings", () => {
+    const batch = batchReport();
+    const analysis = report([{ jobId: "job-a", locale: "en", status: "failed", frames: [] }]);
+    analysis.analysis.findings = [
+      finding({
+        id: "rich-a",
+        canonicalKey: "job:job-a",
+        code: "PRODUCT_ASSERTION",
+        detail: "richer A",
+        screenLabel: "Login chrome",
+      }),
+    ];
+    const resolved = resolvePlanFindings(batch, analysis);
+    expect(resolved.analysis.findings.map((item) => [item.id, item.testId])).toEqual([
+      ["rich-a", "login"],
+      ["cell-case-b", "toolbar"],
+    ]);
+  });
+
+  it("does not invent a Test id from a similar screen label", () => {
+    const source = batchReport();
+    const batch = {
+      ...source,
+      cases: source.cases.map((item) => ({ ...item, identity: undefined })),
+    };
+    const resolved = resolvePlanFindings(batch);
+    expect(resolved.analysis.findings.every((item) => item.testId === undefined)).toBe(true);
+    expect(planFindingTestId(resolved.analysis.findings[0]!)).toBeUndefined();
   });
 });
