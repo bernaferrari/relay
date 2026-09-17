@@ -132,7 +132,9 @@ export function StepMedia({
         )}
       </div>
       {reviewControls ? (
-        <div className="flex shrink-0 justify-center px-3 pb-3">{reviewControls}</div>
+        <div className="shrink-0 border-t border-border/40 bg-background/20 px-4 py-4">
+          {reviewControls}
+        </div>
       ) : null}
       {frames.length > 1 || controls ? (
         <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 border-t border-border/50 px-3 py-1.5">

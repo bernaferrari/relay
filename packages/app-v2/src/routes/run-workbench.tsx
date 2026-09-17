@@ -362,13 +362,22 @@ export function RunWorkbench({
                   : undefined;
             if (!item) return undefined;
             return (
-              <div className="grid justify-items-center gap-2">
+              <div className="grid w-full gap-2">
                 {reviewError ? (
                   <p role="alert" className="rounded-lg bg-card px-3 py-2 text-sm text-destructive">
                     {reviewError}
                   </p>
                 ) : null}
                 <CaptureReviewDecisions
+                  status={
+                    item.status === "accepted"
+                      ? "Marked as correct"
+                      : item.status === "issue"
+                        ? "Issue reported"
+                        : item.status === "need-more-evidence"
+                          ? "More evidence requested"
+                          : "Awaiting your decision"
+                  }
                   busy={reviewBusy}
                   onReview={(action) => void reviewCaptures(action, [item])}
                 />
