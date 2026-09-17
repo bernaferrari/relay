@@ -17,6 +17,8 @@ import {
   workbookOriginalMayLeftoverSkip,
   workbookOriginalObligationIdentity,
   workbookRc23BindingError,
+  WORKBOOK_MODELS_FAMILY_ID,
+  WORKBOOK_MODELS_ORIGINAL_IDS,
   WORKBOOK_SHELL_FAMILY_ID,
   WORKBOOK_SHELL_ORIGINAL_IDS,
   type WorkbookCoverageManifest,
@@ -382,6 +384,15 @@ test("capture-view leftover skip is only GQA-004 attach and GQA-040 Settings inv
     }),
     false,
   );
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 7, evidencePacket: "view" }), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 7,
+      evidencePacket: "view",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
 });
 
 test("S16 cannot be single-view Fast UI", () => {
@@ -553,4 +564,122 @@ test("S02 packets stay unbound and need test-action before/after plus receipt", 
     true,
   );
   assert.equal(coverByRc23DestEnd({ id: 33 }, "sidebar"), false);
+});
+
+test("S05 packets stay unbound and need a causal TAP that changes selection", () => {
+  assert.deepEqual([...WORKBOOK_MODELS_ORIGINAL_IDS], [7, 8]);
+  const missing = original({
+    id: 7,
+    name: "Switch model",
+    family: WORKBOOK_MODELS_FAMILY_ID,
+    evidencePacket: "view",
+    status: "unbound",
+  });
+  assert.match(
+    workbookEvidenceNeededError(missing) ?? "",
+    /S05 must be test-action|S05 needs explicit evidence-needed|causal TAP must change selection/u,
+  );
+  const leftoverFast = original({
+    id: 7,
+    name: "Switch model",
+    family: WORKBOOK_MODELS_FAMILY_ID,
+    evidencePacket: "view",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "view",
+        id: "leftover-fast-checked",
+        note: "Inspect-only Fast-checked sheet.",
+      },
+    ],
+    status: "unbound",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverFast) ?? "",
+    /causal TAP must change selection/u,
+  );
+  const packet = original({
+    id: 7,
+    name: "Switch model",
+    family: WORKBOOK_MODELS_FAMILY_ID,
+    evidencePacket: "view",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-current-model",
+        note: "Current model before the switch TAP.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-different-model",
+        note: "TAP a different model actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-selection-reflected",
+        note: "New selection reflected.",
+      },
+      {
+        kind: "view",
+        id: "after-selector-chrome",
+        note: "Selector after the causal TAP.",
+      },
+    ],
+    status: "unbound",
+  });
+  assert.equal(workbookEvidenceNeededError(packet), undefined);
+  assert.equal(workbookEvidencePolicyError(packet), undefined);
+  assert.equal(originalIsCovered(packet), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 7,
+      evidencePacket: "view",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  const presets = original({
+    id: 8,
+    name: "Presets",
+    family: WORKBOOK_MODELS_FAMILY_ID,
+    evidencePacket: "view",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-open-presets",
+        note: "TAP that opens mobile presets actually executed.",
+      },
+      {
+        kind: "view",
+        id: "presets-inventory",
+        note: "Mobile presets inventory. Customize Grok conflict unresolved.",
+      },
+    ],
+    status: "unbound",
+  });
+  assert.equal(workbookEvidenceNeededError(presets), undefined);
+  assert.equal(originalIsCovered(presets), false);
+  const report = evaluateWorkbookCoverage(fixture({ originals: [packet, presets] }), [
+    { id: "test-grok-web-signed-in-model-iterate", name: "Inspect model choices" },
+    { id: "test-grok-ios-presets", name: "Customize Grok peek" },
+  ]);
+  assert.deepEqual(report.coveredOriginalIds, []);
+  assert.equal(report.unboundOriginalIds.includes(7), true);
+  assert.equal(report.unboundOriginalIds.includes(8), true);
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 7 && row.testId === "test-grok-web-signed-in-model-iterate",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 8 && row.testId === "test-grok-ios-presets",
+    ),
+    true,
+  );
+  assert.equal(coverByRc23DestEnd({ id: 7 }, "models"), false);
+  assert.equal(coverByRc23DestEnd({ id: 8 }, "models"), false);
 });

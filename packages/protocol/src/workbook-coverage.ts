@@ -5,8 +5,9 @@
  * never marks an original covered. Every original has a smallest-sufficient
  * evidence packet or an authorized exclusion; that packet is not coverage.
  * Captions are display text; obligations are plannedSlots identities.
- * S02 shell originals keep explicit test-action evidence-needed (before/after,
- * receipt, sequence) while remaining unbound.
+ * S02 shell and S05 model/preset originals keep explicit test-action
+ * evidence-needed while remaining unbound. Leftover Fast-checked is not a
+ * models Test. Inspect-only model sheet is not Switch model or presets.
  */
 
 import { captureReviewSlotId, type CaptureReviewConfiguration } from "./capture-review.js";
@@ -22,6 +23,8 @@ export const WORKBOOK_GLOBAL_EXCLUSION_IDS = [5, 18, 19, 20, 42] as const;
 export const WORKBOOK_SURVIVAL_FAMILY_ID = "S16";
 export const WORKBOOK_SHELL_FAMILY_ID = "S02";
 export const WORKBOOK_SHELL_ORIGINAL_IDS = [3, 33, 35, 36, 37] as const;
+export const WORKBOOK_MODELS_FAMILY_ID = "S05";
+export const WORKBOOK_MODELS_ORIGINAL_IDS = [7, 8] as const;
 export const WORKBOOK_MATH_ORIGINAL_ID = 48;
 export const WORKBOOK_DOWNLOAD_ORIGINAL_ID = 16;
 
@@ -794,6 +797,7 @@ function distinctiveNeedles(original: WorkbookOriginal): readonly string[] {
   if (original.id === 33) extra.push("sidebar", "menu");
   if (original.id === 3 || original.id === 36) extra.push("new-chat", "newchat");
   if (original.id === 35) extra.push("logo");
+  if (original.id === 7) extra.push("model", "models", "selector");
   if (original.id === 37 || original.id === 16 || original.id === 17) extra.push("imagine");
   if (original.id === 42) extra.push("dictation");
   if (original.id === 50) extra.push("heavy", "expert");
@@ -1030,6 +1034,22 @@ export function workbookEvidenceNeededError(
     }
     if (!original.evidenceNeeded || original.evidenceNeeded.length === 0) {
       return `${label} S02 needs explicit evidence-needed (before/after, receipt, sequence)`;
+    }
+  }
+  if (original.family === WORKBOOK_MODELS_FAMILY_ID) {
+    if (original.requirementAction !== "test-action") {
+      return `${label} S05 must be test-action — leftover Fast-checked / inspect-only sheet is not Switch model or presets`;
+    }
+    if (!original.evidenceNeeded || original.evidenceNeeded.length === 0) {
+      return `${label} S05 needs explicit evidence-needed (before/after, receipt)`;
+    }
+  }
+  if (original.id === 7) {
+    const switchKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    for (const required of ["before", "after", "receipt"] as const) {
+      if (!switchKinds.has(required)) {
+        return `${label} GQA-007 causal TAP must change selection — needs ${required} evidence`;
+      }
     }
   }
   if (!original.evidenceNeeded) return undefined;

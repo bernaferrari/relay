@@ -12,9 +12,12 @@
 # RC-24 S02 shell packets stay unbound: explicit test-action evidence-needed
 # (before/after + receipt; logo adds sequence). Similar sidebar/logo/imagine/new-chat
 # names do not cover. Leftover dest skip is only GQA-004/040 capture-view.
+# RC-25 S05 model/preset packets stay unbound: GQA-007 test-action must change
+# selection (leftover Fast-checked / inspect-only sheet is not coverage).
+# GQA-008 presets stay mobile inventory + open TAP; Customize Grok conflict unresolved.
 schemaVersion: 1
 id: grok-qa-workbook
-revision: 4
+revision: 5
 reviewedAt: "2026-09-16"
 source:
   workbook: grok-qa-graph.xlsx
@@ -302,9 +305,24 @@ originals:
     evidencePacket: view
     queue: "fast-ui"
     suggestedExecutionQueue: fast-ui
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-current-model
+        note: "Fresh Fast image of the current model label before any switch TAP. Leftover Fast-checked sheet / inspect-only dest-end is not this before frame. stabilityMeasured false."
+      - kind: receipt
+        id: tap-different-model
+        note: "TAP a different chat model actually executed (test-action). Identifier TAP model-select-trigger that only opens the sheet is not this original. Do not tap SuperGrok Upgrade / Try now / Dismiss."
+      - kind: after
+        id: after-selection-reflected
+        note: "Fresh Fast image where the new selection is reflected in the UI. Criteria stay human-review: Model updates immediately. stabilityMeasured false."
+      - kind: view
+        id: after-selector-chrome
+        note: "Single Fast view of the selector after the causal TAP. Walking every remaining option is extra sequence, not this binding."
     gates:
       - "Selector: SuperGrok Lite+."
       - Inspect separately from actually switching Fast/Expert.
+      - "Leftover Fast-checked / inspect-only model sheet is not this original. Causal TAP must change selection."
     status: unbound
     bindings: []
   - id: 8
@@ -317,6 +335,14 @@ originals:
     evidencePacket: view
     queue: "fast-ui"
     suggestedExecutionQueue: fast-ui
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: receipt
+        id: tap-open-presets
+        note: "TAP that opens the mobile presets inventory actually executed. Inspect-only Customize Grok peek / leftover dest skip is not this original. Do not tap Customize Grok, Sign Out, App Language, or Upgrade."
+      - kind: view
+        id: presets-inventory
+        note: "Fresh Fast image of the mobile presets inventory. Workbook: Customize Grok must NOT appear (removed iOS 1.4.27 / Android 1.2.24.11). Live iOS Customize Grok peek conflict stays unresolved. Opening each tool is extra, not this binding. stabilityMeasured false."
     gates:
       - "Presets: mobile only."
       - "Workbook: Customize Grok must NOT appear. Live iOS Customize Grok peek exists — conflict unresolved."

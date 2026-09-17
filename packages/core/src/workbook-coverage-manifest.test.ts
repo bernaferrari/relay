@@ -21,6 +21,8 @@ import {
   workbookOriginalObligationIdentity,
   WORKBOOK_EVIDENCE_PACKET_LABELS,
   WORKBOOK_RC23_REQUIREMENT_ID,
+  WORKBOOK_MODELS_FAMILY_ID,
+  WORKBOOK_MODELS_ORIGINAL_IDS,
   WORKBOOK_SHELL_FAMILY_ID,
   WORKBOOK_SHELL_ORIGINAL_IDS,
   WORKBOOK_SURVIVAL_FAMILY_ID,
@@ -51,11 +53,16 @@ const similarCatalog = [
     name: "UNRECORDED 5-image Heavy",
     appMapId: "grok-android",
   },
+  {
+    id: "test-grok-web-signed-in-model-iterate",
+    name: "Inspect model choices",
+    appMapId: "grok-web",
+  },
 ];
 
 test("reviewed workbook freeze keeps 58 originals, 15 active families, and 5 exclusions", () => {
   const manifest = loadReviewedWorkbook();
-  assert.equal(manifest.revision, 4);
+  assert.equal(manifest.revision, 5);
   assert.equal(manifest.counts.originals, 58);
   assert.equal(manifest.counts.families, 17);
   assert.equal(manifest.counts.activeFamilies, 15);
@@ -386,6 +393,34 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
         item.requirementAction === "test-action" &&
         (item.evidenceNeeded?.length ?? 0) > 0 &&
         item.bindings.length === 0,
+    ),
+    true,
+  );
+  const modelsFamily = manifest.originals.filter(
+    (item) => item.family === WORKBOOK_MODELS_FAMILY_ID,
+  );
+  assert.deepEqual(
+    modelsFamily.map((item) => item.id),
+    [...WORKBOOK_MODELS_ORIGINAL_IDS],
+  );
+  assert.equal(
+    modelsFamily.every(
+      (item) =>
+        item.status === "unbound" &&
+        item.requirementAction === "test-action" &&
+        (item.evidenceNeeded?.length ?? 0) > 0 &&
+        item.bindings.length === 0,
+    ),
+    true,
+  );
+  const switchKinds = new Set(models.evidenceNeeded?.map((item) => item.kind) ?? []);
+  assert.equal(
+    ["before", "after", "receipt"].every((kind) => switchKinds.has(kind)),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(models, similarCatalog).some(
+      (row) => row.id === "test-grok-web-signed-in-model-iterate",
     ),
     true,
   );
