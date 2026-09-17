@@ -190,6 +190,49 @@ test("dest-phase identity is dest wait-for, not leftover Close last-frame", () =
   assert.notEqual(rows[0]?.afterPng, "android/screenshots/003-005.png");
 });
 
+test("checklist dest identity pairs dest wait-for 003, not leftover Close 004 last-frame", () => {
+  const rows = reviewChecklistRows({
+    cases: [
+      {
+        jobId: "job-home",
+        name: "Home chrome",
+        status: "ok",
+        frames: [
+          "web/screenshots/001-002.png",
+          "web/screenshots/002-003.png",
+          "web/screenshots/003-004.png",
+        ],
+        destIdentityFrame: "frames/003.png",
+      },
+    ],
+    findings: [],
+  });
+  assert.equal(rows[0]?.beforePng, "web/screenshots/001-002.png");
+  assert.equal(rows[0]?.afterPng, "web/screenshots/002-003.png");
+  assert.notEqual(rows[0]?.afterPng, "web/screenshots/003-004.png");
+});
+
+test("checklist dest identity does not fall back to leftover Close last-frame", () => {
+  const rows = reviewChecklistRows({
+    cases: [
+      {
+        jobId: "job-home",
+        name: "Home chrome",
+        status: "ok",
+        frames: [
+          "web/screenshots/001-001.png",
+          "web/screenshots/002-002.png",
+          "web/screenshots/003-004.png",
+        ],
+        destIdentityFrame: "frames/003.png",
+      },
+    ],
+    findings: [],
+  });
+  assert.equal(rows[0]?.afterPng, "web/screenshots/002-002.png");
+  assert.notEqual(rows[0]?.afterPng, "web/screenshots/003-004.png");
+});
+
 test("todo file items merge as unbound todo rows", () => {
   const rows = mergeReviewChecklistTodos(
     [

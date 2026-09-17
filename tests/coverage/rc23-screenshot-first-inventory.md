@@ -138,7 +138,7 @@ Plan `cf9f0260-8be1-428a-85fc-b1453d4bcae6` is prior mixed-cell provenance, not 
 
 ### Web leftover-tolerant dest-phase recapture — Lane grok-lab, Playwright chromium, fixture `7189423f` ready
 
-Did **not** tap Try now / Dismiss / Sign Out / SuperGrok type. Identifier-only TAP on `model-select-trigger`. Capture-review later / pending / Fast / dest. Fixture `7189423f` health **ready** / signed in. Dest-wait patched r905→r912; dictation/composer dest-end r913–r916; live r937. Warm-confirm leftover skip now carries dest-phase (compiler `efb84ebd6`). Galaxy offline; did not invent iOS Imagine.
+Did **not** tap Try now / Dismiss / Sign Out / SuperGrok type. Identifier-only TAP on `model-select-trigger`. Capture-review later / pending / Fast / dest. Fixture `7189423f` health **ready** / signed in. Dest-wait patched r905→r912; dictation/composer dest-end r913–r916; live r937. Warm-confirm leftover skip now carries dest-phase (compiler `efb84ebd6`). Galaxy offline; did not invent iOS Imagine. Leftover Close / Run saved Test last-frame (`004`) cannot fill dest identity pairing, slot cards, or Plan Result remaining surfaces even without leftover-phase.
 
 | Cell              | Job                                    |  Rev | Duration | Coverage                                                            | Status                                                                                      |
 | ----------------- | -------------------------------------- | ---: | -------: | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |

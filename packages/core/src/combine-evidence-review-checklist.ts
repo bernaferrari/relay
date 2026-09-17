@@ -89,7 +89,7 @@ export function visualReviewCommand(jobId: string): string {
   return `relay run visual review ${jobId}`;
 }
 
-/** Match dest identity `frames/002.png` onto pack `002-002.png` / `002.png`. */
+/** Match dest identity `frames/003.png` onto pack `002-003.png` / `003.png`. */
 export function reviewChecklistDestIdentityFrame(
   frames: readonly string[],
   destIdentityFrame?: string,
@@ -103,6 +103,24 @@ export function reviewChecklistDestIdentityFrame(
   });
 }
 
+function packOriginalName(path: string): string {
+  const pack = basename(path);
+  const dash = pack.lastIndexOf("-");
+  return dash >= 0 ? pack.slice(dash + 1) : pack;
+}
+
+/** Numbered leftover Close last-frame after dest identity, e.g. dest 003 vs 003-004.png. */
+export function reviewChecklistIsLeftoverLastFrame(
+  path: string,
+  destIdentityFrame?: string,
+): boolean {
+  const identity = destIdentityFrame?.trim();
+  if (!identity) return false;
+  const destStem = basename(identity).replace(/\.png$/iu, "");
+  const originalStem = packOriginalName(path).replace(/\.png$/iu, "");
+  return originalStem > destStem;
+}
+
 export function reviewChecklistFramePair(
   frames: readonly string[],
   destIdentityFrame?: string,
@@ -113,7 +131,13 @@ export function reviewChecklistFramePair(
   const shots = frames.filter((path) => !/(?:^|\/)full\.png$/u.test(path));
   if (!shots.length) return {};
   const dest = reviewChecklistDestIdentityFrame(shots, destIdentityFrame);
-  return { beforePng: shots[0], afterPng: dest ?? shots.at(-1) };
+  const usable = destIdentityFrame
+    ? shots.filter((path) => !reviewChecklistIsLeftoverLastFrame(path, destIdentityFrame))
+    : shots;
+  return {
+    beforePng: usable[0] ?? shots[0],
+    afterPng: dest ?? usable.at(-1),
+  };
 }
 
 /**

@@ -31,7 +31,7 @@ import { CaptureReviewPanel } from "./run-capture-review-panel";
 import {
   type CaptureReviewAction,
   type CaptureReviewItem,
-  isCaptureReviewLeftoverPhase,
+  destIdentityReviewItems,
 } from "@relay/protocol";
 
 type Report = ProductRunReportOverview;
@@ -108,19 +108,33 @@ export function RunWorkbench({
     report.evidence
       .find((section) => section.id === "screenshot")
       ?.items.filter((item) => item.media) ?? [];
-  const reviewItems = (report.captureReview?.items ?? []).filter(
-    (item) => !isCaptureReviewLeftoverPhase(item.phase),
-  );
+  const reviewItems = destIdentityReviewItems(report.captureReview?.items ?? []);
   const destFrameIds = new Set(
     reviewItems.flatMap((item) => (item.framePath ? [item.framePath] : [])),
   );
+  const leftoverFrameIds = (() => {
+    if (!destFrameIds.size) return new Set<string>();
+    const leftover = new Set<string>();
+    let seenDest = false;
+    for (const item of allFrames) {
+      if (destFrameIds.has(item.id)) {
+        seenDest = true;
+        continue;
+      }
+      if (seenDest) leftover.add(item.id);
+    }
+    return leftover;
+  })();
   const destFrames = destFrameIds.size
     ? allFrames.filter((item) => destFrameIds.has(item.id))
+    : allFrames;
+  const listedFrames = leftoverFrameIds.size
+    ? allFrames.filter((item) => !leftoverFrameIds.has(item.id))
     : allFrames;
   const reviewMode = reviewItems.length > 0;
   const selectedCapture = Math.min(
     requestedCapture,
-    Math.max(0, (reviewMode ? reviewItems.length : allFrames.length) - 1),
+    Math.max(0, (reviewMode ? reviewItems.length : listedFrames.length) - 1),
   );
   const selectedReview = reviewItems[selectedCapture];
   const reviewCaptures = async (action: CaptureReviewAction, items: CaptureReviewItem[]) => {
@@ -143,8 +157,8 @@ export function RunWorkbench({
     }
   };
   const capture = reviewMode
-    ? allFrames.find((item) => item.id === selectedReview?.framePath)
-    : allFrames[selectedCapture];
+    ? destFrames.find((item) => item.id === selectedReview?.framePath)
+    : listedFrames[selectedCapture];
   const [playing, setPlaying] = useState(false);
   useEffect(() => {
     if (!playing || requestedPanel === "captures") return;
@@ -243,7 +257,7 @@ export function RunWorkbench({
         <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 px-4 text-xs text-muted-foreground">
           <span>
             {showingCapture
-              ? `Capture ${selectedCapture + 1} of ${reviewMode ? reviewItems.length : allFrames.length}`
+              ? `Capture ${selectedCapture + 1} of ${reviewMode ? reviewItems.length : listedFrames.length}`
               : step.phase === "test"
                 ? `Test step ${report.timeline.slice(0, selectedStepIndex + 1).filter((item) => item.phase === "test").length} of ${report.timeline.filter((item) => item.phase === "test").length}`
                 : `Step ${selectedStepIndex + 1} of ${report.timeline.length}`}
@@ -284,7 +298,7 @@ export function RunWorkbench({
               aria-label={showingCapture ? "Next capture" : "Next step"}
               disabled={
                 showingCapture
-                  ? selectedCapture === (reviewMode ? reviewItems.length : allFrames.length) - 1
+                  ? selectedCapture === (reviewMode ? reviewItems.length : listedFrames.length) - 1
                   : selectedStepIndex === report.timeline.length - 1
               }
               onClick={() => {
@@ -335,9 +349,9 @@ export function RunWorkbench({
               : undefined
           }
           controls={
-            !showingCapture && !actionFrames.length && allFrames.length ? (
+            !showingCapture && !actionFrames.length && listedFrames.length ? (
               <Button size="sm" variant="ghost" onClick={() => setPanel("captures")}>
-                View all captures ({allFrames.length})
+                View all captures ({listedFrames.length})
               </Button>
             ) : undefined
           }
@@ -427,7 +441,7 @@ export function RunWorkbench({
             {(
               [
                 ["steps", "Steps"],
-                ...(allFrames.length || reviewMode ? [["captures", "Captures"]] : []),
+                ...(listedFrames.length || reviewMode ? [["captures", "Captures"]] : []),
                 ...(report.performance?.length ? [["performance", "Performance"]] : []),
                 ...(hasChecks ? [["details", "Checks"]] : []),
                 ["logs", "Logs"],
@@ -592,7 +606,7 @@ export function RunWorkbench({
                       All screenshots saved during this run.
                     </p>
                     <ul className="grid list-none gap-1">
-                      {allFrames.map((item, index) => (
+                      {listedFrames.map((item, index) => (
                         <li key={item.id}>
                           <button
                             type="button"

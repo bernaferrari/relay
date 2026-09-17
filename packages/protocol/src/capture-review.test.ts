@@ -8,6 +8,8 @@ import {
   captureReviewId,
   captureReviewIdentityFramePaths,
   captureReviewLeftoverFramePaths,
+  captureReviewLeftoverLastFramePaths,
+  destIdentityReviewItems,
   destIdentitySourceFrames,
   captureReviewSlotFamilyId,
   captureReviewSlotId,
@@ -1094,6 +1096,20 @@ test("dest-end dest-phase identity is dest wait-for pixels, not leftover Close l
   assert.deepEqual(captureReviewIdentityFramePaths([leftoverHome, destWait]), ["frames/002.png"]);
   assert.deepEqual(captureReviewLeftoverFramePaths([leftoverHome, destWait]), ["frames/005.png"]);
   assert.deepEqual(
+    captureReviewLeftoverLastFramePaths(
+      [{ path: "frames/002.png" }, { path: "frames/004.png" }, { path: "frames/005.png" }],
+      [leftoverHome, destWait],
+    ),
+    ["frames/005.png", "frames/004.png"],
+  );
+  assert.deepEqual(
+    destIdentityReviewItems([
+      { phase: "dest", framePath: "frames/002.png" },
+      { phase: "leftover", framePath: "frames/004.png" },
+    ]).map((item) => item.framePath),
+    ["frames/002.png"],
+  );
+  assert.deepEqual(
     destIdentitySourceFrames(
       [{ path: "frames/002.png" }, { path: "frames/005.png" }, { path: "frames/004.png" }],
       [leftoverHome, destWait],
@@ -1207,6 +1223,47 @@ test("leftover Close extra slot cannot fill dest identity cards", () => {
       checkpointId: "close-dismiss",
       attempt: 1,
       phase: CAPTURE_REVIEW_LEFTOVER_PHASE,
+      configuration: dest.configuration,
+    },
+  };
+  const destWait = {
+    kind: "capture-review",
+    data: {
+      caption: dest.caption,
+      lookFor: dest.lookFor,
+      framePath: "frames/003.png",
+      imageSha256: "dest-wait",
+      stepId: dest.stepId,
+      slotId: captureReviewSlotId(dest),
+      checkpointId: dest.checkpointId,
+      attempt: 1,
+      phase: CAPTURE_REVIEW_DEST_PHASE,
+      policy: "fast",
+      configuration: dest.configuration,
+    },
+  };
+  const queue = resolveCaptureReviewQueue({
+    plannedSlots: [dest],
+    artifacts: [leftoverClose, destWait],
+  });
+  assert.equal(queue.items.length, 1);
+  assert.equal(queue.items[0]?.framePath, "frames/003.png");
+  assert.equal(
+    queue.items.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
+test("unphased leftover Close extra cannot fill dest identity cards", () => {
+  const dest = destEndSlot();
+  const leftoverClose = {
+    kind: "capture-review",
+    data: {
+      caption: "Close",
+      framePath: "frames/004.png",
+      imageSha256: "close-leftover",
+      checkpointId: "close-dismiss",
+      attempt: 1,
       configuration: dest.configuration,
     },
   };

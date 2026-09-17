@@ -219,7 +219,7 @@ export function captureReviewIdentityFramePaths(
   return dest;
 }
 
-/** Leftover Close / Run saved Test last-frame rasters. Dest identity stays dest. */
+/** Leftover-phase Close / dismiss rasters. Dest identity stays dest. */
 export function captureReviewLeftoverFramePaths(
   artifacts: readonly { kind?: string; data?: unknown }[],
 ): string[] {
@@ -234,6 +234,31 @@ export function captureReviewLeftoverFramePaths(
   return leftover;
 }
 
+function leftoverCloseCaption(caption?: string): boolean {
+  const value = caption?.trim() ?? "";
+  return /^(?:close|back)(?:\s|$)/iu.test(value) || /^after · run saved test$/iu.test(value);
+}
+
+/** Leftover Close / Run saved Test last-frame after dest identity.
+ * Unphased Android dest-wait (no dest identity) keeps every frame. */
+export function captureReviewLeftoverLastFramePaths(
+  frames: readonly { path: string; caption?: string }[],
+  artifacts?: readonly { kind?: string; data?: unknown }[],
+): string[] {
+  const leftover = new Set(captureReviewLeftoverFramePaths(artifacts ?? []));
+  const dest = new Set(captureReviewIdentityFramePaths(artifacts ?? []));
+  if (!dest.size) return [...leftover];
+  let seenDest = false;
+  for (const frame of frames) {
+    if (dest.has(frame.path)) {
+      seenDest = true;
+      continue;
+    }
+    if (seenDest) leftover.add(frame.path);
+  }
+  return [...leftover];
+}
+
 /** Dest-phase identity rasters only. Leftover Close last-frame cannot fill dest.
  * Unphased runs (Android dest-wait) keep every frame. */
 export function destIdentitySourceFrames<T extends { path: string }>(
@@ -243,6 +268,12 @@ export function destIdentitySourceFrames<T extends { path: string }>(
   const destIdentity = new Set(captureReviewIdentityFramePaths(artifacts ?? []));
   if (!destIdentity.size) return [...frames];
   return frames.filter((frame) => destIdentity.has(frame.path));
+}
+
+/** Dest-phase slot cards when dest identity exists. Leftover Close extras cannot fill dest. */
+export function destIdentityReviewItems<T extends { phase?: string }>(items: readonly T[]): T[] {
+  const dest = items.filter((item) => isCaptureReviewDestPhase(item.phase));
+  return dest.length ? dest : items.filter((item) => !isCaptureReviewLeftoverPhase(item.phase));
 }
 
 /** Stable planned capture identity. Caption is display text only. */
@@ -1078,6 +1109,18 @@ function leftoverArtifactWithoutLeftoverSlot(
   );
 }
 
+function leftoverLastFrameExtra(
+  artifact: CaptureReviewItem,
+  destArtifacts: readonly CaptureReviewItem[],
+): boolean {
+  if (!destArtifacts.length || isCaptureReviewDestPhase(artifact.phase)) return false;
+  if (isCaptureReviewLeftoverPhase(artifact.phase) || leftoverCloseCaption(artifact.caption)) {
+    return true;
+  }
+  const destPaths = destArtifacts.flatMap((item) => (item.framePath ? [item.framePath] : []));
+  return Boolean(artifact.framePath && destPaths.some((path) => artifact.framePath! > path));
+}
+
 function artifactImpersonatesDestSlot(
   artifact: CaptureReviewItem,
   slots: readonly CaptureReviewPlannedSlot[],
@@ -1202,6 +1245,7 @@ export function resolveCaptureReviewQueue(input: {
       if (bindArtifactToSlots(artifact, items, planned, bound)) continue;
       if (artifactImpersonatesDestSlot(artifact, planned, destArtifacts)) continue;
       if (leftoverArtifactWithoutLeftoverSlot(artifact, planned, bound)) continue;
+      if (leftoverLastFrameExtra(artifact, destArtifacts)) continue;
       extras.push(artifact);
     }
     items.push(...extras);

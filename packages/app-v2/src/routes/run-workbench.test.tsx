@@ -615,4 +615,70 @@ describe("RunWorkbench", () => {
     expect(host.textContent).toContain("Observe");
     expect(host.textContent).not.toContain("Captured result");
   });
+
+  it("dest-end slot cards stay dest wait-for, not unphased leftover Close last-frame", () => {
+    const value: ProductRunReportOverview = {
+      ...report,
+      captureReview: {
+        items: [
+          {
+            captureId: "frames/003.png::dest-wait",
+            caption: "Observe",
+            status: "pending",
+            framePath: "frames/003.png",
+            lookFor: "What should we explore?",
+            phase: "dest",
+            policy: "fast",
+          },
+          {
+            captureId: "frames/004.png::close-leftover",
+            caption: "Close",
+            status: "pending",
+            framePath: "frames/004.png",
+          },
+        ],
+        summary: {
+          captured: 2,
+          missing: 0,
+          pending: 2,
+          accepted: 0,
+          issue: 0,
+          needMoreEvidence: 0,
+        },
+      },
+      evidence: [
+        {
+          id: "screenshot",
+          label: "Screenshots",
+          count: 2,
+          detail: "2 screenshots",
+          summary: "Persisted run screenshots",
+          inspectable: true,
+          items: [
+            {
+              id: "frames/003.png",
+              title: "Observe",
+              media: { kind: "image", src: "/dest-wait.png", width: 320, height: 200 },
+            },
+            {
+              id: "frames/004.png",
+              title: "after · Run saved Test",
+              media: { kind: "image", src: "/leftover-close.png", width: 320, height: 200 },
+            },
+          ],
+        },
+      ],
+    };
+    const host = render(0, value);
+    const thumbs = [...host.querySelectorAll('[aria-label="Screenshots for review"] img')].map(
+      (img) => img.getAttribute("src"),
+    );
+    expect(thumbs).toEqual(["/dest-wait.png"]);
+    expect(host.querySelector(".relay-evidence-image-frame img")?.getAttribute("src")).toBe(
+      "/dest-wait.png",
+    );
+    expect(host.textContent).toContain("Observe");
+    expect(host.textContent).not.toContain("Close");
+    expect(host.textContent).not.toMatch(/after · Run saved Test/u);
+  });
 });

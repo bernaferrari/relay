@@ -8,10 +8,10 @@ import {
   captureReviewAdvanceIndex,
   captureReviewQueueFrameKey,
   captureReviewQueueItemKey,
+  destIdentityReviewItems,
   formatCaptureReviewConfiguration,
   formatCaptureReviewCoverageSummary,
   formatCaptureReviewObservedSession,
-  isCaptureReviewLeftoverPhase,
   type CaptureReviewAction,
   type CaptureReviewConfiguration,
   type CaptureReviewItem,
@@ -111,7 +111,7 @@ export function CaptureReviewPanel({
       (current) => new Set([...current].filter((key) => !reviewedItemKeys.includes(key))),
     );
   }, [reviewedItemKeys]);
-  const destItems = queue.items.filter((item) => !isCaptureReviewLeftoverPhase(item.phase));
+  const destItems = destIdentityReviewItems(queue.items);
   const selected = destItems[Math.min(selectedIndex, Math.max(0, destItems.length - 1))];
   const pendingIndices = destItems.flatMap((item, index) =>
     item.status === "pending" && reviewable(item) && index !== selectedIndex ? [index] : [],

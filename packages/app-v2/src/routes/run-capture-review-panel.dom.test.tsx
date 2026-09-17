@@ -263,4 +263,71 @@ describe("CaptureReviewPanel selection", () => {
     expect(host.textContent).not.toContain("Captured result");
     expect(host.textContent).not.toMatch(/Close leftover|after · Run saved Test/u);
   });
+
+  it("dest-end slot cards stay dest wait-for, not unphased leftover Close last-frame", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    act(() =>
+      root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <CaptureReviewPanel
+            queue={{
+              items: [
+                {
+                  captureId: "frames/003.png::dest-wait",
+                  caption: "Observe",
+                  status: "pending",
+                  lookFor: "What should we explore?",
+                  framePath: "frames/003.png",
+                  imageSha256: "dest-wait",
+                  phase: "dest",
+                  policy: "fast",
+                },
+                {
+                  captureId: "frames/004.png::close-leftover",
+                  caption: "Close",
+                  status: "pending",
+                  framePath: "frames/004.png",
+                  imageSha256: "close-leftover",
+                },
+              ],
+              summary: {
+                captured: 2,
+                missing: 0,
+                pending: 2,
+                accepted: 0,
+                issue: 0,
+                needMoreEvidence: 0,
+              },
+            }}
+            frames={[
+              {
+                id: "frames/003.png",
+                title: "Observe",
+                media: { kind: "image", src: "/runs/dest-end-observe/frames/003.png" },
+              },
+              {
+                id: "frames/004.png",
+                title: "after · Run saved Test",
+                media: { kind: "image", src: "/runs/dest-end-observe/frames/004.png" },
+              },
+            ]}
+            selectedIndex={0}
+            onSelect={() => undefined}
+            onReview={vi.fn()}
+            onReviewMany={vi.fn()}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    const thumbs = [...host.querySelectorAll('[aria-label="Screenshots for review"] img')].map(
+      (img) => img.getAttribute("src"),
+    );
+    expect(thumbs).toEqual(["/runs/dest-end-observe/frames/003.png"]);
+    expect(host.textContent).toContain("Observe");
+    expect(host.textContent).not.toContain("Close");
+    expect(host.textContent).not.toMatch(/after · Run saved Test/u);
+  });
 });

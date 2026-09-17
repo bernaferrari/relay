@@ -925,3 +925,98 @@ test("pack checklist dest identity is dest wait-for, not leftover Close last-fra
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+test("pack numbered dest identity drops leftover Close 004 last-frame without leftover-phase", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-pack-dest-004-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = directory;
+  try {
+    const runDir = join(directory, "home");
+    await mkdir(join(runDir, "frames"), { recursive: true });
+    await writeFile(join(runDir, "frames", "001.png"), "land");
+    await writeFile(join(runDir, "frames", "003.png"), "dest-wait");
+    await writeFile(join(runDir, "frames", "004.png"), "leftover-close");
+    const job = {
+      id: "job-home-dest",
+      action: "rc23-screenshot-first",
+      title: "Home chrome",
+      status: "ok",
+      outcome: "passed",
+      batchId: "dest-004",
+      runDir,
+      frames: [
+        { path: "frames/001.png", caption: "Land", capturedAt: 1 },
+        { path: "frames/003.png", caption: "Observe", capturedAt: 2 },
+        { path: "frames/004.png", caption: "Close", capturedAt: 3 },
+      ],
+      steps: [],
+      artifacts: [
+        {
+          kind: "app-map-test-execution-intent",
+          capturedAt: 1,
+          data: {
+            plan: {
+              plannedSlots: [
+                {
+                  requirementId: "rc23-screenshot-first",
+                  checkpointId: "home-chrome",
+                  caption: "Home chrome",
+                  attempt: 1,
+                  phase: "dest",
+                },
+              ],
+            },
+          },
+        },
+        {
+          kind: "capture-review",
+          capturedAt: 2,
+          data: {
+            caption: "Observe",
+            framePath: "frames/003.png",
+            imageSha256: "dest-wait",
+            checkpointId: "home-chrome",
+            attempt: 1,
+            phase: "dest",
+            policy: "fast",
+          },
+        },
+        {
+          kind: "capture-review",
+          capturedAt: 3,
+          data: {
+            caption: "Close",
+            framePath: "frames/004.png",
+            imageSha256: "close-leftover",
+            checkpointId: "close-dismiss",
+            attempt: 1,
+          },
+        },
+      ],
+      resolvedInputs: { locale: "home" },
+      recipeId: "rc23-screenshot-first",
+    } as unknown as TestJob;
+    const pack = await exportCombineEvidencePack({
+      batchId: "dest-004",
+      jobs: [job],
+      title: "Dest identity 004",
+    });
+    const html = await readFile(join(pack.rootDir, "index.html"), "utf8");
+    const checklist = JSON.parse(
+      await readFile(join(pack.rootDir, "checklist.json"), "utf8"),
+    ) as Array<{ afterPng?: string; beforePng?: string }>;
+    const rasters = await readdir(join(pack.rootDir, "home", "screenshots"));
+    assert.equal(
+      rasters.some((name) => name.includes("004")),
+      false,
+    );
+    assert.match(checklist[0]?.afterPng ?? "", /003\.png$/u);
+    assert.doesNotMatch(checklist[0]?.afterPng ?? "", /004\.png$/u);
+    assert.match(html, /003\.png/u);
+    assert.doesNotMatch(html, /004\.png/u);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
+});

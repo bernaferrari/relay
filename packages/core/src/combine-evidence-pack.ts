@@ -20,7 +20,7 @@ import type {
 import {
   formatCaptureReviewCoverageSummary,
   captureReviewIdentityFramePaths,
-  captureReviewLeftoverFramePaths,
+  captureReviewLeftoverLastFramePaths,
 } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import { pngDimensions } from "./ios-geometry.js";
@@ -343,7 +343,9 @@ function authoredFrames(job: CombineEvidenceCase): CombineEvidenceCase["frames"]
     allowed = undefined;
   }
   const dest = captureReviewIdentityFramePaths(job.artifacts ?? []);
-  const leftover = new Set(captureReviewLeftoverFramePaths(job.artifacts ?? []));
+  const leftover = new Set(
+    captureReviewLeftoverLastFramePaths(job.frames ?? [], job.artifacts ?? []),
+  );
   return (job.frames ?? []).filter((frame) => {
     if (isHarnessFrame(frame.caption)) return false;
     if (allowed && !allowed.has(basename(frame.path))) return false;
@@ -642,7 +644,9 @@ export async function exportCombineEvidencePack(input: {
     );
     const destIdentity = captureReviewIdentityFramePaths(job.artifacts ?? []);
     const leftoverNames = new Set(
-      captureReviewLeftoverFramePaths(job.artifacts ?? []).map((path) => basename(path)),
+      captureReviewLeftoverLastFramePaths(job.frames ?? [], job.artifacts ?? []).map((path) =>
+        basename(path),
+      ),
     );
     if (job.runDir) {
       try {
