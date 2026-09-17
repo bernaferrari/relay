@@ -17,6 +17,65 @@ import {
 import { operationInputSchemas } from "./operation-input-schemas.js";
 import { operationOutputSchemas } from "./operation-output-schemas.js";
 import { graphTest } from "./app-map-test-operation-schemas.js";
+import { destEndCoverageForRequirement } from "./recipes.js";
+import { RC23_SCREENSHOT_FIRST_TESTS } from "./rc23-screenshot-first.js";
+import * as z from "zod/v4";
+
+function jsonSchemaHasKey(schema: unknown, key: string, seen = new Set<unknown>()): boolean {
+  if (!schema || typeof schema !== "object" || seen.has(schema)) return false;
+  seen.add(schema);
+  if (Array.isArray(schema)) return schema.some((item) => jsonSchemaHasKey(item, key, seen));
+  const rec = schema as Record<string, unknown>;
+  const properties = rec.properties;
+  if (
+    properties &&
+    typeof properties === "object" &&
+    !Array.isArray(properties) &&
+    Object.hasOwn(properties, key)
+  ) {
+    return true;
+  }
+  return Object.values(rec).some((value) => jsonSchemaHasKey(value, key, seen));
+}
+
+function testPatchPropertyKeys(schema: unknown): string[] {
+  const walk = (value: unknown, seen = new Set<unknown>()): Record<string, unknown> | undefined => {
+    if (!value || typeof value !== "object" || seen.has(value)) return undefined;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = walk(item, seen);
+        if (found) return found;
+      }
+      return undefined;
+    }
+    const rec = value as Record<string, unknown>;
+    const properties =
+      rec.properties && typeof rec.properties === "object" && !Array.isArray(rec.properties)
+        ? (rec.properties as Record<string, unknown>)
+        : undefined;
+    const kindNode =
+      properties?.kind && typeof properties.kind === "object" && !Array.isArray(properties.kind)
+        ? (properties.kind as { const?: unknown; enum?: unknown[] })
+        : undefined;
+    const kindConst = kindNode?.const;
+    const kindEnum = Array.isArray(kindNode?.enum) ? kindNode.enum : [];
+    if (kindConst === "test.patch" || kindEnum.includes("test.patch")) {
+      const patch = properties?.patch;
+      const patchProps =
+        patch && typeof patch === "object" && !Array.isArray(patch)
+          ? (patch as { properties?: Record<string, unknown> }).properties
+          : undefined;
+      if (patchProps) return patchProps;
+    }
+    for (const nested of Object.values(rec)) {
+      const found = walk(nested, seen);
+      if (found) return found;
+    }
+    return undefined;
+  };
+  return Object.keys(walk(schema) ?? {});
+}
 
 test("graph Test schema accepts wait-response and rejects unsafe timing bounds", () => {
   const step = {
@@ -315,12 +374,63 @@ test("graph Test transport accepts cross-map native route companions", () => {
   );
 });
 
+test("app-map.test.edit schema accepts capture-view on GQA-004/040; omitted dest-end stays test-action", () => {
+  const definition = operationDefinition("app-map.test.edit");
+  for (const testId of [
+    RC23_SCREENSHOT_FIRST_TESTS.attach.ios,
+    RC23_SCREENSHOT_FIRST_TESTS.settings.ios,
+    RC23_SCREENSHOT_FIRST_TESTS.attach.android,
+    RC23_SCREENSHOT_FIRST_TESTS.settings.android,
+  ]) {
+    assert.ok(testId);
+    assert.deepEqual(
+      definition.input.parse({
+        appMapId: "grok-ios",
+        testId,
+        expectedRevision: 1,
+        edits: [{ kind: "test.patch", patch: { requirementAction: "capture-view" } }],
+      }).edits[0],
+      { kind: "test.patch", patch: { requirementAction: "capture-view" } },
+    );
+  }
+  assert.equal(destEndCoverageForRequirement({}), "transition");
+  const schema = z.toJSONSchema(definition.input.presentation);
+  assert.ok(jsonSchemaHasKey(schema, "requirementAction"));
+  const patchKeys = testPatchPropertyKeys(schema);
+  assert.ok(patchKeys.includes("requirementAction"));
+  assert.ok(patchKeys.includes("startingState"));
+  assert.ok(patchKeys.includes("executionQueue"));
+});
+
 test("campaign capacity preflight remains composed into the central operation registry", () => {
   const definition = operationDefinition("campaign.capacity.preflight");
   assert.equal(definition.transport.method, "POST");
   assert.equal(definition.transport.path, "/campaign-capacity/preflight");
   assert.equal(definition.input.description, "campaign capacity preflight input");
   assert.equal(definition.output.description, "campaign capacity preflight response");
+});
+
+test("campaign capacity preflight schema accepts separate queue members", () => {
+  const definition = operationDefinition("campaign.capacity.preflight");
+  const input = {
+    targets: [{ targetId: "pixel-1", platform: "android" as const }],
+    workItems: 3,
+    workItemsByPlatform: { android: 3 },
+    duration: { workItemDurationMs: 5_000, provenance: "supplied" as const },
+    deadlineMs: 600_000,
+    queueMembers: [
+      { executionQueue: "fast-ui" as const, workMs: 5_000 },
+      { executionQueue: "live-output" as const, workMs: 45_000 },
+      {
+        executionQueue: "stateful-survival" as const,
+        workMs: 8_000,
+        requiredDwellMs: 60_000,
+      },
+    ],
+  };
+  assert.deepEqual(definition.input.parse(input).queueMembers, input.queueMembers);
+  const schema = z.toJSONSchema(definition.input.presentation);
+  assert.ok(jsonSchemaHasKey(schema, "queueMembers"));
 });
 
 test("Proof exposes its canonical lifecycle operations plus execution and list queries", () => {

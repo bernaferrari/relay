@@ -121,6 +121,8 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
     " Human-only bulk screenshot review for exact selected Plan items. Bind runId, captureId, and image hash. Never accepts future arrivals, missing frames, or items hidden by pending/screen/device/account filters. Looks correct does not approve a visual baseline.",
   "job.combine.start":
     " Run a saved Plan. Default is one cell. Pass executionMode all to run every selected world. Missing extra sign-ins or devices fail closed as Infra columns, not a smaller Plan. cell or selectedCellIds names the worlds to queue. A default serial/target fills missing cell bindings. A single Test with in worlds uses app-map.test.run. Never invent a Variable for screenshots.",
+  "app-map.test.edit":
+    " Semantic edits include test.patch.requirementAction: capture-view | test-action. MCP can author the same dest-end contract as CLI. capture-view leftover-skip is only GQA-004 attach and GQA-040 Settings inventory; omitted dest-end stays test-action.",
   "app-map.test.run":
     " Not a first poke: compiled wait-for/expect-screen poll the accessibility slot while pixels stay still and freeze the glass. Poke with screenshot + interact first. Without `in`: runs one saved Test once (expectedRevision + target are required). With `in`: upserts a Combine for this Test × the selected worlds and runs one cell — pass executionMode:'all' to run every world instead; `cell` or `selectedCellIds` names which. Never invent a Variable for screenshots.",
   "app-map.screen.alias-observe":

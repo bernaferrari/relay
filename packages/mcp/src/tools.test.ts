@@ -1,4 +1,8 @@
-import { operationDefinitions } from "@relay/protocol";
+import {
+  destEndCoverageForRequirement,
+  operationDefinitions,
+  RC23_SCREENSHOT_FIRST_TESTS,
+} from "@relay/protocol";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -998,4 +1002,39 @@ test("publishes exact graph Test and one-pass run schemas", () => {
       target: { kind: "device", platform: "browser", targetId: "pixel-9" },
     }),
   );
+});
+
+test("app-map.test.edit accepts capture-view on GQA-004/040; omitted dest-end stays test-action", () => {
+  const edit = tool("app-map.test.edit");
+  assert.match(edit.description, /requirementAction/);
+  assert.match(edit.description, /capture-view/);
+  assert.match(edit.description, /test-action/);
+  for (const testId of [
+    RC23_SCREENSHOT_FIRST_TESTS.attach.ios,
+    RC23_SCREENSHOT_FIRST_TESTS.settings.ios,
+    RC23_SCREENSHOT_FIRST_TESTS.attach.android,
+    RC23_SCREENSHOT_FIRST_TESTS.settings.android,
+  ]) {
+    assert.ok(testId);
+    const parsed = edit.inputSchema.parse({
+      appMapId: "grok-ios",
+      testId,
+      expectedRevision: 1,
+      edits: [{ kind: "test.patch", patch: { requirementAction: "capture-view" } }],
+    }) as { edits: unknown[] };
+    assert.deepEqual(parsed.edits[0], {
+      kind: "test.patch",
+      patch: { requirementAction: "capture-view" },
+    });
+  }
+  assert.equal(destEndCoverageForRequirement({}), "transition");
+  const homeChromeIos = RC23_SCREENSHOT_FIRST_TESTS["home-chrome"].ios;
+  assert.ok(homeChromeIos);
+  const parsedHome = edit.inputSchema.parse({
+    appMapId: "grok-ios",
+    testId: homeChromeIos,
+    expectedRevision: 1,
+    edits: [{ kind: "test.patch", patch: { name: "Home chrome" } }],
+  }) as { edits: unknown[] };
+  assert.deepEqual(parsedHome.edits[0], { kind: "test.patch", patch: { name: "Home chrome" } });
 });

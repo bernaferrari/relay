@@ -8,6 +8,7 @@ import {
 } from "./operation-schema-primitives.js";
 import { VISUAL_REVIEW_ACTIONS } from "./visual-verification.js";
 import { CAPTURE_REVIEW_ACTIONS } from "./capture-review.js";
+import { executionQueueMemberQuoteSchema } from "./execution-queue.js";
 
 const runRef = z.object({ runId: identifier("Persisted Run identifier") }).strict();
 const replayRunRef = z
@@ -49,6 +50,7 @@ export const executionOperationSchemas = {
       deadlineMs: natural("Campaign deadline"),
       setupHeadroomMs: natural("Setup headroom").optional(),
       recoveryHeadroomMs: natural("Recovery headroom").optional(),
+      queueMembers: z.array(executionQueueMemberQuoteSchema).optional(),
     })
     .strict(),
   "campaign.duration.cohorts.estimate": z

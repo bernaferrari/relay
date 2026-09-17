@@ -36,6 +36,7 @@ import { leftoverWarmConfirmationSteps } from "./leftover-origin-recovery.js";
 import {
   assertCompiledExecutionQueue,
   destEndInspectScreenshotReview,
+  quoteCompiledTestDuration,
   resolvedExecutionQueue,
 } from "./execution-queue-compile.js";
 import {
@@ -899,6 +900,7 @@ export function compileAppMapScenarioTest(
   }
   const executionQueue = resolvedExecutionQueue(map, test);
   assertCompiledExecutionQueue(test, graph, executionQueue);
+  const queueQuotes = quoteCompiledTestDuration(root, graph, executionQueue);
   const plan: AppMapCompiledTest = {
     schemaVersion: 1,
     appMapId: map.id,
@@ -948,6 +950,7 @@ export function compileAppMapScenarioTest(
       requirementId: test.id,
     }),
     ...(executionQueue ? { executionQueue } : {}),
+    ...(queueQuotes.length ? { queueQuotes } : {}),
     startup: options.entryCheckpointScreenId
       ? { mode: "verified-checkpoint", screenId: options.entryCheckpointScreenId }
       : {

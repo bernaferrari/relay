@@ -611,7 +611,11 @@ async function invokeAdvanced(
     throw new TypeError(`relay_advanced ${operationId} requires confirm: true.`);
   }
   const input = object(parsed.input) ?? {};
-  return invokeWithAutoLease(invoker, descriptor.operationId, input, signal);
+  const validated = descriptor.inputSchema.parse(
+    descriptor.requiresConfirmation ? { ...input, confirm: true } : input,
+  ) as Record<string, unknown>;
+  const { confirm: _confirm, ...operationInput } = validated;
+  return invokeWithAutoLease(invoker, descriptor.operationId, operationInput, signal);
 }
 
 /**

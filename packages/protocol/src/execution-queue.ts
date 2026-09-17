@@ -26,6 +26,10 @@ export const EXECUTION_QUEUE_LABELS: Record<ExecutionQueue, string> = {
   "stateful-survival": "Stateful/survival",
 };
 
+/** Capacity / compile / Plan JSON must keep these three quotes distinct. */
+export const EXECUTION_QUEUE_DURATION_ASSUMPTION =
+  "Fast UI, Live output, and Stateful/survival report separate duration targets; never a three-minute workbook promise. A required 1-minute survival outage cannot become a 10-second outage.";
+
 const QUEUE_SET = new Set<string>(EXECUTION_QUEUES);
 
 export const executionQueueSchema = z.enum(EXECUTION_QUEUES);
@@ -151,6 +155,7 @@ export type ExecutionQueueMemberQuote = {
 
 export type ExecutionQueueDurationQuote = {
   queue: ExecutionQueue;
+  label: (typeof EXECUTION_QUEUE_LABELS)[ExecutionQueue];
   workItemCount: number;
   totalWorkMs: number;
   criticalPathMs: number;
@@ -158,6 +163,28 @@ export type ExecutionQueueDurationQuote = {
   requiredDwellMs: number;
   lowerBoundMs: number;
 };
+
+export const executionQueueMemberQuoteSchema = z
+  .object({
+    executionQueue: executionQueueSchema.optional(),
+    destEndChromeInspect: z.boolean().optional(),
+    workMs: z.number(),
+    requiredDwellMs: z.number().optional(),
+  })
+  .strict();
+
+export const executionQueueDurationQuoteSchema = z
+  .object({
+    queue: executionQueueSchema,
+    label: z.enum(["Fast UI", "Live output", "Stateful/survival"]),
+    workItemCount: z.number(),
+    totalWorkMs: z.number(),
+    criticalPathMs: z.number(),
+    workers: z.number(),
+    requiredDwellMs: z.number(),
+    lowerBoundMs: z.number(),
+  })
+  .strict();
 
 /** Separate duration targets. Never a three-minute workbook promise. */
 export function quoteDeclaredExecutionQueues(
@@ -183,6 +210,7 @@ export function quoteDeclaredExecutionQueues(
       workerCount > 1 ? Math.max(0, ...items.map((item) => item.workMs)) : totalWorkMs;
     quotes.push({
       queue,
+      label: EXECUTION_QUEUE_LABELS[queue],
       workItemCount: items.length,
       totalWorkMs,
       criticalPathMs,

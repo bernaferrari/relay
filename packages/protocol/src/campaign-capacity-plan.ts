@@ -1,4 +1,5 @@
 import type { TargetWorkerStatus } from "./target-runtime.js";
+import type { ExecutionQueueDurationQuote, ExecutionQueueMemberQuote } from "./execution-queue.js";
 
 /** A current scheduling fact about a concrete target, not a provider promise. */
 export type CampaignCapacityTargetAvailability = "available" | "unavailable" | "stale";
@@ -120,6 +121,9 @@ export type CampaignCapacityPlan = {
   serial: CampaignCapacityTimeEstimate;
   parallel: CampaignCapacityTimeEstimate & { idealSpeedup: number | null };
   budget?: CampaignCapacityBudgetEstimate;
+  /** Separate Fast UI / Live output / Stateful-survival duration quotes when
+   * the caller declared queue members. Never a three-minute workbook promise. */
+  queueQuotes?: ExecutionQueueDurationQuote[];
   /** Explicit estimator limits so consumers do not mistake this for a farm SLA. */
   assumptions: string[];
 };
@@ -140,6 +144,9 @@ export type CampaignCapacityPlanInput = {
   workItemsByPlatform?: Partial<Record<CampaignCapacityTarget["platform"], number>>;
   estimatedWorkItemDurationMs: number;
   timeBudgetMs?: number;
+  /** Optional per-item queue membership so capacity JSON can quote Fast UI,
+   * Live output, and Stateful/survival separately. */
+  queueMembers?: readonly ExecutionQueueMemberQuote[];
 };
 
 /** The target selector used by the local-device preflight. It stays explicit
@@ -284,6 +291,9 @@ export type LocalCampaignCapacityPreflightInput = {
   setupHeadroomMs?: number;
   /** Critical-path reserve for one recovery/repair path, applied once to the campaign. */
   recoveryHeadroomMs?: number;
+  /** Optional per-item queue membership so capacity JSON can quote Fast UI,
+   * Live output, and Stateful/survival separately. */
+  queueMembers?: ExecutionQueueMemberQuote[];
 };
 
 export type LocalCampaignCapacityTargetReason =

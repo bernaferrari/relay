@@ -3,7 +3,6 @@ import type {
   AppMapCombine,
   AppMapCombinePreflight,
   AppMapCombinePreflightIssue,
-  RecipeStep,
 } from "@relay/protocol";
 import { quoteDeclaredExecutionQueues } from "@relay/protocol";
 import type { AppMapTestCompileOptions } from "./app-map-test-compiler.js";
@@ -26,13 +25,15 @@ import {
   prepareOptionCasePlan,
   type OptionRunSet,
 } from "./option-run.js";
-import type { Recipe } from "./recipes.js";
 import {
   assessMutatingRoutineSharing,
   assessSequentialStartingState,
   UnsafeStartingStateError,
 } from "./starting-state-routines.js";
-import { declaredDwellMsFromRecipeGraph } from "./execution-queue-compile.js";
+import {
+  declaredDwellMsFromRecipeGraph,
+  estimateRecipeDuration,
+} from "./execution-queue-compile.js";
 
 function issue(
   code: AppMapCombinePreflightIssue["code"],
@@ -46,52 +47,6 @@ function selectedIds(combine: AppMapCombine, variableId: string, available: stri
   const selected = combine.selected?.[variableId] ?? [];
   const availableSet = new Set(available);
   return [...new Set(selected.filter((id) => availableSet.has(id)))];
-}
-
-function estimateStepDuration(
-  step: RecipeStep,
-  graph: Record<string, Recipe>,
-  visiting: ReadonlySet<string>,
-): number {
-  if (step.kind === "sleep") return step.ms;
-  if (step.kind === "tap" || step.kind === "key" || step.kind === "swipe") return 700;
-  if (step.kind === "screenshot") return 350;
-  if (step.kind === "app" || step.kind === "device") return 1_200;
-  if (step.kind === "tour") {
-    const stops = step.fallbackStops?.length ?? 1;
-    return Math.max(2_000, stops * 1_800);
-  }
-  if (step.kind === "module" || step.kind === "repeat") {
-    const nested = graph[step.recipeId];
-    if (!nested || visiting.has(nested.id)) return 0;
-    const duration = estimateRecipeDuration(nested, graph, new Set(visiting).add(nested.id));
-    return step.kind === "repeat" ? duration * step.count : duration;
-  }
-  if (step.kind === "branch") {
-    const branches = [step.thenRecipeId, step.elseRecipeId]
-      .map((id) => (id ? graph[id] : undefined))
-      .filter((recipe): recipe is Recipe => Boolean(recipe));
-    return Math.max(
-      0,
-      ...branches.map((recipe) =>
-        visiting.has(recipe.id)
-          ? 0
-          : estimateRecipeDuration(recipe, graph, new Set(visiting).add(recipe.id)),
-      ),
-    );
-  }
-  return 500;
-}
-
-function estimateRecipeDuration(
-  recipe: Recipe,
-  graph: Record<string, Recipe>,
-  visiting: ReadonlySet<string>,
-): number {
-  return recipe.steps.reduce(
-    (total, step) => total + estimateStepDuration(step, graph, visiting),
-    0,
-  );
 }
 
 export async function preflightAppMapCombine(

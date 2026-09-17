@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type {
-  CampaignCapacityCohortDurationEvidence,
-  DeviceLease,
-  TargetRuntimeReadiness,
+import {
+  EXECUTION_QUEUE_DURATION_ASSUMPTION,
+  SURVIVAL_FAMILY_ID,
+  SURVIVAL_REQUIRED_DWELL_MS,
+  THREE_MINUTE_MS,
+  canCoverWorkbookFamily,
+  type CampaignCapacityCohortDurationEvidence,
+  type DeviceLease,
+  type TargetRuntimeReadiness,
 } from "@relay/protocol";
 import {
   preflightLocalCampaignCapacity,
@@ -366,5 +371,61 @@ test("one grok-com target still serializes three account cells", () => {
   assert.ok(
     typeof predicted === "number" &&
       Math.abs(predicted - measuredConcurrentPackMs) / measuredConcurrentPackMs > 0.2,
+  );
+});
+
+test("local capacity JSON quotes Fast UI, Live output, and Stateful/survival separately", () => {
+  const preflight = preflightLocalCampaignCapacity({
+    targets: [
+      { targetId: "pixel-a", platform: "android" },
+      { targetId: "ipad-a", platform: "ios" },
+    ],
+    workItems: 3,
+    workItemsByPlatform: { android: 2, ios: 1 },
+    duration: {
+      workItemDurationMs: 5_000,
+      provenance: "observed-p95",
+      observedAt: 950,
+      sampleCount: 24,
+      maxAgeMs: 500,
+    },
+    deadlineMs: 600_000,
+    setupHeadroomMs: 500,
+    recoveryHeadroomMs: 500,
+    queueMembers: [
+      { executionQueue: "fast-ui", workMs: 5_000 },
+      { executionQueue: "live-output", workMs: 45_000 },
+      {
+        executionQueue: "stateful-survival",
+        workMs: 8_000,
+        requiredDwellMs: SURVIVAL_REQUIRED_DWELL_MS,
+      },
+    ],
+    devices: [device("pixel-a", "android"), device("ipad-a", "ios")],
+    leases: [],
+    workers: [],
+    at: 1_000,
+  });
+  assert.deepEqual(
+    preflight.plan.queueQuotes?.map((quote) => [quote.queue, quote.label]),
+    [
+      ["fast-ui", "Fast UI"],
+      ["live-output", "Live output"],
+      ["stateful-survival", "Stateful/survival"],
+    ],
+  );
+  const survival = preflight.plan.queueQuotes?.find((quote) => quote.queue === "stateful-survival");
+  assert.equal(survival?.requiredDwellMs, SURVIVAL_REQUIRED_DWELL_MS);
+  assert.ok((survival?.lowerBoundMs ?? 0) >= SURVIVAL_REQUIRED_DWELL_MS);
+  assert.ok(preflight.plan.queueQuotes?.every((quote) => quote.lowerBoundMs !== THREE_MINUTE_MS));
+  assert.ok(preflight.assumptions.includes(EXECUTION_QUEUE_DURATION_ASSUMPTION));
+  assert.ok(preflight.plan.assumptions.includes(EXECUTION_QUEUE_DURATION_ASSUMPTION));
+  assert.equal(
+    canCoverWorkbookFamily({
+      executionQueue: "stateful-survival",
+      declaredDwellMs: 10_000,
+      family: SURVIVAL_FAMILY_ID,
+    }).ok,
+    false,
   );
 });

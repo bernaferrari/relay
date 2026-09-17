@@ -38,6 +38,62 @@ type ListedTool = {
   };
 };
 
+function jsonSchemaHasKey(schema: unknown, key: string, seen = new Set<unknown>()): boolean {
+  if (!schema || typeof schema !== "object" || seen.has(schema)) return false;
+  seen.add(schema);
+  if (Array.isArray(schema)) return schema.some((item) => jsonSchemaHasKey(item, key, seen));
+  const rec = schema as Record<string, unknown>;
+  const properties = rec.properties;
+  if (
+    properties &&
+    typeof properties === "object" &&
+    !Array.isArray(properties) &&
+    Object.hasOwn(properties, key)
+  ) {
+    return true;
+  }
+  return Object.values(rec).some((value) => jsonSchemaHasKey(value, key, seen));
+}
+
+function testPatchPropertyKeys(schema: unknown): string[] {
+  const walk = (value: unknown, seen = new Set<unknown>()): Record<string, unknown> | undefined => {
+    if (!value || typeof value !== "object" || seen.has(value)) return undefined;
+    seen.add(value);
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = walk(item, seen);
+        if (found) return found;
+      }
+      return undefined;
+    }
+    const rec = value as Record<string, unknown>;
+    const properties =
+      rec.properties && typeof rec.properties === "object" && !Array.isArray(rec.properties)
+        ? (rec.properties as Record<string, unknown>)
+        : undefined;
+    const kindNode =
+      properties?.kind && typeof properties.kind === "object" && !Array.isArray(properties.kind)
+        ? (properties.kind as { const?: unknown; enum?: unknown[] })
+        : undefined;
+    const kindConst = kindNode?.const;
+    const kindEnum = Array.isArray(kindNode?.enum) ? kindNode.enum : [];
+    if (kindConst === "test.patch" || kindEnum.includes("test.patch")) {
+      const patch = properties?.patch;
+      const patchProps =
+        patch && typeof patch === "object" && !Array.isArray(patch)
+          ? (patch as { properties?: Record<string, unknown> }).properties
+          : undefined;
+      if (patchProps) return patchProps;
+    }
+    for (const nested of Object.values(rec)) {
+      const found = walk(nested, seen);
+      if (found) return found;
+    }
+    return undefined;
+  };
+  return Object.keys(walk(schema) ?? {});
+}
+
 type ToolCallResult = {
   content: Array<Record<string, unknown>>;
   structuredContent?: Record<string, unknown>;
@@ -162,6 +218,25 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
     ]);
     assert.match(snapshot.description ?? "", /digest/i);
     assert.match(snapshot.description ?? "", /full/);
+  } finally {
+    await session.close();
+  }
+});
+
+test("tools/list JSON schema for app-map.test.edit includes requirementAction", async () => {
+  const session = await connectMcp({ async invoke() {} });
+  try {
+    const listed = await session.request("tools/list", {});
+    assert.equal(listed.error, undefined);
+    const tools = listed.result?.tools as ListedTool[];
+    const edit = tools.find(({ name }) => name === "relay_app_map_test_edit");
+    assert.ok(edit);
+    assert.match(edit.description ?? "", /requirementAction/);
+    assert.ok(jsonSchemaHasKey(edit.inputSchema, "requirementAction"));
+    const patchKeys = testPatchPropertyKeys(edit.inputSchema);
+    assert.ok(patchKeys.includes("requirementAction"), JSON.stringify(patchKeys));
+    assert.ok(patchKeys.includes("startingState"), JSON.stringify(patchKeys));
+    assert.ok(patchKeys.includes("executionQueue"), JSON.stringify(patchKeys));
   } finally {
     await session.close();
   }

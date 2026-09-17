@@ -1,18 +1,19 @@
-import type {
-  CampaignCapacityCohortDurationEvidence,
-  CampaignCapacityDurationInput,
-  CampaignCapacityMeasurementAssurance,
-  CampaignCapacityObservedDurationInput,
-  CampaignCapacityTarget,
-  CampaignCapacityWorker,
-  DeviceLease,
-  LocalCampaignCapacityCriticalPathWorkItem,
-  LocalCampaignCapacityPreflight,
-  LocalCampaignCapacityPreflightInput,
-  LocalCampaignCapacityTargetFact,
-  LocalCampaignCapacityTargetCriticalPathPreflight,
-  LocalCampaignCapacityTargetInput,
-  TargetWorkerStatus,
+import {
+  EXECUTION_QUEUE_DURATION_ASSUMPTION,
+  type CampaignCapacityCohortDurationEvidence,
+  type CampaignCapacityDurationInput,
+  type CampaignCapacityMeasurementAssurance,
+  type CampaignCapacityObservedDurationInput,
+  type CampaignCapacityTarget,
+  type CampaignCapacityWorker,
+  type DeviceLease,
+  type LocalCampaignCapacityCriticalPathWorkItem,
+  type LocalCampaignCapacityPreflight,
+  type LocalCampaignCapacityPreflightInput,
+  type LocalCampaignCapacityTargetFact,
+  type LocalCampaignCapacityTargetCriticalPathPreflight,
+  type LocalCampaignCapacityTargetInput,
+  type TargetWorkerStatus,
 } from "@relay/protocol";
 import { planCampaignCapacity } from "./campaign-capacity-plan.js";
 import { defaultTargetWorkerAssignment } from "./target-worker.js";
@@ -135,6 +136,7 @@ function normalizedInput(
     deadlineMs: input.deadlineMs,
     ...(setupHeadroomMs ? { setupHeadroomMs } : {}),
     ...(recoveryHeadroomMs ? { recoveryHeadroomMs } : {}),
+    ...(input.queueMembers ? { queueMembers: input.queueMembers } : {}),
   };
 }
 
@@ -395,6 +397,7 @@ export function preflightLocalCampaignCapacity(
     workItemsByPlatform: input.workItemsByPlatform,
     estimatedWorkItemDurationMs: input.duration.workItemDurationMs,
     timeBudgetMs: workBudgetMs,
+    ...(input.queueMembers ? { queueMembers: input.queueMembers } : {}),
   });
   const assurance = durationAssurance(input.duration, at);
   const estimatedParallelDurationMs =
@@ -429,6 +432,7 @@ export function preflightLocalCampaignCapacity(
       "Queued or staged work reserves its target and shared-host capacity; its unbounded drain time is not included in a new deadline estimate.",
       "Setup and recovery headroom are reserved once on the campaign critical path, not multiplied by every work item.",
       "A supplied or stale duration can size work, but cannot make the deadline achievable with current capacity.",
+      EXECUTION_QUEUE_DURATION_ASSUMPTION,
     ],
   };
 }

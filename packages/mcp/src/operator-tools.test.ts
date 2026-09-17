@@ -1,5 +1,6 @@
 import { ApiError } from "@relay/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
+import { RC23_SCREENSHOT_FIRST_TESTS } from "@relay/protocol";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -266,6 +267,35 @@ test("relay_advanced refuses lease.takeover outside full", async () => {
     /lease\.takeover/u,
   );
   assert.deepEqual(calls, []);
+});
+
+test("relay_advanced accepts capture-view on GQA-004/040 test.edit", async () => {
+  const { invoker, calls } = recordingInvoker(() => ({ ok: true }));
+  for (const testId of [
+    RC23_SCREENSHOT_FIRST_TESTS.attach.ios,
+    RC23_SCREENSHOT_FIRST_TESTS.settings.ios,
+    RC23_SCREENSHOT_FIRST_TESTS.attach.android,
+    RC23_SCREENSHOT_FIRST_TESTS.settings.android,
+  ]) {
+    assert.ok(testId);
+    const payload = {
+      appMapId: "grok-ios",
+      testId,
+      expectedRevision: 1,
+      edits: [{ kind: "test.patch", patch: { requirementAction: "capture-view" } }],
+    };
+    await invokeRelayOperatorTool({
+      name: "relay_advanced",
+      argumentsValue: { operationId: "app-map.test.edit", input: payload },
+      confirmed: false,
+      invoker,
+      actorId: "agent:cursor",
+      signal: new AbortController().signal,
+      profile: "operator",
+    });
+    assert.deepEqual(calls.at(-1), { operationId: "app-map.test.edit", input: payload });
+  }
+  assert.equal(calls.length, 4);
 });
 
 test("relay_visual_review requires confirm:true and refuses agent:* actors", async () => {

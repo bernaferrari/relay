@@ -77,6 +77,17 @@ test("campaign capacity preflight validates exact local target and duration evid
   assert.deepEqual(
     definition.input.parse({
       ...validInput,
+      queueMembers: [
+        { executionQueue: "fast-ui", workMs: 5_000 },
+        { executionQueue: "live-output", workMs: 45_000 },
+        { executionQueue: "stateful-survival", workMs: 8_000, requiredDwellMs: 60_000 },
+      ],
+    }).queueMembers?.[0],
+    { executionQueue: "fast-ui", workMs: 5_000 },
+  );
+  assert.deepEqual(
+    definition.input.parse({
+      ...validInput,
       targets: [{ targetId: "grok-web", platform: "browser" }],
       workItems: 8,
       workItemsByPlatform: { browser: 8 },

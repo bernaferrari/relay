@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { graphTest } from "./app-map-test-operation-schemas.js";
 import {
+  EXECUTION_QUEUE_DURATION_ASSUMPTION,
   SURVIVAL_FAMILY_ID,
   SURVIVAL_REQUIRED_DWELL_MS,
   THREE_MINUTE_MS,
@@ -118,11 +119,17 @@ test("Combine duration quote lists the three queues separately when members decl
   const live = quotes.find((quote) => quote.queue === "live-output");
   const survival = quotes.find((quote) => quote.queue === "stateful-survival");
   assert.equal(fast?.workItemCount, 30);
+  assert.equal(fast?.label, "Fast UI");
+  assert.equal(live?.label, "Live output");
+  assert.equal(survival?.label, "Stateful/survival");
   assert.equal(fast?.lowerBoundMs, 60_000);
   assert.equal(live?.lowerBoundMs, 45_000);
   assert.equal(survival?.requiredDwellMs, SURVIVAL_REQUIRED_DWELL_MS);
   assert.equal(survival?.lowerBoundMs, SURVIVAL_REQUIRED_DWELL_MS);
   assert.notEqual(fast?.lowerBoundMs, THREE_MINUTE_MS);
+  assert.match(EXECUTION_QUEUE_DURATION_ASSUMPTION, /separate duration targets/u);
+  assert.match(EXECUTION_QUEUE_DURATION_ASSUMPTION, /three-minute workbook promise/u);
+  assert.match(EXECUTION_QUEUE_DURATION_ASSUMPTION, /1-minute survival outage/u);
   assert.equal(
     canCoverWorkbookFamily({
       executionQueue: "fast-ui",

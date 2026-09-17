@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {
+  EXECUTION_QUEUE_DURATION_ASSUMPTION,
+  SURVIVAL_FAMILY_ID,
+  SURVIVAL_REQUIRED_DWELL_MS,
+  THREE_MINUTE_MS,
+  canCoverWorkbookFamily,
+} from "@relay/protocol";
 import { planCampaignCapacity } from "./campaign-capacity-plan.js";
 
 test("excludes unavailable, stale, leased, active, and queued targets before assigning capacity", () => {
@@ -570,4 +577,76 @@ test("fails closed instead of inventing capacity for an unobserved worker", () =
   assert.deepEqual(plan.excludedTargets, [
     { targetId: "unknown-host", platform: "ios", reasons: ["worker-unknown"] },
   ]);
+});
+
+test("capacity JSON quotes Fast UI, Live output, and Stateful/survival separately", () => {
+  const plan = planCampaignCapacity({
+    workItems: 3,
+    estimatedWorkItemDurationMs: 5_000,
+    queueMembers: [
+      { executionQueue: "fast-ui", workMs: 5_000 },
+      { executionQueue: "live-output", workMs: 45_000 },
+      {
+        executionQueue: "stateful-survival",
+        workMs: 8_000,
+        requiredDwellMs: SURVIVAL_REQUIRED_DWELL_MS,
+      },
+    ],
+    targets: [
+      {
+        targetId: "pixel-1",
+        platform: "android",
+        availability: "available",
+        lease: "available",
+        workerId: "android-host",
+      },
+    ],
+    workers: [
+      {
+        workerId: "android-host",
+        capacity: 1,
+        active: 0,
+        queued: 0,
+        activeTargets: [],
+        queuedTargets: [],
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    plan.queueQuotes?.map((quote) => [quote.queue, quote.label]),
+    [
+      ["fast-ui", "Fast UI"],
+      ["live-output", "Live output"],
+      ["stateful-survival", "Stateful/survival"],
+    ],
+  );
+  const fast = plan.queueQuotes?.find((quote) => quote.queue === "fast-ui");
+  const live = plan.queueQuotes?.find((quote) => quote.queue === "live-output");
+  const survival = plan.queueQuotes?.find((quote) => quote.queue === "stateful-survival");
+  assert.equal(fast?.lowerBoundMs, 5_000);
+  assert.equal(live?.lowerBoundMs, 45_000);
+  assert.equal(survival?.requiredDwellMs, SURVIVAL_REQUIRED_DWELL_MS);
+  assert.equal(survival?.lowerBoundMs, SURVIVAL_REQUIRED_DWELL_MS);
+  assert.notEqual(fast?.lowerBoundMs, THREE_MINUTE_MS);
+  assert.notEqual(live?.lowerBoundMs, THREE_MINUTE_MS);
+  assert.notEqual(survival?.lowerBoundMs, THREE_MINUTE_MS);
+  assert.notEqual(plan.parallel.estimatedDurationMs, THREE_MINUTE_MS);
+  assert.ok(plan.assumptions.includes(EXECUTION_QUEUE_DURATION_ASSUMPTION));
+  assert.equal(
+    canCoverWorkbookFamily({
+      executionQueue: "fast-ui",
+      declaredDwellMs: 10_000,
+      family: SURVIVAL_FAMILY_ID,
+    }).ok,
+    false,
+  );
+  assert.equal(
+    canCoverWorkbookFamily({
+      executionQueue: "stateful-survival",
+      declaredDwellMs: 10_000,
+      family: SURVIVAL_FAMILY_ID,
+    }).ok,
+    false,
+  );
 });

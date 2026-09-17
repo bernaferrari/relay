@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, AppMapEntity, AppMapScenarioTest, Connection, Screen } from "@relay/protocol";
 import {
+  EXECUTION_QUEUE_DURATION_ASSUMPTION,
   SURVIVAL_FAMILY_ID,
   SURVIVAL_REQUIRED_DWELL_MS,
+  THREE_MINUTE_MS,
   canCoverWorkbookFamily,
 } from "@relay/protocol";
 import { AppMapTestCompileError } from "./app-map-test-compile-error.js";
@@ -214,7 +216,11 @@ test("live-output compile rejects a loading placeholder as Sequence after", () =
   const illegal = liveOutputTest();
   const step = illegal.steps[0]!;
   assert.equal(step.kind, "validation");
-  if (step.kind !== "validation" || step.binding.kind !== "recipe-step") {
+  if (
+    step.kind !== "validation" ||
+    step.binding.status !== "resolved" ||
+    step.binding.kind !== "recipe-step"
+  ) {
     throw new Error("expected recipe-step screenshot");
   }
   step.binding = {
@@ -271,9 +277,12 @@ test("Combine/plan duration quote lists the three queues separately when members
   const fast = preflight.queueQuotes?.find((quote) => quote.queue === "fast-ui");
   const survival = preflight.queueQuotes?.find((quote) => quote.queue === "stateful-survival");
   assert.ok(fast);
+  assert.equal(fast?.label, "Fast UI");
+  assert.equal(survival?.label, "Stateful/survival");
   assert.equal(survival?.requiredDwellMs, SURVIVAL_REQUIRED_DWELL_MS);
   assert.ok((survival?.lowerBoundMs ?? 0) >= SURVIVAL_REQUIRED_DWELL_MS);
   assert.notEqual(fast?.lowerBoundMs, survival?.lowerBoundMs);
+  assert.match(EXECUTION_QUEUE_DURATION_ASSUMPTION, /separate duration targets/u);
   assert.equal(
     canCoverWorkbookFamily({
       executionQueue: "fast-ui",
@@ -292,6 +301,28 @@ test("Combine/plan duration quote lists the three queues separately when members
       compileAppMapTest(map, survivalTest()).plan.executionQueue === "stateful-survival",
     true,
   );
+  const inspectQuotes = compileAppMapTest(map, inspectTest()).plan.queueQuotes;
+  const liveQuotes = compileAppMapTest(map, liveOutputTest()).plan.queueQuotes;
+  const survivalQuotes = compileAppMapTest(map, survivalTest()).plan.queueQuotes;
+  assert.deepEqual(
+    inspectQuotes?.map((quote) => quote.queue),
+    ["fast-ui"],
+  );
+  assert.equal(inspectQuotes?.[0]?.label, "Fast UI");
+  assert.deepEqual(
+    liveQuotes?.map((quote) => quote.queue),
+    ["live-output"],
+  );
+  assert.equal(liveQuotes?.[0]?.label, "Live output");
+  assert.deepEqual(
+    survivalQuotes?.map((quote) => quote.queue),
+    ["stateful-survival"],
+  );
+  assert.equal(survivalQuotes?.[0]?.label, "Stateful/survival");
+  assert.equal(survivalQuotes?.[0]?.requiredDwellMs, SURVIVAL_REQUIRED_DWELL_MS);
+  assert.ok((survivalQuotes?.[0]?.lowerBoundMs ?? 0) >= SURVIVAL_REQUIRED_DWELL_MS);
+  assert.notEqual(inspectQuotes?.[0]?.lowerBoundMs, THREE_MINUTE_MS);
+  assert.notEqual(preflight.estimatedDurationMs, THREE_MINUTE_MS);
   assert.equal(
     new AppMapTestCompileError("unsafe-execution-queue", "x", "y", "z").code,
     "unsafe-execution-queue",

@@ -11,6 +11,12 @@ import { appMapTestStartingStateSchema } from "./routine-effects.js";
 import { executionQueueSchema } from "./execution-queue.js";
 import { repeatPilotSpecSchema, repeatSpecSchema } from "./repeat-spec.js";
 
+const requirementActionKind = z
+  .enum(["capture-view", "test-action"])
+  .describe(
+    "capture-view may leftover-skip dest chrome (GQA-004 attach, GQA-040 settings). test-action must execute the named opener. Omitted dest-end stays test-action.",
+  );
+
 const forceRecaptureScreenIds = z
   .array(identifier("Full-surface screen identifier to recapture"))
   .min(1)
@@ -767,7 +773,7 @@ export const graphTest = z
     originApplication: z.string().trim().min(1).optional(),
     startingState: appMapTestStartingStateSchema.optional(),
     executionQueue: executionQueueSchema.optional(),
-    requirementAction: z.enum(["capture-view", "test-action"]).optional(),
+    requirementAction: requirementActionKind.optional(),
     steps: z.array(graphTestStep).max(200),
     family: testFamily.optional(),
     nativeRouteCompanions: nativeRouteCompanions.optional(),
@@ -847,7 +853,7 @@ const testSemanticEdit = z.discriminatedUnion("kind", [
           nativeRouteCompanions: nativeRouteCompanions.nullable().optional(),
           startingState: appMapTestStartingStateSchema.nullable().optional(),
           executionQueue: executionQueueSchema.nullable().optional(),
-          requirementAction: z.enum(["capture-view", "test-action"]).nullable().optional(),
+          requirementAction: requirementActionKind.nullable().optional(),
         })
         .strict()
         .refine((patch) => Object.keys(patch).length > 0, "Test patch must change a field"),

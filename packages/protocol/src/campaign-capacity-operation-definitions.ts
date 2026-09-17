@@ -9,6 +9,7 @@ import {
   record,
   string,
 } from "./operation-parser-primitives.js";
+import { isExecutionQueue } from "./execution-queue.js";
 
 export type CampaignCapacityOperationId =
   | "campaign.capacity.preflight"
@@ -63,6 +64,24 @@ const campaignCapacityPreflightInputParser = objectParser<
   }
   if (input.recoveryHeadroomMs !== undefined) {
     number(input.recoveryHeadroomMs, "campaign capacity recoveryHeadroomMs");
+  }
+  if (input.queueMembers !== undefined) {
+    if (!Array.isArray(input.queueMembers)) {
+      fail("campaign capacity queueMembers", "must be an array");
+    }
+    for (const [index, value] of input.queueMembers.entries()) {
+      const member = record(value, `campaign capacity queueMembers ${index}`);
+      if (member.executionQueue !== undefined && !isExecutionQueue(String(member.executionQueue))) {
+        fail(
+          `campaign capacity queueMembers ${index} executionQueue`,
+          "must be fast-ui, live-output, or stateful-survival",
+        );
+      }
+      number(member.workMs, `campaign capacity queueMembers ${index} workMs`);
+      if (member.requiredDwellMs !== undefined) {
+        number(member.requiredDwellMs, `campaign capacity queueMembers ${index} requiredDwellMs`);
+      }
+    }
   }
 });
 

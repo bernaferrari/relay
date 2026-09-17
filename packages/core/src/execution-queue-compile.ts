@@ -3,12 +3,14 @@ import type {
   AppMapScenarioTest,
   CaptureRasterPolicy,
   ExecutionQueue,
+  ExecutionQueueDurationQuote,
   RecipeStep,
 } from "@relay/protocol";
 import {
   CAPTURE_REVIEW_DEST_PHASE,
   destEndConnectionsAreChromeInspect,
   executionQueueForTest,
+  quoteDeclaredExecutionQueues,
   sequenceAfterIsPlaceholder,
 } from "@relay/protocol";
 import type { Recipe } from "./recipes.js";
@@ -16,7 +18,13 @@ import { AppMapTestCompileError } from "./app-map-test-compile-error.js";
 
 export function destEndChromeInspectForTest(map: AppMap, test: AppMapScenarioTest): boolean {
   const connections = test.steps.flatMap((step) => {
-    if (step.kind !== "instruction" || step.binding.kind !== "connections") return [];
+    if (
+      step.kind !== "instruction" ||
+      step.binding.status !== "resolved" ||
+      step.binding.kind !== "connections"
+    ) {
+      return [];
+    }
     return step.binding.connectionIds.flatMap((id) => {
       const connection = map.connections[id];
       return connection ? [connection] : [];
@@ -64,6 +72,69 @@ export function declaredDwellMsFromRecipeGraph(
   };
   visit(rootRecipeId, new Set());
   return max;
+}
+
+function estimateStepDuration(
+  step: RecipeStep,
+  graph: Readonly<Record<string, Recipe>>,
+  visiting: ReadonlySet<string>,
+): number {
+  if (step.kind === "sleep") return step.ms;
+  if (step.kind === "tap" || step.kind === "key" || step.kind === "swipe") return 700;
+  if (step.kind === "screenshot") return 350;
+  if (step.kind === "app" || step.kind === "device") return 1_200;
+  if (step.kind === "tour") {
+    const stops = step.fallbackStops?.length ?? 1;
+    return Math.max(2_000, stops * 1_800);
+  }
+  if (step.kind === "module" || step.kind === "repeat") {
+    const nested = graph[step.recipeId];
+    if (!nested || visiting.has(nested.id)) return 0;
+    const duration = estimateRecipeDuration(nested, graph, new Set(visiting).add(nested.id));
+    return step.kind === "repeat" ? duration * step.count : duration;
+  }
+  if (step.kind === "branch") {
+    const branches = [step.thenRecipeId, step.elseRecipeId]
+      .map((id) => (id ? graph[id] : undefined))
+      .filter((recipe): recipe is Recipe => Boolean(recipe));
+    return Math.max(
+      0,
+      ...branches.map((recipe) =>
+        visiting.has(recipe.id)
+          ? 0
+          : estimateRecipeDuration(recipe, graph, new Set(visiting).add(recipe.id)),
+      ),
+    );
+  }
+  return 500;
+}
+
+export function estimateRecipeDuration(
+  recipe: Recipe,
+  graph: Readonly<Record<string, Recipe>>,
+  visiting: ReadonlySet<string>,
+): number {
+  return recipe.steps.reduce(
+    (total, step) => total + estimateStepDuration(step, graph, visiting),
+    0,
+  );
+}
+
+export function quoteCompiledTestDuration(
+  recipe: Recipe,
+  graph: Readonly<Record<string, Recipe>>,
+  executionQueue: ExecutionQueue | undefined,
+): ExecutionQueueDurationQuote[] {
+  return quoteDeclaredExecutionQueues(
+    [
+      {
+        executionQueue,
+        workMs: estimateRecipeDuration(recipe, graph, new Set([recipe.id])),
+        requiredDwellMs: declaredDwellMsFromRecipeGraph(graph, recipe.id),
+      },
+    ],
+    1,
+  );
 }
 
 function screenshotUsesPlaceholderAsAfter(step: RecipeStep): boolean {

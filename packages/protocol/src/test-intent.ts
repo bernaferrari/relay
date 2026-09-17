@@ -1,5 +1,5 @@
 import type { AppMapTestStartingState } from "./routine-effects.js";
-import type { ExecutionQueue } from "./execution-queue.js";
+import type { ExecutionQueue, ExecutionQueueDurationQuote } from "./execution-queue.js";
 import type { BrowserEngine } from "./browser-case-profile.js";
 import type {
   AppMapCapturePolicy,
@@ -621,6 +621,9 @@ export type AppMapCompiledTest = {
   /** Resolved Fast UI / live output / stateful-survival queue. Dest-end
    * chrome inspect defaults to fast-ui when the Test omitted it. */
   executionQueue?: ExecutionQueue;
+  /** Separate Fast UI / Live output / Stateful-survival duration quotes.
+   * Never a three-minute workbook promise. */
+  queueQuotes?: ExecutionQueueDurationQuote[];
   startup: AppMapTestStartup;
   /** Explicit recording origin application, when the Test has one. */
   originApplication?: string;
