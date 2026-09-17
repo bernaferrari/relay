@@ -22,21 +22,30 @@ export function TestStepEvidencePreview({
 }) {
   const allMatches = report?.stepEvidence?.filter((item) => item.testStepId === step.id) ?? [];
   const captures = allMatches.filter((item) => item.evidence.framePaths.length > 0);
+  const destFramePaths = new Set(
+    (report?.captureReview?.items ?? [])
+      .filter((item) => item.phase === "dest")
+      .flatMap((item) => (item.framePath ? [item.framePath] : [])),
+  );
+  const destCaptures = captures.filter((item) =>
+    item.evidence.framePaths.some((path) => destFramePaths.has(path)),
+  );
   const visibleCaptures = captures.filter((item) =>
     report?.timeline.some((entry) => entry.id === item.traceStepId),
   );
-  const intentionalCaptures = visibleCaptures.filter((item) =>
-    report?.timeline
-      .find((entry) => entry.id === item.traceStepId)
-      ?.title.startsWith("Screenshot ·"),
-  );
-  const matches = intentionalCaptures.length
-    ? intentionalCaptures
-    : visibleCaptures.length
-      ? visibleCaptures
-      : captures.length
-        ? captures
-        : allMatches;
+  const intentionalCaptures = visibleCaptures.filter((item) => {
+    const title = report?.timeline.find((entry) => entry.id === item.traceStepId)?.title ?? "";
+    return title.startsWith("Screenshot ·") || title.startsWith("Capture for review");
+  });
+  const matches = destCaptures.length
+    ? destCaptures
+    : intentionalCaptures.length
+      ? intentionalCaptures
+      : visibleCaptures.length
+        ? visibleCaptures
+        : captures.length
+          ? captures
+          : allMatches;
   const [selectedOccurrence, setSelectedOccurrence] = useState(matches[0]?.occurrence ?? 1);
   if (!hasRuns && step.recordingFrames?.length) {
     return (

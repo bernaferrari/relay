@@ -86,6 +86,104 @@ describe("TestStepEvidencePreview", () => {
     expect(host.textContent).toContain("Open report");
   });
 
+  it("prefers dest wait-for pixels over leftover Run saved Test last-frame", () => {
+    const host = render({
+      ...baseReport,
+      captureReview: {
+        items: [
+          {
+            captureId: "frames/003.png::dest",
+            caption: "step:step-observe:Observe",
+            status: "pending",
+            framePath: "frames/003.png",
+            phase: "dest",
+            policy: "fast",
+          },
+        ],
+        summary: {
+          captured: 1,
+          missing: 0,
+          pending: 1,
+          accepted: 0,
+          issue: 0,
+          needMoreEvidence: 0,
+        },
+      },
+      timeline: [
+        {
+          id: "trace-module",
+          index: 4,
+          title: "Captured result",
+          state: "passed",
+          evidenceCount: 1,
+          framePaths: ["frames/004.png"],
+        },
+        {
+          id: "trace-dest",
+          index: 8,
+          title: "Observe",
+          state: "passed",
+          evidenceCount: 1,
+          framePaths: ["frames/003.png"],
+        },
+      ],
+      stepEvidence: [
+        {
+          schemaVersion: 1,
+          testStepId: "step-2",
+          recipeId: "root",
+          recipeStepId: "relay-test-step-observe-1",
+          traceStepId: "trace-module",
+          traceStepIndex: 4,
+          occurrence: 1,
+          evidence: {
+            framePaths: ["frames/004.png"],
+            eventSequences: [],
+            artifactKinds: ["screenshot"],
+          },
+        },
+        {
+          schemaVersion: 1,
+          testStepId: "step-2",
+          recipeId: "observe-flow",
+          recipeStepId: "relay-test-step-observe-dest",
+          traceStepId: "trace-dest",
+          traceStepIndex: 8,
+          occurrence: 5,
+          evidence: {
+            framePaths: ["frames/003.png"],
+            eventSequences: [],
+            artifactKinds: ["capture-review"],
+          },
+        },
+      ],
+      evidence: [
+        {
+          id: "screenshot",
+          label: "Screenshots",
+          count: 2,
+          detail: "2 screenshots",
+          summary: "Persisted screenshots",
+          inspectable: true,
+          items: [
+            {
+              id: "frames/004.png",
+              title: "after · Run saved Test",
+              media: { kind: "image", src: "/leftover.png", width: 100, height: 80 },
+            },
+            {
+              id: "frames/003.png",
+              title: "step:step-observe:Observe",
+              media: { kind: "image", src: "/dest.png", width: 100, height: 80 },
+            },
+          ],
+        },
+      ],
+    });
+    expect(host.querySelector('img[src="/dest.png"]')).not.toBeNull();
+    expect(host.querySelector('img[src="/leftover.png"]')).toBeNull();
+  });
+
   it("joins retained media by the authoritative frame id", () => {
     const host = render();
     expect(host.querySelector('img[src="/right.png"]')).not.toBeNull();

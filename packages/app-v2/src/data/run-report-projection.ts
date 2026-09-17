@@ -6,7 +6,11 @@ import type {
   EvidenceChannelRecord,
   RunOutcome,
 } from "@relay/protocol";
-import { parseOptionalRunTestStepEvidence, resolveCaptureReviewQueue } from "@relay/protocol";
+import {
+  captureReviewIdentityFramePaths,
+  parseOptionalRunTestStepEvidence,
+  resolveCaptureReviewQueue,
+} from "@relay/protocol";
 import type { RunTestStepEvidence } from "@relay/protocol";
 import { runOutcome } from "./run-outcome";
 import {
@@ -304,6 +308,22 @@ function reportTimeline(
     if (id && finite(data?.startedAt) !== undefined && finite(data?.finishedAt) !== undefined)
       checkTimes.set(id, { start: finite(data?.startedAt)!, end: finite(data?.finishedAt)! });
   }
+  const destIdentityFrames = new Set(
+    captureReviewIdentityFramePaths(
+      array(record(rawRun)?.artifacts) as Array<{ kind?: string; data?: unknown }>,
+    ),
+  );
+  const destCaptureVisible = array(record(rawRun)?.steps).some((other) => {
+    const candidate = record(other);
+    const candidateTitle = text(candidate?.title) ?? "";
+    const frames = array(candidate?.frames).flatMap((frame) => {
+      const path = text(record(frame)?.path);
+      return path ? [path] : [];
+    });
+    if (frames.length === 0) return false;
+    if (destEndCaptureReviewTitle(candidateTitle)) return true;
+    return frames.some((path) => destIdentityFrames.has(path));
+  });
   return array(record(rawRun)?.steps).flatMap((value, fallbackIndex) => {
     const step = record(value);
     if (!step) return [];
@@ -315,6 +335,7 @@ function reportTimeline(
     const hasCapture = array(step.frames).some((frame) => text(record(frame)?.path));
     if (generatedBranch && !failed && !hasCapture) return [];
     const authoredStep = stepEvidence?.find((item) => item.traceStepId === text(step.id));
+    if (leftoverSavedTestTitle(text(step.title)) && hasCapture && destCaptureVisible) return [];
     const hasVisibleCapture =
       authoredStep &&
       array(record(rawRun)?.steps).some((other) => {
@@ -322,9 +343,7 @@ function reportTimeline(
         const candidateId = text(candidate?.id);
         if (candidateId === authoredStep.traceStepId || !humanStepTitle(candidate?.title))
           return false;
-        const captureStepId = /^Screenshot · step:([^:]+):/u.exec(
-          text(candidate?.title) ?? "",
-        )?.[1];
+        const captureStepId = authoredCaptureStepId(text(candidate?.title));
         return (
           captureStepId === authoredStep.testStepId ||
           stepEvidence?.some(
@@ -345,7 +364,7 @@ function reportTimeline(
     if (!title) return [];
     // Authored-step screenshot traces measure evidence capture, not whether
     // the preceding interaction passed. Use its retained check verdict.
-    const checkId = /^Screenshot · step:([^:]+):/u.exec(text(step.title) ?? "")?.[1];
+    const checkId = authoredCaptureStepId(text(step.title));
     const checkStatus = checkId ? checkStatuses.get(checkId) : undefined;
     const status = checkStatus ? (checkStatus === "passed" ? "ok" : "error") : text(step.status);
     const tone = text(step.tone);
@@ -591,17 +610,37 @@ function artifactEvidenceChannel(kind: string): EvidenceChannel | undefined {
   if (/screenshot|image|frame/iu.test(kind)) return "screenshot";
   return undefined;
 }
+function leftoverSavedTestTitle(title: string | undefined): boolean {
+  return /^(?:run|execute|start|open|load)(?: (?:the|this))?(?: saved)? test\b/iu.test(title ?? "");
+}
+
+function destEndCaptureReviewTitle(title: string | undefined): boolean {
+  return /^Capture for review · step:[^:]+:/u.test(title ?? "");
+}
+
+function authoredCaptureStepId(title: string | undefined): string | undefined {
+  const raw = title?.trim();
+  if (!raw) return undefined;
+  return (
+    /^Screenshot · step:([^:]+):/u.exec(raw)?.[1] ??
+    /^Capture for review · step:([^:]+):/u.exec(raw)?.[1]
+  );
+}
+
 function humanStepTitle(value: unknown): string | undefined {
   const rawTitle = text(value);
   if (!rawTitle) return undefined;
-  const title = /^Screenshot · (?:step:)?[^:]+:(.+)$/u.exec(rawTitle)?.[1]?.trim() ?? rawTitle;
+  const title =
+    /^Screenshot · (?:step:)?[^:]+:(.+)$/u.exec(rawTitle)?.[1]?.trim() ??
+    /^Capture for review · step:[^:]+:(.+)$/u.exec(rawTitle)?.[1]?.trim() ??
+    rawTitle;
   if (isTautologicalNavigationTitle(title)) return undefined;
   if (/^check identifier .+ visible$/iu.test(title)) return "Expected screen content was visible";
   if (/^check layout: identifier .+ does not overlap identifier .+$/iu.test(title)) {
     return "Expected content did not overlap";
   }
   if (
-    /^(?:run|execute|start|open|load)(?: (?:the|this))?(?: saved)? test\b/iu.test(title) ||
+    leftoverSavedTestTitle(title) ||
     /^(?:prepare|preparing|start|starting|started|run|running|finish|finished|complete|completed|succeeded)$/iu.test(
       title,
     )

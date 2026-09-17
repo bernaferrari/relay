@@ -180,3 +180,71 @@ it("does not repeat a wrapper capture when the same authored step has visible ca
   );
   expect(result.timeline.map((step) => step.id)).toEqual(["capture"]);
 });
+
+it("dest-end Observe is dest wait-for, not leftover Run saved Test last-frame", () => {
+  const result = projectRunReport(
+    "dest-end-observe",
+    {
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "step:step-observe:Observe",
+            framePath: "frames/003.png",
+            imageSha256: "dest-wait",
+            stepId: "relay-test-step-observe-dest",
+            phase: "dest",
+            policy: "fast",
+          },
+        },
+      ],
+      steps: [
+        {
+          id: "trace-module",
+          index: 4,
+          title: "Run saved Test",
+          status: "ok",
+          frames: [{ path: "frames/004.png", caption: "after · Run saved Test" }],
+        },
+        {
+          id: "trace-wait",
+          index: 6,
+          title: 'Wait for label "What should we explore?"',
+          status: "ok",
+          frames: [],
+        },
+        {
+          id: "trace-dest",
+          index: 8,
+          title: "Capture for review · step:step-observe:Observe",
+          status: "ok",
+          frames: [{ path: "frames/003.png", caption: "step:step-observe:Observe" }],
+        },
+      ],
+      testStepEvidence: [
+        {
+          schemaVersion: 1,
+          testStepId: "step-observe",
+          recipeId: "observe-flow",
+          recipeStepId: "relay-test-step-observe-dest",
+          traceStepId: "trace-dest",
+          traceStepIndex: 8,
+          occurrence: 5,
+          evidence: {
+            framePaths: ["frames/003.png"],
+            eventSequences: [],
+            artifactKinds: ["capture-review"],
+          },
+        },
+      ],
+    },
+    {},
+  );
+  expect(result.timeline.find((step) => step.id === "trace-dest")).toMatchObject({
+    title: "Observe",
+    framePaths: ["frames/003.png"],
+  });
+  expect(result.timeline.some((step) => step.title === "Captured result")).toBe(false);
+  expect(result.timeline.some((step) => step.framePaths?.includes("frames/004.png"))).toBe(false);
+  expect(result.timeline[initialRunStep(result.timeline)]?.framePaths).toEqual(["frames/003.png"]);
+});
