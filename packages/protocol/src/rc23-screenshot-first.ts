@@ -8,6 +8,7 @@
  */
 
 import {
+  CAPTURE_REVIEW_DEST_PHASE,
   captureReviewSlotId,
   type CaptureReviewConfiguration,
   type CaptureReviewPlannedSlot,
@@ -316,6 +317,17 @@ function runPlatform(platform: Rc23ScreenshotFirstPlatform): "browser" | "androi
 }
 
 /**
+ * Web/iOS freeze captures stamp dest-phase so leftover Close/Back cannot
+ * become dest identity. Slot ids stay unphased (no `::dest` suffix). Android
+ * dest-wait r368 stays unphased until Galaxy `RQCY104BG8X` is on ADB.
+ */
+export function rc23ScreenshotFirstArtifactPhase(
+  platform: Rc23ScreenshotFirstPlatform,
+): typeof CAPTURE_REVIEW_DEST_PHASE | undefined {
+  return platform === "android" ? undefined : CAPTURE_REVIEW_DEST_PHASE;
+}
+
+/**
  * Product persist mapping: Unbound iOS Imagine is a blocked Run, not a
  * missing caption and not a capability-gate-only in-memory row. Capture-review
  * GET/export after restart must keep this slot in the planned denominator.
@@ -350,6 +362,7 @@ export function rc23ScreenshotFirstRuns(input?: {
       (item) => item.checkpointId === slot.checkpointId && item.platform === slot.platform,
     );
     const web = slot.platform === "web";
+    const destPhase = rc23ScreenshotFirstArtifactPhase(slot.platform);
     return {
       runId: slotId,
       platform: runPlatform(slot.platform),
@@ -372,6 +385,8 @@ export function rc23ScreenshotFirstRuns(input?: {
                   attempt: 1,
                   requirementId: slot.requirementId,
                   configuration: slot.configuration,
+                  policy: "fast",
+                  ...(destPhase ? { phase: destPhase } : {}),
                   ...(web
                     ? {
                         observed: {

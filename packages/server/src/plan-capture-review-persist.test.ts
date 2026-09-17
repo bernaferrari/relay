@@ -18,6 +18,7 @@ import {
   captureReviewSlotId,
   formatCaptureReviewCoverageSummary,
   materializeRc23ScreenshotFirstSlots,
+  rc23ScreenshotFirstArtifactPhase,
   type PlanCaptureReviewQueue,
   type Rc23ScreenshotFirstSlot,
 } from "@relay/protocol";
@@ -71,6 +72,7 @@ async function persistFreezeSlot(input: {
   const blocked = !hit;
   const id = freezeRunId(input.slot);
   const slotId = captureReviewSlotId(input.slot);
+  const destPhase = rc23ScreenshotFirstArtifactPhase(input.slot.platform);
   await persistRun({
     id,
     projectId,
@@ -123,6 +125,8 @@ async function persistFreezeSlot(input: {
                 requirementId: input.slot.requirementId,
                 configuration: input.slot.configuration,
                 slotId,
+                policy: "fast",
+                ...(destPhase ? { phase: destPhase } : {}),
               },
             },
           ]
@@ -202,6 +206,26 @@ test(
       assert.equal(blocked.length, 1);
       assert.equal(blocked[0]?.checkpointId, "imagine");
       assert.equal(blocked[0]?.configuration?.app, "ai.x.GrokApp");
+      assert.equal(
+        pending.find(
+          (item) =>
+            item.checkpointId === "home-chrome" && item.configuration?.browser === "grok-com",
+        )?.phase,
+        "dest",
+      );
+      assert.equal(
+        pending.find(
+          (item) =>
+            item.checkpointId === "home-chrome" && item.configuration?.app === "ai.x.GrokApp",
+        )?.phase,
+        "dest",
+      );
+      assert.equal(
+        pending.find(
+          (item) => item.checkpointId === "home-chrome" && item.configuration?.app === "android",
+        )?.phase,
+        undefined,
+      );
 
       const exported = await reviewer.invoke("job.combine.export", { batchId: freezeBatchId });
       const html = await readFile(join(exported.rootDir, "index.html"), "utf8");
@@ -496,38 +520,47 @@ function persistedRunId(item: { runId?: string }): string {
 }
 
 test("the review API lists frozen captures before any Run exists", async () => {
-  const batchId = "not-started-review";
-  await createCombineCampaign({
-    schemaVersion: 1,
-    id: batchId,
-    projectId,
-    appMapId: "map",
-    combineId: "plan",
-    sourceRevision: 1,
-    latestRevision: 1,
-    status: "running",
-    createdAt: 1,
-    updatedAt: 1,
-    lineage: [],
-    execution: { selectedCellIds: ["waiting", "blocked"], seed: 1 },
-    cases: ["waiting", "blocked"].map((cellId, index) => ({
-      index,
-      cellId,
-      testId: "settings",
-      world: cellId,
-      values: {},
-      targetProfileId: cellId,
-      childIntentDigest: "child",
-      outerIntentDigest: "outer",
-      wrapperGraphDigest: "graph",
-      staticInputDigest: "inputs",
-      phase: "coverage",
-      status: index ? "blocked" : "pending",
-      plannedCaptures: [{ checkpointId: "settings", caption: "Settings" }],
-    })),
-  });
-  const server = await startServer({ host: "127.0.0.1", port: 0 });
+  const root = await mkdtemp(join(tmpdir(), "relay-rc23-capture-empty-"));
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  const previousState = process.env.RELAY_STATE_DIR;
+  const previousWorkspace = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_RUNS_DIR = join(root, "runs");
+  process.env.RELAY_STATE_DIR = join(root, "state");
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  resetControlDatabaseCache();
+  let server: Awaited<ReturnType<typeof startServer>> | undefined;
   try {
+    const batchId = "not-started-review";
+    await createCombineCampaign({
+      schemaVersion: 1,
+      id: batchId,
+      projectId,
+      appMapId: "map",
+      combineId: "plan",
+      sourceRevision: 1,
+      latestRevision: 1,
+      status: "running",
+      createdAt: 1,
+      updatedAt: 1,
+      lineage: [],
+      execution: { selectedCellIds: ["waiting", "blocked"], seed: 1 },
+      cases: ["waiting", "blocked"].map((cellId, index) => ({
+        index,
+        cellId,
+        testId: "settings",
+        world: cellId,
+        values: {},
+        targetProfileId: cellId,
+        childIntentDigest: "child",
+        outerIntentDigest: "outer",
+        wrapperGraphDigest: "graph",
+        staticInputDigest: "inputs",
+        phase: "coverage",
+        status: index ? "blocked" : "pending",
+        plannedCaptures: [{ checkpointId: "settings", caption: "Settings" }],
+      })),
+    });
+    server = await startServer({ host: "127.0.0.1", port: 0 });
     const { queue } = await client(server.port, "human:qa", "human").invoke(
       "job.combine.capture.review",
       { batchId },
@@ -540,7 +573,14 @@ test("the review API lists frozen captures before any Run exists", async () => {
       true,
     );
   } finally {
-    await server.close();
+    await server?.close().catch(() => undefined);
     resetControlDatabaseCache();
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    if (previousWorkspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previousWorkspace;
+    await rm(root, { recursive: true, force: true });
   }
 });

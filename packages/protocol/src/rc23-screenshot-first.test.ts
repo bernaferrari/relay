@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { captureReviewSlotId, formatCaptureReviewCoverageSummary } from "./capture-review.js";
+import {
+  captureReviewIdentityFramePaths,
+  captureReviewSlotId,
+  formatCaptureReviewCoverageSummary,
+} from "./capture-review.js";
 import {
   resolvePlanCaptureReviewQueue,
   selectedPlanCaptureReviewItems,
@@ -15,7 +19,9 @@ import {
   materializeRc23ScreenshotFirstSlots,
   partitionRc23ScreenshotFirst,
   rc23LooksCorrectCannotAcceptMissing,
+  rc23ScreenshotFirstArtifactPhase,
   rc23ScreenshotFirstProductPlanRuns,
+  rc23ScreenshotFirstRuns,
   resolveRc23ScreenshotFirstQueue,
 } from "./rc23-screenshot-first.js";
 import {
@@ -90,6 +96,91 @@ test("web home-chrome freeze job is leftover dest-phase r937, not prior r916", (
   );
   assert.equal(webHome?.jobId, "4b93702b-d2cc-4db6-83ff-800380a3b284");
   assert.notEqual(webHome?.jobId, "ec2588e6-b64c-4ccd-9e5b-d5c7831b6c97");
+});
+
+test("freeze mapping stamps dest-phase on web/iOS artifacts; Android dest-wait stays unphased", () => {
+  assert.equal(rc23ScreenshotFirstArtifactPhase("web"), "dest");
+  assert.equal(rc23ScreenshotFirstArtifactPhase("ios"), "dest");
+  assert.equal(rc23ScreenshotFirstArtifactPhase("android"), undefined);
+  const slots = materializeRc23ScreenshotFirstSlots();
+  assert.equal(
+    slots.every((slot) => !slot.phase),
+    true,
+  );
+  assert.equal(
+    slots.every((slot) => !captureReviewSlotId(slot).endsWith("::dest")),
+    true,
+  );
+  const runs = rc23ScreenshotFirstRuns();
+  const webHome = runs.find(
+    (run) =>
+      run.plannedSlots[0]?.checkpointId === "home-chrome" &&
+      run.plannedSlots[0]?.configuration?.browser === "grok-com",
+  )!;
+  const iosHome = runs.find(
+    (run) =>
+      run.plannedSlots[0]?.checkpointId === "home-chrome" &&
+      run.plannedSlots[0]?.configuration?.app === "ai.x.GrokApp",
+  )!;
+  const androidHome = runs.find(
+    (run) =>
+      run.plannedSlots[0]?.checkpointId === "home-chrome" &&
+      run.plannedSlots[0]?.configuration?.app === "android",
+  )!;
+  const iosImagine = runs.find(
+    (run) =>
+      run.plannedSlots[0]?.checkpointId === "imagine" &&
+      run.plannedSlots[0]?.configuration?.app === "ai.x.GrokApp",
+  )!;
+  assert.deepEqual(captureReviewIdentityFramePaths(webHome.artifacts ?? []), [
+    "frames/home-chrome-web.png",
+  ]);
+  assert.deepEqual(captureReviewIdentityFramePaths(iosHome.artifacts ?? []), [
+    "frames/home-chrome-ios.png",
+  ]);
+  assert.deepEqual(captureReviewIdentityFramePaths(androidHome.artifacts ?? []), []);
+  assert.deepEqual(captureReviewIdentityFramePaths(iosImagine.artifacts ?? []), []);
+  assert.equal(
+    runs
+      .filter((run) => run.plannedSlots[0]?.configuration?.browser === "grok-com")
+      .every((run) =>
+        (run.artifacts ?? []).some((artifact) => {
+          const phase = (artifact.data as { phase?: string } | undefined)?.phase;
+          const policy = (artifact.data as { policy?: string } | undefined)?.policy;
+          return phase === "dest" && policy === "fast";
+        }),
+      ),
+    true,
+  );
+  assert.equal(
+    runs
+      .filter((run) => run.plannedSlots[0]?.configuration?.app === "ai.x.GrokApp")
+      .filter((run) => (run.artifacts ?? []).length > 0)
+      .every((run) =>
+        (run.artifacts ?? []).some(
+          (artifact) => (artifact.data as { phase?: string } | undefined)?.phase === "dest",
+        ),
+      ),
+    true,
+  );
+  assert.equal(
+    runs
+      .filter((run) => run.plannedSlots[0]?.configuration?.app === "android")
+      .every((run) =>
+        (run.artifacts ?? []).every(
+          (artifact) => (artifact.data as { phase?: string } | undefined)?.phase === undefined,
+        ),
+      ),
+    true,
+  );
+  const queue = resolveRc23ScreenshotFirstQueue();
+  const counts = partitionRc23ScreenshotFirst(queue);
+  assert.equal(counts.planned, 30);
+  assert.equal(counts.captured, 29);
+  assert.equal(counts.blocked, 1);
+  assert.equal(counts.missing, 0);
+  assert.equal(counts.pending, 29);
+  assert.equal(counts.accepted, 0);
 });
 
 test("30 planned; 29 captured + 1 blocked + 0 missing = 30; mixed 12 is not complete", () => {
