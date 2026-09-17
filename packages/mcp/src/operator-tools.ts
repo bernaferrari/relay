@@ -794,7 +794,7 @@ export async function invokeRelayOperatorTool(input: {
           })
         : true,
       operationId: "job.combine.start",
-      result: started,
+      result: summarizeExecutionOperationResult("job.combine.start", started),
       ...(jobs.length ? { jobs } : {}),
       ...(lastJob ? { job: lastJob } : {}),
       ...(findings !== undefined

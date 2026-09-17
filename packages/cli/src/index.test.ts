@@ -2324,6 +2324,116 @@ test("combine campaign failures --json keeps clusters; leftover Close 004 cannot
   assert.deepEqual(result.result?.clusters?.[0]?.cases?.[0]?.evidenceRefs, ["run:4b93702b"]);
 });
 
+test("combine export --json dest identity is dest wait-for 003, not leftover Close 004 last-frame", async () => {
+  const io = capture();
+  const code = await runCli(["combine", "export", "dest-004", "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke(operationId) {
+        assert.equal(operationId, "job.combine.export");
+        return {
+          rootDir: "/tmp/pack",
+          jobIds: [leftoverDestEndRun.id],
+          manifest: {
+            cases: [
+              {
+                locale: "en",
+                status: "ok",
+                frames: leftoverDestEndRun.frames,
+              },
+            ],
+            byCanonicalKey: {
+              "frame-dest": { en: "frames/003.png" },
+              "frame-leftover": { en: "frames/004.png" },
+            },
+            analysis: {
+              baselineLocale: "en",
+              critical: 0,
+              warnings: 1,
+              affectedScreens: 1,
+              findings: [
+                {
+                  id: "finding-dest",
+                  canonicalKey: "frame-dest",
+                  locale: "en",
+                },
+                {
+                  id: "finding-leftover",
+                  canonicalKey: "frame-leftover",
+                  locale: "en",
+                },
+              ],
+            },
+          },
+        };
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      destIdentity?: Array<{ path?: string }>;
+      manifest?: {
+        cases?: Array<{ frameCount?: number }>;
+        analysis?: { findings?: Array<{ frame?: string }> };
+      };
+    };
+  };
+  assert.deepEqual(
+    result.result?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(result.result?.manifest?.cases?.[0]?.frameCount, 1);
+  assert.equal(
+    result.result?.manifest?.analysis?.findings?.some(
+      (finding) => finding.frame === "frames/004.png",
+    ),
+    false,
+  );
+});
+
+test("job retry --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+  const io = capture();
+  const leftoverJob = {
+    id: leftoverDestEndRun.id,
+    status: "ok",
+    frames: leftoverDestEndRun.frames,
+    artifacts: leftoverDestEndRun.artifacts,
+  };
+  const code = await runCli(["job", "retry", leftoverDestEndRun.id, "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke(operationId) {
+        assert.equal(operationId, "job.retry");
+        return { job: leftoverJob };
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      job?: {
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+      };
+    };
+  };
+  assert.deepEqual(
+    result.result?.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.result?.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
 test("combine run carries the shared explicit local-admission contract unchanged", async () => {
   const io = capture();
   const calls: Array<{ operationId: OperationId; input: Record<string, unknown> }> = [];

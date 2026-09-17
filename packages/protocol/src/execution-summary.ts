@@ -400,9 +400,18 @@ function summarizePackExport(response: Record<string, unknown>): unknown {
   const byCanonicalKey = object(manifest.byCanonicalKey);
   const findings = Array.isArray(analysis?.findings) ? analysis.findings : [];
   const cases = Array.isArray(manifest.cases) ? manifest.cases : [];
+  const listed = cases.flatMap((value) => analysisCaseFrames(object(value)?.frames));
+  const destIdentity = destIdentityVisualFrames(listed);
+  const destPaths = new Set(destIdentity.map((frame) => frame.path));
+  const leftover = new Set(
+    destPaths.size
+      ? listed.filter((frame) => !destPaths.has(frame.path)).map((frame) => frame.path)
+      : [],
+  );
   return {
     ...(typeof response.rootDir === "string" ? { rootDir: response.rootDir } : {}),
     ...(Array.isArray(response.jobIds) ? { jobIds: response.jobIds } : {}),
+    ...(destIdentity.length ? { destIdentity } : {}),
     manifest: {
       batchId: manifest.batchId,
       title: manifest.title,
@@ -424,10 +433,17 @@ function summarizePackExport(response: Record<string, unknown>): unknown {
         : {}),
       cases: cases.map((value) => {
         const item = object(value);
+        const frames = Array.isArray(item?.frames) ? item.frames : [];
+        const visible = destPaths.size
+          ? frames.filter((entry) => {
+              const path = listedFramePath(object(entry)?.framePath) ?? listedFramePath(entry);
+              return !path || destPaths.has(path);
+            })
+          : frames;
         return {
           locale: item?.locale,
           status: item?.status,
-          frameCount: Array.isArray(item?.frames) ? item.frames.length : 0,
+          frameCount: visible.length,
           ...(typeof item?.expectedFrames === "number"
             ? { expectedFrames: item.expectedFrames }
             : {}),
@@ -441,12 +457,21 @@ function summarizePackExport(response: Record<string, unknown>): unknown {
               warnings: analysis.warnings,
               affectedScreens: analysis.affectedScreens,
               findingCount: findings.length,
-              findings: findings.slice(0, MAX_SUMMARIZED_FINDINGS).map((value) => {
-                const finding = object(value);
-                if (!finding) return value;
-                const locales = object(byCanonicalKey?.[String(finding.canonicalKey)]);
-                return projectFinding(finding, locales?.[String(finding.locale)]);
-              }),
+              findings: findings
+                .slice(0, MAX_SUMMARIZED_FINDINGS)
+                .filter((value) => {
+                  const finding = object(value);
+                  const source = object(byCanonicalKey?.[String(finding?.canonicalKey)])?.[
+                    String(finding?.locale)
+                  ];
+                  return typeof source !== "string" || !leftover.has(source);
+                })
+                .map((value) => {
+                  const finding = object(value);
+                  if (!finding) return value;
+                  const locales = object(byCanonicalKey?.[String(finding.canonicalKey)]);
+                  return projectFinding(finding, locales?.[String(finding.locale)]);
+                }),
             },
           }
         : {}),
@@ -757,14 +782,23 @@ function isAttachedJobOperation(operationId: string): boolean {
   );
 }
 
-/** Combine campaign JSON keeps campaign/cells. Resume jobs keep dest wait-for Fast;
- * leftover Close last-frame cannot fill dest. */
-function summarizeCombineCampaign(response: Record<string, unknown>): unknown {
-  const jobs = Array.isArray(response.jobs) ? response.jobs.map(summarizeJob) : undefined;
-  return {
-    ...response,
-    ...(jobs !== undefined ? { jobs } : {}),
-  };
+/** Combine start/campaign JSON keeps campaign/cells/admission. Matrix/soak keep
+ * the matrix. Resume jobs keep dest wait-for Fast; leftover Close last-frame
+ * cannot fill dest. */
+function summarizeJobEnvelope(response: Record<string, unknown>): unknown {
+  return projectAttachedJobResult(response);
+}
+
+function isJobEnvelopeOperation(operationId: string): boolean {
+  return (
+    operationId === "job.combine.start" ||
+    operationId.startsWith("job.combine.campaign.") ||
+    operationId === "job.matrix.start" ||
+    operationId === "job.soak.start" ||
+    operationId === "job.compatibility-matrix.start" ||
+    operationId === "job.retry" ||
+    operationId === "job.active.cancel"
+  );
 }
 
 /** Bounded command/MCP projection for execution jobs. Full traces remain in
@@ -792,7 +826,7 @@ export function summarizeExecutionOperationResult(operationId: string, result: u
       : projectAttachedJobResult(response);
   }
   if (operationId !== "app-map.flow.run" && !operationId.startsWith("job.")) return result;
-  if (operationId.startsWith("job.combine.campaign.")) return summarizeCombineCampaign(response);
+  if (isJobEnvelopeOperation(operationId)) return summarizeJobEnvelope(response);
   if (operationId.endsWith(".export")) return summarizePackExport(response);
   if (operationId.endsWith(".analysis")) return summarizeLocaleAnalysis(response);
   if (operationId.includes(".capture.review")) return summarizePlanCaptureReview(response);

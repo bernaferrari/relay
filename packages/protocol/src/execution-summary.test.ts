@@ -1006,3 +1006,145 @@ test("combine campaign repeat clusters keep campaign id; leftover Close 004 cann
   assert.equal(result.clusters?.[0]?.id, "cluster-1");
   assert.deepEqual(result.clusters?.[0]?.cases?.[0]?.evidenceRefs, ["run:4b93702b"]);
 });
+
+test("combine export dest identity is dest wait-for 003, not leftover Close 004 last-frame", () => {
+  const result = summarizeExecutionOperationResult("job.combine.export", {
+    rootDir: "/tmp/pack",
+    jobIds: [leftoverDestEndJob.id],
+    manifest: {
+      batchId: "dest-004",
+      title: "Dest identity",
+      locales: ["en"],
+      generatedAt: 5,
+      cases: [
+        {
+          locale: "en",
+          jobId: leftoverDestEndJob.id,
+          status: "ok",
+          frames: leftoverDestEndJob.frames,
+        },
+      ],
+      byCanonicalKey: {
+        "frame-dest": { en: "frames/003.png" },
+        "frame-leftover": { en: "frames/004.png" },
+      },
+      analysis: {
+        baselineLocale: "en",
+        critical: 0,
+        warnings: 2,
+        affectedScreens: 1,
+        findings: [
+          {
+            id: "finding-dest",
+            code: "POSSIBLE_TEXT_CLIPPED",
+            locale: "en",
+            canonicalKey: "frame-dest",
+          },
+          {
+            id: "finding-leftover",
+            code: "POSSIBLE_UNTRANSLATED_TEXT",
+            locale: "en",
+            canonicalKey: "frame-leftover",
+          },
+        ],
+      },
+    },
+  }) as {
+    destIdentity?: Array<{ path?: string }>;
+    manifest?: {
+      cases?: Array<{ frameCount?: number }>;
+      analysis?: { findings?: Array<{ frame?: string }> };
+    };
+  };
+  assert.deepEqual(
+    result.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(result.manifest?.cases?.[0]?.frameCount, 1);
+  assert.equal(
+    result.manifest?.analysis?.findings?.some((finding) => finding.frame === "frames/004.png"),
+    false,
+  );
+  assert.equal(result.manifest?.analysis?.findings?.[0]?.frame, "frames/003.png");
+});
+
+test("combine start keeps campaign; leftover Close 004 cannot fill dest", () => {
+  const result = summarizeExecutionOperationResult("job.combine.start", {
+    campaign: { id: "camp-1", status: "running" },
+    cells: [{ cellId: "cell-1" }],
+    admission: { admitted: true },
+    selectedCellIds: ["cell-1"],
+    jobs: [leftoverDestEndJob],
+  }) as {
+    campaign?: { id?: string };
+    cells?: Array<{ cellId?: string }>;
+    admission?: { admitted?: boolean };
+    selectedCellIds?: string[];
+    jobs?: Array<{
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    }>;
+  };
+  assert.equal(result.campaign?.id, "camp-1");
+  assert.equal(result.cells?.[0]?.cellId, "cell-1");
+  assert.equal(result.admission?.admitted, true);
+  assert.deepEqual(result.selectedCellIds, ["cell-1"]);
+  assert.deepEqual(
+    result.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.jobs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
+test("job matrix/soak dest identity is dest wait-for, not leftover Close 004 last-frame", () => {
+  for (const operationId of [
+    "job.matrix.start",
+    "job.soak.start",
+    "job.compatibility-matrix.start",
+  ] as const) {
+    const result = summarizeExecutionOperationResult(operationId, {
+      matrix: { id: "matrix-1" },
+      jobs: [leftoverDestEndJob],
+      batchId: "batch-1",
+      repetitions: 1,
+    }) as {
+      matrix?: { id?: string };
+      batchId?: string;
+      jobs?: Array<{
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+      }>;
+    };
+    assert.equal(result.matrix?.id, "matrix-1");
+    assert.deepEqual(
+      result.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
+      ["frames/003.png"],
+    );
+    assert.equal(
+      result.jobs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+      false,
+    );
+  }
+});
+
+test("job retry dest identity is dest wait-for, not leftover Close 004 last-frame", () => {
+  const result = summarizeExecutionOperationResult("job.retry", {
+    job: leftoverDestEndJob,
+  }) as {
+    job?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+  };
+  assert.deepEqual(
+    result.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
