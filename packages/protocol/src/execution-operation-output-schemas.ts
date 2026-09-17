@@ -1,5 +1,8 @@
 import * as z from "zod/v4";
-import { captureReviewPlannedSlotSchema } from "./capture-review-schema.js";
+import {
+  captureReviewPlannedSlotSchema,
+  planCaptureReviewQueueSchema,
+} from "./capture-review-schema.js";
 import { browserCaseProfileSchema } from "./browser-case-profile.js";
 import { combineCampaignAdmissionSchema } from "./campaign-capacity-operation-output-schemas.js";
 import {
@@ -8,23 +11,6 @@ import {
 } from "./app-map-test-operation-schemas.js";
 import { repeatPilotSpecSchema, repeatSpecSchema } from "./repeat-spec.js";
 import { repeatFailureClusterReportSchema } from "./repeat-failure.js";
-import { CAPTURE_REVIEW_STATUSES } from "./capture-review.js";
-
-const planCaptureReviewItemSchema = z
-  .object({
-    captureId: z.string(),
-    caption: z.string(),
-    status: z.enum(CAPTURE_REVIEW_STATUSES),
-    runId: z.string().min(1).optional(),
-    executionCaseId: z.string().min(1).optional(),
-  })
-  .passthrough()
-  .refine(
-    (item) => Boolean(item.runId) || (item.status === "missing" && Boolean(item.executionCaseId)),
-    {
-      message: "Captured evidence requires a Run; unstarted captures require a planned case.",
-    },
-  );
 
 const targetCapabilitySchema = z.enum([
   "snapshot",
@@ -308,6 +294,7 @@ const combineEvidencePackManifestSchema = z
           frames: z.array(z.string()),
           expectedFrames: z.number().optional(),
           captures: z.array(combineEvidencePackFrameSchema).optional(),
+          note: z.string().optional(),
         })
         .strict(),
     ),
@@ -812,44 +799,12 @@ export const executionOperationOutputSchemas = {
   "job.combine.analysis": combineEvidenceAnalysisReportSchema,
   "job.combine.capture.review": z
     .object({
-      queue: z
-        .object({
-          items: z.array(planCaptureReviewItemSchema),
-          summary: z
-            .object({
-              captured: z.number(),
-              missing: z.number(),
-              pending: z.number(),
-              accepted: z.number(),
-              issue: z.number(),
-              needMoreEvidence: z.number(),
-              planned: z.number(),
-              blocked: z.number(),
-            })
-            .strict(),
-        })
-        .strict(),
+      queue: planCaptureReviewQueueSchema,
     })
     .strict(),
   "job.combine.capture.review.apply": z
     .object({
-      queue: z
-        .object({
-          items: z.array(planCaptureReviewItemSchema),
-          summary: z
-            .object({
-              captured: z.number(),
-              missing: z.number(),
-              pending: z.number(),
-              accepted: z.number(),
-              issue: z.number(),
-              needMoreEvidence: z.number(),
-              planned: z.number(),
-              blocked: z.number(),
-            })
-            .strict(),
-        })
-        .strict(),
+      queue: planCaptureReviewQueueSchema,
       results: z.array(
         z
           .object({
