@@ -22,6 +22,7 @@ import {
   assessMutatingRoutineSharing,
   assessSequentialStartingState,
   assessTransitionDeclaredSource,
+  collectTestEffects,
   transitionOpenerMustRun,
   UnsafeStartingStateError,
 } from "./starting-state-routines.js";
@@ -369,6 +370,145 @@ test("browser Lane isolation is not server-side account isolation", () => {
     { testId: "home", accountId: "grok-lab", laneId: "grok-daily-b" },
   ]);
   assert.equal(stillBlocked[0]?.code, "lane-is-not-account");
+});
+
+function destEndTest(
+  id: string,
+  connectionId: string,
+  extra: Partial<AppMapScenarioTest> = {},
+): AppMapScenarioTest {
+  return {
+    ...entity(id),
+    name: id,
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: `${id}-open`,
+        intent: id,
+        kind: "instruction",
+        capture: true,
+        binding: { status: "resolved", kind: "connections", connectionIds: [connectionId] },
+      },
+    ],
+    ...extra,
+  };
+}
+
+function settingsDestEnd(id: string, closeDest: boolean): Connection {
+  return {
+    ...entity(id),
+    fromScreenId: "home",
+    destination: { kind: "end" },
+    state: "ready",
+    actions: [
+      {
+        id: `${id}-steps`,
+        kind: "steps",
+        steps: [
+          { kind: "wait-for", target: { identifier: "composer" }, timeoutMs: 8_000 },
+          { kind: "tap", target: { identifier: "sidebar.settings" } },
+          { kind: "wait-for", target: { identifier: "settings.account" }, timeoutMs: 8_000 },
+          ...(closeDest
+            ? ([
+                { kind: "tap", target: { label: "Close" } },
+                { kind: "wait-for", target: { identifier: "composer" }, timeoutMs: 8_000 },
+              ] as const)
+            : []),
+        ],
+      },
+    ],
+  };
+}
+
+test("dest-end Settings leftover cannot be inherited as Home; Close restores Home without Sign Out", () => {
+  const leftover = mapWith(
+    { "home-chrome": homeChrome },
+    {
+      settings: destEndTest("settings", "open-settings", { requirementAction: "capture-view" }),
+      "claim-home": moduleTest("claim-home", "home-chrome", {
+        startingState: { requires: ["home-visible"], sourceScreenId: "home" },
+      }),
+    },
+    { "open-settings": settingsDestEnd("open-settings", false) },
+  );
+  const leftoverEffects = collectTestEffects(leftover, leftover.tests.settings!);
+  assert.deepEqual(leftoverEffects.leftover, ["settings"]);
+  assert.equal(leftoverEffects.establishes?.includes("home-visible"), false);
+  const issues = assessSequentialStartingState(leftover, ["settings", "claim-home"]);
+  assert.equal(issues[0]?.code, "leftover-home-claim");
+  assert.equal(issues[0]?.testId, "claim-home");
+  assert.equal(issues[0]?.previousTestId, "settings");
+  assert.throws(
+    () =>
+      compileAppMapCombine(leftover, {
+        ...entity("pack"),
+        name: "pack",
+        variableIds: [],
+        testIds: ["settings", "claim-home"],
+      }),
+    (error: unknown) =>
+      error instanceof UnsafeStartingStateError && error.issueCode === "leftover-home-claim",
+  );
+
+  const restored = mapWith(
+    { "home-chrome": homeChrome },
+    {
+      settings: destEndTest("settings", "open-settings", { requirementAction: "test-action" }),
+      "claim-home": moduleTest("claim-home", "home-chrome", {
+        startingState: { requires: ["home-visible", "menu-closed", "composer-empty"] },
+      }),
+    },
+    { "open-settings": settingsDestEnd("open-settings", true) },
+  );
+  const restoredEffects = collectTestEffects(restored, restored.tests.settings!);
+  assert.deepEqual(restoredEffects.leftover, []);
+  assert.deepEqual(restoredEffects.establishes, ["home-visible", "menu-closed", "composer-empty"]);
+  assert.deepEqual(assessSequentialStartingState(restored, ["settings", "claim-home"]), []);
+  assert.doesNotThrow(() =>
+    compileAppMapCombine(restored, {
+      ...entity("pack"),
+      name: "pack",
+      variableIds: [],
+      testIds: ["settings", "claim-home"],
+    }),
+  );
+
+  const signedOut = mapWith(
+    { "home-chrome": homeChrome },
+    {
+      "sign-out": destEndTest("sign-out", "sign-out", { requirementAction: "test-action" }),
+      "claim-home": moduleTest("claim-home", "home-chrome", {
+        startingState: { requires: ["home-visible"] },
+      }),
+    },
+    {
+      "sign-out": {
+        ...entity("sign-out"),
+        fromScreenId: "home",
+        destination: { kind: "end" },
+        state: "ready",
+        actions: [
+          {
+            id: "leave",
+            kind: "steps",
+            steps: [
+              { kind: "wait-for", target: { identifier: "composer" }, timeoutMs: 8_000 },
+              { kind: "tap", target: { label: "Sign Out" } },
+              { kind: "tap", target: { label: "Close" } },
+            ],
+          },
+        ],
+      },
+    },
+  );
+  assert.deepEqual(collectTestEffects(signedOut, signedOut.tests["sign-out"]!).leftover, [
+    "signed-out",
+  ]);
+  assert.equal(
+    assessSequentialStartingState(signedOut, ["sign-out", "claim-home"])[0]?.code,
+    "leftover-home-claim",
+  );
 });
 
 test("Tests without declared effects still pack in graph order", () => {

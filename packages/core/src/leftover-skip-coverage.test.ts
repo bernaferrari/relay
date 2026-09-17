@@ -724,6 +724,73 @@ test("test-action Test from Home still taps Settings when leftover Settings chro
   assert.ok(executedReasons(job).includes("transition-executed"));
 });
 
+test("capture-view settings leftover does not skip a later test-action Settings TAP", async () => {
+  const connection = inspectDestEndConnection();
+  connection.fromScreenId = "home";
+  const map = destEndMap(connection);
+  const captureView = destEndTest(connection.id, "capture-view");
+  const laterTap = destEndTest(connection.id, "test-action");
+  laterTap.id = "open-settings-from-home";
+  laterTap.name = "open-settings-from-home";
+  laterTap.startingState = { sourceScreenId: "home" };
+  map.tests[captureView.id] = captureView;
+  map.tests[laterTap.id] = laterTap;
+
+  function destSteps(test: AppMapScenarioTest) {
+    const compiled = compileAppMapTest(map, test);
+    const destModule = compiled.graph[compiled.plan.rootRecipeId]!.steps.find(
+      (step) => step.kind === "module",
+    );
+    const destEndRecipe =
+      destModule?.kind === "module" ? compiled.graph[destModule.recipeId] : undefined;
+    assert.ok(destEndRecipe);
+    return destEndRecipe.steps;
+  }
+
+  const captureSteps = destSteps(captureView);
+  const captureOpener = captureSteps.find((step) => step.kind === "tap");
+  assert.equal(captureOpener?.coverage, "inspect");
+  assert.equal(captureOpener?.when?.condition, "absent");
+  const capturePresses: string[] = [];
+  const captureJob = recipeJob("capture-view-then-tap", destEndRuntimeSteps(captureSteps));
+  await androidTarget(() =>
+    runRecipeSteps(
+      captureJob,
+      leftoverDevice(capturePresses),
+      () => {},
+      () => {},
+    ),
+  );
+  assert.deepEqual(capturePresses, []);
+  assert.ok(skipReasons(captureJob).every((reason) => reason === "inspect-setup-skipped"));
+  assert.ok(
+    captureJob.steps.some(
+      (step) => step.title === describeCoverageStepReason("inspect-setup-skipped"),
+    ),
+  );
+
+  const tapSteps = destSteps(laterTap);
+  const tapOpener = tapSteps.find((step) => step.kind === "tap");
+  assert.equal(tapOpener?.when, undefined);
+  assert.equal(tapOpener?.coverage, "transition");
+  const tapPresses: string[] = [];
+  const tapJob = recipeJob("later-test-action", destEndRuntimeSteps(tapSteps));
+  await androidTarget(() =>
+    runRecipeSteps(
+      tapJob,
+      leftoverDevice(tapPresses),
+      () => {},
+      () => {},
+    ),
+  );
+  assert.ok(
+    tapPresses.length >= 1,
+    "capture-view leftover skipped a later test-action Settings TAP",
+  );
+  assert.equal(skipReasons(tapJob).includes("inspect-setup-skipped"), false);
+  assert.ok(executedReasons(tapJob).includes("transition-executed"));
+});
+
 test("capture-view Routine leftover Settings skips the opener; test-action Routine taps", () => {
   const map = destEndMap(inspectDestEndConnection());
   map.routines["ensure-settings"] = {

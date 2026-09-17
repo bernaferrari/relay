@@ -4,12 +4,15 @@ import type {
   AppMapScenarioTest,
   AppMapScenarioTestStep,
   AppMapTestStartingState,
+  Connection,
   RoutineEffects,
   StartingStateShareContext,
 } from "@relay/protocol";
 import {
+  hasMutatingLeftover,
   leftoverContradictsFact,
   mutatingWorkMayShare,
+  STARTING_STATE_ROUTINE_PRESETS,
   type RoutineLeftoverSurface,
   type RoutineStartingStateFact,
 } from "@relay/protocol";
@@ -101,6 +104,68 @@ function actionRoutineIds(actions: readonly ActionSpec[]): string[] {
   return actions.flatMap((action) => (action.kind === "routine" ? [action.routineId] : []));
 }
 
+function destEndAuthoredSteps(connection: Connection): RecipeStep[] {
+  const steps: RecipeStep[] = [];
+  for (const action of connection.actions) {
+    if (action.kind === "steps" || action.kind === "recorded") {
+      steps.push(...action.steps);
+    } else if (action.kind === "tap") {
+      steps.push({ kind: "tap", target: action.target });
+    }
+  }
+  return steps;
+}
+
+function isOverlayDismissTap(step: RecipeStep): boolean {
+  if (step.kind === "key" && (step.key === "back" || step.key === "home")) return true;
+  if (step.kind !== "tap") return false;
+  const label = step.target.label?.trim().toLowerCase() ?? "";
+  return label === "close" || label === "back";
+}
+
+function leftoverSurfaceFromTarget(target: {
+  identifier?: string;
+  label?: string;
+}): RoutineLeftoverSurface | undefined {
+  const hay = `${target.identifier ?? ""} ${target.label ?? ""}`.trim().toLowerCase();
+  if (!hay) return undefined;
+  if (/\bsign[\s_-]?out\b|\blog[\s_-]?out\b/u.test(hay)) return "signed-out";
+  if (/\bprivate[\s_-]?chat\b|\btemporary chat\b|\bnew temporary conversation\b/u.test(hay)) {
+    return "private-chat";
+  }
+  if (/\bsettings\b|\bappearance\b/u.test(hay)) return "settings";
+  if (/\bsidebar\b|\bhamburger\b|\bautomations\b/u.test(hay)) return "sidebar";
+  return undefined;
+}
+
+/** Dest-end overlay leftover (Settings / sidebar / Private Chat). Authored
+ * Close/Back restores Home chrome without Sign Out. Mutating leftover
+ * (signed-out) stays leftover even if a later Close exists. */
+function destEndLeftoverEffects(connection: Connection): RoutineEffects | undefined {
+  if (connection.destination.kind !== "end") return undefined;
+  const steps = destEndAuthoredSteps(connection);
+  if (!steps.length) return undefined;
+  const dismissIndex = steps.findIndex((step) => isOverlayDismissTap(step));
+  const scanEnd = dismissIndex >= 0 ? dismissIndex : steps.length;
+  let leftover: RoutineLeftoverSurface | undefined;
+  for (let index = 0; index < scanEnd; index += 1) {
+    const step = steps[index];
+    if (step?.kind !== "wait-for" && step?.kind !== "tap") continue;
+    leftover = leftoverSurfaceFromTarget(step.target) ?? leftover;
+  }
+  const effects: RoutineEffects = leftover ? { leftover: [leftover] } : {};
+  if (dismissIndex >= 0 && !hasMutatingLeftover(effects)) {
+    return { establishes: STARTING_STATE_ROUTINE_PRESETS["home-chrome"].establishes };
+  }
+  return leftover ? effects : undefined;
+}
+
+function applyDestEndConnectionEffects(cursor: Cursor, connection: Connection): void {
+  const effects = destEndLeftoverEffects(connection);
+  if (!effects) return;
+  applyEffects(cursor, effects, Boolean(effects.establishes?.length) && !effects.leftover?.length);
+}
+
 function mergeLeftover(
   current: readonly RoutineLeftoverSurface[],
   next: readonly RoutineLeftoverSurface[] | undefined,
@@ -170,6 +235,7 @@ export function collectTestEffects(map: AppMap, test: AppMapScenarioTest): Routi
           if (effects?.accountIsolation) accountIsolation = effects.accountIsolation;
           if (effects?.accountIsolationNote) accountIsolationNote = effects.accountIsolationNote;
         }
+        applyDestEndConnectionEffects(cursor, connection);
       }
       if (step.cleanup) {
         applyEffects(cursor, routineEffects(map, step.cleanup.routineId), true);
@@ -216,6 +282,7 @@ export function assessIntraTestStartingState(
         for (const routineId of actionRoutineIds(connection.actions)) {
           applyEffects(cursor, routineEffects(map, routineId), false);
         }
+        applyDestEndConnectionEffects(cursor, connection);
       }
       if (step.cleanup) applyEffects(cursor, routineEffects(map, step.cleanup.routineId), true);
     }
