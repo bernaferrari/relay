@@ -22,41 +22,50 @@ export function CaptureReviewDecisions({
       }
       aria-busy={busy}
     >
-      {status ? (
+      {status || bulkCount ? (
         <div className="min-w-0">
-          <p className="text-sm font-medium">Screenshot review</p>
-          <p className="mt-0.5 text-xs text-muted-foreground" role="status">
-            {busy ? "Saving decision…" : status}
+          <p className="text-sm font-medium">
+            {bulkCount
+              ? `${bulkCount} ${bulkCount === 1 ? "screenshot" : "screenshots"} selected`
+              : "Screenshot review"}
           </p>
+          {busy || status ? (
+            <p className="mt-0.5 text-xs text-muted-foreground" role="status">
+              {busy ? "Saving decision…" : status}
+            </p>
+          ) : null}
         </div>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
-          className="min-h-10"
+          className="min-h-11"
           variant={bulkCount ? "outline" : "default"}
           disabled={busy}
           onClick={() => onReview("accept")}
         >
-          <Check className="size-4" aria-hidden="true" /> Looks correct{suffix}
+          <Check className="size-4" aria-hidden="true" /> Looks correct
+          <span className="sr-only">{suffix}</span>
         </Button>
         <Button
           size="sm"
-          className="min-h-10"
+          className="min-h-11"
           variant="ghost"
           disabled={busy}
           onClick={() => onReview("report-issue")}
         >
-          <Flag className="size-4" aria-hidden="true" /> Report issue{suffix}
+          <Flag className="size-4" aria-hidden="true" /> Report issue
+          <span className="sr-only">{suffix}</span>
         </Button>
         <Button
           size="sm"
-          className="min-h-10"
+          className="min-h-11"
           variant="ghost"
           disabled={busy}
           onClick={() => onReview("need-more-evidence")}
         >
-          <ImagePlus className="size-4" aria-hidden="true" /> Need more evidence{suffix}
+          <ImagePlus className="size-4" aria-hidden="true" /> Need more evidence
+          <span className="sr-only">{suffix}</span>
         </Button>
       </div>
     </div>

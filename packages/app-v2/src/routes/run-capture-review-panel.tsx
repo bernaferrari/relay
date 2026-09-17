@@ -66,7 +66,7 @@ function reviewShellClass(input: {
   const columns = !input.showImage
     ? ""
     : input.gallery
-      ? "lg:grid-cols-[minmax(0,1fr)_minmax(22rem,min(42rem,46%))] lg:items-start"
+      ? ""
       : "lg:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)] lg:items-start";
   return `grid gap-5 ${input.showCoverage ? "p-3" : ""} ${columns}`.trim();
 }
@@ -179,7 +179,7 @@ export function CaptureReviewPanel({
         if (next !== selectedIndex) onSelect(next);
       }}
     >
-      <div className={`grid min-w-0 gap-3 ${gallery ? "order-2 lg:order-1" : ""}`}>
+      <div className="grid min-w-0 gap-3">
         {showCoverage ? (
           <p className="px-1 text-xs tabular-nums text-muted-foreground">
             {captureReviewSummaryLine(queue)}
@@ -238,7 +238,10 @@ export function CaptureReviewPanel({
             size="sm"
             disabled={nextPendingIndex === undefined}
             onClick={() => {
-              if (nextPendingIndex !== undefined) onSelect(nextPendingIndex);
+              if (nextPendingIndex !== undefined) {
+                onSelect(nextPendingIndex);
+                if (gallery) setLayout("detail");
+              }
             }}
           >
             Next unreviewed
@@ -255,7 +258,9 @@ export function CaptureReviewPanel({
           className={
             gallery
               ? "grid grid-cols-1 items-start gap-x-4 gap-y-5 p-0.5 sm:grid-cols-2"
-              : "grid max-h-[min(45vh,24rem)] gap-2 overflow-y-auto p-0.5"
+              : showImage
+                ? "flex gap-2 overflow-x-auto p-0.5 lg:grid lg:max-h-[min(60vh,36rem)] lg:overflow-y-auto"
+                : "grid max-h-[min(45vh,24rem)] gap-2 overflow-y-auto p-0.5"
           }
           aria-label="Screenshots for review"
         >
@@ -266,7 +271,10 @@ export function CaptureReviewPanel({
             const place = previewPlace(item);
             const blocked = Boolean(planFields(item).blocked);
             return (
-              <li key={key} className="relative min-w-0">
+              <li
+                key={key}
+                className={`relative min-w-0 ${showImage && !gallery ? "w-72 shrink-0 lg:w-auto" : ""}`}
+              >
                 {reviewable(item) ? (
                   <label
                     className={`absolute start-0 z-10 flex size-10 items-center justify-center ${gallery ? "top-0 start-0 cursor-pointer" : "top-1/2 -translate-y-1/2"}`}
@@ -293,9 +301,13 @@ export function CaptureReviewPanel({
                 ) : null}
                 <button
                   type="button"
-                  aria-pressed={index === selectedIndex}
+                  aria-pressed={gallery ? undefined : index === selectedIndex}
                   className={`${gallery ? "" : " cursor-pointer hover:bg-accent"} flex min-h-20 w-full gap-3 rounded-lg text-left transition-colors focus-visible:outline-2 ${gallery ? "flex-col overflow-hidden pb-1" : "items-center py-2 pl-10 pr-3"} ${index === selectedIndex ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
-                  onClick={() => onSelect(index)}
+                  aria-label={gallery ? `Inspect ${caption(item, index)}` : undefined}
+                  onClick={() => {
+                    onSelect(index);
+                    if (gallery) setLayout("detail");
+                  }}
                 >
                   {thumb?.media ? (
                     <ReportImage
@@ -344,9 +356,9 @@ export function CaptureReviewPanel({
           })}
         </ul>
       </div>
-      {selected ? (
+      {selected && !gallery ? (
         <div
-          className={`grid min-w-0 gap-3 ${gallery ? "order-1 lg:order-2 lg:sticky lg:top-3" : ""} ${showImage ? "rounded-lg border border-border/60 p-4" : ""}`}
+          className={`grid min-w-0 gap-3 ${showImage ? "rounded-lg border border-border/60 p-4" : ""}`}
           aria-label="Selected screenshot"
         >
           {caption(selected, selectedIndex) !== fallbackTitle ? (
@@ -363,7 +375,9 @@ export function CaptureReviewPanel({
                 .join(" · ")}
             </p>
           ) : null}
-          {selected.lookFor && selected.lookFor !== fallbackTitle ? (
+          {selected.lookFor &&
+          selected.lookFor !== fallbackTitle &&
+          selected.lookFor !== caption(selected, selectedIndex) ? (
             <p className="text-sm text-muted-foreground">Look for: {selected.lookFor}</p>
           ) : null}
           {selected.framePath ||
@@ -383,7 +397,7 @@ export function CaptureReviewPanel({
               {selected.attempt ? <p>Attempt {selected.attempt}</p> : null}
             </details>
           ) : null}
-          {showImage || selected.status !== "pending" ? (
+          {selected.status !== "pending" || !onReview ? (
             <p className="text-xs text-muted-foreground">
               {selectedMeta.blocked
                 ? onReviewMany
@@ -427,7 +441,7 @@ export function CaptureReviewPanel({
           ) : selected.status === "missing" ? (
             <p className="text-sm">No screenshot was saved for this checkpoint.</p>
           ) : null}
-          {onReview && reviewable(selected) ? (
+          {onReview && reviewable(selected) && bulkItems.length === 0 ? (
             <div className="rounded-lg border border-border/60 bg-muted/30 p-4">
               <CaptureReviewDecisions
                 busy={busy}

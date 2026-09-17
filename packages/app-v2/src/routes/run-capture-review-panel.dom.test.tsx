@@ -118,7 +118,7 @@ describe("CaptureReviewPanel selection", () => {
     expect(host.textContent).not.toContain("Approve new baseline");
   });
 
-  it("keeps the selected image and review actions on the gallery", () => {
+  it("opens inspection from the gallery without duplicating its full image", () => {
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
@@ -176,6 +176,9 @@ describe("CaptureReviewPanel selection", () => {
       ),
     );
     expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Gallery");
+    expect(host.querySelector('[aria-label="Selected screenshot"]')).toBeNull();
+    act(() => host.querySelector<HTMLButtonElement>('button[aria-label^="Inspect "]')!.click());
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Inspect");
     expect(host.querySelector('[aria-label="Selected screenshot"]')).not.toBeNull();
     expect(host.querySelector('[aria-label="Selected screenshot"] img')?.getAttribute("src")).toBe(
       "/runs/run-1/frames/001.png",
@@ -186,6 +189,8 @@ describe("CaptureReviewPanel selection", () => {
     expect(host.textContent).toContain("Need more evidence");
     expect(host.textContent).not.toContain("Use as baseline");
     expect(host.textContent).not.toContain("Approve new baseline");
+
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Inspect");
   });
 
   it("dest-end Gallery selected image is dest wait-for, not leftover Close last-frame", () => {
@@ -248,6 +253,9 @@ describe("CaptureReviewPanel selection", () => {
       ),
     );
     expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Gallery");
+    expect(host.querySelector('[aria-label="Selected screenshot"]')).toBeNull();
+    act(() => host.querySelector<HTMLButtonElement>('button[aria-label^="Inspect "]')!.click());
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Inspect");
     expect(host.querySelector('[aria-label="Selected screenshot"] img')?.getAttribute("src")).toBe(
       "/runs/dest-end-observe/frames/003.png",
     );

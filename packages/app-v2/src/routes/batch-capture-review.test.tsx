@@ -140,9 +140,8 @@ describe("Plan screenshot review filters", () => {
     expect(host.textContent).toContain("3 pending");
     expect(host.textContent).toContain("Looks correct does not approve a visual baseline.");
     expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Gallery");
-    expect(host.querySelector('[aria-label="Selected screenshot"]')).not.toBeNull();
-    expect(host.textContent).toContain("Report issue");
-    expect(host.textContent).toContain("Need more evidence");
+    expect(host.querySelector('[aria-label="Selected screenshot"]')).toBeNull();
+
     expect(host.textContent).not.toContain("Use as baseline");
     expect(host.textContent).not.toContain("Approve new baseline");
     const itemChecks = [
@@ -154,6 +153,9 @@ describe("Plan screenshot review filters", () => {
         if (box instanceof HTMLElement) box.click();
       });
     }
+    expect(host.textContent).toContain("3 screenshots selected");
+    expect(host.textContent).toContain("Report issue");
+    expect(host.textContent).toContain("Need more evidence");
     const screen = host.querySelector<HTMLButtonElement>(
       '[role="combobox"][aria-label="Filter by screen"]',
     );
