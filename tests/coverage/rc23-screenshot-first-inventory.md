@@ -126,6 +126,34 @@ Did **not** tap Try now / Dismiss / Sign Out / SuperGrok type. Identifier-only T
 
 Prior jobs (not this slot): Home `a0b6380d` / Attach `a11c41b4` / Imagine `37014ba6` / Settings `3787eb65` / Dictation `b1eead7a` / Sidebar `b7c18573` / Logo `d8bf4385` / Private `2b2377c7` / Composer `ded7d047` / Models `f5116f81` r904 (inspect confirm path missed dest-phase). Models `fc5c83d3` r899 cancelled. Did **not** Dismiss. Identifier TAP `model-select-trigger` opened the sheet (Build Mode dialog went away as the menu opened — not a Dismiss tap). Dest-wait Fast/Auto/Expert/Heavy; no Close after dest. Capture-review `pending` · `policy:fast` · `phase:dest` · intended app `Grok.com` · account `authfx:7189423f-193e-45ed-b674-154505cc5107:1` SuperGrok signed-in · observed lane `grok-lab` · profile `browser:grok-com-1280x800-339a5a430a41` · Playwright. Last frame equals dest-phase on all 10. Leftover after this pass: signed-in grok-lab home `b2dcd768…` + Introducing Build Mode (did not Dismiss). Not accepted. Do not enqueue SuperGrok on Electron.
 
+### P0.1 Lane identity — grok-lab dest-end 3-pass (2026-09-17)
+
+Playwright chromium + fixture `7189423f` **ready** / `signedIn: true` / `needsReloginCount: 0`. Electron `persist:lane:grok-lab` is still **absent** (Grok Bot Partitions `sand-forever-box` only; `~/Library/Application Support/Electron/Partitions` has `lane:grok-auth-email` / `lane:grok-auth-gmail` only). Fail closed — do **not** relabel grok-daily unsigned as SuperGrok. grok-com `authenticationFixtureId` stays empty.
+
+Live stores before dest-end (exclusive grok.com; did not touch iPad Settings leftover; did not wait on Galaxy):
+
+| Lane       | Fingerprint      | Nodes | Identity                                                                                          | Scheduling key                          | Profile                                      |
+| ---------- | ---------------- | ----: | ------------------------------------------------------------------------------------------------- | --------------------------------------- | -------------------------------------------- |
+| grok-lab   | `b2dcd768…`      |   122 | Bernardo Ferrari, sidebar history, no Sign in, Introducing Build Mode, `model-select-trigger` Fast | `grok-com#authfx:7189423f-…`            | `browser:grok-com-1280x800-339a5a430a41`     |
+| grok-daily | `3b675478…`      |    26 | Sign in + Sign up, no Bernardo                                                                    | `grok-com#signed-out:grok-daily`        | `browser:grok-com`                           |
+
+`test-grok-web-signed-in-model-iterate` dest-end **test-action** identifier TAP `model-select-trigger` (capture-view stays attach/settings). Dest-phase **dest**, Fast UI, optional wait-for Introducing Build Mode `timeoutMs: 0`, no Close / Dismiss / Try now / Sign Out / SuperGrok type.
+
+| Attempt | Job                                    |  Rev | Duration | Outcome                                                                                                                                                                                                 |
+| ------- | -------------------------------------- | ---: | -------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1       | `61318f78-d7ff-4efe-87b0-f5388ca87ff6` | r929 |   7237ms | **passed**                                                                                                                                                                                              |
+| 2       | `3f36ba74-7a53-45dc-8099-4b52d4b49a9f` | r930 |   7618ms | **passed**                                                                                                                                                                                              |
+| —       | `e1cf87dd-3e98-428d-8126-bf483d0aba2f` | r931 |    ~1.6s | **error** `browser.newContext` storage state / browser closed — tsx watch restarted `:8787` (sibling protocol edits). Did not reach dest. Not a product fail. Not a dest-end pass.                      |
+| 3       | `f62a8b46-b583-4ecb-94eb-6ada17838ce9` | r931 |   7456ms | **passed**                                                                                                                                                                                              |
+
+Three dest-end passes (1, 2, 3): capture-review `pending` · `policy:fast` · `phase:dest` · app `Grok.com` · account `authfx:7189423f-193e-45ed-b674-154505cc5107:1` SuperGrok · observed lane `grok-lab` · profile `browser:grok-com-1280x800-339a5a430a41` · `sessionStore: playwright-user-data`. Dest frames: Fast sheet (Fast checked, Build/Auto/Expert/Heavy, SuperGrok Upgrade) + Bernardo Ferrari sidebar. **Not** grok-daily Sign in.
+
+Concurrent during pass 2: unsigned `--lane grok-daily` snapshot still `3b675478…` / Sign in / no Bernardo. Scheduler overlap allowed; cookies not overlaid.
+
+Leftover after pass 3 snapshot: grok-lab home `b2dcd768…`, sidebar open, Introducing Build Mode up (did not Dismiss). Freeze **30 · 29 captured · 1 blocked · 0 missing · 29 pending · 0 accepted** unchanged — this 3-pass is Lane-identity evidence, not a new freeze cell (models slot remains `648ee0ab`). Workbook **2 bound / 51 unbound / 5 excluded**. **0 accepted.** 19z5 stays open.
+
+Remaining **P0.1:** Electron grok-lab still unproven. Remaining **P0.2:** `OPENROUTER_API_KEY` unset (agent env + workspace variables revision 0 empty) — judged Tier B blocked.
+
 ### iOS chrome — physical iPad, prime without relaunch
 
 | Cell              | Job                                         | Duration | Status                                                                                                                                                                                                      |
@@ -181,4 +209,5 @@ Capture-review on disk is **fast** · `settled:false` · `samples:1` · `status:
 - No bulk accept; capture-review pending. Looks correct cannot accept missing.
 - Workbook originals: **2 bound / 51 unbound / 5 excluded**. Remaining-before-gates **53**. Not 53 covered.
 - OPENROUTER unset. grok-com `authenticationFixtureId` stays empty.
+- Electron `persist:lane:grok-lab` still absent. P0.1 Playwright dest-end 3-pass is lane identity, not Electron. Do not relabel grok-daily as SuperGrok.
 - 19z5 stays open.

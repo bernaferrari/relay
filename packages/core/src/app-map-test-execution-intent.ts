@@ -431,6 +431,38 @@ function canonicalPlannedCaptureSlots(value: unknown): boolean {
   return Array.isArray(value) && value.every(canonicalPlannedCaptureSlot);
 }
 
+function canonicalQueueQuotes(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!Array.isArray(value)) return false;
+  return value.every((entry) => {
+    if (!isRecord(entry)) return false;
+    return (
+      ownKeys(entry, [
+        "queue",
+        "label",
+        "workItemCount",
+        "totalWorkMs",
+        "criticalPathMs",
+        "workers",
+        "requiredDwellMs",
+        "lowerBoundMs",
+      ]) &&
+      (entry.queue === "fast-ui" ||
+        entry.queue === "live-output" ||
+        entry.queue === "stateful-survival") &&
+      (entry.label === "Fast UI" ||
+        entry.label === "Live output" ||
+        entry.label === "Stateful/survival") &&
+      integer(entry.workItemCount) &&
+      integer(entry.totalWorkMs) &&
+      integer(entry.criticalPathMs) &&
+      integer(entry.workers) &&
+      integer(entry.requiredDwellMs) &&
+      integer(entry.lowerBoundMs)
+    );
+  });
+}
+
 /** The registered historical plan shape. This deliberately checks the
  * App-Map-Test discriminators, compiled root, and parsed recipe projection;
  * labels, recipe IDs, and opaque artifact fields never classify a legacy job
@@ -459,6 +491,7 @@ export function parseCanonicalAppMapTestPlan(value: unknown): AppMapCompiledTest
       "performance",
       "plannedSlots",
       "executionQueue",
+      "queueQuotes",
       "startup",
       "originApplication",
       "omittedSteps",
@@ -484,7 +517,8 @@ export function parseCanonicalAppMapTestPlan(value: unknown): AppMapCompiledTest
     (value.executionQueue !== undefined &&
       value.executionQueue !== "fast-ui" &&
       value.executionQueue !== "live-output" &&
-      value.executionQueue !== "stateful-survival")
+      value.executionQueue !== "stateful-survival") ||
+    !canonicalQueueQuotes(value.queueQuotes)
   ) {
     return undefined;
   }

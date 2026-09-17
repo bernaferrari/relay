@@ -280,3 +280,32 @@ test("canonical plans retain explicit app origins and support warm startup", () 
   assert.equal(parseCanonicalAppMapTestPlan({ ...plan, originApplication: 42 }), undefined);
   assert.equal(parseCanonicalAppMapTestPlan({ ...plan, originApplication: "" }), undefined);
 });
+
+test("canonical plans persist Fast UI queue quotes without treating them as unknown keys", () => {
+  const ready = fixture();
+  ready.plan.executionQueue = "fast-ui";
+  ready.plan.queueQuotes = [
+    {
+      queue: "fast-ui",
+      label: "Fast UI",
+      workItemCount: 1,
+      totalWorkMs: 7550,
+      criticalPathMs: 7550,
+      workers: 1,
+      requiredDwellMs: 2000,
+      lowerBoundMs: 7550,
+    },
+  ];
+  ready.preflight.planDigest = digestAppMapTestExecutionValue(ready.plan);
+  ready.preflight.executionRisk = compileExecutionRisk({
+    kind: "compiled-test",
+    test: ready.plan,
+  });
+  const intent = createAppMapTestExecutionIntent(ready);
+  assert.equal(intent.plan.executionQueue, "fast-ui");
+  assert.equal(intent.plan.queueQuotes?.[0]?.label, "Fast UI");
+  assert.equal(
+    parseCanonicalAppMapTestPlan({ ...ready.plan, queueQuotes: [{ queue: "fast-ui" }] }),
+    undefined,
+  );
+});
