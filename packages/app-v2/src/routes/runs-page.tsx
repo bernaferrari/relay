@@ -124,7 +124,6 @@ export function RunsPage() {
         label="Filter Runs"
         tabs={
           <Tabs
-            className="border-b border-border pb-1.5"
             value={view}
             onValueChange={(next) => setView(next as RunView)}
           >

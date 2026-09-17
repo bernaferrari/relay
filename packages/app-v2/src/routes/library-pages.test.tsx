@@ -493,7 +493,7 @@ describe("Runs workspace", () => {
 
     const tabs = document.querySelector('[data-slot="tabs"]');
     const filters = document.querySelector('[aria-label="Filter Runs"]');
-    expect(tabs?.className).toContain("border-b");
+    expect(tabs?.className).not.toContain("border-b");
     expect(filters?.className).not.toContain("mt-3");
     expect(filters?.parentElement?.className).toMatch(/gap-5|gap-6/);
   });
