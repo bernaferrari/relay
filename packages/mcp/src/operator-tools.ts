@@ -828,7 +828,10 @@ export async function invokeRelayOperatorTool(input: {
     );
   }
   if (input.name === "relay_visual_compare") {
-    return invoker.invoke("run.visual.compare", { runId: parsed.runId }, { signal });
+    return summarizeExecutionOperationResult(
+      "run.visual.compare",
+      await invoker.invoke("run.visual.compare", { runId: parsed.runId }, { signal }),
+    );
   }
   if (input.name === "relay_visual_review") {
     if (input.actorId.startsWith("agent:")) {
@@ -836,15 +839,18 @@ export async function invokeRelayOperatorTool(input: {
         "relay_visual_review requires a human actor; agent:* cannot approve or reject visual comparisons.",
       );
     }
-    return invoker.invoke(
+    return summarizeExecutionOperationResult(
       "run.visual.review",
-      {
-        runId: parsed.runId,
-        comparisonId: parsed.comparisonId,
-        action: parsed.action,
-        ...(typeof parsed.note === "string" ? { note: parsed.note } : {}),
-      },
-      { signal },
+      await invoker.invoke(
+        "run.visual.review",
+        {
+          runId: parsed.runId,
+          comparisonId: parsed.comparisonId,
+          action: parsed.action,
+          ...(typeof parsed.note === "string" ? { note: parsed.note } : {}),
+        },
+        { signal },
+      ),
     );
   }
   if (input.name === "relay_lanes") return invoker.invoke("lane.list", {}, { signal });

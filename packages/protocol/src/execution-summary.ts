@@ -3,6 +3,7 @@ import {
   captureReviewLeftoverLastFramePaths,
   destIdentityCheckpointFramePaths,
   destIdentityReviewItems,
+  isCaptureReviewLeftoverCaption,
   CAPTURE_REVIEW_DEST_PHASE,
   resolveCaptureReviewQueue,
   type CaptureReviewItem,
@@ -59,6 +60,39 @@ function compactDestIdentity(
     const frame = byPath.get(path);
     return frame ?? { path };
   });
+}
+
+/** Dest wait-for frames when leftover Close / Run saved Test last-frame is
+ * also listed. Unphased dest-wait (no dest identity) keeps every frame. */
+function destWaitForListedFrames(
+  frames: readonly { path: string; caption?: string }[],
+): { path: string; caption?: string }[] {
+  const dest = frames.filter((frame) => !isCaptureReviewLeftoverCaption(frame.caption));
+  const leftover = frames.filter((frame) => isCaptureReviewLeftoverCaption(frame.caption));
+  return dest.length && leftover.length ? dest : [...frames];
+}
+
+/** Leftover Close captions cannot fill dest identity. Unphased dest-wait still
+ * keeps leftover rasters on the comparison; destIdentity stays empty. */
+function destIdentityVisualFrames(
+  frames: readonly { path: string; caption?: string }[],
+): { path: string; caption?: string }[] {
+  const dest = destWaitForListedFrames(frames).filter(
+    (frame) => !isCaptureReviewLeftoverCaption(frame.caption),
+  );
+  const seen = new Set<string>();
+  return dest.filter((frame) => {
+    if (seen.has(frame.path)) return false;
+    seen.add(frame.path);
+    return true;
+  });
+}
+
+function listedFramePath(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  const record = object(value);
+  const path = typeof record?.path === "string" ? record.path.trim() : "";
+  return path || undefined;
 }
 
 function compactCaptureReviewItem(
@@ -270,16 +304,51 @@ function projectFinding(value: unknown, frame: unknown): unknown {
  * of paths for a caller that asked what broke. Keep the verdicts and the counts
  * that say how much could be read; the frames stay in the runs.
  */
+function analysisCaseFrames(value: unknown): { path: string; caption?: string }[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const frame = object(entry);
+    const path =
+      listedFramePath(frame?.framePath) ?? listedFramePath(frame?.path) ?? listedFramePath(entry);
+    if (!path) return [];
+    const caption = typeof frame?.caption === "string" ? frame.caption : undefined;
+    return [{ path, ...(caption ? { caption } : {}) }];
+  });
+}
+
 function summarizeLocaleAnalysis(response: Record<string, unknown>): unknown {
   const analysis = object(response.analysis);
   if (!analysis) return response;
   const findings = Array.isArray(analysis.findings) ? analysis.findings : [];
   const cases = Array.isArray(response.cases) ? response.cases : [];
+  const listed = cases.flatMap((value) => analysisCaseFrames(object(value)?.frames));
+  const destIdentity = destIdentityVisualFrames(listed);
+  const destPaths = new Set(destIdentity.map((frame) => frame.path));
+  const leftover = new Set(
+    destPaths.size
+      ? listed.filter((frame) => !destPaths.has(frame.path)).map((frame) => frame.path)
+      : [],
+  );
+  const originalFramePaths = new Map<string, unknown>();
   const framePaths = new Map<string, unknown>();
   const summarized = cases.map((value) => {
     const item = object(value);
     const frames = Array.isArray(item?.frames) ? item.frames : [];
+    const visible = destPaths.size
+      ? frames.filter((entry) => {
+          const path = listedFramePath(object(entry)?.framePath) ?? listedFramePath(entry);
+          return !path || destPaths.has(path);
+        })
+      : frames;
     for (const entry of frames) {
+      const frame = object(entry);
+      if (frame)
+        originalFramePaths.set(
+          `${String(item?.locale)}\n${String(frame.canonicalKey)}`,
+          frame.framePath,
+        );
+    }
+    for (const entry of visible) {
       const frame = object(entry);
       if (frame)
         framePaths.set(`${String(item?.locale)}\n${String(frame.canonicalKey)}`, frame.framePath);
@@ -288,14 +357,30 @@ function summarizeLocaleAnalysis(response: Record<string, unknown>): unknown {
       jobId: item?.jobId,
       locale: item?.locale,
       status: item?.status,
-      frameCount: frames.length,
-      inspectedFrames: frames.filter((entry) => object(entry)?.inspected === true).length,
+      frameCount: visible.length,
+      inspectedFrames: visible.filter((entry) => object(entry)?.inspected === true).length,
     };
   });
+  const projectedFindings = findings
+    .slice(0, MAX_SUMMARIZED_FINDINGS)
+    .filter((value) => {
+      const finding = object(value);
+      const source = originalFramePaths.get(
+        `${String(finding?.locale)}\n${String(finding?.canonicalKey)}`,
+      );
+      return typeof source !== "string" || !leftover.has(source);
+    })
+    .map((value) =>
+      projectFinding(
+        value,
+        framePaths.get(`${String(object(value)?.locale)}\n${String(object(value)?.canonicalKey)}`),
+      ),
+    );
   return {
     batchId: response.batchId,
     locales: response.locales,
     coverage: response.coverage,
+    ...(destIdentity.length ? { destIdentity } : {}),
     cases: summarized,
     analysis: {
       baselineLocale: analysis.baselineLocale,
@@ -303,16 +388,7 @@ function summarizeLocaleAnalysis(response: Record<string, unknown>): unknown {
       warnings: analysis.warnings,
       affectedScreens: analysis.affectedScreens,
       findingCount: findings.length,
-      findings: findings
-        .slice(0, MAX_SUMMARIZED_FINDINGS)
-        .map((value) =>
-          projectFinding(
-            value,
-            framePaths.get(
-              `${String(object(value)?.locale)}\n${String(object(value)?.canonicalKey)}`,
-            ),
-          ),
-        ),
+      findings: projectedFindings,
     },
   };
 }
@@ -398,6 +474,84 @@ function summarizePlanCaptureReview(response: Record<string, unknown>): unknown 
         ? { queue: response.queue }
         : {}),
     ...(response.results !== undefined ? { results: response.results } : {}),
+  };
+}
+
+function projectVisualSnapshot(value: unknown): Record<string, unknown> | undefined {
+  const snapshot = object(value);
+  if (!snapshot) return undefined;
+  const frames = destWaitForListedFrames(listedFrames(snapshot.frames));
+  return {
+    ...snapshot,
+    ...(frames.length || snapshot.frameCount !== undefined ? { frameCount: frames.length } : {}),
+    ...(snapshot.frames !== undefined ? { frames } : {}),
+  };
+}
+
+function visualDestPaths(snapshot: Record<string, unknown> | undefined): Set<string> {
+  return new Set(listedFrames(snapshot?.frames).map((frame) => frame.path));
+}
+
+function projectVisualDiff(value: unknown, destPaths: Set<string>): unknown {
+  const diff = object(value);
+  if (!diff || !destPaths.size || !Array.isArray(diff.frames)) return value;
+  const frames = diff.frames.filter((entry) => {
+    const item = object(entry);
+    const latest = listedFramePath(object(item?.latest)?.path);
+    const approved = listedFramePath(object(item?.approved)?.path);
+    if (latest && destPaths.has(latest)) return true;
+    if (approved && destPaths.has(approved)) return true;
+    if (latest && !destPaths.has(latest)) return false;
+    if (approved && !destPaths.has(approved)) return false;
+    return true;
+  });
+  return { ...diff, latestFrameCount: destPaths.size, frames };
+}
+
+/** Visual compare / baseline JSON never treats leftover Close 004 as dest. */
+function summarizeVisualComparison(response: Record<string, unknown>): unknown {
+  const comparison = object(response.comparison);
+  const latest = projectVisualSnapshot(comparison?.latest);
+  const approved = projectVisualSnapshot(comparison?.approved);
+  const baselineRecord = object(comparison?.baseline) ?? object(response.baseline);
+  const baselineApproved = projectVisualSnapshot(baselineRecord?.approved);
+  const destIdentity = destIdentityVisualFrames([
+    ...listedFrames(latest?.frames),
+    ...listedFrames(baselineApproved?.frames),
+  ]);
+  const destPaths = visualDestPaths(latest);
+  const comparisonBaseline = object(comparison?.baseline);
+  return {
+    ...response,
+    ...(destIdentity.length ? { destIdentity } : {}),
+    ...(comparison
+      ? {
+          comparison: {
+            ...comparison,
+            ...(latest ? { latest } : {}),
+            ...(approved ? { approved } : {}),
+            ...(comparisonBaseline
+              ? {
+                  baseline: {
+                    ...comparisonBaseline,
+                    ...(baselineApproved ? { approved: baselineApproved } : {}),
+                  },
+                }
+              : {}),
+            ...(comparison.diff !== undefined
+              ? { diff: projectVisualDiff(comparison.diff, destPaths) }
+              : {}),
+          },
+        }
+      : {}),
+    ...(object(response.baseline)
+      ? {
+          baseline: {
+            ...object(response.baseline),
+            ...(baselineApproved ? { approved: baselineApproved } : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -614,6 +768,14 @@ export function summarizeExecutionOperationResult(operationId: string, result: u
   if (operationId === "run.capture.review") return summarizeRunCaptureReview(response);
   if (operationId === "run.story.get") return summarizeRunStory(response);
   if (operationId === "run.trace-pack.get") return summarizeTracePackEnvelope(response);
+  if (
+    operationId === "run.visual.compare" ||
+    operationId === "run.visual-baseline.update" ||
+    operationId === "run.visual.review" ||
+    operationId === "run.visual-policy.update"
+  ) {
+    return summarizeVisualComparison(response);
+  }
   if (isAttachedJobOperation(operationId)) {
     return response.job === undefined && !Array.isArray(response.jobs)
       ? result

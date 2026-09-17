@@ -770,3 +770,150 @@ test("app-map.connection.run dest identity is dest wait-for, not leftover Close 
     false,
   );
 });
+
+test("run.visual.compare dest identity is dest wait-for 003, not leftover Close 004 last-frame", () => {
+  const result = summarizeExecutionOperationResult("run.visual.compare", {
+    comparison: {
+      id: "visual-comparison-leftover",
+      code: "VISUAL_BASELINE_MISSING",
+      latest: {
+        runId: leftoverDestEndJob.id,
+        frameCount: 2,
+        frames: [
+          { path: "frames/003.png", caption: "Observe", index: 0 },
+          { path: "frames/004.png", caption: "after · Run saved Test", index: 1 },
+        ],
+      },
+      diff: {
+        latestFrameCount: 2,
+        frames: [
+          { index: 0, code: "FRAME_ADDED", latest: { path: "frames/003.png" } },
+          { index: 1, code: "FRAME_ADDED", latest: { path: "frames/004.png" } },
+        ],
+      },
+    },
+  }) as {
+    destIdentity?: Array<{ path?: string }>;
+    comparison?: {
+      latest?: { frameCount?: number; frames?: Array<{ path?: string }> };
+      diff?: { frames?: Array<{ latest?: { path?: string } }> };
+    };
+  };
+  assert.deepEqual(
+    result.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.deepEqual(
+    result.comparison?.latest?.frames?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(result.comparison?.latest?.frameCount, 1);
+  assert.equal(
+    result.comparison?.diff?.frames?.some((frame) => frame.latest?.path === "frames/004.png"),
+    false,
+  );
+});
+
+test("run.visual-baseline.update never accepts leftover Close 004 as dest", () => {
+  const result = summarizeExecutionOperationResult("run.visual-baseline.update", {
+    comparison: {
+      latest: {
+        frames: [
+          { path: "frames/003.png", caption: "Observe" },
+          { path: "frames/004.png", caption: "Close" },
+        ],
+      },
+    },
+    decision: { action: "approve-new-baseline" },
+    baseline: {
+      id: "visual-baseline-leftover",
+      approved: {
+        frames: [
+          { path: "frames/003.png", caption: "Observe" },
+          { path: "frames/004.png", caption: "after · Run saved Test" },
+        ],
+      },
+    },
+  }) as {
+    destIdentity?: Array<{ path?: string }>;
+    comparison?: { latest?: { frames?: Array<{ path?: string }> } };
+    baseline?: { approved?: { frames?: Array<{ path?: string }> } };
+    decision?: { action?: string };
+  };
+  assert.equal(result.decision?.action, "approve-new-baseline");
+  assert.deepEqual(
+    result.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.comparison?.latest?.frames?.some((frame) => frame.path === "frames/004.png"),
+    false,
+  );
+  assert.equal(
+    result.baseline?.approved?.frames?.some((frame) => frame.path === "frames/004.png"),
+    false,
+  );
+});
+
+test("job.combine.analysis dest identity drops leftover Close 004 finding frames", () => {
+  const result = summarizeExecutionOperationResult("job.combine.analysis", {
+    batchId: "dest-004",
+    locales: ["en"],
+    coverage: { frames: 2, inspectedFrames: 2 },
+    cases: [
+      {
+        jobId: leftoverDestEndJob.id,
+        locale: "en",
+        status: "ok",
+        frames: [
+          {
+            framePath: "frames/003.png",
+            caption: "Observe",
+            canonicalKey: "frame-001",
+            inspected: true,
+          },
+          {
+            framePath: "frames/004.png",
+            caption: "after · Run saved Test",
+            canonicalKey: "frame-002",
+            inspected: true,
+          },
+        ],
+      },
+    ],
+    analysis: {
+      baselineLocale: "en",
+      critical: 0,
+      warnings: 1,
+      affectedScreens: 1,
+      findings: [
+        {
+          id: "finding-dest",
+          code: "POSSIBLE_TEXT_CLIPPED",
+          locale: "en",
+          canonicalKey: "frame-001",
+        },
+        {
+          id: "finding-leftover",
+          code: "POSSIBLE_UNTRANSLATED_TEXT",
+          locale: "en",
+          canonicalKey: "frame-002",
+        },
+      ],
+    },
+  }) as {
+    destIdentity?: Array<{ path?: string }>;
+    cases?: Array<{ frameCount?: number }>;
+    analysis?: { findings?: Array<{ frame?: string }> };
+  };
+  assert.deepEqual(
+    result.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(result.cases?.[0]?.frameCount, 1);
+  assert.equal(
+    result.analysis?.findings?.some((finding) => finding.frame === "frames/004.png"),
+    false,
+  );
+  assert.equal(result.analysis?.findings?.[0]?.frame, "frames/003.png");
+});

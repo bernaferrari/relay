@@ -597,3 +597,36 @@ test("operator plan run dest identity is dest wait-for, not leftover Close 004 l
     false,
   );
 });
+
+test("operator visual compare dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+  const { invoker } = recordingInvoker((operationId) => {
+    assert.equal(operationId, "run.visual.compare");
+    return {
+      comparison: {
+        latest: {
+          frames: leftoverDestEndJob.frames,
+          frameCount: leftoverDestEndJob.frames.length,
+        },
+      },
+    };
+  });
+  const compared = (await invokeRelayOperatorTool({
+    name: "relay_visual_compare",
+    argumentsValue: { runId: leftoverDestEndJob.id },
+    confirmed: false,
+    invoker,
+    actorId: "agent:cursor",
+    signal: new AbortController().signal,
+  })) as {
+    destIdentity?: Array<{ path?: string }>;
+    comparison?: { latest?: { frames?: Array<{ path?: string }> } };
+  };
+  assert.deepEqual(
+    compared.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    compared.comparison?.latest?.frames?.some((frame) => frame.path === "frames/004.png"),
+    false,
+  );
+});

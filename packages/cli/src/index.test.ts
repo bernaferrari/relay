@@ -612,6 +612,93 @@ test("run story --json dest identity is dest wait-for, not leftover Close 004", 
   );
 });
 
+test("run visual compare --json dest identity is dest wait-for 003, not leftover Close 004 last-frame", async () => {
+  const io = capture();
+  const code = await runCli(["run", "visual", "compare", leftoverDestEndRun.id, "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke(operationId) {
+        assert.equal(operationId, "run.visual.compare");
+        return {
+          comparison: {
+            latest: {
+              frames: leftoverDestEndRun.frames,
+              frameCount: leftoverDestEndRun.frames.length,
+            },
+            diff: {
+              frames: leftoverDestEndRun.frames.map((frame, index) => ({
+                index,
+                code: "FRAME_ADDED",
+                latest: { path: frame.path },
+              })),
+            },
+          },
+        };
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      destIdentity?: Array<{ path?: string }>;
+      comparison?: { latest?: { frames?: Array<{ path?: string }> } };
+    };
+  };
+  assert.deepEqual(
+    result.result?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.result?.comparison?.latest?.frames?.some((frame) => frame.path === "frames/004.png"),
+    false,
+  );
+});
+
+test("run visual-baseline update --json never accepts leftover Close 004 as dest", async () => {
+  const io = capture();
+  const code = await runCli(["run", "visual-baseline", "update", leftoverDestEndRun.id, "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke(operationId) {
+        assert.equal(operationId, "run.visual-baseline.update");
+        return {
+          comparison: { latest: { frames: leftoverDestEndRun.frames } },
+          decision: { action: "approve-new-baseline" },
+          baseline: { approved: { frames: leftoverDestEndRun.frames } },
+        };
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      destIdentity?: Array<{ path?: string }>;
+      comparison?: { latest?: { frames?: Array<{ path?: string }> } };
+      baseline?: { approved?: { frames?: Array<{ path?: string }> } };
+    };
+  };
+  assert.deepEqual(
+    result.result?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.result?.comparison?.latest?.frames?.some((frame) => frame.path === "frames/004.png"),
+    false,
+  );
+  assert.equal(
+    result.result?.baseline?.approved?.frames?.some((frame) => frame.path === "frames/004.png"),
+    false,
+  );
+});
+
 const snapshotTree = {
   serial: "pixel-9",
   bounds: { width: 834, height: 1112 },

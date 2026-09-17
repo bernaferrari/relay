@@ -12,6 +12,7 @@ import {
   destIdentityCheckpointFramePaths,
   destIdentityReviewItems,
   destIdentitySourceFrames,
+  isCaptureReviewLeftoverCaption,
   captureReviewSlotFamilyId,
   captureReviewSlotId,
   CAPTURE_REVIEW_ACTIONS,
@@ -1127,6 +1128,13 @@ test("dest-end dest-phase identity is dest wait-for pixels, not leftover Close l
     ),
     ["frames/002.png"],
   );
+});
+
+test("leftover Close / Run saved Test captions are leftover, dest wait-for Observe is not", () => {
+  assert.equal(isCaptureReviewLeftoverCaption("after · Run saved Test"), true);
+  assert.equal(isCaptureReviewLeftoverCaption("Close"), true);
+  assert.equal(isCaptureReviewLeftoverCaption("Observe"), false);
+  assert.equal(isCaptureReviewLeftoverCaption("step:step-observe:Observe"), false);
 });
 
 test("unphased leftover Close 004 last-frame cannot fill dest checkpoint", () => {

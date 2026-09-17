@@ -234,9 +234,16 @@ export function captureReviewLeftoverFramePaths(
   return leftover;
 }
 
-function leftoverCloseCaption(caption?: string): boolean {
+/** Leftover Close / Back / Run saved Test last-frame captions. Dest wait-for
+ * Observe is not this. Unphased dest-wait keeps those frames until dest
+ * identity also exists. */
+export function isCaptureReviewLeftoverCaption(caption?: string): boolean {
   const value = caption?.trim() ?? "";
   return /^(?:close|back)(?:\s|$)/iu.test(value) || /^after · run saved test$/iu.test(value);
+}
+
+function leftoverCloseCaption(caption?: string): boolean {
+  return isCaptureReviewLeftoverCaption(caption);
 }
 
 /** Leftover Close / Run saved Test last-frame after dest identity.

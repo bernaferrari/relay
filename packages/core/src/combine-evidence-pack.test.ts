@@ -7,6 +7,7 @@ import type { CombineEvidenceControl } from "@relay/protocol";
 import {
   formatCaptureReviewCoverageSummary,
   rc23ScreenshotFirstProductPlanRuns,
+  CAPTURE_REVIEW_DEST_PHASE,
 } from "@relay/protocol";
 import { PNG } from "pngjs";
 import { FRAME_OBSERVATION_KIND, type FrameObservation } from "./frame-observation.js";
@@ -1019,4 +1020,43 @@ test("pack numbered dest identity drops leftover Close 004 last-frame without le
     else process.env.RELAY_WORKSPACE_ROOT = previous;
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("live analysis dest identity drops leftover Close 004 last-frame", () => {
+  const report = analyzeCombineEvidenceJobs("dest-004", [
+    {
+      id: "4b93702b",
+      status: "ok",
+      action: "observe",
+      frames: [
+        { path: "frames/003.png", caption: "Observe", capturedAt: 1 },
+        { path: "frames/004.png", caption: "after · Run saved Test", capturedAt: 2 },
+      ],
+      artifacts: [
+        {
+          kind: "capture-review",
+          capturedAt: 1,
+          data: {
+            caption: "Observe",
+            framePath: "frames/003.png",
+            phase: CAPTURE_REVIEW_DEST_PHASE,
+            policy: "fast",
+          },
+        },
+        {
+          kind: "capture-review",
+          capturedAt: 2,
+          data: { caption: "Close", framePath: "frames/004.png" },
+        },
+      ],
+    } as unknown as TestJob,
+  ]);
+  assert.deepEqual(
+    report.cases[0]?.frames.map((frame) => frame.framePath),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    report.cases[0]?.frames.some((frame) => frame.framePath === "frames/004.png"),
+    false,
+  );
 });
