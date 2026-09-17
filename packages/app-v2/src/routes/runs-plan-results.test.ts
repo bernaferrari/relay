@@ -19,6 +19,29 @@ function run(
 }
 
 describe("Plan Result rows", () => {
+  it("does not retain a representative pass while another Run is still active", () => {
+    const rows = collapsePlanResultRows([
+      run({
+        id: "done",
+        title: "Home",
+        batchId: "active-plan",
+        phase: "completed",
+        outcome: "passed",
+        queuedAt: 1,
+      }),
+      run({
+        id: "active",
+        title: "Settings",
+        batchId: "active-plan",
+        phase: "running",
+        queuedAt: 2,
+      }),
+    ]);
+    expect(rows[0]?.phase).toBe("running");
+    expect(rows[0]?.outcome).toBeUndefined();
+    expect(planResultListCause(rows[0]!)).toBe("In progress");
+  });
+
   it("collapses Run Across cells onto one Plan Result that opens the grid", () => {
     const upload = run({
       id: "run-upload",

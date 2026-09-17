@@ -448,6 +448,34 @@ describe("Tests workspace", () => {
 });
 
 describe("Runs workspace", () => {
+  it("keeps the whole Plan outcome when searching for one successful Test", async () => {
+    const planRuns = [
+      productRun({
+        id: "ok",
+        title: "Morning QA · Open home",
+        testName: "Open home",
+        batchId: "mixed",
+        phase: "completed",
+        outcome: "passed",
+        queuedAt: now - 1000,
+      }),
+      productRun({
+        id: "failed",
+        title: "Morning QA · Settings",
+        testName: "Settings",
+        batchId: "mixed",
+        phase: "failed",
+        outcome: "harness-failure",
+        queuedAt: now - 900,
+      }),
+    ];
+    await render("/runs?q=Open%20home", catalog({ listRuns: async () => planRuns }));
+    const row = document.querySelector('a[href="/batches/mixed"]');
+    expect(row?.textContent).toContain("Could not complete");
+    expect(row?.textContent).toContain("2 Tests");
+    expect(row?.textContent).not.toContain("Passed");
+  });
+
   it("uses the cursor-following catalog before calling history complete", async () => {
     const listRuns = vi.fn(async () => runs.slice(0, 1));
     const listRunsComplete = vi.fn(async () => runs);

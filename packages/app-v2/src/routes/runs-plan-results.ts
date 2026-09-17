@@ -2,6 +2,13 @@ import type { ProductRunPhase, ProductRunSummary } from "@relay/product/catalog"
 
 /** One Results row per Plan grid; standalone Test Runs stay addressable. */
 export function collapsePlanResultRows(runs: readonly ProductRunSummary[]): ProductRunSummary[] {
+  const groups = new Map<string, ProductRunSummary[]>();
+  for (const run of runs) {
+    if (!run.batchId) continue;
+    const group = groups.get(run.batchId) ?? [];
+    group.push(run);
+    groups.set(run.batchId, group);
+  }
   const seen = new Set<string>();
   const rows: ProductRunSummary[] = [];
   for (const run of runs) {
@@ -11,12 +18,7 @@ export function collapsePlanResultRows(runs: readonly ProductRunSummary[]): Prod
     }
     if (seen.has(run.batchId)) continue;
     seen.add(run.batchId);
-    rows.push(
-      planResultRow(
-        run,
-        runs.filter((item) => item.batchId === run.batchId),
-      ),
-    );
+    rows.push(planResultRow(run, groups.get(run.batchId)!));
   }
   return rows;
 }
@@ -38,7 +40,7 @@ function planResultRow(
     ...representative,
     title: planResultListTitle(representative),
     phase,
-    ...(outcome ? { outcome } : {}),
+    outcome,
     caseCount: count,
     ...(finishedAt === undefined ? {} : { finishedAt }),
     ...(startedAt === undefined ? {} : { startedAt }),

@@ -72,21 +72,31 @@ export function RunsPage() {
             .toLocaleLowerCase()
             .includes(deferredQuery)),
     );
-    if (view === "latest") return collapsePlanResultRows(latestRuns(searched));
-    if (view === "failed") {
-      return collapsePlanResultRows(searched.filter((run) => run.phase === "failed"));
-    }
-    if (view === "needs-review") {
-      return collapsePlanResultRows(
-        searched.filter((run) => run.review?.status === "pending" || run.outcome === "uncertain"),
-      );
-    }
-    if (view === "active") {
-      return collapsePlanResultRows(
-        searched.filter((run) => run.phase === "queued" || run.phase === "running"),
-      );
-    }
-    return collapsePlanResultRows(searched);
+    // Filters select Results, but never discard the sibling Runs needed to
+    // describe a Plan accurately (including other devices and pending reviews).
+    const matching =
+      view === "latest"
+        ? latestRuns(searched)
+        : searched.filter((run) => {
+            if (view === "failed") return run.phase === "failed";
+            if (view === "needs-review")
+              return run.review?.status === "pending" || run.outcome === "uncertain";
+            if (view === "active") return run.phase === "queued" || run.phase === "running";
+            return true;
+          });
+    const selected = new Set(
+      matching.map((run) => (run.batchId ? `plan:${run.batchId}` : `run:${run.id}`)),
+    );
+    const rows = new Map(
+      collapsePlanResultRows(runs.data ?? []).map((run) => [
+        run.batchId ? `plan:${run.batchId}` : `run:${run.id}`,
+        run,
+      ]),
+    );
+    return [...selected].flatMap((key) => {
+      const row = rows.get(key);
+      return row ? [row] : [];
+    });
   }, [app, deferredQuery, runs.data, testId, view]);
   const returnFocus = useCollectionReturnFocus("relay:focus:/runs", visibleRuns, [
     "/runs/",
