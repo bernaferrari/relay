@@ -48,9 +48,18 @@
 # model-iterate, and plugins overlay (do not add Gmail/Drive) do not
 # cover. Heavy GQA-031/057 stay S10. Similar sources/news/slack/plugins
 # names do not cover. Leftover dest skip is only GQA-004/040 capture-view.
+# RC-32 S10 Heavy multi-agent packets stay unbound: explicit test-action
+# evidence-needed (Heavy tool+web TAP + Agents-working sequence,
+# Heavy Latest news TAP + note-taker/sources TAP, Heavy investment TAP
+# + agents chrome). YAML sources/news unrecorded, leftover 3*5
+# extract-15 (Search the web absent), inspect-only Expert / Heavy sheet
+# / model-iterate, plugins overlay (do not add Gmail/Drive), finance
+# dest-end (do not tap Add), orig 50 Heavy 5-image, and S09 single-agent
+# Slack/news do not cover. Similar heavy/news/slack/finance/plugins
+# names do not cover. Leftover dest skip is only GQA-004/040 capture-view.
 schemaVersion: 1
 id: grok-qa-workbook
-revision: 11
+revision: 12
 reviewedAt: "2026-09-16"
 source:
   workbook: grok-qa-graph.xlsx
@@ -860,8 +869,20 @@ originals:
     evidencePacket: sequence
     queue: "slow-output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: sequence
+        id: heavy-agents-working
+        note: "Named live-output frames: Heavy selected, tool+web prompt sent (latest news in AI + Slack DMs), Agents working → 4 agents, magnifier/brain notes with actions + tools, finishes with no timeout. Human reviews original criterion. Leftover 3*5 extract-15 / Search the web absent / inspect-only Expert or Heavy sheet / model-iterate / YAML sources/news unrecorded / plugins overlay (do not add Gmail/Drive) / S09 GQA-030 single-agent Slack is not this sequence. Orig 50 Heavy 5-image UNRECORDED is S11, not this original. Finance dest-end (do not tap Add) is not this original. Capture-view leftover skip is only GQA-004/040. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
+      - kind: receipt
+        id: tap-send-heavy-tool-web
+        note: "Select Heavy and type+send a tool+web Slack/news prompt actually executed (test-action). Leftover Fast-checked / inspect-only model-iterate / Fast/Expert SuperGrok pricing TAP / leftover 3*5 extract-15 are not this original. S09 GQA-030 Expert/Fast Slack is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: receipt
+        id: tap-heavy-notes-magnifier
+        note: "TAP magnifier/brain to open notes with actions + tools actually executed (test-action). Inspect-only Heavy sheet / leftover plugins overlay without notes TAP is not this original. S09 thinking-trace expand is GQA-030, not this original."
     gates:
       - "Heavy entitlement. Investment prompt is a Heavy vehicle, not a separate finance product test."
+      - "Leftover 3*5 extract-15 / Search the web absent / inspect-only Expert or Heavy sheet / model-iterate / YAML sources/news unrecorded / plugins overlay (do not add Gmail/Drive) / S09 GQA-030 single-agent Slack is not this original. Causal TAP must select Heavy and send the tool+web prompt; TAP magnifier/brain opens notes. Orig 50 Heavy 5-image stays S11. Finance dest-end (do not tap Add) is not this original."
     status: unbound
     bindings: []
   - id: 32
@@ -1406,8 +1427,20 @@ originals:
     evidencePacket: sequence
     queue: "slow-output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: sequence
+        id: heavy-latest-news-notes
+        note: "Named live-output frames: Heavy selected, Latest news sent; before the final answer, note-taker headers during the run; after, same sources rail as S09; at least 2 follow-ups on the news variant. Do not re-spec the sources rail. Human reviews original criterion. Leftover 3*5 extract-15 / YAML news unrecorded / think-harder YAML seed / inspect-only Expert sheet / S09 GQA-056 single-agent Latest news is not this sequence. Capture-view leftover skip is only GQA-004/040. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
+      - kind: receipt
+        id: tap-send-heavy-latest-news
+        note: "Select Heavy and type+send Latest news actually executed (test-action). Leftover 3*5 extract-15 / YAML news unrecorded / S09 GQA-056 Fast/Expert Latest news is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: receipt
+        id: tap-heavy-sources-rail
+        note: "TAP sources to open the same rail as original 11 actually executed (test-action). Do not re-spec. Leftover toolbar dest-end without a sources TAP is not this original. S09 GQA-056 is not this original."
     gates:
       - Do not re-spec the sources rail.
+      - "Leftover 3*5 extract-15 / YAML news unrecorded / think-harder YAML seed / inspect-only Expert sheet / S09 GQA-056 single-agent Latest news is not this original. Causal TAP must select Heavy, send Latest news, and open the sources rail. Do not re-spec the sources rail."
     status: unbound
     bindings: []
   - id: 58
@@ -1420,7 +1453,16 @@ originals:
     evidencePacket: sequence
     queue: "slow-output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: sequence
+        id: heavy-investment-agents
+        note: "Named live-output frames: Heavy selected, GOOGL vs TSLA investment prompt sent; Agents working → 4 agents; notes include actions and tools; final answer without timeout. Investment prompt is the Heavy vehicle, not a separate finance product test. Human reviews original criterion. Leftover finance dest-end expect-set (do not tap Add) / inspect-only Heavy sheet / orig 50 Heavy 5-image UNRECORDED / leftover 3*5 extract-15 is not this sequence. Capture-view leftover skip is only GQA-004/040. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
+      - kind: receipt
+        id: tap-send-heavy-investment
+        note: "Select Heavy and type+send GOOGL vs TSLA investment prompt actually executed (test-action). Leftover finance dest-end / inspect-only model-iterate / Fast/Expert SuperGrok pricing TAP is not this original. Capture-view leftover skip is only GQA-004/040."
     gates:
       - Investment prompt is the Heavy vehicle, not a separate finance product test.
+      - "Leftover finance dest-end (do not tap Add) / inspect-only Heavy sheet / orig 50 Heavy 5-image UNRECORDED / leftover 3*5 extract-15 is not this original. Causal TAP must select Heavy and send the investment prompt. Notes with actions and tools must appear in the sequence. Orig 50 stays S11."
     status: unbound
     bindings: []

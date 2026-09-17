@@ -8,6 +8,7 @@ import {
   coverByModelIterateOrPricingTap,
   coverByToolbarExpectSetOrShareToast,
   coverByUnrecordedSourcesNewsOrPlugins,
+  coverByUnrecordedHeavyOrFinanceDestEnd,
   coverByRc23DestEnd,
   destEndViewPacketMayLeftoverSkip,
   evaluateWorkbookCoverage,
@@ -34,6 +35,8 @@ import {
   WORKBOOK_CHROME_ORIGINAL_IDS,
   WORKBOOK_TOOLS_FAMILY_ID,
   WORKBOOK_TOOLS_ORIGINAL_IDS,
+  WORKBOOK_HEAVY_FAMILY_ID,
+  WORKBOOK_HEAVY_ORIGINAL_IDS,
   WORKBOOK_MODELS_FAMILY_ID,
   WORKBOOK_MODELS_ORIGINAL_IDS,
   WORKBOOK_OUTPUT_FAMILY_ID,
@@ -516,6 +519,33 @@ test("capture-view leftover skip is only GQA-004 attach and GQA-040 Settings inv
   assert.equal(
     workbookOriginalMayLeftoverSkip({
       id: 56,
+      evidencePacket: "sequence",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 31, evidencePacket: "sequence" }), false);
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 57, evidencePacket: "sequence" }), false);
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 58, evidencePacket: "sequence" }), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 31,
+      evidencePacket: "sequence",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 57,
+      evidencePacket: "sequence",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 58,
       evidencePacket: "sequence",
       requirementAction: "test-action",
     }),
@@ -2383,6 +2413,340 @@ test("S09 packets stay unbound and need sources-rail, Slack tools, and Latest ne
     suggestedExecutionQueueForOriginal({
       id: 56,
       family: WORKBOOK_TOOLS_FAMILY_ID,
+      evidencePacket: "sequence",
+    }),
+    "live-output",
+  );
+});
+
+test("S10 packets stay unbound and need Heavy agents, Heavy Latest news, and Heavy investment TAP evidence", () => {
+  assert.deepEqual([...WORKBOOK_HEAVY_ORIGINAL_IDS], [31, 57, 58]);
+  assert.deepEqual(requiredEvidenceNeededKinds("sequence"), ["sequence"]);
+  const missing = original({
+    id: 31,
+    name: "Heavy multi-agent",
+    family: WORKBOOK_HEAVY_FAMILY_ID,
+    evidencePacket: "sequence",
+    status: "unbound",
+  });
+  assert.match(
+    workbookEvidenceNeededError(missing) ?? "",
+    /S10 must be test-action|S10 needs explicit evidence-needed|sequence evidence/u,
+  );
+  const leftoverHeavySkip = original({
+    id: 31,
+    name: "Heavy multi-agent",
+    family: WORKBOOK_HEAVY_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "leftover-3x5-send",
+        note: "Leftover 3*5 extract-15. Search the web absent. No Heavy TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Heavy chrome: Agents working → 4 agents. Magnifier/brain → notes with actions + tools. Finishes, no timeout.",
+  });
+  assert.match(workbookEvidenceNeededError(leftoverHeavySkip) ?? "", /sequence evidence/u);
+  assert.equal(coverByUnrecordedHeavyOrFinanceDestEnd(leftoverHeavySkip), false);
+  const leftoverHeavySendOnly = original({
+    id: 31,
+    name: "Heavy multi-agent",
+    family: WORKBOOK_HEAVY_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "leftover-heavy-sheet",
+        note: "Inspect-only Heavy sheet. No notes TAP.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-heavy-tool-web",
+        note: "Send Slack/news. No magnifier TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Heavy chrome: Agents working → 4 agents. Magnifier/brain → notes with actions + tools. Finishes, no timeout.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverHeavySendOnly) ?? "",
+    /send TAP and notes TAP receipts/u,
+  );
+  const heavy = original({
+    id: 31,
+    name: "Heavy multi-agent",
+    family: WORKBOOK_HEAVY_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "heavy-agents-working",
+        note: "Agents working → 4 agents. leftover 3*5 / YAML sources / S09 Slack is not this sequence.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-heavy-tool-web",
+        note: "Select Heavy and send a tool+web prompt actually executed.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-heavy-notes-magnifier",
+        note: "TAP magnifier/brain notes actually executed.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Heavy chrome: Agents working → 4 agents. Magnifier/brain → notes with actions + tools. Finishes, no timeout.",
+  });
+  assert.equal(workbookEvidenceNeededError(heavy), undefined);
+  assert.equal(workbookEvidencePolicyError(heavy), undefined);
+  assert.equal(originalIsCovered(heavy), false);
+  assert.equal(coverByUnrecordedHeavyOrFinanceDestEnd(heavy), false);
+  const heavyObligation = workbookOriginalObligationIdentity(heavy);
+  assert.equal(heavyObligation.requirementId, "GQA-031");
+  assert.equal(heavyObligation.caption, "Heavy multi-agent");
+  assert.match(heavyObligation.criteria, /Agents working/u);
+  const leftoverYamlNews = original({
+    id: 57,
+    name: "Latest news (Heavy notes)",
+    family: WORKBOOK_HEAVY_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "yaml-news-unrecorded",
+        note: "YAML news unrecorded. Think harder YAML seed. S09 GQA-056. No sources TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Before the final answer: note-taker headers during the run. After: same sources rail as S09. At least 2 follow-ups on the news variant.",
+  });
+  assert.match(workbookEvidenceNeededError(leftoverYamlNews) ?? "", /sequence evidence/u);
+  const leftoverHeavyNewsSendOnly = original({
+    id: 57,
+    name: "Latest news (Heavy notes)",
+    family: WORKBOOK_HEAVY_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "heavy-latest-news-notes",
+        note: "Latest news sent. No sources TAP.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-heavy-latest-news",
+        note: "Send Latest news. No sources TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Before the final answer: note-taker headers during the run. After: same sources rail as S09. At least 2 follow-ups on the news variant.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverHeavyNewsSendOnly) ?? "",
+    /send TAP and sources TAP receipts/u,
+  );
+  const heavyNews = original({
+    id: 57,
+    name: "Latest news (Heavy notes)",
+    family: WORKBOOK_HEAVY_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "heavy-latest-news-notes",
+        note: "Note-taker headers then same sources rail. leftover YAML news / S09 GQA-056 is not this sequence.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-heavy-latest-news",
+        note: "Select Heavy and send Latest news actually executed.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-heavy-sources-rail",
+        note: "TAP sources to open the rail actually executed.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Before the final answer: note-taker headers during the run. After: same sources rail as S09. At least 2 follow-ups on the news variant.",
+  });
+  assert.equal(workbookEvidenceNeededError(heavyNews), undefined);
+  assert.equal(workbookEvidencePolicyError(heavyNews), undefined);
+  assert.equal(originalIsCovered(heavyNews), false);
+  const leftoverFinance = original({
+    id: 58,
+    name: "Heavy investment GOOGL vs TSLA",
+    family: WORKBOOK_HEAVY_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "leftover-finance-dest-end",
+        note: "Leftover finance dest-end. Do not tap Add. No Heavy send TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "The heavy UI with multiple agents running should show. Agents working → 4 agents. Notes include actions and tools. Final answer without timeout.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverFinance) ?? "",
+    /sequence evidence|finance dest-end/u,
+  );
+  const investment = original({
+    id: 58,
+    name: "Heavy investment GOOGL vs TSLA",
+    family: WORKBOOK_HEAVY_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "heavy-investment-agents",
+        note: "Agents working → 4 agents. leftover finance dest-end / orig 50 Heavy 5-image is not this sequence.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-heavy-investment",
+        note: "Select Heavy and send GOOGL vs TSLA actually executed.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "The heavy UI with multiple agents running should show. Agents working → 4 agents. Notes include actions and tools. Final answer without timeout.",
+  });
+  assert.equal(workbookEvidenceNeededError(investment), undefined);
+  assert.equal(workbookEvidencePolicyError(investment), undefined);
+  assert.equal(originalIsCovered(investment), false);
+  const investmentObligation = workbookOriginalObligationIdentity(investment);
+  assert.equal(investmentObligation.requirementId, "GQA-058");
+  assert.match(investmentObligation.criteria, /Agents working/u);
+  const report = evaluateWorkbookCoverage(fixture({ originals: [heavy, heavyNews, investment] }), [
+    { id: "test-grok-web-sources", name: "YAML sources unrecorded" },
+    { id: "test-grok-web-news", name: "YAML news unrecorded" },
+    { id: "test-grok-web-signed-in-plugins", name: "Open Plugins" },
+    { id: "test-grok-web-signed-in-3x5", name: "Ask 3*5" },
+    { id: "test-grok-web-signed-in-model-iterate", name: "Inspect model choices" },
+    { id: "test-grok-web-wait-think-harder", name: "Think harder response" },
+    { id: "test-grok-web-signed-in-finance", name: "Finance card" },
+    { id: "test-grok-android-unrecorded-heavy-image-5", name: "UNRECORDED 5-image Heavy" },
+  ]);
+  assert.deepEqual(report.coveredOriginalIds, []);
+  assert.equal(report.unboundOriginalIds.includes(31), true);
+  assert.equal(report.unboundOriginalIds.includes(57), true);
+  assert.equal(report.unboundOriginalIds.includes(58), true);
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 31 && row.testId === "test-grok-web-signed-in-plugins",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 31 && row.testId === "test-grok-web-signed-in-3x5",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 31 && row.testId === "test-grok-web-signed-in-model-iterate",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 31 && row.testId === "test-grok-android-unrecorded-heavy-image-5",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 57 && row.testId === "test-grok-web-news",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 57 && row.testId === "test-grok-web-wait-think-harder",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 58 && row.testId === "test-grok-web-signed-in-finance",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 58 && row.testId === "test-grok-android-unrecorded-heavy-image-5",
+    ),
+    true,
+  );
+  assert.equal(coverByFindingSimilarlyNamedTest(heavy, []), false);
+  assert.equal(coverByRc23DestEnd({ id: 31 }, "models"), false);
+  assert.equal(coverByRc23DestEnd({ id: 57 }, "composer-focus"), false);
+  assert.equal(coverByRc23DestEnd({ id: 58 }, "home-chrome"), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 31,
+      evidencePacket: "sequence",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 57,
+      evidencePacket: "sequence",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 58,
+      evidencePacket: "sequence",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 31, evidencePacket: "sequence" }), false);
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 31,
+      family: WORKBOOK_HEAVY_FAMILY_ID,
+      evidencePacket: "sequence",
+    }),
+    "live-output",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 57,
+      family: WORKBOOK_HEAVY_FAMILY_ID,
+      evidencePacket: "sequence",
+    }),
+    "live-output",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 58,
+      family: WORKBOOK_HEAVY_FAMILY_ID,
       evidencePacket: "sequence",
     }),
     "live-output",
