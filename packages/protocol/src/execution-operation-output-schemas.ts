@@ -725,6 +725,17 @@ const runSummarySchema = jobSummarySchema
     writtenAt: z.number(),
     artifactCount: z.number(),
     artifactBytes: z.number(),
+    captureSummary: z
+      .object({
+        captured: z.number(),
+        missing: z.number(),
+        pending: z.number(),
+        accepted: z.number(),
+        issue: z.number(),
+        needMoreEvidence: z.number(),
+      })
+      .strict()
+      .optional(),
     storageBytes: z.number(),
     pinned: z.boolean(),
     retentionClass: z.enum(["standard", "protected"]),

@@ -12,8 +12,8 @@ import {
 } from "react";
 
 export const RUN_HISTORY_VIRTUAL_THRESHOLD = 80;
-export const RUN_HISTORY_ROW_HEIGHT = 77;
-export const RUN_HISTORY_COMPACT_ROW_HEIGHT = 77;
+export const RUN_HISTORY_ROW_HEIGHT = 88;
+export const RUN_HISTORY_COMPACT_ROW_HEIGHT = 88;
 const OVERSCAN = 5;
 
 export type RunHistoryRowInteraction = {
@@ -87,11 +87,12 @@ function WindowedRunHistory({
     return () => query.removeEventListener("change", update);
   }, []);
 
+  const rowIdentity = runs.map((run) => run.id).join("\n");
   useEffect(() => {
     setActiveIndex(0);
     const viewport = viewportRef.current;
     if (viewport) viewport.scrollTop = 0;
-  }, [runs]);
+  }, [rowIdentity]);
 
   useEffect(() => {
     const viewport = viewportRef.current;

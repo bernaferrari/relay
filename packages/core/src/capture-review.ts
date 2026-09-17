@@ -1,13 +1,12 @@
 import {
   actorKindFromId,
-  resolveCaptureReviewQueue,
   type ActorKind,
   type CaptureReviewAction,
   type CaptureReviewDecision,
-  type CaptureReviewPlannedSlot,
   type CaptureReviewQueue,
 } from "@relay/protocol";
-import { executionIntentPlannedSlots } from "./run-test-step-evidence.js";
+import { captureReviewQueueForRun, type CaptureReviewRun } from "./capture-review-queue.js";
+export { captureReviewQueueForRun } from "./capture-review-queue.js";
 import {
   persistPersistedRun,
   persistedRunBelongsToStore,
@@ -38,30 +37,6 @@ export type CaptureReviewResult = {
   queue: CaptureReviewQueue;
   decision: CaptureReviewDecision;
 };
-
-type CaptureReviewRun = Pick<PersistedRun, "artifacts" | "captureReviews"> & {
-  recipeSnapshot?: {
-    steps?: readonly unknown[];
-    recipes?: Record<string, { steps?: readonly unknown[] }>;
-  };
-  recipeGraph?: Record<string, { steps?: readonly unknown[] }>;
-};
-
-function plannedSlotsForRun(
-  run: CaptureReviewRun,
-): readonly CaptureReviewPlannedSlot[] | undefined {
-  return executionIntentPlannedSlots(run.artifacts ?? []);
-}
-
-export function captureReviewQueueForRun(run: CaptureReviewRun): CaptureReviewQueue {
-  return resolveCaptureReviewQueue({
-    artifacts: run.artifacts,
-    decisions: run.captureReviews,
-    recipeSteps: run.recipeSnapshot?.steps,
-    recipes: run.recipeGraph ?? run.recipeSnapshot?.recipes,
-    plannedSlots: plannedSlotsForRun(run),
-  });
-}
 
 export function assertHumanCaptureReviewActor(
   actor: { id: string; kind: ActorKind },

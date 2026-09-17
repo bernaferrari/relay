@@ -1,3 +1,4 @@
+import { captureReviewQueueForRun, type CaptureReviewRun } from "./capture-review-queue.js";
 import { runTestSource } from "./run-test-source.js";
 import { DatabaseSync } from "node:sqlite";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
@@ -79,13 +80,18 @@ function database(root: string): DatabaseSync {
   }
   if (!columns.some((column) => column.name === "source_test_json"))
     db.exec("ALTER TABLE runs ADD COLUMN source_test_json TEXT");
-  db.exec("PRAGMA user_version=3");
+  if (!columns.some((column) => column.name === "capture_summary_json"))
+    db.exec("ALTER TABLE runs ADD COLUMN capture_summary_json TEXT");
+  db.exec("PRAGMA user_version=4");
   return db;
 }
 
 function rowToRecord(row: Record<string, unknown>): CatalogRecord {
   return {
     ...(row.source_test_json ? { sourceTest: JSON.parse(String(row.source_test_json)) } : {}),
+    ...(row.capture_summary_json
+      ? { captureSummary: JSON.parse(String(row.capture_summary_json)) }
+      : {}),
     id: String(row.id),
     dir: String(row.dir),
     action: String(row.action),
@@ -208,8 +214,8 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
       INSERT INTO runs (
         id, dir, action, title, status, outcome, review_json, platform, serial, batch_id,
         queued_at, started_at, finished_at, duration_ms, written_at, frame_count,
-        artifact_count, artifact_bytes, storage_bytes, evidence_complete, source_revision_json, source_test_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        artifact_count, artifact_bytes, storage_bytes, evidence_complete, source_revision_json, source_test_json, capture_summary_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         dir=excluded.dir, action=excluded.action, title=excluded.title, status=excluded.status,
         outcome=excluded.outcome, review_json=excluded.review_json, platform=excluded.platform, serial=excluded.serial,
@@ -218,7 +224,7 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
         written_at=excluded.written_at, frame_count=excluded.frame_count,
         artifact_count=excluded.artifact_count, artifact_bytes=excluded.artifact_bytes,
         storage_bytes=excluded.storage_bytes, evidence_complete=excluded.evidence_complete,
-        source_revision_json=excluded.source_revision_json, source_test_json=excluded.source_test_json
+        source_revision_json=excluded.source_revision_json, source_test_json=excluded.source_test_json, capture_summary_json=excluded.capture_summary_json
     `).run(
       String(run.id),
       String(run.dir),
@@ -242,6 +248,7 @@ export async function indexRun(root: string, run: Record<string, unknown>): Prom
       evidence?.finishedAt ? 1 : 0,
       run.sourceRevision == null ? null : JSON.stringify(run.sourceRevision),
       JSON.stringify(runTestSource(run)) ?? null,
+      JSON.stringify(captureReviewQueueForRun(run as CaptureReviewRun).summary),
     );
     db.prepare("DELETE FROM surface_comparisons WHERE run_id=?").run(String(run.id));
     const insertSurfaceComparison = db.prepare(`
@@ -325,11 +332,11 @@ export async function catalogSummaryPage(
 ): Promise<CatalogSummaryPage> {
   await mkdir(root, { recursive: true });
   let db = database(root);
-  if (!db.prepare("SELECT value FROM metadata WHERE key='test-source-v1'").get()) {
+  if (!db.prepare("SELECT value FROM metadata WHERE key='capture-summary-v1'").get()) {
     db.close();
     await rebuildRunCatalog(root, { preserveExisting: true });
     db = database(root);
-    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('test-source-v1','1')").run();
+    db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('capture-summary-v1','1')").run();
   }
   try {
     const filter = appMapId

@@ -298,6 +298,7 @@ export type TraceStepDto = {
 };
 
 export type RunSummary = JobSummary & {
+  captureSummary?: import("./capture-review.js").CaptureReviewSummary;
   writtenAt: number;
   artifactCount: number;
   artifactBytes: number;

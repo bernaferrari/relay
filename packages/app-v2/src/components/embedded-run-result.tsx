@@ -15,7 +15,9 @@ export function EmbeddedRunResult({ report }: { report: ProductRunReportOverview
   const inspectionUnavailable = /screen-inspection-unavailable:/iu.test(diagnostic);
   const mismatch = !inspectionUnavailable && /expect-screen:/iu.test(diagnostic);
   const title = passed
-    ? "Test passed"
+    ? report.captureReview?.items.length
+      ? "Run completed"
+      : "Test passed"
     : inspectionUnavailable
       ? "Screen inspection unavailable"
       : mismatch

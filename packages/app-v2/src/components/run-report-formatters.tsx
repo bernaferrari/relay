@@ -62,8 +62,10 @@ export function highlightJson(json: string): ReactNode[] {
 export function outcomeSentence(
   outcome: Awaited<ReturnType<RunProductService["getReport"]>>["outcome"],
   target: string,
+  hasReviewScreenshots = false,
 ): string {
-  if (outcome === "passed") return `This Test passed on ${target}.`;
+  if (outcome === "passed")
+    return hasReviewScreenshots ? `Run completed on ${target}.` : `This Test passed on ${target}.`;
   if (outcome === "product-failure") return `This Test found a product problem on ${target}.`;
   if (outcome === "harness-failure") return `Relay could not complete this Test on ${target}.`;
   if (outcome === "uncertain") return `Relay could not confirm the outcome on ${target}.`;

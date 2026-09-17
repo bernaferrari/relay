@@ -448,6 +448,31 @@ describe("Tests workspace", () => {
 });
 
 describe("Runs workspace", () => {
+  it("shows completed collection separately from screenshots waiting for review", async () => {
+    await render(
+      "/runs?view=needs-review",
+      catalog({
+        listRuns: async () => [
+          {
+            ...passedRun,
+            captureSummary: {
+              captured: 8,
+              pending: 8,
+              accepted: 0,
+              missing: 0,
+              issue: 0,
+              needMoreEvidence: 0,
+            },
+          },
+        ],
+      }),
+    );
+    const row = document.querySelector('a[href="/runs/run-passed-internal"]');
+    expect(row?.textContent).toContain("Completed");
+    expect(row?.textContent).toContain("8 to review");
+    expect(row?.textContent).not.toContain("Passed");
+  });
+
   it("keeps the whole Plan outcome when searching for one successful Test", async () => {
     const planRuns = [
       productRun({

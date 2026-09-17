@@ -1,3 +1,4 @@
+import { catalogQueryKeys } from "../data/catalog-queries";
 /** @jsxImportSource react */
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -88,9 +89,12 @@ export function PlanCaptureReviewSection({
       return runAcrossService.reviewCaptures(batchId, input);
     },
     onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: ["run-across", "batch", batchId, "capture-review"],
-      }),
+      Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["run-across", "batch", batchId, "capture-review"],
+        }),
+        queryClient.invalidateQueries({ queryKey: catalogQueryKeys.runs }),
+      ]),
   });
   const queue = captures.data;
   const filter = useMemo(

@@ -41,6 +41,7 @@ function planResultRow(
     title: planResultListTitle(representative),
     phase,
     outcome,
+    captureSummary: combineCaptureSummaries(siblings),
     caseCount: count,
     ...(finishedAt === undefined ? {} : { finishedAt }),
     ...(startedAt === undefined ? {} : { startedAt }),
@@ -97,4 +98,35 @@ function newest(values: readonly (number | undefined)[]): number | undefined {
 function oldest(values: readonly (number | undefined)[]): number | undefined {
   const present = values.filter((value): value is number => typeof value === "number");
   return present.length ? Math.min(...present) : undefined;
+}
+
+function combineCaptureSummaries(
+  runs: readonly ProductRunSummary[],
+): ProductRunSummary["captureSummary"] {
+  if (runs.some((run) => !run.captureSummary)) return undefined;
+  const total = { captured: 0, missing: 0, pending: 0, accepted: 0, issue: 0, needMoreEvidence: 0 };
+  for (const run of runs) {
+    for (const key of Object.keys(total) as (keyof typeof total)[])
+      total[key] += run.captureSummary![key];
+  }
+  return total;
+}
+
+export function screenshotReviewLabel(
+  summary: ProductRunSummary["captureSummary"],
+): string | undefined {
+  if (!summary || summary.captured + summary.missing === 0) return undefined;
+  const parts: string[] = [];
+  if (summary.pending) parts.push(`${summary.pending} to review`);
+  if (summary.missing) parts.push(`${summary.missing} missing`);
+  if (summary.issue) parts.push(`${summary.issue} ${summary.issue === 1 ? "issue" : "issues"}`);
+  if (summary.needMoreEvidence) parts.push(`${summary.needMoreEvidence} need more evidence`);
+  return parts.length ? parts.join(" · ") : `${summary.accepted} approved`;
+}
+
+export function hasScreenshotReviewAttention(run: ProductRunSummary): boolean {
+  const summary = run.captureSummary;
+  return Boolean(
+    summary && (summary.pending || summary.missing || summary.issue || summary.needMoreEvidence),
+  );
 }

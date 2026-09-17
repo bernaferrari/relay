@@ -120,6 +120,7 @@ export type JobSummaryDto = {
 };
 
 export type RunSummaryDto = JobSummaryDto & {
+  captureSummary?: import("./capture-review.js").CaptureReviewSummary;
   writtenAt: number;
   artifactCount: number;
   artifactBytes: number;

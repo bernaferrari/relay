@@ -1,3 +1,4 @@
+import { catalogQueryKeys } from "../data/catalog-queries";
 import { initialRunStep } from "../data/run-timeline-selection";
 import { PageHeader, WorkbenchPage } from "../components/page-layout";
 import { RawEvidenceDisclosure } from "./raw-evidence-disclosure";
@@ -665,6 +666,7 @@ function RunReport({
               runService.reviewCapture
                 ? async (input) => {
                     await runService.reviewCapture?.({ runId: report.runId, ...input });
+                    void queryClient.invalidateQueries({ queryKey: catalogQueryKeys.runs });
                     await queryClient.invalidateQueries({
                       queryKey: runQueryKeys.report(report.runId),
                     });
@@ -738,7 +740,7 @@ function RunReport({
         title={report.title}
         description={
           <>
-            {outcomeSentence(report.outcome, target)}
+            {outcomeSentence(report.outcome, target, Boolean(report.captureReview?.items.length))}
             {report.durationMs !== undefined ? (
               <span className="whitespace-nowrap tabular-nums">
                 <span aria-hidden="true" className="mx-2">

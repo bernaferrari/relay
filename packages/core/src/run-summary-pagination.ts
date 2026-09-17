@@ -1,3 +1,4 @@
+import { captureReviewQueueForRun } from "./capture-review-queue.js";
 import { runTestSource } from "./run-test-source.js";
 import type { RunSummary } from "@relay/protocol";
 import { catalogSummaryPage, rebuildRunCatalog } from "./run-catalog.js";
@@ -59,6 +60,7 @@ export type PersistedRunSummaryPageInput = RunSummaryPageInput & {
 function persistedSummary(run: PersistedRun): RunSummary {
   return {
     ...(runTestSource(run) ? { sourceTest: runTestSource(run) } : {}),
+    captureSummary: captureReviewQueueForRun(run).summary,
     id: run.id,
     action: run.action,
     ...(run.title ? { title: run.title } : {}),

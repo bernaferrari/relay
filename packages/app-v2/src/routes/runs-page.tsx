@@ -14,7 +14,12 @@ import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
-import { collapsePlanResultRows, planResultListCause } from "./runs-plan-results";
+import { Camera } from "lucide-react";
+import {
+  collapsePlanResultRows,
+  screenshotReviewLabel,
+  hasScreenshotReviewAttention,
+} from "./runs-plan-results";
 import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/runs");
@@ -80,7 +85,11 @@ export function RunsPage() {
         : searched.filter((run) => {
             if (view === "failed") return run.phase === "failed";
             if (view === "needs-review")
-              return run.review?.status === "pending" || run.outcome === "uncertain";
+              return (
+                hasScreenshotReviewAttention(run) ||
+                run.review?.status === "pending" ||
+                run.outcome === "uncertain"
+              );
             if (view === "active") return run.phase === "queued" || run.phase === "running";
             return true;
           });
@@ -255,7 +264,7 @@ function RunRow({
   const plan = Boolean(run.batchId);
   const title = plan ? run.title : (run.testName ?? run.title);
   const device = run.targetName ?? platformName(run.platform);
-  const cause = planResultListCause(run);
+  const screenshotReview = screenshotReviewLabel(run.captureSummary);
   const className = ` ${libraryRowSurface} ${libraryRowContent} grid-cols-[minmax(0,1fr)_100px]`;
   const body = (
     <>
@@ -264,14 +273,27 @@ function RunRow({
           {title}
         </strong>
         <span className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">
-          <OutcomeMark outcome={run.outcome ?? phaseOutcome(run)} />
-          <span className="truncate">
-            {[device, cause].filter(Boolean).join(" · ") || (plan ? "Plan Result" : "Saved Run")}
-          </span>
+          <OutcomeMark
+            outcome={
+              screenshotReview && run.phase === "completed" && run.outcome === "passed"
+                ? "completed"
+                : (run.outcome ?? phaseOutcome(run))
+            }
+          />
+          <span className="truncate">{device || (plan ? "Plan Result" : "Saved Run")}</span>
           {plan ? (
             <span className="shrink-0 font-semibold text-foreground">Plan Result</span>
           ) : null}
         </span>
+        {screenshotReview ? (
+          <span
+            className="flex items-center gap-1.5 text-xs text-muted-foreground"
+            aria-label={`Screenshots: ${screenshotReview}`}
+          >
+            <Camera className="size-3.5 shrink-0" aria-hidden="true" />
+            {screenshotReview}
+          </span>
+        ) : null}
       </span>
       <span className="grid min-w-0 justify-items-start gap-1 tabular-nums">
         <strong className="text-xs font-semibold text-foreground">

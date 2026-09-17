@@ -87,6 +87,7 @@ export type ProductRunIdentity = {
 };
 
 export type ProductRunSummary = {
+  captureSummary?: RunSummary["captureSummary"];
   id: string;
   title: string;
   action: string;
@@ -322,6 +323,7 @@ function projectRun(run: RunSummary, maps: readonly AppMap[]): ProductRunSummary
   };
   return {
     id: run.id,
+    captureSummary: run.captureSummary,
     title,
     action: run.action,
     status: run.status,

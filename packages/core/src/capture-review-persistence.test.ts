@@ -1,3 +1,4 @@
+import { catalogSummaries, rebuildRunCatalog } from "./run-catalog.js";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -34,6 +35,8 @@ test("retrying an earlier screenshot returns its exact persisted decision", asyn
       resolvedInputs: {},
       evidencePolicy: { schemaVersion: 1, sensitive: {} },
     } as unknown as TestJob);
+    await rebuildRunCatalog(root);
+    assert.equal((await catalogSummaries(root))[0]?.captureSummary?.pending, 2);
     const [a, b] = captureReviewQueueForRun(run).items;
     assert.ok(a && b);
     const input = {
@@ -43,6 +46,10 @@ test("retrying an earlier screenshot returns its exact persisted decision", asyn
     };
     const first = await reviewPersistedCapture(root, run, input);
     await reviewPersistedCapture(root, run, { ...input, captureId: b.captureId });
+    assert.equal((await catalogSummaries(root))[0]?.captureSummary?.accepted, 2);
+    await rebuildRunCatalog(root, { preserveExisting: true });
+    assert.equal((await catalogSummaries(root))[0]?.captureSummary?.pending, 0);
+    assert.equal((await catalogSummaries(root))[0]?.captureSummary?.accepted, 2);
     const retry = await reviewPersistedCapture(root, run, input);
     assert.deepEqual(retry.decision, first.decision);
     const annotated = await reviewPersistedCapture(root, run, {

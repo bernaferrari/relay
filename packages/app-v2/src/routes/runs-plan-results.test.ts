@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { ProductRunSummary } from "@relay/product/catalog";
-import { collapsePlanResultRows, planResultListCause, resultRowHref } from "./runs-plan-results";
+import {
+  collapsePlanResultRows,
+  planResultListCause,
+  resultRowHref,
+  screenshotReviewLabel,
+} from "./runs-plan-results";
 
 function run(
   input: Pick<ProductRunSummary, "id" | "title" | "phase" | "queuedAt"> &
@@ -19,6 +24,37 @@ function run(
 }
 
 describe("Plan Result rows", () => {
+  it("keeps screenshot review counts separate from successful execution", () => {
+    const captureSummary = {
+      captured: 1,
+      pending: 1,
+      accepted: 0,
+      missing: 0,
+      issue: 0,
+      needMoreEvidence: 0,
+    };
+    const items = [1, 2].map((id) =>
+      run({
+        id: String(id),
+        title: "Capture",
+        phase: "completed",
+        outcome: "passed",
+        queuedAt: id,
+        batchId: "plan",
+        captureSummary,
+      }),
+    );
+    const result = collapsePlanResultRows(items)[0]!;
+    expect(result.outcome).toBe("passed");
+    expect(screenshotReviewLabel(result.captureSummary)).toBe("2 to review");
+    expect(
+      collapsePlanResultRows([
+        ...items,
+        run({ id: "unknown", title: "Unknown", phase: "completed", queuedAt: 3, batchId: "plan" }),
+      ])[0]?.captureSummary,
+    ).toBeUndefined();
+  });
+
   it("does not retain a representative pass while another Run is still active", () => {
     const rows = collapsePlanResultRows([
       run({
