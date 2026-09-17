@@ -2,10 +2,7 @@
   "id": "rc23-screenshot-first",
   "requirementId": "rc23-screenshot-first",
   "workbookBound": 2,
-  "workbookBoundOriginalIds": [
-    4,
-    40
-  ],
+  "workbookBoundOriginalIds": [4, 40],
   "workbookUnbound": 51,
   "workbookExcluded": 5,
   "checkpointIds": [
@@ -20,11 +17,7 @@
     "models",
     "private-chat"
   ],
-  "platforms": [
-    "web",
-    "android",
-    "ios"
-  ],
+  "platforms": ["web", "android", "ios"],
   "attempt": 1,
   "counts": {
     "planned": 30,
