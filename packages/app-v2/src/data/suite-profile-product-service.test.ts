@@ -879,6 +879,69 @@ describe("suite and environment product projections", () => {
     ).resolves.toEqual({ id: "sched-1" });
   });
 
+  it("lists this Plan's schedules and keeps another Plan's run out", async () => {
+    relay.invoke.mockReset().mockImplementation(async (operation: string) => {
+      if (operation === "schedule.list") {
+        return {
+          schedules: [
+            {
+              id: "other",
+              recipeId: "",
+              combineId: "other-plan",
+              nextRunAt: 2,
+              enabled: true,
+              targetKind: "browser",
+              targetId: "browser-1",
+              platform: "browser",
+              intervalMinutes: 1_440,
+              repetitions: 1,
+              projectId: "default",
+              createdAt: 1,
+              updatedAt: 1,
+            },
+            {
+              id: "ours",
+              recipeId: "",
+              combineId: combine.id,
+              hour: 8,
+              timezone: "UTC",
+              nextRunAt: 3,
+              lastRunAt: 2,
+              lastFailureAt: 1,
+              lastFailure: "That browser is offline",
+              enabled: true,
+              targetKind: "browser",
+              targetId: "browser-1",
+              platform: "browser",
+              intervalMinutes: 1_440,
+              repetitions: 1,
+              projectId: "default",
+              createdAt: 1,
+              updatedAt: 1,
+            },
+          ],
+        };
+      }
+      throw new Error(`Unexpected operation ${operation}`);
+    });
+    await expect(
+      createSuiteProfileProductService({} as never).listPlanSchedules!({
+        combineId: combine.id,
+      }),
+    ).resolves.toEqual([
+      {
+        id: "ours",
+        hour: 8,
+        timezone: "UTC",
+        nextRunAt: 3,
+        lastRunAt: 2,
+        lastFailureAt: 1,
+        lastFailure: "That browser is offline",
+        enabled: true,
+      },
+    ]);
+  });
+
   it("binds a paired account fixture and opens the Infra Result when start fails closed", async () => {
     relay.invoke.mockReset().mockImplementation(async (operation: string, input: unknown) => {
       if (operation === "target.list") return { targets: [target("browser-1", "browser")] };

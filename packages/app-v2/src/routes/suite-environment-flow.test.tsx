@@ -462,4 +462,29 @@ describe("Suite and Environment routes", () => {
       timezone: expect.any(String),
     });
   });
+
+  it("shows next and last run without treating admission failure as a pass", async () => {
+    await render("/apps/app-1/suites/suite-1", {
+      suiteService: suiteService({
+        schedulePlan: vi.fn(async () => ({ id: "sched-1" })),
+        listPlanSchedules: async () => [
+          {
+            id: "sched-1",
+            hour: 8,
+            timezone: "UTC",
+            nextRunAt: Date.UTC(2026, 8, 18, 8),
+            lastFailure: "That browser is offline",
+            enabled: true,
+          },
+        ],
+      }),
+    });
+    expect(document.body.textContent).toContain("Next");
+    expect(document.body.textContent).toContain("Fri, Sep 18, 8:00 AM");
+    expect(document.body.textContent).toContain("Last");
+    expect(document.body.textContent).toContain("Never");
+    expect(document.body.textContent).toContain("That browser is offline");
+    expect(document.body.textContent).toContain("does not accept a visual baseline");
+    expect(document.body.textContent).not.toContain("Looks correct");
+  });
 });

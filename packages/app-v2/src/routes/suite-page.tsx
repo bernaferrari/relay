@@ -184,6 +184,19 @@ export function SuitePage() {
         timezone: input.timezone,
       });
     },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["suites", appId, suiteId, "schedules"] });
+    },
+  });
+  const planSchedules = useQuery({
+    queryKey: ["suites", appId, suiteId, "schedules"],
+    queryFn: () => {
+      if (!suiteProfileService.listPlanSchedules)
+        throw new TypeError("Listing schedules is unavailable.");
+      return suiteProfileService.listPlanSchedules({ combineId: suiteId });
+    },
+    enabled: Boolean(suiteProfileService.listPlanSchedules),
+    staleTime: 10_000,
   });
   const value = suite.data;
   const needsReview = value?.tests.some((test) => test.status === "needs-review") ?? false;
@@ -536,6 +549,7 @@ export function SuitePage() {
               disabled={!selectedProfileIds.length || Boolean(missingAccountBlockers.length)}
               pending={schedule.isPending}
               error={schedule.error}
+              schedules={planSchedules.data ?? []}
               onSave={(input) => schedule.mutate(input)}
             />
           ) : null}

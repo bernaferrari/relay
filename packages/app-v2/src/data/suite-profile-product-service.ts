@@ -259,6 +259,18 @@ export type SuiteProfileProductService = {
     hour: number;
     timezone: string;
   }): Promise<{ id: string }>;
+  listPlanSchedules?(input: { combineId: string }): Promise<readonly ProductPlanSchedule[]>;
+};
+
+export type ProductPlanSchedule = {
+  readonly id: string;
+  readonly hour?: number;
+  readonly timezone?: string;
+  readonly nextRunAt: number;
+  readonly lastRunAt?: number;
+  readonly lastFailureAt?: number;
+  readonly lastFailure?: string;
+  readonly enabled: boolean;
 };
 
 function text(value: unknown, fallback: string): string {
@@ -871,6 +883,24 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
         ...(profileTargets?.length ? { profileTargets } : {}),
       });
       return { id: result.schedule.id };
+    },
+    async listPlanSchedules(input) {
+      const combineId = input.combineId.trim();
+      if (!combineId) throw new TypeError("Choose a Plan first.");
+      const { schedules } = await (await client()).invoke("schedule.list", {});
+      return schedules
+        .filter((item) => item.combineId === combineId)
+        .map((item) => ({
+          id: item.id,
+          ...(item.hour === undefined ? {} : { hour: item.hour }),
+          ...(item.timezone ? { timezone: item.timezone } : {}),
+          nextRunAt: item.nextRunAt,
+          ...(item.lastRunAt === undefined ? {} : { lastRunAt: item.lastRunAt }),
+          ...(item.lastFailureAt === undefined ? {} : { lastFailureAt: item.lastFailureAt }),
+          ...(item.lastFailure ? { lastFailure: item.lastFailure } : {}),
+          enabled: item.enabled,
+        }))
+        .sort((left, right) => left.nextRunAt - right.nextRunAt);
     },
   };
 }
