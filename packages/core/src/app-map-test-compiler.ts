@@ -72,9 +72,10 @@ function insertDestEndCaptureReviewScreenshot(
   recipe: { steps: RecipeStep[] },
   screenshot: RecipeStep,
 ): boolean {
+  if (screenshot.id && recipe.steps.some((step) => step.id === screenshot.id)) return true;
   const destIndex = destEndCaptureWaitForIndex(recipe.steps);
   if (destIndex < 0) return false;
-  recipe.steps.splice(destIndex + 1, 0, screenshot);
+  recipe.steps.splice(destIndex + 1, 0, structuredClone(screenshot));
   return true;
 }
 
@@ -787,7 +788,16 @@ export function compileAppMapScenarioTest(
             review: destEndInspectScreenshotReview(step.intent),
             id: `relay-test-${step.id}-dest`,
           };
-          if (destRecipe) insertDestEndCaptureReviewScreenshot(destRecipe, screenshot);
+          const seen = new Set<string>();
+          const destEndRecipes = destRecipe
+            ? [destRecipe, ...Object.values(graph)]
+            : Object.values(graph);
+          for (const recipe of destEndRecipes) {
+            if (seen.has(recipe.id)) continue;
+            if (recipe !== destRecipe && !destEndRecipeIds.has(recipe.id)) continue;
+            seen.add(recipe.id);
+            insertDestEndCaptureReviewScreenshot(recipe, screenshot);
+          }
         } else {
           recipeSteps.push({
             kind: "screenshot",

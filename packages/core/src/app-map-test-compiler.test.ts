@@ -1963,6 +1963,51 @@ test("dest-end capture-true compiles a later-review screenshot into plannedSlots
   );
 });
 
+test("dest-end dest-phase screenshot is on warm confirmation leftover skip path", () => {
+  const map = fixture();
+  const work = destEndPrimitiveWork(map, "open-settings-panel", [
+    {
+      id: "open-settings",
+      kind: "steps",
+      steps: [
+        { kind: "wait-for", target: { identifier: "composer" }, timeoutMs: 8_000 },
+        { kind: "tap", target: { identifier: "sidebar.settings" } },
+        { kind: "wait-for", target: { identifier: "settings.account" }, timeoutMs: 8_000 },
+      ],
+    },
+  ]);
+  const instruction = work.steps[0]!;
+  work.steps = [
+    {
+      id: "wait-composer",
+      kind: "validation",
+      intent: "Composer is visible",
+      binding: {
+        status: "resolved",
+        kind: "recipe-step",
+        step: { kind: "expect", target: { identifier: "composer" }, condition: "visible" },
+      },
+    },
+    { ...instruction, capture: true },
+  ];
+  const compiled = compileAppMapTest(map, work);
+  const destShot = {
+    kind: "screenshot",
+    caption: `step:${instruction.id}:${instruction.intent}`,
+    review: { mode: "later", lookFor: instruction.intent, phase: "dest", policy: "fast" },
+    id: `relay-test-${instruction.id}-dest`,
+  };
+  const confirm = Object.values(compiled.graph).find((recipe) => recipe.id.includes(":confirm:"));
+  assert.ok(confirm);
+  const destWaitIndex = confirm!.steps.findIndex(
+    (step) => step.kind === "wait-for" && step.target?.identifier === "settings.account",
+  );
+  assert.ok(destWaitIndex >= 0);
+  assert.deepEqual(confirm!.steps[destWaitIndex + 1], destShot);
+  assert.equal(compiled.plan.plannedSlots?.length, 1);
+  assert.equal(compiled.plan.plannedSlots?.[0]?.phase, "dest");
+});
+
 test("dest-end leftover Close last-frame is not dest capture-review identity", () => {
   const map = fixture();
   const work = destEndPrimitiveWork(map, "open-sidebar", [
@@ -2038,14 +2083,7 @@ test("dest-end dest-phase waits Settings unique chrome not open-sidebar leftover
   const kinds = destEndRecipe!.steps.map((step) =>
     step.kind === "screenshot" ? `${step.kind}:${step.review?.phase ?? ""}` : step.kind,
   );
-  assert.deepEqual(kinds, [
-    "wait-for",
-    "tap",
-    "wait-for",
-    "tap",
-    "wait-for",
-    "screenshot:dest",
-  ]);
+  assert.deepEqual(kinds, ["wait-for", "tap", "wait-for", "tap", "wait-for", "screenshot:dest"]);
   const sidebarWaitIndex = destEndRecipe!.steps.findIndex(
     (step) => step.kind === "wait-for" && step.target?.identifier === "sidebar.settings",
   );
