@@ -175,6 +175,77 @@ test("invoke derives path, query, and method from the operation registry", async
   );
 });
 
+test("parseRegisteredOperationOutput strips nested additive fixture health keys", () => {
+  const olderHealth = {
+    parse(value: unknown) {
+      const body = value as {
+        fixtures?: Array<{ health?: { identity?: unknown; signedIn?: boolean } }>;
+        summary?: {
+          liveCount?: number;
+          electronGrokLabPartitionPresent?: unknown;
+          electronGrokLabReason?: unknown;
+        };
+      };
+      const issues: Array<{ code: string; keys: string[]; path: PropertyKey[] }> = [];
+      if (body.fixtures?.[0]?.health && "identity" in body.fixtures[0].health) {
+        issues.push({
+          code: "unrecognized_keys",
+          keys: ["identity"],
+          path: ["fixtures", 0, "health"],
+        });
+      }
+      if (body.summary && "electronGrokLabPartitionPresent" in body.summary) {
+        issues.push({
+          code: "unrecognized_keys",
+          keys: ["electronGrokLabPartitionPresent", "electronGrokLabReason"],
+          path: ["summary"],
+        });
+      }
+      if (issues.length > 0) {
+        throw Object.assign(new Error("Unrecognized keys"), { issues });
+      }
+      return value;
+    },
+  };
+  const parsed = parseRegisteredOperationOutput(olderHealth, {
+    fixtures: [
+      {
+        id: "7189423f-193e-45ed-b674-154505cc5107",
+        health: {
+          status: "ready",
+          checkedAt: 1,
+          signedIn: true,
+          identity: "Bernardo Ferrari",
+        },
+      },
+    ],
+    summary: {
+      liveCount: 1,
+      revokedCount: 14,
+      readyCount: 1,
+      needsReloginCount: 0,
+      expiredCount: 0,
+      errorCount: 0,
+      concurrentAccountsPossible: false,
+      concurrentReason: "One live account.",
+      lanes: [],
+      electronGrokLabPartitionPresent: false,
+      electronGrokLabReason: "Electron persist:lane:grok-lab is absent.",
+    },
+  });
+  assert.equal(parsed.summary.liveCount, 1);
+  assert.equal(parsed.fixtures[0]?.health?.signedIn, true);
+  assert.equal(
+    (parsed.fixtures[0]?.health as { identity?: unknown } | undefined)?.identity,
+    undefined,
+  );
+  assert.equal(
+    (parsed.summary as { electronGrokLabPartitionPresent?: unknown })
+      .electronGrokLabPartitionPresent,
+    undefined,
+  );
+});
+
 test("invoke strips additive output keys instead of 502ing an older operator client", async () => {
   const client = new RelayClient(
     {

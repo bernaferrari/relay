@@ -62,6 +62,12 @@ function recordAtPath(
 ): Record<string, unknown> | undefined {
   let current: unknown = root;
   for (const key of path) {
+    if (Array.isArray(current)) {
+      const index = typeof key === "number" ? key : Number(key);
+      if (!Number.isInteger(index) || index < 0 || index >= current.length) return undefined;
+      current = current[index];
+      continue;
+    }
     if (!isRecord(current)) return undefined;
     current = current[String(key)];
   }
