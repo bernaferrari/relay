@@ -18,7 +18,11 @@ export function recordingSourceForCommit(
   },
   actions: readonly ActionSpec[],
 ): AuthoringRecordingSource | undefined {
-  if (!actions.some((action) => action.kind === "recorded")) return undefined;
+  const hasRecordedActions = actions.some((action) => action.kind === "recorded");
+  const hasScreenshot = Object.values(input.evidenceById ?? {}).some(
+    (item) => item.kind === "screenshot" && input.evidenceIds.includes(item.id),
+  );
+  if (!hasRecordedActions && (!hasScreenshot || !input.captureReview)) return undefined;
   if (!input.captureReview) {
     throw new TypeError("recorded commits require explicit reviewed capture provenance");
   }
@@ -31,6 +35,7 @@ export function recordingSourceForCommit(
       frames.push({ evidenceId: evidence.id, uri: evidence.uri, role });
     }
   }
+  if (!hasRecordedActions && !frames.length) return undefined;
   return {
     ...(frames.length ? { frames } : {}),
     schemaVersion: 1,

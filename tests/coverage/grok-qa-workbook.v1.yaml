@@ -45,13 +45,6 @@ conflicts:
     sources:
       - "Suite S15 / Dead and skip original 42"
       - "grok-ios test-grok-ios-dictation (Dictation inspect)"
-  - id: orig-50-fast-vs-heavy-expert
-    originalIds: [50]
-    status: unresolved
-    summary: "Original 50 is a 5-image edit (dogs/hat or animals). Workbook/plan gates the 5-pack to Heavy/Expert, and also notes Fast is OK for single-image since 3/27. Leave gating unresolved until the requirement owner chooses. Do not guess Fast vs Heavy/Expert."
-    sources:
-      - "Suite S11 / original 50"
-      - "plan required-requirement decision 2"
 notWorkbookPacks:
   - packId: grok-ios-daily
     testIds:
@@ -937,7 +930,7 @@ originals:
     queue: "slow-output"
     suggestedExecutionQueue: live-output
     gates:
-      - "UNRESOLVED: 5-pack gate is Heavy/Expert; notes also say Fast is OK for single-image since 3/27. Do not guess Fast vs Heavy/Expert."
+      - "Owner decision 2026-09-17: the five-image edit requires Heavy/Expert. Fast does not satisfy this requirement."
     status: unbound
     bindings: []
   - id: 51

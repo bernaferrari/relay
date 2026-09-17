@@ -740,6 +740,33 @@ test("saved Tests retain reviewed screenshots independently of later screen capt
   ]);
 });
 
+test("screenshot-only Tests retain their reviewed name and recording image", () => {
+  const uri = `relay-evidence://${"d".repeat(64)}`;
+  const result = commitAppMapRecording(
+    mapFixture(),
+    {
+      sessionId: "screenshot-only",
+      target: { kind: "device", platform: "android", targetId: "pixel-8" },
+      takeId: "screenshot-take",
+      takeRevision: 1,
+      testId: "screenshot-test",
+      testName: "Home capture",
+      actions: [{ ...action(), steps: [], label: "Signed-out home" }],
+      after: observation("after", afterFingerprint, "screenshot"),
+      evidenceIds: ["screenshot"],
+      evidenceById: { screenshot: { id: "screenshot", kind: "screenshot", capturedAt: 1, uri } },
+    },
+    context("screenshot-only"),
+  );
+  const connection = result.appMap.connections[result.connectionId]!;
+  assert.equal(connection.label, "Signed-out home");
+  assert.equal(result.appMap.tests["screenshot-test"]!.steps[0]!.intent, "Signed-out home");
+  assert.equal(connection.actions[0]!.kind, "passive");
+  assert.deepEqual(connection.recordingSource?.frames, [
+    { evidenceId: "screenshot", uri, role: "after" },
+  ]);
+});
+
 test("recorded commits cannot invent Relay-controlled capture provenance", () => {
   assert.throws(
     () =>

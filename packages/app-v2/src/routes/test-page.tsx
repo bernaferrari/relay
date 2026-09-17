@@ -14,7 +14,7 @@ import { WorkbenchPage } from "../components/page-layout";
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { ChevronLeft, History } from "lucide-react";
+import { Camera, ChevronLeft, History } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
@@ -495,7 +495,7 @@ export function TestPage() {
               stage={
                 <div className="flex h-full min-h-0 flex-col">
                   <p className="border-b border-border px-4 py-3 text-xs text-muted-foreground">
-                    Recording reference · current saved Test. Run evidence is shown separately.
+                    Recording preview
                   </p>
                   <div className="min-h-0 flex-1">
                     {selectedEvidenceStep?.recordingFrames?.length ? (
@@ -507,14 +507,27 @@ export function TestPage() {
                         loading={false}
                       />
                     ) : (
-                      <EmptyState
-                        title={
-                          selectedEvidenceStep?.label ??
-                          selectedEvidenceStep?.intent ??
-                          "No saved steps"
-                        }
-                        detail="No recording reference was saved for this step. Open Run evidence to inspect an execution."
-                      />
+                      <div className="grid h-full min-h-0 place-items-center overflow-auto px-6 py-5">
+                        <div className="grid max-w-sm justify-items-center gap-3 text-center">
+                          <div className="grid size-12 place-items-center rounded-2xl bg-muted">
+                            <Camera className="size-5 text-muted-foreground" aria-hidden="true" />
+                          </div>
+                          <div className="grid gap-1.5">
+                            <h2 className="text-base font-semibold">Preview this Test</h2>
+                            <p className="text-sm leading-relaxed text-muted-foreground">
+                              No recording reference was saved for this step. Run the Test to
+                              capture the app and review what happened.
+                            </p>
+                          </div>
+                          <Button
+                            variant="outline"
+                            onClick={runOrFocusSetup}
+                            disabled={start.isPending}
+                          >
+                            {canStart ? "Run and capture" : "Choose a device"}
+                          </Button>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>

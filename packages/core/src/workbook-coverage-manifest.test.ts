@@ -146,13 +146,12 @@ test("grok-ios-daily 12/12 is not the 58-row workbook", () => {
   assert.deepEqual(imagine?.testIds, ["test-grok-ios-imagine"]);
 });
 
-test("Customize Grok, Dictation, and original 50 conflicts stay unresolved", () => {
+test("preserves unresolved conflicts and records the owner decision for original 50", () => {
   const manifest = loadReviewedWorkbook();
   const ids = manifest.conflicts.map((item) => item.id);
   assert.deepEqual(ids, [
     "customize-grok-removed-vs-peek",
     "dictation-workbook-skip-vs-ios-dest-end",
-    "orig-50-fast-vs-heavy-expert",
   ]);
   assert.equal(
     manifest.conflicts.every((item) => item.status === "unresolved"),
@@ -167,12 +166,12 @@ test("Customize Grok, Dictation, and original 50 conflicts stay unresolved", () 
       ?.originalIds,
     [42],
   );
-  assert.deepEqual(
-    manifest.conflicts.find((item) => item.id === "orig-50-fast-vs-heavy-expert")?.originalIds,
-    [50],
+  assert.equal(
+    manifest.conflicts.some((item) => item.id === "orig-50-fast-vs-heavy-expert"),
+    false,
   );
   const orig50 = manifest.originals.find((item) => item.id === 50);
-  assert.match(orig50?.gates.join(" ") ?? "", /Do not guess Fast vs Heavy\/Expert/u);
+  assert.match(orig50?.gates.join(" ") ?? "", /five-image edit requires Heavy\/Expert/u);
 });
 
 test("sequence capture does not bind workbook originals without kind:reviewed", () => {

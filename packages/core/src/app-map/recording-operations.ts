@@ -781,7 +781,9 @@ function humanizeIdentifier(identifier: string): string {
 }
 
 function recordedConnectionLabel(input: AppMapRecordingInput, actions: ActionSpec[]): string {
-  if (actions[0]?.kind === "passive") return "Observe";
+  if (actions[0]?.kind === "passive") {
+    return input.actions.find((action) => action.label?.trim())?.label?.trim() ?? "Observe";
+  }
   const active = input.actions.filter((action) => action.steps.length > 0);
   if (active.length === 1 && active[0]!.label?.trim()) return active[0]!.label!.trim();
   const steps = input.actions.flatMap((action) => action.steps);

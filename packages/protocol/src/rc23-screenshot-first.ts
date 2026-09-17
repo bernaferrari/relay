@@ -140,17 +140,17 @@ export const RC23_SCREENSHOT_FIRST_CAPTURED_PENDING: readonly Rc23ScreenshotFirs
   {
     checkpointId: "attach",
     platform: "web",
-    jobId: "2fbd94f7-cd51-4897-9b05-d24a15ac341d",
+    jobId: "074ef085-28c7-4f55-8f45-46e47fa0779c",
   },
   {
     checkpointId: "imagine",
     platform: "web",
-    jobId: "c6e3123a-817d-4305-865e-d788f16ebd50",
+    jobId: "bf026eff-52cc-4b36-903a-5bb0c5127507",
   },
   {
     checkpointId: "settings",
     platform: "web",
-    jobId: "37c7cab7-199b-4e45-9068-929b01ff5ab0",
+    jobId: "6fe95c66-7efe-4749-966e-de27ca56f17f",
   },
   {
     checkpointId: "dictation",
@@ -160,7 +160,7 @@ export const RC23_SCREENSHOT_FIRST_CAPTURED_PENDING: readonly Rc23ScreenshotFirs
   {
     checkpointId: "sidebar",
     platform: "web",
-    jobId: "405daa91-d8bd-4fd2-87cf-c4519c9ca514",
+    jobId: "0976eb98-22ec-4855-b871-cef97bd8d1d0",
   },
   {
     checkpointId: "logo",
@@ -175,7 +175,7 @@ export const RC23_SCREENSHOT_FIRST_CAPTURED_PENDING: readonly Rc23ScreenshotFirs
   {
     checkpointId: "models",
     platform: "web",
-    jobId: "648ee0ab-1b9b-4d22-903e-88eaefefa960",
+    jobId: "bfe409df-da3c-4652-a0d9-5a0112f5772f",
   },
   {
     checkpointId: "private-chat",
@@ -185,47 +185,47 @@ export const RC23_SCREENSHOT_FIRST_CAPTURED_PENDING: readonly Rc23ScreenshotFirs
   {
     checkpointId: "home-chrome",
     platform: "ios",
-    jobId: "12e0cbef-46ef-4870-a2f0-3b76234e151f",
+    jobId: "5e2dca45-ece2-46f5-a8b1-cb4de7526338",
   },
   {
     checkpointId: "dictation",
     platform: "ios",
-    jobId: "a262c526-8156-4d68-9af1-b62a73c1154a",
+    jobId: "0e5d0984-750d-48c9-9a28-3840b0b7873b",
   },
   {
     checkpointId: "sidebar",
     platform: "ios",
-    jobId: "81ab27a4-e987-4bff-92cd-56502485f990",
+    jobId: "e79b55ac-cdb7-4a2e-a85b-b20e5dac897b",
   },
   {
     checkpointId: "logo",
     platform: "ios",
-    jobId: "f67d37fe-8a92-4d20-92d7-a651313f0897",
+    jobId: "da7dd841-e968-49be-88d0-bb1cfa50b732",
   },
   {
     checkpointId: "composer-focus",
     platform: "ios",
-    jobId: "56898725-7890-46b8-abd1-2b193cdf82b0",
+    jobId: "eae15cdd-cd30-496e-941a-6701b986e999",
   },
   {
     checkpointId: "attach",
     platform: "ios",
-    jobId: "71034ce6-02b5-40c1-ab93-ce70262e2965",
+    jobId: "dd7643a2-879e-4e7e-9277-58d99fdf1fbd",
   },
   {
     checkpointId: "models",
     platform: "ios",
-    jobId: "04c08ecd-7089-40a6-8da7-47d45ef0c69c",
+    jobId: "04c7ad2f-7420-463b-8aca-718724ac8320",
   },
   {
     checkpointId: "private-chat",
     platform: "ios",
-    jobId: "113c9510-4250-4cc9-b3bc-6873edc19928",
+    jobId: "d3dc2280-0e41-4641-892d-6228b51297e5",
   },
   {
     checkpointId: "settings",
     platform: "ios",
-    jobId: "2f0c7174-0feb-4cc9-82a5-1f0b9f32de6e",
+    jobId: "bb704c47-eee8-499e-b048-ecdb946187e8",
   },
   {
     checkpointId: "home-chrome",

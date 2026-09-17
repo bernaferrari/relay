@@ -403,7 +403,9 @@ export function ReviewRecordingPage({
                   disabled={transition.isPending}
                 >
                   <RotateCcw aria-hidden="true" />
-                  {transition.isPending && transition.variables?.action === "replay" ? "Replaying…" : `Replay on ${replayDeviceName}`}
+                  {transition.isPending && transition.variables?.action === "replay"
+                    ? "Replaying…"
+                    : `Replay on ${replayDeviceName}`}
                 </Button>
               ) : null}
               {canApprove ? (

@@ -528,17 +528,23 @@ export function assertConnection(connection: Connection, scope: AppMapScope, lab
     }
     const recorded = connection.actions.filter((action) => action.kind === "recorded");
     const sourceEvidence = new Set(source.evidenceIds);
+    const reviewedObservation =
+      connection.actions.length === 1 &&
+      connection.actions[0]?.kind === "passive" &&
+      connection.actions[0].id === `passive-${source.takeId}` &&
+      Boolean(source.frames?.length);
     if (
       sourceEvidence.size !== source.evidenceIds.length ||
-      !recorded.some(
-        (action) =>
-          action.kind === "recorded" &&
-          action.takeId === source.takeId &&
-          action.takeRevision === source.takeRevision &&
-          new Set(action.evidenceIds).size === action.evidenceIds.length &&
-          action.evidenceIds.length === source.evidenceIds.length &&
-          action.evidenceIds.every((id) => sourceEvidence.has(id)),
-      )
+      (!reviewedObservation &&
+        !recorded.some(
+          (action) =>
+            action.kind === "recorded" &&
+            action.takeId === source.takeId &&
+            action.takeRevision === source.takeRevision &&
+            new Set(action.evidenceIds).size === action.evidenceIds.length &&
+            action.evidenceIds.length === source.evidenceIds.length &&
+            action.evidenceIds.every((id) => sourceEvidence.has(id)),
+        ))
     ) {
       appMapFail("invalid-map", `${label}.recordingSource must match its recorded action evidence`);
     }
