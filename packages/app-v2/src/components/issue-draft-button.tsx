@@ -59,42 +59,42 @@ export function IssueDraftButton({ source }: { source: ProductIssueSource }) {
           Relay prepared a bounded, redacted draft. Nothing is sent to GitHub or another provider.
         </DialogDescription>
         <div className="relay-issue-draft-meta mt-[18px] flex flex-wrap gap-1.5">
-          <span className="rounded-full bg-[var(--background-weak)] px-2 py-1 text-[10px] capitalize text-[var(--text-weak)]">
+          <span className="rounded-full bg-muted px-2 py-1 text-[10px] capitalize text-muted-foreground">
             {draft.source.kind}
           </span>
-          <span className="rounded-full bg-[var(--background-weak)] px-2 py-1 text-[10px] capitalize text-[var(--text-weak)]">
+          <span className="rounded-full bg-muted px-2 py-1 text-[10px] capitalize text-muted-foreground">
             {draft.evidence.count} evidence {draft.evidence.count === 1 ? "channel" : "channels"}
           </span>
-          <span className="rounded-full bg-[var(--background-weak)] px-2 py-1 text-[10px] capitalize text-[var(--text-weak)]">
+          <span className="rounded-full bg-muted px-2 py-1 text-[10px] capitalize text-muted-foreground">
             {draft.redaction.applied ? "Sensitive fields redacted" : "No sensitive fields detected"}
           </span>
         </div>
         <label
-          className="mb-1.5 mt-4 block text-[11px] font-semibold text-[var(--text-weak)]"
+          className="mb-1.5 mt-4 block text-[11px] font-semibold text-muted-foreground"
           htmlFor={`issue-title-${draft.source.id}`}
         >
           Title
         </label>
         <input
           id={`issue-title-${draft.source.id}`}
-          className="relay-issue-draft-title min-h-9 w-full rounded-[var(--radius-md)] border border-[var(--border-base)] bg-[var(--surface-base)] px-3 text-xs text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
+          className="relay-issue-draft-title min-h-9 w-full rounded-[var(--radius-md)] border border-input bg-secondary px-3 text-xs text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
           value={title}
           onChange={(event) => setTitle(event.currentTarget.value)}
         />
         <label
-          className="mb-1.5 mt-4 block text-[11px] font-semibold text-[var(--text-weak)]"
+          className="mb-1.5 mt-4 block text-[11px] font-semibold text-muted-foreground"
           htmlFor={`issue-body-${draft.source.id}`}
         >
           Body
         </label>
         <textarea
           id={`issue-body-${draft.source.id}`}
-          className="relay-issue-draft-body max-h-80 w-full resize-y rounded-[var(--radius-md)] border border-[var(--border-base)] bg-[var(--surface-base)] p-3 font-mono text-xs leading-6 text-[var(--text-strong)] focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
+          className="relay-issue-draft-body max-h-80 w-full resize-y rounded-[var(--radius-md)] border border-input bg-secondary p-3 font-mono text-xs leading-6 text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
           value={body}
           onChange={(event) => setBody(event.currentTarget.value)}
           rows={14}
         />
-        <p className="relay-issue-draft-note mt-2.5 text-[11px] text-[var(--text-weaker)]">
+        <p className="relay-issue-draft-note mt-2.5 text-[11px] text-muted-foreground">
           {draft.delivery.detail}
         </p>
         {copyError ? <p role="alert">{copyError}</p> : null}

@@ -28,7 +28,7 @@ it("injects Relay tokens and the preload key when applying a scheme", () => {
   expect(document.documentElement.style.colorScheme).toBe("dark");
   expect(document.getElementById("relay-theme")?.textContent).toContain("color-scheme: dark");
   expect(localStorage.getItem("relay-color-scheme")).toBe("dark");
-  expect(localStorage.getItem("relay-theme-css-dark")).toContain("--background-base");
+  expect(localStorage.getItem("relay-theme-css-dark")).toContain("color-scheme");
 
   applyColorScheme("light");
   expect(document.documentElement.dataset.colorScheme).toBe("light");

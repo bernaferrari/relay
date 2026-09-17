@@ -548,8 +548,37 @@ export function resolveTheme(theme: DesktopTheme): { light: ResolvedTheme; dark:
   };
 }
 
+/** Chrome tokens owned by shadcn in product CSS. Do not inject generated hex over them. */
+const SHADCN_BACKED_TOKENS = new Set([
+  "background-base",
+  "background-weak",
+  "background-strong",
+  "background-stronger",
+  "surface-base",
+  "surface-base-hover",
+  "surface-base-active",
+  "surface-raised-strong",
+  "surface-raised-strong-hover",
+  "surface-raised-stronger-non-alpha",
+  "text-strong",
+  "text-base",
+  "text-weak",
+  "text-weaker",
+  "text-interactive-base",
+  "text-interactive-hover",
+  "border-base",
+  "border-hover",
+  "border-weak-base",
+  "border-weak-disabled",
+  "button-primary-base",
+  "button-primary-foreground",
+  "button-primary-hover",
+  "button-primary-active",
+]);
+
 export function themeToCss(tokens: ResolvedTheme): string {
   return Object.entries(tokens)
+    .filter(([key]) => !SHADCN_BACKED_TOKENS.has(key))
     .map(([key, value]) => `--${key}: ${value};`)
     .join("\n  ");
 }

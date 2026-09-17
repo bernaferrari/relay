@@ -41,7 +41,7 @@ import {
 } from "./batch-result-view";
 
 const findingsLinkClass =
-  "relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 font-semibold text-[var(--text-interactive-base)] underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]";
+  "relay-inline-link font-semibold text-foreground underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2";
 
 export function BatchResultSummary({ report }: { report: ProductBatchReport }) {
   const facts = batchResultFacts(report);

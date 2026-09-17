@@ -525,9 +525,7 @@ export async function runRecipeSteps(
     job.artifacts.find((artifact) => artifact.kind === "app-map-test-execution-intent"),
   );
   const destEndRecipeIds = executionIntent?.plan.destEndRecipeIds;
-  const runtime: RecipeRuntimeState = {
-    ...(destEndRecipeIds?.length ? { destEndRecipeIds } : {}),
-  };
+  const runtime: RecipeRuntimeState = destEndRecipeIds?.length ? { destEndRecipeIds } : {};
   pushLog(`==> recipe: ${recipe.title} · ${recipe.steps.length} step(s)`);
   const execute = async (
     step: import("./recipes.js").RecipeStep,

@@ -192,7 +192,7 @@ export function EnvironmentPage() {
           detail="It may have been removed from this workspace."
           action={
             <Link
-              className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+              className="{productLinkClassName}"
               to="/environments"
             >
               Back to browsers

@@ -124,7 +124,7 @@ export function AppPage() {
                 </div>
                 {app.data.screens.length > 4 ? (
                   <Link
-                    className="text-sm font-medium text-[var(--text-interactive-base)] underline underline-offset-4"
+                    className="text-sm font-medium text-foreground underline underline-offset-4"
                     to="/apps/$appId/map"
                     params={{ appId }}
                     search={{ view: "screens" }}
@@ -188,7 +188,7 @@ export function AppPage() {
                   </h2>
                 </div>
                 <Link
-                  className="text-sm font-medium text-[var(--text-interactive-base)] underline underline-offset-4"
+                  className="text-sm font-medium text-foreground underline underline-offset-4"
                   to="/tests"
                   search={{ app: appId }}
                 >
@@ -203,7 +203,7 @@ export function AppPage() {
                       className="flex min-h-14 items-center justify-between gap-4 px-4 py-3"
                     >
                       <Link
-                        className="min-w-0 truncate text-sm font-medium text-[var(--text-interactive-base)] underline-offset-4 hover:underline"
+                        className="min-w-0 truncate text-sm font-medium text-foreground underline-offset-4 hover:underline"
                         to="/tests/$testId"
                         params={{ testId: test.id }}
                       >

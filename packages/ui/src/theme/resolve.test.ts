@@ -14,5 +14,7 @@ test("theme injection leaves shadcn primary to globals.css", () => {
 
   const css = themeToCss(tokens);
   assert.doesNotMatch(css, /--primary:/);
-  assert.match(css, /--button-primary-base: var\(--primary\)/);
+  assert.doesNotMatch(css, /--button-primary-base:/);
+  assert.doesNotMatch(css, /--text-strong:/);
+  assert.doesNotMatch(css, /--background-base:/);
 });

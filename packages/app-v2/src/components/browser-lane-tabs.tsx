@@ -139,7 +139,7 @@ export function BrowserLaneTabs({
               title={blocker}
               disabled={disabled || Boolean(blocker)}
               onClick={() => openLane(lane)}
-              className="relative min-h-9 rounded-[10px] px-3 text-[12.5px] font-medium tracking-[-0.01em] text-muted-foreground transition-[color,background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:text-foreground focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 active:scale-[0.97] disabled:opacity-50 aria-selected:bg-[var(--background)] aria-selected:text-foreground aria-selected:shadow-[0_1px_0_color-mix(in_srgb,var(--foreground)_8%,transparent)]"
+              className="relative min-h-9 rounded-[10px] px-3 text-[12.5px] font-medium tracking-[-0.01em] text-muted-foreground transition-[color,background-color,transform] duration-150 ease-[cubic-bezier(0.23,1,0.32,1)] hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 active:scale-[0.97] disabled:opacity-50 aria-selected:bg-[var(--background)] aria-selected:text-foreground aria-selected:shadow-[0_1px_0_color-mix(in_srgb,var(--foreground)_8%,transparent)]"
             >
               {browserLaneTabLabel(lane.id)}
             </button>

@@ -132,7 +132,7 @@ export function ChangePage() {
           detail="It may have been replaced or removed. Return to Changes to see the current history."
           action={
             <Link
-              className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+              className="{productLinkClassName}"
               to="/changes"
             >
               View Changes
@@ -295,7 +295,7 @@ export function ChangePage() {
               className="relay-change-attention mt-5 rounded-lg border border-red-500/40 bg-red-500/5 p-5"
               aria-labelledby="verification-paused-title"
             >
-              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
                 Verification paused safely
               </p>
               <h2 id="verification-paused-title">
@@ -387,7 +387,7 @@ function RepairContext({ packet }: { packet: ProductChangeRepairPacket }) {
       aria-labelledby="repair-context-title"
     >
       <header>
-        <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+        <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
           Repair context
         </p>
         <h2 id="repair-context-title">Smallest useful fix</h2>

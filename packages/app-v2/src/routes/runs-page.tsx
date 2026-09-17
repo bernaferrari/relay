@@ -203,7 +203,7 @@ export function RunsPage() {
             <h2 id="run-history-title" className="text-[13px] font-semibold">
               {visibleRuns.length === 1 ? "1 Result" : `${visibleRuns.length} Results`}
             </h2>
-            <span className="text-xs text-[var(--text-weak)]" aria-live="polite">
+            <span className="text-xs text-muted-foreground" aria-live="polite">
               {runs.isError ? "Last loaded results" : runViewDescription(view, historyComplete)}
             </span>
           </div>
@@ -231,7 +231,7 @@ export function RunsPage() {
               detail="Open a saved Test and run it on a Device or Browser."
               action={
                 <Link
-                  className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                  className="{productLinkClassName}"
                   to="/tests"
                 >
                   Browse saved Tests
@@ -260,28 +260,28 @@ function RunRow({
   const body = (
     <>
       <span className="relay-library-row-main grid min-w-0 gap-1">
-        <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-[var(--text-strong)]">
+        <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-foreground">
           {title}
         </strong>
-        <span className="relay-run-row-context flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-[var(--text-weak)]">
+        <span className="relay-run-row-context flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">
           <OutcomeMark outcome={run.outcome ?? phaseOutcome(run)} />
           <span className="truncate">
             {[device, cause].filter(Boolean).join(" · ") || (plan ? "Plan Result" : "Saved Run")}
           </span>
           {plan ? (
-            <span className="shrink-0 font-semibold text-[var(--text-base)]">Plan Result</span>
+            <span className="shrink-0 font-semibold text-foreground">Plan Result</span>
           ) : null}
         </span>
       </span>
       <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1 tabular-nums">
-        <strong className="text-xs font-semibold text-[var(--text-base)]">
+        <strong className="text-xs font-semibold text-foreground">
           {plan && run.caseCount
             ? `${run.caseCount} Tests`
             : run.durationMs === undefined
               ? phaseDetail(run)
               : formatDuration(run.durationMs)}
         </strong>
-        <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
+        <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
           {relativeTime(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
         </small>
       </span>

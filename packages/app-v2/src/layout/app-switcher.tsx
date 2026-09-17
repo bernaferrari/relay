@@ -219,15 +219,15 @@ export function AppSwitcher() {
             </DropdownMenuRadioGroup>
             {apps.isError ? (
               <DropdownMenuItem
-                className="relay-menu-note flex min-h-11 items-center px-2.5 text-xs text-[var(--text-weaker)]"
+                className="relay-menu-note flex min-h-11 items-center px-2.5 text-xs text-muted-foreground"
                 disabled
               >
                 Apps are temporarily unavailable
               </DropdownMenuItem>
             ) : null}
-            <DropdownMenuSeparator className="relay-menu-separator my-2 ml-1.5 mr-1.5 mt-2 h-px bg-[var(--border-weak-base)]" />
+            <DropdownMenuSeparator className="relay-menu-separator my-2 ml-1.5 mr-1.5 mt-2 h-px bg-border" />
             <DropdownMenuItem
-              className="relay-menu-item focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex justify-between gap-4"
+              className="relay-menu-item focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex justify-between gap-4"
               onClick={() => router.history.push("/apps")}
             >
               Manage apps

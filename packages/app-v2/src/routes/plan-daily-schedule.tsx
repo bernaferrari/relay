@@ -60,29 +60,29 @@ export function PlanDailySchedule({
   }
   return (
     <section
-      className="mt-8 border-t border-border-weak-base pt-5"
+      className="mt-8 border-t border-border pt-5"
       aria-labelledby="plan-daily-title"
     >
-      <h2 id="plan-daily-title" className="text-sm font-semibold text-text-strong">
+      <h2 id="plan-daily-title" className="text-sm font-semibold text-foreground">
         Run daily
       </h2>
-      <p className="mt-1 text-xs leading-5 text-text-weak">
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">
         Starts this Plan every day at {clockLabel(Number(hour))} ({timezone}) on the first selected
         browser or device. Slack is unsupported; Relay writes `.relay/notifications.json` and can
         POST `RELAY_NOTIFY_WEBHOOK`. Next and last run come from the saved schedule. An admission
         failure stays Infra and does not accept a visual baseline.
       </p>
       {schedules.length ? (
-        <ol className="mt-3 grid gap-2 text-xs leading-5 text-text-weak">
+        <ol className="mt-3 grid gap-2 text-xs leading-5 text-muted-foreground">
           {schedules.map((schedule) => {
             const status = planScheduleStatus(schedule);
             return (
-              <li key={schedule.id} className="rounded-md border border-border-weak-base px-3 py-2">
+              <li key={schedule.id} className="rounded-md border border-border px-3 py-2">
                 <p>
-                  <span className="font-medium text-text-strong">Next</span> {status.next}
+                  <span className="font-medium text-foreground">Next</span> {status.next}
                 </p>
                 <p>
-                  <span className="font-medium text-text-strong">Last</span> {status.last}
+                  <span className="font-medium text-foreground">Last</span> {status.last}
                 </p>
                 {status.failure ? <p>{status.failure}</p> : null}
               </li>
@@ -90,7 +90,7 @@ export function PlanDailySchedule({
           })}
         </ol>
       ) : (
-        <p className="mt-3 text-xs leading-5 text-text-weak">No daily run is scheduled yet.</p>
+        <p className="mt-3 text-xs leading-5 text-muted-foreground">No daily run is scheduled yet.</p>
       )}
       <form className="mt-3 flex flex-wrap items-end gap-3" onSubmit={submit}>
         <Field>

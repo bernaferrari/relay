@@ -20,7 +20,7 @@ export function RepairSection({
       <div className="flex items-center gap-2.5">
         <Sparkles aria-hidden="true" />
         <div>
-          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
             Review
           </p>
           <h2 id="repairs-title">Suggested repairs</h2>
@@ -89,7 +89,7 @@ export function HistorySection({ items }: { items: ProductTestEditorDocument["hi
       <div className="flex items-center gap-2.5">
         <History aria-hidden="true" />
         <div>
-          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
             Saved activity
           </p>
           <h2 id="history-title">History</h2>

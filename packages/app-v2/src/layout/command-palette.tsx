@@ -230,7 +230,7 @@ export function CommandPalette({
         <DialogDescription className="relay-visually-hidden sr-only">
           Search destinations and common product actions.
         </DialogDescription>
-        <div className="relay-command-search flex min-h-14 items-center gap-3 border-b border-[var(--border-weak-base)] px-4">
+        <div className="relay-command-search flex min-h-14 items-center gap-3 border-b border-border px-4">
           <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <input
             autoFocus
@@ -248,7 +248,7 @@ export function CommandPalette({
             }
             className="relay-command-search-input h-14 min-w-0 flex-1 bg-transparent text-[15px] leading-5 text-foreground outline-none placeholder:text-muted-foreground"
           />
-          <kbd className="rounded-[var(--radius-sm)] border border-[var(--border-weak-base)] px-1.5 py-0.5 text-[10px] leading-[1.4] text-muted-foreground">
+          <kbd className="rounded-[var(--radius-sm)] border border-border px-1.5 py-0.5 text-[10px] leading-[1.4] text-muted-foreground">
             Esc
           </kbd>
         </div>
@@ -261,14 +261,14 @@ export function CommandPalette({
           >
             {tests.isError ? (
               <div
-                className="grid gap-2 p-6 text-center text-sm text-[var(--text-weaker)]"
+                className="grid gap-2 p-6 text-center text-sm text-muted-foreground"
                 role="alert"
               >
                 <p>
                   Test search is unavailable. Try again or use the available workspace commands.
                 </p>
                 <button
-                  className="mx-auto min-h-10 rounded-[var(--radius-md)] border border-[var(--border-base)] px-3 font-medium text-[var(--text-interactive-base)] focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
+                  className="mx-auto min-h-10 rounded-[var(--radius-md)] border border-input px-3 font-medium text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
                   type="button"
                   onClick={() => void tests.refetch()}
                 >
@@ -281,7 +281,7 @@ export function CommandPalette({
                 <button
                   role="option"
                   type="button"
-                  className={`relay-command-item flex min-h-11 w-full items-center gap-3 rounded-[var(--radius-md)] px-2.5 py-2 text-left text-[13px]${index === activeIndex ? " relay-command-item--active bg-[var(--surface-base-active)]" : ""}`}
+                  className={`relay-command-item flex min-h-11 w-full items-center gap-3 rounded-[var(--radius-md)] px-2.5 py-2 text-left text-[13px]${index === activeIndex ? " relay-command-item--active bg-accent" : ""}`}
                   key={command.id}
                   id={`relay-command-${command.id}`}
                   aria-selected={index === activeIndex}
@@ -296,14 +296,14 @@ export function CommandPalette({
                     <strong className="overflow-hidden text-ellipsis whitespace-nowrap font-medium">
                       {command.label}
                     </strong>
-                    <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weaker)]">
+                    <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
                       {command.detail}
                     </small>
                   </span>
                 </button>
               ))
             ) : tests.isError ? null : (
-              <p className="relay-command-empty p-6 text-center text-sm text-[var(--text-weaker)]">
+              <p className="relay-command-empty p-6 text-center text-sm text-muted-foreground">
                 No matching commands
               </p>
             )}

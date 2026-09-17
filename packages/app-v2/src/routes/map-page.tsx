@@ -228,7 +228,7 @@ export function MapPage() {
                   detail="Record a Test to give Relay a starting point for exploration."
                   action={
                     <Link
-                      className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                      className="{productLinkClassName}"
                       to="/tests/new"
                       search={{ app: appId }}
                     >

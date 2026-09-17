@@ -55,13 +55,13 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
                     isActive={active}
                     aria-current={active ? "page" : undefined}
                     className={classNames(
-                      "relay-nav-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-[var(--text-base)]",
+                      "relay-nav-link focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-foreground",
                       active &&
-                        "relay-nav-link--active bg-[var(--surface-base-active)] font-semibold text-[var(--text-strong)] shadow-none",
+                        "relay-nav-link--active bg-accent font-semibold text-foreground shadow-none",
                     )}
                   >
                     <item.icon
-                      className={`h-[17px] w-[17px] shrink-0 text-[var(--text-weaker)]${active ? " text-[var(--text-strong)]" : ""}`}
+                      className={`h-[17px] w-[17px] shrink-0 text-muted-foreground${active ? " text-foreground" : ""}`}
                       aria-hidden="true"
                     />
                     <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
@@ -77,20 +77,20 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
       <SidebarFooter className="relay-sidebar-footer mt-auto pt-2.5">
         <ActiveWork />
         <nav
-          className="relay-nav relay-nav--secondary flex flex-col gap-0.5 border-t border-[var(--border-weak-base)] pt-2.5"
+          className="relay-nav relay-nav--secondary flex flex-col gap-0.5 border-t border-border pt-2.5"
           aria-label={`${label} settings`}
         >
           <SidebarMenuButton
             render={<Link to="/changes" onClick={closeMobileNavigation} />}
             isActive={pathname.startsWith("/changes")}
             className={classNames(
-              "relay-nav-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-[var(--text-base)]",
+              "relay-nav-link focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-foreground",
               pathname.startsWith("/changes") &&
-                "relay-nav-link--active bg-[var(--surface-base-active)] font-semibold text-[var(--text-strong)] shadow-none",
+                "relay-nav-link--active bg-accent font-semibold text-foreground shadow-none",
             )}
           >
             <GitCompare
-              className={`h-[17px] w-[17px] shrink-0 text-[var(--text-weaker)]${pathname.startsWith("/changes") ? " text-[var(--text-strong)]" : ""}`}
+              className={`h-[17px] w-[17px] shrink-0 text-muted-foreground${pathname.startsWith("/changes") ? " text-foreground" : ""}`}
               aria-hidden="true"
             />
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Changes</span>
@@ -99,13 +99,13 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
             render={<Link to="/settings/general" onClick={closeMobileNavigation} />}
             isActive={settingsActive}
             className={classNames(
-              "relay-nav-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-[var(--text-base)]",
+              "relay-nav-link focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-foreground",
               settingsActive &&
-                "relay-nav-link--active bg-[var(--surface-base-active)] font-semibold text-[var(--text-strong)] shadow-none",
+                "relay-nav-link--active bg-accent font-semibold text-foreground shadow-none",
             )}
           >
             <Settings
-              className={`h-[17px] w-[17px] shrink-0 text-[var(--text-weaker)]${settingsActive ? " text-[var(--text-strong)]" : ""}`}
+              className={`h-[17px] w-[17px] shrink-0 text-muted-foreground${settingsActive ? " text-foreground" : ""}`}
               aria-hidden="true"
             />
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">

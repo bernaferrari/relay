@@ -150,7 +150,7 @@ export function SelectedStepEditor({
           {entry.number}
         </span>
         <div className="min-w-0">
-          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+          <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
             Selected step
           </p>
           <h2>{stepKindLabel(entry.step)}</h2>

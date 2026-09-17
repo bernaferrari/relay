@@ -482,8 +482,8 @@ export function DevicePage() {
             ) : null}
             {device.data.platform === "android" ? (
               <section className="grid gap-4" aria-labelledby="device-launch-title">
-                <div className="grid gap-2 text-sm leading-relaxed text-text-weak">
-                  <h2 className="font-semibold text-text-strong" id="device-launch-title">
+                <div className="grid gap-2 text-sm leading-relaxed text-muted-foreground">
+                  <h2 className="font-semibold text-foreground" id="device-launch-title">
                     App and language
                   </h2>
                 </div>

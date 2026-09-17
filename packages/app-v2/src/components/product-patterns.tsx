@@ -60,13 +60,13 @@ export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
             <li className="inline-flex min-w-0 items-center gap-1.5" key={`${item.label}:${index}`}>
               {index ? (
                 <ChevronRight
-                  className="relay-breadcrumb-separator size-3 shrink-0 text-[var(--text-weaker)]"
+                  className="relay-breadcrumb-separator size-3 shrink-0 text-muted-foreground"
                   aria-hidden="true"
                 />
               ) : null}
               {"to" in item && (item.to === "/apps/$appId" || item.to === "/tests/$testId") ? (
                 <Link
-                  className="inline-flex items-center text-[var(--text-weak)] hover:text-foreground"
+                  className="inline-flex items-center text-muted-foreground hover:text-foreground"
                   to={item.to}
                   params={item.params}
                 >
@@ -74,7 +74,7 @@ export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
                 </Link>
               ) : "to" in item ? (
                 <Link
-                  className="inline-flex items-center text-[var(--text-weak)] hover:text-foreground"
+                  className="inline-flex items-center text-muted-foreground hover:text-foreground"
                   to={item.to}
                 >
                   {item.label}

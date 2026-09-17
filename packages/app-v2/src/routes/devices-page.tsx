@@ -70,10 +70,10 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
             <DeviceIcon className="size-5" strokeWidth={1.75} />
           </span>
           <span className="grid min-w-0 gap-0.5">
-            <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-[var(--text-strong)]">
+            <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-foreground">
               {device.name}
             </strong>
-            <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
+            <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
               {deviceSummaryLine(device)}
             </span>
           </span>

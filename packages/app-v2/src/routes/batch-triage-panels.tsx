@@ -31,7 +31,7 @@ import {
 } from "./batch-triage";
 
 const reportLinkClass =
-  "inline-flex min-h-11 items-center gap-1 text-[13px] font-semibold text-[var(--text-interactive-base)] underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px] transition-[color] duration-150 ease-out hover:text-[var(--text-interactive-hover)]";
+  "inline-flex min-h-11 items-center gap-1 text-[13px] font-semibold text-foreground underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px] transition-[color] duration-150 ease-out hover:text-[var(--text-interactive-hover)]";
 
 export function BatchFailureClusters({
   clusters,
@@ -68,7 +68,7 @@ export function BatchFailureClusters({
           const product = copy.lane === "Product";
           return (
             <li
-              className={`grid min-h-14 grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-xl border border-border bg-[var(--surface-raised-strong)] py-3.5 pr-3 pl-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] ${
+              className={`grid min-h-14 grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-xl border border-border bg-card py-3.5 pr-3 pl-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] ${
                 product
                   ? "border-l-[3px] border-l-border-critical-selected"
                   : "border-l-[3px] border-l-border"

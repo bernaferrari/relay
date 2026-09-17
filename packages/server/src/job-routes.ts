@@ -234,9 +234,10 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       targetProfile: previous.targetProfile,
       parentAuthenticationHealth: previous.authenticationHealth,
     });
-    const job = runtime.retryJob(retryMatch.id!, {
-      ...(authenticationHealth ? { authenticationHealth } : {}),
-    });
+    const job = runtime.retryJob(
+      retryMatch.id!,
+      authenticationHealth ? { authenticationHealth } : {},
+    );
     json(res, 202, { job });
     return true;
   }
@@ -305,9 +306,11 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
           targetKind: device.kind,
         });
       }
-      const job = runtime.replayPersistedRun(run, "saved-steps", {
-        ...(authenticationHealth ? { authenticationHealth } : {}),
-      });
+      const job = runtime.replayPersistedRun(
+        run,
+        "saved-steps",
+        authenticationHealth ? { authenticationHealth } : {},
+      );
       json(res, 202, { job });
     } catch (error) {
       throw new HttpError(409, error instanceof Error ? error.message : String(error));
@@ -678,9 +681,10 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
         parentAuthenticationHealth: previous.authenticationHealth,
       });
       try {
-        const job = runtime.retryJob(body.retryOf, {
-          ...(authenticationHealth ? { authenticationHealth } : {}),
-        });
+        const job = runtime.retryJob(
+          body.retryOf,
+          authenticationHealth ? { authenticationHealth } : {},
+        );
         json(res, 202, { job });
         return true;
       } catch (err) {

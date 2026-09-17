@@ -218,7 +218,7 @@ export function RunInspection({
           detail="The copied result is still available, but it is not an attached report for this Test."
           action={
             <Link
-              className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+              className="{productLinkClassName}"
               to="/runs/$runId"
               params={{ runId }}
             >
@@ -707,7 +707,7 @@ function RunReport({
             className="mt-5 rounded-xl border border-border bg-card p-5"
             aria-labelledby="first-evidence-title"
           >
-            <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+            <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
               {report.outcome === "passed" ? "What Relay verified" : "Evidence at this point"}
             </p>
             <h2 id="first-evidence-title">{report.firstEvidence.label}</h2>

@@ -469,12 +469,12 @@ export function MapEdges({
         return (
           <g
             key={geometry.path.id}
-            className={`relay-map-edge [&>path]:fill-none [&>path]:stroke-current [&>path]:[stroke-linecap:round] [&>path]:stroke-[1.5] [&>path]:[vector-effect:non-scaling-stroke] [&>rect]:fill-[var(--surface-raised-stronger-non-alpha)] [&>rect]:stroke-[var(--border-weak-base)] [&>rect]:stroke-0 [&>rect]:[vector-effect:non-scaling-stroke] [&_text]:fill-current [&_text]:font-sans [&_text]:text-[10.5px] [&_text]:font-normal ${
+            className={`relay-map-edge [&>path]:fill-none [&>path]:stroke-current [&>path]:[stroke-linecap:round] [&>path]:stroke-[1.5] [&>path]:[vector-effect:non-scaling-stroke] [&>rect]:fill-popover [&>rect]:stroke-border [&>rect]:stroke-0 [&>rect]:[vector-effect:non-scaling-stroke] [&_text]:fill-current [&_text]:font-sans [&_text]:text-[10.5px] [&_text]:font-normal ${
               state === "selected"
                 ? "text-blue-400"
                 : state === "muted"
                   ? "text-[color-mix(in_oklch,var(--text-weak)_80%,var(--background)_20%)]"
-                  : "text-[var(--text-weak)]"
+                  : "text-muted-foreground"
             }`}
           >
             {geometry.anchor ? (

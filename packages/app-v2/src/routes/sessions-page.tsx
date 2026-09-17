@@ -137,13 +137,13 @@ export function SessionsPage() {
             <h2 className="text-[13px] font-semibold" id="session-results-title">
               {visible.length === 1 ? "1 live" : `${visible.length} live`}
             </h2>
-            <span className="text-xs text-text-weak" aria-live="polite">
+            <span className="text-xs text-muted-foreground" aria-live="polite">
               {view === "active" ? "Continue where you left off" : "Session history"}
             </span>
           </div>
-          <ul className="m-0 list-none overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-strong p-0">
+          <ul className="m-0 list-none overflow-hidden rounded-xl border border-border bg-card p-0">
             {visible.map((session) => (
-              <li className="border-b border-border-weak-base last:border-b-0" key={session.id}>
+              <li className="border-b border-border last:border-b-0" key={session.id}>
                 <SessionRow
                   session={session}
                   referenceTime={referenceTime}
@@ -219,16 +219,16 @@ function SessionRow({
   const Icon = session.target.platform === "browser" ? Monitor : Smartphone;
   return (
     <Link
-      className="grid min-h-16 cursor-pointer grid-cols-[28px_minmax(0,1fr)_18px] items-center gap-x-3 gap-y-1 px-3 py-2 text-text-base transition-colors hover:bg-surface-raised-strong-hover focus-visible:relative focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-text-strong md:grid-cols-[28px_minmax(0,1fr)_auto_18px] md:gap-4"
+      className="grid min-h-16 cursor-pointer grid-cols-[28px_minmax(0,1fr)_18px] items-center gap-x-3 gap-y-1 px-3 py-2 text-foreground transition-colors hover:bg-accent focus-visible:relative focus-visible:z-[1] focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring md:grid-cols-[28px_minmax(0,1fr)_auto_18px] md:gap-4"
       to="/sessions/$sessionId"
       params={{ sessionId: session.id }}
     >
-      <span className="grid size-7 place-items-center rounded-md border border-border-weak-base bg-surface-base text-text-weak">
+      <span className="grid size-7 place-items-center rounded-md border border-border bg-secondary text-muted-foreground">
         <Icon className="size-3.5" aria-hidden="true" />
       </span>
       <span className="grid min-w-0 gap-1">
         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <strong className="truncate text-sm font-semibold text-text-strong">
+          <strong className="truncate text-sm font-semibold text-foreground">
             {session.title}
           </strong>
           <Badge
@@ -246,16 +246,16 @@ function SessionRow({
             {sessionStateLabel(session.state)}
           </Badge>
         </span>
-        <span className="truncate text-xs text-text-weak">
+        <span className="truncate text-xs text-muted-foreground">
           {targetName ?? (session.target.platform === "browser" ? "Browser" : "Device")} ·{" "}
           {session.actorKind === "agent" ? "Agent" : "Manual"}
         </span>
       </span>
       <span className="col-start-2 grid min-w-0 justify-items-start gap-1 md:col-auto">
-        <strong className="truncate text-xs font-semibold tabular-nums text-text-base">
+        <strong className="truncate text-xs font-semibold tabular-nums text-foreground">
           Updated {relativeTime(session.updatedAt, referenceTime)}
         </strong>
-        <small className="truncate text-xs text-text-weak">
+        <small className="truncate text-xs text-muted-foreground">
           {active
             ? "Active session"
             : session.take
@@ -264,7 +264,7 @@ function SessionRow({
         </small>
       </span>
       <ChevronRight
-        className="col-start-3 row-start-1 size-4 text-text-weaker md:col-start-4"
+        className="col-start-3 row-start-1 size-4 text-muted-foreground md:col-start-4"
         aria-hidden="true"
       />
     </Link>

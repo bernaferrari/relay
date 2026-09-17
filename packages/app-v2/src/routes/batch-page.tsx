@@ -315,7 +315,7 @@ export function BatchPage() {
           ) : null}
 
           {canContinue ? (
-            <section className="relay-batch-next-step mt-5 rounded-xl border border-border border-l-[3px] border-l-border-interactive-base bg-[var(--surface-raised-strong)] p-5">
+            <section className="relay-batch-next-step mt-5 rounded-xl border border-border border-l-[3px] border-l-border-interactive-base bg-card p-5">
               <h2 className="text-[20px] font-semibold tracking-tight text-foreground">
                 Review before continuing
               </h2>
@@ -504,7 +504,7 @@ export function BatchPage() {
               </Button>
               {downloadUrl ? (
                 <a
-                  className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                  className="{productLinkClassName}"
                   href={downloadUrl}
                   download={`relay-${batchId}.tar.gz`}
                 >

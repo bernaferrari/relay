@@ -252,7 +252,7 @@ export function SuitePage() {
           detail="It may have been removed from this App."
           action={
             <Link
-              className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+              className="{productLinkClassName}"
               to="/suites"
             >
               Back to Plans
@@ -298,19 +298,19 @@ export function SuitePage() {
           />
 
           <dl
-            className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 border-y border-border-weak-base py-3"
+            className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 border-y border-border py-3"
             aria-label={`${value.name} scope`}
           >
             <div className="flex items-center gap-2">
-              <dt className="text-xs text-text-weaker">Tests</dt>
-              <dd className="text-sm font-semibold text-text-strong">{value.tests.length}</dd>
+              <dt className="text-xs text-muted-foreground">Tests</dt>
+              <dd className="text-sm font-semibold text-foreground">{value.tests.length}</dd>
             </div>
             <div className="flex items-center gap-2">
-              <dt className="text-xs text-text-weaker">Data sets</dt>
-              <dd className="text-sm font-semibold text-text-strong">{value.variableIds.length}</dd>
+              <dt className="text-xs text-muted-foreground">Data sets</dt>
+              <dd className="text-sm font-semibold text-foreground">{value.variableIds.length}</dd>
             </div>
             <div className="flex items-center gap-2">
-              <dt className="text-xs text-text-weaker">Status</dt>
+              <dt className="text-xs text-muted-foreground">Status</dt>
               <dd>
                 <ReadinessMark status={needsReview ? "needs-review" : "ready"} />
               </dd>
@@ -319,24 +319,24 @@ export function SuitePage() {
 
           <div className="mt-6 grid items-start gap-4 lg:grid-cols-2">
             <section
-              className="min-w-0 rounded-xl border border-border-weak-base bg-surface-raised-strong p-4"
+              className="min-w-0 rounded-xl border border-border bg-card p-4"
               aria-labelledby="suite-tests-title"
             >
-              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
                 Coverage
               </p>
-              <h2 id="suite-tests-title" className="mt-1 text-base font-semibold text-text-strong">
+              <h2 id="suite-tests-title" className="mt-1 text-base font-semibold text-foreground">
                 Saved Tests
               </h2>
               <ul className="mt-4 grid list-none gap-2 p-0">
                 {value.tests.map((test) => (
                   <li key={test.id}>
                     <Link
-                      className="flex min-h-9 items-center justify-between gap-3 rounded-md bg-background-weak px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-border-focus"
+                      className="flex min-h-9 items-center justify-between gap-3 rounded-md bg-muted px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       to="/tests/$testId"
                       params={{ testId: test.id }}
                     >
-                      <span className="truncate text-sm font-medium text-text-strong">
+                      <span className="truncate text-sm font-medium text-foreground">
                         {test.name}
                       </span>
                       <ReadinessMark
@@ -347,7 +347,7 @@ export function SuitePage() {
                   </li>
                 ))}
               </ul>
-              <p className="mt-4 border-t border-border-weak-base pt-3 text-xs leading-5 text-text-weak">
+              <p className="mt-4 border-t border-border pt-3 text-xs leading-5 text-muted-foreground">
                 {value.variableIds.length
                   ? `${value.variableIds.length} saved Data ${
                       value.variableIds.length === 1 ? "set" : "sets"
@@ -357,7 +357,7 @@ export function SuitePage() {
             </section>
 
             <section
-              className="min-w-0 rounded-xl border border-border-weak-base bg-surface-raised-strong p-4"
+              className="min-w-0 rounded-xl border border-border bg-card p-4"
               aria-labelledby="suite-environment-title"
             >
               <RunConfigurationComposer
@@ -487,7 +487,7 @@ export function SuitePage() {
                   }`}
                   role="status"
                 >
-                  <strong className="font-semibold text-text-strong">
+                  <strong className="font-semibold text-foreground">
                     {previewBlockers.length
                       ? "Needs attention"
                       : `Full Plan: ${preview.data?.caseCount} ${
@@ -499,7 +499,7 @@ export function SuitePage() {
                         }`}
                   </strong>
                   {preview.data ? (
-                    <span className="text-text-weak">
+                    <span className="text-muted-foreground">
                       {preview.data.checkCount} {preview.data.checkCount === 1 ? "check" : "checks"}
                       {preview.data.expectedScreenshots === undefined
                         ? ""
@@ -512,14 +512,14 @@ export function SuitePage() {
                     </span>
                   ) : null}
                   {preview.data?.execution?.detail ? (
-                    <details className="mt-2 text-text-weak">
+                    <details className="mt-2 text-muted-foreground">
                       <summary className="cursor-pointer py-1">Execution details</summary>
                       <p className="mt-1 leading-5">{preview.data.execution.detail}</p>
                     </details>
                   ) : null}
                   {previewBlockers.slice(0, 1).map((blocker) => (
                     <small
-                      className="leading-5 text-text-weak"
+                      className="leading-5 text-muted-foreground"
                       key={`${blocker.code}:${"suiteCellId" in blocker ? blocker.suiteCellId : "suite"}`}
                     >
                       {friendlySuiteIssue(blocker.message)}
@@ -555,14 +555,14 @@ export function SuitePage() {
           ) : null}
 
           <section
-            className="mt-8 flex items-center justify-between gap-5 border-t border-border-weak-base pt-5 max-sm:items-start"
+            className="mt-8 flex items-center justify-between gap-5 border-t border-border pt-5 max-sm:items-start"
             aria-labelledby="remove-suite-title"
           >
             <div>
-              <h2 id="remove-suite-title" className="text-sm font-semibold text-text-strong">
+              <h2 id="remove-suite-title" className="text-sm font-semibold text-foreground">
                 Remove Plan
               </h2>
-              <p className="mt-1 text-xs leading-5 text-text-weak">
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
                 Tests and Reports stay in the App.
               </p>
             </div>

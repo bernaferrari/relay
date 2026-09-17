@@ -149,10 +149,10 @@ export function ActiveWork() {
   return (
     <>
       <section
-        className="relay-sidebar-active-work mb-2 grid gap-1 rounded-[var(--radius-lg)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] p-[9px]"
+        className="relay-sidebar-active-work mb-2 grid gap-1 rounded-[var(--radius-lg)] border border-border bg-card p-[9px]"
         aria-label="Active work"
       >
-        <div className="relay-sidebar-active-heading flex min-h-6 items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+        <div className="relay-sidebar-active-heading flex min-h-6 items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
           <span>Active work</span>
           <Badge variant="secondary" className="min-h-5 px-1.5 text-[9px]">
             {items.length}
@@ -160,18 +160,18 @@ export function ActiveWork() {
         </div>
         <button
           type="button"
-          className="relay-sidebar-active-link grid min-h-11 w-full grid-cols-[16px_minmax(0,1fr)] items-center gap-[9px] rounded-[var(--radius-md)] border-0 bg-transparent p-1.5 text-left text-[var(--text-base)]"
+          className="relay-sidebar-active-link grid min-h-11 w-full grid-cols-[16px_minmax(0,1fr)] items-center gap-[9px] rounded-[var(--radius-md)] border-0 bg-transparent p-1.5 text-left text-foreground"
           onClick={() => router.history.push(primary.href)}
         >
           <Icon
-            className="h-[15px] w-[15px] text-[var(--text-interactive-base)]"
+            className="h-[15px] w-[15px] text-foreground"
             aria-hidden="true"
           />
           <span className="grid min-w-0 gap-px">
             <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-[11px] font-semibold">
               {primary.title}
             </strong>
-            <small className="overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-[var(--text-weaker)]">
+            <small className="overflow-hidden text-ellipsis whitespace-nowrap text-[10px] text-muted-foreground">
               {primary.status} · {primary.detail}
             </small>
           </span>
@@ -179,7 +179,7 @@ export function ActiveWork() {
         {items.length > 1 ? (
           <button
             type="button"
-            className="relay-sidebar-active-all inline-flex min-h-9 items-center rounded-[var(--radius-sm)] border-0 bg-transparent px-1.5 text-[10px] font-semibold text-[var(--text-interactive-base)]"
+            className="relay-sidebar-active-all inline-flex min-h-9 items-center rounded-[var(--radius-sm)] border-0 bg-transparent px-1.5 text-[10px] font-semibold text-foreground"
             onClick={() => setOpen(true)}
           >
             View all {items.length} activities

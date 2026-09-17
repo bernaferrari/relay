@@ -120,11 +120,11 @@ export function ChangesPage() {
             <h2 id="changes-result-title" className="text-[13px] font-semibold">
               {visible.length === 1 ? "1 Change" : `${visible.length} Changes`}
             </h2>
-            <span className="text-xs text-[var(--text-weak)]" aria-live="polite">
+            <span className="text-xs text-muted-foreground" aria-live="polite">
               {viewLabel(view)}
             </span>
           </div>
-          <ul className="relay-library-list m-0 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] p-0 list-none [&>li]:border-b [&>li]:border-[var(--border-weak-base)] [&>li:last-child]:border-b-0">
+          <ul className="relay-library-list m-0 overflow-hidden rounded-[var(--radius-xl)] border border-border bg-card p-0 list-none [&>li]:border-b [&>li]:border-border [&>li:last-child]:border-b-0">
             {visible.map((change) => (
               <ChangeRow key={change.id} change={change} />
             ))}
@@ -178,10 +178,10 @@ function ChangeRow({ change }: { change: ProductChange }) {
         className={`${libraryRowSurface} ${libraryRowContent} grid-cols-[minmax(220px,1fr)_minmax(118px,auto)_minmax(148px,.42fr)] max-[720px]:grid-cols-[minmax(0,1fr)_auto]`}
       >
         <span className="relay-library-row-main grid min-w-0 gap-1">
-          <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-[var(--text-strong)]">
+          <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-foreground">
             {change.title}
           </strong>
-          <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
+          <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
             {change.repository}
             {change.pullRequest ? ` · PR #${change.pullRequest}` : ""}
           </span>
@@ -201,10 +201,10 @@ function ChangeRow({ change }: { change: ProductChange }) {
           </Badge>
         </span>
         <span className="relay-library-row-recent grid min-w-0 justify-items-start gap-1 tabular-nums">
-          <strong className="text-xs font-semibold text-[var(--text-base)]">
+          <strong className="text-xs font-semibold text-foreground">
             {relativeTime(change.updatedAt)}
           </strong>
-          <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
+          <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
             {coverageLabel(change)}
           </small>
         </span>

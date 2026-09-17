@@ -86,7 +86,7 @@ export function DeviceDestinationButton({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="relay-destination-trigger relay-electron-no-drag [-webkit-app-region:no-drag] inline-flex h-7 max-w-[12.5rem] items-center gap-1 rounded-md px-2.5 text-[13px] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2"
+        className="relay-destination-trigger relay-electron-no-drag [-webkit-app-region:no-drag] inline-flex h-7 max-w-[12.5rem] items-center gap-1 rounded-md px-2.5 text-[13px] text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
         aria-label={triggerLabel ?? `Device or browser: ${label}`}
       >
         <MonitorSmartphone className="size-3.5 shrink-0" aria-hidden="true" />

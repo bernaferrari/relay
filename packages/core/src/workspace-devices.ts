@@ -554,9 +554,7 @@ async function browserDeviceForOverlay(
   const fixtureId = overlay?.authenticationFixtureId?.trim();
   const unsignedLaneId = overlay?.unsignedLaneId?.trim();
   if (!fixtureId) {
-    return getBrowserDevice(targetId, {
-      ...(unsignedLaneId ? { unsignedLaneId } : {}),
-    });
+    return getBrowserDevice(targetId, unsignedLaneId ? { unsignedLaneId } : {});
   }
   const target = await readTarget(targetId);
   if (!target?.browser) return getBrowserDevice(targetId);

@@ -108,7 +108,7 @@ export function AppShell({ platform }: { platform: Platform }) {
             </div>
             <button
               type="button"
-              className="relay-command-trigger relay-electron-no-drag [-webkit-app-region:no-drag] absolute left-0 inline-flex min-h-9 min-w-[220px] translate-x-(--command-x) items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] px-2 py-0 pl-2.5 text-left text-xs text-[var(--text-weaker)] transition-transform duration-200 ease-in-out motion-reduce:transition-none"
+              className="relay-command-trigger relay-electron-no-drag [-webkit-app-region:no-drag] absolute left-0 inline-flex min-h-9 min-w-[220px] translate-x-(--command-x) items-center gap-2 rounded-[var(--radius-md)] border border-border bg-card px-2 py-0 pl-2.5 text-left text-xs text-muted-foreground transition-transform duration-200 ease-in-out motion-reduce:transition-none"
               style={
                 {
                   "--command-x": navigationOpen
@@ -123,7 +123,7 @@ export function AppShell({ platform }: { platform: Platform }) {
             >
               <Search className="size-3.5" aria-hidden="true" />
               <span>Search or run a command</span>
-              <kbd className="min-w-7 rounded-[var(--radius-sm)] border border-[var(--border-weak-base)] bg-sidebar px-[5px] py-0.5 text-center text-[10px] leading-[1.4] text-[var(--text-weaker)]">
+              <kbd className="min-w-7 rounded-[var(--radius-sm)] border border-border bg-sidebar px-[5px] py-0.5 text-center text-[10px] leading-[1.4] text-muted-foreground">
                 {modifierKey()} K
               </kbd>
             </button>
@@ -135,7 +135,7 @@ export function AppShell({ platform }: { platform: Platform }) {
         ) : null}
         <header
           className={[
-            "relay-mobile-header relay-electron-drag [-webkit-app-region:drag] flex min-h-12 items-center gap-2 border-b border-[var(--border-weak-base)] bg-[var(--background-base)] px-2 min-[861px]:hidden",
+            "relay-mobile-header relay-electron-drag [-webkit-app-region:drag] flex min-h-12 items-center gap-2 border-b border-border bg-background px-2 min-[861px]:hidden",
             platform.platform === "desktop" ? "min-h-[60px] pl-[82px]" : "",
           ].join(" ")}
         >

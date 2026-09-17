@@ -203,7 +203,7 @@ export function TestsPage() {
           </div>
           {resumeRecordingId ? (
             <Link
-              className="text-sm font-semibold text-[var(--text-interactive-base)]"
+              className="text-sm font-semibold text-foreground"
               to="/recordings/$recordingId"
               params={{ recordingId: resumeRecordingId }}
             >
@@ -211,7 +211,7 @@ export function TestsPage() {
             </Link>
           ) : resumeRunId ? (
             <Link
-              className="text-sm font-semibold text-[var(--text-interactive-base)]"
+              className="text-sm font-semibold text-foreground"
               to="/runs/$runId"
               params={{ runId: resumeRunId }}
             >
@@ -282,7 +282,7 @@ export function TestsPage() {
                 {attentionRuns.length === 1 ? "result needs" : "results need"} attention →
               </Link>
             ) : resultLabel ? (
-              <span className="text-xs text-[var(--text-weak)]" aria-live="polite">
+              <span className="text-xs text-muted-foreground" aria-live="polite">
                 {resultLabel}
               </span>
             ) : null}
@@ -313,7 +313,7 @@ export function TestsPage() {
               detail="Open your app and record the steps you want to repeat."
               action={
                 <Link
-                  className="relay-inline-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 inline-flex min-h-11 items-center text-[var(--text-interactive-base)] font-semibold underline decoration-[color-mix(in_srgb,currentColor_45%,transparent)] underline-offset-[3px]"
+                  className="{productLinkClassName}"
                   to="/tests/new"
                 >
                   New test
@@ -340,10 +340,10 @@ function TestRow({ test }: { test: ProductTestSummary }) {
           className="grid min-w-0 gap-2 px-4 py-3.5 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-6"
         >
           <span className="relay-library-row-main grid min-w-0 gap-1">
-            <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-[var(--text-strong)]">
+            <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-foreground">
               {test.name}
             </strong>
-            <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-[var(--text-weak)]">
+            <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
               {test.appName} · {test.stepCount === 1 ? "1 step" : `${test.stepCount} steps`}
             </span>
           </span>

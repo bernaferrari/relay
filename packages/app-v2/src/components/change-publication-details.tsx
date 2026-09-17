@@ -215,7 +215,7 @@ export function ChangeSectionHeader({
   return (
     <header className="flex items-start justify-between gap-3">
       <div>
-        <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+        <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
           {eyebrow}
         </p>
         <h2 id={id}>{title}</h2>

@@ -448,7 +448,7 @@ export function SessionPage() {
               className="rounded-xl border border-border bg-card p-5"
               aria-labelledby="session-activity-title"
             >
-              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--text-weaker)]">
+              <p className="relay-section-label text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
                 Activity
               </p>
               <h2 id="session-activity-title">Recent operations</h2>
