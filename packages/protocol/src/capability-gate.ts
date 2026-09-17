@@ -3,7 +3,9 @@
  * denominator as blocked / unbound / human-only. Empty adb does not omit
  * Android combinations. Compile unresolved-step does not delete a workbook
  * original. A browser or simulator approximation is labeled as such and is
- * never the physical iOS/Android Imagine scenario.
+ * never the physical iOS/Android Imagine scenario. Signed-build / TestFlight /
+ * production-entitlement stay blocked without a signed IPA — leftover Settings
+ * and unsigned Grok are not that coverage.
  */
 
 import type {
@@ -53,6 +55,12 @@ export type CapabilityInventory = {
   adbDeviceCount: number;
   /** SuperGrok iPad home has no `navigation.tab.imagine`. Undefined means unknown — do not invent. */
   iosImagineTabPresent?: boolean;
+  /** A signed Grok IPA on disk. Undefined or false is not coverage. */
+  signedIpaPresent?: boolean;
+  /** A TestFlight build available to this lab. Undefined or false is not coverage. */
+  testFlightBuildPresent?: boolean;
+  /** Production entitlements observed on the installed Grok. Undefined or false is not coverage. */
+  productionEntitlementPresent?: boolean;
 };
 
 export type CapabilityGate = {
@@ -87,6 +95,30 @@ export type DeviceEffectSupport = {
   reason: string;
 };
 
+/** Screenshot-first: signed-build / TestFlight / production entitlements
+ * are named capabilities. Leftover Settings and unsigned Grok are not them. */
+export const DISTRIBUTION_CAPABILITIES = [
+  "signed-build",
+  "testflight",
+  "production-entitlement",
+] as const;
+export type DistributionCapability = (typeof DISTRIBUTION_CAPABILITIES)[number];
+
+export const DISTRIBUTION_SUPPORT_STATUSES = [
+  "supported",
+  "unsupported",
+  "human-only",
+  "dev-unsigned",
+] as const;
+export type DistributionSupportStatus = (typeof DISTRIBUTION_SUPPORT_STATUSES)[number];
+
+export type DistributionSupport = {
+  capability: DistributionCapability;
+  status: DistributionSupportStatus;
+  primitive: string;
+  reason: string;
+};
+
 export type PlanCaptureReviewCapabilityRun = PlanCaptureReviewRunInput & {
   platform?: "android" | "ios" | "browser";
   approximation?: "simulator" | "emulator" | "browser";
@@ -98,6 +130,8 @@ export type PlanCaptureReviewCapabilityRun = PlanCaptureReviewRunInput & {
   family?: string;
   /** Explicit device-effect claims. Caption text is not a capability. */
   deviceEffects?: readonly DeviceEffectCapability[];
+  /** Explicit signed-build / TestFlight / entitlement claims. Settings is not one. */
+  distributionCapabilities?: readonly DistributionCapability[];
 };
 
 export const IOS_HARDWARE_CLASSES = [
@@ -211,6 +245,160 @@ export function claimedDeviceEffects(input: {
   for (const effect of deviceEffectsFromRecipeSteps(input.recipeSteps)) push(effect);
   push(deviceEffectFromCheckpointId(input.checkpointId));
   return found;
+}
+
+const CHECKPOINT_DISTRIBUTION: Record<string, DistributionCapability> = {
+  "signed-build": "signed-build",
+  "signed-ipa": "signed-build",
+  testflight: "testflight",
+  "test-flight": "testflight",
+  "production-entitlement": "production-entitlement",
+  "production-entitlements": "production-entitlement",
+};
+
+export function distributionCapabilityFromCheckpointId(
+  checkpointId?: string,
+): DistributionCapability | undefined {
+  const key = checkpointId?.trim().toLowerCase();
+  if (!key) return undefined;
+  return CHECKPOINT_DISTRIBUTION[key];
+}
+
+/** Caption / leftover Settings is display only and is not a signed-build claim. */
+export function claimedDistributionCapabilities(input: {
+  checkpointId?: string;
+  distributionCapabilities?: readonly DistributionCapability[];
+}): DistributionCapability[] {
+  const found: DistributionCapability[] = [];
+  const push = (capability: DistributionCapability | undefined): void => {
+    if (capability && !found.includes(capability)) found.push(capability);
+  };
+  for (const capability of input.distributionCapabilities ?? []) push(capability);
+  push(distributionCapabilityFromCheckpointId(input.checkpointId));
+  return found;
+}
+
+const NO_SIGNED_IPA: DistributionSupport = {
+  capability: "signed-build",
+  status: "unsupported",
+  primitive: "none",
+  reason:
+    "No signed IPA in this workspace. Apple Development is not a shippable Grok build. Simulator/dev unsigned Grok is not signed-build coverage. Do not sideload a fake Grok.",
+};
+
+const NO_TESTFLIGHT: DistributionSupport = {
+  capability: "testflight",
+  status: "unsupported",
+  primitive: "none",
+  reason:
+    "No TestFlight IPA in this workspace. A leftover Settings screenshot is not TestFlight coverage. Do not invent a TestFlight pass.",
+};
+
+const NO_PRODUCTION_ENTITLEMENT: DistributionSupport = {
+  capability: "production-entitlement",
+  status: "unsupported",
+  primitive: "none",
+  reason:
+    "Production entitlements are not on the XCTest/dev runner or Apple Development identity. Store/TestFlight entitlements stay unproven until a signed IPA presents them.",
+};
+
+function isDevUnsignedSurface(input: {
+  approximation?: "simulator" | "emulator" | "browser";
+  platform?: "android" | "ios" | "browser";
+}): boolean {
+  return (
+    input.approximation === "simulator" ||
+    input.approximation === "emulator" ||
+    input.approximation === "browser" ||
+    input.platform === "browser"
+  );
+}
+
+function inventoryHas(flag: boolean | undefined): boolean {
+  return flag === true;
+}
+
+/** Actual Relay support. Absence of a signed IPA is unsupported, not missing. */
+export function distributionCapabilitySupport(input: {
+  capability: DistributionCapability;
+  inventory: CapabilityInventory;
+  approximation?: "simulator" | "emulator" | "browser";
+  platform?: "android" | "ios" | "browser";
+}): DistributionSupport {
+  if (isDevUnsignedSurface(input)) {
+    return {
+      capability: input.capability,
+      status: "dev-unsigned",
+      primitive: "none",
+      reason: `Simulator/dev unsigned Grok is not ${input.capability} coverage`,
+    };
+  }
+  if (input.capability === "signed-build") {
+    if (inventoryHas(input.inventory.signedIpaPresent)) {
+      return {
+        capability: "signed-build",
+        status: "supported",
+        primitive: "signed IPA",
+        reason: "Signed IPA is present in this workspace.",
+      };
+    }
+    return NO_SIGNED_IPA;
+  }
+  if (input.capability === "testflight") {
+    if (inventoryHas(input.inventory.testFlightBuildPresent)) {
+      return {
+        capability: "testflight",
+        status: "human-only",
+        primitive: "TestFlight install",
+        reason: "TestFlight install stays human. Relay has no TestFlight install primitive.",
+      };
+    }
+    return NO_TESTFLIGHT;
+  }
+  if (inventoryHas(input.inventory.productionEntitlementPresent)) {
+    return {
+      capability: "production-entitlement",
+      status: "supported",
+      primitive: "production entitlements",
+      reason: "Production entitlements were observed on the installed Grok.",
+    };
+  }
+  return NO_PRODUCTION_ENTITLEMENT;
+}
+
+export function distributionCapabilityMatrix(input: {
+  inventory: CapabilityInventory;
+  approximation?: "simulator" | "emulator" | "browser";
+  platform?: "android" | "ios" | "browser";
+}): DistributionSupport[] {
+  return DISTRIBUTION_CAPABILITIES.map((capability) =>
+    distributionCapabilitySupport({ ...input, capability }),
+  );
+}
+
+/** Signed-build / TestFlight / production-entitlement stay blocked without evidence. */
+export function canCoverSignedDistribution(input: {
+  capability: DistributionCapability;
+  inventory: CapabilityInventory;
+  approximation?: "simulator" | "emulator" | "browser";
+  platform?: "android" | "ios" | "browser";
+}): { ok: true } | { ok: false; reason: string } {
+  const support = distributionCapabilitySupport(input);
+  if (support.status !== "supported") return { ok: false, reason: support.reason };
+  return { ok: true };
+}
+
+function gateForDistribution(support: DistributionSupport): CapabilityGate | undefined {
+  if (support.status === "human-only") {
+    return { kind: "human-only", reason: support.reason };
+  }
+  if (support.status === "unsupported") {
+    return { kind: "unsupported", reason: support.reason };
+  }
+  if (support.status === "dev-unsigned") {
+    return { kind: "nonapplicable", reason: support.reason };
+  }
+  return undefined;
 }
 
 const PHYSICAL_LOCK: DeviceEffectSupport = {
@@ -486,6 +674,7 @@ export function capabilityGateForSlot(input: {
   serial?: string;
   family?: string;
   deviceEffects?: readonly DeviceEffectCapability[];
+  distributionCapabilities?: readonly DistributionCapability[];
   recipeSteps?: readonly unknown[];
 }): CapabilityGate | undefined {
   const platform = captureReviewSlotPlatform({
@@ -550,6 +739,20 @@ export function capabilityGateForSlot(input: {
     }
   }
 
+  for (const capability of claimedDistributionCapabilities({
+    checkpointId: input.slot.checkpointId,
+    distributionCapabilities: input.distributionCapabilities,
+  })) {
+    const support = distributionCapabilitySupport({
+      capability,
+      inventory: input.inventory,
+      approximation: input.approximation,
+      platform,
+    });
+    const gate = gateForDistribution(support);
+    if (gate) return gate;
+  }
+
   if (input.executionQueue !== undefined || input.declaredDwellMs !== undefined) {
     const survival = canCoverWorkbookFamily({
       executionQueue: input.executionQueue,
@@ -598,6 +801,7 @@ export function capabilityGateForRun(
       serial: run.serial,
       family: run.family,
       deviceEffects: run.deviceEffects,
+      distributionCapabilities: run.distributionCapabilities,
       recipeSteps: run.recipeSteps,
     });
     if (gate) return gate;

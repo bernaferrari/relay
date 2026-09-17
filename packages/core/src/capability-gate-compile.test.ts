@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AppMap, AppMapEntity, AppMapScenarioTest, Connection, Screen } from "@relay/protocol";
-import { resolveGatedPlanCaptureReviewQueue } from "@relay/protocol";
+import {
+  canCoverSignedDistribution,
+  claimedDistributionCapabilities,
+  resolveGatedPlanCaptureReviewQueue,
+} from "@relay/protocol";
 import { AppMapTestCompileError } from "./app-map-test-compile-error.js";
 import { compileAppMapTest } from "./map-work.js";
 
@@ -146,4 +150,58 @@ test("iOS Imagine compile unresolved-step does not invent navigation.tab.imagine
       error.code === "unresolved-step" &&
       /navigation\.tab\.imagine absent/u.test(error.message),
   );
+});
+
+test("compiled leftover Settings is not signed-build coverage without a signed IPA", () => {
+  const compiled = compileAppMapTest(
+    map({ "test-grok-android-home-chrome": homeTest() }),
+    homeTest(),
+  );
+  const leftover = (compiled.plan.plannedSlots ?? []).map((slot) => ({
+    ...slot,
+    checkpointId: "settings",
+    caption: "Settings leftover",
+    configuration: { app: "ai.x.GrokApp" as const },
+  }));
+  assert.ok(leftover.length >= 1);
+  assert.deepEqual(
+    claimedDistributionCapabilities({ checkpointId: leftover[0]?.checkpointId }),
+    [],
+  );
+  const inventory = { adbDeviceCount: 0, iosImagineTabPresent: false };
+  assert.equal(
+    canCoverSignedDistribution({
+      capability: "signed-build",
+      inventory,
+      platform: "ios",
+    }).ok,
+    false,
+  );
+  const leftoverQueue = resolveGatedPlanCaptureReviewQueue(
+    [
+      {
+        runId: "ipad-settings",
+        platform: "ios",
+        serial: "db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+        plannedSlots: leftover,
+      },
+    ],
+    inventory,
+  );
+  assert.equal(leftoverQueue.summary.blocked, 0);
+
+  const signedQueue = resolveGatedPlanCaptureReviewQueue(
+    [
+      {
+        runId: "ios-signed-build",
+        platform: "ios",
+        serial: "db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+        plannedSlots: leftover.map((slot) => ({ ...slot, checkpointId: "signed-build" })),
+      },
+    ],
+    inventory,
+  );
+  assert.equal(signedQueue.summary.planned, leftover.length);
+  assert.equal(signedQueue.summary.blocked, leftover.length);
+  assert.equal(signedQueue.summary.missing, 0);
 });

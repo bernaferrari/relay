@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   canCoverPhysicalIpadSurvival,
+  canCoverSignedDistribution,
   capabilityGateForRun,
   capabilityGateForSlot,
   claimedDeviceEffects,
+  claimedDistributionCapabilities,
   classifyIosHardware,
   deviceEffectFromRecipeStep,
+  distributionCapabilityMatrix,
+  distributionCapabilitySupport,
   gatePlanCaptureReviewRuns,
   iosDeviceEffectMatrix,
   iosDeviceEffectSupport,
@@ -558,4 +562,148 @@ test("this iPad serial has no lock/airplane/cellular primitive; simulator cannot
   assert.equal(capabilityGateForRun(physicalAirplane, inventory)?.kind, "human-only");
   assert.equal(capabilityGateForRun(cellular, inventory)?.kind, "unsupported");
   assert.equal(capabilityGateForRun(auth, inventory)?.kind, "human-only");
+});
+
+test("leftover Settings is not a signed-build claim", () => {
+  assert.deepEqual(claimedDistributionCapabilities({ checkpointId: "settings" }), []);
+  assert.deepEqual(
+    claimedDistributionCapabilities({
+      checkpointId: "home-chrome",
+      distributionCapabilities: [],
+    }),
+    [],
+  );
+  const inventory = { adbDeviceCount: 0, iosImagineTabPresent: false };
+  const leftoverSettings = {
+    checkpointId: "settings",
+    caption: "Settings",
+    lookFor: "Light / Dark / System",
+    attempt: 1,
+    configuration: { app: "ai.x.GrokApp" as const },
+  };
+  assert.equal(
+    capabilityGateForSlot({
+      slot: leftoverSettings,
+      inventory,
+      platform: "ios",
+      serial: LAB_PHYSICAL_IPAD_SERIAL,
+    }),
+    undefined,
+  );
+});
+
+test("signed-build / TestFlight / production-entitlement stay blocked without a signed IPA", () => {
+  const inventory = { adbDeviceCount: 0, iosImagineTabPresent: false };
+  const matrix = distributionCapabilityMatrix({ inventory, platform: "ios" });
+  assert.equal(
+    matrix.every((row) => row.status !== "supported"),
+    true,
+  );
+  assert.equal(matrix.find((row) => row.capability === "signed-build")?.status, "unsupported");
+  assert.equal(matrix.find((row) => row.capability === "testflight")?.status, "unsupported");
+  assert.equal(
+    matrix.find((row) => row.capability === "production-entitlement")?.status,
+    "unsupported",
+  );
+  assert.equal(
+    canCoverSignedDistribution({ capability: "signed-build", inventory, platform: "ios" }).ok,
+    false,
+  );
+
+  const signed = {
+    runId: "ios-signed-build",
+    platform: "ios" as const,
+    serial: LAB_PHYSICAL_IPAD_SERIAL,
+    plannedSlots: [
+      {
+        checkpointId: "signed-build",
+        caption: "Signed Grok",
+        attempt: 1,
+        configuration: { app: "ai.x.GrokApp" as const },
+      },
+    ],
+  };
+  const testflight = {
+    runId: "ios-testflight",
+    platform: "ios" as const,
+    serial: LAB_PHYSICAL_IPAD_SERIAL,
+    plannedSlots: [
+      {
+        checkpointId: "testflight",
+        caption: "TestFlight",
+        attempt: 1,
+        configuration: { app: "ai.x.GrokApp" as const },
+      },
+    ],
+  };
+  const entitlement = {
+    runId: "ios-entitlement",
+    platform: "ios" as const,
+    serial: LAB_PHYSICAL_IPAD_SERIAL,
+    distributionCapabilities: ["production-entitlement" as const],
+    plannedSlots: [
+      {
+        checkpointId: "settings",
+        caption: "Settings leftover",
+        attempt: 1,
+        configuration: { app: "ai.x.GrokApp" as const },
+      },
+    ],
+  };
+  const simulator = {
+    runId: "sim-signed-build",
+    platform: "ios" as const,
+    approximation: "simulator" as const,
+    plannedSlots: [
+      {
+        checkpointId: "signed-build",
+        caption: "Dev unsigned Grok",
+        attempt: 1,
+        configuration: { app: "ai.x.GrokApp" as const },
+      },
+    ],
+    artifacts: [
+      {
+        kind: "capture-review",
+        data: {
+          caption: "Dev unsigned Grok",
+          framePath: "frames/sim-signed.png",
+          imageSha256: "sim",
+          checkpointId: "signed-build",
+          configuration: { app: "ai.x.GrokApp" },
+        },
+      },
+    ],
+  };
+
+  assert.equal(capabilityGateForRun(signed, inventory)?.kind, "unsupported");
+  assert.equal(capabilityGateForRun(testflight, inventory)?.kind, "unsupported");
+  assert.equal(capabilityGateForRun(entitlement, inventory)?.kind, "unsupported");
+  assert.equal(capabilityGateForRun(simulator, inventory)?.kind, "nonapplicable");
+  assert.equal(
+    distributionCapabilitySupport({
+      capability: "signed-build",
+      inventory,
+      approximation: "simulator",
+      platform: "ios",
+    }).status,
+    "dev-unsigned",
+  );
+
+  const queue = resolveGatedPlanCaptureReviewQueue(
+    [signed, testflight, entitlement, simulator],
+    inventory,
+  );
+  assert.equal(queue.summary.planned, 4);
+  assert.equal(queue.items.length, 4);
+  assert.equal(queue.summary.missing, 0);
+  assert.equal(
+    queue.items.filter((item) => item.runId !== "sim-signed-build" && item.blocked).length,
+    3,
+  );
+  assert.equal(
+    queue.items.find((item) => item.runId === "sim-signed-build")?.scenarioKind,
+    "simulator-approximation",
+  );
+  assert.match(capabilityGateForRun(signed, inventory)?.reason ?? "", /signed IPA/u);
 });
