@@ -7,6 +7,7 @@ import {
   coverByFindingSimilarlyNamedTest,
   coverByModelIterateOrPricingTap,
   coverByToolbarExpectSetOrShareToast,
+  coverByUnrecordedSourcesNewsOrPlugins,
   coverByRc23DestEnd,
   destEndViewPacketMayLeftoverSkip,
   evaluateWorkbookCoverage,
@@ -31,6 +32,8 @@ import {
   WORKBOOK_AUTO_ORIGINAL_IDS,
   WORKBOOK_CHROME_FAMILY_ID,
   WORKBOOK_CHROME_ORIGINAL_IDS,
+  WORKBOOK_TOOLS_FAMILY_ID,
+  WORKBOOK_TOOLS_ORIGINAL_IDS,
   WORKBOOK_MODELS_FAMILY_ID,
   WORKBOOK_MODELS_ORIGINAL_IDS,
   WORKBOOK_OUTPUT_FAMILY_ID,
@@ -491,6 +494,33 @@ test("capture-view leftover skip is only GQA-004 attach and GQA-040 Settings inv
     }),
     false,
   );
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 11, evidencePacket: "sequence" }), false);
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 30, evidencePacket: "sequence" }), false);
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 56, evidencePacket: "sequence" }), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 11,
+      evidencePacket: "sequence",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 30,
+      evidencePacket: "sequence",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 56,
+      evidencePacket: "sequence",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
 });
 
 test("S16 cannot be single-view Fast UI", () => {
@@ -562,6 +592,9 @@ test("RC-23 dest-end table binds only orig 4 attach view and orig 40 settings vi
   assert.equal(rc23DestEndSatisfiesOriginal("models", 7), false);
   assert.equal(rc23DestEndSatisfiesOriginal("models", 28), false);
   assert.equal(rc23DestEndSatisfiesOriginal("models", 29), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("models", 11), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("models", 30), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("models", 56), false);
   assert.equal(rc23DestEndSatisfiesOriginal("sidebar", 33), false);
   assert.equal(rc23DestEndSatisfiesOriginal("logo", 35), false);
   assert.equal(rc23DestEndSatisfiesOriginal("imagine", 37), false);
@@ -2003,6 +2036,354 @@ test("S07 packets stay unbound and need toolbar, chip, autoscroll, and share TAP
       id: 13,
       family: WORKBOOK_CHROME_FAMILY_ID,
       evidencePacket: "screenshot-receipt",
+    }),
+    "live-output",
+  );
+});
+
+test("S09 packets stay unbound and need sources-rail, Slack tools, and Latest news TAP evidence", () => {
+  assert.deepEqual([...WORKBOOK_TOOLS_ORIGINAL_IDS], [11, 30, 56]);
+  assert.deepEqual(requiredEvidenceNeededKinds("sequence"), ["sequence"]);
+  const missing = original({
+    id: 11,
+    name: "Sources rail (Expert movie review)",
+    family: WORKBOOK_TOOLS_FAMILY_ID,
+    evidencePacket: "sequence",
+    status: "unbound",
+  });
+  assert.match(
+    workbookEvidenceNeededError(missing) ?? "",
+    /S09 must be test-action|S09 needs explicit evidence-needed|sequence evidence/u,
+  );
+  const leftoverSourcesSkip = original({
+    id: 11,
+    name: "Sources rail (Expert movie review)",
+    family: WORKBOOK_TOOLS_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "leftover-3x5-send",
+        note: "Leftover 3*5 extract-15. Search the web absent. No sources TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria: "The detailed list opens in the sidebar (or a lower pop-up on Android/iOS).",
+  });
+  assert.match(workbookEvidenceNeededError(leftoverSourcesSkip) ?? "", /sequence evidence/u);
+  assert.equal(coverByUnrecordedSourcesNewsOrPlugins(leftoverSourcesSkip), false);
+  const leftoverSourcesSendOnly = original({
+    id: 11,
+    name: "Sources rail (Expert movie review)",
+    family: WORKBOOK_TOOLS_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "leftover-expert-sheet",
+        note: "Inspect-only Expert sheet. No sources TAP.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-expert-web-search",
+        note: "Send Usual Suspects. No 10 web pages TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria: "The detailed list opens in the sidebar (or a lower pop-up on Android/iOS).",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverSourcesSendOnly) ?? "",
+    /send TAP and sources TAP receipts/u,
+  );
+  const sources = original({
+    id: 11,
+    name: "Sources rail (Expert movie review)",
+    family: WORKBOOK_TOOLS_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "sources-rail-opens",
+        note: "Sources list opens after TAP. leftover 3*5 / YAML sources unrecorded is not this sequence.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-expert-web-search",
+        note: "Select Expert and send a detailed web-search question actually executed.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-sources-10-web-or-20-x",
+        note: "TAP 10 web pages / 20 X posts actually executed.",
+      },
+    ],
+    status: "unbound",
+    criteria: "The detailed list opens in the sidebar (or a lower pop-up on Android/iOS).",
+  });
+  assert.equal(workbookEvidenceNeededError(sources), undefined);
+  assert.equal(workbookEvidencePolicyError(sources), undefined);
+  assert.equal(originalIsCovered(sources), false);
+  assert.equal(coverByUnrecordedSourcesNewsOrPlugins(sources), false);
+  const sourcesObligation = workbookOriginalObligationIdentity(sources);
+  assert.equal(sourcesObligation.requirementId, "GQA-011");
+  assert.equal(sourcesObligation.caption, "Sources rail (Expert movie review)");
+  assert.match(sourcesObligation.criteria, /detailed list opens/u);
+  const leftoverPlugins = original({
+    id: 30,
+    name: "Single-agent tools + Slack",
+    family: WORKBOOK_TOOLS_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "leftover-plugins-overlay",
+        note: "Leftover plugins overlay. Do not add Gmail/Drive. No thinking-trace expand.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "A thinking trace appears and can be expanded. Trace shows web searches and connector tools (e.g. Used Slack Search Public).",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverPlugins) ?? "",
+    /sequence evidence|plugins overlay/u,
+  );
+  const leftoverSlackSendOnly = original({
+    id: 30,
+    name: "Single-agent tools + Slack",
+    family: WORKBOOK_TOOLS_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "thinking-trace-slack-tools",
+        note: "Prompt sent. Trace not expanded.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-tool-web-slack",
+        note: "Send Slack prompt. No expand TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "A thinking trace appears and can be expanded. Trace shows web searches and connector tools (e.g. Used Slack Search Public).",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverSlackSendOnly) ?? "",
+    /send TAP and thinking-trace expand TAP receipts/u,
+  );
+  const slack = original({
+    id: 30,
+    name: "Single-agent tools + Slack",
+    family: WORKBOOK_TOOLS_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "thinking-trace-slack-tools",
+        note: "Thinking trace expands with Slack Search Public. leftover plugins overlay is not this sequence.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-tool-web-slack",
+        note: "Send tool+web Slack prompt actually executed.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-expand-thinking-trace",
+        note: "TAP expand thinking trace actually executed.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "A thinking trace appears and can be expanded. Trace shows web searches and connector tools (e.g. Used Slack Search Public).",
+  });
+  assert.equal(workbookEvidenceNeededError(slack), undefined);
+  assert.equal(workbookEvidencePolicyError(slack), undefined);
+  assert.equal(originalIsCovered(slack), false);
+  const leftoverYamlNews = original({
+    id: 56,
+    name: "Latest news (single-agent)",
+    family: WORKBOOK_TOOLS_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "yaml-news-unrecorded",
+        note: "YAML news unrecorded. Think harder YAML seed. No sources TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Before the final answer: tool chips + result counts. After: logos + N sources. Tap sources → rail. News is dated today/recent, reputable + X. Think Harder only if Auto.",
+  });
+  assert.match(workbookEvidenceNeededError(leftoverYamlNews) ?? "", /sequence evidence/u);
+  const leftoverNewsSendOnly = original({
+    id: 56,
+    name: "Latest news (single-agent)",
+    family: WORKBOOK_TOOLS_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "latest-news-sources-rail",
+        note: "Latest news sent. No sources TAP.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-latest-news",
+        note: "Send Latest news. No sources TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Before the final answer: tool chips + result counts. After: logos + N sources. Tap sources → rail. News is dated today/recent, reputable + X. Think Harder only if Auto.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverNewsSendOnly) ?? "",
+    /send TAP and sources TAP receipts/u,
+  );
+  const news = original({
+    id: 56,
+    name: "Latest news (single-agent)",
+    family: WORKBOOK_TOOLS_FAMILY_ID,
+    evidencePacket: "sequence",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "sequence",
+        id: "latest-news-sources-rail",
+        note: "Tool chips then logos + N sources. leftover YAML news / think-harder YAML is not this sequence.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-latest-news",
+        note: "Type and send Latest news actually executed.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-sources-rail",
+        note: "TAP sources to open the rail actually executed.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Before the final answer: tool chips + result counts. After: logos + N sources. Tap sources → rail. News is dated today/recent, reputable + X. Think Harder only if Auto.",
+  });
+  assert.equal(workbookEvidenceNeededError(news), undefined);
+  assert.equal(workbookEvidencePolicyError(news), undefined);
+  assert.equal(originalIsCovered(news), false);
+  const newsObligation = workbookOriginalObligationIdentity(news);
+  assert.equal(newsObligation.requirementId, "GQA-056");
+  assert.match(newsObligation.criteria, /Tap sources/u);
+  const report = evaluateWorkbookCoverage(fixture({ originals: [sources, slack, news] }), [
+    { id: "test-grok-web-sources", name: "YAML sources unrecorded" },
+    { id: "test-grok-web-news", name: "YAML news unrecorded" },
+    { id: "test-grok-web-signed-in-plugins", name: "Open Plugins" },
+    { id: "test-grok-web-signed-in-3x5", name: "Ask 3*5" },
+    { id: "test-grok-web-signed-in-model-iterate", name: "Inspect model choices" },
+    { id: "test-grok-web-wait-think-harder", name: "Think harder response" },
+  ]);
+  assert.deepEqual(report.coveredOriginalIds, []);
+  assert.equal(report.unboundOriginalIds.includes(11), true);
+  assert.equal(report.unboundOriginalIds.includes(30), true);
+  assert.equal(report.unboundOriginalIds.includes(56), true);
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 11 && row.testId === "test-grok-web-sources",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 11 && row.testId === "test-grok-web-signed-in-3x5",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 11 && row.testId === "test-grok-web-signed-in-model-iterate",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 30 && row.testId === "test-grok-web-signed-in-plugins",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 56 && row.testId === "test-grok-web-news",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 56 && row.testId === "test-grok-web-wait-think-harder",
+    ),
+    true,
+  );
+  assert.equal(coverByFindingSimilarlyNamedTest(sources, []), false);
+  assert.equal(coverByRc23DestEnd({ id: 11 }, "models"), false);
+  assert.equal(coverByRc23DestEnd({ id: 30 }, "composer-focus"), false);
+  assert.equal(coverByRc23DestEnd({ id: 56 }, "home-chrome"), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 11,
+      evidencePacket: "sequence",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 30,
+      evidencePacket: "sequence",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 56,
+      evidencePacket: "sequence",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 11, evidencePacket: "sequence" }), false);
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 11,
+      family: WORKBOOK_TOOLS_FAMILY_ID,
+      evidencePacket: "sequence",
+    }),
+    "live-output",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 30,
+      family: WORKBOOK_TOOLS_FAMILY_ID,
+      evidencePacket: "sequence",
+    }),
+    "live-output",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 56,
+      family: WORKBOOK_TOOLS_FAMILY_ID,
+      evidencePacket: "sequence",
     }),
     "live-output",
   );

@@ -40,9 +40,17 @@
 # clipboard-denied share toast, and more-header chrome-only do not cover.
 # Similar toolbar/share/chip names do not cover. Leftover dest skip is
 # only GQA-004/040 capture-view.
+# RC-31 S09 single-agent tools + sources packets stay unbound: explicit
+# test-action evidence-needed (Expert web-search TAP + sources-rail TAP,
+# Slack tool+web TAP + thinking-trace expand, Latest news TAP + sources
+# TAP). YAML typeahead/sources/code/news unrecorded, leftover 3*5
+# extract-15 (Search the web absent), inspect-only Expert sheet /
+# model-iterate, and plugins overlay (do not add Gmail/Drive) do not
+# cover. Heavy GQA-031/057 stay S10. Similar sources/news/slack/plugins
+# names do not cover. Leftover dest skip is only GQA-004/040 capture-view.
 schemaVersion: 1
 id: grok-qa-workbook
-revision: 10
+revision: 11
 reviewedAt: "2026-09-16"
 source:
   workbook: grok-qa-graph.xlsx
@@ -464,8 +472,20 @@ originals:
     evidencePacket: sequence
     queue: "tools/output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: sequence
+        id: sources-rail-opens
+        note: "Named live-output frames: Expert selected, a detailed web-search question (e.g. review of The Usual Suspects) is sent, then TAP 10 web pages / 20 X posts opens the detailed list in the sidebar (or a lower pop-up on Android/iOS). Human reviews original criterion. Leftover 3*5 extract-15 / Search the web absent / inspect-only Expert sheet / YAML sources unrecorded is not this sequence. Capture-view leftover skip is only GQA-004/040. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
+      - kind: receipt
+        id: tap-send-expert-web-search
+        note: "Select Expert and type+send a detailed web-search question actually executed (test-action). Leftover Fast-checked / inspect-only model-iterate and leftover 3*5 extract-15 are not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: receipt
+        id: tap-sources-10-web-or-20-x
+        note: "TAP 10 web pages / 20 X posts actually executed so the detailed list opens (test-action). Leftover toolbar expect-set / dest-end toolbar-existing without a sources TAP is not this original."
     gates:
       - "Sources rail: SuperGrok Lite+."
+      - "Leftover 3*5 extract-15 / Search the web absent / inspect-only Expert sheet / YAML sources unrecorded is not this original. Causal TAP must open the sources rail."
     status: unbound
     bindings: []
   - id: 12
@@ -814,8 +834,20 @@ originals:
     evidencePacket: sequence
     queue: "tools/output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: sequence
+        id: thinking-trace-slack-tools
+        note: "Named live-output frames: connector enabled, tool+web prompt sent to Expert or Fast, thinking trace appears and can be expanded showing web searches and connector tools (e.g. Used Slack Search Public). Human reviews original criterion. Leftover plugins overlay (do not add Gmail/Drive) is not this sequence. Orig 5 File Connectors skip is not this original. Heavy GQA-031 is S10, not this original. YAML sources/news unrecorded is not this original. Capture-view leftover skip is only GQA-004/040. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
+      - kind: receipt
+        id: tap-send-tool-web-slack
+        note: "Type and send a tool+web Slack DM prompt to Expert or Fast actually executed (test-action). Leftover 3*5 extract-15 / plugins overlay / inspect-only Expert sheet is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: receipt
+        id: tap-expand-thinking-trace
+        note: "TAP to expand the thinking trace actually executed (test-action). Leftover plugins overlay without a trace expand is not this original. Heavy GQA-031 is S10, not this original."
     gates:
       - Added 7/22 for the connector variant.
+      - "Leftover plugins overlay (do not add Gmail/Drive) / orig 5 File Connectors skip / YAML sources/news unrecorded is not this original. Causal TAP must send the Slack tool+web prompt and expand the thinking trace. Heavy GQA-031 stays S10."
     status: unbound
     bindings: []
   - id: 31
@@ -1348,8 +1380,20 @@ originals:
     evidencePacket: sequence
     queue: "tools/output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: sequence
+        id: latest-news-sources-rail
+        note: "Named live-output frames: before the final answer, tool chips + result counts; after, logos + N sources; TAP sources opens the same rail as original 11. News is dated today/recent, reputable + X. Think Harder only if Auto. Human reviews original criterion. Do not re-spec the sources rail. Leftover 3*5 extract-15 / YAML news unrecorded / think-harder YAML seed is not this sequence. Heavy GQA-057 is S10, not this original. Capture-view leftover skip is only GQA-004/040. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
+      - kind: receipt
+        id: tap-send-latest-news
+        note: "Type and send Latest news actually executed (test-action). Leftover 3*5 extract-15 / YAML news unrecorded is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: receipt
+        id: tap-sources-rail
+        note: "TAP sources to open the rail actually executed (test-action). Same sources rail as original 11 — do not re-spec. Leftover toolbar dest-end without a sources TAP is not this original. Think harder YAML seed is GQA-028 leftover, not this original. Heavy GQA-057 is S10."
     gates:
       - Same sources rail as original 11. SuperGrok Lite+.
+      - "Leftover 3*5 extract-15 / YAML news unrecorded / think-harder YAML seed is not this original. Causal TAP must send Latest news and open the sources rail. Heavy GQA-057 stays S10. Think Harder only if Auto."
     status: unbound
     bindings: []
   - id: 57

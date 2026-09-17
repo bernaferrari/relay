@@ -6,20 +6,23 @@
  * evidence packet or an authorized exclusion; that packet is not coverage.
  * Captions are display text; obligations are plannedSlots identities.
  * S02 shell, S05 model/preset, S08 output-battery, S01 auth, S03
- * composer, S06 Auto-routing, and S07 response-chrome originals keep
- * explicit test-action evidence-needed while remaining unbound. Leftover
- * Fast-checked is not a models Test. Inspect-only model sheet is not
- * Switch model, presets, or Auto Fast/Expert routing. Leftover 3*5
- * extract-15 / Markdown judge is not S08 generated-output coverage.
- * Cloudflare Sign up / weekly Continue-with-X pause / grok-lab leftover
- * is not S01 coverage. Composer-focus inspect / send-hello paywall /
+ * composer, S06 Auto-routing, S07 response-chrome, and S09
+ * single-agent tools + sources originals keep explicit test-action
+ * evidence-needed while remaining unbound. Leftover Fast-checked is
+ * not a models Test. Inspect-only model sheet is not Switch model,
+ * presets, or Auto Fast/Expert routing. Leftover 3*5 extract-15 /
+ * Markdown judge is not S08 generated-output coverage. Cloudflare
+ * Sign up / weekly Continue-with-X pause / grok-lab leftover is not
+ * S01 coverage. Composer-focus inspect / send-hello paywall /
  * multiline extract-15 is not S03 type+send, expand, or typeahead
  * persistence. Model-iterate inspect / SuperGrok pricing TAP /
  * Think harder YAML seed is not S06 Auto routing. Leftover 3*5
  * toolbar expect-set / dest-end toolbar-existing / More extras-forbid
  * / clipboard-denied share toast is not S07 Response toolbar,
- * follow-up chips, autoscroll, or Share. Original criteria stay on
- * the slot.
+ * follow-up chips, autoscroll, or Share. YAML sources/news unrecorded
+ * / leftover 3*5 Search the web absent / inspect-only Expert sheet /
+ * plugins overlay is not S09 Sources rail, Slack tools, or Latest
+ * news. Original criteria stay on the slot.
  */
 
 import { captureReviewSlotId, type CaptureReviewConfiguration } from "./capture-review.js";
@@ -43,6 +46,8 @@ export const WORKBOOK_AUTO_FAMILY_ID = "S06";
 export const WORKBOOK_AUTO_ORIGINAL_IDS = [28, 29] as const;
 export const WORKBOOK_CHROME_FAMILY_ID = "S07";
 export const WORKBOOK_CHROME_ORIGINAL_IDS = [9, 10, 12, 13] as const;
+export const WORKBOOK_TOOLS_FAMILY_ID = "S09";
+export const WORKBOOK_TOOLS_ORIGINAL_IDS = [11, 30, 56] as const;
 export const WORKBOOK_MODELS_FAMILY_ID = "S05";
 export const WORKBOOK_MODELS_ORIGINAL_IDS = [7, 8] as const;
 export const WORKBOOK_OUTPUT_FAMILY_ID = "S08";
@@ -242,8 +247,9 @@ export const RC23_WORKBOOK_NON_BINDINGS: readonly {
   },
   {
     checkpointId: "models",
-    originalIds: [7, 8, 28, 29],
-    reason: "Inspect-only model sheet is not Switch model, presets, or Auto Fast/Expert routing.",
+    originalIds: [7, 8, 11, 28, 29, 30, 56],
+    reason:
+      "Inspect-only model sheet is not Switch model, presets, Auto Fast/Expert routing, or S09 sources-rail / Slack tools / Latest news.",
   },
   {
     checkpointId: "private-chat",
@@ -371,6 +377,18 @@ export function coverByModelIterateOrPricingTap(
  * chrome-only never cover S07. Toolbar TAP, chip TAP, autoscroll
  * sequence, and share TAP evidence is required. */
 export function coverByToolbarExpectSetOrShareToast(
+  original: Pick<WorkbookOriginal, "id" | "family">,
+): boolean {
+  void original;
+  return false;
+}
+
+/** YAML typeahead/sources/code/news unrecorded, leftover 3*5 extract-15
+ * (Search the web absent), inspect-only Expert sheet / model-iterate,
+ * or plugins overlay (do not add Gmail/Drive) never cover S09.
+ * Sources-rail TAP + sequence evidence is required. Heavy GQA-031/057
+ * stay S10. */
+export function coverByUnrecordedSourcesNewsOrPlugins(
   original: Pick<WorkbookOriginal, "id" | "family">,
 ): boolean {
   void original;
@@ -878,6 +896,9 @@ function distinctiveNeedles(original: WorkbookOriginal): readonly string[] {
   if (original.id === 10) extra.push("follow-up", "chip");
   if (original.id === 12) extra.push("autoscroll");
   if (original.id === 13) extra.push("share", "more-header");
+  if (original.id === 11) extra.push("sources", "rail", "model-iterate", "3x5");
+  if (original.id === 30) extra.push("slack", "plugins", "connector");
+  if (original.id === 56) extra.push("news", "think-harder", "sources", "3x5");
   if (original.id === 28) extra.push("think-harder", "model-iterate");
   if (original.id === 29) extra.push("quick-answer", "model-iterate");
   if (original.id === 8) extra.push("preset", "presets", "customize");
@@ -1007,6 +1028,7 @@ export function suggestedExecutionQueueForOriginal(input: {
   if (
     input.family === WORKBOOK_AUTO_FAMILY_ID ||
     input.family === WORKBOOK_CHROME_FAMILY_ID ||
+    input.family === WORKBOOK_TOOLS_FAMILY_ID ||
     input.family === "S17"
   )
     return "live-output";
@@ -1197,6 +1219,14 @@ export function workbookEvidenceNeededError(
       return `${label} S07 needs explicit evidence-needed (toolbar TAP, chip TAP, autoscroll sequence, share receipt)`;
     }
   }
+  if (original.family === WORKBOOK_TOOLS_FAMILY_ID) {
+    if (original.requirementAction !== "test-action") {
+      return `${label} S09 must be test-action — leftover 3*5 extract-15 / YAML sources/news unrecorded / plugins overlay / inspect-only Expert sheet is not Sources rail, Slack tools, or Latest news`;
+    }
+    if (!original.evidenceNeeded || original.evidenceNeeded.length === 0) {
+      return `${label} S09 needs explicit evidence-needed (sources-rail TAP, thinking-trace sequence, Latest news TAP)`;
+    }
+  }
   if (original.id === 7) {
     const switchKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
     for (const required of ["before", "after", "receipt"] as const) {
@@ -1292,6 +1322,37 @@ export function workbookEvidenceNeededError(
     const shareKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
     if (!shareKinds.has("receipt")) {
       return `${label} GQA-013 share TAP must execute — leftover 3*5 share toast / clipboard-denied / more-header chrome-only is not this original`;
+    }
+  }
+  if (original.id === 11) {
+    const sourcesKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!sourcesKinds.has("sequence")) {
+      return `${label} GQA-011 needs sequence evidence — leftover 3*5 extract-15 / Search the web absent / inspect-only Expert sheet is not this original`;
+    }
+    const sourcesReceipts =
+      original.evidenceNeeded?.filter((item) => item.kind === "receipt") ?? [];
+    if (sourcesReceipts.length < 2) {
+      return `${label} GQA-011 needs send TAP and sources TAP receipts — leftover 3*5 extract-15 / toolbar dest-end is not this original`;
+    }
+  }
+  if (original.id === 30) {
+    const slackKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!slackKinds.has("sequence")) {
+      return `${label} GQA-030 needs sequence evidence — leftover plugins overlay / Heavy GQA-031 is not this original`;
+    }
+    const slackReceipts = original.evidenceNeeded?.filter((item) => item.kind === "receipt") ?? [];
+    if (slackReceipts.length < 2) {
+      return `${label} GQA-030 needs send TAP and thinking-trace expand TAP receipts — leftover plugins overlay is not this original`;
+    }
+  }
+  if (original.id === 56) {
+    const newsKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!newsKinds.has("sequence")) {
+      return `${label} GQA-056 needs sequence evidence — leftover YAML news / think-harder YAML / Heavy GQA-057 is not this original`;
+    }
+    const newsReceipts = original.evidenceNeeded?.filter((item) => item.kind === "receipt") ?? [];
+    if (newsReceipts.length < 2) {
+      return `${label} GQA-056 needs send TAP and sources TAP receipts — leftover 3*5 extract-15 is not this original`;
     }
   }
   if (!original.evidenceNeeded) return undefined;

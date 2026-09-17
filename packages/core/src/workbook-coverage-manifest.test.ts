@@ -9,6 +9,7 @@ import {
   coverByFindingSimilarlyNamedTest,
   coverByModelIterateOrPricingTap,
   coverByToolbarExpectSetOrShareToast,
+  coverByUnrecordedSourcesNewsOrPlugins,
   coverByRc23DestEnd,
   countWorkbookEvidencePackets,
   countWorkbookSuggestedQueues,
@@ -32,6 +33,8 @@ import {
   WORKBOOK_AUTO_ORIGINAL_IDS,
   WORKBOOK_CHROME_FAMILY_ID,
   WORKBOOK_CHROME_ORIGINAL_IDS,
+  WORKBOOK_TOOLS_FAMILY_ID,
+  WORKBOOK_TOOLS_ORIGINAL_IDS,
   WORKBOOK_EVIDENCE_PACKET_LABELS,
   WORKBOOK_RC23_REQUIREMENT_ID,
   WORKBOOK_MODELS_FAMILY_ID,
@@ -111,11 +114,26 @@ const similarCatalog = [
     name: "Header More on an existing chat",
     appMapId: "grok-web",
   },
+  {
+    id: "test-grok-web-sources",
+    name: "YAML sources unrecorded",
+    appMapId: "grok-web",
+  },
+  {
+    id: "test-grok-web-news",
+    name: "YAML news unrecorded",
+    appMapId: "grok-web",
+  },
+  {
+    id: "test-grok-web-signed-in-plugins",
+    name: "Open Plugins",
+    appMapId: "grok-web",
+  },
 ];
 
 test("reviewed workbook freeze keeps 58 originals, 15 active families, and 5 exclusions", () => {
   const manifest = loadReviewedWorkbook();
-  assert.equal(manifest.revision, 10);
+  assert.equal(manifest.revision, 11);
   assert.equal(manifest.counts.originals, 58);
   assert.equal(manifest.counts.families, 17);
   assert.equal(manifest.counts.activeFamilies, 15);
@@ -280,7 +298,25 @@ test("similarly named live Tests do not cover Customize Grok, Imagine, Dictation
     true,
   );
   assert.equal(
-    [8, 37, 42, 50, 48, 51, 44, 47, 1, 2, 6, 28, 29, 9, 10, 12, 13].every(
+    report.nameCollisions.some(
+      (row) => row.originalId === 11 && row.testId === "test-grok-web-sources",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 30 && row.testId === "test-grok-web-signed-in-plugins",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 56 && row.testId === "test-grok-web-news",
+    ),
+    true,
+  );
+  assert.equal(
+    [8, 37, 42, 50, 48, 51, 44, 47, 1, 2, 6, 28, 29, 9, 10, 12, 13, 11, 30, 56].every(
       (id) => !report.coveredOriginalIds.includes(id),
     ),
     true,
@@ -526,6 +562,9 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
   assert.equal(rc23DestEndSatisfiesOriginal("models", 7), false);
   assert.equal(rc23DestEndSatisfiesOriginal("models", 28), false);
   assert.equal(rc23DestEndSatisfiesOriginal("models", 29), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("models", 11), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("models", 30), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("models", 56), false);
   assert.equal(rc23DestEndSatisfiesOriginal("sidebar", 33), false);
   assert.equal(rc23DestEndSatisfiesOriginal("logo", 35), false);
   assert.equal(rc23DestEndSatisfiesOriginal("imagine", 37), false);
@@ -880,6 +919,103 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
   assert.equal(coverByRc23DestEnd({ id: 10 }, "models"), false);
   assert.equal(coverByRc23DestEnd({ id: 12 }, "home-chrome"), false);
   assert.equal(coverByRc23DestEnd({ id: 13 }, "settings"), false);
+  const toolsFamily = manifest.originals.filter((item) => item.family === WORKBOOK_TOOLS_FAMILY_ID);
+  assert.deepEqual(
+    toolsFamily.map((item) => item.id),
+    [...WORKBOOK_TOOLS_ORIGINAL_IDS],
+  );
+  assert.equal(
+    toolsFamily.every(
+      (item) =>
+        item.status === "unbound" &&
+        item.requirementAction === "test-action" &&
+        (item.evidenceNeeded?.length ?? 0) > 0 &&
+        item.bindings.length === 0 &&
+        item.criteria.trim().length > 0 &&
+        item.suggestedExecutionQueue === "live-output" &&
+        item.evidencePacket === "sequence" &&
+        coverByUnrecordedSourcesNewsOrPlugins(item) === false,
+    ),
+    true,
+  );
+  const sourcesKinds = new Set(
+    manifest.originals.find((item) => item.id === 11)?.evidenceNeeded?.map((item) => item.kind) ??
+      [],
+  );
+  assert.equal(sourcesKinds.has("sequence"), true);
+  assert.equal(
+    (manifest.originals
+      .find((item) => item.id === 11)
+      ?.evidenceNeeded?.filter((item) => item.kind === "receipt").length ?? 0) >= 2,
+    true,
+  );
+  const slackKinds = new Set(
+    manifest.originals.find((item) => item.id === 30)?.evidenceNeeded?.map((item) => item.kind) ??
+      [],
+  );
+  assert.equal(slackKinds.has("sequence"), true);
+  assert.equal(
+    (manifest.originals
+      .find((item) => item.id === 30)
+      ?.evidenceNeeded?.filter((item) => item.kind === "receipt").length ?? 0) >= 2,
+    true,
+  );
+  const newsKinds = new Set(
+    manifest.originals.find((item) => item.id === 56)?.evidenceNeeded?.map((item) => item.kind) ??
+      [],
+  );
+  assert.equal(newsKinds.has("sequence"), true);
+  assert.equal(
+    (manifest.originals
+      .find((item) => item.id === 56)
+      ?.evidenceNeeded?.filter((item) => item.kind === "receipt").length ?? 0) >= 2,
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 11)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-sources"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 11)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-3x5"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 11)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-model-iterate"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 30)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-plugins"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 56)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-news"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 56)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-wait-think-harder"),
+    true,
+  );
+  assert.equal(coverByRc23DestEnd({ id: 11 }, "models"), false);
+  assert.equal(coverByRc23DestEnd({ id: 30 }, "composer-focus"), false);
+  assert.equal(coverByRc23DestEnd({ id: 56 }, "home-chrome"), false);
   const slotsPath = join(
     dirname(fileURLToPath(import.meta.url)),
     "../../../tests/coverage/rc23-screenshot-first-slots.json",
