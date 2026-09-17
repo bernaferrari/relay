@@ -233,3 +233,114 @@ test("writeRunOutDir falls back to the last dest frame when capture-review is mi
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("writeRunOutDir dest checkpoint is dest wait-for 003, not leftover Close 004 last-frame", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-cli-out-leftover-004-"));
+  const runDir = join(root, "job-run");
+  const outDir = join(root, "out");
+  try {
+    await mkdir(join(runDir, "frames"), { recursive: true });
+    await writeFile(join(runDir, "frames", "003.png"), overlayBytes);
+    await writeFile(join(runDir, "frames", "004.png"), pngBytes);
+    const copied = await writeRunOutDir({
+      dir: outDir,
+      envelope: {
+        type: "result",
+        ok: true,
+        result: {
+          job: {
+            id: "4b93702b-leftover-004",
+            resources: { runDir },
+            frames: [
+              { path: "frames/003.png", caption: "step:step-observe:Observe" },
+              { path: "frames/004.png", caption: "after · Run saved Test" },
+            ],
+            artifacts: [
+              {
+                kind: "capture-review",
+                data: {
+                  caption: "step:step-observe:Observe",
+                  lookFor: "Observe",
+                  framePath: "frames/003.png",
+                  phase: "dest",
+                  policy: "fast",
+                  status: "pending",
+                },
+              },
+              {
+                kind: "capture-review",
+                data: {
+                  caption: "Close",
+                  framePath: "frames/004.png",
+                },
+              },
+            ],
+          },
+        },
+      },
+      stderr: "",
+    });
+    assert.deepEqual(await readFile(join(outDir, "checkpoint.png")), overlayBytes);
+    assert.notDeepEqual(await readFile(join(outDir, "checkpoint.png")), pngBytes);
+    assert.ok(copied.some((path) => path.endsWith("frames/003.png")));
+    assert.equal(
+      copied.some((path) => path.endsWith("frames/004.png")),
+      false,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("writeRunOutDir reads dest wait-for from run.json when the job summary omitted artifacts", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-cli-out-summarized-"));
+  const runDir = join(root, "job-run");
+  const outDir = join(root, "out");
+  try {
+    await mkdir(join(runDir, "frames"), { recursive: true });
+    await writeFile(join(runDir, "frames", "003.png"), overlayBytes);
+    await writeFile(join(runDir, "frames", "004.png"), pngBytes);
+    await writeFile(
+      join(runDir, "run.json"),
+      JSON.stringify({
+        id: "4b93702b-summarized",
+        frames: [
+          { path: "frames/003.png", caption: "step:step-observe:Observe" },
+          { path: "frames/004.png", caption: "after · Run saved Test" },
+        ],
+        artifacts: [
+          {
+            kind: "capture-review",
+            data: {
+              caption: "step:step-observe:Observe",
+              framePath: "frames/003.png",
+              phase: "dest",
+              policy: "fast",
+            },
+          },
+        ],
+      }),
+    );
+    await writeRunOutDir({
+      dir: outDir,
+      envelope: {
+        type: "result",
+        ok: true,
+        result: {
+          job: {
+            id: "4b93702b-summarized",
+            status: "ok",
+            frameCount: 4,
+            artifactCount: 30,
+            resources: { runDir },
+          },
+        },
+      },
+      stderr: "",
+    });
+    assert.deepEqual(await readFile(join(outDir, "checkpoint.png")), overlayBytes);
+    assert.notDeepEqual(await readFile(join(outDir, "checkpoint.png")), pngBytes);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

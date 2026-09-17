@@ -1,3 +1,13 @@
+import {
+  captureReviewIdentityFramePaths,
+  captureReviewLeftoverLastFramePaths,
+  destIdentityCheckpointFramePaths,
+  destIdentityReviewItems,
+  CAPTURE_REVIEW_DEST_PHASE,
+  resolveCaptureReviewQueue,
+  type CaptureReviewItem,
+} from "./capture-review.js";
+
 function object(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -15,6 +25,88 @@ function boundedText(value: unknown, max = MAX_SUMMARY_TEXT): string | undefined
 
 function resourceSegment(value: string): string {
   return encodeURIComponent(value);
+}
+
+function artifactRecords(value: unknown): { kind?: string; data?: unknown }[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const record = object(item);
+    return record ? [record] : [];
+  });
+}
+
+function listedFrames(value: unknown): { path: string; caption?: string }[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item === "string" && item.trim()) return [{ path: item.trim() }];
+    const record = object(item);
+    if (!record) return [];
+    const path = typeof record.path === "string" ? record.path.trim() : "";
+    if (!path) return [];
+    const caption = typeof record.caption === "string" ? record.caption : undefined;
+    return [{ path, ...(caption ? { caption } : {}) }];
+  });
+}
+
+function compactDestIdentity(
+  frames: readonly { path: string; caption?: string }[],
+  artifacts: readonly { kind?: string; data?: unknown }[],
+): { path: string; caption?: string }[] {
+  const destPaths = destIdentityCheckpointFramePaths(frames, artifacts);
+  if (!destPaths.length) return [];
+  const byPath = new Map(frames.map((frame) => [frame.path, frame]));
+  return destPaths.map((path) => {
+    const frame = byPath.get(path);
+    return frame ?? { path };
+  });
+}
+
+function compactCaptureReviewItem(
+  item: CaptureReviewItem & { runId?: string; attempt?: number },
+): Record<string, unknown> {
+  return {
+    captureId: item.captureId,
+    caption: item.caption,
+    status: item.status,
+    ...(item.framePath ? { framePath: item.framePath } : {}),
+    ...(item.phase ? { phase: item.phase } : {}),
+    ...(item.policy ? { policy: item.policy } : {}),
+    ...(item.lookFor ? { lookFor: item.lookFor } : {}),
+    ...(item.attempt !== undefined ? { attempt: item.attempt } : {}),
+    ...(typeof item.runId === "string" ? { runId: item.runId } : {}),
+  };
+}
+
+function destIdentityProjection(record: Record<string, unknown>): {
+  destIdentity?: { path: string; caption?: string }[];
+  captureReview?: Record<string, unknown>[];
+} {
+  const artifacts = artifactRecords(record.artifacts);
+  const frames = listedFrames(record.frames);
+  const destIdentity = compactDestIdentity(frames, artifacts);
+  const destPaths = new Set(destIdentity.map((frame) => frame.path));
+  const leftover = new Set(captureReviewLeftoverLastFramePaths(frames, artifacts));
+  const queue = resolveCaptureReviewQueue({
+    artifacts,
+    decisions: Array.isArray(record.captureReviews) ? record.captureReviews : undefined,
+  });
+  const visible = destIdentityReviewItems(queue.items).filter((item) => {
+    if (!item.framePath) return true;
+    if (destPaths.size) return destPaths.has(item.framePath);
+    return !leftover.has(item.framePath);
+  });
+  const captureReview = visible.map((item) =>
+    compactCaptureReviewItem({
+      ...item,
+      ...(item.framePath && destPaths.has(item.framePath) && !item.phase
+        ? { phase: CAPTURE_REVIEW_DEST_PHASE }
+        : {}),
+    }),
+  );
+  return {
+    ...(destIdentity.length ? { destIdentity } : {}),
+    ...(captureReview.length ? { captureReview } : {}),
+  };
 }
 
 function summarizeJob(value: unknown): unknown {
@@ -106,6 +198,7 @@ function summarizeJob(value: unknown): unknown {
       : {}),
     ...(frames ? { frameCount: frames.length } : {}),
     ...(artifacts ? { artifactCount: artifacts.length } : {}),
+    ...destIdentityProjection(job),
     ...(checks?.length
       ? {
           checkCount: checks.length,
@@ -272,9 +365,103 @@ function summarizePackExport(response: Record<string, unknown>): unknown {
 }
 
 function summarizePlanCaptureReview(response: Record<string, unknown>): unknown {
+  const queue = object(response.queue);
+  const items = Array.isArray(queue?.items) ? queue.items : undefined;
+  const destItems = items
+    ? destIdentityReviewItems(items as CaptureReviewItem[]).map((item) =>
+        compactCaptureReviewItem(item as CaptureReviewItem & { runId?: string }),
+      )
+    : undefined;
   return {
-    ...(response.queue !== undefined ? { queue: response.queue } : {}),
+    ...(queue
+      ? {
+          queue: {
+            ...queue,
+            ...(destItems ? { items: destItems } : {}),
+          },
+        }
+      : response.queue !== undefined
+        ? { queue: response.queue }
+        : {}),
     ...(response.results !== undefined ? { results: response.results } : {}),
+  };
+}
+
+function summarizePersistedRun(run: Record<string, unknown>): Record<string, unknown> {
+  const optional = ["title", "action", "platform", "serial", "outcome", "status"] as const;
+  const fields: Record<string, string | number> = {};
+  if (typeof run.id === "string") fields.id = run.id;
+  if (typeof run.status === "string") fields.status = run.status;
+  for (const key of optional) {
+    const value = run[key];
+    if (typeof value === "string") {
+      const bounded = boundedText(value, 2_000);
+      if (bounded !== undefined) fields[key] = bounded;
+    }
+  }
+  if (typeof run.durationMs === "number") fields.durationMs = run.durationMs;
+  const frames = listedFrames(run.frames);
+  return {
+    ...fields,
+    ...(frames.length ? { frameCount: frames.length } : {}),
+    ...destIdentityProjection(run),
+  };
+}
+
+function summarizeRunGet(response: Record<string, unknown>): unknown {
+  const run = object(response.run) ?? response;
+  return { run: summarizePersistedRun(run) };
+}
+
+function summarizeRunCaptureReview(response: Record<string, unknown>): unknown {
+  const run = object(response.run);
+  const queue = object(response.queue);
+  const items = Array.isArray(queue?.items) ? queue.items : [];
+  const destItems = destIdentityReviewItems(items as CaptureReviewItem[]).map(
+    compactCaptureReviewItem,
+  );
+  return {
+    ...(run ? { destIdentity: destIdentityProjection(run).destIdentity } : {}),
+    queue: {
+      ...queue,
+      items: destItems,
+    },
+    ...(response.decision !== undefined ? { decision: response.decision } : {}),
+  };
+}
+
+function summarizeRunEvidence(response: Record<string, unknown>): unknown {
+  const evidence = object(response.evidence) ?? response;
+  if (!evidence) return response;
+  const artifacts = artifactRecords(evidence.artifacts);
+  const destPaths = new Set(captureReviewIdentityFramePaths(artifacts));
+  const testStepEvidence = Array.isArray(evidence.testStepEvidence)
+    ? evidence.testStepEvidence.filter((item) => {
+        if (!destPaths.size) return true;
+        const record = object(item);
+        const nested = object(record?.evidence);
+        const frames = Array.isArray(nested?.framePaths)
+          ? nested.framePaths
+          : Array.isArray(record?.framePaths)
+            ? record.framePaths
+            : [];
+        if (!frames.length) return true;
+        return frames.some((path) => typeof path === "string" && destPaths.has(path));
+      })
+    : undefined;
+  const destIdentity = destPaths.size
+    ? [...destPaths].map((path) => ({ path }))
+    : compactDestIdentity([], artifacts);
+  return {
+    evidence: {
+      ...(typeof evidence.runId === "string" ? { runId: evidence.runId } : {}),
+      ...(typeof evidence.schemaVersion === "number"
+        ? { schemaVersion: evidence.schemaVersion }
+        : {}),
+      ...(destIdentity.length ? { destIdentity } : {}),
+      ...(testStepEvidence ? { testStepEvidence } : {}),
+      ...(evidence.channels !== undefined ? { channels: evidence.channels } : {}),
+    },
   };
 }
 
@@ -319,6 +506,9 @@ export function summarizeExecutionOperationResult(operationId: string, result: u
   const response = object(result);
   if (!response) return result;
   if (operationId === "step.run") return summarizeStandaloneStep(response);
+  if (operationId === "run.get") return summarizeRunGet(response);
+  if (operationId === "run.evidence.get") return summarizeRunEvidence(response);
+  if (operationId === "run.capture.review") return summarizeRunCaptureReview(response);
   if (operationId !== "app-map.flow.run" && !operationId.startsWith("job.")) return result;
   if (operationId.endsWith(".export")) return summarizePackExport(response);
   if (operationId.endsWith(".analysis")) return summarizeLocaleAnalysis(response);

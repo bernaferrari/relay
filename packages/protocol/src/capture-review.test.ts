@@ -9,6 +9,7 @@ import {
   captureReviewIdentityFramePaths,
   captureReviewLeftoverFramePaths,
   captureReviewLeftoverLastFramePaths,
+  destIdentityCheckpointFramePaths,
   destIdentityReviewItems,
   destIdentitySourceFrames,
   captureReviewSlotFamilyId,
@@ -1115,6 +1116,45 @@ test("dest-end dest-phase identity is dest wait-for pixels, not leftover Close l
       [leftoverHome, destWait],
     ).map((frame) => frame.path),
     ["frames/002.png"],
+  );
+  assert.deepEqual(
+    destIdentityCheckpointFramePaths(
+      [
+        { path: "frames/002.png", caption: "Observe" },
+        { path: "frames/004.png", caption: "after · Run saved Test" },
+      ],
+      [leftoverHome, destWait],
+    ),
+    ["frames/002.png"],
+  );
+});
+
+test("unphased leftover Close 004 last-frame cannot fill dest checkpoint", () => {
+  const destWait = {
+    kind: "capture-review",
+    data: {
+      caption: "Observe",
+      framePath: "frames/003.png",
+      phase: CAPTURE_REVIEW_DEST_PHASE,
+      policy: "fast",
+    },
+  };
+  const leftoverClose = {
+    kind: "capture-review",
+    data: {
+      caption: "Close",
+      framePath: "frames/004.png",
+    },
+  };
+  assert.deepEqual(
+    destIdentityCheckpointFramePaths(
+      [
+        { path: "frames/003.png", caption: "step:step-observe:Observe" },
+        { path: "frames/004.png", caption: "after · Run saved Test" },
+      ],
+      [leftoverClose, destWait],
+    ),
+    ["frames/003.png"],
   );
 });
 

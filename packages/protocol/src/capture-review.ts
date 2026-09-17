@@ -270,6 +270,20 @@ export function destIdentitySourceFrames<T extends { path: string }>(
   return frames.filter((frame) => destIdentity.has(frame.path));
 }
 
+/** Dest wait-for checkpoint paths. Leftover Close / Run saved Test last-frame
+ * cannot fill dest even without leftover-phase. Unphased dest-wait keeps listed
+ * frames. */
+export function destIdentityCheckpointFramePaths(
+  frames: readonly { path: string; caption?: string }[],
+  artifacts?: readonly { kind?: string; data?: unknown }[],
+): string[] {
+  const dest = captureReviewIdentityFramePaths(artifacts ?? []);
+  if (dest.length) return [...new Set(dest)];
+  const leftover = new Set(captureReviewLeftoverLastFramePaths(frames, artifacts));
+  const usable = leftover.size ? frames.filter((frame) => !leftover.has(frame.path)) : frames;
+  return [...new Set(usable.map((frame) => frame.path))];
+}
+
 /** Dest-phase slot cards when dest identity exists. Leftover Close extras cannot fill dest. */
 export function destIdentityReviewItems<T extends { phase?: string }>(items: readonly T[]): T[] {
   const dest = items.filter((item) => isCaptureReviewDestPhase(item.phase));

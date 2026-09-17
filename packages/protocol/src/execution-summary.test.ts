@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { summarizeExecutionOperationResult } from "./execution-summary.js";
+import { CAPTURE_REVIEW_DEST_PHASE } from "./capture-review.js";
 
 test("job.get keeps a useful tail of logs for agents watching a tour", () => {
   const logs = Array.from({ length: 30 }, (_, index) => `tour → stop ${index + 1}`);
@@ -362,4 +363,213 @@ test("pack summaries expose duplicate counts and viewer path without dumping pag
   assert.equal(summary.manifest.content.duplicateGroupCount, 1);
   assert.equal(summary.manifest.content.comparison, "comparison.html");
   assert.equal(summary.manifest.content.pages, undefined);
+});
+
+test("run.get dest identity is dest wait-for 003, not leftover Close 004 last-frame", () => {
+  const result = summarizeExecutionOperationResult("run.get", {
+    run: {
+      id: "4b93702b-d2cc-4db6-83ff-800380a3b284",
+      status: "ok",
+      action: "app-map:grok-web:test:test-grok-web-signed-in-home:root:r937",
+      title: "Open grok.com signed-in",
+      frames: [
+        { path: "frames/003.png", caption: "step:step-observe:Observe" },
+        { path: "frames/004.png", caption: "after · Run saved Test" },
+      ],
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "step:step-observe:Observe",
+            lookFor: "Observe",
+            framePath: "frames/003.png",
+            phase: CAPTURE_REVIEW_DEST_PHASE,
+            policy: "fast",
+            status: "pending",
+          },
+        },
+        {
+          kind: "capture-review",
+          data: {
+            caption: "Close",
+            framePath: "frames/004.png",
+          },
+        },
+      ],
+      recipeSnapshot: {
+        steps: Array.from({ length: 40 }, (_, index) => ({ id: `step-${index}` })),
+      },
+    },
+  }) as {
+    run?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string; phase?: string }>;
+      frameCount?: number;
+      recipeSnapshot?: unknown;
+    };
+  };
+  assert.deepEqual(
+    result.run?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.run?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+  assert.equal(result.run?.captureReview?.[0]?.framePath, "frames/003.png");
+  assert.equal(result.run?.captureReview?.[0]?.phase, CAPTURE_REVIEW_DEST_PHASE);
+  assert.equal(result.run?.frameCount, 2);
+  assert.equal(result.run?.recipeSnapshot, undefined);
+});
+
+test("run.capture.review dest identity omits leftover Close last-frame", () => {
+  const result = summarizeExecutionOperationResult("run.capture.review", {
+    run: {
+      id: "4b93702b",
+      frames: [
+        { path: "frames/003.png", caption: "Observe" },
+        { path: "frames/004.png", caption: "after · Run saved Test" },
+      ],
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "Observe",
+            framePath: "frames/003.png",
+            phase: CAPTURE_REVIEW_DEST_PHASE,
+            policy: "fast",
+          },
+        },
+      ],
+    },
+    queue: {
+      items: [
+        {
+          captureId: "frames/003.png::dest",
+          caption: "Observe",
+          status: "pending",
+          framePath: "frames/003.png",
+          phase: CAPTURE_REVIEW_DEST_PHASE,
+        },
+        {
+          captureId: "frames/004.png::close-leftover",
+          caption: "Close",
+          status: "pending",
+          framePath: "frames/004.png",
+        },
+      ],
+      summary: { pending: 2 },
+    },
+    decision: { captureId: "frames/003.png::dest", action: "accept" },
+  }) as {
+    destIdentity?: Array<{ path?: string }>;
+    queue?: { items?: Array<{ framePath?: string }> };
+    run?: unknown;
+  };
+  assert.deepEqual(
+    result.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.queue?.items?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+  assert.equal(result.run, undefined);
+});
+
+test("run.evidence.get dest identity drops leftover 004 last-frame", () => {
+  const result = summarizeExecutionOperationResult("run.evidence.get", {
+    evidence: {
+      runId: "4b93702b",
+      schemaVersion: 1,
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: { framePath: "frames/003.png", phase: CAPTURE_REVIEW_DEST_PHASE },
+        },
+      ],
+      testStepEvidence: [
+        { testStepId: "step-observe", evidence: { framePaths: ["frames/003.png"] } },
+        { testStepId: "step-observe", evidence: { framePaths: ["frames/004.png"] } },
+      ],
+      events: Array.from({ length: 200 }, (_, index) => ({ id: `event-${index}` })),
+    },
+  }) as {
+    evidence?: {
+      destIdentity?: Array<{ path?: string }>;
+      testStepEvidence?: Array<{ evidence?: { framePaths?: string[] } }>;
+      events?: unknown;
+    };
+  };
+  assert.deepEqual(result.evidence?.destIdentity, [{ path: "frames/003.png" }]);
+  assert.equal(
+    result.evidence?.testStepEvidence?.some((item) =>
+      item.evidence?.framePaths?.includes("frames/004.png"),
+    ),
+    false,
+  );
+  assert.equal(result.evidence?.events, undefined);
+});
+
+test("job.get dest identity is dest wait-for, not leftover last-frame", () => {
+  const result = summarizeExecutionOperationResult("job.get", {
+    job: {
+      id: "4b93702b",
+      status: "ok",
+      frames: [
+        { path: "frames/003.png", caption: "Observe" },
+        { path: "frames/004.png", caption: "after · Run saved Test" },
+      ],
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "Observe",
+            framePath: "frames/003.png",
+            phase: CAPTURE_REVIEW_DEST_PHASE,
+            policy: "fast",
+          },
+        },
+      ],
+    },
+  }) as {
+    job?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+  };
+  assert.deepEqual(
+    result.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
+test("Plan capture review summary keeps dest wait-for, not leftover Close last-frame", () => {
+  const result = summarizeExecutionOperationResult("job.combine.capture.review", {
+    queue: {
+      items: [
+        {
+          captureId: "frames/003.png::dest",
+          caption: "Observe",
+          status: "pending",
+          framePath: "frames/003.png",
+          phase: CAPTURE_REVIEW_DEST_PHASE,
+        },
+        {
+          captureId: "frames/004.png::close-leftover",
+          caption: "Close",
+          status: "pending",
+          framePath: "frames/004.png",
+        },
+      ],
+      summary: { planned: 1, pending: 2 },
+    },
+  }) as { queue?: { items?: Array<{ framePath?: string; phase?: string }> } };
+  assert.equal(result.queue?.items?.length, 1);
+  assert.equal(result.queue?.items?.[0]?.framePath, "frames/003.png");
+  assert.equal(result.queue?.items?.[0]?.phase, CAPTURE_REVIEW_DEST_PHASE);
 });

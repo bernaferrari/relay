@@ -32,7 +32,7 @@ const globalOptions = `Global options:
   --json | --ndjson                Machine-readable output
   --quiet                          Suppress stderr diagnostics
   --timeout <ms>                   Request timeout (default 180s; env RELAY_TIMEOUT_MS). --budget on plan/combine run overrides watch unless --timeout is set
-  --out <dir>                      On run verbs: write result.json, stderr.log, checkpoint.png (capture-review / last dest frame), and per-job PNGs
+  --out <dir>                      On run verbs: write result.json, stderr.log, checkpoint.png (dest wait-for, not leftover Close last-frame), and per-job dest PNGs
   --wait | --no-wait               Wait policy (env RELAY_WAIT)
   --target current                 Resolve the only connected Device for an advanced Test run
   --revision current               Resolve the latest saved topology revision for an advanced run

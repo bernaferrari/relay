@@ -1,6 +1,11 @@
-import { copyFile, mkdir, readdir, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { Writable } from "node:stream";
+import {
+  captureReviewIdentityFramePaths,
+  captureReviewLeftoverLastFramePaths,
+  destIdentityCheckpointFramePaths,
+} from "@relay/protocol";
 
 const PNG = /\.png$/iu;
 const MAX_PNGS = 50;
@@ -138,28 +143,61 @@ async function isFile(path: string): Promise<boolean> {
   }
 }
 
-function captureReviewFramePaths(job: Record<string, unknown>): string[] {
-  const artifacts = Array.isArray(job.artifacts) ? job.artifacts : [];
-  const paths: string[] = [];
-  for (const artifact of artifacts) {
-    const record = asRecord(artifact);
-    if (record?.kind !== "capture-review") continue;
-    const data = asRecord(record.data);
-    const framePath = data?.framePath;
-    if (typeof framePath === "string" && framePath.trim()) paths.push(framePath.trim());
-  }
-  return paths;
+function listedFramePaths(job: Record<string, unknown>): string[] {
+  return jobFrames(job).map((frame) => frame.path);
 }
 
-function listedFramePaths(job: Record<string, unknown>): string[] {
+function jobArtifacts(job: Record<string, unknown>): { kind?: string; data?: unknown }[] {
+  if (!Array.isArray(job.artifacts)) return [];
+  return job.artifacts.flatMap((item) => {
+    const record = asRecord(item);
+    return record ? [record] : [];
+  });
+}
+
+function destIdentitySummaryPaths(job: Record<string, unknown>): string[] {
+  if (!Array.isArray(job.destIdentity)) return [];
+  return job.destIdentity.flatMap((item) => {
+    if (typeof item === "string" && item.trim()) return [item.trim()];
+    const record = asRecord(item);
+    const path = typeof record?.path === "string" ? record.path.trim() : "";
+    return path ? [path] : [];
+  });
+}
+
+function jobFrames(job: Record<string, unknown>): { path: string; caption?: string }[] {
   const frames = Array.isArray(job.frames) ? job.frames : [];
-  const paths: string[] = [];
-  for (const frame of frames) {
+  return frames.flatMap((frame) => {
     const record = asRecord(frame);
-    const path = typeof frame === "string" ? frame : record?.path;
-    if (typeof path === "string" && path.trim()) paths.push(path.trim());
+    const path = typeof frame === "string" ? frame.trim() : record?.path;
+    if (typeof path !== "string" || !path.trim()) return [];
+    const caption = typeof record?.caption === "string" ? record.caption : undefined;
+    return [{ path: path.trim(), ...(caption ? { caption } : {}) }];
+  });
+}
+
+async function persistedJob(runDir: string): Promise<Record<string, unknown> | undefined> {
+  try {
+    const parsed = JSON.parse(await readFile(join(runDir, "run.json"), "utf8")) as unknown;
+    return asRecord(parsed);
+  } catch {
+    return undefined;
   }
-  return paths;
+}
+
+function mergeJob(
+  job: Record<string, unknown>,
+  persisted?: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!persisted) return job;
+  const artifacts = jobArtifacts(job);
+  const frames = Array.isArray(job.frames) && job.frames.length ? job.frames : persisted.frames;
+  return {
+    ...persisted,
+    ...job,
+    artifacts: artifacts.length ? job.artifacts : persisted.artifacts,
+    frames,
+  };
 }
 
 async function firstExisting(runDir: string, framePaths: string[]): Promise<string | undefined> {
@@ -174,12 +212,42 @@ async function checkpointSource(
   job: Record<string, unknown>,
   runDir: string,
 ): Promise<string | undefined> {
-  const review = await firstExisting(runDir, [...captureReviewFramePaths(job)].reverse());
-  if (review) return review;
-  const dest = await firstExisting(runDir, [...listedFramePaths(job)].reverse());
-  if (dest) return dest;
+  const merged = mergeJob(job, await persistedJob(runDir));
+  const artifacts = jobArtifacts(merged);
+  const frames = jobFrames(merged);
+  const dest = [...captureReviewIdentityFramePaths(artifacts), ...destIdentitySummaryPaths(merged)];
+  const leftover = new Set(captureReviewLeftoverLastFramePaths(frames, artifacts));
+  const destPaths = dest.length ? [...new Set(dest)] : [];
+  const found = destPaths.length
+    ? await firstExisting(runDir, destPaths)
+    : await firstExisting(
+        runDir,
+        [...destIdentityCheckpointFramePaths(frames, artifacts)].reverse(),
+      );
+  if (found) return found;
+  if (dest.length) return undefined;
+  const listed = listedFramePaths(merged).filter((path) => !leftover.has(path));
+  const fallback = await firstExisting(
+    runDir,
+    [...(listed.length ? listed : listedFramePaths(merged))].reverse(),
+  );
+  if (fallback) return fallback;
   const pngs = await pngsUnder(runDir);
-  return pngs.at(-1);
+  const usable = leftover.size
+    ? pngs.filter((file) => !leftover.has(relativeFromRunDir(runDir, file)))
+    : pngs;
+  return (usable.length ? usable : pngs).at(-1);
+}
+
+async function copyablePngs(job: Record<string, unknown>, runDir: string): Promise<string[]> {
+  const pngs = await pngsUnder(runDir);
+  const merged = mergeJob(job, await persistedJob(runDir));
+  const artifacts = jobArtifacts(merged);
+  const dest = [...captureReviewIdentityFramePaths(artifacts), ...destIdentitySummaryPaths(merged)];
+  if (!dest.length) return pngs;
+  const leftover = new Set(captureReviewLeftoverLastFramePaths(jobFrames(merged), artifacts));
+  if (!leftover.size) return pngs;
+  return pngs.filter((file) => !leftover.has(relativeFromRunDir(runDir, file)));
 }
 
 function relativeFromRunDir(runDir: string, file: string): string {
@@ -221,7 +289,7 @@ export async function writeRunOutDir(input: {
       folder: jobFolderName(job, folderNames),
       runDir,
       checkpoint: await checkpointSource(job, runDir),
-      files: await pngsUnder(runDir),
+      files: await copyablePngs(job, runDir),
     });
   }
   const packCheckpoint = [...outs].reverse().find((job) => job.checkpoint)?.checkpoint;
