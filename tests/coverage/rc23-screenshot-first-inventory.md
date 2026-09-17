@@ -154,6 +154,41 @@ Leftover after pass 3 snapshot: grok-lab home `b2dcd768…`, sidebar open, Intro
 
 Remaining **P0.1:** Electron grok-lab still unproven. Remaining **P0.2:** `OPENROUTER_API_KEY` unset (agent env + workspace variables revision 0 empty) — judged Tier B blocked.
 
+### N-account health + concurrent Lane isolation (2026-09-17) — not freeze coverage
+
+Exclusive grok.com. Did **not** overlay grok-lab onto grok-daily. Did **not** Dismiss Build Mode / Try now / Sign Out / type SuperGrok. Did **not** tap iPad. Did **not** wait on Galaxy. Did **not** run dest-ends on auth Lanes. grok-com `authenticationFixtureId` stays empty. Electron `persist:lane:grok-lab` **absent** (Grok Bot Partitions `sand-forever-box` only; `~/Library/Application Support/Electron/Partitions` has `lane:grok-auth-email` / `lane:grok-auth-gmail` only). Fail closed — do **not** stamp SuperGrok on unsigned, do **not** relabel grok-daily as SuperGrok, do **not** enqueue SuperGrok on Electron.
+
+`relay browser auth health grok-com --json` (probe default true) + MCP `relay_target_browser_auth_health` `targetId:grok-com` `probe:true` (MCP body truncated at 15 fixtures; CLI summary authoritative). Revoked lab A/B/C and expired cookie probes were **not** opened. Dead fixtures stay revoked / not live — `ACCOUNT_NEEDS_RELOGIN` would fail closed before a Plan could stamp them SuperGrok (`readyCount` 0 / `signedIn: false` / status ≠ ready).
+
+| Fixture                         | Lane bind  | Health                         | liveCount | readyCount | needsReloginCount |
+| ------------------------------- | ---------- | ------------------------------ | --------: | ---------: | ----------------: |
+| `7189423f` SuperGrok lab signed-in | grok-lab   | `ready` / `signedIn: true`     |         1 |          1 |                 0 |
+| 14 revoked lab A/B/C + P2.3     | (none)     | `revoked` (not probed)         |         0 |          0 |                 0 |
+
+Target summary: **liveCount 1 · readyCount 1 · needsReloginCount 0 · revokedCount 14 · expiredCount 0 · errorCount 0 · concurrentAccountsPossible false** (“One live account. Concurrent N-account Plans need another saved sign-in. Signed-out remains a separate lane.”).
+
+| Lane            | kind       | live | Scheduling key                         | Playwright store                                      |
+| --------------- | ---------- | ---- | -------------------------------------- | ----------------------------------------------------- |
+| grok-lab        | fixture    | true | `grok-com#authfx:7189423f-…`           | unique profile `browser:grok-com-1280x800-339a5a430a41` |
+| grok-daily      | signed-out | true | `grok-com#signed-out:grok-daily`       | `grok-com__lane_grok-daily`                           |
+| grok-auth-email | signed-out | true | `grok-com#signed-out:grok-auth-email`  | `grok-com__lane_grok-auth-email`                      |
+| grok-auth-gmail / x / x-out | signed-out | true | `grok-com#signed-out:grok-auth-*` | `grok-com__lane_grok-auth-*` (not snapshotted)        |
+| grok-daily-b…h  | signed-out | true | `grok-com#signed-out:grok-daily-*`     | unsigned extras (not this overlap)                    |
+
+Concurrent snapshots (three CLI jobs started together; MCP digest pair also overlapped grok-lab + grok-daily). First wave overlap lab+daily **4722ms** / three-way **4721ms**. Fingerprint wave overlap lab+daily **1613ms** / three-way **1607ms**. Cookies/fingerprints stayed isolated while both existed:
+
+| Lane            | Fingerprint (full / digest) | Nodes | Identity while overlapped                                                                 | SuperGrok stamp |
+| --------------- | --------------------------- | ----: | ----------------------------------------------------------------------------------------- | --------------- |
+| grok-lab        | `b2dcd768…` / `b2dcd768bae5dc6c` | 122 | Bernardo Ferrari, sidebar history, Introducing Build Mode (did not Dismiss), no Sign in   | fixture ready only — Playwright, not Electron |
+| grok-daily      | `3b675478…` / `3b675478320cae41` |  38 | Sign in + Sign up, cookie banner, no Bernardo                                             | **no** — unsigned |
+| grok-auth-email | `3b675478…` / same unsigned home |  26 | Sign in + Sign up, no Bernardo (did **not** steal grok-lab cookies)                       | **no** — unsigned sign-in Lane |
+
+Same unsigned fingerprint on grok-daily and grok-auth-email is logged-out home chrome, not a shared jar: separate `id__lane_*` user-data, grok-lab stayed `b2dcd768…` + Bernardo for the whole overlap. Auth Lane dest-ends were **not** run.
+
+Freeze **30 · 29 captured · 1 blocked · 0 missing · 29 pending · 0 accepted** unchanged — this is N-account evidence, not a freeze cell. Workbook **2 bound / 51 unbound / 5 excluded**. **0 accepted.** 19z5 stays open.
+
+Remaining **N-account:** a second live SuperGrok fixture (3-account Plans still unmeasured). Remaining **P0.1:** Electron `persist:lane:grok-lab` still absent. Remaining **P0.2:** `OPENROUTER_API_KEY` unset — judged Tier B blocked.
+
 ### iOS chrome — physical iPad, prime without relaunch
 
 | Cell              | Job                                         | Duration | Status                                                                                                                                                                                                      |
@@ -209,5 +244,5 @@ Capture-review on disk is **fast** · `settled:false` · `samples:1` · `status:
 - No bulk accept; capture-review pending. Looks correct cannot accept missing.
 - Workbook originals: **2 bound / 51 unbound / 5 excluded**. Remaining-before-gates **53**. Not 53 covered.
 - OPENROUTER unset. grok-com `authenticationFixtureId` stays empty.
-- Electron `persist:lane:grok-lab` still absent. P0.1 Playwright dest-end 3-pass is lane identity, not Electron. Do not relabel grok-daily as SuperGrok.
+- Electron `persist:lane:grok-lab` still absent. P0.1 Playwright dest-end 3-pass is lane identity, not Electron. N-account health + concurrent grok-lab/grok-daily/grok-auth-email snapshots are isolation evidence, not Electron and not a freeze cell. Do not relabel grok-daily as SuperGrok.
 - 19z5 stays open.
