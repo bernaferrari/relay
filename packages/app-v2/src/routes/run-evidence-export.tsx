@@ -1,23 +1,30 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { RunEvidenceExportDocument } from "@relay/product/run-evidence-export";
 import { productLinkClassName } from "../lib/class-names";
 
-export function RunEvidenceExport({
+function RunEvidenceExportForRun({
   runId,
   exportEvidence,
 }: {
   runId: string;
   exportEvidence(runId: string): Promise<RunEvidenceExportDocument>;
 }) {
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [href, setHref] = useState<string>();
   const [fileName, setFileName] = useState<string>();
   const exportRun = useMutation({
     mutationFn: () => exportEvidence(runId),
     onSuccess: (document) => {
-      if (href) URL.revokeObjectURL(href);
+      if (!mounted.current) return;
       setHref(URL.createObjectURL(new Blob([document.body], { type: "application/json" })));
       setFileName(document.fileName);
     },
@@ -53,4 +60,12 @@ export function RunEvidenceExport({
       ) : null}
     </div>
   );
+}
+
+/** A download belongs to one Run, including requests that finish after navigation. */
+export function RunEvidenceExport(props: {
+  runId: string;
+  exportEvidence(runId: string): Promise<RunEvidenceExportDocument>;
+}) {
+  return <RunEvidenceExportForRun key={props.runId} {...props} />;
 }

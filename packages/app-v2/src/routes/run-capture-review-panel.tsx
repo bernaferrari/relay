@@ -220,7 +220,12 @@ export function CaptureReviewPanel({
               </Button>
             )}
             {selectedIds.size ? (
-              <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => setSelectedIds(new Set())}
+              >
                 Clear selection
               </Button>
             ) : null}
@@ -274,6 +279,7 @@ export function CaptureReviewPanel({
                       aria-checked={selectedIds.has(key)}
                       className="peer sr-only"
                       checked={selectedIds.has(key)}
+                      disabled={busy}
                       onChange={(event) => toggleSelected(key, event.target.checked)}
                       onClick={(event) => event.stopPropagation()}
                     />

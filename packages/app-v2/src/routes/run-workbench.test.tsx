@@ -453,6 +453,46 @@ describe("RunWorkbench", () => {
     expect(host.textContent).toContain("The saved image could not be loaded");
   });
 
+  it("clears only acknowledged selections after a partial bulk review failure", async () => {
+    const value: ProductRunReportOverview = {
+      ...report,
+      captureReview: {
+        items: [
+          { captureId: "first", caption: "First", status: "pending", framePath: "cart" },
+          { captureId: "second", caption: "Second", status: "pending", framePath: "checkout" },
+        ],
+        summary: {
+          captured: 2,
+          missing: 0,
+          pending: 2,
+          accepted: 0,
+          issue: 0,
+          needMoreEvidence: 0,
+        },
+      },
+    };
+    const review = vi.fn(async ({ captureId }: { captureId: string }) => {
+      if (captureId === "second") throw new Error("Connection interrupted");
+    });
+    const host = render(0, value, review);
+    await act(async () => {
+      for (const input of host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+        input.click();
+    });
+    const button = [...host.querySelectorAll("button")].find((item) =>
+      item.textContent?.includes("Looks correct for 2 selected"),
+    )!;
+    expect(button).toBeDefined();
+    await act(async () => button.click());
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Select First"]')?.checked).toBe(
+      false,
+    );
+    expect(host.querySelector<HTMLInputElement>('[aria-label="Select Second"]')?.checked).toBe(
+      true,
+    );
+    expect(host.textContent).toContain("1 of 2 decisions saved");
+  });
+
   it("moves review with arrow keys and sends the image toolbar decision for the selected capture", async () => {
     const value: ProductRunReportOverview = {
       ...report,

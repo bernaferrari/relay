@@ -2,7 +2,7 @@
 
 # Relay
 
-### Record a journey. Run it again. See what changed.
+### Record a journey. Collect screenshots. Review them together.
 
 Local-first testing for web, Android, and iOS.
 Built for people and coding agents.
@@ -17,13 +17,13 @@ Built for people and coding agents.
 
 ## From “it should work” to seeing it work
 
-Relay brings your app, its user journeys, and their results into one workspace. Explore a browser or device, record a Test, then replay it with the languages and targets you choose. Inspect the screenshots, interface trees, and logs that explain what happened.
+Relay brings your app, its user journeys, and their results into one workspace. Choose a browser or device, record a Test, then replay it with the accounts, data sets, and targets you choose. Relay collects screenshots without waiting for a review between steps. Review them together afterward; steps and logs are available when you need to investigate.
 
 Your devices. Your local service. Your saved evidence.
 
-| Explore                                                                                | Test                                                                                  | Understand                                                                        |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Navigate the **App map**, browse captured screens, and inspect the paths between them. | Record a journey once. Run it again, or run it across selected languages and devices. | Open **Results** to inspect captures, steps, failures, and available diagnostics. |
+| Explore                                                                 | Test                                                                                  | Understand                                                                        |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Choose a browser or connected device and open the app you want to test. | Record a journey once. Run it again, or run it across selected languages and devices. | Open **Results** to inspect captures, steps, failures, and available diagnostics. |
 
 ## One Test, many cases
 
@@ -35,7 +35,9 @@ For example, checking a pricing page in ten languages can be one Test:
 Open the page → Capture Individual → Click Business → Capture Business
 ```
 
-Choose the language values in **Run across**, run the first case, and review its result before continuing with the remaining cases. Keep the same journey while changing the data.
+Choose the language values and devices in **Run across**. Run the selected cases, then review their screenshots together in **Results**. Keep the same journey while changing the data.
+
+**Completed** means execution finished. Screenshot review is separate: **to review**, **missing**, or **approved**. A completed Run does not mean someone approved its screenshots. Replay and human screenshot review need no model credentials.
 
 - **Screenshots and interface trees** give you visual and structural evidence to compare.
 - **Steps and logs** help you locate where a journey failed.
@@ -46,10 +48,10 @@ Available evidence depends on the target and capture settings. The report makes 
 
 ## Get started
 
-Use **Node.js 24+** and **Corepack**. Android targets also need `adb`; physical iOS devices need the Apple developer tooling described in the [device setup guide](https://oss.callstack.com/agent-device/docs/quick-start).
+Use **Node.js 24+**, **Corepack**, and the **Vite+ CLI** (`vp`). Android targets also need `adb`; physical iOS devices need the Apple developer tooling described in the [device setup guide](https://oss.callstack.com/agent-device/docs/quick-start).
 
 ```bash
-corepack pnpm install --frozen-lockfile
+vp install
 pnpm doctor
 pnpm dev:desktop
 ```
@@ -57,10 +59,12 @@ pnpm dev:desktop
 The desktop app starts the local Relay service for your project.
 
 1. Choose a browser or connected device.
-2. Select **Record test** and walk through the journey.
-3. Review the recorded actions and save the Test.
-4. Run it, then open **Results** to inspect the evidence.
+2. Open **Tests → New Test**, start recording, and walk through the journey.
+3. Capture each screen you want to review. Choose **Stop and review**, name the Test, and **Save Test**.
+4. Run it, then open **Results → Needs review**. Inspect a screenshot or select several and choose **Looks correct**, **Report issue**, or **Need more evidence**.
 5. Use **Run across** when you are ready to repeat it with more values or targets.
+
+For a walkthrough of capture, review, and sharing, see [your first screenshot review](./docs/FIRST_SCREENSHOT_REVIEW.md).
 
 Prefer a browser window? Run `pnpm dev:web` and open the local URL printed in the terminal.
 

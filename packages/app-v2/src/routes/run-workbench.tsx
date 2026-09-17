@@ -24,7 +24,7 @@ import {
   Keyboard,
   MoveUpRight,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { framePathsForTraceStep, type ProductRunReportOverview } from "../data/run-product-service";
 import { CaptureReviewDecisions } from "./capture-review-decisions";
 import { CaptureReviewPanel } from "./run-capture-review-panel";
@@ -32,6 +32,7 @@ import {
   type CaptureReviewAction,
   type CaptureReviewItem,
   destIdentityReviewItems,
+  captureReviewQueueItemKey,
 } from "@relay/protocol";
 
 type Report = ProductRunReportOverview;
@@ -88,6 +89,8 @@ export function RunWorkbench({
   const [localCapture, setLocalCapture] = useState(0);
   const [showMasks, setShowMasks] = useState(false);
   const [reviewBusy, setReviewBusy] = useState(false);
+  const reviewInFlight = useRef(false);
+  const [reviewedItemKeys, setReviewedItemKeys] = useState<string[]>([]);
   const [reviewError, setReviewError] = useState<string>();
   const requestedCapture =
     Number.isInteger(captureIndex) && captureIndex! >= 0 ? captureIndex! : localCapture;
@@ -138,21 +141,28 @@ export function RunWorkbench({
   );
   const selectedReview = reviewItems[selectedCapture];
   const reviewCaptures = async (action: CaptureReviewAction, items: CaptureReviewItem[]) => {
-    if (!onReviewCapture) return;
+    if (!onReviewCapture || reviewInFlight.current) return;
+    reviewInFlight.current = true;
     setReviewBusy(true);
+    const saved: string[] = [];
+    setReviewedItemKeys([]);
     setReviewError(undefined);
     try {
-      for (const item of items)
+      for (const item of items) {
         await onReviewCapture({
           captureId: item.captureId,
           action,
           ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
         });
+        saved.push(captureReviewQueueItemKey(item));
+        setReviewedItemKeys([...saved]);
+      }
     } catch (error) {
       setReviewError(
-        error instanceof Error ? error.message : "Review could not be saved. Try again.",
+        `${saved.length} of ${items.length} decisions saved. ${error instanceof Error ? error.message : "Save was not confirmed. Refresh before retrying."}`,
       );
     } finally {
+      reviewInFlight.current = false;
       setReviewBusy(false);
     }
   };
@@ -572,6 +582,7 @@ export function RunWorkbench({
                     selectedIndex={selectedCapture}
                     onSelect={setSelectedCapture}
                     busy={reviewBusy}
+                    reviewedItemKeys={reviewedItemKeys}
                     onReviewMany={
                       onReviewCapture
                         ? (action, items) => void reviewCaptures(action, items)
