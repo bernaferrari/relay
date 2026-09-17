@@ -558,6 +558,99 @@ test("omitted dest-end Test leftover Settings still taps Settings", async () => 
   );
 });
 
+function bakedInspectLeftoverSkipConnection(): Connection {
+  const leftover = { target: { label: "Appearance" }, condition: "absent" as const };
+  return {
+    ...entity("open-settings-baked"),
+    fromScreenId: "home",
+    destination: { kind: "end" },
+    state: "ready",
+    actions: [
+      {
+        id: "settings-panel",
+        kind: "steps",
+        steps: [
+          {
+            kind: "wait-for",
+            target: { identifier: "composer" },
+            timeoutMs: 8_000,
+            coverage: "inspect",
+            when: leftover,
+          },
+          {
+            kind: "tap",
+            target: { identifier: "sidebar.settings" },
+            coverage: "inspect",
+            when: leftover,
+          },
+          { kind: "wait-for", target: { label: "Appearance" }, timeoutMs: 8_000 },
+        ],
+      },
+    ],
+  };
+}
+
+test("baked inspect leftover skip on omitted dest-end still taps Settings", async () => {
+  const steps = destEndRecipeSteps(bakedInspectLeftoverSkipConnection());
+  const opener = steps.find((step) => step.kind === "tap");
+  assert.equal(opener?.when, undefined);
+  assert.equal(opener?.coverage, "transition");
+  const presses: string[] = [];
+  const job = recipeJob("baked-omitted-tap", destEndRuntimeSteps(steps));
+  await androidTarget(() =>
+    runRecipeSteps(
+      job,
+      leftoverDevice(presses),
+      () => {},
+      () => {},
+    ),
+  );
+  assert.ok(presses.length >= 1, "baked leftover skip dropped the omitted Settings tap");
+  assert.equal(skipReasons(job).includes("inspect-setup-skipped"), false);
+});
+
+test("baked inspect leftover skip on test-action dest-end still taps Settings", async () => {
+  const steps = destEndRecipeSteps(bakedInspectLeftoverSkipConnection(), "test-action");
+  const opener = steps.find((step) => step.kind === "tap");
+  assert.equal(opener?.when, undefined);
+  assert.equal(opener?.coverage, "transition");
+  const presses: string[] = [];
+  const job = recipeJob("baked-test-action-tap", destEndRuntimeSteps(steps));
+  await androidTarget(() =>
+    runRecipeSteps(
+      job,
+      leftoverDevice(presses),
+      () => {},
+      () => {},
+    ),
+  );
+  assert.ok(presses.length >= 1, "baked leftover skip dropped the test-action Settings tap");
+  assert.equal(skipReasons(job).includes("inspect-setup-skipped"), false);
+});
+
+test("baked inspect leftover skip on capture-view dest-end still skips opener", async () => {
+  const steps = destEndRecipeSteps(bakedInspectLeftoverSkipConnection(), "capture-view");
+  const opener = steps.find((step) => step.kind === "tap");
+  assert.equal(opener?.when?.condition, "absent");
+  assert.equal(opener?.coverage, "inspect");
+  const destWait = steps.find(
+    (step) => step.kind === "wait-for" && step.target?.label === "Appearance",
+  );
+  assert.equal(destWait?.when, undefined);
+  const presses: string[] = [];
+  const job = recipeJob("baked-capture-view-skip", destEndRuntimeSteps(steps));
+  await androidTarget(() =>
+    runRecipeSteps(
+      job,
+      leftoverDevice(presses),
+      () => {},
+      () => {},
+    ),
+  );
+  assert.deepEqual(presses, []);
+  assert.ok(skipReasons(job).every((reason) => reason === "inspect-setup-skipped"));
+});
+
 test("capture-view Test leftover Settings skips opener and does not look like a tap", async () => {
   const connection = inspectDestEndConnection();
   const steps = destEndRecipeSteps(connection, "capture-view");

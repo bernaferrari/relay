@@ -2177,6 +2177,90 @@ test("test-action dest-end from Home still taps Settings when leftover Settings 
   assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.phase, "dest");
 });
 
+test("baked inspect leftover skip on test-action dest-end still taps Settings", () => {
+  const leftover = { target: { identifier: "settings.account" }, condition: "absent" as const };
+  const map = fixture();
+  const work = destEndPrimitiveWork(map, "open-settings-from-home", [
+    {
+      id: "open-settings",
+      kind: "steps",
+      steps: [
+        {
+          kind: "wait-for",
+          target: { identifier: "composer" },
+          timeoutMs: 8_000,
+          coverage: "inspect",
+          when: leftover,
+        },
+        {
+          kind: "tap",
+          target: { identifier: "sidebar.settings" },
+          coverage: "inspect",
+          when: leftover,
+        },
+        { kind: "wait-for", target: { identifier: "settings.account" }, timeoutMs: 8_000 },
+      ],
+    },
+  ]);
+  work.requirementAction = "test-action";
+  work.startingState = { sourceScreenId: "home" };
+  map.connections["open-settings-from-home"]!.fromScreenId = "home";
+  const instruction = work.steps[0]!;
+  work.steps = [{ ...instruction, capture: true }];
+  const compiled = compileAppMapTest(map, work);
+  const destModule = compiled.graph[compiled.plan.rootRecipeId]!.steps.find(
+    (step) => step.kind === "module",
+  );
+  const destEndRecipe =
+    destModule?.kind === "module" ? compiled.graph[destModule.recipeId] : undefined;
+  assert.ok(destEndRecipe);
+  assert.equal(destEndRecipe!.steps[0]?.when, undefined);
+  assert.equal(destEndRecipe!.steps[1]?.when, undefined);
+  assert.equal(destEndRecipe!.steps[1]?.kind, "tap");
+  assert.equal(destEndRecipe!.steps[1]?.coverage, "transition");
+});
+
+test("baked inspect leftover skip on capture-view dest-end still skips opener", () => {
+  const leftover = { target: { identifier: "settings.account" }, condition: "absent" as const };
+  const map = fixture();
+  const work = destEndPrimitiveWork(map, "settings-inventory", [
+    {
+      id: "settings-inventory",
+      kind: "steps",
+      steps: [
+        {
+          kind: "wait-for",
+          target: { identifier: "composer" },
+          timeoutMs: 8_000,
+          coverage: "inspect",
+          when: leftover,
+        },
+        {
+          kind: "tap",
+          target: { identifier: "sidebar.settings" },
+          coverage: "inspect",
+          when: leftover,
+        },
+        { kind: "wait-for", target: { identifier: "settings.account" }, timeoutMs: 8_000 },
+      ],
+    },
+  ]);
+  work.requirementAction = "capture-view";
+  const instruction = work.steps[0]!;
+  work.steps = [{ ...instruction, capture: true }];
+  const compiled = compileAppMapTest(map, work);
+  const destModule = compiled.graph[compiled.plan.rootRecipeId]!.steps.find(
+    (step) => step.kind === "module",
+  );
+  const destEndRecipe =
+    destModule?.kind === "module" ? compiled.graph[destModule.recipeId] : undefined;
+  assert.ok(destEndRecipe);
+  const destWhen = { target: { identifier: "settings.account" }, condition: "absent" as const };
+  assert.deepEqual(destEndRecipe!.steps[0]?.when, destWhen);
+  assert.deepEqual(destEndRecipe!.steps[1]?.when, destWhen);
+  assert.equal(destEndRecipe!.steps[1]?.coverage, "inspect");
+});
+
 test("dest-end dest-phase waits focused composer chrome after the focus tap", () => {
   const map = fixture();
   const work = destEndPrimitiveWork(map, "focus-composer", [

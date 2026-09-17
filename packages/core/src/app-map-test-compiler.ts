@@ -198,12 +198,10 @@ export function compileAppMapScenarioTest(
       `Test ${test.id} does not belong to App Map ${map.id}`,
     );
   }
-  const compileMap = test.requirementAction
-    ? {
-        ...map,
-        connections: destEndConnectionsForRequirement(map.connections, test.requirementAction),
-      }
-    : map;
+  const compileMap = {
+    ...map,
+    connections: destEndConnectionsForRequirement(map.connections, test.requirementAction),
+  };
   const graph: Record<string, Recipe> = {};
   const provenance: AppMapTestStepProvenance[] = [];
   const destEndRecipeIds = new Set<string>();

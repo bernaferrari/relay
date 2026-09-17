@@ -389,18 +389,11 @@ export function destEndCaptureWaitForIndex(
  * overlay (open sidebar hides the composer). Skip the open prefix when later
  * dest chrome is already on screen — do not tap the opener, which would close
  * it, and do not re-tap a peek that is already open. Capture-view only; omitted
- * dest-end stays test-action so leftover Settings cannot prove the Settings tap. */
-function destEndLeftoverSkipAllowed(
-  steps: RecipeStep[],
-  start: number,
-  end: number,
-  coverage?: CaptureCoverage,
-): boolean {
-  const resolved = destEndCoverageForRequirement({
-    coverage,
-    actionCoverages: steps.slice(start, end).map((step) => step.coverage),
-  });
-  return leftoverSkipAllowedForCoverage(resolved);
+ * dest-end stays test-action so leftover Settings cannot prove the Settings tap.
+ * Remapped connection.coverage is the authority — inner step inspect/transition
+ * must not flip a capture-view skip or a test-action tap. */
+function destEndLeftoverSkipAllowed(coverage?: CaptureCoverage): boolean {
+  return leftoverSkipAllowedForCoverage(destEndCoverageForRequirement({ coverage }));
 }
 
 function destEndOriginOpener(
@@ -435,13 +428,26 @@ function stampDestEndOpenerAsTestAction(steps: RecipeStep[], start: number, end:
   if (!found.opener.coverage) found.opener.coverage = "transition";
 }
 
+function stripDestEndLeftoverSkip(steps: RecipeStep[], start: number, end: number): void {
+  const destIndex = destEndCaptureWaitForIndex(steps, start, end);
+  for (let index = start; index < end; index += 1) {
+    if (index === destIndex) continue;
+    const step = steps[index];
+    if (!step || (step.kind !== "wait-for" && step.kind !== "tap")) continue;
+    if (step.when?.condition !== "absent") continue;
+    delete step.when;
+    if (step.kind === "tap") step.coverage = "transition";
+  }
+}
+
 function applyDestEndOpenLeftoverPolicy(
   steps: RecipeStep[],
   start = 0,
   end = steps.length,
   coverage?: CaptureCoverage,
 ): void {
-  if (!destEndLeftoverSkipAllowed(steps, start, end, coverage)) {
+  if (!destEndLeftoverSkipAllowed(coverage)) {
+    if (coverage === "transition") stripDestEndLeftoverSkip(steps, start, end);
     stampDestEndOpenerAsTestAction(steps, start, end);
     return;
   }
@@ -467,15 +473,15 @@ export function destEndConnectionsForRequirement(
   connections: AppMap["connections"],
   requirementAction?: RequirementActionKind,
 ): AppMap["connections"] {
-  if (!requirementAction) return connections;
+  const action = requirementAction ?? "test-action";
   let changed = false;
   const next: AppMap["connections"] = { ...connections };
   for (const [id, connection] of Object.entries(next)) {
     if (connection.destination.kind !== "end") continue;
     const resolved = destEndCoverageForRequirement({
-      requirementAction,
+      requirementAction: action,
       coverage: connection.coverage,
-      actionCoverages: connection.actions.map((action) => action.coverage),
+      actionCoverages: connection.actions.map((spec) => spec.coverage),
     });
     if (resolved === connection.coverage) continue;
     next[id] = { ...connection, coverage: resolved };
