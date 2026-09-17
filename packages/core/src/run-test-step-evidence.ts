@@ -36,7 +36,7 @@ function validProvenance(value: AppMapTestStepProvenance): boolean {
 }
 
 function traceArtifactStepId(artifact: RunArtifact): string | undefined {
-  return nonEmpty(record(artifact.data)?.stepId);
+  return nonEmpty(record(artifact?.data)?.stepId);
 }
 
 function artifactBelongsToTrace(artifact: RunArtifact, trace: TraceStep): boolean {
@@ -51,7 +51,7 @@ function destPhaseReviews(
 ): Array<{ stepId: string; framePath: string }> {
   const dest: Array<{ stepId: string; framePath: string }> = [];
   for (const artifact of artifacts) {
-    if (artifact.kind !== "capture-review") continue;
+    if (artifact?.kind !== "capture-review") continue;
     const payload = record(artifact.data);
     if (!isCaptureReviewDestPhase(nonEmpty(payload?.phase))) continue;
     const stepId = nonEmpty(payload?.stepId);

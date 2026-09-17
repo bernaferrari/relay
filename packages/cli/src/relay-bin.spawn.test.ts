@@ -165,7 +165,7 @@ test("relay bin --json keeps progress and heartbeat on stderr", async () => {
     };
     assert.equal(saved.ok, true);
     assert.match(await readFile(join(outDir, "stderr.log"), "utf8"), /tour → Haptics/);
-    assert.deepEqual(await readFile(join(outDir, "frame.png")), pngBytes);
+    assert.deepEqual(await readFile(join(outDir, "abc", "frame.png")), pngBytes);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

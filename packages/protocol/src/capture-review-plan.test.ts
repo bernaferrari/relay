@@ -584,3 +584,59 @@ test("Plan review account filter uses the observed capture account, not a guesse
   assert.equal(spoofed.items.length, 0);
   assert.equal(spoofed.summary.captured, 2);
 });
+
+test("mixed Plan phases retain unphased captures and blocked obligations beside dest captures", () => {
+  const items = [
+    {
+      captureId: "web",
+      caption: "Settings",
+      status: "pending" as const,
+      runId: "web-run",
+      phase: "dest",
+    },
+    { captureId: "android", caption: "Settings", status: "pending" as const, runId: "android-run" },
+    {
+      captureId: "sequence",
+      caption: "Settings",
+      status: "pending" as const,
+      runId: "web-run",
+      phase: "after-send",
+    },
+    {
+      captureId: "ios",
+      caption: "Imagine",
+      status: "missing" as const,
+      executionCaseId: "ios-case",
+      blocked: true,
+    },
+    {
+      captureId: "leftover",
+      caption: "Close",
+      status: "pending" as const,
+      runId: "web-run",
+      phase: "leftover",
+    },
+  ];
+  const summary = {
+    planned: 4,
+    captured: 3,
+    blocked: 1,
+    missing: 0,
+    pending: 3,
+    accepted: 0,
+    issue: 0,
+    needMoreEvidence: 0,
+  };
+  const queue = filterPlanCaptureReviewQueue({ items, summary });
+  assert.deepEqual(
+    queue.items.map((item) => item.captureId),
+    ["web", "android", "sequence", "ios"],
+  );
+  assert.deepEqual(queue.summary, summary);
+  assert.deepEqual(
+    filterPlanCaptureReviewQueue({ items, summary }, { pending: true }).items.map(
+      (item) => item.captureId,
+    ),
+    ["web", "android", "sequence"],
+  );
+});

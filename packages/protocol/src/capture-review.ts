@@ -208,7 +208,7 @@ export function captureReviewIdentityFramePaths(
 ): string[] {
   const dest: string[] = [];
   for (const artifact of artifacts) {
-    if (artifact.kind !== "capture-review") continue;
+    if (artifact?.kind !== "capture-review") continue;
     const payload = record(artifact.data);
     const framePath = text(payload?.framePath);
     if (!framePath) continue;
@@ -225,7 +225,7 @@ export function captureReviewLeftoverFramePaths(
 ): string[] {
   const leftover: string[] = [];
   for (const artifact of artifacts) {
-    if (artifact.kind !== "capture-review") continue;
+    if (artifact?.kind !== "capture-review") continue;
     const payload = record(artifact.data);
     const framePath = text(payload?.framePath);
     if (!framePath || !isCaptureReviewLeftoverPhase(text(payload?.phase))) continue;
@@ -300,16 +300,15 @@ export function destIdentityCheckpointFramePaths(
   ];
 }
 
-/** Dest-phase slot cards when dest identity exists. Leftover Close extras cannot fill dest
- * even without leftover-phase. */
+/** Exclude leftover frames without hiding other checkpoints or configurations.
+ * A dest-phase capture in one Run cannot erase an unphased capture in another. */
 export function destIdentityReviewItems<T extends { phase?: string; caption?: string }>(
   items: readonly T[],
 ): T[] {
-  const dest = items.filter((item) => isCaptureReviewDestPhase(item.phase));
-  if (dest.length) return dest;
   return items.filter(
     (item) =>
-      !isCaptureReviewLeftoverPhase(item.phase) && !isCaptureReviewLeftoverCaption(item.caption),
+      isCaptureReviewDestPhase(item.phase) ||
+      (!isCaptureReviewLeftoverPhase(item.phase) && !isCaptureReviewLeftoverCaption(item.caption)),
   );
 }
 
@@ -1252,7 +1251,7 @@ export function resolveCaptureReviewQueue(input: {
   const artifacts: CaptureReviewItem[] = [];
   const seen = new Set<string>();
   for (const artifact of input.artifacts ?? []) {
-    if (artifact.kind !== "capture-review") continue;
+    if (artifact?.kind !== "capture-review") continue;
     const item = captureReviewArtifact(artifact.data);
     if (!item || seen.has(item.captureId)) continue;
     seen.add(item.captureId);
