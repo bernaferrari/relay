@@ -62,6 +62,7 @@ import {
   WORKBOOK_SHELL_FAMILY_ID,
   WORKBOOK_SHELL_ORIGINAL_IDS,
   WORKBOOK_SURVIVAL_FAMILY_ID,
+  RC23_SCREENSHOT_FIRST_CAPTURED_PENDING,
   RC23_SCREENSHOT_FIRST_PLATFORM_CONFIGURATION,
   RC23_SCREENSHOT_FIRST_REQUIREMENT_ID,
   RC23_SCREENSHOT_FIRST_TESTS,
@@ -1757,9 +1758,29 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     workbookBound: number;
     workbookBoundOriginalIds?: number[];
     requirementId: string;
+    slots?: Array<{
+      checkpointId?: string;
+      platform?: string;
+      jobId?: string;
+      mapRevision?: number;
+      status?: string;
+    }>;
   };
   assert.equal(slots.workbookBound, 2);
   assert.deepEqual(slots.workbookBoundOriginalIds, [4, 40]);
   assert.equal(slots.requirementId, "rc23-screenshot-first");
   assert.equal(slots.requirementId.startsWith("GQA-"), false);
+  const webHome = slots.slots?.find(
+    (slot) => slot.checkpointId === "home-chrome" && slot.platform === "web",
+  );
+  assert.equal(webHome?.jobId, "4b93702b-d2cc-4db6-83ff-800380a3b284");
+  assert.equal(webHome?.mapRevision, 937);
+  assert.notEqual(webHome?.jobId, "ec2588e6-b64c-4ccd-9e5b-d5c7831b6c97");
+  for (const captured of RC23_SCREENSHOT_FIRST_CAPTURED_PENDING) {
+    const slot = slots.slots?.find(
+      (item) => item.checkpointId === captured.checkpointId && item.platform === captured.platform,
+    );
+    assert.equal(slot?.status, "captured");
+    assert.equal(slot?.jobId, captured.jobId);
+  }
 });

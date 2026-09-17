@@ -135,7 +135,7 @@ export const RC23_SCREENSHOT_FIRST_CAPTURED_PENDING: readonly Rc23ScreenshotFirs
   {
     checkpointId: "home-chrome",
     platform: "web",
-    jobId: "ec2588e6-b64c-4ccd-9e5b-d5c7831b6c97",
+    jobId: "4b93702b-d2cc-4db6-83ff-800380a3b284",
   },
   {
     checkpointId: "attach",

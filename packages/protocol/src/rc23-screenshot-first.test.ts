@@ -84,6 +84,14 @@ test("two Settings captions on web vs iOS are two slots", () => {
   assert.equal(ios.configuration?.app, "ai.x.GrokApp");
 });
 
+test("web home-chrome freeze job is leftover dest-phase r937, not prior r916", () => {
+  const webHome = RC23_SCREENSHOT_FIRST_CAPTURED_PENDING.find(
+    (item) => item.checkpointId === "home-chrome" && item.platform === "web",
+  );
+  assert.equal(webHome?.jobId, "4b93702b-d2cc-4db6-83ff-800380a3b284");
+  assert.notEqual(webHome?.jobId, "ec2588e6-b64c-4ccd-9e5b-d5c7831b6c97");
+});
+
 test("30 planned; 29 captured + 1 blocked + 0 missing = 30; mixed 12 is not complete", () => {
   const queue = resolveRc23ScreenshotFirstQueue();
   const counts = partitionRc23ScreenshotFirst(queue);
