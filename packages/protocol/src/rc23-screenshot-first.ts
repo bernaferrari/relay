@@ -210,7 +210,7 @@ export const RC23_SCREENSHOT_FIRST_CAPTURED_PENDING: readonly Rc23ScreenshotFirs
   {
     checkpointId: "attach",
     platform: "ios",
-    jobId: "9fb29721-66f1-47a0-9330-2fe142341103",
+    jobId: "71034ce6-02b5-40c1-ab93-ce70262e2965",
   },
   {
     checkpointId: "models",
@@ -225,7 +225,7 @@ export const RC23_SCREENSHOT_FIRST_CAPTURED_PENDING: readonly Rc23ScreenshotFirs
   {
     checkpointId: "settings",
     platform: "ios",
-    jobId: "183110a2-ddf6-4f0f-9b26-5b750a928b52",
+    jobId: "2f0c7174-0feb-4cc9-82a5-1f0b9f32de6e",
   },
   {
     checkpointId: "home-chrome",

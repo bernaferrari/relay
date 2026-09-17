@@ -227,8 +227,8 @@
       "caption": "Attach",
       "testId": "test-grok-ios-attach",
       "status": "captured",
-      "jobId": "9fb29721-66f1-47a0-9330-2fe142341103",
-      "mapRevision": 335,
+      "jobId": "71034ce6-02b5-40c1-ab93-ce70262e2965",
+      "mapRevision": 347,
       "scenarioKind": "physical",
       "blocked": false
     },
@@ -278,8 +278,8 @@
       "caption": "Settings",
       "testId": "test-grok-ios-settings",
       "status": "captured",
-      "jobId": "32b7deaf-a11e-4004-92c4-c4ba77fbcc68",
-      "mapRevision": 343,
+      "jobId": "2f0c7174-0feb-4cc9-82a5-1f0b9f32de6e",
+      "mapRevision": 348,
       "scenarioKind": "physical",
       "blocked": false
     },
