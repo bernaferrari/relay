@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { saveBrowserAuthenticationFixture } from "./browser-authentication-fixtures.js";
 import {
+  browserAuthenticationFixtureCanProbe,
   browserAuthenticationFixtureIsLive,
   collectBrowserTargetAccountHealth,
   concurrentBrowserAccountCopy,
@@ -38,6 +39,11 @@ test("revoked lab A/B/C are not live accounts", () => {
     false,
   );
   assert.equal(browserAuthenticationFixtureIsLive({ health: { status: "revoked" } }), false);
+  assert.equal(browserAuthenticationFixtureIsLive({ health: { status: "needs-relogin" } }), false);
+  assert.equal(browserAuthenticationFixtureIsLive({ health: { status: "expired" } }), false);
+  assert.equal(browserAuthenticationFixtureIsLive({ health: { status: "error" } }), false);
+  assert.equal(browserAuthenticationFixtureCanProbe({ health: { status: "needs-relogin" } }), true);
+  assert.equal(browserAuthenticationFixtureCanProbe({ health: { status: "revoked" } }), false);
 });
 
 test("one live SuperGrok fixture is honest one-account, not a 3-account pack", () => {

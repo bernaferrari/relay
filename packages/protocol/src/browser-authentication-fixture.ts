@@ -16,6 +16,8 @@ export const browserAuthenticationHealthSchema = z
     checkedAt: z.number().int().nonnegative(),
     detail: z.string().max(500).optional(),
     signedIn: z.boolean().optional(),
+    /** Live page account name. Lane ids and saved fixture names are not identity. */
+    identity: z.string().trim().min(1).max(128).optional(),
   })
   .strict();
 

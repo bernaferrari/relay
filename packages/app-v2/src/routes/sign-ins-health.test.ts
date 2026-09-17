@@ -5,6 +5,8 @@ import {
   concurrentAccountCopy,
   lanesForAccount,
   liveSignIns,
+  probedAccountIdentity,
+  readySignIns,
   revokedSignIns,
 } from "./sign-ins-health";
 
@@ -44,6 +46,25 @@ describe("Sign-ins health", () => {
     expect(liveSignIns([live, revoked])).toEqual([live]);
     expect(revokedSignIns([live, revoked])).toEqual([revoked]);
     expect(accountHealthState(revoked.fixture)).toBe("revoked");
+  });
+
+  it("does not treat needs-relogin as a live SuperGrok account", () => {
+    const stale: ProductBrowserAccount = {
+      ...live,
+      fixture: {
+        ...live.fixture,
+        health: { status: "needs-relogin", checkedAt: now, signedIn: false },
+      },
+    };
+    expect(readySignIns([live, stale, revoked])).toEqual([live]);
+    expect(concurrentAccountCopy(readySignIns([live, stale]).length)).toContain("One live account");
+    expect(
+      probedAccountIdentity({
+        ...live.fixture,
+        health: { ...live.fixture.health!, identity: "Bernardo Ferrari" },
+      }),
+    ).toBe("Bernardo Ferrari");
+    expect(probedAccountIdentity(live.fixture)).toBeUndefined();
   });
 
   it("says one live account cannot be a 3-account Plan", () => {

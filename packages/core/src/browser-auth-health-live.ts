@@ -34,9 +34,19 @@ export async function inspectManagedBrowserAuthPage(input: {
     } catch {
       // Classify from whatever rendered; missing markers become health error.
     }
+    const labels = await page.evaluate(() =>
+      [...document.querySelectorAll("button, [role='button'], a")]
+        .map((element) =>
+          (element.getAttribute("aria-label") || element.textContent || "")
+            .replace(/\s+/gu, " ")
+            .trim(),
+        )
+        .filter((text) => text.length > 0 && text.length < 120),
+    );
     return {
       title: await page.title(),
       bodyText: (await body.count()) ? await body.innerText() : "",
+      ...(labels.length ? { labels } : {}),
     };
   } finally {
     await handle.close();

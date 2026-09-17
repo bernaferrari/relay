@@ -24,6 +24,8 @@ import { PageLoading } from "./recording-shared";
 import {
   accountHealthState,
   concurrentAccountCopy,
+  probedAccountIdentity,
+  readySignIns,
   healthCheckedAt,
   lanesForAccount,
   liveSignIns,
@@ -318,7 +320,7 @@ export function AppAccountsPage() {
                 the daily Plan.
               </p>
               <p className="mb-3 text-sm text-muted-foreground">
-                {concurrentAccountCopy(live.length)}
+                {concurrentAccountCopy(readySignIns(listed).length)}
               </p>
               {revoked.length ? (
                 <p className="mb-3">
@@ -505,6 +507,7 @@ function AccountRow({
   onSignIn(): void;
 }) {
   const state = accountHealthState(account.fixture);
+  const identity = probedAccountIdentity(account.fixture);
   const bound = lanesForAccount(account, lanes);
   const checkedAt = healthCheckedAt(account.fixture);
   const showActions = canProbe || canSignIn || canRefresh || (canRevoke && state !== "revoked");
@@ -517,8 +520,12 @@ function AccountRow({
         <KeyRound />
       </span>
       <span className="grid min-w-0 gap-1">
-        <strong>{account.fixture.name}</strong>
+        <strong>
+          {identity ?? (state === "needs-relogin" ? "Needs relogin" : account.fixture.name)}
+        </strong>
         <small>
+          {identity ? `Saved as ${account.fixture.name}` : account.fixture.name}
+          {" · "}
           <Link
             to="/devices/$deviceId"
             params={{ deviceId: account.target.id }}

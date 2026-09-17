@@ -11,6 +11,7 @@ import {
   claimedBrowserJobStartBlocker,
   claimedFixtureStartBlocker,
   classifyBrowserAuthenticationHealth,
+  extractProbedAccountIdentity,
   planAccountHealthBlocker,
   planAccountStartBlocker,
   probeBrowserAuthenticationFixture,
@@ -40,6 +41,53 @@ test("signed-in markers distinguish grok.com chrome from the login wall", () => 
     ),
     false,
   );
+});
+
+test("probe identity is the page account, not a Lane or SuperGrok stand-in", () => {
+  const grok = GROK_WEB_APP_POLICY;
+  assert.equal(
+    extractProbedAccountIdentity({
+      title: "Grok",
+      bodyText: "Library\nPrivate Chat",
+      labels: ["BF Bernardo Ferrari", "Profile picture, Bernardo Ferrari,  bferrari@ext.teachx.ai"],
+    }),
+    "Bernardo Ferrari",
+  );
+  assert.equal(
+    extractProbedAccountIdentity({
+      title: "Grok",
+      bodyText: "Sign in\nImagine\nAsk Grok anything",
+      labels: ["grok-lab", "SuperGrok", "grok-daily"],
+    }),
+    undefined,
+  );
+  const signedOut = classifyBrowserAuthenticationHealth(
+    { name: "SuperGrok lab signed-in" },
+    20,
+    {
+      title: "Grok",
+      bodyText: "What should we explore?\nImagine\nSign in\nAsk Grok anything",
+      labels: ["grok-lab"],
+    },
+    grok,
+  );
+  assert.equal(signedOut.status, "needs-relogin");
+  assert.equal(signedOut.identity, undefined);
+  assert.doesNotMatch(signedOut.detail ?? "", /SuperGrok|grok-lab/u);
+  const signedIn = classifyBrowserAuthenticationHealth(
+    { name: "SuperGrok lab signed-in" },
+    20,
+    {
+      title: "Grok",
+      bodyText: "Ask Grok anything\nNew Chat",
+      labels: ["BF Bernardo Ferrari"],
+    },
+    grok,
+  );
+  assert.equal(signedIn.status, "ready");
+  assert.equal(signedIn.identity, "Bernardo Ferrari");
+  assert.match(signedIn.detail ?? "", /Signed in as Bernardo Ferrari/u);
+  assert.doesNotMatch(signedIn.detail ?? "", /SuperGrok lab signed-in is signed in/u);
 });
 
 test("expired and revoked fixtures fail closed before a live page probe", () => {

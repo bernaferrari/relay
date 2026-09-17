@@ -47,6 +47,16 @@ export function browserAuthenticationFixtureIsLive(
   fixture: Pick<FixtureHealthView, "revokedAt" | "health">,
 ): boolean {
   if (fixture.revokedAt !== undefined) return false;
+  const status = fixture.health?.status;
+  if (status === undefined) return true;
+  return status === "ready";
+}
+
+/** Revoked fixtures are never opened. Needs-relogin still gets a live page probe. */
+export function browserAuthenticationFixtureCanProbe(
+  fixture: Pick<FixtureHealthView, "revokedAt" | "health">,
+): boolean {
+  if (fixture.revokedAt !== undefined) return false;
   return fixture.health?.status !== "revoked";
 }
 
@@ -156,7 +166,7 @@ export async function collectBrowserTargetAccountHealth(input: {
       ...fixture,
       origins: [...fixture.origins],
     };
-    if (!input.probe || !browserAuthenticationFixtureIsLive(listedFixture)) {
+    if (!input.probe || !browserAuthenticationFixtureCanProbe(listedFixture)) {
       fixtures.push(listedFixture);
       continue;
     }

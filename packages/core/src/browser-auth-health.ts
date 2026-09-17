@@ -22,7 +22,56 @@ import { listedFixtureForAccount } from "./browser-execution-identity.js";
 export type BrowserAuthPageSnapshot = {
   title: string;
   bodyText: string;
+  labels?: readonly string[];
 };
+
+const ACCOUNT_IDENTITY_STAND_INS = new Set([
+  "super grok",
+  "supergrok",
+  "grok-lab",
+  "grok-daily",
+  "grok-daily-b",
+  "grok-daily-c",
+  "grok-daily-d",
+  "grok-daily-e",
+  "grok-daily-f",
+  "grok-daily-g",
+  "grok-daily-h",
+  "grok-auth-email",
+  "grok-auth-gmail",
+  "grok-auth-x",
+  "grok-auth-x-out",
+  "sign in",
+  "sign up",
+  "new chat",
+  "imagine",
+]);
+
+function normalizeIdentityCandidate(value: string): string | undefined {
+  const trimmed = value.replace(/\s+/gu, " ").trim();
+  if (!trimmed || trimmed.length > 80) return undefined;
+  const key = trimmed.toLocaleLowerCase();
+  if (ACCOUNT_IDENTITY_STAND_INS.has(key) || key.startsWith("grok-")) return undefined;
+  return trimmed;
+}
+
+/** Live page account name. Lane ids, SuperGrok, and saved fixture names are not identity. */
+export function extractProbedAccountIdentity(
+  snapshot: BrowserAuthPageSnapshot,
+  savedName?: string,
+): string | undefined {
+  const saved = savedName?.replace(/\s+/gu, " ").trim().toLocaleLowerCase();
+  const lines = [...(snapshot.labels ?? []), ...snapshot.bodyText.split(/\r?\n/u), snapshot.title];
+  for (const raw of lines) {
+    const profile = raw.match(/profile picture,\s*([^,]+)/iu);
+    const fromProfile = profile ? normalizeIdentityCandidate(profile[1] ?? "") : undefined;
+    if (fromProfile && fromProfile.toLocaleLowerCase() !== saved) return fromProfile;
+    const initials = raw.match(/^[A-Z]{1,3}\s+([A-Z][^\n,]{1,60})$/u);
+    const fromInitials = initials ? normalizeIdentityCandidate(initials[1] ?? "") : undefined;
+    if (fromInitials && fromInitials.toLocaleLowerCase() !== saved) return fromInitials;
+  }
+  return undefined;
+}
 
 type HealthIndex = Record<string, BrowserAuthenticationHealth>;
 
@@ -100,21 +149,25 @@ export function classifyBrowserAuthenticationHealth(
         status: "needs-relogin",
         checkedAt: now,
         signedIn: false,
-        detail: `${fixture.name} opened signed out. Complete OAuth, then Refresh.`,
+        detail: "Opened signed out. Complete OAuth, then Refresh.",
       };
     }
     if (signedIn === true) {
+      const identity = extractProbedAccountIdentity(page, fixture.name);
       return {
         status: "ready",
         checkedAt: now,
         signedIn: true,
-        detail: `${fixture.name} is signed in.`,
+        detail: identity
+          ? `Signed in as ${identity}.`
+          : "Signed in. Page did not show an account name.",
+        ...(identity ? { identity } : {}),
       };
     }
     return {
       status: "error",
       checkedAt: now,
-      detail: `${fixture.name} did not show a signed-in or signed-out marker.`,
+      detail: "Page did not show a signed-in or signed-out marker.",
     };
   }
   return {
