@@ -57,9 +57,18 @@
 # dest-end (do not tap Add), orig 50 Heavy 5-image, and S09 single-agent
 # Slack/news do not cover. Similar heavy/news/slack/finance/plugins
 # names do not cover. Leftover dest skip is only GQA-004/040 capture-view.
+# RC-33 S11 image gen + edit + export packets stay unbound: explicit
+# test-action evidence-needed (generate TAP + download TAP, Make Video
+# TAP, Heavy/Expert 5-image edit TAP, Draw a puppy TAP, Draw a hat TAP).
+# Imagine dest-end / iOS Imagine Unbound / logged-out Imagine judged
+# (do not require generated images) / UNRECORDED orig 50 Heavy 5-image
+# / leftover 3*5 extract-15 / S02 Imagine from menu / S10 Heavy agents
+# / GQA-008 Create Videos preset do not cover. Similar imagine/puppy/
+# download/video/hat names do not cover. Leftover dest skip is only
+# GQA-004/040 capture-view.
 schemaVersion: 1
 id: grok-qa-workbook
-revision: 12
+revision: 13
 reviewedAt: "2026-09-16"
 source:
   workbook: grok-qa-graph.xlsx
@@ -600,8 +609,20 @@ originals:
     evidencePacket: screenshot-receipt
     queue: "slow-output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: receipt
+        id: tap-send-generate-image
+        note: "Type and send an image-generation prompt actually executed (test-action). Reuse the exact newly generated image. Leftover Imagine dest-end (What should we imagine?) / iOS Imagine Unbound / logged-out Imagine judged (do not require generated images) / leftover 3*5 extract-15 is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: receipt
+        id: tap-download-carousel-icon
+        note: "TAP download icon from the image in the carousel actually executed (test-action). Imagine dest-end without a generated image / S02 GQA-037 Imagine from menu is not this original."
+      - kind: view
+        id: image-download-success
+        note: "Fresh live-output image that the image downloaded successfully. Human reviews original criterion. leftover Imagine dest-end / grok-lab leftover b2dcd768 sidebar+Build Mode is not this view. stabilityMeasured false."
     gates:
       - Reuse the exact newly generated image.
+      - "Leftover Imagine dest-end / iOS Imagine Unbound / logged-out Imagine judged / leftover 3*5 extract-15 / S02 GQA-037 Imagine from menu is not this original. Causal TAP must generate an image and download it from the carousel. Similar imagine/download names do not cover."
     status: unbound
     bindings: []
   - id: 17
@@ -614,8 +635,20 @@ originals:
     evidencePacket: generated-output
     queue: "slow-output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: receipt
+        id: tap-send-generate-image-for-video
+        note: "Type and send an image-generation prompt actually executed (test-action). Leftover Imagine dest-end / iOS Imagine Unbound / GQA-008 Create Videos preset inventory is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: receipt
+        id: tap-make-video
+        note: "TAP Make Video icon actually executed (test-action). SuperGrok Lite+. Imagine dest-end without Make Video TAP is not this original. GQA-008 Create Videos preset is not this original."
+      - kind: after
+        id: after-video-generated
+        note: "Generated output at a declared phase: lightbox opens in Imagine and video generated successfully. Human reviews original criterion. leftover Imagine dest-end / grok-lab leftover b2dcd768 sidebar+Build Mode is not this after frame. stabilityMeasured false."
     gates:
       - "Make Video: SuperGrok Lite+."
+      - "Leftover Imagine dest-end / iOS Imagine Unbound / GQA-008 Create Videos preset inventory is not this original. Causal TAP must generate an image then TAP Make Video. Similar imagine/video names do not cover."
     status: unbound
     bindings: []
   - id: 18
@@ -1296,8 +1329,20 @@ originals:
     evidencePacket: generated-output
     queue: "slow-output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: receipt
+        id: tap-send-five-image-heavy
+        note: "Select Heavy or Expert and type+send a 5-image prompt (e.g. 5 dogs) actually executed (test-action). Fast does not satisfy. Leftover Imagine dest-end / inspect-only Heavy sheet / model-iterate / leftover 3*5 extract-15 / UNRECORDED heavy-image-5 is not this original. S10 Heavy agents is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: receipt
+        id: tap-edit-second-image-hat
+        note: "Ask to change the second image (add hat) actually executed (test-action). UNRECORDED 5-image Heavy without the edit TAP is not this original. GQA-055 Imagine hat-on-X is not this original."
+      - kind: after
+        id: after-five-images-edited
+        note: "Generated output at a declared phase: images generated and edited according to requests. Human reviews original criterion. Fast leftover / Imagine dest-end / grok-lab leftover b2dcd768 sidebar+Build Mode is not this after frame. stabilityMeasured false."
     gates:
       - "Owner decision 2026-09-17: the five-image edit requires Heavy/Expert. Fast does not satisfy this requirement."
+      - "Leftover Imagine dest-end / inspect-only Heavy sheet / model-iterate / leftover 3*5 extract-15 / UNRECORDED heavy-image-5 / S10 Heavy agents is not this original. Causal TAP must select Heavy or Expert, generate 5 images, and edit a particular image. Fast does not satisfy. GQA-055 stays Imagine hat-on-X. Similar heavy/imagine/hat names do not cover."
     status: unbound
     bindings: []
   - id: 51
@@ -1373,8 +1418,17 @@ originals:
     evidencePacket: generated-output
     queue: "slow-output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: receipt
+        id: tap-send-draw-a-puppy
+        note: "Type and send Draw a puppy (or variation) actually executed (test-action). Leftover Imagine dest-end / iOS Imagine Unbound / logged-out Imagine judged (do not require generated images) / leftover 3*5 extract-15 is not this original. Orig 50 five-image Heavy is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: after
+        id: after-puppy-image
+        note: "Generated output at a declared phase: an image based on the prompt using Imagine, at least 2 follow-up suggestions. Single-image requirement since 3/27. Human reviews original criterion. iOS Imagine Unbound / Imagine dest-end feed without generation is not this after frame. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
     gates:
       - Single-image requirement since 3/27. iOS Imagine Unbound.
+      - "Leftover Imagine dest-end / iOS Imagine Unbound / logged-out Imagine judged / leftover 3*5 extract-15 is not this original. Causal TAP must send Draw a puppy. Do not invent navigation.tab.imagine. Orig 50 stays Heavy 5-image. Similar imagine/puppy names do not cover."
     status: unbound
     bindings: []
   - id: 55
@@ -1387,8 +1441,17 @@ originals:
     evidencePacket: generated-output
     queue: "slow-output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: receipt
+        id: tap-send-draw-a-hat
+        note: "Reuse the exact newly generated image (or upload) and type+send Draw a hat on X actually executed (test-action). Orig 50 Heavy 5-image edit is not this original. Leftover Imagine dest-end / iOS Imagine Unbound is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: after
+        id: after-hat-edit
+        note: "Generated output at a declared phase: an image edited from the image attached using Imagine, at least 2 follow-up suggestions. Human reviews original criterion. Orig 16 download / orig 50 five-image / Imagine dest-end is not this after frame. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
     gates:
       - Reuse the exact newly generated image where valid.
+      - "Leftover Imagine dest-end / iOS Imagine Unbound / orig 50 Heavy 5-image UNRECORDED is not this original. Causal TAP must reuse the newly generated image and send Draw a hat on X. Orig 16 stays download. Similar imagine/hat names do not cover."
     status: unbound
     bindings: []
   - id: 56

@@ -7,8 +7,9 @@
  * Captions are display text; obligations are plannedSlots identities.
  * S02 shell, S05 model/preset, S08 output-battery, S01 auth, S03
  * composer, S06 Auto-routing, S07 response-chrome, S09
- * single-agent tools + sources, and S10 Heavy multi-agent originals
- * keep explicit test-action evidence-needed while remaining unbound.
+ * single-agent tools + sources, S10 Heavy multi-agent, and S11
+ * image gen + edit + export originals keep explicit test-action
+ * evidence-needed while remaining unbound.
  * Leftover Fast-checked is not a models Test. Inspect-only model
  * sheet is not Switch model, presets, or Auto Fast/Expert routing.
  * Leftover 3*5 extract-15 / Markdown judge is not S08 generated-output
@@ -26,7 +27,11 @@
  * inspect-only Expert or Heavy sheet / plugins overlay / finance
  * dest-end / orig 50 Heavy 5-image / S09 single-agent Slack/news is
  * not S10 Heavy agents, Heavy Latest news, or Heavy investment.
- * Original criteria stay on the slot.
+ * Imagine dest-end / iOS Imagine Unbound / logged-out Imagine judged
+ * / UNRECORDED orig 50 Heavy 5-image / leftover 3*5 / S02 Imagine
+ * from menu / S10 Heavy agents / GQA-008 Create Videos preset is
+ * not S11 image gen download, Make Video, five-image edit, Draw a
+ * puppy, or Draw a hat. Original criteria stay on the slot.
  */
 
 import { captureReviewSlotId, type CaptureReviewConfiguration } from "./capture-review.js";
@@ -54,6 +59,8 @@ export const WORKBOOK_TOOLS_FAMILY_ID = "S09";
 export const WORKBOOK_TOOLS_ORIGINAL_IDS = [11, 30, 56] as const;
 export const WORKBOOK_HEAVY_FAMILY_ID = "S10";
 export const WORKBOOK_HEAVY_ORIGINAL_IDS = [31, 57, 58] as const;
+export const WORKBOOK_IMAGE_FAMILY_ID = "S11";
+export const WORKBOOK_IMAGE_ORIGINAL_IDS = [16, 17, 50, 54, 55] as const;
 export const WORKBOOK_MODELS_FAMILY_ID = "S05";
 export const WORKBOOK_MODELS_ORIGINAL_IDS = [7, 8] as const;
 export const WORKBOOK_OUTPUT_FAMILY_ID = "S08";
@@ -237,7 +244,7 @@ export const RC23_WORKBOOK_NON_BINDINGS: readonly {
     checkpointId: "imagine",
     originalIds: [16, 17, 37, 50, 54, 55],
     reason:
-      "iOS Imagine Unbound; image-generation rows stay unbound; Android Imagine is a native companion, not a workbook binding.",
+      "iOS Imagine Unbound; image-generation rows stay unbound; Android Imagine is a native companion, not a workbook binding. Imagine dest-end is not generate+download, Make Video, five-image edit, Draw a puppy, or Draw a hat.",
   },
   {
     checkpointId: "logo",
@@ -408,6 +415,19 @@ export function coverByUnrecordedSourcesNewsOrPlugins(
  * never cover S10. Heavy send TAP + Agents-working sequence evidence
  * is required. */
 export function coverByUnrecordedHeavyOrFinanceDestEnd(
+  original: Pick<WorkbookOriginal, "id" | "family">,
+): boolean {
+  void original;
+  return false;
+}
+
+/** Imagine dest-end, iOS Imagine Unbound, logged-out Imagine judged
+ * (do not require generated images), UNRECORDED orig 50 Heavy 5-image,
+ * leftover 3*5 extract-15, S02 Imagine from menu, S10 Heavy agents,
+ * or GQA-008 Create Videos preset never cover S11. Generate TAP +
+ * download / Make Video / Heavy 5-image edit / Draw a puppy / Draw a
+ * hat TAP evidence is required. */
+export function coverByImagineDestEndOrUnrecordedHeavyImage(
   original: Pick<WorkbookOriginal, "id" | "family">,
 ): boolean {
   void original;
@@ -929,9 +949,21 @@ function distinctiveNeedles(original: WorkbookOriginal): readonly string[] {
   if (original.id === 3 || original.id === 36) extra.push("new-chat", "newchat");
   if (original.id === 35) extra.push("logo");
   if (original.id === 7) extra.push("model", "models", "selector");
-  if (original.id === 37 || original.id === 16 || original.id === 17) extra.push("imagine");
+  if (
+    original.id === 37 ||
+    original.id === 16 ||
+    original.id === 17 ||
+    original.id === 50 ||
+    original.id === 54 ||
+    original.id === 55
+  )
+    extra.push("imagine");
+  if (original.id === 16) extra.push("download");
+  if (original.id === 17) extra.push("video");
   if (original.id === 42) extra.push("dictation");
   if (original.id === 50) extra.push("heavy", "expert");
+  if (original.id === 54) extra.push("puppy");
+  if (original.id === 55) extra.push("hat");
   if (original.id === 14) extra.push("code", "snippet");
   if (original.id === 15) extra.push("markdown");
   if (original.id === 32) extra.push("coffee");
@@ -1053,6 +1085,7 @@ export function suggestedExecutionQueueForOriginal(input: {
     input.family === WORKBOOK_CHROME_FAMILY_ID ||
     input.family === WORKBOOK_TOOLS_FAMILY_ID ||
     input.family === WORKBOOK_HEAVY_FAMILY_ID ||
+    input.family === WORKBOOK_IMAGE_FAMILY_ID ||
     input.family === "S17"
   )
     return "live-output";
@@ -1259,6 +1292,14 @@ export function workbookEvidenceNeededError(
       return `${label} S10 needs explicit evidence-needed (Heavy tool+web TAP, Agents-working sequence, Heavy Latest news TAP, Heavy investment TAP)`;
     }
   }
+  if (original.family === WORKBOOK_IMAGE_FAMILY_ID) {
+    if (original.requirementAction !== "test-action") {
+      return `${label} S11 must be test-action — leftover Imagine dest-end / iOS Imagine Unbound / UNRECORDED Heavy 5-image / logged-out Imagine judged is not image gen download, Make Video, five-image edit, Draw a puppy, or Draw a hat`;
+    }
+    if (!original.evidenceNeeded || original.evidenceNeeded.length === 0) {
+      return `${label} S11 needs explicit evidence-needed (generate TAP, download TAP, Make Video TAP, Heavy/Expert 5-image edit TAP)`;
+    }
+  }
   if (original.id === 7) {
     const switchKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
     for (const required of ["before", "after", "receipt"] as const) {
@@ -1415,6 +1456,50 @@ export function workbookEvidenceNeededError(
     }
     if (!investmentKinds.has("receipt")) {
       return `${label} GQA-058 needs a Heavy investment send TAP receipt — leftover finance dest-end (do not tap Add) is not this original`;
+    }
+  }
+  if (original.id === 16) {
+    const downloadKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!downloadKinds.has("receipt")) {
+      return `${label} GQA-016 download TAP must execute — leftover Imagine dest-end / iOS Imagine Unbound is not this original`;
+    }
+    const downloadReceipts =
+      original.evidenceNeeded?.filter((item) => item.kind === "receipt") ?? [];
+    if (downloadReceipts.length < 2) {
+      return `${label} GQA-016 needs generate TAP and download TAP receipts — leftover Imagine dest-end / iOS Imagine Unbound is not this original`;
+    }
+  }
+  if (original.id === 17) {
+    const videoKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!videoKinds.has("after")) {
+      return `${label} GQA-017 needs after evidence — leftover Imagine dest-end / GQA-008 Create Videos preset is not this original`;
+    }
+    const videoReceipts = original.evidenceNeeded?.filter((item) => item.kind === "receipt") ?? [];
+    if (videoReceipts.length < 2) {
+      return `${label} GQA-017 needs generate TAP and Make Video TAP receipts — leftover Imagine dest-end / GQA-008 Create Videos preset is not this original`;
+    }
+  }
+  if (original.id === 50) {
+    const fiveImageKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!fiveImageKinds.has("after")) {
+      return `${label} GQA-050 needs after evidence — leftover Imagine dest-end / UNRECORDED Heavy 5-image / Fast leftover is not this original`;
+    }
+    const fiveImageReceipts =
+      original.evidenceNeeded?.filter((item) => item.kind === "receipt") ?? [];
+    if (fiveImageReceipts.length < 2) {
+      return `${label} GQA-050 needs generate TAP and edit TAP receipts — leftover Imagine dest-end / UNRECORDED Heavy 5-image / Fast leftover is not this original`;
+    }
+  }
+  if (original.id === 54) {
+    const puppyKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!puppyKinds.has("receipt")) {
+      return `${label} GQA-054 needs a Draw a puppy send TAP receipt — leftover Imagine dest-end / iOS Imagine Unbound is not this original`;
+    }
+  }
+  if (original.id === 55) {
+    const hatKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    if (!hatKinds.has("receipt")) {
+      return `${label} GQA-055 needs a Draw a hat send TAP receipt — leftover Imagine dest-end / orig 50 Heavy 5-image is not this original`;
     }
   }
   if (!original.evidenceNeeded) return undefined;

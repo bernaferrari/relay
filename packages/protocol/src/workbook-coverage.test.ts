@@ -9,6 +9,7 @@ import {
   coverByToolbarExpectSetOrShareToast,
   coverByUnrecordedSourcesNewsOrPlugins,
   coverByUnrecordedHeavyOrFinanceDestEnd,
+  coverByImagineDestEndOrUnrecordedHeavyImage,
   coverByRc23DestEnd,
   destEndViewPacketMayLeftoverSkip,
   evaluateWorkbookCoverage,
@@ -37,6 +38,8 @@ import {
   WORKBOOK_TOOLS_ORIGINAL_IDS,
   WORKBOOK_HEAVY_FAMILY_ID,
   WORKBOOK_HEAVY_ORIGINAL_IDS,
+  WORKBOOK_IMAGE_FAMILY_ID,
+  WORKBOOK_IMAGE_ORIGINAL_IDS,
   WORKBOOK_MODELS_FAMILY_ID,
   WORKBOOK_MODELS_ORIGINAL_IDS,
   WORKBOOK_OUTPUT_FAMILY_ID,
@@ -162,6 +165,21 @@ const similarCatalog = [
     id: "test-grok-android-unrecorded-heavy-image-5",
     name: "UNRECORDED 5-image Heavy",
     appMapId: "grok-android",
+  },
+  {
+    id: "test-grok-web-signed-in-imagine",
+    name: "Open Imagine",
+    appMapId: "grok-web",
+  },
+  {
+    id: "test-grok-android-imagine",
+    name: "Open Imagine",
+    appMapId: "grok-android",
+  },
+  {
+    id: "test-grok-web-logged-out-imagine-judged",
+    name: "Judge logged-out Imagine chrome",
+    appMapId: "grok-web",
   },
 ];
 
@@ -551,6 +569,66 @@ test("capture-view leftover skip is only GQA-004 attach and GQA-040 Settings inv
     }),
     false,
   );
+  assert.equal(
+    destEndViewPacketMayLeftoverSkip({ id: 16, evidencePacket: "screenshot-receipt" }),
+    false,
+  );
+  assert.equal(
+    destEndViewPacketMayLeftoverSkip({ id: 17, evidencePacket: "generated-output" }),
+    false,
+  );
+  assert.equal(
+    destEndViewPacketMayLeftoverSkip({ id: 50, evidencePacket: "generated-output" }),
+    false,
+  );
+  assert.equal(
+    destEndViewPacketMayLeftoverSkip({ id: 54, evidencePacket: "generated-output" }),
+    false,
+  );
+  assert.equal(
+    destEndViewPacketMayLeftoverSkip({ id: 55, evidencePacket: "generated-output" }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 16,
+      evidencePacket: "screenshot-receipt",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 17,
+      evidencePacket: "generated-output",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 50,
+      evidencePacket: "generated-output",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 54,
+      evidencePacket: "generated-output",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 55,
+      evidencePacket: "generated-output",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
 });
 
 test("S16 cannot be single-view Fast UI", () => {
@@ -628,7 +706,11 @@ test("RC-23 dest-end table binds only orig 4 attach view and orig 40 settings vi
   assert.equal(rc23DestEndSatisfiesOriginal("sidebar", 33), false);
   assert.equal(rc23DestEndSatisfiesOriginal("logo", 35), false);
   assert.equal(rc23DestEndSatisfiesOriginal("imagine", 37), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("imagine", 16), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("imagine", 17), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("imagine", 50), false);
   assert.equal(rc23DestEndSatisfiesOriginal("imagine", 54), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("imagine", 55), false);
   assert.equal(rc23DestEndSatisfiesOriginal("dictation", 42), false);
   assert.equal(coverByRc23DestEnd({ id: 4 }, "attach"), true);
   assert.equal(coverByRc23DestEnd({ id: 6 }, "composer-focus"), false);
@@ -2748,6 +2830,433 @@ test("S10 packets stay unbound and need Heavy agents, Heavy Latest news, and Hea
       id: 58,
       family: WORKBOOK_HEAVY_FAMILY_ID,
       evidencePacket: "sequence",
+    }),
+    "live-output",
+  );
+});
+
+test("S11 packets stay unbound and need generate, download, Make Video, five-image edit, Draw a puppy, and Draw a hat TAP evidence", () => {
+  assert.deepEqual([...WORKBOOK_IMAGE_ORIGINAL_IDS], [16, 17, 50, 54, 55]);
+  assert.deepEqual(requiredEvidenceNeededKinds("screenshot-receipt"), ["view", "receipt"]);
+  assert.deepEqual(requiredEvidenceNeededKinds("generated-output"), ["after"]);
+  const missing = original({
+    id: 16,
+    name: "Image gen download",
+    family: WORKBOOK_IMAGE_FAMILY_ID,
+    evidencePacket: "screenshot-receipt",
+    status: "unbound",
+  });
+  assert.match(
+    workbookEvidenceNeededError(missing) ?? "",
+    /S11 must be test-action|S11 needs explicit evidence-needed|download TAP must execute/u,
+  );
+  const leftoverImagineDest = original({
+    id: 16,
+    name: "Image gen download",
+    family: WORKBOOK_IMAGE_FAMILY_ID,
+    evidencePacket: "screenshot-receipt",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "view",
+        id: "leftover-imagine-dest-end",
+        note: "Leftover Imagine dest-end What should we imagine? No generate or download TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria: "Image downloads successfully.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverImagineDest) ?? "",
+    /download TAP must execute/u,
+  );
+  assert.equal(coverByImagineDestEndOrUnrecordedHeavyImage(leftoverImagineDest), false);
+  const leftoverGenerateOnly = original({
+    id: 16,
+    name: "Image gen download",
+    family: WORKBOOK_IMAGE_FAMILY_ID,
+    evidencePacket: "screenshot-receipt",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-send-generate-image",
+        note: "Generate image. No download TAP.",
+      },
+      {
+        kind: "view",
+        id: "generated-image",
+        note: "Image visible. Download not tapped.",
+      },
+    ],
+    status: "unbound",
+    criteria: "Image downloads successfully.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverGenerateOnly) ?? "",
+    /generate TAP and download TAP receipts/u,
+  );
+  const download = original({
+    id: 16,
+    name: "Image gen download",
+    family: WORKBOOK_IMAGE_FAMILY_ID,
+    evidencePacket: "screenshot-receipt",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-send-generate-image",
+        note: "Generate an image actually executed. leftover Imagine dest-end is not this original.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-download-carousel-icon",
+        note: "TAP download from carousel actually executed.",
+      },
+      {
+        kind: "view",
+        id: "image-download-success",
+        note: "Image downloaded successfully. leftover Imagine dest-end is not this view.",
+      },
+    ],
+    status: "unbound",
+    criteria: "Image downloads successfully.",
+  });
+  assert.equal(workbookEvidenceNeededError(download), undefined);
+  assert.equal(workbookEvidencePolicyError(download), undefined);
+  assert.equal(originalIsCovered(download), false);
+  assert.equal(coverByImagineDestEndOrUnrecordedHeavyImage(download), false);
+  const downloadObligation = workbookOriginalObligationIdentity(download);
+  assert.equal(downloadObligation.requirementId, "GQA-016");
+  assert.equal(downloadObligation.caption, "Image gen download");
+  assert.equal(downloadObligation.criteria, "Image downloads successfully.");
+  const leftoverVideoDest = original({
+    id: 17,
+    name: "Make Video",
+    family: WORKBOOK_IMAGE_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "after",
+        id: "leftover-imagine-feed",
+        note: "Leftover Imagine dest-end. No Make Video TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria: "Lightbox opens in Imagine and video generated successfully.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverVideoDest) ?? "",
+    /generate TAP and Make Video TAP receipts/u,
+  );
+  const makeVideo = original({
+    id: 17,
+    name: "Make Video",
+    family: WORKBOOK_IMAGE_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-send-generate-image-for-video",
+        note: "Generate an image actually executed. leftover Imagine dest-end is not this original.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-make-video",
+        note: "TAP Make Video actually executed. GQA-008 Create Videos preset is not this original.",
+      },
+      {
+        kind: "after",
+        id: "after-video-generated",
+        note: "Lightbox opens and video generated. leftover Imagine dest-end is not this frame.",
+      },
+    ],
+    status: "unbound",
+    criteria: "Lightbox opens in Imagine and video generated successfully.",
+  });
+  assert.equal(workbookEvidenceNeededError(makeVideo), undefined);
+  assert.equal(workbookEvidencePolicyError(makeVideo), undefined);
+  assert.equal(originalIsCovered(makeVideo), false);
+  const leftoverFiveImage = original({
+    id: 50,
+    name: "Five-image edit (dogs / hat)",
+    family: WORKBOOK_IMAGE_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "after",
+        id: "unrecorded-heavy-image-5",
+        note: "UNRECORDED 5-image Heavy. Fast leftover. No edit TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria: "Images should be generated and edited according to requests.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverFiveImage) ?? "",
+    /generate TAP and edit TAP receipts/u,
+  );
+  const fiveImage = original({
+    id: 50,
+    name: "Five-image edit (dogs / hat)",
+    family: WORKBOOK_IMAGE_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-send-five-image-heavy",
+        note: "Select Heavy or Expert and send 5 dogs. Fast does not satisfy.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-edit-second-image-hat",
+        note: "Edit the second image (add hat) actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-five-images-edited",
+        note: "Images generated and edited. UNRECORDED / Imagine dest-end is not this frame.",
+      },
+    ],
+    status: "unbound",
+    criteria: "Images should be generated and edited according to requests.",
+  });
+  assert.equal(workbookEvidenceNeededError(fiveImage), undefined);
+  assert.equal(workbookEvidencePolicyError(fiveImage), undefined);
+  assert.equal(originalIsCovered(fiveImage), false);
+  const leftoverPuppy = original({
+    id: 54,
+    name: "Draw a puppy",
+    family: WORKBOOK_IMAGE_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "after",
+        id: "leftover-imagine-feed",
+        note: "Leftover Imagine dest-end. iOS Imagine Unbound. No Draw a puppy TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "It should generate an image based on the prompt using Imagine. At least 2 follow-up suggestions.",
+  });
+  assert.match(workbookEvidenceNeededError(leftoverPuppy) ?? "", /Draw a puppy send TAP receipt/u);
+  const puppy = original({
+    id: 54,
+    name: "Draw a puppy",
+    family: WORKBOOK_IMAGE_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-send-draw-a-puppy",
+        note: "Type and send Draw a puppy actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-puppy-image",
+        note: "Generated image with at least 2 follow-ups. leftover Imagine dest-end is not this frame.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "It should generate an image based on the prompt using Imagine. At least 2 follow-up suggestions.",
+  });
+  assert.equal(workbookEvidenceNeededError(puppy), undefined);
+  assert.equal(workbookEvidencePolicyError(puppy), undefined);
+  assert.equal(originalIsCovered(puppy), false);
+  const leftoverHat = original({
+    id: 55,
+    name: "Draw a hat on it",
+    family: WORKBOOK_IMAGE_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "after",
+        id: "leftover-five-image",
+        note: "Orig 50 Heavy 5-image. Imagine dest-end. No Draw a hat TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "It should generate an image edited from the image attached using Imagine. At least 2 follow-up suggestions.",
+  });
+  assert.match(workbookEvidenceNeededError(leftoverHat) ?? "", /Draw a hat send TAP receipt/u);
+  const hat = original({
+    id: 55,
+    name: "Draw a hat on it",
+    family: WORKBOOK_IMAGE_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-send-draw-a-hat",
+        note: "Reuse newly generated image and send Draw a hat on X actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-hat-edit",
+        note: "Edited image with at least 2 follow-ups. orig 50 / Imagine dest-end is not this frame.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "It should generate an image edited from the image attached using Imagine. At least 2 follow-up suggestions.",
+  });
+  assert.equal(workbookEvidenceNeededError(hat), undefined);
+  assert.equal(workbookEvidencePolicyError(hat), undefined);
+  assert.equal(originalIsCovered(hat), false);
+  const hatObligation = workbookOriginalObligationIdentity(hat);
+  assert.equal(hatObligation.requirementId, "GQA-055");
+  assert.match(hatObligation.criteria, /image edited from the image attached/u);
+  const report = evaluateWorkbookCoverage(
+    fixture({ originals: [download, makeVideo, fiveImage, puppy, hat] }),
+    [
+      { id: "test-grok-ios-imagine", name: "Imagine" },
+      { id: "test-grok-web-signed-in-imagine", name: "Open Imagine" },
+      { id: "test-grok-android-imagine", name: "Open Imagine" },
+      { id: "test-grok-web-logged-out-imagine-judged", name: "Judge logged-out Imagine chrome" },
+      { id: "test-grok-android-unrecorded-heavy-image-5", name: "UNRECORDED 5-image Heavy" },
+      { id: "test-grok-web-signed-in-3x5", name: "Ask 3*5" },
+    ],
+  );
+  assert.deepEqual(report.coveredOriginalIds, []);
+  assert.equal(report.unboundOriginalIds.includes(16), true);
+  assert.equal(report.unboundOriginalIds.includes(17), true);
+  assert.equal(report.unboundOriginalIds.includes(50), true);
+  assert.equal(report.unboundOriginalIds.includes(54), true);
+  assert.equal(report.unboundOriginalIds.includes(55), true);
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 16 && row.testId === "test-grok-web-signed-in-imagine",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 16 && row.testId === "test-grok-ios-imagine",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 17 && row.testId === "test-grok-android-imagine",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 50 && row.testId === "test-grok-android-unrecorded-heavy-image-5",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 54 && row.testId === "test-grok-ios-imagine",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 55 && row.testId === "test-grok-web-logged-out-imagine-judged",
+    ),
+    true,
+  );
+  assert.equal(coverByFindingSimilarlyNamedTest(download, []), false);
+  assert.equal(coverByRc23DestEnd({ id: 16 }, "imagine"), false);
+  assert.equal(coverByRc23DestEnd({ id: 17 }, "imagine"), false);
+  assert.equal(coverByRc23DestEnd({ id: 50 }, "imagine"), false);
+  assert.equal(coverByRc23DestEnd({ id: 54 }, "imagine"), false);
+  assert.equal(coverByRc23DestEnd({ id: 55 }, "imagine"), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 16,
+      evidencePacket: "screenshot-receipt",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 17,
+      evidencePacket: "generated-output",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 50,
+      evidencePacket: "generated-output",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 54,
+      evidencePacket: "generated-output",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 55,
+      evidencePacket: "generated-output",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    destEndViewPacketMayLeftoverSkip({ id: 16, evidencePacket: "screenshot-receipt" }),
+    false,
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 16,
+      family: WORKBOOK_IMAGE_FAMILY_ID,
+      evidencePacket: "screenshot-receipt",
+    }),
+    "live-output",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 17,
+      family: WORKBOOK_IMAGE_FAMILY_ID,
+      evidencePacket: "generated-output",
+    }),
+    "live-output",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 50,
+      family: WORKBOOK_IMAGE_FAMILY_ID,
+      evidencePacket: "generated-output",
+    }),
+    "live-output",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 54,
+      family: WORKBOOK_IMAGE_FAMILY_ID,
+      evidencePacket: "generated-output",
+    }),
+    "live-output",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 55,
+      family: WORKBOOK_IMAGE_FAMILY_ID,
+      evidencePacket: "generated-output",
     }),
     "live-output",
   );
