@@ -27,9 +27,15 @@
 # inspect, logged-out send-hello paywall, and 3*5 multiline extract-15 do not
 # cover. Similar send/multiline/composer names do not cover. Leftover dest skip
 # is only GQA-004/040 capture-view.
+# RC-29 S06 Auto-routing packets stay unbound: explicit test-action
+# evidence-needed (Auto prompt TAP + Think harder / Quick answer routing).
+# Inspect-only model-iterate, Fast/Expert SuperGrok pricing TAP, leftover
+# Fast-checked sheet, and Think harder YAML seed do not cover. Similar
+# auto/fast/expert/think-harder names do not cover. Leftover dest skip is
+# only GQA-004/040 capture-view.
 schemaVersion: 1
 id: grok-qa-workbook
-revision: 8
+revision: 9
 reviewedAt: "2026-09-16"
 source:
   workbook: grok-qa-graph.xlsx
@@ -701,8 +707,26 @@ originals:
     evidencePacket: transition
     queue: "output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-auto-selected
+        note: "Fresh live-output image of Auto selected on a New Chat composer. Leftover Fast-checked / inspect-only model sheet (test-grok-web-signed-in-model-iterate) is not this before frame. Do not tap Fast/Expert on pinned SuperGrok pricing. grok-lab leftover b2dcd768 sidebar+Build Mode is not this family. stabilityMeasured false."
+      - kind: receipt
+        id: tap-send-simple-auto-prompt
+        note: "Type and send a simple Auto query (e.g. What's up bro) actually executed (test-action). Logged-out Auto Cloudflare/x.ai and leftover 3*5 extract-15 are not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: after
+        id: after-routed-fast-think-harder
+        note: "Fresh live-output image where the request is routed to Fast and Think harder is shown. Human reviews original criterion. YAML grok-wait-think-harder and leftover toolbar with Think harder absent are not this after frame. stabilityMeasured false."
+      - kind: receipt
+        id: tap-think-harder
+        note: "TAP Think harder actually executed and routes to Expert (test-action). Inspect-only Think harder absence is not this original. Do not tap Fast/Expert on pinned SuperGrok pricing."
+      - kind: after
+        id: after-think-harder-expert
+        note: "Fresh live-output image after Think harder routes to Expert. Both directions required with GQA-029. stabilityMeasured false."
     gates:
       - Auto model. Added 7/21. Do not tap Fast/Expert on pinned SuperGrok pricing.
+      - "Leftover Fast-checked / inspect-only model sheet is not this original. Causal TAP must route Auto→Fast then Think harder."
     status: unbound
     bindings: []
   - id: 29
@@ -715,8 +739,26 @@ originals:
     evidencePacket: transition
     queue: "output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-auto-selected
+        note: "Fresh live-output image of Auto selected on a New Chat composer. Leftover Fast-checked / inspect-only model-iterate is not this before frame. Do not tap Fast/Expert on pinned SuperGrok pricing. grok-lab leftover b2dcd768 is not this family. stabilityMeasured false."
+      - kind: receipt
+        id: tap-send-complex-auto-prompt
+        note: "Type and send a complex Auto query (e.g. Think hard about AI) actually executed (test-action). Capture-view leftover skip is only GQA-004/040."
+      - kind: after
+        id: after-routed-expert-quick-answer
+        note: "Fresh live-output image where the request is routed to Expert and Quick answer is shown. Human reviews original criterion. Leftover 3*5 extract-15 / GQA-048 math thunderbolt is not this after frame. stabilityMeasured false."
+      - kind: receipt
+        id: tap-quick-answer
+        note: "TAP Quick answer actually executed and routes to Fast (test-action). GQA-048 'no Quick Answer visible' math criterion is not this original. Do not tap Fast/Expert on pinned SuperGrok pricing."
+      - kind: after
+        id: after-quick-answer-fast
+        note: "Fresh live-output image after Quick answer routes to Fast. Both directions required with GQA-028. stabilityMeasured false."
     gates:
       - Auto model. Both directions required.
+      - "Leftover Fast-checked / inspect-only model sheet is not this original. Causal TAP must route Auto→Expert then Quick answer. Do not tap Fast/Expert on pinned SuperGrok pricing."
     status: unbound
     bindings: []
   - id: 30

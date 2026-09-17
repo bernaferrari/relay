@@ -1,6 +1,6 @@
 # RC-23 screenshot-first inventory (2026-09-17)
 
-**Not 53 covered.** RC-23 dest-ends bind **2** workbook originals as screenshot-first view packets: **GQA-004 attach menu** and **GQA-040 settings inventory**. Workbook is **2 bound / 51 unbound / 5 excluded** (`tests/coverage/grok-qa-workbook.v1.yaml` revision 8). Remaining-before-gates stays **53**. Similarly named Tests do not cover. `grok-ios-daily` 12/12 is not this freeze. Composer-focus inspect does not cover S03. iOS Imagine stays Unbound — orig 37 and image-generation rows stay unbound. Agents cannot Looks-correct. **0 accepted.**
+**Not 53 covered.** RC-23 dest-ends bind **2** workbook originals as screenshot-first view packets: **GQA-004 attach menu** and **GQA-040 settings inventory**. Workbook is **2 bound / 51 unbound / 5 excluded** (`tests/coverage/grok-qa-workbook.v1.yaml` revision 9). Remaining-before-gates stays **53**. Similarly named Tests do not cover. `grok-ios-daily` 12/12 is not this freeze. Composer-focus inspect does not cover S03. Inspect-only `models` dest-end / model-iterate does not cover S06 Auto routing. iOS Imagine stays Unbound — orig 37 and image-generation rows stay unbound. Agents cannot Looks-correct. **0 accepted.**
 
 Language: **planned · captured · blocked · missing · pending review**. Dest-end `outcome:passed` is execution only. Looks correct cannot accept missing.
 
@@ -46,7 +46,7 @@ RC-23 `requirementId` stays `rc23-screenshot-first` — not a GQA original. Bind
 Explicit non-bindings (similar names / inspect / leftover skip do not cover):
 
 - `composer-focus` does not bind GQA-001 / GQA-002 / GQA-006 (no type, send, or typeahead persistence)
-- `models` does not bind GQA-007 / GQA-008 (inspect-only sheet is not Switch model or presets)
+- `models` does not bind GQA-007 / GQA-008 / GQA-028 / GQA-029 (inspect-only sheet is not Switch model, presets, or Auto Fast/Expert routing)
 - `sidebar` does not bind GQA-033 / GQA-034 / GQA-036 (open dest-end is not open+close, History expand, or New Chat from menu)
 - `logo` does not bind GQA-035 (leftover inspect-skip is not logo from Chat/Imagine/Voice/Projects/History)
 - `imagine` does not bind GQA-037 or image-generation GQA-016 / 017 / 050 / 054 / 055 (iOS Unbound; Android companion is not a workbook binding)
@@ -64,6 +64,8 @@ S08 output battery (GQA-014, GQA-015, GQA-032, GQA-048, GQA-051, GQA-052) now ha
 S01 auth (GQA-044, GQA-045, GQA-046, GQA-047) now has explicit **test-action** evidence-needed packets on isolated auth fixtures. GQA-044 needs before (signed-in Sign Out) + TAP+confirm receipt + after (login/onboarding). GQA-045/046 need Continue with X TAP + sequence (sheet vs X app). GQA-047 needs Sign Up TAP + Create your account view. Cloudflare Sign up, weekly Continue-with-X pause, `test-grok-web-signed-in-sign-out`, and `test-grok-web-signup` do **not** cover. Do not tap Sign Out on grok-lab SuperGrok. Capture-view leftover skip stays only GQA-004/040. Those packets are **not coverage**. **Did not recapture this turn.**
 
 S03 composer send (GQA-001, GQA-002, GQA-006) now has explicit **test-action** evidence-needed packets. GQA-001 needs before (empty composer) + type+send TAP receipt + after (message sent). Leftover composer-focus inspect / logged-out `test-grok-web-send-hello` paywall is **not** that Test. GQA-002 needs multiline type TAP + expanded composer view; `test-grok-web-signed-in-multiline` extract-15 is leftover math, not this view. GQA-006 needs typeahead select TAP + Settings toggle persistence after force-close (SuperGrok; skip Android). Capture-view leftover skip stays only GQA-004/040. Those packets are **not coverage**. **Did not recapture this turn.**
+
+S06 Auto routing (GQA-028, GQA-029) now has explicit **test-action** evidence-needed packets. GQA-028 needs Auto selected + simple prompt TAP + Fast/Think harder after + Think harder TAP that routes to Expert. GQA-029 needs Auto selected + complex prompt TAP + Expert/Quick answer after + Quick answer TAP that routes to Fast. Leftover Fast-checked / inspect-only `models` dest-end / `test-grok-web-signed-in-model-iterate` / Fast/Expert SuperGrok pricing TAP / YAML `grok-wait-think-harder` do **not** cover. Capture-view leftover skip stays only GQA-004/040. Those packets are **not coverage**. **Did not recapture this turn.**
 
 | Checkpoint     | Web grok-lab (`browser:grok-com`)                                                                                                                                                       | Android `RQCY104BG8X` (off ADB; r368 dest-wait unrecaptured)                  | iOS `ai.x.GrokApp`                                                                                                            |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |

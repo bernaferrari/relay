@@ -5,15 +5,18 @@
  * never marks an original covered. Every original has a smallest-sufficient
  * evidence packet or an authorized exclusion; that packet is not coverage.
  * Captions are display text; obligations are plannedSlots identities.
- * S02 shell, S05 model/preset, S08 output-battery, S01 auth, and S03
- * composer originals keep explicit test-action evidence-needed while
- * remaining unbound. Leftover Fast-checked is not a models Test.
- * Inspect-only model sheet is not Switch model or presets. Leftover
- * 3*5 extract-15 / Markdown judge is not S08 generated-output coverage.
- * Cloudflare Sign up / weekly Continue-with-X pause / grok-lab leftover
- * is not S01 coverage. Composer-focus inspect / send-hello paywall /
+ * S02 shell, S05 model/preset, S08 output-battery, S01 auth, S03
+ * composer, and S06 Auto-routing originals keep explicit test-action
+ * evidence-needed while remaining unbound. Leftover Fast-checked is
+ * not a models Test. Inspect-only model sheet is not Switch model,
+ * presets, or Auto Fast/Expert routing. Leftover 3*5 extract-15 /
+ * Markdown judge is not S08 generated-output coverage. Cloudflare
+ * Sign up / weekly Continue-with-X pause / grok-lab leftover is not
+ * S01 coverage. Composer-focus inspect / send-hello paywall /
  * multiline extract-15 is not S03 type+send, expand, or typeahead
- * persistence. Original criteria stay on the slot.
+ * persistence. Model-iterate inspect / SuperGrok pricing TAP /
+ * Think harder YAML seed is not S06 Auto routing. Original criteria
+ * stay on the slot.
  */
 
 import { captureReviewSlotId, type CaptureReviewConfiguration } from "./capture-review.js";
@@ -33,6 +36,8 @@ export const WORKBOOK_SHELL_FAMILY_ID = "S02";
 export const WORKBOOK_SHELL_ORIGINAL_IDS = [3, 33, 35, 36, 37] as const;
 export const WORKBOOK_COMPOSER_FAMILY_ID = "S03";
 export const WORKBOOK_COMPOSER_ORIGINAL_IDS = [1, 2, 6] as const;
+export const WORKBOOK_AUTO_FAMILY_ID = "S06";
+export const WORKBOOK_AUTO_ORIGINAL_IDS = [28, 29] as const;
 export const WORKBOOK_MODELS_FAMILY_ID = "S05";
 export const WORKBOOK_MODELS_ORIGINAL_IDS = [7, 8] as const;
 export const WORKBOOK_OUTPUT_FAMILY_ID = "S08";
@@ -232,8 +237,8 @@ export const RC23_WORKBOOK_NON_BINDINGS: readonly {
   },
   {
     checkpointId: "models",
-    originalIds: [7, 8],
-    reason: "Inspect-only model sheet is not Switch model or presets.",
+    originalIds: [7, 8, 28, 29],
+    reason: "Inspect-only model sheet is not Switch model, presets, or Auto Fast/Expert routing.",
   },
   {
     checkpointId: "private-chat",
@@ -340,6 +345,16 @@ export function coverByCloudflareOrWeeklyAuthPause(
 /** Composer-focus inspect, logged-out send-hello paywall, or 3*5
  * multiline extract-15 never cover S03. Type+send TAP evidence is required. */
 export function coverByComposerFocusOrSendHello(
+  original: Pick<WorkbookOriginal, "id" | "family">,
+): boolean {
+  void original;
+  return false;
+}
+
+/** Inspect-only model-iterate, Fast/Expert SuperGrok pricing TAP, or
+ * Think harder YAML seed never cover S06. Auto prompt + routing TAP
+ * evidence is required. */
+export function coverByModelIterateOrPricingTap(
   original: Pick<WorkbookOriginal, "id" | "family">,
 ): boolean {
   void original;
@@ -843,6 +858,8 @@ function distinctiveNeedles(original: WorkbookOriginal): readonly string[] {
   if (original.id === 2) extra.push("multiline", "composer");
   if (original.id === 5) extra.push("connector", "connectors");
   if (original.id === 6) extra.push("typeahead", "autocomplete", "composer");
+  if (original.id === 28) extra.push("think-harder", "model-iterate");
+  if (original.id === 29) extra.push("quick-answer", "model-iterate");
   if (original.id === 8) extra.push("preset", "presets", "customize");
   if (original.id === 33) extra.push("sidebar", "menu");
   if (original.id === 3 || original.id === 36) extra.push("new-chat", "newchat");
@@ -967,7 +984,7 @@ export function suggestedExecutionQueueForOriginal(input: {
   ) {
     return "live-output";
   }
-  if (input.family === "S06" || input.family === "S07" || input.family === "S17")
+  if (input.family === WORKBOOK_AUTO_FAMILY_ID || input.family === "S07" || input.family === "S17")
     return "live-output";
   return "fast-ui";
 }
@@ -1140,6 +1157,14 @@ export function workbookEvidenceNeededError(
       return `${label} S03 needs explicit evidence-needed (send TAP, expanded composer view, typeahead persistence)`;
     }
   }
+  if (original.family === WORKBOOK_AUTO_FAMILY_ID) {
+    if (original.requirementAction !== "test-action") {
+      return `${label} S06 must be test-action — leftover Fast-checked / inspect-only model sheet / SuperGrok pricing TAP is not Auto Fast/Expert routing`;
+    }
+    if (!original.evidenceNeeded || original.evidenceNeeded.length === 0) {
+      return `${label} S06 needs explicit evidence-needed (Auto prompt TAP, Think harder / Quick answer routing)`;
+    }
+  }
   if (original.id === 7) {
     const switchKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
     for (const required of ["before", "after", "receipt"] as const) {
@@ -1183,6 +1208,32 @@ export function workbookEvidenceNeededError(
     const typeaheadKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
     if (!typeaheadKinds.has("receipt")) {
       return `${label} GQA-006 needs a typeahead select TAP receipt — leftover composer-focus inspect is not this original`;
+    }
+  }
+  if (original.id === 28) {
+    const autoFastKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    for (const required of ["before", "after", "receipt"] as const) {
+      if (!autoFastKinds.has(required)) {
+        return `${label} GQA-028 Auto Fast routing TAP must execute — leftover Fast-checked / model-iterate / SuperGrok pricing is not this original — needs ${required} evidence`;
+      }
+    }
+    const autoFastReceipts =
+      original.evidenceNeeded?.filter((item) => item.kind === "receipt") ?? [];
+    if (autoFastReceipts.length < 2) {
+      return `${label} GQA-028 needs send TAP and Think harder TAP receipts — leftover Fast-checked / model-iterate is not this original`;
+    }
+  }
+  if (original.id === 29) {
+    const autoExpertKinds = new Set(original.evidenceNeeded?.map((item) => item.kind) ?? []);
+    for (const required of ["before", "after", "receipt"] as const) {
+      if (!autoExpertKinds.has(required)) {
+        return `${label} GQA-029 Auto Expert routing TAP must execute — leftover Fast-checked / model-iterate / SuperGrok pricing is not this original — needs ${required} evidence`;
+      }
+    }
+    const autoExpertReceipts =
+      original.evidenceNeeded?.filter((item) => item.kind === "receipt") ?? [];
+    if (autoExpertReceipts.length < 2) {
+      return `${label} GQA-029 needs send TAP and Quick answer TAP receipts — leftover Fast-checked / model-iterate is not this original`;
     }
   }
   if (!original.evidenceNeeded) return undefined;

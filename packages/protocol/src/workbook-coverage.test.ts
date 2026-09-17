@@ -5,6 +5,7 @@ import {
   coverByCloudflareOrWeeklyAuthPause,
   coverByComposerFocusOrSendHello,
   coverByFindingSimilarlyNamedTest,
+  coverByModelIterateOrPricingTap,
   coverByRc23DestEnd,
   destEndViewPacketMayLeftoverSkip,
   evaluateWorkbookCoverage,
@@ -25,6 +26,8 @@ import {
   WORKBOOK_AUTH_ORIGINAL_IDS,
   WORKBOOK_COMPOSER_FAMILY_ID,
   WORKBOOK_COMPOSER_ORIGINAL_IDS,
+  WORKBOOK_AUTO_FAMILY_ID,
+  WORKBOOK_AUTO_ORIGINAL_IDS,
   WORKBOOK_MODELS_FAMILY_ID,
   WORKBOOK_MODELS_ORIGINAL_IDS,
   WORKBOOK_OUTPUT_FAMILY_ID,
@@ -467,6 +470,24 @@ test("capture-view leftover skip is only GQA-004 attach and GQA-040 Settings inv
     }),
     false,
   );
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 28, evidencePacket: "transition" }), false);
+  assert.equal(destEndViewPacketMayLeftoverSkip({ id: 29, evidencePacket: "transition" }), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 28,
+      evidencePacket: "transition",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 29,
+      evidencePacket: "transition",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
 });
 
 test("S16 cannot be single-view Fast UI", () => {
@@ -536,6 +557,8 @@ test("RC-23 dest-end table binds only orig 4 attach view and orig 40 settings vi
   assert.equal(rc23DestEndSatisfiesOriginal("composer-focus", 2), false);
   assert.equal(rc23DestEndSatisfiesOriginal("composer-focus", 6), false);
   assert.equal(rc23DestEndSatisfiesOriginal("models", 7), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("models", 28), false);
+  assert.equal(rc23DestEndSatisfiesOriginal("models", 29), false);
   assert.equal(rc23DestEndSatisfiesOriginal("sidebar", 33), false);
   assert.equal(rc23DestEndSatisfiesOriginal("logo", 35), false);
   assert.equal(rc23DestEndSatisfiesOriginal("imagine", 37), false);
@@ -1404,5 +1427,255 @@ test("S03 packets stay unbound and need type+send TAP evidence", () => {
       evidencePacket: "persistence",
     }),
     "stateful-survival",
+  );
+});
+
+test("S06 packets stay unbound and need Auto routing TAP evidence", () => {
+  assert.deepEqual([...WORKBOOK_AUTO_ORIGINAL_IDS], [28, 29]);
+  assert.deepEqual(requiredEvidenceNeededKinds("transition"), ["before", "after", "receipt"]);
+  const missing = original({
+    id: 28,
+    name: "Auto routes Fast",
+    family: WORKBOOK_AUTO_FAMILY_ID,
+    evidencePacket: "transition",
+    status: "unbound",
+  });
+  assert.match(
+    workbookEvidenceNeededError(missing) ?? "",
+    /S06 must be test-action|S06 needs explicit evidence-needed|Auto Fast routing TAP must execute/u,
+  );
+  const leftoverFastChecked = original({
+    id: 28,
+    name: "Auto routes Fast",
+    family: WORKBOOK_AUTO_FAMILY_ID,
+    evidencePacket: "transition",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "after",
+        id: "leftover-fast-checked",
+        note: "Leftover Fast-checked inspect-only model sheet. No Auto prompt TAP.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "The request is routed to the Fast model. A Think harder button is shown and routes to the Expert model when clicked.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverFastChecked) ?? "",
+    /Auto Fast routing TAP must execute/u,
+  );
+  assert.equal(coverByModelIterateOrPricingTap(leftoverFastChecked), false);
+  const leftoverSendOnly = original({
+    id: 28,
+    name: "Auto routes Fast",
+    family: WORKBOOK_AUTO_FAMILY_ID,
+    evidencePacket: "transition",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-auto-selected",
+        note: "Auto selected. Leftover Fast-checked is not this frame.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-simple-auto-prompt",
+        note: "Send simple Auto query. No Think harder TAP.",
+      },
+      {
+        kind: "after",
+        id: "after-routed-fast-think-harder",
+        note: "Routed to Fast. Think harder not tapped.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "The request is routed to the Fast model. A Think harder button is shown and routes to the Expert model when clicked.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverSendOnly) ?? "",
+    /send TAP and Think harder TAP receipts/u,
+  );
+  const autoFast = original({
+    id: 28,
+    name: "Auto routes Fast",
+    family: WORKBOOK_AUTO_FAMILY_ID,
+    evidencePacket: "transition",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-auto-selected",
+        note: "Auto selected. Leftover Fast-checked / model-iterate is not this frame.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-simple-auto-prompt",
+        note: "Type and send a simple Auto query actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-routed-fast-think-harder",
+        note: "Routed to Fast. Think harder shown. SuperGrok pricing TAP is not this frame.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-think-harder",
+        note: "TAP Think harder actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-think-harder-expert",
+        note: "Think harder routes to Expert.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "The request is routed to the Fast model. A Think harder button is shown and routes to the Expert model when clicked.",
+  });
+  assert.equal(workbookEvidenceNeededError(autoFast), undefined);
+  assert.equal(workbookEvidencePolicyError(autoFast), undefined);
+  assert.equal(originalIsCovered(autoFast), false);
+  assert.equal(coverByModelIterateOrPricingTap(autoFast), false);
+  const obligation = workbookOriginalObligationIdentity(autoFast);
+  assert.equal(obligation.requirementId, "GQA-028");
+  assert.equal(obligation.caption, "Auto routes Fast");
+  assert.equal(
+    obligation.criteria,
+    "The request is routed to the Fast model. A Think harder button is shown and routes to the Expert model when clicked.",
+  );
+  const leftoverExpertSendOnly = original({
+    id: 29,
+    name: "Auto routes Expert",
+    family: WORKBOOK_AUTO_FAMILY_ID,
+    evidencePacket: "transition",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-auto-selected",
+        note: "Auto selected. No Quick answer TAP.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-complex-auto-prompt",
+        note: "Send complex Auto query. No Quick answer TAP.",
+      },
+      {
+        kind: "after",
+        id: "after-routed-expert-quick-answer",
+        note: "Routed to Expert. Quick answer not tapped.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "The request is routed to the Expert model. A Quick answer button is shown and routes to the Fast model when clicked.",
+  });
+  assert.match(
+    workbookEvidenceNeededError(leftoverExpertSendOnly) ?? "",
+    /send TAP and Quick answer TAP receipts/u,
+  );
+  const autoExpert = original({
+    id: 29,
+    name: "Auto routes Expert",
+    family: WORKBOOK_AUTO_FAMILY_ID,
+    evidencePacket: "transition",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-auto-selected",
+        note: "Auto selected. Leftover Fast-checked / model-iterate is not this frame.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-complex-auto-prompt",
+        note: "Type and send a complex Auto query actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-routed-expert-quick-answer",
+        note: "Routed to Expert. Quick answer shown. GQA-048 math thunderbolt is not this frame.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-quick-answer",
+        note: "TAP Quick answer actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-quick-answer-fast",
+        note: "Quick answer routes to Fast.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "The request is routed to the Expert model. A Quick answer button is shown and routes to the Fast model when clicked.",
+  });
+  assert.equal(workbookEvidenceNeededError(autoExpert), undefined);
+  assert.equal(workbookEvidencePolicyError(autoExpert), undefined);
+  assert.equal(originalIsCovered(autoExpert), false);
+  assert.equal(coverByModelIterateOrPricingTap(autoExpert), false);
+  const report = evaluateWorkbookCoverage(fixture({ originals: [autoFast, autoExpert] }), [
+    { id: "test-grok-web-signed-in-model-iterate", name: "Inspect model choices" },
+    { id: "test-grok-web-wait-think-harder", name: "Think harder response" },
+    { id: "test-grok-web-signed-in-3x5", name: "Ask 3*5" },
+  ]);
+  assert.deepEqual(report.coveredOriginalIds, []);
+  assert.equal(report.unboundOriginalIds.includes(28), true);
+  assert.equal(report.unboundOriginalIds.includes(29), true);
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 28 && row.testId === "test-grok-web-signed-in-model-iterate",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 29 && row.testId === "test-grok-web-signed-in-model-iterate",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 28 && row.testId === "test-grok-web-wait-think-harder",
+    ),
+    true,
+  );
+  assert.equal(coverByFindingSimilarlyNamedTest(autoFast, []), false);
+  assert.equal(coverByRc23DestEnd({ id: 28 }, "models"), false);
+  assert.equal(coverByRc23DestEnd({ id: 29 }, "models"), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 28,
+      evidencePacket: "transition",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 29,
+      evidencePacket: "transition",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 28,
+      family: WORKBOOK_AUTO_FAMILY_ID,
+      evidencePacket: "transition",
+    }),
+    "live-output",
+  );
+  assert.equal(
+    suggestedExecutionQueueForOriginal({
+      id: 29,
+      family: WORKBOOK_AUTO_FAMILY_ID,
+      evidencePacket: "transition",
+    }),
+    "live-output",
   );
 });
