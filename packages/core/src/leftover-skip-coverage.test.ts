@@ -20,6 +20,7 @@ import {
   leftoverSkipForbidden,
 } from "./coverage-step-outcome.js";
 import type { Device } from "./device.js";
+import { nodeMatchesTarget } from "./recipe-target-match.js";
 import { runCampaignCheck } from "./recipe-runner-campaign-checks.js";
 import { runRecipeStep } from "./recipe-runner.js";
 import { captureRecipeScreenshot } from "./recipe-runner-screen.js";
@@ -135,15 +136,15 @@ function leftoverOriginHomeNodes() {
     { role: "application", enabled: true, rect: { x: 0, y: 0, width: 1080, height: 2340 } },
     leftoverControl("sidebar-search", "Search", 80),
     leftoverControl("composer", "Composer", 150),
+    leftoverControl("sidebar.account", "Account", 200),
     leftoverControl("sidebar.settings", "Settings", 220),
     leftoverControl("model-select-trigger", "Fast", 300),
     leftoverControl("toggle-sidebar", "Toggle Sidebar", 40),
   ];
 }
 
-function leftoverNodes() {
+function leftoverDestChromeNodes() {
   return [
-    ...leftoverOriginHomeNodes(),
     leftoverControl("settings.account", "Account", 290),
     {
       role: "button",
@@ -164,6 +165,10 @@ function leftoverNodes() {
   ];
 }
 
+function leftoverNodes() {
+  return [...leftoverOriginHomeNodes(), ...leftoverDestChromeNodes()];
+}
+
 function leftoverOriginHomeDevice(presses: string[]): Device {
   return leftoverDevice(presses, leftoverOriginHomeNodes());
 }
@@ -178,13 +183,32 @@ function leftoverDevice(
   );
   return {
     interactions: {
-      find: () => Promise.resolve({}),
+      find: (options: { query?: string }) => {
+        const query = options.query ?? "";
+        const identifier = /^id="(.+)"$/u.exec(query)?.[1];
+        const target = identifier ? { identifier } : { label: query };
+        if (nodes.some((node) => nodeMatchesTarget(node, target))) return Promise.resolve({});
+        return Promise.reject(new Error("No match"));
+      },
       press: (options: { query?: string; selector?: string; x?: number; y?: number }) => {
         presses.push(
           options.selector ??
             options.query ??
             (typeof options.x === "number" ? `${options.x},${options.y}` : "press"),
         );
+        for (const extra of leftoverDestChromeNodes()) {
+          const extraId = "identifier" in extra ? extra.identifier : undefined;
+          const extraLabel = "label" in extra ? extra.label : undefined;
+          if (
+            !nodes.some((node) => {
+              const nodeId = "identifier" in node ? node.identifier : undefined;
+              const nodeLabel = "label" in node ? node.label : undefined;
+              return nodeId === extraId && nodeLabel === extraLabel;
+            })
+          ) {
+            nodes.push(extra);
+          }
+        }
         return Promise.resolve({});
       },
       longPress: () => Promise.resolve({}),
@@ -264,10 +288,14 @@ test("skip vs transition is stamped from RecipeStep.coverage, not leftover chrom
     target: { identifier: "sidebar.settings" },
     when: leftover,
   };
+  const destTap: RecipeStep = { ...transitionTap, leftoverSkip: "dest" };
   assert.equal(inspectSetupSkip(inspectTap), true);
   assert.equal(leftoverSkipForbidden(inspectTap), false);
   assert.equal(leftoverSkipForbidden(transitionTap), true);
   assert.equal(inspectSetupSkip(transitionTap), false);
+  assert.equal(destLeftoverSkip(destTap), true);
+  assert.equal(leftoverSkipForbidden(destTap), false);
+  assert.equal(destLeftoverSkip(transitionTap), false);
   assert.deepEqual(
     coverageOutcomesFromArtifacts([
       { kind: "conditional-step-skipped", data: { reason: "inspect-setup-skipped" } },
@@ -396,7 +424,7 @@ test("inspect dest-end leftover skip records inspect-setup skipped and still cap
   assert.doesNotMatch(rows[0]?.note ?? "", /\btap(?:ped|s)?\b/iu);
 });
 
-test("coverage:transition leftover still present must run the opener tap", async () => {
+test("coverage:transition leftover dest skips TAP; leftover origin still taps", async () => {
   const compiled = compileAppMapConnection(
     destEndMap(transitionDestEndConnection()),
     "open-settings",
@@ -404,14 +432,36 @@ test("coverage:transition leftover still present must run the opener tap", async
   const steps = compiled.recipes[compiled.rootRecipeId]!.steps;
   assert.equal(steps[1]?.kind, "tap");
   assert.equal(steps[1]?.coverage, "transition");
-  assert.equal(steps[0]?.when, undefined);
-  assert.equal(steps[1]?.when, undefined);
+  assert.equal(steps[1]?.leftoverSkip, "dest");
+  assert.deepEqual(steps[0]?.when, {
+    target: { identifier: "settings.account" },
+    condition: "absent",
+  });
+  assert.deepEqual(steps[1]?.when, {
+    target: { identifier: "settings.account" },
+    condition: "absent",
+  });
   assert.equal(steps[2]?.when, undefined);
+
+  const destPresses: string[] = [];
+  const destLogs: string[] = [];
+  const destJob = recipeJob("transition-leftover-dest", steps);
+  await androidTarget(() =>
+    runRecipeSteps(
+      destJob,
+      leftoverDevice(destPresses),
+      (line) => destLogs.push(line),
+      () => {},
+    ),
+  );
+  assert.deepEqual(destPresses, []);
+  assert.equal(skipReasons(destJob).includes("inspect-setup-skipped"), false);
+  assert.equal(executedReasons(destJob).includes("transition-executed"), false);
 
   const presses: string[] = [];
   const logs: string[] = [];
-  const job = recipeJob("transition-leftover", steps);
-  const device = leftoverDevice(presses);
+  const job = recipeJob("transition-leftover-home", steps);
+  const device = leftoverOriginHomeDevice(presses);
   await androidTarget(() =>
     runRecipeSteps(
       job,
@@ -433,9 +483,10 @@ test("coverage:transition leftover still present must run the opener tap", async
   assert.ok(logs.some((line) => line.includes(executedTitle)));
 
   const checkJob = recipeJob("transition-check", []);
+  const checkDevice = leftoverOriginHomeDevice([]);
   await androidTarget(() =>
     runCampaignCheck(
-      leftoverDevice(presses),
+      checkDevice,
       {
         kind: "module",
         recipeId: "transition-leftover",
@@ -443,7 +494,7 @@ test("coverage:transition leftover still present must run the opener tap", async
       },
       { log: (line) => logs.push(line), job: checkJob, runtime: {} },
       async () => {
-        await runRecipeStep(device, steps[1]!, {
+        await runRecipeStep(checkDevice, steps[1]!, {
           log: (line) => logs.push(line),
           job: checkJob,
           runtime: {},
@@ -560,27 +611,41 @@ function destEndRuntimeSteps(steps: RecipeStep[]): RecipeStep[] {
   return steps.filter((step) => step.kind !== "screenshot");
 }
 
-test("omitted dest-end Test leftover Settings still taps Settings", async () => {
+test("omitted dest-end Test remapped to transition skips TAP on leftover dest", async () => {
   const steps = destEndRecipeSteps(settingsTapDestEndConnection());
   const opener = steps.find((step) => step.kind === "tap");
   assert.equal(opener?.coverage, "transition");
-  assert.equal(opener?.when, undefined);
-  const presses: string[] = [];
-  const job = recipeJob("omitted-test-action", destEndRuntimeSteps(steps));
+  assert.equal(opener?.leftoverSkip, "dest");
+  assert.deepEqual(opener?.when, {
+    target: { identifier: "settings.account" },
+    condition: "absent",
+  });
+  const destPresses: string[] = [];
+  const destJob = recipeJob("omitted-test-action-dest", destEndRuntimeSteps(steps));
   await androidTarget(() =>
     runRecipeSteps(
-      job,
-      leftoverDevice(presses),
+      destJob,
+      leftoverDevice(destPresses),
       () => {},
       () => {},
     ),
   );
-  assert.ok(presses.length >= 1, "omitted dest-end skipped the Settings tap");
-  assert.equal(skipReasons(job).includes("inspect-setup-skipped"), false);
-  assert.ok(executedReasons(job).includes("transition-executed"));
-  assert.ok(
-    job.steps.some((step) => step.title === describeCoverageStepReason("transition-executed")),
+  assert.deepEqual(destPresses, []);
+  assert.equal(skipReasons(destJob).includes("inspect-setup-skipped"), false);
+  assert.equal(executedReasons(destJob).includes("transition-executed"), false);
+
+  const homePresses: string[] = [];
+  const homeJob = recipeJob("omitted-test-action-home", destEndRuntimeSteps(steps));
+  await androidTarget(() =>
+    runRecipeSteps(
+      homeJob,
+      leftoverOriginHomeDevice(homePresses),
+      () => {},
+      () => {},
+    ),
   );
+  assert.ok(homePresses.length >= 1, "origin leftover skipped the Settings tap");
+  assert.ok(executedReasons(homeJob).includes("transition-executed"));
 });
 
 function bakedInspectLeftoverSkipConnection(): Connection {
@@ -615,29 +680,27 @@ function bakedInspectLeftoverSkipConnection(): Connection {
   };
 }
 
-test("baked inspect leftover skip on omitted dest-end still taps Settings", async () => {
-  const steps = destEndRecipeSteps(bakedInspectLeftoverSkipConnection());
-  const opener = steps.find((step) => step.kind === "tap");
-  assert.equal(opener?.when, undefined);
-  assert.equal(opener?.coverage, "transition");
-  const presses: string[] = [];
-  const job = recipeJob("baked-omitted-tap", destEndRuntimeSteps(steps));
+test("baked inspect leftover skip remapped to test-action dest leftover skips TAP", async () => {
+  const omittedSteps = destEndRecipeSteps(bakedInspectLeftoverSkipConnection());
+  const omittedOpener = omittedSteps.find((step) => step.kind === "tap");
+  assert.equal(omittedOpener?.leftoverSkip, "dest");
+  assert.equal(omittedOpener?.coverage, "transition");
+  const omittedPresses: string[] = [];
+  const omittedJob = recipeJob("baked-omitted-tap", destEndRuntimeSteps(omittedSteps));
   await androidTarget(() =>
     runRecipeSteps(
-      job,
-      leftoverDevice(presses),
+      omittedJob,
+      leftoverDevice(omittedPresses),
       () => {},
       () => {},
     ),
   );
-  assert.ok(presses.length >= 1, "baked leftover skip dropped the omitted Settings tap");
-  assert.equal(skipReasons(job).includes("inspect-setup-skipped"), false);
-});
+  assert.deepEqual(omittedPresses, []);
+  assert.equal(skipReasons(omittedJob).includes("inspect-setup-skipped"), false);
 
-test("baked inspect leftover skip on test-action dest-end still taps Settings", async () => {
   const steps = destEndRecipeSteps(bakedInspectLeftoverSkipConnection(), "test-action");
   const opener = steps.find((step) => step.kind === "tap");
-  assert.equal(opener?.when, undefined);
+  assert.equal(opener?.leftoverSkip, "dest");
   assert.equal(opener?.coverage, "transition");
   const presses: string[] = [];
   const job = recipeJob("baked-test-action-tap", destEndRuntimeSteps(steps));
@@ -649,7 +712,7 @@ test("baked inspect leftover skip on test-action dest-end still taps Settings", 
       () => {},
     ),
   );
-  assert.ok(presses.length >= 1, "baked leftover skip dropped the test-action Settings tap");
+  assert.deepEqual(presses, []);
   assert.equal(skipReasons(job).includes("inspect-setup-skipped"), false);
 });
 
@@ -710,7 +773,7 @@ test("capture-view Test leftover Settings skips opener and does not look like a 
   assert.equal(logs.some(claimsOpenerTap), false);
 });
 
-test("test-action Test from Home still taps Settings when leftover Settings chrome is present", async () => {
+test("test-action dest leftover skip binds dest-phase without tapping leftover dest", async () => {
   const connection = inspectDestEndConnection();
   connection.coverage = "inspect";
   connection.fromScreenId = "home";
@@ -725,28 +788,43 @@ test("test-action Test from Home still taps Settings when leftover Settings chro
     destModule?.kind === "module" ? compiled.graph[destModule.recipeId] : undefined;
   assert.ok(destEndRecipe);
   const opener = destEndRecipe.steps.find((step) => step.kind === "tap");
-  assert.equal(opener?.when, undefined);
+  assert.equal(opener?.leftoverSkip, "dest");
   assert.equal(opener?.coverage, "transition");
+  assert.deepEqual(opener?.when, { target: { label: "Appearance" }, condition: "absent" });
   const destWaitIndex = destEndRecipe.steps.findIndex(
     (step) => step.kind === "wait-for" && step.target?.label === "Appearance",
   );
   assert.ok(destWaitIndex >= 0);
+  assert.equal(destEndRecipe.steps[destWaitIndex]?.when, undefined);
   const destShot = destEndRecipe.steps[destWaitIndex + 1];
   assert.equal(destShot?.kind, "screenshot");
   assert.equal(destShot?.kind === "screenshot" ? destShot.review?.phase : undefined, "dest");
-  const presses: string[] = [];
-  const job = recipeJob("test-action-from-home", destEndRuntimeSteps(destEndRecipe.steps));
+  const destPresses: string[] = [];
+  const destJob = recipeJob("test-action-leftover-dest", destEndRuntimeSteps(destEndRecipe.steps));
   await androidTarget(() =>
     runRecipeSteps(
-      job,
-      leftoverDevice(presses),
+      destJob,
+      leftoverDevice(destPresses),
       () => {},
       () => {},
     ),
   );
-  assert.ok(presses.length >= 1, "test-action leftover Settings skipped the Settings tap");
-  assert.equal(skipReasons(job).includes("inspect-setup-skipped"), false);
-  assert.ok(executedReasons(job).includes("transition-executed"));
+  assert.deepEqual(destPresses, []);
+  assert.equal(skipReasons(destJob).includes("inspect-setup-skipped"), false);
+  assert.equal(executedReasons(destJob).includes("transition-executed"), false);
+
+  const homePresses: string[] = [];
+  const homeJob = recipeJob("test-action-from-home", destEndRuntimeSteps(destEndRecipe.steps));
+  await androidTarget(() =>
+    runRecipeSteps(
+      homeJob,
+      leftoverOriginHomeDevice(homePresses),
+      () => {},
+      () => {},
+    ),
+  );
+  assert.ok(homePresses.length >= 1, "origin leftover skipped the Settings tap");
+  assert.ok(executedReasons(homeJob).includes("transition-executed"));
 });
 
 test("capture-view settings leftover does not skip a later test-action Settings TAP", async () => {
@@ -796,22 +874,32 @@ test("capture-view settings leftover does not skip a later test-action Settings 
 
   const tapSteps = destSteps(laterTap);
   const tapOpener = tapSteps.find((step) => step.kind === "tap");
-  assert.equal(tapOpener?.when, undefined);
+  assert.equal(tapOpener?.leftoverSkip, "dest");
   assert.equal(tapOpener?.coverage, "transition");
-  const tapPresses: string[] = [];
-  const tapJob = recipeJob("later-test-action", destEndRuntimeSteps(tapSteps));
+  const destPresses: string[] = [];
+  const destJob = recipeJob("later-test-action-dest", destEndRuntimeSteps(tapSteps));
   await androidTarget(() =>
     runRecipeSteps(
-      tapJob,
-      leftoverDevice(tapPresses),
+      destJob,
+      leftoverDevice(destPresses),
       () => {},
       () => {},
     ),
   );
-  assert.ok(
-    tapPresses.length >= 1,
-    "capture-view leftover skipped a later test-action Settings TAP",
+  assert.deepEqual(destPresses, []);
+  assert.equal(skipReasons(destJob).includes("inspect-setup-skipped"), false);
+
+  const tapPresses: string[] = [];
+  const tapJob = recipeJob("later-test-action-home", destEndRuntimeSteps(tapSteps));
+  await androidTarget(() =>
+    runRecipeSteps(
+      tapJob,
+      leftoverOriginHomeDevice(tapPresses),
+      () => {},
+      () => {},
+    ),
   );
+  assert.ok(tapPresses.length >= 1, "origin leftover skipped a later test-action Settings TAP");
   assert.equal(skipReasons(tapJob).includes("inspect-setup-skipped"), false);
   assert.ok(executedReasons(tapJob).includes("transition-executed"));
 });
@@ -839,6 +927,10 @@ test("capture-view Routine leftover Settings skips the opener; test-action Routi
   const tap = testAction.recipes[testAction.rootRecipeId]!.steps.find(
     (step) => step.kind === "tap",
   );
-  assert.equal(tap?.when, undefined);
+  assert.equal(tap?.leftoverSkip, "dest");
   assert.equal(tap?.coverage, "transition");
+  assert.deepEqual(tap?.when, {
+    target: { identifier: "settings.account" },
+    condition: "absent",
+  });
 });

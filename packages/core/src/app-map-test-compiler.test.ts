@@ -2140,7 +2140,7 @@ test("capture-view dest-end leftover Settings skips opener; dest-phase stays des
   assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.policy, "fast");
 });
 
-test("test-action dest-end from Home still taps Settings when leftover Settings chrome is present", () => {
+test("test-action dest leftover skip gates Settings TAP on leftover dest chrome", () => {
   const map = fixture();
   const work = destEndPrimitiveWork(map, "open-settings-from-home", [
     {
@@ -2165,10 +2165,12 @@ test("test-action dest-end from Home still taps Settings when leftover Settings 
   const destEndRecipe =
     destModule?.kind === "module" ? compiled.graph[destModule.recipeId] : undefined;
   assert.ok(destEndRecipe);
-  assert.equal(destEndRecipe!.steps[0]?.when, undefined);
-  assert.equal(destEndRecipe!.steps[1]?.when, undefined);
+  const destWhen = { target: { identifier: "settings.account" }, condition: "absent" as const };
+  assert.deepEqual(destEndRecipe!.steps[0]?.when, destWhen);
+  assert.deepEqual(destEndRecipe!.steps[1]?.when, destWhen);
   assert.equal(destEndRecipe!.steps[1]?.kind, "tap");
   assert.equal(destEndRecipe!.steps[1]?.coverage, "transition");
+  assert.equal(destEndRecipe!.steps[1]?.leftoverSkip, "dest");
   const destWaitIndex = destEndRecipe!.steps.findIndex(
     (step) => step.kind === "wait-for" && step.target?.identifier === "settings.account",
   );
@@ -2177,7 +2179,7 @@ test("test-action dest-end from Home still taps Settings when leftover Settings 
   assert.equal(destEndRecipe!.steps[destWaitIndex + 1]?.review?.phase, "dest");
 });
 
-test("baked inspect leftover skip on test-action dest-end still taps Settings", () => {
+test("baked inspect leftover skip remapped to test-action dest leftover skips TAP", () => {
   const leftover = { target: { identifier: "settings.account" }, condition: "absent" as const };
   const map = fixture();
   const work = destEndPrimitiveWork(map, "open-settings-from-home", [
@@ -2214,10 +2216,12 @@ test("baked inspect leftover skip on test-action dest-end still taps Settings", 
   const destEndRecipe =
     destModule?.kind === "module" ? compiled.graph[destModule.recipeId] : undefined;
   assert.ok(destEndRecipe);
-  assert.equal(destEndRecipe!.steps[0]?.when, undefined);
-  assert.equal(destEndRecipe!.steps[1]?.when, undefined);
+  const destWhen = { target: { identifier: "settings.account" }, condition: "absent" as const };
+  assert.deepEqual(destEndRecipe!.steps[0]?.when, destWhen);
+  assert.deepEqual(destEndRecipe!.steps[1]?.when, destWhen);
   assert.equal(destEndRecipe!.steps[1]?.kind, "tap");
   assert.equal(destEndRecipe!.steps[1]?.coverage, "transition");
+  assert.equal(destEndRecipe!.steps[1]?.leftoverSkip, "dest");
 });
 
 test("baked inspect leftover skip on capture-view dest-end still skips opener", () => {

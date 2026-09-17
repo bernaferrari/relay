@@ -17,8 +17,14 @@ function record(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+export function destLeftoverSkip(step: RecipeStep): boolean {
+  return step.leftoverSkip === "dest" && step.when?.condition === "absent";
+}
+
 export function leftoverSkipForbidden(step: RecipeStep): boolean {
-  return step.coverage === "transition" && step.when?.condition === "absent";
+  return (
+    step.coverage === "transition" && step.when?.condition === "absent" && !destLeftoverSkip(step)
+  );
 }
 
 export function inspectSetupSkip(step: RecipeStep): boolean {

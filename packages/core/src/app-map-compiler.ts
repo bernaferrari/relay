@@ -298,6 +298,24 @@ function destEndLeftoverDismissTapIndex(
   return -1;
 }
 
+function destEndPrefixPassthrough(step: RecipeStep | undefined): boolean {
+  return step?.kind === "wait-for" || step?.kind === "expect" || step?.kind === "sleep";
+}
+
+/** First TAP after origin wait-for, skipping intermediate wait-for / expect / sleep. */
+function destEndCausalTapIndex(
+  steps: readonly RecipeStep[],
+  afterIndex: number,
+  end: number,
+): number {
+  for (let index = afterIndex; index < end; index += 1) {
+    const step = steps[index];
+    if (step?.kind === "tap") return index;
+    if (!destEndPrefixPassthrough(step)) return -1;
+  }
+  return -1;
+}
+
 function destEndRequiredChromeWaitForIndex(
   steps: readonly RecipeStep[],
   origin: Extract<RecipeStep, { kind: "wait-for" }>,
@@ -365,17 +383,18 @@ export function destEndCaptureWaitForIndex(
     (step, index) =>
       index >= start && index < end && step.kind === "wait-for" && step.optional !== true,
   );
-  if (originIndex >= 0 && originIndex + 1 < end) {
+  if (originIndex >= 0) {
     const origin = steps[originIndex];
-    const opener = steps[originIndex + 1];
+    const openerIndex = destEndCausalTapIndex(steps, originIndex + 1, end);
+    const opener = openerIndex >= 0 ? steps[openerIndex] : undefined;
     if (origin?.kind === "wait-for" && opener?.kind === "tap") {
-      const leftoverDismiss = destEndLeftoverDismissTapIndex(steps, originIndex + 2, end);
+      const leftoverDismiss = destEndLeftoverDismissTapIndex(steps, openerIndex + 1, end);
       const destEnd = leftoverDismiss >= 0 ? leftoverDismiss : end;
       const lastChrome = destEndRequiredChromeWaitForIndex(
         steps,
         origin,
         opener,
-        originIndex + 2,
+        openerIndex + 1,
         destEnd,
         "last",
       );
@@ -397,6 +416,35 @@ function destEndLeftoverSkipAllowed(coverage?: CaptureCoverage): boolean {
 }
 
 function destEndOriginOpener(
+  steps: RecipeStep[],
+  start: number,
+  end: number,
+):
+  | {
+      originIndex: number;
+      origin: Extract<RecipeStep, { kind: "wait-for" }>;
+      openerIndex: number;
+      opener: Extract<RecipeStep, { kind: "tap" }>;
+    }
+  | undefined {
+  const originIndex = steps.findIndex(
+    (step, index) =>
+      index >= start &&
+      index < end &&
+      step.kind === "wait-for" &&
+      step.optional !== true &&
+      step.when === undefined,
+  );
+  if (originIndex < 0) return undefined;
+  const origin = steps[originIndex];
+  if (origin?.kind !== "wait-for") return undefined;
+  const openerIndex = destEndCausalTapIndex(steps, originIndex + 1, end);
+  const opener = openerIndex >= 0 ? steps[openerIndex] : undefined;
+  if (opener?.kind !== "tap") return undefined;
+  return { originIndex, origin, openerIndex, opener };
+}
+
+function destEndImmediateOriginOpener(
   steps: RecipeStep[],
   start: number,
   end: number,
@@ -433,10 +481,49 @@ function stripDestEndLeftoverSkip(steps: RecipeStep[], start: number, end: numbe
   for (let index = start; index < end; index += 1) {
     if (index === destIndex) continue;
     const step = steps[index];
-    if (!step || (step.kind !== "wait-for" && step.kind !== "tap")) continue;
+    if (!step || (step.kind !== "wait-for" && step.kind !== "tap" && step.kind !== "expect")) {
+      continue;
+    }
     if (step.when?.condition !== "absent") continue;
     delete step.when;
+    delete step.leftoverSkip;
     if (step.kind === "tap") step.coverage = "transition";
+    else if (step.coverage === "inspect") delete step.coverage;
+  }
+}
+
+function destEndOpenLeftoverWhenTarget(
+  steps: RecipeStep[],
+  destIndex: number,
+): StepTarget | undefined {
+  const destStep = steps[destIndex];
+  return destStep
+    ? (destEndOpenChromeTarget(destStep) ?? destEndOpenFallbackTarget(destStep))
+    : undefined;
+}
+
+function applyDestEndDestLeftoverSkip(steps: RecipeStep[], start: number, end: number): void {
+  const found = destEndOriginOpener(steps, start, end);
+  if (!found || found.opener.when) return;
+  const destIndex = destEndCaptureWaitForIndex(steps, start, end);
+  if (destIndex <= found.openerIndex) return;
+  const destTarget = destEndOpenLeftoverWhenTarget(steps, destIndex);
+  if (!destTarget) return;
+  if (semanticTargetMatches(destTarget, found.origin.target)) return;
+  if (semanticTargetMatches(destTarget, found.opener.target)) return;
+  const when = { target: structuredClone(destTarget), condition: "absent" as const };
+  for (let index = found.originIndex; index < destIndex; index += 1) {
+    const step = steps[index]!;
+    if ((step.kind !== "wait-for" && step.kind !== "tap" && step.kind !== "expect") || step.when) {
+      continue;
+    }
+    step.when = structuredClone(when);
+    if (step.kind === "tap") {
+      step.leftoverSkip = "dest";
+      step.coverage = "transition";
+    } else if (step.coverage === "inspect") {
+      delete step.coverage;
+    }
   }
 }
 
@@ -447,18 +534,18 @@ function applyDestEndOpenLeftoverPolicy(
   coverage?: CaptureCoverage,
 ): void {
   if (!destEndLeftoverSkipAllowed(coverage)) {
-    if (coverage === "transition") stripDestEndLeftoverSkip(steps, start, end);
+    if (coverage === "transition") {
+      stripDestEndLeftoverSkip(steps, start, end);
+      applyDestEndDestLeftoverSkip(steps, start, end);
+    }
     stampDestEndOpenerAsTestAction(steps, start, end);
     return;
   }
-  const found = destEndOriginOpener(steps, start, end);
+  const found = destEndImmediateOriginOpener(steps, start, end);
   if (!found || found.opener.when) return;
   const destIndex = destEndDestinationWaitForIndex(steps, start, end);
   if (destIndex <= found.originIndex + 1) return;
-  const destStep = steps[destIndex];
-  const destTarget = destStep
-    ? (destEndOpenChromeTarget(destStep) ?? destEndOpenFallbackTarget(destStep))
-    : undefined;
+  const destTarget = destEndOpenLeftoverWhenTarget(steps, destIndex);
   if (!destTarget) return;
   const when = { target: structuredClone(destTarget), condition: "absent" as const };
   for (let index = found.originIndex; index < destIndex; index += 1) {

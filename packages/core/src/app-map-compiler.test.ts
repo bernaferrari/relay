@@ -1172,7 +1172,7 @@ test("capture-view dest-end leftover Settings skips the opener", () => {
   assert.equal(steps[2]?.when, undefined);
 });
 
-test("coverage:transition unsigned Settings waits Light dest chrome and does not leftover-skip", () => {
+test("coverage:transition unsigned Settings leftover dest skip gates TAP on Light dest chrome", () => {
   const map = fixture();
   map.connections["open-home"]!.destination = { kind: "end" };
   map.connections["open-home"]!.caseStackId = undefined;
@@ -1202,9 +1202,11 @@ test("coverage:transition unsigned Settings waits Light dest chrome and does not
     ["wait-for", "tap", "wait-for", "expect-set"],
   );
   assert.deepEqual(steps[2]?.target, { label: "Light" });
-  assert.equal(steps[0]?.when, undefined);
-  assert.equal(steps[1]?.when, undefined);
+  const destWhen = { target: { label: "Light" }, condition: "absent" as const };
+  assert.deepEqual(steps[0]?.when, destWhen);
+  assert.deepEqual(steps[1]?.when, destWhen);
   assert.equal(steps[1]?.coverage, "transition");
+  assert.equal(steps[1]?.leftoverSkip, "dest");
   assert.equal(steps[2]?.when, undefined);
 });
 

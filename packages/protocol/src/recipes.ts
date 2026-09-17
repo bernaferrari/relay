@@ -316,6 +316,9 @@ export type RecipeStepMetadata = {
     condition: "present" | "absent";
     region?: { minX?: number; maxX?: number; minY?: number; maxY?: number };
   };
+  /** Test-action dest leftover skip. Distinct from inspect leftover skip.
+   * Skip this TAP only when leftover already matches dest identity. */
+  leftoverSkip?: "dest";
 };
 
 export type RecipeStep = RecipeStepMetadata &

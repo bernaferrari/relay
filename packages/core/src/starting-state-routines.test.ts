@@ -237,15 +237,15 @@ test("coverage:transition opener still must run from the declared source", () =>
   const compiled = compileAppMapConnection(map, "open-settings");
   const opener = compiled.recipes[compiled.rootRecipeId]!.steps.find((step) => step.kind === "tap");
   assert.equal(opener?.coverage, "transition");
-  assert.equal(opener?.when, undefined);
+  assert.equal(opener?.leftoverSkip, "dest");
+  assert.deepEqual(opener?.when, {
+    target: { identifier: "settings.account" },
+    condition: "absent",
+  });
   assert.equal(transitionOpenerMustRun(opener!), true);
-  assert.equal(
-    leftoverSkipForbidden({
-      ...opener!,
-      when: { target: { identifier: "settings.account" }, condition: "absent" },
-    }),
-    true,
-  );
+  const unmarked = { ...opener!, leftoverSkip: undefined };
+  assert.equal(leftoverSkipForbidden(unmarked), true);
+  assert.equal(leftoverSkipForbidden(opener!), false);
 
   const aligned: AppMapScenarioTest = {
     ...entity("open-from-home"),
