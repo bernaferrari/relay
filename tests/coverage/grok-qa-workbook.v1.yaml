@@ -15,9 +15,12 @@
 # RC-25 S05 model/preset packets stay unbound: GQA-007 test-action must change
 # selection (leftover Fast-checked / inspect-only sheet is not coverage).
 # GQA-008 presets stay mobile inventory + open TAP; Customize Grok conflict unresolved.
+# RC-26 S08 output-battery packets stay unbound: generated-output capture
+# without arithmetic/Markdown/answer judge. Original criteria stay on the slot.
+# Leftover 3*5 extract-15 / capital extract-Paris is not coverage.
 schemaVersion: 1
 id: grok-qa-workbook
-revision: 5
+revision: 6
 reviewedAt: "2026-09-16"
 source:
   workbook: grok-qa-graph.xlsx
@@ -427,6 +430,17 @@ originals:
     evidencePacket: generated-output
     queue: "output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-empty-thread
+        note: "Fresh live-output image of an empty or New Chat composer. Leftover 3*5 / 2+2 / grok-lab b2dcd768 sidebar+Build Mode is not this before frame. stabilityMeasured false."
+      - kind: receipt
+        id: tap-send-code-prompt
+        note: "Type and send a code-snippet prompt actually executed (test-action). Leftover conversation skip is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: after
+        id: after-code-block
+        note: "Generated output at a declared phase: formatted code block with syntax highlighting and copy option visible. Human reviews original criterion. No arithmetic/Markdown judge. Copy TAP is extra and needs a receipt. stabilityMeasured false."
     gates:
       - Human reviews rendering. Copy needs a receipt.
     status: unbound
@@ -441,6 +455,17 @@ originals:
     evidencePacket: generated-output
     queue: "output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-empty-thread
+        note: "Fresh live-output image of an empty or New Chat composer. Leftover 3*5 extract-15 is not this before frame. stabilityMeasured false."
+      - kind: receipt
+        id: tap-send-markdown-prompt
+        note: "Type and send an H1–H6 markdown prompt actually executed (test-action). Leftover conversation skip is not this original."
+      - kind: after
+        id: after-markdown-headers
+        note: "Generated output at a declared phase: formatted headers with size hierarchy visible. Human reviews original criterion. No mandatory Markdown judge. stabilityMeasured false."
     gates:
       - No mandatory Markdown judge. Keep human criterion.
     status: unbound
@@ -690,6 +715,17 @@ originals:
     evidencePacket: generated-output
     queue: "output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-empty-thread
+        note: "Fresh live-output image of an empty or New Chat composer. Leftover 3*5 / capital / grok-lab b2dcd768 sidebar+Build Mode is not this before frame. stabilityMeasured false."
+      - kind: receipt
+        id: tap-send-coffee-prompt
+        note: "Type and send a coffee-shop-near-me prompt actually executed (test-action). Leftover conversation skip is not this original."
+      - kind: after
+        id: after-near-me-locations
+        note: "Generated output at a declared phase: requested locations near you. Human reviews original criterion. No answer judge. Leftover extract-15 is not this original. stabilityMeasured false."
     gates:
       - Location added 5/20. Uses actual near-me results.
     status: unbound
@@ -994,6 +1030,17 @@ originals:
     evidencePacket: generated-output
     queue: "output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-empty-thread
+        note: "Fresh live-output image of an empty or New Chat composer. Leftover 3*5 thread / extract-contains-15 is not this before frame. grok-lab b2dcd768 sidebar+Build Mode is leftover, not this original. stabilityMeasured false."
+      - kind: receipt
+        id: tap-send-math-prompt
+        note: "Type and send 3*5 (or variation) actually executed (test-action). test-grok-web-signed-in-3x5 extract contains 15 is not this original. Capture-view leftover skip is only GQA-004/040."
+      - kind: after
+        id: after-math-result
+        note: "Generated output at a declared phase: result appears instantly, no Quick Answer thunderbolt. Human reviews original criterion. No mandatory number-equals judge. stabilityMeasured false."
     gates:
       - "Math web-only / skip mobile. Quick answer paid-only. No mandatory number-equals judge."
     status: unbound
@@ -1036,6 +1083,17 @@ originals:
     evidencePacket: generated-output
     queue: "output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-empty-thread
+        note: "Fresh live-output image of an empty or New Chat composer. Leftover 3*5 extract-15 is not this before frame. stabilityMeasured false."
+      - kind: receipt
+        id: tap-send-capital-prompt
+        note: "Type and send Capital of France (or variation) actually executed (test-action). test-grok-web-signed-in-capital extract contains Paris is not this original."
+      - kind: after
+        id: after-short-answer
+        note: "Generated output at a declared phase: a short answer. Timing is auxiliary evidence. Human reviews original criterion. No mandatory answer judge. stabilityMeasured false."
     gates:
       - Timing is auxiliary evidence. No mandatory answer judge.
     status: unbound
@@ -1050,6 +1108,17 @@ originals:
     evidencePacket: generated-output
     queue: "output"
     suggestedExecutionQueue: live-output
+    requirementAction: test-action
+    evidenceNeeded:
+      - kind: before
+        id: before-empty-thread
+        note: "Fresh live-output image of an empty or New Chat composer. Logged-out send-hello / leftover English hello is not this before frame. stabilityMeasured false."
+      - kind: receipt
+        id: tap-send-greeting-prompt
+        note: "Type and send a greeting in another language actually executed (test-action). test-grok-web-send-hello is not this original."
+      - kind: after
+        id: after-greeting-in-language
+        note: "Generated output at a declared phase: greeting in the language utilized. Human reviews original criterion. No language-detect judge. stabilityMeasured false."
     gates: []
     status: unbound
     bindings: []

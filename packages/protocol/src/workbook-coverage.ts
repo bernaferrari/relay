@@ -5,9 +5,11 @@
  * never marks an original covered. Every original has a smallest-sufficient
  * evidence packet or an authorized exclusion; that packet is not coverage.
  * Captions are display text; obligations are plannedSlots identities.
- * S02 shell and S05 model/preset originals keep explicit test-action
- * evidence-needed while remaining unbound. Leftover Fast-checked is not a
- * models Test. Inspect-only model sheet is not Switch model or presets.
+ * S02 shell, S05 model/preset, and S08 output-battery originals keep
+ * explicit test-action evidence-needed while remaining unbound. Leftover
+ * Fast-checked is not a models Test. Inspect-only model sheet is not
+ * Switch model or presets. Leftover 3*5 extract-15 / Markdown judge is
+ * not S08 generated-output coverage. Original criteria stay on the slot.
  */
 
 import { captureReviewSlotId, type CaptureReviewConfiguration } from "./capture-review.js";
@@ -25,6 +27,8 @@ export const WORKBOOK_SHELL_FAMILY_ID = "S02";
 export const WORKBOOK_SHELL_ORIGINAL_IDS = [3, 33, 35, 36, 37] as const;
 export const WORKBOOK_MODELS_FAMILY_ID = "S05";
 export const WORKBOOK_MODELS_ORIGINAL_IDS = [7, 8] as const;
+export const WORKBOOK_OUTPUT_FAMILY_ID = "S08";
+export const WORKBOOK_OUTPUT_ORIGINAL_IDS = [14, 15, 32, 48, 51, 52] as const;
 export const WORKBOOK_MATH_ORIGINAL_ID = 48;
 export const WORKBOOK_DOWNLOAD_ORIGINAL_ID = 16;
 
@@ -282,21 +286,38 @@ export function isRc23DestEndBinding(binding: Pick<WorkbookReviewedBinding, "slo
   return slotId.startsWith(`${WORKBOOK_RC23_REQUIREMENT_ID}::`);
 }
 
-/** Caption is display text. Obligation identity is GQA id + packet. */
+/** Caption is display text. Obligation identity is GQA id + packet.
+ * Original criteria stay visible on the slot even when not auto-asserted. */
 export function workbookOriginalObligationIdentity(
-  original: Pick<WorkbookOriginal, "gqaId" | "name" | "evidencePacket" | "status">,
+  original: Pick<WorkbookOriginal, "gqaId" | "name" | "evidencePacket" | "status" | "criteria">,
 ): {
   requirementId: string;
   caption: string;
+  criteria: string;
   evidencePacket: WorkbookEvidencePacket;
   status: WorkbookOriginalStatus;
 } {
   return {
     requirementId: original.gqaId,
     caption: original.name,
+    criteria: original.criteria,
     evidencePacket: original.evidencePacket,
     status: original.status,
   };
+}
+
+/** Arithmetic extract-15, Markdown, or answer judges never cover S08.
+ * Capture the generated output; a human reviews the original criterion. */
+export function workbookOriginalAllowsAutoJudge(original: { family: string }): boolean {
+  return original.family !== WORKBOOK_OUTPUT_FAMILY_ID;
+}
+
+/** Similar-name extract-15 / Markdown / Paris judges are not coverage. */
+export function coverByArithmeticOrMarkdownJudge(
+  original: Pick<WorkbookOriginal, "id" | "family">,
+): boolean {
+  void original;
+  return false;
 }
 
 export type WorkbookReviewedBinding = {
@@ -801,6 +822,12 @@ function distinctiveNeedles(original: WorkbookOriginal): readonly string[] {
   if (original.id === 37 || original.id === 16 || original.id === 17) extra.push("imagine");
   if (original.id === 42) extra.push("dictation");
   if (original.id === 50) extra.push("heavy", "expert");
+  if (original.id === 14) extra.push("code", "snippet");
+  if (original.id === 15) extra.push("markdown");
+  if (original.id === 32) extra.push("coffee");
+  if (original.id === 48) extra.push("3x5", "math");
+  if (original.id === 51) extra.push("capital");
+  if (original.id === 52) extra.push("greeting", "language");
   return [...new Set([...fromName, ...extra])];
 }
 
@@ -997,8 +1024,13 @@ export function workbookEvidencePolicyError(
   ) {
     return `${label} S11 download needs screenshot+receipt`;
   }
-  if (original.id === WORKBOOK_MATH_ORIGINAL_ID && original.evidencePacket !== "generated-output") {
-    return `${label} S08 math stays generated-output for human review`;
+  if (
+    original.family === WORKBOOK_OUTPUT_FAMILY_ID &&
+    original.evidencePacket !== "generated-output"
+  ) {
+    return original.id === WORKBOOK_MATH_ORIGINAL_ID
+      ? `${label} S08 math stays generated-output for human review`
+      : `${label} S08 stays generated-output for human review`;
   }
   if (
     original.evidencePacket === "generated-output" &&
@@ -1042,6 +1074,21 @@ export function workbookEvidenceNeededError(
     }
     if (!original.evidenceNeeded || original.evidenceNeeded.length === 0) {
       return `${label} S05 needs explicit evidence-needed (before/after, receipt)`;
+    }
+  }
+  if (original.family === WORKBOOK_OUTPUT_FAMILY_ID) {
+    if (original.requirementAction !== "test-action") {
+      return `${label} S08 must be test-action — leftover conversation / extract-contains-15 is not generated-output coverage`;
+    }
+    if (!original.evidenceNeeded || original.evidenceNeeded.length === 0) {
+      return `${label} S08 needs explicit evidence-needed (generated output at a declared phase)`;
+    }
+    const outputKinds = new Set(original.evidenceNeeded.map((item) => item.kind));
+    if (!outputKinds.has("receipt")) {
+      return `${label} S08 needs a send TAP receipt — leftover 3*5 thread is not this original`;
+    }
+    if (!outputKinds.has("after")) {
+      return `${label} S08 generated-output needs after evidence — no arithmetic/Markdown judge`;
     }
   }
   if (original.id === 7) {

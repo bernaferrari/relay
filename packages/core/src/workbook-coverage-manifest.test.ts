@@ -18,11 +18,14 @@ import {
   similarNamedTests,
   suggestedExecutionQueueForOriginal,
   workbookCoverageAfterCompileAttempts,
+  workbookOriginalAllowsAutoJudge,
   workbookOriginalObligationIdentity,
   WORKBOOK_EVIDENCE_PACKET_LABELS,
   WORKBOOK_RC23_REQUIREMENT_ID,
   WORKBOOK_MODELS_FAMILY_ID,
   WORKBOOK_MODELS_ORIGINAL_IDS,
+  WORKBOOK_OUTPUT_FAMILY_ID,
+  WORKBOOK_OUTPUT_ORIGINAL_IDS,
   WORKBOOK_SHELL_FAMILY_ID,
   WORKBOOK_SHELL_ORIGINAL_IDS,
   WORKBOOK_SURVIVAL_FAMILY_ID,
@@ -58,11 +61,14 @@ const similarCatalog = [
     name: "Inspect model choices",
     appMapId: "grok-web",
   },
+  { id: "test-grok-web-signed-in-3x5", name: "Ask 3*5", appMapId: "grok-web" },
+  { id: "test-grok-web-signed-in-capital", name: "Ask Capital of France", appMapId: "grok-web" },
+  { id: "test-grok-web-send-hello", name: "Send hello while logged out", appMapId: "grok-web" },
 ];
 
 test("reviewed workbook freeze keeps 58 originals, 15 active families, and 5 exclusions", () => {
   const manifest = loadReviewedWorkbook();
-  assert.equal(manifest.revision, 5);
+  assert.equal(manifest.revision, 6);
   assert.equal(manifest.counts.originals, 58);
   assert.equal(manifest.counts.families, 17);
   assert.equal(manifest.counts.activeFamilies, 15);
@@ -92,10 +98,14 @@ test("similarly named live Tests do not cover Customize Grok, Imagine, Dictation
   assert.equal(byId.get(37)?.status, "unbound");
   assert.equal(byId.get(42)?.status, "excluded");
   assert.equal(byId.get(50)?.status, "unbound");
+  assert.equal(byId.get(48)?.status, "unbound");
+  assert.equal(byId.get(51)?.status, "unbound");
   assert.equal(originalIsCovered(byId.get(8)!), false);
   assert.equal(originalIsCovered(byId.get(37)!), false);
   assert.equal(originalIsCovered(byId.get(42)!), false);
   assert.equal(originalIsCovered(byId.get(50)!), false);
+  assert.equal(originalIsCovered(byId.get(48)!), false);
+  assert.equal(originalIsCovered(byId.get(51)!), false);
   assert.equal(
     similarNamedTests(byId.get(8)!, similarCatalog).some(
       (row) => row.id === "test-grok-ios-presets",
@@ -133,7 +143,19 @@ test("similarly named live Tests do not cover Customize Grok, Imagine, Dictation
     true,
   );
   assert.equal(
-    [8, 37, 42, 50].every((id) => !report.coveredOriginalIds.includes(id)),
+    report.nameCollisions.some(
+      (row) => row.originalId === 48 && row.testId === "test-grok-web-signed-in-3x5",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 51 && row.testId === "test-grok-web-signed-in-capital",
+    ),
+    true,
+  );
+  assert.equal(
+    [8, 37, 42, 50, 48, 51].every((id) => !report.coveredOriginalIds.includes(id)),
     true,
   );
 });
@@ -220,7 +242,11 @@ test("RC-13 every original has a packet; excluded keep packet+exclusion; dest-en
   assert.equal(
     manifest.originals.every((item) => {
       const obligation = workbookOriginalObligationIdentity(item);
-      return obligation.requirementId === item.gqaId && obligation.caption === item.name;
+      return (
+        obligation.requirementId === item.gqaId &&
+        obligation.caption === item.name &&
+        obligation.criteria === item.criteria
+      );
     }),
     true,
   );
@@ -263,6 +289,10 @@ test("RC-13 S16 cannot be single-view Fast UI; S11 download is receipt; S08 math
   assert.equal(math?.suggestedExecutionQueue, "live-output");
   assert.match(math?.criteria ?? "", /Result should appear instantly/u);
   assert.match(math?.gates.join(" ") ?? "", /No mandatory number-equals judge/u);
+  assert.equal(workbookOriginalAllowsAutoJudge(math!), false);
+  const mathSlot = workbookOriginalObligationIdentity(math!);
+  assert.equal(mathSlot.criteria, math?.criteria);
+  assert.notEqual(mathSlot.criteria, "contains 15");
   const packets = countWorkbookEvidencePackets(manifest.originals);
   assert.equal(
     Object.values(packets).reduce((sum, count) => sum + count, 0),
@@ -278,7 +308,7 @@ test("RC-13 similarly named Test still does not cover originals 8, 37, 42, or 50
   const report = evaluateWorkbookCoverage(manifest, similarCatalog);
   assert.deepEqual(report.coveredOriginalIds, [4, 40]);
   assert.equal(
-    [8, 37, 42, 50].every((id) => !report.coveredOriginalIds.includes(id)),
+    [8, 37, 42, 50, 48, 51].every((id) => !report.coveredOriginalIds.includes(id)),
     true,
   );
   assert.equal(
@@ -422,6 +452,48 @@ test("RC-23 dest-ends bind orig 4 and 40 by slot identity; similar names do not 
     similarNamedTests(models, similarCatalog).some(
       (row) => row.id === "test-grok-web-signed-in-model-iterate",
     ),
+    true,
+  );
+  const outputFamily = manifest.originals.filter(
+    (item) => item.family === WORKBOOK_OUTPUT_FAMILY_ID,
+  );
+  assert.deepEqual(
+    outputFamily.map((item) => item.id),
+    [...WORKBOOK_OUTPUT_ORIGINAL_IDS],
+  );
+  assert.equal(
+    outputFamily.every(
+      (item) =>
+        item.status === "unbound" &&
+        item.evidencePacket === "generated-output" &&
+        item.requirementAction === "test-action" &&
+        (item.evidenceNeeded?.length ?? 0) > 0 &&
+        item.bindings.length === 0 &&
+        item.criteria.trim().length > 0 &&
+        workbookOriginalAllowsAutoJudge(item) === false,
+    ),
+    true,
+  );
+  const mathKinds = new Set(
+    manifest.originals.find((item) => item.id === 48)?.evidenceNeeded?.map((item) => item.kind) ??
+      [],
+  );
+  assert.equal(
+    ["before", "after", "receipt"].every((kind) => mathKinds.has(kind)),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 48)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-3x5"),
+    true,
+  );
+  assert.equal(
+    similarNamedTests(
+      manifest.originals.find((item) => item.id === 51)!,
+      similarCatalog,
+    ).some((row) => row.id === "test-grok-web-signed-in-capital"),
     true,
   );
   const slotsPath = join(

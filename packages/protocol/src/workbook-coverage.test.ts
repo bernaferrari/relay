@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  coverByArithmeticOrMarkdownJudge,
   coverByFindingSimilarlyNamedTest,
   coverByRc23DestEnd,
   destEndViewPacketMayLeftoverSkip,
@@ -14,11 +15,14 @@ import {
   suggestedExecutionQueueForOriginal,
   workbookEvidenceNeededError,
   workbookEvidencePolicyError,
+  workbookOriginalAllowsAutoJudge,
   workbookOriginalMayLeftoverSkip,
   workbookOriginalObligationIdentity,
   workbookRc23BindingError,
   WORKBOOK_MODELS_FAMILY_ID,
   WORKBOOK_MODELS_ORIGINAL_IDS,
+  WORKBOOK_OUTPUT_FAMILY_ID,
+  WORKBOOK_OUTPUT_ORIGINAL_IDS,
   WORKBOOK_SHELL_FAMILY_ID,
   WORKBOOK_SHELL_ORIGINAL_IDS,
   type WorkbookCoverageManifest,
@@ -393,6 +397,22 @@ test("capture-view leftover skip is only GQA-004 attach and GQA-040 Settings inv
     }),
     false,
   );
+  assert.equal(
+    destEndViewPacketMayLeftoverSkip({ id: 48, evidencePacket: "generated-output" }),
+    false,
+  );
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 48,
+      evidencePacket: "generated-output",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
+  assert.equal(
+    destEndViewPacketMayLeftoverSkip({ id: 14, evidencePacket: "generated-output" }),
+    false,
+  );
 });
 
 test("S16 cannot be single-view Fast UI", () => {
@@ -474,7 +494,9 @@ test("RC-23 dest-end table binds only orig 4 attach view and orig 40 settings vi
   );
   assert.equal(obligation.requirementId, "GQA-006");
   assert.equal(obligation.caption, "Autocomplete / typeaheads");
+  assert.equal(obligation.criteria, "Keep the original criterion visible.");
   assert.notEqual(obligation.requirementId, obligation.caption);
+  assert.notEqual(obligation.criteria, obligation.caption);
 });
 
 test("complete workbook cannot bind orig 6 via composer-focus dest-end", () => {
@@ -682,4 +704,155 @@ test("S05 packets stay unbound and need a causal TAP that changes selection", ()
   );
   assert.equal(coverByRc23DestEnd({ id: 7 }, "models"), false);
   assert.equal(coverByRc23DestEnd({ id: 8 }, "models"), false);
+});
+
+test("S08 packets stay unbound and capture without arithmetic or Markdown judge", () => {
+  assert.deepEqual([...WORKBOOK_OUTPUT_ORIGINAL_IDS], [14, 15, 32, 48, 51, 52]);
+  assert.deepEqual(requiredEvidenceNeededKinds("generated-output"), ["after"]);
+  const missing = original({
+    id: 48,
+    name: "Math 3*5",
+    family: WORKBOOK_OUTPUT_FAMILY_ID,
+    evidencePacket: "generated-output",
+    status: "unbound",
+  });
+  assert.match(
+    workbookEvidenceNeededError(missing) ?? "",
+    /S08 must be test-action|S08 needs explicit evidence-needed|send TAP receipt/u,
+  );
+  const leftoverExtract = original({
+    id: 48,
+    name: "Math 3*5",
+    family: WORKBOOK_OUTPUT_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "after",
+        id: "leftover-extract-15",
+        note: "Leftover 3*5 thread with extract contains 15.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Result should appear instantly. There should be no Quick Answer visible (thunderbolt suggestions).",
+  });
+  assert.match(workbookEvidenceNeededError(leftoverExtract) ?? "", /send TAP receipt/u);
+  assert.equal(workbookOriginalAllowsAutoJudge(leftoverExtract), false);
+  assert.equal(coverByArithmeticOrMarkdownJudge(leftoverExtract), false);
+  const math = original({
+    id: 48,
+    name: "Math 3*5",
+    family: WORKBOOK_OUTPUT_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "before",
+        id: "before-empty-thread",
+        note: "Empty composer. Leftover extract-15 is not this frame.",
+      },
+      {
+        kind: "receipt",
+        id: "tap-send-math-prompt",
+        note: "Type and send 3*5 actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-math-result",
+        note: "Generated output at a declared phase. Human reviews original criterion.",
+      },
+    ],
+    status: "unbound",
+    criteria:
+      "Result should appear instantly. There should be no Quick Answer visible (thunderbolt suggestions).",
+  });
+  assert.equal(workbookEvidenceNeededError(math), undefined);
+  assert.equal(workbookEvidencePolicyError(math), undefined);
+  assert.equal(originalIsCovered(math), false);
+  assert.equal(workbookOriginalAllowsAutoJudge(math), false);
+  const obligation = workbookOriginalObligationIdentity(math);
+  assert.equal(obligation.requirementId, "GQA-048");
+  assert.equal(obligation.caption, "Math 3*5");
+  assert.equal(
+    obligation.criteria,
+    "Result should appear instantly. There should be no Quick Answer visible (thunderbolt suggestions).",
+  );
+  assert.notEqual(obligation.criteria, "contains 15");
+  const markdown = original({
+    id: 15,
+    name: "Markdown headers",
+    family: WORKBOOK_OUTPUT_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-send-markdown-prompt",
+        note: "Type and send H1–H6 prompt actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-markdown-headers",
+        note: "Generated headers. No mandatory Markdown judge.",
+      },
+    ],
+    status: "unbound",
+    criteria: "Response displays formatted headers with size hierarchy (H1 largest – H6 smallest).",
+  });
+  assert.equal(workbookEvidenceNeededError(markdown), undefined);
+  assert.equal(workbookOriginalAllowsAutoJudge(markdown), false);
+  assert.equal(coverByArithmeticOrMarkdownJudge(markdown), false);
+  const capital = original({
+    id: 51,
+    name: "Capital of France",
+    family: WORKBOOK_OUTPUT_FAMILY_ID,
+    evidencePacket: "generated-output",
+    requirementAction: "test-action",
+    evidenceNeeded: [
+      {
+        kind: "receipt",
+        id: "tap-send-capital-prompt",
+        note: "Type and send Capital of France actually executed.",
+      },
+      {
+        kind: "after",
+        id: "after-short-answer",
+        note: "Short answer. No mandatory answer judge.",
+      },
+    ],
+    status: "unbound",
+  });
+  const report = evaluateWorkbookCoverage(fixture({ originals: [math, markdown, capital] }), [
+    { id: "test-grok-web-signed-in-3x5", name: "Ask 3*5" },
+    { id: "test-grok-web-signed-in-capital", name: "Ask Capital of France" },
+    { id: "test-grok-web-send-hello", name: "Send hello while logged out" },
+  ]);
+  assert.deepEqual(report.coveredOriginalIds, []);
+  assert.equal(report.unboundOriginalIds.includes(48), true);
+  assert.equal(report.unboundOriginalIds.includes(15), true);
+  assert.equal(report.unboundOriginalIds.includes(51), true);
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 48 && row.testId === "test-grok-web-signed-in-3x5",
+    ),
+    true,
+  );
+  assert.equal(
+    report.nameCollisions.some(
+      (row) => row.originalId === 51 && row.testId === "test-grok-web-signed-in-capital",
+    ),
+    true,
+  );
+  assert.equal(coverByFindingSimilarlyNamedTest(math, []), false);
+  assert.equal(coverByRc23DestEnd({ id: 48 }, "composer-focus"), false);
+  assert.equal(coverByRc23DestEnd({ id: 48 }, "models"), false);
+  assert.equal(
+    workbookOriginalMayLeftoverSkip({
+      id: 48,
+      evidencePacket: "generated-output",
+      requirementAction: "test-action",
+    }),
+    false,
+  );
 });
