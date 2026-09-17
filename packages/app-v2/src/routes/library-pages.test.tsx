@@ -381,8 +381,8 @@ describe("Tests workspace", () => {
 
     const recovery = document.querySelector(".relay-recording-problem");
     expect(recovery?.className).toContain("relay-recovery-state--centered");
-    expect(recovery?.getAttribute("data-slot")).toBe("empty");
-    expect(recovery?.querySelectorAll('[data-slot="empty-description"]')).toHaveLength(1);
+    expect(recovery?.getAttribute("role")).toBe("alert");
+    expect(recovery?.querySelectorAll("h2")).toHaveLength(1);
     expect(recovery?.textContent).toContain("The app could not reach the local Relay service.");
     expect(recovery?.textContent).toContain("Try again");
   });
@@ -466,6 +466,28 @@ describe("Runs workspace", () => {
     expect(document.body.textContent).toContain("Open account");
   });
 
+  it("keeps loaded results visible when polling fails and recovers on retry", async () => {
+    let unavailable = false;
+    const listRuns = vi.fn(async () => {
+      if (unavailable) throw new TypeError("Failed to fetch");
+      return runs;
+    });
+    await render("/runs", catalog({ listRuns }));
+    const row = document.querySelector('a[href="/runs/run-passed-internal"]');
+    expect(row).not.toBeNull();
+    unavailable = true;
+    await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 4_300))));
+    await settle();
+    expect(listRuns.mock.calls.length).toBeGreaterThan(1);
+    expect(document.querySelector('a[href="/runs/run-passed-internal"]')).toBe(row);
+    expect(document.body.textContent).toContain("Couldn’t refresh results");
+    unavailable = false;
+    await click("Try again");
+    await settle();
+    expect(document.querySelector('a[href="/runs/run-passed-internal"]')).toBe(row);
+    expect(document.body.textContent).not.toContain("Couldn’t refresh results");
+  }, 10_000);
+
   it("keeps the Run view tabs on their own rail above the filters", async () => {
     await render("/runs");
 
@@ -506,8 +528,8 @@ describe("Runs workspace", () => {
 
     const recovery = document.querySelector(".relay-recording-problem");
     expect(recovery?.className).toContain("relay-recovery-state--centered");
-    expect(recovery?.getAttribute("data-slot")).toBe("empty");
-    expect(recovery?.querySelectorAll('[data-slot="empty-description"]')).toHaveLength(1);
+    expect(recovery?.getAttribute("role")).toBe("alert");
+    expect(recovery?.querySelectorAll("h2")).toHaveLength(1);
     expect(recovery?.textContent).toContain("The app could not reach the local Relay service.");
     expect(recovery?.textContent).toContain("Try again");
   });

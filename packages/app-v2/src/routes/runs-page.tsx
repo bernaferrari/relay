@@ -165,13 +165,35 @@ export function RunsPage() {
 
       {runs.isPending ? <PageLoading label="Loading Runs…" /> : null}
       <RecordingProblem
-        error={runs.error}
+        error={runs.data === undefined ? runs.error : null}
         onRetry={() => void runs.refetch()}
         retrying={runs.isFetching}
         layout="centered"
       />
 
-      {!runs.isPending && !runs.isError && visibleRuns.length ? (
+      {runs.isError && runs.data !== undefined ? (
+        <div
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border px-4 py-3 text-sm"
+        >
+          <div>
+            <p className="font-medium">Couldn’t refresh results</p>
+            <p className="text-muted-foreground">
+              Showing the last loaded results. Updates will resume when Relay reconnects.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={runs.isFetching}
+            onClick={() => void runs.refetch()}
+          >
+            {runs.isFetching ? "Retrying…" : "Try again"}
+          </Button>
+        </div>
+      ) : null}
+
+      {runs.data !== undefined && visibleRuns.length ? (
         <section
           id="run-history-results"
           className="relay-library-results mt-3"
@@ -182,7 +204,7 @@ export function RunsPage() {
               {visibleRuns.length === 1 ? "1 Result" : `${visibleRuns.length} Results`}
             </h2>
             <span className="text-xs text-[var(--text-weak)]" aria-live="polite">
-              {runViewDescription(view, historyComplete)}
+              {runs.isError ? "Last loaded results" : runViewDescription(view, historyComplete)}
             </span>
           </div>
           <RunHistoryList runs={visibleRuns}>
@@ -191,7 +213,7 @@ export function RunsPage() {
         </section>
       ) : null}
 
-      {!runs.isPending && !runs.isError && !visibleRuns.length ? (
+      {runs.data !== undefined && !visibleRuns.length ? (
         runs.data?.length ? (
           <EmptyState
             title={emptyRunTitle(view)}
