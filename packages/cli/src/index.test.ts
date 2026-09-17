@@ -2442,9 +2442,11 @@ test("job start/pause/resume/cancel --json dest identity is dest wait-for, not l
     artifacts: leftoverDestEndRun.artifacts,
   };
   for (const argv of [
+    ["job", "start", "--input", '{"recipe":"smoke"}'],
     ["job", "pause", leftoverDestEndRun.id],
     ["job", "resume", leftoverDestEndRun.id],
     ["job", "cancel", leftoverDestEndRun.id],
+    ["job", "active", "cancel"],
   ] as const) {
     const io = capture();
     const code = await runCli([...argv, "--json"], {
@@ -2575,6 +2577,204 @@ test("run review --json dest identity is dest wait-for 003, not leftover Close 0
   );
   assert.equal(
     result.result?.run?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
+test("job list --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+  const io = capture();
+  const leftoverJob = {
+    id: leftoverDestEndRun.id,
+    status: "ok",
+    frames: leftoverDestEndRun.frames,
+    artifacts: leftoverDestEndRun.artifacts,
+  };
+  const code = await runCli(["job", "list", "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke(operationId) {
+        assert.equal(operationId, "job.list");
+        return { jobs: [leftoverJob] };
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      jobs?: Array<{
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+      }>;
+    };
+  };
+  assert.deepEqual(
+    result.result?.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.result?.jobs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
+test("flow run --no-wait --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
+  const io = capture();
+  const leftoverJob = {
+    id: leftoverDestEndRun.id,
+    status: "ok",
+    frames: leftoverDestEndRun.frames,
+    artifacts: leftoverDestEndRun.artifacts,
+  };
+  const code = await runCli(["flow", "run", "map", "flow", "--no-wait", "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke(operationId) {
+        assert.equal(operationId, "app-map.flow.run");
+        return {
+          plan: { appMapId: "map", appMapRevision: 1, connections: [{ id: "c1" }] },
+          job: leftoverJob,
+          jobs: [leftoverJob],
+          matrix: { id: "matrix-1" },
+        };
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      plan?: { appMapId?: string; connectionCount?: number };
+      matrix?: { id?: string };
+      job?: {
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+      };
+    };
+  };
+  assert.equal(result.result?.plan?.appMapId, "map");
+  assert.equal(result.result?.plan?.connectionCount, 1);
+  assert.equal(result.result?.matrix?.id, "matrix-1");
+  assert.deepEqual(
+    result.result?.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.result?.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
+test("combine campaign cancel/triage --json keep campaign; leftover Close 004 cannot fill dest", async () => {
+  const leftoverJob = {
+    id: leftoverDestEndRun.id,
+    status: "ok",
+    frames: leftoverDestEndRun.frames,
+    artifacts: leftoverDestEndRun.artifacts,
+  };
+  for (const [argv, operationId] of [
+    [["combine", "campaign", "cancel", "camp-1"], "job.combine.campaign.cancel"],
+    [
+      [
+        "combine",
+        "campaign",
+        "triage",
+        "camp-1",
+        "--input",
+        '{"caseIds":["cell-1"],"triageStatus":"resolved"}',
+      ],
+      "job.combine.campaign.triage",
+    ],
+  ] as const) {
+    const io = capture();
+    const code = await runCli([...argv, "--json"], {
+      streams: io.streams,
+      createClient: () => ({
+        async invoke(id) {
+          assert.equal(id, operationId);
+          return { campaign: { id: "camp-1", status: "cancelled" }, jobs: [leftoverJob] };
+        },
+        events: async () => {},
+      }),
+      registerSignalHandlers: false,
+      env: {},
+    });
+    assert.equal(code, ExitCode.success, argv.join(" "));
+    const result = JSON.parse(io.stdout()) as {
+      result?: {
+        campaign?: { id?: string };
+        jobs?: Array<{
+          destIdentity?: Array<{ path?: string }>;
+          captureReview?: Array<{ framePath?: string }>;
+        }>;
+      };
+    };
+    assert.equal(result.result?.campaign?.id, "camp-1");
+    assert.deepEqual(
+      result.result?.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
+      ["frames/003.png"],
+    );
+    assert.equal(
+      result.result?.jobs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+      false,
+      argv.join(" "),
+    );
+  }
+});
+
+test("run replay-offline --json dest identity is dest wait-for 003, not leftover Close 004 last-frame", async () => {
+  const io = capture();
+  const resources: string[] = [];
+  const code = await runCli(["run", "replay-offline", leftoverDestEndRun.id, "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke() {
+        throw new Error("run replay-offline is a read-only resource");
+      },
+      events: async () => {},
+      async resource(path) {
+        resources.push(path);
+        return {
+          report: {
+            schemaVersion: 1,
+            mode: "offline-evidence-replay",
+            runId: leftoverDestEndRun.id,
+            frames: leftoverDestEndRun.frames,
+            artifacts: leftoverDestEndRun.artifacts,
+          },
+        };
+      },
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(code, ExitCode.success);
+  assert.deepEqual(resources, [`/runs/${leftoverDestEndRun.id}/replay-offline`]);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      destIdentity?: Array<{ path?: string }>;
+      report?: {
+        mode?: string;
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+      };
+    };
+  };
+  assert.equal(result.result?.report?.mode, "offline-evidence-replay");
+  assert.deepEqual(
+    result.result?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.deepEqual(
+    result.result?.report?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.result?.report?.captureReview?.some((item) => item.framePath === "frames/004.png"),
     false,
   );
 });

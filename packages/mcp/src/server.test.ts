@@ -1752,6 +1752,80 @@ test("returns an actionable compact replay and a durable resource when an offlin
   }
 });
 
+test("compact offline replay tool dest identity is dest wait-for 003, not leftover Close 004", async () => {
+  const leftoverFrames = [
+    { path: "frames/003.png", caption: "Observe" },
+    { path: "frames/004.png", caption: "after · Run saved Test" },
+  ];
+  const leftoverArtifacts = [
+    {
+      kind: "capture-review",
+      data: {
+        caption: "Observe",
+        framePath: "frames/003.png",
+        phase: "dest",
+        policy: "fast",
+      },
+    },
+    {
+      kind: "capture-review",
+      data: { caption: "Close", framePath: "frames/004.png" },
+    },
+  ];
+  const report = {
+    schemaVersion: 1,
+    mode: "offline-evidence-replay",
+    runId: "run-1",
+    sourceRunStatus: "error",
+    planDigest: "a".repeat(64),
+    frames: leftoverFrames,
+    artifacts: leftoverArtifacts,
+    summary: {
+      checks: 80,
+      proved: 2,
+      rootFailures: 1,
+      invalidCascades: 77,
+      independentFailures: 0,
+    },
+    firstRootFailure: { checkId: "birth-year", title: "Birth Year", kind: "action-no-op" },
+    cursorTimeline: [],
+    checks: Array.from({ length: 80 }, (_, index) => ({
+      id: `check-${index}`,
+      title: `Check ${index}`,
+      replayStatus: "invalid-cascade",
+      reason: "x".repeat(1_000),
+      selectorAttempts: [],
+      evidence: [],
+    })),
+    blockers: [],
+  };
+  const session = await connectMcp({
+    async invoke(operationId) {
+      assert.equal(operationId, "run.replay.offline");
+      return { report };
+    },
+  });
+  try {
+    const result = callResult(
+      await session.request("tools/call", {
+        name: "relay_run_replay_offline",
+        arguments: { runId: "run-1" },
+      }),
+    );
+    const compact = result.structuredContent?.result as {
+      destIdentity?: Array<{ path?: string; caption?: string }>;
+      report?: {
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+      };
+    };
+    assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+    assert.equal(JSON.stringify(compact).includes("frames/004.png"), false);
+  } finally {
+    await session.close();
+  }
+});
+
 test("returns screenshots as native PNG content without path or base64 metadata leaks", async () => {
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",

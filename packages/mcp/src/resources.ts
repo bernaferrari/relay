@@ -376,12 +376,13 @@ export function registerRelayResources(
             { runId },
             { signal: context.mcpReq.signal },
           );
+          const summarized = summarizeExecutionOperationResult("run.replay.offline", result);
           return readResult(
             uri,
             scope.projectId,
             "run-offline-replay",
-            result,
-            compactOfflineReplayResource(result),
+            rewriteDestIdentityRelativeNames(summarized),
+            compactOfflineReplayResource(summarized),
           );
         } catch {
           throw new ResourceNotFoundError(uri.href);

@@ -926,3 +926,154 @@ test("operator advanced run review dest identity is dest wait-for, not leftover 
     false,
   );
 });
+
+test("operator advanced leftover Close 004 cannot fill dest on remaining job/flow/campaign/offline envelopes", async () => {
+  const { invoker } = recordingInvoker((operationId) => {
+    if (operationId === "job.list") return { jobs: [leftoverDestEndJob] };
+    if (operationId === "job.start" || operationId === "job.active.cancel") {
+      return { job: leftoverDestEndJob };
+    }
+    if (operationId === "app-map.flow.run") {
+      return {
+        plan: { appMapId: "map", appMapRevision: 1, connections: [{ id: "c1" }] },
+        job: leftoverDestEndJob,
+        jobs: [leftoverDestEndJob],
+        matrix: { id: "matrix-1" },
+      };
+    }
+    if (
+      operationId === "job.combine.campaign.cancel" ||
+      operationId === "job.combine.campaign.triage"
+    ) {
+      return { campaign: { id: "camp-1", status: "cancelled" }, jobs: [leftoverDestEndJob] };
+    }
+    if (operationId === "run.replay.offline") {
+      return {
+        report: {
+          schemaVersion: 1,
+          mode: "offline-evidence-replay",
+          runId: leftoverDestEndJob.id,
+          frames: leftoverDestEndJob.frames,
+          artifacts: leftoverDestEndJob.artifacts,
+        },
+      };
+    }
+    return { ok: true };
+  });
+  const signal = new AbortController().signal;
+  const run = (operationId: string, input: Record<string, unknown>, confirmed = false) =>
+    invokeRelayOperatorTool({
+      name: "relay_advanced",
+      argumentsValue: { operationId, input },
+      confirmed,
+      invoker,
+      actorId: "agent:cursor",
+      signal,
+    });
+
+  const listed = (await run("job.list", {})) as {
+    jobs?: Array<{
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    }>;
+  };
+  assert.deepEqual(
+    listed.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    listed.jobs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+
+  for (const operationId of ["job.start", "job.active.cancel"] as const) {
+    const started = (await run(
+      operationId,
+      operationId === "job.start" ? { recipe: "smoke" } : {},
+      true,
+    )) as {
+      job?: {
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+      };
+    };
+    assert.deepEqual(
+      started.job?.destIdentity?.map((frame) => frame.path),
+      ["frames/003.png"],
+      operationId,
+    );
+    assert.equal(
+      started.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+      false,
+      operationId,
+    );
+  }
+
+  const flowed = (await run("app-map.flow.run", { appMapId: "map", flowId: "flow" }, true)) as {
+    plan?: { appMapId?: string; connectionCount?: number };
+    matrix?: { id?: string };
+    job?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+  };
+  assert.equal(flowed.plan?.appMapId, "map");
+  assert.equal(flowed.plan?.connectionCount, 1);
+  assert.equal(flowed.matrix?.id, "matrix-1");
+  assert.deepEqual(
+    flowed.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    flowed.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+
+  for (const [operationId, input] of [
+    ["job.combine.campaign.cancel", { batchId: "camp-1" }],
+    [
+      "job.combine.campaign.triage",
+      { batchId: "camp-1", caseIds: ["cell-1"], triageStatus: "resolved" },
+    ],
+  ] as const) {
+    const cancelled = (await run(operationId, input, true)) as {
+      campaign?: { id?: string };
+      jobs?: Array<{
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+      }>;
+    };
+    assert.equal(cancelled.campaign?.id, "camp-1");
+    assert.deepEqual(
+      cancelled.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
+      ["frames/003.png"],
+    );
+    assert.equal(
+      cancelled.jobs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+      false,
+      operationId,
+    );
+  }
+
+  const replayed = (await run("run.replay.offline", { runId: leftoverDestEndJob.id })) as {
+    destIdentity?: Array<{ path?: string }>;
+    report?: {
+      mode?: string;
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+  };
+  assert.equal(replayed.report?.mode, "offline-evidence-replay");
+  assert.deepEqual(
+    replayed.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.deepEqual(
+    replayed.report?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    replayed.report?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});

@@ -131,7 +131,9 @@ function destIdentityProjection(record: Record<string, unknown>): {
   const artifacts = artifactRecords(record.artifacts);
   const frames = listedFrames(record.frames);
   const computed = compactDestIdentity(frames, artifacts);
-  const destIdentity = computed.length ? computed : listedDestIdentity(record.destIdentity);
+  const destIdentity = computed.length
+    ? computed
+    : destIdentityVisualFrames(listedDestIdentity(record.destIdentity));
   const destPaths = new Set(destIdentity.map((frame) => frame.path));
   const leftover = new Set(captureReviewLeftoverLastFramePaths(frames, artifacts));
   const queue = resolveCaptureReviewQueue({
@@ -615,6 +617,25 @@ function summarizeRunReview(response: Record<string, unknown>): unknown {
   };
 }
 
+/** Offline replay keeps the frozen report. Leftover Close last-frame cannot fill dest. */
+function summarizeOfflineReplay(response: Record<string, unknown>): unknown {
+  const report = object(response.report);
+  const projected = destIdentityProjection(report ?? response);
+  return {
+    ...response,
+    ...(projected.destIdentity ? { destIdentity: projected.destIdentity } : {}),
+    ...(report
+      ? {
+          report: {
+            ...report,
+            ...(projected.destIdentity ? { destIdentity: projected.destIdentity } : {}),
+            ...(projected.captureReview ? { captureReview: projected.captureReview } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
 function summarizeRunCaptureReview(response: Record<string, unknown>): unknown {
   const run = object(response.run);
   const queue = object(response.queue);
@@ -819,6 +840,7 @@ export function summarizeExecutionOperationResult(operationId: string, result: u
   if (operationId === "step.run") return summarizeStandaloneStep(response);
   if (operationId === "run.get") return summarizeRunGet(response);
   if (operationId === "run.review") return summarizeRunReview(response);
+  if (operationId === "run.replay.offline") return summarizeOfflineReplay(response);
   if (operationId === "run.evidence.get") return summarizeRunEvidence(response);
   if (operationId === "run.capture.review") return summarizeRunCaptureReview(response);
   if (operationId === "run.story.get") return summarizeRunStory(response);

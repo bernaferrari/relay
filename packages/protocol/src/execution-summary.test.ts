@@ -1150,7 +1150,13 @@ test("job retry dest identity is dest wait-for, not leftover Close 004 last-fram
 });
 
 test("job start/pause/resume/cancel dest identity is dest wait-for, not leftover Close 004 last-frame", () => {
-  for (const operationId of ["job.start", "job.pause", "job.resume", "job.cancel"] as const) {
+  for (const operationId of [
+    "job.start",
+    "job.pause",
+    "job.resume",
+    "job.cancel",
+    "job.active.cancel",
+  ] as const) {
     const result = summarizeExecutionOperationResult(operationId, {
       job: leftoverDestEndJob,
     }) as {
@@ -1210,6 +1216,132 @@ test("run.review dest identity is dest wait-for 003, not leftover Close 004 last
   );
   assert.equal(
     result.run?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
+test("job.list leftover Close 004 cannot fill dest identity", () => {
+  const result = summarizeExecutionOperationResult("job.list", {
+    jobs: [leftoverDestEndJob],
+  }) as {
+    jobs?: Array<{
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    }>;
+  };
+  assert.deepEqual(
+    result.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.jobs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+});
+
+test("listed destIdentity leftover Close 004 cannot fill dest without dest-phase artifacts", () => {
+  const result = summarizeExecutionOperationResult("job.get", {
+    job: {
+      id: leftoverDestEndJob.id,
+      status: "ok",
+      destIdentity: [
+        { path: "frames/003.png", caption: "Observe" },
+        { path: "frames/004.png", caption: "Close" },
+      ],
+    },
+  }) as { job?: { destIdentity?: Array<{ path?: string; caption?: string }> } };
+  assert.deepEqual(result.job?.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+});
+
+test("app-map.flow.run keeps plan; leftover Close 004 cannot fill dest", () => {
+  const result = summarizeExecutionOperationResult("app-map.flow.run", {
+    plan: { appMapId: "map", appMapRevision: 1, connections: [{ id: "c1" }] },
+    job: leftoverDestEndJob,
+    jobs: [leftoverDestEndJob],
+    matrix: { id: "matrix-1" },
+  }) as {
+    plan?: { appMapId?: string; connectionCount?: number; connections?: unknown };
+    matrix?: { id?: string };
+    job?: {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+    jobs?: Array<{ destIdentity?: Array<{ path?: string }> }>;
+  };
+  assert.equal(result.plan?.appMapId, "map");
+  assert.equal(result.plan?.connectionCount, 1);
+  assert.equal(result.plan?.connections, undefined);
+  assert.equal(result.matrix?.id, "matrix-1");
+  assert.deepEqual(
+    result.job?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.job?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+  assert.deepEqual(
+    result.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+});
+
+test("combine campaign cancel/triage keep campaign; leftover Close 004 cannot fill dest", () => {
+  for (const operationId of [
+    "job.combine.campaign.cancel",
+    "job.combine.campaign.triage",
+    "job.combine.campaign.repeat.active",
+  ] as const) {
+    const result = summarizeExecutionOperationResult(operationId, {
+      campaign: { id: "camp-1", status: "cancelled" },
+      jobs: [leftoverDestEndJob],
+    }) as {
+      campaign?: { id?: string };
+      jobs?: Array<{
+        destIdentity?: Array<{ path?: string }>;
+        captureReview?: Array<{ framePath?: string }>;
+      }>;
+    };
+    assert.equal(result.campaign?.id, "camp-1");
+    assert.deepEqual(
+      result.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
+      ["frames/003.png"],
+    );
+    assert.equal(
+      result.jobs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+      false,
+    );
+  }
+});
+
+test("run.replay.offline keeps report; leftover Close 004 cannot fill dest", () => {
+  const result = summarizeExecutionOperationResult("run.replay.offline", {
+    report: {
+      schemaVersion: 1,
+      mode: "offline-evidence-replay",
+      runId: leftoverDestEndJob.id,
+      frames: leftoverDestEndJob.frames,
+      artifacts: leftoverDestEndJob.artifacts,
+    },
+  }) as {
+    destIdentity?: Array<{ path?: string }>;
+    report?: {
+      mode?: string;
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    };
+  };
+  assert.equal(result.report?.mode, "offline-evidence-replay");
+  assert.deepEqual(
+    result.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.deepEqual(
+    result.report?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.report?.captureReview?.some((item) => item.framePath === "frames/004.png"),
     false,
   );
 });

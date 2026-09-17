@@ -1,3 +1,5 @@
+import { isCaptureReviewLeftoverCaption } from "@relay/protocol";
+
 type UnknownRecord = Record<string, unknown>;
 
 function record(value: unknown): UnknownRecord | undefined {
@@ -168,9 +170,25 @@ function compactOfflineReplayResult(value: unknown, options: CompactOptions): Un
     .map(compactRepairProposal);
 
   const runId = compactText(source.runId, 64);
+  const listedDest = Array.isArray(response?.destIdentity)
+    ? response.destIdentity
+    : Array.isArray(source.destIdentity)
+      ? source.destIdentity
+      : [];
+  const destIdentity = listedDest
+    .flatMap((item) => {
+      const entry = record(item);
+      const path = compactText(entry?.path ?? entry?.relativeName, 64);
+      if (!path) return [];
+      const caption = compactText(entry?.caption, 80);
+      if (isCaptureReviewLeftoverCaption(caption)) return [];
+      return [{ path, ...(caption ? { caption } : {}) }];
+    })
+    .slice(0, 8);
   return {
     truncated: true,
     report,
+    ...(destIdentity.length ? { destIdentity } : {}),
     ...(runId
       ? {
           resource: {

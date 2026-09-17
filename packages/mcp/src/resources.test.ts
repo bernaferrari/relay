@@ -1525,3 +1525,67 @@ test("run evidence resource dest identity is dest wait-for, not leftover Close 0
     await session.close();
   }
 });
+
+test("offline-replay resource dest identity is dest wait-for 003, not leftover Close 004 last-frame", async () => {
+  const session = await connectMcp(
+    fixtureInvoker({
+      "run.replay.offline": {
+        report: {
+          schemaVersion: 1,
+          mode: "offline-evidence-replay",
+          runId: "4b93702b",
+          frames: [
+            { path: "frames/003.png", caption: "Observe" },
+            { path: "frames/004.png", caption: "after · Run saved Test" },
+          ],
+          artifacts: [
+            {
+              kind: "capture-review",
+              data: {
+                caption: "Observe",
+                framePath: "frames/003.png",
+                phase: "dest",
+                policy: "fast",
+              },
+            },
+            {
+              kind: "capture-review",
+              data: { caption: "Close", framePath: "frames/004.png" },
+            },
+          ],
+        },
+      },
+    }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", {
+        uri: relayMcpResourceUris.runOfflineReplay.replace("{runId}", "4b93702b"),
+      }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      data: {
+        destIdentity?: Array<{ relativeName?: string; caption?: string; path?: string }>;
+        report?: {
+          mode?: string;
+          destIdentity?: Array<{ relativeName?: string; path?: string }>;
+          captureReview?: Array<{ framePath?: string }>;
+        };
+      };
+    };
+    assert.equal(envelope.data.report?.mode, "offline-evidence-replay");
+    assert.deepEqual(envelope.data.destIdentity, [
+      { relativeName: "frames/003.png", caption: "Observe" },
+    ]);
+    assert.deepEqual(envelope.data.report?.destIdentity, [
+      { relativeName: "frames/003.png", caption: "Observe" },
+    ]);
+    assert.equal(
+      envelope.data.report?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+      false,
+    );
+    assert.doesNotMatch(content.text, /frames\/004\.png/);
+  } finally {
+    await session.close();
+  }
+});
