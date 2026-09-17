@@ -4,9 +4,8 @@ Major capabilities also follow the measurable [Relay 9/10 quality constitution](
 and its accepted architectural decisions.
 
 Relay is a local-first application mapping and verification system for people and agents. Product UI
-work also follows [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md): `@relay/ui` owns semantic tokens,
-`@relay/ui-react` owns the React Product V2 primitives, and product components use Tailwind utilities
-for ordinary styling.
+work also follows [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md): `@relay/ui-react` owns semantic tokens
+and React Product V2 primitives, and product components use Tailwind utilities for ordinary styling.
 
 ```text
 desktop (Electron) · web app · CLI · TUI · MCP
@@ -89,9 +88,8 @@ and peers) always refers to an App Map id — never a recipe id.
 | `@relay/cli`       | Server-first interface for people, scripts, CI, and agents                |
 | `@relay/mcp`       | Capability-scoped MCP adapter with native PNG observations                |
 | `@relay/tui`       | Terminal workspace                                                        |
-| `@relay/ui`        | Shared semantic tokens and theme CSS (also consumed by Product V2)        |
+| `@relay/ui-react`  | Host-independent React design system and semantic tokens for Product V2   |
 | `@relay/app-v2`    | The host-independent React product UI and canonical route shell           |
-| `@relay/ui-react`  | Host-independent React design system for Product V2                       |
 | `@relay/desktop`   | Sandboxed Electron host                                                   |
 
 ## One operation boundary

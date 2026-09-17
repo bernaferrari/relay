@@ -1,7 +1,6 @@
 /** @jsxImportSource react */
-import { RelayV2App } from "@relay/app-v2";
+import { applyColorScheme, RelayV2App, validColorScheme } from "@relay/app-v2";
 import "@relay/app-v2/index.css";
-import { applyRelayColorScheme } from "@relay/ui/theme/apply";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createDesktopPlatform } from "./desktop-platform";
@@ -11,9 +10,9 @@ try {
   const stored =
     localStorage.getItem("relay-color-scheme") ??
     localStorage.getItem("relay:appearance.colorScheme");
-  applyRelayColorScheme(stored === "light" || stored === "dark" ? stored : "system");
+  applyColorScheme(validColorScheme(stored));
 } catch {
-  applyRelayColorScheme("system");
+  applyColorScheme("system");
 }
 
 const root = document.getElementById("root");

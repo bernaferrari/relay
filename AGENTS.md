@@ -41,7 +41,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) and [README.md](./README.md).
 | `@relay/workflows` | `packages/workflows` | Outcome-oriented workflow façade |
 | `@relay/cli`       | `packages/cli`       | Primary host                     |
 | `@relay/tui`       | `packages/tui`       | ANSI terminal UI                 |
-| `@relay/ui`        | `packages/ui`        | Shared semantic tokens + themes  |
+| `@relay/ui-react`  | `packages/ui-react`  | React design system + tokens     |
 | `@relay/app-v2`    | `packages/app-v2`    | React product UI (host-agnostic) |
 | `@relay/desktop`   | `packages/desktop`   | Electron shell                   |
 
@@ -49,7 +49,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) and [README.md](./README.md).
 
 1. Domain logic stays in `core`. UIs call `runAction` or HTTP `/actions/:id/run`.
 2. Renderer never imports `electron` — only `window.api`.
-3. `ui` has zero host knowledge.
+3. `ui-react` has zero host knowledge.
 4. `vendor/opencode` is reference-only (gitignored); do not vendor its agent runtime.
 
 ## Commands

@@ -148,6 +148,11 @@ export {
   type ProductSuiteTest,
   type SuiteProfileProductService,
 } from "./data/suite-profile-product-service";
+export {
+  applyColorScheme,
+  validColorScheme,
+  type ColorSchemePreference,
+} from "./data/appearance-preference";
 export { createWebPlatform } from "./platform/web-platform";
 export type { DesktopUpdateState, Platform, PlatformStorage } from "./platform/types";
 export type {

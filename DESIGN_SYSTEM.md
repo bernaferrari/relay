@@ -6,9 +6,9 @@ actually uses today—not a migration plan and not a mood board.
 
 ## 1. Token reality
 
-The React Product V2 UI uses **one** vocabulary from the semantic tokens supplied by `@relay/ui`
-and the React primitives in `@relay/ui-react`, plus a handful of map-only layout tokens. Do not
-invent a second family and do not use `--v2-*` in product TSX or CSS.
+The React Product V2 UI uses **one** vocabulary from the semantic tokens in
+`@relay/ui-react` globals and the React primitives in `@relay/ui-react`, plus a handful of
+map-only layout tokens. Do not invent a second family and do not use `--v2-*` in product TSX or CSS.
 
 ### Semantic tokens
 
@@ -31,14 +31,13 @@ family; geometry and canvas layout belong in the components as Tailwind utilitie
 
 ### What is banned
 
-Product components own their Tailwind styling. Theme JSON may still emit
-v2 ramps internally; product code must not mention them.
+Product components own their Tailwind styling. Do not mention `--v2-*` ramps.
 
 ## 2. Styling ownership
 
 - **`@relay/ui-react` primitives** own shared React controls: `Button`, `Card`, `IconButton`, fields,
   disclosures, and their Tailwind styles. Prefer them before hand-rolling an equivalent control.
-- **`@relay/ui`** supplies the shared semantic token and theme CSS consumed by the React primitives.
+- **`@relay/ui-react` globals** supply the shared semantic token and theme CSS.
 - **Tailwind utilities in product TSX** own ordinary layout, spacing, typography, borders, colors
   (including `text-[var(--text-strong)]` / `bg-[var(--surface-base)]` patterns), hover,
   focus-visible, selected, disabled, and responsive behavior.

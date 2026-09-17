@@ -17,6 +17,6 @@ export default defineConfig({
     emptyOutDir: true,
   },
   optimizeDeps: {
-    exclude: ["@relay/app-v2", "@relay/ui-react", "@relay/ui"],
+    exclude: ["@relay/app-v2", "@relay/ui-react"],
   },
 });
