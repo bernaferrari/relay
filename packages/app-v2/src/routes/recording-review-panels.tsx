@@ -7,7 +7,7 @@ import type {
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { Button } from "@relay/ui-react/components/button";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import {
   pickRecordingEvidenceControl,
   imagePointFromClick,
@@ -79,21 +79,19 @@ export function RecordingEvidencePanel({
           </Button>
           <Button
             size="sm"
-            variant="ghost"
+            variant={evidenceRole === "entrance" ? "secondary" : "ghost"}
             type="button"
             aria-pressed={evidenceRole === "entrance"}
             onClick={() => onEvidenceRoleChange("entrance")}
-            className="text-xs text-muted-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-sm"
           >
             Before step
           </Button>
           <Button
             size="sm"
-            variant="ghost"
+            variant={evidenceRole === "exit" ? "secondary" : "ghost"}
             type="button"
             aria-pressed={evidenceRole === "exit"}
             onClick={() => onEvidenceRoleChange("exit")}
-            className="text-xs text-muted-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-sm"
           >
             After step
           </Button>
@@ -168,13 +166,15 @@ export function RecordingEvidencePanel({
             {(showElements ? controls : hovered ? [hovered] : []).map((control) => (
               <div
                 key={control.id}
-                className="pointer-events-none absolute rounded-sm border border-blue-500 bg-blue-500/5"
-                style={{
-                  left: `${(control.rect.x / imageSize.width) * 100}%`,
-                  top: `${(control.rect.y / imageSize.height) * 100}%`,
-                  width: `${(control.rect.width / imageSize.width) * 100}%`,
-                  height: `${(control.rect.height / imageSize.height) * 100}%`,
-                }}
+                className="pointer-events-none absolute left-(--box-left) top-(--box-top) h-(--box-height) w-(--box-width) rounded-sm border border-blue-500 bg-blue-500/5"
+                style={
+                  {
+                    "--box-left": `${(control.rect.x / imageSize.width) * 100}%`,
+                    "--box-top": `${(control.rect.y / imageSize.height) * 100}%`,
+                    "--box-width": `${(control.rect.width / imageSize.width) * 100}%`,
+                    "--box-height": `${(control.rect.height / imageSize.height) * 100}%`,
+                  } as CSSProperties
+                }
               >
                 {hovered?.id === control.id ? (
                   <span className="absolute bottom-full start-0 mb-1 flex max-w-64 items-center gap-2 rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-sm">

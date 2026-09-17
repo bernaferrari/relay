@@ -10,6 +10,7 @@ import {
   parsePlanCaptureReviewFilter,
   planCaptureReviewFilterOptions,
 } from "@relay/protocol";
+import { SelectField } from "../components/filter-select";
 import { Button } from "@relay/ui-react/components/button";
 import { captureReviewFeedback } from "./capture-review-feedback";
 import type { RunAcrossProductService } from "../data/run-across-product-service";
@@ -165,14 +166,17 @@ export function PlanCaptureReviewSection({
     });
   };
   return (
-    <section className="relay-batch-capture-review mt-5 rounded-xl border border-border bg-[var(--surface-raised-strong)]">
-      <h2 className="px-5 pt-4 text-title font-semibold tracking-tight text-foreground">
-        Screenshot review
-      </h2>
-      <p className="px-5 text-sm tabular-nums text-muted-foreground">
-        {formatCaptureReviewCoverageSummary(queue.summary)}· Looks correct does not approve a visual
-        baseline.
-      </p>
+    <section className="relay-batch-capture-review mt-4 grid gap-4">
+      <h2 className="sr-only">Screenshot review</h2>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm tabular-nums text-muted-foreground">
+        <span>
+          {queue.summary.captured} of {queue.summary.planned} screenshots captured
+        </span>
+        <span>{queue.summary.pending} to review</span>
+        {queue.summary.missing ? <span>{queue.summary.missing} missing</span> : null}
+        {queue.summary.blocked ? <span>{queue.summary.blocked} blocked</span> : null}
+        {queue.summary.accepted ? <span>{queue.summary.accepted} reviewed as correct</span> : null}
+      </div>
       {captures.isError ? (
         <div role="alert" className="flex flex-wrap items-center gap-2 px-5 pt-2 text-sm">
           <p>Showing saved results. New captures could not be loaded.</p>
@@ -228,55 +232,40 @@ export function PlanCaptureReviewSection({
           New captures appear here as they finish. Selection does not include later arrivals.
         </p>
       ) : null}
-      <div
-        className="flex flex-wrap items-center gap-3 px-5 pt-2 text-sm"
-        aria-label="Screenshot review filters"
-      >
-        <button
-          type="button"
+      <div className="flex flex-wrap items-center gap-2" aria-label="Screenshot review filters">
+        <Button
+          variant={pendingOnly ? "secondary" : "outline"}
           aria-pressed={pendingOnly}
-          className={`rounded-md border px-2.5 py-1 transition-colors ${pendingOnly ? "border-foreground bg-accent" : "border-border bg-background"}`}
           onClick={() => setPendingOnly((current) => !current)}
         >
           Pending
-        </button>
-        <label className="flex items-center gap-2">
-          By screen
-          <select
-            aria-label="Filter by screen"
-            className="rounded-md border border-border bg-background px-2 py-1"
-            value={screen}
-            onChange={(event) => setScreen(event.target.value)}
-          >
-            <option value="">All screens</option>
-            {options.screens.map((value) => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex items-center gap-2">
-          By device/account
-          <select
-            aria-label="Filter by device or account"
-            className="rounded-md border border-border bg-background px-2 py-1"
-            value={place}
-            onChange={(event) => setPlace(event.target.value)}
-          >
-            <option value="">All devices and accounts</option>
-            {options.devices.map((value) => (
-              <option key={`device:${value}`} value={`device:${value}`}>
-                {value}
-              </option>
-            ))}
-            {options.accounts.map((value) => (
-              <option key={`account:${value}`} value={`account:${value}`}>
-                {value}
-              </option>
-            ))}
-          </select>
-        </label>
+        </Button>
+        <SelectField
+          compact
+          label="Filter by screen"
+          value={screen || "__all"}
+          onValueChange={(value) => setScreen(value === "__all" ? "" : value)}
+          options={[
+            { value: "__all", label: "All screens" },
+            ...options.screens.map((value) => ({
+              value,
+              label: value.startsWith("step:")
+                ? value.split(":").slice(2).join(":") || "Checkpoint"
+                : value,
+            })),
+          ]}
+        />
+        <SelectField
+          compact
+          label="Filter by device or account"
+          value={place || "__all"}
+          onValueChange={(value) => setPlace(value === "__all" ? "" : value)}
+          options={[
+            { value: "__all", label: "All devices and accounts" },
+            ...options.devices.map((value) => ({ value: `device:${value}`, label: value })),
+            ...options.accounts.map((value) => ({ value: `account:${value}`, label: value })),
+          ]}
+        />
       </div>
       {!visible?.items.length ? (
         <p role="status" className="p-5 text-sm text-muted-foreground">
@@ -308,6 +297,11 @@ export function PlanCaptureReviewSection({
           }
         />
       )}
+      <details className="pt-2 text-xs text-muted-foreground">
+        <summary className="w-fit cursor-pointer">Coverage and review details</summary>
+        <p className="mt-2">{formatCaptureReviewCoverageSummary(queue.summary)}</p>
+        <p className="mt-1">Looks correct does not approve a visual baseline.</p>
+      </details>
     </section>
   );
 }

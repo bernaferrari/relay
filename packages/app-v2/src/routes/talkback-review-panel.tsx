@@ -1,6 +1,13 @@
 /** @jsxImportSource react */
 import type { TalkBackReview, TalkBackReviewItem } from "@relay/protocol";
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from "react";
 import { Scan, Check, LoaderCircle } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
 import {
@@ -145,8 +152,15 @@ export function TalkBackOverlay({
       {visible.map(({ item, box }) => (
         <div
           key={item.id}
-          className={`absolute rounded-[3px] border border-blue-500/50 ${item.id === hoveredId ? "border-blue-500 bg-blue-500/15 ring-1 ring-blue-500" : "bg-blue-500/[0.03]"}`}
-          style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
+          className={`absolute left-(--box-left) top-(--box-top) h-(--box-height) w-(--box-width) rounded-[3px] border border-blue-500/50 ${item.id === hoveredId ? "border-blue-500 bg-blue-500/15 ring-1 ring-blue-500" : "bg-blue-500/[0.03]"}`}
+          style={
+            {
+              "--box-left": `${box.left}px`,
+              "--box-top": `${box.top}px`,
+              "--box-width": `${box.width}px`,
+              "--box-height": `${box.height}px`,
+            } as CSSProperties
+          }
         >
           {mode === "always" || item.id === hoveredId ? (
             <span className="absolute start-0 top-0 flex max-w-64 -translate-y-full items-center gap-1.5 whitespace-nowrap rounded-md bg-popover px-2 py-1 text-xs font-medium text-popover-foreground shadow-md ring-1 ring-border">

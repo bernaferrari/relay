@@ -37,10 +37,8 @@ export function BatchResultSummary({ report }: { report: ProductBatchReport }) {
   const facts = batchResultFacts(report);
   const context = batchResultContext(report);
   return (
-    <div className="relay-batch-summary mt-1 grid max-w-[62ch] gap-2">
-      <p className="text-[22px] font-semibold leading-7 tracking-tight text-pretty text-foreground max-[480px]:text-[20px] max-[480px]:leading-6">
-        {batchResultHeadline(report)}
-      </p>
+    <div className="relay-batch-summary mt-1 flex max-w-[80ch] flex-wrap items-center gap-x-3 gap-y-1">
+      <p className="text-sm font-medium text-foreground">{batchResultHeadline(report)}</p>
       {context ? <p className="text-[13px] leading-5 text-muted-foreground">{context}</p> : null}
       <p className="flex flex-wrap gap-x-3 gap-y-1 text-[13px] leading-5 tabular-nums">
         {facts.map((fact) => (
@@ -254,7 +252,8 @@ function FindingReviewCard({
           <Button
             size="sm"
             variant="outline"
-            className="min-h-11 aria-pressed:bg-muted"
+            className="min-h-11"
+            variant={decision === "confirm" ? "secondary" : "outline"}
             aria-pressed={decision === "confirm"}
             onClick={() => record(finding.id, "confirm", actorId, notes, onNotes)}
           >
@@ -263,7 +262,8 @@ function FindingReviewCard({
           <Button
             size="sm"
             variant="outline"
-            className="min-h-11 aria-pressed:bg-muted"
+            className="min-h-11"
+            variant={decision === "reject" ? "secondary" : "outline"}
             aria-pressed={decision === "reject"}
             onClick={() => record(finding.id, "reject", actorId, notes, onNotes)}
           >

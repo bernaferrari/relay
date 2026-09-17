@@ -335,7 +335,7 @@ export function EnvironmentPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            className="text-muted-foreground"
+
                             onClick={() => {
                               revokeAccount.reset();
                               setRevokeFixture(fixture);
@@ -375,7 +375,7 @@ export function EnvironmentPage() {
               </FieldError>
             ) : null}
             <Button
-              className="mt-1 px-0 text-muted-foreground"
+              className="mt-1"
               variant="ghost"
               size="sm"
               onClick={() => {
@@ -404,7 +404,7 @@ export function EnvironmentPage() {
               <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
                 <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                 <Button
-                  className="text-red-700 dark:text-red-300"
+                  variant="destructive"
                   onClick={() => remove.mutate()}
                   disabled={remove.isPending}
                 >
@@ -475,7 +475,7 @@ export function EnvironmentPage() {
               <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
                 <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                 <Button
-                  className="text-red-700 dark:text-red-300"
+                  variant="destructive"
                   onClick={() => {
                     if (revokeFixture) revokeAccount.mutate(revokeFixture.reference);
                   }}

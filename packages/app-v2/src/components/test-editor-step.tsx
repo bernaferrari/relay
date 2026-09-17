@@ -329,7 +329,7 @@ export function SelectedStepEditor({
           <Button
             variant="ghost"
             type="button"
-            className="text-destructive"
+            variant="destructive"
             disabled={busy}
             onClick={() => setRemoveArmed(true)}
           >

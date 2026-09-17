@@ -397,7 +397,7 @@ export function TestPage() {
                 variant="ghost"
                 size="sm"
                 aria-pressed={showRecording}
-                className={showRecording ? "bg-background shadow-sm" : "text-muted-foreground"}
+                variant={showRecording ? "secondary" : "ghost"}
                 onClick={() => selectSource("definition")}
               >
                 Test definition
@@ -407,7 +407,7 @@ export function TestPage() {
                 size="sm"
                 aria-pressed={!showRecording}
                 disabled={!attachedRunId}
-                className={!showRecording ? "bg-background shadow-sm" : "text-muted-foreground"}
+                variant={!showRecording ? "secondary" : "ghost"}
                 onClick={() => selectSource("run")}
               >
                 Run evidence

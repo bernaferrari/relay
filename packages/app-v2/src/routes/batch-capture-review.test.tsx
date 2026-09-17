@@ -140,20 +140,24 @@ describe("Plan screenshot review filters", () => {
     expect(host.textContent).toContain("3 pending");
     expect(host.textContent).toContain("Looks correct does not approve a visual baseline.");
     const itemChecks = [
-      ...host.querySelectorAll('ul[aria-label="Screenshots for review"] input[type="checkbox"]'),
+      ...host.querySelectorAll('ul[aria-label="Screenshots for review"] [role="checkbox"]'),
     ];
     expect(itemChecks).toHaveLength(3);
     for (const box of itemChecks) {
       await act(async () => {
-        if (box instanceof HTMLInputElement) box.click();
+        if (box instanceof HTMLElement) box.click();
       });
     }
-    const screen = host.querySelector('select[aria-label="Filter by screen"]');
-    if (!(screen instanceof HTMLSelectElement)) throw new Error("screen filter missing");
-    await act(async () => {
-      screen.value = "Settings";
-      screen.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    const screen = host.querySelector<HTMLButtonElement>(
+      '[role="combobox"][aria-label="Filter by screen"]',
+    );
+    if (!screen) throw new Error("screen filter missing");
+    await act(async () => screen.click());
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+      (node) => node.textContent === "Settings",
+    );
+    if (!option) throw new Error("screen option missing");
+    await act(async () => option.click());
     expect(host.textContent).toContain("3 planned · 3 captured");
     expect(host.textContent).not.toContain("Composer is empty");
     const bulk = [...host.querySelectorAll("button")].find((button) =>
@@ -249,7 +253,7 @@ describe("Plan screenshot review filters", () => {
     expect(host.textContent).toContain("Blocked");
     expect(host.textContent).not.toContain("2 tests passed");
     const checks = [
-      ...host.querySelectorAll('ul[aria-label="Screenshots for review"] input[type="checkbox"]'),
+      ...host.querySelectorAll('ul[aria-label="Screenshots for review"] [role="checkbox"]'),
     ];
     expect(checks).toHaveLength(1);
   });
@@ -270,6 +274,43 @@ function button(host: HTMLElement, label: string) {
 }
 
 describe("Plan review acknowledgements", () => {
+  it("selects the current gallery without silently including later screenshots", async () => {
+    const client = new QueryClient();
+    const save = vi.fn(async (_batch: string, _input: { items: unknown[] }) => ({
+      results: [],
+      queue: { items: [], summary: {} },
+    }));
+    const host = await render(
+      save as unknown as RunAcrossProductService["reviewCaptures"],
+      undefined,
+      client,
+    );
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Gallery");
+    await act(async () => button(host, "Select unreviewed").click());
+    const key = ["run-across", "batch", "plan-1", "capture-review"];
+    const queue = client.getQueryData<{ items: PlanCaptureReviewItem[]; summary: unknown }>(key)!;
+    await act(async () =>
+      client.setQueryData(key, {
+        ...queue,
+        items: [
+          ...queue.items,
+          item({ runId: "later-run", captureId: "later", caption: "Later arrival" }),
+        ],
+      }),
+    );
+    await settleReview();
+    const checks = [...host.querySelectorAll<HTMLElement>('ul [role="checkbox"]')];
+    expect(checks.map((checkbox) => checkbox.getAttribute("aria-checked") === "true")).toEqual([
+      true,
+      true,
+      true,
+      false,
+    ]);
+    await act(async () => button(host, "Looks correct for 3 selected").click());
+    expect(save.mock.calls[0]?.[1].items).toHaveLength(3);
+    expect(JSON.stringify(save.mock.calls)).not.toContain("later-run");
+  });
+
   it("shows a load error and allows retry instead of hiding the queue", async () => {
     const get = vi
       .fn()
@@ -304,7 +345,8 @@ describe("Plan review acknowledgements", () => {
       ],
     })) as unknown as NonNullable<RunAcrossProductService["reviewCaptures"]>;
     const host = await render(review);
-    const checks = [...host.querySelectorAll<HTMLInputElement>('ul input[type="checkbox"]')];
+    await settleReview();
+    const checks = [...host.querySelectorAll<HTMLElement>('ul [role="checkbox"]')];
     await act(async () => {
       checks[0]!.click();
       checks[1]!.click();
@@ -315,20 +357,20 @@ describe("Plan review acknowledgements", () => {
       "1 of 2 review decisions saved",
     );
     expect(host.textContent).toContain("Home: The screenshot or its review changed");
-    expect(checks[0]!.checked).toBe(false);
-    expect(checks[1]!.checked).toBe(true);
+    expect(checks[0]!.getAttribute("aria-checked") === "true").toBe(false);
+    expect(checks[1]!.getAttribute("aria-checked") === "true").toBe(true);
   });
 
   it("retains selection after an unconfirmed save and exposes refresh", async () => {
     const host = await render(vi.fn().mockRejectedValue(new Error("Offline")));
-    const check = host.querySelector<HTMLInputElement>('ul input[type="checkbox"]')!;
+    const check = host.querySelector<HTMLElement>('ul [role="checkbox"]')!;
     await act(async () => check.click());
-    await act(async () => button(host, "Looks correct").click());
+    await act(async () => button(host, "Looks correct for 1 selected").click());
     await settleReview();
     expect(host.querySelector('[role="alert"]')?.textContent).toContain(
       "Review could not be confirmed. Offline",
     );
-    expect(check.checked).toBe(true);
+    expect(check.getAttribute("aria-checked") === "true").toBe(true);
     expect(button(host, "Refresh screenshots")).toBeTruthy();
   });
 

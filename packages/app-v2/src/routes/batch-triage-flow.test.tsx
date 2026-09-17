@@ -450,6 +450,10 @@ describe("Batch review controls", () => {
     expect(document.body.textContent).toContain(
       "Looks correct does not approve a visual baseline.",
     );
+    const inspect = [...document.querySelectorAll('[role="tab"]')].find(
+      (tab) => tab.textContent === "Inspect",
+    ) as HTMLButtonElement;
+    await act(async () => inspect.click());
     const accept = [...document.querySelectorAll("button")].find(
       (button) => button.textContent?.trim() === "Looks correct",
     );

@@ -290,7 +290,7 @@ export function HomePage() {
                 render={<Link to="/runs" search={{ app: appScope || undefined }} />}
                 variant="ghost"
                 size="sm"
-                className="gap-1 text-muted-foreground"
+                className="gap-1"
               >
                 View all <ArrowRight className="size-4" aria-hidden="true" />
               </Button>
@@ -484,26 +484,28 @@ function NextCardLink({
     <Button
       nativeButton={false}
       render={link}
-      className="mt-4 grid h-auto min-h-32 w-full grid-cols-[2rem_minmax(0,1fr)] items-start gap-4 rounded-xl border border-border/70 bg-card p-4 text-left whitespace-normal text-card-foreground shadow-none hover:border-border hover:bg-muted/40 md:grid-cols-[2rem_minmax(0,1fr)_auto] md:p-5"
-      variant="ghost"
+      className="mt-4 h-auto min-h-32 w-full text-left whitespace-normal"
+      variant="outline"
     >
-      <span className="grid size-8 place-items-center rounded-lg bg-muted text-foreground">
-        <Icon className="size-4" aria-hidden="true" />
-      </span>
-      <span className="grid min-w-0 gap-1.5">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          {eyebrow}
+      <span className="grid w-full grid-cols-[2rem_minmax(0,1fr)] items-start gap-4 p-4 md:grid-cols-[2rem_minmax(0,1fr)_auto] md:p-5">
+        <span className="grid size-8 place-items-center rounded-lg bg-muted text-foreground">
+          <Icon className="size-4" aria-hidden="true" />
         </span>
-        <strong
-          id="home-next-title"
-          className="text-base font-semibold tracking-tight text-foreground"
-        >
-          {title}
-        </strong>
-        <span className="max-w-prose text-sm leading-5 text-muted-foreground">{detail}</span>
-      </span>
-      <span className="col-span-2 inline-flex items-center gap-1 text-sm font-medium text-foreground md:col-span-1 md:mt-1">
-        {action} <ArrowRight className="size-4" aria-hidden="true" />
+        <span className="grid min-w-0 gap-1.5">
+          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            {eyebrow}
+          </span>
+          <strong
+            id="home-next-title"
+            className="text-base font-semibold tracking-tight text-foreground"
+          >
+            {title}
+          </strong>
+          <span className="max-w-prose text-sm leading-5 text-muted-foreground">{detail}</span>
+        </span>
+        <span className="col-span-2 inline-flex items-center gap-1 text-sm font-medium text-foreground md:col-span-1 md:mt-1">
+          {action} <ArrowRight className="size-4" aria-hidden="true" />
+        </span>
       </span>
     </Button>
   );

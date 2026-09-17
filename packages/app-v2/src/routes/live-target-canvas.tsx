@@ -360,7 +360,7 @@ export function LiveTargetCanvas({
           <Button
             type="button"
             size="icon-sm"
-            className="-ml-12 mr-1 size-9 shrink-0 rounded-full"
+            className="-ml-12 mr-1 shrink-0"
             aria-label="Type text into app"
             title="Type text into the focused field"
             disabled={!text || !streaming || busy}

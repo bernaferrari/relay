@@ -1,3 +1,4 @@
+import { classNames } from "../lib/class-names";
 import { routeContractForPath } from "../router/route-contract";
 /** @jsxImportSource react */
 import {
@@ -53,7 +54,11 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
                     }
                     isActive={active}
                     aria-current={active ? "page" : undefined}
-                    className={`relay-nav-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-[var(--text-base)]${active ? " relay-nav-link--active bg-[var(--surface-base-active)] font-semibold text-[var(--text-strong)] shadow-none" : ""}`}
+                    className={classNames(
+                      "relay-nav-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-[var(--text-base)]",
+                      active &&
+                        "relay-nav-link--active bg-[var(--surface-base-active)] font-semibold text-[var(--text-strong)] shadow-none",
+                    )}
                   >
                     <item.icon
                       className={`h-[17px] w-[17px] shrink-0 text-[var(--text-weaker)]${active ? " text-[var(--text-strong)]" : ""}`}
@@ -78,7 +83,11 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
           <SidebarMenuButton
             render={<Link to="/changes" onClick={closeMobileNavigation} />}
             isActive={pathname.startsWith("/changes")}
-            className={`relay-nav-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-[var(--text-base)]${pathname.startsWith("/changes") ? " relay-nav-link--active bg-[var(--surface-base-active)] font-semibold text-[var(--text-strong)] shadow-none" : ""}`}
+            className={classNames(
+              "relay-nav-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-[var(--text-base)]",
+              pathname.startsWith("/changes") &&
+                "relay-nav-link--active bg-[var(--surface-base-active)] font-semibold text-[var(--text-strong)] shadow-none",
+            )}
           >
             <GitCompare
               className={`h-[17px] w-[17px] shrink-0 text-[var(--text-weaker)]${pathname.startsWith("/changes") ? " text-[var(--text-strong)]" : ""}`}
@@ -89,7 +98,11 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
           <SidebarMenuButton
             render={<Link to="/settings/general" onClick={closeMobileNavigation} />}
             isActive={settingsActive}
-            className={`relay-nav-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-[var(--text-base)]${settingsActive ? " relay-nav-link--active bg-[var(--surface-base-active)] font-semibold text-[var(--text-strong)] shadow-none" : ""}`}
+            className={classNames(
+              "relay-nav-link focus-visible:outline-2 focus-visible:outline-[var(--relay-focus-ring)] focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-[11px] text-[13px] font-medium text-[var(--text-base)]",
+              settingsActive &&
+                "relay-nav-link--active bg-[var(--surface-base-active)] font-semibold text-[var(--text-strong)] shadow-none",
+            )}
           >
             <Settings
               className={`h-[17px] w-[17px] shrink-0 text-[var(--text-weaker)]${settingsActive ? " text-[var(--text-strong)]" : ""}`}

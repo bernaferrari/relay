@@ -25,10 +25,15 @@ export function RunLoading() {
         </div>
         <div className="space-y-6 bg-background/80 p-6">
           <div className="h-3 w-20 rounded bg-muted" />
-          {[72, 88, 60, 80].map((width) => (
-            <div key={width} className="flex items-center gap-3">
+          {[
+            ["72", "w-[72%]"],
+            ["88", "w-[88%]"],
+            ["60", "w-[60%]"],
+            ["80", "w-[80%]"],
+          ].map(([key, widthClass]) => (
+            <div key={key} className="flex items-center gap-3">
               <div className="size-5 shrink-0 rounded-full bg-muted" />
-              <div className="h-3 rounded bg-muted" style={{ width: `${width}%` }} />
+              <div className={`h-3 rounded bg-muted ${widthClass}`} />
             </div>
           ))}
         </div>

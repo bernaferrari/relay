@@ -82,7 +82,7 @@ export function InstalledAppChoice({
               id="recording-origin-application"
               type="button"
               variant="outline"
-              className="min-h-11 w-full justify-between font-normal"
+              className="min-h-11 w-full justify-between"
               aria-label="Starting app"
               aria-haspopup="listbox"
             />

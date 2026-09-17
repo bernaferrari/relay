@@ -89,12 +89,11 @@ export function ScreenInspector({
             {onRename ? (
               <textarea
                 rows={1}
-                style={{ fieldSizing: "content" }}
                 key={`${screen.id}:${screen.title}`}
                 aria-label="Screen name"
                 defaultValue={screen.title}
                 disabled={saving}
-                className="w-full resize-none rounded-md border border-transparent bg-transparent px-1 py-1 text-sm font-medium leading-5 outline-none hover:border-input focus:border-input focus:ring-2 focus:ring-ring"
+                className="field-sizing-content w-full resize-none rounded-md border border-transparent bg-transparent px-1 py-1 text-sm font-medium leading-5 outline-none hover:border-input focus:border-input focus:ring-2 focus:ring-ring"
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();

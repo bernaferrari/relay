@@ -1,7 +1,7 @@
 import { Terminal } from "lucide-react";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import type { ReportEvidenceItem } from "../data/run-report-model";
 
 export function RunLogPanel({ logs }: { logs: readonly ReportEvidenceItem[] }) {
@@ -64,7 +64,8 @@ export function RunLogPanel({ logs }: { logs: readonly ReportEvidenceItem[] }) {
         >
           <div
             role="list"
-            style={{ height: virtual.getTotalSize(), position: "relative", width: "100%" }}
+            className="relative h-(--list-height) w-full"
+            style={{ "--list-height": `${virtual.getTotalSize()}px` } as CSSProperties}
           >
             {virtual.getVirtualItems().map((row) => (
               <div
@@ -74,8 +75,8 @@ export function RunLogPanel({ logs }: { logs: readonly ReportEvidenceItem[] }) {
                 aria-setsize={rows.length}
                 data-index={row.index}
                 ref={virtual.measureElement}
-                className="absolute top-0 left-0 w-full border-b border-border/50 py-3 pr-3"
-                style={{ transform: `translateY(${row.start}px)` }}
+                className="absolute top-0 left-0 w-full translate-y-(--row-y) border-b border-border/50 py-3 pr-3"
+                style={{ "--row-y": `${row.start}px` } as CSSProperties}
               >
                 <p className="mb-1 text-xs text-muted-foreground">{rows[row.index]!.meta}</p>
                 <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5">

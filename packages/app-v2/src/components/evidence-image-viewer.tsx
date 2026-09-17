@@ -9,7 +9,7 @@ import {
   DialogTrigger,
 } from "@relay/ui-react/components/dialog";
 import { Expand, Minus, Plus } from "lucide-react";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import type { ReportEvidenceItem } from "../data/run-product-service";
 
 /** Opens the exact saved frame. Scaling never substitutes another step's image. */
@@ -51,7 +51,7 @@ export function EvidenceImageViewer({
         <DialogTrigger
           render={
             <Button
-              className="absolute right-3 top-3 bg-background/70 text-muted-foreground hover:text-foreground"
+              className="absolute right-3 top-3"
               variant="ghost"
               size="icon-sm"
               aria-label="Inspect screenshot"
@@ -111,8 +111,14 @@ export function EvidenceImageViewer({
               alt={frame.title}
               width={frame.media.width}
               height={frame.media.height}
-              className={zoom === 0 ? "max-h-full max-w-full object-contain" : "max-w-none"}
-              style={zoom ? { width: imageWidth! * zoom } : undefined}
+              className={
+                zoom === 0 ? "max-h-full max-w-full object-contain" : "w-(--zoom-width) max-w-none"
+              }
+              style={
+                zoom
+                  ? ({ "--zoom-width": `${imageWidth! * zoom}px` } as CSSProperties)
+                  : undefined
+              }
               onError={onError}
             />
           </div>

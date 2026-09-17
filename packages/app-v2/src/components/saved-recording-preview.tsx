@@ -44,9 +44,7 @@ export function SavedRecordingPreview({
               size="sm"
               variant="ghost"
               aria-pressed={selected === index}
-              className={
-                selected === index ? "bg-accent text-accent-foreground" : "text-muted-foreground"
-              }
+              variant={selected === index ? "secondary" : "ghost"}
               onClick={() => setSelected(index)}
             >
               {item.role === "before" ? "Before" : "After"}

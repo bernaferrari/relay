@@ -1,6 +1,6 @@
 import { Button } from "@relay/ui-react/components/button";
 import { Slider } from "@relay/ui-react/components/slider";
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type CSSProperties } from "react";
 import { Scissors, RotateCcw, X } from "lucide-react";
 import { formatDuration } from "./recording-review-presentation";
 
@@ -56,11 +56,17 @@ export function RecordingTrimPanel({
               </h2>
               <div className="flex items-center gap-3 text-xs">
                 <span className="text-muted-foreground">Start</span>
-                <output className="font-mono tabular-nums text-right" style={{ width: timeWidth }}>
+                <output
+                  className="w-(--time-width) text-right font-mono tabular-nums"
+                  style={{ "--time-width": timeWidth } as CSSProperties}
+                >
                   {formatDuration(trimStartMs)}
                 </output>
                 <span className="text-muted-foreground">End</span>
-                <output className="font-mono tabular-nums text-right" style={{ width: timeWidth }}>
+                <output
+                  className="w-(--time-width) text-right font-mono tabular-nums"
+                  style={{ "--time-width": timeWidth } as CSSProperties}
+                >
                   {formatDuration(trimEndMs)}
                 </output>
                 <Button
@@ -148,13 +154,17 @@ export function RecordingTrimPanel({
                     key={moment.id}
                     size="sm"
                     variant={selectedId === moment.id ? "secondary" : "ghost"}
-                    className="shrink-0 gap-2 font-mono text-xs tabular-nums"
+                    className="shrink-0"
                     aria-pressed={selectedId === moment.id}
                     title={moment.label}
                     onClick={() => onSelect?.(moment.id)}
                   >
-                    <span className="text-muted-foreground">{index + 1}</span>
-                    {formatDuration(moment.timeMs)}
+                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                      {index + 1}
+                    </span>
+                    <span className="font-mono text-xs tabular-nums">
+                      {formatDuration(moment.timeMs)}
+                    </span>
                   </Button>
                 ))}
               </div>
@@ -162,8 +172,8 @@ export function RecordingTrimPanel({
             <div className="mt-2 flex justify-between text-xs text-muted-foreground">
               <span>Drag the handles to keep a time range</span>
               <span
-                className="font-mono tabular-nums"
-                style={{ minWidth: timeWidth, textAlign: "right" }}
+                className="min-w-(--time-width) text-right font-mono tabular-nums"
+                style={{ "--time-width": timeWidth } as CSSProperties}
               >
                 {formatDuration(durationMs)}
               </span>

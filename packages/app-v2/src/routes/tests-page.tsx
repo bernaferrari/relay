@@ -365,7 +365,7 @@ function TestRow({ test }: { test: ProductTestSummary }) {
           nativeButton={false}
           variant="ghost"
           size="sm"
-          className="relay-library-row-run min-h-10 justify-self-end rounded-md border border-transparent px-3 text-xs font-medium text-muted-foreground transition-[color,background-color,border-color] duration-150 group-hover/test-row:border-border group-hover/test-row:text-foreground hover:bg-background focus-visible:border-border motion-reduce:transition-none"
+          className="relay-library-row-run min-h-10 justify-self-end"
           render={
             test.status === "needs-review" ? (
               <Link to="/tests/$testId/edit" params={{ testId: test.id }} />

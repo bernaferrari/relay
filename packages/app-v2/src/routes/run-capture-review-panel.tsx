@@ -1,6 +1,8 @@
 /** @jsxImportSource react */
 
 import { useEffect, useState } from "react";
+import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
+import { Check } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
 import {
   captureReviewAdvanceIndex,
@@ -86,6 +88,8 @@ export function CaptureReviewPanel({
   fallbackTitle?: string;
   reviewedItemKeys?: readonly string[];
 }) {
+  const [layout, setLayout] = useState("gallery");
+  const gallery = Boolean(showImage && onReviewMany && layout === "gallery");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   useEffect(() => {
     if (!reviewedItemKeys?.length) return;
@@ -134,7 +138,7 @@ export function CaptureReviewPanel({
   };
   return (
     <div
-      className={`grid gap-5 p-3 ${showImage ? "lg:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)] lg:items-start" : ""}`}
+      className={`grid gap-5 ${showCoverage ? "p-3" : ""} ${showImage && !gallery ? "lg:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)] lg:items-start" : ""}`}
       tabIndex={0}
       aria-label="Screenshot review"
       onKeyDown={(event) => {
@@ -164,20 +168,67 @@ export function CaptureReviewPanel({
             {captureReviewSummaryLine(queue)}
           </p>
         ) : null}
-        {nextPendingIndex !== undefined ? (
+        {showImage && onReviewMany ? (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Tabs value={layout} onValueChange={setLayout}>
+              <TabsList aria-label="Screenshot layout">
+                <TabsTrigger value="gallery">Gallery</TabsTrigger>
+                <TabsTrigger value="detail">Inspect</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            {bulkItems.length > 0 ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => onReviewMany("accept", bulkItems)}
+              >
+                Looks correct for {bulkItems.length} selected
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={
+                  busy || !queue.items.some((item) => item.status === "pending" && reviewable(item))
+                }
+                onClick={() =>
+                  setSelectedIds(
+                    new Set(
+                      queue.items
+                        .filter((item) => item.status === "pending" && reviewable(item))
+                        .map(captureReviewQueueItemKey),
+                    ),
+                  )
+                }
+              >
+                Select unreviewed
+              </Button>
+            )}
+            {selectedIds.size ? (
+              <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+                Clear selection
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {!gallery && nextPendingIndex !== undefined ? (
           <Button
             className="w-fit"
             variant="ghost"
             size="sm"
             disabled={nextPendingIndex === undefined}
             onClick={() => {
-              if (nextPendingIndex !== undefined) onSelect(nextPendingIndex);
+              if (nextPendingIndex !== undefined) {
+                onSelect(nextPendingIndex);
+                if (gallery) setLayout("detail");
+              }
             }}
           >
             Next unreviewed
           </Button>
         ) : null}
-        {onReviewMany && bulkItems.length > 1 ? (
+        {onReviewMany && !showImage && bulkItems.length > 0 ? (
           <div className="flex flex-wrap items-center gap-2">
             <Button
               size="sm"
@@ -190,7 +241,11 @@ export function CaptureReviewPanel({
           </div>
         ) : null}
         <ul
-          className="grid max-h-[min(45vh,24rem)] gap-2 overflow-y-auto p-0.5"
+          className={
+            gallery
+              ? "grid grid-cols-1 items-start gap-x-5 gap-y-6 p-0.5 sm:grid-cols-2 xl:grid-cols-3"
+              : "grid max-h-[min(45vh,24rem)] gap-2 overflow-y-auto p-0.5"
+          }
           aria-label="Screenshots for review"
         >
           {queue.items.map((item, index) => {
@@ -202,52 +257,77 @@ export function CaptureReviewPanel({
             return (
               <li key={key} className="relative min-w-0">
                 {reviewable(item) ? (
-                  <label className="absolute start-0 top-1/2 z-10 flex size-10 -translate-y-1/2 items-center justify-center">
+                  <label
+                    className={`absolute start-0 z-10 flex size-10 items-center justify-center ${gallery ? "top-0 start-0 cursor-pointer" : "top-1/2 -translate-y-1/2"}`}
+                  >
                     <span className="sr-only">Select {caption(item, index)}</span>
                     <input
                       type="checkbox"
-                      className="size-3.5 accent-foreground"
+                      role="checkbox"
+                      aria-label={`Select ${caption(item, index)}`}
+                      aria-checked={selectedIds.has(key)}
+                      className="peer sr-only"
                       checked={selectedIds.has(key)}
                       onChange={(event) => toggleSelected(key, event.target.checked)}
                       onClick={(event) => event.stopPropagation()}
                     />
+                    <span
+                      aria-hidden="true"
+                      className="flex size-6 items-center justify-center rounded-full border border-black/20 bg-white/95 text-transparent shadow-sm transition-colors peer-checked:border-blue-600 peer-checked:bg-blue-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-focus-visible:ring-offset-2"
+                    >
+                      <Check className="size-3.5" strokeWidth={2.5} />
+                    </span>
                   </label>
                 ) : null}
                 <button
                   type="button"
-                  aria-pressed={index === selectedIndex}
-                  className={`relay-interactive-row flex min-h-20 w-full items-center gap-3 rounded-lg py-2 pl-10 pr-3 text-left transition-colors focus-visible:outline-2 ${index === selectedIndex ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
-                  onClick={() => onSelect(index)}
+                  aria-pressed={gallery ? undefined : index === selectedIndex}
+                  className={`${gallery ? "" : "relay-interactive-row"} flex min-h-20 w-full gap-3 rounded-lg text-left transition-colors focus-visible:outline-2 ${gallery ? "flex-col overflow-hidden pb-1" : "items-center py-2 pl-10 pr-3"} ${!gallery && index === selectedIndex ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
+                  onClick={() => {
+                    onSelect(index);
+                    if (gallery) setLayout("detail");
+                  }}
                 >
                   {thumb?.media ? (
                     <ReportImage
                       media={thumb.media}
                       alt=""
-                      className="h-16 w-20 shrink-0 rounded-md bg-muted/40 object-contain"
+                      className={
+                        gallery
+                          ? "h-auto w-full rounded-lg object-contain"
+                          : "h-16 w-20 shrink-0 rounded-md bg-muted/40 object-contain"
+                      }
                     />
                   ) : (
-                    <span className="flex h-16 w-20 shrink-0 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground">
+                    <span
+                      className={`flex shrink-0 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground ${gallery ? "aspect-[4/3] w-full" : "h-16 w-20"}`}
+                    >
                       {blocked ? "Blocked" : "Missing"}
                     </span>
                   )}
-                  <span className="grid min-w-0 gap-1">
+                  <span className={`grid min-w-0 gap-1 ${gallery ? "w-full px-0.5" : ""}`}>
                     <span className="truncate text-sm font-medium">{caption(item, index)}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {blocked
-                        ? "Blocked"
-                        : item.status === "missing"
-                          ? "Not captured"
-                          : item.status === "accepted"
-                            ? "Looks correct"
-                            : item.status === "issue"
-                              ? "Issue reported"
-                              : item.status === "need-more-evidence"
-                                ? "More evidence needed"
-                                : "Pending review"}
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
+                      {place ? (
+                        <>
+                          <span className="truncate">{place}</span>
+                          <span aria-hidden="true">·</span>
+                        </>
+                      ) : null}
+                      <span>
+                        {blocked
+                          ? "Blocked"
+                          : item.status === "missing"
+                            ? "Not captured"
+                            : item.status === "accepted"
+                              ? "Looks correct"
+                              : item.status === "issue"
+                                ? "Issue reported"
+                                : item.status === "need-more-evidence"
+                                  ? "More evidence needed"
+                                  : "Pending review"}
+                      </span>
                     </span>
-                    {place ? (
-                      <span className="truncate text-xs text-muted-foreground">{place}</span>
-                    ) : null}
                   </span>
                 </button>
               </li>
@@ -255,7 +335,7 @@ export function CaptureReviewPanel({
           })}
         </ul>
       </div>
-      {selected ? (
+      {selected && !gallery ? (
         <div
           className={`grid min-w-0 gap-3 ${showImage ? "rounded-lg border border-border/60 p-4" : ""}`}
         >
@@ -319,11 +399,8 @@ export function CaptureReviewPanel({
               Show review overlays
             </label>
           ) : null}
-          {onReview && reviewable(selected) ? (
-            <CaptureReviewDecisions busy={busy} onReview={(action) => onReview(action, selected)} />
-          ) : null}
           {showImage && frame?.media ? (
-            <div className="relative min-h-48 rounded-lg bg-muted/20 p-3">
+            <div className="relative min-h-48 overflow-hidden rounded-lg bg-muted/20">
               <EvidenceImageViewer
                 key={frame.id}
                 frame={frame}
@@ -335,6 +412,15 @@ export function CaptureReviewPanel({
             <p className="text-sm">Blocked — no screenshot to accept.</p>
           ) : selected.status === "missing" ? (
             <p className="text-sm">No screenshot was saved for this checkpoint.</p>
+          ) : null}
+          {onReview && reviewable(selected) ? (
+            <div className="rounded-lg border border-border/60 bg-muted/30 p-4">
+              <CaptureReviewDecisions
+                busy={busy}
+                status={selected.status === "pending" ? "Awaiting your decision" : "Decision saved"}
+                onReview={(action) => onReview(action, selected)}
+              />
+            </div>
           ) : null}
         </div>
       ) : null}

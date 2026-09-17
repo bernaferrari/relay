@@ -572,7 +572,8 @@ export function SuitePage() {
                 <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
                   <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                   <Button
-                    className="relay-suite-remove-confirm rounded-lg border border-red-500/30 bg-red-500/5 p-4"
+                    className="relay-suite-remove-confirm"
+                    variant="destructive"
                     onClick={() => remove.mutate()}
                     disabled={remove.isPending}
                   >

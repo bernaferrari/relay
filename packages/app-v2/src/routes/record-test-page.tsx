@@ -512,7 +512,7 @@ function RecordingWorkspace({
               <DialogTrigger
                 render={
                   <Button
-                    className="inline-flex w-fit text-muted-foreground relay-electron-no-drag [-webkit-app-region:no-drag]"
+                    className="inline-flex w-fit relay-electron-no-drag [-webkit-app-region:no-drag]"
                     variant="ghost"
                     size="sm"
                   />

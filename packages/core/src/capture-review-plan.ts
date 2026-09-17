@@ -21,6 +21,7 @@ import { listCombineCampaignIds, readCombineCampaign } from "./combine-campaign.
 import { executionIntentPlannedSlots } from "./run-test-step-evidence.js";
 import {
   listPersistedRuns,
+  readPersistedRun,
   persistPersistedRun,
   persistedRunBelongsToStore,
   readCompletedPersistedRun,
@@ -92,7 +93,37 @@ export async function resolvePersistedPlanBatchId(
   batchId: string,
   projectId = "default",
 ): Promise<string> {
+  const exact = await readCombineCampaign(projectId, batchId);
+  if (exact) return exact.id;
   return resolveUniquePlanBatchId(batchId, await knownPlanBatchIds(projectId));
+}
+
+async function planRuns(
+  batchId: string,
+  projectId: string,
+  campaign: CombineCampaign | null,
+): Promise<PersistedRun[]> {
+  if (!campaign)
+    return (await listPersistedRuns(Number.MAX_SAFE_INTEGER, undefined, batchId)).filter(
+      (run) => (run.projectId ?? "default") === projectId,
+    );
+  const ids = [
+    ...new Set(
+      campaign.cases
+        .flatMap((item) => [item.runId, item.jobId, ...(item.priorRunIds ?? [])])
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const runs: PersistedRun[] = [];
+  for (let offset = 0; offset < ids.length; offset += 16) {
+    const page = await Promise.all(ids.slice(offset, offset + 16).map(readPersistedRun));
+    runs.push(
+      ...page.filter((run): run is PersistedRun =>
+        Boolean(run && run.batchId === batchId && (run.projectId ?? "default") === projectId),
+      ),
+    );
+  }
+  return runs;
 }
 
 function runIsBlocked(run: PlanCaptureReviewRun): boolean {
@@ -304,13 +335,11 @@ export async function reviewPersistedPlanCaptures(
     "Open the Plan captures panel and ask a person to mark Looks correct, Report issue, or Need more evidence.",
   );
   const resolved = await resolvePersistedPlanBatchId(batchId, projectId);
-  const loaded = (await listPersistedRuns(Number.MAX_SAFE_INTEGER, undefined, resolved)).filter(
-    (run) => (run.projectId ?? "default") === projectId,
-  );
+  const campaign = await readCombineCampaign(projectId, resolved);
+  const loaded = await planRuns(resolved, projectId, campaign);
   const results: Array<PlanCaptureReviewItemResult | undefined> = Array.from({
     length: input.items.length,
   });
-  const campaign = await readCombineCampaign(projectId, resolved);
   const visible = filterPlanCaptureReviewQueue(
     captureReviewQueueForCampaign(campaign, loaded),
     input.filter,
@@ -370,14 +399,10 @@ export async function reviewPersistedPlanCaptures(
       await persistPersistedRun(root, latest, persisted, "capture-review");
     });
   }
-  const refreshed = (await listPersistedRuns(Number.MAX_SAFE_INTEGER, undefined, resolved)).filter(
-    (run) => (run.projectId ?? "default") === projectId,
-  );
+  const refreshedCampaign = await readCombineCampaign(projectId, resolved);
+  const refreshed = await planRuns(resolved, projectId, refreshedCampaign);
   return {
-    queue: captureReviewQueueForCampaign(
-      await readCombineCampaign(projectId, resolved),
-      refreshed.length ? refreshed : loaded,
-    ),
+    queue: captureReviewQueueForCampaign(refreshedCampaign, refreshed.length ? refreshed : loaded),
     results: results.map((result, index) => {
       if (result) return result;
       const selection = input.items[index]!;
@@ -397,13 +422,10 @@ export async function captureReviewQueueForPersistedPlan(
   projectId = "default",
 ): Promise<PlanCaptureReviewQueue> {
   const resolved = await resolvePersistedPlanBatchId(batchId, projectId);
-  const [campaign, runs] = await Promise.all([
-    readCombineCampaign(projectId, resolved),
-    listPersistedRuns(Number.MAX_SAFE_INTEGER, undefined, resolved),
-  ]);
+  const campaign = await readCombineCampaign(projectId, resolved);
   const queue = captureReviewQueueForCampaign(
     campaign,
-    runs.filter((run) => (run.projectId ?? "default") === projectId),
+    await planRuns(resolved, projectId, campaign),
   );
   return filterPlanCaptureReviewQueue(queue, filter);
 }

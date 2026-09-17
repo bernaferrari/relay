@@ -111,7 +111,7 @@ export function ActivityCenterButton() {
       <Button
         variant="ghost"
         size="sm"
-        className="relay-electron-no-drag [-webkit-app-region:no-drag] text-muted-foreground"
+        className="relay-electron-no-drag [-webkit-app-region:no-drag]"
         onClick={() => setOpen(true)}
         aria-label={`Open Activity Center${unavailable ? ", unavailable" : items.length ? `, ${items.length} active` : ""}`}
       >
@@ -258,10 +258,11 @@ function ActivityCenter({
                   <Button
                     type="button"
                     variant="ghost"
-                    className="grid h-auto min-h-12 w-full grid-cols-[1rem_minmax(0,1fr)] items-center gap-3 px-2.5 py-2 text-left whitespace-normal"
+                    className="h-auto min-h-12 w-full text-left whitespace-normal"
                     key={item.id}
                     onClick={() => openItem(item)}
                   >
+                    <span className="grid w-full grid-cols-[1rem_minmax(0,1fr)] items-center gap-3 px-2.5 py-2">
                     <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
                     <span className="grid min-w-0">
                       <strong className="truncate text-sm font-medium text-foreground">
@@ -270,6 +271,7 @@ function ActivityCenter({
                       <small className="truncate text-xs font-normal text-muted-foreground">
                         {item.status}
                       </small>
+                    </span>
                     </span>
                   </Button>
                 );

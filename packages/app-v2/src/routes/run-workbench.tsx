@@ -405,10 +405,11 @@ export function RunWorkbench({
           }}
         />
       </div>
+      <div className={workspaceToolsSurface}>
       <Tabs
         value={panel}
         onValueChange={(value) => setPanel(value as typeof panel)}
-        className={`${workspaceToolsSurface} gap-0`}
+        className="gap-0"
       >
         <TabsList
           variant="line"
@@ -659,6 +660,7 @@ export function RunWorkbench({
           <div className="flex shrink-0 justify-end border-t border-border px-4 py-2">{footer}</div>
         ) : null}
       </Tabs>
+      </div>
     </section>
   );
 }

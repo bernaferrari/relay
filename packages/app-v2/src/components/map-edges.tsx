@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { forwardRoute, avoidPreviewObstacles, routeCrossesBox } from "./map-forward-route";
 import type { ProductMapPath } from "@relay/product/map-exploration";
 import {
@@ -414,15 +415,17 @@ export function MapEdges({
   );
   return (
     <svg
-      className="relay-map-edges pointer-events-none absolute z-10 overflow-visible"
+      className="relay-map-edges pointer-events-none absolute left-(--box-left) top-(--box-top) z-10 h-(--box-height) w-(--box-width) overflow-visible"
       aria-hidden="true"
       viewBox={`${edgeBounds.minX} ${edgeBounds.minY} ${edgeBounds.maxX - edgeBounds.minX} ${edgeBounds.maxY - edgeBounds.minY}`}
-      style={{
-        left: edgeBounds.minX,
-        top: edgeBounds.minY,
-        width: edgeBounds.maxX - edgeBounds.minX,
-        height: edgeBounds.maxY - edgeBounds.minY,
-      }}
+      style={
+        {
+          "--box-left": `${edgeBounds.minX}px`,
+          "--box-top": `${edgeBounds.minY}px`,
+          "--box-width": `${edgeBounds.maxX - edgeBounds.minX}px`,
+          "--box-height": `${edgeBounds.maxY - edgeBounds.minY}px`,
+        } as CSSProperties
+      }
     >
       <defs>
         {["neutral", "selected", "muted"].map((state) => (
@@ -466,15 +469,13 @@ export function MapEdges({
         return (
           <g
             key={geometry.path.id}
-            style={{
-              color:
-                state === "selected"
-                  ? "var(--color-blue-400)"
-                  : state === "muted"
-                    ? "color-mix(in oklch, var(--text-weak) 80%, var(--background) 20%)"
-                    : "var(--text-weak)",
-            }}
-            className="relay-map-edge [&>path]:fill-none [&>path]:stroke-current [&>path]:[stroke-linecap:round] [&>path]:stroke-[1.5] [&>path]:[vector-effect:non-scaling-stroke] [&>rect]:fill-[var(--surface-raised-stronger-non-alpha)] [&>rect]:stroke-[var(--border-weak-base)] [&>rect]:stroke-0 [&>rect]:[vector-effect:non-scaling-stroke] [&_text]:fill-current [&_text]:font-sans [&_text]:text-[10.5px] [&_text]:font-normal"
+            className={`relay-map-edge [&>path]:fill-none [&>path]:stroke-current [&>path]:[stroke-linecap:round] [&>path]:stroke-[1.5] [&>path]:[vector-effect:non-scaling-stroke] [&>rect]:fill-[var(--surface-raised-stronger-non-alpha)] [&>rect]:stroke-[var(--border-weak-base)] [&>rect]:stroke-0 [&>rect]:[vector-effect:non-scaling-stroke] [&_text]:fill-current [&_text]:font-sans [&_text]:text-[10.5px] [&_text]:font-normal ${
+              state === "selected"
+                ? "text-blue-400"
+                : state === "muted"
+                  ? "text-[color-mix(in_oklch,var(--text-weak)_80%,var(--background)_20%)]"
+                  : "text-[var(--text-weak)]"
+            }`}
           >
             {geometry.anchor ? (
               <>
@@ -486,7 +487,6 @@ export function MapEdges({
                     height={geometry.anchorRect.height}
                     rx="3"
                     className="fill-blue-500/15 stroke-blue-500"
-                    style={{ fill: "rgba(59,130,246,0.15)", stroke: "#3b82f6" }}
                     strokeWidth="1.5"
                   />
                 ) : null}
@@ -502,11 +502,9 @@ export function MapEdges({
               <path
                 d="M 0 -5 A 5 5 0 1 0 0 5 L 7 0 Z"
                 transform={`translate(${geometry.anchor.x} ${geometry.anchor.y}) rotate(${(positions.get(geometry.path.toScreenId ?? "")?.x ?? Infinity) < (positions.get(geometry.path.fromScreenId)?.x ?? 0) ? 180 : 0})`}
-                style={{
-                  fill: "var(--color-blue-500)",
-                  stroke: "var(--background)",
-                  strokeWidth: 1.5,
-                }}
+                fill="var(--color-blue-500)"
+                stroke="var(--background)"
+                strokeWidth="1.5"
               />
             ) : null}
             <rect
@@ -524,7 +522,7 @@ export function MapEdges({
                 x={geometry.label.x}
                 y={geometry.label.y + 17}
                 textAnchor="middle"
-                style={{ fontWeight: 400 }}
+                className="font-normal"
               >
                 Destination not recorded
               </text>

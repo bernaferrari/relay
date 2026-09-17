@@ -58,6 +58,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
   type WheelEvent,
@@ -884,13 +885,15 @@ export function InfiniteMapCanvas({
           {marquee ? (
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute z-30 border border-blue-400 bg-blue-400/10"
-              style={{
-                left: marquee.x,
-                top: marquee.y,
-                width: marquee.width,
-                height: marquee.height,
-              }}
+              className="pointer-events-none absolute left-(--box-left) top-(--box-top) z-30 h-(--box-height) w-(--box-width) border border-blue-400 bg-blue-400/10"
+              style={
+                {
+                  "--box-left": `${marquee.x}px`,
+                  "--box-top": `${marquee.y}px`,
+                  "--box-width": `${marquee.width}px`,
+                  "--box-height": `${marquee.height}px`,
+                } as CSSProperties
+              }
             />
           ) : null}
           {selectedIds.size > 1 ? (
@@ -906,29 +909,20 @@ export function InfiniteMapCanvas({
             selected screen, Space to pan, or 0 to reset the view. Tab to visit each screen.
           </span>
           <div
-            className="relay-map-world absolute inset-0 origin-top-left"
-            ref={worldRef}
-            style={{ transform: "translate3d(48px, 64px, 0) scale(1)" }}
+            className="relay-map-world absolute inset-0 origin-top-left translate-x-12 translate-y-16"
           >
             {alignmentGuides.map((guide, index) => (
               <div
                 key={index}
                 aria-hidden="true"
-                className="pointer-events-none absolute z-30 bg-blue-400"
+                className="pointer-events-none absolute left-(--box-left) top-(--box-top) z-30 h-(--box-height) w-(--box-width) bg-blue-400"
                 style={
-                  guide.axis === "x"
-                    ? {
-                        left: guide.value,
-                        top: guide.from,
-                        width: 1 / transformRef.current.scale,
-                        height: guide.to - guide.from,
-                      }
-                    : {
-                        left: guide.from,
-                        top: guide.value,
-                        width: guide.to - guide.from,
-                        height: 1 / transformRef.current.scale,
-                      }
+                  {
+                    "--box-left": `${guide.axis === "x" ? guide.value : guide.from}px`,
+                    "--box-top": `${guide.axis === "x" ? guide.from : guide.value}px`,
+                    "--box-width": `${guide.axis === "x" ? 1 / transformRef.current.scale : guide.to - guide.from}px`,
+                    "--box-height": `${guide.axis === "x" ? guide.to - guide.from : 1 / transformRef.current.scale}px`,
+                  } as CSSProperties
                 }
               />
             ))}
@@ -951,7 +945,7 @@ export function InfiniteMapCanvas({
               return (
                 <button
                   type="button"
-                  className={`relay-map-screen group/map-screen absolute flex flex-col gap-2 text-left focus-visible:outline-2 focus-visible:outline-ring`}
+                  className="relay-map-screen group/map-screen absolute left-(--box-left) top-(--box-top) flex h-(--box-height) w-(--box-width) flex-col gap-2 text-left focus-visible:outline-2 focus-visible:outline-ring"
                   key={screen.id}
                   aria-pressed={selectedNode}
                   onClick={(event) => {
@@ -1044,12 +1038,14 @@ export function InfiniteMapCanvas({
                     setAlignmentGuides([]);
                   }}
                   onFocus={() => revealScreen(screen.id)}
-                  style={{
-                    left: position.x,
-                    top: position.y,
-                    width: MAP_NODE_WIDTH,
-                    height: MAP_NODE_HEIGHT,
-                  }}
+                  style={
+                    {
+                      "--box-left": `${position.x}px`,
+                      "--box-top": `${position.y}px`,
+                      "--box-width": `${MAP_NODE_WIDTH}px`,
+                      "--box-height": `${MAP_NODE_HEIGHT}px`,
+                    } as CSSProperties
+                  }
                 >
                   <span
                     className={`flex h-5 w-full shrink-0 items-end justify-center text-center text-[13px] font-medium leading-tight ${selectedNode ? "text-blue-400" : "text-muted-foreground"}`}
@@ -1111,12 +1107,14 @@ export function InfiniteMapCanvas({
               return (
                 <div
                   key={`returns-${screen.id}`}
-                  className="absolute z-20 flex flex-col items-center gap-1"
-                  style={{
-                    left: position.x,
-                    top: image.y + image.height + 12,
-                    width: MAP_NODE_WIDTH,
-                  }}
+                  className="absolute left-(--box-left) top-(--box-top) z-20 flex w-(--box-width) flex-col items-center gap-1"
+                  style={
+                    {
+                      "--box-left": `${position.x}px`,
+                      "--box-top": `${image.y + image.height + 12}px`,
+                      "--box-width": `${MAP_NODE_WIDTH}px`,
+                    } as CSSProperties
+                  }
                 >
                   {returns.map((path) => (
                     <button

@@ -189,7 +189,7 @@ function ChangeRow({ change }: { change: ProductChange }) {
         <span className="relay-library-row-status flex justify-start">
           <Badge
             variant={changeBadgeVariant(status.tone)}
-            className={changeBadgeClass(status.tone)}
+            className={changeBadgeClasses[status.tone]}
           >
             {status.label}
           </Badge>
@@ -215,11 +215,13 @@ function changeBadgeVariant(
   return "secondary";
 }
 
-function changeBadgeClass(tone: ReturnType<typeof changeStatus>["tone"]): string | undefined {
-  if (tone === "success") return "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300";
-  if (tone === "notice") return "bg-amber-500/15 text-amber-800 dark:text-amber-300";
-  return undefined;
-}
+const changeBadgeClasses = {
+  success: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
+  notice: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
+  danger: undefined,
+  quiet: undefined,
+  active: undefined,
+} as const;
 
 export function changeStatus(change: ProductChange): {
   label: string;

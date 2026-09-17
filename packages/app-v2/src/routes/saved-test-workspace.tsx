@@ -38,7 +38,7 @@ export function SavedTestWorkspace({
                 render={
                   <Button
                     variant="ghost"
-                    className="h-auto w-full justify-start gap-2 rounded-none px-4 py-3 text-sm"
+                    className="h-auto w-full justify-start"
                   />
                 }
               >

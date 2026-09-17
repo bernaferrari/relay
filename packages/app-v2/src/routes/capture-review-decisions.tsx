@@ -28,7 +28,7 @@ export function CaptureReviewDecisions({
       <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
-          className="min-h-10 gap-2 rounded-lg bg-foreground px-4 text-background hover:bg-foreground/90"
+          className="min-h-10"
           variant="default"
           disabled={busy}
           onClick={() => onReview("accept")}
@@ -37,7 +37,7 @@ export function CaptureReviewDecisions({
         </Button>
         <Button
           size="sm"
-          className="min-h-10 gap-2 rounded-lg"
+          className="min-h-10"
           variant="ghost"
           disabled={busy}
           onClick={() => onReview("report-issue")}
@@ -46,7 +46,7 @@ export function CaptureReviewDecisions({
         </Button>
         <Button
           size="sm"
-          className="min-h-10 gap-2 rounded-lg"
+          className="min-h-10"
           variant="ghost"
           disabled={busy}
           onClick={() => onReview("need-more-evidence")}

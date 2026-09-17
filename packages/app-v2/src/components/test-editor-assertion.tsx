@@ -10,6 +10,7 @@ import { Button } from "@relay/ui-react/components/button";
 import { SelectField } from "./filter-select";
 import { validationKindGroupsForEditor } from "./test-editor-checkpoint-kinds";
 import { JudgeAgreementControls } from "./test-editor-judge-agreement";
+import type { CSSProperties } from "react";
 
 export { VALIDATION_KIND_GROUPS } from "./test-editor-checkpoint-kinds";
 
@@ -731,13 +732,15 @@ function RegionFrame({ region }: { region: string }) {
       <span className="pointer-events-none absolute inset-x-[7%] top-[8%] h-[10%] rounded-sm bg-foreground/10" />
       {box ? (
         <span
-          className="pointer-events-none absolute rounded-sm bg-primary/30 ring-1 ring-primary/50"
-          style={{
-            left: `${Math.max(0, box.x) * 100}%`,
-            top: `${Math.max(0, box.y) * 100}%`,
-            width: `${Math.max(0, box.width) * 100}%`,
-            height: `${Math.max(0, box.height) * 100}%`,
-          }}
+          className="pointer-events-none absolute left-(--box-left) top-(--box-top) h-(--box-height) w-(--box-width) rounded-sm bg-primary/30 ring-1 ring-primary/50"
+          style={
+            {
+              "--box-left": `${Math.max(0, box.x) * 100}%`,
+              "--box-top": `${Math.max(0, box.y) * 100}%`,
+              "--box-width": `${Math.max(0, box.width) * 100}%`,
+              "--box-height": `${Math.max(0, box.height) * 100}%`,
+            } as CSSProperties
+          }
         />
       ) : (
         <span className="pointer-events-none absolute inset-0 grid place-items-center text-[10px] text-muted-foreground">

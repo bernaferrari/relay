@@ -8,7 +8,7 @@ import {
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
 import { Target, Search, Check } from "lucide-react";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import type { RecordingEvidenceControl } from "../data/recording-evidence-target";
 import {
   pickRecordingEvidenceControl,
@@ -115,13 +115,15 @@ export function RecordingTargetPicker({
                   />
                   {highlight && size ? (
                     <span
-                      className="pointer-events-none absolute rounded-sm border-2 border-blue-500 bg-blue-500/10"
-                      style={{
-                        left: `${(highlight.rect.x / size.width) * 100}%`,
-                        top: `${(highlight.rect.y / size.height) * 100}%`,
-                        width: `${(highlight.rect.width / size.width) * 100}%`,
-                        height: `${(highlight.rect.height / size.height) * 100}%`,
-                      }}
+                      className="pointer-events-none absolute left-(--box-left) top-(--box-top) h-(--box-height) w-(--box-width) rounded-sm border-2 border-blue-500 bg-blue-500/10"
+                      style={
+                        {
+                          "--box-left": `${(highlight.rect.x / size.width) * 100}%`,
+                          "--box-top": `${(highlight.rect.y / size.height) * 100}%`,
+                          "--box-width": `${(highlight.rect.width / size.width) * 100}%`,
+                          "--box-height": `${(highlight.rect.height / size.height) * 100}%`,
+                        } as CSSProperties
+                      }
                     />
                   ) : null}
                 </button>

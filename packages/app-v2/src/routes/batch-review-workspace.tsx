@@ -69,7 +69,7 @@ export function BatchReviewWorkspace({
                 variant="ghost"
                 size="sm"
                 aria-pressed={view === item}
-                className={view === item ? "bg-background shadow-sm" : "text-muted-foreground"}
+                variant={view === item ? "secondary" : "ghost"}
                 onClick={() => setView(item)}
               >
                 {item === "queue"

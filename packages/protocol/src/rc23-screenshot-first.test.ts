@@ -144,6 +144,7 @@ test("product persist mapping keeps Imagine blocked in the denominator, not miss
   );
   const imagine = queue.items.find((item) => item.checkpointId === "imagine" && item.blocked);
   assert.ok(imagine);
+  assert.ok(imagine.runId);
   assert.equal(imagine.status, "missing");
   assert.equal(
     selectedPlanCaptureReviewItems(queue, [{ runId: imagine.runId, captureId: imagine.captureId }])
@@ -160,6 +161,7 @@ test("Looks correct cannot accept missing, including the blocked iOS Imagine slo
   const missing = queue.items.find(
     (item) => item.checkpointId === "imagine" && item.configuration?.app === "ai.x.GrokApp",
   )!;
+  assert.ok(missing.runId);
   assert.equal(missing.status, "missing");
   assert.equal(missing.blocked, true);
   assert.equal(
@@ -172,6 +174,7 @@ test("Looks correct cannot accept missing, including the blocked iOS Imagine slo
   )!;
   assert.equal(models.status, "pending");
   const captured = queue.items.find((item) => item.status === "pending")!;
+  assert.ok(captured.runId);
   assert.equal(
     selectedPlanCaptureReviewItems(queue, [
       { runId: captured.runId, captureId: captured.captureId },

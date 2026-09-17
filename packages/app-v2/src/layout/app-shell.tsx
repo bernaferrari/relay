@@ -9,7 +9,8 @@ import {
   type RouterHistory,
 } from "@tanstack/react-router";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { classNames } from "../lib/class-names";
 import type { Platform } from "../platform/types";
 import { parentPathForPath, routeContractForPath } from "../router/route-contract";
 import { ActivityCenterButton } from "./active-work";
@@ -57,7 +58,10 @@ export function AppShell({ platform }: { platform: Platform }) {
     <SidebarProvider
       open={navigationOpen}
       onOpenChange={setNavigationOpen}
-      className={`relay-shell flex h-dvh min-w-0 overflow-hidden bg-sidebar${immersive ? " relay-shell--immersive" : ""}`}
+      className={classNames(
+        "relay-shell flex h-dvh min-w-0 overflow-hidden bg-sidebar",
+        immersive && "relay-shell--immersive",
+      )}
       data-platform={platform.platform}
     >
       <a
@@ -84,7 +88,7 @@ export function AppShell({ platform }: { platform: Platform }) {
               <Button
                 size="icon-sm"
                 variant="ghost"
-                className="relay-history-button h-8 w-8 border-transparent bg-transparent"
+                className="relay-history-button"
                 aria-label="Go back"
                 onClick={goBack}
                 disabled={!canGoBack}
@@ -94,7 +98,7 @@ export function AppShell({ platform }: { platform: Platform }) {
               <Button
                 size="icon-sm"
                 variant="ghost"
-                className="relay-history-button h-8 w-8 border-transparent bg-transparent"
+                className="relay-history-button"
                 aria-label="Go forward"
                 onClick={() => router.history.forward()}
                 disabled={!historyAvailability.canGoForward}
@@ -104,10 +108,16 @@ export function AppShell({ platform }: { platform: Platform }) {
             </div>
             <button
               type="button"
-              className="relay-command-trigger relay-electron-no-drag [-webkit-app-region:no-drag] absolute left-0 inline-flex min-h-9 min-w-[220px] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] px-2 py-0 pl-2.5 text-left text-xs text-[var(--text-weaker)] transition-transform duration-200 ease-in-out motion-reduce:transition-none"
-              style={{
-                transform: `translateX(${navigationOpen ? "calc(var(--sidebar-width) + 12px)" : platform.platform === "desktop" ? "195px" : "123px"})`,
-              }}
+              className="relay-command-trigger relay-electron-no-drag [-webkit-app-region:no-drag] absolute left-0 inline-flex min-h-9 min-w-[220px] translate-x-(--command-x) items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border-weak-base)] bg-[var(--surface-raised-strong)] px-2 py-0 pl-2.5 text-left text-xs text-[var(--text-weaker)] transition-transform duration-200 ease-in-out motion-reduce:transition-none"
+              style={
+                {
+                  "--command-x": navigationOpen
+                    ? "calc(var(--sidebar-width) + 12px)"
+                    : platform.platform === "desktop"
+                      ? "195px"
+                      : "123px",
+                } as CSSProperties
+              }
               onClick={() => changeCommandOpen(true)}
               aria-label="Open command palette"
             >
@@ -150,9 +160,14 @@ export function AppShell({ platform }: { platform: Platform }) {
         </header>
         <main
           id="main-content"
-          className={`relay-main ${runWorkspace ? "min-[721px]:overflow-hidden" : ""} min-h-0 min-w-0 flex-1 bg-card focus:outline-none ${immersive ? "overflow-hidden" : "overflow-auto overscroll-contain min-[861px]:mx-2 min-[861px]:mb-2 min-[861px]:rounded-xl [scrollbar-gutter:stable_both-edges]"}`}
+          className={classNames(
+            "relay-main min-h-0 min-w-0 flex-1 bg-card focus:outline-none",
+            runWorkspace && "min-[721px]:overflow-hidden [scrollbar-gutter:auto]",
+            immersive
+              ? "overflow-hidden"
+              : "overflow-auto overscroll-contain min-[861px]:mx-2 min-[861px]:mb-2 min-[861px]:rounded-xl [scrollbar-gutter:stable_both-edges]",
+          )}
           data-run-workspace={runWorkspace || undefined}
-          style={runWorkspace ? { scrollbarGutter: "auto" } : undefined}
           tabIndex={-1}
         >
           <Outlet />

@@ -760,7 +760,7 @@ export async function exportCombineEvidencePack(input: {
           item.status === "missing" ||
           item.status === "need-more-evidence",
       )
-      .map((item) => item.runId),
+      .flatMap((item) => (item.runId ? [item.runId] : [])),
   );
   const checklistRows = reviewChecklistRows({
     cases: manifest.cases,

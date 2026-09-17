@@ -323,7 +323,7 @@ export function ReviewRecordingPage({
             <Button
               variant="ghost"
               size="sm"
-              className="-ml-2 text-muted-foreground"
+              className="-ml-2"
               disabled={
                 transition.isPending ||
                 leaveDraft.isPending ||
@@ -699,7 +699,7 @@ export function ReviewRecordingPage({
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="justify-self-start text-muted-foreground hover:text-destructive"
+                              className="justify-self-start"
                               disabled={!canEdit}
                             />
                           }
@@ -718,7 +718,7 @@ export function ReviewRecordingPage({
                           <div className="relay-dialog-actions flex flex-wrap items-center justify-end gap-2.5">
                             <DialogClose render={<Button variant="ghost">Cancel</Button>} />
                             <Button
-                              className="grid gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3"
+                              variant="destructive"
                               onClick={() => {
                                 setDeleteOpen(false);
                                 edit({
