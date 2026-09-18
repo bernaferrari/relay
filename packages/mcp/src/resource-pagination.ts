@@ -9,9 +9,9 @@ import {
 import {
   enrichCaptureReviewObservedSession,
   isCaptureReviewLeftoverCaption,
-  isCaptureReviewOpenerCaption,
   liveCaptureReviewAccount,
   projectCaptureReviewDestIdentity,
+  destIdentityReviewItems,
   type OperationId,
   type CaptureReviewObservedSession,
 } from "@relay/protocol";
@@ -355,11 +355,8 @@ function captureReviewCollectionEntries(value: unknown): Record<string, unknown>
   if (!hasLeftover) return entries;
   /** Pre-listed captureReview without dest-phase used to keep before · Tap beside
    * leftover Transition (parity with destIdentityCollectionEntries). */
-  const withoutOpeners = entries.filter(
-    (entry) =>
-      !isCaptureReviewOpenerCaption(typeof entry.caption === "string" ? entry.caption : undefined),
-  );
-  return withoutOpeners.length ? withoutOpeners : entries;
+  const projected = destIdentityReviewItems(entries);
+  return projected.length ? projected : entries;
 }
 
 function projectRunListDestIdentity(value: unknown): unknown {
