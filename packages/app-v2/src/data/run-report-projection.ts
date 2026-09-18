@@ -782,12 +782,15 @@ function authoredCaptureStepId(title: string | undefined): string | undefined {
 function humanStepTitle(value: unknown): string | undefined {
   const rawTitle = text(value);
   if (!rawTitle) return undefined;
-  /** Authored Capture for review / Screenshot · step: product labels — keep
-   * even when they contain "selector" (iOS models dest "Model selector
-   * SuperGrok" used to collapse to Captured result). */
+  /** Authored Capture for review / Screenshot · step: / bare step: product
+   * labels — keep even when they contain "selector" (iOS models dest "Model
+   * selector SuperGrok" used to collapse to Captured result on the timeline,
+   * and Screenshots fell back to "Screenshot 1" because the frame caption is
+   * only `step:step-action:Model selector SuperGrok`). */
   const authoredCaptureLabel =
     /^Screenshot · (?:step:)?[^:]+:(.+)$/u.exec(rawTitle)?.[1]?.trim() ??
-    /^Capture for review · step:[^:]+:(.+)$/u.exec(rawTitle)?.[1]?.trim();
+    /^Capture for review · step:[^:]+:(.+)$/u.exec(rawTitle)?.[1]?.trim() ??
+    /^step:[^:]+:(.+)$/u.exec(rawTitle)?.[1]?.trim();
   const title = authoredCaptureLabel ?? rawTitle;
   if (isTautologicalNavigationTitle(title)) return undefined;
   if (/^check identifier .+ visible$/iu.test(title)) return "Expected screen content was visible";

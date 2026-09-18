@@ -850,6 +850,11 @@ it("dest-end Model selector SuperGrok keeps product title, not Captured result",
     "dest-end-model-selector-title",
     {
       outcome: "passed",
+      evidence: {
+        channels: {
+          screenshot: { entries: 1 },
+        },
+      },
       artifacts: [
         {
           kind: "capture-review",
@@ -934,6 +939,13 @@ it("dest-end Model selector SuperGrok keeps product title, not Captured result",
   expect(result.timeline.map((step) => step.title)).toEqual(["Model selector SuperGrok"]);
   expect(result.timeline.some((step) => step.title === "Captured result")).toBe(false);
   expect(result.timeline.some((step) => step.title === 'Wait for label "Heavy"')).toBe(false);
+  const shotTitles = (result.evidence as { items?: { title?: string; id?: string }[] }[])?.[0]
+    ?.items;
+  expect(shotTitles?.map((item) => item.id)).toEqual(["frames/003.png"]);
+  expect(shotTitles?.map((item) => item.title)).toEqual(["Model selector SuperGrok"]);
+  expect(shotTitles?.some((item) => /Screenshot \d+|Captured result/u.test(item.title ?? ""))).toBe(
+    false,
+  );
 });
 
 it("failed dest-end firstEvidence is Capture for review, not prelude Wait for", () => {
@@ -998,7 +1010,12 @@ it("failed dest-end firstEvidence is Capture for review, not prelude Wait for", 
   const shotTitles = (result.evidence as { items?: { title?: string; id?: string }[] }[])?.[0]
     ?.items;
   expect(shotTitles?.map((item) => item.id)).toEqual(["frames/007.png"]);
-  expect(shotTitles?.some((item) => /Wait for|failed:primary/u.test(item.title ?? ""))).toBe(false);
+  expect(shotTitles?.map((item) => item.title)).toEqual([
+    "Tap Expert, dismiss with Back key (not 540,400).",
+  ]);
+  expect(shotTitles?.some((item) => /Wait for|failed:primary|^step:/u.test(item.title ?? ""))).toBe(
+    false,
+  );
 });
 
 it("dest-end Observe timeline keeps Capture frame, not leftover Run saved Test from testStepEvidence", () => {
