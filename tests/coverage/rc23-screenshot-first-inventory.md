@@ -285,3 +285,12 @@ Aligned freeze identities to dest-phase jobs already on disk. `:8787` in-memory 
 **Fail-closed this session:** iOS Imagine Unbound (`navigation.tab.imagine` absent on grok-ios r362). Web private leftover is `Private` / Switch to Private Chat, not dest history-disclaimer AX — TAP would toggle Private off; slot stays `41513df5` r925. Galaxy `RQCY104BG8X` off ADB; r368 dest-wait unrecaptured; AVD is not Galaxy.
 
 Compiler SHAs already on main: dest leftover skip `efb84ebd6`; fence recover `9b42c1ee9`; leftover inspect `9da720de1`; leftover-skip unread-tree `8781e3c91`; P0.4 `f1ebbdf70`; airplane/lock `b9b7ffa37`. Freeze **30 planned · 29 captured · 1 blocked · 0 missing · 29 pending · 0 accepted**. Workbook **2/51/5**. **29 ≠ 30 complete.** 19z5 stays open.
+
+### 2026-09-18 continuation evidence (current head `4f12dd291`)
+
+This section records fresh runtime evidence without changing the frozen RC-23 denominator or claiming human acceptance.
+
+- **Physical iPad** `db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5` (iPad Pro 10.5, iOS 17.7.11): Relay recovery restored semantic control; a fresh snapshot proved pixels, semantics, and evidence capture. Existing no-AI Tests passed: Settings `5d52b25e-9e08-4ee0-a17f-1c17b555a52a`, Home chrome `fbf3dc62-8224-42bc-ae12-54736375fc67`, and Sidebar `bb953584-c5e6-4aa0-bb59-a4c5582be4bd`. Each produced a pending exact-image review artifact; none was marked Looks correct.
+- **Android emulator** `emulator-5554` from the declared `LuminaQA` AVD (Android 16, 720×1280): the saved Settings Language Proof route was re-recorded against the current runtime profile and selected explicitly as `device:emulator-5554-720x1280` (App Map revision 40). No-AI Test `settings-language-arabic` run `b778e96f-fa1f-48e1-877c-853004e9d300` passed 16 steps, produced 11 frames, passed both transition checks, and passed the Arabic description/primary-action non-overlap assertion.
+- The Android run proves the current deterministic Relay proof fixture’s capture/control/evidence path. It does **not** replace the frozen Grok Android RC-23 cell: the current emulator has no Grok package/account, and the old `medium_phone` profile is unavailable. The Grok Android slot remains pending historical evidence, not accepted.
+- **Still open:** RC-23 remains **30 planned · 29 captured · 1 blocked · 0 accepted**; iOS Imagine remains Unbound because the live SuperGrok home has no unique Imagine control; human review, Android Grok account parity, and unfamiliar-user acceptance remain outstanding.
