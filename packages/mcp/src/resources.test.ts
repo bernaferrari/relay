@@ -1548,6 +1548,78 @@ test("runs collection dest identity is dest wait-for 003, not leftover Close 004
   }
 });
 
+test("paged runs collection keeps dest capture-review account and drops leftover Close 004", async () => {
+  const stamped = {
+    id: "4b93702b",
+    action: "observe",
+    destIdentity: [
+      { path: "frames/003.png", caption: "Observe" },
+      { path: "frames/004.png", caption: "Close" },
+    ],
+    captureReview: [
+      {
+        captureId: "frames/003.png::observe",
+        caption: "Observe",
+        status: "pending",
+        framePath: "frames/003.png",
+        phase: "dest",
+        configuration: { account: "Bernardo Ferrari", app: "Grok.com" },
+        observed: { laneId: "grok-lab" },
+      },
+      {
+        captureId: "frames/004.png::close-leftover",
+        caption: "Close",
+        status: "pending",
+        framePath: "frames/004.png",
+        configuration: { account: "SuperGrok lab signed-in" },
+      },
+    ],
+  };
+  // Force the bounded/paged path (projectRunListDestIdentity is skipped when paged).
+  const runs = Array.from({ length: 101 }, (_, index) =>
+    index === 0 ? stamped : { id: `filler-${index}`, action: "observe", status: "passed" },
+  );
+  const session = await connectMcp(
+    fixtureInvoker({
+      "run.list": { runs },
+    }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", { uri: relayMcpResourceUris.runs }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      data: {
+        runs?: Array<{
+          id?: string;
+          destIdentity?: Array<{ relativeName?: string; caption?: string }>;
+          captureReview?: Array<{
+            relativeName?: string;
+            framePath?: string;
+            configuration?: { account?: string };
+            observed?: { laneId?: string };
+          }>;
+        }>;
+        pagination?: { nextResourceUri?: string };
+      };
+    };
+    assert.ok(envelope.data.pagination?.nextResourceUri);
+    const first = envelope.data.runs?.find((run) => run.id === "4b93702b");
+    assert.deepEqual(first?.destIdentity, [{ relativeName: "frames/003.png", caption: "Observe" }]);
+    assert.doesNotMatch(content.text, /frames\/004\.png/);
+    assert.equal(first?.captureReview?.[0]?.relativeName, "frames/003.png");
+    assert.equal(first?.captureReview?.[0]?.configuration?.account, "Bernardo Ferrari");
+    assert.equal(first?.captureReview?.[0]?.observed?.laneId, "grok-lab");
+    assert.ok(
+      !first?.captureReview?.some(
+        (item) => item.relativeName === "frames/004.png" || item.framePath === "frames/004.png",
+      ),
+    );
+  } finally {
+    await session.close();
+  }
+});
+
 test("trace-pack resource pre-listed destIdentity leftover Close 004 cannot fill dest", async () => {
   const destIdentity = [
     { path: "frames/003.png", caption: "Observe" },

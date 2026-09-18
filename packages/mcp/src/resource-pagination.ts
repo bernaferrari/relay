@@ -334,6 +334,9 @@ function boundedCollectionItem(value: unknown, kind: "app-map" | "run" | "sessio
   }
   if (kind === "run") {
     const destIdentity = destIdentityCollectionEntries(item.destIdentity).slice(0, 8);
+    // Paged runs use this path instead of projectRunListDestIdentity — keep
+    // dest wait-for captureReview account/observed and drop leftover Close.
+    const captureReview = captureReviewCollectionEntries(item.captureReview).slice(0, 8);
     return {
       ...(typeof item.id === "string" ? { id: item.id } : {}),
       ...(typeof item.action === "string" ? { action: item.action.slice(0, 160) } : {}),
@@ -343,6 +346,7 @@ function boundedCollectionItem(value: unknown, kind: "app-map" | "run" | "sessio
       ...(typeof item.writtenAt === "number" ? { writtenAt: item.writtenAt } : {}),
       ...(typeof item.updatedAt === "number" ? { updatedAt: item.updatedAt } : {}),
       ...(destIdentity.length ? { destIdentity } : {}),
+      ...(captureReview.length ? { captureReview } : {}),
     };
   }
   return {
