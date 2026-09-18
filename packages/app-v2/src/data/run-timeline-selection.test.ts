@@ -844,3 +844,150 @@ it("dest-end timeline drops prelude Wait for text beside dest Capture for review
   expect(result.timeline.some((step) => step.title === waitText)).toBe(false);
   expect(result.timeline.some((step) => step.title === "Sleep 1500ms")).toBe(false);
 });
+
+it("dest-end Model selector SuperGrok keeps product title, not Captured result", () => {
+  const result = projectRunReport(
+    "dest-end-model-selector-title",
+    {
+      outcome: "passed",
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "step:step-action:Model selector SuperGrok",
+            framePath: "frames/003.png",
+            imageSha256: "dest-wait",
+            stepId: "relay-test-step-action-dest",
+            phase: "dest",
+            policy: "fast",
+          },
+        },
+      ],
+      frames: [
+        {
+          path: "frames/001.png",
+          caption: "before · Tap identifier toolbar.model.selector.button",
+        },
+        {
+          path: "frames/002.png",
+          caption: "after · Tap identifier toolbar.model.selector.button",
+        },
+        { path: "frames/004.png", caption: "after · Run saved Test" },
+        {
+          path: "frames/003.png",
+          caption: "step:step-action:Model selector SuperGrok",
+        },
+      ],
+      steps: [
+        {
+          id: "trace-run",
+          index: 0,
+          title: "Run saved Test",
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [{ path: "frames/004.png", caption: "after · Run saved Test" }],
+        },
+        {
+          id: "trace-tap",
+          index: 1,
+          title: "Tap identifier toolbar.model.selector.button",
+          status: "ok",
+          actions: [{ kind: "tap" }],
+          frames: [
+            {
+              path: "frames/001.png",
+              caption: "before · Tap identifier toolbar.model.selector.button",
+            },
+            {
+              path: "frames/002.png",
+              caption: "after · Tap identifier toolbar.model.selector.button",
+            },
+          ],
+        },
+        {
+          id: "trace-wait",
+          index: 2,
+          title: 'Wait for label "Heavy"',
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [],
+        },
+        {
+          id: "trace-dest",
+          index: 3,
+          title: "Capture for review · step:step-action:Model selector SuperGrok",
+          status: "ok",
+          actions: [{ kind: "shot" }],
+          frames: [
+            {
+              path: "frames/003.png",
+              caption: "step:step-action:Model selector SuperGrok",
+            },
+          ],
+        },
+      ],
+    },
+    {},
+  );
+  expect(result.firstEvidence?.label).toBe("Model selector SuperGrok");
+  expect(result.firstEvidence?.label).not.toBe("Captured result");
+  expect(result.timeline.map((step) => step.title)).toEqual(["Model selector SuperGrok"]);
+  expect(result.timeline.some((step) => step.title === "Captured result")).toBe(false);
+  expect(result.timeline.some((step) => step.title === 'Wait for label "Heavy"')).toBe(false);
+});
+
+it("failed dest-end firstEvidence is Capture for review, not prelude Wait for", () => {
+  const result = projectRunReport(
+    "dest-end-failed-wait-first-evidence",
+    {
+      outcome: "harness-failure",
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "step:step-action:Tap Expert, dismiss with Back key (not 540,400).",
+            framePath: "frames/007.png",
+            imageSha256: "dest-wait",
+            stepId: "relay-test-step-action-dest",
+          },
+        },
+      ],
+      steps: [
+        {
+          id: "trace-wait",
+          index: 5,
+          title: 'Wait for label "Heavy"',
+          status: "error",
+          actions: [{ kind: "wait" }],
+          frames: [
+            { path: "frames/005.png", caption: 'after · Wait for label "Heavy"' },
+            {
+              path: "frames/006.png",
+              caption: "failed:primary:Tap Expert, dismiss with Back key (not 540,400).",
+            },
+          ],
+        },
+        {
+          id: "trace-dest",
+          index: 6,
+          title:
+            "Capture for review · step:step-action:Tap Expert, dismiss with Back key (not 540,400).",
+          status: "error",
+          actions: [{ kind: "shot" }],
+          frames: [
+            {
+              path: "frames/007.png",
+              caption: "step:step-action:Tap Expert, dismiss with Back key (not 540,400).",
+            },
+          ],
+        },
+      ],
+    },
+    {},
+  );
+  expect(result.firstEvidence?.label).toBe("Tap Expert, dismiss with Back key (not 540,400).");
+  expect(result.firstEvidence?.label).not.toBe('Wait for label "Heavy"');
+  expect(result.timeline.map((step) => step.title)).toEqual([
+    "Tap Expert, dismiss with Back key (not 540,400).",
+  ]);
+});

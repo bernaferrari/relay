@@ -749,10 +749,13 @@ function authoredCaptureStepId(title: string | undefined): string | undefined {
 function humanStepTitle(value: unknown): string | undefined {
   const rawTitle = text(value);
   if (!rawTitle) return undefined;
-  const title =
+  /** Authored Capture for review / Screenshot · step: product labels — keep
+   * even when they contain "selector" (iOS models dest "Model selector
+   * SuperGrok" used to collapse to Captured result). */
+  const authoredCaptureLabel =
     /^Screenshot · (?:step:)?[^:]+:(.+)$/u.exec(rawTitle)?.[1]?.trim() ??
-    /^Capture for review · step:[^:]+:(.+)$/u.exec(rawTitle)?.[1]?.trim() ??
-    rawTitle;
+    /^Capture for review · step:[^:]+:(.+)$/u.exec(rawTitle)?.[1]?.trim();
+  const title = authoredCaptureLabel ?? rawTitle;
   if (isTautologicalNavigationTitle(title)) return undefined;
   if (/^check identifier .+ visible$/iu.test(title)) return "Expected screen content was visible";
   if (/^check layout: identifier .+ does not overlap identifier .+$/iu.test(title)) {
@@ -767,6 +770,7 @@ function humanStepTitle(value: unknown): string | undefined {
     return undefined;
   }
   if (
+    !authoredCaptureLabel &&
     /identifier|selector|xpath|geometry|accessibility tree|app map|recipe|profile id/iu.test(title)
   ) {
     return undefined;
@@ -871,9 +875,9 @@ export function resolvedTestTitle(rawRun: unknown, rawApps: unknown): string | u
   return matches.length === 1 ? matches[0] : undefined;
 }
 /** Dest wait-for Capture for review / Observe label when dest is already
- * visible — prelude check identifier / Sign in gone cannot fill first evidence
- * beside Fast dest (logo leftover inspect used to lead with Expected screen
- * content was visible). */
+ * visible — prelude check identifier / Sign in gone / Wait for cannot fill
+ * first evidence beside Fast dest (logo leftover inspect used to lead with
+ * Expected screen; failed Android models led with Wait for label Heavy). */
 function destWaitForEvidenceLabel(rawRun: unknown): string | undefined {
   for (const value of array(record(rawRun)?.steps)) {
     const step = record(value);
@@ -894,7 +898,10 @@ function destWaitForEvidenceLabel(rawRun: unknown): string | undefined {
 }
 
 function firstTraceEvidence(rawRun: unknown, outcome: RunOutcome | undefined) {
-  if (outcome === "passed" && destCaptureVisibleInRun(rawRun)) {
+  /** Dest Capture for review / Observe wins for passed and failed dest-ends —
+   * failed Android models still stamped Capture frames but firstEvidence led
+   * with prelude Wait for label Heavy. */
+  if (destCaptureVisibleInRun(rawRun)) {
     const destLabel = destWaitForEvidenceLabel(rawRun);
     if (destLabel) return { label: destLabel };
   }
@@ -910,10 +917,12 @@ function firstTraceEvidence(rawRun: unknown, outcome: RunOutcome | undefined) {
       status === "ok" &&
       actions.some((action) => ["ok", "shot"].includes(String(record(action)?.kind)));
     if (outcome === "passed" ? !isSuccess : !isFailure) continue;
+    const rawTitle = text(step?.title);
+    if (preludeLaneCheckStepTitle(rawTitle)) continue;
     const label = humanStepTitle(step?.title);
-    if (!label || leftoverWrapperStepTitle(text(step?.title))) continue;
+    if (!label || leftoverWrapperStepTitle(rawTitle)) continue;
     const checkpoint = /check|expect|assert|verify|visible|screen|page|content|layout/iu.test(
-      text(step?.title) ?? "",
+      rawTitle ?? "",
     );
     candidates.push({ label, score: checkpoint ? 2 : 1, index: candidates.length });
   }
