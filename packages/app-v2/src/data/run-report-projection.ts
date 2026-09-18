@@ -333,12 +333,13 @@ function reportTimeline(
      * the timeline beside dest — including empty-frame siblings that only carry
      * the leftover title (logo leftover inspect used to keep those rows). */
     if (leftoverWrapperStepTitle(text(step.title)) && destCaptureVisible) return [];
-    /** Prelude Expected screen / Sign in gone / Reach / Land / Wait for label /
+    /** Prelude Expected screen / Sign in gone / Reach / Land / Wait for … /
      * Sleep cannot lead the timeline beside Fast dest Capture for review —
      * they hide the firstEvidence banner and were the live logo leftover /
      * home Observe mismatch (shots already drop Reach / Land when dest-phase
-     * is stamped; Wait for / Sleep still sat beside Observe). Do not apply
-     * this to the dest Capture for review row itself. */
+     * is stamped; Wait for label / Sleep dropped; Wait for text still sat
+     * beside private-chat dest). Do not apply this to the dest Capture for
+     * review row itself. */
     if (
       !destEndCaptureReviewTitle(text(step.title)) &&
       preludeLaneCheckStepTitle(text(step.title)) &&
@@ -712,21 +713,22 @@ function leftoverWrapperStepTitle(title: string | undefined): boolean {
 /** Prelude lane checks / home origin / dest settle waits that used to lead
  * dest-end Run report before Fast dest Capture for review / Observe —
  * Expected screen content was visible, check "Sign in" gone, Reach Signed-in
- * home, Land on signed-in home, Wait for label …, and Sleep Nms (live
- * `4b93702b` / attach / Imagine / logo still kept Wait for / Sleep on the
- * timeline after Reach / Land already dropped). */
+ * home, Land on signed-in home, Wait for … (label / text / identifier), and
+ * Sleep Nms (live `4b93702b` / attach / Imagine / logo dropped Wait for label
+ * / Sleep; private-chat dest still kept Wait for text beside the dest
+ * Capture for review). */
 function preludeLaneCheckStepTitle(title: string | undefined): boolean {
   const value = title?.trim() ?? "";
   if (!value) return false;
   if (/^check identifier .+ visible$/iu.test(value)) return true;
   if (/^check\s+".+"\s+gone$/iu.test(value)) return true;
-  if (/^Wait for label\b/iu.test(value)) return true;
+  if (/^Wait for\b/iu.test(value)) return true;
   if (/^Sleep \d+ms$/iu.test(value)) return true;
   const human = humanStepTitle(value) ?? value;
   if (human === "Expected screen content was visible") return true;
   if (/^Reach\b/u.test(human)) return true;
   if (/^Land on\b/iu.test(human)) return true;
-  if (/^Wait for label\b/iu.test(human)) return true;
+  if (/^Wait for\b/iu.test(human)) return true;
   if (/^Sleep \d+ms$/iu.test(human)) return true;
   return false;
 }

@@ -761,3 +761,86 @@ it("dest-end Observe timeline drops prelude Wait for label / Sleep beside dest",
     ),
   ).toBe(false);
 });
+
+it("dest-end timeline drops prelude Wait for text beside dest Capture for review", () => {
+  const waitText =
+    'Wait for text "This chat won\'t appear in your history and will not be used to train models."';
+  const result = projectRunReport(
+    "dest-end-prelude-wait-text",
+    {
+      outcome: "passed",
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "step:step-action:Switch to private chat signed-in",
+            framePath: "frames/003.png",
+            imageSha256: "dest-wait",
+            stepId: "relay-test-step-action-dest",
+            phase: "dest",
+            policy: "fast",
+          },
+        },
+      ],
+      frames: [
+        { path: "frames/004.png", caption: "after · Run saved Test" },
+        {
+          path: "frames/003.png",
+          caption: "step:step-action:Switch to private chat signed-in",
+        },
+      ],
+      steps: [
+        {
+          id: "trace-sleep",
+          index: 5,
+          title: "Sleep 1500ms",
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [],
+        },
+        {
+          id: "trace-wait-text",
+          index: 6,
+          title: waitText,
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [],
+        },
+        {
+          id: "trace-dest",
+          index: 7,
+          title: "Capture for review · step:step-action:Switch to private chat signed-in",
+          status: "ok",
+          actions: [{ kind: "ok" }, { kind: "shot" }],
+          frames: [
+            {
+              path: "frames/003.png",
+              caption: "step:step-action:Switch to private chat signed-in",
+            },
+          ],
+        },
+      ],
+      testStepEvidence: [
+        {
+          schemaVersion: 1,
+          testStepId: "step-action",
+          recipeId: "private-chat-flow",
+          recipeStepId: "relay-test-step-action-dest",
+          traceStepId: "trace-dest",
+          traceStepIndex: 7,
+          occurrence: 1,
+          evidence: {
+            framePaths: ["frames/003.png"],
+            eventSequences: [],
+            artifactKinds: ["capture-review"],
+          },
+        },
+      ],
+    },
+    {},
+  );
+  expect(result.timeline.map((step) => step.id)).toEqual(["trace-dest"]);
+  expect(result.timeline.map((step) => step.title)).toEqual(["Switch to private chat signed-in"]);
+  expect(result.timeline.some((step) => step.title === waitText)).toBe(false);
+  expect(result.timeline.some((step) => step.title === "Sleep 1500ms")).toBe(false);
+});
