@@ -7,7 +7,6 @@ import type {
   AppMapTestCompileDiagnostic,
   AppMapTestStepProvenance,
   RecipeStep,
-  ReviewedDocumentOriginProjection,
 } from "@relay/protocol";
 import { materializeCaptureReviewSlots } from "@relay/protocol";
 import { assertScenarioTest } from "./app-map/test-intent-validation.js";
@@ -15,7 +14,6 @@ import {
   compileAppMapConnection,
   compileAppMapFlow,
   compileAppMapRoutine,
-  destEndCaptureWaitForIndex,
   destEndConnectionsForRequirement,
 } from "./app-map-compiler.js";
 import {
@@ -36,7 +34,6 @@ import { leftoverWarmConfirmationSteps } from "./leftover-origin-recovery.js";
 import {
   assertCompiledExecutionQueue,
   compiledIosReadinessDurations,
-  destEndInspectScreenshotReview,
   quoteCompiledTestDuration,
   resolvedExecutionQueue,
 } from "./execution-queue-compile.js";
@@ -57,11 +54,20 @@ import {
 import { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";
 import { assertionRecipeStep } from "./app-map-test-assertion.js";
 import { compiledGraphPlatformBlocker } from "./recipe-platform-support.js";
-import {
-  AppMapTestCompileError,
-  type AppMapTestCompileErrorCode,
-} from "./app-map-test-compile-error.js";
+import { AppMapTestCompileError } from "./app-map-test-compile-error.js";
 import { compiledTestClaimedAbsentControl } from "./app-map-unrecorded-claimed-control.js";
+import {
+  asRecipe,
+  compiledPerformance,
+  DESTINATION_SURVEY_MAX_SCROLLS,
+  destEndCaptureScreenshot,
+  fail,
+  insertDestEndCaptureReviewScreenshot,
+  MAX_COMPILED_STEPS,
+  recipeId,
+  stampDestEndCaptureReviewScreenshots,
+  type AppMapTestCompileOptions,
+} from "./app-map-test-compile-support.js";
 
 export { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";
 export { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
@@ -70,126 +76,7 @@ export {
   type AppMapTestCompileErrorCode,
 } from "./app-map-test-compile-error.js";
 
-const MAX_COMPILED_STEPS = 4_096;
-/** Bounded automatic survey using the `target.scroll-survey.capture` default, so an every-screen Test
- * never costs more than one manual `device survey`. */
-const DESTINATION_SURVEY_MAX_SCROLLS = 4;
-
-function destEndCaptureScreenshot(step: AppMapScenarioTestStep): RecipeStep {
-  return {
-    kind: "screenshot",
-    caption: `step:${step.id}:${step.intent}`,
-    review: destEndInspectScreenshotReview(step.intent),
-    id: `relay-test-${step.id}-dest`,
-  };
-}
-
-function insertDestEndCaptureReviewScreenshot(
-  recipe: { steps: RecipeStep[] },
-  screenshot: RecipeStep,
-): boolean {
-  if (screenshot.id && recipe.steps.some((step) => step.id === screenshot.id)) return true;
-  const destIndex = destEndCaptureWaitForIndex(recipe.steps);
-  if (destIndex < 0) return false;
-  recipe.steps.splice(destIndex + 1, 0, structuredClone(screenshot));
-  return true;
-}
-
-/** Stamp dest wait-for before provenance import so leftover Close last-frame
- * does not inherit the dest screenshot's stepIndex. */
-function stampDestEndCaptureReviewScreenshots(
-  recipes: Iterable<{ id: string; steps: RecipeStep[] }>,
-  destRecipe: { id: string; steps: RecipeStep[] } | undefined,
-  destEndIds: ReadonlySet<string>,
-  screenshot: RecipeStep,
-): void {
-  const seen = new Set<string>();
-  const ordered = destRecipe ? [destRecipe, ...recipes] : [...recipes];
-  for (const recipe of ordered) {
-    if (seen.has(recipe.id)) continue;
-    if (destRecipe && recipe !== destRecipe && !destEndIds.has(recipe.id)) continue;
-    seen.add(recipe.id);
-    insertDestEndCaptureReviewScreenshot(recipe, screenshot);
-  }
-}
-
-export type AppMapTestCompileOptions = {
-  /** Run-scoped startup choice. Warm preserves the current target; cold
-   * requires and launches the frozen Test origin application. */
-  startupMode?: "warm" | "cold";
-  /** Frozen saved profile used to choose one reviewed Test implementation. */
-  runtimeTargetProfile?: import("@relay/protocol").AppMapCompiledRuntimeTargetProfile;
-  /** Run-scoped cache bypass for selected full-surface Test bindings. */
-  forceRecaptureSurfaceScreenIds?: readonly string[];
-  /** Start from a live product checkpoint instead of executing earlier setup.
-   * The compiled plan begins with a fresh exact screen proof and fails closed
-   * on mismatch; it never silently relaunches. */
-  entryCheckpointScreenId?: string;
-  /** Server-only, locally verified reviewed-origin sidecars. Without this
-   * optional input pure/offline compilation remains exact-inverse. */
-  reviewedDocumentOrigins?: readonly ReviewedDocumentOriginProjection[];
-};
-
-function fail(
-  code: AppMapTestCompileErrorCode,
-  test: AppMapScenarioTest,
-  step: AppMapScenarioTestStep,
-  message: string,
-): never {
-  throw new AppMapTestCompileError(code, test.id, step.id, message);
-}
-
-function recipeId(map: AppMap, test: AppMapScenarioTest, suffix = "root"): string {
-  return `app-map:${map.id}:test:${test.id}:${suffix}:r${map.revision}`;
-}
-
-function asRecipe(
-  map: AppMap,
-  compiled: { id: string; title: string; description?: string; steps: RecipeStep[] },
-): Recipe {
-  return {
-    id: compiled.id,
-    title: compiled.title,
-    ...(compiled.description ? { description: compiled.description } : {}),
-    source: "custom",
-    steps: structuredClone(compiled.steps),
-    createdAt: map.createdAt,
-    updatedAt: map.updatedAt,
-  };
-}
-
-function compiledPerformance(
-  rootRecipeId: string,
-  graph: Readonly<Record<string, Recipe>>,
-): AppMapCompiledTest["performance"] {
-  const operationCounts: Partial<Record<RecipeStep["kind"], number>> = {};
-  let moduleCalls = 0;
-  const visit = (recipeId: string, stack: ReadonlySet<string>): void => {
-    if (stack.has(recipeId)) return;
-    const recipe = graph[recipeId];
-    if (!recipe) return;
-    const nextStack = new Set(stack).add(recipeId);
-    for (const step of recipe.steps) {
-      if (step.kind === "module") {
-        moduleCalls += 1;
-        visit(step.recipeId, nextStack);
-        continue;
-      }
-      operationCounts[step.kind] = (operationCounts[step.kind] ?? 0) + 1;
-    }
-  };
-  visit(rootRecipeId, new Set());
-  return {
-    executableOperations: Object.values(operationCounts).reduce(
-      (total, count) => total + (count ?? 0),
-      0,
-    ),
-    moduleCalls,
-    operationCounts,
-    screenshotCount: operationCounts.screenshot ?? 0,
-    destinationProofCount: operationCounts["expect-screen"] ?? 0,
-  };
-}
+export type { AppMapTestCompileOptions } from "./app-map-test-compile-support.js";
 
 export function compileAppMapScenarioTest(
   map: AppMap,

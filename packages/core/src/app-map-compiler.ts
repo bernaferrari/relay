@@ -22,6 +22,11 @@ import { observeScreenIdentityForHost } from "./screen-identity.js";
 import type { SnapshotNode } from "./device.js";
 import { semanticTargetMatches } from "./scroll-surface-semantic-index.js";
 import { compiledJudgeFields } from "./judge-assertion-fields.js";
+import {
+  compileRecipe as compileRecipeFromActions,
+  connectionActionsStartWithWaitFor as connectionActionsStartWithWaitForFromActions,
+} from "./app-map-recipe-compiler.js";
+import { destinationExpectation, navigationStep } from "./app-map-navigation-compiler.js";
 
 export type AppMapCompileErrorCode =
   | "missing-flow"
@@ -72,7 +77,7 @@ function routineCompiler(map: AppMap, recipes: Record<string, AppMapCompiledReci
       steps: [],
       stepProvenance: [],
     };
-    recipes[id] = compileRecipe({
+    recipes[id] = compileRecipeFromActions({
       map,
       id,
       title: routine.name,
@@ -82,6 +87,7 @@ function routineCompiler(map: AppMap, recipes: Record<string, AppMapCompiledReci
       ownerId: routine.id,
       actions: routine.actions,
       ensureRoutine,
+      assertionStep,
     });
     if (routine.requirementAction === "capture-view") {
       applyDestEndOpenLeftoverPolicy(recipes[id]!.steps, 0, recipes[id]!.steps.length, "inspect");
@@ -95,13 +101,6 @@ function routineCompiler(map: AppMap, recipes: Record<string, AppMapCompiledReci
     }
   };
   return ensureRoutine;
-}
-
-function stableStep(step: RecipeStep, actionId: string, index: number): RecipeStep {
-  return {
-    ...structuredClone(step),
-    id: step.id?.trim() || compiledAppMapStepId("relay-action", `${actionId}-${index + 1}`),
-  };
 }
 
 export function screenExpectation(
@@ -222,39 +221,6 @@ function assertionStep(map: AppMap, actionId: string, assertion: AssertionSpec):
     expected: assertion.expected,
     match: assertion.match,
   };
-}
-
-function semanticRevealPlans(
-  map: AppMap,
-  screenId: string | undefined,
-  target: StepTarget,
-): SemanticRevealPlan[] {
-  const screen = screenId ? map.screens[screenId] : undefined;
-  if (!screen) return [];
-  const plans: SemanticRevealPlan[] = [];
-  for (const variantId of screen.variantIds) {
-    const surfaces = [...(map.screenVariants[variantId]?.scrollSurfaces ?? [])].sort(
-      (left, right) => right.capturedAt - left.capturedAt,
-    );
-    const surface = surfaces.find((candidate) =>
-      candidate.semanticIndex?.anchors.some((anchor) =>
-        semanticTargetMatches(target, anchor.target),
-      ),
-    );
-    if (!surface?.semanticIndex) continue;
-    const targetAnchor = surface.semanticIndex.anchors.find((anchor) =>
-      semanticTargetMatches(target, anchor.target),
-    );
-    if (!targetAnchor) continue;
-    plans.push({
-      ...structuredClone(surface.semanticIndex),
-      surfaceId: surface.id,
-      captureId: surface.captureId,
-      targetOrder: targetAnchor.order,
-      targetDocumentY: targetAnchor.documentY,
-    });
-  }
-  return plans;
 }
 
 function destEndOpenChromeTarget(step: RecipeStep): StepTarget | undefined {
@@ -577,245 +543,6 @@ export function destEndConnectionsForRequirement(
   return changed ? next : connections;
 }
 
-function connectionActionsStartWithWaitFor(connection: Connection | undefined): boolean {
-  const first = connection?.actions[0];
-  if (!first) return false;
-  if (first.kind === "steps" || first.kind === "recorded") {
-    return first.steps[0]?.kind === "wait-for";
-  }
-  return false;
-}
-
-function stampActionCoverage(step: RecipeStep, coverage?: CaptureCoverage): RecipeStep {
-  if (!coverage || step.coverage) return step;
-  return { ...step, coverage };
-}
-
-function actionSteps(map: AppMap, action: ActionSpec, sourceScreenId?: string): RecipeStep[] {
-  const steps: RecipeStep[] = (() => {
-    switch (action.kind) {
-      case "recorded":
-        return action.steps.map((step, index) => stableStep(step, action.id, index));
-      case "steps":
-        return action.steps.map((step, index) => stableStep(step, action.id, index));
-      case "tap":
-        return [
-          {
-            id: compiledAppMapStepId("relay-action", action.id),
-            kind: "tap",
-            target: structuredClone(action.target),
-            ...(action.expectedApp ? { expectedApp: action.expectedApp } : {}),
-            ...(action.fallbackTargets?.length
-              ? { fallbackTargets: structuredClone(action.fallbackTargets) }
-              : {}),
-          },
-        ];
-      case "text":
-        return [
-          {
-            id: compiledAppMapStepId("relay-action", action.id),
-            kind: "type",
-            text: action.text,
-            ...(action.target ? { target: structuredClone(action.target) } : {}),
-          },
-        ];
-      case "gesture":
-        return action.gesture.kind === "swipe"
-          ? [
-              {
-                id: compiledAppMapStepId("relay-action", action.id),
-                kind: "swipe",
-                from: structuredClone(action.gesture.from),
-                to: structuredClone(action.gesture.to),
-                ...(action.gesture.durationMs === undefined
-                  ? {}
-                  : { durationMs: action.gesture.durationMs }),
-              },
-            ]
-          : [
-              {
-                id: compiledAppMapStepId("relay-action", action.id),
-                kind: "scroll",
-                direction: action.gesture.direction,
-                ...(action.gesture.amount === undefined ? {} : { amount: action.gesture.amount }),
-              },
-            ];
-      case "reveal": {
-        const navigation = semanticRevealPlans(map, sourceScreenId, action.target);
-        return [
-          {
-            id: compiledAppMapStepId("relay-action", action.id),
-            kind: "reveal",
-            target: structuredClone(action.target),
-            ...(action.direction ? { direction: action.direction } : {}),
-            ...(action.maxAttempts === undefined ? {} : { maxAttempts: action.maxAttempts }),
-            ...(navigation.length ? { navigation } : {}),
-          },
-        ];
-      }
-      case "back":
-      case "home":
-        return [
-          { id: compiledAppMapStepId("relay-action", action.id), kind: "key", key: action.kind },
-        ];
-      case "app":
-        return [
-          {
-            id: compiledAppMapStepId("relay-action", action.id),
-            kind: "app",
-            action: action.action,
-            ...(action.app ? { app: action.app } : {}),
-            ...(action.action === "open" && action.url ? { url: action.url } : {}),
-            ...(action.action === "open" && action.relaunch !== undefined
-              ? { relaunch: action.relaunch }
-              : {}),
-          },
-        ];
-      case "wait":
-        return action.ms === 0
-          ? []
-          : [
-              {
-                id: compiledAppMapStepId("relay-action", action.id),
-                kind: "sleep",
-                ms: action.ms,
-              },
-            ];
-      case "assertion":
-        return [assertionStep(map, action.id, action.assertion)];
-      case "routine":
-        return [
-          {
-            id: compiledAppMapStepId("relay-action", action.id),
-            kind: "module",
-            recipeId: recipeId(map, "routine", action.routineId),
-            ...(action.bindings ? { bindings: structuredClone(action.bindings) } : {}),
-          },
-        ];
-      case "passive":
-        return [];
-    }
-  })();
-  return steps.map((step) => {
-    const navigation =
-      step.kind === "reveal" && !step.navigation?.length
-        ? semanticRevealPlans(map, sourceScreenId, step.target)
-        : [];
-    return stampActionCoverage(
-      {
-        ...step,
-        ...(navigation.length ? { navigation } : {}),
-        ...(action.optional ? { optional: true as const } : {}),
-        ...(action.when ? { when: structuredClone(action.when) } : {}),
-      },
-      action.coverage,
-    );
-  });
-}
-
-function compileRecipe(input: {
-  map: AppMap;
-  id: string;
-  title: string;
-  description?: string;
-  parameters?: Routine["parameters"];
-  ownerKind: "connection" | "routine";
-  ownerId: string;
-  sourceScreenId?: string;
-  actions: ActionSpec[];
-  ensureRoutine?: (routineId: string) => void;
-}): AppMapCompiledRecipe {
-  const steps: RecipeStep[] = [];
-  const stepProvenance: AppMapCompiledStepProvenance[] = [];
-  for (const action of input.actions) {
-    if (action.kind === "routine") input.ensureRoutine?.(action.routineId);
-    for (const step of actionSteps(input.map, action, input.sourceScreenId)) {
-      const stepIndex = steps.length;
-      steps.push(step);
-      stepProvenance.push({
-        recipeId: input.id,
-        stepIndex,
-        stepId: step.id!,
-        origin: "action",
-        ownerKind: input.ownerKind,
-        ownerId: input.ownerId,
-        actionId: action.id,
-      });
-    }
-  }
-  return {
-    id: input.id,
-    title: input.title,
-    ...(input.description ? { description: input.description } : {}),
-    parameters: structuredClone(input.parameters ?? []),
-    steps,
-    stepProvenance,
-  };
-}
-
-function navigationTarget(
-  target: NonNullable<Connection["navigation"]>["targetAlternatives"][number],
-): StepTarget {
-  switch (target.kind) {
-    case "identifier":
-      return { identifier: target.identifier };
-    case "accessibility":
-      return { label: target.label, ...(target.role ? { role: target.role } : {}) };
-    case "element-relative":
-      return {
-        point: {
-          x: 0,
-          y: 0,
-          relativeTo: {
-            target: structuredClone(target.anchor),
-            xRatio: target.xRatio,
-            yRatio: target.yRatio,
-          },
-        },
-      };
-  }
-}
-
-function navigationStep(connection: Connection): Extract<RecipeStep, { kind: "tap" }> | undefined {
-  const contract = connection.navigation;
-  if (!contract) return undefined;
-  const [primary, ...fallbacks] = contract.targetAlternatives.map(navigationTarget);
-  if (!primary) return undefined;
-  return {
-    id: compiledAppMapStepId("relay-navigation", connection.id),
-    kind: "tap",
-    target: primary,
-    ...(fallbacks.length ? { fallbackTargets: fallbacks } : {}),
-    navigationContract: {
-      connectionId: connection.id,
-      expectedScreenId: contract.expectedDestination.screenId,
-      expectedFingerprint: contract.expectedDestination.identity.fingerprint,
-      evidenceIds: [...contract.expectedDestination.evidenceIds],
-    },
-  };
-}
-
-function destinationExpectation(map: AppMap, connection: Connection): RecipeStep {
-  const destination =
-    map.screens[
-      (connection.destination as Extract<Connection["destination"], { kind: "screen" }>).screenId
-    ]!;
-  const hasOutgoingConnection = Object.values(map.connections).some(
-    (candidate) => candidate.fromScreenId === destination.id && candidate.state !== "draft",
-  );
-  return screenExpectation(
-    map,
-    connection.navigation
-      ? {
-          ...destination,
-          identity: structuredClone(connection.navigation.expectedDestination.identity),
-        }
-      : destination,
-    compiledAppMapStepId("relay-destination", connection.id),
-    destination.evidenceSurface ?? (hasOutgoingConnection ? "ordinary" : "dead-end"),
-  );
-}
-
 /** Compile one saved flow into the exact recipes consumed by the runner. */
 export function compileAppMapFlow(
   mapInput: AppMap,
@@ -870,7 +597,7 @@ export function compileAppMapFlow(
   // Dest-end chrome that starts with wait-for must not require the origin
   // fingerprint. compileAppMapConnection already skips that identity; the
   // Test/Flow compiler has to skip it too or leftover origin chrome SOS.
-  if (!connectionActionsStartWithWaitFor(firstConnection)) {
+  if (!connectionActionsStartWithWaitForFromActions(firstConnection)) {
     const sourceStep = screenExpectation(
       map,
       source,
@@ -916,7 +643,7 @@ export function compileAppMapFlow(
         actionId: "navigation-contract",
       });
     }
-    const compiled = compileRecipe({
+    const compiled = compileRecipeFromActions({
       map,
       id: rootRecipeId,
       title: root.title,
@@ -925,6 +652,7 @@ export function compileAppMapFlow(
       sourceScreenId: connection.fromScreenId,
       actions: connection.actions,
       ensureRoutine,
+      assertionStep,
     });
     for (let index = 0; index < compiled.steps.length; index += 1) {
       const step = compiled.steps[index]!;
@@ -935,7 +663,7 @@ export function compileAppMapFlow(
     }
     if (connection.destination.kind === "screen") {
       const stepIndex = root.steps.length;
-      const step = destinationExpectation(map, connection);
+      const step = destinationExpectation(map, connection, screenExpectation);
       let scrollIndex = -1;
       for (let index = rangeStart; index < root.steps.length; index += 1) {
         if (root.steps[index]?.kind === "scroll") scrollIndex = index;
@@ -1048,7 +776,7 @@ export function compileAppMapConnection(
       },
     ],
   };
-  const compiled = compileRecipe({
+  const compiled = compileRecipeFromActions({
     map,
     id: rootRecipeId,
     title: root.title,
@@ -1057,11 +785,15 @@ export function compileAppMapConnection(
     sourceScreenId: connection.fromScreenId,
     actions: connection.actions,
     ensureRoutine,
+    assertionStep,
   });
   // Wait-for as the first action is the origin proof. Requiring origin
   // identity strands leftover conversation after a reply (open chat is no
   // longer empty home), then SOS-recovers by replaying the same connection.
-  if (connectionActionsStartWithWaitFor(connection) || compiled.steps[0]?.kind === "wait-for") {
+  if (
+    connectionActionsStartWithWaitForFromActions(connection) ||
+    compiled.steps[0]?.kind === "wait-for"
+  ) {
     root.steps = [];
     root.stepProvenance = [];
   }
@@ -1084,7 +816,7 @@ export function compileAppMapConnection(
     root.stepProvenance.push({ ...compiled.stepProvenance[index]!, stepIndex });
   }
   if (connection.destination.kind === "screen") {
-    const step = destinationExpectation(map, connection);
+    const step = destinationExpectation(map, connection, screenExpectation);
     root.stepProvenance.push({
       recipeId: rootRecipeId,
       stepIndex: root.steps.length,
