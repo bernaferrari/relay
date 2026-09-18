@@ -190,6 +190,41 @@ const verifyChangeSelectionTransport = z.discriminatedUnion("kind", [
 ]);
 
 const debugBugInputSchema = createDebugBugInputSchema(verifyChangeSelectionTransport);
+const goalSessionInputSchema = z
+  .object({
+    goal: z.string().trim().min(1).max(2_048).optional(),
+    startUrl: z.url().optional(),
+    targetId,
+    laneId: identifier.optional(),
+    model: identifier.optional(),
+    maxSteps: z.number().int().min(1).max(40).optional(),
+    maxDurationMs: z.number().int().min(1_000).max(900_000).optional(),
+    resumeSessionId: identifier.optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.resumeSessionId) {
+      if (
+        value.goal !== undefined ||
+        value.startUrl !== undefined ||
+        value.targetId !== undefined ||
+        value.laneId !== undefined ||
+        value.model !== undefined ||
+        value.maxSteps !== undefined ||
+        value.maxDurationMs !== undefined
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "resumeSessionId cannot be combined with start fields",
+        });
+      }
+      return;
+    }
+    if (!value.goal) context.addIssue({ code: "custom", message: "goal is required" });
+    if ((value.startUrl === undefined) === (value.targetId === undefined)) {
+      context.addIssue({ code: "custom", message: "provide exactly one of startUrl or targetId" });
+    }
+  });
 
 function assertRawTracePackPayloads(value: unknown, maxPacks: number): void {
   if (!Array.isArray(value)) return;
@@ -312,6 +347,20 @@ export const relayOutcomeTools = Object.freeze([
       readOnlyHint: true,
       destructiveHint: false,
       idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: "relay_goal",
+    title: "Run a bounded goal",
+    description:
+      "Interact with one target toward a stated goal using a single bounded worker. Optional OpenRouter-hosted Typesafe Jev suggestions receive only a compact redacted observation; Relay validates every candidate, persists intent before mutation, never types secrets or runs code, and stops for review on uncertainty. Start with startUrl or targetId, or resume a session by id.",
+    requiresConfirmation: true,
+    inputSchema: goalSessionInputSchema,
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
       openWorldHint: false,
     },
   },
@@ -735,6 +784,21 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
     return jobs.observe({
       kind: "observe-target",
       ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
+    });
+  }
+  if (input.name === "relay_goal") {
+    if (typeof parsed.resumeSessionId === "string") {
+      return jobs.resumeGoal({ kind: "goal-resume", sessionId: parsed.resumeSessionId });
+    }
+    return jobs.goal({
+      kind: "goal-start",
+      goal: parsed.goal as string,
+      ...(typeof parsed.startUrl === "string" ? { startUrl: parsed.startUrl } : {}),
+      ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
+      ...(typeof parsed.laneId === "string" ? { laneId: parsed.laneId } : {}),
+      ...(typeof parsed.model === "string" ? { model: parsed.model } : {}),
+      ...(typeof parsed.maxSteps === "number" ? { maxSteps: parsed.maxSteps } : {}),
+      ...(typeof parsed.maxDurationMs === "number" ? { maxDurationMs: parsed.maxDurationMs } : {}),
     });
   }
   if (input.name === "relay_record_test") {

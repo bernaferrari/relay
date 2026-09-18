@@ -1,0 +1,294 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import type {
+  ArtifactRefProjection,
+  GoalSessionRecord,
+  ModelDecisionRecord,
+  OperationId,
+  OperationInput,
+  OperationOutput,
+  TargetObservation,
+} from "@relay/protocol";
+import type { ModelDecisionProvider } from "@relay/core";
+import { GOAL_SESSION_SCHEMA_VERSION } from "@relay/protocol";
+import type { RelayOperationPort } from "./operation-port.js";
+import { createGoalSessionRunner, type GoalSessionStore } from "./goal-runner.js";
+
+const missingArtifact: ArtifactRefProjection = {
+  status: "missing",
+  source: "external",
+  media: { kind: "image", mime: "image/png" },
+};
+
+function observation(step: number): TargetObservation {
+  return {
+    schemaVersion: 1,
+    target: { kind: "browser", platform: "browser", targetId: "goal-goal-test" },
+    capturedAt: step,
+    pixels: { status: "unavailable", message: "test" },
+    semantics: {
+      status: "current",
+      capturedAt: step,
+      artifact: missingArtifact,
+      source: "pixels-only",
+      nodeCount: 1,
+      controls: [
+        {
+          identifier: "next",
+          label: "Next",
+          role: "button",
+          enabled: true,
+          rect: { x: 1, y: 2, width: 10, height: 10 },
+        },
+      ],
+    },
+    screenCandidate: { fingerprint: `screen-${step}`, confidence: "observed" },
+  };
+}
+
+function targetDefinition(id = "goal-goal-test") {
+  return {
+    id,
+    name: "Goal test",
+    kind: "browser" as const,
+    createdAt: 1,
+    updatedAt: 1,
+    browser: { startUrl: "https://example.test", profileRetention: "ephemeral" as const },
+  };
+}
+
+function choice(criteria: Record<string, string | null>, selected: string) {
+  return {
+    type: "choice" as const,
+    choice: selected,
+    probabilities: Object.fromEntries(
+      Object.keys(criteria).map((key) => [key, key === selected ? 1 : 0]),
+    ),
+    confidence: 1,
+  };
+}
+
+function providerFor(...decisions: Array<"continue" | "complete">): ModelDecisionProvider {
+  let cursor = 0;
+  return {
+    id: "openrouter",
+    async decide(request): Promise<ModelDecisionRecord> {
+      const selected = decisions[cursor++] ?? "complete";
+      const progress = request.questions.progress;
+      const nextAction = request.questions.next_action;
+      assert.equal(progress.type, "choice");
+      assert.equal(nextAction.type, "choice");
+      assert.equal(request.provider, "openrouter");
+      const state = request.state as { redacted?: unknown };
+      assert.equal(state.redacted, true);
+      const stateRecord =
+        request.state && typeof request.state === "object" && !Array.isArray(request.state)
+          ? request.state
+          : {};
+      assert.equal("pixels" in stateRecord, false);
+      return {
+        schemaVersion: 1,
+        status: "ok",
+        provider: "openrouter",
+        model: "~typesafe/jev-latest",
+        requestId: `request-${cursor}`,
+        observationDigest: request.observationDigest,
+        questionDigest: "q",
+        answers: {
+          progress: choice(progress.criteria, selected),
+          next_action: choice(
+            nextAction.criteria,
+            selected === "continue"
+              ? Object.keys(nextAction.criteria).find((key) => key !== "none")!
+              : "none",
+          ),
+        },
+        startedAt: 1,
+        completedAt: 2,
+        durationMs: 1,
+        evidenceRefs: request.evidenceRefs ?? [],
+      };
+    },
+  };
+}
+
+function unavailableProvider(): ModelDecisionProvider {
+  return {
+    id: "openrouter",
+    async decide(): Promise<ModelDecisionRecord> {
+      return {
+        schemaVersion: 1,
+        status: "unavailable",
+        provider: "openrouter",
+        model: "~typesafe/jev-latest",
+        requestId: "request-unavailable",
+        startedAt: 1,
+        completedAt: 2,
+        durationMs: 1,
+        evidenceRefs: [],
+        error: { code: "provider-unavailable", message: "OpenRouter is not configured" },
+      };
+    },
+  };
+}
+
+function memoryStore(
+  initial: GoalSessionRecord[] = [],
+): GoalSessionStore & { values: Map<string, GoalSessionRecord> } {
+  const values = new Map(initial.map((record) => [record.id, structuredClone(record)]));
+  return {
+    values,
+    async load(id) {
+      const record = values.get(id);
+      return record ? structuredClone(record) : null;
+    },
+    async save(record) {
+      values.set(record.id, structuredClone(record));
+    },
+  };
+}
+
+function operations(options: { uncertain?: boolean } = {}): {
+  port: RelayOperationPort;
+  calls: OperationId[];
+} {
+  let captureCount = 0;
+  const calls: OperationId[] = [];
+  const port: RelayOperationPort = {
+    async invoke<Id extends OperationId>(
+      id: Id,
+      _input: OperationInput<Id>,
+    ): Promise<OperationOutput<Id>> {
+      calls.push(id);
+      if (id === "target.create") {
+        const targetId = (_input as { id?: string }).id;
+        return { target: targetDefinition(targetId) } as OperationOutput<Id>;
+      }
+      if (id === "target.open") {
+        const targetId = (_input as { targetId?: string }).targetId;
+        return {
+          session: {
+            targetId,
+            name: "Goal test",
+            url: "https://example.test",
+            signedOut: true,
+          },
+        } as OperationOutput<Id>;
+      }
+      if (id === "target.observation.capture") {
+        captureCount += 1;
+        return observation(captureCount) as OperationOutput<Id>;
+      }
+      if (id === "target.interact") {
+        if (options.uncertain) throw new Error("target interaction outcome-unknown");
+        return { ok: true } as OperationOutput<Id>;
+      }
+      throw new Error(`Unexpected operation ${id}`);
+    },
+  };
+  return { port, calls };
+}
+
+test("goal runner persists redacted observation and intent before one safe action", async () => {
+  const store = memoryStore();
+  const runtime = operations();
+  const runner = createGoalSessionRunner({
+    operations: runtime.port,
+    store,
+    decisionProvider: providerFor("continue", "complete"),
+    id: () => "goal-test",
+    now: (() => {
+      let value = 1;
+      return () => value++;
+    })(),
+  });
+
+  const result = await runner.start({
+    goal: "Reach the next screen",
+    startUrl: "https://example.test",
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(result.stopReason?.code, "goal-achieved");
+  assert.deepEqual(runtime.calls, [
+    "target.create",
+    "target.open",
+    "target.observation.capture",
+    "target.interact",
+    "target.observation.capture",
+  ]);
+  assert.equal(result.actions[0]?.status, "acknowledged");
+  assert.equal(store.values.get("goal-test")?.pendingAction, undefined);
+  assert.equal(store.values.get("goal-test")?.lastObservation?.redacted, true);
+});
+
+test("goal runner reports unavailable OpenRouter without mutating the target", async () => {
+  const runtime = operations();
+  const result = await createGoalSessionRunner({
+    operations: runtime.port,
+    store: memoryStore(),
+    decisionProvider: unavailableProvider(),
+    id: () => "goal-unavailable",
+  }).start({ goal: "Do the thing", startUrl: "https://example.test" });
+  assert.equal(result.status, "blocked");
+  assert.equal(result.stopReason?.code, "provider-unavailable");
+  assert.equal(runtime.calls.includes("target.interact"), false);
+});
+
+test("uncertain target interaction is terminal and is never automatically retried", async () => {
+  const runtime = operations({ uncertain: true });
+  const result = await createGoalSessionRunner({
+    operations: runtime.port,
+    store: memoryStore(),
+    decisionProvider: providerFor("continue"),
+    id: () => "goal-uncertain",
+  }).start({ goal: "Do the thing", startUrl: "https://example.test" });
+  assert.equal(result.status, "uncertain");
+  assert.equal(result.stopReason?.code, "action-uncertain");
+  assert.equal(runtime.calls.filter((id) => id === "target.interact").length, 1);
+  assert.equal(result.actions[0]?.status, "unknown");
+});
+
+test("resume fences a persisted in-flight mutation for human review", async () => {
+  const record: GoalSessionRecord = {
+    schemaVersion: GOAL_SESSION_SCHEMA_VERSION,
+    id: "goal-pending",
+    goal: "Review the target",
+    target: { targetId: "ipad", platform: "ios" },
+    budget: { maxSteps: 2, maxDurationMs: 10_000 },
+    status: "running",
+    step: 0,
+    createdAt: 1,
+    updatedAt: 1,
+    observations: [],
+    actions: [],
+    pendingAction: {
+      actionId: "action-1",
+      candidateId: "c1",
+      observationDigest: "digest",
+      intendedAt: 2,
+    },
+  };
+  const runtime = operations();
+  const result = await createGoalSessionRunner({
+    operations: runtime.port,
+    store: memoryStore([record]),
+  }).resume("goal-pending");
+  assert.equal(result.status, "uncertain");
+  assert.equal(result.resumeRequiresReview, true);
+  assert.equal(result.stopReason?.code, "resume-review-required");
+  assert.deepEqual(runtime.calls, []);
+});
+
+test("goal runner stops at the action budget after observing the result", async () => {
+  const runtime = operations();
+  const result = await createGoalSessionRunner({
+    operations: runtime.port,
+    store: memoryStore(),
+    decisionProvider: providerFor("continue"),
+    id: () => "goal-budget",
+  }).start({ goal: "Do one step", startUrl: "https://example.test", maxSteps: 1 });
+  assert.equal(result.status, "blocked");
+  assert.equal(result.stopReason?.code, "budget-exhausted");
+  assert.equal(result.actions.length, 1);
+  assert.equal(result.observations.length, 2);
+});

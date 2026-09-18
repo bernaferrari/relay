@@ -137,6 +137,8 @@ function renderRootHelp(): string {
 Usage:
   relay connect [device]
   relay observe [device]
+  relay explore --url <url> --goal <goal> --confirm [--max-steps <n>] [--max-ms <n>]
+  relay goal resume <sessionId> --confirm
   relay record <title> [--map <id>] [--device <id>] --confirm
   relay edit-recording <workflowId> <expectedVersion> <remove|reorder|replace|merge|split|rename> ...
   relay run <testId> [--map <id>] [--device <id>] [--confirm]
@@ -167,7 +169,7 @@ Usage:
   relay <family> --help
 
 Outcome commands:
-  connect, observe, record, edit-recording, run, repeat, continue-repeat, inspect-workflow, cancel-run,
+  connect, observe, explore, goal, record, edit-recording, run, repeat, continue-repeat, inspect-workflow, cancel-run,
   inspect-failure, propose-repair,
   export-evidence, replay-lab
 

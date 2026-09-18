@@ -139,6 +139,11 @@ const valueFlags = new Set([
   "--export",
   "--todo",
   "--triage",
+  "--url",
+  "--goal",
+  "--max-steps",
+  "--max-ms",
+  "--model",
 ]);
 const switchFlags = new Set([
   "-h",

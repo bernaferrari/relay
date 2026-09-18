@@ -85,6 +85,7 @@ export * from "./browser-lane-session.js";
 export * from "./browser-authentication-fixture.js";
 export * from "./target-observation.js";
 export * from "./goal-observation.js";
+export * from "./goal-session.js";
 export * from "./model-decision.js";
 export * from "./target-supervisor.js";
 export * from "./workflow-record.js";

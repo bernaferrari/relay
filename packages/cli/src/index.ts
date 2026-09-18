@@ -392,6 +392,8 @@ async function runOutcomeCommand(input: {
     return cancelled;
   }
   if (intent.kind === "inspect-failure") return jobs.inspectFailure(intent);
+  if (intent.kind === "goal-start") return jobs.goal(intent);
+  if (intent.kind === "goal-resume") return jobs.resumeGoal(intent);
   if (intent.kind === "propose-repair") return jobs.proposeRepair(intent);
   if (intent.kind === "export-evidence") return jobs.exportEvidence(intent);
   if (intent.kind === "replay-lab") {

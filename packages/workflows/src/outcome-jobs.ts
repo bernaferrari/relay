@@ -36,11 +36,14 @@ import type {
   ReplayLabOutcomeIntent,
   RunTestOutcomeIntent,
   VerifyChangeOutcomeIntent,
+  GoalSessionResumeIntent,
+  GoalSessionStartIntent,
 } from "./types.js";
 import { runReplayLab } from "./replay-lab.js";
 import { recordingPathContext } from "./recording-path-context.js";
 import { startDebugBugRecording } from "./recording-outcome-jobs.js";
 import { acquireOwnLease, selectAppMap, selectTarget, targetCatalog } from "./target-catalog.js";
+import { createGoalSessionRunner, type GoalSessionRunner } from "./goal-runner.js";
 
 export type RelayOutcomeJobOptions = { actorId: string };
 
@@ -275,6 +278,7 @@ function revisionMatches(candidate: unknown, expected: SourceRevision): boolean 
 class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
   private readonly operations: RelayOperationPort;
   private readonly workflows;
+  private readonly goals: GoalSessionRunner;
 
   constructor(
     client: RelayInvokeClient,
@@ -282,6 +286,7 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
   ) {
     this.operations = createRelayOperationPort(client);
     this.workflows = createRelayWorkflows(client);
+    this.goals = createGoalSessionRunner({ operations: this.operations });
     this.eventSource = client.events
       ? (client as RelayInvokeClient & WorkflowEventSource)
       : undefined;
@@ -505,6 +510,15 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       nextAction: "share-proof",
       evidence,
     };
+  }
+
+  async goal(intent: GoalSessionStartIntent) {
+    const { kind: _kind, ...input } = intent;
+    return this.goals.start(input);
+  }
+
+  async resumeGoal(intent: GoalSessionResumeIntent) {
+    return this.goals.resume(intent.sessionId);
   }
 
   async proposeRepair(intent: ProposeRepairIntent): Promise<RepairProposalResult> {

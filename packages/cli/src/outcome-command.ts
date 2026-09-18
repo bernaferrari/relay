@@ -12,6 +12,8 @@ import type {
   RepeatTestOutcomeIntent,
   RunTestOutcomeIntent,
   VerifyChangeOutcomeIntent,
+  GoalSessionResumeIntent,
+  GoalSessionStartIntent,
 } from "@relay/workflows";
 import type {
   AuthoringInteraction,
@@ -37,6 +39,8 @@ export type OutcomeCliIntent =
   | EditRecordingOutcomeIntent
   | ReplayLabFileIntent
   | VerifyChangeOutcomeIntent
+  | GoalSessionStartIntent
+  | GoalSessionResumeIntent
   | ProofAnalyzeCliIntent;
 
 /** CLI-only name for the read-only analysis seam. The workflow façade still
@@ -182,6 +186,8 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
   const selectedMap = tokens.values.get("--map");
   if (
     verb !== "repeat" &&
+    verb !== "goal" &&
+    verb !== "explore" &&
     ["--each", "--strategy", "--pilot", "--resume"].some((flag) => tokens.values.has(flag))
   ) {
     throw new UsageError("--each, --strategy, --pilot, and --resume are only valid on repeat");
@@ -203,6 +209,67 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
       throw new UsageError("observe accepts only an optional device id");
     }
     return { kind: "observe-target", ...(args[0] ? { targetId: args[0] } : {}) };
+  }
+  if (verb === "goal" || verb === "explore") {
+    const rawResume = tokens.values.get("--resume");
+    const isResume = (verb === "goal" && args[0] === "resume") || Boolean(rawResume);
+    if (isResume) {
+      const sessionId = verb === "goal" && args[0] === "resume" ? args[1] : rawResume;
+      if (!sessionId || (verb === "goal" && args.length !== 2)) {
+        throw new UsageError("goal resume requires one goal session id");
+      }
+      if (
+        tokens.values.size > (rawResume ? 1 : 0) ||
+        [...tokens.switches].some((flag) => flag !== "--confirm")
+      ) {
+        throw new UsageError("goal resume accepts a session id and --confirm");
+      }
+      if (!tokens.switches.has("--confirm")) {
+        throw new UsageError(
+          "goal resume requires --confirm before Relay may interact with a target",
+        );
+      }
+      return { kind: "goal-resume", sessionId };
+    }
+    if (verb === "goal" && args.length > 1 && args[0] !== "run") {
+      throw new UsageError("goal accepts run or resume");
+    }
+    if (tokens.values.has("--resume")) {
+      throw new UsageError("goal start cannot use --resume");
+    }
+    if (!tokens.switches.has("--confirm")) {
+      throw new UsageError("goal requires --confirm before Relay may interact with a target");
+    }
+    const goal = tokens.values.get("--goal")?.trim();
+    const startUrl = tokens.values.get("--url")?.trim();
+    if (!goal) throw new UsageError("goal requires --goal");
+    if ((startUrl === undefined) === (targetId === undefined)) {
+      throw new UsageError("goal requires exactly one of --url or --device");
+    }
+    const rawSteps = tokens.values.get("--max-steps");
+    const rawDuration = tokens.values.get("--max-ms");
+    const maxSteps = rawSteps === undefined ? undefined : Number(rawSteps);
+    const maxDurationMs = rawDuration === undefined ? undefined : Number(rawDuration);
+    if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 40)) {
+      throw new UsageError("--max-steps must be an integer between 1 and 40");
+    }
+    if (
+      maxDurationMs !== undefined &&
+      (!Number.isInteger(maxDurationMs) || maxDurationMs < 1_000 || maxDurationMs > 900_000)
+    ) {
+      throw new UsageError("--max-ms must be an integer between 1000 and 900000");
+    }
+    const intent: GoalSessionStartIntent = {
+      kind: "goal-start",
+      goal,
+      ...(startUrl ? { startUrl } : {}),
+      ...(targetId ? { targetId } : {}),
+      ...(tokens.values.get("--lane") ? { laneId: tokens.values.get("--lane") } : {}),
+      ...(tokens.values.get("--model") ? { model: tokens.values.get("--model") } : {}),
+      ...(maxSteps === undefined ? {} : { maxSteps }),
+      ...(maxDurationMs === undefined ? {} : { maxDurationMs }),
+    };
+    return intent;
   }
   if (verb === "record" && (args.length === 1 || args.length === 2)) {
     if (tokens.values.has("--in") || tokens.values.has("--lens") || tokens.switches.has("--all")) {

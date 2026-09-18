@@ -78,6 +78,17 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
       expected: { kind: "observe-target", targetId: "pixel-9" },
     },
     {
+      name: "relay_goal",
+      argumentsValue: { startUrl: "https://example.test", goal: "Reach settings" },
+      confirmed: true,
+      method: "goal",
+      expected: {
+        kind: "goal-start",
+        startUrl: "https://example.test",
+        goal: "Reach settings",
+      },
+    },
+    {
       name: "relay_record_test",
       argumentsValue: { appMapId: "settings", title: "Locale", targetId: "ipad" },
       confirmed: true,
@@ -407,6 +418,10 @@ test("protected outcome tools reject missing confirmation before workflow dispat
         action: "start",
         title: "Smoke",
       },
+    },
+    {
+      name: "relay_goal" as const,
+      argumentsValue: { startUrl: "https://example.test", goal: "Reach settings" },
     },
   ]) {
     const invocations: Invocation[] = [];

@@ -27,7 +27,10 @@ import type {
   VerifyChangeIntent,
   VerifyChangeResult,
   DiscoveryScope,
+  GoalSessionResult,
+  GoalSessionStartInput,
 } from "@relay/protocol";
+export type { GoalSessionResult } from "@relay/protocol";
 export type { TargetObservation, TargetObservationControl } from "@relay/protocol";
 
 export type WorkflowRef = string & { readonly __workflowRef: unique symbol };
@@ -472,6 +475,11 @@ export type RepeatTestOutcomeIntent = OutcomeTargetSelection & {
 
 export type InspectFailureIntent = { kind: "inspect-failure"; runId: string };
 
+/** Goal-first execution is an explicit, bounded worker. It does not create
+ * an App Map or silently promote model suggestions into durable Tests. */
+export type GoalSessionStartIntent = GoalSessionStartInput & { kind: "goal-start" };
+export type GoalSessionResumeIntent = { kind: "goal-resume"; sessionId: string };
+
 /**
  * One bounded, resumable Agent Debug outcome. The action is deliberately
  * explicit: a caller can start recording, explore, run, inspect, propose a
@@ -688,6 +696,8 @@ export interface RelayOutcomeJobs {
   repeat(intent: RepeatTestOutcomeIntent): Promise<RepeatTestSnapshot>;
   inspectFailure(intent: InspectFailureIntent): Promise<FailureInspection>;
   debugBug(intent: DebugBugOutcomeIntent): Promise<DebugBugOutcome>;
+  goal(intent: GoalSessionStartIntent): Promise<GoalSessionResult>;
+  resumeGoal(intent: GoalSessionResumeIntent): Promise<GoalSessionResult>;
   proposeRepair(intent: ProposeRepairIntent): Promise<RepairProposalResult>;
   exportEvidence(intent: ExportEvidenceIntent): Promise<EvidenceExportResult>;
   replayLab(intent: ReplayLabOutcomeIntent): Promise<ReplayLabReport>;

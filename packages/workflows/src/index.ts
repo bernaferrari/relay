@@ -1,5 +1,10 @@
 export { createRelayWorkflows } from "./relay-workflows.js";
 export {
+  createGoalSessionRunner,
+  type GoalSessionRunner,
+  type GoalSessionStore,
+} from "./goal-runner.js";
+export {
   createChangeVerificationWorkflow,
   createProofWorkflow,
   type ApproveVerificationPlanInput,
@@ -110,6 +115,9 @@ export type {
   RecordTestOutcomeIntent,
   RecordingPathContext,
   RelayOutcomeJobs,
+  GoalSessionResumeIntent,
+  GoalSessionResult,
+  GoalSessionStartIntent,
   RepeatTestOutcomeIntent,
   ReplayLabOutcomeIntent,
   RunTestOutcomeIntent,

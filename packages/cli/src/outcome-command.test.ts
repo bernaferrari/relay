@@ -29,6 +29,23 @@ test("every outcome CLI command maps named arguments to one workflow intent", ()
     },
     {
       input: tokens(
+        ["explore"],
+        { "--url": "https://example.test", "--goal": "Reach settings", "--max-steps": "3" },
+        ["--confirm"],
+      ),
+      expected: {
+        kind: "goal-start",
+        startUrl: "https://example.test",
+        goal: "Reach settings",
+        maxSteps: 3,
+      },
+    },
+    {
+      input: tokens(["goal", "resume", "goal-123"], {}, ["--confirm"]),
+      expected: { kind: "goal-resume", sessionId: "goal-123" },
+    },
+    {
+      input: tokens(
         ["record", "Settings localization"],
         { "--map": "settings", "--device": "ipad" },
         ["--confirm"],
