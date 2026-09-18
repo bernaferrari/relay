@@ -1620,6 +1620,123 @@ test("paged runs collection keeps dest capture-review account and drops leftover
   }
 });
 
+test("runs collection strips SuperGrok fixture display name from dest capture-review account", async () => {
+  const labFixture = "authfx:7189423f-193e-45ed-b674-154505cc5107:1";
+  const session = await connectMcp(
+    fixtureInvoker({
+      "run.list": {
+        runs: [
+          {
+            id: "spoofed-supergrok",
+            action: "observe",
+            destIdentity: [{ path: "frames/003.png", caption: "Observe" }],
+            captureReview: [
+              {
+                captureId: "frames/003.png::observe",
+                caption: "Observe",
+                status: "pending",
+                framePath: "frames/003.png",
+                phase: "dest",
+                configuration: { account: "SuperGrok lab signed-in", app: "Grok.com" },
+                observed: { laneId: "grok-lab" },
+              },
+            ],
+          },
+          {
+            id: "fixture-account",
+            action: "observe",
+            destIdentity: [{ path: "frames/003.png", caption: "Observe" }],
+            captureReview: [
+              {
+                captureId: "frames/003.png::observe",
+                caption: "Observe",
+                status: "pending",
+                framePath: "frames/003.png",
+                phase: "dest",
+                configuration: { account: labFixture, app: "Grok.com" },
+                observed: { laneId: "grok-lab" },
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", { uri: relayMcpResourceUris.runs }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      data: {
+        runs?: Array<{
+          id?: string;
+          captureReview?: Array<{
+            configuration?: { account?: string; app?: string };
+            observed?: { laneId?: string };
+          }>;
+        }>;
+      };
+    };
+    const spoofed = envelope.data.runs?.find((run) => run.id === "spoofed-supergrok");
+    const fixture = envelope.data.runs?.find((run) => run.id === "fixture-account");
+    assert.equal(spoofed?.captureReview?.[0]?.configuration?.account, undefined);
+    assert.equal(spoofed?.captureReview?.[0]?.configuration?.app, "Grok.com");
+    assert.equal(spoofed?.captureReview?.[0]?.observed?.laneId, "grok-lab");
+    assert.equal(fixture?.captureReview?.[0]?.configuration?.account, labFixture);
+    assert.doesNotMatch(content.text, /SuperGrok lab signed-in/);
+  } finally {
+    await session.close();
+  }
+});
+
+test("paged runs collection strips SuperGrok fixture display name from dest capture-review account", async () => {
+  const stamped = {
+    id: "spoofed-supergrok-paged",
+    action: "observe",
+    destIdentity: [{ path: "frames/003.png", caption: "Observe" }],
+    captureReview: [
+      {
+        captureId: "frames/003.png::observe",
+        caption: "Observe",
+        status: "pending",
+        framePath: "frames/003.png",
+        phase: "dest",
+        configuration: { account: "SuperGrok lab signed-in", app: "Grok.com" },
+        observed: { laneId: "grok-lab" },
+      },
+    ],
+  };
+  const runs = Array.from({ length: 101 }, (_, index) =>
+    index === 0 ? stamped : { id: `filler-${index}`, action: "observe", status: "passed" },
+  );
+  const session = await connectMcp(
+    fixtureInvoker({
+      "run.list": { runs },
+    }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", { uri: relayMcpResourceUris.runs }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      data: {
+        runs?: Array<{
+          id?: string;
+          captureReview?: Array<{ configuration?: { account?: string; app?: string } }>;
+        }>;
+        pagination?: { nextResourceUri?: string };
+      };
+    };
+    assert.ok(envelope.data.pagination?.nextResourceUri);
+    const first = envelope.data.runs?.find((run) => run.id === "spoofed-supergrok-paged");
+    assert.equal(first?.captureReview?.[0]?.configuration?.account, undefined);
+    assert.equal(first?.captureReview?.[0]?.configuration?.app, "Grok.com");
+    assert.doesNotMatch(content.text, /SuperGrok lab signed-in/);
+  } finally {
+    await session.close();
+  }
+});
+
 test("trace-pack resource pre-listed destIdentity leftover Close 004 cannot fill dest", async () => {
   const destIdentity = [
     { path: "frames/003.png", caption: "Observe" },

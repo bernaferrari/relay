@@ -6,7 +6,11 @@ import {
   ResourceTemplate,
   type Variables,
 } from "@modelcontextprotocol/server";
-import { isCaptureReviewLeftoverCaption, type OperationId } from "@relay/protocol";
+import {
+  isCaptureReviewLeftoverCaption,
+  liveCaptureReviewAccount,
+  type OperationId,
+} from "@relay/protocol";
 import type { OperationInvoker } from "./server.js";
 import { readResult, relayMcpResourceMimeType } from "./resource-encoding.js";
 import type { RelayMcpProfile, RelayMcpToolDescriptor } from "./tools.js";
@@ -280,7 +284,17 @@ function captureReviewCollectionEntries(value: unknown): Record<string, unknown>
         : [];
     }
     if (!relativeName && !caption && typeof rec.captureId !== "string") return [];
-    const configuration = object(rec.configuration);
+    // Parity with CLI/MCP run.get compact captureReview: SuperGrok* / fixture
+    // display names are not live identity (Bernardo Ferrari or authfx:… stay).
+    const rawConfiguration = object(rec.configuration);
+    const { account: listedAccount, ...configurationRest } = rawConfiguration;
+    const account = liveCaptureReviewAccount(
+      typeof listedAccount === "string" ? listedAccount : undefined,
+    );
+    const configuration = {
+      ...configurationRest,
+      ...(account ? { account } : {}),
+    };
     const observed = object(rec.observed);
     return [
       {
