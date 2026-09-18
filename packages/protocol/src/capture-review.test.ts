@@ -1266,6 +1266,31 @@ test("leftover Close / Run saved Test captions are leftover, dest wait-for Obser
   assert.equal(isCaptureReviewLeftoverCaption("step:step-observe:Observe"), false);
 });
 
+test("leftover Transition executed / Inspect setup skipped cannot fill dest wait-for", () => {
+  assert.equal(isCaptureReviewLeftoverCaption("after · Transition executed"), true);
+  assert.equal(isCaptureReviewLeftoverCaption("before · Transition executed"), true);
+  assert.equal(isCaptureReviewLeftoverCaption("Transition executed"), true);
+  assert.equal(
+    isCaptureReviewLeftoverCaption("after · Inspect setup skipped — already on this view"),
+    true,
+  );
+  assert.equal(
+    isCaptureReviewLeftoverCaption(
+      "after · Inspect setup skipped — already on this view; Transition executed",
+    ),
+    true,
+  );
+  assert.deepEqual(
+    destIdentityCheckpointFramePaths([
+      { path: "frames/002.png", caption: "after · Transition executed" },
+      { path: "frames/003.png", caption: "step:step-observe:Observe" },
+      { path: "frames/004.png", caption: "after · Transition executed" },
+      { path: "frames/005.png", caption: "after · Run saved Test" },
+    ]),
+    ["frames/003.png"],
+  );
+});
+
 test("unphased leftover Close 004 last-frame cannot fill dest checkpoint", () => {
   const destWait = {
     kind: "capture-review",

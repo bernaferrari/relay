@@ -275,12 +275,19 @@ export function captureReviewLeftoverFramePaths(
   return leftover;
 }
 
-/** Leftover Close / Back / Run saved Test last-frame captions. Dest wait-for
- * Observe is not this. Unphased dest-wait keeps those frames until dest
- * identity also exists. */
+/** Leftover Close / Back / Run saved Test / Transition executed last-frame
+ * captions. Dest wait-for Observe is not this. Unphased dest-wait keeps those
+ * frames until dest identity also exists. Coverage leftover-skip wrappers
+ * (`Transition executed`, `Inspect setup skipped…`) are the same class as
+ * Run saved Test — they must not fill dest identity when artifacts are absent. */
 export function isCaptureReviewLeftoverCaption(caption?: string): boolean {
   const value = caption?.trim() ?? "";
-  return /^(?:close|back)(?:\s|$)/iu.test(value) || /^after · run saved test$/iu.test(value);
+  if (/^(?:close|back)(?:\s|$)/iu.test(value)) return true;
+  if (/^after · run saved test$/iu.test(value)) return true;
+  const body = value.replace(/^(?:before|after) · /iu, "").trim();
+  if (/^transition executed$/iu.test(body)) return true;
+  if (/^inspect setup skipped\b/iu.test(body)) return true;
+  return false;
 }
 
 function leftoverCloseCaption(caption?: string): boolean {
