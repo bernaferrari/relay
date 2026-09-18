@@ -307,7 +307,19 @@ function preferDestWaitForCaptures<
       )
     );
   };
+  const openerCapture = (item: T) => {
+    const title = timeline?.find((entry) => entry.id === item.traceStepId)?.title;
+    if (isCaptureReviewOpenerCaption(title)) return true;
+    return (
+      item.evidence.framePaths.length > 0 &&
+      item.evidence.framePaths.every((path) =>
+        isCaptureReviewOpenerCaption(items.find((frame) => frame.id === path)?.title),
+      )
+    );
+  };
   const dest = captures.filter((item) => !leftoverCapture(item));
   const leftover = captures.filter(leftoverCapture);
-  return dest.length && leftover.length ? dest : [...captures];
+  if (!(dest.length && leftover.length)) return [...captures];
+  const withoutOpeners = dest.filter((item) => !openerCapture(item));
+  return withoutOpeners.length ? withoutOpeners : dest;
 }

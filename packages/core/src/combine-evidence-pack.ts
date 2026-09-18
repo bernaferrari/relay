@@ -23,6 +23,7 @@ import {
   captureReviewLeftoverLastFramePaths,
   destIdentityCheckpointFramePaths,
   isCaptureReviewLeftoverCaption,
+  isCaptureReviewOpenerCaption,
 } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import { pngDimensions } from "./ios-geometry.js";
@@ -334,7 +335,8 @@ function comparesLanguage(jobs: CombineEvidenceCase[]): boolean {
 }
 
 /** Dest-phase path when stamped. Unphased dest-wait uses the last non-leftover
- * caption so Transition executed / Inspect setup skipped cannot fill dest. */
+ * caption so Transition executed / Inspect setup skipped cannot fill dest.
+ * Opener before · Tap cannot fill dest beside leftover Transition either. */
 function checklistDestIdentityFrame(
   job: Pick<CombineEvidenceCase, "frames" | "artifacts">,
 ): string | undefined {
@@ -345,16 +347,23 @@ function checklistDestIdentityFrame(
 
 /** Caption leftovers to drop when dest-phase is absent but dest wait-for
  * captions exist. Unphased Android dest-wait with no leftover caption keeps
- * every frame. */
-function unphasedLeftoverCaptionNames(
+ * every frame. Opener before · Tap cannot fill dest beside leftover Transition
+ * either (parity with destIdentityCheckpointFramePaths). */
+function unphasedNonDestCaptionNames(
   job: Pick<CombineEvidenceCase, "frames" | "artifacts">,
 ): Set<string> {
   if (captureReviewIdentityFramePaths(job.artifacts ?? []).length) return new Set();
   const dest = destIdentityCheckpointFramePaths(job.frames ?? [], job.artifacts ?? []);
   if (!dest.length) return new Set();
+  const hasLeftover = (job.frames ?? []).some((frame) =>
+    isCaptureReviewLeftoverCaption(frame.caption),
+  );
   return new Set(
     (job.frames ?? [])
-      .filter((frame) => isCaptureReviewLeftoverCaption(frame.caption))
+      .filter((frame) => {
+        if (isCaptureReviewLeftoverCaption(frame.caption)) return true;
+        return hasLeftover && isCaptureReviewOpenerCaption(frame.caption);
+      })
       .map((frame) => basename(frame.path)),
   );
 }
@@ -374,12 +383,12 @@ function authoredFrames(job: CombineEvidenceCase): CombineEvidenceCase["frames"]
   const leftover = new Set(
     captureReviewLeftoverLastFramePaths(job.frames ?? [], job.artifacts ?? []),
   );
-  const captionLeftover = unphasedLeftoverCaptionNames(job);
+  const captionNonDest = unphasedNonDestCaptionNames(job);
   return (job.frames ?? []).filter((frame) => {
     if (isHarnessFrame(frame.caption)) return false;
     if (allowed && !allowed.has(basename(frame.path))) return false;
     if (dest.length && leftover.has(frame.path)) return false;
-    if (captionLeftover.has(basename(frame.path))) return false;
+    if (captionNonDest.has(basename(frame.path))) return false;
     return true;
   });
 }
@@ -678,7 +687,7 @@ export async function exportCombineEvidencePack(input: {
         basename(path),
       ),
     );
-    const captionLeftover = unphasedLeftoverCaptionNames(job);
+    const captionNonDest = unphasedNonDestCaptionNames(job);
     if (job.runDir) {
       try {
         const frameDir = join(job.runDir, "frames");
@@ -689,7 +698,7 @@ export async function exportCombineEvidencePack(input: {
               name !== "full.png" &&
               !harness.has(name) &&
               !(destIdentity.length && leftoverNames.has(name)) &&
-              !captionLeftover.has(name) &&
+              !captionNonDest.has(name) &&
               (!evidence.names || evidence.names.has(name)),
           )
           .sort();

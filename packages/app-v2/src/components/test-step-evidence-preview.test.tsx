@@ -300,6 +300,113 @@ describe("TestStepEvidencePreview", () => {
     expect(host.querySelector('img[src="/inspect-setup-skipped.png"]')).toBeNull();
   });
 
+  it("unphased step thumb drops opener Tap beside leftover Transition", () => {
+    const host = render({
+      ...baseReport,
+      // No captureReview dest-phase — fallback capture selection must not pick opener.
+      timeline: [
+        {
+          id: "trace-opener",
+          index: 1,
+          title: "before · Tap identifier sidebar.open.button",
+          state: "passed",
+          evidenceCount: 1,
+          framePaths: ["frames/001.png"],
+        },
+        {
+          id: "trace-transition",
+          index: 2,
+          title: "after · Transition executed",
+          state: "passed",
+          evidenceCount: 1,
+          framePaths: ["frames/002.png"],
+        },
+        {
+          id: "trace-dest",
+          index: 8,
+          title: "Observe",
+          state: "passed",
+          evidenceCount: 1,
+          framePaths: ["frames/003.png"],
+        },
+      ],
+      stepEvidence: [
+        {
+          schemaVersion: 1,
+          testStepId: "step-2",
+          recipeId: "root",
+          recipeStepId: "relay-test-step-opener",
+          traceStepId: "trace-opener",
+          traceStepIndex: 1,
+          occurrence: 1,
+          evidence: {
+            framePaths: ["frames/001.png"],
+            eventSequences: [],
+            artifactKinds: ["screenshot"],
+          },
+        },
+        {
+          schemaVersion: 1,
+          testStepId: "step-2",
+          recipeId: "root",
+          recipeStepId: "relay-test-step-transition",
+          traceStepId: "trace-transition",
+          traceStepIndex: 2,
+          occurrence: 2,
+          evidence: {
+            framePaths: ["frames/002.png"],
+            eventSequences: [],
+            artifactKinds: ["screenshot"],
+          },
+        },
+        {
+          schemaVersion: 1,
+          testStepId: "step-2",
+          recipeId: "observe-flow",
+          recipeStepId: "relay-test-step-observe-dest",
+          traceStepId: "trace-dest",
+          traceStepIndex: 8,
+          occurrence: 3,
+          evidence: {
+            framePaths: ["frames/003.png"],
+            eventSequences: [],
+            artifactKinds: ["screenshot"],
+          },
+        },
+      ],
+      evidence: [
+        {
+          id: "screenshot",
+          label: "Screenshots",
+          count: 3,
+          detail: "3 screenshots",
+          summary: "Persisted screenshots",
+          inspectable: true,
+          items: [
+            {
+              id: "frames/001.png",
+              title: "before · Tap identifier sidebar.open.button",
+              media: { kind: "image", src: "/opener-tap.png", width: 100, height: 80 },
+            },
+            {
+              id: "frames/002.png",
+              title: "after · Transition executed",
+              media: { kind: "image", src: "/transition-executed.png", width: 100, height: 80 },
+            },
+            {
+              id: "frames/003.png",
+              title: "Observe",
+              media: { kind: "image", src: "/dest-wait-for.png", width: 100, height: 80 },
+            },
+          ],
+        },
+      ],
+    });
+    expect(host.querySelector('img[src="/dest-wait-for.png"]')).not.toBeNull();
+    expect(host.querySelector('img[src="/opener-tap.png"]')).toBeNull();
+    expect(host.querySelector('img[src="/transition-executed.png"]')).toBeNull();
+  });
+
   it("joins retained media by the authoritative frame id", () => {
     const host = render();
     expect(host.querySelector('img[src="/right.png"]')).not.toBeNull();

@@ -1092,6 +1092,40 @@ test("unphased live analysis drops leftover Transition executed / Inspect setup 
   );
 });
 
+test("unphased live analysis drops opener Tap beside leftover Transition", () => {
+  const report = analyzeCombineEvidenceJobs("dest-opener", [
+    {
+      id: "job-opener",
+      status: "ok",
+      action: "observe",
+      frames: [
+        {
+          path: "frames/001.png",
+          caption: "before · Tap identifier sidebar.open.button",
+          capturedAt: 1,
+        },
+        { path: "frames/002.png", caption: "after · Transition executed", capturedAt: 2 },
+        { path: "frames/003.png", caption: "Observe", capturedAt: 3 },
+      ],
+      artifacts: [
+        {
+          kind: "capture-review",
+          capturedAt: 1,
+          data: { caption: "Observe", framePath: "frames/003.png", policy: "fast" },
+        },
+      ],
+    } as unknown as TestJob,
+  ]);
+  assert.deepEqual(
+    report.cases[0]?.frames.map((frame) => frame.framePath),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    report.cases[0]?.frames.some((frame) => /before · Tap/u.test(frame.caption ?? "")),
+    false,
+  );
+});
+
 test("unphased pack checklist after thumb is dest wait-for, not leftover Transition executed", async () => {
   const directory = await mkdtemp(join(tmpdir(), "relay-pack-unphased-transition-"));
   const previous = process.env.RELAY_WORKSPACE_ROOT;
