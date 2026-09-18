@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   compactGoalObservation,
   createOpenRouterDecisionProvider,
+  DEFAULT_OPENROUTER_DECISION_MODEL,
   findWorkspaceRoot,
   type ModelDecisionProvider,
 } from "@relay/core";
@@ -29,7 +30,6 @@ import {
 } from "@relay/protocol";
 import type { RelayOperationPort } from "./operation-port.js";
 
-const DEFAULT_MODEL = "~typesafe/jev-latest";
 const MAX_GOAL_CHARS = 2_048;
 const MAX_ERROR_CHARS = 1_024;
 const MAX_EVIDENCE_REFS = 8;
@@ -467,7 +467,7 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
       const request = {
         schemaVersion: 1 as const,
         provider: "openrouter",
-        model: record.model ?? DEFAULT_MODEL,
+        model: record.model ?? DEFAULT_OPENROUTER_DECISION_MODEL,
         state: observation,
         observationDigest: observation.observationDigest,
         evidenceRefs: record.observations.at(-1)?.evidenceRefs,

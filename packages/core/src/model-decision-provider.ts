@@ -14,7 +14,7 @@ import { canonicalSha256 } from "./canonical-json.js";
 import { redactSensitiveEvidenceValue } from "./redaction.js";
 
 const OPENROUTER_CHAT_COMPLETIONS = "https://openrouter.ai/api/v1/chat/completions";
-const DEFAULT_MODEL = "~typesafe/jev-latest";
+export const DEFAULT_OPENROUTER_DECISION_MODEL = "~typesafe/jev-latest" as const;
 const MAX_QUESTIONS = 16;
 const MAX_ATTEMPTS = 3;
 const RETRYABLE_STATUSES = new Set([429, 529]);
@@ -377,7 +377,8 @@ export function createOpenRouterDecisionProvider(
     options.sleep ??
     ((milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
   const apiKey = options.apiKey ?? process.env.OPENROUTER_API_KEY;
-  const model = options.model ?? process.env.OPENROUTER_DECISION_MODEL ?? DEFAULT_MODEL;
+  const model =
+    options.model ?? process.env.OPENROUTER_DECISION_MODEL ?? DEFAULT_OPENROUTER_DECISION_MODEL;
   const endpoint = options.endpoint ?? OPENROUTER_CHAT_COMPLETIONS;
   const maxAttempts = Math.max(
     1,
