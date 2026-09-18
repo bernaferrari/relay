@@ -1501,14 +1501,102 @@ test("run.list leftover Close 004 cannot fill dest identity", () => {
           { path: "frames/003.png", caption: "Observe" },
           { path: "frames/004.png", caption: "Close" },
         ],
+        captureReview: [
+          {
+            captureId: "frames/003.png::observe",
+            caption: "Observe",
+            status: "pending",
+            framePath: "frames/003.png",
+            phase: CAPTURE_REVIEW_DEST_PHASE,
+          },
+          {
+            captureId: "frames/004.png::close-leftover",
+            caption: "Close",
+            status: "pending",
+            framePath: "frames/004.png",
+          },
+        ],
       },
     ],
   }) as {
-    runs?: Array<{ destIdentity?: Array<{ path?: string; caption?: string }> }>;
+    runs?: Array<{
+      destIdentity?: Array<{ path?: string; caption?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+    }>;
   };
   assert.deepEqual(result.runs?.[0]?.destIdentity, [
     { path: "frames/003.png", caption: "Observe" },
   ]);
+  assert.ok(!result.runs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"));
+});
+
+test("run.list compact capture-review keeps live account and observed lane", () => {
+  const result = summarizeExecutionOperationResult("run.list", {
+    runs: [
+      {
+        id: "4b93702b-d2cc-4db6-83ff-800380a3b284",
+        status: "ok",
+        frames: leftoverDestEndJob.frames,
+        artifacts: [
+          {
+            kind: "capture-review",
+            data: {
+              caption: "Observe",
+              framePath: "frames/003.png",
+              phase: CAPTURE_REVIEW_DEST_PHASE,
+              policy: "fast",
+              status: "pending",
+              configuration: {
+                app: "Grok.com",
+                account: "Bernardo Ferrari",
+                browser: "chromium",
+              },
+              observed: {
+                laneId: "grok-lab",
+                profileId: "browser:grok-com-1280x800-339a5a430a41",
+              },
+            },
+          },
+          {
+            kind: "capture-review",
+            data: { caption: "Close", framePath: "frames/004.png" },
+          },
+        ],
+        captureReview: [
+          {
+            captureId: "frames/004.png::close-leftover",
+            caption: "Close",
+            status: "pending",
+            framePath: "frames/004.png",
+            configuration: { account: "SuperGrok lab signed-in" },
+          },
+        ],
+      },
+    ],
+  }) as {
+    runs?: Array<{
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{
+        framePath?: string;
+        phase?: string;
+        configuration?: { account?: string; app?: string };
+        observed?: { laneId?: string };
+      }>;
+    }>;
+  };
+  assert.deepEqual(
+    result.runs?.[0]?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.runs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+  assert.equal(result.runs?.[0]?.captureReview?.[0]?.framePath, "frames/003.png");
+  assert.equal(result.runs?.[0]?.captureReview?.[0]?.phase, CAPTURE_REVIEW_DEST_PHASE);
+  assert.equal(result.runs?.[0]?.captureReview?.[0]?.configuration?.account, "Bernardo Ferrari");
+  assert.equal(result.runs?.[0]?.captureReview?.[0]?.configuration?.app, "Grok.com");
+  assert.equal(result.runs?.[0]?.captureReview?.[0]?.observed?.laneId, "grok-lab");
 });
 
 test("run.trace-pack.get pre-listed destIdentity leftover Close 004 cannot fill dest", () => {

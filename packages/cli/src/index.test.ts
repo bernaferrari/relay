@@ -2865,9 +2865,37 @@ test("run list --json dest identity is dest wait-for, not leftover Close 004 las
           runs: [
             {
               id: leftoverDestEndRun.id,
+              frames: leftoverDestEndRun.frames,
+              artifacts: [
+                {
+                  kind: "capture-review",
+                  data: {
+                    caption: "Observe",
+                    framePath: "frames/003.png",
+                    phase: CAPTURE_REVIEW_DEST_PHASE,
+                    policy: "fast",
+                    status: "pending",
+                    configuration: { account: "Bernardo Ferrari", app: "Grok.com" },
+                    observed: { laneId: "grok-lab" },
+                  },
+                },
+                {
+                  kind: "capture-review",
+                  data: { caption: "Close", framePath: "frames/004.png" },
+                },
+              ],
               destIdentity: [
                 { path: "frames/003.png", caption: "Observe" },
                 { path: "frames/004.png", caption: "Close" },
+              ],
+              captureReview: [
+                {
+                  captureId: "frames/004.png::close-leftover",
+                  caption: "Close",
+                  status: "pending",
+                  framePath: "frames/004.png",
+                  configuration: { account: "SuperGrok lab signed-in" },
+                },
               ],
             },
           ],
@@ -2881,12 +2909,27 @@ test("run list --json dest identity is dest wait-for, not leftover Close 004 las
   assert.equal(code, ExitCode.success);
   const result = JSON.parse(io.stdout()) as {
     result?: {
-      runs?: Array<{ destIdentity?: Array<{ path?: string; caption?: string }> }>;
+      runs?: Array<{
+        destIdentity?: Array<{ path?: string; caption?: string }>;
+        captureReview?: Array<{
+          framePath?: string;
+          configuration?: { account?: string };
+          observed?: { laneId?: string };
+        }>;
+      }>;
     };
   };
   assert.deepEqual(result.result?.runs?.[0]?.destIdentity, [
     { path: "frames/003.png", caption: "Observe" },
   ]);
+  assert.ok(
+    !result.result?.runs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+  );
+  assert.equal(
+    result.result?.runs?.[0]?.captureReview?.[0]?.configuration?.account,
+    "Bernardo Ferrari",
+  );
+  assert.equal(result.result?.runs?.[0]?.captureReview?.[0]?.observed?.laneId, "grok-lab");
 });
 
 test("flow run --no-wait --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {

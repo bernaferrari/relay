@@ -1488,6 +1488,24 @@ test("runs collection dest identity is dest wait-for 003, not leftover Close 004
               { path: "frames/003.png", caption: "Observe" },
               { path: "frames/004.png", caption: "Close" },
             ],
+            captureReview: [
+              {
+                captureId: "frames/003.png::observe",
+                caption: "Observe",
+                status: "pending",
+                framePath: "frames/003.png",
+                phase: "dest",
+                configuration: { account: "Bernardo Ferrari", app: "Grok.com" },
+                observed: { laneId: "grok-lab" },
+              },
+              {
+                captureId: "frames/004.png::close-leftover",
+                caption: "Close",
+                status: "pending",
+                framePath: "frames/004.png",
+                configuration: { account: "SuperGrok lab signed-in" },
+              },
+            ],
           },
         ],
       },
@@ -1499,13 +1517,32 @@ test("runs collection dest identity is dest wait-for 003, not leftover Close 004
     );
     const envelope = JSON.parse(content.text) as {
       data: {
-        runs?: Array<{ destIdentity?: Array<{ relativeName?: string; caption?: string }> }>;
+        runs?: Array<{
+          destIdentity?: Array<{ relativeName?: string; caption?: string }>;
+          captureReview?: Array<{
+            relativeName?: string;
+            framePath?: string;
+            configuration?: { account?: string };
+            observed?: { laneId?: string };
+          }>;
+        }>;
       };
     };
     assert.deepEqual(envelope.data.runs?.[0]?.destIdentity, [
       { relativeName: "frames/003.png", caption: "Observe" },
     ]);
     assert.doesNotMatch(content.text, /frames\/004\.png/);
+    assert.equal(envelope.data.runs?.[0]?.captureReview?.[0]?.relativeName, "frames/003.png");
+    assert.equal(
+      envelope.data.runs?.[0]?.captureReview?.[0]?.configuration?.account,
+      "Bernardo Ferrari",
+    );
+    assert.equal(envelope.data.runs?.[0]?.captureReview?.[0]?.observed?.laneId, "grok-lab");
+    assert.ok(
+      !envelope.data.runs?.[0]?.captureReview?.some(
+        (item) => item.relativeName === "frames/004.png" || item.framePath === "frames/004.png",
+      ),
+    );
   } finally {
     await session.close();
   }

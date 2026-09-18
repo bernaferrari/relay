@@ -753,6 +753,8 @@ function summarizeTracePackEnvelope(response: Record<string, unknown>): unknown 
     : response;
 }
 
+/** run.list keeps dest wait-for Fast and compact captureReview account/observed.
+ * Leftover Close / Run saved Test last-frame cannot fill dest or the review queue. */
 function summarizeRunList(response: Record<string, unknown>): unknown {
   if (!Array.isArray(response.runs)) return response;
   return {
@@ -761,10 +763,11 @@ function summarizeRunList(response: Record<string, unknown>): unknown {
       const run = object(item);
       if (!run) return item;
       const projected = destIdentityProjection(run);
-      const { destIdentity: _listed, ...rest } = run;
+      const { destIdentity: _listed, captureReview: _listedReview, ...rest } = run;
       return {
         ...rest,
         ...(projected.destIdentity ? { destIdentity: projected.destIdentity } : {}),
+        ...(projected.captureReview ? { captureReview: projected.captureReview } : {}),
       };
     }),
   };

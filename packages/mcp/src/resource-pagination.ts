@@ -245,6 +245,59 @@ function destIdentityCollectionEntries(value: unknown): Record<string, string>[]
   });
 }
 
+function captureReviewCollectionEntries(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const rec = object(entry);
+    const caption = typeof rec.caption === "string" ? rec.caption.slice(0, 160) : undefined;
+    if (isCaptureReviewLeftoverCaption(caption)) return [];
+    const relativeName =
+      typeof rec.relativeName === "string"
+        ? rec.relativeName.slice(0, 160)
+        : typeof rec.framePath === "string"
+          ? rec.framePath.slice(0, 160)
+          : typeof rec.path === "string"
+            ? rec.path.slice(0, 160)
+            : undefined;
+    if (
+      relativeName &&
+      (relativeName.startsWith("/") ||
+        relativeName.includes("\\") ||
+        relativeName.split("/").some((segment) => segment === "." || segment === ".."))
+    ) {
+      return caption || typeof rec.captureId === "string"
+        ? [
+            {
+              ...(typeof rec.captureId === "string"
+                ? { captureId: rec.captureId.slice(0, 200) }
+                : {}),
+              ...(caption ? { caption } : {}),
+              ...(typeof rec.status === "string" ? { status: rec.status } : {}),
+              ...(typeof rec.phase === "string" ? { phase: rec.phase } : {}),
+              ...(typeof rec.policy === "string" ? { policy: rec.policy } : {}),
+            },
+          ]
+        : [];
+    }
+    if (!relativeName && !caption && typeof rec.captureId !== "string") return [];
+    const configuration = object(rec.configuration);
+    const observed = object(rec.observed);
+    return [
+      {
+        ...(typeof rec.captureId === "string" ? { captureId: rec.captureId.slice(0, 200) } : {}),
+        ...(caption ? { caption } : {}),
+        ...(typeof rec.status === "string" ? { status: rec.status } : {}),
+        // relativeName survives MCP sanitize; framePath / path keys are stripped.
+        ...(relativeName ? { relativeName } : {}),
+        ...(typeof rec.phase === "string" ? { phase: rec.phase } : {}),
+        ...(typeof rec.policy === "string" ? { policy: rec.policy } : {}),
+        ...(Object.keys(configuration).length ? { configuration } : {}),
+        ...(Object.keys(observed).length ? { observed } : {}),
+      },
+    ];
+  });
+}
+
 function projectRunListDestIdentity(value: unknown): unknown {
   const record = object(value);
   if (!Array.isArray(record.runs)) return value;
@@ -252,10 +305,15 @@ function projectRunListDestIdentity(value: unknown): unknown {
     ...record,
     runs: record.runs.map((item) => {
       const run = object(item);
-      if (!Array.isArray(run.destIdentity)) return item;
+      if (!Array.isArray(run.destIdentity) && !Array.isArray(run.captureReview)) return item;
       const destIdentity = destIdentityCollectionEntries(run.destIdentity);
-      const { destIdentity: _drop, ...rest } = run;
-      return destIdentity.length ? { ...rest, destIdentity } : rest;
+      const captureReview = captureReviewCollectionEntries(run.captureReview);
+      const { destIdentity: _drop, captureReview: _listedReview, ...rest } = run;
+      return {
+        ...rest,
+        ...(destIdentity.length ? { destIdentity } : {}),
+        ...(captureReview.length ? { captureReview } : {}),
+      };
     }),
   };
 }
