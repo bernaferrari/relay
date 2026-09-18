@@ -294,6 +294,78 @@ test(
         acceptedQueue.items.find((item) => item.status === "accepted")?.decidedBy?.id,
         "human:reviewer",
       );
+
+      const requestA = {
+        requestId: "capture-review-route-a",
+        idempotencyKey: "capture-review-route-a",
+      };
+      const firstRetry = await reviewer.invoke(
+        "run.capture.review",
+        {
+          runId: persistedRunId(pendingItem),
+          captureId: pendingItem.captureId,
+          action: "accept",
+          imageSha256: pendingItem.imageSha256,
+          expectedReviewVersion: 1,
+        },
+        requestA,
+      );
+      assert.equal(firstRetry.decision.action, "accept");
+      assert.equal(firstRetry.decision.reviewVersion, 1);
+
+      await server.close();
+      resetControlDatabaseCache();
+      server = await startServer({ host: "127.0.0.1", port: 0 });
+      const afterRestartReviewer = client(server.port, "human:reviewer", "human");
+      const revised = await afterRestartReviewer.invoke(
+        "run.capture.review",
+        {
+          runId: persistedRunId(pendingItem),
+          captureId: pendingItem.captureId,
+          action: "report-issue",
+          imageSha256: pendingItem.imageSha256,
+          note: "Overlap found",
+          expectedReviewVersion: 1,
+        },
+        { requestId: "capture-review-route-b", idempotencyKey: "capture-review-route-b" },
+      );
+      assert.equal(revised.decision.action, "report-issue");
+      assert.equal(revised.decision.reviewVersion, 2);
+      const delayed = await afterRestartReviewer.invoke(
+        "run.capture.review",
+        {
+          runId: persistedRunId(pendingItem),
+          captureId: pendingItem.captureId,
+          action: "accept",
+          imageSha256: pendingItem.imageSha256,
+          expectedReviewVersion: 1,
+        },
+        requestA,
+      );
+      assert.equal(delayed.decision.action, "accept");
+      assert.equal(delayed.decision.reviewVersion, 1);
+      const afterDelayed = await afterRestartReviewer.invoke("job.combine.capture.review", {
+        batchId,
+      });
+      assert.equal(
+        (afterDelayed.queue as PlanCaptureReviewQueue).items.find(
+          (item) => item.captureId === pendingItem.captureId,
+        )?.status,
+        "issue",
+      );
+      const restored = await afterRestartReviewer.invoke(
+        "run.capture.review",
+        {
+          runId: persistedRunId(pendingItem),
+          captureId: pendingItem.captureId,
+          action: "accept",
+          imageSha256: pendingItem.imageSha256,
+          expectedReviewVersion: 2,
+        },
+        { requestId: "capture-review-route-c", idempotencyKey: "capture-review-route-c" },
+      );
+      assert.equal(restored.decision.action, "accept");
+      assert.equal(restored.decision.reviewVersion, 3);
       assert.equal(
         await getVisualBaseline(runsRoot(), SEEDED_MEMBER_CAPTURE_TEST_ID, SEEDED_MEMBER_TARGET_ID),
         null,
@@ -301,7 +373,7 @@ test(
 
       await assert.rejects(
         () =>
-          reviewer.invoke("run.capture.review", {
+          afterRestartReviewer.invoke("run.capture.review", {
             runId: persistedRunId(missingItem),
             captureId: missingItem.captureId,
             action: "accept",

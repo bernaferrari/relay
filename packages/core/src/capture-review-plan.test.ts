@@ -104,6 +104,7 @@ test("mixed campaigns preserve frozen obligations and label legacy scope as unkn
         world: "default",
         values: {},
         targetProfileId: "browser:test",
+        runId: "legacy-run",
         childIntentDigest: "child-2",
         outerIntentDigest: "outer-2",
         wrapperGraphDigest: "wrapper-2",
@@ -115,17 +116,24 @@ test("mixed campaigns preserve frozen obligations and label legacy scope as unkn
     lineage: [],
     execution: { selectedCellIds: ["frozen-cell", "legacy-cell"], seed: 1 },
   };
-  const queue = captureReviewQueueForCampaign(campaign, []);
-  assert.equal(queue.summary.planned, 2);
+  const queue = captureReviewQueueForCampaign(campaign, [
+    run("legacy-run", "frames/legacy.png", "legacy"),
+  ]);
+  assert.equal(queue.summary.planned, 3);
+  assert.equal(queue.summary.captured, 1);
   assert.equal(queue.summary.missing, 2);
   assert.equal(
     queue.items.find((item) => item.executionCaseId?.endsWith("frozen-case"))?.caption,
     "Settings",
   );
-  const legacy = queue.items.find((item) => item.legacyScope === "unknown");
+  const legacy = queue.items.find((item) => item.caption === "Legacy capture scope unavailable");
   assert.equal(legacy?.status, "missing");
   assert.equal(legacy?.caption, "Legacy capture scope unavailable");
   assert.match(legacy?.legacyReason ?? "", /predates frozen/u);
+  assert.equal(
+    queue.items.find((item) => item.framePath === "frames/legacy.png")?.legacyScope,
+    "unknown",
+  );
 });
 
 test("bulk Looks correct writes the existing capture-review store for exact items only", () => {
