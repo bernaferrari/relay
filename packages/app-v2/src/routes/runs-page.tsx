@@ -14,7 +14,7 @@ import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
-import { Camera } from "lucide-react";
+import { Camera, ChevronRight } from "lucide-react";
 import {
   collapsePlanResultRows,
   screenshotReviewLabel,
@@ -265,13 +265,11 @@ function RunRow({
   const title = plan ? run.title : (run.testName ?? run.title);
   const device = run.targetName ?? platformName(run.platform);
   const screenshotReview = screenshotReviewLabel(run.captureSummary);
-  const className = ` ${libraryRowSurface} ${libraryRowContent} grid-cols-[minmax(0,1fr)_100px]`;
+  const className = `${libraryRowSurface} ${libraryRowContent} h-22 grid-cols-[minmax(0,1fr)_auto] gap-3 sm:gap-5`;
   const body = (
     <>
-      <span className="grid min-w-0 gap-1">
-        <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-foreground">
-          {title}
-        </strong>
+      <span className="grid min-w-0 gap-2">
+        <strong className="truncate text-sm font-semibold text-foreground">{title}</strong>
         <span className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">
           <OutcomeMark
             outcome={
@@ -281,31 +279,32 @@ function RunRow({
             }
           />
           <span className="truncate">{device || (plan ? "Plan Result" : "Saved Run")}</span>
-          {plan ? (
-            <span className="shrink-0 font-semibold text-foreground">Plan Result</span>
+          <span aria-hidden="true">·</span>
+          <span className="shrink-0 tabular-nums">
+            {plan && run.caseCount
+              ? `${run.caseCount} Tests`
+              : run.durationMs === undefined
+                ? phaseDetail(run)
+                : formatDuration(run.durationMs)}
+          </span>
+        </span>
+      </span>
+      <span className="flex min-w-0 items-center gap-3">
+        <span className="grid justify-items-end gap-2">
+          <small className="text-xs text-muted-foreground tabular-nums">
+            {relativeTime(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
+          </small>
+          {screenshotReview ? (
+            <span
+              className="flex max-w-40 items-center gap-1.5 rounded-md bg-accent px-2 py-1 text-xs font-medium text-foreground"
+              aria-label={`Screenshots: ${screenshotReview}`}
+            >
+              <Camera className="size-3.5 shrink-0" aria-hidden="true" />
+              <span className="truncate">{screenshotReview}</span>
+            </span>
           ) : null}
         </span>
-        {screenshotReview ? (
-          <span
-            className="flex items-center gap-1.5 text-xs text-muted-foreground"
-            aria-label={`Screenshots: ${screenshotReview}`}
-          >
-            <Camera className="size-3.5 shrink-0" aria-hidden="true" />
-            {screenshotReview}
-          </span>
-        ) : null}
-      </span>
-      <span className="grid min-w-0 justify-items-start gap-1 tabular-nums">
-        <strong className="text-xs font-semibold text-foreground">
-          {plan && run.caseCount
-            ? `${run.caseCount} Tests`
-            : run.durationMs === undefined
-              ? phaseDetail(run)
-              : formatDuration(run.durationMs)}
-        </strong>
-        <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
-          {relativeTime(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
-        </small>
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground/60" aria-hidden="true" />
       </span>
     </>
   );
