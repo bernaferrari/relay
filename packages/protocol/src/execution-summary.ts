@@ -7,6 +7,7 @@ import {
   isCaptureReviewLeftoverCaption,
   isCaptureReviewOpenerCaption,
   liveCaptureReviewAccount,
+  projectCaptureReviewDestIdentity,
   CAPTURE_REVIEW_DEST_PHASE,
   resolveCaptureReviewQueue,
   type CaptureReviewConfiguration,
@@ -58,13 +59,7 @@ function compactDestIdentity(
   frames: readonly { path: string; caption?: string }[],
   artifacts: readonly { kind?: string; data?: unknown }[],
 ): { path: string; caption?: string }[] {
-  const destPaths = destIdentityCheckpointFramePaths(frames, artifacts);
-  if (!destPaths.length) return [];
-  const byPath = new Map(frames.map((frame) => [frame.path, frame]));
-  return destPaths.map((path) => {
-    const frame = byPath.get(path);
-    return frame ?? { path };
-  });
+  return projectCaptureReviewDestIdentity(frames, artifacts);
 }
 
 /** Dest wait-for frames when leftover Close / Run saved Test / Transition
@@ -86,15 +81,7 @@ function destWaitForListedFrames(
 function destIdentityVisualFrames(
   frames: readonly { path: string; caption?: string }[],
 ): { path: string; caption?: string }[] {
-  const dest = destWaitForListedFrames(frames).filter(
-    (frame) => !isCaptureReviewLeftoverCaption(frame.caption),
-  );
-  const seen = new Set<string>();
-  return dest.filter((frame) => {
-    if (seen.has(frame.path)) return false;
-    seen.add(frame.path);
-    return true;
-  });
+  return projectCaptureReviewDestIdentity([], [], frames);
 }
 
 function listedFramePath(value: unknown): string | undefined {

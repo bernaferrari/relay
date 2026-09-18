@@ -55,6 +55,7 @@ test("retrying an earlier screenshot returns its exact persisted decision", asyn
     const annotated = await reviewPersistedCapture(root, run, {
       ...input,
       note: "Text is legible",
+      expectedReviewVersion: first.decision.reviewVersion,
     });
     assert.equal(annotated.decision.captureId, a.captureId);
     assert.equal(annotated.decision.note, "Text is legible");

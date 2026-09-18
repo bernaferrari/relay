@@ -141,6 +141,21 @@ export function applyCaptureReviewDecision(
       "Refresh the Run and submit an intentional revision against the current review version.",
     );
   }
+  const requestedNote = input.note?.trim().slice(0, 2_000);
+  const sameImage =
+    !input.imageSha256 || !item.imageSha256 || input.imageSha256 === item.imageSha256;
+  const sameIntent =
+    prior !== undefined &&
+    prior.action === input.action &&
+    sameImage &&
+    (input.note === undefined || requestedNote === prior.note);
+  if (prior && input.expectedReviewVersion === undefined && !sameIntent) {
+    throw new CaptureReviewError(
+      "CAPTURE_REVIEW_CONFLICT",
+      "An existing review can only be changed with its current review version",
+      "Refresh the Run and submit the intentional revision with expectedReviewVersion set to the value shown in the captures panel.",
+    );
+  }
   if (prior && prior.decidedBy.id !== input.actor.id) {
     throw new CaptureReviewError(
       "CAPTURE_REVIEW_CONFLICT",
@@ -148,19 +163,14 @@ export function applyCaptureReviewDecision(
       "Refresh the Plan captures panel and continue with items that are still pending. Looks correct never overwrites another person's saved decision.",
     );
   }
-  const note = input.note?.trim().slice(0, 2_000) || prior?.note;
-  if (
-    prior &&
-    prior.action === input.action &&
-    (!prior.imageSha256 || !item.imageSha256 || prior.imageSha256 === item.imageSha256)
-  ) {
+  const note = requestedNote || prior?.note;
+  if (prior && prior.action === input.action && sameImage) {
+    const nextDecision = note === prior.note || !note ? prior : { ...prior, note };
     const captureReviews =
       note === prior.note
         ? (run.captureReviews ?? [])
         : (run.captureReviews ?? []).map((decision) =>
-            decision.captureId === prior.captureId
-              ? { ...prior, ...(note ? { note } : {}) }
-              : decision,
+            decision.captureId === prior.captureId ? nextDecision : decision,
           );
     const captureReviewReceipts =
       requestId && !receipts.some((receipt) => receipt.requestId === requestId)
@@ -170,7 +180,7 @@ export function applyCaptureReviewDecision(
       captureReviews,
       captureReviewReceipts,
       queue: captureReviewQueueForRun({ ...run, captureReviews }),
-      decision: prior,
+      decision: nextDecision,
       outcome: run.outcome,
       changed: captureReviews !== run.captureReviews || captureReviewReceipts !== receipts,
     };

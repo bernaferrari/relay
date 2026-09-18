@@ -499,9 +499,11 @@ test(
         phase?: string;
         imageSha256?: string;
         framePath?: string;
+        configuration?: unknown;
       };
       assert.equal(captured.phase, SEEDED_MEMBER_CAPTURE_SETTINGS_PHASE);
       assert.equal(captured.slotId, captureReviewSlotId(planned[0]!));
+      assert.deepEqual(captured.configuration, planned[0]?.configuration);
       assert.equal(typeof captured.imageSha256, "string");
       const capturedPng = await readFrameFile(
         persisted.dir,

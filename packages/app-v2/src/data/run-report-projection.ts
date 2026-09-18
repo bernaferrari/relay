@@ -937,7 +937,8 @@ function firstTraceEvidence(rawRun: unknown, outcome: RunOutcome | undefined) {
   /** Dest Capture for review / Observe wins for passed and failed dest-ends —
    * failed Android models still stamped Capture frames but firstEvidence led
    * with prelude Wait for label Heavy. */
-  if (destCaptureVisibleInRun(rawRun)) {
+  const hasDestCapture = destCaptureVisibleInRun(rawRun);
+  if (hasDestCapture) {
     const destLabel = destWaitForEvidenceLabel(rawRun);
     if (destLabel) return { label: destLabel };
   }
@@ -954,7 +955,10 @@ function firstTraceEvidence(rawRun: unknown, outcome: RunOutcome | undefined) {
       actions.some((action) => ["ok", "shot"].includes(String(record(action)?.kind)));
     if (outcome === "passed" ? !isSuccess : !isFailure) continue;
     const rawTitle = text(step?.title);
-    if (preludeLaneCheckStepTitle(rawTitle)) continue;
+    // Prelude checks are only machinery when a later dest-end capture proves
+    // the meaningful destination. For an ordinary Test, the same check is
+    // the first product evidence and should remain visible in the summary.
+    if (hasDestCapture && preludeLaneCheckStepTitle(rawTitle)) continue;
     const label = humanStepTitle(step?.title);
     if (!label || leftoverWrapperStepTitle(rawTitle)) continue;
     const checkpoint = /check|expect|assert|verify|visible|screen|page|content|layout/iu.test(

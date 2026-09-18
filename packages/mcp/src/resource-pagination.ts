@@ -11,6 +11,7 @@ import {
   isCaptureReviewLeftoverCaption,
   isCaptureReviewOpenerCaption,
   liveCaptureReviewAccount,
+  projectCaptureReviewDestIdentity,
   type OperationId,
   type CaptureReviewObservedSession,
 } from "@relay/protocol";
@@ -226,37 +227,35 @@ export function scalarFields(value: unknown): Record<string, unknown> {
   );
 }
 
-function destIdentityCollectionEntries(value: unknown): Record<string, string>[] {
+function destIdentityCollectionEntries(value: unknown): Record<string, string | undefined>[] {
   if (!Array.isArray(value)) return [];
-  const hasLeftover = value.some((entry) => {
-    const caption = object(entry).caption;
-    return isCaptureReviewLeftoverCaption(typeof caption === "string" ? caption : undefined);
-  });
-  const entries = value.flatMap((entry) => {
+  const frames = value.flatMap((entry) => {
     const rec = object(entry);
     const caption = typeof rec.caption === "string" ? rec.caption.slice(0, 160) : undefined;
-    if (isCaptureReviewLeftoverCaption(caption)) return [];
     const relativeName =
       typeof rec.relativeName === "string"
         ? rec.relativeName.slice(0, 160)
         : typeof rec.path === "string"
           ? rec.path.slice(0, 160)
           : undefined;
-    if (
-      relativeName &&
-      (relativeName.startsWith("/") ||
-        relativeName.includes("\\") ||
-        relativeName.split("/").some((segment) => segment === "." || segment === ".."))
-    ) {
-      return caption ? [{ caption }] : [];
-    }
     return relativeName || caption
-      ? [{ ...(relativeName ? { relativeName } : {}), ...(caption ? { caption } : {}) }]
+      ? [{ path: relativeName ?? caption!, ...(caption ? { caption } : {}) }]
       : [];
   });
-  if (!hasLeftover) return entries;
-  const withoutOpeners = entries.filter((entry) => !isCaptureReviewOpenerCaption(entry.caption));
-  return withoutOpeners.length ? withoutOpeners : entries;
+  const result: Record<string, string | undefined>[] = [];
+  for (const frame of projectCaptureReviewDestIdentity([], [], frames)) {
+    const relativeName = frame.path.slice(0, 160);
+    if (
+      relativeName.startsWith("/") ||
+      relativeName.includes("\\") ||
+      relativeName.split("/").some((segment) => segment === "." || segment === "..")
+    ) {
+      if (frame.caption) result.push({ caption: frame.caption });
+      continue;
+    }
+    result.push({ relativeName, ...(frame.caption ? { caption: frame.caption } : {}) });
+  }
+  return result;
 }
 
 function captureReviewCollectionEntries(value: unknown): Record<string, unknown>[] {

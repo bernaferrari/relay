@@ -389,6 +389,57 @@ test("a delayed same-reviewer retry replays its receipt without reverting a newe
   assert.equal(retry.queue.items[0]?.status, "issue");
 });
 
+test("a same-reviewer revision requires the current review version", () => {
+  const captureId = captureReviewId({
+    caption: "Arabic account settings",
+    framePath: "frames/001.png",
+    imageSha256: "aaa",
+  });
+  const run = {
+    artifacts: [artifact],
+    outcome: "passed" as const,
+    recipeSnapshot: { steps: [] },
+  };
+  const first = applyCaptureReviewDecision(run, {
+    captureId,
+    action: "report-issue",
+    actor: { id: "human:maria", kind: "human" },
+    imageSha256: "aaa",
+    note: "Overlap found",
+    expectedReviewVersion: 0,
+  });
+
+  assert.throws(
+    () =>
+      applyCaptureReviewDecision(
+        { ...run, captureReviews: first.captureReviews },
+        {
+          captureId,
+          action: "accept",
+          actor: { id: "human:maria", kind: "human" },
+          imageSha256: "aaa",
+        },
+      ),
+    (error: unknown) =>
+      error instanceof CaptureReviewError &&
+      error.code === "CAPTURE_REVIEW_CONFLICT" &&
+      /current review version/u.test(error.message),
+  );
+
+  const revised = applyCaptureReviewDecision(
+    { ...run, captureReviews: first.captureReviews },
+    {
+      captureId,
+      action: "accept",
+      actor: { id: "human:maria", kind: "human" },
+      imageSha256: "aaa",
+      expectedReviewVersion: 1,
+    },
+  );
+  assert.equal(revised.decision.action, "accept");
+  assert.equal(revised.decision.reviewVersion, 2);
+});
+
 test("run capture review reads Combine cell child plannedSlots", () => {
   const queue = captureReviewQueueForRun({
     artifacts: [

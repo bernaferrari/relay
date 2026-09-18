@@ -366,6 +366,29 @@ export function destIdentityCheckpointFramePaths(
   ];
 }
 
+export type CaptureReviewEvidenceFrame = { path: string; caption?: string };
+
+/** One projection for every surface that presents a capture-review destination.
+ * New phase-aware artifacts win. Listed legacy identity is only a fallback and
+ * goes through the same leftover/opener adapter everywhere. */
+export function projectCaptureReviewDestIdentity(
+  frames: readonly CaptureReviewEvidenceFrame[],
+  artifacts: readonly { kind?: string; data?: unknown }[] = [],
+  listedDestIdentity: readonly CaptureReviewEvidenceFrame[] = [],
+): CaptureReviewEvidenceFrame[] {
+  const paths = destIdentityCheckpointFramePaths(frames, artifacts);
+  const byPath = new Map(frames.map((frame) => [frame.path, frame]));
+  const source = paths.length
+    ? paths.map((path) => byPath.get(path) ?? { path })
+    : destIdentityReviewItems(listedDestIdentity);
+  const seen = new Set<string>();
+  return source.filter((frame) => {
+    if (seen.has(frame.path)) return false;
+    seen.add(frame.path);
+    return true;
+  });
+}
+
 /** Exclude leftover frames without hiding other checkpoints or configurations.
  * A dest-phase capture in one Run cannot erase an unphased capture in another.
  * Opener before · Tap cannot fill dest beside leftover Transition / Close. */

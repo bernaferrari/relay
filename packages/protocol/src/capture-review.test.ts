@@ -24,6 +24,7 @@ import {
   materializeCaptureReviewSlots,
   observedCaptureReviewAccount,
   liveCaptureReviewAccount,
+  projectCaptureReviewDestIdentity,
   BLOCKED_CAPTURE_REVIEW_ACCOUNT,
   resolveCaptureReviewQueue,
   summarizeCaptureReview,
@@ -42,6 +43,40 @@ test("arrow keys move the contact sheet without wrapping past the ends", () => {
   assert.equal(captureReviewAdvanceIndex(0, 8, "Home"), 0);
   assert.equal(captureReviewAdvanceIndex(2, 8, "End"), 7);
   assert.equal(captureReviewAdvanceIndex(2, 8, "Enter"), undefined);
+});
+
+test("all capture-review projections share the same dest and legacy fallback", () => {
+  const frames = [
+    { path: "frames/001.png", caption: "before · Tap" },
+    { path: "frames/002.png", caption: "Observe" },
+    { path: "frames/003.png", caption: "Transition executed" },
+    { path: "frames/004.png", caption: "Close" },
+  ];
+  assert.deepEqual(projectCaptureReviewDestIdentity([], [], frames), [
+    { path: "frames/002.png", caption: "Observe" },
+  ]);
+  assert.deepEqual(
+    projectCaptureReviewDestIdentity(frames, [
+      {
+        kind: "capture-review",
+        data: { framePath: "frames/002.png", phase: CAPTURE_REVIEW_DEST_PHASE },
+      },
+      {
+        kind: "capture-review",
+        data: { framePath: "frames/004.png", phase: CAPTURE_REVIEW_LEFTOVER_PHASE },
+      },
+    ]),
+    [{ path: "frames/002.png", caption: "Observe" }],
+  );
+  assert.deepEqual(
+    projectCaptureReviewDestIdentity(frames, [
+      {
+        kind: "capture-review",
+        data: { framePath: "frames/002.png", phase: CAPTURE_REVIEW_DEST_PHASE },
+      },
+    ]).map((frame) => frame.path),
+    ["frames/002.png"],
+  );
 });
 
 test("eight intended captures stay pending until a person reviews the exact image", () => {

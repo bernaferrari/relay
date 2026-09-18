@@ -411,6 +411,12 @@ export async function captureRecipeScreenshot(
       ? ctx.plannedSlots?.find((slot) => captureReviewSlotId(slot) === computedSlotId)
       : undefined;
     const slotId = frozen ? captureReviewSlotId(frozen) : computedSlotId;
+    // A planned slot's configuration is its stable review identity. Keep the
+    // runtime engine (for example, chromium) in observed session metadata
+    // rather than allowing it to contradict the planned target (for example,
+    // grok-com).
+    const persistedConfiguration =
+      frozen?.configuration ?? identity?.configuration ?? configuration;
     (ctx.job?.artifacts ?? ctx.artifacts)?.push({
       kind: "capture-review",
       capturedAt: screenshotCapturedAt,
@@ -442,7 +448,7 @@ export async function captureRecipeScreenshot(
         samples: capture.samples,
         stabilityMeasured: capture.stabilityMeasured,
         policy,
-        ...(configuration ? { configuration } : {}),
+        ...(persistedConfiguration ? { configuration: persistedConfiguration } : {}),
         ...(observed ? { observed } : {}),
       },
     });

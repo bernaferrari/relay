@@ -17,6 +17,13 @@ import {
   resolveSnapshotTargetRevealDirection,
 } from "./device-target-resolution.js";
 
+async function waitForCount(read: () => number, expected: number): Promise<void> {
+  const deadline = Date.now() + 1_000;
+  while (read() < expected && Date.now() < deadline) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 test("parses immutable Android app build facts from dumpsys output", () => {
   assert.deepEqual(
     parseAndroidAppBuild(
@@ -1164,9 +1171,9 @@ test("shares one in-flight physical-iPad accessibility read", async () => {
   };
   const target = { kind: "device", platform: "ios", serial: "ipad-single-flight" } as const;
   const first = runWithTargetContext(target, () => snapshot(device as never));
-  await new Promise<void>((resolve) => setImmediate(resolve));
+  await waitForCount(() => calls, 1);
   const second = runWithTargetContext(target, () => snapshot(device as never));
-  await new Promise<void>((resolve) => setImmediate(resolve));
+  await waitForCount(() => calls, 1);
   assert.equal(calls, 1);
 
   release({ nodes: [{ label: "Settings" }] });
@@ -1194,7 +1201,7 @@ test("does not overlap a full iPad tree read behind an interactive-only read", a
   const interactive = runWithTargetContext(target, () =>
     snapshot(device as never, { interactiveOnly: true }),
   );
-  await new Promise<void>((resolve) => setImmediate(resolve));
+  await waitForCount(() => calls, 1);
 
   await assert.rejects(
     runWithTargetContext(target, () => snapshot(device as never)),
