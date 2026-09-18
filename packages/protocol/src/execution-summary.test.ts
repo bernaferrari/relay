@@ -1379,6 +1379,7 @@ test("job.list leftover Close 004 cannot fill dest identity", () => {
     result.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
     ["frames/003.png"],
   );
+  assert.equal(result.jobs?.[0]?.captureReview?.[0]?.framePath, "frames/003.png");
   assert.equal(
     result.jobs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"),
     false,
@@ -1527,7 +1528,110 @@ test("run.list leftover Close 004 cannot fill dest identity", () => {
   assert.deepEqual(result.runs?.[0]?.destIdentity, [
     { path: "frames/003.png", caption: "Observe" },
   ]);
+  assert.equal(result.runs?.[0]?.captureReview?.[0]?.framePath, "frames/003.png");
   assert.ok(!result.runs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"));
+});
+
+test("run.list listed-only capture-review keeps live account without artifacts", () => {
+  const result = summarizeExecutionOperationResult("run.list", {
+    runs: [
+      {
+        id: "4b93702b-d2cc-4db6-83ff-800380a3b284",
+        status: "ok",
+        destIdentity: [
+          { path: "frames/003.png", caption: "Observe" },
+          { path: "frames/004.png", caption: "Close" },
+        ],
+        captureReview: [
+          {
+            captureId: "frames/003.png::observe",
+            caption: "Observe",
+            status: "pending",
+            framePath: "frames/003.png",
+            phase: CAPTURE_REVIEW_DEST_PHASE,
+            configuration: { account: "Bernardo Ferrari", app: "Grok.com" },
+            observed: { laneId: "grok-lab" },
+          },
+          {
+            captureId: "frames/004.png::close-leftover",
+            caption: "Close",
+            status: "pending",
+            framePath: "frames/004.png",
+            configuration: { account: "SuperGrok lab signed-in" },
+          },
+        ],
+      },
+    ],
+  }) as {
+    runs?: Array<{
+      destIdentity?: Array<{ path?: string; caption?: string }>;
+      captureReview?: Array<{
+        framePath?: string;
+        phase?: string;
+        configuration?: { account?: string; app?: string };
+        observed?: { laneId?: string };
+      }>;
+    }>;
+  };
+  assert.deepEqual(result.runs?.[0]?.destIdentity, [
+    { path: "frames/003.png", caption: "Observe" },
+  ]);
+  assert.equal(result.runs?.[0]?.captureReview?.[0]?.framePath, "frames/003.png");
+  assert.equal(result.runs?.[0]?.captureReview?.[0]?.phase, CAPTURE_REVIEW_DEST_PHASE);
+  assert.equal(result.runs?.[0]?.captureReview?.[0]?.configuration?.account, "Bernardo Ferrari");
+  assert.equal(result.runs?.[0]?.captureReview?.[0]?.configuration?.app, "Grok.com");
+  assert.equal(result.runs?.[0]?.captureReview?.[0]?.observed?.laneId, "grok-lab");
+  assert.ok(!result.runs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"));
+});
+
+test("job.list listed-only capture-review keeps live account without artifacts", () => {
+  const result = summarizeExecutionOperationResult("job.list", {
+    jobs: [
+      {
+        id: "4b93702b-d2cc-4db6-83ff-800380a3b284",
+        status: "ok",
+        destIdentity: [
+          { path: "frames/003.png", caption: "Observe" },
+          { path: "frames/004.png", caption: "Close" },
+        ],
+        captureReview: [
+          {
+            captureId: "frames/003.png::observe",
+            caption: "Observe",
+            status: "pending",
+            framePath: "frames/003.png",
+            phase: CAPTURE_REVIEW_DEST_PHASE,
+            configuration: { account: "Bernardo Ferrari", app: "Grok.com" },
+            observed: { laneId: "grok-lab" },
+          },
+          {
+            captureId: "frames/004.png::close-leftover",
+            caption: "Close",
+            status: "pending",
+            framePath: "frames/004.png",
+            configuration: { account: "SuperGrok lab signed-in" },
+          },
+        ],
+      },
+    ],
+  }) as {
+    jobs?: Array<{
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{
+        framePath?: string;
+        configuration?: { account?: string };
+        observed?: { laneId?: string };
+      }>;
+    }>;
+  };
+  assert.deepEqual(
+    result.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(result.jobs?.[0]?.captureReview?.[0]?.framePath, "frames/003.png");
+  assert.equal(result.jobs?.[0]?.captureReview?.[0]?.configuration?.account, "Bernardo Ferrari");
+  assert.equal(result.jobs?.[0]?.captureReview?.[0]?.observed?.laneId, "grok-lab");
+  assert.ok(!result.jobs?.[0]?.captureReview?.some((item) => item.framePath === "frames/004.png"));
 });
 
 test("run.list compact capture-review keeps live account and observed lane", () => {

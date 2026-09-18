@@ -162,6 +162,18 @@ function listedDestIdentity(value: unknown): { path: string; caption?: string }[
   });
 }
 
+function visibleDestCaptureReviewItems(
+  items: CaptureReviewItem[],
+  destPaths: Set<string>,
+  leftover: Set<string>,
+): CaptureReviewItem[] {
+  return destIdentityReviewItems(items).filter((item) => {
+    if (!item.framePath) return true;
+    if (destPaths.size) return destPaths.has(item.framePath);
+    return !leftover.has(item.framePath);
+  });
+}
+
 function destIdentityProjection(record: Record<string, unknown>): {
   destIdentity?: { path: string; caption?: string }[];
   captureReview?: Record<string, unknown>[];
@@ -178,11 +190,17 @@ function destIdentityProjection(record: Record<string, unknown>): {
     artifacts,
     decisions: Array.isArray(record.captureReviews) ? record.captureReviews : undefined,
   });
-  const visible = destIdentityReviewItems(queue.items).filter((item) => {
-    if (!item.framePath) return true;
-    if (destPaths.size) return destPaths.has(item.framePath);
-    return !leftover.has(item.framePath);
-  });
+  // Listed destIdentity already falls back without artifacts; listed captureReview
+  // must too — otherwise run.list/job.list drop Observe account while Close-drop
+  // assertions still pass on an empty queue (MCP runs collection already keeps it).
+  let visible = visibleDestCaptureReviewItems(queue.items, destPaths, leftover);
+  if (!visible.length && Array.isArray(record.captureReview)) {
+    visible = visibleDestCaptureReviewItems(
+      record.captureReview as CaptureReviewItem[],
+      destPaths,
+      leftover,
+    );
+  }
   const captureReview = visible.map((item) =>
     compactCaptureReviewItem({
       ...item,
