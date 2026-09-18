@@ -11,6 +11,7 @@ import {
   type GoalExplorationStatus,
   type GoalExplorationSummary,
   type GoalExplorationWorker,
+  type GoalFinding,
 } from "@relay/protocol";
 import type { GoalSessionResult } from "@relay/protocol";
 import type { GoalSessionRunner } from "./goal-runner.js";
@@ -161,6 +162,14 @@ function workerResult(
   };
 }
 
+function aggregateFindings(
+  workers: readonly GoalExplorationWorker[],
+  existing: readonly GoalFinding[] = [],
+): GoalFinding[] {
+  const findings = [...existing, ...workers.flatMap((worker) => worker.result?.findings ?? [])];
+  return [...new Map(findings.map((finding) => [finding.id, finding])).values()];
+}
+
 export function createGoalExplorationRunner(
   options: GoalExplorationRunnerOptions,
 ): GoalExplorationRunner {
@@ -221,6 +230,7 @@ export function createGoalExplorationRunner(
       ...record,
       status: finalStatus(workerSummary),
       summary: workerSummary,
+      findings: aggregateFindings(record.workers, record.findings),
       stopReason: {
         code: "all-workers-finished",
         message: "Every bounded goal worker reached a terminal result.",
@@ -260,6 +270,7 @@ export function createGoalExplorationRunner(
         updatedAt: at,
         workers,
         summary: summary(workers),
+        findings: [],
       };
       await store.save(record);
       return run(record, input);

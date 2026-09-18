@@ -220,6 +220,7 @@ test("goal runner persists redacted observation and intent before one safe actio
     "target.observation.capture",
   ]);
   assert.equal(result.actions[0]?.status, "acknowledged");
+  assert.deepEqual(result.findings, []);
   assert.equal(store.values.get("goal-test")?.pendingAction, undefined);
   assert.equal(store.values.get("goal-test")?.lastObservation?.redacted, true);
 });
@@ -234,6 +235,7 @@ test("goal runner reports unavailable OpenRouter without mutating the target", a
   }).start({ goal: "Do the thing", startUrl: "https://example.test" });
   assert.equal(result.status, "blocked");
   assert.equal(result.stopReason?.code, "provider-unavailable");
+  assert.equal(result.findings[0]?.kind, "blocked-exploration");
   assert.equal(runtime.calls.includes("target.interact"), false);
 });
 
@@ -263,6 +265,7 @@ test("uncertain target interaction is terminal and is never automatically retrie
   assert.equal(result.stopReason?.code, "action-uncertain");
   assert.equal(runtime.calls.filter((id) => id === "target.interact").length, 1);
   assert.equal(result.actions[0]?.status, "unknown");
+  assert.equal(result.findings[0]?.kind, "possible-issue");
 });
 
 test("resume fences a persisted in-flight mutation for human review", async () => {
@@ -327,6 +330,7 @@ test("fresh reproduction replays acknowledged actions on an isolated browser tar
   assert.equal(reproduced.reproduction?.status, "reproduced");
   assert.equal(reproduced.reproduction?.target.targetId, "goal-repro-goal-reproduce");
   assert.equal(reproduced.reproduction?.actions[0]?.status, "acknowledged");
+  assert.equal(reproduced.reproduction?.findings?.[0]?.kind, "reproduction-lead");
   assert.equal(runtime.calls.filter((id) => id === "target.interact").length, 2);
   assert.equal(store.values.get(original.sessionId)?.reproduction?.pendingAction, undefined);
 });

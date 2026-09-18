@@ -19,11 +19,13 @@ import type {
   GoalSessionStartInput,
   GoalSessionStopCode,
   GoalReproductionRecord,
+  GoalFinding,
   ModelChoiceAnswer,
   ModelDecisionRecord,
   TargetObservation,
 } from "@relay/protocol";
 import {
+  GOAL_FINDING_SCHEMA_VERSION,
   GOAL_SESSION_MAX_ACTIONS,
   GOAL_SESSION_MAX_DURATION_MS,
   GOAL_SESSION_MAX_STEPS,
@@ -119,6 +121,7 @@ function parseStoredRecord(value: unknown, expectedId: string): GoalSessionRecor
     typeof record.budget !== "object" ||
     !Array.isArray(record.actions) ||
     !Array.isArray(record.observations) ||
+    (record.findings !== undefined && !Array.isArray(record.findings)) ||
     (record.status !== "running" &&
       record.status !== "completed" &&
       record.status !== "blocked" &&
@@ -297,6 +300,7 @@ function result(record: GoalSessionRecord): GoalSessionResult {
     ...(record.lastObservation ? { lastObservation: record.lastObservation } : {}),
     ...(record.lastDecision ? { lastDecision: record.lastDecision } : {}),
     ...(record.reproduction ? { reproduction: record.reproduction } : {}),
+    findings: record.findings ?? [],
     actions: record.actions,
     observations: record.observations,
     ...(record.pendingAction ||
@@ -314,12 +318,13 @@ function stop(
   message: string,
   at: number,
 ): GoalSessionRecord {
-  return {
+  const next = {
     ...record,
     status,
     updatedAt: at,
     stopReason: { code, message: message.slice(0, MAX_ERROR_CHARS), at },
   };
+  return appendFinding(next, findingForStop(next, code, message, at));
 }
 
 async function resolveTarget(
@@ -463,6 +468,55 @@ function reproductionEvidenceRefs(
     if (projection.status === "available") refs.push(projection.artifact.id);
   }
   return [...new Set(refs)].slice(0, MAX_EVIDENCE_REFS);
+}
+
+function findingEvidenceRefs(record: GoalSessionRecord): string[] {
+  return [
+    ...(record.actions.at(-1)?.evidenceRefs ?? []),
+    ...(record.observations.at(-1)?.evidenceRefs ?? []),
+  ].slice(0, MAX_EVIDENCE_REFS);
+}
+
+function findingForStop(
+  record: GoalSessionRecord,
+  code: GoalSessionStopCode,
+  message: string,
+  at: number,
+): GoalFinding | undefined {
+  if (code === "goal-achieved") return undefined;
+  const missingEvidence = code === "observation-unavailable";
+  const uncertainMutation = code === "action-uncertain";
+  return {
+    schemaVersion: GOAL_FINDING_SCHEMA_VERSION,
+    id: `finding-${record.id}-${code}`,
+    sessionId: record.id,
+    kind: missingEvidence
+      ? "missing-evidence"
+      : uncertainMutation
+        ? "possible-issue"
+        : "blocked-exploration",
+    status: uncertainMutation ? "open" : "blocked",
+    title: missingEvidence
+      ? "Exploration stopped with missing evidence"
+      : uncertainMutation
+        ? "Possible issue after an uncertain interaction"
+        : "Exploration stopped before the goal was established",
+    summary: message.slice(0, MAX_ERROR_CHARS),
+    evidenceRefs: findingEvidenceRefs(record),
+    source: "goal-runner",
+    createdAt: at,
+    updatedAt: at,
+    requiresReview: true,
+  };
+}
+
+function appendFinding(
+  record: GoalSessionRecord,
+  finding: GoalFinding | undefined,
+): GoalSessionRecord {
+  if (!finding) return record;
+  const findings = [...(record.findings ?? []).filter((item) => item.id !== finding.id), finding];
+  return { ...record, findings };
 }
 
 export function createGoalSessionRunner(options: GoalSessionRunnerOptions): GoalSessionRunner {
@@ -793,6 +847,7 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
         updatedAt: at,
         observations: [],
         actions: [],
+        findings: [],
       };
       await store.save(record);
       return exclusive(sessionId, () => run(record));
@@ -860,6 +915,7 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
           updatedAt: now(),
           actions: record.reproduction?.actions ?? [],
           observations: record.reproduction?.observations ?? [],
+          findings: record.reproduction?.findings ?? [],
           ...(record.reproduction?.lastObservation
             ? { lastObservation: record.reproduction.lastObservation }
             : {}),
@@ -874,12 +930,45 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
           code: GoalSessionStopCode,
           message: string,
         ): Promise<GoalSessionResult> => {
+          const at = now();
+          const finding: GoalFinding = {
+            schemaVersion: GOAL_FINDING_SCHEMA_VERSION,
+            id: `finding-${record.id}-reproduction-${status}`,
+            sessionId: record.id,
+            kind:
+              status === "reproduced"
+                ? "reproduction-lead"
+                : status === "uncertain" || status === "unresolved"
+                  ? "possible-issue"
+                  : "missing-evidence",
+            status:
+              status === "reproduced" ? "reproduced" : status === "uncertain" ? "open" : "blocked",
+            title:
+              status === "reproduced"
+                ? "Fresh path replayed; review before saving a Test"
+                : status === "uncertain"
+                  ? "Possible issue needs fresh-target review"
+                  : "Fresh reproduction needs more evidence",
+            summary: message.slice(0, MAX_ERROR_CHARS),
+            evidenceRefs: [
+              ...(reproduction.actions.at(-1)?.evidenceRefs ?? []),
+              ...(reproduction.observations.at(-1)?.evidenceRefs ?? []),
+            ].slice(0, MAX_EVIDENCE_REFS),
+            source: "fresh-reproduction",
+            createdAt: at,
+            updatedAt: at,
+            requiresReview: true,
+          };
           reproduction = {
             ...reproduction,
             status,
             pendingAction: undefined,
-            stopReason: { code, message: message.slice(0, MAX_ERROR_CHARS), at: now() },
-            updatedAt: now(),
+            findings: [
+              ...(reproduction.findings ?? []).filter((item) => item.id !== finding.id),
+              finding,
+            ],
+            stopReason: { code, message: message.slice(0, MAX_ERROR_CHARS), at },
+            updatedAt: at,
           };
           record = { ...record, reproduction };
           await persist(record);

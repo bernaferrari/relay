@@ -138,6 +138,7 @@ Usage:
   relay connect [device]
   relay observe [device]
   relay explore --url <url> --goal <goal> --confirm [--agents <1-4>] [--max-steps <n>] [--max-ms <n>]
+    [--judge jev] [--model <openrouter-model>]
   relay explore --resume <explorationId> --confirm
   relay goal resume <sessionId> --confirm
   relay goal reproduce <sessionId> --confirm
@@ -170,6 +171,11 @@ Usage:
   relay <family> <command> [arguments] [--input <json> | --input-file <path>] [global options]
   relay operation invoke <operationId> (--input <json> | --input-file <path>) [global options]
   relay <family> --help
+
+Goal exploration options:
+  --judge jev                    Use the OpenRouter-hosted Typesafe Jev decision model
+  --model <id>                   Override the OpenRouter model alias or pinned model id
+  --auth-fixture <reference>     Bind one existing managed browser fixture (single worker only)
 
 Outcome commands:
   connect, observe, explore, goal, record, edit-recording, run, repeat, continue-repeat, inspect-workflow, cancel-run,

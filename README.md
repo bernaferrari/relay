@@ -82,6 +82,32 @@ The example assumes you already saved a Test named `settings-localization`. See 
 
 For change verification, Relay also supports revision-bound Proof workflows and GitHub Checks. See [PR proof integration](./docs/PR_PROOF_CI.md) for the current setup and boundaries.
 
+### Try a goal before authoring a Test
+
+For an explicit, bounded browser experiment, give Relay a URL and a goal. This path is opt-in and
+uses the single OpenRouter boundary when `OPENROUTER_API_KEY` is configured; it does not require a
+saved App Map or Test:
+
+```bash
+pnpm ensure:serve
+pnpm relay explore \
+  --url http://localhost:3000 \
+  --goal "Try to submit checkout with an empty cart; verify that no order is created" \
+  --agents 4 --confirm
+```
+
+Results retain redacted observations, acknowledged actions, evidence-linked findings, and precise
+blocked or uncertain states. A completed browser path can be replayed on a fresh target and opened
+in the existing review-only Authoring flow:
+
+```bash
+pnpm relay goal reproduce <session-id> --confirm
+pnpm relay goal promote <session-id> --confirm --title "Empty cart regression"
+```
+
+Promotion stops before human approval. Model-free recorded Test replay and screenshot review remain
+the dependable path.
+
 ## Local by default
 
 The normal desktop workflow uses a loopback service and stores evidence in your project. You operate the browsers and devices. Remote serving and evidence sharing are explicit, self-managed features.

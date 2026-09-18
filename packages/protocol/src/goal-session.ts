@@ -1,4 +1,5 @@
 import type { CompactGoalObservation } from "./goal-observation.js";
+import type { GoalFinding } from "./goal-finding.js";
 import type { ModelDecisionRecord } from "./model-decision.js";
 
 /** Durable contract for the first goal-first worker. */
@@ -90,6 +91,7 @@ export type GoalReproductionRecord = {
   updatedAt: number;
   actions: GoalSessionAction[];
   observations: GoalSessionObservationRef[];
+  findings?: GoalFinding[];
   lastObservation?: CompactGoalObservation;
   pendingAction?: GoalSessionPendingAction;
   stopReason?: GoalSessionStopReason;
@@ -115,6 +117,7 @@ export type GoalSessionRecord = {
   updatedAt: number;
   observations: GoalSessionObservationRef[];
   actions: GoalSessionAction[];
+  findings?: GoalFinding[];
   lastObservation?: CompactGoalObservation;
   lastDecision?: ModelDecisionRecord;
   pendingAction?: GoalSessionPendingAction;
@@ -151,6 +154,7 @@ export type GoalSessionResult = {
   lastDecision?: ModelDecisionRecord;
   actions: GoalSessionAction[];
   observations: GoalSessionObservationRef[];
+  findings: GoalFinding[];
   reproduction?: GoalReproductionRecord;
   /** True when a mutation was attempted and must be reviewed before resume. */
   resumeRequiresReview?: true;

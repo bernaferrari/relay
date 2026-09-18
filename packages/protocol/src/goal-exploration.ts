@@ -3,6 +3,7 @@ import type {
   GoalSessionStartInput,
   GoalSessionStatus,
 } from "./goal-session.js";
+import type { GoalFinding } from "./goal-finding.js";
 
 /** Durable contract for a bounded group of independent goal workers. */
 export const GOAL_EXPLORATION_SCHEMA_VERSION = 1 as const;
@@ -50,6 +51,7 @@ export type GoalExplorationRecord = {
   updatedAt: number;
   workers: GoalExplorationWorker[];
   summary: GoalExplorationSummary;
+  findings?: GoalFinding[];
   stopReason?: GoalExplorationStopReason;
 };
 

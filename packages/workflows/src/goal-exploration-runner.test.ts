@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { GoalExplorationRecord, GoalSessionResult } from "@relay/protocol";
+import type { GoalExplorationRecord, GoalFinding, GoalSessionResult } from "@relay/protocol";
 import { GOAL_EXPLORATION_SCHEMA_VERSION } from "@relay/protocol";
 import {
   createGoalExplorationRunner,
@@ -8,7 +8,11 @@ import {
 } from "./goal-exploration-runner.js";
 import type { GoalSessionRunner } from "./goal-runner.js";
 
-function result(sessionId: string, status: GoalSessionResult["status"] = "completed") {
+function result(
+  sessionId: string,
+  status: GoalSessionResult["status"] = "completed",
+  findings: GoalFinding[] = [],
+) {
   return {
     schemaVersion: 1 as const,
     sessionId,
@@ -19,6 +23,7 @@ function result(sessionId: string, status: GoalSessionResult["status"] = "comple
     budget: { maxSteps: 2, maxDurationMs: 10_000 },
     actions: [],
     observations: [],
+    findings,
   } satisfies GoalSessionResult;
 }
 
@@ -35,7 +40,7 @@ function memoryStore(initial: GoalExplorationRecord[] = []): GoalExplorationStor
   };
 }
 
-function fakeSessions(options: { delayMs?: number } = {}): {
+function fakeSessions(options: { delayMs?: number; finding?: GoalFinding } = {}): {
   runner: GoalSessionRunner;
   started: string[];
   resumed: string[];
@@ -50,7 +55,11 @@ function fakeSessions(options: { delayMs?: number } = {}): {
     maximum = Math.max(maximum, active);
     await new Promise((resolve) => setTimeout(resolve, options.delayMs ?? 2));
     active -= 1;
-    return result(sessionId);
+    return result(
+      sessionId,
+      options.finding ? "blocked" : "completed",
+      options.finding ? [options.finding] : [],
+    );
   };
   return {
     started,
@@ -118,6 +127,37 @@ test("exploration refuses shared target or account bindings for multiple workers
     }),
     /share one Lane/u,
   );
+});
+
+test("exploration aggregates bounded worker findings without changing their review status", async () => {
+  const finding: GoalFinding = {
+    schemaVersion: 1,
+    id: "finding-worker-1",
+    sessionId: "worker-session",
+    kind: "possible-issue",
+    status: "open",
+    title: "Possible issue",
+    summary: "Review the retained evidence.",
+    evidenceRefs: ["evidence-1"],
+    source: "goal-runner",
+    createdAt: 1,
+    updatedAt: 1,
+    requiresReview: true,
+  };
+  const exploration = createGoalExplorationRunner({
+    sessions: fakeSessions({ finding }).runner,
+    store: memoryStore(),
+    id: () => "explore-findings",
+  });
+  const record = await exploration.start({
+    goal: "Reach the goal",
+    startUrl: "https://example.test",
+    agents: 2,
+  });
+  assert.equal(record.status, "blocked");
+  assert.equal(record.findings?.length, 1);
+  assert.equal(record.findings?.[0]?.requiresReview, true);
+  assert.equal(record.findings?.[0]?.status, "open");
 });
 
 test("exploration resume continues persisted workers without creating new worker identities", async () => {

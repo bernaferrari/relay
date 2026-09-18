@@ -87,6 +87,7 @@ export * from "./target-observation.js";
 export * from "./goal-observation.js";
 export * from "./goal-session.js";
 export * from "./goal-exploration.js";
+export * from "./goal-finding.js";
 export * from "./model-decision.js";
 export * from "./target-supervisor.js";
 export * from "./workflow-record.js";
