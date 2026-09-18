@@ -154,6 +154,53 @@ test("job summaries dest identity is dest wait-for 003, not leftover Close 004 l
   assert.equal(summarizeJob(job).frameCount, 2);
 });
 
+test("unphased job summaries drop leftover Transition executed / Inspect setup skipped", () => {
+  const job = {
+    id: "unphased-transition",
+    action: "observe",
+    status: "ok",
+    queuedAt: 10,
+    platform: "browser",
+    targetKind: "browser",
+    logs: [],
+    frames: [
+      { path: "frames/002.png", caption: "after · Transition executed", capturedAt: 1 },
+      { path: "frames/003.png", caption: "Observe", capturedAt: 2 },
+      {
+        path: "frames/004.png",
+        caption: "after · Inspect setup skipped — already on this view",
+        capturedAt: 3,
+      },
+    ],
+    artifacts: [],
+  } as unknown as TestJob;
+
+  assert.deepEqual(summarizeJob(job).destIdentity, [
+    { path: "frames/003.png", caption: "Observe" },
+  ]);
+  assert.equal(summarizeJob(job).frameCount, 3);
+});
+
+test("unphased Android dest-wait with no leftover caption omits destIdentity", () => {
+  const job = {
+    id: "android-r368",
+    action: "observe",
+    status: "ok",
+    queuedAt: 10,
+    platform: "android",
+    targetKind: "device",
+    logs: [],
+    frames: [
+      { path: "frames/001.png", caption: "after · Reach home", capturedAt: 1 },
+      { path: "frames/002.png", caption: "Observe", capturedAt: 2 },
+    ],
+    artifacts: [],
+  } as unknown as TestJob;
+
+  assert.equal(summarizeJob(job).destIdentity, undefined);
+  assert.equal(summarizeJob(job).frameCount, 2);
+});
+
 test("a persisted run can replay its frozen plan without consulting current authoring state", () => {
   const replay = replayInputFromPersistedRun({
     id: "run-1",

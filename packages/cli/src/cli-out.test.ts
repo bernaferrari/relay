@@ -363,6 +363,87 @@ test("writeRunOutDir listed destIdentity leftover Transition executed cannot fil
   }
 });
 
+test("writeRunOutDir unphased leftover Transition executed cannot fill per-job dest PNGs", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-cli-out-unphased-transition-"));
+  const runDir = join(root, "job-run");
+  const outDir = join(root, "out");
+  try {
+    await mkdir(join(runDir, "frames"), { recursive: true });
+    await writeFile(join(runDir, "frames", "002.png"), pngBytes);
+    await writeFile(join(runDir, "frames", "003.png"), overlayBytes);
+    await writeFile(join(runDir, "frames", "004.png"), pngBytes);
+    const copied = await writeRunOutDir({
+      dir: outDir,
+      envelope: {
+        type: "result",
+        ok: true,
+        result: {
+          job: {
+            id: "unphased-transition-pngs",
+            resources: { runDir },
+            frames: [
+              { path: "frames/002.png", caption: "after · Transition executed" },
+              { path: "frames/003.png", caption: "Observe" },
+              {
+                path: "frames/004.png",
+                caption: "after · Inspect setup skipped — already on this view",
+              },
+            ],
+            artifacts: [],
+          },
+        },
+      },
+      stderr: "",
+    });
+    assert.deepEqual(await readFile(join(outDir, "checkpoint.png")), overlayBytes);
+    assert.ok(copied.some((path) => path.endsWith("frames/003.png")));
+    assert.equal(
+      copied.some((path) => path.endsWith("frames/002.png")),
+      false,
+    );
+    assert.equal(
+      copied.some((path) => path.endsWith("frames/004.png")),
+      false,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("writeRunOutDir unphased Android dest-wait with no leftover caption keeps every PNG", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-cli-out-android-keep-"));
+  const runDir = join(root, "job-run");
+  const outDir = join(root, "out");
+  try {
+    await mkdir(join(runDir, "frames"), { recursive: true });
+    await writeFile(join(runDir, "frames", "001.png"), pngBytes);
+    await writeFile(join(runDir, "frames", "002.png"), overlayBytes);
+    const copied = await writeRunOutDir({
+      dir: outDir,
+      envelope: {
+        type: "result",
+        ok: true,
+        result: {
+          job: {
+            id: "android-r368-keep",
+            resources: { runDir },
+            frames: [
+              { path: "frames/001.png", caption: "after · Reach home" },
+              { path: "frames/002.png", caption: "Observe" },
+            ],
+            artifacts: [],
+          },
+        },
+      },
+      stderr: "",
+    });
+    assert.ok(copied.some((path) => path.endsWith("frames/001.png")));
+    assert.ok(copied.some((path) => path.endsWith("frames/002.png")));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("writeRunOutDir reads dest wait-for from run.json when the job summary omitted artifacts", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-cli-out-summarized-"));
   const runDir = join(root, "job-run");

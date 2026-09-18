@@ -246,9 +246,23 @@ async function copyablePngs(job: Record<string, unknown>, runDir: string): Promi
   const pngs = await pngsUnder(runDir);
   const merged = mergeJob(job, await persistedJob(runDir));
   const artifacts = jobArtifacts(merged);
+  const frames = jobFrames(merged);
   const dest = [...captureReviewIdentityFramePaths(artifacts), ...destIdentitySummaryPaths(merged)];
-  if (!dest.length) return pngs;
-  const leftover = new Set(captureReviewLeftoverLastFramePaths(jobFrames(merged), artifacts));
+  const leftover = new Set(captureReviewLeftoverLastFramePaths(frames, artifacts));
+  /** Missing dest-phase is not every PNG: leftover Transition executed /
+   * Inspect setup skipped cannot sit beside Observe. Unphased Android dest-wait
+   * with no leftover caption still keeps every frame. */
+  if (!dest.length) {
+    const keep = destIdentityCheckpointFramePaths(frames, artifacts);
+    const hasLeftoverCaption = frames.some((frame) =>
+      isCaptureReviewLeftoverCaption(frame.caption),
+    );
+    if (keep.length && hasLeftoverCaption) {
+      const keepSet = new Set(keep);
+      return pngs.filter((file) => keepSet.has(relativeFromRunDir(runDir, file)));
+    }
+    return pngs;
+  }
   if (!leftover.size) return pngs;
   return pngs.filter((file) => !leftover.has(relativeFromRunDir(runDir, file)));
 }

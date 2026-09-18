@@ -2,6 +2,7 @@ import {
   canonicalAppMapCombineCellValues,
   captureReviewIdentityFramePaths,
   destIdentityCheckpointFramePaths,
+  isCaptureReviewLeftoverCaption,
   parseAppMapTestTupleIdentity,
   describeCoverageStepReasons,
   type CampaignCheckSummary,
@@ -10,15 +11,22 @@ import {
 } from "@relay/protocol";
 import type { TestJob } from "./session-contract.js";
 
+/** Dest wait-for for job.list / campaign envelopes. Missing dest-phase is not
+ * "omit destIdentity so callers fall back to every frame": leftover Transition
+ * executed / Inspect setup skipped cannot sit beside Observe. Unphased Android
+ * dest-wait with no leftover caption still omits destIdentity (keeps every
+ * frame elsewhere). */
 function jobDestIdentity(job: TestJob): JobSummary["destIdentity"] {
-  const dest = captureReviewIdentityFramePaths(job.artifacts);
-  if (!dest.length) return undefined;
   const frames = job.frames.map((frame) => ({
     path: frame.path,
     ...(frame.caption ? { caption: frame.caption } : {}),
   }));
+  const phased = captureReviewIdentityFramePaths(job.artifacts);
   const paths = destIdentityCheckpointFramePaths(frames, job.artifacts);
   if (!paths.length) return undefined;
+  if (!phased.length && !frames.some((frame) => isCaptureReviewLeftoverCaption(frame.caption))) {
+    return undefined;
+  }
   const byPath = new Map(frames.map((frame) => [frame.path, frame]));
   return paths.map((path) => {
     const frame = byPath.get(path);
