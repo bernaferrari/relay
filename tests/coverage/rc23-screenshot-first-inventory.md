@@ -294,3 +294,13 @@ This section records fresh runtime evidence without changing the frozen RC-23 de
 - **Android emulator** `emulator-5554` from the declared `LuminaQA` AVD (Android 16, 720×1280): the saved Settings Language Proof route was re-recorded against the current runtime profile and selected explicitly as `device:emulator-5554-720x1280` (App Map revision 40). No-AI Test `settings-language-arabic` run `b778e96f-fa1f-48e1-877c-853004e9d300` passed 16 steps, produced 11 frames, passed both transition checks, and passed the Arabic description/primary-action non-overlap assertion.
 - The Android run proves the current deterministic Relay proof fixture’s capture/control/evidence path. It does **not** replace the frozen Grok Android RC-23 cell: the current emulator has no Grok package/account, and the old `medium_phone` profile is unavailable. The Grok Android slot remains pending historical evidence, not accepted.
 - **Still open:** RC-23 remains **30 planned · 29 captured · 1 blocked · 0 accepted**; iOS Imagine remains Unbound because the live SuperGrok home has no unique Imagine control; human review, Android Grok account parity, and unfamiliar-user acceptance remain outstanding.
+
+### 2026-09-18 current-head iPad requalification
+
+The physical iPad was relaunched/recovered after a stale Settings overlay, then each Test was run only after a fresh origin snapshot proved the required controls. These are runtime qualification artifacts, not visual acceptance: every capture-review item remains `pending` and no human marked Looks correct.
+
+- Settings peek: job `fba983ad-5a02-4e8c-8fa3-3838afcba7d4`, App Map r369, 9 steps, 1 passed check, 8 frames, physical iPad profile `device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5`.
+- Sidebar open-close: job `35ef970c-aa10-42da-99b7-d562084d923a`, App Map r370, 5 steps, 1 passed check, 4 frames, physical iPad profile above.
+- Home chrome: job `ef3e73b5-53d5-4cc1-826b-0d45e8059848`, App Map r371, 9 steps, 1 passed check, 4 frames, physical iPad profile above.
+- Two intervening failures were retained as harness evidence: Sidebar started from a Settings overlay (`f5d08fc9-edc2-4446-88e8-ef04c0ab4052`), and Home chrome started with the sidebar still open (`82138c9b-af9e-4947-8e9a-e09c49a900f3`). Recovery/relaunch plus explicit origin snapshots corrected the setup; these failures are not counted as product failures or passes.
+- The fresh iPad runs still do not close RC-23: iOS Imagine remains Unbound, Android Grok account parity is unavailable, and all screenshots remain pending human review.
