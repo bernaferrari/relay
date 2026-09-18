@@ -30,7 +30,7 @@ test("TUI history drops leftover Transition executed / Inspect setup skipped", (
       },
       { path: "frames/005.png", caption: "after · Run saved Test" },
     ]),
-    "step:step-observe:Observe",
+    "Observe",
   );
 });
 
@@ -41,6 +41,22 @@ test("TUI history drops opener Tap beside leftover Transition", () => {
       { path: "frames/002.png", caption: "after · Transition executed" },
       { path: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
     ]),
-    "step:step-action:Sidebar open-close",
+    "Sidebar open-close",
+  );
+});
+
+test("TUI history keeps Model selector product title, not bare step caption", () => {
+  assert.equal(
+    destIdentityHistoryCaption([
+      { path: "frames/003.png", caption: "step:step-action:Model selector SuperGrok" },
+      { path: "frames/004.png", caption: "after · Run saved Test" },
+    ]),
+    "Model selector SuperGrok",
+  );
+  assert.notEqual(
+    destIdentityHistoryCaption([
+      { path: "frames/003.png", caption: "step:step-action:Model selector SuperGrok" },
+    ]),
+    "step:step-action:Model selector SuperGrok",
   );
 });

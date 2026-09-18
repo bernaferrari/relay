@@ -1,8 +1,13 @@
-import { isCaptureReviewLeftoverCaption, isCaptureReviewOpenerCaption } from "@relay/protocol";
+import {
+  isCaptureReviewLeftoverCaption,
+  isCaptureReviewOpenerCaption,
+  planCaptureReviewScreenLabel,
+} from "@relay/protocol";
 
 /** Dest wait-for caption for TUI history. Leftover Close / Run saved Test /
  * Transition executed / Inspect setup skipped cannot fill dest. Opener before ·
- * Tap cannot fill dest beside those leftovers either. */
+ * Tap cannot fill dest beside those leftovers either. Strip bare `step:…:`
+ * engine ids so Model selector SuperGrok matches Plan Gallery / Run report. */
 export function destIdentityHistoryCaption(
   destIdentity: Array<{ path?: string; caption?: string }> | undefined,
 ): string | undefined {
@@ -20,5 +25,9 @@ export function destIdentityHistoryCaption(
     : candidates;
   const dest = (preferred.length ? preferred : candidates)[0];
   const caption = dest?.caption?.trim();
-  return caption || dest?.path?.trim() || undefined;
+  if (caption) {
+    const labeled = planCaptureReviewScreenLabel({ caption });
+    if (labeled) return labeled;
+  }
+  return dest?.path?.trim() || undefined;
 }
