@@ -4,9 +4,12 @@ import {
   destIdentityCheckpointFramePaths,
   destIdentityReviewItems,
   isCaptureReviewLeftoverCaption,
+  liveCaptureReviewAccount,
   CAPTURE_REVIEW_DEST_PHASE,
   resolveCaptureReviewQueue,
+  type CaptureReviewConfiguration,
   type CaptureReviewItem,
+  type CaptureReviewObservedSession,
 } from "./capture-review.js";
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -95,9 +98,42 @@ function listedFramePath(value: unknown): string | undefined {
   return path || undefined;
 }
 
+/** Keep live/fixture account identity on compact CLI/MCP capture-review.
+ * SuperGrok* / Lane-name stand-ins stay dropped (same as stamp). */
+function compactCaptureReviewConfiguration(
+  configuration?: CaptureReviewConfiguration,
+): CaptureReviewConfiguration | undefined {
+  if (!configuration) return undefined;
+  const account = liveCaptureReviewAccount(configuration.account);
+  const next: CaptureReviewConfiguration = {
+    ...(configuration.app?.trim() ? { app: configuration.app.trim() } : {}),
+    ...(account ? { account } : {}),
+    ...(configuration.browser?.trim() ? { browser: configuration.browser.trim() } : {}),
+    ...(configuration.viewport?.trim() ? { viewport: configuration.viewport.trim() } : {}),
+    ...(configuration.locale?.trim() ? { locale: configuration.locale.trim() } : {}),
+    ...(configuration.build?.trim() ? { build: configuration.build.trim() } : {}),
+  };
+  return Object.keys(next).length ? next : undefined;
+}
+
+function compactCaptureReviewObserved(
+  observed?: CaptureReviewObservedSession,
+): CaptureReviewObservedSession | undefined {
+  if (!observed) return undefined;
+  const next: CaptureReviewObservedSession = {
+    ...(observed.laneId?.trim() ? { laneId: observed.laneId.trim() } : {}),
+    ...(observed.profileId?.trim() ? { profileId: observed.profileId.trim() } : {}),
+    ...(observed.sessionStore ? { sessionStore: observed.sessionStore } : {}),
+    ...(observed.iosHardwareClass ? { iosHardwareClass: observed.iosHardwareClass } : {}),
+  };
+  return Object.keys(next).length ? next : undefined;
+}
+
 function compactCaptureReviewItem(
   item: CaptureReviewItem & { runId?: string; attempt?: number },
 ): Record<string, unknown> {
+  const configuration = compactCaptureReviewConfiguration(item.configuration);
+  const observed = compactCaptureReviewObserved(item.observed);
   return {
     captureId: item.captureId,
     caption: item.caption,
@@ -108,6 +144,8 @@ function compactCaptureReviewItem(
     ...(item.lookFor ? { lookFor: item.lookFor } : {}),
     ...(item.attempt !== undefined ? { attempt: item.attempt } : {}),
     ...(typeof item.runId === "string" ? { runId: item.runId } : {}),
+    ...(configuration ? { configuration } : {}),
+    ...(observed ? { observed } : {}),
   };
 }
 

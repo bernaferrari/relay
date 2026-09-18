@@ -389,6 +389,18 @@ test("run.get dest identity is dest wait-for 003, not leftover Close 004 last-fr
             phase: CAPTURE_REVIEW_DEST_PHASE,
             policy: "fast",
             status: "pending",
+            configuration: {
+              app: "Grok.com",
+              account: "Bernardo Ferrari",
+              browser: "chromium",
+              viewport: "1280×800",
+              locale: "en-US",
+            },
+            observed: {
+              laneId: "grok-lab",
+              profileId: "browser:grok-com-1280x800-339a5a430a41",
+              sessionStore: "playwright-user-data",
+            },
           },
         },
         {
@@ -406,7 +418,12 @@ test("run.get dest identity is dest wait-for 003, not leftover Close 004 last-fr
   }) as {
     run?: {
       destIdentity?: Array<{ path?: string }>;
-      captureReview?: Array<{ framePath?: string; phase?: string }>;
+      captureReview?: Array<{
+        framePath?: string;
+        phase?: string;
+        configuration?: { account?: string; app?: string };
+        observed?: { laneId?: string };
+      }>;
       frameCount?: number;
       recipeSnapshot?: unknown;
     };
@@ -421,8 +438,61 @@ test("run.get dest identity is dest wait-for 003, not leftover Close 004 last-fr
   );
   assert.equal(result.run?.captureReview?.[0]?.framePath, "frames/003.png");
   assert.equal(result.run?.captureReview?.[0]?.phase, CAPTURE_REVIEW_DEST_PHASE);
+  assert.equal(result.run?.captureReview?.[0]?.configuration?.account, "Bernardo Ferrari");
+  assert.equal(result.run?.captureReview?.[0]?.configuration?.app, "Grok.com");
+  assert.equal(result.run?.captureReview?.[0]?.observed?.laneId, "grok-lab");
   assert.equal(result.run?.frameCount, 2);
   assert.equal(result.run?.recipeSnapshot, undefined);
+});
+
+test("run.get compact capture-review drops SuperGrok stand-in account, keeps fixture id", () => {
+  const labFixture = "authfx:7189423f-193e-45ed-b674-154505cc5107:1";
+  const spoofed = summarizeExecutionOperationResult("run.get", {
+    run: {
+      id: "spoofed-supergrok",
+      status: "ok",
+      frames: [{ path: "frames/003.png", caption: "Observe" }],
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "Observe",
+            framePath: "frames/003.png",
+            phase: CAPTURE_REVIEW_DEST_PHASE,
+            status: "pending",
+            configuration: { account: "SuperGrok lab signed-in", app: "Grok.com" },
+          },
+        },
+      ],
+    },
+  }) as {
+    run?: { captureReview?: Array<{ configuration?: { account?: string; app?: string } }> };
+  };
+  assert.equal(spoofed.run?.captureReview?.[0]?.configuration?.account, undefined);
+  assert.equal(spoofed.run?.captureReview?.[0]?.configuration?.app, "Grok.com");
+
+  const fixture = summarizeExecutionOperationResult("run.get", {
+    run: {
+      id: "fixture-account",
+      status: "ok",
+      frames: [{ path: "frames/003.png", caption: "Observe" }],
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "Observe",
+            framePath: "frames/003.png",
+            phase: CAPTURE_REVIEW_DEST_PHASE,
+            status: "pending",
+            configuration: { account: labFixture, app: "Grok.com" },
+          },
+        },
+      ],
+    },
+  }) as {
+    run?: { captureReview?: Array<{ configuration?: { account?: string } }> };
+  };
+  assert.equal(fixture.run?.captureReview?.[0]?.configuration?.account, labFixture);
 });
 
 test("run.capture.review dest identity omits leftover Close last-frame", () => {
