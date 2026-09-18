@@ -263,6 +263,161 @@ test("dest wait-for still binds when dest screenshot provenance was omitted", ()
   );
 });
 
+test("unphased step evidence drops leftover Transition executed / Inspect setup skipped beside Observe", () => {
+  const result = projectRunTestStepEvidence({
+    steps: [
+      trace({
+        id: "trace-land",
+        index: 1,
+        recipeId: "observe-flow",
+        recipeStepId: "land",
+        title: "Land",
+        frames: [{ path: "frames/001.png", caption: "Land", capturedAt: 1 }],
+      }),
+      trace({
+        id: "trace-transition",
+        index: 2,
+        recipeId: "observe-flow",
+        recipeStepId: "transition",
+        title: "Transition executed",
+        frames: [{ path: "frames/002.png", caption: "after · Transition executed", capturedAt: 2 }],
+      }),
+      trace({
+        id: "trace-dest",
+        index: 3,
+        recipeId: "observe-flow",
+        recipeStepId: "observe",
+        title: "Observe",
+        frames: [{ path: "frames/003.png", caption: "Observe", capturedAt: 3 }],
+      }),
+      trace({
+        id: "trace-skip",
+        index: 4,
+        recipeId: "observe-flow",
+        recipeStepId: "skip",
+        title: "Inspect setup skipped — already on this view",
+        frames: [
+          {
+            path: "frames/004.png",
+            caption: "after · Inspect setup skipped — already on this view",
+            capturedAt: 4,
+          },
+        ],
+      }),
+    ],
+    provenance: [
+      provenance({ recipeId: "observe-flow", recipeStepId: "land", testStepId: "step-land" }),
+      provenance({
+        recipeId: "observe-flow",
+        recipeStepId: "transition",
+        testStepId: "step-transition",
+      }),
+      provenance({ recipeId: "observe-flow", recipeStepId: "observe", testStepId: "step-observe" }),
+      provenance({ recipeId: "observe-flow", recipeStepId: "skip", testStepId: "step-skip" }),
+    ],
+    artifacts: [
+      {
+        kind: "capture-review",
+        data: { caption: "Observe", framePath: "frames/003.png", policy: "fast" },
+      },
+    ],
+  });
+  assert.deepEqual(
+    result.map((item) => item.evidence.framePaths),
+    [["frames/001.png"], ["frames/003.png"]],
+  );
+  assert.equal(
+    result.some((item) =>
+      item.evidence.framePaths.some(
+        (path) => path === "frames/002.png" || path === "frames/004.png",
+      ),
+    ),
+    false,
+  );
+});
+
+test("unphased Android dest-wait with no leftover caption keeps every frame", () => {
+  const result = projectRunTestStepEvidence({
+    steps: [
+      trace({
+        id: "trace-before",
+        index: 1,
+        recipeId: "home",
+        recipeStepId: "before",
+        frames: [{ path: "frames/001.png", caption: "before · Tap label Ask", capturedAt: 1 }],
+      }),
+      trace({
+        id: "trace-after",
+        index: 2,
+        recipeId: "home",
+        recipeStepId: "after",
+        frames: [{ path: "frames/002.png", caption: "after · Tap label Ask", capturedAt: 2 }],
+      }),
+    ],
+    provenance: [
+      provenance({ recipeId: "home", recipeStepId: "before", testStepId: "step-before" }),
+      provenance({ recipeId: "home", recipeStepId: "after", testStepId: "step-after" }),
+    ],
+  });
+  assert.deepEqual(
+    result.map((item) => item.evidence.framePaths),
+    [["frames/001.png"], ["frames/002.png"]],
+  );
+});
+
+test("overlayDestEndIdentityEvidence drops unphased leftover Transition executed beside Observe", () => {
+  const persisted = projectRunTestStepEvidence({
+    steps: [
+      trace({
+        id: "trace-transition",
+        index: 2,
+        recipeId: "observe-flow",
+        recipeStepId: "transition",
+        frames: [{ path: "frames/002.png", caption: "after · Transition executed", capturedAt: 2 }],
+      }),
+    ],
+    provenance: [
+      provenance({
+        recipeId: "observe-flow",
+        recipeStepId: "transition",
+        testStepId: "step-transition",
+      }),
+    ],
+  });
+  assert.deepEqual(persisted[0]?.evidence.framePaths, ["frames/002.png"]);
+  const overlaid = overlayDestEndIdentityEvidence({
+    items: persisted,
+    steps: [
+      trace({
+        id: "trace-transition",
+        index: 2,
+        recipeId: "observe-flow",
+        recipeStepId: "transition",
+        frames: [{ path: "frames/002.png", caption: "after · Transition executed", capturedAt: 2 }],
+      }),
+      trace({
+        id: "trace-dest",
+        index: 3,
+        recipeId: "observe-flow",
+        recipeStepId: "observe",
+        frames: [{ path: "frames/003.png", caption: "Observe", capturedAt: 3 }],
+      }),
+    ],
+    provenance: [
+      provenance({
+        recipeId: "observe-flow",
+        recipeStepId: "transition",
+        testStepId: "step-transition",
+      }),
+      provenance({ recipeId: "observe-flow", recipeStepId: "observe", testStepId: "step-observe" }),
+    ],
+  });
+  assert.deepEqual(
+    overlaid.map((item) => item.evidence.framePaths),
+    [["frames/003.png"]],
+  );
+});
+
 test("overlayDestEndIdentityEvidence replaces persisted leftover last-frame", () => {
   const leftover = projectRunTestStepEvidence({
     steps: [

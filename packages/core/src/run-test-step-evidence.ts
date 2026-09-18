@@ -4,6 +4,7 @@ import type { AppMapTestStepProvenance, EvidenceEvent, RunTestStepEvidence } fro
 import {
   captureReviewIdentityFramePaths,
   isCaptureReviewDestPhase,
+  isCaptureReviewLeftoverCaption,
   parseRunTestStepEvidence,
 } from "@relay/protocol";
 import type { TraceStep } from "./trace.js";
@@ -102,14 +103,50 @@ function evidenceForTrace(
   });
 }
 
+function captionedFramePaths(steps: readonly TraceStep[]): {
+  dest: Set<string>;
+  leftover: Set<string>;
+} {
+  const dest = new Set<string>();
+  const leftover = new Set<string>();
+  for (const step of steps) {
+    for (const frame of step.frames) {
+      const path = nonEmpty(frame.path);
+      if (!path) continue;
+      if (isCaptureReviewLeftoverCaption(frame.caption)) leftover.add(path);
+      else dest.add(path);
+    }
+  }
+  return { dest, leftover };
+}
+
+/** Missing dest-phase is not every step frame. Leftover Transition executed /
+ * Inspect setup skipped cannot sit beside Observe. Unphased Android dest-wait
+ * with no leftover caption keeps every frame. */
+function preferUnphasedDestWaitForEvidence(
+  items: readonly RunTestStepEvidence[],
+  steps: readonly TraceStep[],
+): RunTestStepEvidence[] {
+  const { dest, leftover } = captionedFramePaths(steps);
+  if (!leftover.size || !dest.size) return [...items];
+  return items.flatMap((item) => {
+    if (!item.evidence.framePaths.length) return [item];
+    const framePaths = item.evidence.framePaths.filter((path) => !leftover.has(path));
+    if (!framePaths.length) return [];
+    if (framePaths.length === item.evidence.framePaths.length) return [item];
+    return [{ ...item, evidence: { ...item.evidence, framePaths } }];
+  });
+}
+
 /** Dest wait-for identity is authored evidence. Leftover Close / Run saved Test
  * last-frame cannot fill dest-end Observe. */
 function preferDestEndIdentityEvidence(
   items: readonly RunTestStepEvidence[],
   artifacts: readonly RunArtifact[],
+  steps: readonly TraceStep[],
 ): RunTestStepEvidence[] {
   const destFrames = new Set(captureReviewIdentityFramePaths(artifacts));
-  if (destFrames.size === 0) return [...items];
+  if (destFrames.size === 0) return preferUnphasedDestWaitForEvidence(items, steps);
   const destTestStepIds = new Set(
     items
       .filter((item) => item.evidence.framePaths.some((path) => destFrames.has(path)))
@@ -207,11 +244,13 @@ export function projectRunTestStepEvidence(input: {
     artifacts: input.artifacts ?? [],
     occurrenceByTestStep,
   });
-  return preferDestEndIdentityEvidence(result, input.artifacts ?? []);
+  return preferDestEndIdentityEvidence(result, input.artifacts ?? [], input.steps);
 }
 
 /** Persisted leftover last-frame evidence yields dest wait-for when dest-phase
- * capture-review is on disk. Event sequences on other steps stay intact. */
+ * capture-review is on disk. Unphased dest-wait drops leftover Transition
+ * executed / Inspect setup skipped beside Observe. Event sequences on other
+ * steps stay intact. */
 export function overlayDestEndIdentityEvidence(input: {
   items: readonly RunTestStepEvidence[];
   steps: readonly TraceStep[];
@@ -220,7 +259,27 @@ export function overlayDestEndIdentityEvidence(input: {
 }): RunTestStepEvidence[] {
   const artifacts = input.artifacts ?? [];
   const destFrames = new Set(captureReviewIdentityFramePaths(artifacts));
-  if (destFrames.size === 0) return [...input.items];
+  if (destFrames.size === 0) {
+    const filtered = preferUnphasedDestWaitForEvidence(input.items, input.steps);
+    const { dest } = captionedFramePaths(input.steps);
+    const have = new Set(filtered.flatMap((item) => item.evidence.framePaths));
+    if (!dest.size || [...dest].every((path) => have.has(path))) return filtered;
+    const projected = projectRunTestStepEvidence({
+      steps: input.steps,
+      provenance: input.provenance,
+      artifacts,
+    });
+    const missing = projected.filter((item) =>
+      item.evidence.framePaths.some((path) => dest.has(path) && !have.has(path)),
+    );
+    if (
+      !missing.length &&
+      !filtered.some((item) => item.evidence.framePaths.some((path) => dest.has(path)))
+    ) {
+      return [...input.items];
+    }
+    return [...filtered, ...missing];
+  }
   const projected = projectRunTestStepEvidence({
     steps: input.steps,
     provenance: input.provenance,
