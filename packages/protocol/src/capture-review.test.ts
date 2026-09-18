@@ -125,6 +125,43 @@ test("eight intended captures stay pending until a person reviews the exact imag
   });
 });
 
+test("contradictory capture identity stays unbound instead of filling a weaker slot match", () => {
+  const planned = {
+    checkpointId: "settings",
+    stepId: "settings",
+    caption: "Arabic settings",
+    attempt: 1,
+    configuration: { locale: "ar" },
+  };
+  const slotId = captureReviewSlotId(planned);
+  const queue = resolveCaptureReviewQueue({
+    plannedSlots: [planned],
+    artifacts: [
+      {
+        kind: "capture-review",
+        data: {
+          status: "pending",
+          caption: "English settings",
+          framePath: "frames/settings-en.png",
+          imageSha256: "english",
+          checkpointId: "settings",
+          stepId: "settings",
+          attempt: 1,
+          slotId,
+          configuration: { locale: "en" },
+        },
+      },
+    ],
+  });
+
+  assert.equal(queue.summary.missing, 1);
+  assert.equal(queue.summary.captured, 1);
+  assert.equal(queue.items[0]?.status, "missing");
+  assert.equal(queue.items[0]?.configuration?.locale, "ar");
+  assert.equal(queue.items[1]?.framePath, "frames/settings-en.png");
+  assert.equal(queue.items[1]?.slotId, slotId);
+});
+
 const labFixture = "authfx:7189423f-193e-45ed-b674-154505cc5107:1";
 
 test("Lane name grok-lab without a fixture is signed-out, not SuperGrok", () => {
