@@ -142,6 +142,23 @@ export function applyLaneFlag(
 }
 
 export function assertPlanCliFlags(operationId: string, tokens: CliFlagBag): void {
+  if (tokens.values.has("--triage") && tokens.values.get("--triage") !== "jev") {
+    throw new UsageError('--triage currently accepts only "jev"');
+  }
+  if (
+    tokens.values.has("--triage") &&
+    operationId !== "job.combine.start" &&
+    operationId !== "job.combine.analysis"
+  ) {
+    throw new UsageError("--triage is only valid on plan run or plan findings");
+  }
+  if (
+    tokens.values.has("--triage") &&
+    operationId === "job.combine.start" &&
+    !tokens.switches.has("--findings")
+  ) {
+    throw new UsageError("--triage on plan run requires --findings");
+  }
   if (tokens.values.has("--budget") && operationId !== "job.combine.start") {
     throw new UsageError("--budget is only valid on plan run or combine run");
   }

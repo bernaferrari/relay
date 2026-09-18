@@ -303,6 +303,32 @@ const combineEvidencePackManifestSchema = z
     analysisCoverage: z.object({ frames: z.number(), inspectedFrames: z.number() }).strict(),
   })
   .strict();
+const modelDecisionAnswerSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("noul"),
+      noul: z.number(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("choice"),
+      choice: z.string(),
+      probabilities: z.record(z.string(), z.number()),
+      confidence: z.number(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("score"),
+      score: z.number(),
+      legend: z.record(z.string(), z.string()),
+      probabilities: z.record(z.string(), z.number()),
+      confidence: z.number(),
+    })
+    .strict(),
+]);
+
 const combineEvidenceAnalysisReportSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -310,6 +336,44 @@ const combineEvidenceAnalysisReportSchema = z
     locales: z.array(z.string()),
     analysis: combineEvidenceAnalysisSchema,
     coverage: z.object({ frames: z.number(), inspectedFrames: z.number() }).strict(),
+    jevTriage: z
+      .object({
+        schemaVersion: z.literal(1),
+        status: z.enum(["suggested", "invalid", "unavailable"]),
+        provider: z.literal("openrouter"),
+        batchId: z.string(),
+        findingIds: z.array(z.string()),
+        rationale: z.string(),
+        decision: z
+          .object({
+            schemaVersion: z.literal(1),
+            status: z.enum(["ok", "invalid", "unavailable"]),
+            provider: z.literal("openrouter"),
+            model: z.string(),
+            requestId: z.string(),
+            observationDigest: z.string().optional(),
+            questionDigest: z.string().optional(),
+            answers: z.record(z.string(), modelDecisionAnswerSchema).optional(),
+            usage: z
+              .object({ inputTokens: z.number(), outputTokens: z.number() })
+              .strict()
+              .optional(),
+            startedAt: z.number(),
+            completedAt: z.number(),
+            durationMs: z.number(),
+            evidenceRefs: z.array(z.string()),
+            error: z
+              .object({
+                code: z.enum(["provider-unavailable", "request-rejected", "invalid-response"]),
+                message: z.string(),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict(),
+      })
+      .strict()
+      .optional(),
     cases: z.array(
       z
         .object({

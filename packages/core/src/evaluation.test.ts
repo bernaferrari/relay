@@ -1,8 +1,68 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { evaluateSemantic, evaluationCostUsd, registerEvaluationProvider } from "./evaluation.js";
+import {
+  evaluateSemantic,
+  evaluationCostUsd,
+  normalizeEvaluationResult,
+  registerEvaluationProvider,
+} from "./evaluation.js";
 
 describe("semantic evaluation providers", () => {
+  it("does not allow a claimed pass to override missing criteria", () => {
+    const result = normalizeEvaluationResult(
+      { status: "pass", confidence: 1, score: 1, summary: "done", criteria: [] },
+      { criteria: ["Names France"] },
+      "fixture",
+      "fixture-v1",
+    );
+    assert.equal(result.status, "uncertain");
+    assert.match(result.summary, /criteria count does not match/u);
+  });
+
+  it("does not allow a claimed pass to override a failed criterion or low score", () => {
+    const failedCriterion = normalizeEvaluationResult(
+      {
+        status: "pass",
+        confidence: 1,
+        score: 1,
+        criteria: [{ id: "criterion-1", passed: false, score: 0, evidence: "No" }],
+      },
+      { criteria: ["Names France"] },
+      "fixture",
+      "fixture-v1",
+    );
+    assert.equal(failedCriterion.status, "fail");
+
+    const lowScore = normalizeEvaluationResult(
+      {
+        status: "pass",
+        confidence: 1,
+        score: 0.4,
+        criteria: [{ id: "criterion-1", passed: true, score: 1, evidence: "Yes" }],
+      },
+      { criteria: ["Names France"], threshold: 0.9 },
+      "fixture",
+      "fixture-v1",
+    );
+    assert.equal(lowScore.status, "fail");
+  });
+
+  it("turns nonfinite or contradictory provider answers into uncertainty", () => {
+    const result = normalizeEvaluationResult(
+      {
+        status: "pass",
+        confidence: Number.NaN,
+        score: Number.POSITIVE_INFINITY,
+        criteria: [{ id: "criterion-1", passed: true, score: 0 }],
+      },
+      { criteria: ["Names France"] },
+      "fixture",
+      "fixture-v1",
+    );
+    assert.equal(result.status, "uncertain");
+    assert.match(result.summary, /invalid/u);
+  });
+
   it("uses registered providers without coupling execution to one model vendor", async () => {
     const unregister = registerEvaluationProvider({
       id: "test-judge",

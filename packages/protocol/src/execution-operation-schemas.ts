@@ -104,7 +104,7 @@ export const executionOperationSchemas = {
     })
     .strict(),
   "job.combine.export": batchRef,
-  "job.combine.analysis": batchRef,
+  "job.combine.analysis": batchRef.extend({ triage: z.literal("jev").optional() }),
   "job.combine.capture.review": z
     .object({
       batchId: identifier("Plan campaign identifier"),

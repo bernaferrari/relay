@@ -28,6 +28,8 @@
     "./collaboration": "./src/collaboration.ts",
     "./generation": "./src/generation.ts",
     "./evaluation": "./src/evaluation.ts",
+    "./model-decision-provider": "./src/model-decision-provider.ts",
+    "./evidence-triage": "./src/evidence-triage.ts",
     "./outcomes": "./src/outcomes.ts",
     "./run-evidence": "./src/run-evidence.ts",
     "./run-observatory": "./src/run-observatory.ts",

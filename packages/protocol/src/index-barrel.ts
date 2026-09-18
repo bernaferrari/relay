@@ -84,6 +84,8 @@ export * from "./browser-device-telemetry.js";
 export * from "./browser-lane-session.js";
 export * from "./browser-authentication-fixture.js";
 export * from "./target-observation.js";
+export * from "./goal-observation.js";
+export * from "./model-decision.js";
 export * from "./target-supervisor.js";
 export * from "./workflow-record.js";
 export * from "./workflow-record-operation-schemas.js";

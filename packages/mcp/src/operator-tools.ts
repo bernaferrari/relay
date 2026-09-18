@@ -248,7 +248,7 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_plan_run",
     "Run a Plan",
-    'When to use: run a saved Plan (every selected case), optionally wait, print findings, and export the review pack. Missing extra sign-ins or devices fail closed as Infra columns, not a smaller Plan. Do not start this while tsx watch would reload :8787 mid-pack. Example: {appMapId:"grok-web",combineId:"grok-hourly",lane:"grok-lab",findings:true,export:true}.',
+    'When to use: run a saved Plan (every selected case), optionally wait, print findings, and export the review pack. Missing extra sign-ins or devices fail closed as Infra columns, not a smaller Plan. Set triage:"jev" only for additive, read-only OpenRouter sorting of saved findings. Do not start this while tsx watch would reload :8787 mid-pack. Example: {appMapId:"grok-web",combineId:"grok-hourly",lane:"grok-lab",findings:true,triage:"jev",export:true}.',
     z
       .object({
         appMapId: identifier,
@@ -259,6 +259,7 @@ export const relayOperatorTools = Object.freeze([
         targetKind: z.enum(["device", "browser"]).optional(),
         executionMode: z.enum(["all"]).optional(),
         findings: z.boolean().optional(),
+        triage: z.literal("jev").optional(),
         export: z.union([z.boolean(), identifier]).optional(),
       })
       .strict(),
@@ -274,8 +275,8 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_findings",
     "Plan findings",
-    'When to use: read durable Plan findings for Confirm/Reject (never auto-accepts visuals). Example: {batchId:"camp-1"}.',
-    z.object({ batchId: identifier }).strict(),
+    'When to use: read durable Plan findings for Confirm/Reject (never auto-accepts visuals). Set triage:"jev" only for additive, read-only OpenRouter sorting of saved findings. Example: {batchId:"camp-1",triage:"jev"}.',
+    z.object({ batchId: identifier, triage: z.literal("jev").optional() }).strict(),
     ro,
   ),
   verb(
@@ -766,7 +767,11 @@ export async function invokeRelayOperatorTool(input: {
     const batchId = planBatchId(started);
     const findings =
       parsed.findings === true && batchId
-        ? await invoker.invoke("job.combine.analysis", { batchId }, { signal })
+        ? await invoker.invoke(
+            "job.combine.analysis",
+            { batchId, ...(parsed.triage === "jev" ? { triage: "jev" } : {}) },
+            { signal },
+          )
         : undefined;
     const exported =
       parsed.export && batchId
@@ -818,7 +823,14 @@ export async function invokeRelayOperatorTool(input: {
   if (input.name === "relay_findings") {
     return summarizeExecutionOperationResult(
       "job.combine.analysis",
-      await invoker.invoke("job.combine.analysis", { batchId: parsed.batchId }, { signal }),
+      await invoker.invoke(
+        "job.combine.analysis",
+        {
+          batchId: parsed.batchId,
+          ...(parsed.triage === "jev" ? { triage: "jev" } : {}),
+        },
+        { signal },
+      ),
     );
   }
   if (input.name === "relay_evidence") {

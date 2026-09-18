@@ -31,36 +31,81 @@ export function normalizeEvaluationResult(
 ): SemanticEvaluationResult {
   const value = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const rawCriteria = Array.isArray(value.criteria) ? value.criteria : [];
+  const issues: string[] = [];
+  if (rawCriteria.length !== input.criteria.length) {
+    issues.push("criteria count does not match the request");
+  }
   const criteria = input.criteria.map((description, index) => {
     const item = rawCriteria[index];
+    if (!item || typeof item !== "object") {
+      issues.push(`criterion ${index + 1} is missing`);
+    }
     const record = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+    const passed = record.passed;
+    if (typeof passed !== "boolean") {
+      issues.push(`criterion ${index + 1} has no boolean result`);
+    }
+    const rawScore = record.score;
+    if (
+      typeof rawScore !== "number" ||
+      !Number.isFinite(rawScore) ||
+      rawScore < 0 ||
+      rawScore > 1
+    ) {
+      issues.push(`criterion ${index + 1} has an invalid score`);
+    }
+    if (passed === true && rawScore === 0) {
+      issues.push(`criterion ${index + 1} is contradictory`);
+    }
     return {
       id: typeof record.id === "string" ? record.id : `criterion-${index + 1}`,
       description,
-      passed: record.passed === true,
-      score:
-        typeof record.score === "number" && Number.isFinite(record.score)
-          ? Math.max(0, Math.min(1, record.score))
-          : record.passed === true
-            ? 1
-            : 0,
+      passed: passed === true,
+      score: typeof rawScore === "number" && Number.isFinite(rawScore) ? rawScore : 0,
       ...(typeof record.evidence === "string" ? { evidence: record.evidence } : {}),
     };
   });
-  const score =
-    typeof value.score === "number" && Number.isFinite(value.score)
-      ? Math.max(0, Math.min(1, value.score))
+  const rawScore = value.score;
+  if (
+    rawScore !== undefined &&
+    (typeof rawScore !== "number" || !Number.isFinite(rawScore) || rawScore < 0 || rawScore > 1)
+  ) {
+    issues.push("overall score is invalid");
+  }
+  const computedScore =
+    criteria.length === 0
+      ? 0
       : criteria.reduce((sum, item) => sum + item.score, 0) / criteria.length;
+  const score =
+    typeof rawScore === "number" && Number.isFinite(rawScore) && rawScore >= 0 && rawScore <= 1
+      ? rawScore
+      : computedScore;
   const threshold = input.threshold ?? 0.9;
   const requestedStatus = value.status;
+  if (
+    requestedStatus !== undefined &&
+    requestedStatus !== "pass" &&
+    requestedStatus !== "fail" &&
+    requestedStatus !== "uncertain"
+  ) {
+    issues.push("status is missing or invalid");
+  }
+  const rawConfidence = value.confidence;
+  if (
+    rawConfidence !== undefined &&
+    (typeof rawConfidence !== "number" ||
+      !Number.isFinite(rawConfidence) ||
+      rawConfidence < 0 ||
+      rawConfidence > 1)
+  ) {
+    issues.push("confidence is invalid");
+  }
+  const deterministicStatus =
+    criteria.length > 0 && criteria.every((item) => item.passed) && score >= threshold
+      ? "pass"
+      : "fail";
   const status =
-    requestedStatus === "uncertain"
-      ? "uncertain"
-      : requestedStatus === "pass" || requestedStatus === "fail"
-        ? requestedStatus
-        : score >= threshold
-          ? "pass"
-          : "fail";
+    issues.length > 0 || requestedStatus === "uncertain" ? "uncertain" : deterministicStatus;
   return {
     status,
     confidence:
@@ -69,7 +114,11 @@ export function normalizeEvaluationResult(
         : 0.5,
     score,
     summary:
-      typeof value.summary === "string" ? value.summary : `Semantic score ${score.toFixed(2)}`,
+      issues.length > 0
+        ? `Provider response was incomplete or contradictory: ${issues.join("; ")}.`
+        : typeof value.summary === "string"
+          ? value.summary
+          : `Semantic score ${score.toFixed(2)}`,
     criteria,
     provider,
     model,

@@ -4,6 +4,7 @@ import {
   appMapTestExecutionSourceFromJob,
   appMapTestExecutionSourceFromRun,
   analyzeCombineEvidenceBatch,
+  triageEvidenceReport,
   captureReviewQueueForPersistedPlan,
   CaptureReviewError,
   reviewPersistedPlanCaptures,
@@ -524,7 +525,14 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
   const combineAnalysisMatch = matchPath(pathname, "/jobs/combine/:batchId/analysis");
   if (method === "GET" && combineAnalysisMatch) {
     try {
-      json(res, 200, await analyzeCombineEvidenceBatch(combineAnalysisMatch.batchId!));
+      const report = await analyzeCombineEvidenceBatch(combineAnalysisMatch.batchId!);
+      json(
+        res,
+        200,
+        url.searchParams.get("triage") === "jev"
+          ? { ...report, jevTriage: await triageEvidenceReport(report) }
+          : report,
+      );
     } catch (error) {
       throw new HttpError(404, error instanceof Error ? error.message : String(error));
     }

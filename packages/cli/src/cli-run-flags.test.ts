@@ -42,6 +42,27 @@ test("budget and findings flags stay on Plan commands", () => {
   assert.throws(() => assertPlanCliFlags("job.get", tokens), /--budget is only valid/);
 });
 
+test("Jev triage is explicit and stays attached to saved findings", () => {
+  const tokens = {
+    values: new Map([["--triage", "jev"]]),
+    switches: new Set(["--findings"]),
+  };
+  assert.doesNotThrow(() => assertPlanCliFlags("job.combine.start", tokens));
+  assert.doesNotThrow(() => assertPlanCliFlags("job.combine.analysis", tokens));
+  assert.throws(
+    () => assertPlanCliFlags("job.combine.start", { values: tokens.values, switches: new Set() }),
+    /requires --findings/u,
+  );
+  assert.throws(
+    () =>
+      assertPlanCliFlags("job.combine.start", {
+        values: new Map([["--triage", "anything-else"]]),
+        switches: new Set(["--findings"]),
+      }),
+    /accepts only/u,
+  );
+});
+
 test("export and todo flags stay on Plan and combine export", () => {
   const tokens = {
     values: new Map([

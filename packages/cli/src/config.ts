@@ -51,6 +51,7 @@ export type ParsedCli =
       currentTarget?: boolean;
       currentRevision?: boolean;
       findings?: boolean;
+      triage?: "jev";
       outDir?: string;
     } & ReturnType<typeof evidencePackCliFlags>)
   | {
@@ -137,6 +138,7 @@ const valueFlags = new Set([
   "--config-file",
   "--export",
   "--todo",
+  "--triage",
 ]);
 const switchFlags = new Set([
   "-h",
@@ -551,6 +553,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
       "--lane",
       "--budget",
       "--findings",
+      "--triage",
       "--export",
       "--todo",
     ] as const) {
@@ -833,6 +836,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     );
   }
   assertPlanCliFlags(resolved.operationId, tokens);
+  const triage = tokens.values.get("--triage");
   const budgetRaw = tokens.values.get("--budget");
   const budgetMs = budgetRaw ? parseBudgetMs(budgetRaw) : undefined;
   const effectiveTimeout =
@@ -874,6 +878,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
     ...(targetShortcut === "current" ? { currentTarget: true } : {}),
     ...(revisionShortcut === "current" ? { currentRevision: true } : {}),
     ...(tokens.switches.has("--findings") ? { findings: true } : {}),
+    ...(triage === "jev" ? { triage: "jev" as const } : {}),
     ...evidencePackCliFlags(tokens, resolved.operationId, wait),
     ...(outDir ? { outDir } : {}),
   };

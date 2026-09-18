@@ -696,7 +696,12 @@ export async function runCli(
             if (watchFailure) throw watchFailure;
             throw new Error("Plan findings need a campaign or batch id");
           }
-          const analysis = await invoke(client, "job.combine.analysis", { batchId }, abort.signal);
+          const analysis = await invoke(
+            client,
+            "job.combine.analysis",
+            { batchId, ...(parsed.triage === "jev" ? { triage: "jev" } : {}) },
+            abort.signal,
+          );
           output.result(
             "job.combine.analysis",
             parsed.config.output === "human"

@@ -1,5 +1,6 @@
 /** A portable review pack exported from one Combine run. */
 import type { CombineEvidenceAnalysis } from "./combine-evidence-contract.js";
+import type { JevEvidenceTriage } from "./model-decision.js";
 
 /** One authored screenshot inside a Combine case. */
 export type CombineEvidencePackFrame = {
@@ -47,6 +48,8 @@ export type CombineEvidenceAnalysisReport = {
   locales: string[];
   analysis: CombineEvidenceAnalysis;
   coverage: { frames: number; inspectedFrames: number };
+  /** Present only when an explicit, read-only Jev triage request was made. */
+  jevTriage?: JevEvidenceTriage;
   cases: Array<{
     jobId: string;
     locale: string;
