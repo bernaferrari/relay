@@ -41,7 +41,6 @@ import {
   getActiveJob,
   getActiveJobs,
   getJob,
-  IdempotencyConflict,
   listActionsWithTrace,
   listAndroidDevicesFast,
   listDevices,
@@ -102,15 +101,9 @@ import {
   parseLimit,
   text,
 } from "./http.js";
-import { RevisionConflict } from "@relay/protocol";
 import { streamTargetVideo } from "./target-video-stream.js";
 import { pruneIosVideoTakes, reconcileIosVideoTake } from "./ios-video-capture.js";
-import {
-  bindOperationRequest,
-  OperationAuthorizationError,
-  OperationContractError,
-  serverOperationManifest,
-} from "./operations.js";
+import { bindOperationRequest, serverOperationManifest } from "./operations.js";
 import { handleAuthoringActionReplace, handleAuthoringRoute } from "./authoring-routes.js";
 import {
   flushOperationActivity,
@@ -138,6 +131,7 @@ import type { ChangeVerificationRouteRuntime } from "./change-verification-route
 import { createProofRuntimeBootstrap } from "./proof-runtime-bootstrap.js";
 import { runServerCli } from "./server-cli.js";
 import { requestsBearerAuthentication, setCorsOrigin } from "./cors.js";
+import { respondToRequestError } from "./request-error-response.js";
 export type { StartServerOptions, StartedServer } from "./server-types.js";
 
 const serverStartedAt = Date.now();
@@ -683,56 +677,7 @@ async function handleRequest(
 
     json(res, 404, { error: `Not found: ${method} ${pathname}` });
   } catch (err) {
-    // Streaming routes have already committed their response by the time a
-    // browser disconnect or decoder restart can reject. Attempting to send a
-    // JSON error after that point crashes the entire local server with
-    // ERR_HTTP_HEADERS_SENT. Close the abandoned stream and keep serving the
-    // rest of Relay instead.
-    if (res.headersSent || res.destroyed || res.writableEnded) {
-      if (!res.destroyed && !res.writableEnded) res.destroy();
-      return;
-    }
-    if (err instanceof RevisionConflict) {
-      json(res, 409, { error: err.message, current: err.current });
-      return;
-    }
-    if (err instanceof IdempotencyConflict) {
-      json(res, 409, { error: err.message });
-      return;
-    }
-    if (err instanceof OperationAuthorizationError) {
-      json(res, 403, {
-        error: err.message,
-        code: "PROJECT_ROLE_REQUIRED",
-        operationId: err.operationId,
-        role: err.actualRole,
-        requiredRole: err.requiredRole,
-        recovery:
-          "Use a Relay connection whose configured project role permits this operation, or ask a project administrator to perform it.",
-      });
-      return;
-    }
-    if (err instanceof OperationContractError) {
-      const status = err.phase === "input" ? 400 : 500;
-      const message =
-        status === 500 && resolvedScope && !resolvedScope.localTrusted
-          ? "Internal server error"
-          : err.message;
-      json(res, status, { error: message });
-      return;
-    }
-    if (err instanceof HttpError) {
-      // Structured context must augment the human-readable failure, never
-      // replace it. Clients key off `error`; omitting it reduced actionable
-      // replay failures to an opaque "422 Unprocessable Entity".
-      json(res, err.status, { error: err.message, ...err.body });
-      return;
-    }
-    const message = err instanceof Error ? err.message : String(err);
-    publish({ type: "error", at: now(), message, where: "server" });
-    json(res, 500, {
-      error: resolvedScope && !resolvedScope.localTrusted ? "Internal server error" : message,
-    });
+    respondToRequestError(err, res, resolvedScope);
   }
 }
 

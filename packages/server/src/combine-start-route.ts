@@ -12,10 +12,7 @@ import type {
 } from "@relay/protocol";
 import { executionTargetRefKey } from "@relay/protocol";
 import {
-  AppMapCombineCellContractError,
   AppMapCombineWorldError,
-  AppMapCompileError,
-  AppMapTargetProfileError,
   KeyedSerialQueue,
   activeReviewedDocumentOriginsForAppMap,
   applyFullSurfaceDestinationBindings,
@@ -46,16 +43,13 @@ import {
   resolveCombineCellSelector,
   stagePreparedAppMapCombineCells,
   summarizeJob,
-  updateCombineCampaign,
 } from "@relay/core";
 import {
   assertPreparedCombineCells,
-  combineCellContractHttpError,
   requireSingleTestUseAppMapTestRun,
 } from "./app-map-combine-runtime-contract.js";
 import {
   combineStartControlTargetIds,
-  httpErrorFromAppMapTargetProfile,
   savedBrowserIdentityForProfile,
 } from "./app-map-test-run-prepare.js";
 import { queuedAppMapTestTargetProfile } from "./app-map-test-target-profile.js";
@@ -70,6 +64,7 @@ import {
   type LocalCombineCampaignAdmissionRequest,
 } from "./local-combine-campaign-admission.js";
 import type { RequestContext } from "./security.js";
+import { compensateCombineStartFailure } from "./combine-start-compensation.js";
 
 type CombineStartRequest = {
   appMapId?: string;
@@ -867,61 +862,15 @@ async function executeCombineStartUnlocked(
       ...(campaign ? { campaign } : {}),
     };
   } catch (error) {
-    const cleanupErrors: string[] = [];
-    try {
-      staged?.rollback();
-    } catch (cleanupError) {
-      cleanupErrors.push(
-        cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
-      );
-    }
-    try {
-      await admission?.rollback();
-    } catch (cleanupError) {
-      cleanupErrors.push(
-        cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
-      );
-    }
-    if (persistedCampaignId) {
-      try {
-        const at = Date.now();
-        await updateCombineCampaign(scope.projectId, persistedCampaignId, (current) => ({
-          ...current,
-          status: "cancelled",
-          updatedAt: at,
-          cases: current.cases.map((item) =>
-            item.jobId ? { ...item, status: "cancelled" as const } : item,
-          ),
-          lineage: [
-            ...current.lineage,
-            {
-              kind: "cancelled",
-              at,
-              appMapRevision: current.latestRevision,
-              actorId: currentOperationContext()!.actorId,
-            },
-          ],
-        }));
-      } catch (cleanupError) {
-        cleanupErrors.push(
-          cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
-        );
-      }
-    }
-    if (cleanupErrors.length) {
-      throw new HttpError(
-        500,
-        `Combine admission failed and Relay could not fully compensate staged work: ${cleanupErrors.join("; ")}`,
-      );
-    }
-    if (error instanceof HttpError) throw error;
-    if (error instanceof AppMapTargetProfileError) throw httpErrorFromAppMapTargetProfile(error);
-    if (error instanceof AppMapCombineCellContractError)
-      throw combineCellContractHttpError(error, {
-        map,
-        ...(targetId ? { target: { targetId, platform: requestedPlatform ?? "browser" } } : {}),
-      });
-    if (error instanceof AppMapCompileError) throw new HttpError(409, error.message);
-    throw new HttpError(400, error instanceof Error ? error.message : String(error));
+    return await compensateCombineStartFailure({
+      error,
+      scope,
+      map,
+      targetId,
+      requestedPlatform,
+      staged,
+      admission,
+      persistedCampaignId,
+    });
   }
 }
