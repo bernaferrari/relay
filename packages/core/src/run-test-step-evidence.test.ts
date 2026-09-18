@@ -336,6 +336,79 @@ test("unphased step evidence drops leftover Transition executed / Inspect setup 
   );
 });
 
+test("unphased step evidence drops opener Tap beside leftover Transition", () => {
+  const result = projectRunTestStepEvidence({
+    steps: [
+      trace({
+        id: "trace-tap",
+        index: 1,
+        recipeId: "observe-flow",
+        recipeStepId: "tap",
+        title: "Tap",
+        frames: [
+          {
+            path: "frames/001.png",
+            caption: "before · Tap identifier sidebar.open.button",
+            capturedAt: 1,
+          },
+        ],
+      }),
+      trace({
+        id: "trace-transition",
+        index: 2,
+        recipeId: "observe-flow",
+        recipeStepId: "transition",
+        title: "Transition executed",
+        frames: [{ path: "frames/002.png", caption: "after · Transition executed", capturedAt: 2 }],
+      }),
+      trace({
+        id: "trace-dest",
+        index: 3,
+        recipeId: "observe-flow",
+        recipeStepId: "observe",
+        title: "Observe",
+        frames: [{ path: "frames/003.png", caption: "Observe", capturedAt: 3 }],
+      }),
+      trace({
+        id: "trace-transition-2",
+        index: 4,
+        recipeId: "observe-flow",
+        recipeStepId: "transition-2",
+        title: "Transition executed",
+        frames: [{ path: "frames/004.png", caption: "after · Transition executed", capturedAt: 4 }],
+      }),
+    ],
+    provenance: [
+      provenance({ recipeId: "observe-flow", recipeStepId: "tap", testStepId: "step-tap" }),
+      provenance({
+        recipeId: "observe-flow",
+        recipeStepId: "transition",
+        testStepId: "step-transition",
+      }),
+      provenance({ recipeId: "observe-flow", recipeStepId: "observe", testStepId: "step-observe" }),
+      provenance({
+        recipeId: "observe-flow",
+        recipeStepId: "transition-2",
+        testStepId: "step-transition-2",
+      }),
+    ],
+    artifacts: [
+      {
+        kind: "capture-review",
+        data: { caption: "Observe", framePath: "frames/003.png", policy: "fast" },
+      },
+    ],
+  });
+  assert.deepEqual(
+    result.map((item) => item.evidence.framePaths),
+    [["frames/003.png"]],
+  );
+  assert.equal(
+    result.some((item) => item.evidence.framePaths.includes("frames/001.png")),
+    false,
+  );
+});
+
 test("unphased Android dest-wait with no leftover caption keeps every frame", () => {
   const result = projectRunTestStepEvidence({
     steps: [

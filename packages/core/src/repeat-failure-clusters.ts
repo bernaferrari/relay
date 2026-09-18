@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
 import {
-  captureReviewIdentityFramePaths,
-  captureReviewLeftoverLastFramePaths,
   compareUtf8Bytewise,
+  destIdentityCheckpointFramePaths,
   isCaptureReviewLeftoverCaption,
 } from "@relay/protocol";
 import type {
@@ -330,11 +329,15 @@ function evidenceRefs(run: PersistedRun): string[] {
     path: frame.path,
     ...(frame.caption ? { caption: frame.caption } : {}),
   }));
-  const leftover = new Set(captureReviewLeftoverLastFramePaths(frames, run.artifacts));
-  const dest = captureReviewIdentityFramePaths(run.artifacts);
+  /** Dest wait-for only. Leftover Close / Transition executed and opener before ·
+   * Tap beside those leftovers cannot fill dest evidence refs. */
+  const checkpoint = new Set(destIdentityCheckpointFramePaths(frames, run.artifacts));
   run.frames.forEach((frame, index) => {
-    if (dest.length && leftover.has(frame.path)) return;
-    if (!dest.length && isCaptureReviewLeftoverCaption(frame.caption)) return;
+    if (checkpoint.size) {
+      if (!checkpoint.has(frame.path)) return;
+    } else if (isCaptureReviewLeftoverCaption(frame.caption)) {
+      return;
+    }
     refs.push(`run:${run.id}#frame:${index}`);
   });
   return refs.slice(0, 128);

@@ -3,6 +3,7 @@ import { parseAppMapTestExecutionIntentArtifact } from "./app-map-test-execution
 import type { AppMapTestStepProvenance, EvidenceEvent, RunTestStepEvidence } from "@relay/protocol";
 import {
   captureReviewIdentityFramePaths,
+  destIdentityCheckpointFramePaths,
   isCaptureReviewDestPhase,
   isCaptureReviewLeftoverCaption,
   parseRunTestStepEvidence,
@@ -121,17 +122,27 @@ function captionedFramePaths(steps: readonly TraceStep[]): {
 }
 
 /** Missing dest-phase is not every step frame. Leftover Transition executed /
- * Inspect setup skipped cannot sit beside Observe. Unphased Android dest-wait
- * with no leftover caption keeps every frame. */
+ * Inspect setup skipped cannot sit beside Observe. Opener before · Tap cannot
+ * fill dest beside those leftovers either. Unphased Android dest-wait with no
+ * leftover caption keeps every frame. */
 function preferUnphasedDestWaitForEvidence(
   items: readonly RunTestStepEvidence[],
   steps: readonly TraceStep[],
 ): RunTestStepEvidence[] {
   const { dest, leftover } = captionedFramePaths(steps);
   if (!leftover.size || !dest.size) return [...items];
+  const frames = steps.flatMap((step) =>
+    step.frames.flatMap((frame) => {
+      const path = nonEmpty(frame.path);
+      if (!path) return [];
+      return [{ path, ...(frame.caption ? { caption: frame.caption } : {}) }];
+    }),
+  );
+  const keep = new Set(destIdentityCheckpointFramePaths(frames, []));
+  if (!keep.size) return [...items];
   return items.flatMap((item) => {
     if (!item.evidence.framePaths.length) return [item];
-    const framePaths = item.evidence.framePaths.filter((path) => !leftover.has(path));
+    const framePaths = item.evidence.framePaths.filter((path) => keep.has(path));
     if (!framePaths.length) return [];
     if (framePaths.length === item.evidence.framePaths.length) return [item];
     return [{ ...item, evidence: { ...item.evidence, framePaths } }];
@@ -249,8 +260,8 @@ export function projectRunTestStepEvidence(input: {
 
 /** Persisted leftover last-frame evidence yields dest wait-for when dest-phase
  * capture-review is on disk. Unphased dest-wait drops leftover Transition
- * executed / Inspect setup skipped beside Observe. Event sequences on other
- * steps stay intact. */
+ * executed / Inspect setup skipped and opener before · Tap beside Observe.
+ * Event sequences on other steps stay intact. */
 export function overlayDestEndIdentityEvidence(input: {
   items: readonly RunTestStepEvidence[];
   steps: readonly TraceStep[];
