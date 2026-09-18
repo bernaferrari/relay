@@ -99,12 +99,14 @@ function listedFramePath(value: unknown): string | undefined {
 }
 
 /** Keep live/fixture account identity on compact CLI/MCP capture-review.
- * SuperGrok* / Lane-name stand-ins stay dropped (same as stamp). */
+ * SuperGrok* / Lane-name stand-ins stay dropped (same as stamp). Device-observed
+ * historical `signed-out` (browser scheduler on an iPad Lane) is also dropped. */
 function compactCaptureReviewConfiguration(
   configuration?: CaptureReviewConfiguration,
+  observed?: CaptureReviewObservedSession,
 ): CaptureReviewConfiguration | undefined {
   if (!configuration) return undefined;
-  const account = liveCaptureReviewAccount(configuration.account);
+  const account = liveCaptureReviewAccount(configuration.account, observed);
   const next: CaptureReviewConfiguration = {
     ...(configuration.app?.trim() ? { app: configuration.app.trim() } : {}),
     ...(account ? { account } : {}),
@@ -132,8 +134,8 @@ function compactCaptureReviewObserved(
 function compactCaptureReviewItem(
   item: CaptureReviewItem & { runId?: string; attempt?: number },
 ): Record<string, unknown> {
-  const configuration = compactCaptureReviewConfiguration(item.configuration);
   const observed = compactCaptureReviewObserved(item.observed);
+  const configuration = compactCaptureReviewConfiguration(item.configuration, item.observed);
   return {
     captureId: item.captureId,
     caption: item.caption,

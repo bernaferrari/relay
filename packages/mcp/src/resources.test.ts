@@ -1737,6 +1737,79 @@ test("paged runs collection strips SuperGrok fixture display name from dest capt
   }
 });
 
+test("runs collection strips device-observed signed-out from dest capture-review account", async () => {
+  const session = await connectMcp(
+    fixtureInvoker({
+      "run.list": {
+        runs: [
+          {
+            id: "5e2dca45-ece2-46f5-a8b1-cb4de7526338",
+            action: "observe",
+            destIdentity: [{ path: "frames/003.png", caption: "Observe" }],
+            captureReview: [
+              {
+                captureId: "frames/003.png::observe",
+                caption: "Observe",
+                status: "pending",
+                framePath: "frames/003.png",
+                phase: "dest",
+                configuration: { account: "signed-out", app: "iPad Pro 10.5" },
+                observed: {
+                  laneId: "grok-ios-daily",
+                  profileId: "device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+                },
+              },
+            ],
+          },
+          {
+            id: "unsigned-browser",
+            action: "observe",
+            destIdentity: [{ path: "frames/003.png", caption: "Observe" }],
+            captureReview: [
+              {
+                captureId: "frames/003.png::observe",
+                caption: "Observe",
+                status: "pending",
+                framePath: "frames/003.png",
+                phase: "dest",
+                configuration: { account: "signed-out", app: "Grok.com" },
+                observed: {
+                  laneId: "grok-daily",
+                  profileId: "browser:grok-com-1280x800-339a5a430a41",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", { uri: relayMcpResourceUris.runs }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      data: {
+        runs?: Array<{
+          id?: string;
+          captureReview?: Array<{
+            configuration?: { account?: string; app?: string };
+            observed?: { laneId?: string; profileId?: string };
+          }>;
+        }>;
+      };
+    };
+    const ios = envelope.data.runs?.find((run) => run.id?.startsWith("5e2dca45"));
+    const browser = envelope.data.runs?.find((run) => run.id === "unsigned-browser");
+    assert.equal(ios?.captureReview?.[0]?.configuration?.account, undefined);
+    assert.equal(ios?.captureReview?.[0]?.configuration?.app, "iPad Pro 10.5");
+    assert.equal(ios?.captureReview?.[0]?.observed?.laneId, "grok-ios-daily");
+    assert.equal(browser?.captureReview?.[0]?.configuration?.account, "signed-out");
+  } finally {
+    await session.close();
+  }
+});
+
 test("trace-pack resource pre-listed destIdentity leftover Close 004 cannot fill dest", async () => {
   const destIdentity = [
     { path: "frames/003.png", caption: "Observe" },

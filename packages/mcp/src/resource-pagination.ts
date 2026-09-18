@@ -286,16 +286,30 @@ function captureReviewCollectionEntries(value: unknown): Record<string, unknown>
     if (!relativeName && !caption && typeof rec.captureId !== "string") return [];
     // Parity with CLI/MCP run.get compact captureReview: SuperGrok* / fixture
     // display names are not live identity (Bernardo Ferrari or authfx:… stay).
+    // Device-observed historical signed-out (iOS Lane) is also dropped.
     const rawConfiguration = object(rec.configuration);
     const { account: listedAccount, ...configurationRest } = rawConfiguration;
+    const observed = object(rec.observed);
+    const observedSession =
+      typeof observed.profileId === "string" || typeof observed.iosHardwareClass === "string"
+        ? {
+            ...(typeof observed.profileId === "string" ? { profileId: observed.profileId } : {}),
+            ...(observed.iosHardwareClass === "physical-ipad" ||
+            observed.iosHardwareClass === "physical-iphone" ||
+            observed.iosHardwareClass === "simulator" ||
+            observed.iosHardwareClass === "unproven"
+              ? { iosHardwareClass: observed.iosHardwareClass }
+              : {}),
+          }
+        : undefined;
     const account = liveCaptureReviewAccount(
       typeof listedAccount === "string" ? listedAccount : undefined,
+      observedSession,
     );
     const configuration = {
       ...configurationRest,
       ...(account ? { account } : {}),
     };
-    const observed = object(rec.observed);
     return [
       {
         ...(typeof rec.captureId === "string" ? { captureId: rec.captureId.slice(0, 200) } : {}),

@@ -191,6 +191,59 @@ test("SuperGrok lab signed-in fixture name cannot fill capture-review account", 
   assert.notEqual(labeled.account, "SuperGrok");
 });
 
+test("device-observed signed-out cannot fill capture-review account", () => {
+  assert.equal(liveCaptureReviewAccount("signed-out"), "signed-out");
+  assert.equal(
+    liveCaptureReviewAccount("signed-out", {
+      laneId: "grok-ios-daily",
+      profileId: "device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+    }),
+    undefined,
+  );
+  assert.equal(
+    liveCaptureReviewAccount("Bernardo Ferrari", {
+      laneId: "grok-ios-daily",
+      profileId: "device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+    }),
+    "Bernardo Ferrari",
+  );
+  assert.equal(
+    liveCaptureReviewAccount("signed-out", {
+      laneId: "grok-daily",
+      profileId: "browser:grok-com-1280x800-339a5a430a41",
+    }),
+    "signed-out",
+  );
+});
+
+test("resolveCaptureReviewQueue strips device-observed signed-out from historical iOS artifacts", () => {
+  const slotId =
+    "test-grok-ios-home-chrome::relay-test-step-action-dest::::module:app-map:grok-ios:flow:x::::1::dest";
+  const queue = resolveCaptureReviewQueue({
+    artifacts: [
+      {
+        kind: "capture-review",
+        data: {
+          caption: "Observe",
+          framePath: "frames/003.png",
+          phase: CAPTURE_REVIEW_DEST_PHASE,
+          status: "pending",
+          slotId,
+          configuration: { account: "signed-out", app: "iPad Pro 10.5" },
+          observed: {
+            laneId: "grok-ios-daily",
+            profileId: "device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+          },
+        },
+      },
+    ],
+  });
+  assert.equal(queue.items[0]?.slotId, slotId);
+  assert.equal(queue.items[0]?.configuration?.account, undefined);
+  assert.equal(queue.items[0]?.configuration?.app, "iPad Pro 10.5");
+  assert.equal(queue.items[0]?.observed?.laneId, "grok-ios-daily");
+});
+
 test("grok-lab fixture is the observed account, not a daily overlay or Lane name", () => {
   const labeled = observedCaptureReviewAccount({
     laneId: "grok-lab",

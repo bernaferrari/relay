@@ -495,6 +495,73 @@ test("run.get compact capture-review drops SuperGrok stand-in account, keeps fix
   assert.equal(fixture.run?.captureReview?.[0]?.configuration?.account, labFixture);
 });
 
+test("run.get compact drops device-observed signed-out, keeps browser signed-out", () => {
+  const device = summarizeExecutionOperationResult("run.get", {
+    run: {
+      id: "5e2dca45-ece2-46f5-a8b1-cb4de7526338",
+      status: "ok",
+      frames: [{ path: "frames/003.png", caption: "Observe" }],
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "Observe",
+            framePath: "frames/003.png",
+            phase: CAPTURE_REVIEW_DEST_PHASE,
+            status: "pending",
+            configuration: { account: "signed-out", app: "iPad Pro 10.5" },
+            observed: {
+              laneId: "grok-ios-daily",
+              profileId: "device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+            },
+          },
+        },
+      ],
+    },
+  }) as {
+    run?: {
+      captureReview?: Array<{
+        configuration?: { account?: string; app?: string };
+        observed?: { laneId?: string; profileId?: string };
+      }>;
+    };
+  };
+  assert.equal(device.run?.captureReview?.[0]?.configuration?.account, undefined);
+  assert.equal(device.run?.captureReview?.[0]?.configuration?.app, "iPad Pro 10.5");
+  assert.equal(device.run?.captureReview?.[0]?.observed?.laneId, "grok-ios-daily");
+  assert.equal(
+    device.run?.captureReview?.[0]?.observed?.profileId,
+    "device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+  );
+
+  const browser = summarizeExecutionOperationResult("run.get", {
+    run: {
+      id: "unsigned-browser",
+      status: "ok",
+      frames: [{ path: "frames/003.png", caption: "Observe" }],
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "Observe",
+            framePath: "frames/003.png",
+            phase: CAPTURE_REVIEW_DEST_PHASE,
+            status: "pending",
+            configuration: { account: "signed-out", app: "Grok.com" },
+            observed: {
+              laneId: "grok-daily",
+              profileId: "browser:grok-com-1280x800-339a5a430a41",
+            },
+          },
+        },
+      ],
+    },
+  }) as {
+    run?: { captureReview?: Array<{ configuration?: { account?: string } }> };
+  };
+  assert.equal(browser.run?.captureReview?.[0]?.configuration?.account, "signed-out");
+});
+
 test("run.capture.review dest identity omits leftover Close last-frame", () => {
   const result = summarizeExecutionOperationResult("run.capture.review", {
     run: {

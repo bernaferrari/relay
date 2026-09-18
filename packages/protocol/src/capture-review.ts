@@ -83,8 +83,20 @@ const CAPTURE_REVIEW_ACCOUNT_STAND_INS = new Set([
   "grok-auth-x-out",
 ]);
 
-/** Live page account name. Lane ids, SuperGrok*, and saved fixture names are not identity. */
-export function liveCaptureReviewAccount(value?: string): string | undefined {
+/** Device observed session — browser signed-out scheduler identity does not apply. */
+export function isDeviceCaptureReviewObserved(observed?: CaptureReviewObservedSession): boolean {
+  const profileId = observed?.profileId?.trim() ?? "";
+  if (profileId.startsWith("device:")) return true;
+  return Boolean(observed?.iosHardwareClass);
+}
+
+/** Live page account name. Lane ids, SuperGrok*, and saved fixture names are not identity.
+ * Historical iOS dest jobs stamped browser `signed-out` onto a device Lane — drop that
+ * when observed is a device profile (pixels were SuperGrok / Bernardo Ferrari). */
+export function liveCaptureReviewAccount(
+  value?: string,
+  observed?: CaptureReviewObservedSession,
+): string | undefined {
   const trimmed = value?.replace(/\s+/gu, " ").trim();
   if (!trimmed || trimmed.length > 80) return undefined;
   const key = trimmed.toLocaleLowerCase();
@@ -93,6 +105,9 @@ export function liveCaptureReviewAccount(value?: string): string | undefined {
     key.startsWith("grok-") ||
     key.startsWith("supergrok")
   ) {
+    return undefined;
+  }
+  if (key === "signed-out" && isDeviceCaptureReviewObserved(observed)) {
     return undefined;
   }
   return trimmed;
@@ -986,6 +1001,23 @@ export function materializeCaptureReviewSlots(input: {
   );
 }
 
+function sanitizeCaptureReviewConfiguration(
+  configuration: CaptureReviewConfiguration | undefined,
+  observed?: CaptureReviewObservedSession,
+): CaptureReviewConfiguration | undefined {
+  if (!configuration) return undefined;
+  const account = liveCaptureReviewAccount(configuration.account, observed);
+  const next: CaptureReviewConfiguration = {
+    ...(configuration.app?.trim() ? { app: configuration.app.trim() } : {}),
+    ...(account ? { account } : {}),
+    ...(configuration.browser?.trim() ? { browser: configuration.browser.trim() } : {}),
+    ...(configuration.viewport?.trim() ? { viewport: configuration.viewport.trim() } : {}),
+    ...(configuration.locale?.trim() ? { locale: configuration.locale.trim() } : {}),
+    ...(configuration.build?.trim() ? { build: configuration.build.trim() } : {}),
+  };
+  return Object.keys(next).length ? next : undefined;
+}
+
 function captureReviewArtifact(data: unknown): CaptureReviewItem | undefined {
   const payload = record(data);
   if (!payload) return undefined;
@@ -993,8 +1025,10 @@ function captureReviewArtifact(data: unknown): CaptureReviewItem | undefined {
   const framePath = text(payload.framePath);
   const imageSha256 = text(payload.imageSha256);
   const status = payload.status === "missing" || !framePath ? "missing" : "pending";
-  const configuration = parseConfiguration(payload.configuration);
+  const configurationRaw = parseConfiguration(payload.configuration);
   const observed = parseObservedSession(payload.observed);
+  // Keep raw configuration for slot identity; strip false device signed-out on the item.
+  const configuration = sanitizeCaptureReviewConfiguration(configurationRaw, observed);
   const masks = Array.isArray(payload.masks)
     ? payload.masks.flatMap((value) => {
         const mask = parseMask(value);
@@ -1009,7 +1043,7 @@ function captureReviewArtifact(data: unknown): CaptureReviewItem | undefined {
     ? {
         checkpointId,
         ...(text(payload.requirementId) ? { requirementId: text(payload.requirementId) } : {}),
-        ...(configuration ? { configuration } : {}),
+        ...(configurationRaw ? { configuration: configurationRaw } : {}),
         ...(text(payload.invocation) ? { invocation: text(payload.invocation) } : {}),
         ...(iteration !== undefined ? { iteration } : {}),
         ...(attempt !== undefined ? { attempt } : {}),
