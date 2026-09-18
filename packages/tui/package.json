@@ -13,7 +13,8 @@
     "test": "tsx --test src/*.test.ts"
   },
   "dependencies": {
-    "@relay/client": "workspace:*"
+    "@relay/client": "workspace:*",
+    "@relay/protocol": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.5.1",

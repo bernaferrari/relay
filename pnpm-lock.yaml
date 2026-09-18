@@ -577,6 +577,9 @@ importers:
       '@relay/client':
         specifier: workspace:*
         version: link:../client
+      '@relay/protocol':
+        specifier: workspace:*
+        version: link:../protocol
     devDependencies:
       '@types/node':
         specifier: ^26.5.1
