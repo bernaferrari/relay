@@ -106,6 +106,8 @@ import { parseAppMapTestExecutionIntentArtifact } from "./app-map-test-execution
 import { attachDestinationRepairProposals } from "./session-repair-attachment.js";
 import { automaticEvidencePhases } from "./session-evidence-phases.js";
 export { automaticEvidencePhases } from "./session-evidence-phases.js";
+export { runRecipeSteps } from "./session-recipe-execution.js";
+import { runRecipeSteps } from "./session-recipe-execution.js";
 export type {
   EnqueueJobInput,
   JobErrorCode,
@@ -506,107 +508,6 @@ export function cancelActiveJob(targetId?: string): TestJob | null {
   const active = getActiveJob(targetId);
   if (!active) return null;
   return cancelJob(active.id);
-}
-
-/** Run a frozen recipe as traced, cancellable device actions. */
-export async function runRecipeSteps(
-  job: TestJob,
-  device: Device,
-  pushLog: (line: string) => void,
-  setCurrentStep: (step: TraceStep | undefined) => void,
-): Promise<void> {
-  const recipeId = job.recipeId;
-  if (!recipeId) throw new Error("recipe job has no recipeId");
-  const recipe = job.recipeSnapshot ?? (await readRecipe(recipeId));
-  if (!recipe) throw new Error(`recipe not found: ${recipeId}`);
-  if (!job.recipeSnapshot) job.recipeSnapshot = structuredClone(recipe);
-  job.resolvedInputs = { ...recipe.variables, ...job.resolvedInputs };
-  const executionIntent = parseAppMapTestExecutionIntentArtifact(
-    job.artifacts.find((artifact) => artifact.kind === "app-map-test-execution-intent"),
-  );
-  const destEndRecipeIds = executionIntent?.plan.destEndRecipeIds;
-  const runtime: RecipeRuntimeState = destEndRecipeIds?.length ? { destEndRecipeIds } : {};
-  pushLog(`==> recipe: ${recipe.title} · ${recipe.steps.length} step(s)`);
-  const execute = async (
-    step: import("./recipes.js").RecipeStep,
-    stepIndex: number,
-    owner: typeof recipe,
-    context: RecipeStepContext,
-  ): Promise<void> => {
-    await cooperativeCheckpoint(job.id);
-    // The generated TraceStep id is intentionally opaque and changes on every
-    // run. Carry the frozen recipe identity alongside it so persisted evidence
-    // can join back to the authored Test provenance without guessing by UUID.
-    const recipeStepId = step.id?.trim() || `${owner.id}:${stepIndex + 1}`;
-    const ts = openStep(job, {
-      recipeId: owner.id,
-      recipeStepId,
-      kind: "Replay",
-      tone: "acc",
-      title: describeRecipeStep(step),
-      glyphs: glyphsForStep(step),
-      status: "running",
-    });
-    setCurrentStep(ts);
-    try {
-      observeStepActions(ts, glyphsForStep(step));
-      const resolvedStep = resolveRecipeStep(step, job.resolvedInputs);
-      job.artifacts.push({
-        kind: "command-attempt",
-        capturedAt: now(),
-        data: { stepId: ts.id, command: resolvedStep },
-      });
-      const evidencePhases = automaticEvidencePhases(resolvedStep, owner.steps[stepIndex + 1]);
-      if (evidencePhases.includes("before"))
-        await captureAutomaticState(job, device, ts, "before", pushLog, runtime);
-      const artifactStart = job.artifacts.length;
-      await runRecipeStep(device, resolvedStep, {
-        ...context,
-        runChild: async (child, index, childRecipe, childContext) => {
-          try {
-            await execute(child, index, childRecipe, childContext);
-          } finally {
-            setCurrentStep(ts);
-          }
-        },
-      });
-      applyCoverageOutcomeToTrace(ts, job.artifacts.slice(artifactStart));
-      if (evidencePhases.includes("after"))
-        await captureAutomaticState(job, device, ts, "after", pushLog, runtime);
-      finishCheckedStep(ts, resolvedStep.check?.id, job.artifacts.slice(artifactStart));
-    } catch (err) {
-      // A failure frame remains useful when passive-step evidence is suppressed.
-      // Cancellation hard-stops the native session before it reaches this
-      // boundary. Preserve already-buffered evidence instead of issuing a
-      // fresh query against the destroyed adapter.
-      if (!isJobCancellation(err) && !isTargetUnavailableError(err)) {
-        await captureAutomaticState(job, device, ts, "after", pushLog, runtime);
-      }
-      await attachDestinationRepairProposals(job, err, runtime).catch(() => {
-        // Proposal generation is advisory: never let it mask the original
-        // step failure propagating from the catch below.
-      });
-      finishStep(ts, "error");
-      throw err;
-    }
-  };
-  for (const [index, step] of recipe.steps.entries()) {
-    await execute(step, index, recipe, {
-      log: pushLog,
-      job,
-      recipeGraph: job.recipeGraph,
-      runtime,
-      captureReview: {
-        ...(executionIntent?.plan.test.id ? { requirementId: executionIntent.plan.test.id } : {}),
-        moduleCalls: new Map(),
-      },
-      ...(executionIntent?.plan.plannedSlots
-        ? { plannedSlots: [...executionIntent.plan.plannedSlots] }
-        : {}),
-    });
-  }
-  finalizeDeferredChecksForJob(job, pushLog, runtime);
-  setCurrentStep(undefined);
 }
 
 async function executeJob(id: string, workerInstanceId?: string): Promise<void> {
