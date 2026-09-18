@@ -4,10 +4,8 @@ import { WorkbenchPage, PageHeader, WorkbenchPanes } from "../components/page-la
 import type { AppMapScenarioTestStep, AppMapTestStepPlacement } from "@relay/protocol";
 import { ApiError } from "@relay/client";
 import { Button } from "@relay/ui-react/components/button";
-import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { Redo2, Undo2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { TestEditorEvidencePanel } from "../components/test-editor-evidence-panel";
@@ -27,6 +25,7 @@ import { useLatestTestReport } from "../hooks/use-latest-test-report";
 import { LiveTestEditorPane } from "./live-test-editor-pane";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { HistorySection, RepairSection } from "./test-editor-context-panels";
+import { TestEditorHistoryBar, TestEditorSettingsPanel } from "./test-editor-page-sections";
 import {
   collectStepEntries,
   insertPendingCheckpoint,
@@ -582,46 +581,19 @@ function TestEditorDocument() {
           </>
         }
       />
-      {settingsOpen && !sessionId ? (
-        <section
-          className="mx-4 mb-4 grid max-w-xl gap-3 rounded-lg border border-border bg-card p-4"
-          aria-label="Test settings"
-        >
-          <div>
-            <h2 className="text-sm font-semibold">Test settings</h2>
-            <p className="text-xs text-muted-foreground">
-              Update the saved Test identity and origin package.
-            </p>
-          </div>
-          <label className="grid gap-1 text-xs font-medium">
-            Name
-            <Input value={settingsName} onChange={(event) => setSettingsName(event.target.value)} />
-          </label>
-          <label className="grid gap-1 text-xs font-medium">
-            Origin application
-            <Input
-              placeholder="com.example.app"
-              value={settingsOrigin}
-              onChange={(event) => setSettingsOrigin(event.target.value)}
-            />
-          </label>
-          <div className="flex gap-2">
-            <Button
-              onClick={() => settings.mutate()}
-              disabled={!settingsName.trim() || settings.isPending}
-            >
-              Save settings
-            </Button>
-            <Button variant="ghost" onClick={() => setSettingsOpen(false)}>
-              Cancel
-            </Button>
-          </div>
-          <RecordingProblem
-            error={settings.error}
-            onRetry={() => settings.mutate()}
-            retrying={settings.isPending}
-          />
-        </section>
+      {!sessionId ? (
+        <TestEditorSettingsPanel
+          name={settingsName}
+          originApplication={settingsOrigin}
+          open={settingsOpen}
+          saving={settings.isPending}
+          error={settings.error}
+          onNameChange={setSettingsName}
+          onOriginChange={setSettingsOrigin}
+          onOpenChange={setSettingsOpen}
+          onRetry={() => settings.mutate()}
+          onSave={() => settings.mutate()}
+        />
       ) : null}
 
       {(sessionId ? liveEditor.isPending : document.isPending) ? (
@@ -650,31 +622,14 @@ function TestEditorDocument() {
 
       {editorDocument ? (
         <>
-          <div className="flex flex-wrap items-center gap-2" aria-label="Editing history">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={undo}
-              disabled={!canUndo || edit.isPending || historyAction.isPending}
-              aria-label="Undo last saved change"
-            >
-              <Undo2 aria-hidden="true" /> Undo
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={redo}
-              disabled={!canRedo || edit.isPending || historyAction.isPending}
-              aria-label="Redo last undone change"
-            >
-              <Redo2 aria-hidden="true" /> Redo
-            </Button>
-            {latestHistory ? (
-              <span className="text-xs text-muted-foreground">
-                Last saved change: {latestHistory.summary}
-              </span>
-            ) : null}
-          </div>
+          <TestEditorHistoryBar
+            canUndo={canUndo}
+            canRedo={canRedo}
+            busy={edit.isPending || historyAction.isPending}
+            latestSummary={latestHistory?.summary}
+            onUndo={undo}
+            onRedo={redo}
+          />
 
           <WorkbenchPanes
             inspectorKind={sessionId ? "device" : "form"}

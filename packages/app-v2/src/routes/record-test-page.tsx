@@ -1,9 +1,8 @@
-import { ScanLine, LoaderCircle } from "lucide-react";
+import { ScanLine } from "lucide-react";
 import { AuthoringWorkspace } from "./authoring-workspace";
 import { AuthoringHeader } from "./authoring-header";
-import { RecordingActionList } from "./recording-action-list";
-import { RecordingInputRecovery } from "./recording-input-recovery";
 import { RecordingScreenCapture } from "./recording-screen-capture";
+import { RecordingTimelineSidebar } from "./recording-timeline-sidebar";
 /** @jsxImportSource react */
 import {
   Dialog,
@@ -13,7 +12,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
-import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Button } from "@relay/ui-react/components/button";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -45,7 +43,7 @@ import { recordingQueryKeys, refreshRecording } from "../data/recording-queries"
 import { reviewDocumentLocation } from "../data/test-document-surface";
 import { clearWorkflowPointerIfCurrent, writeWorkflowPointer } from "../data/workflow-pointer";
 import { LiveTargetCanvas } from "./live-target-canvas";
-import { PageLoading, RecordingProblem, errorMessage, targetLabel } from "./recording-shared";
+import { PageLoading, errorMessage, targetLabel } from "./recording-shared";
 import { TalkBackModeSelect, TalkBackOverlay, useTalkBackReview } from "./talkback-review-panel";
 
 const testRouteApi = getRouteApi("/tests/$testId/record");
@@ -575,77 +573,23 @@ function RecordingWorkspace({
         {!recording.isPending && snapshot && previewAvailable ? (
           <AuthoringWorkspace
             tools={
-              <aside
-                className="grid h-full min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden"
-                aria-labelledby="capture-timeline-title"
-              >
-                <div className="flex items-center justify-between gap-3 border-b border-border px-1 pb-2">
-                  <h2 id="capture-timeline-title" className="text-sm font-medium">
-                    Recorded steps
-                    {liveInputBusy || action.isPending ? (
-                      <LoaderCircle
-                        className="ms-2 inline size-3.5 animate-spin text-muted-foreground motion-reduce:animate-none"
-                        aria-label="Saving step"
-                      />
-                    ) : null}
-                  </h2>
-                  <span className="text-xs tabular-nums text-muted-foreground">
-                    {recordedActions.length}
-                  </span>
-                </div>
-                <div>
-                  {captureReady &&
-                  (recoveryKind === "unknown" || recoveryKind === "refresh-failed") ? (
-                    <div className="m-3 grid gap-3" aria-label="Recording controls">
-                      {recoveryKind === "unknown" ? (
-                        <RecordingInputRecovery
-                          issue={liveIssue}
-                          failure={unresolvedRecordingMutation(recordingLedger.current, "unknown")}
-                          busy={liveInputBusy || action.isPending || !allowed.has("record")}
-                          onObserve={observeLastUnknownMutation}
-                        />
-                      ) : null}
-                      {recoveryKind === "refresh-failed" ? (
-                        <Button
-                          variant="outline"
-                          disabled={liveInputBusy}
-                          onClick={() => void recoverRecordingRefreshOnly()}
-                        >
-                          Refresh recording
-                        </Button>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  {recording.error ||
-                  action.error ||
-                  action.data?.recovery ||
-                  recording.data?.recovery ? (
-                    <RecordingProblem
-                      className="m-3"
-                      error={recording.error ?? action.error}
-                      recovery={action.data?.recovery ?? recording.data?.recovery}
-                      onRetry={() => void recording.refetch()}
-                      retrying={recording.isFetching}
-                      checking={
-                        action.isPending || snapshot?.progress.label === "Finishing interaction…"
-                      }
-                    />
-                  ) : (
-                    <span />
-                  )}
-                </div>
-                {recordedActions.length ? (
-                  <ScrollArea className="min-h-0">
-                    <RecordingActionList actions={recordedActions} />
-                  </ScrollArea>
-                ) : (
-                  <div className="grid min-h-44 place-items-center px-4 text-center text-sm text-muted-foreground">
-                    <p>
-                      {captureReady ? "Taps and typing appear here." : "No recorded steps yet."}
-                    </p>
-                  </div>
-                )}
-              </aside>
+              <RecordingTimelineSidebar
+                captureReady={captureReady}
+                recoveryKind={recoveryKind}
+                liveIssue={liveIssue}
+                failure={unresolvedRecordingMutation(recordingLedger.current, "unknown")}
+                liveInputBusy={liveInputBusy || action.isPending}
+                canRecord={allowed.has("record")}
+                onObserve={observeLastUnknownMutation}
+                onRefresh={() => void recoverRecordingRefreshOnly()}
+                recordingError={recording.error}
+                actionError={action.error}
+                recovery={action.data?.recovery ?? recording.data?.recovery}
+                onRetry={() => void recording.refetch()}
+                retrying={recording.isFetching}
+                checking={action.isPending || snapshot?.progress.label === "Finishing interaction…"}
+                recordedActions={recordedActions}
+              />
             }
             stage={
               <div

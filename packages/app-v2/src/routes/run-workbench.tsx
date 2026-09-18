@@ -9,25 +9,12 @@ import { ReportVideoInspector } from "../components/report-video-inspector";
 import { Button } from "@relay/ui-react/components/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@relay/ui-react/components/tabs";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
-import {
-  Check,
-  Circle,
-  CircleAlert,
-  Play,
-  Pause,
-  ChevronLeft,
-  ChevronRight,
-  Hand,
-  ArrowLeft,
-  Camera,
-  Clock,
-  Keyboard,
-  MoveUpRight,
-} from "lucide-react";
+import { Check, Circle, CircleAlert, Play, Pause, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { framePathsForTraceStep, type ProductRunReportOverview } from "../data/run-product-service";
 import { CaptureReviewDecisions } from "./capture-review-decisions";
 import { CaptureReviewPanel } from "./run-capture-review-panel";
+import { StepActionIcon, timelineStateLabel } from "./run-workbench-presentation";
 import {
   type CaptureReviewAction,
   type CaptureReviewItem,
@@ -700,30 +687,4 @@ export function RunWorkbench({
       </div>
     </section>
   );
-}
-
-function timelineStateLabel(state: Report["timeline"][number]["state"]): string {
-  if (state === "passed") return "Passed";
-  if (state === "failed") return "Failed";
-  if (state === "blocked") return "Blocked";
-  if (state === "recovered") return "Recovered";
-  if (state === "running") return "In progress";
-  return "Not reached";
-}
-
-function StepActionIcon({ title }: { title: string }) {
-  const Icon = /^tap\b/i.test(title)
-    ? Hand
-    : /^back\b/i.test(title)
-      ? ArrowLeft
-      : /^observe\b/i.test(title)
-        ? Camera
-        : /^(wait|pause)\b/i.test(title)
-          ? Clock
-          : /^(type|input)\b/i.test(title)
-            ? Keyboard
-            : /^swipe\b/i.test(title)
-              ? MoveUpRight
-              : Circle;
-  return <Icon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />;
 }
