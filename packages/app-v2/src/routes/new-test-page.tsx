@@ -438,6 +438,7 @@ export function NewTestPage() {
         !targets.data?.recovery &&
         !blocksNewRecording ? (
           <AuthoringWorkspace
+            mobileOrder="setup-first"
             tools={
               <aside
                 className="grid min-w-0 content-start gap-5 rounded-lg border border-border p-4"

@@ -153,16 +153,23 @@ export function RunConfigurationComposer({
               ))}
             </fieldset>
           ) : (
-            <SelectField
-              label="Device or browser"
-              value={selection?.targetProfileId ?? ""}
-              options={targetOptions.map((option) => ({ value: option.id, label: option.label }))}
-              placeholder="Choose a device"
-              onValueChange={(targetProfileId) =>
-                onSelectionChange({ ...selection, targetProfileId, targetProfileIds: undefined })
-              }
-              disabled={loading}
-            />
+            <div className="grid gap-2">
+              <SelectField
+                label="Device or browser"
+                value={selection?.targetProfileId ?? ""}
+                options={targetOptions.map((option) => ({ value: option.id, label: option.label }))}
+                placeholder="Choose a device"
+                onValueChange={(targetProfileId) =>
+                  onSelectionChange({ ...selection, targetProfileId, targetProfileIds: undefined })
+                }
+                disabled={loading}
+              />
+              {targetOptions.find((option) => option.id === selection?.targetProfileId)?.detail ? (
+                <p className="text-sm text-muted-foreground" role="status">
+                  {targetOptions.find((option) => option.id === selection?.targetProfileId)?.detail}
+                </p>
+              ) : null}
+            </div>
           )}
         </>
       ) : null}
@@ -205,7 +212,7 @@ export function RunConfigurationComposer({
             placeholder={languageChoices ? "Search languages…" : "Search values…"}
             value={valueSearch}
             onChange={(event) => setValueSearch(event.target.value)}
-            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-11 w-full rounded-md border border-input bg-background px-3 text-base sm:text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
           <ScrollArea
             className="h-[42dvh] min-h-0"
@@ -258,13 +265,13 @@ export function RunConfigurationComposer({
       ) : null}
       {pairedWorkspaceLabel && onSelectionChange ? (
         <label className="flex min-h-11 items-center gap-2 text-sm">
-          <input
-            type="checkbox"
+          <Checkbox
+            disabled={loading}
             checked={selection?.usePairedWorkspace === true}
-            onChange={(event) =>
+            onCheckedChange={(checked) =>
               onSelectionChange({
                 ...selection,
-                usePairedWorkspace: event.currentTarget.checked || undefined,
+                usePairedWorkspace: checked === true || undefined,
               })
             }
           />

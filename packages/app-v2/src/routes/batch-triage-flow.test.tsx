@@ -107,6 +107,7 @@ async function render(service: RunAcrossProductService) {
   for (let index = 0; index < 8; index += 1) {
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
   }
+  return history;
 }
 
 afterEach(async () => {
@@ -117,6 +118,32 @@ afterEach(async () => {
 });
 
 describe("Batch review controls", () => {
+  it("does not attach an old Plan download to the next Plan", async () => {
+    let finish!: (blob: Blob) => void;
+    const createUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:old-plan");
+    const history = await render({
+      getReport: async (id: string) => ({ ...report, id, export: { jobIds: ["run-1"] } }),
+      getFailureClusters: async () => ({ campaignId: "batch-1", clusters: [] }),
+      getFindings: async () => undefined,
+      downloadExport: () =>
+        new Promise<Blob>((resolve) => {
+          finish = resolve;
+        }),
+    } as unknown as RunAcrossProductService);
+    const download = [...document.querySelectorAll("button")].find((item) =>
+      item.textContent?.includes("Download"),
+    );
+    expect(download).toBeDefined();
+    await act(async () => download!.click());
+    await act(async () => history.push("/batches/batch-2"));
+    for (let i = 0; i < 4; i++)
+      await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
+    await act(async () => finish(new Blob(["old-plan"])));
+    expect(createUrl).not.toHaveBeenCalled();
+    expect(document.querySelector('a[href="blob:old-plan"]')).toBeNull();
+    createUrl.mockRestore();
+  });
+
   it("advances to the next unresolved case only after a successful review", async () => {
     const triage = vi.fn(async () => report);
     await render({

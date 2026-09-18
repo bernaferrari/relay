@@ -725,7 +725,7 @@ function RunReport({
     </>
   );
 
-  if (embedded) return <EmbeddedRunResult report={report} />;
+  if (embedded) return <EmbeddedRunResult key={report.runId} report={report} />;
 
   return (
     <WorkbenchPage className="flex h-full min-h-0 flex-col !pt-3 !pb-3 max-[720px]:h-auto [&>header]:shrink-0">

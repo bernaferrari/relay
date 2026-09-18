@@ -1,3 +1,5 @@
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -93,4 +95,66 @@ it("dest-end result thumb is dest wait-for, not leftover Close last-frame", () =
   );
   expect(html).toContain("/dest-wait-for.png");
   expect(html).not.toContain("/leftover-close.png");
+});
+
+it("labels the captured result separately and shows the selected step image during investigation", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const client = new QueryClient();
+  const report = {
+    outcome: "passed",
+    timeline: [
+      {
+        id: "start",
+        index: 0,
+        title: "Reach Start",
+        state: "passed",
+        evidenceCount: 1,
+        framePaths: ["start.png"],
+      },
+    ],
+    captureReview: {
+      items: [
+        {
+          captureId: "dest",
+          framePath: "dest.png",
+          status: "pending",
+          phase: "dest",
+          policy: "fast",
+        },
+      ],
+    },
+    evidence: [
+      {
+        id: "screenshot",
+        items: [
+          { id: "start.png", media: { kind: "image", src: "/start.png" } },
+          { id: "dest.png", media: { kind: "image", src: "/dest.png" } },
+        ],
+      },
+    ],
+  } as unknown as ProductRunReportOverview;
+  try {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <EmbeddedRunResult report={report} />
+        </QueryClientProvider>,
+      ),
+    );
+    expect(host.querySelector("img")?.getAttribute("src")).toBe("/dest.png");
+    expect(host.textContent).toContain("Captured result");
+    expect(host.textContent).not.toContain("Reach Start");
+    await act(async () =>
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "View steps")!
+        .click(),
+    );
+    expect(host.querySelector("img")?.getAttribute("src")).toBe("/start.png");
+    expect(host.textContent).toContain("Reach Start");
+  } finally {
+    await act(async () => root.unmount());
+    client.clear();
+  }
 });

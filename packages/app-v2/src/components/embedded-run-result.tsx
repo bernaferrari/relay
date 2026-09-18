@@ -32,6 +32,7 @@ export function EmbeddedRunResult({ report }: { report: ProductRunReportOverview
       : passed
         ? undefined
         : "Open the full report to inspect where the run stopped.";
+  const [inspectingSteps, setInspectingSteps] = useState(false);
   const [stepIndex, setStepIndex] = useState(() => initialRunStep(report.timeline));
   const step = report.timeline[stepIndex];
   const authoredFrames = step
@@ -39,11 +40,13 @@ export function EmbeddedRunResult({ report }: { report: ProductRunReportOverview
     : [];
   const paths = authoredFrames.length ? authoredFrames : (step?.framePaths ?? []);
   const frames = report.evidence.find((section) => section.id === "screenshot")?.items ?? [];
-  const destPath = destIdentityReviewItems(report.captureReview?.items ?? []).find((item) =>
-    isCaptureReviewDestPhase(item.phase),
-  )?.framePath;
+  const destPath =
+    destIdentityReviewItems(report.captureReview?.items ?? []).find((item) =>
+      isCaptureReviewDestPhase(item.phase),
+    )?.framePath ?? report.captureReview?.items.find((item) => item.framePath)?.framePath;
   const lastPath = paths.at(-1);
-  const thumbId = destPath ?? lastPath;
+  const showingCapturedResult = Boolean(destPath) && !inspectingSteps;
+  const thumbId = showingCapturedResult ? destPath : lastPath;
   const frame = step
     ? frames.find((item) => item.id === thumbId && item.media)
     : destPath
@@ -78,7 +81,17 @@ export function EmbeddedRunResult({ report }: { report: ProductRunReportOverview
         {report.executionContext?.account ? <span>{report.executionContext.account}</span> : null}
         {report.executionContext?.locale ? <span>{report.executionContext.locale}</span> : null}
       </div>
-      {step ? (
+      {destPath ? (
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-medium">
+            {showingCapturedResult ? "Captured result" : "Run steps"}
+          </p>
+          <Button size="sm" variant="ghost" onClick={() => setInspectingSteps((value) => !value)}>
+            {showingCapturedResult ? "View steps" : "Back to captured result"}
+          </Button>
+        </div>
+      ) : null}
+      {step && !showingCapturedResult ? (
         <div className="grid gap-2">
           <div className="flex items-center gap-3">
             <Button

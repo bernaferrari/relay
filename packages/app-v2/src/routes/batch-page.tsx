@@ -5,7 +5,7 @@ import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { RotateCcw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
@@ -45,10 +45,21 @@ import {
 const routeApi = getRouteApi("/batches/$batchId");
 
 export function BatchPage() {
+  const { batchId } = routeApi.useParams();
+  return <BatchDocument key={batchId} batchId={batchId} />;
+}
+
+function BatchDocument({ batchId }: { batchId: string }) {
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const { runAcrossService, queryClient, platform, catalogService } = useRouteContext({
     from: "__root__",
   });
-  const { batchId } = routeApi.useParams();
   const [resultView, setResultView] = useState(
     runAcrossService.getCaptureReview ? "screenshots" : "cases",
   );
@@ -99,6 +110,7 @@ export function BatchPage() {
       return runAcrossService.downloadExport(batchId);
     },
     onSuccess: (blob) => {
+      if (!mounted.current) return;
       if (downloadUrl) URL.revokeObjectURL(downloadUrl);
       setDownloadUrl(URL.createObjectURL(blob));
     },

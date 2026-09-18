@@ -70,9 +70,13 @@ function blocksReview(state: ProductRecordingState | undefined): boolean {
 export function ReviewRecordingPage({
   recordingId: recordingIdProp,
 }: { recordingId?: string } = {}) {
-  const { productService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const params = useParams({ strict: false }) as { recordingId?: string };
   const recordingId = recordingIdProp ?? params.recordingId ?? "";
+  return <RecordingReviewDocument key={recordingId} recordingId={recordingId} />;
+}
+
+function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
+  const { productService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const navigate = useNavigate();
   const workflowId = recordingId;
   const nameDraftKey = `recordingName:${workflowId}`;
@@ -125,6 +129,7 @@ export function ReviewRecordingPage({
           queryClient.invalidateQueries({ queryKey: ["catalog", "tests"] }),
           queryClient.invalidateQueries({ queryKey: recordingQueryKeys.apps }),
         ]);
+        await nameWrites.current.catch(() => undefined);
         await Promise.resolve(platform.storage.remove?.(nameDraftKey));
         if (await clearWorkflowPointerIfCurrent(platform, workflowId)) {
           queryClient.setQueryData<string | null>(recordingQueryKeys.pointer, null);
@@ -471,13 +476,19 @@ export function ReviewRecordingPage({
               role="status"
               aria-label="Recording status"
             >
-              {canApprove
-                ? "Recording captured. Ready to save."
-                : review?.latestReplay
-                  ? replayDetail(review.latestReplay.outcome, canApprove)
-                  : actions.length
-                    ? `Replay runs these steps on ${replayDeviceName} before saving.`
-                    : "No actions were recorded. Start a new recording to capture your Test."}
+              {transition.isPending
+                ? transition.variables?.action === "replay"
+                  ? `Replaying on ${replayDeviceName}…`
+                  : transition.variables?.action === "edit"
+                    ? "Saving step changes…"
+                    : "Saving Test…"
+                : canApprove
+                  ? "Recording captured. Ready to save."
+                  : review?.latestReplay
+                    ? replayDetail(review.latestReplay.outcome, canApprove)
+                    : actions.length
+                      ? `Replay runs these steps on ${replayDeviceName} before saving.`
+                      : "No actions were recorded. Start a new recording to capture your Test."}
             </p>
           </div>
         ) : null}

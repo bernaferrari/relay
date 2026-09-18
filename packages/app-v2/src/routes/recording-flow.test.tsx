@@ -370,6 +370,30 @@ async function interactWithLiveTarget() {
 }
 
 describe("record, review, replay, and save", () => {
+  it("isolates naming and edit mode when navigating between recordings", async () => {
+    const fake = fakeService(state("reviewing", ["inspect", "edit", "replay"]));
+    const storage = platformWithStorage({ "recordingName:workflow-2": "Second recording" });
+    const { history } = await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      storage.platform,
+    );
+    await fill(
+      document.querySelector<HTMLInputElement>("#review-test-name")!,
+      "First recording draft",
+    );
+    await settle();
+    await click(button("Edit steps"));
+    await act(async () => history.push("/recordings/workflow-2/review"));
+    await settle();
+    expect(document.querySelector<HTMLInputElement>("#review-test-name")?.value).toBe(
+      "Second recording",
+    );
+    expect(button("Edit steps").getAttribute("aria-pressed")).toBe("false");
+    expect(storage.values.get("recordingName:workflow-1")).toBe("First recording draft");
+    expect(storage.values.get("recordingName:workflow-2")).toBe("Second recording");
+  });
+
   it("carries a verified Map path into the recording setup", async () => {
     const fake = fakeService();
     const mapService: MapProductService = {
