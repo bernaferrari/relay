@@ -1,4 +1,5 @@
 import type { ProductRunPhase, ProductRunSummary } from "@relay/product/catalog";
+import { summarizePlanResult, type PlanResultCase } from "@relay/protocol";
 
 /** One Results row per Plan grid; standalone Test Runs stay addressable. */
 export function collapsePlanResultRows(runs: readonly ProductRunSummary[]): ProductRunSummary[] {
@@ -58,10 +59,11 @@ function planResultListTitle(run: ProductRunSummary): string {
 }
 
 function planResultPhase(siblings: readonly ProductRunSummary[]): ProductRunPhase {
-  if (siblings.some((item) => item.phase === "running")) return "running";
-  if (siblings.some((item) => item.phase === "queued")) return "queued";
-  if (siblings.some((item) => item.phase === "failed")) return "failed";
-  if (siblings.some((item) => item.phase === "cancelled")) return "cancelled";
+  const grid = summarizePlanRuns(siblings);
+  if (grid.cells.running) return "running";
+  if (grid.cells.pending) return "queued";
+  if (grid.cells["check-failed"] || grid.cells["could-not-run"]) return "failed";
+  if (grid.cells.cancelled) return "cancelled";
   return "completed";
 }
 
@@ -69,13 +71,27 @@ function planResultOutcome(
   siblings: readonly ProductRunSummary[],
   phase: ProductRunPhase,
 ): ProductRunSummary["outcome"] {
-  if (siblings.some((item) => item.outcome === "product-failure")) return "product-failure";
-  if (siblings.some((item) => item.outcome === "harness-failure")) return "harness-failure";
-  if (siblings.some((item) => item.outcome === "uncertain" || item.review?.status === "pending")) {
-    return "uncertain";
-  }
-  if (phase === "completed" && siblings.every((item) => item.outcome === "passed")) return "passed";
+  const grid = summarizePlanRuns(siblings);
+  if (grid.cells["check-failed"]) return "product-failure";
+  if (grid.cells["could-not-run"]) return "harness-failure";
+  if (grid.cells["needs-review"]) return "uncertain";
+  if (phase === "completed" && grid.cells.passed === grid.coverage.planned) return "passed";
+  if (phase === "cancelled" && grid.cells.cancelled === grid.coverage.planned) return "cancelled";
   return undefined;
+}
+
+function summarizePlanRuns(siblings: readonly ProductRunSummary[]) {
+  return summarizePlanResult(siblings.map(planResultCase));
+}
+
+function planResultCase(run: ProductRunSummary): PlanResultCase {
+  const status = run.outcome === "passed" ? "passed" : run.phase;
+  const reviewRequired = run.outcome === "uncertain" || run.review?.status === "pending";
+  return {
+    status,
+    ...(reviewRequired ? { failureCategory: "review-required" } : {}),
+    ...(run.outcome ? { outcome: run.outcome } : {}),
+  };
 }
 
 /** Results list copy. A failed phase is not a product pass when the cell is Infra. */

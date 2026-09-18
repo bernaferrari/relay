@@ -169,6 +169,38 @@ describe("Plan Result rows", () => {
     expect(planResultListCause(rows[0]!)).toBe("Could not complete");
   });
 
+  it("uses the canonical review classification for a completed pending-review cell", () => {
+    const rows = collapsePlanResultRows([
+      run({
+        id: "run-pending-review",
+        title: "Capture Settings",
+        phase: "completed",
+        outcome: "uncertain",
+        queuedAt: 1,
+        batchId: "batch-review",
+      }),
+    ]);
+    expect(rows[0]?.phase).toBe("completed");
+    expect(rows[0]?.outcome).toBe("uncertain");
+    expect(planResultListCause(rows[0]!)).toBe("Needs review");
+  });
+
+  it("does not turn an all-cancelled Plan into a successful result", () => {
+    const rows = collapsePlanResultRows([
+      run({
+        id: "run-cancelled",
+        title: "Cancelled Test",
+        phase: "cancelled",
+        outcome: "cancelled",
+        queuedAt: 1,
+        batchId: "batch-cancelled",
+      }),
+    ]);
+    expect(rows[0]?.phase).toBe("cancelled");
+    expect(rows[0]?.outcome).toBe("cancelled");
+    expect(planResultListCause(rows[0]!)).toBe("Cancelled");
+  });
+
   it("keeps a mixed Plan as a product failure when any cell is a product issue", () => {
     const rows = collapsePlanResultRows([
       run({
