@@ -114,6 +114,27 @@ function sameFilterValue(value: string | undefined, needle: string): boolean {
   return normalizedFilterValue(value).toLowerCase() === needle.toLowerCase();
 }
 
+/** Plan Gallery screen chip / human queue label. Strip bare `step:…:product`
+ * / Capture · step captions — iOS models used to list
+ * `step:step-action:Model selector SuperGrok` on filter chips after Run report
+ * already kept the product title. lookFor stays review criteria, not the chip. */
+export function planCaptureReviewScreenLabel(item: {
+  lookFor?: string;
+  caption?: string;
+  checkpointId?: string;
+}): string {
+  const caption = normalizedFilterValue(item.caption);
+  if (/^step:[^:]+:/u.test(caption)) {
+    const product = caption.split(":").slice(2).join(":").trim();
+    if (product) return product;
+  }
+  const captureLabel = /^(?:Capture for review|Screenshot) · step:[^:]+:(.+)$/u
+    .exec(caption)?.[1]
+    ?.trim();
+  if (captureLabel) return captureLabel;
+  return caption || normalizedFilterValue(item.lookFor) || normalizedFilterValue(item.checkpointId);
+}
+
 export function parsePlanCaptureReviewFilter(input: {
   pending?: unknown;
   screen?: unknown;
@@ -143,6 +164,7 @@ export function planCaptureReviewItemMatchesFilter(
   if (filter.screen) {
     const screen = filter.screen;
     if (
+      !sameFilterValue(planCaptureReviewScreenLabel(item), screen) &&
       !sameFilterValue(item.caption, screen) &&
       !sameFilterValue(item.checkpointId, screen) &&
       !sameFilterValue(item.requirementId, screen)
@@ -201,7 +223,7 @@ export function planCaptureReviewFilterOptions(items: readonly PlanCaptureReview
   const devices = new Set<string>();
   const accounts = new Set<string>();
   for (const item of destIdentityReviewItems(items)) {
-    const screen = normalizedFilterValue(item.caption) || normalizedFilterValue(item.checkpointId);
+    const screen = planCaptureReviewScreenLabel(item);
     if (screen) screens.add(screen);
     const device =
       normalizedFilterValue(item.device) ||
@@ -282,7 +304,7 @@ export function formatPlanCaptureReviewQueue(queue: PlanCaptureReviewQueue): str
         : "";
     const place = [item.device, item.account, item.observed?.laneId].filter(Boolean).join(" · ");
     const placeSuffix = place ? ` · ${place}` : "";
-    return `${item.runId} · ${item.caption}${attempt} · ${item.status}${blocked}${approximation}${placeSuffix}`;
+    return `${item.runId} · ${planCaptureReviewScreenLabel(item)}${attempt} · ${item.status}${blocked}${approximation}${placeSuffix}`;
   });
   const shown =
     dest.summary.planned && dest.items.length !== dest.summary.planned

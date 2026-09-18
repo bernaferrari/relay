@@ -10,6 +10,7 @@ import {
   formatCaptureReviewCoverageSummary,
   parsePlanCaptureReviewFilter,
   planCaptureReviewFilterOptions,
+  planCaptureReviewScreenLabel,
 } from "@relay/protocol";
 import { SelectField } from "../components/filter-select";
 import { Button } from "@relay/ui-react/components/button";
@@ -34,7 +35,7 @@ function planCaptureFrames(
     return [
       {
         id,
-        title: item.caption,
+        title: planCaptureReviewScreenLabel(item),
         media: {
           kind: "image" as const,
           src: path,
@@ -222,8 +223,11 @@ export function PlanCaptureReviewSection({
             <ul className="mt-1 list-disc pl-5 text-muted-foreground">
               {feedback.failures.map((failure) => (
                 <li key={failure.key}>
-                  {queue.items.find((item) => captureReviewQueueItemKey(item) === failure.key)
-                    ?.caption ?? "Screenshot"}
+                  {planCaptureReviewScreenLabel(
+                    queue.items.find((item) => captureReviewQueueItemKey(item) === failure.key) ?? {
+                      caption: "Screenshot",
+                    },
+                  )}
                   : {failure.message}
                 </li>
               ))}

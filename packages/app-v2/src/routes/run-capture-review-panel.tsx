@@ -12,6 +12,7 @@ import {
   formatCaptureReviewConfiguration,
   formatCaptureReviewCoverageSummary,
   formatCaptureReviewObservedSession,
+  planCaptureReviewScreenLabel,
   type CaptureReviewAction,
   type CaptureReviewConfiguration,
   type CaptureReviewItem,
@@ -141,6 +142,8 @@ export function CaptureReviewPanel({
     });
   };
   const caption = (item: CaptureReviewItem, index: number) => {
+    const labeled = planCaptureReviewScreenLabel(item);
+    if (labeled && labeled !== item.caption) return labeled;
     if (item.caption.startsWith("step:"))
       return (
         item.caption.split(":").slice(2).join(":") || fallbackTitle || `Checkpoint ${index + 1}`
@@ -149,7 +152,7 @@ export function CaptureReviewPanel({
       return fallbackTitle
         ? `${fallbackTitle} · checkpoint ${index + 1}`
         : `Checkpoint ${index + 1}`;
-    return item.caption;
+    return item.caption || fallbackTitle || `Checkpoint ${index + 1}`;
   };
   return (
     <div

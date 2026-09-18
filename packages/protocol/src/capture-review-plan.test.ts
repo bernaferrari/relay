@@ -12,6 +12,7 @@ import {
   formatPlanCaptureReviewQueue,
   parsePlanCaptureReviewFilter,
   planCaptureReviewFilterOptions,
+  planCaptureReviewScreenLabel,
   resolvePlanCaptureReviewQueue,
   selectedPlanCaptureReviewItems,
 } from "./capture-review-plan.js";
@@ -304,6 +305,57 @@ test("Plan dest identity filters and Gallery skip leftover Close last-frame", ()
   assert.match(listed, /Observe/u);
   assert.doesNotMatch(listed, /Close/u);
   assert.doesNotMatch(listed, /frames\/004\.png/u);
+});
+
+test("Plan Gallery filter chips keep Model selector product title, not bare step caption", () => {
+  const dest = {
+    captureId: "frames/003.png::models",
+    caption: "step:step-action:Model selector SuperGrok",
+    lookFor: "Model selector SuperGrok",
+    status: "pending" as const,
+    framePath: "frames/003.png",
+    imageSha256: "dest-wait",
+    checkpointId: "models",
+    phase: CAPTURE_REVIEW_DEST_PHASE,
+    policy: "fast" as const,
+    runId: "04c7ad2f",
+    configuration: { app: "iPad Pro 10.5" },
+    observed: {
+      laneId: "grok-ios-daily",
+      profileId: "device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+      iosHardwareClass: "physical-ipad" as const,
+    },
+  };
+  const queue = {
+    items: [dest],
+    summary: {
+      planned: 1,
+      captured: 1,
+      blocked: 0,
+      missing: 0,
+      pending: 1,
+      accepted: 0,
+      issue: 0,
+      needMoreEvidence: 0,
+    },
+  };
+  assert.deepEqual(planCaptureReviewFilterOptions(queue.items), {
+    screens: ["Model selector SuperGrok"],
+    devices: ["iPad Pro 10.5"],
+    accounts: [],
+  });
+  assert.equal(
+    planCaptureReviewScreenLabel({
+      caption: "step:step-action:Model selector SuperGrok",
+    }),
+    "Model selector SuperGrok",
+  );
+  const byProduct = filterPlanCaptureReviewQueue(queue, { screen: "Model selector SuperGrok" });
+  assert.equal(byProduct.items.length, 1);
+  assert.equal(byProduct.items[0]?.framePath, "frames/003.png");
+  const listed = formatPlanCaptureReviewQueue(queue);
+  assert.match(listed, /Model selector SuperGrok/u);
+  assert.doesNotMatch(listed, /step:step-action:Model selector SuperGrok/u);
 });
 
 test("Plan Gallery filter chips drop opener Tap beside leftover Transition", () => {
