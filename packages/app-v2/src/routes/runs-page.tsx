@@ -14,7 +14,7 @@ import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
-import { Camera, ChevronRight } from "lucide-react";
+import { Camera, ChevronRight, Globe } from "lucide-react";
 import {
   collapsePlanResultRows,
   screenshotReviewLabel,
@@ -265,6 +265,8 @@ function RunRow({
   const title = plan ? run.title : (run.testName ?? run.title);
   const device = run.targetName ?? platformName(run.platform);
   const screenshotReview = screenshotReviewLabel(run.captureSummary);
+  const genericBrowser = device === "Browser";
+  const chromeBrowser = run.platform === "browser" && /\bchrome\b/i.test(run.targetName ?? "");
   const className = `${libraryRowSurface} ${libraryRowContent} h-22 grid-cols-[minmax(0,1fr)_auto] gap-3 sm:gap-5`;
   const body = (
     <>
@@ -278,7 +280,29 @@ function RunRow({
                 : (run.outcome ?? phaseOutcome(run))
             }
           />
-          <span className="truncate">{device || (plan ? "Plan Result" : "Saved Run")}</span>
+          {genericBrowser || chromeBrowser ? (
+            <span className="inline-flex shrink-0 items-center" title={device}>
+              {chromeBrowser ? (
+                <svg
+                  viewBox="0 0 24 24"
+                  className="size-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <circle cx="12" cy="12" r="4" />
+                  <path d="M12 8h9.2M15.5 14l-4.6 7.9M8.5 14 3.9 6.1" />
+                </svg>
+              ) : (
+                <Globe className="size-4" aria-hidden="true" />
+              )}
+              <span className="sr-only">{device}</span>
+            </span>
+          ) : (
+            <span className="truncate">{device || (plan ? "Plan Result" : "Saved Run")}</span>
+          )}
           <span aria-hidden="true">·</span>
           <span className="shrink-0 tabular-nums">
             {plan && run.caseCount
