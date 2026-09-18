@@ -386,6 +386,8 @@ export type RunEvidenceArtifactSummary = {
   entries?: number;
   bytes?: number;
   summary?: string;
+  /** Slim capture-review dest identity — phase/framePath/caption only. */
+  data?: { phase?: string; framePath?: string; caption?: string };
 };
 
 /** One inspectable fact placed on the run's shared replay clock. */

@@ -303,6 +303,41 @@ test("buildRunEvidence lists path+caption frames for compact destIdentity", () =
   ]);
 });
 
+test("buildRunEvidence keeps slim capture-review dest-phase on artifact summary", () => {
+  const evidence = buildRunEvidence(
+    run({
+      frames: [
+        {
+          path: "frames/001.png",
+          caption: "before · Tap identifier sidebar.open.button",
+          capturedAt: 1,
+        },
+        { path: "frames/003.png", caption: "step:step-action:Sidebar open-close", capturedAt: 3 },
+      ],
+      artifacts: [
+        {
+          kind: "capture-review",
+          capturedAt: 3,
+          data: {
+            status: "pending",
+            caption: "step:step-action:Sidebar open-close",
+            framePath: "frames/003.png",
+            phase: "dest",
+            policy: "fast",
+            configuration: { app: "iPad Pro 10.5", account: "signed-out" },
+          },
+        },
+      ],
+    }),
+  );
+  const captureReview = evidence.artifacts.find((item) => item.kind === "capture-review");
+  assert.deepEqual(captureReview?.data, {
+    phase: "dest",
+    framePath: "frames/003.png",
+    caption: "step:step-action:Sidebar open-close",
+  });
+});
+
 test("buildRunEvidence preserves typed packet failure beside a successful session log", () => {
   const evidence = buildRunEvidence(
     run({

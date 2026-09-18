@@ -318,6 +318,14 @@ function artifactSummary(artifact: {
     (artifact.kind === "network" && Array.isArray(data.entries)
       ? `${data.entries.length} request${data.entries.length === 1 ? "" : "s"}`
       : undefined);
+  const captureReviewData =
+    artifact.kind === "capture-review"
+      ? {
+          ...(text(data.phase) ? { phase: text(data.phase) } : {}),
+          ...(text(data.framePath) ? { framePath: text(data.framePath) } : {}),
+          ...(text(data.caption) ? { caption: text(data.caption) } : {}),
+        }
+      : undefined;
   return {
     kind: artifact.kind,
     capturedAt: artifact.capturedAt,
@@ -326,6 +334,9 @@ function artifactSummary(artifact: {
       : { entries: artifactEntries(artifact.data) }),
     ...(artifactBytes(artifact.data) === undefined ? {} : { bytes: artifactBytes(artifact.data) }),
     ...(summary ? { summary } : {}),
+    ...(captureReviewData && Object.keys(captureReviewData).length
+      ? { data: captureReviewData }
+      : {}),
   };
 }
 

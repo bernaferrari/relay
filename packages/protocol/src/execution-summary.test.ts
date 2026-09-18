@@ -698,6 +698,58 @@ test("run.evidence.get unphased drops leftover Transition executed / Inspect set
   );
 });
 
+test("run.evidence.get drops opener Tap beside leftover Transition when dest-phase slim data absent", () => {
+  const result = summarizeExecutionOperationResult("run.evidence.get", {
+    evidence: {
+      runId: "ios-sidebar-stripped",
+      schemaVersion: 1,
+      frames: [
+        { path: "frames/001.png", caption: "before · Tap identifier sidebar.open.button" },
+        { path: "frames/002.png", caption: "after · Transition executed" },
+        { path: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
+        { path: "frames/004.png", caption: "after · Transition executed" },
+      ],
+      artifacts: [{ kind: "capture-review", capturedAt: 1 }],
+    },
+  }) as {
+    evidence?: { destIdentity?: Array<{ path?: string; caption?: string }> };
+  };
+  assert.deepEqual(result.evidence?.destIdentity, [
+    { path: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
+  ]);
+});
+
+test("run.evidence.get keeps slim capture-review dest-phase over opener Tap frames", () => {
+  const result = summarizeExecutionOperationResult("run.evidence.get", {
+    evidence: {
+      runId: "ios-sidebar-slim",
+      schemaVersion: 1,
+      frames: [
+        { path: "frames/001.png", caption: "before · Tap identifier sidebar.open.button" },
+        { path: "frames/002.png", caption: "after · Transition executed" },
+        { path: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
+        { path: "frames/004.png", caption: "after · Transition executed" },
+      ],
+      artifacts: [
+        {
+          kind: "capture-review",
+          capturedAt: 1,
+          data: {
+            phase: "dest",
+            framePath: "frames/003.png",
+            caption: "step:step-action:Sidebar open-close",
+          },
+        },
+      ],
+    },
+  }) as {
+    evidence?: { destIdentity?: Array<{ path?: string; caption?: string }> };
+  };
+  assert.deepEqual(result.evidence?.destIdentity, [
+    { path: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
+  ]);
+});
+
 test("run.evidence.get unphased Android dest-wait omits destIdentity", () => {
   const result = summarizeExecutionOperationResult("run.evidence.get", {
     evidence: {

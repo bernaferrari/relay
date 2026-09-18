@@ -13,6 +13,7 @@ import {
   destIdentityReviewItems,
   destIdentitySourceFrames,
   isCaptureReviewLeftoverCaption,
+  isCaptureReviewOpenerCaption,
   captureReviewSlotFamilyId,
   captureReviewSlotId,
   CAPTURE_REVIEW_ACTIONS,
@@ -1366,6 +1367,19 @@ test("leftover Transition executed / Inspect setup skipped cannot fill dest wait
       },
     ]).map((frame) => frame.path),
     ["frames/001.png", "frames/003.png"],
+  );
+  assert.equal(isCaptureReviewOpenerCaption("before · Tap identifier sidebar.open.button"), true);
+  assert.equal(isCaptureReviewOpenerCaption("after · Tap identifier sidebar.open.button"), true);
+  assert.equal(isCaptureReviewOpenerCaption("Land"), false);
+  assert.equal(isCaptureReviewOpenerCaption("step:step-action:Sidebar open-close"), false);
+  assert.deepEqual(
+    destIdentityCheckpointFramePaths([
+      { path: "frames/001.png", caption: "before · Tap identifier sidebar.open.button" },
+      { path: "frames/002.png", caption: "after · Transition executed" },
+      { path: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
+      { path: "frames/004.png", caption: "after · Transition executed" },
+    ]),
+    ["frames/003.png"],
   );
 });
 

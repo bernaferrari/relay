@@ -291,6 +291,15 @@ export function isCaptureReviewLeftoverCaption(caption?: string): boolean {
   return false;
 }
 
+/** Opener TAP before/after frames are not dest wait-for. When leftover
+ * Transition/Close captions sit beside dest, before · Tap cannot fill dest
+ * identity (evidence without slim dest-phase data used to keep it). */
+export function isCaptureReviewOpenerCaption(caption?: string): boolean {
+  const value = caption?.trim() ?? "";
+  const body = value.replace(/^(?:before|after) · /iu, "").trim();
+  return /^tap\b/iu.test(body);
+}
+
 function leftoverCloseCaption(caption?: string): boolean {
   return isCaptureReviewLeftoverCaption(caption);
 }
@@ -330,7 +339,8 @@ export function destIdentitySourceFrames<T extends { path: string; caption?: str
 }
 
 /** Dest wait-for checkpoint paths. Leftover Close / Run saved Test last-frame
- * cannot fill dest even without leftover-phase. Unphased dest-wait keeps listed
+ * cannot fill dest even without leftover-phase. Opener before · Tap cannot fill
+ * dest beside leftover Transition either. Unphased dest-wait keeps listed
  * frames. */
 export function destIdentityCheckpointFramePaths(
   frames: readonly { path: string; caption?: string }[],
@@ -342,7 +352,11 @@ export function destIdentityCheckpointFramePaths(
   const usable = leftover.size ? frames.filter((frame) => !leftover.has(frame.path)) : frames;
   const destCaptions = usable.filter((frame) => !isCaptureReviewLeftoverCaption(frame.caption));
   const leftoverCaptions = usable.filter((frame) => isCaptureReviewLeftoverCaption(frame.caption));
-  const waitFor = destCaptions.length && leftoverCaptions.length ? destCaptions : usable;
+  let waitFor = destCaptions.length && leftoverCaptions.length ? destCaptions : usable;
+  if (destCaptions.length && leftoverCaptions.length) {
+    const withoutOpeners = waitFor.filter((frame) => !isCaptureReviewOpenerCaption(frame.caption));
+    if (withoutOpeners.length) waitFor = withoutOpeners;
+  }
   return [
     ...new Set(
       waitFor
