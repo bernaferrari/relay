@@ -3,9 +3,9 @@ import {
   captureReviewLeftoverLastFramePaths,
   destIdentityCheckpointFramePaths,
   destIdentityReviewItems,
+  destIdentitySourceFrames,
   enrichCaptureReviewObservedSession,
   isCaptureReviewLeftoverCaption,
-  isCaptureReviewOpenerCaption,
   liveCaptureReviewAccount,
   projectCaptureReviewDestIdentity,
   CAPTURE_REVIEW_DEST_PHASE,
@@ -60,20 +60,6 @@ function compactDestIdentity(
   artifacts: readonly { kind?: string; data?: unknown }[],
 ): { path: string; caption?: string }[] {
   return projectCaptureReviewDestIdentity(frames, artifacts);
-}
-
-/** Dest wait-for frames when leftover Close / Run saved Test / Transition
- * last-frame is also listed. Opener before · Tap cannot fill dest beside those
- * leftovers (parity with destIdentityCheckpointFramePaths). Unphased dest-wait
- * (no leftover caption) keeps every frame. */
-function destWaitForListedFrames(
-  frames: readonly { path: string; caption?: string }[],
-): { path: string; caption?: string }[] {
-  const dest = frames.filter((frame) => !isCaptureReviewLeftoverCaption(frame.caption));
-  const leftover = frames.filter((frame) => isCaptureReviewLeftoverCaption(frame.caption));
-  if (!(dest.length && leftover.length)) return [...frames];
-  const withoutOpeners = dest.filter((frame) => !isCaptureReviewOpenerCaption(frame.caption));
-  return withoutOpeners.length ? withoutOpeners : dest;
 }
 
 /** Leftover Close captions cannot fill dest identity. Unphased dest-wait still
@@ -564,7 +550,7 @@ function summarizePlanCaptureReview(response: Record<string, unknown>): unknown 
 function projectVisualSnapshot(value: unknown): Record<string, unknown> | undefined {
   const snapshot = object(value);
   if (!snapshot) return undefined;
-  const frames = destWaitForListedFrames(listedFrames(snapshot.frames));
+  const frames = destIdentitySourceFrames(listedFrames(snapshot.frames));
   return {
     ...snapshot,
     ...(frames.length || snapshot.frameCount !== undefined ? { frameCount: frames.length } : {}),
