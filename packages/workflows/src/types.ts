@@ -29,8 +29,11 @@ import type {
   DiscoveryScope,
   GoalSessionResult,
   GoalSessionStartInput,
+  GoalExplorationResult,
+  GoalExplorationStartInput,
 } from "@relay/protocol";
 export type { GoalSessionResult } from "@relay/protocol";
+export type { GoalExplorationResult } from "@relay/protocol";
 export type { TargetObservation, TargetObservationControl } from "@relay/protocol";
 
 export type WorkflowRef = string & { readonly __workflowRef: unique symbol };
@@ -479,6 +482,19 @@ export type InspectFailureIntent = { kind: "inspect-failure"; runId: string };
  * an App Map or silently promote model suggestions into durable Tests. */
 export type GoalSessionStartIntent = GoalSessionStartInput & { kind: "goal-start" };
 export type GoalSessionResumeIntent = { kind: "goal-resume"; sessionId: string };
+export type GoalSessionReproduceIntent = { kind: "goal-reproduce"; sessionId: string };
+export type GoalExplorationStartIntent = GoalExplorationStartInput & { kind: "goal-explore" };
+export type GoalExplorationResumeIntent = {
+  kind: "goal-explore-resume";
+  explorationId: string;
+};
+export type GoalPromotionIntent = {
+  kind: "goal-promote";
+  sessionId: string;
+  title?: string;
+  appMapId?: string;
+  confirmControl: true;
+};
 
 /**
  * One bounded, resumable Agent Debug outcome. The action is deliberately
@@ -698,6 +714,10 @@ export interface RelayOutcomeJobs {
   debugBug(intent: DebugBugOutcomeIntent): Promise<DebugBugOutcome>;
   goal(intent: GoalSessionStartIntent): Promise<GoalSessionResult>;
   resumeGoal(intent: GoalSessionResumeIntent): Promise<GoalSessionResult>;
+  reproduceGoal(intent: GoalSessionReproduceIntent): Promise<GoalSessionResult>;
+  promoteGoal(intent: GoalPromotionIntent): Promise<AuthorTestSnapshot>;
+  explore(intent: GoalExplorationStartIntent): Promise<GoalExplorationResult>;
+  resumeExploration(intent: GoalExplorationResumeIntent): Promise<GoalExplorationResult>;
   proposeRepair(intent: ProposeRepairIntent): Promise<RepairProposalResult>;
   exportEvidence(intent: ExportEvidenceIntent): Promise<EvidenceExportResult>;
   replayLab(intent: ReplayLabOutcomeIntent): Promise<ReplayLabReport>;

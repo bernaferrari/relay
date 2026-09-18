@@ -37,13 +37,22 @@ import type {
   RunTestOutcomeIntent,
   VerifyChangeOutcomeIntent,
   GoalSessionResumeIntent,
+  GoalSessionReproduceIntent,
   GoalSessionStartIntent,
+  GoalExplorationResumeIntent,
+  GoalExplorationStartIntent,
+  GoalPromotionIntent,
 } from "./types.js";
 import { runReplayLab } from "./replay-lab.js";
 import { recordingPathContext } from "./recording-path-context.js";
 import { startDebugBugRecording } from "./recording-outcome-jobs.js";
 import { acquireOwnLease, selectAppMap, selectTarget, targetCatalog } from "./target-catalog.js";
 import { createGoalSessionRunner, type GoalSessionRunner } from "./goal-runner.js";
+import {
+  createGoalExplorationRunner,
+  type GoalExplorationRunner,
+} from "./goal-exploration-runner.js";
+import { createGoalPromotionRunner, type GoalPromotionRunner } from "./goal-promotion-runner.js";
 
 export type RelayOutcomeJobOptions = { actorId: string };
 
@@ -279,6 +288,8 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
   private readonly operations: RelayOperationPort;
   private readonly workflows;
   private readonly goals: GoalSessionRunner;
+  private readonly explorations: GoalExplorationRunner;
+  private readonly promotions: GoalPromotionRunner;
 
   constructor(
     client: RelayInvokeClient,
@@ -287,6 +298,12 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
     this.operations = createRelayOperationPort(client);
     this.workflows = createRelayWorkflows(client);
     this.goals = createGoalSessionRunner({ operations: this.operations });
+    this.explorations = createGoalExplorationRunner({ sessions: this.goals });
+    this.promotions = createGoalPromotionRunner({
+      operations: this.operations,
+      sessions: this.goals,
+      actorId: options.actorId,
+    });
     this.eventSource = client.events
       ? (client as RelayInvokeClient & WorkflowEventSource)
       : undefined;
@@ -519,6 +536,28 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
 
   async resumeGoal(intent: GoalSessionResumeIntent) {
     return this.goals.resume(intent.sessionId);
+  }
+
+  async reproduceGoal(intent: GoalSessionReproduceIntent) {
+    return this.goals.reproduce(intent.sessionId);
+  }
+
+  async promoteGoal(intent: GoalPromotionIntent) {
+    return this.promotions.promote({
+      sessionId: intent.sessionId,
+      ...(intent.title ? { title: intent.title } : {}),
+      ...(intent.appMapId ? { appMapId: intent.appMapId } : {}),
+      confirmControl: intent.confirmControl,
+    });
+  }
+
+  async explore(intent: GoalExplorationStartIntent) {
+    const { kind: _kind, ...input } = intent;
+    return this.explorations.start(input);
+  }
+
+  async resumeExploration(intent: GoalExplorationResumeIntent) {
+    return this.explorations.resume(intent.explorationId);
   }
 
   async proposeRepair(intent: ProposeRepairIntent): Promise<RepairProposalResult> {

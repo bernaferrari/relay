@@ -10,6 +10,7 @@ import {
   type RepeatSpec,
   type SourceRevision,
   type TracePack,
+  browserAuthenticationFixtureReferenceSchema,
 } from "@relay/protocol";
 import type { RelayOutcomeJobs, WorkflowRef } from "@relay/workflows";
 import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
@@ -196,22 +197,60 @@ const goalSessionInputSchema = z
     startUrl: z.url().optional(),
     targetId,
     laneId: identifier.optional(),
+    authenticationFixtureReference: browserAuthenticationFixtureReferenceSchema.optional(),
     model: identifier.optional(),
     maxSteps: z.number().int().min(1).max(40).optional(),
     maxDurationMs: z.number().int().min(1_000).max(900_000).optional(),
+    agents: z.number().int().min(1).max(4).optional(),
     resumeSessionId: identifier.optional(),
+    resumeExplorationId: identifier.optional(),
+    reproduceSessionId: identifier.optional(),
+    promoteSessionId: identifier.optional(),
+    appMapId: identifier.optional(),
+    title: z.string().trim().min(1).max(160).optional(),
   })
   .strict()
   .superRefine((value, context) => {
-    if (value.resumeSessionId) {
+    if (value.reproduceSessionId || value.promoteSessionId) {
       if (
         value.goal !== undefined ||
         value.startUrl !== undefined ||
         value.targetId !== undefined ||
         value.laneId !== undefined ||
+        value.authenticationFixtureReference !== undefined ||
         value.model !== undefined ||
         value.maxSteps !== undefined ||
-        value.maxDurationMs !== undefined
+        value.maxDurationMs !== undefined ||
+        value.agents !== undefined ||
+        value.resumeSessionId !== undefined ||
+        value.resumeExplorationId !== undefined ||
+        (value.reproduceSessionId !== undefined && value.promoteSessionId !== undefined) ||
+        (value.reproduceSessionId !== undefined &&
+          (value.appMapId !== undefined || value.title !== undefined))
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Goal reproduction or promotion cannot be combined with start fields",
+        });
+      }
+      return;
+    }
+    if (value.resumeSessionId || value.resumeExplorationId) {
+      if (
+        value.goal !== undefined ||
+        value.startUrl !== undefined ||
+        value.targetId !== undefined ||
+        value.laneId !== undefined ||
+        value.authenticationFixtureReference !== undefined ||
+        value.model !== undefined ||
+        value.maxSteps !== undefined ||
+        value.maxDurationMs !== undefined ||
+        value.agents !== undefined ||
+        value.appMapId !== undefined ||
+        value.title !== undefined ||
+        value.reproduceSessionId !== undefined ||
+        value.promoteSessionId !== undefined ||
+        (value.resumeSessionId !== undefined && value.resumeExplorationId !== undefined)
       ) {
         context.addIssue({
           code: "custom",
@@ -219,6 +258,12 @@ const goalSessionInputSchema = z
         });
       }
       return;
+    }
+    if (value.appMapId !== undefined || value.title !== undefined) {
+      context.addIssue({
+        code: "custom",
+        message: "appMapId and title are only valid when promoting a reproduced goal",
+      });
     }
     if (!value.goal) context.addIssue({ code: "custom", message: "goal is required" });
     if ((value.startUrl === undefined) === (value.targetId === undefined)) {
@@ -354,7 +399,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_goal",
     title: "Run a bounded goal",
     description:
-      "Interact with one target toward a stated goal using a single bounded worker. Optional OpenRouter-hosted Typesafe Jev suggestions receive only a compact redacted observation; Relay validates every candidate, persists intent before mutation, never types secrets or runs code, and stops for review on uncertainty. Start with startUrl or targetId, or resume a session by id.",
+      "Interact with one target toward a stated goal using bounded OpenRouter-hosted Typesafe Jev suggestions. Relay validates every candidate, persists intent before mutation, never types secrets or runs code, and stops for review on uncertainty. Start, resume, reproduce an acknowledged browser path, or promote a fresh reproduction into the existing review-only Authoring workflow.",
     requiresConfirmation: true,
     inputSchema: goalSessionInputSchema,
     annotations: {
@@ -787,8 +832,46 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
     });
   }
   if (input.name === "relay_goal") {
+    if (typeof parsed.reproduceSessionId === "string") {
+      return jobs.reproduceGoal({
+        kind: "goal-reproduce",
+        sessionId: parsed.reproduceSessionId,
+      });
+    }
+    if (typeof parsed.promoteSessionId === "string") {
+      return jobs.promoteGoal({
+        kind: "goal-promote",
+        sessionId: parsed.promoteSessionId,
+        ...(typeof parsed.appMapId === "string" ? { appMapId: parsed.appMapId } : {}),
+        ...(typeof parsed.title === "string" ? { title: parsed.title } : {}),
+        confirmControl: true,
+      });
+    }
+    if (typeof parsed.resumeExplorationId === "string") {
+      return jobs.resumeExploration({
+        kind: "goal-explore-resume",
+        explorationId: parsed.resumeExplorationId,
+      });
+    }
     if (typeof parsed.resumeSessionId === "string") {
       return jobs.resumeGoal({ kind: "goal-resume", sessionId: parsed.resumeSessionId });
+    }
+    if (typeof parsed.agents === "number" && parsed.agents > 1) {
+      return jobs.explore({
+        kind: "goal-explore",
+        goal: parsed.goal as string,
+        ...(typeof parsed.startUrl === "string" ? { startUrl: parsed.startUrl } : {}),
+        ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
+        ...(typeof parsed.authenticationFixtureReference === "string"
+          ? { authenticationFixtureReference: parsed.authenticationFixtureReference }
+          : {}),
+        ...(typeof parsed.model === "string" ? { model: parsed.model } : {}),
+        ...(typeof parsed.maxSteps === "number" ? { maxSteps: parsed.maxSteps } : {}),
+        ...(typeof parsed.maxDurationMs === "number"
+          ? { maxDurationMs: parsed.maxDurationMs }
+          : {}),
+        agents: parsed.agents,
+      });
     }
     return jobs.goal({
       kind: "goal-start",
@@ -796,9 +879,13 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
       ...(typeof parsed.startUrl === "string" ? { startUrl: parsed.startUrl } : {}),
       ...(typeof parsed.targetId === "string" ? { targetId: parsed.targetId } : {}),
       ...(typeof parsed.laneId === "string" ? { laneId: parsed.laneId } : {}),
+      ...(typeof parsed.authenticationFixtureReference === "string"
+        ? { authenticationFixtureReference: parsed.authenticationFixtureReference }
+        : {}),
       ...(typeof parsed.model === "string" ? { model: parsed.model } : {}),
       ...(typeof parsed.maxSteps === "number" ? { maxSteps: parsed.maxSteps } : {}),
       ...(typeof parsed.maxDurationMs === "number" ? { maxDurationMs: parsed.maxDurationMs } : {}),
+      ...(typeof parsed.agents === "number" ? { agents: parsed.agents } : {}),
     });
   }
   if (input.name === "relay_record_test") {

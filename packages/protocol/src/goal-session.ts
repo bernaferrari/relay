@@ -25,6 +25,8 @@ export type GoalSessionTarget = {
   targetId: string;
   platform: "android" | "ios" | "browser";
   startUrl?: string;
+  laneId?: string;
+  authenticationFixtureReference?: string;
 };
 
 export type GoalSessionBudget = {
@@ -70,6 +72,29 @@ export type GoalSessionPendingAction = {
   intendedAt: number;
 };
 
+export type GoalReproductionStatus =
+  | "running"
+  | "reproduced"
+  | "unresolved"
+  | "blocked"
+  | "uncertain";
+
+/** One isolated replay of a completed goal path. It is evidence for review,
+ * never an automatic claim that a product defect or Test has been proven. */
+export type GoalReproductionRecord = {
+  id: string;
+  sourceSessionId: string;
+  target: GoalSessionTarget;
+  status: GoalReproductionStatus;
+  startedAt: number;
+  updatedAt: number;
+  actions: GoalSessionAction[];
+  observations: GoalSessionObservationRef[];
+  lastObservation?: CompactGoalObservation;
+  pendingAction?: GoalSessionPendingAction;
+  stopReason?: GoalSessionStopReason;
+};
+
 export type GoalSessionStopReason = {
   code: GoalSessionStopCode;
   message: string;
@@ -93,6 +118,7 @@ export type GoalSessionRecord = {
   lastObservation?: CompactGoalObservation;
   lastDecision?: ModelDecisionRecord;
   pendingAction?: GoalSessionPendingAction;
+  reproduction?: GoalReproductionRecord;
   stopReason?: GoalSessionStopReason;
 };
 
@@ -103,7 +129,10 @@ export type GoalSessionStartInput = {
   /** Use an already-connected native or managed browser target. */
   targetId?: string;
   laneId?: string;
+  authenticationFixtureReference?: string;
   signedOut?: true;
+  /** Internal parent-worker identity; callers normally omit it. */
+  sessionId?: string;
   model?: string;
   maxSteps?: number;
   maxDurationMs?: number;
@@ -122,6 +151,7 @@ export type GoalSessionResult = {
   lastDecision?: ModelDecisionRecord;
   actions: GoalSessionAction[];
   observations: GoalSessionObservationRef[];
+  reproduction?: GoalReproductionRecord;
   /** True when a mutation was attempted and must be reviewed before resume. */
   resumeRequiresReview?: true;
 };

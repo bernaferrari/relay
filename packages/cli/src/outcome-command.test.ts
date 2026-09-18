@@ -34,15 +34,55 @@ test("every outcome CLI command maps named arguments to one workflow intent", ()
         ["--confirm"],
       ),
       expected: {
-        kind: "goal-start",
+        kind: "goal-explore",
         startUrl: "https://example.test",
         goal: "Reach settings",
         maxSteps: 3,
       },
     },
     {
+      input: tokens(
+        ["explore"],
+        {
+          "--url": "https://example.test",
+          "--goal": "Reach settings",
+          "--agents": "4",
+          "--judge": "jev",
+        },
+        ["--confirm"],
+      ),
+      expected: {
+        kind: "goal-explore",
+        startUrl: "https://example.test",
+        goal: "Reach settings",
+        agents: 4,
+      },
+    },
+    {
       input: tokens(["goal", "resume", "goal-123"], {}, ["--confirm"]),
       expected: { kind: "goal-resume", sessionId: "goal-123" },
+    },
+    {
+      input: tokens(["goal", "reproduce", "goal-123"], {}, ["--confirm"]),
+      expected: { kind: "goal-reproduce", sessionId: "goal-123" },
+    },
+    {
+      input: tokens(
+        ["goal", "promote", "goal-123"],
+        { "--map": "checkout", "--title": "Empty cart regression" },
+        ["--confirm"],
+      ),
+      expected: {
+        kind: "goal-promote",
+        sessionId: "goal-123",
+        appMapId: "checkout",
+        title: "Empty cart regression",
+        confirmControl: true,
+      },
+    },
+    {
+      input: tokens(["explore"], { "--resume": "explore-123" }, ["--confirm"]),
+      expected: { kind: "goal-explore-resume", explorationId: "explore-123" },
     },
     {
       input: tokens(

@@ -5,6 +5,16 @@ export {
   type GoalSessionStore,
 } from "./goal-runner.js";
 export {
+  createGoalExplorationRunner,
+  type GoalExplorationRunner,
+  type GoalExplorationStore,
+} from "./goal-exploration-runner.js";
+export {
+  createGoalPromotionRunner,
+  type GoalPromotionInput,
+  type GoalPromotionRunner,
+} from "./goal-promotion-runner.js";
+export {
   createChangeVerificationWorkflow,
   createProofWorkflow,
   type ApproveVerificationPlanInput,
@@ -116,8 +126,12 @@ export type {
   RecordingPathContext,
   RelayOutcomeJobs,
   GoalSessionResumeIntent,
+  GoalSessionReproduceIntent,
   GoalSessionResult,
   GoalSessionStartIntent,
+  GoalExplorationResumeIntent,
+  GoalExplorationStartIntent,
+  GoalPromotionIntent,
   RepeatTestOutcomeIntent,
   ReplayLabOutcomeIntent,
   RunTestOutcomeIntent,

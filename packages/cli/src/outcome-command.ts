@@ -13,7 +13,11 @@ import type {
   RunTestOutcomeIntent,
   VerifyChangeOutcomeIntent,
   GoalSessionResumeIntent,
+  GoalSessionReproduceIntent,
   GoalSessionStartIntent,
+  GoalExplorationResumeIntent,
+  GoalExplorationStartIntent,
+  GoalPromotionIntent,
 } from "@relay/workflows";
 import type {
   AuthoringInteraction,
@@ -41,6 +45,10 @@ export type OutcomeCliIntent =
   | VerifyChangeOutcomeIntent
   | GoalSessionStartIntent
   | GoalSessionResumeIntent
+  | GoalSessionReproduceIntent
+  | GoalExplorationStartIntent
+  | GoalExplorationResumeIntent
+  | GoalPromotionIntent
   | ProofAnalyzeCliIntent;
 
 /** CLI-only name for the read-only analysis seam. The workflow façade still
@@ -229,7 +237,35 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
           "goal resume requires --confirm before Relay may interact with a target",
         );
       }
-      return { kind: "goal-resume", sessionId };
+      return verb === "explore"
+        ? { kind: "goal-explore-resume", explorationId: sessionId }
+        : { kind: "goal-resume", sessionId };
+    }
+    if (verb === "goal" && (args[0] === "reproduce" || args[0] === "promote")) {
+      if (args.length !== 2) {
+        throw new UsageError(`goal ${args[0]} requires one goal session id`);
+      }
+      if (!tokens.switches.has("--confirm")) {
+        throw new UsageError(
+          `goal ${args[0]} requires --confirm before Relay may control a target`,
+        );
+      }
+      if (args[0] === "reproduce") {
+        if (selectedMap || tokens.values.has("--title")) {
+          throw new UsageError("goal reproduce accepts only a session id and --confirm");
+        }
+        return { kind: "goal-reproduce", sessionId: args[1]! };
+      }
+      if (tokens.values.has("--url") || tokens.values.has("--device")) {
+        throw new UsageError("goal promote accepts --map or --title, not a target selector");
+      }
+      return {
+        kind: "goal-promote",
+        sessionId: args[1]!,
+        ...(selectedMap ? { appMapId: selectedMap } : {}),
+        ...(tokens.values.get("--title") ? { title: tokens.values.get("--title") } : {}),
+        confirmControl: true,
+      };
     }
     if (verb === "goal" && args.length > 1 && args[0] !== "run") {
       throw new UsageError("goal accepts run or resume");
@@ -248,6 +284,9 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
     }
     const rawSteps = tokens.values.get("--max-steps");
     const rawDuration = tokens.values.get("--max-ms");
+    const rawAgents = tokens.values.get("--agents");
+    const judge = tokens.values.get("--judge");
+    const authenticationFixtureReference = tokens.values.get("--auth-fixture");
     const maxSteps = rawSteps === undefined ? undefined : Number(rawSteps);
     const maxDurationMs = rawDuration === undefined ? undefined : Number(rawDuration);
     if (maxSteps !== undefined && (!Number.isInteger(maxSteps) || maxSteps < 1 || maxSteps > 40)) {
@@ -259,12 +298,45 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
     ) {
       throw new UsageError("--max-ms must be an integer between 1000 and 900000");
     }
+    const agents = rawAgents === undefined ? undefined : Number(rawAgents);
+    if (
+      agents !== undefined &&
+      (!Number.isInteger(agents) || agents < 1 || agents > 4 || verb !== "explore")
+    ) {
+      throw new UsageError(
+        "--agents is only valid on explore and must be an integer between 1 and 4",
+      );
+    }
+    if (judge !== undefined && (judge !== "jev" || verb !== "explore")) {
+      throw new UsageError("--judge must be jev and is only valid on explore");
+    }
+    if (authenticationFixtureReference && startUrl) {
+      throw new UsageError(
+        "--auth-fixture requires an existing managed browser selected by --device",
+      );
+    }
+    if (verb === "explore") {
+      const intent: GoalExplorationStartIntent = {
+        kind: "goal-explore",
+        goal,
+        ...(startUrl ? { startUrl } : {}),
+        ...(targetId ? { targetId } : {}),
+        ...(tokens.values.get("--lane") ? { laneId: tokens.values.get("--lane") } : {}),
+        ...(authenticationFixtureReference ? { authenticationFixtureReference } : {}),
+        ...(tokens.values.get("--model") ? { model: tokens.values.get("--model") } : {}),
+        ...(maxSteps === undefined ? {} : { maxSteps }),
+        ...(maxDurationMs === undefined ? {} : { maxDurationMs }),
+        ...(agents === undefined ? {} : { agents }),
+      };
+      return intent;
+    }
     const intent: GoalSessionStartIntent = {
       kind: "goal-start",
       goal,
       ...(startUrl ? { startUrl } : {}),
       ...(targetId ? { targetId } : {}),
       ...(tokens.values.get("--lane") ? { laneId: tokens.values.get("--lane") } : {}),
+      ...(authenticationFixtureReference ? { authenticationFixtureReference } : {}),
       ...(tokens.values.get("--model") ? { model: tokens.values.get("--model") } : {}),
       ...(maxSteps === undefined ? {} : { maxSteps }),
       ...(maxDurationMs === undefined ? {} : { maxDurationMs }),

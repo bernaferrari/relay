@@ -5,12 +5,12 @@ import type {
 } from "@relay/protocol";
 import { canonicalSha256 } from "./canonical-json.js";
 import {
+  DEFAULT_OPENROUTER_DECISION_MODEL,
   createOpenRouterDecisionProvider,
   type ModelDecisionProvider,
 } from "./model-decision-provider.js";
 import { redactSensitiveEvidenceValue } from "./redaction.js";
 
-const DEFAULT_MODEL = "~typesafe/jev-latest";
 const MAX_FINDINGS = 40;
 
 export type EvidenceTriageOptions = {
@@ -46,7 +46,8 @@ export function evidenceTriageRequest(
   return {
     schemaVersion: 1,
     provider: "openrouter",
-    model: options.model ?? process.env.OPENROUTER_DECISION_MODEL ?? DEFAULT_MODEL,
+    model:
+      options.model ?? process.env.OPENROUTER_DECISION_MODEL ?? DEFAULT_OPENROUTER_DECISION_MODEL,
     state: safeState as ModelDecisionRequest["state"],
     questions: {
       review_scope: {

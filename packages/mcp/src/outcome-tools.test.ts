@@ -376,6 +376,44 @@ test("every default MCP outcome tool validates and invokes exactly one façade m
   }
 });
 
+test("relay_goal exposes explicit reproduction and review-only promotion", async () => {
+  const cases = [
+    {
+      argumentsValue: { reproduceSessionId: "goal-123" },
+      method: "reproduceGoal" as const,
+      expected: { kind: "goal-reproduce", sessionId: "goal-123" },
+    },
+    {
+      argumentsValue: {
+        promoteSessionId: "goal-123",
+        appMapId: "checkout",
+        title: "Empty cart regression",
+      },
+      method: "promoteGoal" as const,
+      expected: {
+        kind: "goal-promote",
+        sessionId: "goal-123",
+        appMapId: "checkout",
+        title: "Empty cart regression",
+        confirmControl: true,
+      },
+    },
+  ];
+  for (const testCase of cases) {
+    const invocations: Invocation[] = [];
+    const result = await invokeRelayOutcomeToolWithJobs({
+      name: "relay_goal",
+      argumentsValue: testCase.argumentsValue,
+      confirmed: true,
+      jobs: recordingJobs(invocations),
+    });
+    assert.deepEqual(result, { invoked: testCase.method });
+    assert.deepEqual(invocations, [
+      { method: testCase.method, argumentsValue: [testCase.expected] },
+    ]);
+  }
+});
+
 test("Agent Debug title uses the same 160 character limit as the product UI", () => {
   const descriptor = relayOutcomeTools.find(({ name }) => name === "relay_debug_bug");
   assert.ok(descriptor);

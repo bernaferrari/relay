@@ -148,7 +148,7 @@ function memoryStore(
   };
 }
 
-function operations(options: { uncertain?: boolean } = {}): {
+function operations(options: { uncertain?: boolean; openTargetMismatch?: boolean } = {}): {
   port: RelayOperationPort;
   calls: OperationId[];
 } {
@@ -164,11 +164,14 @@ function operations(options: { uncertain?: boolean } = {}): {
         const targetId = (_input as { id?: string }).id;
         return { target: targetDefinition(targetId) } as OperationOutput<Id>;
       }
+      if (id === "target.list") {
+        return { targets: [] } as OperationOutput<Id>;
+      }
       if (id === "target.open") {
         const targetId = (_input as { targetId?: string }).targetId;
         return {
           session: {
-            targetId,
+            targetId: options.openTargetMismatch ? "different-goal-target" : targetId,
             name: "Goal test",
             url: "https://example.test",
             signedOut: true,
@@ -234,6 +237,20 @@ test("goal runner reports unavailable OpenRouter without mutating the target", a
   assert.equal(runtime.calls.includes("target.interact"), false);
 });
 
+test("goal runner fails closed when target.open returns a different target", async () => {
+  const runtime = operations({ openTargetMismatch: true });
+  await assert.rejects(
+    createGoalSessionRunner({
+      operations: runtime.port,
+      store: memoryStore(),
+      decisionProvider: providerFor("complete"),
+      id: () => "goal-target-mismatch",
+    }).start({ goal: "Do the thing", startUrl: "https://example.test" }),
+    /opened target different-goal-target/u,
+  );
+  assert.deepEqual(runtime.calls, ["target.create", "target.open"]);
+});
+
 test("uncertain target interaction is terminal and is never automatically retried", async () => {
   const runtime = operations({ uncertain: true });
   const result = await createGoalSessionRunner({
@@ -291,4 +308,25 @@ test("goal runner stops at the action budget after observing the result", async 
   assert.equal(result.stopReason?.code, "budget-exhausted");
   assert.equal(result.actions.length, 1);
   assert.equal(result.observations.length, 2);
+});
+
+test("fresh reproduction replays acknowledged actions on an isolated browser target", async () => {
+  const runtime = operations();
+  const store = memoryStore();
+  const runner = createGoalSessionRunner({
+    operations: runtime.port,
+    store,
+    decisionProvider: providerFor("continue", "complete"),
+    id: () => "goal-reproduce",
+  });
+  const original = await runner.start({
+    goal: "Reach the next screen",
+    startUrl: "https://example.test",
+  });
+  const reproduced = await runner.reproduce(original.sessionId);
+  assert.equal(reproduced.reproduction?.status, "reproduced");
+  assert.equal(reproduced.reproduction?.target.targetId, "goal-repro-goal-reproduce");
+  assert.equal(reproduced.reproduction?.actions[0]?.status, "acknowledged");
+  assert.equal(runtime.calls.filter((id) => id === "target.interact").length, 2);
+  assert.equal(store.values.get(original.sessionId)?.reproduction?.pendingAction, undefined);
 });

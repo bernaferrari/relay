@@ -141,9 +141,13 @@ const valueFlags = new Set([
   "--triage",
   "--url",
   "--goal",
+  "--title",
   "--max-steps",
   "--max-ms",
   "--model",
+  "--agents",
+  "--judge",
+  "--auth-fixture",
 ]);
 const switchFlags = new Set([
   "-h",

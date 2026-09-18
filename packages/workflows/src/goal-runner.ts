@@ -18,6 +18,7 @@ import type {
   GoalSessionResult,
   GoalSessionStartInput,
   GoalSessionStopCode,
+  GoalReproductionRecord,
   ModelChoiceAnswer,
   ModelDecisionRecord,
   TargetObservation,
@@ -50,6 +51,7 @@ export type GoalSessionRunnerOptions = {
 export type GoalSessionRunner = {
   start(input: GoalSessionStartInput): Promise<GoalSessionResult>;
   resume(sessionId: string): Promise<GoalSessionResult>;
+  reproduce(sessionId: string): Promise<GoalSessionResult>;
   inspect(sessionId: string): Promise<GoalSessionRecord>;
 };
 
@@ -154,6 +156,14 @@ function targetPlatform(platform: "android" | "ios" | "browser") {
   return platform;
 }
 
+function assertOpenedTarget(result: { session: { targetId: string } }, targetId: string): void {
+  if (result.session.targetId !== targetId) {
+    throw new TypeError(
+      `Relay opened target ${result.session.targetId}, but the goal requested ${targetId}.`,
+    );
+  }
+}
+
 function evidenceRefs(sessionId: string, observation: TargetObservation, digest: string): string[] {
   const refs = [`goal:${sessionId}:observation:${digest}`];
   const projections = [
@@ -256,10 +266,10 @@ function interactionFor(candidate: {
   throw new TypeError("Goal candidate has no actionable selector.");
 }
 
-function interactionInput(record: GoalSessionRecord, action: GoalSessionAction) {
+function interactionInput(record: GoalSessionRecord, action: GoalSessionAction, targetId?: string) {
   const selector = action.interaction.target;
   return {
-    serial: record.target.targetId,
+    serial: targetId ?? record.target.targetId,
     ...(record.laneId ? { laneId: record.laneId } : {}),
     kind: action.interaction.kind,
     ...(selector.identifier ? { identifier: selector.identifier } : {}),
@@ -286,6 +296,7 @@ function result(record: GoalSessionRecord): GoalSessionResult {
     ...(record.stopReason ? { stopReason: record.stopReason } : {}),
     ...(record.lastObservation ? { lastObservation: record.lastObservation } : {}),
     ...(record.lastDecision ? { lastDecision: record.lastDecision } : {}),
+    ...(record.reproduction ? { reproduction: record.reproduction } : {}),
     actions: record.actions,
     observations: record.observations,
     ...(record.pendingAction ||
@@ -319,6 +330,14 @@ async function resolveTarget(
   if (input.startUrl && input.targetId) {
     throw new TypeError("Provide startUrl or targetId, not both.");
   }
+  if (input.startUrl && input.authenticationFixtureReference) {
+    throw new TypeError(
+      "authenticationFixtureReference requires an existing managed browser target; provide targetId instead of startUrl.",
+    );
+  }
+  if (input.authenticationFixtureReference && input.signedOut) {
+    throw new TypeError("Choose authenticationFixtureReference or signedOut, not both.");
+  }
   if (!input.startUrl && !input.targetId) {
     throw new TypeError("A goal session needs startUrl or targetId.");
   }
@@ -343,14 +362,25 @@ async function resolveTarget(
     if (created.target.id !== targetId || created.target.kind !== "browser") {
       throw new TypeError("Relay returned an unexpected goal browser target.");
     }
-    await operations.invoke("target.open", {
+    const opened = await operations.invoke("target.open", {
       targetId,
       ...(input.laneId ? { laneId: input.laneId } : {}),
-      signedOut: true,
+      ...(input.authenticationFixtureReference
+        ? { authenticationFixtureReference: input.authenticationFixtureReference }
+        : { signedOut: true }),
       presentation: "embedded",
     });
+    assertOpenedTarget(opened, targetId);
     return {
-      target: { targetId, platform: targetPlatform("browser"), startUrl: url.toString() },
+      target: {
+        targetId,
+        platform: targetPlatform("browser"),
+        startUrl: url.toString(),
+        ...(input.laneId ? { laneId: input.laneId } : {}),
+        ...(input.authenticationFixtureReference
+          ? { authenticationFixtureReference: input.authenticationFixtureReference }
+          : {}),
+      },
       ...(input.laneId ? { laneId: input.laneId } : {}),
     };
   }
@@ -358,10 +388,81 @@ async function resolveTarget(
   const devices = await operations.invoke("target.devices.list", {});
   const device = devices.devices.find((item) => item.id === targetId || item.serial === targetId);
   if (!device) throw new TypeError(`Target ${targetId} is not connected.`);
+  if (input.authenticationFixtureReference && device.platform !== "browser") {
+    throw new TypeError("Authentication fixtures can only bind managed browser targets.");
+  }
   return {
-    target: { targetId: device.serial || device.id, platform: targetPlatform(device.platform) },
+    target: {
+      targetId: device.serial || device.id,
+      platform: targetPlatform(device.platform),
+      ...(input.laneId ? { laneId: input.laneId } : {}),
+      ...(input.authenticationFixtureReference
+        ? { authenticationFixtureReference: input.authenticationFixtureReference }
+        : {}),
+    },
     ...(input.laneId ? { laneId: input.laneId } : {}),
   };
+}
+
+async function ensureFreshBrowserTarget(
+  operations: RelayOperationPort,
+  targetId: string,
+  startUrl: string,
+  sessionId: string,
+  authenticationFixtureReference?: string,
+): Promise<{ target: GoalSessionRecord["target"]; exists: boolean }> {
+  const registered = await operations.invoke("target.list", {});
+  const existing = registered.targets.find((target) => target.id === targetId);
+  if (existing) {
+    if (existing.kind !== "browser" || existing.browser?.startUrl !== startUrl) {
+      throw new TypeError("The durable goal target is bound to a different browser configuration.");
+    }
+    return {
+      target: {
+        targetId,
+        platform: "browser",
+        startUrl,
+        ...(authenticationFixtureReference ? { authenticationFixtureReference } : {}),
+      },
+      exists: true,
+    };
+  }
+  const created = await operations.invoke("target.create", {
+    id: targetId,
+    name: `Relay goal ${sessionId.slice(0, 8)}`,
+    startUrl,
+    headless: true,
+    profileRetention: "ephemeral",
+  });
+  if (created.target.id !== targetId || created.target.kind !== "browser") {
+    throw new TypeError("Relay returned an unexpected goal browser target.");
+  }
+  return {
+    target: {
+      targetId,
+      platform: "browser",
+      startUrl,
+      ...(authenticationFixtureReference ? { authenticationFixtureReference } : {}),
+    },
+    exists: false,
+  };
+}
+
+function reproductionEvidenceRefs(
+  sessionId: string,
+  reproductionId: string,
+  observation: TargetObservation,
+  digest: string,
+): string[] {
+  const refs = [`goal:${sessionId}:reproduction:${reproductionId}:observation:${digest}`];
+  const projections = [
+    ...(observation.pixels.status === "captured" ? [observation.pixels.artifact] : []),
+    observation.semantics.artifact,
+  ];
+  for (const projection of projections) {
+    if (projection.status === "available") refs.push(projection.artifact.id);
+  }
+  return [...new Set(refs)].slice(0, MAX_EVIDENCE_REFS);
 }
 
 export function createGoalSessionRunner(options: GoalSessionRunnerOptions): GoalSessionRunner {
@@ -672,7 +773,7 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
 
   return {
     async start(input) {
-      const sessionId = id();
+      const sessionId = input.sessionId ?? id();
       assertSessionId(sessionId);
       const goal = boundedGoal(input.goal);
       const budget = boundedBudget(input);
@@ -701,6 +802,267 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
       const record = await store.load(sessionId);
       if (!record) throw new TypeError(`Goal session ${sessionId} was not found.`);
       return exclusive(sessionId, () => run(record));
+    },
+    async reproduce(sessionId) {
+      assertSessionId(sessionId);
+      const loaded = await store.load(sessionId);
+      if (!loaded) throw new TypeError(`Goal session ${sessionId} was not found.`);
+      return exclusive(sessionId, async () => {
+        let record = (await store.load(sessionId)) ?? loaded;
+        if (record.reproduction && record.reproduction.status !== "running") {
+          return result(record);
+        }
+        if (record.pendingAction) {
+          record = stop(
+            record,
+            "uncertain",
+            "resume-review-required",
+            "The original goal still has an in-flight mutation. Review it before attempting reproduction.",
+            now(),
+          );
+          await persist(record);
+          return result(record);
+        }
+        if (record.target.platform !== "browser" || !record.target.startUrl) {
+          throw new TypeError(
+            "Fresh reproduction currently requires a browser goal with a durable startUrl.",
+          );
+        }
+        if (record.target.laneId) {
+          throw new TypeError(
+            "Fresh reproduction cannot reuse a shared Lane; use a signed-out or fixture-bound browser target.",
+          );
+        }
+        if (record.status !== "completed") {
+          throw new TypeError("Fresh reproduction requires a completed goal session.");
+        }
+        const sourceActions = record.actions.filter((action) => action.status === "acknowledged");
+        if (sourceActions.length === 0 || sourceActions.length !== record.actions.length) {
+          throw new TypeError(
+            "Fresh reproduction requires a goal path whose every recorded action was acknowledged.",
+          );
+        }
+        const reproductionId = record.reproduction?.id ?? `repro-${record.id.slice(0, 120)}`;
+        const targetId = `goal-repro-${record.id.slice(0, 110)}`;
+        const ensured = await ensureFreshBrowserTarget(
+          options.operations,
+          targetId,
+          record.target.startUrl,
+          reproductionId,
+          record.target.authenticationFixtureReference,
+        );
+        let reproduction: GoalReproductionRecord = {
+          id: reproductionId,
+          sourceSessionId: record.id,
+          target: ensured.target,
+          status: "running",
+          startedAt: record.reproduction?.startedAt ?? now(),
+          updatedAt: now(),
+          actions: record.reproduction?.actions ?? [],
+          observations: record.reproduction?.observations ?? [],
+          ...(record.reproduction?.lastObservation
+            ? { lastObservation: record.reproduction.lastObservation }
+            : {}),
+        };
+        const saveReproduction = async (): Promise<void> => {
+          reproduction = { ...reproduction, updatedAt: now() };
+          record = { ...record, reproduction };
+          await persist(record);
+        };
+        const finish = async (
+          status: GoalReproductionRecord["status"],
+          code: GoalSessionStopCode,
+          message: string,
+        ): Promise<GoalSessionResult> => {
+          reproduction = {
+            ...reproduction,
+            status,
+            pendingAction: undefined,
+            stopReason: { code, message: message.slice(0, MAX_ERROR_CHARS), at: now() },
+            updatedAt: now(),
+          };
+          record = { ...record, reproduction };
+          await persist(record);
+          return result(record);
+        };
+        if (reproduction.pendingAction) {
+          return finish(
+            "uncertain",
+            "resume-review-required",
+            "A reproduction mutation was recorded as intended before the worker stopped. Review the fresh target; Relay will not replay it.",
+          );
+        }
+        if (!ensured.exists || reproduction.actions.length === 0) {
+          const opened = await options.operations.invoke("target.open", {
+            targetId,
+            ...(record.target.authenticationFixtureReference
+              ? { authenticationFixtureReference: record.target.authenticationFixtureReference }
+              : { signedOut: true as const }),
+            presentation: "embedded",
+          });
+          assertOpenedTarget(opened, targetId);
+        }
+        await saveReproduction();
+
+        const captureReproduction = async (): Promise<CompactGoalObservation> => {
+          const observation = await options.operations.invoke("target.observation.capture", {
+            serial: targetId,
+          });
+          const compact = compactGoalObservation({
+            goal: record.goal,
+            sessionId: reproduction.id,
+            targetId,
+            platform: "browser",
+            app: observation.foregroundApp,
+            observation,
+            recentActions: recentActions({
+              ...record,
+              id: reproduction.id,
+              target: reproduction.target,
+              actions: reproduction.actions,
+            }),
+            signals: observationSignals(observation),
+            capabilities: observationCapabilities(observation),
+            missingEvidence: [
+              ...(observation.pixels.status === "captured" ? [] : ["pixels"]),
+              ...(observation.semantics.status === "current" ? [] : ["current semantics"]),
+            ],
+          });
+          const refs = reproductionEvidenceRefs(
+            record.id,
+            reproduction.id,
+            observation,
+            compact.observationDigest,
+          );
+          reproduction = {
+            ...reproduction,
+            lastObservation: compact,
+            observations: [
+              ...reproduction.observations,
+              {
+                step: reproduction.actions.length,
+                observationDigest: compact.observationDigest,
+                capturedAt: observation.capturedAt,
+                evidenceRefs: refs,
+              },
+            ].slice(-GOAL_SESSION_MAX_ACTIONS),
+          };
+          await saveReproduction();
+          return compact;
+        };
+
+        try {
+          if (!reproduction.lastObservation) await captureReproduction();
+        } catch (error) {
+          return finish("blocked", "observation-unavailable", normalizeError(error));
+        }
+        for (let index = reproduction.actions.length; index < sourceActions.length; index += 1) {
+          const sourceAction = sourceActions[index]!;
+          const before = reproduction.lastObservation;
+          if (!before)
+            return finish(
+              "blocked",
+              "observation-unavailable",
+              "Reproduction has no current observation.",
+            );
+          const action: GoalSessionAction = {
+            ...sourceAction,
+            id: `repro-action-${index + 1}`,
+            step: index + 1,
+            status: "intended",
+            observationDigestBefore: before.observationDigest,
+            observationDigestAfter: undefined,
+            evidenceRefs: reproduction.observations.at(-1)?.evidenceRefs ?? [],
+            at: now(),
+            error: undefined,
+          };
+          reproduction = {
+            ...reproduction,
+            actions: [...reproduction.actions, action],
+            pendingAction: {
+              actionId: action.id,
+              candidateId: action.candidateId,
+              observationDigest: action.observationDigestBefore,
+              intendedAt: action.at,
+            },
+          };
+          await saveReproduction();
+          try {
+            const interactionResult = await options.operations.invoke(
+              "target.interact",
+              interactionInput(
+                { ...record, target: reproduction.target },
+                action,
+                reproduction.target.targetId,
+              ),
+            );
+            if (
+              "iosMutation" in interactionResult &&
+              interactionResult.iosMutation?.outcome === "outcome-unknown"
+            ) {
+              throw new Error("target interaction outcome-unknown; review required before resume");
+            }
+            reproduction = {
+              ...reproduction,
+              actions: reproduction.actions.map((item) =>
+                item.id === action.id ? { ...item, status: "acknowledged", at: now() } : item,
+              ),
+              pendingAction: undefined,
+            };
+            await saveReproduction();
+          } catch (error) {
+            const unknown = isOutcomeUnknown(error);
+            reproduction = {
+              ...reproduction,
+              actions: reproduction.actions.map((item) =>
+                item.id === action.id
+                  ? {
+                      ...item,
+                      status: unknown ? ("unknown" as const) : ("rejected" as const),
+                      error: normalizeError(error),
+                      at: now(),
+                    }
+                  : item,
+              ),
+            };
+            await saveReproduction();
+            return finish(
+              unknown ? "uncertain" : "unresolved",
+              unknown ? "action-uncertain" : "action-rejected",
+              unknown
+                ? "The fresh reproduction interaction may have been applied. Review the target before any retry."
+                : `The fresh reproduction could not replay the selected control: ${normalizeError(error)}`,
+            );
+          }
+          try {
+            const after = await captureReproduction();
+            const refs = reproduction.observations.at(-1)?.evidenceRefs ?? [];
+            reproduction = {
+              ...reproduction,
+              actions: reproduction.actions.map((item) =>
+                item.id === action.id
+                  ? {
+                      ...item,
+                      observationDigestAfter: after.observationDigest,
+                      evidenceRefs: [...new Set([...item.evidenceRefs, ...refs])].slice(
+                        0,
+                        MAX_EVIDENCE_REFS,
+                      ),
+                    }
+                  : item,
+              ),
+            };
+            await saveReproduction();
+          } catch (error) {
+            return finish("blocked", "observation-unavailable", normalizeError(error));
+          }
+        }
+        return finish(
+          "reproduced",
+          "goal-achieved",
+          "Fresh target replayed every acknowledged goal action and captured each result. Human review is still required before promotion.",
+        );
+      });
     },
     async inspect(sessionId) {
       assertSessionId(sessionId);

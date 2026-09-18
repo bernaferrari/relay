@@ -137,8 +137,11 @@ function renderRootHelp(): string {
 Usage:
   relay connect [device]
   relay observe [device]
-  relay explore --url <url> --goal <goal> --confirm [--max-steps <n>] [--max-ms <n>]
+  relay explore --url <url> --goal <goal> --confirm [--agents <1-4>] [--max-steps <n>] [--max-ms <n>]
+  relay explore --resume <explorationId> --confirm
   relay goal resume <sessionId> --confirm
+  relay goal reproduce <sessionId> --confirm
+  relay goal promote <sessionId> --confirm [--map <id>] [--title <name>]
   relay record <title> [--map <id>] [--device <id>] --confirm
   relay edit-recording <workflowId> <expectedVersion> <remove|reorder|replace|merge|split|rename> ...
   relay run <testId> [--map <id>] [--device <id>] [--confirm]
