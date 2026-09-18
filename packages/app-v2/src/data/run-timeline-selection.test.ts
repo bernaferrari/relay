@@ -683,3 +683,81 @@ it("dest-end Observe timeline and shots drop prelude Reach / Land when dest-phas
     result.evidence.find((section) => section.id === "screenshot")?.items.map((item) => item.id),
   ).toEqual(["frames/003.png"]);
 });
+
+it("dest-end Observe timeline drops prelude Wait for label / Sleep beside dest", () => {
+  const result = projectRunReport(
+    "dest-end-prelude-wait-sleep",
+    {
+      outcome: "passed",
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "step:step-observe:Observe",
+            framePath: "frames/003.png",
+            imageSha256: "dest-wait",
+            stepId: "relay-test-step-observe-dest",
+            phase: "dest",
+            policy: "fast",
+          },
+        },
+      ],
+      frames: [
+        { path: "frames/004.png", caption: "after · Run saved Test" },
+        { path: "frames/003.png", caption: "step:step-observe:Observe" },
+      ],
+      steps: [
+        {
+          id: "trace-sleep",
+          index: 5,
+          title: "Sleep 1500ms",
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [],
+        },
+        {
+          id: "trace-wait",
+          index: 6,
+          title: 'Wait for label "What should we explore?"',
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [],
+        },
+        {
+          id: "trace-dest",
+          index: 8,
+          title: "Capture for review · step:step-observe:Observe",
+          status: "ok",
+          actions: [{ kind: "ok" }, { kind: "shot" }],
+          frames: [{ path: "frames/003.png", caption: "step:step-observe:Observe" }],
+        },
+      ],
+      testStepEvidence: [
+        {
+          schemaVersion: 1,
+          testStepId: "step-observe",
+          recipeId: "observe-flow",
+          recipeStepId: "relay-test-step-observe-dest",
+          traceStepId: "trace-dest",
+          traceStepIndex: 8,
+          occurrence: 5,
+          evidence: {
+            framePaths: ["frames/003.png"],
+            eventSequences: [],
+            artifactKinds: ["capture-review"],
+          },
+        },
+      ],
+    },
+    {},
+  );
+  expect(result.firstEvidence?.label).toBe("Observe");
+  expect(result.timeline.map((step) => step.id)).toEqual(["trace-dest"]);
+  expect(result.timeline.map((step) => step.title)).toEqual(["Observe"]);
+  expect(
+    result.timeline.some(
+      (step) =>
+        step.title === "Sleep 1500ms" || step.title === 'Wait for label "What should we explore?"',
+    ),
+  ).toBe(false);
+});
