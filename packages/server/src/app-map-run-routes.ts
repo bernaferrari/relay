@@ -2,17 +2,13 @@ import type http from "node:http";
 import {
   AppMapCombineWorldError,
   AppMapCompileError,
+  accountReloginFindingsReport,
   currentOperationContext,
   bindRegisteredWebDeploymentToProof,
-  accountFixtureIdsFromListed,
-  bindRequestedBrowserIdentity,
-  listBrowserAuthenticationFixtures,
   unsignedBrowserLaneId,
   invokedBrowserLaneId,
   rememberedBrowserAuthenticationHealth,
-  claimedFixtureStartBlocker,
   claimedBrowserJobStartBlocker,
-  accountReloginFindingsReport,
   CasePlanError,
   buildTargetProfiles,
   compileAppMapConnection,
@@ -56,6 +52,7 @@ import {
   offlinePreflightProfileRecovery,
 } from "./app-map-run-target-admission.js";
 import { appMapProofExecutionAdmission } from "./app-map-proof-execution-admission.js";
+import { assertAppMapTestBrowserIdentity } from "./app-map-browser-identity-admission.js";
 
 export {
   frozenTestRunTargetProfile,
@@ -266,49 +263,14 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
     const executionTarget = prepared.executionTarget;
     const targetId = executionTarget.targetId.trim();
     const requestedTarget = { targetId, platform: executionTarget.platform };
-    if (body.account || body.engine) {
-      const savedBrowser = runtimeTargetProfile?.browserCaseProfile;
-      const listed = await listBrowserAuthenticationFixtures({
-        projectId: input.scope.projectId,
-        targetId,
-      });
-      const bound = bindRequestedBrowserIdentity({
-        requested: {
-          ...(body.engine ? { engine: body.engine } : {}),
-          ...(body.account ? { account: body.account } : {}),
-        },
-        saved: {
-          ...(savedBrowser?.engine ? { engine: savedBrowser.engine } : {}),
-          ...(savedBrowser?.authenticationFixtureId
-            ? { authenticationFixtureId: savedBrowser.authenticationFixtureId }
-            : {}),
-        },
-        platform: executionTarget.platform,
-        accountFixtureIds: accountFixtureIdsFromListed(listed),
-      });
-      if (bound.status === "blocked") {
-        throw new HttpError(409, bound.reason, {
-          code: "REQUESTED_ACCOUNT_MISMATCH",
-          recovery:
-            "Use the exact saved account fixture revision, or capture a matching runtime profile before running.",
-        });
-      }
-    }
-    const savedFixtureReference =
-      runtimeTargetProfile?.browserCaseProfile?.authenticationFixtureId?.trim();
-    const accountBlocker = await claimedFixtureStartBlocker({
+    const savedFixtureReference = await assertAppMapTestBrowserIdentity({
       projectId: input.scope.projectId,
       targetId,
+      platform: executionTarget.platform,
+      savedBrowser: runtimeTargetProfile?.browserCaseProfile,
       ...(body.account ? { account: body.account } : {}),
-      ...(savedFixtureReference ? { savedFixtureReference } : {}),
+      ...(body.engine ? { engine: body.engine } : {}),
     });
-    if (accountBlocker) {
-      throw new HttpError(409, accountBlocker, {
-        code: "ACCOUNT_NEEDS_RELOGIN",
-        recovery: "Open Sign-ins, complete OAuth, then Refresh.",
-        findings: accountReloginFindingsReport({ detail: accountBlocker }),
-      });
-    }
     const plan = compiled.plan;
     const preflight = preflightCompiledAppMapTestOffline(
       plan,
