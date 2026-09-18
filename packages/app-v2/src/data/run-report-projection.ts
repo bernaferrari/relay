@@ -143,6 +143,7 @@ function evidenceItems(
     ]),
     leftoverBesideDestVisible(rawRun),
     array(run?.artifacts) as Array<{ kind?: string; data?: unknown }>,
+    destCaptureStepFramePaths(rawRun),
   );
   if (frames.length) {
     output.screenshot = frames.map((value, index) => {
@@ -425,6 +426,15 @@ function reportTimeline(
               ?.filter((item) => item.testStepId === checkId)
               .flatMap((item) => item.evidence.framePaths)
           : exactFramePaths;
+    /** Capture for review owns its dest raster. Persisted testStepEvidence can
+     * still map the same testStepId to leftover Run saved Test `004` (live
+     * home Observe `4b93702b`) — do not let that replace the Capture frame. */
+    const ownedFramePaths = array(step.frames).flatMap((frame) => {
+      const path = text(record(frame)?.path);
+      return path ? [path] : [];
+    });
+    const preferOwnedDestCapture =
+      destEndCaptureReviewTitle(text(step.title)) && ownedFramePaths.length > 0;
     const times = checkId ? checkTimes.get(checkId) : undefined;
     const resolutions = array(record(rawRun)?.artifacts)
       .map(record)
@@ -486,12 +496,9 @@ function reportTimeline(
             ? {}
             : { finishedAt: finite(step.finishedAt) }),
         evidenceCount: array(step.frames).length,
-        framePaths:
-          authoredFramePaths ??
-          array(step.frames).flatMap((frame) => {
-            const path = text(record(frame)?.path);
-            return path ? [path] : [];
-          }),
+        framePaths: preferOwnedDestCapture
+          ? ownedFramePaths
+          : (authoredFramePaths ?? ownedFramePaths),
         ...(text(step.log) ? { observed: text(step.log) } : {}),
         ...(text(step.log) ? { log: text(step.log) } : {}),
         ...(expected ? { expected } : {}),
@@ -567,17 +574,28 @@ function publicFrameCaption(value: unknown): string | undefined {
  * captions are also listed — or when empty-frame leftover wrapper titles sit
  * beside dest (logo leftover inspect). Opener before · Tap cannot fill dest
  * beside those leftovers. Stamped dest-phase paths win over prelude Reach /
- * Land frames (home Observe used to keep those beside Fast dest). Unphased
- * dest-wait (no leftover beside dest, no dest-phase) keeps every frame. */
+ * Land frames (home Observe used to keep those beside Fast dest). Capture for
+ * review step frames win over prelude Wait for / failed:primary when dest-phase
+ * is absent (failed Android models `78e87393` still listed Wait for Heavy in
+ * shots after firstEvidence already preferred Fast Capture). Unphased
+ * dest-wait (no leftover beside dest, no dest-phase, no Capture step) keeps
+ * every frame. */
 function destWaitForEvidenceFrames(
   frames: unknown[],
   leftoverBesideDest = false,
   artifacts: Array<{ kind?: string; data?: unknown }> = [],
+  captureStepPaths: ReadonlySet<string> = new Set(),
 ): unknown[] {
   const destPhasePaths = new Set(captureReviewIdentityFramePaths(artifacts));
   if (destPhasePaths.size) {
     const phased = frames.filter((frame) => destPhasePaths.has(text(record(frame)?.path) ?? ""));
     if (phased.length) return phased;
+  }
+  if (captureStepPaths.size) {
+    const captured = frames.filter((frame) =>
+      captureStepPaths.has(text(record(frame)?.path) ?? ""),
+    );
+    if (captured.length) return captured;
   }
   const dest = frames.filter(
     (frame) => !isCaptureReviewLeftoverCaption(text(record(frame)?.caption)),
@@ -590,6 +608,21 @@ function destWaitForEvidenceFrames(
     (frame) => !isCaptureReviewOpenerCaption(text(record(frame)?.caption)),
   );
   return withoutOpeners.length ? withoutOpeners : dest;
+}
+
+/** Paths owned by Capture for review · step:… rows — Fast dest rasters even
+ * when capture-review artifacts lack a stamped dest phase. */
+function destCaptureStepFramePaths(rawRun: unknown): Set<string> {
+  const paths = new Set<string>();
+  for (const value of array(record(rawRun)?.steps)) {
+    const step = record(value);
+    if (!destEndCaptureReviewTitle(text(step?.title))) continue;
+    for (const frame of array(step?.frames)) {
+      const path = text(record(frame)?.path);
+      if (path) paths.add(path);
+    }
+  }
+  return paths;
 }
 
 function destCaptureVisibleInRun(rawRun: unknown): boolean {

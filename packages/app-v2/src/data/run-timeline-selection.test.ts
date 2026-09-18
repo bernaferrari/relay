@@ -941,6 +941,11 @@ it("failed dest-end firstEvidence is Capture for review, not prelude Wait for", 
     "dest-end-failed-wait-first-evidence",
     {
       outcome: "harness-failure",
+      evidence: {
+        channels: {
+          screenshot: { entries: 3 },
+        },
+      },
       artifacts: [
         {
           kind: "capture-review",
@@ -990,4 +995,67 @@ it("failed dest-end firstEvidence is Capture for review, not prelude Wait for", 
   expect(result.timeline.map((step) => step.title)).toEqual([
     "Tap Expert, dismiss with Back key (not 540,400).",
   ]);
+  const shotTitles = (result.evidence as { items?: { title?: string; id?: string }[] }[])?.[0]
+    ?.items;
+  expect(shotTitles?.map((item) => item.id)).toEqual(["frames/007.png"]);
+  expect(shotTitles?.some((item) => /Wait for|failed:primary/u.test(item.title ?? ""))).toBe(false);
+});
+
+it("dest-end Observe timeline keeps Capture frame, not leftover Run saved Test from testStepEvidence", () => {
+  const result = projectRunReport(
+    "dest-end-observe-leftover-004-framepaths",
+    {
+      outcome: "passed",
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            phase: "dest",
+            caption: "step:step-observe:Observe",
+            framePath: "frames/003.png",
+            imageSha256: "dest-observe",
+            stepId: "relay-test-step-observe",
+          },
+        },
+      ],
+      testStepEvidence: [
+        {
+          schemaVersion: 1,
+          testStepId: "step-observe",
+          recipeId: "relay-test",
+          recipeStepId: "relay-test-step-observe",
+          traceStepId: "trace-leftover",
+          traceStepIndex: 4,
+          occurrence: 1,
+          evidence: { framePaths: ["frames/004.png"], eventSequences: [], artifactKinds: [] },
+        },
+      ],
+      steps: [
+        {
+          id: "trace-leftover",
+          index: 4,
+          title: "Run saved Test",
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [{ path: "frames/004.png", caption: "after · Run saved Test" }],
+        },
+        {
+          id: "trace-dest",
+          index: 8,
+          recipeId: "relay-test",
+          recipeStepId: "relay-test-step-observe",
+          title: "Capture for review · step:step-observe:Observe",
+          status: "ok",
+          actions: [{ kind: "shot" }],
+          frames: [{ path: "frames/003.png", caption: "step:step-observe:Observe" }],
+        },
+      ],
+    },
+    {},
+  );
+  expect(result.firstEvidence?.label).toBe("Observe");
+  expect(result.timeline).toHaveLength(1);
+  expect(result.timeline[0]?.title).toBe("Observe");
+  expect(result.timeline[0]?.framePaths).toEqual(["frames/003.png"]);
+  expect(result.timeline[0]?.framePaths).not.toContain("frames/004.png");
 });
