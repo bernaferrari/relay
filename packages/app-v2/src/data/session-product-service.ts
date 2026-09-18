@@ -266,10 +266,10 @@ async function leases(client: SessionClient): Promise<readonly DeviceLease[]> {
 async function activities(client: SessionClient): Promise<readonly ActivityRecord[]> {
   try {
     const result = await client.invoke("activity.list", { limit: 100 });
-    // Older Relay servers expose the core page as `items`; newer operation
-    // schemas call the same bounded collection `records`.
+    // Core ActivityPage and the operation output schema both use `items`.
+    // Older clients/tests may still look for `records`; accept either.
     const value = result as unknown as { records?: ActivityRecord[]; items?: ActivityRecord[] };
-    return value.records ?? value.items ?? [];
+    return value.items ?? value.records ?? [];
   } catch (error) {
     // Relay servers that predate the operation schema used `items` for this
     // same page. Preserve that read compatibility at this product seam while

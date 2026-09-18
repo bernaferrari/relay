@@ -109,7 +109,7 @@ describe("Session product projection", () => {
       if (operation === "authoring.session.cancel")
         return { session: session({ state: "cancelled" }) };
       if (operation === "lease.list") return { leases: [lease()] };
-      if (operation === "activity.list") return { records: [activity()] };
+      if (operation === "activity.list") return { items: [activity()] };
       if (operation === "app-map.get") return { appMap: { name: "Checkout" } };
       throw new Error(`unexpected operation ${operation}`);
     });

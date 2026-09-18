@@ -22,6 +22,7 @@ import {
   formatCaptureReviewCoverageSummary,
   materializeCaptureReviewSlots,
   observedCaptureReviewAccount,
+  liveCaptureReviewAccount,
   BLOCKED_CAPTURE_REVIEW_ACCOUNT,
   resolveCaptureReviewQueue,
   summarizeCaptureReview,
@@ -170,6 +171,23 @@ test("ready fixture without live identity keeps fixture id, not SuperGrok name",
     resolvedAccount: "SuperGrok",
   });
   assert.equal(labeled.account, labFixture);
+  assert.notEqual(labeled.account, "SuperGrok");
+});
+
+test("SuperGrok lab signed-in fixture name cannot fill capture-review account", () => {
+  assert.equal(liveCaptureReviewAccount("SuperGrok lab signed-in"), undefined);
+  assert.equal(liveCaptureReviewAccount("SuperGrok"), undefined);
+  assert.equal(liveCaptureReviewAccount("Bernardo Ferrari"), "Bernardo Ferrari");
+  const labeled = observedCaptureReviewAccount({
+    laneId: "grok-lab",
+    authenticationFixtureId: labFixture,
+    fixtureName: "SuperGrok lab signed-in",
+    fixtureHealthStatus: "ready",
+    fixtureSignedIn: true,
+    resolvedAccount: "SuperGrok lab signed-in",
+  });
+  assert.equal(labeled.account, labFixture);
+  assert.notEqual(labeled.account, "SuperGrok lab signed-in");
   assert.notEqual(labeled.account, "SuperGrok");
 });
 

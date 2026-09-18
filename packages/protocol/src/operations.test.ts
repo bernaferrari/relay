@@ -885,6 +885,35 @@ test("operation roles keep viewing, authoring, execution, and administration dis
   assert.equal(operationDefinition("target.video.start").minimumRole, "runner");
   assert.equal(operationDefinition("workspace.privacy.update").minimumRole, "admin");
   assert.equal(operationDefinition("activity.list").minimumRole, "admin");
+  assert.deepEqual(
+    operationDefinition("activity.list")
+      .output.parse({
+        items: [
+          {
+            schemaVersion: 1,
+            organizationId: "local",
+            projectId: "default",
+            activityId: "activity-1",
+            actorId: "agent:cursor",
+            actorKind: "agent",
+            operationId: "system.health.get",
+            requestId: "request-1",
+            timestamp: 1,
+            eventType: "operation.succeeded",
+            resourceKind: "system",
+            resourceId: "health",
+            summary: "Health",
+            outcome: "succeeded",
+          },
+        ],
+      })
+      .items.map((item) => item.activityId),
+    ["activity-1"],
+  );
+  assert.throws(
+    () => operationDefinition("activity.list").output.parse({ records: [] }),
+    /items|Unrecognized key/,
+  );
   assert.equal(operationDefinition("activity.export").minimumRole, "admin");
   assert.equal(operationDefinition("run.share.list").minimumRole, "admin");
   assert.equal(operationDefinition("run.share.create").minimumRole, "admin");

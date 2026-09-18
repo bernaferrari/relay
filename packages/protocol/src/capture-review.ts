@@ -83,12 +83,18 @@ const CAPTURE_REVIEW_ACCOUNT_STAND_INS = new Set([
   "grok-auth-x-out",
 ]);
 
-/** Live page account name. Lane ids, SuperGrok, and saved fixture names are not identity. */
+/** Live page account name. Lane ids, SuperGrok*, and saved fixture names are not identity. */
 export function liveCaptureReviewAccount(value?: string): string | undefined {
   const trimmed = value?.replace(/\s+/gu, " ").trim();
   if (!trimmed || trimmed.length > 80) return undefined;
   const key = trimmed.toLocaleLowerCase();
-  if (CAPTURE_REVIEW_ACCOUNT_STAND_INS.has(key) || key.startsWith("grok-")) return undefined;
+  if (
+    CAPTURE_REVIEW_ACCOUNT_STAND_INS.has(key) ||
+    key.startsWith("grok-") ||
+    key.startsWith("supergrok")
+  ) {
+    return undefined;
+  }
   return trimmed;
 }
 
@@ -123,8 +129,10 @@ export function observedCaptureReviewAccount(input: {
     if (fixtureCaptureReviewAccountIsBlocked(input)) {
       return { account: BLOCKED_CAPTURE_REVIEW_ACCOUNT, observed };
     }
+    // Fixture display names (e.g. "SuperGrok lab signed-in") are not identity.
+    // Live page name wins; otherwise keep the fixture id.
     return {
-      account: live || liveCaptureReviewAccount(input.fixtureName) || fixture,
+      account: live || fixture,
       observed,
     };
   }
