@@ -317,3 +317,58 @@ it("dest-end Observe drops leftover Transition executed / Inspect setup skipped 
     shotTitles?.some((title) => /Transition executed|Inspect setup skipped/u.test(title ?? "")),
   ).toBe(false);
 });
+
+it("unphased Observe drops opener Tap Captured result beside leftover Transition", () => {
+  const executedTitle = describeCoverageStepReason("transition-executed");
+  const result = projectRunReport(
+    "unphased-opener-tap-timeline",
+    {
+      outcome: "passed",
+      artifacts: [],
+      frames: [
+        { path: "frames/001.png", caption: "before · Tap identifier sidebar.open.button" },
+        { path: "frames/002.png", caption: "after · Transition executed" },
+        { path: "frames/003.png", caption: "Observe" },
+      ],
+      steps: [
+        {
+          id: "trace-tap",
+          index: 1,
+          title: "before · Tap identifier sidebar.open.button",
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [
+            {
+              path: "frames/001.png",
+              caption: "before · Tap identifier sidebar.open.button",
+            },
+          ],
+        },
+        {
+          id: "trace-transition",
+          index: 2,
+          title: executedTitle,
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [{ path: "frames/002.png", caption: "after · Transition executed" }],
+        },
+        {
+          id: "trace-dest",
+          index: 3,
+          title: "Capture for review · step:step-observe:Observe",
+          status: "ok",
+          actions: [{ kind: "shot" }],
+          frames: [{ path: "frames/003.png", caption: "Observe" }],
+        },
+      ],
+    },
+    { channels: { screenshot: { entries: 3 } } },
+  );
+  expect(result.timeline.map((step) => step.id)).toEqual(["trace-dest"]);
+  expect(result.timeline.map((step) => step.title)).toEqual(["Observe"]);
+  expect(result.timeline.some((step) => step.title === "Captured result")).toBe(false);
+  expect(result.firstEvidence?.label).toBe("Observe");
+  expect(
+    result.evidence.find((section) => section.id === "screenshot")?.items.map((item) => item.id),
+  ).toEqual(["frames/003.png"]);
+});

@@ -328,6 +328,19 @@ function reportTimeline(
     if (destEndCaptureReviewTitle(candidateTitle)) return true;
     return frames.some((path) => destIdentityFrames.has(path));
   });
+  /** Leftover Transition / Close captions or wrapper titles beside dest. */
+  const leftoverBesideDest =
+    destCaptureVisible &&
+    (array(record(rawRun)?.frames).some((frame) =>
+      isCaptureReviewLeftoverCaption(text(record(frame)?.caption)),
+    ) ||
+      array(record(rawRun)?.steps).some((other) => {
+        const candidate = record(other);
+        if (leftoverWrapperStepTitle(text(candidate?.title))) return true;
+        return array(candidate?.frames).some((frame) =>
+          isCaptureReviewLeftoverCaption(text(record(frame)?.caption)),
+        );
+      }));
   return array(record(rawRun)?.steps).flatMap((value, fallbackIndex) => {
     const step = record(value);
     if (!step) return [];
@@ -336,10 +349,22 @@ function reportTimeline(
     const failed = step.status === "error" || step.tone === "fail";
     if (!failed && text(step.log)?.startsWith("conditional tap: skipped")) return [];
     const generatedBranch = (text(step.title) ?? "").startsWith("Branch when");
-    const hasCapture = array(step.frames).some((frame) => text(record(frame)?.path));
+    const stepFrames = array(step.frames);
+    const hasCapture = stepFrames.some((frame) => text(record(frame)?.path));
     if (generatedBranch && !failed && !hasCapture) return [];
     const authoredStep = stepEvidence?.find((item) => item.traceStepId === text(step.id));
     if (leftoverWrapperStepTitle(text(step.title)) && hasCapture && destCaptureVisible) return [];
+    /** Opener before · Tap cannot fill the timeline as Captured result beside
+     * leftover Transition when dest wait-for Observe is also listed. */
+    const openerOnlyCapture =
+      hasCapture &&
+      stepFrames.length > 0 &&
+      stepFrames.every((frame) => {
+        const path = text(record(frame)?.path);
+        if (!path) return true;
+        return isCaptureReviewOpenerCaption(text(record(frame)?.caption));
+      });
+    if (openerOnlyCapture && leftoverBesideDest) return [];
     const hasVisibleCapture =
       authoredStep &&
       array(record(rawRun)?.steps).some((other) => {
