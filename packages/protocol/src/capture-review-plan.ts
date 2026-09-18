@@ -1,7 +1,6 @@
 import {
   destIdentityReviewItems,
   formatCaptureReviewCoverageSummary,
-  isCaptureReviewLeftoverCaption,
   isCaptureReviewLeftoverPhase,
   resolveCaptureReviewQueue,
   summarizeCaptureReview,
@@ -170,7 +169,8 @@ export function planCaptureReviewItemMatchesFilter(
   return true;
 }
 
-/** Visible dest identity only. Leftover Close last-frame is not dest.
+/** Visible dest identity only. Leftover Close / Transition last-frame is not dest.
+ * Opener before · Tap cannot fill the visible queue beside leftover Transition.
  * Coverage counts stay on the full Plan queue. */
 export function filterPlanCaptureReviewQueue(
   queue: PlanCaptureReviewQueue,
@@ -188,6 +188,10 @@ export function filterPlanCaptureReviewQueue(
   };
 }
 
+/** Screen/device/account chips for Plan Gallery. Leftover Close / Transition /
+ * Inspect setup skipped never appear. Opener before · Tap cannot fill chips
+ * beside leftover Transition either (parity with destIdentityReviewItems /
+ * visible queue). Coverage counts stay on the full Plan queue. */
 export function planCaptureReviewFilterOptions(items: readonly PlanCaptureReviewItem[]): {
   screens: string[];
   devices: string[];
@@ -196,10 +200,7 @@ export function planCaptureReviewFilterOptions(items: readonly PlanCaptureReview
   const screens = new Set<string>();
   const devices = new Set<string>();
   const accounts = new Set<string>();
-  for (const item of items) {
-    if (isCaptureReviewLeftoverPhase(item.phase) || isCaptureReviewLeftoverCaption(item.caption)) {
-      continue;
-    }
+  for (const item of destIdentityReviewItems(items)) {
     const screen = normalizedFilterValue(item.caption) || normalizedFilterValue(item.checkpointId);
     if (screen) screens.add(screen);
     const device =

@@ -306,6 +306,66 @@ test("Plan dest identity filters and Gallery skip leftover Close last-frame", ()
   assert.doesNotMatch(listed, /frames\/004\.png/u);
 });
 
+test("Plan Gallery filter chips drop opener Tap beside leftover Transition", () => {
+  const opener = {
+    captureId: "frames/001.png::tap",
+    caption: "before · Tap identifier sidebar.open.button",
+    status: "pending" as const,
+    framePath: "frames/001.png",
+    imageSha256: "tap",
+    checkpointId: "sidebar-open",
+    runId: "run-observe",
+  };
+  const leftoverTransition = {
+    captureId: "frames/002.png::transition",
+    caption: "after · Transition executed",
+    status: "pending" as const,
+    framePath: "frames/002.png",
+    imageSha256: "transition",
+    checkpointId: "sidebar-open",
+    runId: "run-observe",
+  };
+  const dest = {
+    captureId: "frames/003.png::observe",
+    caption: "Observe",
+    status: "pending" as const,
+    framePath: "frames/003.png",
+    imageSha256: "dest-wait",
+    checkpointId: "home-chrome",
+    phase: CAPTURE_REVIEW_DEST_PHASE,
+    runId: "run-observe",
+  };
+  const queue = {
+    items: [opener, leftoverTransition, dest],
+    summary: {
+      planned: 1,
+      captured: 3,
+      blocked: 0,
+      missing: 0,
+      pending: 3,
+      accepted: 0,
+      issue: 0,
+      needMoreEvidence: 0,
+    },
+  };
+  assert.deepEqual(planCaptureReviewFilterOptions(queue.items), {
+    screens: ["Observe"],
+    devices: [],
+    accounts: [],
+  });
+  const visible = filterPlanCaptureReviewQueue(queue);
+  assert.equal(visible.items.length, 1);
+  assert.equal(visible.items[0]?.framePath, "frames/003.png");
+  assert.equal(
+    visible.items.some((item) => /before · Tap/u.test(item.caption)),
+    false,
+  );
+  const listed = formatPlanCaptureReviewQueue(queue);
+  assert.match(listed, /Observe/u);
+  assert.doesNotMatch(listed, /before · Tap/u);
+  assert.doesNotMatch(listed, /Transition executed/u);
+});
+
 test("Plan dest identity filters skip unphased leftover Close extras", () => {
   const dest = {
     captureId: "frames/003.png::observe",
