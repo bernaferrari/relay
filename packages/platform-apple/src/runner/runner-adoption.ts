@@ -9,7 +9,11 @@ import {
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { isRequestCanceledError } from '@agent-device/kernel/errors';
 import { sendRunnerCommandOnce } from './runner-transport.ts';
-import { withRunnerCommandId } from './runner-contract.ts';
+import {
+  decodeRunnerResponseBody,
+  isRunnerResponseOk,
+  withRunnerCommandId,
+} from './runner-contract.ts';
 import {
   buildRunnerLease,
   readStaleRunnerLease,
@@ -137,8 +141,7 @@ async function probeRunnerAnswersUptime(device: DeviceInfo, port: number): Promi
       withRunnerCommandId({ command: 'uptime' }),
       RUNNER_ADOPTION_PROBE_TIMEOUT_MS,
     );
-    const payload = JSON.parse(await response.text()) as { ok?: unknown };
-    return payload?.ok === true;
+    return isRunnerResponseOk(decodeRunnerResponseBody(await response.text()));
   } catch {
     return false;
   }
