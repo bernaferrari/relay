@@ -144,6 +144,30 @@ test("iOS device Lane without live identity omits SuperGrok instead of signed-ou
   assert.equal(labeled.observed.laneId, "grok-ios-daily");
 });
 
+test("iOS device profile without targetKind is not browser signed-out via unsignedLaneId", () => {
+  // Live dest jobs set unsignedLaneId=grok-ios-daily and omit targetKind.
+  const labeled = observedCaptureReviewAccount({
+    laneId: "grok-ios-daily",
+    unsignedLaneId: "grok-ios-daily",
+    targetProfileId: "device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+    resolvedAccount: "signed-out",
+  });
+  assert.equal(labeled.account, undefined);
+  assert.notEqual(labeled.account, "signed-out");
+  assert.equal(labeled.observed.laneId, "grok-ios-daily");
+  assert.equal(labeled.observed.profileId, "device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5");
+});
+
+test("browser unsigned without targetKind stays signed-out", () => {
+  const labeled = observedCaptureReviewAccount({
+    laneId: "grok-daily",
+    unsignedLaneId: "grok-daily",
+    targetProfileId: "browser:grok-com",
+  });
+  assert.equal(labeled.account, "signed-out");
+  assert.equal(labeled.observed.profileId, "browser:grok-com");
+});
+
 test("live page identity wins over SuperGrok fixture name on capture-review", () => {
   const labeled = observedCaptureReviewAccount({
     laneId: "grok-lab",

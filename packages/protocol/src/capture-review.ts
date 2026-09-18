@@ -116,7 +116,8 @@ export function liveCaptureReviewAccount(
 /** Account on the pixels, not a Lane-name overlay. Fixture identity wins;
  * unsigned/signed-out stays signed-out even when the Lane is named grok-lab.
  * Device Lanes are not signed-out grok.com identities; leftover BF / person
- * names win over SuperGrok and grok-ios-daily. */
+ * names win over SuperGrok and grok-ios-daily. Missing targetKind plus a
+ * device `unsignedLaneId` must not stamp browser signed-out (historical iOS). */
 export function observedCaptureReviewAccount(input: {
   laneId?: string;
   unsignedLaneId?: string;
@@ -152,11 +153,15 @@ export function observedCaptureReviewAccount(input: {
     };
   }
   if (live) return { account: live, observed };
-  const browserUnsigned = Boolean(unsignedLaneId) && input.targetKind !== "device";
-  if (input.signedOut === true || browserUnsigned) {
+  // Device jobs often omit targetKind while still setting unsignedLaneId to the
+  // device Lane id (historical iOS dest). That is not browser unsigned/signed-out.
+  const deviceObserved = isDeviceCaptureReviewObserved(observed);
+  const browserUnsigned =
+    Boolean(unsignedLaneId) && input.targetKind !== "device" && !deviceObserved;
+  if ((input.signedOut === true || browserUnsigned) && !deviceObserved) {
     return { account: "signed-out", observed };
   }
-  const resolved = liveCaptureReviewAccount(input.resolvedAccount);
+  const resolved = liveCaptureReviewAccount(input.resolvedAccount, observed);
   return { ...(resolved ? { account: resolved } : {}), observed };
 }
 
