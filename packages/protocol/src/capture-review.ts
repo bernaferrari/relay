@@ -314,15 +314,18 @@ export function captureReviewLeftoverLastFramePaths(
   return [...leftover];
 }
 
-/** Dest-phase identity rasters only. Leftover Close last-frame cannot fill dest.
- * Unphased runs (Android dest-wait) keep every frame. */
-export function destIdentitySourceFrames<T extends { path: string }>(
+/** Dest-phase identity rasters. Missing dest-phase is not "use the last raw
+ * frame": leftover Close / Transition executed / Inspect setup skipped
+ * captions cannot fill dest. Unphased Android dest-wait (no leftover caption)
+ * keeps every frame. */
+export function destIdentitySourceFrames<T extends { path: string; caption?: string }>(
   frames: readonly T[],
   artifacts?: readonly { kind?: string; data?: unknown }[],
 ): T[] {
-  const destIdentity = new Set(captureReviewIdentityFramePaths(artifacts ?? []));
-  if (!destIdentity.size) return [...frames];
-  return frames.filter((frame) => destIdentity.has(frame.path));
+  const paths = destIdentityCheckpointFramePaths(frames, artifacts);
+  if (!paths.length) return [];
+  const keep = new Set(paths);
+  return frames.filter((frame) => keep.has(frame.path));
 }
 
 /** Dest wait-for checkpoint paths. Leftover Close / Run saved Test last-frame

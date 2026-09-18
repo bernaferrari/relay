@@ -449,8 +449,9 @@ function pngDimensions(
   return { width, height };
 }
 
-/** Dest-phase identity rasters only. Leftover Close last-frame cannot fill dest.
- * Unphased runs (Android dest-wait) keep every PNG. */
+/** Dest-phase identity rasters. Missing dest-phase is not the last raw frame:
+ * leftover Transition executed / Inspect setup skipped captions stay out.
+ * Unphased Android dest-wait (no leftover caption) keeps every PNG. */
 function visualSnapshotSourceFrames(
   run: Pick<PersistedRun, "frames" | "artifacts">,
 ): PersistedRun["frames"] {

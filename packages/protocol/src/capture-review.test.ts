@@ -1289,6 +1289,18 @@ test("leftover Transition executed / Inspect setup skipped cannot fill dest wait
     ]),
     ["frames/003.png"],
   );
+  assert.deepEqual(
+    destIdentitySourceFrames([
+      { path: "frames/001.png", caption: "Land" },
+      { path: "frames/002.png", caption: "after · Transition executed" },
+      { path: "frames/003.png", caption: "Observe" },
+      {
+        path: "frames/004.png",
+        caption: "after · Inspect setup skipped — already on this view",
+      },
+    ]).map((frame) => frame.path),
+    ["frames/001.png", "frames/003.png"],
+  );
 });
 
 test("unphased leftover Close 004 last-frame cannot fill dest checkpoint", () => {

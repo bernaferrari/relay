@@ -232,6 +232,83 @@ test("share dest identity is dest wait-for, not leftover Close last-frame", () =
   );
 });
 
+test("unphased share dest identity drops leftover Transition executed / Inspect setup skipped", () => {
+  const destRun: PersistedRun = {
+    ...run({ id: "run-unphased", frames: 4, outcome: "passed" }),
+    frames: [
+      {
+        path: "frames/001.png",
+        caption: "Land",
+        capturedAt: 1,
+        mime: "image/png",
+        width: 100,
+        height: 200,
+      },
+      {
+        path: "frames/002.png",
+        caption: "after · Transition executed",
+        capturedAt: 2,
+        mime: "image/png",
+        width: 100,
+        height: 200,
+      },
+      {
+        path: "frames/003.png",
+        caption: "Observe",
+        capturedAt: 3,
+        mime: "image/png",
+        width: 100,
+        height: 200,
+      },
+      {
+        path: "frames/004.png",
+        caption: "after · Inspect setup skipped — already on this view",
+        capturedAt: 4,
+        mime: "image/png",
+        width: 100,
+        height: 200,
+      },
+    ],
+    artifacts: [
+      {
+        kind: "capture-review",
+        capturedAt: 3,
+        data: {
+          caption: "Observe",
+          framePath: "frames/003.png",
+          policy: "fast",
+        },
+      },
+    ],
+  };
+  const report = buildRunShareReport(
+    {
+      schemaVersion: 1,
+      id: "share-unphased",
+      runId: destRun.id,
+      runIds: [destRun.id],
+      projectId: "project-a",
+      title: "Unphased dest identity",
+      createdAt: 1,
+      expiresAt: 2,
+      createdBy: "human:a",
+      frameCount: 2,
+    },
+    [destRun],
+  );
+  assert.deepEqual(
+    report.runs[0]!.frames.map((frame) => frame.caption),
+    ["Land", "Observe"],
+  );
+  assert.equal(report.totals.screenshots, 2);
+  assert.equal(
+    report.runs[0]!.frames.some((frame) =>
+      /Transition executed|Inspect setup skipped/u.test(frame.caption ?? ""),
+    ),
+    false,
+  );
+});
+
 test("revocation invalidates the bearer capability without deleting its audit summary", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-run-share-revoke-"));
   const at = 20_000;
