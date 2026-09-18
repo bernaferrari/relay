@@ -447,3 +447,77 @@ it("unphased Observe drops opener Tap Captured result beside leftover Transition
     result.evidence.find((section) => section.id === "screenshot")?.items.map((item) => item.id),
   ).toEqual(["frames/003.png"]);
 });
+
+it("dest-end Observe drops opener Tap from shots when leftover wrappers are empty-frame only", () => {
+  const executedTitle = describeCoverageStepReason("transition-executed");
+  const skipTitle = describeCoverageStepReason("inspect-setup-skipped");
+  const result = projectRunReport(
+    "dest-end-empty-leftover-opener-shots",
+    {
+      outcome: "passed",
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "Observe",
+            framePath: "frames/003.png",
+            imageSha256: "dest-wait",
+            stepId: "relay-test-step-observe-dest",
+            phase: "dest",
+            policy: "fast",
+          },
+        },
+      ],
+      frames: [
+        { path: "frames/001.png", caption: 'before · Tap label "Home page"' },
+        { path: "frames/003.png", caption: "Observe" },
+      ],
+      steps: [
+        {
+          id: "trace-tap",
+          index: 1,
+          title: 'before · Tap label "Home page"',
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [{ path: "frames/001.png", caption: 'before · Tap label "Home page"' }],
+        },
+        {
+          id: "trace-skip-empty",
+          index: 2,
+          title: skipTitle,
+          status: "ok",
+          log: skipTitle,
+          actions: [{ kind: "ok" }],
+          frames: [],
+        },
+        {
+          id: "trace-transition-empty",
+          index: 3,
+          title: executedTitle,
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [],
+        },
+        {
+          id: "trace-dest",
+          index: 4,
+          title: "Capture for review · step:step-observe:Observe",
+          status: "ok",
+          actions: [{ kind: "shot" }],
+          frames: [{ path: "frames/003.png", caption: "Observe" }],
+        },
+      ],
+    },
+    { channels: { screenshot: { entries: 2 } } },
+  );
+  expect(result.timeline.map((step) => step.id)).toEqual(["trace-dest"]);
+  expect(result.timeline.some((step) => step.title === "Captured result")).toBe(false);
+  expect(
+    result.evidence.find((section) => section.id === "screenshot")?.items.map((item) => item.id),
+  ).toEqual(["frames/003.png"]);
+  expect(
+    result.evidence
+      .find((section) => section.id === "screenshot")
+      ?.items.some((item) => /Tap|Screenshot 1/u.test(item.title ?? "")),
+  ).toBe(false);
+});

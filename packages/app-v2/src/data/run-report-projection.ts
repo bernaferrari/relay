@@ -141,6 +141,7 @@ function evidenceItems(
       ...array(run?.frames),
       ...array(run?.steps).flatMap((value) => array(record(value)?.frames)),
     ]),
+    leftoverBesideDestVisible(rawRun),
   );
   if (frames.length) {
     output.screenshot = frames.map((value, index) => {
@@ -312,35 +313,9 @@ function reportTimeline(
     if (id && finite(data?.startedAt) !== undefined && finite(data?.finishedAt) !== undefined)
       checkTimes.set(id, { start: finite(data?.startedAt)!, end: finite(data?.finishedAt)! });
   }
-  const destIdentityFrames = new Set(
-    captureReviewIdentityFramePaths(
-      array(record(rawRun)?.artifacts) as Array<{ kind?: string; data?: unknown }>,
-    ),
-  );
-  const destCaptureVisible = array(record(rawRun)?.steps).some((other) => {
-    const candidate = record(other);
-    const candidateTitle = text(candidate?.title) ?? "";
-    const frames = array(candidate?.frames).flatMap((frame) => {
-      const path = text(record(frame)?.path);
-      return path ? [path] : [];
-    });
-    if (frames.length === 0) return false;
-    if (destEndCaptureReviewTitle(candidateTitle)) return true;
-    return frames.some((path) => destIdentityFrames.has(path));
-  });
+  const destCaptureVisible = destCaptureVisibleInRun(rawRun);
   /** Leftover Transition / Close captions or wrapper titles beside dest. */
-  const leftoverBesideDest =
-    destCaptureVisible &&
-    (array(record(rawRun)?.frames).some((frame) =>
-      isCaptureReviewLeftoverCaption(text(record(frame)?.caption)),
-    ) ||
-      array(record(rawRun)?.steps).some((other) => {
-        const candidate = record(other);
-        if (leftoverWrapperStepTitle(text(candidate?.title))) return true;
-        return array(candidate?.frames).some((frame) =>
-          isCaptureReviewLeftoverCaption(text(record(frame)?.caption)),
-        );
-      }));
+  const leftoverBesideDest = leftoverBesideDestVisible(rawRun);
   return array(record(rawRun)?.steps).flatMap((value, fallbackIndex) => {
     const step = record(value);
     if (!step) return [];
@@ -574,20 +549,59 @@ function publicFrameCaption(value: unknown): string | undefined {
 }
 
 /** Dest wait-for evidence when leftover Close / Transition executed last-frame
- * captions are also listed. Opener before · Tap cannot fill dest beside those
- * leftovers. Unphased dest-wait (no dest wait-for caption) keeps every frame. */
-function destWaitForEvidenceFrames(frames: unknown[]): unknown[] {
+ * captions are also listed — or when empty-frame leftover wrapper titles sit
+ * beside dest (logo leftover inspect). Opener before · Tap cannot fill dest
+ * beside those leftovers. Unphased dest-wait (no leftover beside dest) keeps
+ * every frame. */
+function destWaitForEvidenceFrames(frames: unknown[], leftoverBesideDest = false): unknown[] {
   const dest = frames.filter(
     (frame) => !isCaptureReviewLeftoverCaption(text(record(frame)?.caption)),
   );
   const leftover = frames.filter((frame) =>
     isCaptureReviewLeftoverCaption(text(record(frame)?.caption)),
   );
-  if (!(dest.length && leftover.length)) return frames;
+  if (!(dest.length && (leftover.length || leftoverBesideDest))) return frames;
   const withoutOpeners = dest.filter(
     (frame) => !isCaptureReviewOpenerCaption(text(record(frame)?.caption)),
   );
   return withoutOpeners.length ? withoutOpeners : dest;
+}
+
+function destCaptureVisibleInRun(rawRun: unknown): boolean {
+  const destIdentityFrames = new Set(
+    captureReviewIdentityFramePaths(
+      array(record(rawRun)?.artifacts) as Array<{ kind?: string; data?: unknown }>,
+    ),
+  );
+  return array(record(rawRun)?.steps).some((other) => {
+    const candidate = record(other);
+    const candidateTitle = text(candidate?.title) ?? "";
+    const frames = array(candidate?.frames).flatMap((frame) => {
+      const path = text(record(frame)?.path);
+      return path ? [path] : [];
+    });
+    if (frames.length === 0) return false;
+    if (destEndCaptureReviewTitle(candidateTitle)) return true;
+    return frames.some((path) => destIdentityFrames.has(path));
+  });
+}
+
+/** Leftover Transition / Inspect / Close captions or empty-frame wrapper titles
+ * beside dest wait-for — same signal timeline uses to drop opener Tap. */
+function leftoverBesideDestVisible(rawRun: unknown): boolean {
+  if (!destCaptureVisibleInRun(rawRun)) return false;
+  return (
+    array(record(rawRun)?.frames).some((frame) =>
+      isCaptureReviewLeftoverCaption(text(record(frame)?.caption)),
+    ) ||
+    array(record(rawRun)?.steps).some((other) => {
+      const candidate = record(other);
+      if (leftoverWrapperStepTitle(text(candidate?.title))) return true;
+      return array(candidate?.frames).some((frame) =>
+        isCaptureReviewLeftoverCaption(text(record(frame)?.caption)),
+      );
+    })
+  );
 }
 function publicNetworkUrl(value: unknown): string | undefined {
   const raw = text(value);
