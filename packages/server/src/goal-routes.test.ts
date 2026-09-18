@@ -21,6 +21,14 @@ test("goal control requires confirmation while retained evidence stays inspectab
       if (sessionId === "missing") throw new TypeError("Goal session missing was not found.");
       return { id: sessionId, goal: "checkout" } as never;
     },
+    reproduce: async (sessionId) => {
+      calls.push(`reproduce:${sessionId}`);
+      return { sessionId, status: "completed" } as never;
+    },
+    promote: async ({ sessionId }) => {
+      calls.push(`promote:${sessionId}`);
+      return { stage: "reviewing" } as never;
+    },
   };
   const server = await startServer({
     host: "127.0.0.1",
@@ -45,6 +53,27 @@ test("goal control requires confirmation while retained evidence stays inspectab
     assert.equal(missing.status, 404);
     assert.deepEqual(await missing.json(), { error: "Goal session missing was not found." });
 
+    const deniedReproduction = await fetch(`${base}/goal/goal-1/reproduce`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(deniedReproduction.status, 403);
+
+    const reproduced = await fetch(`${base}/goal/goal-1/reproduce`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirmControl: true }),
+    });
+    assert.equal(reproduced.status, 200);
+
+    const promoted = await fetch(`${base}/goal/goal-1/promote`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title: "Empty cart", confirmControl: true }),
+    });
+    assert.equal(promoted.status, 200);
+
     const started = await fetch(`${base}/goal`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -55,7 +84,13 @@ test("goal control requires confirmation while retained evidence stays inspectab
       }),
     });
     assert.equal(started.status, 200);
-    assert.deepEqual(calls, ["inspect:goal-1", "inspect:missing", "start:checkout"]);
+    assert.deepEqual(calls, [
+      "inspect:goal-1",
+      "inspect:missing",
+      "reproduce:goal-1",
+      "promote:goal-1",
+      "start:checkout",
+    ]);
   } finally {
     await server.close();
     if (previousStateDir === undefined) delete process.env.RELAY_STATE_DIR;

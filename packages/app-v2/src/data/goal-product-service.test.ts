@@ -72,4 +72,34 @@ describe("goal product service", () => {
     );
     expect(JSON.parse(String(init?.body))).toMatchObject({ agents: 4, confirmControl: true });
   });
+
+  it("keeps reproduction and promotion as explicit control requests", async () => {
+    const requests: Request[] = [];
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const next = new Request(input, init);
+      requests.push(next);
+      return new Response(JSON.stringify({ sessionId: "goal-1", status: "completed" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const service = createGoalProductService(platform(fetch));
+
+    await service.reproduceSession("goal/1");
+    await service.promoteSession({
+      sessionId: "goal/1",
+      title: "Empty cart",
+      confirmControl: true,
+    });
+
+    expect(requests.map((request) => request.url)).toEqual([
+      "http://relay.test/goal/goal%2F1/reproduce",
+      "http://relay.test/goal/goal%2F1/promote",
+    ]);
+    expect(JSON.parse(await requests[0]!.text())).toEqual({ confirmControl: true });
+    expect(JSON.parse(await requests[1]!.text())).toEqual({
+      title: "Empty cart",
+      confirmControl: true,
+    });
+  });
 });

@@ -7,9 +7,10 @@ import { Input } from "@relay/ui-react/components/input";
 import { Textarea } from "@relay/ui-react/components/textarea";
 import { useMutation } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
-import { Compass, ExternalLink, RefreshCw } from "lucide-react";
+import { Compass, ExternalLink, RefreshCw, RotateCcw, Save } from "lucide-react";
 import { useState, type FormEvent, type KeyboardEvent } from "react";
-import type { GoalExplorationRecord, GoalSessionRecord } from "@relay/protocol";
+import type { GoalExplorationRecord, GoalFinding, GoalSessionRecord } from "@relay/protocol";
+import type { AuthorTestSnapshot } from "@relay/workflows";
 import type { GoalRunResult } from "../data/goal-product-service";
 import { FormPage, PageHeader } from "../components/page-layout";
 
@@ -30,12 +31,45 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+function isExplorationEvidence(
+  result: GoalEvidence,
+): result is Extract<GoalEvidence, { workers: unknown }> {
+  return "workers" in result;
+}
+
+function FindingCard({ finding }: { finding: GoalFinding }) {
+  return (
+    <article className="grid gap-1 rounded-lg border border-border/60 bg-background/60 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <p className="font-medium text-foreground">{finding.title}</p>
+        <span className="shrink-0 text-xs text-muted-foreground capitalize">{finding.status}</span>
+      </div>
+      <p className="text-sm leading-5 text-muted-foreground">{finding.summary}</p>
+      <p className="text-xs text-muted-foreground">Review required · {finding.kind}</p>
+    </article>
+  );
+}
+
+function PromotionResult({ result }: { result: AuthorTestSnapshot }) {
+  return (
+    <Alert>
+      <AlertTitle>Test promotion ready for review</AlertTitle>
+      <AlertDescription>
+        {result.title} is now in the existing Authoring flow at <strong>{result.stage}</strong>.
+        Human review and approval remain required before it becomes a saved Test.
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 export function GoalPage() {
   const { goalService } = useRouteContext({ from: "__root__" });
   const [goal, setGoal] = useState("");
   const [startUrl, setStartUrl] = useState("");
   const [agents, setAgents] = useState("1");
   const [confirmControl, setConfirmControl] = useState(false);
+  const [promotionTitle, setPromotionTitle] = useState("");
+  const [confirmPromotion, setConfirmPromotion] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const run = useMutation({ mutationFn: goalService.start });
   const inspect = useMutation<GoalSessionRecord | GoalExplorationRecord, Error, GoalRunResult>({
@@ -44,6 +78,8 @@ export function GoalPage() {
         ? goalService.inspectSession(result.sessionId)
         : goalService.inspectExploration(result.id),
   });
+  const reproduce = useMutation({ mutationFn: goalService.reproduceSession });
+  const promote = useMutation({ mutationFn: goalService.promoteSession });
 
   const agentCount = Number(agents);
   const valid = goal.trim().length > 0 && isHttpUrl(startUrl.trim()) && confirmControl;
@@ -52,6 +88,11 @@ export function GoalPage() {
     event.preventDefault();
     setSubmitted(true);
     if (!valid || run.isPending) return;
+    inspect.reset();
+    reproduce.reset();
+    promote.reset();
+    setPromotionTitle("");
+    setConfirmPromotion(false);
     run.mutate({
       goal: goal.trim(),
       startUrl: startUrl.trim(),
@@ -67,7 +108,24 @@ export function GoalPage() {
     }
   }
 
-  const displayedResult = inspect.data ?? run.data;
+  const displayedResult = reproduce.data ?? inspect.data ?? run.data;
+  const resultError = promote.error ?? reproduce.error ?? inspect.error ?? run.error;
+  const resultErrorTitle = promote.error
+    ? "Test promotion failed"
+    : reproduce.error
+      ? "Fresh reproduction failed"
+      : inspect.error
+        ? "Evidence refresh failed"
+        : "Goal exploration failed";
+  const canReproduce =
+    displayedResult &&
+    isSessionEvidence(displayedResult) &&
+    displayedResult.status === "completed" &&
+    !displayedResult.reproduction;
+  const canPromote =
+    displayedResult &&
+    isSessionEvidence(displayedResult) &&
+    displayedResult.reproduction?.status === "reproduced";
 
   return (
     <FormPage>
@@ -194,10 +252,99 @@ export function GoalPage() {
                     {displayedResult.stopReason.message}
                   </p>
                 ) : null}
-                {run.error || inspect.error ? (
+                {isExplorationEvidence(displayedResult) ? (
+                  <div className="grid gap-2" aria-label="Goal workers">
+                    <p className="font-medium text-foreground">Workers</p>
+                    {displayedResult.workers.map((worker) => (
+                      <div
+                        key={worker.id}
+                        className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/50 p-3"
+                      >
+                        <span>Worker {worker.index + 1}</span>
+                        <span className="text-xs text-muted-foreground capitalize">
+                          {worker.status}
+                          {worker.result?.findings?.length
+                            ? ` · ${worker.result.findings.length} finding${worker.result.findings.length === 1 ? "" : "s"}`
+                            : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {displayedResult.findings?.length ? (
+                  <div className="grid gap-2" aria-label="Review findings">
+                    <p className="font-medium text-foreground">Review findings</p>
+                    {displayedResult.findings.map((finding) => (
+                      <FindingCard key={finding.id} finding={finding} />
+                    ))}
+                  </div>
+                ) : null}
+                {canReproduce ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    disabled={reproduce.isPending}
+                    onClick={() => {
+                      if (isSessionEvidence(displayedResult)) {
+                        reproduce.mutate(displayedResult.sessionId);
+                      }
+                    }}
+                  >
+                    <RotateCcw aria-hidden="true" />
+                    {reproduce.isPending ? "Reproducing…" : "Replay on a fresh target"}
+                  </Button>
+                ) : null}
+                {canPromote ? (
+                  <div className="grid gap-3 rounded-lg border border-border/60 bg-background/50 p-3">
+                    <div>
+                      <p className="font-medium text-foreground">Save as a Test</p>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        Fresh reproduction succeeded. Promotion records the path, then leaves human
+                        review and approval in control.
+                      </p>
+                    </div>
+                    <Field>
+                      <FieldLabel htmlFor="goal-promotion-title">Test title (optional)</FieldLabel>
+                      <Input
+                        id="goal-promotion-title"
+                        value={promotionTitle}
+                        onChange={(event) => setPromotionTitle(event.currentTarget.value)}
+                        placeholder="Goal reproduction: checkout"
+                        maxLength={160}
+                      />
+                    </Field>
+                    <label className="flex min-h-11 cursor-pointer items-start gap-3 text-xs leading-5">
+                      <Checkbox
+                        checked={confirmPromotion}
+                        onCheckedChange={(checked) => setConfirmPromotion(checked === true)}
+                        aria-label="Confirm Test promotion"
+                      />
+                      <span>I confirm Relay may control the fresh target to record this Test.</span>
+                    </label>
+                    <Button
+                      type="button"
+                      disabled={!confirmPromotion || promote.isPending}
+                      onClick={() => {
+                        if (isSessionEvidence(displayedResult)) {
+                          promote.mutate({
+                            sessionId: displayedResult.sessionId,
+                            ...(promotionTitle.trim() ? { title: promotionTitle.trim() } : {}),
+                            confirmControl: true,
+                          });
+                        }
+                      }}
+                    >
+                      <Save aria-hidden="true" />
+                      {promote.isPending ? "Saving…" : "Save as Test"}
+                    </Button>
+                  </div>
+                ) : null}
+                {promote.data ? <PromotionResult result={promote.data} /> : null}
+                {resultError ? (
                   <Alert variant="destructive">
-                    <AlertTitle>Evidence refresh failed</AlertTitle>
-                    <AlertDescription>{(inspect.error ?? run.error)?.message}</AlertDescription>
+                    <AlertTitle>{resultErrorTitle}</AlertTitle>
+                    <AlertDescription>{resultError.message}</AlertDescription>
                   </Alert>
                 ) : null}
                 <Button
@@ -206,7 +353,8 @@ export function GoalPage() {
                   className="w-full"
                   disabled={inspect.isPending}
                   onClick={() => {
-                    if (run.data) inspect.mutate(run.data);
+                    const source = reproduce.data ?? run.data;
+                    if (source) inspect.mutate(source);
                   }}
                 >
                   <RefreshCw aria-hidden="true" />

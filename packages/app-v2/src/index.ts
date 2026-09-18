@@ -1,6 +1,7 @@
 export { RelayV2App } from "./app";
 export {
   createGoalProductService,
+  type GoalPromotionInput,
   type GoalProductService,
   type GoalRunResult,
   type GoalStartInput,

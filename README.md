@@ -106,6 +106,10 @@ pnpm relay goal reproduce <session-id> --confirm
 pnpm relay goal promote <session-id> --confirm --title "Empty cart regression"
 ```
 
+In the desktop app, open **Explore** to use the same goal service. Review-required findings stay
+visible with the retained evidence; a completed browser path can be replayed on a fresh target and
+then explicitly promoted into the existing Authoring review flow.
+
 Inspection is read-only and exposes the retained findings and evidence references without resuming
 or controlling the target.
 

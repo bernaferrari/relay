@@ -4,6 +4,7 @@ import type {
   GoalSessionRecord,
   GoalSessionResult,
 } from "@relay/protocol";
+import type { AuthorTestSnapshot } from "@relay/workflows";
 import type { Platform } from "../platform/types";
 
 export type GoalStartInput = {
@@ -17,10 +18,19 @@ export type GoalStartInput = {
 
 export type GoalRunResult = GoalSessionResult | GoalExplorationResult;
 
+export type GoalPromotionInput = {
+  sessionId: string;
+  title?: string;
+  appMapId?: string;
+  confirmControl: true;
+};
+
 export type GoalProductService = {
   start(input: GoalStartInput): Promise<GoalRunResult>;
   inspectSession(sessionId: string): Promise<GoalSessionRecord>;
   inspectExploration(explorationId: string): Promise<GoalExplorationRecord>;
+  reproduceSession(sessionId: string): Promise<GoalSessionResult>;
+  promoteSession(input: GoalPromotionInput): Promise<AuthorTestSnapshot>;
 };
 
 function errorMessage(body: unknown, status: number): string {
@@ -76,6 +86,22 @@ export function createGoalProductService(platform: Platform): GoalProductService
     },
     inspectExploration(explorationId) {
       return request<GoalExplorationRecord>(`/explore/${encodeURIComponent(explorationId)}`);
+    },
+    reproduceSession(sessionId) {
+      return request<GoalSessionResult>(`/goal/${encodeURIComponent(sessionId)}/reproduce`, {
+        method: "POST",
+        body: JSON.stringify({ confirmControl: true }),
+      });
+    },
+    promoteSession(input) {
+      return request<AuthorTestSnapshot>(`/goal/${encodeURIComponent(input.sessionId)}/promote`, {
+        method: "POST",
+        body: JSON.stringify({
+          ...(input.title?.trim() ? { title: input.title.trim() } : {}),
+          ...(input.appMapId?.trim() ? { appMapId: input.appMapId.trim() } : {}),
+          confirmControl: true,
+        }),
+      });
     },
   };
 }
