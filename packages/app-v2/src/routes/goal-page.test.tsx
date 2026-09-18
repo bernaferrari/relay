@@ -1,0 +1,211 @@
+/** @jsxImportSource react */
+import { createMemoryHistory } from "@tanstack/react-router";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { RelayV2App } from "../app";
+import type { GoalProductService } from "../data/goal-product-service";
+import type { DeviceProductService } from "../data/device-product-service";
+import type { RecordingProductService } from "../data/recording-product-service";
+import type { Platform } from "../platform/types";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const roots: Root[] = [];
+const platform: Platform = {
+  platform: "web",
+  getServerUrl: () => "http://127.0.0.1:8787",
+  getServerConnection: () => ({
+    url: "http://127.0.0.1:8787",
+    auth: { type: "none" },
+    organizationId: "local",
+    projectId: "default",
+    actorId: "human:goal-test",
+    actorKind: "human",
+  }),
+  storage: { get: () => null, set: () => undefined, remove: () => undefined },
+};
+
+const deviceService: DeviceProductService = {
+  list: vi.fn(async () => []),
+  get: vi.fn(async () => undefined),
+  actions: vi.fn(async () => []),
+  recover: vi.fn(async (serial) => ({
+    serial,
+    recovered: true,
+    ready: true,
+    summary: "Recovered",
+    actions: [],
+    session: { status: "ready", detail: "Ready" },
+  })),
+};
+
+function sessionResult(reproduced = false) {
+  return {
+    schemaVersion: 1,
+    sessionId: "goal-1",
+    goal: "Find checkout",
+    target: { targetId: "target-1", platform: "browser", startUrl: "https://example.test" },
+    status: "completed",
+    step: 1,
+    budget: { maxSteps: 4, maxDurationMs: 60_000 },
+    actions: [],
+    observations: [],
+    findings: [
+      {
+        schemaVersion: 1,
+        id: "finding-1",
+        sessionId: "goal-1",
+        kind: "possible-issue",
+        status: reproduced ? "reproduced" : "open",
+        title: "Possible issue needs fresh-target review",
+        summary: "The checkout result needs a fresh reproduction.",
+        evidenceRefs: ["goal:goal-1:evidence"],
+        source: reproduced ? "fresh-reproduction" : "goal-runner",
+        createdAt: 1,
+        updatedAt: 1,
+        requiresReview: true,
+      },
+    ],
+    ...(reproduced
+      ? {
+          reproduction: {
+            id: "repro-1",
+            sourceSessionId: "goal-1",
+            target: {
+              targetId: "goal-repro-goal-1",
+              platform: "browser",
+              startUrl: "https://example.test",
+            },
+            status: "reproduced",
+            startedAt: 1,
+            updatedAt: 1,
+            actions: [],
+            observations: [],
+            findings: [],
+          },
+        }
+      : {}),
+  } as never;
+}
+
+function goalService(): GoalProductService {
+  return {
+    start: vi.fn(async () => sessionResult()),
+    inspectSession: vi.fn(async () => sessionResult()),
+    inspectExploration: vi.fn(async () => ({}) as never),
+    reproduceSession: vi.fn(async () => sessionResult(true)),
+    promoteSession: vi.fn(async () => ({ title: "Checkout", stage: "reviewing" }) as never),
+  };
+}
+
+async function render(service = goalService()) {
+  const history = createMemoryHistory({ initialEntries: ["/goals"] });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  roots.push(root);
+  await act(async () => {
+    root.render(
+      <RelayV2App
+        platform={platform}
+        history={history}
+        productService={{ listApps: async () => [] } as unknown as RecordingProductService}
+        deviceService={deviceService}
+        goalService={service}
+      />,
+    );
+  });
+  await settle();
+  return { host, service };
+}
+
+async function settle() {
+  for (let index = 0; index < 6; index += 1) {
+    await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
+  }
+}
+
+async function setValue(id: string, value: string) {
+  const input = document.getElementById(id);
+  if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement)) {
+    throw new Error(`Input ${id} not found`);
+  }
+  await act(async () => {
+    const prototype =
+      input instanceof HTMLInputElement
+        ? HTMLInputElement.prototype
+        : HTMLTextAreaElement.prototype;
+    Object.getOwnPropertyDescriptor(prototype, "value")?.set?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await settle();
+}
+
+function button(label: string): HTMLButtonElement {
+  const found = [...document.querySelectorAll("button")].find(
+    (candidate) => candidate.textContent?.trim() === label,
+  );
+  if (!(found instanceof HTMLButtonElement)) throw new Error(`Button ${label} not found`);
+  return found;
+}
+
+afterEach(async () => {
+  await act(async () => {
+    for (const root of roots.splice(0)) root.unmount();
+  });
+  document.body.replaceChildren();
+});
+
+describe("Goal page", () => {
+  it("carries a retained finding through fresh replay and explicit Test promotion", async () => {
+    const { host, service } = await render();
+
+    expect(host.textContent).toContain("Start from a goal");
+    expect(button("Explore goal").disabled).toBe(true);
+
+    await setValue("goal-description", "Find checkout");
+    await setValue("goal-start-url", "https://example.test");
+    await act(async () => {
+      const control = document.querySelector<HTMLButtonElement>(
+        '[aria-label="Confirm target control"]',
+      );
+      control?.closest("label")?.click();
+    });
+    await settle();
+    expect(button("Explore goal").disabled).toBe(false);
+    await act(async () => button("Explore goal").click());
+    await settle();
+
+    expect(service.start).toHaveBeenCalled();
+    expect(vi.mocked(service.start).mock.calls[0]?.[0]).toEqual({
+      goal: "Find checkout",
+      startUrl: "https://example.test",
+      agents: 1,
+      confirmControl: true,
+    });
+    expect(host.textContent).toContain("Review findings");
+    expect(host.textContent).toContain("Replay on a fresh target");
+
+    await act(async () => button("Replay on a fresh target").click());
+    await settle();
+    expect(service.reproduceSession).toHaveBeenCalled();
+    expect(vi.mocked(service.reproduceSession).mock.calls[0]?.[0]).toBe("goal-1");
+    expect(host.textContent).toContain("Save as a Test");
+
+    await act(async () => {
+      const control = document.querySelector('[aria-label="Confirm Test promotion"]');
+      control?.closest("label")?.click();
+    });
+    await settle();
+    await act(async () => button("Save as Test").click());
+    await settle();
+
+    expect(service.promoteSession).toHaveBeenCalled();
+    expect(vi.mocked(service.promoteSession).mock.calls[0]?.[0]).toEqual({
+      sessionId: "goal-1",
+      confirmControl: true,
+    });
+    expect(host.textContent).toContain("Test promotion ready for review");
+  });
+});
