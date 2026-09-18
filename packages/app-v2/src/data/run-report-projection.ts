@@ -822,7 +822,34 @@ export function resolvedTestTitle(rawRun: unknown, rawApps: unknown): string | u
   });
   return matches.length === 1 ? matches[0] : undefined;
 }
+/** Dest wait-for Capture for review / Observe label when dest is already
+ * visible — prelude check identifier / Sign in gone cannot fill first evidence
+ * beside Fast dest (logo leftover inspect used to lead with Expected screen
+ * content was visible). */
+function destWaitForEvidenceLabel(rawRun: unknown): string | undefined {
+  for (const value of array(record(rawRun)?.steps)) {
+    const step = record(value);
+    const title = text(step?.title);
+    if (!destEndCaptureReviewTitle(title)) continue;
+    const label = humanStepTitle(title);
+    if (label && !leftoverWrapperStepTitle(title)) return label;
+  }
+  for (const value of array(record(rawRun)?.artifacts)) {
+    const artifact = record(value);
+    if (artifact?.kind !== "capture-review") continue;
+    const data = record(artifact.data);
+    if (text(data?.phase) !== "dest") continue;
+    const label = humanStepTitle(text(data?.caption));
+    if (label && !leftoverWrapperStepTitle(text(data?.caption))) return label;
+  }
+  return undefined;
+}
+
 function firstTraceEvidence(rawRun: unknown, outcome: RunOutcome | undefined) {
+  if (outcome === "passed" && destCaptureVisibleInRun(rawRun)) {
+    const destLabel = destWaitForEvidenceLabel(rawRun);
+    if (destLabel) return { label: destLabel };
+  }
   const steps = record(rawRun)?.steps;
   if (!Array.isArray(steps)) return undefined;
   const candidates: { label: string; score: number; index: number }[] = [];

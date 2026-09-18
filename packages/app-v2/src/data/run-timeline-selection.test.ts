@@ -521,3 +521,55 @@ it("dest-end Observe drops opener Tap from shots when leftover wrappers are empt
       ?.items.some((item) => /Tap|Screenshot 1/u.test(item.title ?? "")),
   ).toBe(false);
 });
+
+it("dest-end firstEvidence is Observe, not prelude Expected screen content was visible", () => {
+  const result = projectRunReport(
+    "dest-end-first-evidence",
+    {
+      outcome: "passed",
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "step:step-observe:Observe",
+            framePath: "frames/003.png",
+            imageSha256: "dest-wait",
+            stepId: "relay-test-step-observe-dest",
+            phase: "dest",
+            policy: "fast",
+          },
+        },
+      ],
+      steps: [
+        {
+          id: "trace-check",
+          index: 0,
+          title: "check identifier sidebar-header-search visible",
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [],
+        },
+        {
+          id: "trace-sign-in",
+          index: 1,
+          title: 'check "Sign in" gone',
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [],
+        },
+        {
+          id: "trace-dest",
+          index: 2,
+          title: "Capture for review · step:step-observe:Observe",
+          status: "ok",
+          actions: [{ kind: "shot" }],
+          frames: [{ path: "frames/003.png", caption: "step:step-observe:Observe" }],
+        },
+      ],
+    },
+    { channels: { screenshot: { entries: 1 } } },
+  );
+  expect(result.firstEvidence?.label).toBe("Observe");
+  expect(result.firstEvidence?.label).not.toBe("Expected screen content was visible");
+  expect(result.firstEvidence?.label).not.toBe('check "Sign in" gone');
+});
