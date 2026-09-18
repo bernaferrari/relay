@@ -8,7 +8,6 @@ import type {
   AppMapTestStepProvenance,
   RecipeStep,
 } from "@relay/protocol";
-import { materializeCaptureReviewSlots } from "@relay/protocol";
 import { assertScenarioTest } from "./app-map/test-intent-validation.js";
 import {
   compileAppMapConnection,
@@ -32,12 +31,6 @@ import { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
 import { attachMappedInboundPrelude } from "./app-map-test-inbound-prelude.js";
 import { leftoverWarmConfirmationSteps } from "./leftover-origin-recovery.js";
 import {
-  assertCompiledExecutionQueue,
-  compiledIosReadinessDurations,
-  quoteCompiledTestDuration,
-  resolvedExecutionQueue,
-} from "./execution-queue-compile.js";
-import {
   assessIntraTestStartingState,
   assessTransitionDeclaredSource,
   throwIfUnsafeStartingState,
@@ -46,11 +39,6 @@ import {
 import type { Recipe } from "./recipes.js";
 import { testWithSelectedRouteVariant } from "./app-map-test-route-variants.js";
 import { resolveScenarioTestCompileRoute } from "./app-map-test-compile-route.js";
-import { compiledTestFamilyProvenance } from "./app-map-test-family-provenance.js";
-import {
-  compileCaptureReviewConfiguration,
-  compiledRouteVariantConfigurations,
-} from "./route-variant-configuration-compile.js";
 import { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";
 import { assertionRecipeStep } from "./app-map-test-assertion.js";
 import { compiledGraphPlatformBlocker } from "./recipe-platform-support.js";
@@ -58,7 +46,6 @@ import { AppMapTestCompileError } from "./app-map-test-compile-error.js";
 import { compiledTestClaimedAbsentControl } from "./app-map-unrecorded-claimed-control.js";
 import {
   asRecipe,
-  compiledPerformance,
   DESTINATION_SURVEY_MAX_SCROLLS,
   destEndCaptureScreenshot,
   fail,
@@ -68,6 +55,7 @@ import {
   stampDestEndCaptureReviewScreenshots,
   type AppMapTestCompileOptions,
 } from "./app-map-test-compile-support.js";
+import { compileAppMapTestPlan } from "./app-map-test-plan.js";
 
 export { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";
 export { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
@@ -821,84 +809,21 @@ export function compileAppMapScenarioTest(
       claimedAbsent.reason,
     );
   }
-  const executionQueue = resolvedExecutionQueue(map, test);
-  assertCompiledExecutionQueue(test, graph, executionQueue);
-  const queueQuotes = quoteCompiledTestDuration(root, graph, executionQueue);
-  const iosReadiness = compiledIosReadinessDurations(graph, rootRecipeId);
-  const captureReviewConfiguration = compileCaptureReviewConfiguration(
+  const plan = compileAppMapTestPlan({
     map,
     authoredTest,
+    test,
+    selectedRouteVariant,
     selectedRouteTargetProfile,
-  );
-  const routeVariantConfigurations = compiledRouteVariantConfigurations(
-    map,
-    authoredTest,
-    selectedRouteTargetProfile,
-  );
-  const plan: AppMapCompiledTest = {
-    schemaVersion: 1,
-    appMapId: map.id,
-    appMapRevision: map.revision,
-    test: {
-      id: test.id,
-      name: test.name,
-      kind: "scenario",
-      intentSchemaVersion: test.intentSchemaVersion,
-    },
-    ...(options.runtimeTargetProfile
-      ? { runtimeTargetProfile: structuredClone(options.runtimeTargetProfile) }
-      : {}),
-    testFamily: compiledTestFamilyProvenance({
-      map,
-      authoredTest,
-      ...(selectedRouteVariant ? { selectedRouteVariant } : {}),
-      ...(selectedRouteTargetProfile ? { selectedTargetProfile: selectedRouteTargetProfile } : {}),
-      stepProvenance: provenance,
-    }),
-    surfaceBindings: structuredClone(test.surfaceBindings ?? []),
-    rawAccessibilitySourcesByScreenId: frozenRawAccessibilitySources(map),
-    rawAccessibilityVariantsByScreenId: frozenRawAccessibilityVariants(map),
-    rawAccessibilityTargetProfiles: frozenRawAccessibilityTargetProfiles(map),
-    executionSchedule: proposeAppMapTestExecutionSchedule(map, rootRecipeId, graph),
+    runtimeTargetProfile: options.runtimeTargetProfile,
+    entryCheckpointScreenId: options.entryCheckpointScreenId,
+    startupMode: options.startupMode,
+    graph,
+    root,
     rootRecipeId,
-    recipes: Object.fromEntries(
-      Object.values(graph).map((recipe) => [
-        recipe.id,
-        {
-          id: recipe.id,
-          title: recipe.title,
-          ...(recipe.description ? { description: recipe.description } : {}),
-          parameters: [],
-          steps: structuredClone(recipe.steps),
-        },
-      ]),
-    ),
-    stepProvenance: provenance,
-    ...(destEndRecipeIds.size
-      ? { destEndRecipeIds: [...destEndRecipeIds].sort((left, right) => left.localeCompare(right)) }
-      : {}),
-    performance: compiledPerformance(rootRecipeId, graph),
-    plannedSlots: materializeCaptureReviewSlots({
-      recipeSteps: root.steps,
-      recipes: graph,
-      requirementId: test.id,
-      ...(captureReviewConfiguration ? { configuration: captureReviewConfiguration } : {}),
-    }),
-    ...(executionQueue ? { executionQueue } : {}),
-    ...(queueQuotes.length ? { queueQuotes } : {}),
-    ...(routeVariantConfigurations.length ? { routeVariantConfigurations } : {}),
-    iosReadiness,
-    startup: options.entryCheckpointScreenId
-      ? { mode: "verified-checkpoint", screenId: options.entryCheckpointScreenId }
-      : {
-          // Dest-end wait-for is leftover origin proof. Cold relaunch on iOS
-          // focuses the composer and wedges the long-lived XCTest runner.
-          mode: options.startupMode ?? (destEndRecipeIds.size ? "warm" : "cold"),
-        },
-    ...(authoredTest.originApplication
-      ? { originApplication: authoredTest.originApplication }
-      : {}),
-    ...(omittedSteps.length ? { omittedSteps } : {}),
-  };
+    provenance,
+    destEndRecipeIds,
+    omittedSteps,
+  });
   return { root, graph, plan };
 }
