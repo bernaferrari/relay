@@ -6,8 +6,6 @@ import {
   applyRunRetention,
   buildCampaignRepairTarget,
   appMapTestExecutionSourceFromRun,
-  createAppMapTestExecutionIntent,
-  deriveAppMapTestRepairExecutionPlan,
   campaignRepairPlanIdentity,
   buildCompatibilityReport,
   buildSoakReport,
@@ -25,7 +23,6 @@ import {
   listCampaignRepairTargets,
   listRunSummariesPage,
   listRunShares,
-  loadFrozenRawAccessibilityEvidence,
   readFrameFile,
   readTarget,
   readAppMap,
@@ -35,7 +32,6 @@ import {
   replayPersistedRunOffline,
   analyzeTracePack,
   exportTracePack,
-  preflightCompiledAppMapTestOffline,
   rebuildRunCatalog,
   reconcileCampaignCheckRepair,
   runArtifactFile,
@@ -55,12 +51,8 @@ import {
   RunReviewError,
   updateVisualComparisonPolicy,
   VISUAL_REVIEW_ACTIONS,
-  VisualVerificationError,
   type PersistedRun,
   visualTargetKey,
-  type AppMapTestExecutionIntent,
-  type CampaignRepairReconciliation,
-  type EnqueueJobInput,
 } from "@relay/core";
 import type {
   CampaignRepairTarget,
@@ -81,6 +73,8 @@ import {
 import { sendHumanInterventionReproofEvidence } from "./human-intervention-reproof-evidence.js";
 import { recordAudit, resolveCommandActor, type RequestContext } from "./security.js";
 import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody, parseLimit } from "./http.js";
+import { scopedCampaignRepairInput } from "./run-repair-input.js";
+import { guardVisualVerification } from "./run-visual-verification.js";
 
 export type RunRouteRuntime = {
   assertTargetControl: typeof assertTargetControl;
@@ -143,33 +137,10 @@ function assertLocalMaintenance(scope: RequestContext): void {
   }
 }
 
-function visualVerificationHttpError(error: VisualVerificationError): HttpError {
-  const status =
-    error.code === "VISUAL_COMPARISON_NOT_FOUND"
-      ? 404
-      : error.code === "VISUAL_REVIEW_AGENT_FORBIDDEN"
-        ? 403
-        : 409;
-  return new HttpError(status, error.message, {
-    code: error.code,
-    recovery: error.recovery,
-  });
-}
-
 async function loadScopedRun(id: string, scope: RequestContext): Promise<PersistedRun> {
   const run = await readPersistedRun(id);
   assertRunAccess(scope, run);
   return run;
-}
-
-async function guardVisualVerification(handler: () => Promise<void>): Promise<true> {
-  try {
-    await handler();
-  } catch (error) {
-    if (error instanceof VisualVerificationError) throw visualVerificationHttpError(error);
-    throw error;
-  }
-  return true;
 }
 
 function reviewActor(context: RunRouteContext): {
@@ -191,73 +162,6 @@ async function currentCampaignRepairReconciliation(
   const test = map?.tests[identity.testId];
   if (!map || !test) return undefined;
   return reconcileCampaignCheckRepair(run, checkId, map, test);
-}
-
-async function scopedCampaignRepairInput(input: {
-  sourceIntent: AppMapTestExecutionIntent | undefined;
-  repairInput: EnqueueJobInput;
-  reconciliation?: CampaignRepairReconciliation;
-}): Promise<EnqueueJobInput> {
-  if (!input.sourceIntent) return input.repairInput;
-  const root = input.repairInput.recipeSnapshot;
-  const graph = input.repairInput.recipeGraph;
-  const checkpoint = root?.steps.find(
-    (step): step is Extract<(typeof root.steps)[number], { kind: "expect-screen" }> =>
-      step.kind === "expect-screen",
-  );
-  if (!root || !graph || !checkpoint) {
-    throw new HttpError(409, "Selective repair has no frozen Test checkpoint to preflight.", {
-      code: "APP_MAP_TEST_EXECUTION_INTENT_REVIEW_REQUIRED",
-      recovery: "Review the failed check and start a new scoped Test run before retrying it.",
-    });
-  }
-  const plan = deriveAppMapTestRepairExecutionPlan({
-    sourcePlan: input.reconciliation?.compiledPlan ?? input.sourceIntent.plan,
-    selectedRuntimeTargetProfile: input.sourceIntent.selectedRuntimeTargetProfile,
-    recipeGraph: graph,
-    rootRecipeId: root.id,
-    checkpointScreenId: checkpoint.screenId,
-  });
-  const preflight = preflightCompiledAppMapTestOffline(
-    plan,
-    await loadFrozenRawAccessibilityEvidence(plan),
-    input.sourceIntent.selectedRuntimeTargetProfile
-      ? { targetProfileId: input.sourceIntent.selectedRuntimeTargetProfile.id }
-      : {},
-  );
-  if (preflight.summary.blockers) {
-    throw new HttpError(
-      409,
-      "Selective repair needs offline review before Relay can control the target.",
-      {
-        code: "APP_MAP_TEST_EXECUTION_INTENT_REVIEW_REQUIRED",
-        preflight,
-        recovery:
-          "Repair the frozen evidence or current Test plan, then start a new scoped Test run before retrying this check.",
-      },
-    );
-  }
-  const executionIntent = createAppMapTestExecutionIntent({ plan, recipeGraph: graph, preflight });
-  const capturedAt = Date.now();
-  return {
-    ...input.repairInput,
-    artifacts: [
-      {
-        kind: "app-map-test-execution-intent",
-        capturedAt,
-        data: executionIntent,
-      },
-      // The repair becomes a distinct frozen Test contract. Do not leave a
-      // prior Test plan or intent beside it: two competing roots must never
-      // be silently selected by a later retry/replay.
-      { kind: "app-map-test-plan", capturedAt, data: structuredClone(plan) },
-      ...(input.repairInput.artifacts ?? []).filter(
-        (artifact) =>
-          artifact.kind !== "app-map-test-execution-intent" &&
-          artifact.kind !== "app-map-test-plan",
-      ),
-    ],
-  };
 }
 
 export async function handleRunRoute(context: RunRouteContext): Promise<boolean> {
