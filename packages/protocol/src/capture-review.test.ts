@@ -173,6 +173,72 @@ test("iOS platform without profile is not browser signed-out via unsignedLaneId"
   assert.equal(labeled.observed.iosHardwareClass, "physical-ipad");
 });
 
+test("capture-review read keeps stamped iosHardwareClass and infers lab iPad serial", () => {
+  const stamped = resolveCaptureReviewQueue({
+    artifacts: [
+      {
+        kind: "capture-review",
+        data: {
+          caption: "Home chrome",
+          framePath: "frames/003.png",
+          phase: "dest",
+          policy: "fast",
+          status: "pending",
+          configuration: { app: "iPad Pro 10.5", account: "signed-out" },
+          observed: {
+            laneId: "grok-ios-daily",
+            profileId: "device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+            iosHardwareClass: "physical-ipad",
+          },
+        },
+      },
+    ],
+  });
+  assert.equal(stamped.items[0]?.observed?.iosHardwareClass, "physical-ipad");
+  assert.equal(stamped.items[0]?.configuration?.account, undefined);
+
+  const historical = resolveCaptureReviewQueue({
+    artifacts: [
+      {
+        kind: "capture-review",
+        data: {
+          caption: "Home chrome",
+          framePath: "frames/003.png",
+          phase: "dest",
+          policy: "fast",
+          status: "pending",
+          configuration: { app: "iPad Pro 10.5", account: "signed-out" },
+          observed: {
+            laneId: "grok-ios-daily",
+            profileId: "device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
+          },
+        },
+      },
+    ],
+  });
+  assert.equal(historical.items[0]?.observed?.iosHardwareClass, "physical-ipad");
+  assert.equal(historical.items[0]?.configuration?.account, undefined);
+});
+
+test("android device profile does not infer unproven iosHardwareClass on read", () => {
+  const queue = resolveCaptureReviewQueue({
+    artifacts: [
+      {
+        kind: "capture-review",
+        data: {
+          caption: "Home chrome",
+          framePath: "frames/006.png",
+          policy: "fast",
+          status: "pending",
+          configuration: { app: "SM S931B" },
+          observed: { profileId: "device:RQCY104BG8X-1080x2340" },
+        },
+      },
+    ],
+  });
+  assert.equal(queue.items[0]?.observed?.iosHardwareClass, undefined);
+});
+
 test("android platform without profile is not browser signed-out via unsignedLaneId", () => {
   const labeled = observedCaptureReviewAccount({
     laneId: "android-primitives-emu",

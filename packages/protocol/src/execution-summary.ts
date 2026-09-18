@@ -3,6 +3,7 @@ import {
   captureReviewLeftoverLastFramePaths,
   destIdentityCheckpointFramePaths,
   destIdentityReviewItems,
+  enrichCaptureReviewObservedSession,
   isCaptureReviewLeftoverCaption,
   liveCaptureReviewAccount,
   CAPTURE_REVIEW_DEST_PHASE,
@@ -120,22 +121,26 @@ function compactCaptureReviewConfiguration(
 
 function compactCaptureReviewObserved(
   observed?: CaptureReviewObservedSession,
+  appName?: string,
 ): CaptureReviewObservedSession | undefined {
   if (!observed) return undefined;
-  const next: CaptureReviewObservedSession = {
-    ...(observed.laneId?.trim() ? { laneId: observed.laneId.trim() } : {}),
-    ...(observed.profileId?.trim() ? { profileId: observed.profileId.trim() } : {}),
-    ...(observed.sessionStore ? { sessionStore: observed.sessionStore } : {}),
-    ...(observed.iosHardwareClass ? { iosHardwareClass: observed.iosHardwareClass } : {}),
-  };
-  return Object.keys(next).length ? next : undefined;
+  const enriched = enrichCaptureReviewObservedSession(
+    {
+      ...(observed.laneId?.trim() ? { laneId: observed.laneId.trim() } : {}),
+      ...(observed.profileId?.trim() ? { profileId: observed.profileId.trim() } : {}),
+      ...(observed.sessionStore ? { sessionStore: observed.sessionStore } : {}),
+      ...(observed.iosHardwareClass ? { iosHardwareClass: observed.iosHardwareClass } : {}),
+    },
+    appName,
+  );
+  return Object.keys(enriched).length ? enriched : undefined;
 }
 
 function compactCaptureReviewItem(
   item: CaptureReviewItem & { runId?: string; attempt?: number },
 ): Record<string, unknown> {
-  const observed = compactCaptureReviewObserved(item.observed);
-  const configuration = compactCaptureReviewConfiguration(item.configuration, item.observed);
+  const observed = compactCaptureReviewObserved(item.observed, item.configuration?.app);
+  const configuration = compactCaptureReviewConfiguration(item.configuration, observed);
   return {
     captureId: item.captureId,
     caption: item.caption,

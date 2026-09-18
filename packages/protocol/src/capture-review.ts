@@ -1,6 +1,7 @@
 import type { BrowserAuthenticationHealth } from "./browser-authentication-fixture.js";
 import type { ActorKind } from "./coordination.js";
 import type { BrowserLaneSessionStoreKind } from "./browser-lane-session.js";
+import { classifyIosHardware } from "./capability-gate.js";
 import type { CaptureRasterPolicy, CaptureSequencePhase } from "./recipes.js";
 
 export const CAPTURE_REVIEW_ACTIONS = ["accept", "report-issue", "need-more-evidence"] as const;
@@ -699,18 +700,54 @@ function parseMask(value: unknown): CaptureReviewMask | undefined {
   };
 }
 
-function parseObservedSession(value: unknown): CaptureReviewObservedSession | undefined {
+function parseIosHardwareClass(
+  value: unknown,
+): CaptureReviewObservedSession["iosHardwareClass"] | undefined {
+  return value === "physical-ipad" ||
+    value === "physical-iphone" ||
+    value === "simulator" ||
+    value === "unproven"
+    ? value
+    : undefined;
+}
+
+/** Keep stamped iosHardwareClass. Historical iOS dest jobs omitted it — infer
+ * from device: serial / iPad app name on read so Plan Gallery does not look
+ * like browser coverage. Do not stamp unproven onto Android device: profiles. */
+export function enrichCaptureReviewObservedSession(
+  observed: CaptureReviewObservedSession,
+  appName?: string,
+): CaptureReviewObservedSession {
+  if (observed.iosHardwareClass) return observed;
+  const profileId = observed.profileId?.trim() ?? "";
+  const serial = profileId.startsWith("device:") ? profileId.slice("device:".length) : undefined;
+  const name = appName?.trim() || undefined;
+  if (!serial && !name) return observed;
+  const iosHardwareClass = classifyIosHardware({ serial, device: serial, name });
+  if (iosHardwareClass === "unproven" && !/ipad|iphone|ipod|simulator/iu.test(name ?? "")) {
+    return observed;
+  }
+  return { ...observed, iosHardwareClass };
+}
+
+function parseObservedSession(
+  value: unknown,
+  appName?: string,
+): CaptureReviewObservedSession | undefined {
   const payload = record(value);
   if (!payload) return undefined;
   const store = text(payload.sessionStore);
   const sessionStore: BrowserLaneSessionStoreKind | undefined =
     store === "playwright-user-data" || store === "electron-partition" ? store : undefined;
-  const observed: CaptureReviewObservedSession = {
+  const stamped = parseIosHardwareClass(payload.iosHardwareClass);
+  const base: CaptureReviewObservedSession = {
     ...(text(payload.laneId) ? { laneId: text(payload.laneId) } : {}),
     ...(text(payload.profileId) ? { profileId: text(payload.profileId) } : {}),
     ...(sessionStore ? { sessionStore } : {}),
+    ...(stamped ? { iosHardwareClass: stamped } : {}),
   };
-  return Object.keys(observed).length ? observed : undefined;
+  if (!Object.keys(base).length) return undefined;
+  return enrichCaptureReviewObservedSession(base, appName);
 }
 
 function parseConfiguration(value: unknown): CaptureReviewConfiguration | undefined {
@@ -1054,7 +1091,7 @@ function captureReviewArtifact(data: unknown): CaptureReviewItem | undefined {
   const imageSha256 = text(payload.imageSha256);
   const status = payload.status === "missing" || !framePath ? "missing" : "pending";
   const configurationRaw = parseConfiguration(payload.configuration);
-  const observed = parseObservedSession(payload.observed);
+  const observed = parseObservedSession(payload.observed, configurationRaw?.app);
   // Keep raw configuration for slot identity; strip false device signed-out on the item.
   const configuration = sanitizeCaptureReviewConfiguration(configurationRaw, observed);
   const masks = Array.isArray(payload.masks)

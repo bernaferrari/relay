@@ -522,11 +522,12 @@ test("run.get compact drops device-observed signed-out, keeps browser signed-out
     run?: {
       captureReview?: Array<{
         configuration?: { account?: string; app?: string };
-        observed?: { laneId?: string; profileId?: string };
+        observed?: { laneId?: string; profileId?: string; iosHardwareClass?: string };
       }>;
     };
   };
   assert.equal(device.run?.captureReview?.[0]?.configuration?.account, undefined);
+  assert.equal(device.run?.captureReview?.[0]?.observed?.iosHardwareClass, "physical-ipad");
   assert.equal(device.run?.captureReview?.[0]?.configuration?.app, "iPad Pro 10.5");
   assert.equal(device.run?.captureReview?.[0]?.observed?.laneId, "grok-ios-daily");
   assert.equal(

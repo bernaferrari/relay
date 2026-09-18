@@ -7,6 +7,7 @@ import {
   type Variables,
 } from "@modelcontextprotocol/server";
 import {
+  enrichCaptureReviewObservedSession,
   isCaptureReviewLeftoverCaption,
   liveCaptureReviewAccount,
   type OperationId,
@@ -291,10 +292,19 @@ function captureReviewCollectionEntries(value: unknown): Record<string, unknown>
     const rawConfiguration = object(rec.configuration);
     const { account: listedAccount, ...configurationRest } = rawConfiguration;
     const observed = object(rec.observed);
-    const observedSession: CaptureReviewObservedSession | undefined =
-      typeof observed.profileId === "string" || typeof observed.iosHardwareClass === "string"
+    const observedBase: CaptureReviewObservedSession | undefined =
+      typeof observed.profileId === "string" ||
+      typeof observed.laneId === "string" ||
+      typeof observed.iosHardwareClass === "string" ||
+      observed.sessionStore === "playwright-user-data" ||
+      observed.sessionStore === "electron-partition"
         ? {
+            ...(typeof observed.laneId === "string" ? { laneId: observed.laneId } : {}),
             ...(typeof observed.profileId === "string" ? { profileId: observed.profileId } : {}),
+            ...(observed.sessionStore === "playwright-user-data" ||
+            observed.sessionStore === "electron-partition"
+              ? { sessionStore: observed.sessionStore }
+              : {}),
             ...(observed.iosHardwareClass === "physical-ipad" ||
             observed.iosHardwareClass === "physical-iphone" ||
             observed.iosHardwareClass === "simulator" ||
@@ -303,6 +313,10 @@ function captureReviewCollectionEntries(value: unknown): Record<string, unknown>
               : {}),
           }
         : undefined;
+    const appName = typeof configurationRest.app === "string" ? configurationRest.app : undefined;
+    const observedSession = observedBase
+      ? enrichCaptureReviewObservedSession(observedBase, appName)
+      : undefined;
     const account = liveCaptureReviewAccount(
       typeof listedAccount === "string" ? listedAccount : undefined,
       observedSession,
@@ -321,7 +335,9 @@ function captureReviewCollectionEntries(value: unknown): Record<string, unknown>
         ...(typeof rec.phase === "string" ? { phase: rec.phase } : {}),
         ...(typeof rec.policy === "string" ? { policy: rec.policy } : {}),
         ...(Object.keys(configuration).length ? { configuration } : {}),
-        ...(Object.keys(observed).length ? { observed } : {}),
+        ...(observedSession && Object.keys(observedSession).length
+          ? { observed: observedSession }
+          : {}),
       },
     ];
   });
