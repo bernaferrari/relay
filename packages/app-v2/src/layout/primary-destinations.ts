@@ -1,7 +1,14 @@
-import { FlaskConical, History, Layers3, MonitorSmartphone } from "lucide-react";
+import { Compass, FlaskConical, History, Layers3, MonitorSmartphone } from "lucide-react";
 
 /** One destination vocabulary for the sidebar and command palette. */
 export const primaryDestinations = [
+  {
+    to: "/goals",
+    label: "Explore",
+    icon: Compass,
+    detail: "Start from a goal",
+    keywords: "goal agent openrouter",
+  },
   {
     to: "/tests",
     label: "Tests",

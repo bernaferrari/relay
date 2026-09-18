@@ -28,6 +28,7 @@ export type RoutePattern =
   | "/changes/:changeId"
   | "/devices"
   | "/devices/:deviceId"
+  | "/goals"
   | "/debug"
   | "/settings/general"
   | "/settings/evidence"
@@ -70,6 +71,7 @@ export type Sidebar =
   | "runs"
   | "changes"
   | "devices"
+  | "goals"
   | "settings";
 export type RouteDefinition = {
   id: RoutePattern;
@@ -244,6 +246,7 @@ export const ROUTE_DEFINITIONS = [
     "q",
   ]),
   d("/devices/:deviceId", "/devices", "Device", "Device", "devices", "inspect-device", ["view"]),
+  d("/goals", "/home", "Explore", null, "goals", null),
   d("/debug", "/sessions", "Agent Debug", "Session", "sessions", null, ["target", "runId"]),
   ...(["general", "evidence", "integrations", "appearance", "advanced", "about"] as const).map(
     (name) =>
@@ -320,6 +323,7 @@ function build(pattern: RoutePattern, params: Params): ConcreteRoute {
   });
 }
 export const routeUrls = {
+  goals: () => "/goals",
   app: (appId: string) => build("/apps/:appId", { appId }),
   appVersions: (appId: string) => build("/apps/:appId/versions", { appId }),
   appAccounts: (appId: string) => build("/apps/:appId/accounts", { appId }),

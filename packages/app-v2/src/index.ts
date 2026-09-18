@@ -1,4 +1,10 @@
 export { RelayV2App } from "./app";
+export {
+  createGoalProductService,
+  type GoalProductService,
+  type GoalRunResult,
+  type GoalStartInput,
+} from "./data/goal-product-service";
 export { createRelayQueryClient } from "./data/query-client";
 export {
   createAppResourcesProductService,

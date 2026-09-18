@@ -531,12 +531,18 @@ importers:
 
   packages/server:
     dependencies:
+      '@relay/client':
+        specifier: workspace:*
+        version: link:../client
       '@relay/core':
         specifier: workspace:*
         version: link:../core
       '@relay/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@relay/workflows':
+        specifier: workspace:*
+        version: link:../workflows
       '@yume-chan/adb':
         specifier: 2.6.2
         version: 2.6.2
@@ -556,9 +562,6 @@ importers:
         specifier: 2.6.1
         version: 2.6.1
     devDependencies:
-      '@relay/client':
-        specifier: workspace:*
-        version: link:../client
       '@relay/mcp':
         specifier: workspace:*
         version: link:../mcp

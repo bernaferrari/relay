@@ -154,6 +154,11 @@ const routePresentations = {
     eyebrow: "Devices",
     description: "Review readiness and capabilities for this device.",
   },
+  "/goals": {
+    path: "/goals",
+    eyebrow: "Explore",
+    description: "Give Relay a goal and a URL, then review the evidence it retains.",
+  },
   "/debug": {
     path: "/debug",
     eyebrow: "Live",

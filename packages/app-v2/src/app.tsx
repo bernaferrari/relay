@@ -63,6 +63,7 @@ import {
   createAgentDebugProductService,
   type AgentDebugProductService,
 } from "./data/agent-debug-product-service";
+import { createGoalProductService, type GoalProductService } from "./data/goal-product-service";
 import type { Platform } from "./platform/types";
 import { createAppRouter } from "./router/create-router";
 
@@ -113,6 +114,7 @@ export function RelayV2App({
   browserSpacesService,
   liveTestEditorService,
   agentDebugService,
+  goalService,
 }: {
   platform: Platform;
   history?: RouterHistory;
@@ -131,6 +133,7 @@ export function RelayV2App({
   browserSpacesService?: BrowserSpacesProductService;
   liveTestEditorService?: LiveTestEditorProductService;
   agentDebugService?: AgentDebugProductService;
+  goalService?: GoalProductService;
 }) {
   const [queryClient] = useState(createRelayQueryClient);
   const [service] = useState(() => productService ?? createRecordingProductService(platform));
@@ -162,6 +165,7 @@ export function RelayV2App({
   const [agentDebug] = useState(
     () => agentDebugService ?? createAgentDebugProductService(platform),
   );
+  const [goals] = useState(() => goalService ?? createGoalProductService(platform));
   const [router] = useState(() =>
     createAppRouter({
       platform,
@@ -180,6 +184,7 @@ export function RelayV2App({
       browserSpacesService: browserSpaces,
       liveTestEditorService: liveTestEditor,
       agentDebugService: agentDebug,
+      goalService: goals,
       queryClient,
       history,
     }),

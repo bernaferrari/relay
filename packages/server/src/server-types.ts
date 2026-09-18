@@ -15,6 +15,7 @@ import type { TargetRuntimeRouteRuntime } from "./target-runtime-routes.js";
 import type { WorkflowRouteRuntime } from "./workflow-routes.js";
 import type { ChangeVerificationRouteRuntime } from "./change-verification-routes.js";
 import type { GitHubProofWebhookConfiguration } from "./github-proof-intake.js";
+import type { GoalRouteRuntime } from "./goal-routes.js";
 
 /** Host-owned server seams, kept separate from the HTTP router implementation. */
 export type StartServerOptions = {
@@ -54,6 +55,9 @@ export type StartServerOptions = {
   githubProofWebhook?: GitHubProofWebhookConfiguration;
   /** Test seam for standalone-step execution without a physical target. */
   stepRunRuntime?: Partial<StepRunRouteRuntime>;
+  /** Goal-first bounded exploration seam. The default is OpenRouter-only and
+   * persists evidence under the authenticated organization/project/actor. */
+  goalRouteRuntime?: Partial<GoalRouteRuntime>;
 };
 
 export type StartedServer = {

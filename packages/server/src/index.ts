@@ -119,6 +119,11 @@ import { handleTargetObservationRoute } from "./target-observation-route.js";
 import { handleControlPlaneRoute } from "./control-plane-routes.js";
 import { handleWorkspaceRoute } from "./workspace-routes.js";
 import { handleInteractionRoute } from "./interaction-routes.js";
+import {
+  createGoalRouteRuntimeBinding,
+  dispatchGoalRoute,
+  type GoalRouteRuntimeFactory,
+} from "./goal-routes.js";
 import { handleStepRunRoute, type StepRunRouteRuntime } from "./step-run-route.js";
 import { handleAndroidAvdRoute } from "./android-avd-routes.js";
 import type { AppMapTestRunRouteRuntime } from "./app-map-run-routes.js";
@@ -158,6 +163,7 @@ async function handleRequest(
   campaignDurationRuntime?: CampaignDurationRouteRuntime,
   proofRouteRuntime?: Partial<ChangeVerificationRouteRuntime>,
   preAuthenticatedRoute = createPreAuthenticatedRoute(),
+  goalRouteRuntimeFactory?: GoalRouteRuntimeFactory,
 ): Promise<void> {
   const method = req.method ?? "GET";
   const host = req.headers.host ?? "localhost";
@@ -230,6 +236,7 @@ async function handleRequest(
     const operation = bindOperationRequest(req, res, method, pathname, url, scope);
     if (await handleActivityRoute({ method, pathname, url, response: res, scope })) return;
     if (operation) await recordOperationActivity({ operation, pathname, scope, response: res });
+    if (await dispatchGoalRoute(req, res, method, pathname, scope, goalRouteRuntimeFactory)) return;
     if (
       await handlePrimaryOperationRoutes({
         method,
@@ -664,6 +671,10 @@ async function handleRequest(
         runsDir: scope.localTrusted ? runsRoot() : "runs",
         operations: serverOperationManifest(),
         resources: [
+          { method: "POST", path: "/goal", mediaType: "application/json" },
+          { method: "POST", path: "/explore", mediaType: "application/json" },
+          { method: "GET", path: "/goal/:id", mediaType: "application/json" },
+          { method: "GET", path: "/explore/:id", mediaType: "application/json" },
           { method: "GET", path: "/events", mediaType: "text/event-stream" },
           { method: "GET", path: "/device/stream", mediaType: "application/x-relay-h264" },
           { method: "GET", path: "/runs/:id/frames/:file", mediaType: "image/*" },
@@ -706,6 +717,12 @@ async function startServerWithStateLease(
   const host = opts.host ?? "127.0.0.1";
   const preferredPort = opts.port ?? 8787;
   const token = opts.token ?? process.env.RELAY_AUTH_TOKEN;
+  const goalRouteRuntimeBinding = createGoalRouteRuntimeBinding({
+    port: preferredPort,
+    ...(token ? { staticToken: token } : {}),
+    ...(opts.goalRouteRuntime ? { runtime: opts.goalRouteRuntime } : {}),
+  });
+  const goalRouteRuntimeFactory = goalRouteRuntimeBinding.factory;
   const externalIdentityVerifier = opts.externalIdentityVerifier;
   const browserOrigins = opts.browserOrigins
     ? configuredBrowserOrigins(opts.browserOrigins.join(","))
@@ -804,6 +821,7 @@ async function startServerWithStateLease(
             opts.campaignDurationRuntime,
             proofRouteRuntime,
             preAuthenticatedRoute,
+            goalRouteRuntimeFactory,
           ),
         ),
       )
@@ -835,6 +853,7 @@ async function startServerWithStateLease(
 
   const addr = server.address();
   const port = typeof addr === "object" && addr !== null ? addr.port : preferredPort;
+  goalRouteRuntimeBinding.setPort(port);
   publish({ type: "server.ready", at: now(), host, port });
   const proofRecovery = proofCoordinator.recover?.(recoverProofCell);
   void proofRecovery?.catch((error: unknown) =>
