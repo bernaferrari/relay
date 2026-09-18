@@ -2,6 +2,11 @@ import { ReportImage } from "./report-image";
 /** @jsxImportSource react */
 import { Link } from "@tanstack/react-router";
 import type { ProductTestStep } from "@relay/product/catalog";
+import {
+  destIdentityReviewItems,
+  isCaptureReviewDestPhase,
+  isCaptureReviewLeftoverCaption,
+} from "@relay/protocol";
 import { SavedRecordingPreview } from "./saved-recording-preview";
 import { useState } from "react";
 import { ImageOff, Info } from "lucide-react";
@@ -22,10 +27,13 @@ export function TestStepEvidencePreview({
 }) {
   const allMatches = report?.stepEvidence?.filter((item) => item.testStepId === step.id) ?? [];
   const captures = allMatches.filter((item) => item.evidence.framePaths.length > 0);
+  const screenshotItems =
+    report?.evidence.find((section) => section.id === "screenshot")?.items ?? [];
+  const reviewItems = destIdentityReviewItems(report?.captureReview?.items ?? []);
+  const destPhaseItems = reviewItems.filter((item) => isCaptureReviewDestPhase(item.phase));
+  const identityItems = destPhaseItems.length ? destPhaseItems : reviewItems;
   const destFramePaths = new Set(
-    (report?.captureReview?.items ?? [])
-      .filter((item) => item.phase === "dest")
-      .flatMap((item) => (item.framePath ? [item.framePath] : [])),
+    identityItems.flatMap((item) => (item.framePath ? [item.framePath] : [])),
   );
   const destCaptures = captures.filter((item) =>
     item.evidence.framePaths.some((path) => destFramePaths.has(path)),
@@ -37,15 +45,16 @@ export function TestStepEvidencePreview({
     const title = report?.timeline.find((entry) => entry.id === item.traceStepId)?.title ?? "";
     return title.startsWith("Screenshot ·") || title.startsWith("Capture for review");
   });
+  const fallbackCaptures = intentionalCaptures.length
+    ? intentionalCaptures
+    : visibleCaptures.length
+      ? visibleCaptures
+      : captures.length
+        ? captures
+        : allMatches;
   const matches = destCaptures.length
     ? destCaptures
-    : intentionalCaptures.length
-      ? intentionalCaptures
-      : visibleCaptures.length
-        ? visibleCaptures
-        : captures.length
-          ? captures
-          : allMatches;
+    : preferDestWaitForCaptures(fallbackCaptures, report?.timeline, screenshotItems);
   const [selectedOccurrence, setSelectedOccurrence] = useState(matches[0]?.occurrence ?? 1);
   if (!hasRuns && step.recordingFrames?.length) {
     return (
@@ -61,9 +70,9 @@ export function TestStepEvidencePreview({
     ? report?.timeline.find((item) => item.id === selected.traceStepId)
     : undefined;
   const titleId = `step-evidence-${step.id}`;
-
-  const screenshotItems =
-    report?.evidence.find((section) => section.id === "screenshot")?.items ?? [];
+  const selectedFramePath = selected
+    ? preferredDestWaitForFramePath(selected.evidence.framePaths, screenshotItems)
+    : undefined;
 
   return (
     <section
@@ -187,9 +196,9 @@ export function TestStepEvidencePreview({
           className="mt-3 flex min-h-0 flex-1 flex-col gap-2"
           aria-label={`Evidence for ${step.intent}`}
         >
-          {selected.evidence.framePaths.length ? (
+          {selectedFramePath ? (
             <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-md bg-muted/20">
-              {[selected.evidence.framePaths.at(-1)!].map((framePath) => {
+              {[selectedFramePath].map((framePath) => {
                 const frame = screenshotItems.find((candidate) => candidate.id === framePath);
                 return frame?.media ? (
                   <EvidenceImage key={framePath} frame={frame} />
@@ -255,4 +264,43 @@ function evidenceSummary(evidence: {
 
 function countLabel(count: number, label: string): string {
   return count ? `${count} ${label}${count === 1 ? "" : "s"}` : "";
+}
+
+/** Dest wait-for frame when leftover Close / Transition executed last-frame
+ * captions are also listed. Unphased dest-wait (no dest wait-for caption) keeps
+ * the last frame. */
+function preferredDestWaitForFramePath(
+  paths: readonly string[],
+  items: readonly { id: string; title?: string }[],
+): string | undefined {
+  if (!paths.length) return undefined;
+  const titled = paths.map((path) => ({
+    path,
+    leftover: isCaptureReviewLeftoverCaption(items.find((item) => item.id === path)?.title),
+  }));
+  const dest = titled.filter((item) => !item.leftover);
+  const leftover = titled.filter((item) => item.leftover);
+  return (dest.length && leftover.length ? dest : titled).at(-1)?.path;
+}
+
+function preferDestWaitForCaptures<
+  T extends { traceStepId: string; evidence: { framePaths: readonly string[] } },
+>(
+  captures: readonly T[],
+  timeline: readonly { id: string; title?: string }[] | undefined,
+  items: readonly { id: string; title?: string }[],
+): T[] {
+  const leftoverCapture = (item: T) => {
+    const title = timeline?.find((entry) => entry.id === item.traceStepId)?.title;
+    if (isCaptureReviewLeftoverCaption(title)) return true;
+    return (
+      item.evidence.framePaths.length > 0 &&
+      item.evidence.framePaths.every((path) =>
+        isCaptureReviewLeftoverCaption(items.find((frame) => frame.id === path)?.title),
+      )
+    );
+  };
+  const dest = captures.filter((item) => !leftoverCapture(item));
+  const leftover = captures.filter(leftoverCapture);
+  return dest.length && leftover.length ? dest : [...captures];
 }
