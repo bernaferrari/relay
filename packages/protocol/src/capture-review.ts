@@ -117,12 +117,17 @@ export function liveCaptureReviewAccount(
  * unsigned/signed-out stays signed-out even when the Lane is named grok-lab.
  * Device Lanes are not signed-out grok.com identities; leftover BF / person
  * names win over SuperGrok and grok-ios-daily. Missing targetKind plus a
- * device `unsignedLaneId` must not stamp browser signed-out (historical iOS). */
+ * device `unsignedLaneId` must not stamp browser signed-out (historical iOS).
+ * Platform ios/android and stamped iosHardwareClass are also device — not
+ * browser unsigned — even when targetProfileId is absent. */
 export function observedCaptureReviewAccount(input: {
   laneId?: string;
   unsignedLaneId?: string;
   targetKind?: string;
   targetProfileId?: string;
+  /** ios / android refuse browser signed-out even without a device: profile. */
+  platform?: string;
+  iosHardwareClass?: CaptureReviewObservedSession["iosHardwareClass"];
   authenticationFixtureId?: string;
   fixtureName?: string;
   liveIdentity?: string;
@@ -137,9 +142,11 @@ export function observedCaptureReviewAccount(input: {
   const profileId = input.targetProfileId?.trim() || undefined;
   const fixture = input.authenticationFixtureId?.trim() || undefined;
   const live = liveCaptureReviewAccount(input.liveIdentity);
+  const platform = input.platform?.trim().toLowerCase();
   const observed: CaptureReviewObservedSession = {
     ...(laneId ? { laneId } : {}),
     ...(profileId ? { profileId } : {}),
+    ...(input.iosHardwareClass ? { iosHardwareClass: input.iosHardwareClass } : {}),
   };
   if (fixture) {
     if (fixtureCaptureReviewAccountIsBlocked(input)) {
@@ -155,13 +162,19 @@ export function observedCaptureReviewAccount(input: {
   if (live) return { account: live, observed };
   // Device jobs often omit targetKind while still setting unsignedLaneId to the
   // device Lane id (historical iOS dest). That is not browser unsigned/signed-out.
-  const deviceObserved = isDeviceCaptureReviewObserved(observed);
+  const deviceObserved =
+    isDeviceCaptureReviewObserved(observed) || platform === "ios" || platform === "android";
   const browserUnsigned =
     Boolean(unsignedLaneId) && input.targetKind !== "device" && !deviceObserved;
   if ((input.signedOut === true || browserUnsigned) && !deviceObserved) {
     return { account: "signed-out", observed };
   }
   const resolved = liveCaptureReviewAccount(input.resolvedAccount, observed);
+  // Platform ios/android without device: profile still must not keep resolved
+  // "signed-out" (liveCaptureReviewAccount only strips when observed looks device).
+  if (resolved === "signed-out" && deviceObserved) {
+    return { observed };
+  }
   return { ...(resolved ? { account: resolved } : {}), observed };
 }
 

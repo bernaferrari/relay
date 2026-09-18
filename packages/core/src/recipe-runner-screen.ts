@@ -3,6 +3,7 @@ import {
   assignCaptureReviewAttempt,
   captureReviewSlotId,
   captureReviewSlotFamilyId,
+  classifyIosHardware,
   describeSnapshotChrome,
   observedCaptureReviewAccount,
   resolvedCaptureRasterPolicy,
@@ -151,12 +152,24 @@ function captureReviewConfigurationFromJob(
 } {
   if (!job) return {};
   const viewport = job.browserCaseProfile?.viewport;
+  const platform = job.platform?.trim() || job.targetProfile?.platform?.trim() || undefined;
+  const iosHardwareClass =
+    platform === "ios"
+      ? classifyIosHardware({
+          name: job.deviceName ?? job.targetProfile?.name,
+          kind: job.targetProfile?.model,
+          serial: job.serial,
+          device: job.serial,
+        })
+      : undefined;
   const labeled = observedCaptureReviewAccount({
     laneId:
       job.laneId || combineCellChildLaneId(job.artifacts) || combineCellChildLaneId(artifacts),
     unsignedLaneId: job.unsignedLaneId,
     targetKind: job.targetKind,
     targetProfileId: job.targetProfile?.id,
+    platform,
+    ...(iosHardwareClass ? { iosHardwareClass } : {}),
     authenticationFixtureId: job.browserCaseProfile?.authenticationFixtureId,
     liveIdentity: job.authenticationHealth?.identity || liveCaptureReviewIdentityFromNodes(nodes),
     resolvedAccount: job.resolvedInputs?.account?.trim() || job.resolvedInputs?.Account?.trim(),

@@ -285,6 +285,8 @@ test("iOS leftover capture-review stamps BF identity, not signed-out grok-ios-da
             laneId: "grok-ios-daily",
             unsignedLaneId: "grok-ios-daily",
             targetKind: "device",
+            platform: "ios",
+            serial: "db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5",
             deviceName: "iPad Pro 10.5",
             resolvedInputs: { account: "SuperGrok" },
             targetProfile: { id: "device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5" },
@@ -296,7 +298,7 @@ test("iOS leftover capture-review stamps BF identity, not signed-out grok-ios-da
   );
   const review = artifacts.find((item) => item.kind === "capture-review")?.data as {
     configuration?: { account?: string; app?: string };
-    observed?: { laneId?: string };
+    observed?: { laneId?: string; iosHardwareClass?: string; profileId?: string };
   };
   assert.equal(review.configuration?.account, "Bernardo Ferrari");
   assert.notEqual(review.configuration?.account, "signed-out");
@@ -304,6 +306,7 @@ test("iOS leftover capture-review stamps BF identity, not signed-out grok-ios-da
   assert.notEqual(review.configuration?.account, "grok-ios-daily");
   assert.equal(review.observed?.laneId, "grok-ios-daily");
   assert.equal(review.configuration?.app, "iPad Pro 10.5");
+  assert.equal(review.observed?.iosHardwareClass, "physical-ipad");
 });
 
 test("expired fixture capture-review is blocked, not SuperGrok", async () => {

@@ -158,6 +158,32 @@ test("iOS device profile without targetKind is not browser signed-out via unsign
   assert.equal(labeled.observed.profileId, "device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5");
 });
 
+test("iOS platform without profile is not browser signed-out via unsignedLaneId", () => {
+  // Dest jobs may omit targetProfile while still running on platform ios.
+  const labeled = observedCaptureReviewAccount({
+    laneId: "grok-ios-daily",
+    unsignedLaneId: "grok-ios-daily",
+    platform: "ios",
+    iosHardwareClass: "physical-ipad",
+    resolvedAccount: "signed-out",
+  });
+  assert.equal(labeled.account, undefined);
+  assert.notEqual(labeled.account, "signed-out");
+  assert.equal(labeled.observed.laneId, "grok-ios-daily");
+  assert.equal(labeled.observed.iosHardwareClass, "physical-ipad");
+});
+
+test("android platform without profile is not browser signed-out via unsignedLaneId", () => {
+  const labeled = observedCaptureReviewAccount({
+    laneId: "android-primitives-emu",
+    unsignedLaneId: "android-primitives-emu",
+    platform: "android",
+    resolvedAccount: "signed-out",
+  });
+  assert.equal(labeled.account, undefined);
+  assert.notEqual(labeled.account, "signed-out");
+});
+
 test("browser unsigned without targetKind stays signed-out", () => {
   const labeled = observedCaptureReviewAccount({
     laneId: "grok-daily",
