@@ -333,10 +333,18 @@ function reportTimeline(
      * the timeline beside dest — including empty-frame siblings that only carry
      * the leftover title (logo leftover inspect used to keep those rows). */
     if (leftoverWrapperStepTitle(text(step.title)) && destCaptureVisible) return [];
-    /** Prelude Expected screen / Sign in gone cannot lead the timeline beside
-     * Fast dest Capture for review — they hide the firstEvidence banner and
-     * were the live logo leftover / home Observe mismatch. */
-    if (preludeLaneCheckStepTitle(text(step.title)) && destCaptureVisible) return [];
+    /** Prelude Expected screen / Sign in gone / Reach / Land cannot lead the
+     * timeline beside Fast dest Capture for review — they hide the firstEvidence
+     * banner and were the live logo leftover / home Observe mismatch (shots
+     * already drop Reach / Land when dest-phase is stamped). Do not apply this
+     * to the dest Capture for review row itself. */
+    if (
+      !destEndCaptureReviewTitle(text(step.title)) &&
+      preludeLaneCheckStepTitle(text(step.title)) &&
+      destCaptureVisible
+    ) {
+      return [];
+    }
     /** Opener before · Tap cannot fill the timeline as Captured result beside
      * leftover Transition when dest wait-for Observe is also listed. */
     const openerOnlyCapture =
@@ -700,15 +708,21 @@ function leftoverWrapperStepTitle(title: string | undefined): boolean {
   return leftoverSavedTestTitle(value) || isCaptureReviewLeftoverCaption(value);
 }
 
-/** Prelude lane checks that used to lead dest-end Run report before Fast dest
- * Capture for review / Observe — Expected screen content was visible and
- * check "Sign in" gone. */
+/** Prelude lane checks / home origin that used to lead dest-end Run report
+ * before Fast dest Capture for review / Observe — Expected screen content was
+ * visible, check "Sign in" gone, Reach Signed-in home, and Land on signed-in
+ * home (live `4b93702b` / attach / Imagine still kept Reach / Land on the
+ * timeline after shots already dropped those frames). */
 function preludeLaneCheckStepTitle(title: string | undefined): boolean {
   const value = title?.trim() ?? "";
   if (!value) return false;
   if (/^check identifier .+ visible$/iu.test(value)) return true;
   if (/^check\s+".+"\s+gone$/iu.test(value)) return true;
-  return humanStepTitle(value) === "Expected screen content was visible";
+  const human = humanStepTitle(value) ?? value;
+  if (human === "Expected screen content was visible") return true;
+  if (/^Reach\b/u.test(human)) return true;
+  if (/^Land on\b/iu.test(human)) return true;
+  return false;
 }
 
 function destEndCaptureReviewTitle(title: string | undefined): boolean {

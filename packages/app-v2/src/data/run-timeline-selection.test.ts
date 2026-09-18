@@ -583,7 +583,7 @@ it("dest-end firstEvidence is Observe, not prelude Expected screen content was v
   ).toBe(false);
 });
 
-it("dest-end Observe shots drop prelude Reach / Land when dest-phase is stamped", () => {
+it("dest-end Observe timeline and shots drop prelude Reach / Land when dest-phase is stamped", () => {
   const result = projectRunReport(
     "dest-end-prelude-reach-land-shots",
     {
@@ -669,16 +669,14 @@ it("dest-end Observe shots drop prelude Reach / Land when dest-phase is stamped"
     { channels: { screenshot: { entries: 4 } } },
   );
   expect(result.firstEvidence?.label).toBe("Observe");
-  expect(result.timeline.map((step) => step.id)).toEqual([
-    "trace-reach",
-    "trace-land",
-    "trace-dest",
-  ]);
+  expect(result.timeline.map((step) => step.id)).toEqual(["trace-dest"]);
   expect(
     result.timeline.some(
       (step) =>
         step.title === "Expected screen content was visible" ||
-        step.title === 'check "Sign in" gone',
+        step.title === 'check "Sign in" gone' ||
+        step.title === "Reach Signed-in home" ||
+        step.title === "Land on signed-in home",
     ),
   ).toBe(false);
   expect(
