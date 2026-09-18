@@ -9,6 +9,7 @@ import type {
 import {
   captureReviewIdentityFramePaths,
   isCaptureReviewLeftoverCaption,
+  isCaptureReviewOpenerCaption,
   parseOptionalRunTestStepEvidence,
   resolveCaptureReviewQueue,
 } from "@relay/protocol";
@@ -545,8 +546,8 @@ function publicFrameCaption(value: unknown): string | undefined {
 }
 
 /** Dest wait-for evidence when leftover Close / Transition executed last-frame
- * captions are also listed. Unphased dest-wait (no dest wait-for caption) keeps
- * every frame. */
+ * captions are also listed. Opener before · Tap cannot fill dest beside those
+ * leftovers. Unphased dest-wait (no dest wait-for caption) keeps every frame. */
 function destWaitForEvidenceFrames(frames: unknown[]): unknown[] {
   const dest = frames.filter(
     (frame) => !isCaptureReviewLeftoverCaption(text(record(frame)?.caption)),
@@ -554,7 +555,11 @@ function destWaitForEvidenceFrames(frames: unknown[]): unknown[] {
   const leftover = frames.filter((frame) =>
     isCaptureReviewLeftoverCaption(text(record(frame)?.caption)),
   );
-  return dest.length && leftover.length ? dest : frames;
+  if (!(dest.length && leftover.length)) return frames;
+  const withoutOpeners = dest.filter(
+    (frame) => !isCaptureReviewOpenerCaption(text(record(frame)?.caption)),
+  );
+  return withoutOpeners.length ? withoutOpeners : dest;
 }
 function publicNetworkUrl(value: unknown): string | undefined {
   const raw = text(value);

@@ -367,15 +367,23 @@ export function destIdentityCheckpointFramePaths(
 }
 
 /** Exclude leftover frames without hiding other checkpoints or configurations.
- * A dest-phase capture in one Run cannot erase an unphased capture in another. */
+ * A dest-phase capture in one Run cannot erase an unphased capture in another.
+ * Opener before · Tap cannot fill dest beside leftover Transition / Close. */
 export function destIdentityReviewItems<T extends { phase?: string; caption?: string }>(
   items: readonly T[],
 ): T[] {
-  return items.filter(
+  const hasLeftover = items.some(
+    (item) =>
+      isCaptureReviewLeftoverPhase(item.phase) || isCaptureReviewLeftoverCaption(item.caption),
+  );
+  const kept = items.filter(
     (item) =>
       isCaptureReviewDestPhase(item.phase) ||
       (!isCaptureReviewLeftoverPhase(item.phase) && !isCaptureReviewLeftoverCaption(item.caption)),
   );
+  if (!hasLeftover) return kept;
+  const withoutOpeners = kept.filter((item) => !isCaptureReviewOpenerCaption(item.caption));
+  return withoutOpeners.length ? withoutOpeners : kept;
 }
 
 /** Stable planned capture identity. Caption is display text only. */

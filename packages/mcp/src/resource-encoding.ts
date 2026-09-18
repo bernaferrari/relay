@@ -7,6 +7,7 @@ import {
   captureReviewLeftoverLastFramePaths,
   destIdentityCheckpointFramePaths,
   isCaptureReviewLeftoverCaption,
+  isCaptureReviewOpenerCaption,
 } from "@relay/protocol";
 
 export const relayMcpResourceByteLimit = 32_768;
@@ -111,14 +112,20 @@ function destIdentityRelativeNames(value: unknown): { relativeName: string; capt
   const frames = listedFrames(frozen?.frames);
   const artifacts = artifactRecords(frozen?.artifacts);
   const destPaths = destIdentityCheckpointFramePaths(frames, artifacts);
-  const listed = destPaths.length
+  const prelisted = listedFrames(frozen?.destIdentity ?? envelope.destIdentity);
+  const hasLeftover = prelisted.some((frame) => isCaptureReviewLeftoverCaption(frame.caption));
+  let listed = destPaths.length
     ? destPaths.map((path) => {
         const frame = frames.find((item) => item.path === path);
         return { path, ...(frame?.caption ? { caption: frame.caption } : {}) };
       })
-    : listedFrames(frozen?.destIdentity ?? envelope.destIdentity).filter(
-        (frame) => !isCaptureReviewLeftoverCaption(frame.caption),
-      );
+    : prelisted.filter((frame) => !isCaptureReviewLeftoverCaption(frame.caption));
+  /** Pre-listed destIdentity without dest-phase artifacts used to keep before · Tap
+   * beside leftover Transition (parity with MCP runs collection / offline-replay). */
+  if (!destPaths.length && hasLeftover) {
+    const withoutOpeners = listed.filter((frame) => !isCaptureReviewOpenerCaption(frame.caption));
+    if (withoutOpeners.length) listed = withoutOpeners;
+  }
   const byPath = new Map(frames.map((frame) => [frame.path, frame]));
   const seen = new Set<string>();
   return listed.flatMap((frame) => {

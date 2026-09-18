@@ -1905,6 +1905,67 @@ test("trace-pack resource pre-listed destIdentity leftover Close 004 cannot fill
   }
 });
 
+test("trace-pack resource drops opener Tap beside leftover Transition", async () => {
+  const destIdentity = [
+    { path: "frames/001.png", caption: "before · Tap identifier sidebar.open.button" },
+    { path: "frames/002.png", caption: "after · Transition executed" },
+    { path: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
+  ];
+  const session = await connectMcp(
+    fixtureInvoker({
+      "run.trace-pack.get": {
+        destIdentity,
+        tracePack: {
+          schemaVersion: 1,
+          kind: "relay-trace-pack",
+          digest: `sha256:${"a".repeat(64)}`,
+          createdAt: 123,
+          source: {
+            runId: "e79b55ac",
+            runSchemaVersion: 5,
+            status: "ok",
+            action: "observe",
+            inputDigest: "b".repeat(64),
+            writtenAt: 123,
+          },
+          redaction: { status: "applied-at-persistence", redactedChannels: [] },
+          completeness: { status: "complete", channels: {}, missing: [], artifacts: [] },
+          objects: [
+            {
+              path: "run.json",
+              kind: "frozen-run",
+              mediaType: "application/json",
+              encoding: "json",
+              digest: `sha256:${"a".repeat(64)}`,
+              bytes: 2,
+              content: { destIdentity },
+            },
+          ],
+        },
+      },
+    }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", {
+        uri: relayMcpResourceUris.runTracePack.replace("{runId}", "e79b55ac"),
+      }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      data: { destIdentity?: Array<{ relativeName?: string; caption?: string }> };
+    };
+    assert.deepEqual(envelope.data.destIdentity, [
+      { relativeName: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
+    ]);
+    assert.equal(
+      envelope.data.destIdentity?.some((frame) => /before · Tap/u.test(frame.caption ?? "")),
+      false,
+    );
+  } finally {
+    await session.close();
+  }
+});
+
 test("run evidence resource dest identity is dest wait-for, not leftover Close 004", async () => {
   const session = await connectMcp(
     fixtureInvoker({

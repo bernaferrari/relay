@@ -2,6 +2,7 @@ import {
   destIdentityReviewItems,
   isCaptureReviewDestPhase,
   isCaptureReviewLeftoverCaption,
+  isCaptureReviewOpenerCaption,
 } from "@relay/protocol";
 import { useState } from "react";
 import { Button } from "@relay/ui-react/components/button";
@@ -13,15 +14,18 @@ import { CheckCircle2, CircleAlert, ImageOff } from "lucide-react";
 import type { ProductRunReportOverview, ReportEvidenceItem } from "../data/run-report-model";
 
 /** Dest wait-for thumb when leftover Close / Transition executed last-frame
- * captions are also listed. Unphased dest-wait (no dest wait-for caption) keeps
- * the last media frame. */
+ * captions are also listed. Opener before · Tap cannot fill dest beside those
+ * leftovers. Unphased dest-wait (no dest wait-for caption) keeps the last media
+ * frame. */
 function destWaitForEvidenceThumb(
   frames: readonly ReportEvidenceItem[],
 ): ReportEvidenceItem | undefined {
   const withMedia = frames.filter((item) => item.media);
   const dest = withMedia.filter((item) => !isCaptureReviewLeftoverCaption(item.title));
   const leftover = withMedia.filter((item) => isCaptureReviewLeftoverCaption(item.title));
-  return (dest.length && leftover.length ? dest : withMedia).at(-1);
+  if (!(dest.length && leftover.length)) return withMedia.at(-1);
+  const withoutOpeners = dest.filter((item) => !isCaptureReviewOpenerCaption(item.title));
+  return (withoutOpeners.length ? withoutOpeners : dest).at(-1);
 }
 
 /** A result in the test workspace. The separate report owns diagnostics. */

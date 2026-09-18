@@ -33,3 +33,14 @@ test("TUI history drops leftover Transition executed / Inspect setup skipped", (
     "step:step-observe:Observe",
   );
 });
+
+test("TUI history drops opener Tap beside leftover Transition", () => {
+  assert.equal(
+    destIdentityHistoryCaption([
+      { path: "frames/001.png", caption: "before · Tap identifier sidebar.open.button" },
+      { path: "frames/002.png", caption: "after · Transition executed" },
+      { path: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
+    ]),
+    "step:step-action:Sidebar open-close",
+  );
+});

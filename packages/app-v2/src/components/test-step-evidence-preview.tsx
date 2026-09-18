@@ -6,6 +6,7 @@ import {
   destIdentityReviewItems,
   isCaptureReviewDestPhase,
   isCaptureReviewLeftoverCaption,
+  isCaptureReviewOpenerCaption,
 } from "@relay/protocol";
 import { SavedRecordingPreview } from "./saved-recording-preview";
 import { useState } from "react";
@@ -267,20 +268,26 @@ function countLabel(count: number, label: string): string {
 }
 
 /** Dest wait-for frame when leftover Close / Transition executed last-frame
- * captions are also listed. Unphased dest-wait (no dest wait-for caption) keeps
- * the last frame. */
+ * captions are also listed. Opener before · Tap cannot fill dest beside those
+ * leftovers. Unphased dest-wait (no dest wait-for caption) keeps the last frame. */
 function preferredDestWaitForFramePath(
   paths: readonly string[],
   items: readonly { id: string; title?: string }[],
 ): string | undefined {
   if (!paths.length) return undefined;
-  const titled = paths.map((path) => ({
-    path,
-    leftover: isCaptureReviewLeftoverCaption(items.find((item) => item.id === path)?.title),
-  }));
+  const titled = paths.map((path) => {
+    const title = items.find((item) => item.id === path)?.title;
+    return {
+      path,
+      leftover: isCaptureReviewLeftoverCaption(title),
+      opener: isCaptureReviewOpenerCaption(title),
+    };
+  });
   const dest = titled.filter((item) => !item.leftover);
   const leftover = titled.filter((item) => item.leftover);
-  return (dest.length && leftover.length ? dest : titled).at(-1)?.path;
+  if (!(dest.length && leftover.length)) return titled.at(-1)?.path;
+  const withoutOpeners = dest.filter((item) => !item.opener);
+  return (withoutOpeners.length ? withoutOpeners : dest).at(-1)?.path;
 }
 
 function preferDestWaitForCaptures<

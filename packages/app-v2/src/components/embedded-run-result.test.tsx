@@ -174,6 +174,83 @@ it("unphased result thumb drops leftover Transition executed / Inspect setup ski
   expect(html).not.toContain("/inspect-setup-skipped.png");
 });
 
+it("unphased result thumb drops opener Tap beside leftover Transition", () => {
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={new QueryClient()}>
+      <EmbeddedRunResult
+        report={
+          {
+            outcome: "passed",
+            timeline: [],
+            captureReview: {
+              items: [
+                {
+                  captureId: "frames/001.png::tap",
+                  caption: "before · Tap identifier sidebar.open.button",
+                  status: "pending",
+                  framePath: "frames/001.png",
+                },
+                {
+                  captureId: "frames/002.png::transition",
+                  caption: "after · Transition executed",
+                  status: "pending",
+                  framePath: "frames/002.png",
+                },
+                {
+                  captureId: "frames/003.png::observe",
+                  caption: "step:step-action:Sidebar open-close",
+                  status: "pending",
+                  framePath: "frames/003.png",
+                  lookFor: "Automations",
+                  policy: "fast",
+                },
+              ],
+              summary: {
+                captured: 1,
+                missing: 0,
+                pending: 1,
+                accepted: 0,
+                issue: 0,
+                needMoreEvidence: 0,
+              },
+            },
+            evidence: [
+              {
+                id: "screenshot",
+                label: "Screenshots",
+                count: 3,
+                detail: "",
+                summary: "",
+                inspectable: true,
+                items: [
+                  {
+                    id: "frames/001.png",
+                    title: "before · Tap identifier sidebar.open.button",
+                    media: { kind: "image", src: "/opener-tap.png" },
+                  },
+                  {
+                    id: "frames/002.png",
+                    title: "after · Transition executed",
+                    media: { kind: "image", src: "/transition-executed.png" },
+                  },
+                  {
+                    id: "frames/003.png",
+                    title: "step:step-action:Sidebar open-close",
+                    media: { kind: "image", src: "/dest-wait-for.png" },
+                  },
+                ],
+              },
+            ],
+          } as unknown as ProductRunReportOverview
+        }
+      />
+    </QueryClientProvider>,
+  );
+  expect(html).toContain("/dest-wait-for.png");
+  expect(html).not.toContain("/opener-tap.png");
+  expect(html).not.toContain("/transition-executed.png");
+});
+
 it("labels the captured result separately and shows the selected step image during investigation", async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const host = document.createElement("div");
