@@ -4,7 +4,8 @@ import { homedir, tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { restartAgentDeviceDaemonForSetup } from "./device-setup.js";
-import { captureIosPngViaGoIos, pixelEvidenceFingerprint } from "./ios-app-launch.js";
+import { captureIosPixelFingerprint } from "./ios-pixel-fingerprint.js";
+export { captureIosPixelFingerprint } from "./ios-pixel-fingerprint.js";
 import {
   IosMutationOutcomeUnknownError,
   runIosMutationOnce,
@@ -798,29 +799,6 @@ export async function isIosDeviceLockedMidRun(
   });
   const second = await probeIosDeviceLockState(serial, input);
   return second === true;
-}
-
-/**
- * Cheap pixel identity for the assisted second look. Capture failures stay
- * `undefined`: missing evidence must stop the re-dispatch, never fake a match.
- */
-export async function captureIosPixelFingerprint(
-  serial: string,
-  input: {
-    run?: (file: string, args: readonly string[], timeoutMs: number) => Promise<CommandResult>;
-  } = {},
-): Promise<string | undefined> {
-  const directory = await mkdtemp(join(tmpdir(), "relay-ios-second-look-"));
-  const path = join(directory, "frame.png");
-  try {
-    await captureIosPngViaGoIos(serial, path, input.run ? { run: input.run } : {});
-    const bytes = await readFile(path);
-    return pixelEvidenceFingerprint(bytes);
-  } catch {
-    return undefined;
-  } finally {
-    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
-  }
 }
 
 export type IosAssistedSecondLookDiagnostic = {

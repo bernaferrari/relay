@@ -29,6 +29,7 @@ import type { SuiteProfileProductService } from "../data/suite-profile-product-s
 import type { BrowserSpacesProductService } from "../data/browser-spaces-product-service";
 import type { AgentDebugProductService } from "../data/agent-debug-product-service";
 import type { Platform } from "../platform/types";
+import { createFixtureLiveTarget } from "./live-target-fixture";
 import "../styles/globals.css";
 
 try {
@@ -703,51 +704,6 @@ const fixtureSession = {
   hasError: false,
   archived: false,
 };
-function fixtureLiveTarget() {
-  const snapshot = {
-    status: "streaming" as const,
-    target: previewTarget,
-    lastFrameAt: VISUAL_NOW,
-  };
-  return {
-    snapshot: () => snapshot,
-    subscribe(listener: (value: LiveTargetSnapshot) => void) {
-      listener(snapshot);
-      return () => undefined;
-    },
-    mount: (canvas: HTMLCanvasElement) => {
-      canvas.width = 768;
-      canvas.height = 512;
-      const context = canvas.getContext("2d");
-      if (context) {
-        context.fillStyle = "#f5f6f8";
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        context.fillStyle = "#ffffff";
-        context.fillRect(92, 46, 584, 420);
-        context.fillStyle = "#171719";
-        context.font = "600 28px system-ui";
-        context.fillText("Checkout", 132, 104);
-        context.fillStyle = "#62636a";
-        context.font = "18px system-ui";
-        context.fillText("Order summary", 132, 150);
-        context.fillStyle = "#e5e7eb";
-        context.fillRect(132, 184, 504, 2);
-        context.fillStyle = "#171719";
-        context.font = "600 22px system-ui";
-        context.fillText("Total", 132, 240);
-        context.fillText("$84.00", 548, 240);
-        context.fillStyle = "#171719";
-        context.fillRect(132, 322, 504, 64);
-        context.fillStyle = "#ffffff";
-        context.font = "600 20px system-ui";
-        context.fillText("Place order", 330, 362);
-      }
-      return () => undefined;
-    },
-    input: async () => undefined,
-    close: () => undefined,
-  };
-}
 const sessionProductService = {
   list: async () => [fixtureSession],
   get: async () => ({
@@ -767,7 +723,7 @@ const sessionProductService = {
       },
     ],
   }),
-  live: async () => fixtureLiveTarget(),
+  live: async () => createFixtureLiveTarget(previewTarget, VISUAL_NOW),
 } as unknown as SessionProductService;
 const liveTestEditorService = {
   open: async () => ({
@@ -808,7 +764,7 @@ const liveTestEditorService = {
       repairs: [],
     },
     authoring: await sessionProductService.get("session-checkout"),
-    liveTarget: fixtureLiveTarget(),
+    liveTarget: createFixtureLiveTarget(previewTarget, VISUAL_NOW),
     capabilities: { edit: true as const, observe: true as const, record: false },
   }),
 } as unknown as LiveTestEditorProductService;

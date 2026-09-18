@@ -4,7 +4,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { PNG } from "pngjs";
 import { describePixelsOnlySnapshotChrome, type TargetRuntimeReadiness } from "@relay/protocol";
 import {
   isIosAccessibilityQueryInFlightError,
@@ -62,6 +61,16 @@ import {
   recordTargetSemanticCapture,
   targetRuntimeReadiness,
 } from "./target-runtime-readiness.js";
+import {
+  formatSnapshotTree,
+  isBlankScreenshot,
+  screenshotIncludesFollowOnTree,
+} from "./workspace-capture-presentation.js";
+export {
+  formatSnapshotTree,
+  isBlankScreenshot,
+  screenshotIncludesFollowOnTree,
+} from "./workspace-capture-presentation.js";
 export {
   captureDeviceVideo,
   captureIosEvidenceVideo,
@@ -135,28 +144,6 @@ function currentIosSnapshotGeometry(
     return undefined;
   }
   return cached.geometry;
-}
-
-/**
- * An all-black PNG is a transport/display failure, not valid visual evidence.
- * Keep this deliberately conservative: dark-mode screens have text and chrome,
- * while the iPad failure mode has no illuminated pixels at all.
- */
-export function isBlankScreenshot(bytes: Uint8Array): boolean {
-  let image: PNG;
-  try {
-    image = PNG.sync.read(Buffer.from(bytes));
-  } catch {
-    return false;
-  }
-  for (let offset = 0; offset < image.data.length; offset += 4) {
-    const alpha = image.data[offset + 3] ?? 0;
-    const red = image.data[offset] ?? 0;
-    const green = image.data[offset + 1] ?? 0;
-    const blue = image.data[offset + 2] ?? 0;
-    if (alpha > 0 && Math.max(red, green, blue) > 4) return false;
-  }
-  return true;
 }
 
 export function iosLogicalBoundsForSerial(
@@ -681,12 +668,6 @@ export function iosPixelsUnavailableMessage(goIosError: unknown, sdkError?: unkn
   return `iOS screenshot failed via go-ios: ${goIos}`;
 }
 
-/** Follow-on AX after a raster is opt-in. Android used to snapshot by default,
- * which let a hung tree stall the PNG; recipe callers already pass false. */
-export function screenshotIncludesFollowOnTree(includeScreenMatch?: boolean): boolean {
-  return includeScreenMatch === true;
-}
-
 export async function captureScreenshot(opts?: {
   serial?: string;
   device?: Device;
@@ -900,20 +881,4 @@ export async function cleanupScreenshot(path: string): Promise<void> {
   const directory = resolve(dirname(path));
   if (!directory.startsWith(`${root}/`) || !dirname(directory).startsWith(root)) return;
   await rm(directory, { recursive: true, force: true });
-}
-
-export function formatSnapshotTree(nodes: SnapshotNode[], limit = 80): string {
-  const lines: string[] = [];
-  for (const n of nodes.slice(0, limit)) {
-    const label = (n.label ?? n.value ?? n.identifier ?? "").trim();
-    if (!label) continue;
-    const hit = n.hittable ? "●" : "○";
-    const rect = n.rect
-      ? ` @${Math.round(n.rect.x)},${Math.round(n.rect.y)} ${Math.round(n.rect.width)}×${Math.round(n.rect.height)}`
-      : "";
-    const ref = n.ref ? ` ${n.ref.startsWith("@") ? n.ref : `@${n.ref}`}` : "";
-    lines.push(`${hit} ${label}${ref}${rect}`);
-  }
-  if (nodes.length > limit) lines.push(`… ${nodes.length - limit} more nodes`);
-  return lines.join("\n");
 }

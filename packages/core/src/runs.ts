@@ -70,6 +70,10 @@ import {
   projectArtifactRef,
   redactedArtifactRef,
 } from "./artifact-ref.js";
+import { readFrameFile, runArtifactFile } from "./run-artifact-files.js";
+export { readFrameFile, runArtifactFile } from "./run-artifact-files.js";
+import { formatRunFolder } from "./run-folder.js";
+export { formatRunFolder } from "./run-folder.js";
 export { findWorkspaceRoot } from "./workspace-root.js";
 
 export type PersistedExecutionProvenance = {
@@ -180,14 +184,6 @@ type RunReviewResult = { run: PersistedRun; review: RunReview };
 const runWrites = new Map<string, Promise<unknown>>();
 const COMPLETE_MARKER = ".complete";
 
-function slug(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 48);
-}
-
 export function runsRoot(): string {
   const env = process.env.RELAY_RUNS_DIR?.trim();
   if (env) return env;
@@ -258,18 +254,6 @@ export async function persistPersistedRun(
   }
   next.dir = run.dir;
   return next;
-}
-
-export function formatRunFolder(
-  job: Pick<TestJob, "id" | "action" | "serial" | "startedAt" | "queuedAt">,
-): string {
-  const ts = new Date(job.startedAt ?? job.queuedAt)
-    .toISOString()
-    .replace(/[:.]/g, "-")
-    .slice(0, 19);
-  const device = slug(job.serial ?? "nodevice");
-  const action = slug(job.action);
-  return `${ts}_${action}_${device}_${job.id.slice(0, 8)}`;
 }
 
 export async function ensureRunDir(job: TestJob): Promise<string> {
@@ -861,17 +845,6 @@ export async function recipeStability(
   };
 }
 
-export async function readFrameFile(runDir: string, relPath: string): Promise<Buffer | null> {
-  // prevent path escape
-  const safe = basename(relPath.includes("/") ? relPath.split("/").pop()! : relPath);
-  const abs = join(runDir, "frames", safe);
-  try {
-    return await readFile(abs);
-  } catch {
-    return null;
-  }
-}
-
 /** Canonical, additive projection for a persisted or live run frame. The
  * supplied run directory remains inside this source adapter; the resulting
  * reference contains only a non-authoritative opaque locator. */
@@ -909,12 +882,6 @@ export async function projectRunFrameArtifact(input: {
       locations: [opaqueArtifactLocation("run", [input.runId, input.frame.path])],
     }),
   );
-}
-
-export function runArtifactFile(runDir: string, area: "video", file: string): string | null {
-  const safe = basename(file);
-  if (!safe || safe !== file || !/\.(mp4|webm)$/i.test(safe)) return null;
-  return join(runDir, area, safe);
 }
 
 export {

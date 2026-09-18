@@ -41,6 +41,8 @@ import {
   resequenceChronologically,
   videoFiles,
 } from "./run-evidence-support.js";
+import { runEvidenceFinalizationDevice, type RunEvidenceOptions } from "./run-evidence-contract.js";
+export { runEvidenceFinalizationDevice, type RunEvidenceOptions } from "./run-evidence-contract.js";
 export { withTimeout, withTimeoutAndDrain } from "./run-evidence-timeout.js";
 
 const CHANNELS: EvidenceChannel[] = [
@@ -78,14 +80,8 @@ export type RunEvidenceHandle = {
   manifest: EvidenceManifest;
 };
 
-/** Cancellation tears down the native control session before terminal
- * persistence. Never reuse that adapter for collector finalization; the
- * handle still folds buffered frames, trees, actions, and command attempts. */
-export function runEvidenceFinalizationDevice(
-  status: TestJob["status"],
-  device: Device | undefined,
-): Device | undefined {
-  return status === "cancelled" ? undefined : device;
+function hasStepScopedCampaignEvidence(job: TestJob): boolean {
+  return job.recipeSnapshot?.steps.some((step) => Boolean(step.check)) === true;
 }
 
 export function initializeRunEvidence(job: TestJob): RunEvidenceHandle {
@@ -338,21 +334,6 @@ async function persistCaptureArtifact(
   record.dropped = dropped;
   if (dropped > 0) record.status = "partial";
   record.finishedAt = now();
-}
-
-export type RunEvidenceOptions = {
-  /** A physical Apple target shares one XCTest process for observation and
-   * control. Starting simulator-style collectors would block that process and
-   * can destroy the app state that the flow is about to verify. */
-  physicalIos?: boolean;
-  /** Override foreground-app discovery in tests or embedded hosts. */
-  foregroundAppResolver?: (serial: string) => Promise<string | undefined>;
-  /** Injectable managed-emulator packet backend for deterministic hosts and tests. */
-  androidPacketRuntime?: AndroidEmulatorNetworkCaptureRuntime;
-};
-
-function hasStepScopedCampaignEvidence(job: TestJob): boolean {
-  return job.recipeSnapshot?.steps.some((step) => Boolean(step.check)) === true;
 }
 
 /** Start bounded automatic collectors. Their failures are recorded, not promoted to test failures. */

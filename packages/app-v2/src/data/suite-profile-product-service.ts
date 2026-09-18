@@ -16,6 +16,7 @@ import { accountReloginBatchIdFromError } from "@relay/product/plan-findings";
 import type { ProductRunAccountBinding } from "@relay/product/run-journey";
 import type { Platform } from "../platform/types";
 import { productClientForPlatform } from "./product-client";
+import { formatObservedDuration } from "./observed-duration";
 
 type BuildDto = OperationOutput<"build.list">["builds"][number];
 
@@ -412,14 +413,6 @@ function issue(value: { code?: unknown; message?: unknown; cellId?: unknown }): 
     message: text(value.message, "Relay could not prove this Plan is ready."),
     ...(typeof value.cellId === "string" ? { suiteCellId: value.cellId } : {}),
   };
-}
-
-function formatObservedDuration(ms: number): string {
-  const seconds = Math.max(1, Math.round(ms / 1_000));
-  if (seconds < 90) return `about ${seconds}s`;
-  const minutes = seconds / 60;
-  const rounded = minutes >= 10 ? Math.round(minutes) : Math.round(minutes * 10) / 10;
-  return `about ${rounded} min`;
 }
 
 function serialWithUnmeasuredParallel(

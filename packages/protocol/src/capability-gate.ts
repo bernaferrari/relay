@@ -30,12 +30,10 @@ import {
   SURVIVAL_REQUIRED_DWELL_MS,
   type ExecutionQueue,
 } from "./execution-queue.js";
-import {
-  evaluateWorkbookCoverage,
-  type WorkbookCatalogTest,
-  type WorkbookCoverageManifest,
-  type WorkbookCoverageReport,
-} from "./workbook-coverage.js";
+export {
+  workbookCoverageAfterCompileAttempts,
+  type WorkbookCompileAttempt,
+} from "./capability-workbook.js";
 
 export const CAPABILITY_GATE_KINDS = [
   "removed",
@@ -898,22 +896,4 @@ export function resolveGatedPlanCaptureReviewQueue(
       };
     }),
   };
-}
-
-export type WorkbookCompileAttempt = {
-  testId: string;
-  errorCode: string;
-};
-
-/**
- * Compile unresolved-step / Unbound never deletes the original from the
- * remaining-before-gates denominator and never counts as coverage.
- */
-export function workbookCoverageAfterCompileAttempts(
-  manifest: WorkbookCoverageManifest,
-  catalog: readonly WorkbookCatalogTest[] = [],
-  attempts: readonly WorkbookCompileAttempt[] = [],
-): WorkbookCoverageReport {
-  void attempts;
-  return evaluateWorkbookCoverage(manifest, catalog);
 }
