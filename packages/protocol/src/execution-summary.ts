@@ -1023,7 +1023,9 @@ export function compactExecutionDestIdentityFallback(
   };
 }
 
-/** Keep logs/network on MCP evidence resources. Hoist dest wait-for and drop leftover 004. */
+/** Keep logs/network on MCP evidence resources. Hoist dest wait-for; leftover
+ * Close / Transition executed / Inspect setup skipped cannot fill dest.
+ * Path+caption frames stay internal to the filter — not re-listed beside Observe. */
 export function projectDestIdentityOnEvidence(evidence: unknown): unknown {
   const record = object(evidence);
   if (!record) return evidence;
@@ -1031,35 +1033,69 @@ export function projectDestIdentityOnEvidence(evidence: unknown): unknown {
     evidence?: { destIdentity?: unknown; testStepEvidence?: unknown };
   };
   const dest = projected.evidence;
+  const { frames: _framesForDestFilter, ...rest } = record;
   return {
-    ...record,
+    ...rest,
     ...(dest?.destIdentity ? { destIdentity: dest.destIdentity } : {}),
     ...(dest?.testStepEvidence !== undefined ? { testStepEvidence: dest.testStepEvidence } : {}),
   };
 }
 
+/** Missing dest-phase is not every step frame on compact evidence: leftover
+ * Transition executed / Inspect setup skipped cannot sit beside Observe.
+ * Unphased Android dest-wait with no leftover caption keeps every frame and
+ * omits destIdentity (callers keep every PNG elsewhere). */
 function summarizeRunEvidence(response: Record<string, unknown>): unknown {
   const evidence = object(response.evidence) ?? response;
   if (!evidence) return response;
   const artifacts = artifactRecords(evidence.artifacts);
-  const destPaths = new Set(captureReviewIdentityFramePaths(artifacts));
+  const frames = listedFrames(evidence.frames);
+  const phased = captureReviewIdentityFramePaths(artifacts);
+  const destPaths = destIdentityCheckpointFramePaths(frames, artifacts);
+  const leftoverPaths = new Set([
+    ...captureReviewLeftoverLastFramePaths(frames, artifacts),
+    ...frames.filter((frame) => isCaptureReviewLeftoverCaption(frame.caption)).map((f) => f.path),
+  ]);
+  const destWaitFor = new Set(destPaths.filter((path) => !leftoverPaths.has(path)));
   const testStepEvidence = Array.isArray(evidence.testStepEvidence)
-    ? evidence.testStepEvidence.filter((item) => {
-        if (!destPaths.size) return true;
+    ? evidence.testStepEvidence.flatMap((item) => {
         const record = object(item);
-        const nested = object(record?.evidence);
-        const frames = Array.isArray(nested?.framePaths)
-          ? nested.framePaths
-          : Array.isArray(record?.framePaths)
-            ? record.framePaths
-            : [];
-        if (!frames.length) return true;
-        return frames.some((path) => typeof path === "string" && destPaths.has(path));
+        if (!record) return [];
+        const nested = object(record.evidence);
+        const framePaths = (
+          Array.isArray(nested?.framePaths)
+            ? nested.framePaths
+            : Array.isArray(record.framePaths)
+              ? record.framePaths
+              : []
+        ).filter((path): path is string => typeof path === "string" && path.trim().length > 0);
+        if (!framePaths.length) return [item];
+        if (phased.length) {
+          return framePaths.some((path) => phased.includes(path)) ? [item] : [];
+        }
+        if (!leftoverPaths.size || !destWaitFor.size) return [item];
+        const kept = framePaths.filter((path) => !leftoverPaths.has(path));
+        if (!kept.length) return [];
+        if (kept.length === framePaths.length) return [item];
+        return [
+          {
+            ...record,
+            evidence: {
+              ...(nested ?? {}),
+              framePaths: kept,
+            },
+          },
+        ];
       })
     : undefined;
-  const destIdentity = destPaths.size
-    ? [...destPaths].map((path) => ({ path }))
-    : compactDestIdentity([], artifacts);
+  const byPath = new Map(frames.map((frame) => [frame.path, frame]));
+  const destIdentity =
+    phased.length || frames.some((frame) => isCaptureReviewLeftoverCaption(frame.caption))
+      ? destPaths.map((path) => {
+          const frame = byPath.get(path);
+          return frame?.caption ? { path, caption: frame.caption } : { path };
+        })
+      : [];
   return {
     evidence: {
       ...(typeof evidence.runId === "string" ? { runId: evidence.runId } : {}),

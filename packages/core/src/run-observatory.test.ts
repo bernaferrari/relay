@@ -288,6 +288,21 @@ test("buildRunEvidence projects authored-step joins and filters by stable Test s
   assert.deepEqual(buildRunEvidence(run()).testStepEvidence, []);
 });
 
+test("buildRunEvidence lists path+caption frames for compact destIdentity", () => {
+  const evidence = buildRunEvidence(
+    run({
+      frames: [
+        { path: "frames/002.png", caption: "after · Transition executed", capturedAt: 1 },
+        { path: "frames/003.png", caption: "after · Observe", capturedAt: 2 },
+      ],
+    }),
+  );
+  assert.deepEqual(evidence.frames, [
+    { path: "frames/002.png", caption: "after · Transition executed" },
+    { path: "frames/003.png", caption: "after · Observe" },
+  ]);
+});
+
 test("buildRunEvidence preserves typed packet failure beside a successful session log", () => {
   const evidence = buildRunEvidence(
     run({

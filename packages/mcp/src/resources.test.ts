@@ -1917,6 +1917,69 @@ test("run evidence resource dest identity is dest wait-for, not leftover Close 0
   }
 });
 
+test("run evidence resource unphased drops leftover Transition executed / Inspect setup skipped", async () => {
+  const session = await connectMcp(
+    fixtureInvoker({
+      "run.evidence.get": {
+        evidence: {
+          runId: "unphased-transition",
+          schemaVersion: 1,
+          frames: [
+            { path: "frames/002.png", caption: "after · Transition executed" },
+            { path: "frames/003.png", caption: "after · Observe" },
+            {
+              path: "frames/004.png",
+              caption: "after · Inspect setup skipped — already on this view",
+            },
+          ],
+          artifacts: [],
+          testStepEvidence: [
+            { testStepId: "step-transition", evidence: { framePaths: ["frames/002.png"] } },
+            { testStepId: "step-observe", evidence: { framePaths: ["frames/003.png"] } },
+            { testStepId: "step-inspect", evidence: { framePaths: ["frames/004.png"] } },
+          ],
+        },
+      },
+    }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", {
+        uri: relayMcpResourceUris.runEvidence.replace("{runId}", "unphased-transition"),
+      }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      data: {
+        evidence?: {
+          destIdentity?: Array<{ relativeName?: string; caption?: string }>;
+          testStepEvidence?: Array<{
+            testStepId?: string;
+            evidence?: { framePaths?: string[] };
+          }>;
+        };
+      };
+    };
+    assert.deepEqual(envelope.data.evidence?.destIdentity, [
+      { relativeName: "frames/003.png", caption: "after · Observe" },
+    ]);
+    assert.deepEqual(
+      envelope.data.evidence?.testStepEvidence?.map((item) => item.testStepId),
+      ["step-observe"],
+    );
+    assert.equal(
+      envelope.data.evidence?.testStepEvidence?.some((item) =>
+        item.evidence?.framePaths?.some(
+          (path) => path === "frames/002.png" || path === "frames/004.png",
+        ),
+      ),
+      false,
+    );
+    assert.equal((envelope.data.evidence as { frames?: unknown } | undefined)?.frames, undefined);
+  } finally {
+    await session.close();
+  }
+});
+
 test("offline-replay resource dest identity is dest wait-for 003, not leftover Close 004 last-frame", async () => {
   const session = await connectMcp(
     fixtureInvoker({

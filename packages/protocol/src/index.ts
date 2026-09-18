@@ -414,6 +414,9 @@ export type RunEvidenceQuery = {
   network: RunEvidenceNetworkEntry[];
   /** Stable authored-step joins; empty for legacy Runs without provenance. */
   testStepEvidence: RunTestStepEvidence[];
+  /** Path + caption only — compact destIdentity filters leftover Transition /
+   * Inspect setup skipped without shipping PNG bytes. */
+  frames?: Array<{ path: string; caption?: string }>;
   networkCapture: {
     mode:
       | "browser-events"

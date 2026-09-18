@@ -522,6 +522,12 @@ export function buildRunEvidence(
   const testStepEvidence = options.testStepId
     ? persistedTestStepEvidence.filter((item) => item.testStepId === options.testStepId)
     : persistedTestStepEvidence;
+  const frames = run.frames.flatMap((frame) => {
+    const path = typeof frame.path === "string" ? frame.path.trim() : "";
+    if (!path) return [];
+    const caption = typeof frame.caption === "string" ? frame.caption : undefined;
+    return [{ path, ...(caption ? { caption } : {}) }];
+  });
   return {
     schemaVersion: 1,
     runId: run.id,
@@ -536,6 +542,7 @@ export function buildRunEvidence(
     logs,
     network,
     testStepEvidence,
+    ...(frames.length ? { frames } : {}),
     networkCapture,
     ...(androidNetwork ? { androidNetwork } : {}),
     ...(androidPacketCapture ? { androidPacketCapture } : {}),

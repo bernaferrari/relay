@@ -651,6 +651,82 @@ test("run.evidence.get dest identity drops leftover 004 last-frame", () => {
   assert.equal(result.evidence?.events, undefined);
 });
 
+test("run.evidence.get unphased drops leftover Transition executed / Inspect setup skipped", () => {
+  const result = summarizeExecutionOperationResult("run.evidence.get", {
+    evidence: {
+      runId: "unphased-transition",
+      schemaVersion: 1,
+      frames: [
+        { path: "frames/002.png", caption: "after · Transition executed" },
+        { path: "frames/003.png", caption: "after · Observe" },
+        {
+          path: "frames/004.png",
+          caption: "after · Inspect setup skipped — already on this view",
+        },
+      ],
+      artifacts: [],
+      testStepEvidence: [
+        { testStepId: "step-transition", evidence: { framePaths: ["frames/002.png"] } },
+        { testStepId: "step-observe", evidence: { framePaths: ["frames/003.png"] } },
+        { testStepId: "step-inspect", evidence: { framePaths: ["frames/004.png"] } },
+      ],
+    },
+  }) as {
+    evidence?: {
+      destIdentity?: Array<{ path?: string; caption?: string }>;
+      testStepEvidence?: Array<{
+        testStepId?: string;
+        evidence?: { framePaths?: string[] };
+      }>;
+    };
+  };
+  assert.deepEqual(result.evidence?.destIdentity, [
+    { path: "frames/003.png", caption: "after · Observe" },
+  ]);
+  assert.deepEqual(
+    result.evidence?.testStepEvidence?.map((item) => item.testStepId),
+    ["step-observe"],
+  );
+  assert.equal(
+    result.evidence?.testStepEvidence?.some((item) =>
+      item.evidence?.framePaths?.some(
+        (path) => path === "frames/002.png" || path === "frames/004.png",
+      ),
+    ),
+    false,
+  );
+});
+
+test("run.evidence.get unphased Android dest-wait omits destIdentity", () => {
+  const result = summarizeExecutionOperationResult("run.evidence.get", {
+    evidence: {
+      runId: "android-unphased",
+      schemaVersion: 1,
+      frames: [
+        { path: "frames/001.png", caption: "before · wait for dest" },
+        { path: "frames/002.png", caption: "after · wait for dest" },
+      ],
+      artifacts: [],
+      testStepEvidence: [
+        {
+          testStepId: "step-wait",
+          evidence: { framePaths: ["frames/001.png", "frames/002.png"] },
+        },
+      ],
+    },
+  }) as {
+    evidence?: {
+      destIdentity?: Array<{ path?: string }>;
+      testStepEvidence?: Array<{ evidence?: { framePaths?: string[] } }>;
+    };
+  };
+  assert.equal(result.evidence?.destIdentity, undefined);
+  assert.deepEqual(result.evidence?.testStepEvidence?.[0]?.evidence?.framePaths, [
+    "frames/001.png",
+    "frames/002.png",
+  ]);
+});
+
 test("job.get dest identity is dest wait-for, not leftover last-frame", () => {
   const result = summarizeExecutionOperationResult("job.get", {
     job: {
