@@ -1,10 +1,8 @@
 import { useMapSelection } from "../hooks/use-map-selection";
-import { MapFrameTitle } from "./map-frame-title";
 import { separateMapScreens } from "./map-layout";
 import { useQueries } from "@tanstack/react-query";
 import { snapMapPreview, type AlignmentGuide } from "./map-alignment";
-import { MapAccessibilityOverlay, accessibilityControls } from "./map-accessibility-overlay";
-import { MapEdges, isRoutineReturn } from "./map-edges";
+import { accessibilityControls } from "./map-accessibility-overlay";
 import {
   containedImageRect,
   MAP_NODE_TITLE_HEIGHT,
@@ -24,34 +22,9 @@ import {
 export * from "./map-canvas-geometry";
 import { ScreenInspector } from "./map-screen-inspector";
 /** @jsxImportSource react */
-import { MapScreenPreview } from "./map-screen-preview";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@relay/ui-react/components/tooltip";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
-import { Button } from "@relay/ui-react/components/button";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuCheckboxItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@relay/ui-react/components/dropdown-menu";
-import { Link } from "@tanstack/react-router";
-import {
-  SlidersHorizontal,
-  Focus,
-  Hand,
-  Minus,
-  Plus,
-  RotateCcw,
-  Search,
-  PanelLeftClose,
-  PanelLeftOpen,
-  MousePointer2,
-  X,
-} from "lucide-react";
+import { MapCanvasPanels } from "./infinite-map-canvas-panels";
+import { MapCanvasViewport } from "./infinite-map-canvas-viewport";
 import {
   useEffect,
   useId,
@@ -623,533 +596,89 @@ export function InfiniteMapCanvas({
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
-      {showScreens ? (
-        <aside
-          className="z-10 flex w-56 shrink-0 flex-col border-r border-border bg-card max-[800px]:absolute max-[800px]:inset-y-0 max-[800px]:left-0 max-[800px]:shadow-lg"
-          aria-label="Screens"
-        >
-          <div className="flex h-12 items-center justify-between px-3">
-            <h2 className="text-xs font-medium">
-              Screens <span className="ml-1 text-muted-foreground">{screens.length}</span>
-            </h2>
-            <MapControl
-              label="Hide screens"
-              icon={PanelLeftClose}
-              onClick={() => setShowScreens(false)}
-            />
-          </div>
-          <div className="relative mx-3 mb-3">
-            <Search className="absolute left-2 top-2.5 size-3.5 text-muted-foreground" />
-            <input
-              aria-label="Find screen"
-              placeholder="Find screen…"
-              value={screenSearch}
-              onChange={(event) => setScreenSearch(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") setScreenSearch("");
-                if (event.key === "Enter") {
-                  const match = visibleScreens.find((screen) =>
-                    screen.title
-                      .toLocaleLowerCase()
-                      .includes(screenSearch.trim().toLocaleLowerCase()),
-                  );
-                  if (match) focusScreen(match.id);
-                }
-              }}
-              className="h-9 w-full rounded-md border border-input bg-background pl-7 pr-8 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-            {screenSearch ? (
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Clear screen search"
-                className="absolute right-0.5 top-0.5"
-                onClick={() => setScreenSearch("")}
-              >
-                <X />
-              </Button>
-            ) : null}
-          </div>
-          <div className="min-h-0 flex-1 overflow-auto px-2 pb-3">
-            {!visibleScreens.some((screen) =>
-              screen.title.toLocaleLowerCase().includes(screenSearch.trim().toLocaleLowerCase()),
-            ) ? (
-              <p className="p-3 text-xs text-muted-foreground">No matching screens</p>
-            ) : null}
-            {visibleScreens
-              .filter((screen) =>
-                screen.title.toLocaleLowerCase().includes(screenSearch.trim().toLocaleLowerCase()),
-              )
-              .map((screen) => (
-                <button
-                  key={screen.id}
-                  type="button"
-                  aria-pressed={screen.id === selectedScreenId}
-                  className={`mb-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring ${screen.id === selectedScreenId ? "bg-accent text-accent-foreground" : ""}`}
-                  onClick={() => {
-                    setSelectedScreenId(screen.id);
-                    revealScreen(screen.id);
-                  }}
-                >
-                  <span
-                    aria-hidden="true"
-                    className="flex h-12 w-10 shrink-0 items-center justify-center rounded bg-muted/40 p-1"
-                  >
-                    <MapScreenPreview
-                      uri={screen.screenshotUri}
-                      load={loadScreenshot}
-                      title={screen.title}
-                      thumbnail
-                    />
-                  </span>
-                  <span className="min-w-0 line-clamp-2 leading-4">{screen.title}</span>
-                </button>
-              ))}
-          </div>
-          <div className="border-t border-border p-3 text-xs text-muted-foreground">
-            {paths.length} paths ·{" "}
-            {screens.filter((screen) => screen.coveringTests.length > 0).length} screens in tests
-          </div>
-        </aside>
-      ) : null}
-      <div className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden">
-        {!showScreens ? (
-          <div className="absolute left-3 top-3 z-20 rounded-md border border-border bg-card p-1 shadow-sm">
-            <MapControl
-              label="Show screens"
-              icon={PanelLeftOpen}
-              onClick={() => setShowScreens(true)}
-            />
-          </div>
-        ) : null}
-        <div
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 rounded-lg border border-border bg-card/95 p-1 shadow-sm"
-          aria-label="Map controls"
-        >
-          <Button
-            size="icon-sm"
-            variant={handTool ? "ghost" : "secondary"}
-            aria-label="Select tool"
-            aria-pressed={!handTool}
-            onClick={() => setHandTool(false)}
-          >
-            <MousePointer2 />
-          </Button>
-          <Button
-            size="icon-sm"
-            variant={handTool ? "secondary" : "ghost"}
-            aria-label="Hand tool"
-            aria-pressed={handTool}
-            onClick={() => setHandTool(true)}
-          >
-            <Hand />
-          </Button>
-          <span className="mx-1 h-5 w-px bg-border" />
-          <MapControl label="Zoom out" icon={Minus} onClick={() => zoomBy(1 / 1.18)} />
-          <span
-            data-slot="map-zoom"
-            className="w-12 text-center font-mono text-xs tabular-nums"
-            ref={zoomLabelRef}
-            aria-live="polite"
-          >
-            100%
-          </span>
-          <MapControl label="Zoom in" icon={Plus} onClick={() => zoomBy(1.18)} />
-          <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
-          <MapControl label="Fit map (F)" icon={Focus} onClick={fitContent} />
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button size="icon-sm" variant="ghost" />}
-              aria-label="Map view options"
-              title="Map view options"
-            >
-              <SlidersHorizontal />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="end" className="w-56">
-              <DropdownMenuCheckboxItem checked={showScreens} onCheckedChange={setShowScreens}>
-                Screen list
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={showInteractionTargets}
-                onCheckedChange={setShowInteractionTargets}
-              >
-                Accessibility bounds
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem
-                checked={showControlOrigins}
-                onCheckedChange={setShowControlOrigins}
-              >
-                Arrows from controls
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuRadioGroup
-                value={layoutMode}
-                onValueChange={(value) => {
-                  const mode = value as "saved" | "aligned" | "staggered" | "horizontal";
-                  setLayoutMode(mode);
-                  setLayoutAnchors(
-                    new Map(originPaths.map((path) => [path.id, path.sourceAnchor])),
-                  );
-                  setArrangedEdits(new Map());
-                  const next = layoutMapScreens(
-                    mode === "saved"
-                      ? visibleScreens
-                      : visibleScreens.map((screen) => ({ ...screen, position: undefined })),
-                    originPaths,
-                    mode === "saved" ? "aligned" : mode,
-                  );
-                  animateTransform(
-                    fitMapToBounds(mapContentBounds(visibleScreens, next), viewportSize()),
-                  );
-                }}
-              >
-                <DropdownMenuRadioItem value="aligned">Aligned layout</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="staggered">
-                  Staggered · Vertical
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="horizontal">
-                  Aligned · Horizontal
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="saved">Saved positions</DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-              <DropdownMenuSeparator />
-              {selectedScreenId ? (
-                <DropdownMenuItem onClick={() => focusScreen(selectedScreenId)}>
-                  Focus selected screen
-                </DropdownMenuItem>
-              ) : null}
-              <DropdownMenuItem onClick={resetView}>Reset view</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        {selectedPath ? (
-          <div
-            className={`absolute right-3 top-3 z-20 flex flex-wrap items-center gap-2 rounded-lg bg-card p-2 shadow-md ${showScreens ? "left-3" : "left-16"}`}
-            aria-label="Selected path"
-          >
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => focusScreen(selectedPath.fromScreenId)}
-            >
-              {selectedPath.fromTitle}
-            </Button>
-            <span className="text-xs text-muted-foreground">→ {selectedPath.label} →</span>
-            {selectedPath.toScreenId ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => focusScreen(selectedPath.toScreenId!)}
-              >
-                {selectedPath.toTitle}
-              </Button>
-            ) : (
-              <span className="text-xs">Finish</span>
-            )}
-            <Button
-              size="sm"
-              variant="outline"
-              nativeButton={false}
-              render={
-                <Link
-                  to="/tests/new"
-                  search={{ app: appId, view: "path", path: selectedPath.id }}
-                />
-              }
-            >
-              Create test
-            </Button>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Close path inspection"
-              onClick={() => setSelectedPathId(undefined)}
-            >
-              <X />
-            </Button>
-          </div>
-        ) : null}
-        <section
-          data-tool={panningTool ? "hand" : "select"}
-          data-slot="map-canvas"
-          className="data-[tool=hand]:cursor-grab relative h-full min-h-0 w-full flex-1 overflow-hidden bg-[radial-gradient(var(--border)_1px,transparent_1px)] [background-size:20px_20px]"
-          aria-label="Screens and verified paths"
-          aria-describedby="map-keyboard-help"
-          tabIndex={0}
-          ref={viewportRef}
+      <MapCanvasPanels
+        appId={appId}
+        screens={screens}
+        paths={paths}
+        visibleScreens={visibleScreens}
+        showScreens={showScreens}
+        setShowScreens={setShowScreens}
+        screenSearch={screenSearch}
+        setScreenSearch={setScreenSearch}
+        selectedScreenId={selectedScreenId}
+        selectScreen={setSelectedScreenId}
+        focusScreen={focusScreen}
+        revealScreen={revealScreen}
+        loadScreenshot={loadScreenshot}
+        handTool={handTool}
+        setHandTool={setHandTool}
+        zoomLabelRef={zoomLabelRef}
+        zoomBy={zoomBy}
+        fitContent={fitContent}
+        showInteractionTargets={showInteractionTargets}
+        setShowInteractionTargets={setShowInteractionTargets}
+        showControlOrigins={showControlOrigins}
+        setShowControlOrigins={setShowControlOrigins}
+        layoutMode={layoutMode}
+        setLayoutMode={setLayoutMode}
+        originPaths={originPaths}
+        setLayoutAnchors={setLayoutAnchors}
+        setArrangedEdits={setArrangedEdits}
+        animateTransform={animateTransform}
+        viewportSize={viewportSize}
+        resetView={resetView}
+        selectedPath={selectedPath}
+        setSelectedPathId={setSelectedPathId}
+      >
+        <MapCanvasViewport
+          viewportRef={viewportRef}
+          panningTool={panningTool}
+          marquee={marquee}
+          selectedIds={selectedIds}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={endPointerDrag}
           onPointerCancel={endPointerDrag}
           onWheel={handleWheel}
           onKeyDown={handleKeyDown}
-        >
-          {marquee ? (
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute left-(--box-left) top-(--box-top) z-30 h-(--box-height) w-(--box-width) border border-info bg-info/10"
-              style={
-                {
-                  "--box-left": `${marquee.x}px`,
-                  "--box-top": `${marquee.y}px`,
-                  "--box-width": `${marquee.width}px`,
-                  "--box-height": `${marquee.height}px`,
-                } as CSSProperties
-              }
-            />
-          ) : null}
-          {selectedIds.size > 1 ? (
-            <span
-              role="status"
-              className="pointer-events-none absolute right-4 top-4 z-20 rounded-md bg-background/90 px-2 py-1 text-xs text-muted-foreground"
-            >
-              {selectedIds.size} screens selected
-            </span>
-          ) : null}
-          <span className="sr-only" id="map-keyboard-help">
-            Use arrow keys to move, plus and minus to zoom, F to fit the map, Shift F to focus a
-            selected screen, Space to pan, or 0 to reset the view. Tab to visit each screen.
-          </span>
-          <div
-            ref={worldRef}
-            data-slot="map-world"
-            className="absolute inset-0 origin-top-left"
-            style={{ transform: "translate3d(48px, 64px, 0) scale(1)" }}
-          >
-            {alignmentGuides.map((guide, index) => (
-              <div
-                key={index}
-                aria-hidden="true"
-                className="pointer-events-none absolute left-(--box-left) top-(--box-top) z-30 h-(--box-height) w-(--box-width) bg-info"
-                style={
-                  {
-                    "--box-left": `${guide.axis === "x" ? guide.value : guide.from}px`,
-                    "--box-top": `${guide.axis === "x" ? guide.from : guide.value}px`,
-                    "--box-width": `${guide.axis === "x" ? 1 / transformRef.current.scale : guide.to - guide.from}px`,
-                    "--box-height": `${guide.axis === "x" ? guide.to - guide.from : 1 / transformRef.current.scale}px`,
-                  } as CSSProperties
-                }
-              />
-            ))}
-            <MapEdges
-              horizontal={layoutMode === "horizontal"}
-              selectedPathId={selectedPathId}
-              paths={originPaths.filter(
-                (path) => path.id === selectedPathId || !isRoutineReturn(path),
-              )}
-              positions={positions}
-              markerId={markerId}
-              selectedScreenId={selectedScreenId}
-              showInteractionTargets={showControlOrigins}
-              screens={visibleScreens}
-              imageDimensions={imageDimensions}
-            />
-            {visibleScreens.map((screen) => {
-              const position = positions.get(screen.id) ?? { x: 0, y: 0 };
-              const selectedNode = selectedScreenId === screen.id || selectedIds.has(screen.id);
-              return (
-                <button
-                  type="button"
-                  data-slot="map-screen"
-                  className="group/map-screen absolute left-(--box-left) top-(--box-top) flex h-(--box-height) w-(--box-width) flex-col gap-2 text-left focus-visible:outline-2 focus-visible:outline-ring"
-                  key={screen.id}
-                  aria-pressed={selectedNode}
-                  onClick={(event) => {
-                    if (suppressNodeClick.current) {
-                      suppressNodeClick.current = false;
-                      return;
-                    }
-                    if (panningTool) return;
-                    if (event.shiftKey) {
-                      setSingleScreenId(undefined);
-                      setSelectedIds((current) => {
-                        const next = new Set(current);
-                        if (next.has(screen.id)) next.delete(screen.id);
-                        else next.add(screen.id);
-                        return next;
-                      });
-                    } else setSelectedScreenId(screen.id);
-                  }}
-                  onDoubleClick={() => {
-                    if (!panningTool) focusScreen(screen.id);
-                  }}
-                  onPointerDown={(event) => {
-                    cancelAnimationFrame(navigationFrame.current);
-                    if (panningTool || !onUpdateScreen || saving || event.button !== 0) return;
-                    suppressNodeClick.current = false;
-                    event.stopPropagation();
-                    event.preventDefault();
-                    event.currentTarget.setPointerCapture(event.pointerId);
-                    nodeDrag.current = {
-                      id: screen.id,
-                      start: { x: event.clientX, y: event.clientY },
-                      position,
-                      moved: false,
-                      members: new Map(
-                        [...positions].filter(([id]) =>
-                          selectedIds.has(screen.id) ? selectedIds.has(id) : id === screen.id,
-                        ),
-                      ),
-                    };
-                  }}
-                  onPointerMove={(event) => {
-                    const drag = nodeDrag.current;
-                    if (!drag || drag.id !== screen.id) return;
-                    const dx = (event.clientX - drag.start.x) / transformRef.current.scale;
-                    const dy = (event.clientY - drag.start.y) / transformRef.current.scale;
-                    if (!drag.moved && Math.hypot(dx, dy) < 4) return;
-                    drag.moved = true;
-                    const aligned = alignedDragPosition(drag, event);
-                    setAlignmentGuides(aligned.guides);
-                    setDragged({ id: screen.id, position: aligned.position });
-                  }}
-                  onPointerUp={(event) => {
-                    const drag = nodeDrag.current;
-                    nodeDrag.current = undefined;
-                    setAlignmentGuides([]);
-                    event.currentTarget.releasePointerCapture(event.pointerId);
-                    if (drag?.moved && onUpdateScreen) {
-                      suppressNodeClick.current = true;
-                      const position = alignedDragPosition(drag, event).position;
-                      const updates = [...drag.members].map(
-                        ([id, origin]) =>
-                          [
-                            id,
-                            {
-                              x: origin.x + position.x - drag.position.x,
-                              y: origin.y + position.y - drag.position.y,
-                            },
-                          ] as const,
-                      );
-                      setArrangedEdits((current) => new Map([...current, ...updates]));
-                      void (async () => {
-                        for (const [id, position] of updates) {
-                          await onUpdateScreen(id, { position });
-                          drag.members.delete(id);
-                        }
-                      })()
-                        .catch(() =>
-                          setArrangedEdits((current) => {
-                            const next = new Map(current);
-                            for (const [id, origin] of drag.members) next.set(id, origin);
-                            return next;
-                          }),
-                        )
-                        .finally(() => setDragged(undefined));
-                    }
-                  }}
-                  onPointerCancel={() => {
-                    nodeDrag.current = undefined;
-                    setDragged(undefined);
-                    setAlignmentGuides([]);
-                  }}
-                  onFocus={() => revealScreen(screen.id)}
-                  style={
-                    {
-                      "--box-left": `${position.x}px`,
-                      "--box-top": `${position.y}px`,
-                      "--box-width": `${MAP_NODE_WIDTH}px`,
-                      "--box-height": `${MAP_NODE_HEIGHT}px`,
-                    } as CSSProperties
-                  }
-                >
-                  <span
-                    className={`flex h-5 w-full shrink-0 items-end justify-center text-center text-sm font-medium leading-tight ${selectedNode ? "text-info" : "text-muted-foreground"}`}
-                  >
-                    <MapFrameTitle title={screen.title} />
-                  </span>
-                  <div className="relative h-72 w-full shrink-0">
-                    <MapScreenPreview
-                      dimensions={imageDimensions.get(screen.id)}
-                      selected={selectedNode}
-                      align="top"
-                      uri={screen.screenshotUri}
-                      load={loadScreenshot}
-                      title={screen.title}
-                      onImageDimensions={(dimensions) => {
-                        setImageDimensions((current) => {
-                          if (
-                            current.get(screen.id)?.width === dimensions.width &&
-                            current.get(screen.id)?.height === dimensions.height
-                          )
-                            return current;
-                          const next = new Map(current);
-                          next.set(screen.id, dimensions);
-                          return next;
-                        });
-                      }}
-                    />
-                    {showInteractionTargets ? (
-                      <MapAccessibilityOverlay
-                        uri={screen.accessibilityTreeUri}
-                        load={loadAccessibilityTree}
-                        image={imageDimensions.get(screen.id)}
-                      />
-                    ) : null}
-                  </div>
-                </button>
-              );
-            })}
-            {visibleScreens.map((screen) => {
-              const returns = visiblePaths.filter(
-                (path) => path.fromScreenId === screen.id && isRoutineReturn(path),
-              );
-              const position = positions.get(screen.id);
-              if (!position || !returns.length) return null;
-              const image = containedImageRect(
-                {
-                  x: position.x,
-                  y: position.y + MAP_NODE_TITLE_HEIGHT + MAP_NODE_GAP,
-                  width: MAP_NODE_WIDTH,
-                  height: MAP_NODE_IMAGE_HEIGHT,
-                },
-                imageDimensions.get(screen.id) ?? {
-                  width: MAP_NODE_WIDTH,
-                  height: MAP_NODE_IMAGE_HEIGHT,
-                },
-                "top",
-              );
-              if (!image) return null;
-              return (
-                <div
-                  key={`returns-${screen.id}`}
-                  className="absolute left-(--box-left) top-(--box-top) z-20 flex w-(--box-width) flex-col items-center gap-1"
-                  style={
-                    {
-                      "--box-left": `${position.x}px`,
-                      "--box-top": `${image.y + image.height + 12}px`,
-                      "--box-width": `${MAP_NODE_WIDTH}px`,
-                    } as CSSProperties
-                  }
-                >
-                  {returns.map((path) => (
-                    <button
-                      key={path.id}
-                      type="button"
-                      aria-label={`Inspect ${path.label} to ${path.toTitle ?? "previous screen"}`}
-                      aria-pressed={selectedPathId === path.id}
-                      className="flex max-w-full items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring aria-pressed:bg-accent"
-                      onClick={() => {
-                        setSelectedPathId((current) => (current === path.id ? undefined : path.id));
-                        setSelectedScreenId(screen.id);
-                      }}
-                    >
-                      <RotateCcw className="size-3 shrink-0" aria-hidden="true" />
-                      <span className="truncate">
-                        {/^disable\b/i.test(path.label)
-                          ? path.label
-                          : path.toTitle
-                            ? `Back to ${path.toTitle}`
-                            : path.label}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      </div>
+          worldProps={{
+            worldRef,
+            transformRef,
+            navigationFrame,
+            nodeDrag,
+            suppressNodeClick,
+            alignmentGuides,
+            visibleScreens,
+            visiblePaths,
+            originPaths,
+            positions,
+            selectedPathId,
+            markerId,
+            selectedScreenId,
+            selectedIds,
+            panningTool,
+            showControlOrigins,
+            showInteractionTargets,
+            imageDimensions,
+            layoutMode,
+            loadScreenshot,
+            loadAccessibilityTree,
+            setImageDimensions,
+            onSelectScreen: setSelectedScreenId,
+            clearSelectedScreen: () => setSingleScreenId(undefined),
+            setSelectedIds,
+            onFocusScreen: focusScreen,
+            onRevealScreen: revealScreen,
+            onSelectPath: (pathId) => setSelectedPathId(pathId),
+            alignedDragPosition,
+            setAlignmentGuides,
+            setDragged,
+            setArrangedEdits,
+            onUpdateScreen,
+            saving,
+          }}
+        />
+      </MapCanvasPanels>
       <ScreenInspector
         onFocusScreen={() => selectedScreenId && focusScreen(selectedScreenId)}
         loadScreenshot={loadScreenshot}
@@ -1165,42 +694,5 @@ export function InfiniteMapCanvas({
         }}
       />
     </section>
-  );
-}
-
-function MapControl({
-  label,
-  icon: Icon,
-  onClick,
-  pressed,
-}: {
-  label: string;
-  icon: typeof Plus;
-  onClick: () => void;
-  pressed?: boolean;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            size="icon-sm"
-            variant={pressed ? "secondary" : "ghost"}
-            aria-label={label}
-            aria-pressed={pressed}
-            onClick={onClick}
-          />
-        }
-      >
-        <Icon aria-hidden="true" />
-      </TooltipTrigger>
-
-      <TooltipContent
-        sideOffset={7}
-        className="rounded-md border border-border bg-card px-2 py-1 text-xs shadow-md"
-      >
-        {label}
-      </TooltipContent>
-    </Tooltip>
   );
 }
