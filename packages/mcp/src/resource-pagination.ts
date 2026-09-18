@@ -8,6 +8,7 @@ import {
 } from "@modelcontextprotocol/server";
 import {
   enrichCaptureReviewObservedSession,
+  isCaptureReviewOpenerCaption,
   isCaptureReviewLeftoverCaption,
   liveCaptureReviewAccount,
   projectCaptureReviewDestIdentity,
@@ -355,7 +356,10 @@ function captureReviewCollectionEntries(value: unknown): Record<string, unknown>
   if (!hasLeftover) return entries;
   /** Pre-listed captureReview without dest-phase used to keep before · Tap beside
    * leftover Transition (parity with destIdentityCollectionEntries). */
-  const projected = destIdentityReviewItems(entries);
+  const projected = entries.filter(
+    (entry) =>
+      !isCaptureReviewOpenerCaption(typeof entry.caption === "string" ? entry.caption : undefined),
+  );
   return projected.length ? projected : entries;
 }
 
