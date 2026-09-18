@@ -1,4 +1,8 @@
-import { destIdentityReviewItems, isCaptureReviewDestPhase } from "@relay/protocol";
+import {
+  destIdentityReviewItems,
+  isCaptureReviewDestPhase,
+  isCaptureReviewLeftoverCaption,
+} from "@relay/protocol";
 import { useState } from "react";
 import { Button } from "@relay/ui-react/components/button";
 import { initialRunStep } from "../data/run-timeline-selection";
@@ -6,7 +10,19 @@ import { framePathsForTraceStep } from "../data/run-report-model";
 import { formatDuration } from "./run-report-formatters";
 import { ReportImage } from "./report-image";
 import { CheckCircle2, CircleAlert, ImageOff } from "lucide-react";
-import type { ProductRunReportOverview } from "../data/run-report-model";
+import type { ProductRunReportOverview, ReportEvidenceItem } from "../data/run-report-model";
+
+/** Dest wait-for thumb when leftover Close / Transition executed last-frame
+ * captions are also listed. Unphased dest-wait (no dest wait-for caption) keeps
+ * the last media frame. */
+function destWaitForEvidenceThumb(
+  frames: readonly ReportEvidenceItem[],
+): ReportEvidenceItem | undefined {
+  const withMedia = frames.filter((item) => item.media);
+  const dest = withMedia.filter((item) => !isCaptureReviewLeftoverCaption(item.title));
+  const leftover = withMedia.filter((item) => isCaptureReviewLeftoverCaption(item.title));
+  return (dest.length && leftover.length ? dest : withMedia).at(-1);
+}
 
 /** A result in the test workspace. The separate report owns diagnostics. */
 export function EmbeddedRunResult({ report }: { report: ProductRunReportOverview }) {
@@ -40,10 +56,10 @@ export function EmbeddedRunResult({ report }: { report: ProductRunReportOverview
     : [];
   const paths = authoredFrames.length ? authoredFrames : (step?.framePaths ?? []);
   const frames = report.evidence.find((section) => section.id === "screenshot")?.items ?? [];
+  const reviewItems = destIdentityReviewItems(report.captureReview?.items ?? []);
   const destPath =
-    destIdentityReviewItems(report.captureReview?.items ?? []).find((item) =>
-      isCaptureReviewDestPhase(item.phase),
-    )?.framePath ?? report.captureReview?.items.find((item) => item.framePath)?.framePath;
+    reviewItems.find((item) => isCaptureReviewDestPhase(item.phase))?.framePath ??
+    reviewItems.find((item) => item.framePath)?.framePath;
   const lastPath = paths.at(-1);
   const showingCapturedResult = Boolean(destPath) && !inspectingSteps;
   const thumbId = showingCapturedResult ? destPath : lastPath;
@@ -51,7 +67,7 @@ export function EmbeddedRunResult({ report }: { report: ProductRunReportOverview
     ? frames.find((item) => item.id === thumbId && item.media)
     : destPath
       ? frames.find((item) => item.id === destPath && item.media)
-      : frames.filter((item) => item.media).at(-1);
+      : destWaitForEvidenceThumb(frames);
   const Icon = passed ? CheckCircle2 : CircleAlert;
   return (
     <section className="flex h-full min-h-0 flex-col gap-4 p-4" aria-label="Run result">

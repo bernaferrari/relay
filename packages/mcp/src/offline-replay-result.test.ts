@@ -46,3 +46,24 @@ test("compact offline replay falls back to report destIdentity and still drops l
     ["frames/003.png"],
   );
 });
+
+test("compact offline replay drops leftover Transition executed / Inspect setup skipped", () => {
+  const report = {
+    schemaVersion: 1,
+    mode: "offline-evidence-replay",
+    runId: "transition-leftover",
+    destIdentity: [
+      { path: "frames/002.png", caption: "after · Transition executed" },
+      { path: "frames/003.png", caption: "Observe" },
+      {
+        path: "frames/004.png",
+        caption: "after · Inspect setup skipped — already on this view",
+      },
+    ],
+  };
+  const compact = compactOfflineReplayResource({
+    destIdentity: report.destIdentity,
+    report,
+  }) as { destIdentity?: Array<{ path?: string; caption?: string }> };
+  assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
+});

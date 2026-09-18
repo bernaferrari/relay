@@ -97,6 +97,83 @@ it("dest-end result thumb is dest wait-for, not leftover Close last-frame", () =
   expect(html).not.toContain("/leftover-close.png");
 });
 
+it("unphased result thumb drops leftover Transition executed / Inspect setup skipped", () => {
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={new QueryClient()}>
+      <EmbeddedRunResult
+        report={
+          {
+            outcome: "passed",
+            timeline: [],
+            captureReview: {
+              items: [
+                {
+                  captureId: "frames/002.png::transition",
+                  caption: "after · Transition executed",
+                  status: "pending",
+                  framePath: "frames/002.png",
+                },
+                {
+                  captureId: "frames/003.png::observe",
+                  caption: "Observe",
+                  status: "pending",
+                  framePath: "frames/003.png",
+                  lookFor: "What should we explore?",
+                  policy: "fast",
+                },
+                {
+                  captureId: "frames/004.png::inspect",
+                  caption: "after · Inspect setup skipped — already on this view",
+                  status: "pending",
+                  framePath: "frames/004.png",
+                },
+              ],
+              summary: {
+                captured: 1,
+                missing: 0,
+                pending: 1,
+                accepted: 0,
+                issue: 0,
+                needMoreEvidence: 0,
+              },
+            },
+            evidence: [
+              {
+                id: "screenshot",
+                label: "Screenshots",
+                count: 3,
+                detail: "",
+                summary: "",
+                inspectable: true,
+                items: [
+                  {
+                    id: "frames/002.png",
+                    title: "after · Transition executed",
+                    media: { kind: "image", src: "/transition-executed.png" },
+                  },
+                  {
+                    id: "frames/003.png",
+                    title: "Observe",
+                    media: { kind: "image", src: "/dest-wait-for.png" },
+                  },
+                  {
+                    id: "frames/004.png",
+                    title: "after · Inspect setup skipped — already on this view",
+                    media: { kind: "image", src: "/inspect-setup-skipped.png" },
+                  },
+                ],
+              },
+            ],
+          } as unknown as ProductRunReportOverview
+        }
+      />
+    </QueryClientProvider>,
+  );
+  expect(html).toContain("/dest-wait-for.png");
+  expect(html).not.toContain("/transition-executed.png");
+  expect(html).not.toContain("/inspect-setup-skipped.png");
+});
+
 it("labels the captured result separately and shows the selected step image during investigation", async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   const host = document.createElement("div");
