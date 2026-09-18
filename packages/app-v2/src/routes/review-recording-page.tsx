@@ -5,32 +5,13 @@ import { RecordingTrimPanel } from "./recording-trim-panel";
 /** @jsxImportSource react */
 import { EditorSaveStatus } from "../components/editor-save-status";
 import { WorkbenchPage } from "../components/page-layout";
-import {
-  Dialog,
-  DialogTrigger,
-  DialogClose,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-} from "@relay/ui-react/components/dialog";
 import type { AuthoringRecordingEdit } from "@relay/protocol";
 import { Field, FieldDescription, FieldLabel } from "@relay/ui-react/components/field";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useRouteContext } from "@tanstack/react-router";
-import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowUp,
-  Combine,
-  Redo2,
-  RotateCcw,
-  Save,
-  Scissors,
-  Trash2,
-  Undo2,
-} from "lucide-react";
+import { ArrowLeft, Redo2, RotateCcw, Save, Undo2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
@@ -40,11 +21,8 @@ import { RecordingActionsPanel, RecordingEvidencePanel } from "./recording-revie
 import { replayDetail, useEvidenceObjectUrl } from "./recording-review-presentation";
 
 import { reviewPersistence } from "../data/recording-review-persistence";
-import { tryReviewTarget } from "../data/recording-try-target";
 import { useRecordingNameDraft } from "../data/use-recording-name-draft";
-import { SelectField } from "../components/filter-select";
-import { RecordingWaitPicker } from "./recording-wait-picker";
-import { RecordingTargetPicker } from "./recording-target-picker";
+import { RecordingReviewInspector } from "./recording-review-inspector";
 
 type ReviewTransitionIntent =
   | { action: "replay" }
@@ -89,7 +67,6 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
   const [trimEndMs, setTrimEndMs] = useState(0);
   const [undoStack, setUndoStack] = useState<readonly number[]>([]);
   const [redoStack, setRedoStack] = useState<readonly number[]>([]);
-  const [deleteOpen, setDeleteOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const historyInitialized = useRef(false);
@@ -559,223 +536,24 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
             }
             inspector={
               editing ? (
-                <aside
-                  className="flex min-w-0 flex-col gap-3 px-3 py-4 text-card-foreground"
-                  aria-label="Edit steps"
-                >
-                  <section className="grid gap-3" aria-labelledby="review-editor-title">
-                    <div className="flex flex-wrap items-center justify-between gap-3.5">
-                      <div>
-                        <h2
-                          id="review-editor-title"
-                          className="text-xs font-medium text-muted-foreground"
-                        >
-                          {selectedActions.length === 0
-                            ? "Select a step"
-                            : selectedActions.length === 1
-                              ? `Step ${selectedIndex + 1}`
-                              : `${selectedActions.length} steps selected`}
-                        </h2>
-                      </div>
-                    </div>
-
-                    {selectedAction ? (
-                      <>
-                        <Field>
-                          <FieldLabel htmlFor="review-action-intent" className="sr-only">
-                            Instruction
-                          </FieldLabel>
-                          <Input
-                            id="review-action-intent"
-                            value={actionIntent}
-                            onChange={(event) => setActionIntent(event.currentTarget.value)}
-                            maxLength={240}
-                            disabled={!canEdit}
-                          />
-                        </Field>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="justify-self-start"
-                          onClick={() =>
-                            edit({
-                              kind: "rename",
-                              actionId: selectedAction.id,
-                              intent: actionIntent.trim(),
-                            })
-                          }
-                          disabled={
-                            !canEdit ||
-                            !actionIntent.trim() ||
-                            actionIntent.trim() === selectedAction.intent
-                          }
-                        >
-                          Save instruction
-                        </Button>
-                        <div className="flex flex-wrap items-center gap-1">
-                          {selectedAction.kind === "tap" ? (
-                            <RecordingTargetPicker
-                              controls={evidencePreview.data?.controls ?? []}
-                              canEdit={canEdit}
-                              previewUrl={evidenceUrl}
-                              onTry={(control) =>
-                                tryReviewTarget({
-                                  previewTarget: productService.previewTarget,
-                                  selectedTarget: state?.selectedTarget,
-                                  control,
-                                  confirmStartingState: async () =>
-                                    state?.selectedTarget
-                                      ? { ok: true }
-                                      : {
-                                          ok: false,
-                                          detail:
-                                            "Restore the recording Device before trying this target.",
-                                        },
-                                  observe: async () => {
-                                    if (!productService.observeTarget || !state?.selectedTarget) {
-                                      return [];
-                                    }
-                                    return productService.observeTarget(state.selectedTarget);
-                                  },
-                                })
-                              }
-                              onKeep={(target) =>
-                                edit({
-                                  kind: "replace",
-                                  actionId: selectedAction.id,
-                                  interaction: { kind: "tap", target },
-                                })
-                              }
-                            />
-                          ) : null}
-                          <RecordingWaitPicker
-                            canEdit={canEdit}
-                            onInsert={(interaction) =>
-                              edit({
-                                kind: "insert-before",
-                                actionId: selectedAction.id,
-                                interaction,
-                              })
-                            }
-                          />
-                        </div>
-                        <div
-                          className="flex flex-wrap items-center gap-1"
-                          aria-label="Reorder action"
-                        >
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => moveSelected(-1)}
-                            disabled={!canEdit || selectedIndex <= 0}
-                          >
-                            <ArrowUp aria-hidden="true" /> Move up
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => moveSelected(1)}
-                            disabled={!canEdit || selectedIndex === actions.length - 1}
-                          >
-                            <ArrowDown aria-hidden="true" /> Move down
-                          </Button>
-                        </div>
-                        {selectedAction.stepCount > 1 ? (
-                          <div className="grid gap-1.5">
-                            <SelectField
-                              label="Split after selected step"
-                              value={String(Math.min(splitAfterStep, selectedAction.stepCount - 1))}
-                              disabled={!canEdit}
-                              options={Array.from(
-                                { length: selectedAction.stepCount - 1 },
-                                (_, index) => ({
-                                  value: String(index + 1),
-                                  label: `After step ${index + 1}`,
-                                }),
-                              )}
-                              onValueChange={(value) =>
-                                setSplitAfterStep(Number.parseInt(value, 10))
-                              }
-                            />
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() =>
-                                edit({
-                                  kind: "split",
-                                  actionId: selectedAction.id,
-                                  atStep: Math.min(splitAfterStep, selectedAction.stepCount - 1),
-                                })
-                              }
-                              disabled={!canEdit}
-                            >
-                              <Scissors aria-hidden="true" /> Split action
-                            </Button>
-                          </div>
-                        ) : null}
-                      </>
-                    ) : selectedActions.length > 1 ? (
-                      <Button
-                        size="sm"
-                        onClick={() =>
-                          edit({
-                            kind: "merge",
-                            actionIds: selectedActions.map((action) => action.id),
-                          })
-                        }
-                        disabled={!canEdit || !selectionIsContiguous}
-                      >
-                        <Combine aria-hidden="true" /> Merge actions
-                      </Button>
-                    ) : (
-                      <p className="text-xs leading-normal text-muted-foreground">
-                        Choose a step to rename, reorder, replace, split, or remove it.
-                      </p>
-                    )}
-
-                    {selectedActions.length ? (
-                      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-                        <DialogTrigger
-                          render={
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="justify-self-start"
-                              disabled={!canEdit}
-                            />
-                          }
-                        >
-                          <Trash2 aria-hidden="true" /> Remove{" "}
-                          {selectedActions.length === 1 ? "action" : "actions"}
-                        </DialogTrigger>
-
-                        <DialogContent showCloseButton={false}>
-                          <DialogTitle>
-                            Remove selected {selectedActions.length === 1 ? "action" : "actions"}?
-                          </DialogTitle>
-                          <DialogDescription>
-                            This changes the steps and requires a new replay before saving.
-                          </DialogDescription>
-                          <div className="flex flex-wrap items-center justify-end gap-2.5">
-                            <DialogClose render={<Button variant="ghost">Cancel</Button>} />
-                            <Button
-                              variant="destructive"
-                              onClick={() => {
-                                setDeleteOpen(false);
-                                edit({
-                                  kind: "remove",
-                                  actionIds: selectedActions.map((action) => action.id),
-                                });
-                              }}
-                            >
-                              Remove
-                            </Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-                    ) : null}
-                  </section>
-                </aside>
+                <RecordingReviewInspector
+                  actions={actions}
+                  selectedActions={selectedActions}
+                  selectedAction={selectedAction}
+                  selectedIndex={selectedIndex}
+                  actionIntent={actionIntent}
+                  setActionIntent={setActionIntent}
+                  splitAfterStep={splitAfterStep}
+                  setSplitAfterStep={setSplitAfterStep}
+                  canEdit={canEdit}
+                  selectionIsContiguous={selectionIsContiguous}
+                  onEdit={edit}
+                  onMoveSelected={moveSelected}
+                  state={state}
+                  productService={productService}
+                  controls={evidencePreview.data?.controls ?? []}
+                  previewUrl={evidenceUrl}
+                />
               ) : undefined
             }
           />
