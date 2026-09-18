@@ -261,7 +261,11 @@ function destIdentityCollectionEntries(value: unknown): Record<string, string>[]
 
 function captureReviewCollectionEntries(value: unknown): Record<string, unknown>[] {
   if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
+  const hasLeftover = value.some((entry) => {
+    const caption = object(entry).caption;
+    return isCaptureReviewLeftoverCaption(typeof caption === "string" ? caption : undefined);
+  });
+  const entries = value.flatMap((entry) => {
     const rec = object(entry);
     const caption = typeof rec.caption === "string" ? rec.caption.slice(0, 160) : undefined;
     if (isCaptureReviewLeftoverCaption(caption)) return [];
@@ -349,6 +353,14 @@ function captureReviewCollectionEntries(value: unknown): Record<string, unknown>
       },
     ];
   });
+  if (!hasLeftover) return entries;
+  /** Pre-listed captureReview without dest-phase used to keep before · Tap beside
+   * leftover Transition (parity with destIdentityCollectionEntries). */
+  const withoutOpeners = entries.filter(
+    (entry) =>
+      !isCaptureReviewOpenerCaption(typeof entry.caption === "string" ? entry.caption : undefined),
+  );
+  return withoutOpeners.length ? withoutOpeners : entries;
 }
 
 function projectRunListDestIdentity(value: unknown): unknown {

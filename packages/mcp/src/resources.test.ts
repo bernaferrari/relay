@@ -1562,6 +1562,27 @@ test("runs collection dest identity drops opener Tap beside leftover Transition"
               { path: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
               { path: "frames/004.png", caption: "after · Transition executed" },
             ],
+            captureReview: [
+              {
+                captureId: "frames/001.png::tap",
+                caption: "before · Tap identifier sidebar.open.button",
+                status: "pending",
+                framePath: "frames/001.png",
+              },
+              {
+                captureId: "frames/002.png::transition",
+                caption: "after · Transition executed",
+                status: "pending",
+                framePath: "frames/002.png",
+              },
+              {
+                captureId: "frames/003.png::observe",
+                caption: "step:step-action:Sidebar open-close",
+                status: "pending",
+                framePath: "frames/003.png",
+                phase: "dest",
+              },
+            ],
           },
         ],
       },
@@ -1573,11 +1594,23 @@ test("runs collection dest identity drops opener Tap beside leftover Transition"
     );
     const envelope = JSON.parse(content.text) as {
       data: {
-        runs?: Array<{ destIdentity?: Array<{ relativeName?: string; caption?: string }> }>;
+        runs?: Array<{
+          destIdentity?: Array<{ relativeName?: string; caption?: string }>;
+          captureReview?: Array<{ relativeName?: string; caption?: string }>;
+        }>;
       };
     };
     assert.deepEqual(envelope.data.runs?.[0]?.destIdentity, [
       { relativeName: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
+    ]);
+    assert.deepEqual(envelope.data.runs?.[0]?.captureReview, [
+      {
+        captureId: "frames/003.png::observe",
+        caption: "step:step-action:Sidebar open-close",
+        relativeName: "frames/003.png",
+        phase: "dest",
+        status: "pending",
+      },
     ]);
     assert.doesNotMatch(content.text, /frames\/001\.png/);
     assert.doesNotMatch(content.text, /before · Tap/);
@@ -2074,6 +2107,64 @@ test("run evidence resource unphased drops leftover Transition executed / Inspec
       false,
     );
     assert.equal((envelope.data.evidence as { frames?: unknown } | undefined)?.frames, undefined);
+  } finally {
+    await session.close();
+  }
+});
+
+test("run evidence resource drops opener Tap from testStepEvidence beside leftover Transition", async () => {
+  const session = await connectMcp(
+    fixtureInvoker({
+      "run.evidence.get": {
+        evidence: {
+          runId: "ios-sidebar-stripped",
+          schemaVersion: 1,
+          frames: [
+            { path: "frames/001.png", caption: "before · Tap identifier sidebar.open.button" },
+            { path: "frames/002.png", caption: "after · Transition executed" },
+            { path: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
+            { path: "frames/004.png", caption: "after · Transition executed" },
+          ],
+          artifacts: [{ kind: "capture-review", capturedAt: 1 }],
+          testStepEvidence: [
+            { testStepId: "step-tap", evidence: { framePaths: ["frames/001.png"] } },
+            { testStepId: "step-transition", evidence: { framePaths: ["frames/002.png"] } },
+            { testStepId: "step-observe", evidence: { framePaths: ["frames/003.png"] } },
+            { testStepId: "step-leftover", evidence: { framePaths: ["frames/004.png"] } },
+          ],
+        },
+      },
+    }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", {
+        uri: relayMcpResourceUris.runEvidence.replace("{runId}", "ios-sidebar-stripped"),
+      }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      data: {
+        evidence?: {
+          destIdentity?: Array<{ relativeName?: string; caption?: string }>;
+          testStepEvidence?: Array<{
+            testStepId?: string;
+            evidence?: { framePaths?: string[] };
+          }>;
+        };
+      };
+    };
+    assert.deepEqual(envelope.data.evidence?.destIdentity, [
+      {
+        relativeName: "frames/003.png",
+        caption: "step:step-action:Sidebar open-close",
+      },
+    ]);
+    assert.deepEqual(
+      envelope.data.evidence?.testStepEvidence?.map((item) => item.testStepId),
+      ["step-observe"],
+    );
+    assert.doesNotMatch(content.text, /before · Tap/);
+    assert.doesNotMatch(content.text, /frames\/001\.png/);
   } finally {
     await session.close();
   }

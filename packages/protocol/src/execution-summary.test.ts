@@ -710,13 +710,35 @@ test("run.evidence.get drops opener Tap beside leftover Transition when dest-pha
         { path: "frames/004.png", caption: "after · Transition executed" },
       ],
       artifacts: [{ kind: "capture-review", capturedAt: 1 }],
+      testStepEvidence: [
+        { testStepId: "step-tap", evidence: { framePaths: ["frames/001.png"] } },
+        { testStepId: "step-transition", evidence: { framePaths: ["frames/002.png"] } },
+        { testStepId: "step-observe", evidence: { framePaths: ["frames/003.png"] } },
+        { testStepId: "step-leftover", evidence: { framePaths: ["frames/004.png"] } },
+      ],
     },
   }) as {
-    evidence?: { destIdentity?: Array<{ path?: string; caption?: string }> };
+    evidence?: {
+      destIdentity?: Array<{ path?: string; caption?: string }>;
+      testStepEvidence?: Array<{
+        testStepId?: string;
+        evidence?: { framePaths?: string[] };
+      }>;
+    };
   };
   assert.deepEqual(result.evidence?.destIdentity, [
     { path: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
   ]);
+  assert.deepEqual(
+    result.evidence?.testStepEvidence?.map((item) => item.testStepId),
+    ["step-observe"],
+  );
+  assert.equal(
+    result.evidence?.testStepEvidence?.some((item) =>
+      item.evidence?.framePaths?.includes("frames/001.png"),
+    ),
+    false,
+  );
 });
 
 test("run.evidence.get keeps slim capture-review dest-phase over opener Tap frames", () => {

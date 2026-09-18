@@ -1053,6 +1053,8 @@ export function projectDestIdentityOnEvidence(evidence: unknown): unknown {
 
 /** Missing dest-phase is not every step frame on compact evidence: leftover
  * Transition executed / Inspect setup skipped cannot sit beside Observe.
+ * Opener before · Tap cannot fill testStepEvidence beside those leftovers either
+ * (parity with destIdentityCheckpointFramePaths / persisted step evidence).
  * Unphased Android dest-wait with no leftover caption keeps every frame and
  * omits destIdentity (callers keep every PNG elsewhere). */
 function summarizeRunEvidence(response: Record<string, unknown>): unknown {
@@ -1084,7 +1086,9 @@ function summarizeRunEvidence(response: Record<string, unknown>): unknown {
           return framePaths.some((path) => phased.includes(path)) ? [item] : [];
         }
         if (!leftoverPaths.size || !destWaitFor.size) return [item];
-        const kept = framePaths.filter((path) => !leftoverPaths.has(path));
+        /** Keep dest wait-for only — not “everything except leftover”, which still
+         * left opener before · Tap beside Observe. */
+        const kept = framePaths.filter((path) => destWaitFor.has(path));
         if (!kept.length) return [];
         if (kept.length === framePaths.length) return [item];
         return [
