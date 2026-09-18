@@ -165,7 +165,7 @@ export function AppearanceSettings() {
               </span>
               <span className="grid min-w-0 gap-0.5 px-1">
                 <span className="truncate font-medium text-foreground">{scheme.title}</span>
-                <span className="truncate text-muted-foreground">{scheme.description}</span>
+                <span className="truncate text-foreground">{scheme.description}</span>
               </span>
               <RadioGroupItem value={scheme.value} />
             </FieldLabel>
@@ -189,7 +189,7 @@ export function AppearanceSettings() {
               <FieldLabel key={option.value} className={radioCardClassName}>
                 <span className="col-span-2 grid min-h-22 content-center gap-1 px-1 py-3">
                   <span className="font-medium text-foreground">{option.label}</span>
-                  <span className="text-muted-foreground">{option.description}</span>
+                  <span className="text-foreground">{option.description}</span>
                 </span>
                 <RadioGroupItem value={option.value} />
               </FieldLabel>

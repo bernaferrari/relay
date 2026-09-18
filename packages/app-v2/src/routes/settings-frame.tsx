@@ -1,5 +1,4 @@
 /** @jsxImportSource react */
-import { Switch } from "@relay/ui-react/components/switch";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import { settingsCategories, type SettingsCategory } from "../data/settings-product-service";
@@ -224,6 +223,7 @@ export function ToggleRow({
     <div
       role="switch"
       aria-checked={checked}
+      aria-label={title}
       aria-labelledby={titleId}
       aria-describedby={descriptionId}
       tabIndex={disabled ? -1 : 0}
@@ -245,15 +245,14 @@ export function ToggleRow({
           {description}
         </span>
       </span>
-      <Switch
-        id={id}
-        checked={checked}
-        disabled={disabled}
-        aria-label={title}
-        aria-describedby={descriptionId}
-        tabIndex={-1}
-        className="pointer-events-none"
-      />
+      <span
+        aria-hidden="true"
+        className={`relative inline-flex h-5 w-8 shrink-0 items-center rounded-full border border-transparent ${checked ? "bg-primary" : "bg-input"}`}
+      >
+        <span
+          className={`pointer-events-none block size-4 rounded-full bg-background transition-transform ${checked ? "translate-x-3.5" : "translate-x-0"}`}
+        />
+      </span>
     </div>
   );
 }

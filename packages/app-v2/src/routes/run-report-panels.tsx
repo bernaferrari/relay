@@ -91,11 +91,9 @@ export function EvidencePreview({
               <span className="grid min-w-0 gap-0.5">
                 <strong className="text-sm font-medium">{item.title}</strong>
                 {item.detail ? (
-                  <span className="text-xs text-muted-foreground">{item.detail}</span>
+                  <span className="text-xs text-foreground">{item.detail}</span>
                 ) : null}
-                {item.meta ? (
-                  <small className="text-xs text-muted-foreground">{item.meta}</small>
-                ) : null}
+                {item.meta ? <small className="text-xs text-foreground">{item.meta}</small> : null}
               </span>
             </li>
           ))}

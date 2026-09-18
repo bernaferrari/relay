@@ -98,7 +98,7 @@ export function RunInspection({
     typeof runService.inspectExecution === "function";
   const execution = useQuery({
     queryKey: ["run", "execution", runId],
-    queryFn: () => runService.inspectExecution?.(runId) ?? Promise.resolve(null),
+    queryFn: async () => (await runService.inspectExecution?.(runId)) ?? null,
     enabled: executionEnabled,
     staleTime: 0,
     retry: false,

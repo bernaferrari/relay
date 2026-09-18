@@ -127,23 +127,26 @@ async function assertDesktopChrome(page) {
       return null;
     };
     return {
-      brand: rect(".relay-brand"),
-      sidebarHeader: rect(".relay-sidebar-head"),
-      toolbar: rect(".relay-desktop-toolbar"),
-      back: rect('.relay-history-button[aria-label="Go back"]'),
-      forward: rect('.relay-history-button[aria-label="Go forward"]'),
-      backIcon: rect('.relay-history-button[aria-label="Go back"] svg'),
-      forwardIcon: rect('.relay-history-button[aria-label="Go forward"] svg'),
-      activity: rect('.relay-desktop-toolbar [aria-label^="Open Activity Center"]'),
-      command: rect(".relay-desktop-toolbar .relay-command-trigger"),
+      sidebar: rect('[aria-label="Relay navigation"]'),
+      toolbar: rect('header[aria-label="Window navigation"]'),
+      back: rect('header[aria-label="Window navigation"] button[aria-label="Go back"]'),
+      forward: rect('header[aria-label="Window navigation"] button[aria-label="Go forward"]'),
+      backIcon: rect('header[aria-label="Window navigation"] button[aria-label="Go back"] svg'),
+      forwardIcon: rect(
+        'header[aria-label="Window navigation"] button[aria-label="Go forward"] svg',
+      ),
+      activity: rect('header[aria-label="Window navigation"] [aria-label^="Open Activity Center"]'),
+      command: rect(
+        'header[aria-label="Window navigation"] button[aria-label="Open command palette"]',
+      ),
     };
   });
   for (const [name, value] of Object.entries(chrome)) {
     assert(value, `Electron desktop chrome is missing ${name}`);
   }
   assert(
-    chrome.brand.left >= 80,
-    `Relay brand overlaps macOS traffic lights: ${chrome.brand.left}`,
+    chrome.command.left >= 80,
+    `Desktop command palette overlaps macOS traffic lights: ${chrome.command.left}`,
   );
   assert(chrome.toolbar.display !== "none", "Electron desktop toolbar is hidden at wide size");
   assert(
@@ -176,8 +179,12 @@ async function assertCompactChrome(page) {
   });
   if (process.platform !== "darwin") return;
   const compact = await page.evaluate(() => {
-    const header = document.querySelector(".relay-mobile-header")?.getBoundingClientRect();
-    const menu = document.querySelector(".relay-mobile-menu")?.getBoundingClientRect();
+    const header = [...document.querySelectorAll("header")]
+      .find((element) => !element.getAttribute("aria-label"))
+      ?.getBoundingClientRect();
+    const menu = document
+      .querySelector('button[aria-label="Open navigation"]')
+      ?.getBoundingClientRect();
     return {
       header: header ? { height: header.height } : null,
       menu: menu ? { left: menu.left } : null,
@@ -284,7 +291,7 @@ async function run() {
     for (const [name, route] of [
       ["Devices", "/devices"],
       ["Changes", "/changes"],
-      ["Runs", "/runs"],
+      ["Results", "/runs"],
     ]) {
       await clickNav(page, name, route);
       await check();

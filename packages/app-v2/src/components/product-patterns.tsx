@@ -207,6 +207,8 @@ export function OutcomeMark({ outcome }: { outcome: OutcomeValue }) {
       className={classNames(
         presentation.tone === "success" && "bg-success/15 text-success-foreground",
         presentation.tone === "notice" && "bg-warning/15 text-warning-foreground",
+        presentation.tone === "danger" &&
+          "bg-destructive text-white dark:bg-destructive dark:text-black",
       )}
       variant={outcomeBadgeVariant(presentation.tone)}
     >

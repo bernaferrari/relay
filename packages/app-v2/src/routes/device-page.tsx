@@ -463,6 +463,7 @@ export function DevicePage() {
                 : "grid min-w-0 content-start gap-5 overflow-y-auto py-2"
             }
             aria-label="Device controls"
+            tabIndex={device.data.platform === "browser" && !recover.error ? -1 : 0}
           >
             {boot.error ? (
               <p role="alert" className="text-sm text-destructive">

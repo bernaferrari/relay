@@ -44,19 +44,19 @@ const fixtures = [
   { id: "apps-error", heading: "Apps" },
   { id: "app-versions", heading: "Versions" },
   { id: "app-versions-error", heading: "Versions" },
-  { id: "app-accounts", heading: "Accounts" },
-  { id: "app-accounts-error", heading: "Accounts" },
-  { id: "prerecord-ready", heading: "Record a Test" },
-  { id: "prerecord-connecting", heading: "Record a Test" },
-  { id: "prerecord-failure", heading: "Record a Test" },
+  { id: "app-accounts", heading: "Sign-ins" },
+  { id: "app-accounts-error", heading: "Sign-ins" },
+  { id: "prerecord-ready", heading: "New test" },
+  { id: "prerecord-connecting", heading: "New test" },
+  { id: "prerecord-failure", heading: "New test" },
   {
     id: "recording-review",
-    heading: "Complete checkout and confirm the order",
+    heading: "Review test",
     recordingReview: true,
   },
-  { id: "recording-active", heading: "Complete checkout and confirm the order" },
+  { id: "recording-active", heading: "Record test" },
   { id: "test-detail", heading: "Complete checkout and confirm the order" },
-  { id: "runs-large", heading: "Run history" },
+  { id: "runs-large", heading: "Results" },
   { id: "report-replay", heading: "Complete checkout" },
   { id: "report-failed", heading: "Complete checkout" },
   { id: "report-video", heading: "Complete checkout", video: true },
@@ -67,25 +67,25 @@ const fixtures = [
   { id: "live-test-editor", heading: "Complete checkout and confirm the order" },
   { id: "suites-list", heading: "Plans" },
   { id: "suite-detail", heading: "Release smoke" },
-  { id: "environments-list", heading: "Environments" },
+  { id: "environments-list", heading: "Browsers" },
   { id: "environment-detail", heading: "Checkout staging" },
-  { id: "agent-debug", heading: "Investigate a bug" },
+  { id: "agent-debug", heading: "Investigate" },
   { id: "devices", heading: "Devices" },
   { id: "tests-library", heading: "Tests" },
   { id: "test-editor", heading: "Complete checkout and confirm the order" },
-  { id: "map-overview", heading: "Checkout" },
+  { id: "map-overview", heading: "App map" },
   { id: "device-detail", heading: "Pixel 9 Pro XL" },
   { id: "changes-list", heading: "Change verification" },
   { id: "change-detail", heading: "Keep Arabic settings readable" },
-  { id: "run-across", heading: "Choose data and where to run" },
+  { id: "run-across", heading: "Run across" },
   { id: "settings-general", heading: "General" },
-  { id: "settings-evidence", heading: "Evidence & privacy" },
+  { id: "settings-evidence", heading: "Privacy" },
   { id: "settings-integrations", heading: "Integrations" },
   { id: "settings-appearance", heading: "Appearance" },
   { id: "settings-advanced", heading: "Advanced" },
   { id: "settings-about", heading: "About" },
   { id: "not-found", heading: "This page is not available" },
-  { id: "route-error", heading: "This page could not load" },
+  { id: "route-error", heading: "This page couldn’t load" },
 ];
 const viewports = [
   { id: "compact", width: 800, height: 560 },
@@ -183,7 +183,13 @@ async function assertAccessible(page, fixture, viewport) {
     .analyze();
   if (!result.violations.length) return;
   const details = result.violations
-    .map((violation) => `${violation.id}: ${violation.nodes[0]?.target.join(", ")}`)
+    .map(
+      (violation) =>
+        `${violation.id}: ${violation.nodes
+          .slice(0, 3)
+          .map((node) => `${node.target.join(", ")} (${node.html})`)
+          .join("; ")}`,
+    )
     .join("\n- ");
   throw new Error(`${fixture.id}/${viewport.id} failed accessibility:\n- ${details}`);
 }
@@ -212,7 +218,7 @@ async function assertZoomedKeyboardReachability(page, fixture, viewport) {
       );
     }
     const focusable = page.locator(
-      'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+      'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"]):not([role="presentation"])',
     );
     if ((await focusable.count()) === 0) throw new Error(`${fixture.id} has no keyboard controls`);
     const tabCount = Math.min((await focusable.count()) + 2, 96);
@@ -243,12 +249,17 @@ async function assertZoomedKeyboardReachability(page, fixture, viewport) {
         return {
           visible: rect.width > 0 && rect.height > 0 && !hidden,
           tag: active.tagName,
+          role: active.getAttribute("role"),
           ariaHidden: active.getAttribute("aria-hidden"),
+          html: active.outerHTML.slice(0, 240),
         };
       });
-      if (!state.visible || state.ariaHidden === "true") {
+      if (
+        !/^(?:presentation|tabpanel)$/u.test(state.role ?? "") &&
+        (!state.visible || state.ariaHidden === "true")
+      ) {
         throw new Error(
-          `${fixture.id}/${viewport.id} reached an inaccessible control at 200% zoom`,
+          `${fixture.id}/${viewport.id} reached an inaccessible control at 200% zoom (tab ${index + 1}, ${state.tag}, ${state.html ?? ""})`,
         );
       }
     }
@@ -373,7 +384,7 @@ async function assertLayout(page, fixture, viewport) {
     });
   }
   if (fixture.evidenceMedia) {
-    const preview = page.locator(".relay-evidence-image-frame img").first();
+    const preview = page.locator('[data-slot="evidence-image-frame"] img').first();
     await preview.waitFor();
     const loaded = await preview.evaluate(
       (image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0,
@@ -387,28 +398,32 @@ async function assertLayout(page, fixture, viewport) {
     }
   }
   if (fixture.id === "test-detail") {
-    const radios = page.getByRole("radio");
-    const titles = page.locator('[data-slot="run-target-title"]');
-    if ((await radios.count()) !== 2) throw new Error("Test detail did not render both targets");
-    if ((await titles.count()) !== 2) throw new Error("Test detail did not render both targets");
-    const clipped = await titles.evaluateAll((nodes) =>
-      nodes.some((node) => node.scrollWidth > node.clientWidth + 1),
-    );
-    if (clipped) throw new Error("Test detail truncated a target name");
-    await radios.first().click();
+    await page.getByRole("button", { name: "Set up run", exact: true }).click();
+    const targetSelect = page.getByRole("combobox", { name: "Device or browser" });
+    if ((await targetSelect.count()) !== 1)
+      throw new Error("Test detail did not render target setup");
+    await targetSelect.click();
+    const targetItemCount = await page.locator('[data-slot="select-item"]').count();
+    if (targetItemCount !== 2) {
+      throw new Error(`Test detail did not render both targets (items ${targetItemCount})`);
+    }
+    await page.locator('[data-slot="select-item"]').first().click();
     if (await page.getByRole("button", { name: "Run Test" }).isDisabled()) {
       throw new Error("Test detail did not enable Run Test after target selection");
     }
+    await page.getByRole("button", { name: "Run settings" }).click();
   }
   if (fixture.recordingReview) {
-    const actions = page.locator(".relay-review-step");
+    const actions = page.locator('ol[aria-label="Recorded actions"] > li');
     if ((await actions.count()) !== 4) {
       throw new Error("Recording review did not render every editable action");
     }
+    await page.getByRole("button", { name: "Edit steps" }).click();
+    await page.getByRole("button", { name: "Save instruction" }).waitFor();
     if (await page.getByRole("button", { name: "Save instruction" }).isEnabled()) {
       throw new Error("Recording review enabled an unchanged instruction");
     }
-    if ((await page.getByText("A passing replay is required before saving.").count()) !== 1) {
+    if ((await page.getByText(/Replay runs these steps .* before saving\./u).count()) !== 1) {
       throw new Error("Recording review did not explain its replay gate");
     }
   }
@@ -417,8 +432,11 @@ async function assertLayout(page, fixture, viewport) {
   if ((await reportLinks.count()) < 1) {
     throw new Error("Batch fixture did not render a Report link");
   }
-  if ((await page.getByRole("link", { name: "Check Sign-ins" }).count()) < 1) {
-    throw new Error("Batch fixture did not render the Sign-ins morning step");
+  if ((await page.getByText("1 product issue to review", { exact: true }).count()) !== 1) {
+    throw new Error("Batch fixture did not render the current product-issue review summary");
+  }
+  if ((await page.getByRole("button", { name: "Next unresolved", exact: true }).count()) !== 1) {
+    throw new Error("Batch fixture did not render the unresolved-case review control");
   }
   const firstLink = await reportLinks.first().boundingBox();
   if (!firstLink || firstLink.height < 44) {

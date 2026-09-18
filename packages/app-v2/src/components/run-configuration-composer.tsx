@@ -81,7 +81,7 @@ export function RunConfigurationComposer({
     });
   }
   const optionCopy = (option: RunConfigurationOption) => (
-    <span className="grid min-w-0 flex-1 gap-0.5 wrap-anywhere [&_strong]:text-sm [&_strong]:font-medium [&_small]:text-xs [&_small]:text-muted-foreground">
+    <span className="grid min-w-0 flex-1 gap-0.5 wrap-anywhere [&_strong]:text-sm [&_strong]:font-medium [&_small]:text-xs [&_small]:text-foreground">
       <strong data-slot="run-target-title" className="flex items-center gap-2">
         {option.locale ? (
           <span

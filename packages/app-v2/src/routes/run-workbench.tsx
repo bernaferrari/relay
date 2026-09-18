@@ -639,9 +639,7 @@ export function RunWorkbench({
                             ) : null}
                             <span className="grid min-w-0 gap-1">
                               <span className="text-sm font-medium">{item.title}</span>
-                              <span className="text-xs text-muted-foreground">
-                                Capture {index + 1}
-                              </span>
+                              <span className="text-xs text-foreground">Capture {index + 1}</span>
                             </span>
                           </button>
                         </li>

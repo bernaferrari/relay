@@ -239,7 +239,7 @@ function SessionRow({
                 : sessionVariant(session) === "warning"
                   ? "bg-warning/15 text-warning-foreground"
                   : sessionVariant(session) === "danger"
-                    ? "bg-destructive/10 text-destructive"
+                    ? "bg-destructive text-white dark:text-black"
                     : undefined
             }
           >

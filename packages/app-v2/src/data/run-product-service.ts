@@ -248,8 +248,27 @@ export function createRunProductService(platform: Platform): RunProductService {
       return (await runtime()).journey.inspect(workflowId);
     },
     async inspectExecution(runId) {
+      const client = await relayClient();
+      // Persisted terminal Results are not workflow-less jobs. Avoid probing
+      // /jobs/:id for them: a 404 is the expected answer, but it still leaks
+      // a failed resource request into browser acceptance and the console.
       try {
-        const { job } = await (await relayClient()).invoke("job.get", { jobId: runId });
+        const { runs } = await client.invoke("run.list", {});
+        const persisted = runs.find((run) => run.id === runId);
+        if (
+          persisted &&
+          !/^(?:queued|pending|waiting|running|started|in-progress|active|paused)$/iu.test(
+            persisted.status,
+          )
+        ) {
+          return undefined;
+        }
+      } catch {
+        // Keep the existing job probe as the fallback when the bounded index
+        // is unavailable; active workflow-less jobs still need discovery.
+      }
+      try {
+        const { job } = await client.invoke("job.get", { jobId: runId });
         return projectWorkflowlessExecution(job, runId);
       } catch {
         return undefined;

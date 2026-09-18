@@ -39,7 +39,7 @@ export function SavedTestWorkspace({
               >
                 <SlidersHorizontal className="size-4 text-muted-foreground" />
                 <span>Run settings</span>
-                <span className="ml-auto max-w-[45%] truncate text-xs font-normal text-muted-foreground">
+                <span className="ml-auto max-w-[45%] truncate text-sidebar-foreground text-xs font-normal">
                   {deviceName}
                 </span>
                 <ChevronDown

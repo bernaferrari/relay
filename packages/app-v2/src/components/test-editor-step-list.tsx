@@ -123,7 +123,7 @@ export function TestEditorStepOutline({
                     <strong className="block overflow-hidden text-xs font-semibold break-words">
                       {entry.step.intent}
                     </strong>
-                    <small className="mt-0.5 block overflow-hidden text-xs text-muted-foreground break-words">
+                    <small className="mt-0.5 block overflow-hidden text-xs text-foreground break-words">
                       {entry.placement ? `${branchLabel(entry.placement)} · ` : ""}
                       {stepKindLabel(entry.step)} ·{" "}
                       {stepReadinessLabel(entry.step, {

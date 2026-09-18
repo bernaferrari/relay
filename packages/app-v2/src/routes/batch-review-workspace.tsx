@@ -125,7 +125,7 @@ export function BatchReviewWorkspace({
                       : Object.values(item.values).map(humanizeBatchIdentity).join(" · ") ||
                         `Case ${item.index + 1}`}
                   </span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs text-foreground">
                     {item.status} · {item.triageStatus ?? "unreviewed"}
                   </span>
                 </button>
@@ -173,6 +173,7 @@ export function BatchReviewWorkspace({
                     <Button
                       nativeButton={false}
                       variant="ghost"
+                      className="min-h-11"
                       render={
                         <Link
                           to="/runs/$runId"

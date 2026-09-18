@@ -176,7 +176,7 @@ export function AppSwitcher() {
           aria-label={`App: ${contextName}`}
         >
           <span className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="text-xs font-normal leading-4 text-muted-foreground">
+            <span className="text-sidebar-foreground text-xs font-normal leading-4">
               {scope.kind === "workspace" ? "Workspace" : "App"}
             </span>
             <span className="truncate text-sm font-medium leading-5">{contextName}</span>

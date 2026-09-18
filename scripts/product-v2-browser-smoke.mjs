@@ -305,7 +305,7 @@ async function runSmoke(options) {
     ),
   );
   page.on("response", (response) => {
-    if (response.status() >= 500) failures.push(`HTTP ${response.status()}: ${response.url()}`);
+    if (response.status() >= 400) failures.push(`HTTP ${response.status()}: ${response.url()}`);
   });
   let reportChecked = false;
   let accessibilityChecks = 0;
@@ -329,7 +329,7 @@ async function runSmoke(options) {
     await assertKeyboardFocus(page);
     await checkAccessibility();
 
-    trace("checking Tests, Live, Agent Debug, Devices, Changes, Runs and Settings routes");
+    trace("checking Tests, Live, Agent Debug, Devices, Changes, Results and Settings routes");
     await clickNav(page, "Tests", "/tests");
     await checkAccessibility();
     if (await page.getByRole("link", { name: "Live", exact: true }).count()) {
@@ -354,7 +354,7 @@ async function runSmoke(options) {
     await checkAccessibility();
     await clickNav(page, "Changes", "/changes");
     await checkAccessibility();
-    await clickNav(page, "Runs", "/runs");
+    await clickNav(page, "Results", "/runs");
     await checkAccessibility();
     const reportLink = page.locator('a[href*="#/runs/"]').first();
     await reportLink.waitFor({ state: "attached", timeout: 3_000 }).catch(() => {});
