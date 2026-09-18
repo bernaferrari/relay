@@ -5,6 +5,7 @@ import {
   destIdentityReviewItems,
   enrichCaptureReviewObservedSession,
   isCaptureReviewLeftoverCaption,
+  isCaptureReviewOpenerCaption,
   liveCaptureReviewAccount,
   CAPTURE_REVIEW_DEST_PHASE,
   resolveCaptureReviewQueue,
@@ -66,14 +67,18 @@ function compactDestIdentity(
   });
 }
 
-/** Dest wait-for frames when leftover Close / Run saved Test last-frame is
- * also listed. Unphased dest-wait (no dest identity) keeps every frame. */
+/** Dest wait-for frames when leftover Close / Run saved Test / Transition
+ * last-frame is also listed. Opener before · Tap cannot fill dest beside those
+ * leftovers (parity with destIdentityCheckpointFramePaths). Unphased dest-wait
+ * (no leftover caption) keeps every frame. */
 function destWaitForListedFrames(
   frames: readonly { path: string; caption?: string }[],
 ): { path: string; caption?: string }[] {
   const dest = frames.filter((frame) => !isCaptureReviewLeftoverCaption(frame.caption));
   const leftover = frames.filter((frame) => isCaptureReviewLeftoverCaption(frame.caption));
-  return dest.length && leftover.length ? dest : [...frames];
+  if (!(dest.length && leftover.length)) return [...frames];
+  const withoutOpeners = dest.filter((frame) => !isCaptureReviewOpenerCaption(frame.caption));
+  return withoutOpeners.length ? withoutOpeners : dest;
 }
 
 /** Leftover Close captions cannot fill dest identity. Unphased dest-wait still

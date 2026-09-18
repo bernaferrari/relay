@@ -9,6 +9,7 @@ import {
 import {
   enrichCaptureReviewObservedSession,
   isCaptureReviewLeftoverCaption,
+  isCaptureReviewOpenerCaption,
   liveCaptureReviewAccount,
   type OperationId,
   type CaptureReviewObservedSession,
@@ -227,7 +228,11 @@ export function scalarFields(value: unknown): Record<string, unknown> {
 
 function destIdentityCollectionEntries(value: unknown): Record<string, string>[] {
   if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
+  const hasLeftover = value.some((entry) => {
+    const caption = object(entry).caption;
+    return isCaptureReviewLeftoverCaption(typeof caption === "string" ? caption : undefined);
+  });
+  const entries = value.flatMap((entry) => {
     const rec = object(entry);
     const caption = typeof rec.caption === "string" ? rec.caption.slice(0, 160) : undefined;
     if (isCaptureReviewLeftoverCaption(caption)) return [];
@@ -249,6 +254,9 @@ function destIdentityCollectionEntries(value: unknown): Record<string, string>[]
       ? [{ ...(relativeName ? { relativeName } : {}), ...(caption ? { caption } : {}) }]
       : [];
   });
+  if (!hasLeftover) return entries;
+  const withoutOpeners = entries.filter((entry) => !isCaptureReviewOpenerCaption(entry.caption));
+  return withoutOpeners.length ? withoutOpeners : entries;
 }
 
 function captureReviewCollectionEntries(value: unknown): Record<string, unknown>[] {

@@ -363,6 +363,41 @@ test("writeRunOutDir listed destIdentity leftover Transition executed cannot fil
   }
 });
 
+test("writeRunOutDir listed destIdentity opener Tap beside leftover Transition cannot fill checkpoint", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-cli-out-listed-opener-"));
+  const runDir = join(root, "job-run");
+  const outDir = join(root, "out");
+  try {
+    await mkdir(join(runDir, "frames"), { recursive: true });
+    await writeFile(join(runDir, "frames", "003.png"), overlayBytes);
+    await writeFile(join(runDir, "frames", "001.png"), pngBytes);
+    await writeFile(join(runDir, "frames", "002.png"), pngBytes);
+    await writeRunOutDir({
+      dir: outDir,
+      envelope: {
+        type: "result",
+        ok: true,
+        result: {
+          job: {
+            id: "e79b55ac-listed-opener",
+            resources: { runDir },
+            destIdentity: [
+              { path: "frames/001.png", caption: "before · Tap identifier sidebar.open.button" },
+              { path: "frames/002.png", caption: "after · Transition executed" },
+              { path: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
+            ],
+          },
+        },
+      },
+      stderr: "",
+    });
+    assert.deepEqual(await readFile(join(outDir, "checkpoint.png")), overlayBytes);
+    assert.notDeepEqual(await readFile(join(outDir, "checkpoint.png")), pngBytes);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("writeRunOutDir unphased leftover Transition executed cannot fill per-job dest PNGs", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-cli-out-unphased-transition-"));
   const runDir = join(root, "job-run");

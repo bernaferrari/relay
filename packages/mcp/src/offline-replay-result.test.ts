@@ -67,3 +67,24 @@ test("compact offline replay drops leftover Transition executed / Inspect setup 
   }) as { destIdentity?: Array<{ path?: string; caption?: string }> };
   assert.deepEqual(compact.destIdentity, [{ path: "frames/003.png", caption: "Observe" }]);
 });
+
+test("compact offline replay drops opener Tap beside leftover Transition", () => {
+  const report = {
+    schemaVersion: 1,
+    mode: "offline-evidence-replay",
+    runId: "e79b55ac",
+    destIdentity: [
+      { path: "frames/001.png", caption: "before · Tap identifier sidebar.open.button" },
+      { path: "frames/002.png", caption: "after · Transition executed" },
+      { path: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
+      { path: "frames/004.png", caption: "after · Transition executed" },
+    ],
+  };
+  const compact = compactOfflineReplayResource({
+    destIdentity: report.destIdentity,
+    report,
+  }) as { destIdentity?: Array<{ path?: string; caption?: string }> };
+  assert.deepEqual(compact.destIdentity, [
+    { path: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
+  ]);
+});

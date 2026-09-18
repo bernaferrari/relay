@@ -1,4 +1,4 @@
-import { isCaptureReviewLeftoverCaption } from "@relay/protocol";
+import { isCaptureReviewLeftoverCaption, isCaptureReviewOpenerCaption } from "@relay/protocol";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -175,6 +175,10 @@ function compactOfflineReplayResult(value: unknown, options: CompactOptions): Un
     : Array.isArray(source.destIdentity)
       ? source.destIdentity
       : [];
+  const hasLeftover = listedDest.some((item) => {
+    const caption = compactText(record(item)?.caption, 80);
+    return isCaptureReviewLeftoverCaption(caption);
+  });
   const destIdentity = listedDest
     .flatMap((item) => {
       const entry = record(item);
@@ -185,10 +189,14 @@ function compactOfflineReplayResult(value: unknown, options: CompactOptions): Un
       return [{ path, ...(caption ? { caption } : {}) }];
     })
     .slice(0, 8);
+  const withoutOpeners = hasLeftover
+    ? destIdentity.filter((frame) => !isCaptureReviewOpenerCaption(frame.caption))
+    : destIdentity;
+  const destFrames = withoutOpeners.length ? withoutOpeners : destIdentity;
   return {
     truncated: true,
     report,
-    ...(destIdentity.length ? { destIdentity } : {}),
+    ...(destFrames.length ? { destIdentity: destFrames } : {}),
     ...(runId
       ? {
           resource: {

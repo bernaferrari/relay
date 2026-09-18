@@ -1441,6 +1441,29 @@ test("attached-job envelope top-level destIdentity drops leftover Close 004", ()
   }
 });
 
+test("attached-job envelope top-level destIdentity drops opener Tap beside leftover Transition", () => {
+  for (const operationId of [
+    "app-map.test.run",
+    "job.combine.start",
+    "run.repair.retry",
+  ] as const) {
+    const result = summarizeExecutionOperationResult(operationId, {
+      job: { id: "e79b55ac", status: "ok" },
+      destIdentity: [
+        { path: "frames/001.png", caption: "before · Tap identifier sidebar.open.button" },
+        { path: "frames/002.png", caption: "after · Transition executed" },
+        { path: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
+        { path: "frames/004.png", caption: "after · Transition executed" },
+      ],
+    }) as { destIdentity?: Array<{ path?: string; caption?: string }> };
+    assert.deepEqual(
+      result.destIdentity,
+      [{ path: "frames/003.png", caption: "step:step-action:Sidebar open-close" }],
+      operationId,
+    );
+  }
+});
+
 test("job matrix/soak dest identity is dest wait-for, not leftover Close 004 last-frame", () => {
   for (const operationId of [
     "job.matrix.start",

@@ -158,14 +158,15 @@ function jobArtifacts(job: Record<string, unknown>): { kind?: string; data?: unk
 
 function destIdentitySummaryPaths(job: Record<string, unknown>): string[] {
   if (!Array.isArray(job.destIdentity)) return [];
-  return job.destIdentity.flatMap((item) => {
-    if (typeof item === "string" && item.trim()) return [item.trim()];
+  const frames = job.destIdentity.flatMap((item) => {
+    if (typeof item === "string" && item.trim()) return [{ path: item.trim() }];
     const record = asRecord(item);
     const path = typeof record?.path === "string" ? record.path.trim() : "";
+    if (!path) return [];
     const caption = typeof record?.caption === "string" ? record.caption : undefined;
-    if (!path || isCaptureReviewLeftoverCaption(caption)) return [];
-    return [path];
+    return [{ path, ...(caption ? { caption } : {}) }];
   });
+  return destIdentityCheckpointFramePaths(frames, []);
 }
 
 function jobFrames(job: Record<string, unknown>): { path: string; caption?: string }[] {

@@ -1548,6 +1548,44 @@ test("runs collection dest identity is dest wait-for 003, not leftover Close 004
   }
 });
 
+test("runs collection dest identity drops opener Tap beside leftover Transition", async () => {
+  const session = await connectMcp(
+    fixtureInvoker({
+      "run.list": {
+        runs: [
+          {
+            id: "e79b55ac",
+            action: "sidebar",
+            destIdentity: [
+              { path: "frames/001.png", caption: "before · Tap identifier sidebar.open.button" },
+              { path: "frames/002.png", caption: "after · Transition executed" },
+              { path: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
+              { path: "frames/004.png", caption: "after · Transition executed" },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", { uri: relayMcpResourceUris.runs }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      data: {
+        runs?: Array<{ destIdentity?: Array<{ relativeName?: string; caption?: string }> }>;
+      };
+    };
+    assert.deepEqual(envelope.data.runs?.[0]?.destIdentity, [
+      { relativeName: "frames/003.png", caption: "step:step-action:Sidebar open-close" },
+    ]);
+    assert.doesNotMatch(content.text, /frames\/001\.png/);
+    assert.doesNotMatch(content.text, /before · Tap/);
+  } finally {
+    await session.close();
+  }
+});
+
 test("paged runs collection keeps dest capture-review account and drops leftover Close 004", async () => {
   const stamped = {
     id: "4b93702b",
