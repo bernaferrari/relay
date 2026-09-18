@@ -142,6 +142,7 @@ function evidenceItems(
       ...array(run?.steps).flatMap((value) => array(record(value)?.frames)),
     ]),
     leftoverBesideDestVisible(rawRun),
+    array(run?.artifacts) as Array<{ kind?: string; data?: unknown }>,
   );
   if (frames.length) {
     output.screenshot = frames.map((value, index) => {
@@ -332,6 +333,10 @@ function reportTimeline(
      * the timeline beside dest — including empty-frame siblings that only carry
      * the leftover title (logo leftover inspect used to keep those rows). */
     if (leftoverWrapperStepTitle(text(step.title)) && destCaptureVisible) return [];
+    /** Prelude Expected screen / Sign in gone cannot lead the timeline beside
+     * Fast dest Capture for review — they hide the firstEvidence banner and
+     * were the live logo leftover / home Observe mismatch. */
+    if (preludeLaneCheckStepTitle(text(step.title)) && destCaptureVisible) return [];
     /** Opener before · Tap cannot fill the timeline as Captured result beside
      * leftover Transition when dest wait-for Observe is also listed. */
     const openerOnlyCapture =
@@ -551,9 +556,19 @@ function publicFrameCaption(value: unknown): string | undefined {
 /** Dest wait-for evidence when leftover Close / Transition executed last-frame
  * captions are also listed — or when empty-frame leftover wrapper titles sit
  * beside dest (logo leftover inspect). Opener before · Tap cannot fill dest
- * beside those leftovers. Unphased dest-wait (no leftover beside dest) keeps
- * every frame. */
-function destWaitForEvidenceFrames(frames: unknown[], leftoverBesideDest = false): unknown[] {
+ * beside those leftovers. Stamped dest-phase paths win over prelude Reach /
+ * Land frames (home Observe used to keep those beside Fast dest). Unphased
+ * dest-wait (no leftover beside dest, no dest-phase) keeps every frame. */
+function destWaitForEvidenceFrames(
+  frames: unknown[],
+  leftoverBesideDest = false,
+  artifacts: Array<{ kind?: string; data?: unknown }> = [],
+): unknown[] {
+  const destPhasePaths = new Set(captureReviewIdentityFramePaths(artifacts));
+  if (destPhasePaths.size) {
+    const phased = frames.filter((frame) => destPhasePaths.has(text(record(frame)?.path) ?? ""));
+    if (phased.length) return phased;
+  }
   const dest = frames.filter(
     (frame) => !isCaptureReviewLeftoverCaption(text(record(frame)?.caption)),
   );
@@ -683,6 +698,17 @@ function leftoverWrapperStepTitle(title: string | undefined): boolean {
   const value = title?.trim() ?? "";
   if (!value) return false;
   return leftoverSavedTestTitle(value) || isCaptureReviewLeftoverCaption(value);
+}
+
+/** Prelude lane checks that used to lead dest-end Run report before Fast dest
+ * Capture for review / Observe — Expected screen content was visible and
+ * check "Sign in" gone. */
+function preludeLaneCheckStepTitle(title: string | undefined): boolean {
+  const value = title?.trim() ?? "";
+  if (!value) return false;
+  if (/^check identifier .+ visible$/iu.test(value)) return true;
+  if (/^check\s+".+"\s+gone$/iu.test(value)) return true;
+  return humanStepTitle(value) === "Expected screen content was visible";
 }
 
 function destEndCaptureReviewTitle(title: string | undefined): boolean {

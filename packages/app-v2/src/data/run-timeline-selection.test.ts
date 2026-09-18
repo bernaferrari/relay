@@ -572,4 +572,116 @@ it("dest-end firstEvidence is Observe, not prelude Expected screen content was v
   expect(result.firstEvidence?.label).toBe("Observe");
   expect(result.firstEvidence?.label).not.toBe("Expected screen content was visible");
   expect(result.firstEvidence?.label).not.toBe('check "Sign in" gone');
+  expect(result.timeline.map((step) => step.id)).toEqual(["trace-dest"]);
+  expect(result.timeline.map((step) => step.title)).toEqual(["Observe"]);
+  expect(
+    result.timeline.some(
+      (step) =>
+        step.title === "Expected screen content was visible" ||
+        step.title === 'check "Sign in" gone',
+    ),
+  ).toBe(false);
+});
+
+it("dest-end Observe shots drop prelude Reach / Land when dest-phase is stamped", () => {
+  const result = projectRunReport(
+    "dest-end-prelude-reach-land-shots",
+    {
+      outcome: "passed",
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "step:step-observe:Observe",
+            framePath: "frames/003.png",
+            imageSha256: "dest-wait",
+            stepId: "relay-test-step-observe-dest",
+            phase: "dest",
+            policy: "fast",
+          },
+        },
+      ],
+      frames: [
+        { path: "frames/001.png", caption: "after · Reach Signed-in home" },
+        {
+          path: "frames/002.png",
+          caption: "step:step-expect-signed-in-home:Land on signed-in home",
+        },
+        { path: "frames/004.png", caption: "after · Run saved Test" },
+        { path: "frames/003.png", caption: "step:step-observe:Observe" },
+      ],
+      steps: [
+        {
+          id: "trace-check",
+          index: 0,
+          title: "check identifier sidebar-header-search visible",
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [],
+        },
+        {
+          id: "trace-sign-in",
+          index: 1,
+          title: 'check "Sign in" gone',
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [],
+        },
+        {
+          id: "trace-reach",
+          index: 2,
+          title: "Reach Signed-in home",
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [{ path: "frames/001.png", caption: "after · Reach Signed-in home" }],
+        },
+        {
+          id: "trace-land",
+          index: 3,
+          title: "Screenshot · step:step-expect-signed-in-home:Land on signed-in home",
+          status: "ok",
+          actions: [{ kind: "shot" }],
+          frames: [
+            {
+              path: "frames/002.png",
+              caption: "step:step-expect-signed-in-home:Land on signed-in home",
+            },
+          ],
+        },
+        {
+          id: "trace-close",
+          index: 4,
+          title: "Run saved Test",
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [{ path: "frames/004.png", caption: "after · Run saved Test" }],
+        },
+        {
+          id: "trace-dest",
+          index: 5,
+          title: "Capture for review · step:step-observe:Observe",
+          status: "ok",
+          actions: [{ kind: "shot" }],
+          frames: [{ path: "frames/003.png", caption: "step:step-observe:Observe" }],
+        },
+      ],
+    },
+    { channels: { screenshot: { entries: 4 } } },
+  );
+  expect(result.firstEvidence?.label).toBe("Observe");
+  expect(result.timeline.map((step) => step.id)).toEqual([
+    "trace-reach",
+    "trace-land",
+    "trace-dest",
+  ]);
+  expect(
+    result.timeline.some(
+      (step) =>
+        step.title === "Expected screen content was visible" ||
+        step.title === 'check "Sign in" gone',
+    ),
+  ).toBe(false);
+  expect(
+    result.evidence.find((section) => section.id === "screenshot")?.items.map((item) => item.id),
+  ).toEqual(["frames/003.png"]);
 });
