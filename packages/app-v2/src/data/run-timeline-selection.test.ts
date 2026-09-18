@@ -248,3 +248,72 @@ it("dest-end Observe is dest wait-for, not leftover Run saved Test last-frame", 
   expect(result.timeline.some((step) => step.framePaths?.includes("frames/004.png"))).toBe(false);
   expect(result.timeline[initialRunStep(result.timeline)]?.framePaths).toEqual(["frames/003.png"]);
 });
+
+it("dest-end Observe drops leftover Transition executed / Inspect setup skipped beside dest", () => {
+  const executedTitle = describeCoverageStepReason("transition-executed");
+  const skipTitle = describeCoverageStepReason("inspect-setup-skipped");
+  const result = projectRunReport(
+    "dest-end-leftover-wrappers",
+    {
+      outcome: "passed",
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "step:step-observe:Observe",
+            framePath: "frames/003.png",
+            imageSha256: "dest-wait",
+            stepId: "relay-test-step-observe-dest",
+            phase: "dest",
+            policy: "fast",
+          },
+        },
+      ],
+      steps: [
+        {
+          id: "trace-transition",
+          index: 2,
+          title: executedTitle,
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [{ path: "frames/002.png", caption: "after · Transition executed" }],
+        },
+        {
+          id: "trace-skip",
+          index: 3,
+          title: skipTitle,
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [
+            {
+              path: "frames/004.png",
+              caption: "after · Inspect setup skipped — already on this view",
+            },
+          ],
+        },
+        {
+          id: "trace-dest",
+          index: 8,
+          title: "Capture for review · step:step-observe:Observe",
+          status: "ok",
+          actions: [{ kind: "shot" }],
+          frames: [{ path: "frames/003.png", caption: "step:step-observe:Observe" }],
+        },
+      ],
+    },
+    { channels: { screenshot: { entries: 3 } } },
+  );
+  expect(result.timeline.map((step) => step.id)).toEqual(["trace-dest"]);
+  expect(result.timeline[0]?.title).toBe("Observe");
+  expect(result.firstEvidence?.label).toBe("Observe");
+  expect(result.firstEvidence?.label).not.toBe(executedTitle);
+  expect(result.firstEvidence?.label).not.toBe(skipTitle);
+  const shotTitles = result.evidence
+    .find((section) => section.id === "screenshot")
+    ?.items.map((item) => item.title);
+  expect(shotTitles).toHaveLength(1);
+  expect(shotTitles?.[0]).toMatch(/Observe/u);
+  expect(
+    shotTitles?.some((title) => /Transition executed|Inspect setup skipped/u.test(title ?? "")),
+  ).toBe(false);
+});

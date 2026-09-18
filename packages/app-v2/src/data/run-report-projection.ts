@@ -8,6 +8,7 @@ import type {
 } from "@relay/protocol";
 import {
   captureReviewIdentityFramePaths,
+  isCaptureReviewLeftoverCaption,
   parseOptionalRunTestStepEvidence,
   resolveCaptureReviewQueue,
 } from "@relay/protocol";
@@ -134,10 +135,12 @@ function evidenceItems(
   const run = record(rawRun);
   const evidence = record(rawEvidence);
   const output: Partial<Record<EvidenceChannel, ReportEvidenceItem[]>> = {};
-  const frames = uniqueRecords([
-    ...array(run?.frames),
-    ...array(run?.steps).flatMap((value) => array(record(value)?.frames)),
-  ]);
+  const frames = destWaitForEvidenceFrames(
+    uniqueRecords([
+      ...array(run?.frames),
+      ...array(run?.steps).flatMap((value) => array(record(value)?.frames)),
+    ]),
+  );
   if (frames.length) {
     output.screenshot = frames.map((value, index) => {
       const frame = record(value) ?? {};
@@ -335,7 +338,7 @@ function reportTimeline(
     const hasCapture = array(step.frames).some((frame) => text(record(frame)?.path));
     if (generatedBranch && !failed && !hasCapture) return [];
     const authoredStep = stepEvidence?.find((item) => item.traceStepId === text(step.id));
-    if (leftoverSavedTestTitle(text(step.title)) && hasCapture && destCaptureVisible) return [];
+    if (leftoverWrapperStepTitle(text(step.title)) && hasCapture && destCaptureVisible) return [];
     const hasVisibleCapture =
       authoredStep &&
       array(record(rawRun)?.steps).some((other) => {
@@ -537,8 +540,17 @@ function publicEvidenceText(value: unknown): string | undefined {
 }
 function publicFrameCaption(value: unknown): string | undefined {
   const caption = publicEvidenceText(value);
-  if (!caption) return undefined;
+  if (!caption || isCaptureReviewLeftoverCaption(caption)) return undefined;
   return humanStepTitle(caption);
+}
+
+/** Dest wait-for evidence when leftover Close / Transition executed last-frame
+ * captions are also listed. Unphased dest-wait (no dest wait-for caption) keeps
+ * every frame. */
+function destWaitForEvidenceFrames(frames: Record<string, unknown>[]): Record<string, unknown>[] {
+  const dest = frames.filter((frame) => !isCaptureReviewLeftoverCaption(text(frame.caption)));
+  const leftover = frames.filter((frame) => isCaptureReviewLeftoverCaption(text(frame.caption)));
+  return dest.length && leftover.length ? dest : frames;
 }
 function publicNetworkUrl(value: unknown): string | undefined {
   const raw = text(value);
@@ -612,6 +624,14 @@ function artifactEvidenceChannel(kind: string): EvidenceChannel | undefined {
 }
 function leftoverSavedTestTitle(title: string | undefined): boolean {
   return /^(?:run|execute|start|open|load)(?: (?:the|this))?(?: saved)? test\b/iu.test(title ?? "");
+}
+
+/** Leftover Close / Run saved Test / Transition executed / Inspect setup skipped
+ * wrappers. Dest wait-for Observe is not this. */
+function leftoverWrapperStepTitle(title: string | undefined): boolean {
+  const value = title?.trim() ?? "";
+  if (!value) return false;
+  return leftoverSavedTestTitle(value) || isCaptureReviewLeftoverCaption(value);
 }
 
 function destEndCaptureReviewTitle(title: string | undefined): boolean {
@@ -765,7 +785,7 @@ function firstTraceEvidence(rawRun: unknown, outcome: RunOutcome | undefined) {
       actions.some((action) => ["ok", "shot"].includes(String(record(action)?.kind)));
     if (outcome === "passed" ? !isSuccess : !isFailure) continue;
     const label = humanStepTitle(step?.title);
-    if (!label) continue;
+    if (!label || leftoverWrapperStepTitle(text(step?.title))) continue;
     const checkpoint = /check|expect|assert|verify|visible|screen|page|content|layout/iu.test(
       text(step?.title) ?? "",
     );
