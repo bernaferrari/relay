@@ -6,7 +6,7 @@ import type { CommandFlags } from '@agent-device/contracts/command';
 import type { ReplaySuiteResult, ReplayScriptSourceBundle } from '@agent-device/contracts/replay';
 import { REPLAY_SCRIPT_SOURCE_REQUIRED_MESSAGE } from '../../replay-script-source.ts';
 import type { ReplayScriptMetadata } from '@agent-device/ad-script';
-import type { DaemonRequest, DaemonResponse, DaemonResponseData } from '../../daemon-request.ts';
+import type { DaemonRequest } from '../../daemon-request.ts';
 import { expandSessionPath } from '@agent-device/host-kit/session-paths';
 import type { ReplayTestCommand } from './command-types.ts';
 import {
@@ -17,7 +17,6 @@ import {
 } from '@agent-device/replay-test';
 import { runReplayCommand } from './native-command.ts';
 import { collectReplayActionArtifactPaths } from './session-replay-runtime-artifacts.ts';
-import { errorResponse } from '../../response.ts';
 import { AppError, asAppError } from '@agent-device/kernel/errors';
 import {
   emitRequestProgress,
@@ -42,6 +41,11 @@ import {
   startReplayTestVideoRecordingIfReady,
 } from './session-replay-video-recording.ts';
 import { REPLAY_ONLY_TEST_FLAG_REJECTIONS } from './session-replay-test-policy.ts';
+import {
+  errorResponse,
+  type DaemonResponse,
+  type DaemonResponseData,
+} from '@agent-device/kernel/contracts';
 
 /**
  * Binds one replay-test attempt to daemon request cancellation (#1478 P3b).

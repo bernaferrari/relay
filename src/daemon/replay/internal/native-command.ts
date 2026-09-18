@@ -1,7 +1,5 @@
 import { asAppError } from '@agent-device/kernel/errors';
-import type { DaemonResponse } from '../../daemon-request.ts';
 import type { SessionState } from '../../session-state.ts';
-import { errorResponse } from '../../response.ts';
 import { runAdReplay } from '@agent-device/ad-replay';
 import type { SnapshotTimingSample } from '@agent-device/contracts/capture';
 import { summarizeSnapshotTimingSamples } from '@agent-device/contracts/capture';
@@ -23,6 +21,7 @@ import {
 } from '../../replay-script-source.ts';
 import { prepareReplaySession } from './session-replay-runtime-session.ts';
 import type { ReplayCommand, ReplaySessionStore } from './command-types.ts';
+import { errorResponse, type DaemonResponse } from '@agent-device/kernel/contracts';
 
 /**
  * #1555 P5 (decomposition): the replay request's own orchestration — routing, plan resolution,

@@ -1,4 +1,4 @@
-import type { DaemonRequest, DaemonResponse } from '../../daemon-request.ts';
+import type { DaemonRequest } from '../../daemon-request.ts';
 import type {
   AdReplayDispatchGuard,
   AdReplayDispatchOutcome,
@@ -12,6 +12,7 @@ import {
   isReplayTargetGuardMismatchResponse,
   isWaitLandmarkMismatchResponse,
 } from './session-replay-target-verification.ts';
+import { type DaemonResponse } from '@agent-device/kernel/contracts';
 
 /**
  * #1555 structural-quality review ("split step-loop.ts per the maestro

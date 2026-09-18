@@ -17,12 +17,9 @@ import {
   computeReplayRepairHint,
   type ReplayRepairHintCapture,
 } from './session-replay-repair-hint.ts';
-import type { ReplaySessionObservationStore, ReplaySessionStore } from './command-types.ts';
+import type { ReplaySessionObservation, ReplaySessionStore } from './command-types.ts';
 import type { ReplayResumeStamper } from '../../session-replay-coordinator.ts';
-import {
-  bindInternalObservationAuthority,
-  type InternalObservationEvidence,
-} from '../../internal-observation.ts';
+import type { ReplayObservationEvidence } from '@agent-device/contracts/replay';
 import { boundReplayDivergenceForSession } from './session-replay-divergence-publication.ts';
 import type { ReplayReportAction } from './session-replay-report-action.ts';
 import { rankAndDedupeReplaySuggestions } from './session-replay-suggestion-ranking.ts';
@@ -56,9 +53,8 @@ export async function buildReplayFailureDivergence(params: {
   sourcePath: string;
   sourceLine: number;
   session: SessionState | undefined;
-  sessionName: string;
   sessionStore: ReplaySessionStore;
-  observationStore: ReplaySessionObservationStore;
+  observationStore: ReplaySessionObservation;
   /** #1478 P4b: the request's bound resume-stamping capability — never a second-constructed coordinator. */
   resumeStamper: ReplayResumeStamper;
   logPath: string;
@@ -78,7 +74,6 @@ export async function buildReplayFailureDivergence(params: {
     sourcePath,
     sourceLine,
     session,
-    sessionName,
     sessionStore,
     observationStore,
     resumeStamper,
@@ -100,7 +95,6 @@ export async function buildReplayFailureDivergence(params: {
   const observation = session
     ? await captureDivergenceObservation({
         session,
-        sessionName,
         observationStore,
         logPath,
         action,
@@ -159,7 +153,6 @@ export async function buildReplayFailureDivergence(params: {
   return boundReplayDivergenceForSession({
     sessionStore,
     observationStore,
-    sessionName,
     divergence,
     responseLevel,
     evidence: observation.state === 'available' ? observation.evidence : undefined,
@@ -172,7 +165,7 @@ export type DivergenceObservation =
       state: 'available';
       nodes: SnapshotNode[];
       refsGeneration: number;
-      evidence: InternalObservationEvidence;
+      evidence: ReplayObservationEvidence;
       /** Session's app bundle id at capture time; threaded to `buildDivergenceScreen`'s chrome filter (Android IME-scope guard — inert on iOS). */
       appBundleId: string | undefined;
     }
@@ -248,20 +241,12 @@ const DIVERGENCE_CAPTURE_RETRY_DELAYS_MS = [300, 500, 800, 1200, 2000, 3000, 400
 
 export async function captureDivergenceObservation(params: {
   session: SessionState;
-  sessionName: string;
-  observationStore: ReplaySessionObservationStore;
+  observationStore: ReplaySessionObservation;
   logPath: string;
   action: ReplayReportAction;
   retryLaunchRace?: boolean;
 }): Promise<DivergenceObservation> {
-  const {
-    session,
-    sessionName,
-    observationStore,
-    logPath,
-    action,
-    retryLaunchRace = false,
-  } = params;
+  const { session, observationStore, logPath, action, retryLaunchRace = false } = params;
   const flags = divergenceCaptureFlags(action);
   // Anchored BEFORE the first attempt, not after: a slow first capture
   // shrinks the retry budget rather than getting a free `DEADLINE_MS` on top
@@ -270,7 +255,6 @@ export async function captureDivergenceObservation(params: {
 
   let attempt = await captureDivergenceObservationAttempt({
     session,
-    sessionName,
     observationStore,
     logPath,
     flags,
@@ -284,7 +268,6 @@ export async function captureDivergenceObservation(params: {
     await sleep(Math.min(delayMs, remainingMs));
     attempt = await captureDivergenceObservationAttempt({
       session,
-      sessionName,
       observationStore,
       logPath,
       flags,
@@ -311,12 +294,11 @@ type DivergenceCaptureAttempt = {
 
 async function captureDivergenceObservationAttempt(params: {
   session: SessionState;
-  sessionName: string;
-  observationStore: ReplaySessionObservationStore;
+  observationStore: ReplaySessionObservation;
   logPath: string;
   flags: CommandFlags;
 }): Promise<DivergenceCaptureAttempt> {
-  const { session, sessionName, observationStore, logPath, flags } = params;
+  const { session, observationStore, logPath, flags } = params;
   try {
     const capture = await captureSnapshot({
       device: session.device,
@@ -335,10 +317,7 @@ async function captureDivergenceObservationAttempt(params: {
         retryable: true,
       };
     }
-    const observationAuthority = bindInternalObservationAuthority({
-      sessionStore: observationStore,
-      sessionName,
-    });
+    const observationAuthority = observationStore.bindAuthority();
     const stored = observationAuthority.store(snapshot);
     return {
       observation: {

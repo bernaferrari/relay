@@ -1,10 +1,9 @@
 import type { SessionAction } from '@agent-device/contracts/session';
 import type { CommandFlags } from '@agent-device/contracts/command';
-import type { DaemonRequest, DaemonResponse } from '../../daemon-request.ts';
+import type { DaemonRequest } from '../../daemon-request.ts';
 import type { SessionState } from '../../session-state.ts';
 import type { ReplayCoordinator } from '../../session-replay-coordinator.ts';
 import type { ReplayCommand, ReplaySessionStore } from './command-types.ts';
-import { errorResponse } from '../../response.ts';
 import { buildReplayScriptPlatformFlags } from '../../replay-device-selection.ts';
 import {
   inspectAdReplay,
@@ -21,6 +20,7 @@ import {
 } from '@agent-device/ad-script';
 import { buildReplayBuiltinVars } from './session-replay-vars.ts';
 import { runTypedMaestroReplay } from './session-replay-maestro-runtime.ts';
+import { errorResponse, type DaemonResponse } from '@agent-device/kernel/contracts';
 
 /**
  * #1555 P5 (decomposition): `runReplayCommand`'s (`native-command.ts`) plan-side

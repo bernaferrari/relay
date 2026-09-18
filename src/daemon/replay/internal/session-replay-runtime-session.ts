@@ -1,8 +1,7 @@
 import fs from 'node:fs';
-import type { DaemonRequest, DaemonResponse } from '../../daemon-request.ts';
+import type { DaemonRequest } from '../../daemon-request.ts';
 import type { ReplaySessionStore } from './command-types.ts';
 import { expandSessionPath } from '@agent-device/host-kit/session-paths';
-import { errorResponse, noActiveSessionError } from '../../response.ts';
 import {
   NO_SCRIPT_PUBLICATION,
   scriptTargetForce,
@@ -13,6 +12,11 @@ import {
   healedScriptSiblingPath,
   type ReplayCoordinator,
 } from '../../session-replay-coordinator.ts';
+import {
+  errorResponse,
+  noActiveSessionError,
+  type DaemonResponse,
+} from '@agent-device/kernel/contracts';
 
 /**
  * #1555 P5 (decomposition): `runReplayCommand`'s (`native-command.ts`) session
