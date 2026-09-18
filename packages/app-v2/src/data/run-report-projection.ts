@@ -353,7 +353,10 @@ function reportTimeline(
     const hasCapture = stepFrames.some((frame) => text(record(frame)?.path));
     if (generatedBranch && !failed && !hasCapture) return [];
     const authoredStep = stepEvidence?.find((item) => item.traceStepId === text(step.id));
-    if (leftoverWrapperStepTitle(text(step.title)) && hasCapture && destCaptureVisible) return [];
+    /** Leftover Transition / Inspect setup skipped / Close wrappers cannot fill
+     * the timeline beside dest — including empty-frame siblings that only carry
+     * the leftover title (logo leftover inspect used to keep those rows). */
+    if (leftoverWrapperStepTitle(text(step.title)) && destCaptureVisible) return [];
     /** Opener before · Tap cannot fill the timeline as Captured result beside
      * leftover Transition when dest wait-for Observe is also listed. */
     const openerOnlyCapture =

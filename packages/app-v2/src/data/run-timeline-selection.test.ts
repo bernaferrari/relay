@@ -318,6 +318,81 @@ it("dest-end Observe drops leftover Transition executed / Inspect setup skipped 
   ).toBe(false);
 });
 
+it("dest-end Observe drops empty-frame Inspect setup skipped siblings beside dest", () => {
+  const skipTitle = describeCoverageStepReason("inspect-setup-skipped");
+  const result = projectRunReport(
+    "dest-end-empty-inspect-skip",
+    {
+      outcome: "passed",
+      artifacts: [
+        {
+          kind: "capture-review",
+          data: {
+            caption: "step:step-action:Grok logo from Imagine signed-in",
+            framePath: "frames/005.png",
+            imageSha256: "dest-wait",
+            stepId: "relay-test-step-logo-dest",
+            phase: "dest",
+            policy: "fast",
+          },
+        },
+      ],
+      steps: [
+        {
+          id: "trace-skip-capture",
+          index: 1,
+          title: skipTitle,
+          status: "ok",
+          actions: [{ kind: "ok" }],
+          frames: [
+            { path: "frames/001.png", caption: 'before · Tap label "Imagine"' },
+            {
+              path: "frames/002.png",
+              caption: "after · Inspect setup skipped — already on this view",
+            },
+          ],
+        },
+        {
+          id: "trace-skip-empty",
+          index: 2,
+          title: skipTitle,
+          status: "ok",
+          log: skipTitle,
+          actions: [{ kind: "ok" }],
+          frames: [],
+        },
+        {
+          id: "trace-skip-empty-2",
+          index: 3,
+          title: skipTitle,
+          status: "ok",
+          log: skipTitle,
+          actions: [{ kind: "ok" }],
+          frames: [],
+        },
+        {
+          id: "trace-dest",
+          index: 4,
+          title: "Capture for review · step:step-action:Grok logo from Imagine signed-in",
+          status: "ok",
+          actions: [{ kind: "shot" }],
+          frames: [
+            {
+              path: "frames/005.png",
+              caption: "step:step-action:Grok logo from Imagine signed-in",
+            },
+          ],
+        },
+      ],
+    },
+    { channels: { screenshot: { entries: 1 } } },
+  );
+  expect(result.timeline.map((step) => step.id)).toEqual(["trace-dest"]);
+  expect(result.timeline.map((step) => step.title)).toEqual(["Grok logo from Imagine signed-in"]);
+  expect(result.timeline.some((step) => step.title === skipTitle)).toBe(false);
+  expect(result.firstEvidence?.label).toBe("Grok logo from Imagine signed-in");
+});
+
 it("unphased Observe drops opener Tap Captured result beside leftover Transition", () => {
   const executedTitle = describeCoverageStepReason("transition-executed");
   const result = projectRunReport(
