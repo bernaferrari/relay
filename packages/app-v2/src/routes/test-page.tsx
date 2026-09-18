@@ -1,6 +1,5 @@
 import { TestRunHistory } from "./test-run-history";
 import { ReadableStep, flattenSteps } from "./saved-test-steps";
-import { AuthoringHeader } from "./authoring-header";
 import { SavedTestWorkspace } from "./saved-test-workspace";
 import { SelectField } from "../components/filter-select";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
@@ -12,10 +11,16 @@ import {
 } from "../data/use-persisted-run-configuration";
 import { WorkbenchPage } from "../components/page-layout";
 import { Button } from "@relay/ui-react/components/button";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@relay/ui-react/components/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@relay/ui-react/components/tabs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { Camera, ChevronLeft, History } from "lucide-react";
+import { Camera, ChevronLeft, MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
@@ -290,24 +295,23 @@ export function TestPage() {
 
   return (
     <WorkbenchPage className="flex h-full min-h-0 flex-col overflow-auto !p-0">
-      <AuthoringHeader
-        back={
+      <header className="shrink-0 px-5 pt-3 pb-5">
+        <div className="flex items-center justify-between gap-3">
           <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost" size="sm">
             <ChevronLeft aria-hidden="true" />
-            Back
+            Tests
           </Button>
-        }
-        title={test.data?.name ?? "Test"}
-        description={test.data?.appName}
-        actions={
-          <>
-            {activeRun ? null : (
+          <div className="flex shrink-0 items-center gap-2">
+            {activeRun && attachedRunId ? (
               <Button
-                variant="default"
+                nativeButton={false}
+                render={<Link to="/runs/$runId" params={{ runId: attachedRunId }} />}
                 size="sm"
-                onClick={runOrFocusSetup}
-                disabled={start.isPending}
               >
+                View live run
+              </Button>
+            ) : (
+              <Button size="sm" onClick={runOrFocusSetup} disabled={start.isPending}>
                 {start.isPending
                   ? "Starting…"
                   : canStart
@@ -317,42 +321,49 @@ export function TestPage() {
                       : "Set up run"}
               </Button>
             )}
-            {!activeRun && test.data ? (
-              <Button
-                nativeButton={false}
-                render={<Link to="/tests/$testId/run-across" params={{ testId }} />}
-                variant="outline"
-                size="sm"
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button variant="ghost" size="sm" />}
+                aria-label="More Test actions"
               >
-                Run across…
-              </Button>
-            ) : null}
-            {attachedRunId ? (
-              <Button
-                nativeButton={false}
-                render={<Link to="/runs/$runId" params={{ runId: attachedRunId }} />}
-                variant={activeRun ? "default" : "ghost"}
-                size="sm"
-              >
-                Open full report
-              </Button>
-            ) : null}
-            {recentRuns.data?.length ? (
-              <Button variant="ghost" size="sm" onClick={() => setHistoryOpen(true)}>
-                <History /> History
-              </Button>
-            ) : null}
-            <Button
-              nativeButton={false}
-              render={<Link to="/tests/$testId/edit" params={{ testId }} />}
-              variant="ghost"
-              size="sm"
-            >
-              Edit current Test
-            </Button>
-          </>
-        }
-      />
+                <MoreHorizontal aria-hidden="true" /> More
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                <DropdownMenuItem render={<Link to="/tests/$testId/edit" params={{ testId }} />}>
+                  Edit Test
+                </DropdownMenuItem>
+                {!activeRun && test.data ? (
+                  <DropdownMenuItem
+                    render={<Link to="/tests/$testId/run-across" params={{ testId }} />}
+                  >
+                    Run across…
+                  </DropdownMenuItem>
+                ) : null}
+                {attachedRunId ? (
+                  <DropdownMenuItem
+                    render={<Link to="/runs/$runId" params={{ runId: attachedRunId }} />}
+                  >
+                    Open full report
+                  </DropdownMenuItem>
+                ) : null}
+                {recentRuns.data?.length ? (
+                  <DropdownMenuItem onClick={() => setHistoryOpen(true)}>
+                    Run history
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+        <div className="mt-4 min-w-0 space-y-1">
+          <h1 className="text-xl leading-snug font-semibold tracking-tight break-words sm:text-2xl">
+            {test.data?.name ?? "Test"}
+          </h1>
+          {test.data?.appName ? (
+            <p className="text-sm text-muted-foreground">{test.data.appName}</p>
+          ) : null}
+        </div>
+      </header>
 
       {loading ? <PageLoading label="Loading the Test and available devices…" /> : null}
       <RecordingProblem

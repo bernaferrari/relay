@@ -707,6 +707,7 @@ describe("Run and Report", () => {
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(document.body.textContent).toContain("Test passed");
     expect(document.body.textContent).not.toContain("Draft issue");
+    await click(button("More Test actions"));
     expect(document.body.textContent).toContain("Open full report");
     expect(document.body.textContent).not.toContain("Investigate this failure");
     expect(document.body.textContent).toMatch(/\d+(?:\.\d+)?\s?s/);
@@ -887,7 +888,7 @@ describe("Run and Report", () => {
     const { history } = await renderRun("/tests/test-1", fake.service, storage.platform);
 
     expect(document.body.textContent).toContain("Checking Language");
-    expect(document.body.textContent).toContain("Open full report");
+    expect(document.body.textContent).toContain("View live run");
     history.push("/tests/test-2");
     await settle();
     expect(document.body.textContent).not.toContain("Checking Language");
@@ -1037,7 +1038,7 @@ describe("Run and Report", () => {
     ).toBe(false);
     expect(
       [...document.querySelectorAll("a")].some((item) =>
-        item.textContent?.includes("Open full report"),
+        item.textContent?.includes("View live run"),
       ),
     ).toBe(true);
     expect(history.location.pathname).toBe("/tests/test-1");
@@ -1048,6 +1049,7 @@ describe("Run and Report", () => {
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(storage.values.has("activeRunWorkflow")).toBe(false);
     expect(document.body.textContent).toContain("Test passed");
+    await click(button("More Test actions"));
     expect(
       [...document.querySelectorAll("a")].some((item) =>
         item.textContent?.includes("Open full report"),
@@ -1248,7 +1250,12 @@ describe("Run and Report", () => {
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
 
     expect(document.body.textContent).not.toContain("Run history");
-    await click(button("History"));
+    await click(button("More Test actions"));
+    const historyAction = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent === "Run history",
+    );
+    if (!historyAction) throw new Error("Run history action not found");
+    await click(historyAction);
     expect(document.body.textContent).toContain("Run history");
     expect(document.body.textContent).toContain("Showing loaded runs. Totals may be incomplete.");
   });
@@ -1279,7 +1286,12 @@ describe("Run and Report", () => {
     fake.service.listTestRunsComplete = async () => history;
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
 
-    await click(button("History"));
+    await click(button("More Test actions"));
+    const historyAction = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent === "Run history",
+    );
+    if (!historyAction) throw new Error("Run history action not found");
+    await click(historyAction);
     expect(document.body.textContent).toContain("Run history");
     expect(document.body.textContent).not.toContain("Totals may be incomplete");
   });
