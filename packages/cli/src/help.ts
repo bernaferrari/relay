@@ -140,7 +140,9 @@ Usage:
   relay explore --url <url> --goal <goal> --confirm [--agents <1-4>] [--max-steps <n>] [--max-ms <n>]
     [--judge jev] [--model <openrouter-model>]
   relay explore --resume <explorationId> --confirm
+  relay explore --inspect <explorationId>
   relay goal resume <sessionId> --confirm
+  relay goal inspect <sessionId>
   relay goal reproduce <sessionId> --confirm
   relay goal promote <sessionId> --confirm [--map <id>] [--title <name>]
   relay record <title> [--map <id>] [--device <id>] --confirm

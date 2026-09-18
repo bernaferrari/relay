@@ -14,8 +14,10 @@ import type {
   VerifyChangeOutcomeIntent,
   GoalSessionResumeIntent,
   GoalSessionReproduceIntent,
+  GoalSessionInspectIntent,
   GoalSessionStartIntent,
   GoalExplorationResumeIntent,
+  GoalExplorationInspectIntent,
   GoalExplorationStartIntent,
   GoalPromotionIntent,
 } from "@relay/workflows";
@@ -46,8 +48,10 @@ export type OutcomeCliIntent =
   | GoalSessionStartIntent
   | GoalSessionResumeIntent
   | GoalSessionReproduceIntent
+  | GoalSessionInspectIntent
   | GoalExplorationStartIntent
   | GoalExplorationResumeIntent
+  | GoalExplorationInspectIntent
   | GoalPromotionIntent
   | ProofAnalyzeCliIntent;
 
@@ -219,6 +223,24 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
     return { kind: "observe-target", ...(args[0] ? { targetId: args[0] } : {}) };
   }
   if (verb === "goal" || verb === "explore") {
+    if (verb === "goal" && args[0] === "inspect") {
+      if (args.length !== 2 || tokens.values.size > 0 || tokens.switches.size > 0) {
+        throw new UsageError("goal inspect requires one goal session id and no control flags");
+      }
+      return { kind: "goal-inspect", sessionId: args[1]! };
+    }
+    if (verb === "explore" && tokens.values.has("--inspect")) {
+      const explorationId = tokens.values.get("--inspect");
+      if (
+        !explorationId ||
+        args.length > 0 ||
+        tokens.values.size !== 1 ||
+        tokens.switches.size > 0
+      ) {
+        throw new UsageError("explore --inspect requires one exploration id and no control flags");
+      }
+      return { kind: "goal-explore-inspect", explorationId };
+    }
     const rawResume = tokens.values.get("--resume");
     const isResume = (verb === "goal" && args[0] === "resume") || Boolean(rawResume);
     if (isResume) {

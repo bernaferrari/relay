@@ -27,7 +27,9 @@ import type {
   VerifyChangeIntent,
   VerifyChangeResult,
   DiscoveryScope,
+  GoalExplorationRecord,
   GoalSessionResult,
+  GoalSessionRecord,
   GoalSessionStartInput,
   GoalExplorationResult,
   GoalExplorationStartInput,
@@ -483,9 +485,14 @@ export type InspectFailureIntent = { kind: "inspect-failure"; runId: string };
 export type GoalSessionStartIntent = GoalSessionStartInput & { kind: "goal-start" };
 export type GoalSessionResumeIntent = { kind: "goal-resume"; sessionId: string };
 export type GoalSessionReproduceIntent = { kind: "goal-reproduce"; sessionId: string };
+export type GoalSessionInspectIntent = { kind: "goal-inspect"; sessionId: string };
 export type GoalExplorationStartIntent = GoalExplorationStartInput & { kind: "goal-explore" };
 export type GoalExplorationResumeIntent = {
   kind: "goal-explore-resume";
+  explorationId: string;
+};
+export type GoalExplorationInspectIntent = {
+  kind: "goal-explore-inspect";
   explorationId: string;
 };
 export type GoalPromotionIntent = {
@@ -715,9 +722,11 @@ export interface RelayOutcomeJobs {
   goal(intent: GoalSessionStartIntent): Promise<GoalSessionResult>;
   resumeGoal(intent: GoalSessionResumeIntent): Promise<GoalSessionResult>;
   reproduceGoal(intent: GoalSessionReproduceIntent): Promise<GoalSessionResult>;
+  inspectGoal(intent: GoalSessionInspectIntent): Promise<GoalSessionRecord>;
   promoteGoal(intent: GoalPromotionIntent): Promise<AuthorTestSnapshot>;
   explore(intent: GoalExplorationStartIntent): Promise<GoalExplorationResult>;
   resumeExploration(intent: GoalExplorationResumeIntent): Promise<GoalExplorationResult>;
+  inspectExploration(intent: GoalExplorationInspectIntent): Promise<GoalExplorationRecord>;
   proposeRepair(intent: ProposeRepairIntent): Promise<RepairProposalResult>;
   exportEvidence(intent: ExportEvidenceIntent): Promise<EvidenceExportResult>;
   replayLab(intent: ReplayLabOutcomeIntent): Promise<ReplayLabReport>;

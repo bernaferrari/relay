@@ -121,6 +121,7 @@ const valueFlags = new Set([
   "--strategy",
   "--pilot",
   "--resume",
+  "--inspect",
   "--lens",
   "--cell",
   "--lane",

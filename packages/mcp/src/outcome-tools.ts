@@ -204,6 +204,8 @@ const goalSessionInputSchema = z
     agents: z.number().int().min(1).max(4).optional(),
     resumeSessionId: identifier.optional(),
     resumeExplorationId: identifier.optional(),
+    inspectSessionId: identifier.optional(),
+    inspectExplorationId: identifier.optional(),
     reproduceSessionId: identifier.optional(),
     promoteSessionId: identifier.optional(),
     appMapId: identifier.optional(),
@@ -211,6 +213,21 @@ const goalSessionInputSchema = z
   })
   .strict()
   .superRefine((value, context) => {
+    if (value.inspectSessionId || value.inspectExplorationId) {
+      if (
+        (value.inspectSessionId !== undefined && value.inspectExplorationId !== undefined) ||
+        Object.entries(value).some(
+          ([key, item]) =>
+            item !== undefined && key !== "inspectSessionId" && key !== "inspectExplorationId",
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Goal inspection accepts exactly one inspection id",
+        });
+      }
+      return;
+    }
     if (value.reproduceSessionId || value.promoteSessionId) {
       if (
         value.goal !== undefined ||
@@ -399,7 +416,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_goal",
     title: "Run a bounded goal",
     description:
-      "Interact with one target toward a stated goal using bounded OpenRouter-hosted Typesafe Jev suggestions. Relay validates every candidate, persists intent before mutation, never types secrets or runs code, and stops for review on uncertainty. Start, resume, reproduce an acknowledged browser path, or promote a fresh reproduction into the existing review-only Authoring workflow.",
+      "Interact with one target toward a stated goal using bounded OpenRouter-hosted Typesafe Jev suggestions. Relay validates every candidate, persists intent before mutation, never types secrets or runs code, and stops for review on uncertainty. Inspect retained evidence read-only, start or resume a goal, reproduce an acknowledged browser path, or promote a fresh reproduction into the existing review-only Authoring workflow.",
     requiresConfirmation: true,
     inputSchema: goalSessionInputSchema,
     annotations: {
@@ -803,7 +820,11 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
 }): Promise<unknown> {
   const descriptor = relayOutcomeTools.find(({ name }) => name === input.name);
   if (!descriptor) throw new TypeError(`Unknown Relay outcome tool: ${input.name}`);
-  if (descriptor.requiresConfirmation && !input.confirmed) {
+  const readOnlyGoalInspection =
+    input.name === "relay_goal" &&
+    (typeof input.argumentsValue.inspectSessionId === "string" ||
+      typeof input.argumentsValue.inspectExplorationId === "string");
+  if (descriptor.requiresConfirmation && !input.confirmed && !readOnlyGoalInspection) {
     throw new TypeError(`${descriptor.name} requires confirm: true.`);
   }
   assertRawOutcomeInputBounds(input.name, input.argumentsValue);
@@ -832,6 +853,18 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
     });
   }
   if (input.name === "relay_goal") {
+    if (typeof parsed.inspectSessionId === "string") {
+      return jobs.inspectGoal({
+        kind: "goal-inspect",
+        sessionId: parsed.inspectSessionId,
+      });
+    }
+    if (typeof parsed.inspectExplorationId === "string") {
+      return jobs.inspectExploration({
+        kind: "goal-explore-inspect",
+        explorationId: parsed.inspectExplorationId,
+      });
+    }
     if (typeof parsed.reproduceSessionId === "string") {
       return jobs.reproduceGoal({
         kind: "goal-reproduce",

@@ -101,9 +101,13 @@ blocked or uncertain states. A completed browser path can be replayed on a fresh
 in the existing review-only Authoring flow:
 
 ```bash
+pnpm relay goal inspect <session-id>
 pnpm relay goal reproduce <session-id> --confirm
 pnpm relay goal promote <session-id> --confirm --title "Empty cart regression"
 ```
+
+Inspection is read-only and exposes the retained findings and evidence references without resuming
+or controlling the target.
 
 Promotion stops before human approval. Model-free recorded Test replay and screenshot review remain
 the dependable path.

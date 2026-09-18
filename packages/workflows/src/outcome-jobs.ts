@@ -38,8 +38,10 @@ import type {
   VerifyChangeOutcomeIntent,
   GoalSessionResumeIntent,
   GoalSessionReproduceIntent,
+  GoalSessionInspectIntent,
   GoalSessionStartIntent,
   GoalExplorationResumeIntent,
+  GoalExplorationInspectIntent,
   GoalExplorationStartIntent,
   GoalPromotionIntent,
 } from "./types.js";
@@ -542,6 +544,10 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
     return this.goals.reproduce(intent.sessionId);
   }
 
+  async inspectGoal(intent: GoalSessionInspectIntent) {
+    return this.goals.inspect(intent.sessionId);
+  }
+
   async promoteGoal(intent: GoalPromotionIntent) {
     return this.promotions.promote({
       sessionId: intent.sessionId,
@@ -558,6 +564,10 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
 
   async resumeExploration(intent: GoalExplorationResumeIntent) {
     return this.explorations.resume(intent.explorationId);
+  }
+
+  async inspectExploration(intent: GoalExplorationInspectIntent) {
+    return this.explorations.inspect(intent.explorationId);
   }
 
   async proposeRepair(intent: ProposeRepairIntent): Promise<RepairProposalResult> {

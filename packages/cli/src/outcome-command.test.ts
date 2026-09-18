@@ -63,6 +63,10 @@ test("every outcome CLI command maps named arguments to one workflow intent", ()
       expected: { kind: "goal-resume", sessionId: "goal-123" },
     },
     {
+      input: tokens(["goal", "inspect", "goal-123"]),
+      expected: { kind: "goal-inspect", sessionId: "goal-123" },
+    },
+    {
       input: tokens(["goal", "reproduce", "goal-123"], {}, ["--confirm"]),
       expected: { kind: "goal-reproduce", sessionId: "goal-123" },
     },
@@ -83,6 +87,10 @@ test("every outcome CLI command maps named arguments to one workflow intent", ()
     {
       input: tokens(["explore"], { "--resume": "explore-123" }, ["--confirm"]),
       expected: { kind: "goal-explore-resume", explorationId: "explore-123" },
+    },
+    {
+      input: tokens(["explore"], { "--inspect": "explore-123" }),
+      expected: { kind: "goal-explore-inspect", explorationId: "explore-123" },
     },
     {
       input: tokens(

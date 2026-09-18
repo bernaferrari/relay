@@ -414,6 +414,34 @@ test("relay_goal exposes explicit reproduction and review-only promotion", async
   }
 });
 
+test("relay_goal exposes read-only inspection without control confirmation", async () => {
+  const cases = [
+    {
+      argumentsValue: { inspectSessionId: "goal-123" },
+      method: "inspectGoal" as const,
+      expected: { kind: "goal-inspect", sessionId: "goal-123" },
+    },
+    {
+      argumentsValue: { inspectExplorationId: "explore-123" },
+      method: "inspectExploration" as const,
+      expected: { kind: "goal-explore-inspect", explorationId: "explore-123" },
+    },
+  ];
+  for (const testCase of cases) {
+    const invocations: Invocation[] = [];
+    const result = await invokeRelayOutcomeToolWithJobs({
+      name: "relay_goal",
+      argumentsValue: testCase.argumentsValue,
+      confirmed: false,
+      jobs: recordingJobs(invocations),
+    });
+    assert.deepEqual(result, { invoked: testCase.method });
+    assert.deepEqual(invocations, [
+      { method: testCase.method, argumentsValue: [testCase.expected] },
+    ]);
+  }
+});
+
 test("Agent Debug title uses the same 160 character limit as the product UI", () => {
   const descriptor = relayOutcomeTools.find(({ name }) => name === "relay_debug_bug");
   assert.ok(descriptor);
