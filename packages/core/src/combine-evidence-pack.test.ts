@@ -1060,3 +1060,108 @@ test("live analysis dest identity drops leftover Close 004 last-frame", () => {
     false,
   );
 });
+
+test("unphased live analysis drops leftover Transition executed / Inspect setup skipped", () => {
+  const report = analyzeCombineEvidenceJobs("dest-unphased", [
+    {
+      id: "job-unphased",
+      status: "ok",
+      action: "observe",
+      frames: [
+        { path: "frames/001.png", caption: "Land", capturedAt: 1 },
+        { path: "frames/002.png", caption: "after · Transition executed", capturedAt: 2 },
+        { path: "frames/003.png", caption: "Observe", capturedAt: 3 },
+        {
+          path: "frames/004.png",
+          caption: "after · Inspect setup skipped — already on this view",
+          capturedAt: 4,
+        },
+      ],
+      artifacts: [
+        {
+          kind: "capture-review",
+          capturedAt: 1,
+          data: { caption: "Observe", framePath: "frames/003.png", policy: "fast" },
+        },
+      ],
+    } as unknown as TestJob,
+  ]);
+  assert.deepEqual(
+    report.cases[0]?.frames.map((frame) => frame.framePath),
+    ["frames/001.png", "frames/003.png"],
+  );
+});
+
+test("unphased pack checklist after thumb is dest wait-for, not leftover Transition executed", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-pack-unphased-transition-"));
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  process.env.RELAY_WORKSPACE_ROOT = directory;
+  try {
+    const runDir = join(directory, "home");
+    await mkdir(join(runDir, "frames"), { recursive: true });
+    await writeFile(join(runDir, "frames", "001.png"), "land");
+    await writeFile(join(runDir, "frames", "002.png"), "transition");
+    await writeFile(join(runDir, "frames", "003.png"), "dest-wait");
+    await writeFile(join(runDir, "frames", "004.png"), "inspect-skipped");
+    const job = {
+      id: "job-unphased-transition",
+      action: "rc23-screenshot-first",
+      title: "Home chrome",
+      status: "ok",
+      outcome: "passed",
+      batchId: "dest-unphased",
+      runDir,
+      frames: [
+        { path: "frames/001.png", caption: "Land", capturedAt: 1 },
+        { path: "frames/002.png", caption: "after · Transition executed", capturedAt: 2 },
+        { path: "frames/003.png", caption: "Observe", capturedAt: 3 },
+        {
+          path: "frames/004.png",
+          caption: "after · Inspect setup skipped — already on this view",
+          capturedAt: 4,
+        },
+      ],
+      steps: [],
+      artifacts: [
+        {
+          kind: "capture-review",
+          capturedAt: 1,
+          data: {
+            caption: "Observe",
+            framePath: "frames/003.png",
+            imageSha256: "dest-wait",
+            checkpointId: "home-chrome",
+            attempt: 1,
+            policy: "fast",
+          },
+        },
+      ],
+      resolvedInputs: { locale: "home" },
+      recipeId: "rc23-screenshot-first",
+    } as unknown as TestJob;
+    const pack = await exportCombineEvidencePack({
+      batchId: "dest-unphased",
+      jobs: [job],
+      title: "Unphased dest identity",
+    });
+    const html = await readFile(join(pack.rootDir, "index.html"), "utf8");
+    const checklist = JSON.parse(
+      await readFile(join(pack.rootDir, "checklist.json"), "utf8"),
+    ) as Array<{ afterPng?: string; beforePng?: string }>;
+    const rasters = await readdir(join(pack.rootDir, "home", "screenshots"));
+    assert.equal(
+      rasters.some((name) => name.endsWith("002.png") || name.endsWith("004.png")),
+      false,
+    );
+    assert.match(checklist[0]?.afterPng ?? "", /003\.png$/u);
+    assert.doesNotMatch(checklist[0]?.afterPng ?? "", /004\.png$/u);
+    assert.doesNotMatch(checklist[0]?.afterPng ?? "", /002\.png$/u);
+    assert.match(html, /003\.png/u);
+    assert.doesNotMatch(html, /002\.png/u);
+    assert.doesNotMatch(html, /004\.png/u);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
+});

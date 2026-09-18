@@ -21,6 +21,8 @@ import {
   formatCaptureReviewCoverageSummary,
   captureReviewIdentityFramePaths,
   captureReviewLeftoverLastFramePaths,
+  destIdentityCheckpointFramePaths,
+  isCaptureReviewLeftoverCaption,
 } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
 import { pngDimensions } from "./ios-geometry.js";
@@ -331,6 +333,32 @@ function comparesLanguage(jobs: CombineEvidenceCase[]): boolean {
   return [...stateByLanguage.values()].every((states) => states.size === 1);
 }
 
+/** Dest-phase path when stamped. Unphased dest-wait uses the last non-leftover
+ * caption so Transition executed / Inspect setup skipped cannot fill dest. */
+function checklistDestIdentityFrame(
+  job: Pick<CombineEvidenceCase, "frames" | "artifacts">,
+): string | undefined {
+  const phased = captureReviewIdentityFramePaths(job.artifacts ?? [])[0];
+  if (phased) return phased;
+  return destIdentityCheckpointFramePaths(job.frames ?? [], job.artifacts ?? []).at(-1);
+}
+
+/** Caption leftovers to drop when dest-phase is absent but dest wait-for
+ * captions exist. Unphased Android dest-wait with no leftover caption keeps
+ * every frame. */
+function unphasedLeftoverCaptionNames(
+  job: Pick<CombineEvidenceCase, "frames" | "artifacts">,
+): Set<string> {
+  if (captureReviewIdentityFramePaths(job.artifacts ?? []).length) return new Set();
+  const dest = destIdentityCheckpointFramePaths(job.frames ?? [], job.artifacts ?? []);
+  if (!dest.length) return new Set();
+  return new Set(
+    (job.frames ?? [])
+      .filter((frame) => isCaptureReviewLeftoverCaption(frame.caption))
+      .map((frame) => basename(frame.path)),
+  );
+}
+
 /** Screenshots the test asked for, as opposed to automatic setup diagnostics. */
 function authoredFrames(job: CombineEvidenceCase): CombineEvidenceCase["frames"] {
   let allowed: Set<string> | undefined;
@@ -346,10 +374,12 @@ function authoredFrames(job: CombineEvidenceCase): CombineEvidenceCase["frames"]
   const leftover = new Set(
     captureReviewLeftoverLastFramePaths(job.frames ?? [], job.artifacts ?? []),
   );
+  const captionLeftover = unphasedLeftoverCaptionNames(job);
   return (job.frames ?? []).filter((frame) => {
     if (isHarnessFrame(frame.caption)) return false;
     if (allowed && !allowed.has(basename(frame.path))) return false;
     if (dest.length && leftover.has(frame.path)) return false;
+    if (captionLeftover.has(basename(frame.path))) return false;
     return true;
   });
 }
@@ -648,6 +678,7 @@ export async function exportCombineEvidencePack(input: {
         basename(path),
       ),
     );
+    const captionLeftover = unphasedLeftoverCaptionNames(job);
     if (job.runDir) {
       try {
         const frameDir = join(job.runDir, "frames");
@@ -658,6 +689,7 @@ export async function exportCombineEvidencePack(input: {
               name !== "full.png" &&
               !harness.has(name) &&
               !(destIdentity.length && leftoverNames.has(name)) &&
+              !captionLeftover.has(name) &&
               (!evidence.names || evidence.names.has(name)),
           )
           .sort();
@@ -781,7 +813,7 @@ export async function exportCombineEvidencePack(input: {
       .flatMap((item) => (item.runId ? [item.runId] : [])),
   );
   const destIdentityByJob = new Map(
-    input.jobs.map((job) => [job.id, captureReviewIdentityFramePaths(job.artifacts ?? [])[0]]),
+    input.jobs.map((job) => [job.id, checklistDestIdentityFrame(job)]),
   );
   const checklistRows = reviewChecklistRows({
     cases: manifest.cases.map((item) => ({
