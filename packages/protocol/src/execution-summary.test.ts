@@ -1106,6 +1106,75 @@ test("combine start keeps campaign; leftover Close 004 cannot fill dest", () => 
   );
 });
 
+test("attached-job envelope top-level destIdentity drops leftover Close 004", () => {
+  for (const operationId of [
+    "job.combine.start",
+    "job.combine.campaign.get",
+    "job.combine.campaign.resume",
+    "job.combine.campaign.cancel",
+    "job.combine.campaign.triage",
+    "job.retry",
+    "job.active.cancel",
+    "app-map.test.run",
+    "run.repair.retry",
+  ] as const) {
+    const result = summarizeExecutionOperationResult(operationId, {
+      campaign: { id: "camp-1", status: "running" },
+      workflowId: "wf-1",
+      jobs: [leftoverDestEndJob],
+      job: leftoverDestEndJob,
+      destIdentity: [
+        { path: "frames/003.png", caption: "Observe" },
+        { path: "frames/004.png", caption: "Close" },
+      ],
+      captureReview: [
+        {
+          captureId: "frames/003.png::dest",
+          caption: "Observe",
+          status: "pending",
+          framePath: "frames/003.png",
+          phase: CAPTURE_REVIEW_DEST_PHASE,
+        },
+        {
+          captureId: "frames/004.png::close-leftover",
+          caption: "Close",
+          status: "pending",
+          framePath: "frames/004.png",
+        },
+      ],
+    }) as {
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+      job?: { destIdentity?: Array<{ path?: string }> };
+      jobs?: Array<{ destIdentity?: Array<{ path?: string }> }>;
+    };
+    assert.deepEqual(
+      result.destIdentity?.map((frame) => frame.path),
+      ["frames/003.png"],
+      operationId,
+    );
+    assert.equal(
+      result.captureReview?.some((item) => item.framePath === "frames/004.png"),
+      false,
+      operationId,
+    );
+    if (result.job) {
+      assert.deepEqual(
+        result.job.destIdentity?.map((frame) => frame.path),
+        ["frames/003.png"],
+        operationId,
+      );
+    }
+    if (result.jobs) {
+      assert.deepEqual(
+        result.jobs[0]?.destIdentity?.map((frame) => frame.path),
+        ["frames/003.png"],
+        operationId,
+      );
+    }
+  }
+});
+
 test("job matrix/soak dest identity is dest wait-for, not leftover Close 004 last-frame", () => {
   for (const operationId of [
     "job.matrix.start",

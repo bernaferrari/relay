@@ -1048,12 +1048,28 @@ function summarizeStandaloneStep(response: Record<string, unknown>): unknown {
 }
 
 /** Workflow / test-run / replay envelopes keep their other fields; leftover Close
- * last-frame cannot fill dest on the attached job. */
+ * last-frame cannot fill dest on the attached job. Top-level destIdentity /
+ * captureReview also stay dest wait-for Fast — leftover Close cannot fill dest. */
 function projectAttachedJobResult(response: Record<string, unknown>): Record<string, unknown> {
+  const {
+    destIdentity: listedDest,
+    captureReview: listedReview,
+    job: _job,
+    jobs: _jobs,
+    ...rest
+  } = response;
+  const job = response.job === undefined ? undefined : summarizeJob(response.job);
+  const jobs = Array.isArray(response.jobs) ? response.jobs.map(summarizeJob) : undefined;
+  const destIdentity = destIdentityVisualFrames(listedDestIdentity(listedDest));
+  const captureReview = Array.isArray(listedReview)
+    ? destIdentityReviewItems(listedReview as CaptureReviewItem[]).map(compactCaptureReviewItem)
+    : undefined;
   return {
-    ...response,
-    ...(response.job !== undefined ? { job: summarizeJob(response.job) } : {}),
-    ...(Array.isArray(response.jobs) ? { jobs: response.jobs.map(summarizeJob) } : {}),
+    ...rest,
+    ...(job !== undefined ? { job } : {}),
+    ...(jobs !== undefined ? { jobs } : {}),
+    ...(destIdentity.length ? { destIdentity } : {}),
+    ...(captureReview?.length ? { captureReview } : {}),
   };
 }
 

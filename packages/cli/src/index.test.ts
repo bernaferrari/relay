@@ -2397,6 +2397,73 @@ test("combine campaign get --json keeps campaign; leftover Close 004 cannot fill
   assert.equal(result.result?.destIdentity, undefined);
 });
 
+test("combine campaign get --json top-level destIdentity drops leftover Close 004", async () => {
+  const io = capture();
+  const code = await runCli(["combine", "campaign", "get", "camp-1", "--json"], {
+    streams: io.streams,
+    createClient: () => ({
+      async invoke(operationId) {
+        assert.equal(operationId, "job.combine.campaign.get");
+        return {
+          campaign: { id: "camp-1", status: "ready-to-resume" },
+          jobs: [
+            {
+              id: leftoverDestEndRun.id,
+              status: "ok",
+              frames: leftoverDestEndRun.frames,
+              artifacts: leftoverDestEndRun.artifacts,
+            },
+          ],
+          destIdentity: [
+            { path: "frames/003.png", caption: "Observe" },
+            { path: "frames/004.png", caption: "Close" },
+          ],
+          captureReview: [
+            {
+              captureId: "frames/003.png::dest",
+              caption: "Observe",
+              status: "pending",
+              framePath: "frames/003.png",
+              phase: CAPTURE_REVIEW_DEST_PHASE,
+            },
+            {
+              captureId: "frames/004.png::close-leftover",
+              caption: "Close",
+              status: "pending",
+              framePath: "frames/004.png",
+            },
+          ],
+        };
+      },
+      events: async () => {},
+    }),
+    registerSignalHandlers: false,
+    env: {},
+  });
+  assert.equal(code, ExitCode.success);
+  const result = JSON.parse(io.stdout()) as {
+    result?: {
+      campaign?: { id?: string };
+      destIdentity?: Array<{ path?: string }>;
+      captureReview?: Array<{ framePath?: string }>;
+      jobs?: Array<{ destIdentity?: Array<{ path?: string }> }>;
+    };
+  };
+  assert.equal(result.result?.campaign?.id, "camp-1");
+  assert.deepEqual(
+    result.result?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+  assert.equal(
+    result.result?.captureReview?.some((item) => item.framePath === "frames/004.png"),
+    false,
+  );
+  assert.deepEqual(
+    result.result?.jobs?.[0]?.destIdentity?.map((frame) => frame.path),
+    ["frames/003.png"],
+  );
+});
+
 test("combine campaign resume --json dest identity is dest wait-for, not leftover Close 004 last-frame", async () => {
   const io = capture();
   const leftoverJob = {
