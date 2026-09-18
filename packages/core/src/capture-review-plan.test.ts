@@ -6,9 +6,11 @@ import {
   captureReviewId,
   captureReviewSlotId,
 } from "@relay/protocol";
+import type { CombineCampaign } from "@relay/protocol";
 import { CaptureReviewError } from "./capture-review.js";
 import {
   applyPlanCaptureReviewDecisions,
+  captureReviewQueueForCampaign,
   captureReviewQueueForPlan,
   resolveUniquePlanBatchId,
 } from "./capture-review-plan.js";
@@ -64,6 +66,66 @@ test("Plan capture review aggregates Runs and keeps missing in the denominator",
   assert.equal(queue.summary.captured, 1);
   assert.equal(queue.summary.blocked, 1);
   assert.equal(queue.summary.missing, 0);
+});
+
+test("mixed campaigns preserve frozen obligations and label legacy scope as unknown", () => {
+  const campaign: CombineCampaign = {
+    schemaVersion: 1,
+    id: "campaign-mixed",
+    projectId: "default",
+    appMapId: "map-1",
+    combineId: "combine-1",
+    sourceRevision: 1,
+    latestRevision: 1,
+    status: "completed",
+    createdAt: 1,
+    updatedAt: 1,
+    cases: [
+      {
+        index: 0,
+        cellId: "frozen-cell",
+        executionCaseId: "frozen-case",
+        testId: "test-1",
+        world: "default",
+        values: {},
+        targetProfileId: "browser:test",
+        plannedCaptures: [{ checkpointId: "settings", caption: "Settings" }],
+        childIntentDigest: "child",
+        outerIntentDigest: "outer",
+        wrapperGraphDigest: "wrapper",
+        staticInputDigest: "inputs",
+        phase: "coverage",
+        status: "pending",
+      },
+      {
+        index: 1,
+        cellId: "legacy-cell",
+        testId: "test-2",
+        world: "default",
+        values: {},
+        targetProfileId: "browser:test",
+        childIntentDigest: "child-2",
+        outerIntentDigest: "outer-2",
+        wrapperGraphDigest: "wrapper-2",
+        staticInputDigest: "inputs-2",
+        phase: "coverage",
+        status: "pending",
+      },
+    ],
+    lineage: [],
+    execution: { selectedCellIds: ["frozen-cell", "legacy-cell"], seed: 1 },
+  };
+  const queue = captureReviewQueueForCampaign(campaign, []);
+  assert.equal(queue.summary.planned, 2);
+  assert.equal(queue.summary.missing, 2);
+  assert.equal(
+    queue.items.find((item) => item.executionCaseId?.endsWith("frozen-case"))?.caption,
+    "Settings",
+  );
+  const legacy = queue.items.find((item) => item.legacyScope === "unknown");
+  assert.equal(legacy?.status, "missing");
+  assert.equal(legacy?.caption, "Legacy capture scope unavailable");
+  assert.match(legacy?.legacyReason ?? "", /predates frozen/u);
 });
 
 test("bulk Looks correct writes the existing capture-review store for exact items only", () => {

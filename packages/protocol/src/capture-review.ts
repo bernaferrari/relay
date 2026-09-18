@@ -431,6 +431,8 @@ export type CaptureReviewItem = {
   decidedAt?: number;
   decidedBy?: CaptureReviewActor;
   note?: string;
+  /** Monotonic review version for optimistic, retry-safe mutations. */
+  reviewVersion?: number;
 };
 
 export type CaptureReviewDecision = {
@@ -440,6 +442,10 @@ export type CaptureReviewDecision = {
   decidedBy: CaptureReviewActor;
   imageSha256?: string;
   note?: string;
+  /** Durable operation identity used to replay a lost acknowledgement safely. */
+  requestId?: string;
+  /** Version of this capture after the decision was applied. */
+  reviewVersion?: number;
 };
 
 export type CaptureReviewSummary = {
@@ -1137,14 +1143,27 @@ function captureReviewArtifact(data: unknown): CaptureReviewItem | undefined {
         ...(phase ? { phase } : {}),
       }
     : undefined;
-  const slotId =
-    text(payload.slotId) ?? (slotIdentity ? captureReviewSlotId(slotIdentity) : undefined);
+  // Only a persisted `slotId` is authoritative. The derived identity is still
+  // useful for capture ids when a legacy artifact has no frame, but treating
+  // it as explicit would make a legacy artifact with extra configuration
+  // contradict an otherwise compatible checkpoint match.
+  const explicitSlotId = text(payload.slotId);
+  const derivedSlotId = slotIdentity ? captureReviewSlotId(slotIdentity) : undefined;
+  const slotId = explicitSlotId;
+  const reviewVersion =
+    typeof payload.reviewVersion === "number" &&
+    Number.isInteger(payload.reviewVersion) &&
+    payload.reviewVersion >= 0
+      ? payload.reviewVersion
+      : 0;
   return {
     captureId: captureReviewId({
       caption,
       ...(framePath ? { framePath } : {}),
       ...(imageSha256 ? { imageSha256 } : {}),
-      ...(slotId && !framePath ? { slotId } : {}),
+      ...((explicitSlotId ?? derivedSlotId) && !framePath
+        ? { slotId: explicitSlotId ?? derivedSlotId }
+        : {}),
     }),
     caption,
     status,
@@ -1172,6 +1191,7 @@ function captureReviewArtifact(data: unknown): CaptureReviewItem | undefined {
     ...(configuration ? { configuration } : {}),
     ...(observed ? { observed } : {}),
     ...(masks.length ? { masks } : {}),
+    reviewVersion,
   };
 }
 
@@ -1181,6 +1201,7 @@ function plannedItem(slot: CaptureReviewPlannedSlot): CaptureReviewItem {
     captureId: captureReviewId({ caption: slot.caption, slotId }),
     caption: slot.caption,
     status: "missing",
+    reviewVersion: 0,
     slotId,
     checkpointId: slot.checkpointId,
     ...(slot.lookFor ? { lookFor: slot.lookFor } : {}),
@@ -1200,7 +1221,26 @@ function sameOptional<T>(left: T | undefined, right: T | undefined): boolean {
 
 function artifactMatchesSlot(artifact: CaptureReviewItem, slot: CaptureReviewPlannedSlot): boolean {
   if (!captureReviewFillsDestPhase(artifact.phase, slot.phase)) return false;
-  if (artifact.slotId && artifact.slotId === captureReviewSlotId(slot)) return true;
+  const artifactSlotId = artifact.slotId?.trim();
+  if (artifactSlotId) {
+    // An explicit slot identity is authoritative. A contradictory id is a
+    // conflict, never permission to retry a weaker checkpoint/step match.
+    if (artifactSlotId !== captureReviewSlotId(slot)) return false;
+    if (!captureReviewConfigurationMatchesSlot(artifact.configuration, slot.configuration)) {
+      return false;
+    }
+    if (artifact.checkpointId && artifact.checkpointId !== slot.checkpointId) return false;
+    if (artifact.stepId && slot.stepId && artifact.stepId !== slot.stepId) return false;
+    if (!sameOptional(artifact.invocation, slot.invocation)) return false;
+    if (!sameOptional(artifact.iteration, slot.iteration)) return false;
+    if (!sameCaptureReviewAttempt(artifact.attempt, slot.attempt)) return false;
+    // A slot id may intentionally name an unphased freeze slot while the
+    // artifact carries the more specific dest phase as evidence metadata.
+    return true;
+  }
+  if (!captureReviewConfigurationMatchesSlot(artifact.configuration, slot.configuration)) {
+    return false;
+  }
   const checkpoint = artifact.checkpointId ?? artifact.stepId;
   if (checkpoint && checkpoint === slot.checkpointId) {
     return (
@@ -1219,6 +1259,19 @@ function artifactMatchesSlot(artifact: CaptureReviewItem, slot: CaptureReviewPla
   return false;
 }
 
+function captureReviewConfigurationMatchesSlot(
+  artifact: CaptureReviewConfiguration | undefined,
+  slot: CaptureReviewConfiguration | undefined,
+): boolean {
+  // Missing configuration is the legacy compatibility path. When both sides
+  // carry a field, a disagreement is explicit contradictory evidence.
+  if (!artifact || !slot) return true;
+  return Object.entries(artifact).every(([key, value]) => {
+    const planned = slot[key as keyof CaptureReviewConfiguration];
+    return planned === undefined || planned === value;
+  });
+}
+
 function bindArtifactToSlots(
   artifact: CaptureReviewItem,
   items: CaptureReviewItem[],
@@ -1231,15 +1284,17 @@ function bindArtifactToSlots(
     if (bound.has(index)) continue;
     if (artifactMatchesSlot(artifact, slot)) exact.push(index);
     else if (
+      !artifact.slotId &&
       artifact.stepId &&
       artifact.stepId === slot.stepId &&
       sameCaptureReviewPhase(artifact.phase, slot.phase) &&
-      captureReviewFillsDestPhase(artifact.phase, slot.phase)
+      captureReviewFillsDestPhase(artifact.phase, slot.phase) &&
+      captureReviewConfigurationMatchesSlot(artifact.configuration, slot.configuration)
     ) {
       byStep.push(index);
     }
   }
-  const candidates = exact.length ? exact : byStep;
+  const candidates = exact.length ? exact : artifact.slotId ? [] : byStep;
   if (candidates.length === 1) {
     const index = candidates[0]!;
     bound.add(index);
@@ -1331,6 +1386,7 @@ function overlayDecision(
     status: captureReviewStatusForAction(match.action),
     decidedAt: match.decidedAt,
     decidedBy: match.decidedBy,
+    reviewVersion: match.reviewVersion ?? item.reviewVersion ?? 0,
     ...(match.note ? { note: match.note } : {}),
   };
 }

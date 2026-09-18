@@ -583,6 +583,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
             captureId: string;
             imageSha256?: string;
             action?: CaptureReviewAction;
+            expectedReviewVersion?: number;
           }>,
           ...(filter ? { filter } : {}),
         },

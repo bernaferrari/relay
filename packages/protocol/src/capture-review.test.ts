@@ -1005,6 +1005,45 @@ test("an empty frozen plannedSlots list does not reconstruct from recipes", () =
   assert.equal(queue.summary.missing, 0);
 });
 
+test("a contradictory explicit slot identity cannot fill a weaker checkpoint match", () => {
+  const arabic = {
+    checkpointId: "settings",
+    stepId: "settings",
+    attempt: 1,
+    phase: "dest",
+    caption: "Settings",
+    configuration: { locale: "Arabic" },
+  } as const;
+  const english = { ...arabic, configuration: { locale: "English" } } as const;
+  const queue = resolveCaptureReviewQueue({
+    plannedSlots: [arabic],
+    artifacts: [
+      {
+        kind: "capture-review",
+        data: {
+          caption: "Settings",
+          framePath: "frames/english.png",
+          imageSha256: "english",
+          checkpointId: "settings",
+          stepId: "settings",
+          attempt: 1,
+          phase: "dest",
+          slotId: captureReviewSlotId(english),
+          configuration: english.configuration,
+        },
+      },
+    ],
+  });
+  assert.equal(
+    queue.items.find((item) => item.slotId === captureReviewSlotId(arabic))?.status,
+    "missing",
+  );
+  assert.equal(
+    queue.items.find((item) => item.configuration?.locale === "English")?.status,
+    "pending",
+  );
+});
+
 const recaptureCheckpoint = {
   requirementId: "GQA-settings",
   checkpointId: "settings",

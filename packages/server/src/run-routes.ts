@@ -823,6 +823,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
       action?: unknown;
       imageSha256?: unknown;
       note?: unknown;
+      expectedReviewVersion?: unknown;
     };
     if (typeof body.captureId !== "string" || !body.captureId.trim()) {
       throw new HttpError(400, "captureId is required", {
@@ -843,6 +844,9 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
         actor: reviewActor(context),
         ...(typeof body.imageSha256 === "string" ? { imageSha256: body.imageSha256 } : {}),
         ...(typeof body.note === "string" ? { note: body.note } : {}),
+        ...(typeof body.expectedReviewVersion === "number"
+          ? { expectedReviewVersion: body.expectedReviewVersion }
+          : {}),
       });
       recordAudit(scope, {
         action: `run.capture.review.${body.action}`,

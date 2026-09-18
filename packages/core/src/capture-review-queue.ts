@@ -6,7 +6,10 @@ import {
 import type { PersistedRun } from "./runs.js";
 import { executionIntentPlannedSlots } from "./run-test-step-evidence.js";
 
-export type CaptureReviewRun = Pick<PersistedRun, "artifacts" | "captureReviews"> & {
+export type CaptureReviewRun = Pick<
+  PersistedRun,
+  "artifacts" | "captureReviews" | "captureReviewReceipts"
+> & {
   recipeSnapshot?: {
     steps?: readonly unknown[];
     recipes?: Record<string, { steps?: readonly unknown[] }>;

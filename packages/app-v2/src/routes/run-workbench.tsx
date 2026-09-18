@@ -62,6 +62,7 @@ export function RunWorkbench({
     captureId: string;
     action: CaptureReviewAction;
     imageSha256?: string;
+    expectedReviewVersion?: number;
   }): Promise<void>;
   renderEvidence?(section: Report["evidence"][number]): ReactNode;
 }) {
@@ -153,6 +154,9 @@ export function RunWorkbench({
           captureId: item.captureId,
           action,
           ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
+          ...(item.reviewVersion !== undefined
+            ? { expectedReviewVersion: item.reviewVersion }
+            : {}),
         });
         saved.push(captureReviewQueueItemKey(item));
         setReviewedItemKeys([...saved]);

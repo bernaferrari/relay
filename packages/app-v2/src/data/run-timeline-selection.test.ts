@@ -939,8 +939,9 @@ it("dest-end Model selector SuperGrok keeps product title, not Captured result",
   expect(result.timeline.map((step) => step.title)).toEqual(["Model selector SuperGrok"]);
   expect(result.timeline.some((step) => step.title === "Captured result")).toBe(false);
   expect(result.timeline.some((step) => step.title === 'Wait for label "Heavy"')).toBe(false);
-  const shotTitles = (result.evidence as { items?: { title?: string; id?: string }[] }[])?.[0]
-    ?.items;
+  const shotTitles = (
+    result.evidence as readonly { items?: readonly { title?: string; id?: string }[] }[]
+  )?.[0]?.items;
   expect(shotTitles?.map((item) => item.id)).toEqual(["frames/003.png"]);
   expect(shotTitles?.map((item) => item.title)).toEqual(["Model selector SuperGrok"]);
   expect(shotTitles?.some((item) => /Screenshot \d+|Captured result/u.test(item.title ?? ""))).toBe(
@@ -1007,8 +1008,9 @@ it("failed dest-end firstEvidence is Capture for review, not prelude Wait for", 
   expect(result.timeline.map((step) => step.title)).toEqual([
     "Tap Expert, dismiss with Back key (not 540,400).",
   ]);
-  const shotTitles = (result.evidence as { items?: { title?: string; id?: string }[] }[])?.[0]
-    ?.items;
+  const shotTitles = (
+    result.evidence as readonly { items?: readonly { title?: string; id?: string }[] }[]
+  )?.[0]?.items;
   expect(shotTitles?.map((item) => item.id)).toEqual(["frames/007.png"]);
   expect(shotTitles?.map((item) => item.title)).toEqual([
     "Tap Expert, dismiss with Back key (not 540,400).",

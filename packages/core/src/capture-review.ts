@@ -14,6 +14,7 @@ import {
   withRunWriteLock,
   type PersistedRun,
 } from "./runs.js";
+import { currentOperationContext } from "./operation-context.js";
 
 export class CaptureReviewError extends Error {
   readonly code:
@@ -56,8 +57,17 @@ export function applyCaptureReviewDecision(
     actor: { id: string; kind: ActorKind };
     imageSha256?: string;
     note?: string;
+    requestId?: string;
+    expectedReviewVersion?: number;
   },
-): { captureReviews: CaptureReviewDecision[]; queue: CaptureReviewQueue; outcome?: string } {
+): {
+  captureReviews: CaptureReviewDecision[];
+  captureReviewReceipts: CaptureReviewDecision[];
+  queue: CaptureReviewQueue;
+  decision: CaptureReviewDecision;
+  outcome?: string;
+  changed: boolean;
+} {
   assertHumanCaptureReviewActor(
     input.actor,
     "A human must decide this screenshot",
@@ -89,6 +99,48 @@ export function applyCaptureReviewDecision(
   const prior = (run.captureReviews ?? []).find(
     (decision) => decision.captureId === item.captureId,
   );
+  const requestId = input.requestId?.trim() || currentOperationContext()?.requestId;
+  const receipts = run.captureReviewReceipts ?? [];
+  const replay = requestId
+    ? [...receipts]
+        .reverse()
+        .find((receipt) => receipt.captureId === item.captureId && receipt.requestId === requestId)
+    : undefined;
+  if (replay) {
+    const requestedNote = input.note?.trim().slice(0, 2_000);
+    const sameImage =
+      !input.imageSha256 || !replay.imageSha256 || input.imageSha256 === replay.imageSha256;
+    const sameIntent =
+      replay.action === input.action &&
+      sameImage &&
+      (input.note === undefined || requestedNote === replay.note);
+    if (!sameIntent) {
+      throw new CaptureReviewError(
+        "CAPTURE_REVIEW_CONFLICT",
+        "This review request id was already used for a different judgement",
+        "Retry with the original review request or create a new review request for an intentional revision.",
+      );
+    }
+    return {
+      captureReviews: run.captureReviews ?? [],
+      captureReviewReceipts: receipts,
+      queue: captureReviewQueueForRun(run),
+      decision: replay,
+      outcome: run.outcome,
+      changed: false,
+    };
+  }
+  const currentReviewVersion = prior?.reviewVersion ?? 0;
+  if (
+    input.expectedReviewVersion !== undefined &&
+    input.expectedReviewVersion !== currentReviewVersion
+  ) {
+    throw new CaptureReviewError(
+      "CAPTURE_REVIEW_CONFLICT",
+      "This screenshot has a newer review decision",
+      "Refresh the Run and submit an intentional revision against the current review version.",
+    );
+  }
   if (prior && prior.decidedBy.id !== input.actor.id) {
     throw new CaptureReviewError(
       "CAPTURE_REVIEW_CONFLICT",
@@ -110,10 +162,17 @@ export function applyCaptureReviewDecision(
               ? { ...prior, ...(note ? { note } : {}) }
               : decision,
           );
+    const captureReviewReceipts =
+      requestId && !receipts.some((receipt) => receipt.requestId === requestId)
+        ? [...receipts, { ...prior, requestId }]
+        : receipts;
     return {
       captureReviews,
+      captureReviewReceipts,
       queue: captureReviewQueueForRun({ ...run, captureReviews }),
+      decision: prior,
       outcome: run.outcome,
+      changed: captureReviews !== run.captureReviews || captureReviewReceipts !== receipts,
     };
   }
   const decision: CaptureReviewDecision = {
@@ -123,15 +182,21 @@ export function applyCaptureReviewDecision(
     decidedBy: input.actor,
     ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
     ...(note ? { note } : {}),
+    ...(requestId ? { requestId } : {}),
+    reviewVersion: currentReviewVersion + 1,
   };
   const captureReviews = [
     ...(run.captureReviews ?? []).filter((existing) => existing.captureId !== item.captureId),
     decision,
   ];
+  const captureReviewReceipts = requestId ? [...receipts, decision].slice(-256) : receipts;
   return {
     captureReviews,
+    captureReviewReceipts,
     queue: captureReviewQueueForRun({ ...run, captureReviews }),
+    decision,
     outcome: run.outcome,
+    changed: true,
   };
 }
 
@@ -144,6 +209,8 @@ export function reviewPersistedCapture(
     actor: { id: string; kind: ActorKind };
     imageSha256?: string;
     note?: string;
+    requestId?: string;
+    expectedReviewVersion?: number;
   },
 ): Promise<CaptureReviewResult> {
   return withRunWriteLock(run.dir, async () => {
@@ -159,11 +226,14 @@ export function reviewPersistedCapture(
     const applied = applyCaptureReviewDecision(latest, input);
     const next: PersistedRun = structuredClone(latest);
     next.captureReviews = applied.captureReviews;
-    const persisted = await persistPersistedRun(root, latest, next, "capture-review");
+    next.captureReviewReceipts = applied.captureReviewReceipts;
+    const persisted = applied.changed
+      ? await persistPersistedRun(root, latest, next, "capture-review")
+      : latest;
     return {
       run: persisted,
       queue: applied.queue,
-      decision: applied.captureReviews.find((decision) => decision.captureId === input.captureId)!,
+      decision: applied.decision,
     };
   });
 }

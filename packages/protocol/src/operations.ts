@@ -596,6 +596,15 @@ const captureReviewInputParser = objectParser<OperationInput<"run.capture.review
     }
     if (input.imageSha256 !== undefined) string(input.imageSha256, "capture review imageSha256");
     if (input.note !== undefined) string(input.note, "capture review note");
+    if (input.expectedReviewVersion !== undefined) {
+      if (
+        typeof input.expectedReviewVersion !== "number" ||
+        !Number.isInteger(input.expectedReviewVersion) ||
+        input.expectedReviewVersion < 0
+      ) {
+        fail("capture review expectedReviewVersion", "must be a non-negative integer");
+      }
+    }
   },
 );
 

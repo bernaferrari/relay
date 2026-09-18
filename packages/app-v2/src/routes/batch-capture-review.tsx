@@ -82,7 +82,12 @@ export function PlanCaptureReviewSection({
   const review = useMutation({
     mutationFn: (input: {
       action: CaptureReviewAction;
-      items: Array<{ runId: string; captureId: string; imageSha256?: string }>;
+      items: Array<{
+        runId: string;
+        captureId: string;
+        imageSha256?: string;
+        expectedReviewVersion?: number;
+      }>;
     }) => {
       if (!runAcrossService.reviewCaptures) {
         throw new Error("Plan capture review is unavailable.");
@@ -167,6 +172,9 @@ export function PlanCaptureReviewSection({
           runId: item.runId,
           captureId: item.captureId,
           ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
+          ...(item.reviewVersion !== undefined
+            ? { expectedReviewVersion: item.reviewVersion }
+            : {}),
         })),
     });
   };

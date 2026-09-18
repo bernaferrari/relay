@@ -125,6 +125,7 @@ export const executionOperationSchemas = {
               runId: identifier("Persisted Run identifier"),
               captureId: identifier("Capture review identifier"),
               imageSha256: z.string().optional(),
+              expectedReviewVersion: z.number().int().nonnegative().optional(),
               action: z.enum(CAPTURE_REVIEW_ACTIONS).optional(),
               note: z.string().max(2_000).optional(),
             })
@@ -206,6 +207,7 @@ export const executionOperationSchemas = {
       action: z.enum(CAPTURE_REVIEW_ACTIONS),
       imageSha256: z.string().optional(),
       note: z.string().optional(),
+      expectedReviewVersion: z.number().int().nonnegative().optional(),
     })
     .strict(),
   "run.visual-policy.get": runRef,

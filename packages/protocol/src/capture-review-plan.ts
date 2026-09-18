@@ -18,6 +18,9 @@ export type PlanCaptureReviewItem = CaptureReviewItem & {
   blocked?: boolean;
   device?: string;
   account?: string;
+  /** Legacy campaign case whose original obligation was never frozen. */
+  legacyScope?: "unknown";
+  legacyReason?: string;
   /** Physical vs simulator/emulator/browser approximation. Never implied by Lane name. */
   scenarioKind?:
     | "physical"
@@ -62,6 +65,7 @@ export type PlanCaptureReviewSelection = {
   imageSha256?: string;
   action?: CaptureReviewAction;
   note?: string;
+  expectedReviewVersion?: number;
 };
 
 export function summarizePlanCaptureReview(

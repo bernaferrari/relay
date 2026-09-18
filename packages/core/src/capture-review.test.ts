@@ -332,6 +332,63 @@ test("a second human cannot overwrite another reviewer's saved decision or note"
   assert.equal(retry.captureReviews.length, 1);
 });
 
+test("a delayed same-reviewer retry replays its receipt without reverting a newer decision", () => {
+  const captureId = captureReviewId({
+    caption: "Arabic account settings",
+    framePath: "frames/001.png",
+    imageSha256: "aaa",
+  });
+  const run = {
+    artifacts: [artifact],
+    outcome: "passed" as const,
+    recipeSnapshot: { steps: [] },
+  };
+  const first = applyCaptureReviewDecision(run, {
+    captureId,
+    action: "accept",
+    actor: { id: "human:maria", kind: "human" },
+    imageSha256: "aaa",
+    requestId: "review-a",
+    expectedReviewVersion: 0,
+  });
+  const second = applyCaptureReviewDecision(
+    {
+      ...run,
+      captureReviews: first.captureReviews,
+      captureReviewReceipts: first.captureReviewReceipts,
+    },
+    {
+      captureId,
+      action: "report-issue",
+      actor: { id: "human:maria", kind: "human" },
+      imageSha256: "aaa",
+      note: "Overlap found",
+      requestId: "review-b",
+      expectedReviewVersion: 1,
+    },
+  );
+  const retry = applyCaptureReviewDecision(
+    {
+      ...run,
+      captureReviews: second.captureReviews,
+      captureReviewReceipts: second.captureReviewReceipts,
+    },
+    {
+      captureId,
+      action: "accept",
+      actor: { id: "human:maria", kind: "human" },
+      imageSha256: "aaa",
+      requestId: "review-a",
+      expectedReviewVersion: 0,
+    },
+  );
+  assert.equal(retry.changed, false);
+  assert.equal(retry.decision.action, "accept");
+  assert.equal(retry.captureReviews[0]?.action, "report-issue");
+  assert.equal(retry.captureReviews[0]?.note, "Overlap found");
+  assert.equal(retry.queue.items[0]?.status, "issue");
+});
+
 test("run capture review reads Combine cell child plannedSlots", () => {
   const queue = captureReviewQueueForRun({
     artifacts: [

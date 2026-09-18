@@ -126,6 +126,10 @@ export type PersistedRun = {
   review?: RunReview;
   /** Human screenshot review. Independent of execution outcome and visual baselines. */
   captureReviews?: CaptureReviewDecision[];
+  /** Durable acknowledgements for capture-review retries. The current decision
+   * remains in captureReviews; this bounded history lets a delayed request
+   * replay its own acknowledgement without reverting a newer judgement. */
+  captureReviewReceipts?: CaptureReviewDecision[];
   appVersion?: string;
   batchId?: string;
   caseIndex?: number;

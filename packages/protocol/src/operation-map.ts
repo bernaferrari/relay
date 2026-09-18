@@ -765,6 +765,7 @@ type SpecificOperationMap = {
       action: CaptureReviewAction;
       imageSha256?: string;
       note?: string;
+      expectedReviewVersion?: number;
     };
     output: {
       run: OperationRecord;

@@ -43,7 +43,7 @@ export type PlanCaptureReviewItemResult = {
 
 type PlanCaptureReviewRun = Pick<
   PersistedRun,
-  "id" | "artifacts" | "captureReviews" | "outcome" | "status"
+  "id" | "artifacts" | "captureReviews" | "captureReviewReceipts" | "outcome" | "status"
 > & {
   recipeSnapshot?: {
     steps?: readonly unknown[];
@@ -163,8 +163,7 @@ export function captureReviewQueueForCampaign(
   campaign: CombineCampaign | null,
   runs: readonly PlanCaptureReviewRun[],
 ): PlanCaptureReviewQueue {
-  if (!campaign || campaign.cases.some((item) => item.plannedCaptures === undefined))
-    return captureReviewQueueForPlan(runs);
+  if (!campaign) return captureReviewQueueForPlan(runs);
   const byId = new Map(runs.map((run) => [run.id, run]));
   const scope = campaign.execution?.selectedExecutionCaseIds ?? campaign.execution?.selectedCellIds;
   const selected = scope ? new Set(scope) : undefined;
@@ -180,20 +179,59 @@ export function captureReviewQueueForCampaign(
   const inputs = cases.map((item) => {
     const run = byId.get(item.runId ?? item.jobId ?? "");
     return {
+      case: item,
       executionCaseId: `${campaign.id}:${item.executionCaseId ?? item.cellId}`,
-      ...(run ? { runId: run.id, artifacts: run.artifacts, decisions: run.captureReviews } : {}),
-      plannedSlots: item.plannedCaptures,
+      ...(run
+        ? {
+            runId: run.id,
+            artifacts: run.artifacts,
+            decisions: run.captureReviews,
+            recipeSteps: run.recipeSnapshot?.steps,
+            recipes: run.recipeGraph ?? run.recipeSnapshot?.recipes,
+          }
+        : {}),
+      ...(item.plannedCaptures !== undefined ? { plannedSlots: item.plannedCaptures } : {}),
       blocked: run ? runIsBlocked(run) : ["blocked", "cancelled", "failed"].includes(item.status),
       device: run ? deviceForRun(run) : item.target?.targetId,
     };
   });
-  const expected = resolvePlanCaptureReviewQueue(
-    inputs.map(({ artifacts: _artifacts, decisions: _decisions, ...input }) => input),
-  );
-  const keys = new Set(expected.items.map((item) => `${item.executionCaseId}::${item.slotId}`));
-  const items = resolvePlanCaptureReviewQueue(inputs).items.filter((item) =>
-    keys.has(`${item.executionCaseId}::${item.slotId}`),
-  );
+  const items = inputs.flatMap((input) => {
+    const resolved = resolvePlanCaptureReviewQueue([input]);
+    if (input.case.plannedCaptures !== undefined) {
+      const expected = resolvePlanCaptureReviewQueue([
+        {
+          executionCaseId: input.executionCaseId,
+          plannedSlots: input.case.plannedCaptures,
+          blocked: input.blocked,
+          device: input.device,
+        },
+      ]);
+      const keys = new Set(expected.items.map((item) => `${item.executionCaseId}::${item.slotId}`));
+      return resolved.items.filter((item) => keys.has(`${item.executionCaseId}::${item.slotId}`));
+    }
+    const legacyScopeId = `${input.executionCaseId}:legacy-scope`;
+    const legacyReason = "This campaign predates frozen planned capture obligations.";
+    return [
+      ...resolved.items.map((item) => ({
+        ...item,
+        legacyScope: "unknown" as const,
+        legacyReason,
+      })),
+      {
+        captureId: `missing::${legacyScopeId}`,
+        caption: "Legacy capture scope unavailable",
+        status: "missing" as const,
+        slotId: legacyScopeId,
+        checkpointId: legacyScopeId,
+        ...(input.runId ? { runId: input.runId } : {}),
+        executionCaseId: input.executionCaseId,
+        ...(input.blocked ? { blocked: true } : {}),
+        ...(input.device ? { device: input.device } : {}),
+        legacyScope: "unknown" as const,
+        legacyReason,
+      },
+    ];
+  });
   return { items, summary: summarizePlanCaptureReview(items) };
 }
 
@@ -206,7 +244,11 @@ export function applyPlanCaptureReviewDecisions(
     filter?: PlanCaptureReviewFilter;
   },
 ): PlanCaptureReviewApplyResult & {
-  runs: Array<{ runId: string; captureReviews: CaptureReviewDecision[] }>;
+  runs: Array<{
+    runId: string;
+    captureReviews: CaptureReviewDecision[];
+    captureReviewReceipts: CaptureReviewDecision[];
+  }>;
 } {
   assertHumanCaptureReviewActor(
     input.actor,
@@ -219,6 +261,9 @@ export function applyPlanCaptureReviewDecisions(
   const selectedKeys = new Set(selected.map((item) => `${item.runId}::${item.captureId}`));
   const reviewsByRun = new Map<string, CaptureReviewDecision[]>(
     runs.map((run) => [run.id, [...(run.captureReviews ?? [])]]),
+  );
+  const receiptsByRun = new Map<string, CaptureReviewDecision[]>(
+    runs.map((run) => [run.id, [...(run.captureReviewReceipts ?? [])]]),
   );
   const results: PlanCaptureReviewItemResult[] = [];
   for (const selection of input.items) {
@@ -279,9 +324,13 @@ export function applyPlanCaptureReviewDecisions(
           actor: input.actor,
           ...(selection.imageSha256 ? { imageSha256: selection.imageSha256 } : {}),
           ...(selection.note ? { note: selection.note } : {}),
+          ...(selection.expectedReviewVersion !== undefined
+            ? { expectedReviewVersion: selection.expectedReviewVersion }
+            : {}),
         },
       );
       reviewsByRun.set(run.id, applied.captureReviews);
+      receiptsByRun.set(run.id, applied.captureReviewReceipts);
       results.push({
         runId: selection.runId,
         captureId: selection.captureId,
@@ -307,6 +356,7 @@ export function applyPlanCaptureReviewDecisions(
   const nextRuns = runs.map((run) => ({
     ...run,
     captureReviews: reviewsByRun.get(run.id) ?? run.captureReviews,
+    captureReviewReceipts: receiptsByRun.get(run.id) ?? run.captureReviewReceipts,
   }));
   return {
     queue: captureReviewQueueForPlan(nextRuns),
@@ -314,6 +364,7 @@ export function applyPlanCaptureReviewDecisions(
     runs: [...reviewsByRun.entries()].map(([runId, captureReviews]) => ({
       runId,
       captureReviews,
+      captureReviewReceipts: receiptsByRun.get(runId) ?? [],
     })),
   };
 }
@@ -396,6 +447,8 @@ export async function reviewPersistedPlanCaptures(
       if (!applied.results.some((result) => result.status === "applied")) return;
       const persisted: PersistedRun = structuredClone(latest);
       persisted.captureReviews = applied.runs[0]?.captureReviews ?? latest.captureReviews;
+      persisted.captureReviewReceipts =
+        applied.runs[0]?.captureReviewReceipts ?? latest.captureReviewReceipts;
       await persistPersistedRun(root, latest, persisted, "capture-review");
     });
   }
