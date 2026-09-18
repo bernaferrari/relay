@@ -25,7 +25,11 @@ test("AVD inventory stays separate from connected devices and boot requires one 
   try {
     const { inventory } = await client.invoke("target.avds.list", {});
     assert.ok(inventory.source === "android-sdk" || inventory.source === "unavailable");
-    assert.ok(inventory.avds.every(({ serial, booted }) => booted || serial === undefined));
+    for (const avd of inventory.avds) {
+      assert.equal(avd.booted, avd.status === "booted");
+      if (avd.status === "stopped") assert.equal(avd.serial, undefined);
+      else assert.ok(avd.serial, "Running and booting AVDs retain their observed serial");
+    }
 
     const missingName = await fetch(`${url}/device/avd/boot`, {
       method: "POST",

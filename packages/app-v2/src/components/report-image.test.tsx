@@ -48,3 +48,71 @@ it("retries a failed screenshot without navigating away from the report", async 
     revokeUrl.mockRestore();
   }
 });
+
+it("recovers a browser image error and clears it when choosing another screenshot", async () => {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const client = new QueryClient();
+  const render = (src: string) =>
+    act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ReportImage media={{ kind: "image", src }} alt="Checkpoint" />
+        </QueryClientProvider>,
+      ),
+    );
+  try {
+    await render("/first.png");
+    const failedImage = host.querySelector("img")!;
+    await act(async () => failedImage.dispatchEvent(new Event("error")));
+    expect(host.textContent).toContain("Screenshot couldn’t load.");
+    await act(async () => host.querySelector("button")!.click());
+    expect(host.querySelector("img")?.getAttribute("src")).toBe("/first.png");
+    expect(host.querySelector("img")).not.toBe(failedImage);
+    await act(async () => host.querySelector("img")!.dispatchEvent(new Event("error")));
+    await render("/second.png");
+    expect(host.textContent).not.toContain("couldn’t load");
+    expect(host.querySelector("img")?.getAttribute("src")).toBe("/second.png");
+  } finally {
+    await act(async () => root.unmount());
+    client.clear();
+  }
+});
+
+it("does not display a late screenshot response after selection changes", async () => {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  let resolveFirst!: (value: Blob) => void;
+  const load = () =>
+    new Promise<Blob>((resolve) => {
+      resolveFirst = resolve;
+    });
+  const createUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:stale");
+  try {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ReportImage media={{ kind: "image", src: "first", load }} alt="First" />
+        </QueryClientProvider>,
+      ),
+    );
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ReportImage media={{ kind: "image", src: "/second.png" }} alt="Second" />
+        </QueryClientProvider>,
+      ),
+    );
+    await act(async () => {
+      resolveFirst(new Blob(["old-image"]));
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    expect(host.querySelector("img")?.getAttribute("src")).toBe("/second.png");
+    expect(createUrl).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    client.clear();
+    createUrl.mockRestore();
+  }
+});

@@ -547,9 +547,13 @@ function publicFrameCaption(value: unknown): string | undefined {
 /** Dest wait-for evidence when leftover Close / Transition executed last-frame
  * captions are also listed. Unphased dest-wait (no dest wait-for caption) keeps
  * every frame. */
-function destWaitForEvidenceFrames(frames: Record<string, unknown>[]): Record<string, unknown>[] {
-  const dest = frames.filter((frame) => !isCaptureReviewLeftoverCaption(text(frame.caption)));
-  const leftover = frames.filter((frame) => isCaptureReviewLeftoverCaption(text(frame.caption)));
+function destWaitForEvidenceFrames(frames: unknown[]): unknown[] {
+  const dest = frames.filter(
+    (frame) => !isCaptureReviewLeftoverCaption(text(record(frame)?.caption)),
+  );
+  const leftover = frames.filter((frame) =>
+    isCaptureReviewLeftoverCaption(text(record(frame)?.caption)),
+  );
   return dest.length && leftover.length ? dest : frames;
 }
 function publicNetworkUrl(value: unknown): string | undefined {

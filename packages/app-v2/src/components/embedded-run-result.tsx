@@ -25,7 +25,13 @@ function destWaitForEvidenceThumb(
 }
 
 /** A result in the test workspace. The separate report owns diagnostics. */
-export function EmbeddedRunResult({ report }: { report: ProductRunReportOverview }) {
+export function EmbeddedRunResult({
+  report,
+  onReviewCaptures,
+}: {
+  report: ProductRunReportOverview;
+  onReviewCaptures?: () => void;
+}) {
   const passed = report.outcome === "passed";
   const diagnostic = [report.cause, ...report.timeline.map((step) => step.log)].join("");
   const inspectionUnavailable = /screen-inspection-unavailable:/iu.test(diagnostic);
@@ -89,14 +95,27 @@ export function EmbeddedRunResult({ report }: { report: ProductRunReportOverview
       </header>
       <div className="flex flex-wrap gap-x-4 gap-y-1 border-b border-border pb-3 text-xs text-muted-foreground">
         <span>{report.targetName ?? "Device not recorded"}</span>
-        <span>
-          {report.executionContext?.sourceRevision
-            ? `Source revision ${report.executionContext.sourceRevision}`
-            : "Source revision not recorded"}
-        </span>
+        {report.executionContext?.sourceRevision ? (
+          <span>Source revision {report.executionContext.sourceRevision}</span>
+        ) : null}
         {report.executionContext?.account ? <span>{report.executionContext.account}</span> : null}
         {report.executionContext?.locale ? <span>{report.executionContext.locale}</span> : null}
       </div>
+      {report.captureReview?.items.length && onReviewCaptures ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">
+            {report.captureReview.summary?.pending
+              ? `${report.captureReview.summary.pending} to review`
+              : "Screenshot review"}
+            {report.captureReview.summary?.missing
+              ? ` · ${report.captureReview.summary.missing} missing`
+              : ""}
+          </p>
+          <Button size="sm" variant="outline" onClick={onReviewCaptures}>
+            Review screenshots
+          </Button>
+        </div>
+      ) : null}
       {destPath ? (
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-medium">
@@ -152,7 +171,7 @@ export function EmbeddedRunResult({ report }: { report: ProductRunReportOverview
           <ReportImage
             media={frame.media}
             alt="Screen captured during this run"
-            className="min-h-0 flex-1 rounded-md object-contain"
+            className="min-h-0 flex-1 rounded-md object-contain object-top"
           />
         </figure>
       ) : (

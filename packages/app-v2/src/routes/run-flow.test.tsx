@@ -1352,6 +1352,25 @@ describe("Run and Report", () => {
     expect(document.querySelector('[role="tab"]')).toBeNull();
   });
 
+  it("opens configuration directly when setting up another run", async () => {
+    const fake = fakeRunService();
+    fake.service.getReport = async () => ({ ...report(), testId: "test-1" });
+    const { history } = await renderRun(
+      "/runs/run-1",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    const setup = [...document.querySelectorAll<HTMLElement>("a,button")].find(
+      (item) => item.textContent?.trim() === "Set up another run",
+    );
+    if (!setup) throw new Error("Set up another run action not found");
+    await click(setup);
+    expect(history.location.pathname).toBe("/tests/test-1");
+    expect(String(history.location.search)).toContain("setup=run");
+    expect(document.querySelector("#test-run-setup")).not.toBeNull();
+    expect(fake.calls.some((call) => call.startsWith("start:"))).toBe(false);
+  });
+
   it("exports the attached Run as a TracePack named for that Run", async () => {
     const fake = fakeRunService(runState("succeeded"));
     const created: string[] = [];

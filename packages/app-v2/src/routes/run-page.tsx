@@ -559,7 +559,7 @@ function RunReport({
       ) : testId && !embedded ? (
         <Button
           nativeButton={false}
-          render={<Link to="/tests/$testId" params={{ testId }} />}
+          render={<Link to="/tests/$testId" params={{ testId }} search={{ setup: "run" }} />}
           variant="outline"
         >
           Set up another run
@@ -725,7 +725,20 @@ function RunReport({
     </>
   );
 
-  if (embedded) return <EmbeddedRunResult key={report.runId} report={report} />;
+  if (embedded)
+    return (
+      <EmbeddedRunResult
+        key={report.runId}
+        report={report}
+        onReviewCaptures={() =>
+          void navigate({
+            to: "/runs/$runId",
+            params: { runId: report.runId },
+            search: { reportView: "captures" },
+          })
+        }
+      />
+    );
 
   return (
     <WorkbenchPage className="flex h-full min-h-0 flex-col !pt-3 !pb-3 max-[720px]:h-auto [&>header]:shrink-0">

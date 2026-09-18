@@ -51,7 +51,7 @@ export function SelectField({
     <Select
       disabled={disabled}
       items={options}
-      value={value || null}
+      value={options.some((option) => option.value === value) ? value : null}
       onValueChange={(nextValue) => {
         if (nextValue !== null) onValueChange(nextValue);
       }}

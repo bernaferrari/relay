@@ -10,6 +10,7 @@ import {
   isCaptureReviewLeftoverCaption,
   liveCaptureReviewAccount,
   type OperationId,
+  type CaptureReviewObservedSession,
 } from "@relay/protocol";
 import type { OperationInvoker } from "./server.js";
 import { readResult, relayMcpResourceMimeType } from "./resource-encoding.js";
@@ -290,7 +291,7 @@ function captureReviewCollectionEntries(value: unknown): Record<string, unknown>
     const rawConfiguration = object(rec.configuration);
     const { account: listedAccount, ...configurationRest } = rawConfiguration;
     const observed = object(rec.observed);
-    const observedSession =
+    const observedSession: CaptureReviewObservedSession | undefined =
       typeof observed.profileId === "string" || typeof observed.iosHardwareClass === "string"
         ? {
             ...(typeof observed.profileId === "string" ? { profileId: observed.profileId } : {}),
