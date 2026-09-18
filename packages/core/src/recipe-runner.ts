@@ -40,7 +40,6 @@ export type { RecipeStepContext } from "./recipe-runner-context.js";
 export { DEFAULT_HUMAN_CHECKPOINT_TIMEOUT_MS } from "./recipe-runner-readiness.js";
 import {
   awaitAndroidSemanticReadiness,
-  boundedHumanCheckpointTimeoutMs,
   isAndroidSemanticReadinessTarget,
   pollUntil,
 } from "./recipe-runner-readiness.js";
@@ -70,13 +69,8 @@ import {
 } from "./device.js";
 import { openAppAndVerifyForeground } from "./recipe-runner-app.js";
 import { appStepExpectedLabels } from "./semantic-readiness.js";
-import {
-  cooperativeCheckpointWithTimeout,
-  cooperativeCheckpoint,
-  requestPause,
-  requestResume,
-} from "./control.js";
-import { publish, now } from "./events.js";
+import { cooperativeCheckpoint } from "./control.js";
+import { now } from "./events.js";
 import { runAction, isActionId } from "./actions.js";
 import { captureReviewEnterModule, captureReviewEnterRepeat } from "@relay/protocol";
 import { describeTarget, type RecipeStep } from "./recipes.js";
@@ -113,6 +107,7 @@ import {
 } from "./recipe-runner-extended-steps.js";
 import { rethrowIosMutationOutcomeUnknown } from "./ios-mutation-policy.js";
 import { rethrowInputOutcomeUnknown } from "./input-not-dispatched.js";
+import { runPauseStep } from "./recipe-runner-pause.js";
 export { refMatchesRecordedTarget, screenIdentityMatches } from "./recipe-target-match.js";
 
 async function runRequiredRecipeStep(
@@ -399,127 +394,7 @@ async function runRequiredRecipeStep(
       await runUploadStep(device, step, ctx);
       break;
     case "pause": {
-      if (!job) throw new Error("pause: no job to pause (standalone step execution)");
-      const checkpointStartedAt = now();
-      const checkpointTimeoutMs = boundedHumanCheckpointTimeoutMs(
-        step.timeoutMs ?? ctx.defaultHumanCheckpointTimeoutMs,
-      );
-      const reason = step.reason ?? "other";
-      const resumeLabel = step.resumeLabel ?? "Continue test";
-      log(`⏸ ${step.message}`);
-      job.status = "paused";
-      job.waitingFor = {
-        kind: "human",
-        message: step.message,
-        reason,
-        resumeLabel,
-        since: checkpointStartedAt,
-        timeoutMs: checkpointTimeoutMs,
-        ...(step.verifyAfter
-          ? {
-              verifyAfter: {
-                ...step.verifyAfter,
-                condition: step.verifyAfter.condition ?? "visible",
-              },
-            }
-          : {}),
-      };
-      job.artifacts.push({
-        kind: "human-intervention-requested",
-        capturedAt: checkpointStartedAt,
-        data: {
-          reason,
-          message: step.message,
-          resumeLabel,
-          timeoutMs: checkpointTimeoutMs,
-        },
-      });
-      requestPause(job.id);
-      publish({ type: "job.paused", at: now(), jobId: job.id, action: job.action });
-      publish({
-        type: "job.log",
-        at: now(),
-        jobId: job.id,
-        line: `==> waiting for you: ${step.message}`,
-        level: "info",
-      });
-      // Blocks until resumeJob (POST /jobs/:id/resume) calls requestResume.
-      // On cancel, throws JobCancelledError and propagates up — never sets running.
-      try {
-        await cooperativeCheckpointWithTimeout(job.id, checkpointTimeoutMs);
-      } catch (error) {
-        if (!(error instanceof Error && error.name === "JobCancelledError")) {
-          job.artifacts.push({
-            kind: "human-intervention-expired",
-            capturedAt: now(),
-            data: {
-              reason,
-              message: step.message,
-              waitedMs: now() - checkpointStartedAt,
-              timeoutMs: checkpointTimeoutMs,
-              error: error instanceof Error ? error.message : String(error),
-            },
-          });
-        }
-        throw error;
-      } finally {
-        // A timeout or cancellation must also wake the cooperative waiter.
-        requestResume(job.id);
-        job.waitingFor = undefined;
-      }
-      job.artifacts.push({
-        kind: "human-intervention-completed",
-        capturedAt: now(),
-        data: {
-          reason,
-          message: step.message,
-          waitedMs: now() - checkpointStartedAt,
-        },
-      });
-      // resumeJob already set status="running" + published job.resumed; ensure it.
-      job.status = "running";
-      if (step.verifyAfter) {
-        const verificationStartedAt = now();
-        const condition = step.verifyAfter.condition ?? "visible";
-        try {
-          await runRecipeStep(
-            device,
-            {
-              kind: "expect",
-              target: step.verifyAfter.target,
-              condition,
-              ...(step.verifyAfter.timeoutMs !== undefined
-                ? { timeoutMs: step.verifyAfter.timeoutMs }
-                : {}),
-            },
-            ctx,
-          );
-          job.artifacts.push({
-            kind: "human-intervention-verified",
-            capturedAt: now(),
-            data: {
-              passed: true,
-              target: step.verifyAfter.target,
-              condition,
-              durationMs: now() - verificationStartedAt,
-            },
-          });
-          log(`human checkpoint: verified ${describeTarget(step.verifyAfter.target)} ${condition}`);
-        } catch (error) {
-          job.artifacts.push({
-            kind: "human-intervention-verified",
-            capturedAt: now(),
-            data: {
-              passed: false,
-              target: step.verifyAfter.target,
-              condition,
-              durationMs: now() - verificationStartedAt,
-              error: error instanceof Error ? error.message : String(error),
-            },
-          });
-          throw error;
-        }
-      }
+      await runPauseStep(device, step, ctx, runRecipeStep);
       break;
     }
     case "review": {
