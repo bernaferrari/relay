@@ -43,6 +43,10 @@ import { assertScenarioTest } from "./test-intent-validation.js";
 import { assertRepeatPolicy } from "./repeat-policy-validation.js";
 import { assertReviewedBinding } from "./reviewed-bindings-validation.js";
 import { assertScreenPatch } from "./screen-patch-validation.js";
+export { assertRun, assertTargetResult } from "./run-result-validation.js";
+import { assertRun, assertTargetResult } from "./run-result-validation.js";
+import { assertFlow, assertRoutine, assertRoutineEffects } from "./routine-flow-validation.js";
+export { assertFlow, assertRoutine, assertRoutineEffects } from "./routine-flow-validation.js";
 export { assertScreenPatch } from "./screen-patch-validation.js";
 import {
   assertLogicalScrollSurface,
@@ -88,7 +92,7 @@ function assertObservation(value: ScreenIdentityObservation, label: string): voi
   });
 }
 
-function assertTargetProfile(value: TargetProfile, label: string): void {
+export function assertTargetProfile(value: TargetProfile, label: string): void {
   objectValue(value, label);
   identifier(value.id, `${label}.id`);
   identifier(value.targetId, `${label}.targetId`);
@@ -679,166 +683,6 @@ export function assertAppMapCombine(
       }
     });
   }
-}
-
-function assertUniqueEnumList(
-  values: readonly string[] | undefined,
-  label: string,
-  allowed: (value: string) => boolean,
-  kind: string,
-): void {
-  if (values === undefined) return;
-  if (!Array.isArray(values)) appMapFail("invalid-map", `${label} must be an array`);
-  const seen = new Set<string>();
-  values.forEach((value, index) => {
-    if (typeof value !== "string" || !allowed(value)) {
-      appMapFail("invalid-map", `${label}[${index}] must be a ${kind}`);
-    }
-    if (seen.has(value)) appMapFail("duplicate-id", `${label} contains duplicate ${value}`);
-    seen.add(value);
-  });
-}
-
-export function assertRoutineEffects(effects: RoutineEffects, label: string): void {
-  objectValue(effects, label);
-  const unknown = Object.keys(effects).filter(
-    (key) =>
-      ![
-        "establishes",
-        "requires",
-        "leftover",
-        "sharing",
-        "accountIsolation",
-        "accountIsolationNote",
-      ].includes(key),
-  );
-  if (unknown.length) appMapFail("invalid-map", `${label} contains unknown field ${unknown[0]}`);
-  assertUniqueEnumList(
-    effects.establishes,
-    `${label}.establishes`,
-    isRoutineStartingStateFact,
-    "starting-state fact",
-  );
-  assertUniqueEnumList(
-    effects.requires,
-    `${label}.requires`,
-    isRoutineStartingStateFact,
-    "starting-state fact",
-  );
-  assertUniqueEnumList(
-    effects.leftover,
-    `${label}.leftover`,
-    isRoutineLeftoverSurface,
-    "leftover surface",
-  );
-  if (effects.sharing !== undefined && !isRoutineSharingPolicy(effects.sharing)) {
-    appMapFail("invalid-map", `${label}.sharing is unsupported`);
-  }
-  if (
-    effects.accountIsolation !== undefined &&
-    !isRoutineAccountIsolation(effects.accountIsolation)
-  ) {
-    appMapFail("invalid-map", `${label}.accountIsolation is unsupported`);
-  }
-  optionalText(effects.accountIsolationNote, `${label}.accountIsolationNote`, 500);
-}
-
-export function assertRoutine(routine: Routine, scope: AppMapScope, label: string): void {
-  assertEntity(routine, scope, label);
-  requiredText(routine.name, `${label}.name`);
-  optionalText(routine.description, `${label}.description`);
-  if (!Array.isArray(routine.parameters))
-    appMapFail("invalid-map", `${label}.parameters must be an array`);
-  const names = new Set<string>();
-  routine.parameters.forEach((parameter, index) => {
-    objectValue(parameter, `${label}.parameters[${index}]`);
-    identifier(parameter.name, `${label}.parameters[${index}].name`);
-    if (names.has(parameter.name))
-      appMapFail("duplicate-id", `${label} contains duplicate parameter ${parameter.name}`);
-    names.add(parameter.name);
-    optionalText(parameter.label, `${label}.parameters[${index}].label`);
-    optionalText(parameter.description, `${label}.parameters[${index}].description`);
-    if (parameter.default !== undefined && typeof parameter.default !== "string")
-      appMapFail("invalid-map", `${label}.parameters[${index}].default must be a string`);
-    if (parameter.required !== undefined && typeof parameter.required !== "boolean")
-      appMapFail("invalid-map", `${label}.parameters[${index}].required must be boolean`);
-  });
-  assertActions(routine.actions, `${label}.actions`);
-  if (routine.requirementAction !== undefined) {
-    if (
-      typeof routine.requirementAction !== "string" ||
-      (routine.requirementAction !== "capture-view" && routine.requirementAction !== "test-action")
-    ) {
-      appMapFail("invalid-map", `${label}.requirementAction is unsupported`);
-    }
-  }
-  if (routine.effects !== undefined) assertRoutineEffects(routine.effects, `${label}.effects`);
-}
-
-export function assertFlow(flow: Flow, scope: AppMapScope, label: string): void {
-  assertEntity(flow, scope, label);
-  requiredText(flow.name, `${label}.name`);
-  identifier(flow.startScreenId, `${label}.startScreenId`);
-  if (flow.setup !== undefined) {
-    objectValue(flow.setup, `${label}.setup`);
-    identifier(flow.setup.routineId, `${label}.setup.routineId`);
-    if (flow.setup.bindings !== undefined) {
-      objectValue(flow.setup.bindings, `${label}.setup.bindings`);
-      for (const [name, value] of Object.entries(flow.setup.bindings)) {
-        identifier(name, `${label}.setup.bindings key`);
-        if (typeof value !== "string")
-          appMapFail("invalid-map", `${label}.setup.bindings.${name} must be a string`);
-      }
-    }
-  }
-  stringArray(flow.connectionIds, `${label}.connectionIds`);
-}
-
-export function assertRun(run: RunReference, scope: AppMapScope, label: string): void {
-  assertEntity(run, scope, label);
-  if (run.flowId !== undefined) identifier(run.flowId, `${label}.flowId`);
-  safeInteger(run.appMapRevision, `${label}.appMapRevision`);
-  stringArray(run.targetResultIds, `${label}.targetResultIds`);
-  finiteTimestamp(run.startedAt, `${label}.startedAt`);
-  if (run.finishedAt !== undefined) {
-    finiteTimestamp(run.finishedAt, `${label}.finishedAt`);
-    if (run.finishedAt < run.startedAt)
-      appMapFail("invalid-map", `${label}.finishedAt cannot precede startedAt`);
-  }
-}
-
-export function assertTargetResult(
-  result: TargetResultReference,
-  scope: AppMapScope,
-  label: string,
-): void {
-  assertEntity(result, scope, label);
-  identifier(result.runId, `${label}.runId`);
-  assertTargetProfile(result.targetProfile, `${label}.targetProfile`);
-  if (
-    !(["passed", "product-failure", "harness-failure", "uncertain", "cancelled"] as const).includes(
-      result.outcome,
-    )
-  )
-    appMapFail("invalid-map", `${label}.outcome is unsupported`);
-  if (result.connectionId !== undefined) identifier(result.connectionId, `${label}.connectionId`);
-  if (result.connectionObservations !== undefined) {
-    if (!Array.isArray(result.connectionObservations)) {
-      appMapFail("invalid-map", `${label}.connectionObservations must be an array`);
-    }
-    result.connectionObservations.forEach((observation, index) => {
-      const item = `${label}.connectionObservations[${index}]`;
-      objectValue(observation, item);
-      identifier(observation.connectionId, `${item}.connectionId`);
-      if (observation.outcome !== "passed" && observation.outcome !== "failed") {
-        appMapFail("invalid-map", `${item}.outcome is unsupported`);
-      }
-      safeInteger(observation.durationMs, `${item}.durationMs`);
-      finiteTimestamp(observation.observedAt, `${item}.observedAt`);
-    });
-  }
-  stringArray(result.evidenceIds, `${label}.evidenceIds`);
-  if (result.finishedAt !== undefined) finiteTimestamp(result.finishedAt, `${label}.finishedAt`);
 }
 
 export function assertConnectionPatch(patch: ConnectionPatch, label: string): void {
