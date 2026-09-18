@@ -295,6 +295,15 @@ This section records fresh runtime evidence without changing the frozen RC-23 de
 - The Android run proves the current deterministic Relay proof fixture’s capture/control/evidence path. It does **not** replace the frozen Grok Android RC-23 cell: the current emulator has no Grok package/account, and the old `medium_phone` profile is unavailable. The Grok Android slot remains pending historical evidence, not accepted.
 - **Still open:** RC-23 remains **30 planned · 29 captured · 1 blocked · 0 accepted**; iOS Imagine remains Unbound because the live SuperGrok home has no unique Imagine control; human review, Android Grok account parity, and unfamiliar-user acceptance remain outstanding.
 
+### 2026-09-18 current-head iPad Home continuation
+
+After the documented semantic-runner recovery, a fresh snapshot proved the
+physical iPad origin and the no-AI Home chrome Test passed at current head:
+job `7613878b-3a03-459f-b54e-29cbc24d74f8`, 9 steps, 4 frames, physical
+iPad profile `device:db0c9b7c3aeb83dc2259d08e3b521a30f621d3f5`. The resulting
+exact-image capture-review item is still `pending`; this does not change the
+RC-23 denominator or count as human acceptance.
+
 ### 2026-09-18 current-head iPad requalification
 
 The physical iPad was relaunched/recovered after a stale Settings overlay, then each Test was run only after a fresh origin snapshot proved the required controls. These are runtime qualification artifacts, not visual acceptance: every capture-review item remains `pending` and no human marked Looks correct.
