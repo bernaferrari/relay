@@ -350,7 +350,11 @@ function migrateControlSchema(db: DatabaseSync): void {
   }
   if (version < 9) {
     // Widen the workflow kind CHECK to admit goal-session workflows. SQLite
-    // cannot alter a CHECK in place, so rebuild the table and copy rows.
+    // cannot alter a CHECK in place, so rebuild the table and copy rows. A
+    // partially-run migration leaves a stale copy table behind; drop it so
+    // the rebuild is idempotent (workflow_records remains authoritative).
+    db.exec("PRAGMA foreign_keys=OFF");
+    db.exec("DROP TABLE IF EXISTS workflow_records_v9");
     db.exec(`
       CREATE TABLE workflow_records_v9 (
         workflow_id TEXT PRIMARY KEY,
@@ -372,6 +376,7 @@ function migrateControlSchema(db: DatabaseSync): void {
       CREATE INDEX IF NOT EXISTS workflow_records_project_updated
         ON workflow_records(project_id, updated_at DESC);
       PRAGMA user_version = 9;
+      PRAGMA foreign_keys=ON;
     `);
   }
 }
