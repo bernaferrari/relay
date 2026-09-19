@@ -39,7 +39,7 @@
     "doctor": "node scripts/workspace-doctor.mjs",
     "server:doctor": "node node_modules/tsx/dist/cli.mjs packages/cli/src/index.ts system doctor",
     "test": "pnpm run ios-preview:test && pnpm run test:packages && vp test",
-    "test:packages": "pnpm -r --if-present run test",
+    "test:packages": "pnpm --workspace-concurrency=1 -r --if-present run test",
     "test:coverage": "pnpm -r --if-present run test:coverage && node scripts/check-coverage.mjs",
     "test:proof-cursor": "node node_modules/tsx/dist/cli.mjs --test packages/core/src/proof-cursor-adversarial-fixtures.test.ts",
     "test:ios-terminality": "node node_modules/tsx/dist/cli.mjs --test packages/core/src/ios-mutation-terminality-contract.test.ts packages/core/src/workspace-capture-video.test.ts packages/core/src/ios-interaction-safety.test.ts && node node_modules/tsx/dist/cli.mjs --import ./packages/server/scripts/test-environment.mjs --test packages/server/src/step-run-route.test.ts && node node_modules/tsx/dist/cli.mjs --test packages/mcp/src/server.test.ts",
