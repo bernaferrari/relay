@@ -622,6 +622,12 @@ describe("Run and Report", () => {
     ).toContain("Member · Member");
     await openRunSettings();
 
+    // Account repair happens in context and returns to this Test's run setup.
+    const repair = document.querySelector<HTMLAnchorElement>('a[href*="returnTo="]');
+    expect(repair?.textContent).toContain("Refresh sign-in");
+    expect(decodeURIComponent(repair?.getAttribute("href") ?? "")).toContain(
+      encodeURIComponent('"kind":"run-setup"'),
+    );
     expect(
       document.querySelector<HTMLButtonElement>('button[aria-label="Device or browser"]')
         ?.textContent,

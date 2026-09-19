@@ -48,6 +48,8 @@ export function DevicePage() {
     rawSearch && typeof rawSearch === "object" && "returnTo" in rawSearch
       ? readSetupContinuation(rawSearch.returnTo)
       : undefined;
+  // Device repair only ever originates from the New Test setup flow.
+  const recordingContinuation = returnTo?.kind === "record-test" ? returnTo : undefined;
   const { deviceService, productService, browserSpacesService, queryClient, platform } =
     useRouteContext({
       from: "__root__",
@@ -280,7 +282,7 @@ export function DevicePage() {
         description={device.data ? deviceDescription(device.data) : undefined}
         actions={
           <>
-            {returnTo ? (
+            {recordingContinuation ? (
               <Button
                 variant="ghost"
                 nativeButton={false}
@@ -288,8 +290,10 @@ export function DevicePage() {
                   <Link
                     to="/tests/new"
                     search={{
-                      ...(returnTo.appId ? { app: returnTo.appId } : {}),
-                      ...(returnTo.targetId ? { target: returnTo.targetId } : {}),
+                      ...(recordingContinuation?.appId ? { app: recordingContinuation.appId } : {}),
+                      ...(recordingContinuation?.targetId
+                        ? { target: recordingContinuation.targetId }
+                        : {}),
                     }}
                   />
                 }
@@ -319,7 +323,7 @@ export function DevicePage() {
                   <Link
                     to="/tests/new"
                     search={{
-                      ...(returnTo?.appId ? { app: returnTo.appId } : {}),
+                      ...(recordingContinuation?.appId ? { app: recordingContinuation.appId } : {}),
                       target: target.data?.targetId ?? device.data.serial,
                       ...(appIdentifier ? { originApplication: appIdentifier } : {}),
                     }}

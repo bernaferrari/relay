@@ -148,7 +148,13 @@ export function EnvironmentPage() {
     mutationFn: () => browserSpacesService.removeSpace(profileId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["browser-spaces"] });
-      if (continuation) {
+      if (continuation?.kind === "run-setup") {
+        await navigate({
+          to: "/tests/$testId",
+          params: { testId: continuation.testId },
+          search: { setup: "run" },
+        });
+      } else if (continuation) {
         await navigate({
           to: "/tests/new",
           search: {
@@ -211,16 +217,24 @@ export function EnvironmentPage() {
                     variant="ghost"
                     nativeButton={false}
                     render={
-                      <Link
-                        to="/tests/new"
-                        search={{
-                          ...(continuation.appId ? { app: continuation.appId } : {}),
-                          ...(continuation.targetId ? { target: continuation.targetId } : {}),
-                        }}
-                      />
+                      continuation.kind === "run-setup" ? (
+                        <Link
+                          to="/tests/$testId"
+                          params={{ testId: continuation.testId }}
+                          search={{ setup: "run" }}
+                        />
+                      ) : (
+                        <Link
+                          to="/tests/new"
+                          search={{
+                            ...(continuation.appId ? { app: continuation.appId } : {}),
+                            ...(continuation.targetId ? { target: continuation.targetId } : {}),
+                          }}
+                        />
+                      )
                     }
                   >
-                    Back to recording
+                    {continuation.kind === "run-setup" ? "Back to Test" : "Back to recording"}
                   </Button>
                 ) : null}
                 <Button variant="default" onClick={() => open.mutate()} disabled={open.isPending}>

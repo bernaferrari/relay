@@ -79,11 +79,19 @@ export function EnvironmentsPage() {
     onSuccess: async (space) => {
       await queryClient.invalidateQueries({ queryKey: ["browser-spaces"] });
       setOpen(false);
-      if (continuation) {
+      if (continuation?.kind === "run-setup") {
+        await navigate({
+          to: "/tests/$testId",
+          params: { testId: continuation.testId },
+          search: { setup: "run" },
+        });
+      } else if (continuation) {
         await navigate({
           to: "/tests/new",
           search: {
-            ...(continuation.appId ? { app: continuation.appId } : {}),
+            ...(continuation.kind === "record-test" && continuation.appId
+              ? { app: continuation.appId }
+              : {}),
             target: space.id,
           },
         });
@@ -117,16 +125,28 @@ export function EnvironmentsPage() {
                 variant="ghost"
                 nativeButton={false}
                 render={
-                  <Link
-                    to="/tests/new"
-                    search={{
-                      ...(continuation.appId ? { app: continuation.appId } : {}),
-                      ...(continuation.targetId ? { target: continuation.targetId } : {}),
-                    }}
-                  />
+                  continuation.kind === "run-setup" ? (
+                    <Link
+                      to="/tests/$testId"
+                      params={{ testId: continuation.testId }}
+                      search={{ setup: "run" }}
+                    />
+                  ) : (
+                    <Link
+                      to="/tests/new"
+                      search={{
+                        ...(continuation.kind === "record-test" && continuation.appId
+                          ? { app: continuation.appId }
+                          : {}),
+                        ...(continuation.kind === "record-test" && continuation.targetId
+                          ? { target: continuation.targetId }
+                          : {}),
+                      }}
+                    />
+                  )
                 }
               >
-                Back to recording
+                {continuation.kind === "run-setup" ? "Back to Test" : "Back to recording"}
               </Button>
             ) : null}
             <Dialog
@@ -182,7 +202,7 @@ export function EnvironmentsPage() {
                         <Button
                           variant="ghost"
                           onClick={() => {
-                            if (continuation) {
+                            if (continuation?.kind === "record-test") {
                               void navigate({
                                 to: "/tests/new",
                                 search: {

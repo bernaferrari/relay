@@ -1,6 +1,7 @@
 import { TestRunHistory } from "./test-run-history";
 import { TestStepsOutline } from "./test-steps-outline";
 import { flattenSteps } from "./saved-test-steps";
+import { runSetupContinuation } from "../data/setup-continuation";
 import { SavedTestWorkspace } from "./saved-test-workspace";
 import { SelectField } from "../components/filter-select";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
@@ -600,6 +601,20 @@ export function TestPage() {
                               })
                             }
                           />
+                        ) : null}
+                        {selectedProfile?.account ? (
+                          <p className="grid gap-1 text-xs leading-4 text-muted-foreground">
+                            {selectedProfile.account.name} runs through a saved browser sign-in. If
+                            it expired, refresh it and land back here — the Test and this
+                            configuration stay pending.
+                            <Link
+                              className={productLinkClassName}
+                              to="/environments"
+                              search={{ returnTo: runSetupContinuation(testId) }}
+                            >
+                              Refresh sign-in
+                            </Link>
+                          </p>
                         ) : null}
                         {builds.data?.length ? (
                           <SelectField
