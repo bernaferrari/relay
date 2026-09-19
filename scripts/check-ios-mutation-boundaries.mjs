@@ -19,6 +19,10 @@ export const rawDeviceMutationBoundaryPaths = new Set([
   // the dispatcher/native transport calls they contain.
   "packages/core/src/device-dispatch.ts",
   "packages/core/src/device-text-entry.ts",
+  // Canonical SDK-client construction (0.21.x method rebinding + facade).
+  // It builds the transport device.ts dispatches through; no workflow code
+  // may import it.
+  "packages/core/src/device-client-bindings.ts",
   // Android text entry is a platform-specific dispatcher seam. It owns the
   // clipboard/IME fallback and must remain below the public Device facade.
   "packages/core/src/device-android-text.ts",
@@ -33,12 +37,14 @@ export const privateDeviceCapabilityPaths = new Set([
   ...rawDeviceMutationBoundaryPaths,
   "packages/core/src/device-capabilities.ts",
   "packages/core/src/device-observation-membrane.ts",
+  "packages/core/src/device-client-bindings.ts",
   "packages/core/src/testing.ts",
 ]);
 
 const rawSdkBoundaryPaths = new Set([
   "packages/core/src/control.ts",
   "packages/core/src/device-capabilities.ts",
+  "packages/core/src/device-client-bindings.ts",
   "packages/core/src/device-mutation-adapter.ts",
   "packages/core/src/device.ts",
   "packages/core/src/device-android-text.ts",
@@ -53,6 +59,7 @@ const internalDeviceModuleOwners = new Map([
     new Set([
       "packages/core/src/device.ts",
       "packages/core/src/device-dispatch.ts",
+      "packages/core/src/device-client-bindings.ts",
       "packages/core/src/testing.ts",
       "packages/core/src/ios-runner-listener-command.ts",
       "packages/core/src/device-android-text.ts",
@@ -62,6 +69,7 @@ const internalDeviceModuleOwners = new Map([
     "device-mutation-adapter",
     new Set([
       "packages/core/src/device.ts",
+      "packages/core/src/device-client-bindings.ts",
       "packages/core/src/device-dispatch.ts",
       "packages/core/src/device-text-entry.ts",
       "packages/core/src/device-android-text.ts",
@@ -71,6 +79,7 @@ const internalDeviceModuleOwners = new Map([
     "device-observation-membrane",
     new Set([
       "packages/core/src/browser-target.ts",
+      "packages/core/src/device-client-bindings.ts",
       "packages/core/src/device-factory.ts",
       "packages/core/src/device.ts",
       "packages/core/src/device-dispatch.ts",
@@ -87,8 +96,10 @@ const forbiddenCorePackageEntries = new Set([
 ]);
 const runtimeObservationFacadeOwners = new Set([
   "packages/core/src/browser-target.ts",
+  // device-client-bindings constructs the canonical Device; the facade call
+  // itself lives there (device.ts composes it).
+  "packages/core/src/device-client-bindings.ts",
   "packages/core/src/device-factory.ts",
-  "packages/core/src/device.ts",
   "packages/core/src/testing.ts",
 ]);
 

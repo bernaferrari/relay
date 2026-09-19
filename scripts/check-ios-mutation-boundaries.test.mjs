@@ -136,8 +136,8 @@ test("read-only device inspection stays available to workflow modules", () => {
 test("supported adapters must all create the shared runtime observation facade", () => {
   const ownerSources = [
     "packages/core/src/browser-target.ts",
+    "packages/core/src/device-client-bindings.ts",
     "packages/core/src/device-factory.ts",
-    "packages/core/src/device.ts",
     "packages/core/src/testing.ts",
   ].map((path) => ({
     path,
