@@ -3,6 +3,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { GoalSessionResult } from "@relay/protocol";
 import { RelayV2App } from "../app";
 import type { GoalProductService } from "../data/goal-product-service";
 import type { DeviceProductService } from "../data/device-product-service";
@@ -40,7 +41,7 @@ const deviceService: DeviceProductService = {
   })),
 };
 
-function sessionResult(reproduced = false) {
+function sessionResult(reproduced = false): GoalSessionResult {
   return {
     schemaVersion: 1,
     sessionId: "goal-1",
@@ -86,14 +87,30 @@ function sessionResult(reproduced = false) {
           },
         }
       : {}),
-  } as never;
+  } as GoalSessionResult;
 }
 
-function goalService(): GoalProductService {
+function uncertainSessionResult(): GoalSessionResult {
+  const base = sessionResult() as unknown as Record<string, unknown>;
   return {
-    start: vi.fn(async () => sessionResult()),
-    inspectSession: vi.fn(async () => sessionResult()),
+    ...base,
+    status: "uncertain",
+    stopReason: {
+      code: "action-uncertain",
+      message: "Review the target before resuming.",
+      at: 2,
+    },
+    resumeRequiresReview: true,
+  } as GoalSessionResult;
+}
+
+function goalService(startResult = sessionResult()): GoalProductService {
+  return {
+    start: vi.fn(async () => startResult),
+    inspectSession: vi.fn(async () => sessionResult() as never),
     inspectExploration: vi.fn(async () => ({}) as never),
+    resumeSession: vi.fn(async () => sessionResult()),
+    resumeExploration: vi.fn(async () => ({}) as never),
     reproduceSession: vi.fn(async () => sessionResult(true)),
     promoteSession: vi.fn(async () => ({ title: "Checkout", stage: "reviewing" }) as never),
   };
@@ -209,5 +226,35 @@ describe("Goal page", () => {
       confirmControl: true,
     });
     expect(host.textContent).toContain("Test promotion ready for review");
+  });
+
+  it("requires explicit review before resuming an uncertain goal", async () => {
+    const { host, service } = await render(goalService(uncertainSessionResult()));
+
+    await setValue("goal-description", "Find checkout");
+    await setValue("goal-start-url", "https://example.test");
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[aria-label="Confirm target control"]')
+        ?.closest("label")
+        ?.click();
+    });
+    await settle();
+    await act(async () => button("Explore goal").click());
+    await settle();
+
+    expect(host.textContent).toContain("Review before resuming");
+    expect(button("Resume after review").disabled).toBe(true);
+    await act(async () => {
+      document
+        .querySelector('[aria-label="Confirm reviewed target resume"]')
+        ?.closest("label")
+        ?.click();
+    });
+    await settle();
+    await act(async () => button("Resume after review").click());
+    await settle();
+
+    expect(service.resumeSession).toHaveBeenCalledWith("goal-1");
   });
 });

@@ -856,7 +856,33 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
       assertSessionId(sessionId);
       const record = await store.load(sessionId);
       if (!record) throw new TypeError(`Goal session ${sessionId} was not found.`);
-      return exclusive(sessionId, () => run(record));
+      return exclusive(sessionId, async () => {
+        const current = (await store.load(sessionId)) ?? record;
+        const awaitingExplicitReview =
+          current.stopReason?.code === "action-uncertain" ||
+          current.stopReason?.code === "resume-review-required";
+        if (current.pendingAction !== undefined && !awaitingExplicitReview) {
+          return run(current);
+        }
+        if (current.status !== "running" && !awaitingExplicitReview) return result(current);
+
+        // An explicit resume is the human review boundary for an uncertain
+        // mutation. Preserve the original action and finding as evidence, but
+        // clear only the replay fence so the next run captures the current
+        // target and chooses from fresh evidence. The uncertain mutation is
+        // never dispatched again.
+        const resumed = awaitingExplicitReview
+          ? {
+              ...current,
+              status: "running" as const,
+              pendingAction: undefined,
+              stopReason: undefined,
+              updatedAt: now(),
+            }
+          : current;
+        if (resumed !== current) await persist(resumed);
+        return run(resumed);
+      });
     },
     async reproduce(sessionId) {
       assertSessionId(sessionId);

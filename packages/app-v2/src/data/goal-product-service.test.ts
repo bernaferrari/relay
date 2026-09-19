@@ -102,4 +102,27 @@ describe("goal product service", () => {
       confirmControl: true,
     });
   });
+
+  it("resumes only through the explicit control routes", async () => {
+    const requests: Request[] = [];
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const next = new Request(input, init);
+      requests.push(next);
+      return new Response(JSON.stringify({ sessionId: "goal-1", status: "completed" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const service = createGoalProductService(platform(fetch));
+
+    await service.resumeSession("goal/1");
+    await service.resumeExploration("explore/1");
+
+    expect(requests.map((request) => request.url)).toEqual([
+      "http://relay.test/goal/goal%2F1/resume",
+      "http://relay.test/explore/explore%2F1/resume",
+    ]);
+    expect(JSON.parse(await requests[0]!.text())).toEqual({ confirmControl: true });
+    expect(JSON.parse(await requests[1]!.text())).toEqual({ confirmControl: true });
+  });
 });

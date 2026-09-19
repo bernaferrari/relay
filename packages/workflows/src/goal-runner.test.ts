@@ -299,6 +299,50 @@ test("resume fences a persisted in-flight mutation for human review", async () =
   assert.deepEqual(runtime.calls, []);
 });
 
+test("reviewed resume observes the current target without replaying the uncertain mutation", async () => {
+  const record: GoalSessionRecord = {
+    schemaVersion: GOAL_SESSION_SCHEMA_VERSION,
+    id: "goal-reviewed-resume",
+    goal: "Continue after review",
+    target: { targetId: "goal-goal-test", platform: "browser" },
+    budget: { maxSteps: 2, maxDurationMs: 10_000 },
+    status: "uncertain",
+    step: 0,
+    createdAt: 1,
+    updatedAt: 1,
+    observations: [],
+    actions: [
+      {
+        id: "action-1",
+        step: 1,
+        candidateId: "c1",
+        label: "Next",
+        interaction: { kind: "label", target: { label: "Next" } },
+        status: "unknown",
+        observationDigestBefore: "digest",
+        evidenceRefs: [],
+        at: 2,
+      },
+    ],
+    stopReason: {
+      code: "action-uncertain",
+      message: "Review the target before resuming.",
+      at: 3,
+    },
+  };
+  const runtime = operations();
+  const result = await createGoalSessionRunner({
+    operations: runtime.port,
+    store: memoryStore([record]),
+    decisionProvider: providerFor("complete"),
+    now: () => 1,
+  }).resume("goal-reviewed-resume");
+  assert.equal(result.status, "completed");
+  assert.equal(result.resumeRequiresReview, undefined);
+  assert.equal(result.actions[0]?.status, "unknown");
+  assert.deepEqual(runtime.calls, ["target.observation.capture"]);
+});
+
 test("goal runner stops at the action budget after observing the result", async () => {
   const runtime = operations();
   const result = await createGoalSessionRunner({

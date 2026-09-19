@@ -29,6 +29,8 @@ export type GoalProductService = {
   start(input: GoalStartInput): Promise<GoalRunResult>;
   inspectSession(sessionId: string): Promise<GoalSessionRecord>;
   inspectExploration(explorationId: string): Promise<GoalExplorationRecord>;
+  resumeSession(sessionId: string): Promise<GoalSessionResult>;
+  resumeExploration(explorationId: string): Promise<GoalExplorationResult>;
   reproduceSession(sessionId: string): Promise<GoalSessionResult>;
   promoteSession(input: GoalPromotionInput): Promise<AuthorTestSnapshot>;
 };
@@ -86,6 +88,21 @@ export function createGoalProductService(platform: Platform): GoalProductService
     },
     inspectExploration(explorationId) {
       return request<GoalExplorationRecord>(`/explore/${encodeURIComponent(explorationId)}`);
+    },
+    resumeSession(sessionId) {
+      return request<GoalSessionResult>(`/goal/${encodeURIComponent(sessionId)}/resume`, {
+        method: "POST",
+        body: JSON.stringify({ confirmControl: true }),
+      });
+    },
+    resumeExploration(explorationId) {
+      return request<GoalExplorationResult>(
+        `/explore/${encodeURIComponent(explorationId)}/resume`,
+        {
+          method: "POST",
+          body: JSON.stringify({ confirmControl: true }),
+        },
+      );
     },
     reproduceSession(sessionId) {
       return request<GoalSessionResult>(`/goal/${encodeURIComponent(sessionId)}/reproduce`, {

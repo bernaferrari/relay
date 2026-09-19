@@ -70,6 +70,7 @@ export function GoalPage() {
   const [maxSteps, setMaxSteps] = useState("12");
   const [maxDurationMinutes, setMaxDurationMinutes] = useState("5");
   const [confirmControl, setConfirmControl] = useState(false);
+  const [confirmResume, setConfirmResume] = useState(false);
   const [promotionTitle, setPromotionTitle] = useState("");
   const [confirmPromotion, setConfirmPromotion] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -79,6 +80,12 @@ export function GoalPage() {
       isSessionEvidence(result)
         ? goalService.inspectSession(result.sessionId)
         : goalService.inspectExploration(result.id),
+  });
+  const resume = useMutation<GoalRunResult, Error, GoalEvidence>({
+    mutationFn: (result: GoalEvidence) =>
+      isSessionEvidence(result)
+        ? goalService.resumeSession(result.sessionId)
+        : goalService.resumeExploration(result.id),
   });
   const reproduce = useMutation({ mutationFn: goalService.reproduceSession });
   const promote = useMutation({ mutationFn: goalService.promoteSession });
@@ -106,8 +113,10 @@ export function GoalPage() {
     setSubmitted(true);
     if (!valid || run.isPending) return;
     inspect.reset();
+    resume.reset();
     reproduce.reset();
     promote.reset();
+    setConfirmResume(false);
     setPromotionTitle("");
     setConfirmPromotion(false);
     run.mutate({
@@ -127,15 +136,26 @@ export function GoalPage() {
     }
   }
 
-  const displayedResult = reproduce.data ?? inspect.data ?? run.data;
-  const resultError = promote.error ?? reproduce.error ?? inspect.error ?? run.error;
+  const displayedResult = resume.data ?? reproduce.data ?? inspect.data ?? run.data;
+  const resultError =
+    promote.error ?? reproduce.error ?? resume.error ?? inspect.error ?? run.error;
   const resultErrorTitle = promote.error
     ? "Test promotion failed"
     : reproduce.error
       ? "Fresh reproduction failed"
-      : inspect.error
-        ? "Evidence refresh failed"
-        : "Goal exploration failed";
+      : resume.error
+        ? "Resume after review failed"
+        : inspect.error
+          ? "Evidence refresh failed"
+          : "Goal exploration failed";
+  const canResume =
+    displayedResult &&
+    isSessionEvidence(displayedResult) &&
+    ("resumeRequiresReview" in displayedResult
+      ? displayedResult.resumeRequiresReview === true
+      : ("pendingAction" in displayedResult && displayedResult.pendingAction !== undefined) ||
+        displayedResult.stopReason?.code === "action-uncertain" ||
+        displayedResult.stopReason?.code === "resume-review-required");
   const canReproduce =
     displayedResult &&
     isSessionEvidence(displayedResult) &&
@@ -316,7 +336,7 @@ export function GoalPage() {
                         key={worker.id}
                         className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/50 p-3"
                       >
-                        <span>Worker {worker.index + 1}</span>
+                        <span>Worker {worker.index}</span>
                         <span className="text-xs text-muted-foreground capitalize">
                           {worker.status}
                           {worker.result?.findings?.length
@@ -333,6 +353,34 @@ export function GoalPage() {
                     {displayedResult.findings.map((finding) => (
                       <FindingCard key={finding.id} finding={finding} />
                     ))}
+                  </div>
+                ) : null}
+                {canResume ? (
+                  <div className="grid gap-3 rounded-lg border border-warning/40 bg-warning/5 p-3">
+                    <div>
+                      <p className="font-medium text-foreground">Review before resuming</p>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        An earlier interaction may have applied. Confirm that you reviewed the
+                        current target; Relay will observe it again and will not replay that action.
+                      </p>
+                    </div>
+                    <label className="flex min-h-11 cursor-pointer items-start gap-3 text-xs leading-5">
+                      <Checkbox
+                        checked={confirmResume}
+                        onCheckedChange={(checked) => setConfirmResume(checked === true)}
+                        aria-label="Confirm reviewed target resume"
+                      />
+                      <span>I confirm the current target is safe to observe again.</span>
+                    </label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={!confirmResume || resume.isPending}
+                      onClick={() => resume.mutate(displayedResult)}
+                    >
+                      <RotateCcw aria-hidden="true" />
+                      {resume.isPending ? "Resuming…" : "Resume after review"}
+                    </Button>
                   </div>
                 ) : null}
                 {canReproduce ? (
@@ -409,7 +457,7 @@ export function GoalPage() {
                   className="w-full"
                   disabled={inspect.isPending}
                   onClick={() => {
-                    const source = reproduce.data ?? run.data;
+                    const source = resume.data ?? reproduce.data ?? run.data;
                     if (source) inspect.mutate(source);
                   }}
                 >
