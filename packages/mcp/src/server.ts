@@ -37,12 +37,8 @@ import {
   relayOutcomeTools,
   type RelayOutcomeToolDescriptor,
 } from "./outcome-tools.js";
-import {
-  invokeRelayOperatorTool,
-  operatorResultIsPng,
-  relayOperatorTools,
-  type RelayOperatorToolDescriptor,
-} from "./operator-tools.js";
+import { invokeRelayOperatorTool, operatorResultIsPng } from "./operator-tool-dispatch.js";
+import { relayOperatorTools, type RelayOperatorToolDescriptor } from "./operator-tools.js";
 import { proofOutcomeTools } from "./proof-outcome-tools.js";
 import {
   defaultRelayMcpProfile,

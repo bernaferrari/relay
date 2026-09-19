@@ -3,8 +3,8 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { CAPTURE_REVIEW_DEST_PHASE, RC23_SCREENSHOT_FIRST_TESTS } from "@relay/protocol";
 import assert from "node:assert/strict";
 import test from "node:test";
+import { invokeRelayOperatorTool } from "./operator-tool-dispatch.js";
 import {
-  invokeRelayOperatorTool,
   relayOperatorToolNames,
   relayOperatorTools,
   type RelayOperatorToolDescriptor,
