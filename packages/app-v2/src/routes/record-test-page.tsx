@@ -40,7 +40,6 @@ import {
   type RecordingRecoveryLedger,
 } from "../data/recording-input-outcome";
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
-import { reviewDocumentLocation } from "../data/test-document-surface";
 import { clearWorkflowPointerIfCurrent, writeWorkflowPointer } from "../data/workflow-pointer";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { PageLoading, errorMessage, targetLabel } from "./recording-shared";
@@ -58,7 +57,7 @@ type CaptureAction =
 
 export function RecordTestPage() {
   const { testId } = testRouteApi.useParams();
-  return <RecordingWorkspace workflowId={testId} exitDestination={{ kind: "test", testId }} />;
+  return <RecordingWorkspace workflowId={testId} />;
 }
 
 /** The recording-owned route is used while a new Test has no Test ID yet. It
@@ -66,16 +65,10 @@ export function RecordTestPage() {
  * instead of teaching two route-specific UIs the same workflow behavior. */
 export function RecordingPage() {
   const { recordingId } = recordingRouteApi.useParams();
-  return <RecordingWorkspace workflowId={recordingId} exitDestination={{ kind: "new" }} />;
+  return <RecordingWorkspace workflowId={recordingId} />;
 }
 
-function RecordingWorkspace({
-  workflowId,
-  exitDestination,
-}: {
-  workflowId: string;
-  exitDestination: { kind: "new" } | { kind: "test"; testId: string };
-}) {
+function RecordingWorkspace({ workflowId }: { workflowId: string }) {
   const { productService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const navigate = useNavigate();
   const [checkpointOpen, setCheckpointOpen] = useState(false);
@@ -146,7 +139,13 @@ function RecordingWorkspace({
         setCheckpointOpen(false);
       }
       if (intent.action === "stop" && canonical.snapshot?.stage === "reviewing") {
-        await navigate(reviewDocumentLocation(exitDestination));
+        // Review is a mode of this recording document, not a different
+        // application: keep the recording-owned URL through record → stop →
+        // review so the identity the user is looking at never churns.
+        await navigate({
+          to: "/recordings/$recordingId/review",
+          params: { recordingId: workflowId },
+        });
       }
     },
   });
@@ -184,8 +183,12 @@ function RecordingWorkspace({
   useEffect(() => {
     if (recording.data?.recovery || recording.error) return;
     if (snapshot?.stage !== "reviewing" && snapshot?.stage !== "committed") return;
-    void navigate({ ...reviewDocumentLocation(exitDestination), replace: true });
-  }, [exitDestination, navigate, recording.data?.recovery, recording.error, snapshot?.stage]);
+    void navigate({
+      to: "/recordings/$recordingId/review",
+      params: { recordingId: workflowId },
+      replace: true,
+    });
+  }, [navigate, recording.data?.recovery, recording.error, snapshot?.stage, workflowId]);
 
   useEffect(() => {
     if (snapshot?.stage !== "cancelled") return;

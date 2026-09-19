@@ -891,8 +891,8 @@ describe("record, review, replay, and save", () => {
     await click(button("Save"));
     await click(button("Stop and review"));
 
-    expect(history.location.pathname).toBe("/tests/new");
-    expect(String(history.location.search)).toContain("view=review");
+    expect(history.location.pathname).toBe("/recordings/workflow-1/review");
+    expect(String(history.location.search)).toBe("");
     expect(document.body.textContent).toContain("2 steps");
     expect(button("Replay on Pixel 9 Pro").disabled).toBe(false);
     expect(document.body.textContent).not.toContain("Save Test");
@@ -975,7 +975,7 @@ describe("record, review, replay, and save", () => {
     releaseInput();
     await settle();
     await settle();
-    expect(history.location.pathname).toBe("/tests/new");
+    expect(history.location.pathname).toBe("/recordings/workflow-1/review");
     expect(document.body.textContent).toContain("2 steps");
     expect(fake.calls.indexOf("input:key")).toBeLessThan(fake.calls.indexOf("stop"));
   });
@@ -1613,8 +1613,8 @@ describe("record, review, replay, and save", () => {
     expect(inputCount).toBe(2);
     await click(button("Stop and review"));
     expect(fake.calls).toContain("stop");
-    expect(history.location.pathname).toBe("/tests/new");
-    expect(String(history.location.search)).toContain("view=review");
+    expect(history.location.pathname).toBe("/recordings/workflow-1/review");
+    expect(String(history.location.search)).toBe("");
   });
 
   it("lets the user retry after observing that the unknown interaction did not apply", async () => {

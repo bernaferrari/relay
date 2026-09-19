@@ -22,21 +22,6 @@ export function testDocumentSurface(input: {
   return runId ? { kind: "historical-run", runId } : { kind: "current-test" };
 }
 
-export function reviewDocumentLocation(
-  destination: { kind: "new" } | { kind: "test"; testId: string },
-):
-  | { to: "/tests/new"; search: { view: "review" } }
-  | { to: "/tests/$testId"; params: { testId: string }; search: { view: "review" } } {
-  if (destination.kind === "test") {
-    return {
-      to: "/tests/$testId",
-      params: { testId: destination.testId },
-      search: { view: "review" },
-    };
-  }
-  return { to: "/tests/new", search: { view: "review" } };
-}
-
 export function useTestDocumentReview(platform: Platform, view: unknown): string | undefined {
   const pointer = useQuery({
     queryKey: recordingQueryKeys.pointer,
