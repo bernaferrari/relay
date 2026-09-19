@@ -15,6 +15,16 @@ export default defineConfig({
   build: {
     outDir: resolve("out/renderer-v2"),
     emptyOutDir: true,
+    // Playwright's optional BiDi bridge is loaded only by Node-side browser
+    // execution. Keep its CJS-only modules out of the renderer bundle; the
+    // packaged server bundle applies the same boundary.
+    rolldownOptions: {
+      external: [
+        "chromium-bidi/lib/cjs/bidiMapper/BidiMapper",
+        "chromium-bidi/lib/cjs/cdp/CdpConnection",
+        "kerberos",
+      ],
+    },
   },
   optimizeDeps: {
     exclude: ["@relay/app-v2", "@relay/ui-react"],
