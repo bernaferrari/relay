@@ -25,6 +25,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Contract tests verify git history (seeded-regression lineage:
+          # scripts/android-proof-fixture.test.mjs). Shallow clones break them.
+          fetch-depth: 0
 
       - name: Toolchain
         run: |
