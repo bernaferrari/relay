@@ -1,0 +1,1 @@
+let e;function t(t){e=t?.trim()||void 0}function n(){return e}let r;function i(e){r=e}function a(){return r}export{t as i,n,i as r,a as t};

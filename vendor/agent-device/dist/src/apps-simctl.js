@@ -1,0 +1,1 @@
+import{o as e}from"./tool-provider.js";import{t}from"./simctl.js";function n(e,n){return t(e,n)}function r(t,r,i){return e(n(t,r),i)}function i(e){return e.includes(`not installed`)||e.includes(`not found`)||e.includes(`no such file`)}export{r as n,n as r,i as t};

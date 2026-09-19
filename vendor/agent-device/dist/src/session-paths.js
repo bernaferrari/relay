@@ -1,0 +1,1 @@
+import{n as e}from"./path-resolution.js";import"./file.js";function t(e){return e.replaceAll(/[^a-zA-Z0-9._-]/g,`_`)}function n(e){let n=t(e);return n.length>0&&n!==`.`&&n!==`..`}function r(t,n){return e(t,{cwd:n})}export{n,t as r,r as t};

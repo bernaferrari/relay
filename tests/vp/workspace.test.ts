@@ -47,7 +47,9 @@ describe("Relay workspace verification", () => {
 
   it("keeps package tests separate from Vite+ workspace tests", async () => {
     const root = await packageJson();
-    expect(root.scripts?.["test:packages"]).toBe("pnpm -r --if-present run test");
+    expect(root.scripts?.["test:packages"]).toBe(
+      "pnpm --workspace-concurrency=1 -r --if-present run test",
+    );
     expect(root.scripts?.["test:packages"]).not.toContain("vp test");
   });
 

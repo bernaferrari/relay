@@ -1,1 +1,1 @@
-import{r as e}from"./client-metro.js";import{t}from"./runtime-transport.js";function n(e){return t(e)}async function r(t){await e(t)}export{r as n,n as t};
+import{n as e}from"./client-metro-companion.js";import{t}from"./runtime-transport-hints.js";function n(e){return t(e)}async function r(t){await e(t)}export{r as n,n as t};

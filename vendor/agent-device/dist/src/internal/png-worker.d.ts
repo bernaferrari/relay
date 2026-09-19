@@ -1,11 +1,11 @@
-//#region src/utils/screenshot-diff-pixels.d.ts
+//#region packages/capture-kit/src/screenshot-diff-pixels.d.ts
 type ScreenshotDiffPixelsResult = {
   diffData: Buffer;
   diffMask: Uint8Array;
   differentPixels: number;
 };
 //#endregion
-//#region src/utils/png-rgb-difference.d.ts
+//#region packages/capture-kit/src/png-rgb-difference.d.ts
 type PngRgbComparisonMetadata = {
   readonly first: {
     readonly width: number;
@@ -25,7 +25,7 @@ type PngRgbDifferenceResult = PngRgbComparisonMetadata & ({
   readonly status: 'dimension_mismatch' | 'data_length_mismatch';
 });
 //#endregion
-//#region src/utils/png-worker-contract.d.ts
+//#region packages/capture-kit/src/png-worker-contract.d.ts
 type PngWorkerJobResult = {
   kind: 'decode';
   width: number;
@@ -34,13 +34,16 @@ type PngWorkerJobResult = {
 } | {
   kind: 'encode';
   png: Uint8Array;
+} | {
+  kind: 'crop';
+  png: Uint8Array | null;
 } | ({
   kind: 'rgb-difference';
 } & PngRgbDifferenceResult) | ({
   kind: 'diff-pixels';
 } & ScreenshotDiffPixelsResult);
 //#endregion
-//#region src/utils/png-worker.d.ts
+//#region packages/capture-kit/src/png-worker.d.ts
 /**
  * Transfers result buffers instead of structured-cloning them, but only when a
  * view fully owns its ArrayBuffer. Exported for direct unit coverage; the

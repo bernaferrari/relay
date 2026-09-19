@@ -29,6 +29,8 @@ test('runner command traits are derived from the runner command manifest', () =>
 
 test('runner command manifest pins lifecycle-sensitive command groups', () => {
   assert.deepEqual(commandsForClass('preflightSkippableTouchMutation'), [
+    'clipboardCopy',
+    'clipboardPaste',
     'desktopScroll',
     'drag',
     'gesture',

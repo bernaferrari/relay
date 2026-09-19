@@ -14,4 +14,11 @@ export type ClipboardCommandResult =
       action: 'write';
       textLength: number;
       message: string;
+    }
+  | {
+      /** Relay fork: the atomic field transactions return the transferred text. */
+      action: 'paste' | 'copy';
+      text: string;
+      textLength: number;
+      message: string;
     };

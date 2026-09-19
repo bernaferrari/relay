@@ -123,6 +123,8 @@ export const alertAcceptUse = defineUse({ required: ['acceptAlert'] });
 export const alertDismissUse = defineUse({ required: ['dismissAlert'] });
 export const clipboardReadUse = defineUse({ required: ['readClipboard'] });
 export const clipboardWriteUse = defineUse({ required: ['writeClipboard'] });
+export const clipboardPasteUse = defineUse({ required: ['pasteClipboard'] });
+export const clipboardCopyUse = defineUse({ required: ['copyClipboard'] });
 export const perfFramesUse = defineUse({ required: ['perfFrames'] });
 export const perfMemorySampleUse = defineUse({ required: ['perfMemorySample'] });
 export const perfMemorySnapshotUse = defineUse({ required: ['perfMemorySnapshot'] });
@@ -718,6 +720,8 @@ export const shutdownTargetUse = defineUse({ required: ['shutdownTarget'] });
 export const clipboardRuntimePlanUses = Object.freeze([
   clipboardReadUse,
   clipboardWriteUse,
+  clipboardPasteUse,
+  clipboardCopyUse,
 ] as const);
 
 /**

@@ -33,6 +33,8 @@ export const RUNNER_COMMAND_TRAIT_MANIFEST = {
   appSwitcher: 'default',
   keyboardDismiss: 'default',
   keyboardReturn: 'default',
+  clipboardPaste: 'preflightSkippableTouchMutation',
+  clipboardCopy: 'preflightSkippableTouchMutation',
   alert: 'alertAction',
   sequence: 'preflightSkippableTouchMutation',
   recordStart: 'default',

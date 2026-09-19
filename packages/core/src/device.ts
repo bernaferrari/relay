@@ -736,7 +736,7 @@ export async function rotateDevice(
   orientation: "portrait" | "portrait-upside-down" | "landscape-left" | "landscape-right",
 ): Promise<void> {
   await controlledMutation("rotate", () =>
-    nativeDevice(device).command.rotate({ ...base(), orientation }),
+    nativeDevice(device).command.orientation({ ...base(), orientation }),
   );
 }
 

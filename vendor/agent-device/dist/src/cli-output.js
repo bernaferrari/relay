@@ -1,0 +1,1 @@
+import{t as e}from"./registry.js";const t=e();async function n(e){return await t[e.name]?.({input:e.input??{},result:e.result,progress:e.progress})}export{n as t};

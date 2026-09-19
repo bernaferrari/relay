@@ -1,7 +1,9 @@
-import { _ as SessionRuntimeHints } from "./sdk-contracts.js";
+import { v as SessionRuntimeHints } from "./sdk-contracts.js";
 import { d as PrepareMetroRuntimeResult, f as ReloadMetroResult, o as MetroPrepareKind, p as MetroBridgeScope } from "./sdk-remote-config.js";
-//#region src/utils/url.d.ts
+//#region src/client/base-url.d.ts
 declare function normalizeBaseUrl(input: string): string;
+//#endregion
+//#region src/metro/bundle-url.d.ts
 declare function buildBundleUrl(baseUrl: string, platform: 'ios' | 'android', entryPath?: string): string;
 //#endregion
 //#region src/metro/metro-types.d.ts

@@ -1,0 +1,1 @@
+const e={browserStack:`browserstack`,awsDeviceFarm:`aws-device-farm`},t=new Set(Object.values(e));function n(e){return e!==void 0&&t.has(e)}export{n,e as t};

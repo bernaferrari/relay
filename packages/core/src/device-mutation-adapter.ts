@@ -62,7 +62,7 @@ export function bindNativeDeviceMutations(
       keyboard: (options) => mutate(() => native.command.keyboard(options)),
       alert: (options) => mutate(() => native.command.alert(options)),
       appSwitcher: (options) => mutate(() => native.command.appSwitcher(options)),
-      rotate: (options) => mutate(() => native.command.rotate(options)),
+      orientation: (options) => mutate(() => native.command.orientation(options)),
       prepare: (options) => mutate(() => native.command.prepare(options)),
     },
     settings: { update: (options) => mutate(() => native.settings.update(options)) },

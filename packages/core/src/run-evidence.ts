@@ -409,7 +409,7 @@ export async function startRunEvidence(
     log,
     async () => {
       const performanceResult = await withTimeout(
-        device.observability.perf({ ...base() }),
+        device.observability.perf({ ...base(), area: "cpu" }),
         5_000,
         "performance capture",
       );
@@ -423,7 +423,7 @@ export async function startRunEvidence(
       handle.performanceSampler = sampleRunPerformance({
         probe: () =>
           withTimeoutAndDrain(
-            device.observability.perf({ ...base() }),
+            device.observability.perf({ ...base(), area: "cpu" }),
             5_000,
             "Performance sample",
           ),
@@ -702,7 +702,7 @@ export async function stopRunEvidence(
     if (handle.performanceStarted)
       await guardedCollector(handle, "performance", log, async () => {
         const performanceResult = await withTimeout(
-          device.observability.perf({ ...base() }),
+          device.observability.perf({ ...base(), area: "cpu" }),
           5_000,
           "performance capture",
         );

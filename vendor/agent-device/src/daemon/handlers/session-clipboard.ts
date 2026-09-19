@@ -1,8 +1,12 @@
 import type {
+  ClipboardCopyInput,
+  ClipboardPasteInput,
   ClipboardReadInput,
   ClipboardWriteInput,
 } from '@agent-device/contracts/clipboard-runtime';
 import {
+  clipboardCopyUse,
+  clipboardPasteUse,
   clipboardReadUse,
   clipboardWriteUse,
 } from '@agent-device/contracts/platform-runtime-operations';
@@ -24,7 +28,7 @@ import {
   resolveCommandDevice,
 } from '../session-device-resolution.ts';
 
-type ClipboardAction = 'read' | 'write';
+type ClipboardAction = 'read' | 'write' | 'paste' | 'copy';
 
 /**
  * What the admit-then-bind step reports: either the refusal an unadmitted cell produced — nothing
@@ -46,7 +50,22 @@ type ResolvedClipboardExecution =
  */
 function readClipboardAction(positionals: readonly string[]): ClipboardAction | undefined {
   const action = (positionals[0] ?? '').toLowerCase();
-  return action === 'read' || action === 'write' ? action : undefined;
+  return action === 'read' || action === 'write' || action === 'paste' || action === 'copy'
+    ? action
+    : undefined;
+}
+
+/** The four selector keys a paste/copy field selector accepts, shared by parse and validation. */
+const CLIPBOARD_SELECTOR_KEYS = ['id', 'label', 'text', 'value'] as const;
+
+function clipboardSelectorKey(raw: string): (typeof CLIPBOARD_SELECTOR_KEYS)[number] {
+  if (!(CLIPBOARD_SELECTOR_KEYS as readonly string[]).includes(raw)) {
+    throw new AppError(
+      'INVALID_ARGS',
+      `clipboard selector key must be one of: ${CLIPBOARD_SELECTOR_KEYS.join(', ')}`,
+    );
+  }
+  return raw as (typeof CLIPBOARD_SELECTOR_KEYS)[number];
 }
 
 function clipboardInput(context: DaemonCommandContext): ClipboardReadInput {
@@ -93,11 +112,73 @@ async function executeClipboardWrite(
 }
 
 /**
+ * Relay fork: `clipboard paste <text> <selectorKey> <selectorValue>`. Write and Paste are one
+ * verified runner transaction, so the pasteboard cannot be cleared between them.
+ */
+async function executeClipboardPaste(
+  runtime: BoundDeviceRuntime<typeof clipboardPasteUse>,
+  context: DaemonCommandContext,
+  positionals: readonly string[],
+): Promise<Record<string, unknown>> {
+  if (positionals.length !== 4) {
+    throw new AppError(
+      'INVALID_ARGS',
+      'clipboard paste requires text, selector key, and selector value',
+    );
+  }
+  const input: ClipboardPasteInput = {
+    ...clipboardInput(context),
+    text: positionals[1]!,
+    selector: {
+      key: clipboardSelectorKey(positionals[2]!),
+      value: positionals[3]!,
+    },
+  };
+  const pasted = await runtime.operations.pasteClipboard(input);
+  return {
+    action: 'paste',
+    text: pasted,
+    textLength: Array.from(pasted).length,
+    ...successText('Clipboard pasted'),
+  };
+}
+
+/** Relay fork: `clipboard copy <selectorKey> <selectorValue> [expectedText]`. */
+async function executeClipboardCopy(
+  runtime: BoundDeviceRuntime<typeof clipboardCopyUse>,
+  context: DaemonCommandContext,
+  positionals: readonly string[],
+): Promise<Record<string, unknown>> {
+  if (positionals.length < 3 || positionals.length > 4) {
+    throw new AppError(
+      'INVALID_ARGS',
+      'clipboard copy requires selector key and selector value, with optional expected text',
+    );
+  }
+  const input: ClipboardCopyInput = {
+    ...clipboardInput(context),
+    selector: {
+      key: clipboardSelectorKey(positionals[1]!),
+      value: positionals[2]!,
+    },
+    ...(positionals[3] !== undefined ? { expectedText: positionals[3] } : {}),
+  };
+  const copied = await runtime.operations.copyClipboard(input);
+  return {
+    action: 'copy',
+    text: copied,
+    textLength: Array.from(copied).length,
+    ...successText('Clipboard copied'),
+  };
+}
+
+/**
  * The one place `clipboard` reaches a device (ADR 0019 §9). Exactly one action-selected use is
- * admitted and bound — `read` or `write`, never both. Each branch admits its own literal use, so
- * the bound runtime narrows from that instantiation rather than from an assertion. Both name the
- * bare command in their refusal: the retired `requireCommandSupported('clipboard', device)` gate
- * refused per command, not per subcommand, and the wording is parity-pinned.
+ * admitted and bound — one of `read`, `write`, `paste`, or `copy`, never two. Each branch admits
+ * its own literal use, so the bound runtime narrows from that instantiation rather than from an
+ * assertion. Both name the bare command in their refusal: the retired
+ * `requireCommandSupported('clipboard', device)` gate refused per command, not per subcommand,
+ * and the wording is parity-pinned.
  */
 async function resolveBoundClipboardRuntime(
   params: Readonly<{
@@ -120,6 +201,32 @@ async function resolveBoundClipboardRuntime(
     if (admission.type === 'response') return { ok: false, response: admission.response };
     const runtime = admission.runtime;
     return { ok: true, execute: (context) => executeClipboardRead(runtime, context, positionals) };
+  }
+  if (action === 'paste') {
+    const admission = await admitRuntimeUse({
+      command: 'clipboard',
+      device,
+      use: clipboardPasteUse,
+      inspectFacts,
+      bindDevice,
+      readiness: {},
+    });
+    if (admission.type === 'response') return { ok: false, response: admission.response };
+    const runtime = admission.runtime;
+    return { ok: true, execute: (context) => executeClipboardPaste(runtime, context, positionals) };
+  }
+  if (action === 'copy') {
+    const admission = await admitRuntimeUse({
+      command: 'clipboard',
+      device,
+      use: clipboardCopyUse,
+      inspectFacts,
+      bindDevice,
+      readiness: {},
+    });
+    if (admission.type === 'response') return { ok: false, response: admission.response };
+    const runtime = admission.runtime;
+    return { ok: true, execute: (context) => executeClipboardCopy(runtime, context, positionals) };
   }
   const admission = await admitRuntimeUse({
     command: 'clipboard',
@@ -151,7 +258,10 @@ export async function handleSessionClipboardCommand(params: {
   const positionals = req.positionals ?? [];
   const action = readClipboardAction(positionals);
   if (!action) {
-    return errorResponse('INVALID_ARGS', 'clipboard requires a subcommand: read or write');
+    return errorResponse(
+      'INVALID_ARGS',
+      'clipboard requires a subcommand: read, write, paste, or copy',
+    );
   }
 
   const device = await resolveCommandDevice({ session, flags });

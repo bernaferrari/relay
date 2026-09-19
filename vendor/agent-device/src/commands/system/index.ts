@@ -37,7 +37,8 @@ const CLIPBOARD_COMMAND_NAME = 'clipboard';
 const TV_REMOTE_COMMAND_NAME = 'tv-remote';
 const TV_REMOTE_LONGPRESS_PRESET_MS = 500;
 
-const CLIPBOARD_ACTION_VALUES = ['read', 'write'] as const;
+const CLIPBOARD_ACTION_VALUES = ['read', 'write', 'paste', 'copy'] as const;
+const CLIPBOARD_SELECTOR_KEY_VALUES = ['id', 'label', 'text', 'value'] as const;
 const KEYBOARD_METADATA_ACTION_VALUES = ['status', 'dismiss', 'enter', 'return'] as const;
 
 const appStateCommandDescription = 'Show foreground app/activity';
@@ -100,6 +101,14 @@ const clipboardCommandMetadata = defineFieldCommandMetadata(
   {
     action: requiredField(enumField(CLIPBOARD_ACTION_VALUES)),
     text: stringField(),
+    selectorKey: enumField(
+      CLIPBOARD_SELECTOR_KEY_VALUES,
+      'Selector key naming how the paste/copy target field is located.',
+    ),
+    selectorValue: stringField('Selector value identifying the paste/copy target field.'),
+    expectedText: stringField(
+      'Optional text the copied value is verified against before the runner exits.',
+    ),
   },
 );
 
@@ -334,7 +343,17 @@ function readBackMode(value: unknown): BackMode | undefined {
 }
 
 function clipboardPositionals(input: ClipboardCommandOptions): string[] {
-  return input.action === 'read' ? ['read'] : ['write', input.text];
+  if (input.action === 'read') return ['read'];
+  if (input.action === 'write') return ['write', input.text];
+  if (input.action === 'paste') {
+    return ['paste', input.text, input.selectorKey, input.selectorValue];
+  }
+  return [
+    'copy',
+    input.selectorKey,
+    input.selectorValue,
+    ...(input.expectedText === undefined ? [] : [input.expectedText]),
+  ];
 }
 
 function readKeyboardInput(positionals: string[]): Record<string, unknown> {
@@ -346,8 +365,11 @@ function readKeyboardInput(positionals: string[]): Record<string, unknown> {
 
 function readClipboardInput(positionals: string[]): Record<string, unknown> {
   const action = positionals[0]?.toLowerCase();
-  if (action !== 'read' && action !== 'write') {
-    throw new AppError('INVALID_ARGS', 'clipboard requires a subcommand: read or write.');
+  if (action !== 'read' && action !== 'write' && action !== 'paste' && action !== 'copy') {
+    throw new AppError(
+      'INVALID_ARGS',
+      'clipboard requires a subcommand: read, write, paste, or copy.',
+    );
   }
   if (action === 'read') {
     if (positionals.length !== 1) {
@@ -355,10 +377,38 @@ function readClipboardInput(positionals: string[]): Record<string, unknown> {
     }
     return { action };
   }
-  if (positionals.length < 2) {
-    throw new AppError('INVALID_ARGS', 'clipboard write requires text.');
+  if (action === 'write') {
+    if (positionals.length < 2) {
+      throw new AppError('INVALID_ARGS', 'clipboard write requires text.');
+    }
+    return { action, text: positionals.slice(1).join(' ') };
   }
-  return { action, text: positionals.slice(1).join(' ') };
+  if (action === 'paste') {
+    if (positionals.length !== 4) {
+      throw new AppError(
+        'INVALID_ARGS',
+        'clipboard paste requires text, selector key, and selector value.',
+      );
+    }
+    return {
+      action,
+      text: positionals[1],
+      selectorKey: positionals[2],
+      selectorValue: positionals[3],
+    };
+  }
+  if (positionals.length < 3 || positionals.length > 4) {
+    throw new AppError(
+      'INVALID_ARGS',
+      'clipboard copy requires selector key and selector value, with optional expected text.',
+    );
+  }
+  return {
+    action,
+    selectorKey: positionals[1],
+    selectorValue: positionals[2],
+    ...(positionals[3] === undefined ? {} : { expectedText: positionals[3] }),
+  };
 }
 
 function readTvRemoteInput(

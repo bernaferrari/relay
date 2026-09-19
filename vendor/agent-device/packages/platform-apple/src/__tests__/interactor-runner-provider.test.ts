@@ -8,7 +8,7 @@ import type {
 import { AppError } from '@agent-device/kernel/errors';
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { IOS_SIMULATOR, MACOS_DEVICE } from './device-fixtures.ts';
+import { IOS_DEVICE, IOS_SIMULATOR, MACOS_DEVICE } from './device-fixtures.ts';
 import type {
   AppleRunnerCommandOptions,
   AppleRunnerProvider,
@@ -75,6 +75,16 @@ const RUNNER_TRANSPORT_METHODS: Record<
   setOrientation: { invoke: (i) => i.setOrientation('portrait'), runnerCommand: 'rotate' },
   appSwitcher: { invoke: (i) => i.appSwitcher(), runnerCommand: 'appSwitcher' },
   tvRemote: { invoke: (i) => i.tvRemote('select'), runnerCommand: 'remotePress' },
+  // Relay fork: the atomic field transactions ride one runner command each. They exist only on
+  // a physical iOS device, so the routing test below builds them on IOS_DEVICE.
+  pasteClipboard: {
+    invoke: (i) => i.pasteClipboard!('hi', { key: 'label', value: 'Message' }),
+    runnerCommand: 'clipboardPaste',
+  },
+  copyClipboard: {
+    invoke: (i) => i.copyClipboard!({ key: 'label', value: 'Message' }),
+    runnerCommand: 'clipboardCopy',
+  },
   keyboardDismiss: { invoke: (i) => i.keyboardDismiss!(), runnerCommand: 'keyboardDismiss' },
   keyboardEnter: { invoke: (i) => i.keyboardEnter!(), runnerCommand: 'keyboardReturn' },
   // R59: same reading as `readTextAtPoint` — the macOS-helper branch is reachable only for a
@@ -112,9 +122,18 @@ test('provider-backed interactor routes runner-command methods through the injec
     { appBundleId: 'com.example.app' },
     recordingRunnerProvider(calls),
   );
+  // The atomic clipboard transactions require a physical iOS device by design, so they get
+  // their own interactor on the device fixture; every other command routes identically.
+  const deviceInteractor = createAppleInteractor(
+    IOS_DEVICE,
+    { appBundleId: 'com.example.app' },
+    recordingRunnerProvider(calls),
+  );
   for (const [method, { invoke, runnerCommand }] of Object.entries(RUNNER_TRANSPORT_METHODS)) {
     calls.length = 0;
-    await invoke(interactor);
+    await invoke(
+      method === 'pasteClipboard' || method === 'copyClipboard' ? deviceInteractor : interactor,
+    );
     assert.ok(calls.length >= 1, `${method} never reached the injected runner transport`);
     assert.equal(calls[0]!.command.command, runnerCommand, `${method} sent a different command`);
   }

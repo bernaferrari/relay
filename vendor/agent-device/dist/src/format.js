@@ -1,0 +1,1 @@
+import e from"node:path";function t(t){let n=e.extname(t).toLowerCase();return n===`.yaml`||n===`.yml`}function n(e,t){return`Maestro YAML requires explicit --maestro routing: ${e} ${t} --maestro`}function r(e,n){return n===`maestro`&&t(e)?`maestro`:`ad`}export{n,r,t};

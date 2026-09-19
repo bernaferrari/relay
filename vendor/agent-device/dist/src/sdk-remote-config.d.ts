@@ -1,4 +1,4 @@
-import { B as DeviceTarget, H as PlatformSelector, _ as SessionRuntimeHints, c as DaemonServerMode, f as LeaseBackend, g as SessionIsolationMode, l as DaemonTransportPreference } from "./sdk-contracts.js";
+import { S as DeviceTarget, _ as SessionIsolationMode, c as DaemonServerMode, f as LeaseBackend, l as DaemonTransportPreference, v as SessionRuntimeHints, w as PlatformSelector } from "./sdk-contracts.js";
 //#region packages/contracts/src/companion-tunnel-scope.d.ts
 /**
  * The identity a companion tunnel is scoped to.
@@ -116,6 +116,7 @@ type CloudProviderProfileFields = {
   providerDeviceOrientation?: ProviderDeviceOrientation;
   providerGeoLocation?: string;
   providerTimezone?: string;
+  providerAppiumVersion?: string;
   providerLanguage?: string;
   providerLocale?: string;
   providerNetworkProfile?: string;

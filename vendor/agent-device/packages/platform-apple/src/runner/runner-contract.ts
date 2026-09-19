@@ -75,6 +75,9 @@ export type RunnerCommand = {
     | 'appSwitcher'
     | 'keyboardDismiss'
     | 'keyboardReturn'
+    // Relay fork: atomic field transactions the runner performs as one verified command.
+    | 'clipboardPaste'
+    | 'clipboardCopy'
     | 'alert'
     | 'sequence'
     | 'recordStart'

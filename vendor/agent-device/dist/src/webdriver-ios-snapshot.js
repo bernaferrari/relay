@@ -1,0 +1,1 @@
+import{t as e}from"./webdriver-source.js";import{r as t,t as n}from"./ios-snapshot-acquisition.js";function r(r,i){let a=e(r),o=t(a.roots)??{kind:`missing`,reason:`not-provided`};return n({producer:`appium-source`,nodes:a.nodes,viewport:o,lineage:i?{targetId:i}:{}})}export{r as acquireWebDriverIosSnapshot};

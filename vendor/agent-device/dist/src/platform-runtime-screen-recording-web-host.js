@@ -1,0 +1,1 @@
+async function e(e){if(e.platform!==`web`)return;let{hasScopedWebProvider:t,resolveWebProvider:n}=await import(`./src6.js`).then(e=>e.i);if(!await t())return;let r=await n();if(!(!r.startRecording||!r.stopRecording))return Object.freeze({start:async e=>await r.startRecording(e),stop:async()=>await r.stopRecording()})}export{e as resolveWebScreenRecordingTransport};

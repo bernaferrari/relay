@@ -1,4 +1,5 @@
-import type { Interactor, RunnerContext } from './interactor-types.ts';
+import { AppError } from '@agent-device/kernel/errors';
+import type { ElementSelectorKey, Interactor, RunnerContext } from './interactor-types.ts';
 import type { RuntimeOperationFact, RuntimeOperationUnavailability } from './platform-runtime.ts';
 import type { SnapshotRuntimeExecution } from './snapshot-runtime.ts';
 
@@ -19,6 +20,29 @@ export type ClipboardReadInput = Readonly<{
  */
 export type ClipboardWriteInput = ClipboardReadInput & Readonly<{ text: string }>;
 
+/** One atomic field selector, exactly as the runner commands accept it. */
+export type ClipboardFieldSelector = Readonly<{
+  key: ElementSelectorKey;
+  value: string;
+}>;
+
+/**
+ * One atomic paste: write `text` into the pasteboard and perform the real system Paste
+ * on the selected field as a single verified runner transaction. Physical iOS clears
+ * runner-owned pasteboard data when a one-command test process exits, so the write and
+ * the paste cannot be two requests.
+ */
+export type ClipboardPasteInput = ClipboardReadInput &
+  Readonly<{ text: string; selector: ClipboardFieldSelector }>;
+
+/**
+ * One atomic copy: select the field's text through the real edit menu, copy it, and
+ * return the copied text — optionally verified against `expectedText` — before the
+ * runner process exits.
+ */
+export type ClipboardCopyInput = ClipboardReadInput &
+  Readonly<{ selector: ClipboardFieldSelector; expectedText?: string }>;
+
 export type ClipboardReadRuntimeOperations = Readonly<{
   readClipboard(input: ClipboardReadInput): Promise<string>;
 }>;
@@ -32,12 +56,24 @@ export type ClipboardWriteRuntimeOperations = Readonly<{
   writeClipboard(input: ClipboardWriteInput): Promise<void>;
 }>;
 
+export type ClipboardPasteRuntimeOperations = Readonly<{
+  pasteClipboard(input: ClipboardPasteInput): Promise<string>;
+}>;
+
+export type ClipboardCopyRuntimeOperations = Readonly<{
+  copyClipboard(input: ClipboardCopyInput): Promise<string>;
+}>;
+
 export type ClipboardRuntimeOperations = ClipboardReadRuntimeOperations &
-  ClipboardWriteRuntimeOperations;
+  ClipboardWriteRuntimeOperations &
+  ClipboardPasteRuntimeOperations &
+  ClipboardCopyRuntimeOperations;
 
 export type ClipboardRuntimeOperationFacts = Readonly<{
   readClipboard: RuntimeOperationFact;
   writeClipboard: RuntimeOperationFact;
+  pasteClipboard: RuntimeOperationFact;
+  copyClipboard: RuntimeOperationFact;
 }>;
 
 /**
@@ -55,9 +91,16 @@ export type ClipboardRuntimeOperationFactsInput = Readonly<{
   unsupported: RuntimeOperationUnavailability;
   read?: RuntimeOperationFact;
   write?: RuntimeOperationFact;
+  /**
+   * The atomic field transactions are Relay-fork extensions that exist only where a
+   * runner can perform them in one verified command; owners that name neither leave
+   * both cells to the family denial above.
+   */
+  paste?: RuntimeOperationFact;
+  copy?: RuntimeOperationFact;
 }>;
 
-/** Builds the exhaustive owner claims for the two clipboard operations. */
+/** Builds the exhaustive owner claims for the clipboard operations. */
 export function clipboardRuntimeOperationFacts(
   input: ClipboardRuntimeOperationFactsInput,
 ): ClipboardRuntimeOperationFacts {
@@ -66,6 +109,8 @@ export function clipboardRuntimeOperationFacts(
   return Object.freeze({
     readClipboard: declared(input.read),
     writeClipboard: declared(input.write),
+    pasteClipboard: declared(input.paste),
+    copyClipboard: declared(input.copy),
   });
 }
 
@@ -107,6 +152,42 @@ export function bindClipboardWrite(
     writeClipboard: async (input: ClipboardWriteInput) => {
       const interactor = await resolveClipboardInteractor(signal, resolveInteractor, input);
       await interactor.writeClipboard(input.text);
+    },
+  });
+}
+
+export function bindClipboardPaste(
+  signal: AbortSignal,
+  resolveInteractor: (runner: RunnerContext) => Promise<Interactor>,
+): ClipboardPasteRuntimeOperations {
+  return Object.freeze({
+    pasteClipboard: async (input: ClipboardPasteInput) => {
+      const interactor = await resolveClipboardInteractor(signal, resolveInteractor, input);
+      if (!interactor.pasteClipboard) {
+        throw new AppError(
+          'UNSUPPORTED_OPERATION',
+          'atomic clipboard paste is unavailable on this backend',
+        );
+      }
+      return await interactor.pasteClipboard(input.text, input.selector);
+    },
+  });
+}
+
+export function bindClipboardCopy(
+  signal: AbortSignal,
+  resolveInteractor: (runner: RunnerContext) => Promise<Interactor>,
+): ClipboardCopyRuntimeOperations {
+  return Object.freeze({
+    copyClipboard: async (input: ClipboardCopyInput) => {
+      const interactor = await resolveClipboardInteractor(signal, resolveInteractor, input);
+      if (!interactor.copyClipboard) {
+        throw new AppError(
+          'UNSUPPORTED_OPERATION',
+          'atomic clipboard copy is unavailable on this backend',
+        );
+      }
+      return await interactor.copyClipboard(input.selector, input.expectedText);
     },
   });
 }

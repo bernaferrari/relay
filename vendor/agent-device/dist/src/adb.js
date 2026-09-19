@@ -1,0 +1,1 @@
+import{r as e}from"./rolldown-runtime.js";import"./retry.js";import{a as t}from"./adb-executor.js";var n=e({isAndroidShellCommandUnsupported:()=>i,runAndroidAdb:()=>r});async function r(e,n,r){return await t(e)(n,r)}function i(e,t){let n=`${e}\n${t}`.toLowerCase();return n.includes(`no shell command implementation`)||n.includes(`unknown command`)}export{i as n,r,n as t};

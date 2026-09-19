@@ -3,7 +3,12 @@ import { bindAlertLeg } from './alert-runtime.ts';
 import { bindAppEvent } from './app-event-runtime.ts';
 import { bindAppSwitcher } from './app-switcher-runtime.ts';
 import { bindBack } from './back-runtime.ts';
-import { bindClipboardRead, bindClipboardWrite } from './clipboard-runtime.ts';
+import {
+  bindClipboardCopy,
+  bindClipboardPaste,
+  bindClipboardRead,
+  bindClipboardWrite,
+} from './clipboard-runtime.ts';
 import { bindHome } from './home-runtime.ts';
 import { KEYBOARD_ACTION_LABELS, bindKeyboardAction } from './keyboard-runtime.ts';
 import { bindOrientation } from './orientation-runtime.ts';
@@ -73,6 +78,16 @@ export const INTERACTOR_OPERATIONS = [
   },
   { operation: 'readClipboard', label: 'clipboard read', bind: bindClipboardRead },
   { operation: 'writeClipboard', label: 'clipboard write', bind: bindClipboardWrite },
+  {
+    operation: 'pasteClipboard',
+    label: 'clipboard paste',
+    bind: bindClipboardPaste,
+  },
+  {
+    operation: 'copyClipboard',
+    label: 'clipboard copy',
+    bind: bindClipboardCopy,
+  },
   { operation: 'appSwitcher', label: 'app-switcher', bind: bindAppSwitcher },
   { operation: 'triggerAppEvent', label: 'trigger-app-event', bind: bindAppEvent },
   { operation: 'setSetting', label: 'settings', bind: bindSetSetting },

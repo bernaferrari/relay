@@ -48,6 +48,9 @@ const APPLE_SIMULATOR_OPERATION_HOSTS: Readonly<
   audioProbeCleanup: 'simulator',
   readClipboard: 'simulator',
   writeClipboard: 'simulator',
+  // Relay fork: the atomic field transactions are single verified runner commands.
+  pasteClipboard: 'runner',
+  copyClipboard: 'runner',
   setSetting: 'simulator',
   // Observation: the AX bridge presents regular and raw trees; custom actions need XCTest.
   captureSnapshot: 'simulator',

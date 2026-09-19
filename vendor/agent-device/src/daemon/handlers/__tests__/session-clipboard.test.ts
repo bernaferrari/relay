@@ -8,6 +8,8 @@ import {
   type RuntimeOperationFact,
 } from '@agent-device/contracts/platform-runtime';
 import {
+  clipboardCopyUse,
+  clipboardPasteUse,
   clipboardReadUse,
   clipboardWriteUse,
   type PlatformRuntimeOperations,
@@ -44,11 +46,18 @@ const unavailable = Object.freeze({
 });
 
 function harness(
-  facts: Readonly<{ read: RuntimeOperationFact; write: RuntimeOperationFact }>,
+  facts: Readonly<{
+    read: RuntimeOperationFact;
+    write: RuntimeOperationFact;
+    paste?: RuntimeOperationFact;
+    copy?: RuntimeOperationFact;
+  }>,
   device: DeviceInfo = androidDevice,
 ) {
   const readClipboard = vi.fn(async () => 'copied text');
   const writeClipboard = vi.fn(async () => undefined);
+  const pasteClipboard = vi.fn(async () => 'pasted text');
+  const copyClipboard = vi.fn(async () => 'copied field text');
   const runtimeFacts: RuntimeFacts<PlatformRuntimeOperations> = {
     device: { ...deviceShape(device), providerMode: 'local' },
     operations: clipboardRuntimeOperationFacts({
@@ -60,14 +69,14 @@ function harness(
     device,
     owner: localRuntimeOwner(device.platform as never),
     facts: runtimeFacts,
-    operations: { readClipboard, writeClipboard },
+    operations: { readClipboard, writeClipboard, pasteClipboard, copyClipboard },
     [Symbol.asyncDispose]: async () => {},
   } satisfies DeviceBinding<PlatformRuntimeOperations>;
   const inspectFacts: InspectDeviceRuntimeFacts = vi.fn(async () => runtimeFacts);
   const bindDevice = vi.fn(async (_device, use) =>
     narrowDeviceBinding(binding, use),
   ) as unknown as BindDeviceRuntime;
-  return { readClipboard, writeClipboard, inspectFacts, bindDevice };
+  return { readClipboard, writeClipboard, pasteClipboard, copyClipboard, inspectFacts, bindDevice };
 }
 
 function request(positionals: string[]) {
@@ -189,14 +198,77 @@ test('a write-only refusal still admits the read', async () => {
   expect(read.ok).toBe(true);
 });
 
+// Relay fork: the atomic field transactions are their own admitted cells, one bind each.
+test('clipboard paste admits clipboardPasteUse and reports the transferred text', async () => {
+  const spies = harness({ read: available, write: available, paste: available, copy: available });
+  const response = await handleSessionClipboardCommand({
+    ...request(['paste', 'hello there', 'label', 'Message']),
+    ...spies,
+  });
+
+  expect(response.ok).toBe(true);
+  expect(response.ok && response.data).toMatchObject({
+    action: 'paste',
+    text: 'pasted text',
+    textLength: 11,
+  });
+  expect(spies.bindDevice).toHaveBeenCalledWith(androidDevice, clipboardPasteUse);
+  expect(spies.readClipboard).not.toHaveBeenCalled();
+  expect(spies.copyClipboard).not.toHaveBeenCalled();
+});
+
+test('clipboard copy admits clipboardCopyUse and forwards the optional expected text', async () => {
+  const spies = harness({ read: available, write: available, paste: available, copy: available });
+  const response = await handleSessionClipboardCommand({
+    ...request(['copy', 'label', 'Message', 'expected value']),
+    ...spies,
+  });
+
+  expect(response.ok).toBe(true);
+  expect(response.ok && response.data).toMatchObject({
+    action: 'copy',
+    text: 'copied field text',
+  });
+  expect(spies.bindDevice).toHaveBeenCalledWith(androidDevice, clipboardCopyUse);
+  expect(spies.copyClipboard).toHaveBeenCalledWith(
+    expect.objectContaining({
+      selector: { key: 'label', value: 'Message' },
+      expectedText: 'expected value',
+    }),
+  );
+});
+
+test('a paste refusal does not take the read or write cells down with it', async () => {
+  const spies = harness({ read: available, write: available, paste: unavailable, copy: available });
+
+  const paste = await handleSessionClipboardCommand({
+    ...request(['paste', 'hi', 'label', 'Message']),
+    ...spies,
+  });
+  expect(paste.ok).toBe(false);
+  expect(spies.pasteClipboard).not.toHaveBeenCalled();
+
+  const read = await handleSessionClipboardCommand({ ...request(['read']), ...spies });
+  expect(read.ok).toBe(true);
+});
+
+test('clipboard paste rejects a malformed selector key downstream of admission', async () => {
+  const spies = harness({ read: available, write: available, paste: available, copy: available });
+  await expect(
+    handleSessionClipboardCommand({ ...request(['paste', 'hi', 'bogus', 'Message']), ...spies }),
+  ).rejects.toThrow('clipboard selector key must be one of: id, label, text, value');
+});
+
 test('an unknown subcommand fails before any device is resolved', async () => {
   const spies = harness({ read: available, write: available });
-  const response = await handleSessionClipboardCommand({ ...request(['paste']), ...spies });
+  const response = await handleSessionClipboardCommand({ ...request(['glue']), ...spies });
 
   expect(response.ok).toBe(false);
   if (!response.ok) {
     expect(response.error.code).toBe('INVALID_ARGS');
-    expect(response.error.message).toBe('clipboard requires a subcommand: read or write');
+    expect(response.error.message).toBe(
+      'clipboard requires a subcommand: read, write, paste, or copy',
+    );
   }
   expect(spies.inspectFacts).not.toHaveBeenCalled();
 });

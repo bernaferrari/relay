@@ -1,113 +1,8 @@
-import { B as DeviceTarget, D as Rect, E as RawSnapshotNode, H as PlatformSelector, R as DeviceInfo, T as Point, f as LeaseBackend, j as SnapshotOptions$1, k as SnapshotBackend } from "./sdk-contracts.js";
-import { c as ScrollDirection, o as GesturePlan, r as AndroidAdbProvider } from "./sdk-android-adb.js";
-import { a as BackendSnapshotResult, d as DeviceRotation, f as BackMode, l as SessionSurface, n as CloudArtifactProvider, u as TvRemoteButton } from "./cloud-artifacts.js";
+import { S as DeviceTarget, b as DeviceInfo, f as LeaseBackend, w as PlatformSelector, x as DeviceKind } from "./sdk-contracts.js";
 import { t as AppsFilter } from "./app-inventory.js";
-import { n as AndroidKeyboardState, s as AndroidInputOwner, t as AndroidKeyboardDismissResult } from "./device-input-state.js";
-import Limrun from "@limrun/api";
-import "@limrun/api/instance-client";
-import "@limrun/api/ios-client";
-//#region packages/contracts/src/settings.d.ts
-type SettingOptions = {
-  permissionTarget?: string;
-  permissionMode?: string;
-  latitude?: number;
-  longitude?: number;
-};
-//#endregion
-//#region packages/contracts/src/runner-lease-context.d.ts
-type RunnerLogicalLeaseContext = {
-  leaseId?: string;
-  clientId?: string;
-  tenantId?: string;
-  runId?: string;
-  leaseProvider?: string;
-  deviceKey?: string;
-};
-//#endregion
-//#region packages/contracts/src/interactor-types.d.ts
-type RunnerContext = {
-  requestId?: string;
-  signal?: AbortSignal;
-  appBundleId?: string;
-  verbose?: boolean;
-  logPath?: string;
-  traceLogPath?: string;
-  iosXctestrunFile?: string;
-  iosXctestDerivedDataPath?: string;
-  iosXctestEnvDir?: string;
-  runnerLeaseContext?: RunnerLogicalLeaseContext;
-};
-type ScreenshotOptions = {
-  appBundleId?: string;
-  pixelDensity?: number;
-  fullscreen?: boolean;
-  normalizeStatusBar?: boolean;
-  stabilize?: boolean;
-  surface?: SessionSurface;
-  skipIosSimulatorBootCheck?: boolean;
-  captureBackend?: 'runner';
-};
-type ElementSelectorKey = 'id' | 'label' | 'text' | 'value';
-type ElementSelectorTapOptions = {
-  key: ElementSelectorKey;
-  value: string;
-  allowNonHittableCoordinateFallback?: boolean;
-  expectedPoint?: Point;
-};
-type SnapshotOptions = SnapshotOptions$1 & {
-  appBundleId?: string;
-  signal?: AbortSignal;
-  includeRects?: boolean;
-  includeHiddenContentHints?: boolean;
-  surface?: SessionSurface;
-};
-type SnapshotResult = Omit<BackendSnapshotResult, 'backend' | 'nodes'> & {
-  nodes?: RawSnapshotNode[];
-  backend: Extract<SnapshotBackend, 'android' | 'xctest' | 'linux-atspi' | 'web'>;
-};
-type Interactor = {
-  open(app: string, options?: {
-    activity?: string;
-    appBundleId?: string;
-    launchConsole?: string;
-    launchArgs?: string[];
-    terminateRunningApp?: boolean;
-    url?: string;
-  }): Promise<void>;
-  openDevice(): Promise<void>;
-  close(app: string): Promise<void>;
-  tap(x: number, y: number): Promise<Record<string, unknown> | void>;
-  tapElementSelector?(selector: ElementSelectorTapOptions): Promise<Record<string, unknown> | void>;
-  doubleTap(x: number, y: number): Promise<Record<string, unknown> | void>;
-  longPress(x: number, y: number, durationMs?: number): Promise<Record<string, unknown> | void>;
-  focus(x: number, y: number): Promise<Record<string, unknown> | void>;
-  type(text: string, delayMs?: number): Promise<void>;
-  fillElementSelector?(selector: ElementSelectorTapOptions, text: string, delayMs?: number): Promise<Record<string, unknown> | void>;
-  fill(x: number, y: number, text: string, delayMs?: number): Promise<Record<string, unknown> | void>;
-  scroll(direction: ScrollDirection, options?: {
-    amount?: number;
-    pixels?: number;
-    durationMs?: number;
-  }): Promise<Record<string, unknown> | void>;
-  screenshot(outPath: string, options?: ScreenshotOptions): Promise<void>;
-  setViewport?(width: number, height: number): Promise<Record<string, unknown> | void>;
-  snapshot(options?: SnapshotOptions): Promise<SnapshotResult>;
-  gestureViewport?(): Promise<Rect>;
-  back(mode?: BackMode): Promise<void>;
-  home(): Promise<void>;
-  setOrientation(orientation: DeviceRotation): Promise<{
-    orientation?: DeviceRotation;
-  } | void>;
-  performGesture?(plan: GesturePlan): Promise<Record<string, unknown> | void>;
-  appSwitcher(): Promise<void>;
-  tvRemote(button: TvRemoteButton, durationMs?: number): Promise<void>;
-  readClipboard(): Promise<string>;
-  writeClipboard(text: string): Promise<void>;
-  pasteClipboard?(text: string, selector: Pick<ElementSelectorTapOptions, 'key' | 'value'>): Promise<string>;
-  copyClipboard?(selector: Pick<ElementSelectorTapOptions, 'key' | 'value'>, expectedText?: string): Promise<string>;
-  setSetting(setting: string, state: string, appId?: string, options?: SettingOptions): Promise<Record<string, unknown> | void>;
-};
-//#endregion
+import { d as Interactor, f as RunnerContext } from "./sdk-selectors.js";
+import { n as CloudArtifactProvider } from "./cloud-artifacts.js";
+import { n as AndroidKeyboardState, s as AndroidInputOwner, t as AndroidKeyboardDismissResult, u as AndroidAdbProvider } from "./device-input-state.js";
 //#region packages/contracts/src/device-inventory.d.ts
 type DeviceInventoryRequest = {
   platform?: PlatformSelector;
@@ -121,7 +16,13 @@ type DeviceInventoryRequest = {
   clientId?: string;
   iosSimulatorSetPath?: string;
   androidSerialAllowlist?: string[];
+  /** Internal local-inventory projection filters; not public command grammar. */
+  kind?: DeviceKind;
+  booted?: boolean;
+  /** Internal target-resolution policy; ordinary inventory leaves this absent and lists all AVDs. */
+  androidAvdSelection?: 'running-only' | 'include-stopped';
 };
+type ProviderDeviceInventoryRequest = Omit<DeviceInventoryRequest, 'booted' | 'kind'>;
 //#endregion
 //#region packages/contracts/src/device-provider.d.ts
 type DeviceLease = {
@@ -138,14 +39,30 @@ type DeviceLease = {
 };
 type LeaseLifecycleContext = {
   flags?: Readonly<Record<string, unknown>>;
+  initialApp?: string;
   cwd?: string;
+  publicNetworkOnly?: boolean;
+  /** Request-bound cancellation (explicit cancel or client disconnect). */
+  signal?: AbortSignal;
+  /**
+   * Epoch-ms deadline by which `allocate` must have settled; derived from the
+   * same budget as the client's `lease_allocate` envelope, so a provider that
+   * fits its remote phases within it is never abandoned by a client first.
+   */
+  deadline?: number;
 };
 type LeaseLifecycleProvider = {
   allocate?: (lease: DeviceLease, context?: LeaseLifecycleContext) => Promise<Record<string, unknown> | undefined>;
   heartbeat?: (lease: DeviceLease, context?: LeaseLifecycleContext) => Promise<Record<string, unknown> | undefined>;
   release?: (lease: DeviceLease, context?: LeaseLifecycleContext) => Promise<Record<string, unknown> | undefined>;
 };
-type DeviceInventoryProvider = (request: DeviceInventoryRequest) => Promise<DeviceInfo[] | null | undefined>;
+type DeviceInventoryProvider = (request: ProviderDeviceInventoryRequest, signal?: AbortSignal) => Promise<DeviceInfo[] | null | undefined>;
+type ProviderAppCatalogQuery = Readonly<{
+  provider: string;
+  platform: 'android' | 'ios';
+  publicNetworkOnly?: boolean;
+}>;
+type ProviderAppCatalogHandler = (query: ProviderAppCatalogQuery, signal?: AbortSignal) => Promise<readonly string[]>;
 //#endregion
 //#region packages/contracts/src/provider-device-runtime.d.ts
 type ProviderDeviceInstallResult = {
@@ -173,6 +90,7 @@ type ProviderDeviceRuntime = {
   leaseLifecycle: LeaseLifecycleProvider;
   recoverExpiredLease?: ProviderExpiredLeaseRecovery;
   cloudArtifacts?: CloudArtifactProvider;
+  appCatalog?: ProviderAppCatalogHandler;
   deviceInventoryProvider: DeviceInventoryProvider;
   ownsDevice(device: DeviceInfo): boolean;
   getInteractor(device: DeviceInfo, runnerContext?: RunnerContext): Interactor | undefined;
@@ -293,7 +211,7 @@ type LimrunDeviceSessionBase = {
 type LimrunAndroidDeviceSession$1 = LimrunDeviceSessionBase & {
   readonly platform: 'android';
   readonly adb: LimrunAdbProvider;
-  getForegroundApp(): Promise<LimrunForegroundApp | undefined>;
+  getForegroundApp(signal?: AbortSignal): Promise<LimrunForegroundApp | undefined>;
   getKeyboardState(): Promise<LimrunAndroidKeyboardState>;
   dismissKeyboard(): Promise<LimrunAndroidKeyboardDismissResult>;
   readLogs(lineLimit: number): Promise<string>;
@@ -314,6 +232,7 @@ type LimrunIosDeviceSession = LimrunDeviceSessionBase & {
 type LimrunRuntimeOptions = {
   apiKey: string;
   region?: string;
+  runtimeInstance?: string;
 };
 //#endregion
 //#region src/sdk/limrun-runtime-types.d.ts

@@ -33,6 +33,14 @@ const EXPECTATIONS: {
   keyboardEnter: { method: 'keyboardEnter', input: {} },
   readClipboard: { method: 'readClipboard', input: {} },
   writeClipboard: { method: 'writeClipboard', input: { text: '' } },
+  pasteClipboard: {
+    method: 'pasteClipboard',
+    input: { text: 'hello', selector: { key: 'id', value: 'field' } },
+  },
+  copyClipboard: {
+    method: 'copyClipboard',
+    input: { selector: { key: 'id', value: 'field' } },
+  },
   appSwitcher: { method: 'appSwitcher', input: {} },
   triggerAppEvent: { method: 'open', input: { eventUrl: 'myapp://x' } },
   setSetting: {

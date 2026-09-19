@@ -1,4 +1,4 @@
-import { A as SnapshotNode } from "./sdk-contracts.js";
+import { j as SnapshotNode } from "./sdk-contracts.js";
 //#region packages/selectors/src/internal/find.d.ts
 declare const FIND_LOCATORS: readonly ['any', 'text', 'label', 'value', 'role', 'id'];
 type FindLocator = (typeof FIND_LOCATORS)[number];
@@ -21,6 +21,8 @@ type FindAction = {
 } | {
   kind: 'wait';
   timeoutMs?: number;
+} | {
+  kind: 'list';
 };
 type ParsedFindArgs = {
   locator: FindLocator;

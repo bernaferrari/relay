@@ -36,6 +36,8 @@ test('builds the exact clipboard operation fact catalog for an owner that names 
   ).toEqual({
     readClipboard: read,
     writeClipboard: write,
+    pasteClipboard: write,
+    copyClipboard: write,
   });
 });
 
@@ -51,6 +53,8 @@ test('a half the owner never names reports the denial the owner stated for the f
   ).toEqual({
     readClipboard: { available: true },
     writeClipboard: denial,
+    pasteClipboard: denial,
+    copyClipboard: denial,
   });
 });
 
@@ -62,6 +66,8 @@ test('an owner serving neither clipboard half names the family denial once and s
   expect(facts).toEqual({
     readClipboard: denial,
     writeClipboard: denial,
+    pasteClipboard: denial,
+    copyClipboard: denial,
   });
   expect(Object.isFrozen(facts)).toBe(true);
 });

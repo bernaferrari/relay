@@ -1,0 +1,2 @@
+import{n as e,t}from"./success-text.js";function n(e){return({result:t})=>e(t)}const r=n(i);function i(e){return{data:e,text:t(e)}}function a(n){let r=t(n),i=e(n);return i.length===0?r:[r,...i.map(e=>`Warning: ${o(e)}`)].filter(Boolean).join(`
+`)}function o(e){return e.replaceAll(/\s*\n\s*/g,` `)}const s=n(e=>({data:e,text:a(e)}));function c(e,t){if(typeof e==`string`&&e.length!==0&&typeof t==`number`)return`@${e.startsWith(`@`)?e.slice(1):e}~s${t}`}export{c as a,s as i,i as n,n as o,r,o as t};

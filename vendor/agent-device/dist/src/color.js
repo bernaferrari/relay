@@ -1,0 +1,1 @@
+import{styleText as e}from"node:util";function t(e=process.stdout){let t=process.env.FORCE_COLOR;return typeof t==`string`?t!==`0`:typeof process.env.NO_COLOR!=`string`&&!!e.isTTY}function n(t,n,r){return e(n,t,r)}export{t as n,n as t};

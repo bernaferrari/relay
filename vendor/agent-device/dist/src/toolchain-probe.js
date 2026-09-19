@@ -1,0 +1,2 @@
+import{c as e}from"./exec.js";import"./command.js";const t=3e3;async function n(n,i){try{let a=await e(n,i,{allowFailure:!0,timeoutMs:t});return a.exitCode===0?r(a.stdout):void 0}catch{return}}function r(e){return e.split(`
+`).map(e=>e.trim()).find(Boolean)}export{n,r,t};

@@ -1,0 +1,1 @@
+import{t as e}from"./tool-provider2.js";async function t(t,n){await e().screenshot.capture(t,n)}export{t as screenshotLinux};

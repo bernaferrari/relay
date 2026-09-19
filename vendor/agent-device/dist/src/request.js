@@ -1,0 +1,1 @@
+import{AsyncLocalStorage as e}from"node:async_hooks";const t=new e;async function n(e,n){return await t.run(e,n)}function r(e){t.getStore()?.(e)}export{n,r as t};

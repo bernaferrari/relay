@@ -1,0 +1,1 @@
+import{t as e}from"./scoped-provider.js";import{createAgentBrowserWebProvider as t}from"./agent-browser-provider.js";const n=t(),r=e(n);function i(e){return r.resolve(e)}function a(){return r.hasScope()}async function o(e,t){return await r.run(e,t)}export{a as hasScopedWebProvider,i as resolveWebProvider,o as withWebProvider};

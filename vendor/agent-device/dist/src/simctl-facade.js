@@ -1,0 +1,1 @@
+import{t as e}from"./simctl.js";export{e as buildSimctlArgsForDevice};

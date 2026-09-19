@@ -138,8 +138,6 @@ const runnerProtocolCommandFixtures: Record<RunnerCommand['command'], RunnerComm
   appSwitcher: { command: 'appSwitcher' },
   keyboardDismiss: { command: 'keyboardDismiss' },
   keyboardReturn: { command: 'keyboardReturn' },
-  clipboardRead: { command: 'clipboardRead' },
-  clipboardWrite: { command: 'clipboardWrite', text: 'hello' },
   clipboardPaste: {
     command: 'clipboardPaste',
     text: 'hello',
@@ -330,8 +328,6 @@ test('runner protocol fixtures cover every runner command with JSON-safe samples
     'backSystem',
     'clipboardCopy',
     'clipboardPaste',
-    'clipboardRead',
-    'clipboardWrite',
     'desktopScroll',
     'drag',
     'findText',

@@ -154,7 +154,6 @@ test('adoption succeeds for a live physical device runner', async () => {
   expect(session?.xctestrunArtifact?.reason).toBe('adopted_from_lease');
 });
 
-
 test('adoption succeeds for a live, matching, probe-healthy runner', async () => {
   const lease = writeStaleLease();
   mockIsProcessAlive.mockReturnValue(true);
