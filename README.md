@@ -110,6 +110,9 @@ In the desktop app, open **Explore** to use the same goal service. Review-requir
 visible with the retained evidence; a completed browser path can be replayed on a fresh target and
 then explicitly promoted into the existing Authoring review flow.
 
+Existing Playwright suites can call the same small HTTP surface without adopting the desktop UI or
+rewriting their deterministic tests. See [goal-first discovery from Playwright](./docs/GOAL_FIRST_PLAYWRIGHT.md).
+
 Inspection is read-only and exposes the retained findings and evidence references without resuming
 or controlling the target.
 
