@@ -10,6 +10,7 @@ import type { ProofReport, ProofReportFlow, ProofVerdict } from "@relay/protocol
 import { failedStepFromTrace } from "@relay/protocol";
 import type { PersistedRun } from "./runs.js";
 import { redactText } from "./redaction.js";
+import { captureReviewQueueForRun } from "./capture-review-queue.js";
 
 export type ProofReportInput = {
   run: Pick<
@@ -20,6 +21,14 @@ export type ProofReportInput = {
     steps?: PersistedRun["steps"];
     testId?: string;
     sourceRevision?: PersistedRun["sourceRevision"];
+    /** Human capture review. When present the report carries the review
+     * accounting beside the machine verdict — never folded into it. */
+    artifacts?: PersistedRun["artifacts"];
+    captureReviews?: PersistedRun["captureReviews"];
+    captureReviewReceipts?: PersistedRun["captureReviewReceipts"];
+    recipeSnapshot?: PersistedRun["recipeSnapshot"];
+    recipeGraph?: PersistedRun["recipeGraph"];
+    testStepEvidence?: PersistedRun["testStepEvidence"];
   };
   /** Relative share-report path for this run's signed link, when one exists. */
   sharePath?: string;
@@ -77,16 +86,30 @@ function flowFor(input: ProofReportInput): ProofReportFlow {
 export function buildProofReport(input: ProofReportInput): ProofReport {
   const at = input.at ?? Date.now();
   const flow = flowFor(input);
+  // Three independent outcomes: the machine verdict stays execution-only;
+  // recorded human review is reported beside it when the run carries any.
+  const hasReviewState =
+    input.run.artifacts !== undefined || input.run.captureReviews?.length !== undefined;
+  const captureReview = hasReviewState
+    ? captureReviewQueueForRun({
+        artifacts: input.run.artifacts ?? [],
+        captureReviews: input.run.captureReviews,
+        captureReviewReceipts: input.run.captureReviewReceipts,
+        recipeSnapshot: input.run.recipeSnapshot,
+        recipeGraph: input.run.recipeGraph,
+      }).summary
+    : undefined;
+  const reviewObligations = captureReview ? captureReview.captured + captureReview.missing : 0;
   return {
     schemaVersion: 1,
     verdict: proofVerdict(input.run),
     ...(input.run.sourceRevision ? { sourceRevision: input.run.sourceRevision } : {}),
     flows: [flow],
+    ...(captureReview && reviewObligations > 0 ? { captureReview } : {}),
     ...(input.relayServerUrl ? { relayServerUrl: input.relayServerUrl } : {}),
     generatedAt: at,
   };
 }
-
 /** Compact GitHub check-run markdown: one line per flow with an icon verdict,
  * title, duration, and share link path. Deterministic — no timestamps, no
  * locale formatting — so identical runs render byte-identical summaries. */
@@ -105,5 +128,14 @@ export function renderProofReportMarkdown(report: ProofReport): string {
   lines.push(
     `Verdict: **${report.verdict}** (${report.flows.length} flow${report.flows.length === 1 ? "" : "s"})`,
   );
+  // The review line reports human decisions beside the machine verdict;
+  if (report.captureReview) {
+    const s = report.captureReview;
+    const planned = s.captured + s.missing;
+    lines.push("");
+    lines.push(
+      `Review: ${s.captured}/${planned} captured · ${s.accepted} accepted · ${s.issue} issues · ${s.needMoreEvidence} need more evidence · ${s.pending} to review`,
+    );
+  }
   return `${lines.join("\n")}\n`;
 }

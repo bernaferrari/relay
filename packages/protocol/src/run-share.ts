@@ -1,5 +1,6 @@
 import { operationInputContract } from "./operation-builders.js";
 import { parseOptionalSourceRevision, type SourceRevision } from "./source-revision.js";
+import type { CaptureReviewSummary } from "./capture-review.js";
 
 export type RunOutcome =
   | "passed"
@@ -126,6 +127,10 @@ export type ProofReport = {
   /** Immutable commit/build identity frozen at enqueue time, when known. */
   sourceRevision?: SourceRevision;
   flows: ProofReportFlow[];
+  /** Human capture-review accounting, reported beside the machine verdict.
+   * Present only when the run planned at least one capture; never folded
+   * into `verdict` — execution, checks, and review are independent outcomes. */
+  captureReview?: CaptureReviewSummary;
   relayServerUrl?: string;
   generatedAt: number;
 };
@@ -345,6 +350,29 @@ export const proofReportOutputParser: Parser<ProofReport> = {
           ...(sharePath !== undefined ? { sharePath } : {}),
         };
       }),
+      ...(input.captureReview !== undefined
+        ? {
+            captureReview: (() => {
+              const summary = object(input.captureReview, "proof report captureReview");
+              const counts = [
+                "captured",
+                "missing",
+                "pending",
+                "accepted",
+                "issue",
+                "needMoreEvidence",
+              ] as const;
+              const parsed: Record<string, number> = {};
+              for (const key of counts) {
+                parsed[key] = finiteNumber(
+                  (summary as Record<string, unknown>)[key],
+                  `proof report captureReview ${key}`,
+                );
+              }
+              return parsed as unknown as CaptureReviewSummary;
+            })(),
+          }
+        : {}),
       ...(input.relayServerUrl !== undefined
         ? { relayServerUrl: requiredString(input.relayServerUrl, "proof report relayServerUrl") }
         : {}),

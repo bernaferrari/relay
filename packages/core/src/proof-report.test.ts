@@ -167,3 +167,61 @@ test("proof report JSON survives a parse roundtrip through its output parser", a
   assert.throws(() => proofReportOutputParser.parse({ ...report, schemaVersion: 2 }));
   assert.throws(() => proofReportOutputParser.parse({ ...report, verdict: "maybe" }));
 });
+
+test("review accounting rides beside the machine verdict, never into it", () => {
+  const reviewed = run({
+    status: "ok",
+    outcome: "passed",
+    title: "Account settings reference",
+    artifacts: [
+      {
+        kind: "app-map-test-execution-intent",
+        capturedAt: 1,
+        data: {
+          plan: {
+            plannedSlots: [
+              {
+                slotId: "slot-home",
+                checkpointId: "checkpoint-home",
+                caption: "Home",
+              },
+            ],
+          },
+        },
+      },
+      {
+        kind: "capture-review",
+        capturedAt: 2,
+        data: {
+          captureId: "frames/001.png::aaa",
+          checkpointId: "checkpoint-home",
+          framePath: "frames/001.png",
+          imageSha256: "aaa",
+          caption: "Home",
+        },
+      },
+    ] as unknown as PersistedRun["artifacts"],
+    captureReviews: [
+      {
+        captureId: "frames/001.png::aaa",
+        imageSha256: "aaa",
+        action: "report-issue",
+        at: 2,
+        by: { id: "human:reviewer", kind: "human" },
+      },
+    ] as unknown as PersistedRun["captureReviews"],
+  });
+  const report = buildProofReport({ run: reviewed, at: 3 });
+  // Execution passed; the reported issue does not flip the machine verdict.
+  assert.equal(report.verdict, "pass");
+  assert.ok(report.captureReview);
+  assert.equal(report.captureReview!.issue, 1);
+  const markdown = renderProofReportMarkdown(report);
+  assert.match(markdown, /Review: 1\/1 captured · 0 accepted · 1 issues · 0 need more evidence/);
+  assert.match(markdown, /Verdict: \*\*pass\*\*/);
+
+  // Runs without planned captures keep the previous compact shape.
+  const plain = buildProofReport({ run: run({ status: "ok", outcome: "passed" }), at: 3 });
+  assert.equal(plain.captureReview, undefined);
+  assert.doesNotMatch(renderProofReportMarkdown(plain), /Review:/);
+});
