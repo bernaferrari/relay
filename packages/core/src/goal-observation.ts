@@ -1,3 +1,7 @@
+import {
+  GOAL_OBSERVATION_MAX_CANDIDATES,
+  GOAL_OBSERVATION_SCHEMA_VERSION,
+} from "@relay/protocol";
 import type {
   CompactGoalObservation,
   GoalObservationAction,
@@ -15,6 +19,15 @@ const MAX_SIGNALS = 20;
 const MAX_CAPABILITIES = 32;
 const EDITABLE_CONTROL = /(?:text(?:box|field)?|textarea|input|editable|password|email)/iu;
 
+/** Editable controls are never tap-authoritative in the goal loop; their
+ * values are dispatch-time data, not model-facing state. */
+export function isEditableGoalControl(
+  role: string | undefined,
+  identifier: string | undefined,
+): boolean {
+  return EDITABLE_CONTROL.test(`${role ?? ""} ${identifier ?? ""}`);
+}
+
 export type CompactGoalObservationInput = {
   goal: string;
   subgoal?: string;
@@ -23,6 +36,7 @@ export type CompactGoalObservationInput = {
   platform: GoalObservationTarget["platform"];
   app?: string;
   configurationId?: string;
+  runtimeSessionId?: string;
   observation: TargetObservation;
   recentActions?: readonly GoalObservationAction[];
   signals?: readonly GoalObservationSignal[];
@@ -48,7 +62,7 @@ function controlTarget(control: TargetObservation["semantics"]["controls"][numbe
   const target = {
     ...(safeText(control.identifier) ? { identifier: safeText(control.identifier) } : {}),
     ...(safeText(control.label) ? { label: safeText(control.label) } : {}),
-    ...(safeText(control.text) && !isEditableControl(control.role, control.identifier)
+    ...(safeText(control.text) && !isEditableGoalControl(control.role, control.identifier)
       ? { text: safeText(control.text) }
       : {}),
     ...(control.rect
@@ -67,15 +81,17 @@ function compactCandidate(
   control: TargetObservation["semantics"]["controls"][number],
   index: number,
 ): GoalObservationCandidate {
-  const editable = isEditableControl(control.role, control.identifier);
+  const editable = isEditableGoalControl(control.role, control.identifier);
   const text = editable ? REDACTED : safeText(control.text);
+  const enabledAssumed = control.enabled === undefined;
   return {
     id: `c${index + 1}`,
     kind: "control",
     ...(safeText(control.label) ? { label: safeText(control.label) } : {}),
     ...(text ? { text } : {}),
     ...(safeText(control.role) ? { role: safeText(control.role) } : {}),
-    enabled: control.enabled !== false,
+    enabled: enabledAssumed ? true : control.enabled === true,
+    ...(enabledAssumed ? { enabledAssumed: true as const } : {}),
     ...(control.selected !== undefined ? { selected: control.selected } : {}),
     target: controlTarget(control),
   };
@@ -119,12 +135,18 @@ export function compactGoalObservation(input: CompactGoalObservationInput): Comp
     platform: input.platform,
     ...(input.app ? { app: safeText(input.app) } : {}),
     ...(input.configurationId ? { configurationId: safeText(input.configurationId) } : {}),
+    ...(input.runtimeSessionId
+      ? { runtimeSessionId: safeText(input.runtimeSessionId) ?? REDACTED }
+      : {}),
   };
-  const candidates = observation.semantics.controls
-    .slice(0, 40)
-    .map((control, index) => compactCandidate(control, index));
+  const keptControls = observation.semantics.controls.slice(0, GOAL_OBSERVATION_MAX_CANDIDATES);
+  const candidates = keptControls.map((control, index) => compactCandidate(control, index));
+  const candidatesOmitted = Math.max(
+    0,
+    observation.semantics.controls.length - keptControls.length,
+  );
   const base = {
-    schemaVersion: 1 as const,
+    schemaVersion: GOAL_OBSERVATION_SCHEMA_VERSION,
     goal: safeText(input.goal) ?? REDACTED,
     ...(input.subgoal ? { subgoal: safeText(input.subgoal) } : {}),
     target,
@@ -134,8 +156,16 @@ export function compactGoalObservation(input: CompactGoalObservationInput): Comp
         : {}),
       semantics: observation.semantics.status,
       ...(observation.semantics.capturedAt ? { capturedAt: observation.semantics.capturedAt } : {}),
+      pixels: observation.pixels.status,
+      ...(observation.pixels.status === "captured"
+        ? { pixelsCapturedAt: observation.pixels.capturedAt }
+        : {}),
     },
     candidates,
+    omissions: {
+      candidatesKept: candidates.length,
+      candidatesOmitted,
+    },
     recentActions: (input.recentActions ?? []).slice(-MAX_ACTIONS).map(safeAction),
     signals: (input.signals ?? []).slice(-MAX_SIGNALS).map(safeSignal),
     capabilities: (input.capabilities ?? []).slice(0, MAX_CAPABILITIES).map(safeCapability),

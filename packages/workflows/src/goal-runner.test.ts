@@ -151,9 +151,11 @@ function memoryStore(
 function operations(options: { uncertain?: boolean; openTargetMismatch?: boolean } = {}): {
   port: RelayOperationPort;
   calls: OperationId[];
+  openInputs: unknown[];
 } {
   let captureCount = 0;
   const calls: OperationId[] = [];
+  const openInputs: unknown[] = [];
   const port: RelayOperationPort = {
     async invoke<Id extends OperationId>(
       id: Id,
@@ -168,15 +170,38 @@ function operations(options: { uncertain?: boolean; openTargetMismatch?: boolean
         return { targets: [] } as OperationOutput<Id>;
       }
       if (id === "target.open") {
-        const targetId = (_input as { targetId?: string }).targetId;
+        // Generic `Id` erases the concrete input type; narrow to the registry's
+        // validated target.open input instead of fabricating a shape.
+        const input = _input as OperationInput<"target.open">;
+        openInputs.push(input);
+        const targetId = input.targetId;
         return {
           session: {
             targetId: options.openTargetMismatch ? "different-goal-target" : targetId,
             name: "Goal test",
             url: "https://example.test",
             signedOut: true,
+            ...(input.authenticationFixtureReference
+              ? {
+                  sessionId: "runtime-ctx-1",
+                  configurationDigest: "config-digest-1",
+                  authenticationFixtureId: input.authenticationFixtureReference,
+                }
+              : {}),
           },
         } as OperationOutput<Id>;
+      }
+      if (id === "target.devices.list") {
+        return {
+          devices: [
+            {
+              id: "managed-browser",
+              serial: "managed-browser",
+              platform: "browser",
+              state: "connected",
+            },
+          ],
+        } as unknown as OperationOutput<Id>;
       }
       if (id === "target.observation.capture") {
         captureCount += 1;
@@ -189,7 +214,7 @@ function operations(options: { uncertain?: boolean; openTargetMismatch?: boolean
       throw new Error(`Unexpected operation ${id}`);
     },
   };
-  return { port, calls };
+  return { port, calls, openInputs };
 }
 
 test("goal runner persists redacted observation and intent before one safe action", async () => {
@@ -333,4 +358,110 @@ test("fresh reproduction replays acknowledged actions on an isolated browser tar
   assert.equal(reproduced.reproduction?.findings?.[0]?.kind, "reproduction-lead");
   assert.equal(runtime.calls.filter((id) => id === "target.interact").length, 2);
   assert.equal(store.values.get(original.sessionId)?.reproduction?.pendingAction, undefined);
+});
+
+test("an existing managed browser target is opened with the requested fixture, not merely listed", async () => {
+  const runtime = operations();
+  const result = await createGoalSessionRunner({
+    operations: runtime.port,
+    store: memoryStore(),
+    decisionProvider: providerFor("complete"),
+    id: () => "goal-fixture",
+  }).start({
+    goal: "Open settings",
+    targetId: "managed-browser",
+    authenticationFixtureReference: "authfx:00000000-0000-0000-0000-000000000007:7",
+  });
+  assert.deepEqual(runtime.calls, [
+    "target.devices.list",
+    "target.open",
+    "target.observation.capture",
+  ]);
+  assert.deepEqual(runtime.openInputs, [
+    {
+      targetId: "managed-browser",
+      authenticationFixtureReference: "authfx:00000000-0000-0000-0000-000000000007:7",
+      presentation: "embedded",
+    },
+  ]);
+  assert.equal(result.target.runtimeSessionId, "runtime-ctx-1");
+  assert.equal(result.target.configurationDigest, "config-digest-1");
+  assert.equal(
+    result.target.appliedAuthenticationFixtureId,
+    "authfx:00000000-0000-0000-0000-000000000007:7",
+  );
+});
+
+test("a decision bound to a different observation digest cannot authorize input", async () => {
+  const staleProvider: ModelDecisionProvider = {
+    id: "openrouter",
+    async decide(request): Promise<ModelDecisionRecord> {
+      return {
+        schemaVersion: 1,
+        status: "ok",
+        provider: "openrouter",
+        model: "~typesafe/jev-latest",
+        requestId: "request-stale",
+        observationDigest: "sha256:" + "a".repeat(64),
+        questionDigest: "q",
+        answers: {
+          progress: {
+            type: "choice",
+            choice: "continue",
+            probabilities: { continue: 1 },
+            confidence: 1,
+          },
+          next_action: {
+            type: "choice",
+            choice: "c1",
+            probabilities: { c1: 1 },
+            confidence: 1,
+          },
+        },
+        startedAt: 1,
+        completedAt: 2,
+        durationMs: 1,
+        evidenceRefs: request.evidenceRefs ?? [],
+      };
+    },
+  };
+  const runtime = operations();
+  const result = await createGoalSessionRunner({
+    operations: runtime.port,
+    store: memoryStore(),
+    decisionProvider: staleProvider,
+    id: () => "goal-stale",
+  }).start({ goal: "Reach the next screen", startUrl: "https://example.test" });
+  assert.equal(result.status, "blocked");
+  assert.equal(result.stopReason?.code, "action-rejected");
+  assert.equal(runtime.calls.includes("target.interact"), false);
+});
+
+test("a control with unknown enabled state is never an authorized tap candidate", async () => {
+  const runtime = operations();
+  const originalObservation = observation(1);
+  // Drop the explicit enabled flag: the projection must mark it assumed and
+  // the runner must refuse to tap it even when the model selects it.
+  const port: RelayOperationPort = {
+    async invoke<Id extends OperationId>(
+      id: Id,
+      _input: OperationInput<Id>,
+    ): Promise<OperationOutput<Id>> {
+      if (id === "target.observation.capture") {
+        const obs = structuredClone(originalObservation);
+        const control = obs.semantics.controls[0];
+        if (control) delete control.enabled;
+        return obs as unknown as OperationOutput<Id>;
+      }
+      return runtime.port.invoke(id, _input);
+    },
+  };
+  const result = await createGoalSessionRunner({
+    operations: port,
+    store: memoryStore(),
+    decisionProvider: providerFor("continue", "complete"),
+    id: () => "goal-assumed",
+  }).start({ goal: "Reach the next screen", startUrl: "https://example.test" });
+  assert.equal(result.stopReason?.code, "no-action");
+  assert.equal(result.lastObservation?.candidates[0]?.enabledAssumed, true);
 });

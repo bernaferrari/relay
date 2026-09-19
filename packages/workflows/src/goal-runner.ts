@@ -6,6 +6,7 @@ import {
   createOpenRouterDecisionProvider,
   DEFAULT_OPENROUTER_DECISION_MODEL,
   findWorkspaceRoot,
+  isEditableGoalControl,
   type ModelDecisionProvider,
 } from "@relay/core";
 import type {
@@ -247,11 +248,9 @@ function safeCandidate(observation: CompactGoalObservation, candidateId: string)
   if (observation.screen.semantics !== "current") return undefined;
   const candidate = observation.candidates.find((item) => item.id === candidateId);
   if (!candidate || candidate.kind !== "control" || !candidate.enabled) return undefined;
-  if (
-    /(?:text(?:box|field)?|textarea|input|editable|password|email)/iu.test(candidate.role ?? "")
-  ) {
-    return undefined;
-  }
+  // Assumed-enabled is presentation data, not proven actionability (GOAL-04).
+  if (candidate.enabledAssumed) return undefined;
+  if (isEditableGoalControl(candidate.role, candidate.target.identifier)) return undefined;
   const target = candidate.target;
   if (!target.identifier && !target.ref && !target.label && !target.point) return undefined;
   return candidate;
@@ -384,6 +383,15 @@ async function resolveTarget(
         ...(input.laneId ? { laneId: input.laneId } : {}),
         ...(input.authenticationFixtureReference
           ? { authenticationFixtureReference: input.authenticationFixtureReference }
+          : { signedOut: true as const }),
+        ...(opened.session.sessionId
+          ? { runtimeSessionId: opened.session.sessionId }
+          : {}),
+        ...(opened.session.configurationDigest
+          ? { configurationDigest: opened.session.configurationDigest }
+          : {}),
+        ...(opened.session.authenticationFixtureId
+          ? { appliedAuthenticationFixtureId: opened.session.authenticationFixtureId }
           : {}),
       },
       ...(input.laneId ? { laneId: input.laneId } : {}),
@@ -395,6 +403,43 @@ async function resolveTarget(
   if (!device) throw new TypeError(`Target ${targetId} is not connected.`);
   if (input.authenticationFixtureReference && device.platform !== "browser") {
     throw new TypeError("Authentication fixtures can only bind managed browser targets.");
+  }
+  // An existing managed browser target must actually be opened for this goal —
+  // with the requested fixture or clean state — before any interaction. Listing
+  // devices only proves the target exists; it never applies a configuration.
+  if (device.platform === "browser") {
+    const opened = await operations.invoke("target.open", {
+      targetId: device.serial || device.id,
+      ...(input.laneId ? { laneId: input.laneId } : {}),
+      ...(input.authenticationFixtureReference
+        ? { authenticationFixtureReference: input.authenticationFixtureReference }
+        : input.signedOut
+          ? { signedOut: true }
+          : {}),
+      presentation: "embedded",
+    });
+    assertOpenedTarget(opened, device.serial || device.id);
+    return {
+      target: {
+        targetId: device.serial || device.id,
+        platform: targetPlatform("browser"),
+        ...(input.laneId ? { laneId: input.laneId } : {}),
+        ...(input.authenticationFixtureReference
+          ? { authenticationFixtureReference: input.authenticationFixtureReference }
+          : {}),
+        ...(input.signedOut || opened.session.signedOut ? { signedOut: true as const } : {}),
+        ...(opened.session.sessionId
+          ? { runtimeSessionId: opened.session.sessionId }
+          : {}),
+        ...(opened.session.configurationDigest
+          ? { configurationDigest: opened.session.configurationDigest }
+          : {}),
+        ...(opened.session.authenticationFixtureId
+          ? { appliedAuthenticationFixtureId: opened.session.authenticationFixtureId }
+          : {}),
+      },
+      ...(input.laneId ? { laneId: input.laneId } : {}),
+    };
   }
   return {
     target: {
@@ -540,6 +585,9 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
       targetId: record.target.targetId,
       platform: record.target.platform,
       app: observation.foregroundApp,
+      ...(record.target.runtimeSessionId
+        ? { runtimeSessionId: record.target.runtimeSessionId }
+        : {}),
       observation,
       recentActions: recentActions(record),
       signals: observationSignals(observation),
@@ -656,6 +704,23 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
       }
       record = { ...record, lastDecision: decision, updatedAt: now() };
       await persist(record);
+      // A decision is bound to the exact observation it judged. If the
+      // provider returns one stamped with a different digest, it did not judge
+      // this observation and can never authorize input against it.
+      if (
+        decision.observationDigest &&
+        decision.observationDigest !== observation.observationDigest
+      ) {
+        record = stop(
+          record,
+          "blocked",
+          "action-rejected",
+          "The provider decision was bound to a different observation; it cannot authorize input.",
+          now(),
+        );
+        await persist(record);
+        return result(record);
+      }
       if (decision.status !== "ok") {
         const code = decision.status === "invalid" ? "provider-invalid" : "provider-unavailable";
         record = stop(
@@ -1003,6 +1068,9 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
             targetId,
             platform: "browser",
             app: observation.foregroundApp,
+            ...(reproduction.target.runtimeSessionId
+              ? { runtimeSessionId: reproduction.target.runtimeSessionId }
+            : {}),
             observation,
             recentActions: recentActions({
               ...record,

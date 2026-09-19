@@ -28,6 +28,16 @@ export type GoalSessionTarget = {
   startUrl?: string;
   laneId?: string;
   authenticationFixtureReference?: string;
+  /** Runtime session identity returned by the runtime when the target was
+   * opened for this goal. Absent means the runtime did not report one — the
+   * goal session id is never a substitute for a runtime session proof. */
+  runtimeSessionId?: string;
+  /** Exact-configuration proof from the runtime open, when provided. */
+  configurationDigest?: string;
+  /** The fixture the runtime actually applied, when it reports one. */
+  appliedAuthenticationFixtureId?: string;
+  /** True only when the runtime confirmed a genuinely clean session. */
+  signedOut?: true;
 };
 
 export type GoalSessionBudget = {

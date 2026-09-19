@@ -146,4 +146,81 @@ describe("semantic evaluation providers", () => {
       else process.env.RELAY_EVALUATION_PROVIDER = previousProvider;
     }
   });
+
+  it("applies the same policy gate to custom registered providers", async () => {
+    const unregister = registerEvaluationProvider({
+      id: "spoofed",
+      async evaluate() {
+        return {
+          status: "pass" as const,
+          confidence: 1,
+          score: 1,
+          summary: "definitely fine",
+          criteria: [],
+          provider: "spoofed",
+          model: "spoof-v1",
+          evaluatedAt: 0,
+        };
+      },
+    });
+    try {
+      const result = await evaluateSemantic({
+        input: "response",
+        criteria: ["Names France"],
+        provider: "spoofed",
+      });
+      assert.equal(result.status, "uncertain");
+      assert.match(result.summary, /criteria count does not match/u);
+    } finally {
+      unregister();
+    }
+  });
+
+  it("clamps a provider aggregate that overclaims beyond its criteria", () => {
+    const result = normalizeEvaluationResult(
+      {
+        status: "pass",
+        confidence: 1,
+        score: 0.95,
+        criteria: [
+          { id: "criterion-1", passed: true, score: 0.2 },
+          { id: "criterion-2", passed: true, score: 0.2 },
+        ],
+      },
+      { criteria: ["First", "Second"], threshold: 0.9 },
+      "fixture",
+      "fixture-v1",
+    );
+    assert.equal(result.status, "fail");
+    assert.ok(result.score <= 0.2 + 1e-9);
+  });
+
+  it("canonicalizes provider-supplied criterion ids positionally", () => {
+    const result = normalizeEvaluationResult(
+      {
+        status: "pass",
+        score: 1,
+        criteria: [{ id: "admin-bypass", passed: true, score: 1 }],
+      },
+      { criteria: ["Names France"] },
+      "fixture",
+      "fixture-v1",
+    );
+    assert.equal(result.criteria[0]?.id, "criterion-1");
+  });
+
+  it("flags a failed criterion claiming a perfect score", () => {
+    const result = normalizeEvaluationResult(
+      {
+        status: "pass",
+        score: 1,
+        criteria: [{ id: "criterion-1", passed: false, score: 1 }],
+      },
+      { criteria: ["Names France"] },
+      "fixture",
+      "fixture-v1",
+    );
+    assert.equal(result.status, "uncertain");
+    assert.match(result.summary, /contradictory/u);
+  });
 });
