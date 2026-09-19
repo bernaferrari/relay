@@ -389,7 +389,10 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
           to: { x: point.x, y: Math.max(0, point.y + (down ? 400 : -400)) },
         };
       } else {
-        interaction = interactionFor(candidate);
+        interaction = interactionFor({
+          target: candidate.target,
+          platform: record.target.platform,
+        });
       }
       const remainingBudget = record.budget.maxDurationMs - (now() - record.createdAt);
       if (signal?.aborted || remainingBudget <= 0) {
@@ -488,6 +491,14 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
       }
       try {
         observation = await capture(record);
+        // An acknowledged input can leave the durable semantic proof fenced
+        // while the post-action tree is already readable. Observe again once
+        // after a bounded settle instead of rejecting the next action against
+        // a stale stamp (GOAL-10: on ambiguity, observe again).
+        if (observation.screen.semantics !== "current") {
+          await new Promise((resolve) => setTimeout(resolve, 1_200));
+          observation = await capture(record);
+        }
         record = (await store.load(record.id)) ?? record;
         const afterEvidence = record.observations.at(-1)?.evidenceRefs ?? [];
         record = {

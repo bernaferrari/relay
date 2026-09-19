@@ -182,12 +182,35 @@ export function createDevice(explicitContext?: TargetContext): Device {
     const native = createAgentDeviceClient({
       session: process.env.AGENT_DEVICE_SESSION?.trim() || targetSessionName(context),
     });
+    // agent-device 0.21.x client methods resolve their session and device
+    // transport through `this`; a plain `{...native}` spread leaves the
+    // copies unbound, which silently degrades to default usbmux routing and
+    // loses the session binding (simulators then vanish with "not available
+    // through usbmux"). Rebind every method — two levels deep — to its
+    // owning object before the observation facade copies them onward.
+    const rebound = { ...native } as Record<string, unknown>;
+    const rebind = (clone: Record<string, unknown>, original: Record<string, unknown>): void => {
+      for (const [name, value] of Object.entries(clone)) {
+        const originalValue = original[name];
+        if (typeof value === "function" && typeof originalValue === "function") {
+          clone[name] = (value as (...args: unknown[]) => unknown).bind(original);
+        } else if (
+          value &&
+          typeof value === "object" &&
+          originalValue &&
+          typeof originalValue === "object"
+        ) {
+          rebind(value as Record<string, unknown>, originalValue as Record<string, unknown>);
+        }
+      }
+    };
+    rebind(rebound, native as unknown as Record<string, unknown>);
     device = observationDevice.createDeviceObservationFacade({
-      ...native,
+      ...rebound,
       ...bindNativeDeviceMutations(native, targetIdentity(context), selectedPlatform(context)),
       observability: {
         ...native.observability,
-        crashes: ({ action, since }) =>
+        crashes: ({ action, since }: { action: "start" | "collect"; since?: number }) =>
           action === "start"
             ? Promise.resolve({
                 platform: context.kind === "device" ? context.platform : "android",
@@ -195,9 +218,9 @@ export function createDevice(explicitContext?: TargetContext): Device {
                 entries: [],
                 truncated: false,
               })
-            : captureNativeCrashEvidence(since),
+            : captureNativeCrashEvidence(since ?? 0),
       },
-    } as DeviceTransport);
+    } as unknown as DeviceTransport);
     devicesByTarget.set(key, device);
   }
   return device;
@@ -286,14 +309,24 @@ export async function snapshot(
   } catch {
     context = undefined;
   }
-  // Physical iOS XCTest snapshots can sit on the daemon's 90s budget after the
-  // runner dies. Fail fast so expect-screen/tour can use pixels instead.
+  // CoreSimulator serials are UUID-shaped; the adopted testCommand listener
+  // rides usbmux, which only exists for physical devices. A simulator with a
+  // live runner lease must use the SDK session path instead of throwing a
+  // usbmux attach failure that reads as a missing device.
+  const serialIsCoreSimulator =
+    context?.kind === "device" &&
+    context.platform === "ios" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(context.serial);
   if (context?.kind === "device" && context.platform === "ios") {
     // Recipes already press/type through the adopted testCommand listener.
     // Recapture / observe / screen-capture must use that same usbmux path.
     // The bounded SDK probe looks at Relay’s Copy-probe session, not the
     // LISTENER_READY runner — adopt first, and do not recover-kill it.
-    const adopted = await snapshotFromLiveIosListenerIfReady(context, opts);
+    // A simulator (UUID serial) has no usbmux; its live runner lease must
+    // route through the SDK session below instead.
+    const adopted = serialIsCoreSimulator
+      ? undefined
+      : await snapshotFromLiveIosListenerIfReady(context, opts);
     if (adopted !== undefined) return adopted;
     try {
       return await captureIosSnapshot(
@@ -327,6 +360,15 @@ export async function openApp(
       relaunch: opts?.relaunch ?? true,
       rememberApplication: rememberTargetApplication,
     });
+    // agent-device 0.21.6 requires the app to be opened inside the SDK's own
+    // session before its snapshot/interact paths answer; the physical launch
+    // above (devicectl/go-ios) is invisible to that session. Establish it
+    // best-effort: the launch above stays authoritative for foregrounding,
+    // and a session-open failure must not fail an otherwise-good launch.
+    await nativeDevice(device)
+      .apps.open({ ...base(), app })
+      .then(() => rememberTargetApplication(app))
+      .catch(() => undefined);
     return;
   }
   const opened = await controlledMutation("app-open", () =>
@@ -429,6 +471,11 @@ async function pressViaLiveIosListener(
     return false;
   }
   if (context.kind !== "device" || context.platform !== "ios") return false;
+  // Simulators have no usbmux; the listener transport cannot reach them and
+  // an attempted attach would read as a missing device.
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(context.serial)) {
+    return false;
+  }
   const live = await probeLiveIosRunnerListener(context.serial);
   if (!live) return false;
   const appBundleId = await rememberedTargetApplication(context);

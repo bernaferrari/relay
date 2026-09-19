@@ -374,11 +374,22 @@ export async function dispatchGoalAction(
 
 export function interactionFor(candidate: {
   target: GoalSessionInteractionTarget;
+  /** iOS accessibility identifiers are sparse and often not uniquely
+   * resolvable (system Settings rows carry none); its reliable selector is
+   * the localized label. Other platforms keep identifier-first. */
+  platform?: string;
 }): GoalSessionAction["interaction"] {
   // Keep every observed targeting fact: the semantic selector drives native
   // dispatch, and the observed point drives frame-bound browser control.
   const target = { ...candidate.target };
-  if (candidate.target.identifier) return { kind: "identifier", target };
+  if (candidate.platform === "ios") {
+    if (candidate.target.label) return { kind: "label", target };
+    if (candidate.target.identifier) return { kind: "identifier", target };
+  } else {
+    if (candidate.target.identifier) return { kind: "identifier", target };
+    if (candidate.target.ref) return { kind: "ref", target };
+    if (candidate.target.label) return { kind: "label", target };
+  }
   if (candidate.target.ref) return { kind: "ref", target };
   if (candidate.target.label) return { kind: "label", target };
   if (candidate.target.point) return { kind: "point", target };
@@ -430,7 +441,7 @@ export function interactionInput(
     ...(selector.identifier ? { identifier: selector.identifier } : {}),
     ...(selector.ref ? { ref: selector.ref } : {}),
     ...(selector.label ? { label: selector.label } : {}),
-    ...(selector.point ? { x: selector.point.x, y: selector.point.y } : {}),
+    ...(selector.point ? { point: { x: selector.point.x, y: selector.point.y } } : {}),
   };
 }
 

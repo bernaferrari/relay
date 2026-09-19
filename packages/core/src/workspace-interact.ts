@@ -595,7 +595,16 @@ export async function interact(
       // HID when the DDI advertises it; otherwise XCTest pressPoint. Neither
       // path may surface outcome-unknown as “retry the tap”.
       const bounds = iosLogicalBoundsForSerial(context.serial);
+      // CoreSimulator serials (UUID-shaped) have no usbmux for the HID
+      // preflight or the pixel verifier; tap straight through the XCTest
+      // session instead.
+      const pointSerialIsSimulator =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(context.serial);
       const tap = async () => {
+        if (pointSerialIsSimulator) {
+          await pressPoint(target.device, input.x, input.y);
+          return;
+        }
         try {
           await tapIosPointViaPixels({
             serial: context.serial,
@@ -617,7 +626,7 @@ export async function interact(
           }
         }
       };
-      if (opts?.verifyIosScreenChange === false) {
+      if (opts?.verifyIosScreenChange === false || pointSerialIsSimulator) {
         await tap();
       } else {
         await verifyIosScreenChanged(context.serial, tap, {
@@ -636,10 +645,18 @@ export async function interact(
     // stale selector that leaves pixels untouched must surface as the typed
     // tap-did-not-change error instead of a silent no-op. Callers opt out
     // explicitly with verifyIosScreenChange === false.
+    // CoreSimulator serials (UUID-shaped) have no usbmux: go-ios pixels and
+    // the HID tap preflight cannot reach them. Their taps verify through the
+    // post-action semantic observation like Android, never a cable raster.
+    const iosSerialIsSimulator =
+      context.kind === "device" &&
+      context.platform === "ios" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(context.serial);
     if (
       context.kind === "device" &&
       context.platform === "ios" &&
       opts?.verifyIosScreenChange !== false &&
+      !iosSerialIsSimulator &&
       canVerifyIosScreenChange(input)
     ) {
       let result: InteractResult | undefined;

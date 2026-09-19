@@ -11,6 +11,8 @@ export type LiveIosRunnerListener = {
   serial: string;
   runnerPid: number;
   port: number;
+  /** Owning process from the lease; absent on pre-owner leases. */
+  ownerPid?: number;
 };
 
 export function resolveIosRunnerLeasePath(
@@ -39,12 +41,18 @@ export async function readIosRunnerLease(
 ): Promise<LiveIosRunnerListener | null> {
   try {
     const raw = await readFile(resolveIosRunnerLeasePath(serial, env), "utf8");
-    const doc = JSON.parse(raw) as { runnerPid?: unknown; port?: unknown };
+    const doc = JSON.parse(raw) as { runnerPid?: unknown; port?: unknown; ownerPid?: unknown };
     const runnerPid = Number(doc.runnerPid);
     const port = Number(doc.port);
+    const ownerPid = Number(doc.ownerPid);
     if (!Number.isInteger(runnerPid) || runnerPid <= 0) return null;
     if (!Number.isInteger(port) || port <= 0) return null;
-    return { serial, runnerPid, port };
+    return {
+      serial,
+      runnerPid,
+      port,
+      ...(Number.isInteger(ownerPid) && ownerPid > 0 ? { ownerPid } : {}),
+    };
   } catch {
     return null;
   }
@@ -62,6 +70,13 @@ export async function probeLiveIosRunnerListener(
   const lease = await readIosRunnerLease(serial, env);
   if (!lease) return null;
   if (!isIosRunnerProcessAlive(lease.runnerPid)) return null;
+  // A runner detached from a dead owner still holds that owner's XCTest app
+  // context; its listener answers new sessions with empty trees. Only a live
+  // owner's listener is a healthy attach target — a stale one must fall
+  // through to the caller's own session so a fresh runner spawns.
+  if (lease.ownerPid !== undefined && !isIosRunnerProcessAlive(lease.ownerPid)) {
+    return null;
+  }
   return lease;
 }
 

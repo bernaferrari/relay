@@ -134,8 +134,12 @@ export const targetOperationInputSchemas = {
       to: tapPoint.optional().describe("Required when kind is 'swipe': swipe end point { x, y }"),
       durationMs: z.number().int().positive().optional(),
       ref: z.string().min(1).optional(),
+      point: tapPoint
+        .optional()
+        .describe(
+          "Optional observed center for kind 'label'/'identifier': disambiguates duplicate labels by matching the observed control's bounds",
+        ),
       query: z.string().min(1).optional(),
-      match: z.string().min(1).optional(),
       key: z
         .enum(["enter", "backspace", "back", "home", "recents"])
         .optional()
