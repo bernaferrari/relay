@@ -229,9 +229,7 @@ const goalSessionInputSchema = z
   .superRefine((value, context) => {
     if (value.cancelSessionId) {
       if (
-        Object.entries(value).some(
-          ([key, item]) => item !== undefined && key !== "cancelSessionId",
-        )
+        Object.entries(value).some(([key, item]) => item !== undefined && key !== "cancelSessionId")
       ) {
         context.addIssue({
           code: "custom",

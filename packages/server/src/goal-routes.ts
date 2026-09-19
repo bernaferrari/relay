@@ -38,10 +38,7 @@ type GoalRouteContext = {
 };
 
 export type GoalRouteRuntime = {
-  start(
-    input: GoalSessionStartInput,
-    call?: { signal?: AbortSignal },
-  ): Promise<GoalSessionResult>;
+  start(input: GoalSessionStartInput, call?: { signal?: AbortSignal }): Promise<GoalSessionResult>;
   resume(sessionId: string): Promise<GoalSessionResult>;
   inspect(sessionId: string): Promise<GoalSessionRecord>;
   reproduce(sessionId: string): Promise<GoalSessionResult>;
@@ -216,7 +213,10 @@ function inputFromBody(body: Record<string, unknown>): GoalSessionStartInput {
   if (body.signedOut === true) input.signedOut = true;
   if (Number.isInteger(body.maxSteps)) input.maxSteps = body.maxSteps as number;
   if (Number.isInteger(body.maxDurationMs)) input.maxDurationMs = body.maxDurationMs as number;
-  if (typeof body.sessionId === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(body.sessionId)) {
+  if (
+    typeof body.sessionId === "string" &&
+    /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(body.sessionId)
+  ) {
     input.sessionId = body.sessionId;
   }
   return input;

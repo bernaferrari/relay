@@ -298,7 +298,9 @@ export function GoalPage() {
                 <FieldDescription>At most 15 minutes; the default is 5.</FieldDescription>
               </Field>
               <Field>
-                <FieldLabel htmlFor="goal-missions">Distinct missions (optional, one per line)</FieldLabel>
+                <FieldLabel htmlFor="goal-missions">
+                  Distinct missions (optional, one per line)
+                </FieldLabel>
                 <Textarea
                   id="goal-missions"
                   value={missionsText}
@@ -308,12 +310,14 @@ export function GoalPage() {
                   maxLength={8_400}
                 />
                 <FieldDescription>
-                  With multiple workers, each line drives exactly one worker. Four copies of one goal
-                  buy no new coverage.
+                  With multiple workers, each line drives exactly one worker. Four copies of one
+                  goal buy no new coverage.
                 </FieldDescription>
               </Field>
               <Field>
-                <FieldLabel htmlFor="goal-values">Task values (optional, name=value per line)</FieldLabel>
+                <FieldLabel htmlFor="goal-values">
+                  Task values (optional, name=value per line)
+                </FieldLabel>
                 <Textarea
                   id="goal-values"
                   value={valuesText}

@@ -326,11 +326,15 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
     const valueEntries = repeat("--value").map((entry) => {
       const split = entry.indexOf("=");
       if (split <= 0 || !entry.slice(0, split).trim() || !entry.slice(split + 1)) {
-        throw new UsageError("--value must be name=text (values are plain inputs, not credentials)");
+        throw new UsageError(
+          "--value must be name=text (values are plain inputs, not credentials)",
+        );
       }
       return [entry.slice(0, split).trim(), entry.slice(split + 1)] as const;
     });
-    const missions = repeat("--mission").map((entry) => entry.trim()).filter(Boolean);
+    const missions = repeat("--mission")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
     if (missions.length > 0 && verb !== "explore") {
       throw new UsageError("--mission is only valid on explore; each mission drives one worker");
     }
@@ -377,18 +381,14 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
         ...(maxDurationMs === undefined ? {} : { maxDurationMs }),
         ...(agents === undefined ? {} : { agents }),
         ...(missions.length > 0 ? { missions } : {}),
-        ...(valueEntries.length > 0
-          ? { values: Object.fromEntries(valueEntries) }
-          : {}),
+        ...(valueEntries.length > 0 ? { values: Object.fromEntries(valueEntries) } : {}),
       };
       return intent;
     }
     const intent: GoalSessionStartIntent = {
       kind: "goal-start",
       goal,
-      ...(valueEntries.length > 0
-        ? { values: Object.fromEntries(valueEntries) }
-        : {}),
+      ...(valueEntries.length > 0 ? { values: Object.fromEntries(valueEntries) } : {}),
       ...(startUrl ? { startUrl } : {}),
       ...(targetId ? { targetId } : {}),
       ...(tokens.values.get("--lane") ? { laneId: tokens.values.get("--lane") } : {}),

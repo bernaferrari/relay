@@ -37,9 +37,7 @@ type DurableTargetObservationDependencies = {
   /** Live DOM semantics for a managed browser target. Absent means the
    * deployment did not open a browser-device session; the observation then
    * reports semantics honestly unavailable. */
-  captureBrowserSemantics?(
-    targetId: string,
-  ): Promise<
+  captureBrowserSemantics?(targetId: string): Promise<
     | {
         status: "current";
         capturedAt: number;
@@ -120,9 +118,7 @@ function controls(snapshot: SnapshotPayload | undefined): TargetObservationContr
 /** Live DOM semantics for a managed browser target via its browser-device
  * session. Any failure — closed session, unstable page — returns honestly
  * unavailable; never an invented current tree. */
-async function defaultCaptureBrowserSemantics(
-  targetId: string,
-): Promise<
+async function defaultCaptureBrowserSemantics(targetId: string): Promise<
   | {
       status: "current";
       capturedAt: number;
@@ -195,10 +191,9 @@ async function captureDurableBrowserObservation(
       { code: "TARGET_INPUT_RECONCILIATION_EVIDENCE_UNAVAILABLE" },
     );
   }
-  const semantics =
-    (await (dependencies.captureBrowserSemantics ?? defaultCaptureBrowserSemantics)(
-      managedBrowserTargetIdFromSchedulingKey(serial) ?? serial,
-    )) ?? { status: "unavailable" as const, message: "Browser semantics were not captured." };
+  const semantics = (await (dependencies.captureBrowserSemantics ?? defaultCaptureBrowserSemantics)(
+    managedBrowserTargetIdFromSchedulingKey(serial) ?? serial,
+  )) ?? { status: "unavailable" as const, message: "Browser semantics were not captured." };
   const bytes = Buffer.from(frame.base64, "base64");
   const persisted = await persistCapturedAuthoringObservation({
     capturedAt: frame.capturedAt,

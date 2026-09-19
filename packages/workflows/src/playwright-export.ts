@@ -17,7 +17,13 @@ const HEADER = `import { test } from "@playwright/test";
 `;
 
 function selectorFor(action: GoalSessionAction): string | undefined {
-  if (action.interaction.kind !== "identifier" && action.interaction.kind !== "ref" && action.interaction.kind !== "label" && action.interaction.kind !== "fill" && action.interaction.kind !== "point") {
+  if (
+    action.interaction.kind !== "identifier" &&
+    action.interaction.kind !== "ref" &&
+    action.interaction.kind !== "label" &&
+    action.interaction.kind !== "fill" &&
+    action.interaction.kind !== "point"
+  ) {
     return undefined;
   }
   const target = action.interaction.target;

@@ -327,19 +327,24 @@ test("goal start carries plain task values; explore carries distinct missions", 
       ["--confirm"],
     ),
   ) as { kind: "goal-explore"; missions?: string[] };
-  assert.deepEqual(explore.missions, [
-    "Member permissions",
-    "Back-navigation behavior",
-  ]);
+  assert.deepEqual(explore.missions, ["Member permissions", "Back-navigation behavior"]);
 
   assert.throws(() =>
     parseOutcomeCliIntent(
-      tokens(["goal", "run"], { "--url": "https://example.test", "--goal": "x", "--value": "novalue" }, ["--confirm"]),
+      tokens(
+        ["goal", "run"],
+        { "--url": "https://example.test", "--goal": "x", "--value": "novalue" },
+        ["--confirm"],
+      ),
     ),
   );
   assert.throws(() =>
     parseOutcomeCliIntent(
-      tokens(["goal", "run"], { "--url": "https://example.test", "--goal": "x", "--mission": "m" }, ["--confirm"]),
+      tokens(
+        ["goal", "run"],
+        { "--url": "https://example.test", "--goal": "x", "--mission": "m" },
+        ["--confirm"],
+      ),
     ),
   );
 });

@@ -195,7 +195,11 @@ test(
         maxSteps: 6,
       });
 
-      console.log("JOURNEY:", JSON.stringify(result.stopReason), JSON.stringify(result.actions.map((a) => [a.id, a.candidateId, a.status, a.error])));
+      console.log(
+        "JOURNEY:",
+        JSON.stringify(result.stopReason),
+        JSON.stringify(result.actions.map((a) => [a.id, a.candidateId, a.status, a.error])),
+      );
       assert.equal(result.status, "completed", JSON.stringify(result.stopReason));
       assert.equal(result.actions.length, 3);
       // The kernel dispatched through the semantic interact path, not a

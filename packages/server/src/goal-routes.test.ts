@@ -141,8 +141,7 @@ test("a server-owned goal survives client disconnect and cancels cross-client", 
         });
         void finishGate.then(() => settle("completed"));
       }),
-    inspect: async (sessionId) =>
-      ({ id: sessionId, goal: "inspect", status: "running" }) as never,
+    inspect: async (sessionId) => ({ id: sessionId, goal: "inspect", status: "running" }) as never,
   };
   const server = await startServer({
     host: "127.0.0.1",

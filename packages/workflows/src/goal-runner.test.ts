@@ -212,7 +212,18 @@ function operations(options: { uncertain?: boolean; openTargetMismatch?: boolean
       if (id === "target.browser-device.frame") {
         captureCount += 1;
         return {
-          session: { schemaVersion: 1 as const, sessionId: "runtime-ctx-device", targetId: "frame", status: "streaming" as const, ownership: "controlled" as const, sequence: 1, activePageId: "page-1", pages: [], profile: {}, startedAt: 1 },
+          session: {
+            schemaVersion: 1 as const,
+            sessionId: "runtime-ctx-device",
+            targetId: "frame",
+            status: "streaming" as const,
+            ownership: "controlled" as const,
+            sequence: 1,
+            activePageId: "page-1",
+            pages: [],
+            profile: {},
+            startedAt: 1,
+          },
           frame: {
             schemaVersion: 1 as const,
             sessionId: "runtime-ctx-device",
@@ -877,9 +888,7 @@ test("a fill without a usable value reference stops with a clear needs-input req
 
 test("native targets dispatch through the semantic interact operation", async () => {
   const interactInputs: unknown[] = [];
-  const devices = [
-    { id: "pixel-9", serial: "pixel-9", platform: "android", state: "connected" },
-  ];
+  const devices = [{ id: "pixel-9", serial: "pixel-9", platform: "android", state: "connected" }];
   const runtime = operations();
   const port: RelayOperationPort = {
     async invoke<Id extends OperationId>(
@@ -925,9 +934,7 @@ test("a pixel-only observation admits no candidates and reports the missing sema
     ): Promise<OperationOutput<Id>> {
       if (id === "target.devices.list") {
         return {
-          devices: [
-            { id: "pixel-9", serial: "pixel-9", platform: "android", state: "connected" },
-          ],
+          devices: [{ id: "pixel-9", serial: "pixel-9", platform: "android", state: "connected" }],
         } as unknown as OperationOutput<Id>;
       }
       if (id === "target.observation.capture") {
@@ -958,7 +965,15 @@ function fakeNativeObservation(): TargetObservation {
     schemaVersion: 1,
     target: { kind: "device", platform: "android", targetId: "pixel-9" },
     capturedAt: 1,
-    pixels: { status: "captured", capturedAt: 1, mime: "image/png", bytes: 10, artifact: missingArtifact, width: 1080, height: 2340 },
+    pixels: {
+      status: "captured",
+      capturedAt: 1,
+      mime: "image/png",
+      bytes: 10,
+      artifact: missingArtifact,
+      width: 1080,
+      height: 2340,
+    },
     semantics: {
       status: "current",
       capturedAt: 1,
@@ -966,7 +981,13 @@ function fakeNativeObservation(): TargetObservation {
       source: "android-system",
       nodeCount: 1,
       controls: [
-        { identifier: "settings-button", label: "Settings", role: "button", enabled: true, rect: { x: 1, y: 2, width: 10, height: 10 } },
+        {
+          identifier: "settings-button",
+          label: "Settings",
+          role: "button",
+          enabled: true,
+          rect: { x: 1, y: 2, width: 10, height: 10 },
+        },
       ],
     },
   };

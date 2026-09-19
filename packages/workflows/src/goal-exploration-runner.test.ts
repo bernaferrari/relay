@@ -252,12 +252,7 @@ test("mission partitioning gives each worker a distinct goal", async () => {
   assert.equal(record.workers.length, 4);
   assert.deepEqual(
     record.workers.map((worker) => worker.mission),
-    [
-      "Member permissions",
-      "Signed-out recovery",
-      "Empty inputs",
-      "Back-navigation behavior",
-    ],
+    ["Member permissions", "Signed-out recovery", "Empty inputs", "Back-navigation behavior"],
   );
   // Each worker actually received its own mission, not the shared goal.
   assert.deepEqual(startedGoals.sort(), [

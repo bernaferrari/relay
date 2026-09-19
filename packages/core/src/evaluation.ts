@@ -94,7 +94,8 @@ export function normalizeEvaluationResult(
     typeof rawScore === "number" && Number.isFinite(rawScore) && rawScore >= 0 && rawScore <= 1
       ? rawScore
       : undefined;
-  const score = providerOverall === undefined ? computedScore : Math.min(providerOverall, computedScore);
+  const score =
+    providerOverall === undefined ? computedScore : Math.min(providerOverall, computedScore);
   const threshold = input.threshold ?? 0.9;
   const requestedStatus = value.status;
   if (

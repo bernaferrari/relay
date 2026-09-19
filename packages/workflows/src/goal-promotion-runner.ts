@@ -95,7 +95,12 @@ function authoringInteraction(action: GoalSessionAction): AuthoringInteraction {
   if (interaction.kind === "capture") {
     return { kind: "observe" };
   }
-  if (interaction.target.point && !interaction.target.identifier && !interaction.target.ref && !interaction.target.label) {
+  if (
+    interaction.target.point &&
+    !interaction.target.identifier &&
+    !interaction.target.ref &&
+    !interaction.target.label
+  ) {
     throw new TypeError(
       `Goal action ${action.id} has only a point selector. Review it manually before promotion.`,
     );

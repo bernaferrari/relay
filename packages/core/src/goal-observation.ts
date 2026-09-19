@@ -1,7 +1,4 @@
-import {
-  GOAL_OBSERVATION_MAX_CANDIDATES,
-  GOAL_OBSERVATION_SCHEMA_VERSION,
-} from "@relay/protocol";
+import { GOAL_OBSERVATION_MAX_CANDIDATES, GOAL_OBSERVATION_SCHEMA_VERSION } from "@relay/protocol";
 import type {
   CompactGoalObservation,
   GoalObservationAction,

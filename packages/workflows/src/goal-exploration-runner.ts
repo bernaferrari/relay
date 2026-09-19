@@ -255,7 +255,9 @@ export function createGoalExplorationRunner(
         .filter(Boolean);
       // Mission partitioning governs worker count; without missions every
       // worker would receive the same goal, which buys no new coverage.
-      const agents = missions.length ? Math.max(1, Math.min(missions.length, agentsFor(input))) : agentsFor(input);
+      const agents = missions.length
+        ? Math.max(1, Math.min(missions.length, agentsFor(input)))
+        : agentsFor(input);
       const goal = input.goal.trim();
       const at = now();
       const workers: GoalExplorationWorker[] = Array.from({ length: agents }, (_, index) => ({

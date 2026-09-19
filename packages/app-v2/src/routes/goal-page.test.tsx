@@ -264,12 +264,9 @@ describe("Goal page", () => {
   });
 });
 
-
 it("goal page shows live server-owned activity with a cancel control", async () => {
   const service = goalService();
-  vi.mocked(service.start).mockResolvedValue(
-    sessionResult() as never,
-  );
+  vi.mocked(service.start).mockResolvedValue(sessionResult() as never);
   vi.mocked(service.inspectSession).mockImplementation(
     async () =>
       ({

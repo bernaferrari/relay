@@ -48,7 +48,12 @@ test("exports an acknowledged browser path with honest limitations", () => {
   const spec = exportGoalSessionPlaywrightSpec(
     record([
       action("action-1", { kind: "identifier", target: { identifier: "open-settings" } }),
-      action("action-2", { kind: "fill", target: { identifier: "display-name" }, value: "Ada", mode: "replace" }),
+      action("action-2", {
+        kind: "fill",
+        target: { identifier: "display-name" },
+        value: "Ada",
+        mode: "replace",
+      }),
       action("action-3", { kind: "key", key: "back" }),
       action("action-4", { kind: "wait", ms: 1500 }),
       action("action-5", { kind: "capture", label: "capture" }),
@@ -72,10 +77,14 @@ test("exports an acknowledged browser path with honest limitations", () => {
 
 test("fails closed without an acknowledged browser path", () => {
   assert.throws(() => exportGoalSessionPlaywrightSpec(record([])), /acknowledged/u);
-  const native = { ...record([action("action-1", { kind: "identifier", target: { identifier: "s" } })]) };
+  const native = {
+    ...record([action("action-1", { kind: "identifier", target: { identifier: "s" } })]),
+  };
   native.target = { ...native.target, platform: "android" as const };
   assert.throws(() => exportGoalSessionPlaywrightSpec(native), /browser/u);
-  const noUrl = { ...record([action("action-1", { kind: "identifier", target: { identifier: "s" } })]) };
+  const noUrl = {
+    ...record([action("action-1", { kind: "identifier", target: { identifier: "s" } })]),
+  };
   noUrl.target = { targetId: "t", platform: "browser" as const };
   assert.throws(() => exportGoalSessionPlaywrightSpec(noUrl), /startUrl/u);
 });

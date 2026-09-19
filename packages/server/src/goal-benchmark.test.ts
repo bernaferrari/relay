@@ -151,9 +151,7 @@ function defectObserved(result: GoalSessionResult): boolean | null {
   );
   if (onSettings) return null; // never reached settings: no observation either way
   // On the settings page the seeded defect hides Manage team from Member.
-  const manageTeam = candidates.some(
-    (candidate) => candidate.target.identifier === "manage-team",
-  );
+  const manageTeam = candidates.some((candidate) => candidate.target.identifier === "manage-team");
   return !manageTeam;
 }
 
@@ -275,9 +273,7 @@ test(
 
       // Arm 2 — the repair (same app, defect off), same check.
       fixture.app.setDefect(false);
-      const repaired = (
-        await runGoalArm("goal-repaired", walkthroughProvider("repaired"))
-      ).result;
+      const repaired = (await runGoalArm("goal-repaired", walkthroughProvider("repaired"))).result;
       assert.equal(repaired.status, "completed");
       assert.equal(defectObserved(repaired), false);
 
@@ -337,7 +333,11 @@ test(
         .map(
           (arm) =>
             `${arm.arm}|${arm.status}|${arm.actions}|${arm.captures}|${arm.durationMs}|${
-              arm.defectObserved === null ? "not reached" : arm.defectObserved ? "defect visible" : "defect absent"
+              arm.defectObserved === null
+                ? "not reached"
+                : arm.defectObserved
+                  ? "defect visible"
+                  : "defect absent"
             }|${arm.providerModel}`,
         )
         .join("\n");

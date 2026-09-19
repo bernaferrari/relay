@@ -50,7 +50,10 @@ test("compactGoalObservation creates observation-scoped candidates and omits pix
     recentActions: [{ id: "a1", kind: "observe", outcome: "acknowledged", summary: "ok" }],
   });
 
-  assert.deepEqual(result.candidates.slice(0, 2).map((item) => item.id), ["c1", "c2"]);
+  assert.deepEqual(
+    result.candidates.slice(0, 2).map((item) => item.id),
+    ["c1", "c2"],
+  );
   assert.deepEqual(
     result.candidates.slice(2).map((item) => item.id),
     ["sys-back", "sys-scroll-down", "sys-scroll-up", "sys-wait", "sys-capture"],

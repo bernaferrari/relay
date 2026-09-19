@@ -59,15 +59,15 @@ export async function dispatchRelayOutcomeTool(
   }
   const { jobs } = input;
 
-function goalValues(raw: unknown): { values?: Record<string, string> } {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-  const entries = Object.entries(raw as Record<string, unknown>).filter(
-    ([, value]) => typeof value === "string",
-  );
-  return entries.length > 0
-    ? { values: Object.fromEntries(entries) as Record<string, string> }
-    : {};
-}
+  function goalValues(raw: unknown): { values?: Record<string, string> } {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const entries = Object.entries(raw as Record<string, unknown>).filter(
+      ([, value]) => typeof value === "string",
+    );
+    return entries.length > 0
+      ? { values: Object.fromEntries(entries) as Record<string, string> }
+      : {};
+  }
   if (input.name === "relay_debug_bug") {
     return dependencies.invokeDebugBugOutcomeTool({ parsed, confirmed: input.confirmed, jobs });
   }
@@ -132,9 +132,7 @@ function goalValues(raw: unknown): { values?: Record<string, string> } {
           ? { maxDurationMs: parsed.maxDurationMs }
           : {}),
         ...(Array.isArray(parsed.missions) ? { missions: parsed.missions } : {}),
-        ...(goalValues(parsed.values).values
-          ? { values: goalValues(parsed.values).values }
-          : {}),
+        ...(goalValues(parsed.values).values ? { values: goalValues(parsed.values).values } : {}),
         agents: parsed.agents,
       });
     }

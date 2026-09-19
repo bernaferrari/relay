@@ -81,9 +81,7 @@ function walkthroughProvider(): ModelDecisionProvider {
       }
       phase += 1;
       if (phase === 1) {
-        const settings = observation.candidates.find(
-          (candidate) => candidate.label === "Settings",
-        );
+        const settings = observation.candidates.find((candidate) => candidate.label === "Settings");
         assert.ok(settings, "expected a Settings link on the workspace home");
         return {
           schemaVersion: 1,
@@ -228,7 +226,12 @@ test(
       assert.equal(member.status, "completed");
       assert.equal(member.stopReason?.code, "goal-achieved");
       assert.equal(member.target.appliedAuthenticationFixtureId, memberFx.reference);
-      console.log("FINAL CANDIDATES:", JSON.stringify(member.lastObservation?.candidates.map((c) => [c.target.identifier, c.label, c.text])));
+      console.log(
+        "FINAL CANDIDATES:",
+        JSON.stringify(
+          member.lastObservation?.candidates.map((c) => [c.target.identifier, c.label, c.text]),
+        ),
+      );
       // Identity is proven by the app's own server-rendered, role-dependent
       // chrome — not by stored labels. With the defect on, the Member settings
       // page hides both admin-only and permission-gated controls.
@@ -245,9 +248,7 @@ test(
       );
       assert.ok(memberSave, "expected the member settings page chrome");
       // The explicit capture produced review-linked evidence.
-      const captureAction = member.actions.find(
-        (action) => action.interaction.kind === "capture",
-      );
+      const captureAction = member.actions.find((action) => action.interaction.kind === "capture");
       assert.ok(captureAction, "expected an explicit capture action");
       assert.ok((captureAction.evidenceRefs ?? []).length > 0);
 
