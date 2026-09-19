@@ -11,6 +11,7 @@ import type {
 import { destIdentitySourceFrames, failedStepFromTrace } from "@relay/protocol";
 import type { PersistedRun } from "./runs.js";
 import { redactText } from "./redaction.js";
+import { captureReviewQueueForRun } from "./capture-review-queue.js";
 
 const SHARE_STORE = ".run-shares.json";
 const SHARE_SECRET = ".run-share-secret";
@@ -467,6 +468,23 @@ export function buildRunShareReport(record: RunShareRecord, runs: PersistedRun[]
   const inProgress = projected.filter(({ run }) =>
     ["queued", "running", "paused"].includes(run.status),
   ).length;
+  // Human review is an independent outcome: aggregate it beside the machine
+  // totals so a reviewer sees reported issues even when execution passed.
+  const reviewTotals = projected.reduce(
+    (acc, { run }) => {
+      const summary = captureReviewQueueForRun(run).summary;
+      return {
+        captured: acc.captured + summary.captured,
+        missing: acc.missing + summary.missing,
+        pending: acc.pending + summary.pending,
+        accepted: acc.accepted + summary.accepted,
+        issue: acc.issue + summary.issue,
+        needMoreEvidence: acc.needMoreEvidence + summary.needMoreEvidence,
+      };
+    },
+    { captured: 0, missing: 0, pending: 0, accepted: 0, issue: 0, needMoreEvidence: 0 },
+  );
+  const hasReview = reviewTotals.captured + reviewTotals.missing > 0;
   return {
     schemaVersion: 1,
     share: {
@@ -485,6 +503,7 @@ export function buildRunShareReport(record: RunShareRecord, runs: PersistedRun[]
       screenshots: reportRuns.reduce((total, run) => total + run.frames.length, 0),
       inProgress,
     },
+    ...(hasReview ? { captureReview: reviewTotals } : {}),
     runs: reportRuns,
   };
 }

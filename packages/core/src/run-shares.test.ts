@@ -130,6 +130,8 @@ test("creates a durable signed batch share and projects only bounded report evid
       screenshots: 4,
       inProgress: 0,
     });
+    // Runs without planned captures keep the bounded shape: no review block.
+    assert.equal(report.captureReview, undefined);
     assert.deepEqual(
       report.runs.map((item) => item.id),
       ["run-a", "run-b"],
@@ -493,6 +495,67 @@ test("share reports project the proof block and failed-step drill-in from persis
   assert.equal(healthyReport.runs[0]?.failureCategory, undefined);
   assert.equal(healthyReport.provenance?.sourceRevision, undefined);
   assert.equal(healthyReport.provenance?.appMapRevision, undefined);
+});
+
+test("share totals carry human review beside machine outcomes", () => {
+  const reviewed = {
+    ...run({ id: "run-reviewed", frames: 1, outcome: "passed" }),
+    artifacts: [
+      {
+        kind: "app-map-test-execution-intent",
+        capturedAt: 1,
+        data: {
+          plan: {
+            plannedSlots: [{ slotId: "s1", checkpointId: "c1", caption: "Settings" }],
+          },
+        },
+      },
+      {
+        kind: "capture-review",
+        capturedAt: 2,
+        data: {
+          captureId: "frames/001.png::aaa",
+          checkpointId: "c1",
+          framePath: "frames/001.png",
+          imageSha256: "aaa",
+          caption: "Settings",
+        },
+      },
+    ],
+    captureReviews: [
+      {
+        captureId: "frames/001.png::aaa",
+        imageSha256: "aaa",
+        action: "report-issue",
+        at: 3,
+        by: { id: "human:reviewer", kind: "human" },
+      },
+    ],
+  } as unknown as PersistedRun;
+  const record: RunShareRecord = {
+    schemaVersion: 1,
+    id: "share-1",
+    runId: reviewed.id,
+    runIds: [reviewed.id],
+    projectId: "project-a",
+    title: "Settings tour",
+    createdAt: 1,
+    expiresAt: 99,
+    createdBy: "human:a",
+    frameCount: 1,
+  };
+  const report = buildRunShareReport(record, [reviewed]);
+  // Machine totals stay execution-only; the review row reports the issue.
+  assert.equal(report.totals.passed, 1);
+  assert.equal(report.totals.problems, 0);
+  assert.deepEqual(report.captureReview, {
+    captured: 1,
+    missing: 0,
+    pending: 0,
+    accepted: 0,
+    issue: 1,
+    needMoreEvidence: 0,
+  });
 });
 
 test("totals exclude non-terminal runs from problems and surface them as in progress", () => {

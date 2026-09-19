@@ -96,6 +96,10 @@ export type RunShareReport = {
      * problems. */
     inProgress: number;
   };
+  /** Aggregated human review across the shared runs, present when any capture
+   * was planned. Independent of the machine totals above — reported issues
+   * never count as execution problems, and passes never erase them. */
+  captureReview?: CaptureReviewSummary;
   runs: RunShareReportRun[];
 };
 
