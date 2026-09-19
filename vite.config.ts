@@ -29,6 +29,7 @@ export default defineConfig({
       "dist/**",
       "node_modules/**",
       "pnpm-lock.yaml",
+      ".worktrees/**",
       "vendor/**",
       "packages/*/dist/**",
       "packages/*/out/**",
@@ -176,6 +177,7 @@ export default defineConfig({
     ignorePatterns: [
       "dist/**",
       "node_modules/**",
+      ".worktrees/**",
       "vendor/**",
       "packages/*/dist/**",
       "packages/*/out/**",

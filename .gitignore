@@ -70,6 +70,6 @@ packages/ios-hid-tap/ios-hid-tap.exe
 .dolt/
 *.db
 .beads-credential-key
-# bd worktree
-.worktrees/gj1-4-foreground/
+# Managed worktrees are independent checkouts, not root workspace source.
+.worktrees/
 packages/ios-preview-producer/ios-preview-producer
