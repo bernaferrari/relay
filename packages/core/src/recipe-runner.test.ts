@@ -5158,7 +5158,14 @@ describe("runRecipeStep conversational evidence", () => {
       confidence: 0.98,
       score: 1,
       summary: "Both judges agree.",
-      criteria: [],
+      criteria: [
+        {
+          id: "criterion-1",
+          description: "The response is complete",
+          passed: true,
+          score: 1,
+        },
+      ],
       provider: "fixture",
       model: "fixture-v1",
       evaluatedAt: Date.now(),
@@ -5213,7 +5220,9 @@ describe("runRecipeStep conversational evidence", () => {
         confidence: 0.95,
         score: 1,
         summary: "meets intent",
-        criteria: [],
+        criteria: [
+          { id: "criterion-1", description: "meets intent", passed: true, score: 1 },
+        ],
         provider: "judge-pass",
         model: "pass-v1",
         evaluatedAt: Date.now(),
@@ -5226,7 +5235,9 @@ describe("runRecipeStep conversational evidence", () => {
         confidence: 0.9,
         score: 0,
         summary: "misses intent",
-        criteria: [],
+        criteria: [
+          { id: "criterion-1", description: "meets intent", passed: false, score: 0 },
+        ],
         provider: "judge-fail",
         model: "fail-v1",
         evaluatedAt: Date.now(),
