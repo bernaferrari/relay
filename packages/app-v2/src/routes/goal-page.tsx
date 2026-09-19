@@ -67,6 +67,8 @@ export function GoalPage() {
   const [goal, setGoal] = useState("");
   const [startUrl, setStartUrl] = useState("");
   const [agents, setAgents] = useState("1");
+  const [maxSteps, setMaxSteps] = useState("12");
+  const [maxDurationMinutes, setMaxDurationMinutes] = useState("5");
   const [confirmControl, setConfirmControl] = useState(false);
   const [promotionTitle, setPromotionTitle] = useState("");
   const [confirmPromotion, setConfirmPromotion] = useState(false);
@@ -82,7 +84,22 @@ export function GoalPage() {
   const promote = useMutation({ mutationFn: goalService.promoteSession });
 
   const agentCount = Number(agents);
-  const valid = goal.trim().length > 0 && isHttpUrl(startUrl.trim()) && confirmControl;
+  const maxStepsValue = Number(maxSteps);
+  const maxDurationMinutesValue = Number(maxDurationMinutes);
+  const validAgents = Number.isInteger(agentCount) && agentCount >= 1 && agentCount <= 4;
+  const validBudget =
+    Number.isInteger(maxStepsValue) &&
+    maxStepsValue >= 1 &&
+    maxStepsValue <= 40 &&
+    Number.isInteger(maxDurationMinutesValue) &&
+    maxDurationMinutesValue >= 1 &&
+    maxDurationMinutesValue <= 15;
+  const valid =
+    goal.trim().length > 0 &&
+    isHttpUrl(startUrl.trim()) &&
+    validAgents &&
+    validBudget &&
+    confirmControl;
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -97,6 +114,8 @@ export function GoalPage() {
       goal: goal.trim(),
       startUrl: startUrl.trim(),
       agents: Number.isInteger(agentCount) ? Math.min(4, Math.max(1, agentCount)) : 1,
+      maxSteps: maxStepsValue,
+      maxDurationMs: maxDurationMinutesValue * 60_000,
       confirmControl: true,
     });
   }
@@ -189,6 +208,41 @@ export function GoalPage() {
               Use one worker for a focused run; up to four isolated workers are supported.
             </FieldDescription>
           </Field>
+          <details className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+            <summary className="cursor-pointer py-1 text-sm font-medium text-foreground">
+              Advanced budget
+            </summary>
+            <div className="grid gap-4 pt-3">
+              <Field>
+                <FieldLabel htmlFor="goal-max-steps">Maximum steps</FieldLabel>
+                <Input
+                  id="goal-max-steps"
+                  type="number"
+                  min={1}
+                  max={40}
+                  step={1}
+                  value={maxSteps}
+                  onChange={(event) => setMaxSteps(event.currentTarget.value)}
+                  inputMode="numeric"
+                />
+                <FieldDescription>At most 40 actions; the default is 12.</FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="goal-max-duration">Time budget (minutes)</FieldLabel>
+                <Input
+                  id="goal-max-duration"
+                  type="number"
+                  min={1}
+                  max={15}
+                  step={1}
+                  value={maxDurationMinutes}
+                  onChange={(event) => setMaxDurationMinutes(event.currentTarget.value)}
+                  inputMode="numeric"
+                />
+                <FieldDescription>At most 15 minutes; the default is 5.</FieldDescription>
+              </Field>
+            </div>
+          </details>
           <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border border-border/70 p-3 text-sm leading-5 hover:bg-muted/40">
             <Checkbox
               checked={confirmControl}
@@ -201,7 +255,9 @@ export function GoalPage() {
             </span>
           </label>
           {submitted && !valid ? (
-            <FieldError>Enter a goal and a valid app URL, then confirm target control.</FieldError>
+            <FieldError>
+              Enter a goal and valid URL, choose a bounded budget, then confirm target control.
+            </FieldError>
           ) : null}
           {run.error ? (
             <FieldError>

@@ -182,6 +182,8 @@ describe("Goal page", () => {
       goal: "Find checkout",
       startUrl: "https://example.test",
       agents: 1,
+      maxSteps: 12,
+      maxDurationMs: 300_000,
       confirmControl: true,
     });
     expect(host.textContent).toContain("Review findings");
