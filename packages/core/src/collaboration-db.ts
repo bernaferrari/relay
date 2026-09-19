@@ -33,7 +33,7 @@ export {
 export * from "./change-proof-publication-outbox-db.js";
 export * from "./reviewed-document-origin-db.js";
 export const CONTROL_DB_NAME = "control.sqlite",
-  CONTROL_SCHEMA_VERSION = 8,
+  CONTROL_SCHEMA_VERSION = 9,
   JSON_MIGRATED_META = "json_migrated",
   RECOVERED_FROM_BACKUP_META = "recovered_from_json_backup",
   REPAIRED_ON_MIGRATE_META = "repaired_on_migrate";
