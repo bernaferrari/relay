@@ -289,14 +289,22 @@ test("resume fences a persisted in-flight mutation for human review", async () =
     },
   };
   const runtime = operations();
-  const result = await createGoalSessionRunner({
+  const runner = createGoalSessionRunner({
     operations: runtime.port,
     store: memoryStore([record]),
-  }).resume("goal-pending");
-  assert.equal(result.status, "uncertain");
-  assert.equal(result.resumeRequiresReview, true);
-  assert.equal(result.stopReason?.code, "resume-review-required");
+    decisionProvider: providerFor("complete"),
+    now: () => 1,
+  });
+  const fenced = await runner.resume("goal-pending");
+  assert.equal(fenced.status, "uncertain");
+  assert.equal(fenced.resumeRequiresReview, true);
+  assert.equal(fenced.stopReason?.code, "resume-review-required");
   assert.deepEqual(runtime.calls, []);
+
+  const resumed = await runner.resume("goal-pending");
+  assert.equal(resumed.status, "completed");
+  assert.equal(resumed.resumeRequiresReview, undefined);
+  assert.deepEqual(runtime.calls, ["target.observation.capture"]);
 });
 
 test("reviewed resume observes the current target without replaying the uncertain mutation", async () => {

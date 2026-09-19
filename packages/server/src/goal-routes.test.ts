@@ -21,6 +21,10 @@ test("goal control requires confirmation while retained evidence stays inspectab
       if (sessionId === "missing") throw new TypeError("Goal session missing was not found.");
       return { id: sessionId, goal: "checkout" } as never;
     },
+    resume: async (sessionId) => {
+      calls.push(`resume:${sessionId}`);
+      return { sessionId, status: "completed" } as never;
+    },
     reproduce: async (sessionId) => {
       calls.push(`reproduce:${sessionId}`);
       return { sessionId, status: "completed" } as never;
@@ -60,6 +64,13 @@ test("goal control requires confirmation while retained evidence stays inspectab
     });
     assert.equal(deniedReproduction.status, 403);
 
+    const resumed = await fetch(`${base}/goal/goal-1/resume`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirmControl: true }),
+    });
+    assert.equal(resumed.status, 200);
+
     const reproduced = await fetch(`${base}/goal/goal-1/reproduce`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -87,6 +98,7 @@ test("goal control requires confirmation while retained evidence stays inspectab
     assert.deepEqual(calls, [
       "inspect:goal-1",
       "inspect:missing",
+      "resume:goal-1",
       "reproduce:goal-1",
       "promote:goal-1",
       "start:checkout",
