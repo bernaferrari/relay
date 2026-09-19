@@ -73,6 +73,33 @@ describe("goal product service", () => {
     expect(JSON.parse(String(init?.body))).toMatchObject({ agents: 4, confirmControl: true });
   });
 
+  it("retains a single mission and task values through the exploration route", async () => {
+    const fetch = vi.fn(
+      async () => new Response(JSON.stringify({ id: "explore-1", status: "completed" })),
+    );
+    const service = createGoalProductService(platform(fetch));
+    const input = {
+      goal: "Review settings",
+      startUrl: "https://example.test",
+      agents: 1,
+      missions: ["Member permissions"],
+      values: { displayName: "Sample Member" },
+      confirmControl: true as const,
+    };
+    await service.start(input);
+    expect(fetch).toHaveBeenCalledWith(
+      "http://relay.test/explore",
+      expect.objectContaining({ body: expect.any(String) }),
+    );
+    expect(
+      JSON.parse(String((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body)),
+    ).toEqual(input);
+    expect(() => service.start({ ...input, missions: ["First", "Second"] })).toThrow(
+      /worker per mission/,
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps reproduction and promotion as explicit control requests", async () => {
     const requests: Request[] = [];
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

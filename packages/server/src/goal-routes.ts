@@ -9,6 +9,7 @@ import {
   readDurableWorkflow,
   transitionDurableWorkflow,
 } from "@relay/core";
+import { goalStartRequestSchema, goalExplorationRequestSchema } from "@relay/protocol";
 import type {
   GoalExplorationRecord,
   GoalExplorationResult,
@@ -197,33 +198,25 @@ function bearerToken(request: http.IncomingMessage): string | undefined {
     : undefined;
 }
 
-function inputFromBody(body: Record<string, unknown>): GoalSessionStartInput {
-  const input: GoalSessionStartInput = {
-    goal: typeof body.goal === "string" ? body.goal : "",
-  };
-  for (const key of [
-    "startUrl",
-    "targetId",
-    "laneId",
-    "authenticationFixtureReference",
-    "model",
-  ] as const) {
-    if (typeof body[key] === "string") input[key] = body[key];
+function inputFromBody(body: unknown, exploration = false) {
+  const parsed = (exploration ? goalExplorationRequestSchema : goalStartRequestSchema).safeParse(
+    body,
+  );
+  if (!parsed.success) {
+    const explanation = parsed.error.issues
+      .map(({ path, message }) => `${path.join(".") || "request"}: ${message}`)
+      .join("; ");
+    throw new HttpError(400, `Invalid goal request: ${explanation}`, {
+      code: "INVALID_GOAL_REQUEST",
+      issues: parsed.error.issues.map(({ path, message }) => ({ path, message })),
+    });
   }
-  if (body.signedOut === true) input.signedOut = true;
-  if (Number.isInteger(body.maxSteps)) input.maxSteps = body.maxSteps as number;
-  if (Number.isInteger(body.maxDurationMs)) input.maxDurationMs = body.maxDurationMs as number;
-  if (
-    typeof body.sessionId === "string" &&
-    /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(body.sessionId)
-  ) {
-    input.sessionId = body.sessionId;
-  }
+  const { confirmControl: _confirmation, ...input } = parsed.data;
   return input;
 }
 
 function requireControlConfirmation(body: Record<string, unknown>): void {
-  if (body.confirmControl !== true) {
+  if (!body || body.confirmControl !== true) {
     throw new HttpError(403, "Goal control requires explicit confirmation.", {
       code: "GOAL_CONTROL_CONFIRMATION_REQUIRED",
       recovery: "Review the goal, target, and bounded budget, then confirm control explicitly.",
@@ -353,8 +346,7 @@ export async function handleGoalRoute(context: GoalRouteContext): Promise<boolea
   if (method === "POST" && pathname === "/explore") {
     const body = (await parseJsonBody(request)) as Record<string, unknown>;
     requireControlConfirmation(body);
-    const input = inputFromBody(body) as GoalExplorationStartInput;
-    if (Number.isInteger(body.agents)) input.agents = body.agents as number;
+    const input = inputFromBody(body, true);
     const result = await runtime.explore(input);
     json(response, 200, result);
     return true;

@@ -1,3 +1,4 @@
+import { goalStartRequestSchema, goalExplorationRequestSchema } from "@relay/protocol";
 import type {
   GoalExplorationRecord,
   GoalExplorationResult,
@@ -98,9 +99,13 @@ export function createGoalProductService(platform: Platform): GoalProductService
   return {
     start(input) {
       const { agents, ...body } = input;
-      return request<GoalRunResult>(agents > 1 ? "/explore" : "/goal", {
+      const exploration = agents > 1 || Boolean(body.missions?.length);
+      const validated = exploration
+        ? goalExplorationRequestSchema.parse({ ...body, agents })
+        : goalStartRequestSchema.parse(body);
+      return request<GoalRunResult>(exploration ? "/explore" : "/goal", {
         method: "POST",
-        body: JSON.stringify({ ...body, ...(agents > 1 ? { agents } : {}) }),
+        body: JSON.stringify(validated),
       });
     },
     cancelSession(sessionId) {

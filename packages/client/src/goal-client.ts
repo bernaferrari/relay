@@ -1,3 +1,4 @@
+import { goalStartRequestSchema, goalExplorationRequestSchema } from "@relay/protocol";
 import type {
   GoalExplorationRecord,
   GoalExplorationResult,
@@ -96,7 +97,9 @@ export async function startGoal(
     "/goal",
     {
       method: "POST",
-      body: JSON.stringify({ ...input, confirmControl: options.confirmControl }),
+      body: JSON.stringify(
+        goalStartRequestSchema.parse({ ...input, confirmControl: options.confirmControl }),
+      ),
     },
     options,
   );
@@ -112,7 +115,9 @@ export async function startExploration(
     "/explore",
     {
       method: "POST",
-      body: JSON.stringify({ ...input, confirmControl: options.confirmControl }),
+      body: JSON.stringify(
+        goalExplorationRequestSchema.parse({ ...input, confirmControl: options.confirmControl }),
+      ),
     },
     options,
   );

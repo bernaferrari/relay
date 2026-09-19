@@ -107,3 +107,5 @@ export * from "./ios-mutation-terminality-contract.js";
 export * from "./browser-proof-evidence.js";
 export * from "./android-network-evidence.js";
 export * from "./run-test-step-evidence.js";
+
+export * from "./goal-request.js";

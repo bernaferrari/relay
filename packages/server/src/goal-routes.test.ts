@@ -200,7 +200,6 @@ test("a server-owned goal survives client disconnect and cancels cross-client", 
   }
 });
 
-
 test("a crash-left running goal converges safely on a fresh server", async () => {
   const previousStateDir = process.env.RELAY_STATE_DIR;
   const stateDir = await mkdtemp(join(tmpdir(), "relay-goal-crash-"));
@@ -212,7 +211,11 @@ test("a crash-left running goal converges safely on a fresh server", async () =>
     schemaVersion: 1,
     id: "goal-crash-1",
     goal: "Open settings",
-    target: { targetId: "goal-goal-crash-1", platform: "browser", startUrl: "https://example.test" },
+    target: {
+      targetId: "goal-goal-crash-1",
+      platform: "browser",
+      startUrl: "https://example.test",
+    },
     budget: { maxSteps: 10, maxDurationMs: 900_000 },
     status: "running",
     step: 1,
@@ -306,5 +309,70 @@ test("a crash-left running goal converges safely on a fresh server", async () =>
     if (previousStateDir === undefined) delete process.env.RELAY_STATE_DIR;
     else process.env.RELAY_STATE_DIR = previousStateDir;
     await rm(stateDir, { recursive: true, force: true });
+  }
+});
+
+test("public goal requests preserve values and missions and reject unknown fields", async () => {
+  const previous = process.env.RELAY_STATE_DIR;
+  const directory = await mkdtemp(join(tmpdir(), "relay-goal-contract-"));
+  process.env.RELAY_STATE_DIR = directory;
+  const received: unknown[] = [];
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+    goalRouteRuntime: {
+      start: async (input) => {
+        received.push(input);
+        return { sessionId: input.sessionId, status: "completed" } as never;
+      },
+      explore: async (input) => {
+        received.push(input);
+        return { id: "explore-1", status: "completed", workers: [] } as never;
+      },
+    },
+  });
+  try {
+    const post = (path: string, body: unknown) =>
+      fetch(`http://127.0.0.1:${server.port}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const common = {
+      goal: "Complete the Member form",
+      startUrl: "https://example.test",
+      values: { displayName: "Sample Member" },
+      confirmControl: true,
+    };
+    assert.equal((await post("/goal", common)).status, 200);
+    assert.deepEqual((received[0] as { values: unknown }).values, common.values);
+    const missions = ["Member permissions", "Empty form recovery"];
+    assert.equal((await post("/explore", { ...common, agents: 2, missions })).status, 200);
+    assert.deepEqual((received[1] as { missions: unknown }).missions, missions);
+    assert.deepEqual((received[1] as { values: unknown }).values, common.values);
+    for (const invalid of [
+      { ...common, mission: "typo" },
+      { ...common, values: { name: 3 } },
+      { ...common, sessionId: "../bad" },
+    ]) {
+      assert.equal((await post("/goal", invalid)).status, 400);
+    }
+    for (const invalid of [
+      { ...common, agents: 1, missions },
+      { ...common, agents: 2, missions: [""] },
+      { ...common, agents: 5 },
+      { ...common, agents: "2" },
+      { ...common, unknownOption: true },
+    ]) {
+      const response = await post("/explore", invalid);
+      assert.equal(response.status, 400);
+      assert.match(await response.text(), /INVALID_GOAL_REQUEST/);
+    }
+    assert.equal(received.length, 2, "invalid requests must not start execution");
+  } finally {
+    await server.close();
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(directory, { recursive: true, force: true });
   }
 });
