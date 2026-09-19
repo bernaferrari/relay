@@ -49,5 +49,12 @@ jobs:
       - name: Run architecture contract tests
         run: pnpm run test:architecture
 
+      - name: Build integration-tested artifacts
+        run: pnpm --filter @relay/mcp run build
+
       - name: Run package test suites
         run: pnpm run test:packages
+        env:
+          # Live-device journeys are golden-device work; this lane verifies
+          # the repository and must not contend for the one device slot.
+          RELAY_SKIP_LIVE_DEVICE_TESTS: "1"

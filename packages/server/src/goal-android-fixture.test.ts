@@ -145,6 +145,13 @@ test(
           else resolve(stdout);
         });
       });
+    // Repository-verification CI has no exclusive claim on the device (the
+    // dev host may hold the one UiAutomation slot); live-device journeys
+    // are golden-device work, not unit-lane work.
+    if (process.env.RELAY_SKIP_LIVE_DEVICE_TESTS === "1") {
+      t.skip("live device journeys are disabled in this environment");
+      return;
+    }
     let installed: string;
     try {
       // Bounded output: the full window dump can exceed execFile's buffer.
