@@ -191,6 +191,16 @@ const verifyChangeSelectionTransport = z.discriminatedUnion("kind", [
 ]);
 
 const debugBugInputSchema = createDebugBugInputSchema(verifyChangeSelectionTransport);
+
+function goalValues(raw: unknown): { values?: Record<string, string> } {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const entries = Object.entries(raw as Record<string, unknown>).filter(
+    ([, value]) => typeof value === "string",
+  );
+  return entries.length > 0
+    ? { values: Object.fromEntries(entries) as Record<string, string> }
+    : {};
+}
 const goalSessionInputSchema = z
   .object({
     goal: z.string().trim().min(1).max(2_048).optional(),
@@ -202,6 +212,9 @@ const goalSessionInputSchema = z
     maxSteps: z.number().int().min(1).max(40).optional(),
     maxDurationMs: z.number().int().min(1_000).max(900_000).optional(),
     agents: z.number().int().min(1).max(4).optional(),
+    values: z.record(z.string().trim().min(1).max(64), z.string().max(2_048)).optional(),
+    missions: z.array(z.string().trim().min(1).max(2_048)).max(4).optional(),
+    cancelSessionId: identifier.optional(),
     resumeSessionId: identifier.optional(),
     resumeExplorationId: identifier.optional(),
     inspectSessionId: identifier.optional(),
@@ -213,6 +226,19 @@ const goalSessionInputSchema = z
   })
   .strict()
   .superRefine((value, context) => {
+    if (value.cancelSessionId) {
+      if (
+        Object.entries(value).some(
+          ([key, item]) => item !== undefined && key !== "cancelSessionId",
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Goal cancellation accepts exactly one session id",
+        });
+      }
+      return;
+    }
     if (value.inspectSessionId || value.inspectExplorationId) {
       if (
         (value.inspectSessionId !== undefined && value.inspectExplorationId !== undefined) ||
@@ -263,6 +289,9 @@ const goalSessionInputSchema = z
         value.maxSteps !== undefined ||
         value.maxDurationMs !== undefined ||
         value.agents !== undefined ||
+        value.cancelSessionId !== undefined ||
+        value.values !== undefined ||
+        value.missions !== undefined ||
         value.appMapId !== undefined ||
         value.title !== undefined ||
         value.reproduceSessionId !== undefined ||
@@ -416,7 +445,7 @@ export const relayOutcomeTools = Object.freeze([
     name: "relay_goal",
     title: "Run a bounded goal",
     description:
-      "Interact with one target toward a stated goal using bounded OpenRouter-hosted Typesafe Jev suggestions. Relay validates every candidate, persists intent before mutation, never types secrets or runs code, and stops for review on uncertainty. Inspect retained evidence read-only, start or resume a goal, reproduce an acknowledged browser path, or promote a fresh reproduction into the existing review-only Authoring workflow.",
+      "Interact with one target toward a stated goal using bounded OpenRouter-hosted Typesafe Jev suggestions. Relay validates every candidate, persists intent before mutation, never types secrets or runs code, and stops for review on uncertainty. Inspect retained evidence read-only, start or resume a goal, cancel a running session, reproduce an acknowledged browser path, or promote a fresh reproduction into the existing review-only Authoring workflow. Plain (non-secret) task values may be supplied as a values map; explorations accept distinct missions — one per worker.",
     requiresConfirmation: true,
     inputSchema: goalSessionInputSchema,
     annotations: {
@@ -853,6 +882,9 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
     });
   }
   if (input.name === "relay_goal") {
+    if (typeof parsed.cancelSessionId === "string") {
+      return jobs.cancelGoal({ kind: "goal-cancel", sessionId: parsed.cancelSessionId });
+    }
     if (typeof parsed.inspectSessionId === "string") {
       return jobs.inspectGoal({
         kind: "goal-inspect",
@@ -903,6 +935,8 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
         ...(typeof parsed.maxDurationMs === "number"
           ? { maxDurationMs: parsed.maxDurationMs }
           : {}),
+        ...(Array.isArray(parsed.missions) ? { missions: parsed.missions } : {}),
+        ...goalValues(parsed.values),
         agents: parsed.agents,
       });
     }
@@ -919,6 +953,7 @@ export async function invokeRelayOutcomeToolWithJobs(input: {
       ...(typeof parsed.maxSteps === "number" ? { maxSteps: parsed.maxSteps } : {}),
       ...(typeof parsed.maxDurationMs === "number" ? { maxDurationMs: parsed.maxDurationMs } : {}),
       ...(typeof parsed.agents === "number" ? { agents: parsed.agents } : {}),
+      ...goalValues(parsed.values),
     });
   }
   if (input.name === "relay_record_test") {

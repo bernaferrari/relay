@@ -821,3 +821,100 @@ test("a fill without a usable value reference stops with a clear needs-input req
   assert.match(result.stopReason?.message ?? "", /password/u);
   assert.equal(runtime.calls.includes("target.browser-device.control"), false);
 });
+
+test("native targets dispatch through the semantic interact operation", async () => {
+  const interactInputs: unknown[] = [];
+  const devices = [
+    { id: "pixel-9", serial: "pixel-9", platform: "android", state: "connected" },
+  ];
+  const runtime = operations();
+  const port: RelayOperationPort = {
+    async invoke<Id extends OperationId>(
+      id: Id,
+      input: OperationInput<Id>,
+    ): Promise<OperationOutput<Id>> {
+      if (id === "target.devices.list") {
+        return { devices } as unknown as OperationOutput<Id>;
+      }
+      if (id === "target.interact") {
+        interactInputs.push(input);
+        return { ok: true } as OperationOutput<Id>;
+      }
+      if (id === "target.observation.capture") {
+        const observation = structuredClone(fakeNativeObservation());
+        return observation as unknown as OperationOutput<Id>;
+      }
+      return runtime.port.invoke(id, input);
+    },
+  };
+  const result = await createGoalSessionRunner({
+    operations: port,
+    store: memoryStore(),
+    decisionProvider: providerFor("continue", "complete"),
+    id: () => "goal-native",
+  }).start({ goal: "Open settings", targetId: "pixel-9" });
+  assert.equal(result.status, "completed");
+  assert.equal(interactInputs.length, 1);
+  const dispatched = interactInputs[0] as { serial?: string; kind?: string; identifier?: string };
+  assert.equal(dispatched.serial, "pixel-9");
+  assert.equal(dispatched.kind, "identifier");
+  assert.equal(dispatched.identifier, "settings-button");
+  // Native platforms never open a browser-device session.
+  assert.equal(runtime.calls.includes("target.browser-device.open"), false);
+});
+
+test("a pixel-only observation admits no candidates and reports the missing semantics", async () => {
+  const runtime = operations();
+  const port: RelayOperationPort = {
+    async invoke<Id extends OperationId>(
+      id: Id,
+      input: OperationInput<Id>,
+    ): Promise<OperationOutput<Id>> {
+      if (id === "target.devices.list") {
+        return {
+          devices: [
+            { id: "pixel-9", serial: "pixel-9", platform: "android", state: "connected" },
+          ],
+        } as unknown as OperationOutput<Id>;
+      }
+      if (id === "target.observation.capture") {
+        const observation = structuredClone(fakeNativeObservation());
+        observation.semantics.status = "unavailable";
+        observation.semantics.controls = [];
+        observation.semantics.message = "pixel-only view";
+        return observation as unknown as OperationOutput<Id>;
+      }
+      return runtime.port.invoke(id, input);
+    },
+  };
+  const result = await createGoalSessionRunner({
+    operations: port,
+    store: memoryStore(),
+    decisionProvider: providerFor("continue", "complete"),
+    id: () => "goal-pixels",
+  }).start({ goal: "Open settings", targetId: "pixel-9" });
+  assert.equal(result.status, "blocked");
+  assert.equal(result.stopReason?.code, "no-action");
+  assert.equal(result.actions.length, 0);
+  assert.equal(runtime.calls.includes("target.interact"), false);
+  assert.ok(result.lastObservation.missingEvidence.includes("current semantics"));
+});
+
+function fakeNativeObservation(): TargetObservation {
+  return {
+    schemaVersion: 1,
+    target: { kind: "device", platform: "android", targetId: "pixel-9" },
+    capturedAt: 1,
+    pixels: { status: "captured", capturedAt: 1, mime: "image/png", bytes: 10, artifact: missingArtifact, width: 1080, height: 2340 },
+    semantics: {
+      status: "current",
+      capturedAt: 1,
+      artifact: missingArtifact,
+      source: "android-system",
+      nodeCount: 1,
+      controls: [
+        { identifier: "settings-button", label: "Settings", role: "button", enabled: true, rect: { x: 1, y: 2, width: 10, height: 10 } },
+      ],
+    },
+  };
+}

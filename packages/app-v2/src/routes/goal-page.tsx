@@ -5,16 +5,16 @@ import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { Field, FieldDescription, FieldError, FieldLabel } from "@relay/ui-react/components/field";
 import { Input } from "@relay/ui-react/components/input";
 import { Textarea } from "@relay/ui-react/components/textarea";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
 import { Compass, ExternalLink, RefreshCw, RotateCcw, Save } from "lucide-react";
 import { useState, type FormEvent, type KeyboardEvent } from "react";
 import type { GoalExplorationRecord, GoalFinding, GoalSessionRecord } from "@relay/protocol";
 import type { AuthorTestSnapshot } from "@relay/workflows";
-import type { GoalRunResult } from "../data/goal-product-service";
+import type { GoalRunResult, GoalSessionInspect } from "../data/goal-product-service";
 import { FormPage, PageHeader } from "../components/page-layout";
 
-type GoalEvidence = GoalRunResult | GoalSessionRecord | GoalExplorationRecord;
+type GoalEvidence = GoalRunResult | GoalSessionRecord | GoalSessionInspect | GoalExplorationRecord;
 
 function isSessionEvidence(
   result: GoalEvidence,
@@ -70,6 +70,8 @@ export function GoalPage() {
   const [maxSteps, setMaxSteps] = useState("12");
   const [maxDurationMinutes, setMaxDurationMinutes] = useState("5");
   const [confirmControl, setConfirmControl] = useState(false);
+  const [missionsText, setMissionsText] = useState("");
+  const [valuesText, setValuesText] = useState("");
   const [promotionTitle, setPromotionTitle] = useState("");
   const [confirmPromotion, setConfirmPromotion] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -82,6 +84,20 @@ export function GoalPage() {
   });
   const reproduce = useMutation({ mutationFn: goalService.reproduceSession });
   const promote = useMutation({ mutationFn: goalService.promoteSession });
+  const cancel = useMutation({ mutationFn: goalService.cancelSession });
+
+  // Live activity: the server owns the job, so the UI can attach to it. Poll
+  // while it runs and stop at any terminal status.
+  const liveSource = reproduce.data ?? run.data;
+  const liveSessionId =
+    liveSource && isSessionEvidence(liveSource) ? liveSource.sessionId : undefined;
+  const live = useQuery({
+    queryKey: ["goal-session", liveSessionId],
+    enabled: Boolean(liveSessionId),
+    refetchInterval: (query) =>
+      query.state.data?.status === "running" || query.state.status === "pending" ? 2_000 : false,
+    queryFn: () => goalService.inspectSession(liveSessionId as string),
+  });
 
   const agentCount = Number(agents);
   const maxStepsValue = Number(maxSteps);
@@ -110,12 +126,26 @@ export function GoalPage() {
     promote.reset();
     setPromotionTitle("");
     setConfirmPromotion(false);
+    const missions = missionsText
+      .split("\n")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .slice(0, 4);
+    const values: Record<string, string> = {};
+    for (const line of valuesText.split("\n")) {
+      const split = line.indexOf("=");
+      const name = line.slice(0, split).trim();
+      const value = line.slice(split + 1).trim();
+      if (split > 0 && name && value) values[name] = value;
+    }
     run.mutate({
       goal: goal.trim(),
       startUrl: startUrl.trim(),
       agents: Number.isInteger(agentCount) ? Math.min(4, Math.max(1, agentCount)) : 1,
       maxSteps: maxStepsValue,
       maxDurationMs: maxDurationMinutesValue * 60_000,
+      ...(missions.length > 0 ? { missions } : {}),
+      ...(Object.keys(values).length > 0 ? { values } : {}),
       confirmControl: true,
     });
   }
@@ -127,7 +157,9 @@ export function GoalPage() {
     }
   }
 
-  const displayedResult = reproduce.data ?? inspect.data ?? run.data;
+  // Explicit action results win over polled state; polling exists for runs
+  // still in flight on the server.
+  const displayedResult = reproduce.data ?? live.data ?? inspect.data ?? run.data;
   const resultError = promote.error ?? reproduce.error ?? inspect.error ?? run.error;
   const resultErrorTitle = promote.error
     ? "Test promotion failed"
@@ -145,6 +177,12 @@ export function GoalPage() {
     displayedResult &&
     isSessionEvidence(displayedResult) &&
     displayedResult.reproduction?.status === "reproduced";
+  // The workflow field exists only on server-owned inspect responses; narrow
+  // once here instead of inside JSX.
+  const workflowInfo =
+    displayedResult && "workflow" in displayedResult && displayedResult.workflow
+      ? (displayedResult.workflow as { status: string; version: number })
+      : undefined;
 
   return (
     <FormPage>
@@ -241,6 +279,36 @@ export function GoalPage() {
                 />
                 <FieldDescription>At most 15 minutes; the default is 5.</FieldDescription>
               </Field>
+              <Field>
+                <FieldLabel htmlFor="goal-missions">Distinct missions (optional, one per line)</FieldLabel>
+                <Textarea
+                  id="goal-missions"
+                  value={missionsText}
+                  onChange={(event) => setMissionsText(event.currentTarget.value)}
+                  placeholder={"Member permissions\nSigned-out recovery"}
+                  rows={3}
+                  maxLength={8_400}
+                />
+                <FieldDescription>
+                  With multiple workers, each line drives exactly one worker. Four copies of one goal
+                  buy no new coverage.
+                </FieldDescription>
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="goal-values">Task values (optional, name=value per line)</FieldLabel>
+                <Textarea
+                  id="goal-values"
+                  value={valuesText}
+                  onChange={(event) => setValuesText(event.currentTarget.value)}
+                  placeholder="username=member@example.test"
+                  rows={2}
+                  maxLength={8_400}
+                />
+                <FieldDescription>
+                  Plain form inputs only — the model sees reference names, never values. Credentials
+                  belong to an account fixture.
+                </FieldDescription>
+              </Field>
             </div>
           </details>
           <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border border-border/70 p-3 text-sm leading-5 hover:bg-muted/40">
@@ -302,7 +370,49 @@ export function GoalPage() {
                     <dt className="text-muted-foreground">Findings</dt>
                     <dd>{displayedResult.findings?.length ?? 0} review-required</dd>
                   </div>
+                  {isSessionEvidence(displayedResult) ? (
+                    <>
+                      <div className="flex items-baseline justify-between gap-4">
+                        <dt className="text-muted-foreground">Execution</dt>
+                        <dd className="font-medium capitalize">
+                          {displayedResult.actions.length} action
+                          {displayedResult.actions.length === 1 ? "" : "s"} ·{" "}
+                          {displayedResult.status}
+                        </dd>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-4">
+                        <dt className="text-muted-foreground">Captures</dt>
+                        <dd>
+                          {
+                            displayedResult.actions.filter(
+                              (action) => action.interaction.kind === "capture",
+                            ).length
+                          }{" "}
+                          captured · awaiting review
+                        </dd>
+                      </div>
+                      {workflowInfo ? (
+                        <div className="flex items-baseline justify-between gap-4">
+                          <dt className="text-muted-foreground">Workflow</dt>
+                          <dd className="font-mono text-xs">
+                            {workflowInfo.status} · v{workflowInfo.version}
+                          </dd>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
                 </dl>
+                {isSessionEvidence(displayedResult) && displayedResult.status === "running" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    disabled={cancel.isPending}
+                    onClick={() => cancel.mutate(displayedResult.sessionId)}
+                  >
+                    {cancel.isPending ? "Cancelling…" : "Cancel this goal"}
+                  </Button>
+                ) : null}
                 {displayedResult.stopReason ? (
                   <p className="rounded-lg bg-background/70 p-3 text-sm leading-5 text-muted-foreground">
                     {displayedResult.stopReason.message}

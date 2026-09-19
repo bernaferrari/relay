@@ -13,6 +13,10 @@ export type GoalStartInput = {
   maxSteps?: number;
   maxDurationMs?: number;
   agents: number;
+  /** Distinct missions — one per worker (explorations only). */
+  missions?: string[];
+  /** Plain (non-secret) task values keyed by reference. */
+  values?: Record<string, string>;
   confirmControl: true;
 };
 
@@ -25,9 +29,22 @@ export type GoalPromotionInput = {
   confirmControl: true;
 };
 
+/** A goal session as the cross-client surface shows it: the record plus its
+ * durable workflow identity when the server owns the job. */
+export type GoalSessionInspect = GoalSessionRecord & {
+  valueRefs?: string[];
+  workflow?: {
+    workflowId: string;
+    version: number;
+    status: string;
+    kind: string;
+  };
+};
+
 export type GoalProductService = {
   start(input: GoalStartInput): Promise<GoalRunResult>;
-  inspectSession(sessionId: string): Promise<GoalSessionRecord>;
+  cancelSession(sessionId: string): Promise<GoalSessionResult>;
+  inspectSession(sessionId: string): Promise<GoalSessionInspect>;
   inspectExploration(explorationId: string): Promise<GoalExplorationRecord>;
   reproduceSession(sessionId: string): Promise<GoalSessionResult>;
   promoteSession(input: GoalPromotionInput): Promise<AuthorTestSnapshot>;
@@ -81,8 +98,14 @@ export function createGoalProductService(platform: Platform): GoalProductService
         body: JSON.stringify({ ...body, ...(agents > 1 ? { agents } : {}) }),
       });
     },
+    cancelSession(sessionId) {
+      return request<GoalSessionResult>(`/goal/${encodeURIComponent(sessionId)}/cancel`, {
+        method: "POST",
+        body: JSON.stringify({ confirmControl: true }),
+      });
+    },
     inspectSession(sessionId) {
-      return request<GoalSessionRecord>(`/goal/${encodeURIComponent(sessionId)}`);
+      return request<GoalSessionInspect>(`/goal/${encodeURIComponent(sessionId)}`);
     },
     inspectExploration(explorationId) {
       return request<GoalExplorationRecord>(`/explore/${encodeURIComponent(explorationId)}`);
