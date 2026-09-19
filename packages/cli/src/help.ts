@@ -143,6 +143,9 @@ Usage:
   relay explore --inspect <explorationId>
   relay goal resume <sessionId> --confirm
   relay goal inspect <sessionId>
+  relay goal cancel <sessionId> --confirm
+  relay goal run --url https://app.test --goal "Open settings" --value name=Ada --confirm
+  relay explore --url https://app.test --goal "Explore" --mission "Member permissions" --mission "Signed-out recovery" --confirm
   relay goal reproduce <sessionId> --confirm
   relay goal promote <sessionId> --confirm [--map <id>] [--title <name>]
   relay record <title> [--map <id>] [--device <id>] --confirm

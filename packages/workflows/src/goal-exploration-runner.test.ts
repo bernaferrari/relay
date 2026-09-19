@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { GoalExplorationRecord, GoalFinding, GoalSessionResult } from "@relay/protocol";
+import type {
+  GoalExplorationRecord,
+  GoalFinding,
+  GoalSessionResult,
+  GoalSessionStartInput,
+} from "@relay/protocol";
 import { GOAL_EXPLORATION_SCHEMA_VERSION } from "@relay/protocol";
 import {
   createGoalExplorationRunner,
@@ -73,6 +78,9 @@ function fakeSessions(options: { delayMs?: number; finding?: GoalFinding } = {})
       resume: async (sessionId) => {
         resumed.push(sessionId);
         return settle(sessionId);
+      },
+      cancel: async (sessionId: string) => {
+        throw new Error(`cancel not used: ${sessionId}`);
       },
       reproduce: async (sessionId) => settle(sessionId),
       inspect: async () => {
@@ -186,4 +194,78 @@ test("exploration resume continues persisted workers without creating new worker
   assert.equal(resumed.status, "completed");
   assert.deepEqual(sessions.started, []);
   assert.deepEqual(sessions.resumed.sort(), ["explore-resume-1", "explore-resume-2"]);
+});
+
+test("mission partitioning gives each worker a distinct goal", async () => {
+  const startedGoals: string[] = [];
+  const sessionResults = new Map<string, GoalSessionResult>();
+  const sessions = {
+    async start(input: GoalSessionStartInput) {
+      startedGoals.push(input.goal);
+      const result: GoalSessionResult = {
+        schemaVersion: 1,
+        sessionId: input.sessionId ?? "session",
+        goal: input.goal,
+        target: { targetId: "t", platform: "browser" },
+        status: "completed",
+        step: 0,
+        budget: { maxSteps: 1, maxDurationMs: 1000 },
+        actions: [],
+        observations: [],
+        findings: [],
+      };
+      sessionResults.set(result.sessionId, result);
+      return result;
+    },
+    async resume() {
+      throw new Error("not used");
+    },
+    async cancel() {
+      throw new Error("not used");
+    },
+  } as unknown as GoalSessionRunner;
+  const values = new Map<string, GoalExplorationRecord>();
+  const store = {
+    async load(id: string) {
+      return values.get(id) ?? null;
+    },
+    async save(record: GoalExplorationRecord) {
+      values.set(record.id, structuredClone(record));
+    },
+  };
+  const runner = createGoalExplorationRunner({
+    sessions,
+    store,
+    id: () => "explore-missions",
+  });
+  const record = await runner.start({
+    goal: "Explore the workspace app",
+    startUrl: "https://example.test",
+    agents: 4,
+    missions: [
+      "Member permissions",
+      "Signed-out recovery",
+      "Empty inputs",
+      "Back-navigation behavior",
+    ],
+  });
+  assert.equal(record.workers.length, 4);
+  assert.deepEqual(
+    record.workers.map((worker) => worker.mission),
+    [
+      "Member permissions",
+      "Signed-out recovery",
+      "Empty inputs",
+      "Back-navigation behavior",
+    ],
+  );
+  // Each worker actually received its own mission, not the shared goal.
+  assert.deepEqual(startedGoals.sort(), [
+    "Back-navigation behavior",
+    "Empty inputs",
+    "Member permissions",
+    "Signed-out recovery",
+  ]);
+  assert.equal(record.summary.completed, 4);
+  assert.equal(record.status, "completed");
 });

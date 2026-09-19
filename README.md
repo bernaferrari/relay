@@ -104,8 +104,14 @@ in the existing review-only Authoring flow:
 
 ```bash
 pnpm relay goal inspect <session-id>
+pnpm relay goal cancel <session-id> --confirm
 pnpm relay goal reproduce <session-id> --confirm
 pnpm relay goal promote <session-id> --confirm --title "Empty cart regression"
+
+Plain (non-secret) form values travel as `--value name=text`; credentials stay in account
+fixtures. Multi-worker exploration takes distinct missions — one `--mission` line per worker.
+Goal sessions are server-owned durable workflows: start from the CLI, watch or cancel the same
+job from the desktop app, inspect it read-only from MCP.
 ```
 
 In the desktop app, open **Explore** to use the same goal service. Review-required findings stay

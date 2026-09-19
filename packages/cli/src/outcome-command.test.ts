@@ -3,6 +3,7 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import { renderHelp } from "./help.js";
 import { parseOutcomeCliIntent } from "./outcome-command.js";
+import type { GoalSessionCancelIntent, GoalSessionStartIntent } from "@relay/workflows";
 import { runReportCommand } from "./report-commands.js";
 
 function tokens(
@@ -285,5 +286,60 @@ test("report emit accepts only its documented github-check format", async () => 
   await assert.rejects(
     runReportCommand(["report", "emit", "--format=yaml", "--run", "missing"], streams, {}),
     /only "github-check"/u,
+  );
+});
+
+test("goal cancel parses with explicit confirmation only", () => {
+  const cancelled = parseOutcomeCliIntent(
+    tokens(["goal", "cancel", "goal-1"], {}, ["--confirm"]),
+  ) as GoalSessionCancelIntent;
+  assert.equal(cancelled.kind, "goal-cancel");
+  assert.equal(cancelled.sessionId, "goal-1");
+  assert.throws(() => parseOutcomeCliIntent(tokens(["goal", "cancel", "goal-1"])));
+});
+
+test("goal start carries plain task values; explore carries distinct missions", () => {
+  const start = parseOutcomeCliIntent(
+    tokens(
+      ["goal", "run"],
+      {
+        "--url": "https://example.test",
+        "--goal": "Sign in",
+        "--value": "username=member@example.test\u0000note=hello",
+      },
+      ["--confirm"],
+    ),
+  ) as GoalSessionStartIntent;
+  assert.equal(start.kind, "goal-start");
+  assert.deepEqual(start.values, {
+    username: "member@example.test",
+    note: "hello",
+  });
+
+  const explore = parseOutcomeCliIntent(
+    tokens(
+      ["explore"],
+      {
+        "--url": "https://example.test",
+        "--goal": "Explore the app",
+        "--mission": "Member permissions\u0000Back-navigation behavior",
+      },
+      ["--confirm"],
+    ),
+  ) as { kind: "goal-explore"; missions?: string[] };
+  assert.deepEqual(explore.missions, [
+    "Member permissions",
+    "Back-navigation behavior",
+  ]);
+
+  assert.throws(() =>
+    parseOutcomeCliIntent(
+      tokens(["goal", "run"], { "--url": "https://example.test", "--goal": "x", "--value": "novalue" }, ["--confirm"]),
+    ),
+  );
+  assert.throws(() =>
+    parseOutcomeCliIntent(
+      tokens(["goal", "run"], { "--url": "https://example.test", "--goal": "x", "--mission": "m" }, ["--confirm"]),
+    ),
   );
 });

@@ -8,7 +8,7 @@ export const GOAL_SESSION_MAX_STEPS = 40 as const;
 export const GOAL_SESSION_MAX_DURATION_MS = 900_000 as const;
 export const GOAL_SESSION_MAX_ACTIONS = 40 as const;
 
-export type GoalSessionStatus = "running" | "completed" | "blocked" | "uncertain";
+export type GoalSessionStatus = "running" | "completed" | "blocked" | "uncertain" | "cancelled";
 
 export type GoalSessionStopCode =
   | "goal-achieved"
@@ -20,7 +20,9 @@ export type GoalSessionStopCode =
   | "action-uncertain"
   | "resume-review-required"
   | "observation-unavailable"
-  | "target-unavailable";
+  | "target-unavailable"
+  | "needs-input"
+  | "cancelled";
 
 export type GoalSessionTarget = {
   targetId: string;
@@ -28,6 +30,16 @@ export type GoalSessionTarget = {
   startUrl?: string;
   laneId?: string;
   authenticationFixtureReference?: string;
+  /** Runtime session identity returned by the runtime when the target was
+   * opened for this goal. Absent means the runtime did not report one — the
+   * goal session id is never a substitute for a runtime session proof. */
+  runtimeSessionId?: string;
+  /** Exact-configuration proof from the runtime open, when provided. */
+  configurationDigest?: string;
+  /** The fixture the runtime actually applied, when it reports one. */
+  appliedAuthenticationFixtureId?: string;
+  /** True only when the runtime confirmed a genuinely clean session. */
+  signedOut?: true;
 };
 
 export type GoalSessionBudget = {
@@ -42,15 +54,28 @@ export type GoalSessionInteractionTarget = {
   point?: { x: number; y: number };
 };
 
+/** Typed goal interactions dispatched through the existing target.interact
+ * operation. Values for fill actions are resolved locally from the task's
+ * value map — never from model output. */
+export type GoalSessionInteraction =
+  | { kind: "identifier" | "ref" | "label" | "point"; target: GoalSessionInteractionTarget }
+  | {
+      kind: "fill";
+      target: GoalSessionInteractionTarget;
+      value: string;
+      mode?: "append" | "replace";
+    }
+  | { kind: "swipe"; from: { x: number; y: number }; to: { x: number; y: number } }
+  | { kind: "key"; key: "back" | "home" | "recents" }
+  | { kind: "wait"; ms: number }
+  | { kind: "capture"; label?: string };
+
 export type GoalSessionAction = {
   id: string;
   step: number;
   candidateId: string;
   label: string;
-  interaction: {
-    kind: "identifier" | "ref" | "label" | "point";
-    target: GoalSessionInteractionTarget;
-  };
+  interaction: GoalSessionInteraction;
   status: "intended" | "acknowledged" | "rejected" | "unknown";
   observationDigestBefore: string;
   observationDigestAfter?: string;
@@ -78,7 +103,8 @@ export type GoalReproductionStatus =
   | "reproduced"
   | "unresolved"
   | "blocked"
-  | "uncertain";
+  | "uncertain"
+  | "cancelled";
 
 /** One isolated replay of a completed goal path. It is evidence for review,
  * never an automatic claim that a product defect or Test has been proven. */
@@ -111,6 +137,8 @@ export type GoalSessionRecord = {
   budget: GoalSessionBudget;
   laneId?: string;
   model?: string;
+  /** Plain task values (never model-visible). Stripped from every projection. */
+  values?: Record<string, string>;
   status: GoalSessionStatus;
   step: number;
   createdAt: number;
@@ -139,6 +167,10 @@ export type GoalSessionStartInput = {
   model?: string;
   maxSteps?: number;
   maxDurationMs?: number;
+  /** Non-secret task input values, keyed by reference. The model sees only
+   * the reference keys; values are resolved locally at dispatch. Credentials
+   * belong in an authentication fixture, never here. */
+  values?: Record<string, string>;
 };
 
 export type GoalSessionResult = {

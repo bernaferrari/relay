@@ -63,8 +63,13 @@ export function normalizeEvaluationResult(
     if (passed === true && rawScore === 0) {
       issues.push(`criterion ${index + 1} is contradictory`);
     }
+    if (passed === false && rawScore === 1) {
+      issues.push(`criterion ${index + 1} is contradictory`);
+    }
     return {
-      id: typeof record.id === "string" ? record.id : `criterion-${index + 1}`,
+      // Criterion identity is canonical and positional. Provider-supplied ids
+      // are display data at best and never become authority.
+      id: `criterion-${index + 1}`,
       description,
       passed: passed === true,
       score: typeof rawScore === "number" && Number.isFinite(rawScore) ? rawScore : 0,
@@ -82,10 +87,14 @@ export function normalizeEvaluationResult(
     criteria.length === 0
       ? 0
       : criteria.reduce((sum, item) => sum + item.score, 0) / criteria.length;
-  const score =
+  // A provider may summarize below what the criteria support (a conservative
+  // fail is honored), but an aggregate may never claim more than the criteria
+  // average supports — that direction is an overclaim and is clamped.
+  const providerOverall =
     typeof rawScore === "number" && Number.isFinite(rawScore) && rawScore >= 0 && rawScore <= 1
       ? rawScore
-      : computedScore;
+      : undefined;
+  const score = providerOverall === undefined ? computedScore : Math.min(providerOverall, computedScore);
   const threshold = input.threshold ?? 0.9;
   const requestedStatus = value.status;
   if (
@@ -204,7 +213,16 @@ export async function evaluateSemantic(
   const provider = providers.get(providerId);
   if (!provider)
     throw new Error(`semantic judge unavailable: provider is not configured (${providerId})`);
-  return provider.evaluate(input);
+  const result = await provider.evaluate(input);
+  // Every provider result — builtin or custom — passes the same policy gate.
+  // Registration alone never grants authority to declare an unearned pass.
+  const enforced = normalizeEvaluationResult(
+    result,
+    input,
+    providerId,
+    typeof result.model === "string" && result.model ? result.model : "unknown",
+  );
+  return typeof result.costUsd === "number" ? { ...enforced, costUsd: result.costUsd } : enforced;
 }
 
 export type OpenRouterEvaluationProviderOptions = Omit<OpenRouterAiSdkOptions, "apiKey"> & {

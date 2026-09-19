@@ -105,13 +105,18 @@ function uncertainSessionResult(): GoalSessionResult {
 }
 
 function goalService(startResult = sessionResult()): GoalProductService {
+  const reproduced = { value: false };
   return {
     start: vi.fn(async () => startResult),
-    inspectSession: vi.fn(async () => sessionResult() as never),
+    inspectSession: vi.fn(async () => startResult as never),
     inspectExploration: vi.fn(async () => ({}) as never),
     resumeSession: vi.fn(async () => sessionResult()),
     resumeExploration: vi.fn(async () => ({}) as never),
-    reproduceSession: vi.fn(async () => sessionResult(true)),
+    cancelSession: vi.fn(async () => sessionResult()),
+    reproduceSession: vi.fn(async () => {
+      reproduced.value = true;
+      return sessionResult(true);
+    }),
     promoteSession: vi.fn(async () => ({ title: "Checkout", stage: "reviewing" }) as never),
   };
 }
@@ -257,4 +262,78 @@ describe("Goal page", () => {
 
     expect(service.resumeSession).toHaveBeenCalledWith("goal-1");
   });
+});
+
+
+it("goal page shows live server-owned activity with a cancel control", async () => {
+  const service = goalService();
+  vi.mocked(service.start).mockResolvedValue(
+    sessionResult() as never,
+  );
+  vi.mocked(service.inspectSession).mockImplementation(
+    async () =>
+      ({
+        ...(sessionResult() as object),
+        status: "running",
+        actions: [
+          {
+            id: "action-1",
+            step: 1,
+            candidateId: "c1",
+            label: "Settings",
+            interaction: { kind: "identifier", target: { identifier: "open-settings" } },
+            status: "acknowledged",
+            observationDigestBefore: "sha256:" + "1".repeat(64),
+            evidenceRefs: [],
+            at: 1,
+          },
+          {
+            id: "action-2",
+            step: 2,
+            candidateId: "sys-capture",
+            label: "Capture",
+            interaction: { kind: "capture", label: "capture" },
+            status: "acknowledged",
+            observationDigestBefore: "sha256:" + "2".repeat(64),
+            evidenceRefs: ["run:1"],
+            at: 2,
+          },
+        ],
+        workflow: {
+          workflowId: "goal-session:goal-1",
+          version: 3,
+          status: "active",
+          kind: "goal-session",
+        },
+      }) as never,
+  );
+  const { host } = await render(service);
+  await setValue("goal-description", "Open settings");
+  await setValue("goal-start-url", "https://example.test");
+  await act(async () => {
+    const control = document.querySelector<HTMLButtonElement>(
+      '[aria-label="Confirm target control"]',
+    );
+    control?.closest("label")?.click();
+  });
+  await act(async () => {
+    const submit = [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Explore goal"),
+    );
+    submit?.click();
+  });
+  await settle();
+  expect(host.textContent).toContain("Cancel this goal");
+  expect(host.textContent).toContain("Execution");
+  expect(host.textContent).toContain("awaiting review");
+  expect(host.textContent).toContain("Workflow");
+  const cancel = [...host.querySelectorAll("button")].find((button) =>
+    button.textContent?.includes("Cancel this goal"),
+  );
+  if (!cancel) throw new Error("missing cancel button");
+  await act(async () => {
+    cancel.click();
+  });
+  await settle();
+  expect(vi.mocked(service.cancelSession).mock.calls[0]?.[0]).toBe("goal-1");
 });

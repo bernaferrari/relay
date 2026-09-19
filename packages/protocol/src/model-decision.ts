@@ -46,16 +46,18 @@ export type ModelNoulAnswer = {
 export type ModelChoiceAnswer = {
   type: "choice";
   choice: string;
-  probabilities: Record<string, number>;
-  confidence: number;
+  /** Native Decisions responses may carry only the selected choice; the
+   * distribution is present when the provider returns one. */
+  probabilities?: Record<string, number>;
+  confidence?: number;
 };
 
 export type ModelScoreAnswer = {
   type: "score";
   score: number;
-  legend: Record<string, string>;
-  probabilities: Record<string, number>;
-  confidence: number;
+  legend?: Record<string, string>;
+  probabilities?: Record<string, number>;
+  confidence?: number;
 };
 
 export type ModelDecisionAnswer = ModelNoulAnswer | ModelChoiceAnswer | ModelScoreAnswer;
@@ -63,7 +65,13 @@ export type ModelDecisionAnswer = ModelNoulAnswer | ModelChoiceAnswer | ModelSco
 export type ModelDecisionUsage = {
   inputTokens: number;
   outputTokens: number;
+  costUsd?: number;
 };
+
+/** How the numeric uncertainty in this record was produced. Native Decisions
+ * distributions and chat-model self-reported confidence are not interchangeable
+ * and must never be presented as the same evidence. */
+export type ModelUncertaintySource = "native-distribution" | "self-reported";
 
 export type ModelDecisionRecord = {
   schemaVersion: typeof MODEL_DECISION_SCHEMA_VERSION;
@@ -76,6 +84,7 @@ export type ModelDecisionRecord = {
   questionDigest?: string;
   answers?: Record<string, ModelDecisionAnswer>;
   usage?: ModelDecisionUsage;
+  uncertaintySource?: ModelUncertaintySource;
   startedAt: number;
   completedAt: number;
   durationMs: number;

@@ -58,6 +58,16 @@ export async function dispatchRelayOutcomeTool(
     };
   }
   const { jobs } = input;
+
+function goalValues(raw: unknown): { values?: Record<string, string> } {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const entries = Object.entries(raw as Record<string, unknown>).filter(
+    ([, value]) => typeof value === "string",
+  );
+  return entries.length > 0
+    ? { values: Object.fromEntries(entries) as Record<string, string> }
+    : {};
+}
   if (input.name === "relay_debug_bug") {
     return dependencies.invokeDebugBugOutcomeTool({ parsed, confirmed: input.confirmed, jobs });
   }
@@ -74,6 +84,9 @@ export async function dispatchRelayOutcomeTool(
     });
   }
   if (input.name === "relay_goal") {
+    if (typeof parsed.cancelSessionId === "string") {
+      return jobs.cancelGoal({ kind: "goal-cancel", sessionId: parsed.cancelSessionId });
+    }
     if (typeof parsed.inspectSessionId === "string") {
       return jobs.inspectGoal({ kind: "goal-inspect", sessionId: parsed.inspectSessionId });
     }
@@ -118,6 +131,10 @@ export async function dispatchRelayOutcomeTool(
         ...(typeof parsed.maxDurationMs === "number"
           ? { maxDurationMs: parsed.maxDurationMs }
           : {}),
+        ...(Array.isArray(parsed.missions) ? { missions: parsed.missions } : {}),
+        ...(goalValues(parsed.values).values
+          ? { values: goalValues(parsed.values).values }
+          : {}),
         agents: parsed.agents,
       });
     }
@@ -134,6 +151,7 @@ export async function dispatchRelayOutcomeTool(
       ...(typeof parsed.maxSteps === "number" ? { maxSteps: parsed.maxSteps } : {}),
       ...(typeof parsed.maxDurationMs === "number" ? { maxDurationMs: parsed.maxDurationMs } : {}),
       ...(typeof parsed.agents === "number" ? { agents: parsed.agents } : {}),
+      ...(goalValues(parsed.values).values ? { values: goalValues(parsed.values).values } : {}),
     });
   }
   if (input.name === "relay_record_test") {

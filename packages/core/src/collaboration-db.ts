@@ -348,6 +348,32 @@ function migrateControlSchema(db: DatabaseSync): void {
     ensureAppMapTestHistorySchema(db);
     db.exec("PRAGMA user_version = 8");
   }
+  if (version < 9) {
+    // Widen the workflow kind CHECK to admit goal-session workflows. SQLite
+    // cannot alter a CHECK in place, so rebuild the table and copy rows.
+    db.exec(`
+      CREATE TABLE workflow_records_v9 (
+        workflow_id TEXT PRIMARY KEY,
+        organization_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('run-test', 'author-test', 'repeat-test', 'goal-session')),
+        version INTEGER NOT NULL CHECK (version >= 1),
+        status TEXT NOT NULL CHECK (status IN ('active', 'needs-attention', 'terminal', 'expired')),
+        expires_at INTEGER NOT NULL,
+        document TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO workflow_records_v9
+        SELECT workflow_id, organization_id, project_id, kind, version, status,
+               expires_at, document, updated_at
+        FROM workflow_records;
+      DROP TABLE workflow_records;
+      ALTER TABLE workflow_records_v9 RENAME TO workflow_records;
+      CREATE INDEX IF NOT EXISTS workflow_records_project_updated
+        ON workflow_records(project_id, updated_at DESC);
+      PRAGMA user_version = 9;
+    `);
+  }
 }
 
 export type ControlEventRow = {

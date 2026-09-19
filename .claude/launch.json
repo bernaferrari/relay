@@ -12,7 +12,7 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": [
         "--filter",
-        "@relay/app",
+        "@relay/app-v2",
         "exec",
         "vp",
         "dev",
@@ -27,7 +27,7 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": [
         "--filter",
-        "@relay/app",
+        "@relay/app-v2",
         "exec",
         "vp",
         "dev",

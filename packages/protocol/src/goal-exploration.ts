@@ -13,12 +13,17 @@ export type GoalExplorationStatus = "running" | "completed" | "partial" | "block
 
 export type GoalExplorationStartInput = GoalSessionStartInput & {
   agents?: number;
+  /** Distinct missions — one per worker. Four copies of the same goal is not
+   * four times the coverage; each worker gets exactly one mission. */
+  missions?: string[];
 };
 
 export type GoalExplorationWorker = {
   id: string;
   index: number;
   sessionId: string;
+  /** This worker's distinct mission when the exploration was partitioned. */
+  mission?: string;
   status: "pending" | "partial" | GoalSessionStatus;
   targetId?: string;
   laneId?: string;

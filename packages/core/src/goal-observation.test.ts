@@ -13,6 +13,8 @@ function observation(): TargetObservation {
       capturedAt: 10,
       mime: "image/png",
       bytes: 100,
+      width: 1080,
+      height: 2340,
       artifact: {
         status: "missing",
         source: "run-frame",
@@ -48,9 +50,10 @@ test("compactGoalObservation creates observation-scoped candidates and omits pix
     recentActions: [{ id: "a1", kind: "observe", outcome: "acknowledged", summary: "ok" }],
   });
 
+  assert.deepEqual(result.candidates.slice(0, 2).map((item) => item.id), ["c1", "c2"]);
   assert.deepEqual(
-    result.candidates.map((item) => item.id),
-    ["c1", "c2"],
+    result.candidates.slice(2).map((item) => item.id),
+    ["sys-back", "sys-scroll-down", "sys-scroll-up", "sys-wait", "sys-capture"],
   );
   assert.equal(result.candidates[1]?.text, "[REDACTED]");
   assert.equal("pixels" in result, false);
@@ -77,4 +80,78 @@ test("compactGoalObservation changes its digest when the observed controls chang
     observation: changed,
   });
   assert.notEqual(first.observationDigest, second.observationDigest);
+});
+
+test("compactGoalObservation reports truncation instead of hiding it", () => {
+  const many = observation();
+  many.semantics.controls = Array.from({ length: 55 }, (_, index) => ({
+    role: "button",
+    label: `Action ${index + 1}`,
+    identifier: `action-${index + 1}`,
+    enabled: true,
+  }));
+  const result = compactGoalObservation({
+    goal: "Explore",
+    sessionId: "session-1",
+    targetId: "browser:test",
+    platform: "browser",
+    observation: many,
+  });
+  assert.equal(result.omissions.candidatesKept, 40);
+  assert.equal(result.omissions.candidatesOmitted, 15);
+  // Controls are capped; synthetic loop primitives are always offered.
+  assert.equal(result.candidates.length, 45);
+});
+
+test("compactGoalObservation marks unknown-enabled controls as assumed, not proven", () => {
+  const unknown = observation();
+  unknown.semantics.controls = [
+    { role: "button", label: "Maybe", identifier: "maybe" },
+    { role: "button", label: "Surely", identifier: "surely", enabled: true },
+    { role: "button", label: "Off", identifier: "off", enabled: false },
+  ];
+  const result = compactGoalObservation({
+    goal: "Explore",
+    sessionId: "session-1",
+    targetId: "browser:test",
+    platform: "browser",
+    observation: unknown,
+  });
+  assert.deepEqual(
+    result.candidates.slice(0, 3).map((item) => [item.enabled, item.enabledAssumed ?? false]),
+    [
+      [true, true],
+      [true, false],
+      [false, false],
+    ],
+  );
+});
+
+test("compactGoalObservation carries pixel status, timestamps, and runtime session identity", () => {
+  const withRuntime = observation();
+  const result = compactGoalObservation({
+    goal: "Save the profile",
+    sessionId: "session-1",
+    targetId: "browser:test",
+    platform: "browser",
+    runtimeSessionId: "runtime-context-42",
+    observation: withRuntime,
+  });
+  assert.equal(result.screen.pixels, "captured");
+  assert.equal(result.screen.pixelsCapturedAt, 10);
+  assert.equal(result.target.runtimeSessionId, "runtime-context-42");
+  assert.equal(result.target.sessionId, "session-1");
+
+  const noPixels = observation();
+  noPixels.pixels = { status: "unavailable", message: "off" };
+  const without = compactGoalObservation({
+    goal: "Save the profile",
+    sessionId: "session-1",
+    targetId: "browser:test",
+    platform: "browser",
+    observation: noPixels,
+  });
+  assert.equal(without.screen.pixels, "unavailable");
+  assert.equal(without.screen.pixelsCapturedAt, undefined);
+  assert.equal(without.target.runtimeSessionId, undefined);
 });

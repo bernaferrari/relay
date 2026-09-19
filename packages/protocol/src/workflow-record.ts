@@ -6,13 +6,14 @@ export type WorkflowJsonValue =
   | readonly WorkflowJsonValue[]
   | { readonly [key: string]: WorkflowJsonValue };
 
-export type DurableWorkflowKind = "run-test" | "author-test" | "repeat-test";
+export type DurableWorkflowKind = "run-test" | "author-test" | "repeat-test" | "goal-session";
 export type DurableWorkflowStatus = "active" | "needs-attention" | "terminal" | "expired";
 
 export type DurableWorkflowResourceRef =
   | { kind: "job"; id: string }
   | { kind: "authoring-session"; id: string }
-  | { kind: "campaign"; id: string };
+  | { kind: "campaign"; id: string }
+  | { kind: "goal-session"; id: string };
 
 export type DurableWorkflowResolution = {
   kind: "abandoned";

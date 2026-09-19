@@ -39,6 +39,7 @@ import type {
   GoalSessionResumeIntent,
   GoalSessionReproduceIntent,
   GoalSessionInspectIntent,
+  GoalSessionCancelIntent,
   GoalSessionStartIntent,
   GoalExplorationResumeIntent,
   GoalExplorationInspectIntent,
@@ -529,6 +530,10 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       nextAction: "share-proof",
       evidence,
     };
+  }
+
+  async cancelGoal(intent: GoalSessionCancelIntent) {
+    return this.goals.cancel(intent.sessionId);
   }
 
   async goal(intent: GoalSessionStartIntent) {

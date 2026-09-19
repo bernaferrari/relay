@@ -13,6 +13,10 @@ export type GoalStartInput = {
   maxSteps?: number;
   maxDurationMs?: number;
   agents: number;
+  /** Distinct missions — one per worker (explorations only). */
+  missions?: string[];
+  /** Plain (non-secret) task values keyed by reference. */
+  values?: Record<string, string>;
   confirmControl: true;
 };
 
@@ -25,9 +29,25 @@ export type GoalPromotionInput = {
   confirmControl: true;
 };
 
+/** A goal session as the cross-client surface shows it: the record plus its
+ * durable workflow identity when the server owns the job. */
+export type GoalSessionInspect = GoalSessionRecord & {
+  /** Session identity under the result-facing name so UI session checks
+   * work uniformly for polled records and mutation results. */
+  sessionId: string;
+  valueRefs?: string[];
+  workflow?: {
+    workflowId: string;
+    version: number;
+    status: string;
+    kind: string;
+  };
+};
+
 export type GoalProductService = {
   start(input: GoalStartInput): Promise<GoalRunResult>;
-  inspectSession(sessionId: string): Promise<GoalSessionRecord>;
+  cancelSession(sessionId: string): Promise<GoalSessionResult>;
+  inspectSession(sessionId: string): Promise<GoalSessionInspect>;
   inspectExploration(explorationId: string): Promise<GoalExplorationRecord>;
   resumeSession(sessionId: string): Promise<GoalSessionResult>;
   resumeExploration(explorationId: string): Promise<GoalExplorationResult>;
@@ -83,8 +103,15 @@ export function createGoalProductService(platform: Platform): GoalProductService
         body: JSON.stringify({ ...body, ...(agents > 1 ? { agents } : {}) }),
       });
     },
-    inspectSession(sessionId) {
-      return request<GoalSessionRecord>(`/goal/${encodeURIComponent(sessionId)}`);
+    cancelSession(sessionId) {
+      return request<GoalSessionResult>(`/goal/${encodeURIComponent(sessionId)}/cancel`, {
+        method: "POST",
+        body: JSON.stringify({ confirmControl: true }),
+      });
+    },
+    async inspectSession(sessionId) {
+      const record = await request<GoalSessionInspect>(`/goal/${encodeURIComponent(sessionId)}`);
+      return { ...record, sessionId: record.id };
     },
     inspectExploration(explorationId) {
       return request<GoalExplorationRecord>(`/explore/${encodeURIComponent(explorationId)}`);

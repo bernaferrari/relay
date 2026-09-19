@@ -551,19 +551,27 @@ async function browserDeviceForOverlay(
   targetId: string,
   overlay?: RuntimeTargetOverlay,
 ): Promise<Device> {
-  const fixtureId = overlay?.authenticationFixtureId?.trim();
   const unsignedLaneId = overlay?.unsignedLaneId?.trim();
-  if (!fixtureId) {
+  const target = await readTarget(targetId);
+  if (!target?.browser) {
     return getBrowserDevice(targetId, unsignedLaneId ? { unsignedLaneId } : {});
   }
-  const target = await readTarget(targetId);
-  if (!target?.browser) return getBrowserDevice(targetId);
+  // The saved environment is the target's exact configuration: an interact
+  // must reuse the live session it describes (fixture included), never open a
+  // fresh anonymous one that silently changes the account.
+  const base = browserCaseProfileForTarget(target);
+  const fixtureId = overlay?.authenticationFixtureId?.trim() || base.authenticationFixtureId;
   return getBrowserDevice(targetId, {
-    mode: "proof",
-    profile: compileBrowserEnvironment({
-      ...browserCaseProfileForTarget(target),
-      authenticationFixtureId: fixtureId,
-    }),
+    ...(unsignedLaneId ? { unsignedLaneId } : {}),
+    ...(fixtureId
+      ? {
+          mode: "proof" as const,
+          profile: compileBrowserEnvironment({
+            ...base,
+            authenticationFixtureId: fixtureId,
+          }),
+        }
+      : {}),
     ...(overlay?.projectId ? { projectId: overlay.projectId } : {}),
   });
 }
@@ -597,6 +605,9 @@ export async function resolveRuntimeTarget(
   const context = currentTargetContext();
   return {
     context,
-    device: context.kind === "browser" ? await getBrowserDevice(context.targetId) : createDevice(),
+    device:
+      context.kind === "browser"
+        ? await browserDeviceForOverlay(context.targetId, overlay)
+        : createDevice(),
   };
 }
