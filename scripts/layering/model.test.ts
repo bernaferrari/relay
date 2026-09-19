@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { listSourceFiles } from './check.ts';
@@ -10,7 +10,6 @@ import {
   SESSION_STATE_FIELD_OWNERS,
   STORE_OWNED_SESSION_STATE_FIELDS,
 } from './session-state.ts';
-import { uninstallableImports, zeroDepJobs } from './zero-dep-jobs.ts';
 import {
   largestTypeCycleMembers,
   largestTypeCycleSize,
@@ -53,6 +52,109 @@ test('parseImports distinguishes value, type-only, dynamic, and value re-export 
   );
 });
 
+test('parseImports detects multiline dynamic imports', () => {
+  const edges = parseImports(['void import(', "  '../multiline.ts'", ');'].join('\n'));
+
+  assert.deepEqual(edges, [
+    {
+      spec: '../multiline.ts',
+      dynamic: true,
+      typeOnly: false,
+      line: 1,
+      symbols: [],
+      bindingResidue: false,
+    },
+  ]);
+});
+
+test('parseImports resolves constant-template dynamic imports', () => {
+  const edges = parseImports('void import(`../template.ts`);');
+
+  assert.deepEqual(edges, [
+    {
+      spec: '../template.ts',
+      dynamic: true,
+      typeOnly: false,
+      line: 1,
+      symbols: [],
+      bindingResidue: false,
+    },
+  ]);
+});
+
+test('parseImports captures destructured named bindings of dynamic imports, keyed by export name', () => {
+  const edges = parseImports(
+    [
+      "const { a, 'b': c } = await import('./dyn.ts');",
+      "const mod = await import('./dyn.ts');",
+      "const wrapped = (await import('./dyn.ts')) as Mod;",
+      'const { a, ...rest } = await import("./dyn.ts");',
+      'const { [keyExpr]: named } = await import("./dyn.ts");',
+    ].join('\n'),
+  );
+
+  assert.deepEqual(
+    edges.map(({ spec, symbols, bindingResidue }) => ({ spec, symbols, bindingResidue })),
+    [
+      { spec: './dyn.ts', symbols: ['a', 'b'], bindingResidue: false },
+      { spec: './dyn.ts', symbols: [], bindingResidue: false },
+      { spec: './dyn.ts', symbols: [], bindingResidue: false },
+      { spec: './dyn.ts', symbols: ['a'], bindingResidue: true },
+      { spec: './dyn.ts', symbols: [], bindingResidue: true },
+    ],
+  );
+});
+
+test('parseImports retains named source symbols without changing edge-kind detection', () => {
+  const edges = parseImports(
+    [
+      "import { value as localValue, type TypeA } from './named.ts';",
+      "import type { TypeB as RenamedType } from './types.ts';",
+      "export { reExport as publicName } from './re-export.ts';",
+      "export type { ExportedType } from './exported-types.ts';",
+      "import * as namespace from './namespace.ts';",
+      "void import('./dynamic.ts');",
+    ].join('\n'),
+  );
+
+  assert.deepEqual(
+    edges.map(({ spec, dynamic, typeOnly, symbols }) => ({ spec, dynamic, typeOnly, symbols })),
+    [
+      {
+        spec: './named.ts',
+        dynamic: false,
+        typeOnly: false,
+        symbols: ['value', 'TypeA'],
+      },
+      { spec: './types.ts', dynamic: false, typeOnly: true, symbols: ['TypeB'] },
+      { spec: './re-export.ts', dynamic: false, typeOnly: false, symbols: ['reExport'] },
+      { spec: './exported-types.ts', dynamic: false, typeOnly: true, symbols: ['ExportedType'] },
+      { spec: './namespace.ts', dynamic: false, typeOnly: false, symbols: [] },
+      { spec: './dynamic.ts', dynamic: true, typeOnly: false, symbols: [] },
+    ],
+  );
+});
+
+test('parseImports ignores comments inside named bindings', () => {
+  const edges = parseImports(
+    [
+      "import { /* exact, declared */ SessionStore /* authority */ } from './store.ts';",
+      'import /* shape */ {',
+      '  // exact declaration',
+      '  type SessionState as State,',
+      "} from './types.ts';",
+    ].join('\n'),
+  );
+
+  assert.deepEqual(
+    edges.map(({ spec, typeOnly, symbols }) => ({ spec, typeOnly, symbols })),
+    [
+      { spec: './store.ts', typeOnly: false, symbols: ['SessionStore'] },
+      { spec: './types.ts', typeOnly: true, symbols: ['SessionState'] },
+    ],
+  );
+});
+
 test('value cycles fail while type-only and dynamic cycles stay outside the graph', () => {
   const valueCycle = resolveImportEdges(
     new Map([
@@ -76,7 +178,7 @@ test('value cycles fail while type-only and dynamic cycles stay outside the grap
 test('back-edge identities follow the documented target spine', () => {
   const edges = resolveImportEdges(
     new Map([
-      ['src/platforms/apple.ts', "import '../core/platform-plugin.ts';"],
+      ['src/contracts/result.ts', "import '../core/platform-plugin.ts';"],
       ['src/core/platform-plugin.ts', 'export const plugin = true;'],
       ['src/commands/help.ts', "import '../cli/parser.ts';"],
       ['src/cli/parser.ts', 'export const parser = true;'],
@@ -86,7 +188,7 @@ test('back-edge identities follow the documented target spine', () => {
   const actual = collectBackEdges(edges);
   assert.deepEqual(actual, {
     'commands -> cli': ['src/commands/help.ts -> src/cli/parser.ts'],
-    'platforms -> core': ['src/platforms/apple.ts -> src/core/platform-plugin.ts'],
+    'contracts -> core': ['src/contracts/result.ts -> src/core/platform-plugin.ts'],
   });
 });
 
@@ -95,7 +197,7 @@ test('neutral ownership zones reject value imports into higher layers', () => {
     new Map([
       ['src/contracts/result.ts', "import '../core/result.ts';"],
       ['src/core/result.ts', 'export const result = true;'],
-      ['src/request/cancel.ts', "import '../commands/cancel.ts';"],
+      ['packages/device-selection/src/selection.ts', "import '@agent-device/commands/cancel';"],
       ['src/commands/cancel.ts', 'export const cancel = true;'],
       ['packages/selectors/src/internal/parse.ts', "import '../../../../src/client/client.ts';"],
       ['src/client/client.ts', 'export const client = true;'],
@@ -107,9 +209,46 @@ test('neutral ownership zones reject value imports into higher layers', () => {
   assert.deepEqual(collectBackEdges(edges), {
     'cli-schema -> cli': ['src/cli-schema/schema.ts -> src/cli/parser.ts'],
     'contracts -> core': ['src/contracts/result.ts -> src/core/result.ts'],
-    'request -> commands': ['src/request/cancel.ts -> src/commands/cancel.ts'],
+    'device-selection -> commands': [
+      'packages/device-selection/src/selection.ts -> src/commands/cancel.ts',
+    ],
     'selectors -> client': ['packages/selectors/src/internal/parse.ts -> src/client/client.ts'],
   });
+});
+
+test('a relative import resolves within its own workspace package src/, but not past it', () => {
+  const edges = resolveImportEdges(
+    new Map([
+      ['packages/contracts/src/facades/device.ts', "import '../device.ts';"],
+      ['packages/contracts/src/device.ts', 'export const device = true;'],
+      // A value cycle closed entirely inside one package must be as visible to R4 as
+      // one closed inside src/ — this is what #1781 A9-2 found invisible: `resolved`
+      // landed under `packages/<name>/src/`, so the old `resolved.startsWith('src/')`
+      // check dropped both edges and the reverse-reachability graph stopped at the
+      // package facade.
+      ['packages/contracts/src/cycle-a.ts', "import '../src/cycle-b.ts';"],
+      ['packages/contracts/src/cycle-b.ts', "import '../src/cycle-a.ts';"],
+      // A relative path that climbs out of any package's src/ (landing under a bare
+      // `packages/<name>/` with no `src/` segment) must still be refused by the
+      // model — R11 owns rejecting that import outright, but the graph itself must
+      // not silently resolve a target outside src/ and packages/*/src/.
+      ['packages/contracts/src/escape.ts', "import '../../outside-src.ts';"],
+      ['packages/outside-src.ts', 'export const outsideSrc = true;'],
+    ]),
+  );
+
+  assert.deepEqual(edges.map(({ file, target }) => `${file} -> ${target}`).sort(), [
+    'packages/contracts/src/cycle-a.ts -> packages/contracts/src/cycle-b.ts',
+    'packages/contracts/src/cycle-b.ts -> packages/contracts/src/cycle-a.ts',
+    'packages/contracts/src/facades/device.ts -> packages/contracts/src/device.ts',
+  ]);
+  assert.deepEqual(findValueImportCycles(edges), [
+    [
+      'packages/contracts/src/cycle-a.ts',
+      'packages/contracts/src/cycle-b.ts',
+      'packages/contracts/src/cycle-a.ts',
+    ],
+  ]);
 });
 
 test('type-only edges are ranked by R6 and ignored by R5, and vice versa', () => {
@@ -147,11 +286,13 @@ test('classifyZone separates the ranked spine from intentionally-unranked zones'
   assert.equal(classifyZone('contracts'), 'ranked');
   assert.equal(classifyZone('daemon-server'), 'ranked');
   assert.equal(classifyZone('(root)'), 'unranked');
-  assert.equal(classifyZone('utils'), 'ranked');
+  assert.equal(classifyZone('platform-runtime'), 'unranked');
+  assert.equal(classifyZone('platforms'), 'unclassified');
+  assert.equal(classifyZone('utils'), 'unclassified');
   // Every satellite zone joined the spine; only the composition root stays out, because R2
   // forbids daemon/ from importing commands/ so the files that wire them cannot be ranked.
   assert.equal(classifyZone('mcp'), 'ranked');
-  assert.equal(classifyZone('snapshot'), 'ranked');
+  assert.equal(classifyZone('screenshot-diff'), 'ranked');
   // A zone that is neither ranked nor listed peripheral must be flagged, never
   // silently treated as back-edge-free.
   assert.equal(classifyZone('not-a-real-zone'), 'unclassified');
@@ -162,7 +303,8 @@ test('every production zone is deliberately classified as ranked or unranked', (
   // deliberate ranked-vs-peripheral decision here instead of silently escaping
   // spine back-edge detection. If this fails, add the new zone to TARGET_DAG_RANK
   // (ranked spine) or UNRANKED_ZONES (root/peripheral) in model.ts.
-  assert.deepEqual(unclassifiedZones(listSourceFiles()), []);
+  const productionFiles = listSourceFiles();
+  assert.deepEqual(unclassifiedZones(productionFiles), []);
 
   // The classification must also stay honest to the tree: every zone the model
   // names is a real production zone, so the docs cannot list a spine or peripheral
@@ -175,7 +317,7 @@ test('every production zone is deliberately classified as ranked or unranked', (
 
 test('listSourceFiles includes root-level src/*.ts production files', () => {
   const files = new Set(listSourceFiles());
-  for (const rootFile of ['src/cli.ts', 'src/command-catalog.ts', 'src/backend.ts']) {
+  for (const rootFile of ['src/cli.ts', 'src/runtime.ts', 'src/backend.ts']) {
     assert.ok(files.has(rootFile), `expected ${rootFile} in analyzed source files`);
   }
   assert.ok(![...files].some((file) => file.endsWith('.test.ts')));
@@ -190,40 +332,40 @@ test('SessionState field names come from the declaration, not a hand-kept list',
       "    kind: 'cwd';",
       '    id: string;',
       '  };',
-      '  refFrameState?: RefFrameState;',
+      '  refFrame?: RefFrame;',
       '};',
       '',
       'export type Other = { notAField: string };',
     ].join('\n'),
   );
   // Nested object members are not session fields, and neighbouring types are not scanned.
-  assert.deepEqual(fields, ['name', 'sessionScope', 'refFrameState']);
+  assert.deepEqual(fields, ['name', 'sessionScope', 'refFrame']);
 });
 
 test('session-state writes are found by field, and non-daemon or undeclared names are not', () => {
   const writes = findSessionStateWrites(
     new Map([
-      ['src/daemon/ref-frame.ts', "session.refFrameState = 'active';"],
+      ['src/daemon/ref-frame.ts', "session.refFrame = 'active';"],
       ['src/daemon/session-snapshot.ts', 'session.snapshotGeneration += 1;'],
       // the store owns the record and may write anything on it
-      ['src/daemon/session-store.ts', "session.refFrameState = 'expired';"],
+      ['src/daemon/session-store.ts', "session.refFrame = 'expired';"],
       // a runner session outside the daemon is a different type that happens to share a name
-      ['src/platforms/apple/runner-session.ts', 'session.refFrameState = 1;'],
+      ['src/platforms/apple/runner-session.ts', 'session.refFrame = 1;'],
       // a local that is not a declared SessionState field
-      ['src/daemon/audio-probe.ts', 'session.somethingElse = 1;'],
+      ['src/daemon/session-observability/internal/session-audio.ts', 'session.somethingElse = 1;'],
       // reads and comparisons are not writes
-      ['src/daemon/handlers/find.ts', "if (session.refFrameState === 'active') return;"],
+      ['src/daemon/interaction/internal/find.ts', "if (session.refFrame === 'active') return;"],
       // a write into a sub-object is not a write to the field itself
-      ['src/daemon/handlers/session-open.ts', 'session.refFrameState.inner = 1;'],
+      ['src/daemon/handlers/session-probe.ts', 'session.refFrame.inner = 1;'],
       // a different binding that happens to have a matching property
-      ['src/daemon/handlers/session-close.ts', "other.refFrameState = 'expired';"],
+      ['src/daemon/session-lifecycle/internal/session-close.ts', "other.refFrame = 'expired';"],
     ]),
-    ['refFrameState', 'snapshotGeneration'],
+    ['refFrame', 'snapshotGeneration'],
   );
 
   assert.deepEqual(
     writes.map(({ file, field }) => `${file}:${field}`),
-    ['src/daemon/ref-frame.ts:refFrameState', 'src/daemon/session-snapshot.ts:snapshotGeneration'],
+    ['src/daemon/ref-frame.ts:refFrame', 'src/daemon/session-snapshot.ts:snapshotGeneration'],
   );
 });
 
@@ -231,23 +373,21 @@ test('every assignment form is a write, including the ones a regex forgets', () 
   // A line-based matcher has to enumerate operators, and the ones it misses are the natural
   // ways to write these: `??=` for a default on an optional field, `||=`/`&&=` for a flag.
   const forms = [
-    'session.refFrameState = 1;',
-    'session.refFrameState ??= 1;',
-    'session.refFrameState ||= 1;',
-    'session.refFrameState &&= 1;',
-    'session.refFrameState += 1;',
-    'session.refFrameState -= 1;',
-    'session.refFrameState++;',
-    '--session.refFrameState;',
-    'session\n  .refFrameState = 1;',
+    'session.refFrame = 1;',
+    'session.refFrame ??= 1;',
+    'session.refFrame ||= 1;',
+    'session.refFrame &&= 1;',
+    'session.refFrame += 1;',
+    'session.refFrame -= 1;',
+    'session.refFrame++;',
+    '--session.refFrame;',
+    'session\n  .refFrame = 1;',
   ];
   for (const form of forms) {
-    const writes = findSessionStateWrites(new Map([['src/daemon/probe.ts', form]]), [
-      'refFrameState',
-    ]);
+    const writes = findSessionStateWrites(new Map([['src/daemon/probe.ts', form]]), ['refFrame']);
     assert.deepEqual(
       writes.map(({ field }) => field),
-      ['refFrameState'],
+      ['refFrame'],
       `expected ${JSON.stringify(form)} to count as a write`,
     );
   }
@@ -255,8 +395,8 @@ test('every assignment form is a write, including the ones a regex forgets', () 
 
 test('a computed session write is reported rather than silently unattributed', () => {
   const writes = findSessionStateWrites(
-    new Map([['src/daemon/probe.ts', 'session[key] = 1;\nsession[`refFrameState`] = 2;']]),
-    ['refFrameState'],
+    new Map([['src/daemon/probe.ts', 'session[key] = 1;\nsession[`refFrame`] = 2;']]),
+    ['refFrame'],
   );
   // `[computed]` has no entry in SESSION_STATE_FIELD_OWNERS, so R7 fails on it by
   // construction — a computed write can never pass as an owned one.
@@ -281,276 +421,6 @@ test('every declared session-state owner is a real file path under src/daemon', 
   }
 });
 
-// R8: the zero-dep CI job contract. These tests use synthetic workflows and a synthetic tree,
-// because the point of the rule is to catch a shape that does not exist in the repo yet.
-
-const ZERO_DEP_WORKFLOW = `
-name: CI
-jobs:
-  installs-deps:
-    steps:
-      - uses: ./.github/actions/setup-node-pnpm
-      - run: node scripts/needs-packages/entry.ts
-  zero-dep:
-    steps:
-      - uses: ./.github/actions/setup-node-pnpm
-        with:
-          install-deps: false
-      - run: |
-          node --experimental-strip-types --test scripts/probe/entry.test.ts
-          node --experimental-strip-types scripts/probe/entry.ts
-`;
-
-test('a zero-dep job is discovered from the workflow, and a dep-installing one is not', () => {
-  const present = new Set(['scripts/probe/entry.ts', 'scripts/probe/entry.test.ts']);
-  const jobs = zeroDepJobs(new Map([['.github/workflows/probe.yml', ZERO_DEP_WORKFLOW]]), (file) =>
-    present.has(file),
-  );
-  assert.deepEqual(jobs, [
-    {
-      workflow: '.github/workflows/probe.yml',
-      job: 'zero-dep',
-      // Sorted, deduplicated, and filtered to paths that exist — `scripts/needs-packages`
-      // belongs to the job that installs deps and must not leak in.
-      entries: ['scripts/probe/entry.test.ts', 'scripts/probe/entry.ts'],
-    },
-  ]);
-});
-
-test('install-deps: false counts whether YAML parsed it as a boolean or a string', () => {
-  const quoted = ZERO_DEP_WORKFLOW.replace('install-deps: false', "install-deps: 'false'");
-  const jobs = zeroDepJobs(new Map([['w.yml', quoted]]), () => true);
-  assert.deepEqual(
-    jobs.map(({ job }) => job),
-    ['zero-dep'],
-  );
-});
-
-test('a job with no recognizable entry script is reported rather than exempted', () => {
-  // Fail-closed: `entries: []` is what check.ts turns into a violation, so a job that
-  // invokes its script in some way the scan cannot read never escapes the rule silently.
-  const jobs = zeroDepJobs(new Map([['w.yml', ZERO_DEP_WORKFLOW]]), () => false);
-  assert.deepEqual(jobs, [{ workflow: 'w.yml', job: 'zero-dep', entries: [] }]);
-});
-
-test('a bare pnpm script name resolves through package.json to its entry scripts', () => {
-  // The workflow names no path at all — only the pnpm script name package.json maps to the
-  // real command. A zero-dep job may call its script this way (#1462) without R8 losing the
-  // entries it needs to check: the resolution reads the same paths out of the mapped command.
-  const workflow = `
-name: CI
-jobs:
-  zero-dep:
-    steps:
-      - uses: ./.github/actions/setup-node-pnpm
-        with:
-          install-deps: false
-      - run: pnpm check:affected:test
-`;
-  const present = new Set([
-    'scripts/check-affected/model.test.ts',
-    'scripts/check-affected/run.test.ts',
-  ]);
-  const packageScripts = new Map([
-    [
-      'check:affected:test',
-      'node --experimental-strip-types --test scripts/check-affected/model.test.ts scripts/check-affected/run.test.ts',
-    ],
-  ]);
-  const jobs = zeroDepJobs(
-    new Map([['w.yml', workflow]]),
-    (file) => present.has(file),
-    packageScripts,
-  );
-  assert.deepEqual(jobs, [
-    {
-      workflow: 'w.yml',
-      job: 'zero-dep',
-      entries: ['scripts/check-affected/model.test.ts', 'scripts/check-affected/run.test.ts'],
-    },
-  ]);
-});
-
-test('a resolved script that itself runs a named script is expanded too', () => {
-  // A chained alias (`outer` runs `pnpm inner`) is one hop further from the workflow text
-  // than the direct case above. If resolution stopped at one level, inner's entry would be
-  // invisible to R8 even though the job genuinely depends on it at runtime.
-  const workflow = `
-name: CI
-jobs:
-  zero-dep:
-    steps:
-      - uses: ./.github/actions/setup-node-pnpm
-        with:
-          install-deps: false
-      - run: pnpm outer
-`;
-  const present = new Set(['scripts/outer/entry.ts', 'scripts/inner/entry.ts']);
-  const packageScripts = new Map([
-    ['outer', 'node scripts/outer/entry.ts && pnpm inner'],
-    ['inner', 'node scripts/inner/entry.ts'],
-  ]);
-  const jobs = zeroDepJobs(
-    new Map([['w.yml', workflow]]),
-    (file) => present.has(file),
-    packageScripts,
-  );
-  assert.deepEqual(jobs, [
-    {
-      workflow: 'w.yml',
-      job: 'zero-dep',
-      entries: ['scripts/inner/entry.ts', 'scripts/outer/entry.ts'],
-    },
-  ]);
-});
-
-test('an alias cycle does not hang, and still collects every non-cyclic entry', () => {
-  // `a` runs `pnpm b`, `b` runs `pnpm a` back — resolution must stop re-expanding a name it
-  // has already walked on this chain, not recurse until the stack overflows. Each script's
-  // own direct entry is still found before the cycle closes.
-  const workflow = `
-name: CI
-jobs:
-  zero-dep:
-    steps:
-      - uses: ./.github/actions/setup-node-pnpm
-        with:
-          install-deps: false
-      - run: pnpm a
-`;
-  const present = new Set(['scripts/a/entry.ts', 'scripts/b/entry.ts']);
-  const packageScripts = new Map([
-    ['a', 'node scripts/a/entry.ts && pnpm b'],
-    ['b', 'node scripts/b/entry.ts && pnpm a'],
-  ]);
-  const jobs = zeroDepJobs(
-    new Map([['w.yml', workflow]]),
-    (file) => present.has(file),
-    packageScripts,
-  );
-  assert.deepEqual(jobs, [
-    {
-      workflow: 'w.yml',
-      job: 'zero-dep',
-      entries: ['scripts/a/entry.ts', 'scripts/b/entry.ts'],
-    },
-  ]);
-});
-
-test('a pnpm word that names no real package.json script resolves to nothing', () => {
-  // `pnpm install` (or any other non-script pnpm subcommand) must not be treated as a script
-  // name just because it follows `pnpm` — it is absent from packageScripts, same as a shell
-  // word that merely looks like a path is absent from the tree.
-  const workflow = `
-name: CI
-jobs:
-  zero-dep:
-    steps:
-      - uses: ./.github/actions/setup-node-pnpm
-        with:
-          install-deps: false
-      - run: pnpm install --frozen-lockfile
-`;
-  const jobs = zeroDepJobs(
-    new Map([['w.yml', workflow]]),
-    () => true,
-    new Map([['check:affected:test', 'node scripts/check-affected/run.test.ts']]),
-  );
-  assert.deepEqual(jobs, [{ workflow: 'w.yml', job: 'zero-dep', entries: [] }]);
-});
-
-test('a package import anywhere in a zero-dep closure is rejected, builtins are not', () => {
-  const tree = new Map([
-    [
-      'scripts/probe/entry.ts',
-      "import fs from 'node:fs';\nimport path from 'path';\nimport { helper } from './helper.ts';\n",
-    ],
-    // One hop deeper than the entry: the failure that motivated R8 was exactly this shape —
-    // the entry script itself imported nothing external, its helper did.
-    ['scripts/probe/helper.ts', "import { parseSync } from 'oxc-parser';\nimport './deep.js';\n"],
-    ['scripts/probe/deep.ts', "const lazy = await import('yaml');\n"],
-  ]);
-  const found = uninstallableImports(
-    { workflow: 'w.yml', job: 'zero-dep', entries: ['scripts/probe/entry.ts'] },
-    (file) => tree.get(file) ?? null,
-    (file) => tree.has(file),
-  );
-  assert.deepEqual(
-    found.map(({ file, spec }) => `${file}:${spec}`),
-    // `node:fs` and bare `path` are builtins; `./helper.ts` and `./deep.js` resolve into the
-    // tree (including the .js -> .ts rewrite); a dynamic package import fails just the same.
-    ['scripts/probe/deep.ts:yaml', 'scripts/probe/helper.ts:oxc-parser'],
-  );
-});
-
-test('an import written inside a string is not a package import', () => {
-  // A zero-dep job runs test files, and a test about imports naturally embeds import syntax as
-  // a fixture string. R8 parses instead of scanning lines precisely so those stay invisible —
-  // this file itself contains such fixtures, and reported two phantom violations before the
-  // switch. A type-only package import, by contrast, is still a resolve at runtime under
-  // --experimental-strip-types only because the type is erased; it is listed to prove the
-  // parser sees it, since erasure is a compiler detail and not something to lean on.
-  const tree = new Map([
-    [
-      'scripts/probe/entry.ts',
-      [
-        'const fixture = "import real from \'not-a-package\'";',
-        "const also = ['export { x } from \\'nope\\''];",
-        "import type { T } from 'is-a-package';",
-        'export type Alias = T;',
-      ].join('\n'),
-    ],
-  ]);
-  const found = uninstallableImports(
-    { workflow: 'w.yml', job: 'zero-dep', entries: ['scripts/probe/entry.ts'] },
-    (file) => tree.get(file) ?? null,
-    (file) => tree.has(file),
-  );
-  assert.deepEqual(
-    found.map(({ spec, line }) => `${line}:${spec}`),
-    ['3:is-a-package'],
-  );
-});
-
-test("the repo's own zero-dep jobs resolve without node_modules", () => {
-  const repoRoot = path.resolve(import.meta.dirname, '../..');
-  const read = (file: string): string | null => {
-    const absolute = path.join(repoRoot, file);
-    return existsSync(absolute) && statSync(absolute).isFile()
-      ? readFileSync(absolute, 'utf8')
-      : null;
-  };
-  const exists = (file: string): boolean => read(file) !== null;
-  const packageJson = JSON.parse(read('package.json')!) as { scripts?: Record<string, string> };
-  const packageScripts = new Map(Object.entries(packageJson.scripts ?? {}));
-
-  const jobs = zeroDepJobs(
-    new Map([['.github/workflows/ci.yml', read('.github/workflows/ci.yml')!]]),
-    exists,
-    packageScripts,
-  );
-  // #1490 W0 removed the last zero-dep job: affected-selector's entry closure
-  // reaches `@agent-device/kernel` workspace specifiers through src/utils, and
-  // the R8 relative-import exception is unsafe for production src files (Node's
-  // ESM loader does not realpath, so a file loaded both relatively and via its
-  // package specifier would instantiate twice in one process — duplicate
-  // AppError, broken instanceof). Pin the empty set deliberately: a NEW
-  // zero-dep job re-engages R8 automatically and must update this expectation.
-  assert.deepEqual(
-    jobs.map((job) => job.job),
-    [],
-    'zero-dep jobs changed: verify the new job satisfies R8 and update this pin',
-  );
-  for (const job of jobs) {
-    assert.ok(job.entries.length > 0, `${job.job} must name an entry script`);
-    assert.deepEqual(
-      uninstallableImports(job, read, exists),
-      [],
-      `${job.job} must reach no package`,
-    );
-  }
-});
-
 test('a session write counts through an aliased binding, not only one named `session`', () => {
   // The daemon names these records by role: nextSession, provisionalSession, completedSession,
   // preRunSession, preEntrySession, activeSession. Matching only the literal name `session` hid
@@ -562,19 +432,19 @@ test('a session write counts through an aliased binding, not only one named `ses
         'src/daemon/probe.ts',
         [
           'nextSession.snapshotGeneration = 3;',
-          'preEntrySession.refFrameState = "active";',
+          'preEntrySession.refFrame = "active";',
           'completedSession.saveScriptComplete = true;',
           // Not a session binding, and not a session write.
           'result.snapshotGeneration = 9;',
-          'flags.refFrameState = "x";',
+          'flags.refFrame = "x";',
         ].join('\n'),
       ],
     ]),
-    ['snapshotGeneration', 'refFrameState', 'saveScriptComplete'],
+    ['snapshotGeneration', 'refFrame', 'saveScriptComplete'],
   );
   assert.deepEqual(
     writes.map(({ field, line }) => `${line}:${field}`),
-    ['1:snapshotGeneration', '2:refFrameState', '3:saveScriptComplete'],
+    ['1:snapshotGeneration', '2:refFrame', '3:saveScriptComplete'],
   );
 });
 
@@ -583,7 +453,7 @@ test('every SessionState field is classified exactly once', () => {
   // R7 by being invisible to the scan, and the rule would silently stop covering part of the
   // type it claims to cover.
   const fields = sessionStateFields(
-    readFileSync(path.resolve(import.meta.dirname, '../../src/daemon/types.ts'), 'utf8'),
+    readFileSync(path.resolve(import.meta.dirname, '../../src/daemon/session-state.ts'), 'utf8'),
   );
   assert.deepEqual(fieldClassificationDrift(fields), []);
   assert.equal(
@@ -594,7 +464,7 @@ test('every SessionState field is classified exactly once', () => {
 
 test('classification drift is reported in all three directions', () => {
   const declared = sessionStateFields(
-    readFileSync(path.resolve(import.meta.dirname, '../../src/daemon/types.ts'), 'utf8'),
+    readFileSync(path.resolve(import.meta.dirname, '../../src/daemon/session-state.ts'), 'utf8'),
   );
 
   // Unclassified: a field added to SessionState and to neither table. This is the case the
@@ -650,7 +520,7 @@ test('largestTypeCycleSize counts type-only cycles and ignores dynamic ones', ()
   ]);
 
   // A loop closed through a DYNAMIC import is excluded on purpose: a lazy seam is not a
-  // comprehension barrier, and R3 relies on dynamic imports existing. With no non-dynamic edge at
+  // comprehension barrier. With no non-dynamic edge at
   // all no file enters the walk, so the floor here is 0 rather than 1 — specified, not incidental.
   const dynamicCycle = resolveImportEdges(
     new Map(

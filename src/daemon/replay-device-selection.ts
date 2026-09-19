@@ -1,14 +1,15 @@
-import fs from 'node:fs';
+import type { SessionAction } from '@agent-device/contracts/session';
 import { inspectMaestroFlow } from '@agent-device/maestro';
-import { resolveDeclaredScriptPlatform } from '@agent-device/ad-script';
-import { parseReplayInput } from '../compat/replay-input.ts';
-import type { ResolveTargetDeviceOptions } from '../core/dispatch-resolve.ts';
-import { isDeepLinkTarget } from '@agent-device/contracts/command';
-import { resolveReplayFormat } from '../replay/format.ts';
+import {
+  parseReplayInput,
+  resolveDeclaredScriptPlatform,
+  resolveReplayFormat,
+} from '@agent-device/ad-script';
+import type { ResolveTargetDeviceOptions } from '@agent-device/device-selection/dispatch-resolve';
+import { isDeepLinkTarget, type CommandFlags } from '@agent-device/contracts/command';
+import { readReplayScriptSourceFile } from './replay-script-source.ts';
 import { appleSimulatorAppTargetForOpenTarget } from './open-device-selection.ts';
-import { SessionStore } from './session-store.ts';
-import type { CommandFlags } from '../core/dispatch.ts';
-import type { DaemonRequest, SessionAction } from './types.ts';
+import type { DaemonRequest } from './daemon-request.ts';
 
 export type ReplayTargetDeviceResolution = {
   flags: CommandFlags;
@@ -18,17 +19,22 @@ export type ReplayTargetDeviceResolution = {
 /**
  * Finds a static first app target for fresh replay binding. Request binding
  * must leave a first deep-link or dynamic open to normal device resolution.
+ *
+ * #1802: reads the request's replay script source bundle, never the
+ * filesystem. Before that this opened the caller's path here too, so against a
+ * remote daemon it silently no-opped (the read threw and the catch below
+ * swallowed it) and every remote replay lost its pre-binding.
  */
 export function buildReplayTargetDeviceResolution(
   req: DaemonRequest,
 ): ReplayTargetDeviceResolution | undefined {
   if (req.command !== 'replay' || req.flags?.replayFrom !== undefined) return undefined;
-  const filePath = req.positionals?.[0];
-  if (!filePath) return undefined;
+  const bundle = req.flags?.replayScriptSource;
+  if (!bundle) return undefined;
 
   try {
-    const resolved = SessionStore.expandHome(filePath, req.meta?.cwd);
-    const source = fs.readFileSync(resolved, 'utf8');
+    const resolved = bundle.entry;
+    const source = readReplayScriptSourceFile(bundle, resolved);
     if (resolveReplayFormat(resolved, req.flags?.replayBackend) === 'maestro') {
       const flow = inspectMaestroFlow(source, resolved);
       return {

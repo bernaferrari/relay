@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import type { InteractionGuarantee } from '@agent-device/contracts/interaction';
+import type { InteractionGuarantee } from '@agent-device/contracts/interaction-guarantees';
 import type { Point } from '@agent-device/kernel/snapshot';
 import { selector } from '../../../src/commands/interaction/runtime/selector-read-utils.ts';
 import { assertRpcOk } from '../provider-scenarios/assertions.ts';
@@ -11,9 +11,11 @@ import {
   closedDrawerSnapshot,
   continueButtonSnapshot,
   coveredButtonSnapshot,
+  keyboardCoveredTabBarSnapshot,
   drawerWithVisibleTwinSnapshot,
+  equivalentWrapperChainSnapshot,
   edgeGrazingDrawerSnapshot,
-  manyMatchingItemRowsSnapshot,
+  fullyTiledParentSnapshot,
   nonHittableButtonSnapshot,
   RUNNER_CONTINUE_NODES,
   settledWelcomeSnapshot,
@@ -28,7 +30,29 @@ import { runnerSnapshotEntry, runnerTapEntry, withIosContractDaemon } from './da
 const scenario = (guarantee: InteractionGuarantee): string =>
   scenarioName(RUNTIME_SELECTOR_COVERAGE, guarantee);
 
-test(scenario('disambiguation'), async () => {
+test(scenarioNames(RUNTIME_SELECTOR_COVERAGE, 'disambiguation')[0]!, async () => {
+  const taps: Point[] = [];
+  const device = createContractDevice(equivalentWrapperChainSnapshot(), {
+    tap: async (_context, point) => {
+      taps.push(point);
+    },
+  });
+
+  const result = await device.interactions.click(selector('label=Chat'), {
+    session: 'default',
+  });
+
+  assert.equal(result.kind, 'selector');
+  assert.equal(result.node?.ref, 'e3');
+  assert.equal(result.resolution?.kind, 'disambiguated');
+  if (result.resolution?.kind !== 'disambiguated') {
+    assert.fail('expected structural-equivalence disclosure');
+  }
+  assert.equal(result.resolution.tiebreak, 'structural-equivalence');
+  assert.deepEqual(taps, [{ x: 70, y: 765 }]);
+});
+
+test(scenarioNames(RUNTIME_SELECTOR_COVERAGE, 'disambiguation')[1]!, async () => {
   const taps: Point[] = [];
   const device = createContractDevice(drawerWithVisibleTwinSnapshot(), {
     tap: async (_context, point) => {
@@ -36,13 +60,16 @@ test(scenario('disambiguation'), async () => {
     },
   });
 
-  const result = await device.interactions.click(selector('label=Profile'), {
-    session: 'default',
-  });
-
-  assert.equal(result.kind, 'selector');
-  assert.equal(result.node?.ref, 'e2');
-  assert.deepEqual(taps, [{ x: 120, y: 765 }]);
+  await assert.rejects(
+    () => device.interactions.click(selector('label=Profile'), { session: 'default' }),
+    (error: unknown) => {
+      const typed = error as { code?: unknown; details?: Record<string, unknown> };
+      assert.equal(typed.code, 'AMBIGUOUS_MATCH');
+      assert.equal(typed.details?.matches, 2);
+      return true;
+    },
+  );
+  assert.deepEqual(taps, []);
 });
 
 test(scenarioNames(RUNTIME_SELECTOR_COVERAGE, 'offscreen')[0]!, async () => {
@@ -98,6 +125,56 @@ test(scenario('occlusion'), async () => {
   await assert.rejects(
     () => device.interactions.click(selector('label="Save draft"'), { session: 'default' }),
     /covered by another visible element/,
+  );
+  assert.deepEqual(taps, []);
+});
+
+test(scenario('keyboardOcclusion'), async () => {
+  const taps: Point[] = [];
+  const device = createContractDevice(keyboardCoveredTabBarSnapshot(), {
+    tap: async (_context, point) => {
+      taps.push(point);
+    },
+  });
+
+  await assert.rejects(
+    () => device.interactions.click(selector('label="Form"'), { session: 'default' }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /behind the visible keyboard/);
+      const details = (error as { details?: Record<string, unknown> }).details;
+      assert.equal(details?.reason, 'tap_keyboard_occludes_target');
+      assert.ok(typeof details?.hint === 'string');
+      assert.deepEqual(details?.keyboardFrame, { x: 0, y: 583, width: 402, height: 291 });
+      return true;
+    },
+  );
+  assert.deepEqual(taps, []);
+});
+
+test(scenario('parentOwnedTouchPoint'), async () => {
+  const taps: Point[] = [];
+  const device = createContractDevice(fullyTiledParentSnapshot(), {
+    tap: async (_context, point) => {
+      taps.push(point);
+    },
+  });
+
+  await assert.rejects(
+    () => device.interactions.click(selector('label=Card'), { session: 'default' }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal((error as { code?: unknown }).code, 'COMMAND_FAILED');
+      assert.match(error.message, /Selector label=Card has no parent-owned touch point/);
+      const details = (error as { details?: Record<string, unknown> }).details;
+      assert.equal(details?.reason, 'covered_by_interactive_descendants');
+      assert.equal(details?.selector, 'label=Card');
+      assert.equal(details?.ref, undefined);
+      assert.deepEqual(details?.competitorRefs, ['@e3', '@e4', '@e5', '@e6', '@e7']);
+      assert.equal(details?.competitorCount, 10);
+      assert.match(String(details?.hint), /more specific selector/);
+      return true;
+    },
   );
   assert.deepEqual(taps, []);
 });
@@ -231,11 +308,11 @@ test(scenarioNames(RUNTIME_SELECTOR_COVERAGE, 'resolutionDisclosure')[0]!, async
 });
 
 test(scenarioNames(RUNTIME_SELECTOR_COVERAGE, 'resolutionDisclosure')[1]!, async () => {
-  const device = createContractDevice(drawerWithVisibleTwinSnapshot(), {
+  const device = createContractDevice(equivalentWrapperChainSnapshot(), {
     tap: async () => ({ ok: true }),
   });
 
-  const result = await device.interactions.click(selector('label=Profile'), {
+  const result = await device.interactions.click(selector('label=Chat'), {
     session: 'default',
   });
 
@@ -245,36 +322,11 @@ test(scenarioNames(RUNTIME_SELECTOR_COVERAGE, 'resolutionDisclosure')[1]!, async
   if (resolution?.kind !== 'disambiguated') return;
   assert.equal(resolution.source, 'runtime');
   assert.equal(resolution.phase, 'pre-action');
-  assert.equal(resolution.matchCount, 2);
-  // The visible bottom-tab twin (e2) won; the off-screen drawer item lost.
-  assert.equal(resolution.tiebreak, 'visible');
-  assert.equal(resolution.winnerDiagnostic.diagnosticRef, 'diag-e2');
-  assert.equal(resolution.winnerDiagnostic.label, 'Profile');
-  assert.equal(resolution.alternatives.length, 1);
-  assert.equal(resolution.alternatives[0]?.diagnosticRef, 'diag-e3');
+  assert.equal(resolution.matchCount, 3);
+  assert.equal(resolution.tiebreak, 'structural-equivalence');
+  assert.equal(resolution.winnerDiagnostic.diagnosticRef, 'diag-e3');
+  assert.equal(resolution.winnerDiagnostic.label, 'Chat');
+  assert.equal(resolution.alternatives.length, 2);
   // The winner never appears among its own alternatives.
-  assert.ok(!resolution.alternatives.some((entry) => entry.diagnosticRef === 'diag-e2'));
-});
-
-test(scenarioNames(RUNTIME_SELECTOR_COVERAGE, 'resolutionDisclosure')[2]!, async () => {
-  const device = createContractDevice(manyMatchingItemRowsSnapshot(), {
-    tap: async () => ({ ok: true }),
-  });
-
-  const result = await device.interactions.press(selector('label=Item'), {
-    session: 'default',
-  });
-
-  assert.equal(result.kind, 'selector');
-  const resolution = result.resolution;
-  assert.equal(resolution?.kind, 'disambiguated');
-  if (resolution?.kind !== 'disambiguated') return;
-  assert.equal(resolution.matchCount, 7);
-  assert.equal(resolution.tiebreak, 'deepest');
-  assert.equal(resolution.alternatives.length, 5);
-  assert.ok(
-    !resolution.alternatives.some(
-      (entry) => entry.diagnosticRef === resolution.winnerDiagnostic.diagnosticRef,
-    ),
-  );
+  assert.ok(!resolution.alternatives.some((entry) => entry.diagnosticRef === 'diag-e3'));
 });

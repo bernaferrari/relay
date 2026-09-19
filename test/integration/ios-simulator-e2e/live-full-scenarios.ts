@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { PUBLIC_COMMANDS } from '../../../src/command-catalog.ts';
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
 import {
   assertElementText,
   assertElementTextAfterScrolling,
@@ -150,18 +150,40 @@ export async function assertLifecycleAndSystem(context: LiveContext): Promise<vo
   const switcherNodes = Array.isArray(switcherSurface.json?.data?.nodes)
     ? switcherSurface.json.data.nodes
     : [];
-  const coveredFixtureControl = switcherNodes.find(
+  const fixtureControl = switcherNodes.find(
     (node: { identifier?: unknown }) => node.identifier === 'automation-press',
   );
-  assert.ok(coveredFixtureControl, JSON.stringify(switcherSurface.json));
-  assert.equal(coveredFixtureControl.hittable, false, JSON.stringify(coveredFixtureControl));
+  assert.ok(fixtureControl, JSON.stringify(switcherSurface.json));
+  // The system app switcher is outside the app accessibility tree. Its screenshot proves the
+  // visual cover, while this tree must retain geometric actionability and must not invent a
+  // structured daemon occlusion reason for an overlay the runner never captured.
+  assert.equal(fixtureControl.hittable, true, JSON.stringify(fixtureControl));
+  assert.equal(fixtureControl.interactionBlocked, undefined, JSON.stringify(fixtureControl));
   assert.equal(
     switcherNodes.some(
       (node: { hittable?: unknown; type?: unknown }) =>
         node.type === 'Button' && node.hittable === true,
     ),
-    false,
-    'app switcher should cover every fixture button',
+    true,
+    'app switcher must not turn geometric actionability into runner-side occlusion',
+  );
+  const rawSwitcherSurface = await runStep(context, 'inspect raw fixture in app switcher', [
+    'snapshot',
+    '--raw',
+  ]);
+  const rawSwitcherNodes = Array.isArray(rawSwitcherSurface.json?.data?.nodes)
+    ? rawSwitcherSurface.json.data.nodes
+    : [];
+  const rawFixtureControl = rawSwitcherNodes.find(
+    (node: { identifier?: unknown }) => node.identifier === 'automation-press',
+  );
+  assert.ok(rawFixtureControl, JSON.stringify(rawSwitcherSurface.json));
+  assert.equal(rawFixtureControl.hittable, true, JSON.stringify(rawFixtureControl));
+  assert.equal(rawFixtureControl.interactionBlocked, undefined, JSON.stringify(rawFixtureControl));
+  assert.equal(rawSwitcherSurface.json?.data?.snapshotQuality?.backend, 'tree');
+  assert.ok(
+    Number(rawSwitcherSurface.json?.data?.snapshotDiagnostics?.stats?.backends?.xctest) > 0,
+    JSON.stringify(rawSwitcherSurface.json),
   );
   const switcherPath = path.join(context.artifactDir, 'system-app-switcher.png');
   await capturePng(context, 'capture app switcher', switcherPath);
@@ -174,7 +196,7 @@ export async function assertLifecycleAndSystem(context: LiveContext): Promise<vo
   verifyCommand(
     context,
     C.appSwitcher,
-    'app switcher covers fixture controls and differs from Home and foreground pixels',
+    'app switcher visibly covers the app while regular/raw trees retain geometric actionability',
   );
   verifyBehavior(
     context,
@@ -221,15 +243,12 @@ async function setMicrophonePermissionAndRestart(
 }
 
 export async function assertObservabilityAndArtifacts(context: LiveContext): Promise<void> {
-  const perf = await runStep(context, 'read fixture performance metrics', ['perf', 'metrics']);
+  const perf = await runStep(context, 'read fixture memory metrics', ['perf', 'memory', 'sample']);
   const metrics = perf.json?.data?.metrics;
-  assert.equal(metrics?.startup?.available, true, JSON.stringify(perf.json));
-  assert.ok(Number(metrics?.startup?.lastDurationMs) > 0, JSON.stringify(perf.json));
   assert.equal(metrics?.memory?.available, true, JSON.stringify(perf.json));
   assert.ok(Number(metrics?.memory?.residentMemoryKb) > 0, JSON.stringify(perf.json));
-  assert.equal(metrics?.cpu?.available, true, JSON.stringify(perf.json));
-  assert.ok(Number.isFinite(Number(metrics?.cpu?.usagePercent)), JSON.stringify(perf.json));
-  verifyCommand(context, C.perf, 'startup, memory, and CPU process metrics are typed and numeric');
+  assert.deepEqual(Object.keys(metrics ?? {}), ['memory']);
+  verifyCommand(context, C.perf, 'iOS process memory metrics are typed and numeric');
 
   const logsStart = await runStep(context, 'start fixture log stream', ['logs', 'start']);
   assert.equal(logsStart.json?.data?.started, true, JSON.stringify(logsStart.json));

@@ -1,23 +1,7 @@
-import { isDeepLinkTarget } from '@agent-device/contracts/command';
-import type { SessionSurface } from '@agent-device/contracts/session';
-import type { AppleRunnerLifecycleOptions } from '../platforms/apple/core/runner/runner-provider.ts';
-import { prewarmAppleRunnerCache } from '../platforms/apple/core/runner/runner-client.ts';
-import { isIosFamily, type DeviceInfo } from '@agent-device/kernel/device';
-import { isActiveProviderDevice } from '../provider-device-runtime.ts';
-import { contextFromFlags } from './context.ts';
-import type { DaemonRequest } from './types.ts';
+import type { AppleRunnerRequestOptions } from '@agent-device/contracts/apple-runner-request';
+import type { DaemonRequest } from './daemon-request.ts';
 
-export type AppleRunnerRequestOptions = Pick<
-  AppleRunnerLifecycleOptions,
-  | 'verbose'
-  | 'logPath'
-  | 'traceLogPath'
-  | 'requestId'
-  | 'runnerLeaseContext'
-  | 'iosXctestrunFile'
-  | 'iosXctestDerivedDataPath'
-  | 'iosXctestEnvDir'
->;
+export type { AppleRunnerRequestOptions } from '@agent-device/contracts/apple-runner-request';
 
 export function buildAppleRunnerRequestOptions(params: {
   req: Pick<DaemonRequest, 'flags' | 'meta'>;
@@ -34,65 +18,4 @@ export function buildAppleRunnerRequestOptions(params: {
     iosXctestDerivedDataPath: req.flags?.iosXctestDerivedDataPath,
     iosXctestEnvDir: req.flags?.iosXctestEnvDir,
   };
-}
-
-export function buildAppleRunnerSessionOptions(params: {
-  req: Pick<DaemonRequest, 'flags' | 'meta'>;
-  logPath: string;
-  appBundleId?: string;
-  traceLogPath?: string;
-}): AppleRunnerRequestOptions {
-  const { req, logPath, appBundleId, traceLogPath } = params;
-  return {
-    ...buildAppleRunnerRequestOptions({ req, logPath, traceLogPath }),
-    runnerLeaseContext: contextFromFlags(
-      logPath,
-      req.flags,
-      appBundleId,
-      traceLogPath,
-      req.meta?.requestId,
-      req.meta,
-    ).runnerLeaseContext,
-  };
-}
-
-export function createAppleRunnerCachePrewarmOnColdBoot(params: {
-  req: Pick<DaemonRequest, 'flags' | 'meta'>;
-  logPath: string;
-  device: DeviceInfo;
-  traceLogPath?: string;
-  enabled: boolean;
-}): ((device: DeviceInfo) => void) | undefined {
-  const { req, logPath, device, traceLogPath, enabled } = params;
-  if (
-    !enabled ||
-    !isIosFamily(device) ||
-    isActiveProviderDevice(device) ||
-    device.kind !== 'simulator'
-  ) {
-    return undefined;
-  }
-  return (bootingDevice) =>
-    prewarmAppleRunnerCache(
-      bootingDevice,
-      buildAppleRunnerRequestOptions({ req, logPath, traceLogPath }),
-    );
-}
-
-export function createAppleRunnerCacheColdBootPrewarmForOpen(params: {
-  req: Pick<DaemonRequest, 'flags' | 'meta'>;
-  logPath: string;
-  device: DeviceInfo;
-  surface: SessionSurface;
-  openTarget: string | undefined;
-  traceLogPath?: string;
-}): ((device: DeviceInfo) => void) | undefined {
-  const { req, logPath, device, surface, openTarget, traceLogPath } = params;
-  return createAppleRunnerCachePrewarmOnColdBoot({
-    req,
-    logPath,
-    device,
-    traceLogPath,
-    enabled: surface === 'app' && Boolean(openTarget) && !isDeepLinkTarget(openTarget ?? ''),
-  });
 }

@@ -16,7 +16,7 @@ It is intentionally small, but each surface is dense with durable accessibility 
 - `Product detail`: back navigation, quantity stepper, multiline notes, save action
 - `Checkout form`: required-field validation, fill vs type, checkbox state, choice groups, keyboard dismiss, success summary
 - `Settings`: switch rows, accordion content, loading and error states, retry flow, destructive-confirm modal
-- `Automation lab`: long-press, alert-result, app-event, app-state, appearance, orientation, permission-recovery, and log canaries
+- `Automation lab`: long-press, alert-result, app-event, app-state, appearance, orientation, permission-recovery, log canaries, a flattened (`accessible={true}`) text input, and an Apple Pay sheet hosted in `com.apple.PassbookUIService`
 - `WebView accessibility`: a deterministic semantic fixture plus live websites with varied HTML for native accessibility snapshot verification
 
 Navigation uses Expo Router native bottom tabs, so the tab bar itself is also part of the test surface.
@@ -38,8 +38,9 @@ These are the main case families this app can support without adding more screen
 - `press` on stable buttons, pills, and rows
 - `fill` on single-line and multiline fields
 - `type` after focus for append flows
+- `type` into a focused field the accessibility tree cannot resolve (flattened input, Apple Pay billing address form)
 - `get text` on headings, badges, summaries, and accordion content
-- `is visible` and `is exists` assertions
+- `is visible`, `is exists`, and `is absent` assertions
 - `wait` for async loading and success states
 - `diff snapshot` after dismissals and submits
 - long-list scrolling and `scrollintoview`
@@ -88,9 +89,16 @@ The `/automation` route is intentionally JavaScript-only and can be opened from
 **Settings → Open automation lab** or with the
 `agent-device-test-app:///automation` scheme. Its stable `automation-*` ids expose durable
 outcomes for long press, native alert actions, app-event name/payload, app state, appearance,
-window orientation, and microphone permission recovery. CI repacks JavaScript-only changes into the
-cached Release app without starting Metro; native configuration changes intentionally produce one
-new fingerprinted build that all simulator consumers share.
+window orientation, and microphone permission recovery; the
+`maestro-clickable-first-target` duplicate pair exercises Android Maestro clickable-first
+ordering. `automation-flattened-group` wraps a `TextInput` in an `accessible={true}` view, so the
+field itself never appears in the accessibility tree and only the keyboard proves it has focus;
+`automation-flattened-value` mirrors what was typed. `automation-open-apple-pay` (iOS only, native
+module `modules/apple-pay-lab`) presents the system Apple Pay sheet requiring a billing address plus
+contact email and phone; those forms are hosted out of process in `com.apple.PassbookUIService`, and
+`automation-apple-pay-result` reports `authorized` or `dismissed` once the sheet closes. CI repacks
+JavaScript-only changes into the cached Release app without starting Metro; native configuration
+changes intentionally produce one new fingerprinted build that all simulator consumers share.
 
 ### iOS simulator
 
@@ -250,6 +258,13 @@ canary, verifies the clean pan/pinch/rotate state, then checks that one atomic
 two-pointer gesture changes all three semantic states. On Android, these checks
 are intentionally qualitative because recognizers can report non-exact centroid,
 scale, and rotation values for one simultaneous two-finger gesture.
+
+`gesture-pan-duration.ad` is a separate, minimal iOS replay that asserts a single-pointer
+`gesture pan`'s requested duration is actually observed by the app (a bucketed
+`pan duration` status on the Home screen), rather than just that the gesture activated.
+It's split out of `gesture-lab.ad` so it can run as an automatic PR-tier check
+(`.github/workflows/ios.yml`) without depending on `gesture-lab.ad`'s multi-touch commands,
+which stay full-tier only.
 
 To target a specific iOS simulator or an installed Expo development build, run the
 underlying command directly so global flags stay before replay inputs:

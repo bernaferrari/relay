@@ -1,5 +1,5 @@
-import { buildPrimaryEnvVarName, parseSourceValue } from '../utils/source-value.ts';
-import { listCliCommandNames } from '../command-catalog.ts';
+import { buildPrimaryEnvVarName, parseSourceValue } from '@agent-device/kernel/source-value';
+import { listCliCommandNames } from '@agent-device/command-registry/catalog';
 import {
   getCliCommandSchema,
   getFlagDefinitions,
@@ -91,7 +91,20 @@ function buildOptionSpecs(): OptionSpec[] {
         return supported.has(command);
       },
     }))
-    .sort((left, right) => left.key.localeCompare(right.key));
+    .sort((left, right) => compareOptionKeys(left.key, right.key));
+}
+
+/**
+ * Case-insensitive-then-codepoint ordering, matching what `localeCompare`
+ * produces for the ASCII flag-key vocabulary. This runs at module load on
+ * every CLI invocation, and the FIRST `localeCompare` in a process pays ~5ms
+ * of ICU collator initialization — a cost the CLI otherwise never incurs.
+ */
+function compareOptionKeys(left: string, right: string): number {
+  const leftLower = left.toLowerCase();
+  const rightLower = right.toLowerCase();
+  if (leftLower !== rightLower) return leftLower < rightLower ? -1 : 1;
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function primaryFlagDefinition(spec: OptionSpec): FlagDefinition {

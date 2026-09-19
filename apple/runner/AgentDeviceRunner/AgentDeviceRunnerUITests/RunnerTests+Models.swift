@@ -1,3 +1,5 @@
+import AgentDeviceSnapshotPresentation
+
 // MARK: - Wire Models
 
 enum CommandType: String, Codable {
@@ -132,12 +134,14 @@ struct Command: Codable {
   let direction: String?
   let amount: Double?
   let pixels: Double?
+  let scrollReleaseBehavior: ScrollReleaseBehavior?
   let orientation: String?
   let gesturePlan: RunnerGesturePlan?
   let outPath: String?
   let fps: Int?
-  let maxSize: Int?
   let interactiveOnly: Bool?
+  let preferredBackend: String?
+  let customActions: Bool?
   let depth: Int?
   let scope: String?
   let raw: Bool?
@@ -145,6 +149,11 @@ struct Command: Codable {
   let inlineScreenshot: Bool?
   let synthesized: Bool?
   let steps: [SequenceStep]?
+}
+
+enum ScrollReleaseBehavior: String, Codable {
+  case controlled
+  case inertial
 }
 
 /// Canonical one- or two-pointer plan produced by the portable TypeScript planner.
@@ -206,14 +215,8 @@ struct SequenceStepResult: Codable {
 
 struct Response: Codable {
   let ok: Bool
-  let data: DataPayload?
-  let error: ErrorPayload?
-
-  init(ok: Bool, data: DataPayload? = nil, error: ErrorPayload? = nil) {
-    self.ok = ok
-    self.data = data
-    self.error = error
-  }
+  var data: DataPayload?
+  var error: ErrorPayload?
 }
 
 extension Response {
@@ -226,171 +229,106 @@ extension Response {
     payload.currentUptimeMs = value
     return Response(ok: ok, data: payload, error: error)
   }
+
+  // The daemon reads this occupancy flag to decide whether a healthy response proves the runner
+  // drained its watchdog-abandoned main-thread work. Only successful responses carry it; a refusal
+  // is itself the busy signal and needs no stamp.
+  func stampingCurrentMainThreadBusy(_ value: Bool) -> Response {
+    guard ok else { return self }
+    var payload = data ?? DataPayload()
+    payload.runnerMainThreadBusy = value
+    return Response(ok: ok, data: payload, error: error)
+  }
 }
 
 struct DataPayload: Codable {
-  let message: String?
-  let imageBase64: String?
-  let text: String?
-  let found: Bool?
-  let items: [String]?
-  let nodes: [SnapshotNode]?
-  let truncated: Bool?
-  let snapshotQuality: SnapshotQuality?
-  let gestureStartUptimeMs: Double?
-  let gestureEndUptimeMs: Double?
-  let x: Double?
-  let y: Double?
-  let x2: Double?
-  let y2: Double?
-  let referenceWidth: Double?
-  let referenceHeight: Double?
+  var message: String?
+  var imageBase64: String?
+  var text: String?
+  var found: Bool?
+  var items: [String]?
+  var nodes: [PresentedNode]?
+  var truncated: Bool?
+  var qualityPayload: SnapshotQualityPayload? = nil
+  var snapshotQuality: SnapshotQuality?
+  /// Set when the capture describes an in-place system surface, not the app itself (#2438).
+  var systemSurface: SystemSurfaceProvenancePayload?
+  var gestureStartUptimeMs: Double?
+  var gestureEndUptimeMs: Double?
+  var x: Double?
+  var y: Double?
+  var x2: Double?
+  var y2: Double?
+  var referenceWidth: Double?
+  var referenceHeight: Double?
   var currentUptimeMs: Double?
-  let commandId: String?
-  let lifecycleState: String?
-  let lifecycleCommand: String?
-  let lifecycleResponseOk: Bool?
-  let lifecycleResponseJson: String?
-  let lifecycleErrorCode: String?
-  let lifecycleErrorMessage: String?
-  let lifecycleErrorHint: String?
-  let visible: Bool?
-  let wasVisible: Bool?
-  let dismissed: Bool?
-  let keyboardDismissMechanism: String?
-  let orientation: String?
-  let gestureFallback: String?
-  let gestureFallbackMessage: String?
-  let gestureFallbackHint: String?
-  let maestroNonHittableCoordinateFallbackUsed: Bool?
-  let runnerFatal: Bool?
-  let runnerFatalReason: String?
-  let completedSteps: Int?
-  let failedStepIndex: Int?
-  let sequenceResults: [SequenceStepResult]?
+  var commandId: String?
+  var lifecycleState: String?
+  var lifecycleCommand: String?
+  var lifecycleResponseOk: Bool?
+  var lifecycleResponseJson: String?
+  var lifecycleErrorCode: String?
+  var lifecycleErrorMessage: String?
+  var lifecycleErrorHint: String?
+  var visible: Bool?
+  var wasVisible: Bool?
+  var dismissed: Bool?
+  var keyboardDismissMechanism: String?
+  var orientation: String?
+  var gestureFallback: String?
+  var gestureFallbackMessage: String?
+  var gestureFallbackHint: String?
+  // Scroll keyboard avoidance evidence (#2500): the swipe was clipped to the band above an
+  // on-screen keyboard, and where that band ended. `referenceHeight` already names the clipped axis.
+  var keyboardAvoided: Bool?
+  var keyboardMinY: Double?
+  var maestroNonHittableCoordinateFallbackUsed: Bool?
+  var textEntryRoute: String?
+  var runnerFatal: Bool?
+  var runnerFatalReason: String?
+  /// Whether main-thread XCTest work past the execution watchdog is still draining when this
+  /// response is written. A private-AX snapshot can be served successfully while an abandoned tree
+  /// crawl still grinds, so the healthy response must carry the live occupancy rather than let the
+  /// daemon read `ok` as proof the runner drained (#2552).
+  var runnerMainThreadBusy: Bool?
+  var completedSteps: Int?
+  var failedStepIndex: Int?
+  var sequenceResults: [SequenceStepResult]?
+}
 
-  init(
-    message: String? = nil,
-    imageBase64: String? = nil,
-    text: String? = nil,
-    found: Bool? = nil,
-    items: [String]? = nil,
-    nodes: [SnapshotNode]? = nil,
-    truncated: Bool? = nil,
-    snapshotQuality: SnapshotQuality? = nil,
-    gestureStartUptimeMs: Double? = nil,
-    gestureEndUptimeMs: Double? = nil,
-    x: Double? = nil,
-    y: Double? = nil,
-    x2: Double? = nil,
-    y2: Double? = nil,
-    referenceWidth: Double? = nil,
-    referenceHeight: Double? = nil,
-    currentUptimeMs: Double? = nil,
-    commandId: String? = nil,
-    lifecycleState: String? = nil,
-    lifecycleCommand: String? = nil,
-    lifecycleResponseOk: Bool? = nil,
-    lifecycleResponseJson: String? = nil,
-    lifecycleErrorCode: String? = nil,
-    lifecycleErrorMessage: String? = nil,
-    lifecycleErrorHint: String? = nil,
-    visible: Bool? = nil,
-    wasVisible: Bool? = nil,
-    dismissed: Bool? = nil,
-    keyboardDismissMechanism: String? = nil,
-    orientation: String? = nil,
-    gestureFallback: String? = nil,
-    gestureFallbackMessage: String? = nil,
-    gestureFallbackHint: String? = nil,
-    maestroNonHittableCoordinateFallbackUsed: Bool? = nil,
-    runnerFatal: Bool? = nil,
-    runnerFatalReason: String? = nil,
-    completedSteps: Int? = nil,
-    failedStepIndex: Int? = nil,
-    sequenceResults: [SequenceStepResult]? = nil
-  ) {
-    self.message = message
-    self.imageBase64 = imageBase64
-    self.text = text
-    self.found = found
-    self.items = items
+/// `kind` mirrors the TS `IosSystemSurfaceKind` (e.g. "web-auth").
+struct SystemSurfaceProvenancePayload: Codable {
+  let bundleId: String
+  let kind: String
+}
+
+struct SnapshotQualityPayload: Codable {
+  let nodes: [PresentedNode]
+  let truncated: Bool
+  let scope: String?
+
+  init(nodes: [PresentedNode], truncated: Bool) {
     self.nodes = nodes
     self.truncated = truncated
-    self.snapshotQuality = snapshotQuality
-    self.gestureStartUptimeMs = gestureStartUptimeMs
-    self.gestureEndUptimeMs = gestureEndUptimeMs
-    self.x = x
-    self.y = y
-    self.x2 = x2
-    self.y2 = y2
-    self.referenceWidth = referenceWidth
-    self.referenceHeight = referenceHeight
-    self.currentUptimeMs = currentUptimeMs
-    self.commandId = commandId
-    self.lifecycleState = lifecycleState
-    self.lifecycleCommand = lifecycleCommand
-    self.lifecycleResponseOk = lifecycleResponseOk
-    self.lifecycleResponseJson = lifecycleResponseJson
-    self.lifecycleErrorCode = lifecycleErrorCode
-    self.lifecycleErrorMessage = lifecycleErrorMessage
-    self.lifecycleErrorHint = lifecycleErrorHint
-    self.visible = visible
-    self.wasVisible = wasVisible
-    self.dismissed = dismissed
-    self.keyboardDismissMechanism = keyboardDismissMechanism
-    self.orientation = orientation
-    self.gestureFallback = gestureFallback
-    self.gestureFallbackMessage = gestureFallbackMessage
-    self.gestureFallbackHint = gestureFallbackHint
-    self.maestroNonHittableCoordinateFallbackUsed = maestroNonHittableCoordinateFallbackUsed
-    self.runnerFatal = runnerFatal
-    self.runnerFatalReason = runnerFatalReason
-    self.completedSteps = completedSteps
-    self.failedStepIndex = failedStepIndex
-    self.sequenceResults = sequenceResults
+    self.scope = nil
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case nodes
+    case truncated
+    case scope
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(nodes, forKey: .nodes)
+    try container.encode(truncated, forKey: .truncated)
+    try container.encodeNil(forKey: .scope)
   }
 }
 
 struct ErrorPayload: Codable {
-  let code: String?
+  var code: String?
   let message: String
-  let hint: String?
-
-  init(code: String? = nil, message: String, hint: String? = nil) {
-    self.code = code
-    self.message = message
-    self.hint = hint
-  }
-}
-
-struct SnapshotRect: Codable {
-  let x: Double
-  let y: Double
-  let width: Double
-  let height: Double
-}
-
-struct SnapshotNode: Codable {
-  let index: Int
-  let type: String
-  let label: String?
-  let identifier: String?
-  let value: String?
-  let rect: SnapshotRect
-  let enabled: Bool
-  let focused: Bool?
-  let selected: Bool?
-  let hittable: Bool
-  let depth: Int
-  let parentIndex: Int?
-  let hiddenContentAbove: Bool?
-  let hiddenContentBelow: Bool?
-}
-
-struct SnapshotOptions {
-  let interactiveOnly: Bool
-  let depth: Int?
-  let scope: String?
-  let raw: Bool
+  var hint: String?
 }

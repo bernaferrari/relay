@@ -9,11 +9,19 @@ import { scoreExpectations } from '../help-conformance-case-checks.mjs';
 import { validateAgentDeviceCommand } from '../help-conformance-command-validator.ts';
 import { opensAndCloses, usesValidationPrep } from '../help-conformance-expectations.mjs';
 import { validatePlanCommands } from '../help-conformance-plan-validator.mjs';
-import { detectRunnerError, extractCommands } from '../help-conformance-runner-output.mjs';
+import { classifyRunnerOutput, extractCommands } from '../help-conformance-runner-output.mjs';
 import { summarizeResults } from '../help-conformance-summary.mjs';
 
 const execFileAsync = promisify(execFile);
 const SCRIPT = join(import.meta.dirname, '..', 'help-conformance-bench.mjs');
+const AGENT_DEVICE_SKILL = join(
+  import.meta.dirname,
+  '..',
+  '..',
+  'skills',
+  'agent-device',
+  'SKILL.md',
+);
 
 // These tests spawn the real script in --dry-run mode with every required doc
 // overridden, so no LLM call and no built CLI is needed: the raw-first-screen
@@ -316,35 +324,52 @@ test('validation prep accepts intervening checks and the Android build path in o
   );
 });
 
-test('runner output distinguishes model commands from infrastructure errors', () => {
+test('runner output classifies model commands as success and infrastructure noise as runner-error', () => {
   const successEnvelope = JSON.stringify({
     is_error: false,
     result: JSON.stringify({ commands: ['agent-device snapshot -i'] }),
   });
   assert.deepEqual(extractCommands(successEnvelope), ['agent-device snapshot -i']);
-  assert.equal(detectRunnerError(successEnvelope), undefined);
+  assert.deepEqual(classifyRunnerOutput(successEnvelope), {
+    kind: 'success',
+    raw: successEnvelope,
+    commands: ['agent-device snapshot -i'],
+  });
 
   const claudeError = JSON.stringify({
     is_error: true,
     result: 'API Error: Unable to connect to API',
   });
-  assert.equal(detectRunnerError(claudeError), 'API Error: Unable to connect to API');
+  assert.deepEqual(classifyRunnerOutput(claudeError), {
+    kind: 'runner-error',
+    raw: claudeError,
+    message: 'API Error: Unable to connect to API',
+    reason: 'error-envelope',
+  });
   assert.deepEqual(extractCommands(claudeError), []);
 
-  assert.equal(
-    detectRunnerError(JSON.stringify({ type: 'error', message: 'rate limit exceeded' })),
-    'rate limit exceeded',
-  );
-  assert.equal(
-    detectRunnerError(
-      JSON.stringify({
-        status: 'failed',
-        commands: ['agent-device snapshot -i'],
-      }),
-    ),
-    undefined,
-  );
-  assert.equal(detectRunnerError(''), 'Runner returned empty output.');
+  const rateLimited = JSON.stringify({ type: 'error', message: 'rate limit exceeded' });
+  assert.deepEqual(classifyRunnerOutput(rateLimited), {
+    kind: 'runner-error',
+    raw: rateLimited,
+    message: 'rate limit exceeded',
+    reason: 'error-envelope',
+  });
+
+  // status: 'failed' alone does not shadow a real commands payload.
+  const statusFailedWithCommands = JSON.stringify({
+    status: 'failed',
+    commands: ['agent-device snapshot -i'],
+  });
+  assert.equal(classifyRunnerOutput(statusFailedWithCommands).kind, 'success');
+
+  const empty = classifyRunnerOutput('');
+  assert.deepEqual(empty, {
+    kind: 'runner-error',
+    raw: '',
+    message: 'Runner returned empty output.',
+    reason: 'empty-output',
+  });
 });
 
 test('plan validator rejects shell projection and non-permitted executables', async () => {
@@ -377,6 +402,80 @@ test('plan validator rejects shell projection and non-permitted executables', as
   const [placeholder] = await validatePlanCommands(['agent-device press @<search-ref> --settle']);
   assert.ok(placeholder.issues.some(({ kind }) => kind === 'pseudo-ref'));
   assert.ok(placeholder.issues.some(({ kind }) => kind === 'shell-projection'));
+});
+
+// The compact workflow card teaches chaining confident consecutive steps
+// with an unquoted `&&`. This is the validator side of that contract: split
+// on `&&` and validate each chained segment as its own agent-device command,
+// instead of failing the whole line as one shell-projection violation.
+test('plan validator splits an unquoted && chain into independently valid segments', async () => {
+  const [press, fill] = await validatePlanCommands([
+    'agent-device press \'label="Search"\' --settle && agent-device fill \'label="Search"\' "query" --settle',
+  ]);
+  assert.equal(press.issues.length, 0);
+  assert.deepEqual(press.tokens, ['agent-device', 'press', 'label="Search"', '--settle']);
+  assert.equal(fill.issues.length, 0);
+  assert.deepEqual(fill.tokens, ['agent-device', 'fill', 'label="Search"', 'query', '--settle']);
+});
+
+test('plan validator fails only the offending segment of a chained plan', async () => {
+  const [goodFirst, badSecond] = await validatePlanCommands([
+    'agent-device snapshot -i && agent-device press @<search-ref> --settle',
+  ]);
+  assert.equal(goodFirst.issues.length, 0);
+  assert.ok(badSecond.issues.some(({ kind }) => kind === 'pseudo-ref'));
+});
+
+test('plan validator does not split && inside a quoted selector value', async () => {
+  const [single] = await validatePlanCommands([
+    'agent-device fill \'label="A && B"\' "value" --settle',
+  ]);
+  assert.equal(single.issues.length, 0);
+  assert.deepEqual(single.tokens, ['agent-device', 'fill', 'label="A && B"', 'value', '--settle']);
+});
+
+test('plan validator still rejects an unquoted lone & as a shell operator', async () => {
+  const [lone] = await validatePlanCommands(['agent-device open foo & agent-device close']);
+  assert.equal(lone.issues[0]?.kind, 'shell-projection');
+});
+
+test('plan validator keeps single-command results identical when no chain is present', async () => {
+  const [single] = await validatePlanCommands(['agent-device snapshot -i']);
+  assert.equal(single.issues.length, 0);
+  assert.deepEqual(single.tokens, ['agent-device', 'snapshot', '-i']);
+  assert.equal(single.command, 'agent-device snapshot -i');
+});
+
+// A real shell rejects && with an empty operand on either side. A validator
+// that silently dropped the empty segment (instead of failing it) would
+// bless a plan that fails at execution — exactly the gap review found.
+test('plan validator rejects a leading && as an empty chain operand', async () => {
+  const [empty, closeSegment] = await validatePlanCommands(['&& agent-device close']);
+  assert.equal(empty.issues[0]?.kind, 'empty-chain-operand');
+  assert.equal(closeSegment.issues.length, 0);
+});
+
+test('plan validator rejects a trailing && as an empty chain operand', async () => {
+  const [pressSegment, empty] = await validatePlanCommands(['agent-device press @e1 --settle &&']);
+  assert.equal(pressSegment.issues.length, 0);
+  assert.equal(empty.issues[0]?.kind, 'empty-chain-operand');
+});
+
+test('plan validator rejects a doubled && as an empty chain operand', async () => {
+  const [openSegment, empty, closeSegment] = await validatePlanCommands([
+    'agent-device open foo && && agent-device close',
+  ]);
+  assert.equal(openSegment.issues.length, 0);
+  assert.equal(empty.issues[0]?.kind, 'empty-chain-operand');
+  assert.equal(closeSegment.issues.length, 0);
+});
+
+test('plan validator still allows a quoted && to pass through a single segment unsplit', async () => {
+  const [single] = await validatePlanCommands([
+    'agent-device fill \'label="A && B"\' "value" --settle',
+  ]);
+  assert.equal(single.issues.length, 0);
+  assert.deepEqual(single.tokens, ['agent-device', 'fill', 'label="A && B"', 'value', '--settle']);
 });
 
 test('case matchers score parsed tokens so shell quoting does not change results', async () => {
@@ -420,6 +519,45 @@ test('case matchers score parsed tokens so shell quoting does not change results
     usesLiteralHandleSelector: true,
     opensSettings: true,
   });
+});
+
+test('foreground attach grammar accepts both auto-discovery and an explicit known app', async () => {
+  const autoDiscoveryCommand = 'agent-device open --foreground --platform ios';
+  const explicitTargetCommand = 'agent-device open --foreground --platform ios com.example.app';
+  const [autoDiscovery, explicitTarget] = await validatePlanCommands([
+    autoDiscoveryCommand,
+    explicitTargetCommand,
+  ]);
+
+  assert.deepEqual(autoDiscovery.agentCommand, { command: 'open', positionals: [] });
+  assert.deepEqual(explicitTarget.agentCommand, {
+    command: 'open',
+    positionals: ['com.example.app'],
+  });
+  assert.deepEqual(autoDiscovery.issues, []);
+  assert.deepEqual(explicitTarget.issues, []);
+});
+
+test('compact skill starts a known-app task with foreground open and an initial snapshot', async () => {
+  const skill = await readFile(AGENT_DEVICE_SKILL, 'utf8');
+  const openingCommands = skill
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('agent-device open <app>'));
+
+  assert.ok(
+    skill.split('\n').length <= 30,
+    'the complete skill must fit the reliable first-30-line read',
+  );
+  assert.deepEqual(openingCommands, ['agent-device open <app> --foreground']);
+  assert.match(skill, /returns the initial interactive snapshot with `@refs`/);
+  assert.match(
+    skill,
+    /copy refs? byte-for-byte.*keep the `@`/i,
+    'the always-loaded skill must preserve the @ prefix before topic help is available',
+  );
+  assert.match(skill, /sparse\/AX-unavailable.*refs and selectors are invalid/i);
+  assert.match(skill, /`agent-device screenshot`.*use coordinates.*`snapshot -i`/i);
 });
 
 test('plan validator applies narrow grammar to permitted external commands', async () => {
@@ -480,20 +618,16 @@ test('aggregate summary exposes stability and failure taxonomy per runner x case
       checks: { validPlanCommands: true, usesSettle: true },
       commandValidation: [],
     },
+    // A runner-error result (see runCase in help-conformance-bench.mjs)
+    // never carries checks/commandValidation alongside runnerError: an
+    // infrastructure failure must not also read as a model validation
+    // failure in the aggregate taxonomy.
     {
       runner: 'claude:haiku',
       caseId: 'metamorphic',
       passed: false,
-      checks: { validPlanCommands: false, usesSettle: true },
-      commandValidation: [
-        {
-          issues: [
-            { kind: 'pseudo-ref', error: 'bad ref' },
-            { kind: 'shell-projection', error: 'bad shell' },
-          ],
-        },
-      ],
       runnerError: 'failed',
+      runnerErrorReason: 'process-failure',
     },
     {
       runner: 'claude:haiku',
@@ -518,6 +652,38 @@ test('aggregate summary exposes stability and failure taxonomy per runner x case
       validationIssues: { 'pseudo-ref': 1 },
       runnerErrors: 1,
       passRate: 0.5,
+    },
+  ]);
+});
+
+test('a group with only runner-error trials reports passRate: null, not 0/0', () => {
+  const summary = summarizeResults([
+    {
+      runner: 'codex:gpt',
+      caseId: 'metamorphic',
+      passed: false,
+      runnerError: 'timed out',
+      runnerErrorReason: 'process-failure',
+    },
+    {
+      runner: 'codex:gpt',
+      caseId: 'metamorphic',
+      passed: false,
+      runnerError: 'Runner returned empty output.',
+      runnerErrorReason: 'empty-output',
+    },
+  ]);
+  assert.deepEqual(summary, [
+    {
+      runner: 'codex:gpt',
+      caseId: 'metamorphic',
+      trials: 2,
+      evaluatedTrials: 0,
+      passed: 0,
+      failedChecks: {},
+      validationIssues: {},
+      runnerErrors: 2,
+      passRate: null,
     },
   ]);
 });

@@ -1,3 +1,4 @@
+import { createTestDeviceInventoryGateways } from '../../__tests__/test-utils/device-inventory-gateways.ts';
 /**
  * ADR 0012 decision 6, R7 (C5a): when a repair session was reaped before it was
  * finalized, the request router rewrites the resulting `SESSION_NOT_FOUND` into
@@ -7,28 +8,31 @@
  */
 import { test, expect, vi } from 'vitest';
 import fs from 'node:fs';
-import os from 'node:os';
+
 import path from 'node:path';
 import { getResolveTargetDeviceMock } from './request-router-dispatch-mocks.ts';
 
 vi.mock('../device-ready.ts', () => ({ ensureDeviceReady: vi.fn(async () => {}) }));
 
-import { createRequestHandler } from '../request-router.ts';
-import type { DaemonRequest, SessionState } from '../types.ts';
+import { createRequestHandler } from './test-device-runtime-gateway.ts';
+import type { DaemonRequest } from '../daemon-request.ts';
+import type { SessionState } from '../session-state.ts';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
 import { inspectAdReplay } from '@agent-device/ad-replay';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 
 const mockResolveTargetDevice = vi.mocked(getResolveTargetDeviceMock());
 
 function makeHandler(prefix: string) {
   const sessionStore = makeSessionStore(prefix);
   const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
     token: 'test-token',
     sessionStore,
     leaseRegistry: new LeaseRegistry(),
+    deviceInventoryGateways: createTestDeviceInventoryGateways(),
     trackDownloadableArtifact: () => 'artifact-id',
   });
   return { sessionStore, handler };
@@ -128,14 +132,16 @@ test('a replay --from continuation on a reaped repair session gets REPAIR_SESSIO
   };
   mockResolveTargetDevice.mockResolvedValue(iosDevice);
   const { sessionStore, handler } = makeHandler('agent-device-router-from-expired-');
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-router-from-script-'));
+  const root = mkdtempForTestSync('agent-device-router-from-script-');
   const scriptPath = path.join(root, 'flow.ad');
   fs.writeFileSync(scriptPath, 'open "Demo"\nclick id="a"\n');
 
-  // Compute the plan digest exactly as runReplayScriptFile does (a real agent
+  // Compute the plan digest exactly as runReplayCommand does (a real agent
   // takes it from the divergence report's resume.planDigest).
   const flags = { platform: 'ios' as const };
-  const digest = inspectAdReplay(scriptPath, { platform: flags.platform }).planDigest;
+  const digest = inspectAdReplay(fs.readFileSync(scriptPath, 'utf8'), {
+    platform: flags.platform,
+  }).planDigest;
 
   // The repair session was reaped, leaving a tombstone; no live session exists.
   sessionStore.writeRepairTombstone(tombstonedSession('repair-from'));

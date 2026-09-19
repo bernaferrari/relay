@@ -1,17 +1,18 @@
 import type { PerfOptions } from '@agent-device/contracts/client';
 import { AppError } from '@agent-device/kernel/errors';
-import type { CommandSchemaOverride } from '../../cli-schema/types.ts';
-import { enumField, stringField } from '../command-input.ts';
+import type { CommandSchemaOverride } from '@agent-device/command-registry/command-schema';
+import { enumField, requiredField, stringField } from '../command-input.ts';
 import { defineCommandFacet, defineCommandFamilyFromFacets } from '../family/types.ts';
-import { defineExecutableCommand } from '../command-contract.ts';
 import { defineFieldCommandMetadata } from '../field-command-contract.ts';
 import {
   isPerfAction,
   isPerfArea,
   isPerfKind,
+  isRemovedAggregatePerfToken,
   isPerfSubject,
   PERF_ACTION_ERROR_MESSAGE,
   PERF_ACTION_VALUES,
+  PERF_AGGREGATE_REMOVED_ERROR_MESSAGE,
   PERF_AREA_ERROR_MESSAGE,
   PERF_AREA_VALUES,
   PERF_KIND_ERROR_MESSAGE,
@@ -29,13 +30,14 @@ import { perfCliOutputFormatters } from './output.ts';
 
 const PERF_COMMAND_NAME = 'perf';
 
-const perfCommandDescription = 'Show session performance, frame health, and memory diagnostics.';
+const perfCommandDescription =
+  'Collect frame health, memory diagnostics, and platform profiling artifacts with compact agent-readable summaries.';
 
 export const perfCommandMetadata = defineFieldCommandMetadata(
   PERF_COMMAND_NAME,
   perfCommandDescription,
   {
-    area: enumField(PERF_AREA_VALUES),
+    area: requiredField(enumField(PERF_AREA_VALUES)),
     subject: enumField(PERF_SUBJECT_VALUES),
     action: enumField(PERF_ACTION_VALUES),
     kind: enumField(PERF_KIND_VALUES),
@@ -45,18 +47,12 @@ export const perfCommandMetadata = defineFieldCommandMetadata(
   },
 );
 
-export const perfCommandDefinition = defineExecutableCommand(perfCommandMetadata, (client, input) =>
-  client.observability.perf(input),
-);
-
 const perfCliSchema = {
   usageOverride:
-    'perf metrics --json\n  agent-device perf frames --json\n  agent-device perf memory sample --json\n  agent-device perf memory snapshot [--kind android-hprof|memgraph] [--out <path>]\n  agent-device perf cpu profile start --kind xctrace [--template <name>] --out <profile.trace>\n  agent-device perf cpu profile stop --kind xctrace --out <profile.trace>\n  agent-device perf cpu profile report --kind xctrace --out <report.json>\n  agent-device perf trace start|stop --kind xctrace [--template <name>] --out <path>\n  agent-device perf cpu profile start --kind simpleperf --out <cpu.perf.data>\n  agent-device perf cpu profile stop --kind simpleperf\n  agent-device perf cpu profile report --kind simpleperf --out <cpu-report.json>\n  agent-device perf trace start|stop --kind perfetto [--out <path>]',
+    'perf frames --json\n  agent-device perf memory sample --json\n  agent-device perf memory snapshot [--kind android-hprof|memgraph] [--out <path>]\n  agent-device perf cpu profile start --kind xctrace [--template <name>] --out <profile.trace>\n  agent-device perf cpu profile stop --kind xctrace --out <profile.trace>\n  agent-device perf cpu profile report --kind xctrace --out <report.json>\n  agent-device perf trace start|stop --kind xctrace [--template <name>] --out <path>\n  agent-device perf cpu profile start --kind simpleperf --out <cpu.perf.data>\n  agent-device perf cpu profile stop --kind simpleperf\n  agent-device perf cpu profile report --kind simpleperf --out <cpu-report.json>\n  agent-device perf trace start|stop --kind perfetto [--out <path>]\n\n  Aggregate perf was removed in 0.21. Use one of the explicit forms above.',
+  usageFlags: [],
   listUsageOverride: 'perf',
-  helpDescription:
-    'Show session performance metrics, focused frame/jank health, memory diagnostics artifacts, Apple xctrace artifacts, or Android native Simpleperf/Perfetto artifacts. Prefer explicit perf metrics --json for first-pass startup/CPU/memory data. For CPU profiles, start/stop write the raw artifact and report writes a compact .json summary; include report after simpleperf stop when the task needs agent-readable native CPU evidence. Bare perf and metrics remain aliases. Native perf output is agent evidence: compact state, artifact path, and size only; raw profiles/traces stay on disk.',
-  summary: 'Check runtime metrics, frames, memory, CPU profiles, or native trace artifacts',
-  positionalArgs: ['area?', 'subjectOrAction?', 'action?'],
+  positionalArgs: ['area', 'subjectOrAction?', 'action?'],
   allowedFlags: ['kind', 'perfTemplate', 'out'],
 } as const satisfies CommandSchemaOverride;
 
@@ -73,10 +69,17 @@ export const perfDaemonWriter: DaemonWriter = direct(PERF_COMMAND_NAME, (input) 
   perfPositionals(input as PerfOptions),
 );
 
-const perfCommandFacet = defineCommandFacet({
+export const perfCommandFacet = defineCommandFacet({
   name: PERF_COMMAND_NAME,
+  text: {
+    summary: 'Check frames, memory, or native profiles',
+    cliDetail:
+      'Use perf frames for bounded frame-health evidence and perf memory sample for a compact process-memory reading. On iOS simulators and macOS, process sampling and captures target the resolved app executable and exclude other copies with the same name. Apple xctrace and Android Simpleperf/Perfetto captures keep raw artifacts on disk; report produces bounded agent-readable evidence. For React render internals, use agent-device react-devtools.',
+    mcpDetail:
+      'For CPU profiles, start and stop write the raw artifact while report writes a compact summary; request the report when the task needs readable native CPU evidence. Profiling output is evidence only: compact state, artifact path, and size.',
+  },
   metadata: perfCommandMetadata,
-  definition: perfCommandDefinition,
+  run: (client, input) => client.observability.perf(input),
   cliSchema: perfCliSchema,
   cliReader: perfCliReader,
   daemonWriter: perfDaemonWriter,
@@ -89,7 +92,7 @@ export const perfCommandFamily = defineCommandFamilyFromFacets({
 });
 
 function perfPositionals(input: PerfOptions): string[] {
-  const area = input.area ?? (input.action ? 'metrics' : undefined);
+  const area = input.area;
   if (area === 'cpu') {
     return nativePerfPositionals(
       [
@@ -128,10 +131,6 @@ function readPerfPositionals(
   positionals: string[],
   flags: Pick<PerfOptions, 'kind' | 'template' | 'out'> = {},
 ): Pick<PerfOptions, 'area' | 'subject' | 'action' | 'kind' | 'template' | 'out'> {
-  if (positionals[0] !== undefined && positionals[1] === undefined) {
-    const action = readPerfAction(positionals[0], { allowUndefined: true });
-    if (action) return { action, kind: readPerfKind(flags.kind), out: flags.out };
-  }
   const area = readPerfArea(positionals[0]);
   if (area === 'cpu') {
     return {
@@ -152,29 +151,57 @@ function readPerfPositionals(
       out: flags.out,
     };
   }
+  const action = readPerfAction(positionals[1]);
+  const kind = readPerfKind(flags.kind);
+  validateObservationPerfFlags(area, action, kind, flags.out);
   return {
     area,
-    action: readPerfAction(positionals[1]),
-    kind: readPerfKind(flags.kind),
+    action,
+    kind,
     out: flags.out,
   };
 }
 
-function readPerfArea(value: string | undefined): PerfArea | undefined {
-  if (value === undefined) return undefined;
-  const normalized = value.toLowerCase();
+function validateObservationPerfFlags(
+  area: 'frames' | 'memory',
+  action: PerfAction | undefined,
+  kind: PerfKind | undefined,
+  out: string | undefined,
+): void {
+  if (area === 'frames') {
+    if (kind !== undefined) {
+      throw new AppError('INVALID_ARGS', '--kind is only supported with perf memory snapshot');
+    }
+    if (out !== undefined) {
+      throw new AppError(
+        'INVALID_ARGS',
+        '--out is only supported with perf memory snapshot, perf cpu profile, or perf trace',
+      );
+    }
+  }
+  if (area === 'memory') {
+    if (action !== 'snapshot' && kind !== undefined) {
+      throw new AppError('INVALID_ARGS', '--kind is only supported with perf memory snapshot');
+    }
+    if (action !== 'snapshot' && out !== undefined) {
+      throw new AppError('INVALID_ARGS', '--out is only supported with perf memory snapshot');
+    }
+  }
+}
+
+function readPerfArea(value: string | undefined): PerfArea {
+  const normalized = value?.toLowerCase();
+  if (isRemovedAggregatePerfToken(normalized)) {
+    throw new AppError('INVALID_ARGS', PERF_AGGREGATE_REMOVED_ERROR_MESSAGE);
+  }
   if (isPerfArea(normalized)) return normalized;
   throw new AppError('INVALID_ARGS', PERF_AREA_ERROR_MESSAGE);
 }
 
-function readPerfAction(
-  value: string | undefined,
-  options: { allowUndefined?: boolean } = {},
-): PerfAction | undefined {
+function readPerfAction(value: string | undefined): PerfAction | undefined {
   if (value === undefined) return undefined;
   const normalized = value.toLowerCase();
   if (isPerfAction(normalized)) return normalized;
-  if (options.allowUndefined) return undefined;
   throw new AppError('INVALID_ARGS', PERF_ACTION_ERROR_MESSAGE);
 }
 

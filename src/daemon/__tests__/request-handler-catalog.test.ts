@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { test } from 'vitest';
-import { withTargetDeviceResolutionScope } from '../../core/dispatch-resolve.ts';
-import { INTERNAL_COMMANDS, PUBLIC_COMMANDS } from '../../command-catalog.ts';
+import { withTestDeviceInventoryProvider as withTargetDeviceResolutionScope } from '../../__tests__/test-utils/device-inventory-gateways.ts';
+import { INTERNAL_COMMANDS, PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
+import { isRequestCanceledError, type AppError } from '@agent-device/kernel/errors';
 import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
 import { getDaemonCommandRoute, type DaemonCommandRoute } from '../daemon-command-registry.ts';
 import { cleanupDownloadableArtifact, trackDownloadableArtifact } from '../artifact-tracking.ts';
@@ -12,9 +12,24 @@ import { contextFromFlags } from '../context.ts';
 import { handleLeaseCommands } from '../handlers/lease.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { runRequestHandlerChain } from '../request-handler-chain.ts';
-import type { DaemonRequest, DaemonResponse } from '../types.ts';
+import {
+  clearRequestAbortRegistration,
+  markRequestCanceled,
+  registerRequestAbort,
+} from '@agent-device/host-kit/request';
+import {
+  unavailableBindDevice,
+  unavailableBindExactDevice,
+  unavailableInspectFacts,
+} from './test-device-runtime-gateway.ts';
+import type { DaemonRequest, DaemonResponse } from '../daemon-request.ts';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
+import { createScreenRecordingAdmissionLedger } from '../screen-recording-admission-ledger.ts';
+import { createAudioProbeAdmissionLedger } from '../audio-probe-admission-ledger.ts';
+import { createPerfCaptureAdmissionLedger } from '../perf-capture-admission-ledger.ts';
 
 const SPECIALIZED_ROUTES = [
+  'humanControl',
   'lease',
   'session',
   'snapshot',
@@ -229,6 +244,231 @@ test('lease release calls provider hook using the released lease without heartbe
   });
 });
 
+// #1774: allocation hands the provider the request's cancellation signal and a
+// deadline so a cloud provider can bound its remote device-creation phase and,
+// on client disconnect, release the billed session it produced instead of
+// orphaning it. If the daemon dropped either, the provider would have no way to
+// know the requester is gone.
+test('lease allocation hands the provider the request-bound signal and a deadline', async () => {
+  const leaseRegistry = new LeaseRegistry();
+  const sessionStore = makeSessionStore('agent-device-lease-ownership-');
+  // The signal must be the one bound to THIS request id (aborted on cancel or
+  // client disconnect), so the provider can release a session it produced for a
+  // requester that left — not an inert placeholder.
+  const requestId = 'lease-alloc-cancel-req';
+  const registration = registerRequestAbort(requestId);
+  const before = Date.now();
+  let observed:
+    | {
+        signal?: AbortSignal;
+        deadline?: number;
+        publicNetworkOnly?: boolean;
+        initialApp?: string;
+      }
+    | undefined;
+
+  try {
+    const response = await handleLeaseCommands({
+      req: {
+        command: INTERNAL_COMMANDS.leaseAllocate,
+        token: 'test-token',
+        session: 'catalog-test',
+        meta: {
+          requestId,
+          tenantId: 'tenant-a',
+          runId: 'run-a',
+          leaseBackend: 'android-instance',
+          leaseProvider: 'fake-provider',
+        },
+        flags: { providerApp: 'Example.apk' },
+        internal: { publicNetworkOnly: true },
+        positionals: [],
+      },
+      sessionName: 'catalog-test',
+      sessionStore,
+      leaseRegistry,
+      leaseLifecycleProvider: {
+        allocate: async (_lease, context) => {
+          observed = {
+            signal: context?.signal,
+            deadline: context?.deadline,
+            publicNetworkOnly: context?.publicNetworkOnly,
+            initialApp: context?.initialApp,
+          };
+          return { provider: 'fake-provider' };
+        },
+      },
+    });
+
+    assert.equal(response?.ok, true);
+    assert.equal(observed?.signal?.aborted, false);
+    assert.equal(observed?.publicNetworkOnly, true);
+    assert.equal(observed?.initialApp, 'Example.apk');
+    markRequestCanceled(requestId);
+    assert.equal(observed?.signal?.aborted, true, 'the provider signal must track this request');
+    assert.ok(
+      typeof observed?.deadline === 'number' && observed.deadline > before,
+      `allocation deadline must be a future instant, got ${String(observed?.deadline)}`,
+    );
+  } finally {
+    clearRequestAbortRegistration(registration);
+  }
+});
+
+// #1774: the classic leak. The requester vanishes WHILE the provider is
+// allocating; the provider still returns a real, billed session. The daemon
+// owns the request, so it releases that lease immediately — provider AND
+// registry — and answers with a canceled error carrying the release evidence.
+test('a lease allocated for a requester that left is released, not registered', async () => {
+  const leaseRegistry = new LeaseRegistry();
+  const sessionStore = makeSessionStore('agent-device-lease-gone-');
+  const requestId = 'lease-alloc-gone';
+  const registration = registerRequestAbort(requestId);
+  const released: string[] = [];
+
+  try {
+    await assert.rejects(
+      () =>
+        handleLeaseCommands({
+          req: leaseAllocateRequest(requestId),
+          sessionName: 'catalog-test',
+          sessionStore,
+          leaseRegistry,
+          leaseLifecycleProvider: {
+            allocate: async (lease) => {
+              // The client disconnects mid-allocation; the provider finishes anyway.
+              markRequestCanceled(requestId);
+              return { providerSessionId: `bs-${lease.leaseId}` };
+            },
+            release: async (lease) => {
+              released.push(lease.leaseId);
+              return { providerSessionId: `bs-${lease.leaseId}` };
+            },
+          },
+        }),
+      (error: unknown) => {
+        assert.ok(isRequestCanceledError(error));
+        const details = (error as AppError).details ?? {};
+        assert.equal(details.released, true);
+        assert.equal(details.registryReleased, true);
+        assert.match(String(details.providerSessionId), /^bs-/);
+        return true;
+      },
+    );
+    assert.equal(released.length, 1, 'the provider must be asked to release the lease');
+    assert.equal(
+      leaseRegistry.getLease({ tenantId: 'tenant-a', runId: 'run-a', leaseId: released[0]! }),
+      undefined,
+    );
+  } finally {
+    clearRequestAbortRegistration(registration);
+  }
+});
+
+// A release that could not delete the provider session must NOT be reported as
+// released: the billed session may still be running, and the operator needs the
+// identifiers to stop it by hand.
+test('a failed provider release after cancellation is reported as unreleased with recovery evidence', async () => {
+  const leaseRegistry = new LeaseRegistry();
+  const sessionStore = makeSessionStore('agent-device-lease-gone-unreleased-');
+  const requestId = 'lease-alloc-gone-delete-failed';
+  const registration = registerRequestAbort(requestId);
+
+  try {
+    await assert.rejects(
+      () =>
+        handleLeaseCommands({
+          req: leaseAllocateRequest(requestId),
+          sessionName: 'catalog-test',
+          sessionStore,
+          leaseRegistry,
+          leaseLifecycleProvider: {
+            allocate: async () => {
+              markRequestCanceled(requestId);
+              return { providerSessionId: 'bs-live' };
+            },
+            release: async () => ({
+              providerSessionId: 'bs-live',
+              warnings: [{ code: 'WEBDRIVER_SESSION_DELETE_FAILED', message: 'HTTP 502' }],
+            }),
+          },
+        }),
+      (error: unknown) => {
+        assert.ok(isRequestCanceledError(error));
+        const details = (error as AppError).details ?? {};
+        // `released` is the operator's answer: the billed session is NOT confirmed
+        // gone. Daemon bookkeeping is a separate, unambiguous key.
+        assert.equal(details.released, false);
+        assert.equal(details.registryReleased, true);
+        assert.equal(details.providerSessionId, 'bs-live');
+        assert.match(String(details.hint), /could NOT be confirmed released/);
+        assert.match(String(details.hint), /bs-live/);
+        assert.deepEqual(details.warnings, [
+          { code: 'WEBDRIVER_SESSION_DELETE_FAILED', message: 'HTTP 502' },
+        ]);
+        return true;
+      },
+    );
+  } finally {
+    clearRequestAbortRegistration(registration);
+  }
+});
+
+test('a throwing provider release after cancellation is reported as unreleased, not raised', async () => {
+  const leaseRegistry = new LeaseRegistry();
+  const sessionStore = makeSessionStore('agent-device-lease-gone-throw-');
+  const requestId = 'lease-alloc-gone-release-threw';
+  const registration = registerRequestAbort(requestId);
+
+  try {
+    await assert.rejects(
+      () =>
+        handleLeaseCommands({
+          req: leaseAllocateRequest(requestId),
+          sessionName: 'catalog-test',
+          sessionStore,
+          leaseRegistry,
+          leaseLifecycleProvider: {
+            allocate: async () => {
+              markRequestCanceled(requestId);
+              return { providerSessionId: 'bs-live' };
+            },
+            release: async () => {
+              throw new Error('hub unreachable');
+            },
+          },
+        }),
+      (error: unknown) => {
+        assert.ok(isRequestCanceledError(error), 'nobody is left to receive the release failure');
+        const details = (error as AppError).details ?? {};
+        assert.equal(details.released, false);
+        assert.equal(details.registryReleased, true);
+        assert.equal(details.releaseError, 'hub unreachable');
+        assert.match(String(details.hint), /could NOT be confirmed released/);
+        return true;
+      },
+    );
+  } finally {
+    clearRequestAbortRegistration(registration);
+  }
+});
+
+function leaseAllocateRequest(requestId: string): DaemonRequest {
+  return {
+    command: INTERNAL_COMMANDS.leaseAllocate,
+    token: 'test-token',
+    session: 'catalog-test',
+    meta: {
+      requestId,
+      tenantId: 'tenant-a',
+      runId: 'run-a',
+      leaseBackend: 'android-instance',
+      leaseProvider: 'fake-provider',
+    },
+    positionals: [],
+  };
+}
+
 function catalogCommandsForRoute(route: Exclude<DaemonCommandRoute, 'generic'>): string[] {
   return [...Object.values(PUBLIC_COMMANDS), ...Object.values(INTERNAL_COMMANDS)].filter(
     (command) => getDaemonCommandRoute(command) === route,
@@ -253,7 +493,26 @@ async function runCatalogCommandThroughHandlerChain(
           sessionStore,
           leaseRegistry,
           invoke: async () => ({ ok: true, data: {} }),
-          androidAdbExecutor: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
+          providerScope: {
+            androidAdbExecutor: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
+          },
+          bindDevice: unavailableBindDevice,
+          inspectFacts: unavailableInspectFacts,
+          bindExactDevice: unavailableBindExactDevice,
+          reconcileOrphanedDeviceClaim: async () => ({
+            status: 'retained' as const,
+            reason: 'test-no-recovery',
+          }),
+          screenRecordingAdmissionLedger: createScreenRecordingAdmissionLedger(),
+          audioProbeAdmissionLedger: createAudioProbeAdmissionLedger(),
+          perfCaptureAdmissionLedger: createPerfCaptureAdmissionLedger(),
+          requestScope: {
+            signal: new AbortController().signal,
+            diagnostics: { emit: () => {} },
+            progress: { report: () => {} },
+          },
+          retainDeviceExecutionLock: async () => {},
+          throwIfCanceled: () => {},
           contextFromFlags: (flags, appBundleId, traceLogPath) =>
             contextFromFlags(
               '/tmp/agent-device-catalog-route.log',
@@ -290,7 +549,7 @@ function catalogRouteRequest(command: string): DaemonRequest {
 }
 
 function trackProxyLeaseArtifact(): { artifactId: string; tempDir: string } {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-lease-artifacts-'));
+  const tempDir = mkdtempForTestSync('agent-device-lease-artifacts-');
   const artifactPath = path.join(tempDir, 'proxy-shot.png');
   fs.writeFileSync(artifactPath, 'png-body');
   return {

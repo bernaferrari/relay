@@ -1,8 +1,6 @@
 import type { AppStateCommandResult } from '@agent-device/contracts/device';
-import type {
-  ClipboardCommandResult,
-  KeyboardCommandResult,
-} from '@agent-device/contracts/interaction';
+import type { ClipboardCommandResult } from '@agent-device/contracts/clipboard';
+import type { KeyboardCommandResult } from '@agent-device/contracts/keyboard';
 import type { CliOutput } from '../command-contract.ts';
 import {
   messageCliOutput,
@@ -10,6 +8,7 @@ import {
   resultOutput,
   type CliOutputFormatter,
 } from '../output-common.ts';
+import { withSettleCapableNotes } from '../settle-output.ts';
 
 function appStateCliOutput(result: AppStateCommandResult): CliOutput {
   return {
@@ -40,7 +39,9 @@ function clipboardCliOutput(result: ClipboardCommandResult): CliOutput {
   return messageCliOutput(result);
 }
 
-export const systemCliOutputFormatters = {
+// #1652: back is settle-capable, so the trait-derived wrapper appends the
+// settled diff to its line; the rest of the map is returned untouched.
+export const systemCliOutputFormatters = withSettleCapableNotes({
   appstate: resultOutput(appStateCliOutput),
   back: messageOutput,
   home: messageOutput,
@@ -49,7 +50,7 @@ export const systemCliOutputFormatters = {
   keyboard: resultOutput(keyboardCliOutput),
   clipboard: resultOutput(clipboardCliOutput),
   'tv-remote': messageOutput,
-} as const satisfies Record<string, CliOutputFormatter>;
+} satisfies Record<string, CliOutputFormatter>);
 
 function formatAppState(data: AppStateCommandResult): string | null {
   if (data.platform === 'ios') {

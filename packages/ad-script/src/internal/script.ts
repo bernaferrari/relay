@@ -1,7 +1,10 @@
 import { AppError } from '@agent-device/kernel/errors';
 import { recordingQualityInputToExportQuality } from '@agent-device/contracts/recording';
-import { describeReplayGestureArityError } from '@agent-device/contracts/interaction';
-import { readScreenshotScriptFlag } from '@agent-device/contracts/capture';
+import { describeReplayGestureArityError } from '@agent-device/contracts/gesture-normalization';
+import {
+  RETIRED_SCREENSHOT_MAX_SIZE,
+  readScreenshotScriptFlag,
+} from '@agent-device/contracts/capture';
 import type { DeviceTarget, PlatformSelector } from '@agent-device/kernel/device';
 import { PLATFORM_SELECTORS } from '@agent-device/kernel/device';
 import { parseReplayOpenFlags } from './open-script.ts';
@@ -12,15 +15,17 @@ import {
   parseReplayRuntimeFlags,
   stripRecordedRefGeneration,
 } from './script-utils.ts';
-import { parseTargetAnnotationCommentLine } from './target-annotation-serde.ts';
+import {
+  parseMultiTargetAnnotationCommentLine,
+  parseTargetAnnotationCommentLine,
+} from './target-annotation-serde.ts';
 
 /**
  * The `.ad` script env/var key shape: uppercase letters, digits, and
  * underscores, leading with a letter or underscore. Canonical here because
  * `env KEY=VALUE` directive parsing is script grammar; the sibling
  * `vars.ts` (runtime `${VAR}` resolution) imports it directly, and
- * `src/replay/recorded-input.ts` imports it from this package's façade
- * rather than duplicating the rule.
+ * `recorded-input.ts` imports it directly rather than duplicating the rule.
  */
 export const REPLAY_VAR_KEY_RE = /^[A-Z_][A-Z0-9_]*$/;
 
@@ -55,7 +60,9 @@ export type ParsedReplayScript = {
   actionSourcePaths?: (string | undefined)[];
 };
 
-type PendingTargetAnnotation = { evidence: SessionAction['targetEvidence']; line: number };
+type PendingTargetAnnotation =
+  | { kind: 'single'; evidence: NonNullable<SessionAction['targetEvidence']>; line: number }
+  | { kind: 'multiple'; evidence: NonNullable<SessionAction['targetEvidences']>; line: number };
 
 // fallow-ignore-next-line complexity
 export function parseReplayScriptDetailed(script: string): ParsedReplayScript {
@@ -70,9 +77,10 @@ export function parseReplayScriptDetailed(script: string): ParsedReplayScript {
     index: number,
     why: string,
   ): never => {
+    const tag = annotation.kind === 'multiple' ? 'targets-v1' : 'target-v1';
     throw new AppError(
       'INVALID_ARGS',
-      `target-v1 annotation on line ${annotation.line} must be immediately followed by its action line (line ${index + 1} ${why}).`,
+      `${tag} annotation on line ${annotation.line} must be immediately followed by its action line (line ${index + 1} ${why}).`,
     );
   };
 
@@ -83,10 +91,16 @@ export function parseReplayScriptDetailed(script: string): ParsedReplayScript {
       continue;
     }
     if (trimmed.startsWith('#')) {
+      const multiAnnotation = parseMultiTargetAnnotationCommentLine(trimmed);
+      if (multiAnnotation.kind === 'v1') {
+        if (pending) rejectUnbound(pending, index, 'is another target annotation');
+        pending = { kind: 'multiple', evidence: multiAnnotation.evidence, line: index + 1 };
+        continue;
+      }
       const annotation = parseTargetAnnotationCommentLine(trimmed);
       if (annotation.kind === 'v1') {
-        if (pending) rejectUnbound(pending, index, 'is another target-v1 annotation');
-        pending = { evidence: annotation.evidence, line: index + 1 };
+        if (pending) rejectUnbound(pending, index, 'is another target annotation');
+        pending = { kind: 'single', evidence: annotation.evidence, line: index + 1 };
         continue;
       }
       // An ordinary or future-target-vN comment still counts as an
@@ -116,7 +130,8 @@ export function parseReplayScriptDetailed(script: string): ParsedReplayScript {
     );
     if (gestureArityError) throw new AppError('INVALID_ARGS', gestureArityError);
     if (pending) {
-      parsed.targetEvidence = pending.evidence;
+      if (pending.kind === 'single') parsed.targetEvidence = pending.evidence;
+      else parsed.targetEvidences = pending.evidence;
       pending = undefined;
     }
     actions.push(parsed);
@@ -124,9 +139,10 @@ export function parseReplayScriptDetailed(script: string): ParsedReplayScript {
     sawAction = true;
   }
   if (pending) {
+    const tag = pending.kind === 'multiple' ? 'targets-v1' : 'target-v1';
     throw new AppError(
       'INVALID_ARGS',
-      `target-v1 annotation on line ${pending.line} must be immediately followed by its action line (end of script reached).`,
+      `${tag} annotation on line ${pending.line} must be immediately followed by its action line (end of script reached).`,
     );
   }
   return { actions, actionLines };
@@ -401,6 +417,9 @@ function parseReplayScriptLine(line: string): SessionAction | null {
     const positionals: string[] = [];
     for (let index = 0; index < args.length; index += 1) {
       const token = args[index]!;
+      if (token === RETIRED_SCREENSHOT_MAX_SIZE.cliToken) {
+        throw new AppError('INVALID_ARGS', RETIRED_SCREENSHOT_MAX_SIZE.migration.record);
+      }
       if (token === '--hide-touches') {
         action.flags.hideTouches = true;
         continue;
@@ -418,14 +437,6 @@ function parseReplayScriptLine(line: string): SessionAction | null {
         const exportQuality = recordingQualityInputToExportQuality(value);
         if (exportQuality !== undefined) {
           action.flags.quality = exportQuality;
-        }
-        index += 1;
-        continue;
-      }
-      if (token === '--max-size' && index + 1 < args.length) {
-        const parsedMaxSize = Number(args[index + 1]);
-        if (Number.isFinite(parsedMaxSize)) {
-          action.flags.screenshotMaxSize = Math.floor(parsedMaxSize);
         }
         index += 1;
         continue;
@@ -451,10 +462,11 @@ function parseReplayScriptLine(line: string): SessionAction | null {
     return action;
   }
 
-  // wait @ref [timeout] and longpress @ref [durationMs] flow through this
-  // generic branch: strip recorded generation pins like the branches above.
+  // wait @ref [timeout], longpress @ref [durationMs], and hover @ref flow
+  // through this generic branch: strip recorded generation pins like the
+  // branches above.
   action.positionals =
-    command === 'wait' || command === 'longpress'
+    command === 'wait' || command === 'longpress' || command === 'hover'
       ? args.map((token) => stripRecordedRefGeneration(token))
       : args;
   return action;

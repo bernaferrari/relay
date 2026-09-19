@@ -1,12 +1,12 @@
+import type { CommandFlags } from '@agent-device/contracts/command';
 import { AppError } from '@agent-device/kernel/errors';
-import type { CommandFlags } from '../core/dispatch.ts';
-import type { SessionState } from './types.ts';
+import type { SessionRef, SessionState } from './session-state.ts';
 import {
   isIosFamily,
   isSerialAddressablePlatform,
   matchesPlatformSelector,
 } from '@agent-device/kernel/device';
-import { parseSerialAllowlist } from '../utils/device-isolation.ts';
+import { parseSerialAllowlist } from '@agent-device/kernel/device-isolation';
 import { buildSessionRecoveryHint, describeSessionDevice } from './session-recovery-hints.ts';
 
 export type SessionSelectorConflictKey =
@@ -23,17 +23,22 @@ export type SessionSelectorConflict = {
   value: string;
 };
 
-export function assertSessionSelectorMatches(session: SessionState, flags?: CommandFlags): void {
+export function assertSessionSelectorMatches(ref: SessionRef, flags?: CommandFlags): void {
+  const { address, session } = ref;
   const mismatches = listSessionSelectorConflicts(session, flags);
   if (mismatches.length === 0) return;
 
   throw new AppError(
     'INVALID_ARGS',
-    `Session "${session.name}" is already bound to ${describeSessionDevice(session)}, but this request selected ${mismatches.map(formatSessionSelectorConflict).join(', ')}.`,
+    `Session "${address}" is already bound to ${describeSessionDevice(session)}, but this request selected ${mismatches.map(formatSessionSelectorConflict).join(', ')}.`,
     {
-      session: session.name,
+      session: address,
       conflicts: mismatches.map(formatSessionSelectorConflict),
-      hint: buildSessionRecoveryHint(session, 'selector-conflict'),
+      hint: buildSessionRecoveryHint(ref, 'selector-conflict', {
+        // Only a platform disagreement is answered by another platform's implicit session; a device
+        // or target disagreement is not, and suggesting it there sends the caller in circles.
+        offersPlatformSession: mismatches.some((mismatch) => mismatch.key === 'platform'),
+      }),
     },
   );
 }

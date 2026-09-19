@@ -1,20 +1,22 @@
 import { afterEach, test, vi } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { mkdtempForTestSync } from './test-utils/tmp-dir.ts';
 
-vi.mock('../utils/exec.ts', () => ({
+vi.mock('@agent-device/host-kit/command', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@agent-device/host-kit/command')>()),
   runCmdDetached: vi.fn(),
   runCmdSync: vi.fn(),
 }));
-
-vi.mock('../utils/host-process.ts', () => ({
+vi.mock('@agent-device/host-kit/process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@agent-device/host-kit/process')>()),
   waitForProcessExit: vi.fn(),
 }));
 
-import { runCmdDetached } from '../utils/exec.ts';
-import { waitForProcessExit } from '../utils/host-process.ts';
+import { runCmdDetached } from '@agent-device/host-kit/command';
+import { waitForProcessExit } from '@agent-device/host-kit/process';
+
 import { prepareMetroRuntime } from '../metro/client-metro.ts';
 
 afterEach(() => {
@@ -25,7 +27,7 @@ afterEach(() => {
 });
 
 test('prepareMetroRuntime stops a spawned Metro process when startup readiness times out', async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-metro-startup-cleanup-'));
+  const tempRoot = mkdtempForTestSync('agent-device-metro-startup-cleanup-');
   const projectRoot = path.join(tempRoot, 'project');
   fs.mkdirSync(path.join(projectRoot, 'node_modules'), { recursive: true });
   fs.writeFileSync(

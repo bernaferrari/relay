@@ -2,22 +2,31 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { promises as fs } from 'node:fs';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 
-vi.mock('../../utils/exec.ts', () => ({
-  runCmd: vi.fn(),
-  runCmdSync: vi.fn(),
-  whichCmd: vi.fn(async () => true),
-}));
-vi.mock('../../platforms/apple/core/simulator.ts', () => ({
+vi.mock('@agent-device/host-kit/command', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agent-device/host-kit/command')>();
+  return {
+    ...actual,
+    runCmd: vi.fn(),
+    runCmdSync: vi.fn(),
+    whichCmd: vi.fn(async () => true),
+  };
+});
+vi.mock('@agent-device/platform-apple/simulator', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@agent-device/platform-apple/simulator')>()),
   ensureBootedSimulator: vi.fn(async () => {}),
 }));
-vi.mock('../../platforms/android/devices.ts', () => ({
+vi.mock('@agent-device/platform-android/mechanics', () => ({
   waitForAndroidBoot: vi.fn(async () => {}),
 }));
 
-import { runCmd } from '../../utils/exec.ts';
-import { waitForAndroidBoot } from '../../platforms/android/devices.ts';
-import { ensureBootedSimulator } from '../../platforms/apple/core/simulator.ts';
-import { ANDROID_EMULATOR, IOS_DEVICE, IOS_SIMULATOR } from '../../__tests__/test-utils/index.ts';
+import { runCmd } from '@agent-device/host-kit/command';
+import { waitForAndroidBoot } from '@agent-device/platform-android/mechanics';
+import { ensureBootedSimulator } from '@agent-device/platform-apple/simulator';
+import {
+  ANDROID_EMULATOR,
+  IOS_DEVICE,
+  IOS_SIMULATOR,
+} from '../../__tests__/test-utils/device-fixtures.ts';
 import { DEVICE_READY_CACHE_TTL_MS, ensureDeviceReady } from '../device-ready.ts';
 
 const mockRunCmd = vi.mocked(runCmd);

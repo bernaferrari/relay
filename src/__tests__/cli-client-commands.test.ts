@@ -1,9 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { PNG } from '../utils/png.ts';
+import { PNG } from '@agent-device/capture-kit/png';
 import { tryRunClientBackedCommand } from '../cli/commands/router.ts';
 import { runCliCapture } from './cli-capture.ts';
 import type {
@@ -16,6 +15,17 @@ import type {
 import type { SettingsUpdateOptions } from '@agent-device/contracts/client';
 import { AppError } from '@agent-device/kernel/errors';
 import { resolveCliOptions } from '../cli/resolve-cli-options.ts';
+import { mkdtempForTestSync } from './test-utils/tmp-dir.ts';
+import { createStubClientLeases } from './test-utils/client-lease-fixtures.ts';
+
+// #1802: the replay client reads the script it names, so CLI-level replay cases need a real file.
+const REPLAY_SCRIPT_ROOT = mkdtempForTestSync('agent-device-cli-replay-scripts-');
+
+function writeReplayScript(name: string): string {
+  const scriptPath = path.join(REPLAY_SCRIPT_ROOT, name);
+  fs.writeFileSync(scriptPath, 'open "Demo"\n');
+  return scriptPath;
+}
 
 test('install-from-source forwards URL and repeated headers to client.apps.installFromSource', async () => {
   let observed: AppInstallFromSourceOptions | undefined;
@@ -432,7 +442,7 @@ test('screenshot forwards --overlay-refs to the client capture API', async () =>
     | {
         path?: string;
         overlayRefs?: boolean;
-        maxSize?: number;
+        scale?: number;
         stabilize?: boolean;
       }
     | undefined;
@@ -457,7 +467,7 @@ test('screenshot forwards --overlay-refs to the client capture API', async () =>
       help: false,
       version: false,
       overlayRefs: true,
-      screenshotMaxSize: 1024,
+      screenshotScale: 0.3,
       screenshotNoStabilize: true,
     },
     client,
@@ -467,13 +477,13 @@ test('screenshot forwards --overlay-refs to the client capture API', async () =>
   assert.deepEqual(observed, {
     path: '/tmp/screenshot.png',
     overlayRefs: true,
-    maxSize: 1024,
+    scale: 0.3,
     stabilize: false,
   });
 });
 
 test('diff screenshot forwards --surface to live client screenshot capture', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-cli-diff-surface-'));
+  const dir = mkdtempForTestSync('agent-device-cli-diff-surface-');
   const baseline = path.join(dir, 'baseline.png');
   const out = path.join(dir, 'diff.png');
   fs.writeFileSync(baseline, solidPngBuffer(4, 4, { r: 0, g: 0, b: 0 }));
@@ -675,7 +685,7 @@ test('screenshot reports annotated ref count in non-json mode', async () => {
 });
 
 test('replay export writes Maestro YAML without contacting the daemon', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-replay-export-'));
+  const dir = mkdtempForTestSync('agent-device-replay-export-');
   const sourcePath = path.join(dir, 'flow.ad');
   const outPath = path.join(dir, 'flow.yaml');
   fs.writeFileSync(
@@ -721,23 +731,46 @@ test('replay without a path reaches replay validation instead of unknown command
 });
 
 test('replay path falls through to the generic client command route', async () => {
-  const missingPath = '/tmp/does-not-exist.ad';
-  const result = await runCliCapture(['replay', missingPath], async (request) => {
+  const scriptPath = writeReplayScript('fallthrough.ad');
+  const result = await runCliCapture(['replay', scriptPath], async (request) => {
     assert.equal(request.command, 'replay');
-    assert.deepEqual(request.positionals, [missingPath]);
-    return {
-      ok: false,
-      error: {
-        code: 'UNKNOWN',
-        message: `ENOENT: no such file or directory, open '${missingPath}'`,
-      },
-    };
+    assert.deepEqual(request.positionals, [scriptPath]);
+    return { ok: false, error: { code: 'COMMAND_FAILED', message: 'replay step failed' } };
   });
 
   assert.equal(result.code, 1);
   assert.equal(result.calls.length, 1);
-  assert.match(result.stderr, /ENOENT/);
+  assert.match(result.stderr, /replay step failed/);
   assert.doesNotMatch(result.stderr, /Unknown command: replay/);
+});
+
+// #1802: the caller reads the script, so a path that does not resolve on THIS machine is refused
+// here — before any daemon round-trip — naming the path exactly as it was typed. Against a remote
+// daemon this used to travel and come back as an ENOENT for a file the caller can read.
+test('replay refuses a script missing on the caller before any daemon request', async () => {
+  const missingPath = '/tmp/agent-device-does-not-exist.ad';
+  const result = await runCliCapture(['replay', missingPath], async () => ({
+    ok: true,
+    data: {},
+  }));
+
+  assert.equal(result.code, 1);
+  assert.equal(result.calls.length, 0);
+  assert.match(result.stderr, /replay script not found on this machine/);
+  assert.ok(result.stderr.includes(missingPath), result.stderr);
+});
+
+test('replay --timeout reaches the daemon request envelope through the public CLI', async () => {
+  const scriptPath = writeReplayScript('timeout.ad');
+  const result = await runCliCapture(['replay', scriptPath, '--timeout', '1000'], async () => ({
+    ok: false,
+    error: { code: 'COMMAND_FAILED', message: 'replay step failed' },
+  }));
+
+  assert.equal(result.code, 1);
+  assert.equal(result.calls.length, 1);
+  assert.equal(result.calls[0]?.command, 'replay');
+  assert.equal(result.calls[0]?.flags?.timeoutMs, 1000);
 });
 
 test('replay rejects extra plain replay paths before daemon dispatch', async () => {
@@ -891,7 +924,7 @@ test('metro prepare wraps output in the standard success envelope for --json', a
 });
 
 test('metro prepare with --remote-config loads profile defaults', async () => {
-  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-remote-metro-'));
+  const tmpRoot = mkdtempForTestSync('agent-device-remote-metro-');
   const configDir = path.join(tmpRoot, 'config');
   fs.mkdirSync(configDir, { recursive: true });
   const remoteConfigPath = path.join(configDir, 'remote.json');
@@ -1182,21 +1215,7 @@ function createStubClient(params: {
         identifiers: { session: options.session ?? 'default' },
       }),
     },
-    leases: {
-      allocate: async (options) => ({
-        leaseId: 'lease-1',
-        tenantId: options.tenant,
-        runId: options.runId,
-        backend: options.leaseBackend ?? 'ios-simulator',
-      }),
-      heartbeat: async (options) => ({
-        leaseId: options.leaseId,
-        tenantId: options.tenant ?? 'tenant',
-        runId: options.runId ?? 'run',
-        backend: options.leaseBackend ?? 'ios-simulator',
-      }),
-      release: async () => ({ released: true }),
-    },
+    leases: createStubClientLeases(),
     metro: {
       prepare:
         params.prepareMetro ??

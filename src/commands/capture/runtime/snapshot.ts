@@ -1,4 +1,5 @@
 import {
+  copySnapshotClickabilityEvidence,
   publicSnapshotCaptureAnnotations,
   snapshotCaptureAnnotationsFrom,
   type DiffSnapshotCommandResult,
@@ -7,6 +8,7 @@ import {
   type SnapshotDiagnosticsSummary,
 } from '@agent-device/contracts/capture';
 import { AppError } from '@agent-device/kernel/errors';
+import { normalizeType } from '@agent-device/contracts/snapshot';
 import type {
   SnapshotNode,
   SnapshotState,
@@ -18,12 +20,16 @@ import type { AgentDeviceRuntime, CommandSessionRecord } from '../../../runtime-
 import {
   buildSnapshotDiff,
   countSnapshotComparableLines,
-} from '../../../snapshot/snapshot-diff.ts';
-import { renderSnapshotQualityWarnings } from '../../../snapshot/snapshot-quality.ts';
-import { buildSnapshotVisibility } from '../../../snapshot/snapshot-visibility.ts';
-import { ANDROID_SYSTEM_SURFACE_DISCLOSURE } from '../../../snapshot/system-surface-disclosure.ts';
+} from '@agent-device/capture-kit/snapshot-diff';
+import {
+  renderSnapshotQualityWarnings,
+  truncatedCaptureWarning,
+} from '@agent-device/capture-kit/quality-warnings';
+import { buildSnapshotVisibility } from '@agent-device/capture-kit/snapshot-visibility';
+import { ANDROID_SYSTEM_SURFACE_DISCLOSURE } from '@agent-device/contracts/android-system-surface-disclosure';
 import { formatReactNativeOverlayWarning } from '../../react-native/overlay.ts';
 import { now } from '../../runtime-common.ts';
+import { iosSnapshotTruncationEvidence } from '@agent-device/capture-kit/ios-snapshot-acquisition';
 import type {
   DiffSnapshotCommandOptions,
   RuntimeCommand,
@@ -36,15 +42,13 @@ import {
 
 export type SnapshotCommandResult = {
   nodes: SnapshotNode[];
-  truncated: boolean;
+  truncated?: boolean;
   appName?: string;
   appBundleId?: string;
   visibility?: SnapshotVisibility;
   unchanged?: SnapshotUnchanged;
   snapshotDiagnostics?: SnapshotDiagnosticsSummary;
 } & PublicSnapshotCaptureAnnotations;
-
-export type { DiffSnapshotCommandResult } from '@agent-device/contracts/capture';
 
 type SnapshotCapture = {
   snapshot: SnapshotState;
@@ -69,9 +73,10 @@ export const snapshotCommand: RuntimeCommand<
     },
   });
   await runtime.sessions.set(nextSnapshotSession(options.session, capture));
-  return {
+  const truncated = snapshotTruncationForResult(capture.snapshot);
+  return copySnapshotClickabilityEvidence(capture.snapshot, {
     nodes: capture.snapshot.nodes,
-    truncated: capture.snapshot.truncated ?? false,
+    ...(truncated === undefined ? {} : { truncated }),
     visibility: buildSnapshotVisibility({
       nodes: capture.snapshot.nodes,
       backend: capture.snapshot.backend,
@@ -86,7 +91,7 @@ export const snapshotCommand: RuntimeCommand<
       ? { snapshotDiagnostics: capture.result.snapshotDiagnostics }
       : {}),
     ...snapshotAppFields(capture),
-  };
+  });
 };
 
 export const diffSnapshotCommand: RuntimeCommand<
@@ -153,11 +158,13 @@ async function captureRuntimeSnapshot(
       depth: options.depth,
       scope: options.scope,
       raw: options.raw,
+      customActions: options.customActions,
     },
   );
-  const snapshot = ensureSnapshotPresentationKey(
-    normalizeBackendSnapshot(result, runtime),
-    options,
+  const normalizedSnapshot = normalizeBackendSnapshot(result, runtime);
+  const snapshot = copySnapshotClickabilityEvidence(
+    normalizedSnapshot,
+    ensureSnapshotPresentationKey(normalizedSnapshot, options),
   );
   const annotations = snapshotCaptureAnnotationsFrom(result);
   const warningTime = now(runtime);
@@ -217,6 +224,17 @@ function snapshotAppFields(capture: SnapshotCapture): {
   };
 }
 
+/**
+ * A capture that reported nothing about truncation is only "not truncated" when its producer
+ * actually observes truncation. Producers that do not (Appium page source, the Limrun element
+ * tree) leave it unknown rather than having the absence upgraded to `false` (#2188 invariant 5).
+ */
+function snapshotTruncationForResult(snapshot: SnapshotState): boolean | undefined {
+  if (snapshot.truncated !== undefined) return snapshot.truncated;
+  if (snapshot.backend !== 'xctest' || snapshot.producer === undefined) return false;
+  return iosSnapshotTruncationEvidence(snapshot.producer) === 'unavailable' ? undefined : false;
+}
+
 function buildSnapshotWarnings(params: {
   result: BackendSnapshotResult;
   annotations: SnapshotCaptureAnnotations;
@@ -232,6 +250,7 @@ function buildSnapshotWarnings(params: {
       ...renderSnapshotQualityWarnings(params.annotations.quality, params.snapshot.nodes),
     );
   }
+  warnings.push(...truncatedCaptureWarning(snapshotTruncationForResult(params.snapshot)));
   warnings.push(...buildEmptyAndroidInteractiveWarnings(params));
   if (!params.annotations.quality) {
     // Legacy runners without a structured verdict keep the old daemon-side heuristics.
@@ -272,11 +291,25 @@ function buildSparseIosInteractiveWarnings(params: {
   }
 
   const root = params.snapshot.nodes[0];
-  if (root?.type !== 'Application') return [];
+  if (!isApplicationRoot(root)) return [];
+
+  if (params.snapshot.producer === 'appium-source') {
+    return [
+      'Appium page source exposed only the application root. Descendants may be absent from the acquired hierarchy; use snapshot --raw to inspect the source and verify the app accessibility tree.',
+    ];
+  }
+  if (params.snapshot.producer !== undefined && params.snapshot.producer !== 'apple-runner') {
+    return [];
+  }
 
   return [
     'iOS interactive snapshot exposed only the application root. XCTest accessibility queries can fail to enumerate some simulator UI trees even when screenshots and direct gestures still work. Use screenshot as visual truth, try a scoped/full snapshot for diagnostics, and prefer direct selectors when known.',
   ];
+}
+
+function isApplicationRoot(node: SnapshotNode | undefined): boolean {
+  if (!node) return false;
+  return normalizeType(node.type ?? '') === 'application';
 }
 
 const MERGED_LEAF_MIN_SEGMENTS = 10;

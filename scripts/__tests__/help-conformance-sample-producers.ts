@@ -4,7 +4,11 @@ import {
   APP_NOT_INSTALLED_SAMPLE,
   BROWSERSTACK_CONNECT_SAMPLE,
   DEVICE_IN_USE_SAMPLE,
+  DEVICE_CLAIM_IN_USE_SAMPLE,
+  FOREGROUND_SNAPSHOT_FAILURE_SAMPLE,
+  MERGED_CARD_ACTIONS_SAMPLE,
   NOT_SETTLED_SAMPLE,
+  OFFSCREEN_TARGET_SNAPSHOT_SAMPLE,
   PRIVATE_AX_RECOVERY_SAMPLE,
   SETTLE_DIFF_SAMPLE,
   SETTLE_DIFF_SAMPLE_NOTES,
@@ -12,13 +16,17 @@ import {
   STALE_REF_SAMPLE,
 } from '../help-conformance-sample-outputs.mjs';
 import { interactionCliOutputFormatters } from '../../src/commands/interaction/output.ts';
+import { snapshotCliOutput } from '../../src/commands/capture/output.ts';
+import { openCliOutput } from '../../src/commands/management/output.ts';
 import { NEVER_SETTLED_HINT } from '../../src/commands/interaction/runtime/settle.ts';
-import { buildAmbiguousMatchError } from '../../src/daemon/handlers/find.ts';
-import { refMutationAdmissionResponse } from '../../src/daemon/handlers/interaction-ref-policy.ts';
-import { buildDeviceInUseBySessionError } from '../../src/daemon/handlers/session-open.ts';
+import { buildAmbiguousMatchError } from '../../src/daemon/selector-match-errors.ts';
+import { refMutationAdmissionResponse } from '../../src/daemon/interaction/index.ts';
+import { buildDeviceInUseBySessionError } from '../../src/daemon/session-recovery-hints.ts';
+import { buildDeviceClaimConflictError } from '../../src/daemon/device-claim-conflict.ts';
+import { activateCompleteRefFrame, readRefMutationFrame } from '../../src/daemon/ref-frame.ts';
 import { resolveRefStalenessWarning } from '../../src/daemon/session-snapshot.ts';
-import type { SessionState } from '../../src/daemon/types.ts';
-import { buildAppNotInstalledError } from '../../src/platforms/apple/core/app-resolution.ts';
+import type { SessionState } from '../../src/daemon/session-state.ts';
+import { buildAppNotInstalledError } from '@agent-device/platform-apple/app-resolution';
 import {
   presentConnectReadiness,
   renderConnectSuccess,
@@ -26,9 +34,10 @@ import {
 import type { ConnectVerification } from '../../src/cli/connection/connect-provider-adapters.ts';
 import type { RemoteConnectionState } from '../../src/remote/remote-connection-state.ts';
 import { AppError, normalizeError } from '@agent-device/kernel/errors';
-import type { SnapshotQualityVerdict } from '../../src/snapshot/snapshot-quality.ts';
-import { renderSnapshotQualityWarnings } from '../../src/snapshot/snapshot-quality.ts';
-import { formatSnapshotText, printHumanError } from '../../src/utils/output.ts';
+import type { SnapshotQualityVerdict } from '@agent-device/kernel/snapshot';
+import { renderSnapshotQualityWarnings } from '@agent-device/capture-kit/quality-warnings';
+import { printHumanError } from '../../src/commands/output/error.ts';
+import { formatSnapshotText } from '../../src/commands/output/snapshot.ts';
 
 // The production renderer behind each captured sample in
 // scripts/help-conformance-sample-outputs.mjs, as data rather than as one test
@@ -46,7 +55,7 @@ export type SampleProducer = {
   producer: string;
   sample: CapturedSample;
   /** The sample's text rebuilt from production code, ready to compare. */
-  render: () => string;
+  render: () => string | Promise<string>;
 };
 
 const formatPress = (result: Record<string, unknown>) =>
@@ -56,7 +65,7 @@ const formatFill = (result: Record<string, unknown>) =>
   interactionCliOutputFormatters.fill({ input: {}, result }).text;
 
 /** The `Error (CODE): …` + `Hint: …` text printHumanError writes to stderr. */
-function renderHumanError(error: AppError): string {
+async function renderHumanError(error: AppError): Promise<string> {
   const lines: string[] = [];
   const originalWrite = process.stderr.write;
   process.stderr.write = ((chunk: string | Uint8Array) => {
@@ -64,22 +73,35 @@ function renderHumanError(error: AppError): string {
     return true;
   }) as typeof process.stderr.write;
   try {
-    printHumanError(normalizeError(error));
+    await printHumanError(normalizeError(error));
   } finally {
     process.stderr.write = originalWrite;
   }
   return lines.join('').trimEnd();
 }
 
-type ErrorResponse = { ok: false; error: { code: string; message: string; details?: unknown } };
+type ErrorResponse = {
+  ok: false;
+  error: {
+    code: string;
+    message: string;
+    hint?: string;
+    retriable?: boolean;
+    details?: Record<string, unknown>;
+  };
+};
 
 /** Renders a daemon error response the way the CLI prints it for a human. */
-function renderErrorResponse(response: ErrorResponse): string {
-  return renderHumanError(
+async function renderErrorResponse(response: ErrorResponse): Promise<string> {
+  return await renderHumanError(
     new AppError(
       response.error.code as ConstructorParameters<typeof AppError>[0],
       response.error.message,
-      response.error.details as ConstructorParameters<typeof AppError>[2],
+      {
+        ...response.error.details,
+        ...(response.error.hint ? { hint: response.error.hint } : {}),
+        ...(response.error.retriable === undefined ? {} : { retriable: response.error.retriable }),
+      } as ConstructorParameters<typeof AppError>[2],
     ),
   );
 }
@@ -178,7 +200,7 @@ export const SAMPLE_PRODUCERS: SampleProducer[] = [
     name: 'PRIVATE_AX_RECOVERY_SAMPLE',
     producer: 'the snapshot renderer and the snapshot-quality warning',
     sample: PRIVATE_AX_RECOVERY_SAMPLE,
-    render: () => {
+    render: async () => {
       const nodes = [
         {
           index: 1,
@@ -209,11 +231,145 @@ export const SAMPLE_PRODUCERS: SampleProducer[] = [
     },
   },
   {
+    name: 'OFFSCREEN_TARGET_SNAPSHOT_SAMPLE',
+    producer: 'the visible-first snapshot renderer with off-screen rows summarized',
+    sample: OFFSCREEN_TARGET_SNAPSHOT_SAMPLE,
+    render: () => {
+      // A settings-style scrollable list in an 800pt viewport: five rows fit,
+      // four more (Privacy & Security, Notifications, Wallpaper, Developer) are
+      // laid out below it, so visible-first presentation summarizes them and
+      // none of their refs reach the output.
+      const row = (index: number, ref: string, label: string, y: number) => ({
+        index,
+        ref,
+        parentIndex: 2,
+        type: 'Cell',
+        label,
+        interactive: true,
+        hittable: y < 800,
+        rect: { x: 0, y, width: 390, height: 120 },
+      });
+      const nodes = [
+        {
+          index: 0,
+          ref: 'e1',
+          type: 'Application',
+          label: 'Preferences',
+          rect: { x: 0, y: 0, width: 390, height: 800 },
+        },
+        {
+          index: 1,
+          ref: 'e2',
+          parentIndex: 0,
+          type: 'Window',
+          rect: { x: 0, y: 0, width: 390, height: 800 },
+        },
+        {
+          index: 2,
+          ref: 'e3',
+          parentIndex: 1,
+          type: 'CollectionView',
+          interactive: true,
+          rect: { x: 0, y: 60, width: 390, height: 740 },
+        },
+        row(3, 'e4', 'General', 60),
+        row(4, 'e5', 'Display', 190),
+        row(5, 'e6', 'Sounds', 320),
+        row(6, 'e7', 'Focus', 450),
+        row(7, 'e8', 'Screen Time', 580),
+        row(8, 'e9', 'Privacy & Security', 900),
+        row(9, 'e10', 'Notifications', 1030),
+        row(10, 'e11', 'Wallpaper', 1160),
+        row(11, 'e12', 'Developer', 1290),
+      ];
+      return formatSnapshotText(
+        { nodes, backend: 'xctest', truncated: false },
+        { interactiveOnly: true },
+      ).trimEnd();
+    },
+  },
+  {
+    name: 'FOREGROUND_SNAPSHOT_FAILURE_SAMPLE',
+    producer: 'the open success renderer with a failed composed snapshot',
+    sample: FOREGROUND_SNAPSHOT_FAILURE_SAMPLE,
+    render: async () => {
+      const warning =
+        'The session is open, but the initial interactive snapshot failed (COMMAND_FAILED: capture failed). Run: agent-device snapshot -i';
+      return (
+        (
+          await openCliOutput({
+            session: 'default',
+            warnings: [warning],
+            initialSnapshotError: {
+              code: 'COMMAND_FAILED',
+              message: 'capture failed',
+            },
+            identifiers: { session: 'default' },
+          })
+        ).text ?? ''
+      );
+    },
+  },
+  {
+    name: 'MERGED_CARD_ACTIONS_SAMPLE',
+    producer: "the snapshot renderer with --actions naming a merged element's custom actions",
+    sample: MERGED_CARD_ACTIONS_SAMPLE,
+    render: async () => {
+      // A Bluesky-style feed item merged into one Link node: its Reply/Repost/
+      // menu controls are AX custom actions, not child nodes, so they only
+      // surface when --actions is passed through to the renderer.
+      const nodes = [
+        {
+          index: 0,
+          ref: 'e1',
+          depth: 0,
+          type: 'Application',
+          label: 'Bluesky',
+          rect: { x: 0, y: 0, width: 390, height: 844 },
+        },
+        {
+          index: 1,
+          ref: 'e2',
+          parentIndex: 0,
+          depth: 1,
+          type: 'Window',
+          rect: { x: 0, y: 0, width: 390, height: 844 },
+        },
+        {
+          index: 2,
+          ref: 'e3',
+          parentIndex: 1,
+          depth: 2,
+          type: 'CollectionView',
+          interactive: true,
+          rect: { x: 0, y: 60, width: 390, height: 700 },
+        },
+        {
+          index: 3,
+          ref: 'e72',
+          parentIndex: 2,
+          depth: 3,
+          type: 'Link',
+          label: 'feedItem-by-whiskers.test',
+          interactive: true,
+          rect: { x: 0, y: 60, width: 390, height: 140 },
+          actions: ['Reply', 'Repost', 'Open post options menu'],
+        },
+      ];
+      const output = await snapshotCliOutput({
+        result: { nodes, backend: 'xctest', truncated: false },
+        interactiveOnly: true,
+      });
+      return (output.text ?? '').trimEnd();
+    },
+  },
+  {
     name: 'DEVICE_IN_USE_SAMPLE',
     producer: 'the real session-open by-session conflict producer',
     sample: DEVICE_IN_USE_SAMPLE,
     render: () => {
-      const owningSession = { name: 'checkout' } as SessionState;
+      // An explicitly named session is stored under its own name, so address === name here.
+      const owningSession = { address: 'checkout', session: { name: 'checkout' } as SessionState };
       const device = { id: 'SIM-001', name: 'iPhone 17 Pro' } as Parameters<
         typeof buildDeviceInUseBySessionError
       >[1];
@@ -223,16 +379,60 @@ export const SAMPLE_PRODUCERS: SampleProducer[] = [
     },
   },
   {
+    name: 'DEVICE_CLAIM_IN_USE_SAMPLE',
+    producer: 'the enforced cross-daemon device-claim conflict producer',
+    sample: DEVICE_CLAIM_IN_USE_SAMPLE,
+    render: () => {
+      const response = buildDeviceClaimConflictError(
+        {
+          platform: 'android',
+          id: 'emulator-5554',
+          name: 'Pixel',
+          kind: 'emulator',
+        },
+        {
+          fileName: 'claim.json',
+          deviceKey: 'local:android:none:emulator-5554',
+          classification: 'live',
+          claim: {
+            schemaVersion: 2,
+            deviceKey: 'local:android:none:emulator-5554',
+            device: {
+              family: 'android',
+              id: 'emulator-5554',
+              name: 'Pixel',
+              kind: 'emulator',
+            },
+            session: 'checkout',
+            workspace: '/worktrees/checkout',
+            stateDir: '/state/checkout',
+            ownerPid: 4242,
+            ownerStartTime: 'start',
+            ownerToken: 'token',
+            createdAtMs: 1,
+            updatedAtMs: 1,
+          },
+        },
+      );
+      assertErrorResponse(response, 'the enforced device-claim conflict');
+      return renderErrorResponse(response);
+    },
+  },
+  {
     name: 'STALE_REF_SAMPLE',
     producer: 'the real ADR 0014 admission rejection and staleness hint',
     sample: STALE_REF_SAMPLE,
     render: () => {
-      const session = { refFrameGeneration: 7 } as SessionState;
+      const session = { snapshotGeneration: 7 } as SessionState;
+      // Pin the epoch in the frame itself, as a real published namespace does, so the
+      // sample exercises the frame epoch rather than the pre-frame fallback.
+      activateCompleteRefFrame(session);
       const response = refMutationAdmissionResponse({
         session,
         ref: '@e12',
         mintedGeneration: 5,
         staleRefsWarning: resolveRefStalenessWarning({ session, ref: '@e12', mintedGeneration: 5 }),
+        frame: readRefMutationFrame({ session, ref: '@e12', mintedGeneration: 5 }),
       });
       assertErrorResponse(response, 'a superseded pin');
       return renderErrorResponse(response);

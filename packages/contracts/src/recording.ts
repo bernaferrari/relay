@@ -1,4 +1,6 @@
 import type { DaemonArtifact } from '@agent-device/kernel/contracts';
+import type { RecorderObservation } from './recording-stop-observation.ts';
+import type { NativePathDisposition } from './recording-native-path.ts';
 import type { RecordingScope } from './recording-scope.ts';
 
 export type RecordingAppIdentity = {
@@ -27,6 +29,21 @@ export type RecordingStopCommandResult = {
   recordOnlySession?: boolean;
   activeSessionApp?: RecordingAppIdentity;
   durationMs: number;
+  capturedDurationMs?: number;
+  /**
+   * What the recorder itself was observed doing when the stop was carried out (ADR 0024 2.2).
+   * `confirmed` is the ordinary answer; `unconfirmed` and `lost` say the export was served without
+   * proof that the recorder terminated, which is a disclosure and not a failure. Absent on a
+   * response replayed from a manifest written before this field existed.
+   */
+  recorder?: RecorderObservation;
+  /**
+   * What the recorder's native artifact path was left as (ADR 0024 2.3): `retired` once the backend
+   * removed it and verified that, `retirable` when the writer is proven gone and a fenced removal is
+   * still owed, `pending` when nothing proves the writer gone yet. Absent when the backend has no
+   * native path of its own to keep.
+   */
+  nativePathDisposition?: NativePathDisposition;
   showTouches: boolean;
   warning?: string;
   overlayWarning?: string;
@@ -48,20 +65,3 @@ export type TraceCommandResult =
       outPath: string;
       artifacts: DaemonArtifact[];
     };
-
-/**
- * The daemon-owned recording-backend discriminant (issue #974). A PLATFORM-NEUTRAL
- * string tag naming which recording backend a device resolves to; the daemon maps it
- * back to the concrete {@link RecordingBackend} instance via `RECORDING_BACKENDS_BY_TAG`.
- * The {@link PlatformPlugin.recording} facet returns this tag (type-only in the plugin,
- * exactly like {@link LogBackend} for app-log), so core/platforms never construct the
- * daemon-owned backend objects. `'unsupported'` is the fallthrough for families that
- * carry no recording facet (linux) and any unregistered platform.
- */
-export type RecordingBackendTag =
-  | 'web'
-  | 'android'
-  | 'macos'
-  | 'ios-device'
-  | 'ios-simulator'
-  | 'unsupported';

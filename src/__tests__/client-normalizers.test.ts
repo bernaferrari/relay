@@ -2,6 +2,7 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import {
   normalizeDevice,
+  normalizeDeviceSelection,
   normalizeOpenDevice,
   normalizeSession,
 } from '../client/client-normalizers.ts';
@@ -18,7 +19,36 @@ test('normalizeOpenDevice accepts exactly the canonical leaf platforms', () => {
     assert.equal(result.platform, platform);
   }
   // Lock the membership so the derived check cannot silently widen/narrow.
-  assert.deepEqual([...PUBLIC_PLATFORMS], ['ios', 'macos', 'android', 'vega', 'linux', 'web']);
+  assert.deepEqual(
+    [...PUBLIC_PLATFORMS],
+    ['ios', 'macos', 'android', 'harmonyos', 'vega', 'linux', 'web'],
+  );
+});
+
+test('normalizeDeviceSelection preserves structured resolver evidence and rejects malformed data', () => {
+  assert.deepEqual(
+    normalizeDeviceSelection({
+      reason: 'single-app-installed-local',
+      source: 'local',
+      candidateCount: 1,
+      bootOccurred: false,
+    }),
+    {
+      reason: 'single-app-installed-local',
+      source: 'local',
+      candidateCount: 1,
+      bootOccurred: false,
+    },
+  );
+  assert.equal(
+    normalizeDeviceSelection({
+      reason: 'single-booted-local',
+      source: 'local',
+      candidateCount: -1,
+      bootOccurred: false,
+    }),
+    undefined,
+  );
 });
 
 test('normalizeOpenDevice rejects the apple selector and unknown platforms', () => {

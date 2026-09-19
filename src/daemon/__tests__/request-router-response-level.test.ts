@@ -1,46 +1,49 @@
+import { createTestDeviceInventoryGateways } from '../../__tests__/test-utils/device-inventory-gateways.ts';
 import { test, expect, vi, beforeEach } from 'vitest';
-import os from 'node:os';
+
 import path from 'node:path';
 
-vi.mock('../../core/dispatch.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../core/dispatch.ts')>();
-  return { ...actual, dispatchCommand: vi.fn(async () => ({})) };
-});
-
-vi.mock('../../platforms/apple/core/runner/runner-client.ts', async (importOriginal) => {
+vi.mock('@agent-device/platform-apple/runner/operations', async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import('../../platforms/apple/core/runner/runner-client.ts')>();
+    await importOriginal<typeof import('@agent-device/platform-apple/runner/operations')>();
   return { ...actual, stopIosRunnerSession: vi.fn(async () => {}) };
 });
 
 vi.mock('../device-ready.ts', () => ({ ensureDeviceReady: vi.fn(async () => {}) }));
 
-// Register a test view on a command that flows through the (mocked) generic
-// dispatch path, so the router graft mechanics can be exercised end to end
-// without the real snapshot handler (the actual snapshot view is unit-tested in
-// response-views.test.ts).
+// Register a test view on a command whose payload this file controls end to end, so the router
+// graft mechanics can be exercised without the real snapshot handler (the actual snapshot view is
+// unit-tested in response-views.test.ts). `app-switcher` reaches a bound operation since R56, so
+// its payload is the one the daemon leaf builds rather than a mocked dispatcher's.
 vi.mock('../response-views.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../response-views.ts')>();
   return {
     ...actual,
     RESPONSE_VIEWS: {
       ...actual.RESPONSE_VIEWS,
-      home: (data: Record<string, unknown>, level: string) =>
-        level === 'digest' ? { homeDigest: true, hadItems: Array.isArray(data.items) } : data,
+      'app-switcher': (data: Record<string, unknown>, level: string) =>
+        level === 'digest'
+          ? { appSwitcherDigest: true, hadAction: data.action === 'app-switcher' }
+          : data,
     },
   };
 });
 
-import { dispatchCommand } from '../../core/dispatch.ts';
-import { createRequestHandler } from '../request-router.ts';
-import type { DaemonRequest, SessionState } from '../types.ts';
+import {
+  createRequestHandler,
+  gestureRuntimeSpies,
+  lifecycleDeviceRuntimeGateway,
+} from './test-device-runtime-gateway.ts';
+import type { DaemonRequest } from '../daemon-request.ts';
+import type { SessionState } from '../session-state.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
 import { commandRpcParamsSchema } from '@agent-device/kernel/contracts';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 
-const mockDispatch = vi.mocked(dispatchCommand);
-
-const REPRESENTATIVE_PAYLOAD = { message: 'home-ok', items: [1, 2, 3] } as const;
+const REPRESENTATIVE_PAYLOAD = { message: 'scroll-ok', items: [1, 2, 3] } as const;
+/** What the bound `app-switcher` leaf answers; this file's registered view digests it. */
+const APP_SWITCHER_PAYLOAD = { action: 'app-switcher', message: 'Opened app switcher' } as const;
 
 function makeIosSession(name: string): SessionState {
   return {
@@ -65,11 +68,15 @@ function makeHandler() {
   return {
     sessionStore,
     handler: createRequestHandler({
-      logPath: path.join(os.tmpdir(), 'daemon.log'),
+      logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
       token: 'test-token',
       sessionStore,
       leaseRegistry: new LeaseRegistry(),
+      deviceInventoryGateways: createTestDeviceInventoryGateways(),
       trackDownloadableArtifact: () => 'artifact-id',
+      // Both subjects reach bound runtimes now — `app-switcher` through R56 and `scroll` through
+      // R53 — so the handler needs an owner admitting `appSwitcher` and `scrollDirection` alike.
+      deviceRuntimeGateway: lifecycleDeviceRuntimeGateway,
     }),
   };
 }
@@ -86,54 +93,66 @@ function request(command: string, overrides: Partial<DaemonRequest> = {}): Daemo
 }
 
 beforeEach(() => {
-  mockDispatch.mockReset();
-  mockDispatch.mockImplementation(async () => ({ ...REPRESENTATIVE_PAYLOAD }));
+  gestureRuntimeSpies.scrollDirection.mockReset();
+  gestureRuntimeSpies.scrollDirection.mockResolvedValue({});
 });
 
 test('(a) default identity: responseLevel absent === default === no meta, byte-identical', async () => {
   const { handler } = makeHandler();
-  const noMeta = await handler(request('home'));
-  const emptyMeta = await handler(request('home', { meta: {} }));
-  const explicitDefault = await handler(request('home', { meta: { responseLevel: 'default' } }));
+  const noMeta = await handler(request('app-switcher'));
+  const emptyMeta = await handler(request('app-switcher', { meta: {} }));
+  const explicitDefault = await handler(
+    request('app-switcher', { meta: { responseLevel: 'default' } }),
+  );
 
   expect(JSON.stringify(noMeta)).toBe(JSON.stringify(emptyMeta));
   expect(JSON.stringify(noMeta)).toBe(JSON.stringify(explicitDefault));
-  if (noMeta.ok) expect(noMeta.data).toEqual(REPRESENTATIVE_PAYLOAD);
+  if (noMeta.ok) expect(noMeta.data).toEqual(APP_SWITCHER_PAYLOAD);
 });
 
 test('(b) digest applies the registered view, dropping the full payload', async () => {
   const { handler } = makeHandler();
-  const resp = await handler(request('home', { meta: { responseLevel: 'digest' } }));
+  const resp = await handler(request('app-switcher', { meta: { responseLevel: 'digest' } }));
   expect(resp.ok).toBe(true);
   if (!resp.ok) return;
-  expect(resp.data).toEqual({ homeDigest: true, hadItems: true });
+  expect(resp.data).toEqual({ appSwitcherDigest: true, hadAction: true });
   expect('message' in (resp.data ?? {})).toBe(false);
 });
 
 test('(c) full returns today’s shape (view passthrough) — byte-identical to default', async () => {
   const { handler } = makeHandler();
-  const full = await handler(request('home', { meta: { responseLevel: 'full' } }));
-  const def = await handler(request('home', { meta: { responseLevel: 'default' } }));
+  const full = await handler(request('app-switcher', { meta: { responseLevel: 'full' } }));
+  const def = await handler(request('app-switcher', { meta: { responseLevel: 'default' } }));
   expect(JSON.stringify(full)).toBe(JSON.stringify(def));
 });
 
 test('(d) digest composes with --cost: viewed data plus an additive cost block', async () => {
   const { handler } = makeHandler();
   const resp = await handler(
-    request('home', { meta: { responseLevel: 'digest', includeCost: true } }),
+    request('app-switcher', { meta: { responseLevel: 'digest', includeCost: true } }),
   );
   expect(resp.ok).toBe(true);
   if (!resp.ok) return;
-  expect(resp.data).toMatchObject({ homeDigest: true, hadItems: true });
+  expect(resp.data).toMatchObject({ appSwitcherDigest: true, hadAction: true });
   expect(typeof resp.data?.cost?.wallClockMs).toBe('number');
 });
 
 test('(e) digest on a command with no registered view is byte-identical to default', async () => {
   const { handler } = makeHandler();
-  const digest = await handler(request('back', { meta: { responseLevel: 'digest' } }));
-  const def = await handler(request('back', { meta: {} }));
+  // `scroll` has no registered view. It no longer reaches the mocked `dispatchCommand` (R53 put
+  // it on a bound runtime), so the representative payload comes from the bound operation instead.
+  gestureRuntimeSpies.scrollDirection.mockResolvedValue({ ...REPRESENTATIVE_PAYLOAD });
+  const scrollRequest: Partial<DaemonRequest> = { positionals: ['down'], meta: {} };
+  const digest = await handler(
+    request('scroll', { ...scrollRequest, meta: { responseLevel: 'digest' } }),
+  );
+  const def = await handler(request('scroll', scrollRequest));
   expect(JSON.stringify(digest)).toBe(JSON.stringify(def));
-  if (digest.ok) expect(digest.data).toEqual(REPRESENTATIVE_PAYLOAD);
+  // The owner's payload passes through the view-less path; scroll's own result fields sit beside
+  // it, and its success text owns `message`.
+  if (digest.ok) {
+    expect(digest.data).toMatchObject({ items: REPRESENTATIVE_PAYLOAD.items, direction: 'down' });
+  }
 });
 
 test('(f) boundary survival: meta.responseLevel survives commandRpcParamsSchema parsing', () => {

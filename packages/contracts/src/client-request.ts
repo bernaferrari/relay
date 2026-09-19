@@ -14,63 +14,50 @@ import type {
   NetworkIncludeMode,
   SessionRuntimeHints,
 } from '@agent-device/kernel/contracts';
+import type { SnapshotCommandOptionFields } from '@agent-device/kernel/snapshot';
 import type { DaemonBatchStep } from './batch-step.ts';
+import type { ReplayRequestFields } from './replay-request-fields.ts';
 import type { AgentDeviceClientConfig, AgentDeviceSelectionOptions } from './client-connection.ts';
 
-export type CommandExecutionOptions = Partial<ScreenshotRequestFlags> & {
-  positionals?: string[];
-  kind?: string;
-  out?: string;
-  artifact?: string;
-  dsym?: string;
-  searchPath?: string;
-  interactiveOnly?: boolean;
-  depth?: number;
-  scope?: string;
-  raw?: boolean;
-  forceFull?: boolean;
-  count?: number;
-  fps?: number;
-  maxSize?: number;
-  recordingScope?: RecordingScope;
-  quality?: RecordingExportQuality;
-  hideTouches?: boolean;
-  intervalMs?: number;
-  delayMs?: number;
-  durationMs?: number;
-  holdMs?: number;
-  jitterPx?: number;
-  pixels?: number;
-  doubleTap?: boolean;
-  verify?: boolean;
-  settle?: boolean;
-  settleQuietMs?: number;
-  clickButton?: ClickButton;
-  pauseMs?: number;
-  pattern?: SwipePattern;
-  headless?: boolean;
-  restart?: boolean;
-  replayUpdate?: boolean;
-  replayBackend?: string;
-  replayEnv?: string[];
-  replayShellEnv?: Record<string, string>;
-  replayFrom?: number;
-  replayPlanDigest?: string;
-  replayKeepSession?: boolean;
-  failFast?: boolean;
-  timeoutMs?: number;
-  retries?: number;
-  recordVideo?: boolean;
-  artifactsDir?: string;
-  shardAll?: number;
-  shardSplit?: number;
-  findFirst?: boolean;
-  findLast?: boolean;
-  networkInclude?: NetworkIncludeMode;
-  batchOnError?: 'stop';
-  batchMaxSteps?: number;
-  batchSteps?: DaemonBatchStep[];
-};
+export type CommandExecutionOptions = Partial<ScreenshotRequestFlags> &
+  ReplayRequestFields &
+  SnapshotCommandOptionFields & {
+    positionals?: string[];
+    kind?: string;
+    out?: string;
+    artifact?: string;
+    dsym?: string;
+    searchPath?: string;
+    count?: number;
+    fps?: number;
+    recordingScope?: RecordingScope;
+    quality?: RecordingExportQuality;
+    hideTouches?: boolean;
+    intervalMs?: number;
+    delayMs?: number;
+    durationMs?: number;
+    holdMs?: number;
+    jitterPx?: number;
+    pixels?: number;
+    /** Scroll: repeat passes until this selector is visible on screen. */
+    until?: string;
+    doubleTap?: boolean;
+    verify?: boolean;
+    settle?: boolean;
+    settleQuietMs?: number;
+    clickButton?: ClickButton;
+    pauseMs?: number;
+    pattern?: SwipePattern;
+    headless?: boolean;
+    restart?: boolean;
+    replayBackend?: string;
+    findFirst?: boolean;
+    findLast?: boolean;
+    networkInclude?: NetworkIncludeMode;
+    batchOnError?: 'stop';
+    batchMaxSteps?: number;
+    batchSteps?: DaemonBatchStep[];
+  };
 
 export type InternalRequestOptions = AgentDeviceClientConfig &
   AgentDeviceSelectionOptions &

@@ -1,6 +1,8 @@
 import type { SnapshotQualityVerdict } from '@agent-device/kernel/snapshot';
-import { recoveredSnapshotQualityWarning } from '../snapshot/snapshot-quality.ts';
-import type { DaemonResponseData, SessionState } from './types.ts';
+import { readResponseWarnings } from '@agent-device/kernel/success-text';
+import { recoveredSnapshotQualityWarning } from '@agent-device/capture-kit/quality-warnings';
+import type { DaemonResponseData } from './daemon-request.ts';
+import type { SessionState } from './session-state.ts';
 
 type RecoveredWarningLatch = NonNullable<SessionState['recoveredSnapshotWarningLatch']>;
 
@@ -43,8 +45,14 @@ export function resolveRecoveredWarningLatch(params: {
 }): LatchDecision {
   const { verdict, appBundleId, latch } = params;
   if (!verdict) return { latch };
+  // Android helper quality is a platform-local verdict. It must not arm, clear, or otherwise
+  // mutate the iOS XCTest penalty latch, which is session state for a different capture channel.
+  if (verdict.backend === 'android-helper') return { latch };
   if (verdict.state === 'healthy') return { latch: undefined };
   if (verdict.state !== 'recovered') return { latch };
+  // A request-pinned backend never degraded anything, so it neither warns nor
+  // touches the penalty latch.
+  if (verdict.reasonCode === 'requested-backend') return { latch };
   if (verdict.reasonCode !== 'deferred') {
     return { latch: { appBundleId } };
   }
@@ -85,6 +93,5 @@ export function applyRecoveredWarningLatch(params: {
   });
   session.recoveredSnapshotWarningLatch = decision.latch;
   if (!decision.warning) return data;
-  const warnings = Array.isArray(data.warnings) ? data.warnings : [];
-  return { ...data, warnings: [decision.warning, ...warnings] };
+  return { ...data, warnings: [decision.warning, ...readResponseWarnings(data)] };
 }

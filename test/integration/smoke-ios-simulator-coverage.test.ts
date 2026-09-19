@@ -3,36 +3,24 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
+import { buildGesturePlan } from '@agent-device/contracts/gesture-plan';
 import {
-  buildGesturePlan,
   gesturePayloadFromPositionals,
   normalizePublicGesture,
   normalizePublicSwipeMotion,
   swipePayloadFromPositionals,
-} from '@agent-device/contracts/interaction';
-import { PUBLIC_COMMANDS } from '../../src/command-catalog.ts';
-import {
-  isCommandSupportedOnDevice,
-  unsupportedHintForDevice,
-} from '../../src/core/capabilities.ts';
+} from '@agent-device/contracts/gesture-normalization';
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
 import { parseReplayScriptDetailed } from '@agent-device/ad-script';
+import { isValidSelectorExpression } from '@agent-device/selectors';
 import { IOS_SIMULATOR_BEHAVIOR_COVERAGE } from './ios-simulator-e2e/behavior-coverage.ts';
 import {
   IOS_SIMULATOR_E2E_COVERAGE,
   liveCommandsForScenario,
-} from './ios-simulator-e2e/coverage-manifest.ts';
+} from './ios-simulator-e2e/coverage.ts';
 import { collectPagedEventTimeline } from './live-device-e2e/event-timeline.ts';
 import { findMissingFixtureIdentifiers } from './ios-simulator-e2e/fixture-identifier-coverage.ts';
 import { IOS_SIMULATOR_LIVE_SCENARIOS } from './ios-simulator-e2e/scenarios.ts';
-
-const IOS_SIMULATOR = {
-  appleOs: 'ios' as const,
-  id: 'ci-ios-simulator',
-  kind: 'simulator' as const,
-  name: 'CI iPhone',
-  platform: 'apple' as const,
-  target: 'mobile' as const,
-};
 
 test('iOS simulator coverage exhaustively classifies the public catalog', () => {
   const publicCommands = Object.values(PUBLIC_COMMANDS).sort();
@@ -140,33 +128,16 @@ test('live iOS scenarios reference fixture identifiers that exist', () => {
   );
 });
 
-test('capability classifications match executable simulator behavior', () => {
-  for (const [command, entry] of Object.entries(IOS_SIMULATOR_E2E_COVERAGE)) {
-    const supported = isCommandSupportedOnDevice(command, IOS_SIMULATOR);
-    if (command === PUBLIC_COMMANDS.audio) {
-      assert.equal(
-        supported,
-        process.platform === 'darwin',
-        'simulator audio admission follows host ScreenCaptureKit availability',
-      );
-      continue;
-    }
-    if (entry.level === 'capability-denial') {
-      assert.equal(supported, false, `${command} denial must match capability admission`);
-    } else {
-      assert.equal(supported, true, `${command} evidence requires simulator capability admission`);
-    }
-  }
-
-  assert.equal(isCommandSupportedOnDevice(PUBLIC_COMMANDS.tvRemote, IOS_SIMULATOR), false);
-  assert.equal(IOS_SIMULATOR_E2E_COVERAGE[PUBLIC_COMMANDS.tvRemote].level, 'capability-denial');
-
-  assert.equal(isCommandSupportedOnDevice(PUBLIC_COMMANDS.viewport, IOS_SIMULATOR), false);
-  assert.equal(IOS_SIMULATOR_E2E_COVERAGE[PUBLIC_COMMANDS.viewport].level, 'capability-denial');
-  assert.match(
-    unsupportedHintForDevice(PUBLIC_COMMANDS.viewport, IOS_SIMULATOR) ?? '',
-    /--platform web/,
-    'viewport denial names the surface that does support it',
+test('fact-owned simulator denials carry runtime contract evidence', () => {
+  assert.equal(
+    IOS_SIMULATOR_E2E_COVERAGE[PUBLIC_COMMANDS.tvRemote].level,
+    'command-contract',
+    'tv-remote denial is owned by exact platform runtime facts',
+  );
+  assert.equal(
+    IOS_SIMULATOR_E2E_COVERAGE[PUBLIC_COMMANDS.viewport].level,
+    'command-contract',
+    'viewport denial is owned by exact platform runtime facts',
   );
 });
 
@@ -207,6 +178,31 @@ test('fixture replay gestures fit the smallest supported iPhone viewport', () =>
   for (const replayPath of replayPaths) assertReplayFitsViewports(replayPath, compactViewports);
 });
 
+test('drag replay fixtures use parseable source and destination selectors', () => {
+  const replayPaths = [
+    'examples/test-app/replays/drag.ad',
+    'examples/test-app/replays/drag-android.ad',
+  ];
+
+  for (const replayPath of replayPaths) {
+    const drag = parseReplayScriptDetailed(fs.readFileSync(replayPath, 'utf8')).actions.find(
+      (action) => action.command === 'gesture' && action.positionals?.[0] === 'drag',
+    );
+    assert.ok(drag, `${replayPath} must contain a drag gesture`);
+
+    const source = drag.positionals?.[1];
+    const destination = drag.positionals?.[2];
+    assert.ok(
+      source && isValidSelectorExpression(source),
+      `${replayPath} source must be a selector`,
+    );
+    assert.ok(
+      destination && isValidSelectorExpression(destination),
+      `${replayPath} destination must be a selector`,
+    );
+  }
+});
+
 test('fixture navigation uses edge-aware traversal without losing direct swipe evidence', () => {
   const actions = parseReplayScriptDetailed(
     fs.readFileSync('test/integration/replays/ios/fixture/01-navigation-scroll.ad', 'utf8'),
@@ -223,6 +219,18 @@ test('fixture navigation uses edge-aware traversal without losing direct swipe e
     ['bottom', 'top'],
     'edge traversal must terminate from observed scroll state rather than viewport-tuned swipes',
   );
+});
+
+test('fixture navigation establishes the home route before selecting Catalog', () => {
+  const actions = parseReplayScriptDetailed(
+    fs.readFileSync('test/integration/replays/ios/fixture/01-navigation-scroll.ad', 'utf8'),
+  ).actions;
+  const open = actions[0];
+  assert.equal(open?.command, 'open');
+  assert.equal(open?.flags.relaunch, true);
+  assert.equal(open?.runtime?.launchUrl, 'agent-device-test-app:///');
+  assert.equal(actions[2]?.command, 'click');
+  assert.equal(actions[2]?.positionals?.[0], 'label="Catalog"');
 });
 
 test('event timeline coverage follows cursors beyond the first page', async () => {

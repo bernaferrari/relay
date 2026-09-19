@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import type { AgentDeviceBackend, BackendSnapshotResult } from '../../../backend.ts';
+import type { AgentDeviceBackend } from '../../../backend.ts';
 import type { SnapshotState } from '@agent-device/kernel/snapshot';
 import { createLocalArtifactAdapter } from '../../../io.ts';
 import {
@@ -8,87 +8,19 @@ import {
   createMemorySessionStore,
   localCommandPolicy,
 } from '../../../runtime.ts';
-import { makeSnapshotState } from '../../../__tests__/test-utils/index.ts';
+import { makeSnapshotState } from '@agent-device/selectors/snapshot-geometry-fixtures';
 import { ref, selector } from './selector-read-utils.ts';
 import { buildSettleTailEntries, NEVER_SETTLED_HINT } from './settle.ts';
-import { readSnapshotQualityVerdict } from '../../../snapshot/snapshot-quality.ts';
+import {
+  buttonSnapshot,
+  createFakeClock,
+  createSettleDevice,
+  welcomeSnapshot,
+} from './__tests__/settle-device-fixtures.ts';
+import { readSnapshotQualityVerdict } from '@agent-device/capture-kit/snapshot-quality-verdict';
 
 // #1101 --settle: quiet-window settle loop composition on the interaction
 // commands. Budgets are injected (fake clock) — no real waiting.
-
-function createFakeClock(stepMs = 300): {
-  now: () => number;
-  sleep: (ms: number) => Promise<void>;
-  advance: (ms: number) => void;
-} {
-  let elapsed = 0;
-  return {
-    now: () => elapsed,
-    sleep: async (ms: number) => {
-      elapsed += ms > 0 ? ms : stepMs;
-    },
-    advance: (ms: number) => {
-      elapsed += ms;
-    },
-  };
-}
-
-function buttonSnapshot(): SnapshotState {
-  return makeSnapshotState([
-    {
-      index: 0,
-      depth: 0,
-      type: 'Button',
-      label: 'Continue',
-      rect: { x: 10, y: 20, width: 100, height: 40 },
-      hittable: true,
-    },
-  ]);
-}
-
-// Five nodes so a settled capture clears the tiny-tree readiness heuristic.
-function welcomeSnapshot(): SnapshotState {
-  return makeSnapshotState(
-    ['Welcome!', 'Next', 'Back', 'Home', 'Menu'].map((label, index) => ({
-      index,
-      depth: index === 0 ? 0 : 1,
-      ...(index === 0 ? {} : { parentIndex: 0 }),
-      type: index === 0 ? 'StaticText' : 'Button',
-      label,
-      rect: { x: 10, y: 20 + index * 60, width: 100, height: 40 },
-      hittable: true,
-    })),
-  );
-}
-
-function createSettleDevice(params: {
-  stored: SnapshotState;
-  captureSnapshot: () => Promise<BackendSnapshotResult> | BackendSnapshotResult;
-  tap?: () => Promise<Record<string, unknown>>;
-  clock?: ReturnType<typeof createFakeClock>;
-  appBundleId?: string;
-}): ReturnType<typeof createAgentDevice> {
-  return createAgentDevice({
-    backend: {
-      platform: 'ios',
-      captureSnapshot: async () => await params.captureSnapshot(),
-      tap: async () => (params.tap ? await params.tap() : { ok: true }),
-      fill: async () => ({ ok: true }),
-      longPress: async () => ({ ok: true }),
-      typeText: async () => {},
-    } satisfies AgentDeviceBackend,
-    artifacts: createLocalArtifactAdapter(),
-    sessions: createMemorySessionStore([
-      {
-        name: 'default',
-        snapshot: params.stored,
-        ...(params.appBundleId ? { appBundleId: params.appBundleId } : {}),
-      },
-    ]),
-    policy: localCommandPolicy(),
-    clock: params.clock ?? createFakeClock(),
-  });
-}
 
 test('press --settle returns the settled diff and stores the settled tree', async () => {
   const before = buttonSnapshot();
@@ -171,7 +103,7 @@ test('never-settling content returns settled: false without an actionable diff',
 
 test('private-ax recovery resets the settle budget once', async () => {
   const before = buttonSnapshot();
-  const recoveredAfter = welcomeSnapshot();
+  const recoveredAfter = buttonSnapshot();
   recoveredAfter.snapshotQuality = {
     state: 'recovered',
     backend: 'private-ax',
@@ -206,6 +138,39 @@ test('private-ax recovery resets the settle budget once', async () => {
   assert.equal(settle.settled, true);
   assert.ok(settle.diff);
   assert.equal(captures, 4);
+});
+
+test('press --settle pins an already-established private-ax observation backend', async () => {
+  const established = welcomeSnapshot();
+  established.snapshotQuality = {
+    state: 'recovered',
+    backend: 'private-ax',
+    reasonCode: 'deferred',
+    reason: 'penalty',
+  };
+  const preferredBackends: Array<string | undefined> = [];
+  const device = createAgentDevice({
+    backend: {
+      platform: 'ios',
+      captureSnapshot: async (_context, options) => {
+        preferredBackends.push(options?.preferredBackend);
+        return { snapshot: established };
+      },
+      tap: async () => ({ ok: true }),
+      fill: async () => ({ ok: true }),
+      longPress: async () => ({ ok: true }),
+    } satisfies AgentDeviceBackend,
+    artifacts: createLocalArtifactAdapter(),
+    sessions: createMemorySessionStore([{ name: 'default', snapshot: established }]),
+    policy: localCommandPolicy(),
+    clock: createFakeClock(),
+  });
+  await device.interactions.press(selector('label=Next'), {
+    session: 'default',
+    settle: { quietMs: 500, timeoutMs: 2_000 },
+  });
+  assert.equal(preferredBackends[0], undefined);
+  assert.deepEqual(new Set(preferredBackends.slice(1)), new Set(['private-ax']));
 });
 
 test('penalty-deferred private-ax captures do not reset the settle budget', async () => {
@@ -247,6 +212,34 @@ test('penalty-deferred private-ax captures do not reset the settle budget', asyn
   assert.ok(settle);
   assert.equal(settle.settled, false);
   assert.equal(settle.hint, NEVER_SETTLED_HINT);
+});
+
+test('a settled sparse capture directs agents away from invalid refs and selectors', async () => {
+  const before = buttonSnapshot();
+  const sparseAfter = welcomeSnapshot();
+  sparseAfter.snapshotQuality = {
+    state: 'sparse',
+    backend: 'private-ax',
+    reasonCode: 'sparse-tree',
+    reason: 'snapshot returned no semantic controls or content',
+  };
+  let captures = 0;
+  const device = createSettleDevice({
+    stored: before,
+    captureSnapshot: () => {
+      captures += 1;
+      return { snapshot: captures === 1 ? before : sparseAfter };
+    },
+  });
+
+  const result = await device.interactions.press(selector('label=Continue'), {
+    session: 'default',
+    settle: {},
+  });
+
+  assert.match(result.settle?.hint ?? '', /refs\/selectors are invalid/);
+  assert.match(result.settle?.hint ?? '', /screenshot.*coordinate taps/i);
+  assert.equal(result.settle?.diff, undefined);
 });
 
 test('a broken settle capture never fails the action', async () => {

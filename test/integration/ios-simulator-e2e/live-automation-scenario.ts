@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { PUBLIC_COMMANDS } from '../../../src/command-catalog.ts';
+import { DEFAULT_ALERT_TIMEOUT_MS } from '@agent-device/contracts/alert-contract';
+
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
 import {
   assertElementText,
   assertElementTextAfterScrolling,
@@ -13,7 +15,17 @@ import { clearStateLaunchUrlMaestroFlow } from './live-fixtures.ts';
 import { type LiveContext, runStep, verifyBehavior, verifyCommand } from './live-harness.ts';
 
 const C = PUBLIC_COMMANDS;
+const ALERT_WAIT_TIMEOUT = String(DEFAULT_ALERT_TIMEOUT_MS);
 const FIXTURE_HOME_TITLE = 'Agent Device Tester';
+/**
+ * Deliberately generous. This budget decides whether the alert probe below runs at all, so it must
+ * outlast the slowest honest route mount on a cold CI simulator — the WebView lab took over 2.5 s
+ * there while rendering correctly. Waiting longer costs nothing when a confirmation really is up,
+ * because the route never renders until it is accepted; being too short costs the whole scenario.
+ */
+const DEEP_LINK_DESTINATION_WAIT_MS = '15000';
+/** The Automation lab's own first landmark; see `acceptDeepLinkConfirmationIfPresent`. */
+const AUTOMATION_LAB_LANDMARK = ['text', 'Automation lab'] as const;
 const AUTOMATION_DEEP_LINK =
   'agent-device-test-app:///automation?event=cold.start&payload=%7B%22source%22%3A%22deep-link%22%7D';
 
@@ -33,6 +45,22 @@ async function observeFixtureHome(context: LiveContext) {
   return snapshot;
 }
 
+async function assertAutomationAlertTriggerVisible(context: LiveContext): Promise<void> {
+  const visible = await runStep(context, 'assert automation-open-alert is visible', [
+    'is',
+    'visible',
+    'id="automation-open-alert"',
+  ]);
+  assert.equal(visible.json?.data?.pass, true, JSON.stringify(visible.json));
+}
+
+async function openNativeAlert(context: LiveContext, step: string): Promise<void> {
+  await assertAutomationAlertTriggerVisible(context);
+  await runStep(context, step, ['click', 'id="automation-open-alert"']);
+  // The canary proves JS ran and the state update is observable; alert wait proves native presentation.
+  await assertWaitText(context, 'Alert result: opened');
+}
+
 export async function assertAutomationInput(context: LiveContext): Promise<void> {
   const opened = await runStep(context, 'cold launch fixture', [
     'open',
@@ -40,6 +68,13 @@ export async function assertAutomationInput(context: LiveContext): Promise<void>
     '--relaunch',
   ]);
   assertJsonContains(opened, context.appId, 'open response should retain fixture identity');
+  const runnerLogPath = opened.json?.data?.runnerLogPath;
+  assert.equal(
+    typeof runnerLogPath,
+    'string',
+    `open response should expose the authoritative runner log path: ${JSON.stringify(opened.json)}`,
+  );
+  context.runnerLogPath = runnerLogPath;
   if (context.tier === 'full') {
     await runStep(context, 'normalize simulator orientation', ['orientation', 'portrait']);
     await runStep(context, 'normalize simulator appearance', ['settings', 'appearance', 'light']);
@@ -50,7 +85,7 @@ export async function assertAutomationInput(context: LiveContext): Promise<void>
   verifyCommand(context, C.open, 'cold launch exposes the fixture UI through snapshot and wait');
 
   await openAutomationDeepLink(context, 'cold launch fixture through a deep link');
-  await acceptDeepLinkConfirmationIfPresent(context);
+  await acceptDeepLinkConfirmationIfPresent(context, AUTOMATION_LAB_LANDMARK);
   await assertWaitText(context, 'Automation lab');
   await assertElementText(context, 'id="automation-event-name"', 'cold.start');
   await assertElementText(context, 'id="automation-event-payload"', '{"source":"deep-link"}');
@@ -81,6 +116,13 @@ export async function assertAutomationInput(context: LiveContext): Promise<void>
   await assertWaitText(context, 'Automation sheet');
   await runStep(context, 'close fixture sheet', ['click', 'id="automation-close-sheet"']);
   await assertWaitText(context, 'Automation lab');
+  const absentSheet = await runStep(context, 'assert closed fixture sheet is absent', [
+    'is',
+    'absent',
+    'id="automation-close-sheet"',
+  ]);
+  assert.equal(absentSheet.json?.data?.pass, true, JSON.stringify(absentSheet.json));
+  verifyCommand(context, C.is, 'strict absence observes the unmounted fixture sheet control');
   await runStep(context, 'restore automation route top after sheet', ['scroll', 'top']);
   verifyBehavior(
     context,
@@ -141,15 +183,33 @@ export async function assertAutomationInput(context: LiveContext): Promise<void>
   await assertWaitText(context, 'Long presses: 1');
   verifyCommand(context, C.longPress, '800ms hold increments the long-press counter');
 
-  await runStep(context, 'scroll native alert canary into view', ['scroll', 'down', '1']);
-  await runStep(context, 'open native alert', ['click', 'id="automation-open-alert"']);
-  const alert = await runStep(context, 'wait for native alert', ['alert', 'wait', '5000']);
+  await assertElementTextAfterScrolling(
+    context,
+    'id="automation-open-alert"',
+    'Open automation alert',
+  );
+  await openNativeAlert(context, 'open native alert');
+  const alert = await runStep(context, 'wait for native alert', [
+    'alert',
+    'wait',
+    ALERT_WAIT_TIMEOUT,
+  ]);
   assertJsonContains(alert, 'Automation confirmation', 'alert wait should return fixture alert');
   await runStep(context, 'inspect native alert', ['alert', 'get']);
   await runStep(context, 'dismiss native alert', ['alert', 'dismiss']);
   await assertWaitText(context, 'Alert result: cancelled');
 
-  await runStep(context, 'reopen native alert', ['click', 'id="automation-open-alert"']);
+  await openNativeAlert(context, 'reopen native alert');
+  const reopenedAlert = await runStep(context, 'wait for reopened native alert', [
+    'alert',
+    'wait',
+    ALERT_WAIT_TIMEOUT,
+  ]);
+  assertJsonContains(
+    reopenedAlert,
+    'Automation confirmation',
+    'alert wait should return the reopened fixture alert',
+  );
   await runStep(context, 'accept native alert', ['alert', 'accept']);
   await assertWaitText(context, 'Alert result: accepted');
   verifyCommand(context, C.alert, 'alert wait/get/dismiss/accept produce both fixture outcomes');
@@ -193,16 +253,33 @@ async function assertClearStateLaunchUrl(context: LiveContext): Promise<void> {
   await assertElementText(context, 'id="automation-event-payload"', '{"source":"deep-link"}');
 }
 
-async function acceptDeepLinkConfirmationIfPresent(context: LiveContext): Promise<void> {
-  const destination = await runStep(
+/**
+ * iOS sometimes puts an "Open in <app>?" confirmation in front of a custom-scheme deep link, so a
+ * scenario that launched one must accept it before asserting anything. `destination` is the `wait`
+ * predicate for the route's own first landmark, and it decides whether the alert probe runs at all:
+ * a landmark that arrived proves no confirmation is in the way. Each caller passes its own, because
+ * a shared landmark never matches off its route and sends every caller into the probe — and
+ * `alert get` against a live WKWebView screen is the XCTest query that exceeds the runner's
+ * execution watchdog, leaving every later command refused as `RUNNER_BUSY` (#2484 follow-up). The
+ * landmark must therefore be a native node the route renders before its content, and the budget
+ * above must outlast a cold mount, so the probe is reached only when something really is blocking.
+ */
+export async function acceptDeepLinkConfirmationIfPresent(
+  context: LiveContext,
+  destination: readonly string[],
+): Promise<void> {
+  const arrived = await runStep(
     context,
     'wait for deep-link destination before inspecting system UI',
-    ['wait', 'text', 'Automation lab', '2500'],
+    ['wait', ...destination, DEEP_LINK_DESTINATION_WAIT_MS],
     { allowFailure: true },
   );
-  if (destination.status === 0) return;
+  if (arrived.status === 0) return;
 
-  const alert = await runStep(context, 'inspect delayed deep-link system alert', ['alert', 'get']);
+  const alert = await runStep(context, 'inspect delayed deep-link system alert', ['alert', 'get'], {
+    allowFailure: true,
+  });
+  if (alert.status !== 0) return;
   const alertInfo = alert.json?.data;
   assert.match(String(alertInfo?.message), /^Open in\b/, JSON.stringify(alert.json));
   assert.ok(

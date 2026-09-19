@@ -1,33 +1,36 @@
+import { createTestDeviceInventoryGateways } from '../../__tests__/test-utils/device-inventory-gateways.ts';
+import { legacyDispatchCapture } from './legacy-snapshot-capture-fixture.ts';
 import { test, expect, vi, beforeEach } from 'vitest';
 import fs from 'node:fs';
-import os from 'node:os';
+
 import path from 'node:path';
 
-vi.mock('../../core/dispatch.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../core/dispatch.ts')>();
-  return { ...actual, dispatchCommand: vi.fn(async () => ({})) };
-});
-
-vi.mock('../../platforms/android/app-lifecycle.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../platforms/android/app-lifecycle.ts')>();
+// `scroll` still executes through legacy platform dispatch; screenshot and click bind their fake
+// at the facts/bind seam below instead (ADR 0019).
+vi.mock('@agent-device/platform-android/mechanics', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agent-device/platform-android/mechanics')>();
   return {
     ...actual,
-    getAndroidBlockingDialogFocus: vi.fn(async () => null),
+    getAndroidBlockingDialogObservation: vi.fn(async () => ({ status: 'clear' }) as const),
   };
 });
 
-import { dispatchCommand } from '../../core/dispatch.ts';
-import { createRequestHandler } from '../request-router.ts';
-import { dispatchScreenshotViaRuntime } from '../screenshot-runtime.ts';
-import type { SessionState } from '../types.ts';
+import { createRequestHandler } from './test-device-runtime-gateway.ts';
+import {
+  screenshotRuntimeFixture,
+  writeSolidPng,
+  type ScreenshotRuntimeFixture,
+  type ScreenshotRuntimeFixtureOptions,
+} from './screenshot-runtime-fixture.ts';
+import type { DaemonRequest } from '../daemon-request.ts';
+import type { SessionState } from '../session-state.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { attachRefs } from '@agent-device/kernel/snapshot';
-import { PNG } from '../../utils/png.ts';
+import { PNG } from '@agent-device/capture-kit/png';
 import { ANDROID_EMULATOR, IOS_SIMULATOR } from '../../__tests__/test-utils/device-fixtures.ts';
 import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
 import { makeSession as makeBaseSession } from '../../__tests__/test-utils/session-factories.ts';
-
-const mockDispatch = vi.mocked(dispatchCommand);
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 
 function makeSession(name: string): SessionState {
   return makeBaseSession(name, { device: ANDROID_EMULATOR });
@@ -57,44 +60,42 @@ function makeMacOsMenubarSession(name: string): SessionState {
 }
 
 beforeEach(() => {
-  mockDispatch.mockReset();
-  mockDispatch.mockResolvedValue({});
+  legacyDispatchCapture.mockReset();
+  legacyDispatchCapture.mockResolvedValue({});
 });
 
-function writeSolidPng(filePath: string, width = 100, height = 50): void {
-  const png = new PNG({ width, height });
-  for (let index = 0; index < png.data.length; index += 4) {
-    png.data[index] = 255;
-    png.data[index + 1] = 255;
-    png.data[index + 2] = 255;
-    png.data[index + 3] = 255;
-  }
-  fs.writeFileSync(filePath, PNG.sync.write(png));
-}
+type ScreenshotRouter = Readonly<{
+  handler: ReturnType<typeof createRequestHandler>;
+  sessionStore: ReturnType<typeof makeSessionStore>;
+  runtime: ScreenshotRuntimeFixture;
+}>;
 
-test('screenshot resolves relative positional path against request cwd', async () => {
-  const callerCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-screenshot-cwd-caller-'));
+function screenshotRouter(
+  session: SessionState,
+  options: ScreenshotRuntimeFixtureOptions = {},
+): ScreenshotRouter {
   const sessionStore = makeSessionStore('agent-device-router-screenshot-');
-  sessionStore.set('default', makeSession('default'));
-
-  let capturedPath: string | undefined;
-  mockDispatch.mockImplementation(async (_device, command, positionals) => {
-    if (command === 'screenshot') {
-      capturedPath = positionals[0];
-      if (capturedPath) {
-        writeSolidPng(capturedPath);
-      }
-    }
-    return {};
-  });
-
+  sessionStore.set(session.name, session);
+  const runtime = screenshotRuntimeFixture(options);
   const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
     token: 'test-token',
     sessionStore,
     leaseRegistry: new LeaseRegistry(),
+    deviceInventoryGateways: createTestDeviceInventoryGateways(),
+    deviceRuntimeGateway: runtime.gateway,
     trackDownloadableArtifact: () => 'artifact-id',
   });
+  return { handler, sessionStore, runtime };
+}
+
+function capturedPath(runtime: ScreenshotRuntimeFixture): string | undefined {
+  return runtime.captureScreenshot.mock.calls[0]?.[0].outPath;
+}
+
+test('screenshot resolves relative positional path against request cwd', async () => {
+  const callerCwd = mkdtempForTestSync('agent-device-screenshot-cwd-caller-');
+  const { handler, sessionStore, runtime } = screenshotRouter(makeSession('default'));
 
   await handler({
     token: 'test-token',
@@ -104,54 +105,99 @@ test('screenshot resolves relative positional path against request cwd', async (
     meta: { cwd: callerCwd, requestId: 'req-1', sessionExplicit: true },
   });
 
-  expect(capturedPath).toBeTruthy();
-  expect(capturedPath).toBe(path.join(callerCwd, 'evidence/test.png'));
-  expect(path.isAbsolute(capturedPath!)).toBe(true);
+  expect(capturedPath(runtime)).toBe(path.join(callerCwd, 'evidence/test.png'));
+  expect(path.isAbsolute(capturedPath(runtime)!)).toBe(true);
   const recordedAction = sessionStore.get('default')?.actions.at(-1);
   expect(recordedAction?.positionals).toEqual([path.join(callerCwd, 'evidence/test.png')]);
 });
 
-test('default screenshot temp directory is cleaned when capture fails', async () => {
-  const session = makeSession('default');
-  let capturedPath: string | undefined;
-  mockDispatch.mockImplementation(async (_device, command, positionals) => {
-    if (command === 'screenshot') capturedPath = positionals[0];
-    throw new Error('capture failed');
+test('screenshot keeps absolute positional path unchanged', async () => {
+  const absolutePath = path.join(mkdtempForTestSync('evidence-test'), 'evidence/test.png');
+  const { handler, sessionStore, runtime } = screenshotRouter(makeSession('default'));
+
+  await handler({
+    token: 'test-token',
+    session: 'default',
+    command: 'screenshot',
+    positionals: [absolutePath],
+    meta: { cwd: '/some/other/dir', requestId: 'req-2', sessionExplicit: true },
   });
 
-  await expect(
-    dispatchScreenshotViaRuntime({
-      session,
-      sessionName: session.name,
-      outputPlacement: 'default',
-      dispatchContext: {},
-    }),
-  ).rejects.toThrow(/capture failed/);
-
-  expect(capturedPath).toBeTruthy();
-  expect(path.basename(capturedPath!)).toBe('screenshot.png');
-  expect(fs.existsSync(path.dirname(capturedPath!))).toBe(false);
+  expect(capturedPath(runtime)).toBe(absolutePath);
+  const recordedAction = sessionStore.get('default')?.actions.at(-1);
+  expect(recordedAction?.positionals).toEqual([absolutePath]);
 });
 
-test('session-backed iOS simulator screenshots skip redundant boot probe', async () => {
-  const session = makeIosSession('ios');
-  const outPath = path.join(os.tmpdir(), 'agent-device-ios-session-screenshot.png');
-  let capturedContext: Parameters<typeof dispatchCommand>[4];
+test('screenshot resolves --out flag path against request cwd', async () => {
+  const callerCwd = mkdtempForTestSync('agent-device-screenshot-out-cwd-');
+  const { handler, sessionStore, runtime } = screenshotRouter(makeSession('default'));
 
-  mockDispatch.mockImplementation(async (_device, _command, _positionals, _outPath, context) => {
-    capturedContext = context;
-    return { path: outPath };
+  await handler({
+    token: 'test-token',
+    session: 'default',
+    command: 'screenshot',
+    positionals: [],
+    flags: { out: 'evidence/test.png' },
+    meta: { cwd: callerCwd, requestId: 'req-3', sessionExplicit: true },
   });
 
-  await dispatchScreenshotViaRuntime({
-    session,
-    sessionName: session.name,
-    outPath,
-    outputPlacement: 'positional',
-    dispatchContext: {},
+  expect(capturedPath(runtime)).toBe(path.join(callerCwd, 'evidence/test.png'));
+  expect(path.isAbsolute(capturedPath(runtime)!)).toBe(true);
+  const recordedAction = sessionStore.get('default')?.actions.at(-1);
+  expect(recordedAction?.flags.out).toBe(path.join(callerCwd, 'evidence/test.png'));
+});
+
+test('screenshot runtime supplies default output path when none is requested', async () => {
+  const { handler, runtime } = screenshotRouter(makeSession('default'));
+
+  const response = await handler({
+    token: 'test-token',
+    session: 'default',
+    command: 'screenshot',
+    positionals: [],
+    meta: { requestId: 'req-default-screenshot' },
   });
 
-  expect(capturedContext?.skipIosSimulatorBootCheck).toBe(true);
+  expect(response.ok).toBe(true);
+  expect(capturedPath(runtime)).toContain('agent-device-screenshot-');
+  expect(path.basename(capturedPath(runtime) ?? '')).toBe('screenshot.png');
+  if (response.ok) {
+    expect(response.data?.path).toBe(capturedPath(runtime));
+  }
+});
+
+test('screenshot forwards macOS session surface to the bound capture', async () => {
+  const { handler, runtime } = screenshotRouter(makeMacOsMenubarSession('default'));
+
+  await handler({
+    token: 'test-token',
+    session: 'default',
+    command: 'screenshot',
+    positionals: ['/tmp/menubar.png'],
+    meta: { requestId: 'req-surface-screenshot' },
+  });
+
+  expect(runtime.captureScreenshot.mock.calls[0]?.[0].options).toMatchObject({
+    surface: 'menubar',
+    appBundleId: 'com.example.menubarapp',
+  });
+});
+
+test('click forwards macOS menubar session surface to the bound runtime', async () => {
+  const { handler, runtime } = screenshotRouter(makeMacOsMenubarSession('default'));
+
+  await handler({
+    token: 'test-token',
+    session: 'default',
+    command: 'click',
+    positionals: ['100', '200'],
+    meta: { requestId: 'req-surface-click' },
+  });
+
+  expect(runtime.tapPoint.mock.calls[0]?.[0]).toMatchObject({
+    appBundleId: 'com.example.menubarapp',
+    options: { surface: 'menubar' },
+  });
 });
 
 test('router serializes concurrent commands for the same device across sessions', async () => {
@@ -162,30 +208,40 @@ test('router serializes concurrent commands for the same device across sessions'
   const order: string[] = [];
   let active = 0;
   let maxActive = 0;
-  const gates: Array<() => void> = [];
-
-  mockDispatch.mockImplementation(async (_device, command) => {
-    order.push(`start-${command}`);
+  let releaseScreenshot!: () => void;
+  const screenshotGate = new Promise<void>((resolve) => {
+    releaseScreenshot = resolve;
+  });
+  const enter = (label: string) => {
+    order.push(`start-${label}`);
     active += 1;
     maxActive = Math.max(maxActive, active);
-    if (command === 'screenshot') {
-      writeSolidPng('/tmp/first.png');
-    }
-    await new Promise<void>((resolve) => {
-      gates.push(() => {
-        active -= 1;
-        order.push(`end-${command}`);
-        resolve();
-      });
-    });
-    return {};
+  };
+  const exit = (label: string) => {
+    active -= 1;
+    order.push(`end-${label}`);
+  };
+
+  const runtime = screenshotRuntimeFixture({
+    onCapture: async (input) => {
+      writeSolidPng(input.outPath);
+      enter('screenshot');
+      await screenshotGate;
+      exit('screenshot');
+    },
+    onScroll: async () => {
+      enter('scroll');
+      exit('scroll');
+    },
   });
 
   const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
     token: 'test-token',
     sessionStore,
     leaseRegistry: new LeaseRegistry(),
+    deviceInventoryGateways: createTestDeviceInventoryGateways(),
+    deviceRuntimeGateway: runtime.gateway,
     trackDownloadableArtifact: () => 'artifact-id',
   });
 
@@ -197,9 +253,12 @@ test('router serializes concurrent commands for the same device across sessions'
     meta: { requestId: 'req-lock-1' },
   });
 
-  await vi.waitFor(() => {
-    expect(order).toEqual(['start-screenshot']);
-  });
+  await vi.waitFor(
+    () => {
+      expect(order).toEqual(['start-screenshot']);
+    },
+    { timeout: 5_000 },
+  );
 
   const scrollRequest = handler({
     token: 'test-token',
@@ -212,13 +271,7 @@ test('router serializes concurrent commands for the same device across sessions'
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(order).toEqual(['start-screenshot']);
 
-  gates.shift()?.();
-
-  await vi.waitFor(() => {
-    expect(order).toEqual(['start-screenshot', 'end-screenshot', 'start-scroll']);
-  });
-
-  gates.shift()?.();
+  releaseScreenshot();
 
   const [screenshotResponse, scrollResponse] = await Promise.all([
     screenshotRequest,
@@ -229,161 +282,15 @@ test('router serializes concurrent commands for the same device across sessions'
   expect(scrollResponse.ok).toBe(true);
   expect(maxActive).toBe(1);
   expect(order).toEqual(['start-screenshot', 'end-screenshot', 'start-scroll', 'end-scroll']);
-});
-
-test('screenshot forwards macOS session surface to dispatch', async () => {
-  const sessionStore = makeSessionStore('agent-device-router-screenshot-');
-  sessionStore.set('default', makeMacOsMenubarSession('default'));
-
-  mockDispatch.mockImplementation(async () => ({}));
-
-  const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
-    token: 'test-token',
-    sessionStore,
-    leaseRegistry: new LeaseRegistry(),
-    trackDownloadableArtifact: () => 'artifact-id',
-  });
-
-  await handler({
-    token: 'test-token',
-    session: 'default',
-    command: 'screenshot',
-    positionals: ['/tmp/menubar.png'],
-    meta: { requestId: 'req-surface-screenshot' },
-  });
-
-  expect(mockDispatch.mock.calls[0]?.[4]).toMatchObject({
-    surface: 'menubar',
-    appBundleId: 'com.example.menubarapp',
-  });
-});
-
-test('click forwards macOS menubar session surface to dispatch', async () => {
-  const sessionStore = makeSessionStore('agent-device-router-screenshot-');
-  sessionStore.set('default', makeMacOsMenubarSession('default'));
-
-  mockDispatch.mockImplementation(async () => ({}));
-
-  const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
-    token: 'test-token',
-    sessionStore,
-    leaseRegistry: new LeaseRegistry(),
-    trackDownloadableArtifact: () => 'artifact-id',
-  });
-
-  await handler({
-    token: 'test-token',
-    session: 'default',
-    command: 'click',
-    positionals: ['100', '200'],
-    meta: { requestId: 'req-surface-click' },
-  });
-
-  expect(mockDispatch.mock.calls[0]?.[1]).toBe('press');
-  expect(mockDispatch.mock.calls[0]?.[4]).toMatchObject({
-    surface: 'menubar',
-    appBundleId: 'com.example.menubarapp',
-  });
-});
-
-test('screenshot keeps absolute positional path unchanged', async () => {
-  const sessionStore = makeSessionStore('agent-device-router-screenshot-');
-  sessionStore.set('default', makeSession('default'));
-
-  const absolutePath = path.join(os.tmpdir(), 'evidence/test.png');
-  let capturedPath: string | undefined;
-
-  mockDispatch.mockImplementation(async (_device, command, positionals) => {
-    if (command === 'screenshot') {
-      capturedPath = positionals[0];
-      if (capturedPath) {
-        writeSolidPng(capturedPath);
-      }
-    }
-    return {};
-  });
-
-  const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
-    token: 'test-token',
-    sessionStore,
-    leaseRegistry: new LeaseRegistry(),
-    trackDownloadableArtifact: () => 'artifact-id',
-  });
-
-  await handler({
-    token: 'test-token',
-    session: 'default',
-    command: 'screenshot',
-    positionals: [absolutePath],
-    meta: { cwd: '/some/other/dir', requestId: 'req-2', sessionExplicit: true },
-  });
-
-  expect(capturedPath).toBe(absolutePath);
-  const recordedAction = sessionStore.get('default')?.actions.at(-1);
-  expect(recordedAction?.positionals).toEqual([absolutePath]);
-});
-
-test('screenshot runtime supplies default output path when none is requested', async () => {
-  const sessionStore = makeSessionStore('agent-device-router-screenshot-');
-  sessionStore.set('default', makeSession('default'));
-
-  let capturedPath: string | undefined;
-  mockDispatch.mockImplementation(async (_device, command, positionals) => {
-    if (command === 'screenshot') {
-      capturedPath = positionals[0];
-      if (capturedPath) {
-        writeSolidPng(capturedPath);
-      }
-    }
-    return {};
-  });
-
-  const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
-    token: 'test-token',
-    sessionStore,
-    leaseRegistry: new LeaseRegistry(),
-    trackDownloadableArtifact: () => 'artifact-id',
-  });
-
-  const response = await handler({
-    token: 'test-token',
-    session: 'default',
-    command: 'screenshot',
-    positionals: [],
-    meta: { requestId: 'req-default-screenshot' },
-  });
-
-  expect(response.ok).toBe(true);
-  expect(capturedPath).toContain('agent-device-screenshot-');
-  expect(path.basename(capturedPath ?? '')).toBe('screenshot.png');
-  if (response.ok) {
-    expect(response.data?.path).toBe(capturedPath);
-  }
-});
+}, 15_000);
 
 test('iOS simulator screenshot response includes output dimensions and logical density metadata', async () => {
-  const sessionStore = makeSessionStore('agent-device-router-screenshot-');
-  sessionStore.set('default', makeIosSession('default'));
-  const screenshotPath = path.join(os.tmpdir(), `agent-device-ios-meta-${Date.now()}.png`);
-
-  mockDispatch.mockImplementation(async (_device, command) => {
-    if (command === 'screenshot') {
-      writeSolidPng(screenshotPath, 402, 874);
-      return { path: screenshotPath };
-    }
-    return {};
-  });
-
-  const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
-    token: 'test-token',
-    sessionStore,
-    leaseRegistry: new LeaseRegistry(),
-    trackDownloadableArtifact: () => 'artifact-id',
+  const screenshotPath = path.join(
+    mkdtempForTestSync('agent-device-ios-meta'),
+    `agent-device-ios-meta-${Date.now()}.png`,
+  );
+  const { handler } = screenshotRouter(makeIosSession('default'), {
+    onCapture: (input) => writeSolidPng(input.outPath, 402, 874),
   });
 
   const response = await handler({
@@ -408,24 +315,12 @@ test('iOS simulator screenshot response includes output dimensions and logical d
 });
 
 test('non-iOS screenshot response tolerates malformed PNG metadata', async () => {
-  const sessionStore = makeSessionStore('agent-device-router-screenshot-');
-  sessionStore.set('default', makeSession('default'));
-  const screenshotPath = path.join(os.tmpdir(), `agent-device-android-truncated-${Date.now()}.png`);
-
-  mockDispatch.mockImplementation(async (_device, command) => {
-    if (command === 'screenshot') {
-      fs.writeFileSync(screenshotPath, Buffer.alloc(0));
-      return { path: screenshotPath };
-    }
-    return {};
-  });
-
-  const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
-    token: 'test-token',
-    sessionStore,
-    leaseRegistry: new LeaseRegistry(),
-    trackDownloadableArtifact: () => 'artifact-id',
+  const screenshotPath = path.join(
+    mkdtempForTestSync('agent-device-android-truncated'),
+    `agent-device-android-truncated-${Date.now()}.png`,
+  );
+  const { handler } = screenshotRouter(makeSession('default'), {
+    onCapture: (input) => fs.writeFileSync(input.outPath, Buffer.alloc(0)),
   });
 
   const response = await handler({
@@ -444,25 +339,13 @@ test('non-iOS screenshot response tolerates malformed PNG metadata', async () =>
   }
 });
 
-test('iOS simulator screenshot omits logical density metadata after --max-size downscale', async () => {
-  const sessionStore = makeSessionStore('agent-device-router-screenshot-');
-  sessionStore.set('default', makeIosSession('default'));
-  const screenshotPath = path.join(os.tmpdir(), `agent-device-ios-max-size-${Date.now()}.png`);
-
-  mockDispatch.mockImplementation(async (_device, command) => {
-    if (command === 'screenshot') {
-      writeSolidPng(screenshotPath, 804, 1748);
-      return { path: screenshotPath };
-    }
-    return {};
-  });
-
-  const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
-    token: 'test-token',
-    sessionStore,
-    leaseRegistry: new LeaseRegistry(),
-    trackDownloadableArtifact: () => 'artifact-id',
+test('iOS simulator screenshot omits logical density metadata after --scale downscale', async () => {
+  const screenshotPath = path.join(
+    mkdtempForTestSync('agent-device-ios-scale'),
+    `agent-device-ios-scale-${Date.now()}.png`,
+  );
+  const { handler } = screenshotRouter(makeIosSession('default'), {
+    onCapture: (input) => writeSolidPng(input.outPath, 804, 1748),
   });
 
   const response = await handler({
@@ -470,76 +353,74 @@ test('iOS simulator screenshot omits logical density metadata after --max-size d
     session: 'default',
     command: 'screenshot',
     positionals: [screenshotPath],
-    flags: { screenshotMaxSize: 437, screenshotPixelDensity: 2 },
-    meta: { requestId: 'req-ios-screenshot-max-size-meta' },
+    flags: { screenshotScale: 0.5, screenshotPixelDensity: 2 },
+    meta: { requestId: 'req-ios-screenshot-scale-meta' },
   });
 
   expect(response.ok).toBe(true);
   if (response.ok) {
-    expect(response.data).toMatchObject({
-      path: screenshotPath,
-      width: 201,
-      height: 437,
-    });
+    expect(response.data).toMatchObject({ path: screenshotPath, width: 402, height: 874 });
     expect(response.data).not.toHaveProperty('logicalWidth');
     expect(response.data).not.toHaveProperty('logicalHeight');
     expect(response.data).not.toHaveProperty('pixelDensity');
   }
 });
 
-test('screenshot resolves --out flag path against request cwd', async () => {
-  const callerCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-screenshot-out-cwd-'));
-  const sessionStore = makeSessionStore('agent-device-router-screenshot-');
-  sessionStore.set('default', makeSession('default'));
+test('screenshot rejects the removed max-size field from older remote clients', async () => {
+  const { handler, runtime } = screenshotRouter(makeIosSession('default'));
 
-  let capturedOut: string | undefined;
-
-  mockDispatch.mockImplementation(async (_device, command, _positionals, outPath) => {
-    if (command === 'screenshot') {
-      capturedOut = outPath;
-      if (capturedOut) {
-        writeSolidPng(capturedOut);
-      }
-    }
-    return {};
-  });
-
-  const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
-    token: 'test-token',
-    sessionStore,
-    leaseRegistry: new LeaseRegistry(),
-    trackDownloadableArtifact: () => 'artifact-id',
-  });
-
-  await handler({
+  const response = await handler({
     token: 'test-token',
     session: 'default',
     command: 'screenshot',
-    positionals: [],
-    flags: { out: 'evidence/test.png' },
-    meta: { cwd: callerCwd, requestId: 'req-3', sessionExplicit: true },
+    positionals: ['./legacy-max-size.png'],
+    flags: { screenshotMaxSize: 720 } as unknown as DaemonRequest['flags'],
+    meta: { requestId: 'req-ios-screenshot-legacy-max-size' },
   });
 
-  expect(capturedOut).toBeTruthy();
-  expect(capturedOut).toBe(path.join(callerCwd, 'evidence/test.png'));
-  expect(path.isAbsolute(capturedOut!)).toBe(true);
-  const recordedAction = sessionStore.get('default')?.actions.at(-1);
-  expect(recordedAction?.flags.out).toBe(path.join(callerCwd, 'evidence/test.png'));
+  expect(response.ok).toBe(false);
+  if (!response.ok) {
+    expect(response.error.code).toBe('INVALID_ARGS');
+    expect(response.error.message).toContain('screenshot --max-size was removed; use --scale');
+  }
+  expect(runtime.captureScreenshot).not.toHaveBeenCalled();
+});
+
+test('screenshot --pixel-density is rejected outside iOS-family simulators', async () => {
+  const { handler, runtime } = screenshotRouter(makeSession('default'));
+
+  const response = await handler({
+    token: 'test-token',
+    session: 'default',
+    command: 'screenshot',
+    positionals: ['/tmp/android.png'],
+    flags: { screenshotPixelDensity: 2 },
+    meta: { requestId: 'req-unsupported-density' },
+  });
+
+  expect(response.ok).toBe(false);
+  if (!response.ok) {
+    expect(response.error.message).toContain('currently supported only on iOS-family simulators');
+  }
+  expect(runtime.captureScreenshot).not.toHaveBeenCalled();
 });
 
 test('screenshot --overlay-refs captures a fresh snapshot when the session has none', async () => {
-  const sessionStore = makeSessionStore('agent-device-router-screenshot-');
-  sessionStore.set('default', makeSession('default'));
-  const screenshotPath = path.join(os.tmpdir(), `agent-device-overlay-${Date.now()}.png`);
-
-  mockDispatch.mockImplementation(async (_device, command) => {
-    if (command === 'screenshot') {
-      writeSolidPng(screenshotPath);
-      return { path: screenshotPath };
-    }
-    if (command === 'snapshot') {
+  const screenshotPath = path.join(
+    mkdtempForTestSync('agent-device-overlay'),
+    `agent-device-overlay-${Date.now()}.png`,
+  );
+  const order: string[] = [];
+  const { handler, runtime } = screenshotRouter(makeSession('default'), {
+    onCapture: (input) => {
+      order.push('screenshot');
+      writeSolidPng(input.outPath);
+    },
+    snapshotResult: () => {
+      order.push('snapshot');
       return {
+        backend: 'android',
+        producer: 'android-uiautomator',
         nodes: [
           {
             index: 0,
@@ -550,16 +431,7 @@ test('screenshot --overlay-refs captures a fresh snapshot when the session has n
           },
         ],
       };
-    }
-    return {};
-  });
-
-  const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
-    token: 'test-token',
-    sessionStore,
-    leaseRegistry: new LeaseRegistry(),
-    trackDownloadableArtifact: () => 'artifact-id',
+    },
   });
 
   const response = await handler({
@@ -578,79 +450,68 @@ test('screenshot --overlay-refs captures a fresh snapshot when the session has n
         ref: 'e1',
         label: 'Continue',
         rect: { x: 0, y: 0, width: 40, height: 20 },
-        overlayRect: { x: 0, y: 0, width: 100, height: 50 },
-        center: { x: 50, y: 25 },
+        // The Android backend reports device-pixel rects, so the overlay draws them unprojected.
+        overlayRect: { x: 0, y: 0, width: 40, height: 20 },
+        center: { x: 20, y: 10 },
       },
     ]);
   }
-  expect(mockDispatch.mock.calls.map((call) => call[1])).toEqual(['screenshot', 'snapshot']);
+  expect(order).toEqual(['screenshot', 'snapshot']);
+  expect(runtime.binds).toHaveLength(1);
 });
 
-test('screenshot --overlay-refs uses interactive iOS presentation for row-like other nodes', async () => {
-  const sessionStore = makeSessionStore('agent-device-router-screenshot-');
-  sessionStore.set('default', makeIosSession('default'));
-  const screenshotPath = path.join(os.tmpdir(), `agent-device-overlay-ios-${Date.now()}.png`);
-
-  mockDispatch.mockImplementation(async (_device, command) => {
-    if (command === 'screenshot') {
-      writeSolidPng(screenshotPath, 402, 874);
-      return { path: screenshotPath };
-    }
-    if (command === 'snapshot') {
-      return {
-        backend: 'xctest',
-        nodes: [
-          {
-            index: 0,
-            depth: 0,
-            type: 'Application',
-            label: 'New Expensify Dev',
-            rect: { x: 0, y: 0, width: 402, height: 874 },
-          },
-          {
-            index: 1,
-            depth: 1,
-            parentIndex: 0,
-            type: 'Other',
-            label: '!, Open debugger to view warnings.',
-            rect: { x: 0, y: 0, width: 402, height: 874 },
-          },
-          {
-            index: 2,
-            depth: 1,
-            parentIndex: 0,
-            type: 'ScrollView',
-            label: 'Recent chats',
-            rect: { x: 8, y: 212, width: 386, height: 600 },
-          },
-          {
-            index: 3,
-            depth: 2,
-            parentIndex: 2,
-            type: 'Other',
-            label: 'Recent chats',
-            rect: { x: 0, y: 220, width: 402, height: 16 },
-          },
-          {
-            index: 4,
-            depth: 2,
-            parentIndex: 2,
-            type: 'Other',
-            label: 'Receipt missing details, Receipt scanning failed. Enter details manually.',
-            rect: { x: 8, y: 367, width: 386, height: 64 },
-          },
-        ],
-      };
-    }
-    return {};
-  });
-
-  const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
-    token: 'test-token',
-    sessionStore,
-    leaseRegistry: new LeaseRegistry(),
-    trackDownloadableArtifact: () => 'artifact-id',
+test('screenshot --overlay-refs uses presented iOS runner rows for overlay refs', async () => {
+  const screenshotPath = path.join(
+    mkdtempForTestSync('agent-device-overlay-ios'),
+    `agent-device-overlay-ios-${Date.now()}.png`,
+  );
+  const { handler, sessionStore, runtime } = screenshotRouter(makeIosSession('default'), {
+    onCapture: (input) => writeSolidPng(input.outPath, 402, 874),
+    snapshotResult: () => ({
+      backend: 'xctest',
+      producer: 'apple-runner',
+      nodes: [
+        {
+          index: 0,
+          depth: 0,
+          type: 'Application',
+          label: 'New Expensify Dev',
+          rect: { x: 0, y: 0, width: 402, height: 874 },
+        },
+        {
+          index: 1,
+          depth: 1,
+          parentIndex: 0,
+          type: 'Other',
+          label: '!, Open debugger to view warnings.',
+          rect: { x: 0, y: 0, width: 402, height: 874 },
+        },
+        {
+          index: 2,
+          depth: 1,
+          parentIndex: 0,
+          type: 'ScrollView',
+          label: 'Recent chats',
+          rect: { x: 8, y: 212, width: 386, height: 600 },
+        },
+        {
+          index: 3,
+          depth: 2,
+          parentIndex: 2,
+          type: 'Other',
+          label: 'Recent chats',
+          rect: { x: 0, y: 220, width: 402, height: 16 },
+        },
+        {
+          index: 4,
+          depth: 2,
+          parentIndex: 2,
+          type: 'Cell',
+          label: 'Receipt missing details, Receipt scanning failed. Enter details manually.',
+          rect: { x: 8, y: 367, width: 386, height: 64 },
+        },
+      ],
+    }),
   });
 
   const response = await handler({
@@ -674,15 +535,19 @@ test('screenshot --overlay-refs uses interactive iOS presentation for row-like o
       },
     ]);
   }
-  expect(mockDispatch.mock.calls.map((call) => call[1])).toEqual(['screenshot', 'snapshot']);
-  expect(mockDispatch.mock.calls[1]?.[4]).toMatchObject({
-    snapshotInteractiveOnly: true,
+  expect(runtime.captureSnapshot.mock.calls[0]?.[0].options).toMatchObject({
+    interactiveOnly: true,
   });
-  expect(sessionStore.get('default')?.snapshot?.nodes[4]?.type).toBe('Cell');
+  expect(sessionStore.get('default')?.snapshot?.producer).toBe('apple-runner');
+  expect(
+    sessionStore.get('default')?.snapshot?.nodes.find((node) => node.ref === 'e5'),
+  ).toMatchObject({
+    type: 'Cell',
+    label: 'Receipt missing details, Receipt scanning failed. Enter details manually.',
+  });
 });
 
 test('screenshot --overlay-refs uses a fresh snapshot instead of stale session snapshot', async () => {
-  const sessionStore = makeSessionStore('agent-device-router-screenshot-');
   const session = makeSession('default');
   session.snapshot = {
     nodes: attachRefs([
@@ -696,36 +561,24 @@ test('screenshot --overlay-refs uses a fresh snapshot instead of stale session s
     ]),
     createdAt: Date.now(),
   };
-  sessionStore.set('default', session);
-
-  const screenshotPath = path.join(os.tmpdir(), `agent-device-overlay-${Date.now()}.png`);
-  mockDispatch.mockImplementation(async (_device, command) => {
-    if (command === 'screenshot') {
-      writeSolidPng(screenshotPath);
-      return { path: screenshotPath };
-    }
-    if (command === 'snapshot') {
-      return {
-        nodes: [
-          {
-            index: 0,
-            type: 'XCUIElementTypeButton',
-            label: 'Fresh',
-            hittable: true,
-            rect: { x: 0, y: 0, width: 40, height: 20 },
-          },
-        ],
-      };
-    }
-    return {};
-  });
-
-  const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
-    token: 'test-token',
-    sessionStore,
-    leaseRegistry: new LeaseRegistry(),
-    trackDownloadableArtifact: () => 'artifact-id',
+  const screenshotPath = path.join(
+    mkdtempForTestSync('agent-device-overlay'),
+    `agent-device-overlay-${Date.now()}.png`,
+  );
+  const { handler, sessionStore } = screenshotRouter(session, {
+    snapshotResult: () => ({
+      backend: 'android',
+      producer: 'android-uiautomator',
+      nodes: [
+        {
+          index: 0,
+          type: 'XCUIElementTypeButton',
+          label: 'Fresh',
+          hittable: true,
+          rect: { x: 0, y: 0, width: 40, height: 20 },
+        },
+      ],
+    }),
   });
 
   const response = await handler({
@@ -745,8 +598,9 @@ test('screenshot --overlay-refs uses a fresh snapshot instead of stale session s
         ref: 'e1',
         label: 'Fresh',
         rect: { x: 0, y: 0, width: 40, height: 20 },
-        overlayRect: { x: 0, y: 0, width: 100, height: 50 },
-        center: { x: 50, y: 25 },
+        // The Android backend reports device-pixel rects, so the overlay draws them unprojected.
+        overlayRect: { x: 0, y: 0, width: 40, height: 20 },
+        center: { x: 20, y: 10 },
       },
     ]);
   }
@@ -756,42 +610,26 @@ test('screenshot --overlay-refs uses a fresh snapshot instead of stale session s
 });
 
 test('screenshot --pixel-density keeps overlay refs aligned to scaled iOS simulator output', async () => {
-  const sessionStore = makeSessionStore('agent-device-router-screenshot-');
-  sessionStore.set('default', makeIosSession('default'));
-  const screenshotPath = path.join(os.tmpdir(), `agent-device-overlay-2x-${Date.now()}.png`);
-
-  mockDispatch.mockImplementation(async (_device, command) => {
-    if (command === 'screenshot') {
-      writeSolidPng(screenshotPath, 804, 1748);
-      return { path: screenshotPath };
-    }
-    if (command === 'snapshot') {
-      return {
-        nodes: [
-          {
-            index: 0,
-            type: 'Application',
-            rect: { x: 0, y: 0, width: 402, height: 874 },
-          },
-          {
-            index: 1,
-            type: 'XCUIElementTypeButton',
-            label: 'Continue',
-            hittable: true,
-            rect: { x: 10, y: 20, width: 80, height: 30 },
-          },
-        ],
-      };
-    }
-    return {};
-  });
-
-  const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
-    token: 'test-token',
-    sessionStore,
-    leaseRegistry: new LeaseRegistry(),
-    trackDownloadableArtifact: () => 'artifact-id',
+  const screenshotPath = path.join(
+    mkdtempForTestSync('agent-device-overlay-2x'),
+    `agent-device-overlay-2x-${Date.now()}.png`,
+  );
+  const { handler } = screenshotRouter(makeIosSession('default'), {
+    onCapture: (input) => writeSolidPng(input.outPath, 804, 1748),
+    snapshotResult: () => ({
+      backend: 'xctest',
+      producer: 'apple-runner',
+      nodes: [
+        { index: 0, type: 'Application', rect: { x: 0, y: 0, width: 402, height: 874 } },
+        {
+          index: 1,
+          type: 'XCUIElementTypeButton',
+          label: 'Continue',
+          hittable: true,
+          rect: { x: 10, y: 20, width: 80, height: 30 },
+        },
+      ],
+    }),
   });
 
   const response = await handler({
@@ -821,32 +659,4 @@ test('screenshot --pixel-density keeps overlay refs aligned to scaled iOS simula
       ],
     });
   }
-});
-
-test('screenshot --pixel-density is rejected outside iOS-family simulators', async () => {
-  const sessionStore = makeSessionStore('agent-device-router-screenshot-');
-  sessionStore.set('default', makeSession('default'));
-
-  const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
-    token: 'test-token',
-    sessionStore,
-    leaseRegistry: new LeaseRegistry(),
-    trackDownloadableArtifact: () => 'artifact-id',
-  });
-
-  const response = await handler({
-    token: 'test-token',
-    session: 'default',
-    command: 'screenshot',
-    positionals: ['/tmp/android.png'],
-    flags: { screenshotPixelDensity: 2 },
-    meta: { requestId: 'req-unsupported-density' },
-  });
-
-  expect(response.ok).toBe(false);
-  if (!response.ok) {
-    expect(response.error.message).toContain('currently supported only on iOS-family simulators');
-  }
-  expect(mockDispatch).not.toHaveBeenCalled();
 });

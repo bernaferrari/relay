@@ -1,5 +1,10 @@
-import type { MaestroSelector } from './program-ir.ts';
-import type { SnapshotNode, SnapshotState } from '@agent-device/kernel/snapshot';
+import type { MaestroLeafSelector, MaestroRelationalSelectorFields } from './program-ir.ts';
+
+export type MaestroFlatSelector = MaestroLeafSelector & {
+  [Key in keyof MaestroRelationalSelectorFields]?: never;
+};
+import type { SnapshotNode } from '@agent-device/kernel/snapshot';
+import type { SnapshotVisibility } from '@agent-device/contracts/snapshot';
 import { matchesMaestroRegex } from './selector-regex.ts';
 import { extractNodeText, normalizeText } from './shared.ts';
 import { isMaestroNodeVisible } from './snapshot-policy.ts';
@@ -13,20 +18,18 @@ export type MaestroPlatform = 'ios' | 'android';
  * Maestro intersects every authored selector field. String values are
  * full-match regular expressions. Text is the visible-text form used by
  * scalar selectors, so it checks label, readable node text, and identifier
- * values. Enabled and selected are independent state constraints.
+ * values; `label` itself is command metadata, never a selector field. Enabled
+ * and selected are independent state constraints.
  */
 export function matchesMaestroTypedSelector(
   node: SnapshotNode,
-  selector: MaestroSelector,
+  selector: MaestroFlatSelector,
 ): boolean {
   const textTerms = [
     selector.id === undefined
       ? undefined
       : matchesMaestroSelectorValue(node.identifier, selector.id),
     selector.text === undefined ? undefined : matchesMaestroVisibleText(node, selector.text),
-    selector.label === undefined
-      ? undefined
-      : matchesMaestroSelectorValue(node.label, selector.label),
   ].filter((matched): matched is boolean => matched !== undefined);
   if (textTerms.length === 0 && selector.enabled === undefined && selector.selected === undefined) {
     return false;
@@ -43,11 +46,13 @@ export function matchesMaestroTypedSelector(
 }
 
 export function filterVisibleMaestroMatches(params: {
-  nodes: SnapshotState['nodes'];
+  visibility: SnapshotVisibility;
   matches: SnapshotNode[];
   platform: MaestroPlatform;
 }): SnapshotNode[] {
-  return params.matches.filter((node) => isMaestroNodeVisible(node, params.nodes, params.platform));
+  return params.matches.filter((node) =>
+    isMaestroNodeVisible(node, params.visibility, params.platform),
+  );
 }
 
 function matchesMaestroSelectorValue(value: string | undefined, query: string): boolean {

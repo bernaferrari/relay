@@ -1,23 +1,38 @@
 import type { Rect, SnapshotNode, SnapshotState } from '@agent-device/kernel/snapshot';
+import { createSnapshotVisibility } from '@agent-device/contracts/snapshot';
 import type { MaestroSelector } from './program-ir.ts';
 import type { MaestroPlatform } from './runtime-target-policy.ts';
-import { rankMaestroCandidates, selectMaestroSnapshotMatch } from './runtime-target-ranking.ts';
+import {
+  matchMaestroCandidatesWithResolver,
+  rankMaestroCandidates,
+  rankVisibleMaestroMatches,
+  selectMaestroSnapshotMatch,
+  selectMaestroSnapshotNode,
+  usableRect,
+  type MaestroRankedCandidates,
+} from './runtime-target-ranking.ts';
+import { createMaestroSnapshotResolver } from './runtime-selector-resolution.ts';
 import { pointInsideRect, stripUndefined } from './shared.ts';
+import { isMaestroNodeVisible } from './snapshot-policy.ts';
+import { hasMaestroRecursiveRelations as hasRecursiveRelations } from './selector-relations.ts';
+import { orderMaestroClickableFirst, resolveMaestroClickability } from './runtime-clickability.ts';
 
 export type MaestroTargetQuery = {
   selector: MaestroSelector;
-  index?: number;
-  childOf?: MaestroSelector;
   allowAtomicSelectorDispatch?: boolean;
 };
 
 export type MaestroTargetEvidence = {
   selector: MaestroSelector;
-  childOf?: MaestroSelector;
   matched: boolean;
   visible: boolean;
   candidateCount: number;
   ref?: string;
+};
+
+type MaestroInteractivePresentation = {
+  snapshot: SnapshotState;
+  presentedIndexesBySourceIndex: ReadonlyMap<number, readonly number[]>;
 };
 
 export type MaestroTargetResolution =
@@ -37,11 +52,16 @@ export function resolveMaestroTargetFromSnapshot(
   platform: MaestroPlatform,
   options: {
     interactiveBounds?: boolean;
-    interactiveRects?: ReadonlyMap<number, Rect>;
-    canonicalSnapshot?: SnapshotState;
+    presentation?: MaestroInteractivePresentation;
   } = {},
 ): MaestroTargetResolution {
-  const candidates = rankMaestroCandidates(snapshot, query.selector, platform, query.childOf);
+  const presentedNodes =
+    platform === 'ios' && options.presentation
+      ? createPresentedNodeLookup(options.presentation)
+      : undefined;
+  const candidates = presentedNodes
+    ? rankPresentedMaestroCandidates(snapshot, query, presentedNodes)
+    : rankMaestroCandidates(snapshot, query.selector, platform);
   if (!candidates.parentMatched) {
     return {
       ok: false,
@@ -50,25 +70,91 @@ export function resolveMaestroTargetFromSnapshot(
     };
   }
   const { matches, ranked: rankedMatches } = candidates;
-  const target = selectMaestroSnapshotMatch(rankedMatches, query.index);
-  const evidence = buildMaestroTargetEvidence(query, matches, rankedMatches, target?.node);
+  const target = presentedNodes
+    ? selectMaestroSnapshotNode(rankedMatches, query.selector.index)
+    : selectMaestroSnapshotMatch(rankedMatches, query.selector.index)?.node;
+  const evidence = buildMaestroTargetEvidence(query, matches, rankedMatches, target);
   if (!target) {
     return failedTargetResolution(query, matches, rankedMatches, evidence);
   }
-  const rect =
-    options.interactiveBounds === true
-      ? (options.interactiveRects?.get(target.node.index) ?? target.rect)
-      : target.rect;
+  const presentedTarget = presentedNodes
+    ? selectMaestroSnapshotMatch(presentedNodes.visibleForSource(target), undefined)
+    : null;
+  const semanticRect = usableRect(target);
+  const rect = options.interactiveBounds
+    ? (presentedTarget?.rect ?? semanticRect)
+    : (semanticRect ?? presentedTarget?.rect);
+  if (!rect) return failedTargetResolution(query, matches, rankedMatches, evidence);
+
   return {
     ok: true,
-    node: target.node,
+    node: target,
     rect,
     matches: rankedMatches.length,
     dispatchCandidates:
-      platform === 'ios' && query.allowAtomicSelectorDispatch && !query.childOf
-        ? countCanonicalDispatchCandidates(query, { ...target, rect }, options.canonicalSnapshot)
+      platform === 'ios' &&
+      query.allowAtomicSelectorDispatch &&
+      !hasMaestroRecursiveRelations(query.selector) &&
+      presentedNodes
+        ? countInteractionDispatchCandidates(semanticRect, rankedMatches, presentedTarget)
         : 0,
     evidence,
+  };
+}
+
+export const hasMaestroRecursiveRelations = hasRecursiveRelations;
+
+function createPresentedNodeLookup(presentation: MaestroInteractivePresentation): {
+  isVisible: (node: SnapshotNode) => boolean;
+  visibleForSource: (node: SnapshotNode) => SnapshotNode[];
+} {
+  const visibility = createSnapshotVisibility(presentation.snapshot.nodes);
+  const presentedByIndex = visibility.nodeByIndex;
+  const visibleBySourceIndex = new Map<number, SnapshotNode[]>();
+  const forSource = (semanticNode: SnapshotNode): SnapshotNode[] => {
+    return (presentation.presentedIndexesBySourceIndex.get(semanticNode.index) ?? []).flatMap(
+      (presentedIndex) => {
+        const node = presentedByIndex.get(presentedIndex);
+        return node ? [node] : [];
+      },
+    );
+  };
+  const visibleForSource = (node: SnapshotNode): SnapshotNode[] => {
+    const cached = visibleBySourceIndex.get(node.index);
+    if (cached) return cached;
+    const visible = forSource(node).filter((presentedNode) =>
+      isMaestroNodeVisible(presentedNode, visibility, 'ios'),
+    );
+    visibleBySourceIndex.set(node.index, visible);
+    return visible;
+  };
+  return { visibleForSource, isVisible: (node) => visibleForSource(node).length > 0 };
+}
+
+function rankPresentedMaestroCandidates(
+  snapshot: SnapshotState,
+  query: MaestroTargetQuery,
+  presentedNodes: ReturnType<typeof createPresentedNodeLookup>,
+): MaestroRankedCandidates {
+  const clickability = resolveMaestroClickability(snapshot, 'ios');
+  const resolver = createMaestroSnapshotResolver(
+    snapshot,
+    {},
+    { orderUnindexed: (matches) => orderMaestroClickableFirst(matches, clickability) },
+  );
+  const scoped = matchMaestroCandidatesWithResolver(query.selector, resolver);
+  const visible = scoped.matches.filter(presentedNodes.isVisible);
+  return {
+    ...scoped,
+    visible,
+    clickability,
+    ranked: rankVisibleMaestroMatches(
+      visible,
+      query.selector,
+      'ios',
+      resolver.visibility,
+      clickability,
+    ),
   };
 }
 
@@ -85,26 +171,20 @@ function failedTargetResolution(
       evidence,
     };
   }
-  const index = query.index === undefined ? '' : ` index ${query.index}`;
+  const index = query.selector.index === undefined ? '' : ` index ${query.selector.index}`;
   return { ok: false, message: `Maestro selector did not match${index}.`, evidence };
 }
 
-function countCanonicalDispatchCandidates(
-  query: MaestroTargetQuery,
-  target: { node: SnapshotNode; rect: Rect },
-  canonicalSnapshot: SnapshotState | undefined,
+function countInteractionDispatchCandidates(
+  semanticRect: Rect | undefined,
+  rankedCandidates: SnapshotNode[],
+  presentedTarget: { node: SnapshotNode; rect: Rect } | null,
 ): number {
-  if (!canonicalSnapshot) return 0;
-  const canonicalRankedMatches = rankMaestroCandidates(
-    canonicalSnapshot,
-    query.selector,
-    'ios',
-  ).ranked;
-  if (canonicalRankedMatches.length !== 1) return canonicalRankedMatches.length;
-  const canonicalTarget = selectMaestroSnapshotMatch(canonicalRankedMatches, undefined);
-  return canonicalTarget &&
-    canonicalTarget.node.hittable !== false &&
-    haveSameTapPoint(canonicalTarget.rect, target.rect)
+  if (rankedCandidates.length !== 1) return rankedCandidates.length;
+  return semanticRect &&
+    presentedTarget &&
+    presentedTarget.node.hittable !== false &&
+    haveSameTapPoint(presentedTarget.rect, semanticRect)
     ? 1
     : 0;
 }
@@ -123,7 +203,6 @@ function buildMaestroTargetEvidence(
 ): MaestroTargetEvidence {
   return stripUndefined({
     selector: query.selector,
-    childOf: query.childOf,
     matched: matches.length > 0,
     visible: visibleMatches.length > 0,
     candidateCount: matches.length,

@@ -1,13 +1,20 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, test, vi } from 'vitest';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 
-vi.mock('../session-teardown.ts', () => ({ teardownSessionResources: vi.fn() }));
+vi.mock('../session-teardown.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../session-teardown.ts')>();
+  return {
+    ...actual,
+    stopSessionAppLog: vi.fn(async () => {}),
+    teardownSessionResources: vi.fn(),
+  };
+});
 
 import { SessionStore } from '../session-store.ts';
 import { teardownSessionResources } from '../session-teardown.ts';
-import type { SessionState } from '../types.ts';
+import type { SessionState } from '../session-state.ts';
 import { teardownDaemonSessionForShutdown } from './daemon-runtime.ts';
 
 const mockTeardownSessionResources = vi.mocked(teardownSessionResources);
@@ -20,7 +27,7 @@ afterEach(() => {
 });
 
 function setup(): { session: SessionState; sessionStore: SessionStore; stateDir: string } {
-  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-shutdown-claim-'));
+  const stateDir = mkdtempForTestSync('agent-device-shutdown-claim-');
   roots.push(stateDir);
   const session: SessionState = {
     name: 'claim-session',
@@ -34,7 +41,7 @@ function setup(): { session: SessionState; sessionStore: SessionStore; stateDir:
 }
 
 test('finalizes provider state but does not clear a claim after shutdown teardown rejects', async () => {
-  const { session, sessionStore, stateDir } = setup();
+  const { session, sessionStore } = setup();
   mockTeardownSessionResources.mockRejectedValueOnce(new Error('teardown failed'));
   const beforeDelete = vi.fn(async () => {});
   const afterSuccessfulTeardown = vi.fn(async () => {});
@@ -42,7 +49,6 @@ test('finalizes provider state but does not clear a claim after shutdown teardow
   await teardownDaemonSessionForShutdown({
     session,
     sessionStore,
-    stateDir,
     stderr: { write: () => {} },
     beforeDelete,
     afterSuccessfulTeardown,
@@ -55,7 +61,7 @@ test('finalizes provider state but does not clear a claim after shutdown teardow
 
 test('finalizes provider state but does not clear a claim after shutdown teardown times out', async () => {
   vi.useFakeTimers();
-  const { session, sessionStore, stateDir } = setup();
+  const { session, sessionStore } = setup();
   mockTeardownSessionResources.mockReturnValueOnce(new Promise(() => {}));
   const beforeDelete = vi.fn(async () => {});
   const afterSuccessfulTeardown = vi.fn(async () => {});
@@ -63,7 +69,6 @@ test('finalizes provider state but does not clear a claim after shutdown teardow
   const teardown = teardownDaemonSessionForShutdown({
     session,
     sessionStore,
-    stateDir,
     stderr: { write: () => {} },
     beforeDelete,
     afterSuccessfulTeardown,

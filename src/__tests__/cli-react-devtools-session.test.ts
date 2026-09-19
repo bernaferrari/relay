@@ -1,8 +1,8 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, test, vi } from 'vitest';
 import assert from 'node:assert/strict';
+import { mkdtempForTestSync } from './test-utils/tmp-dir.ts';
 
 vi.mock('../cli/commands/react-devtools.ts', () => ({
   runReactDevtoolsCommand: vi.fn(async () => 0),
@@ -19,14 +19,14 @@ import type {
   DaemonRequest,
   DaemonResponse,
   sendToDaemon as SendToDaemon,
-} from '../daemon/client/daemon-client.ts';
+} from '../daemon-client/daemon-client.ts';
 
 afterEach(() => {
   vi.clearAllMocks();
 });
 
 function createLimrunConnectionFixture(): { tempRoot: string; stateDir: string } {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-react-devtools-limrun-'));
+  const tempRoot = mkdtempForTestSync('agent-device-react-devtools-limrun-');
   const stateDir = path.join(tempRoot, 'state');
   const remoteConfigPath = path.join(tempRoot, 'limrun.json');
   fs.writeFileSync(remoteConfigPath, JSON.stringify({ platform: 'android' }));
@@ -52,7 +52,7 @@ function createLimrunConnectionFixture(): { tempRoot: string; stateDir: string }
 }
 
 test('react-devtools uses active remote connection session after defaults are merged', async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-react-devtools-session-'));
+  const tempRoot = mkdtempForTestSync('agent-device-react-devtools-session-');
   const stateDir = path.join(tempRoot, 'state');
   const remoteConfigPath = path.join(tempRoot, 'remote.json');
   fs.writeFileSync(
@@ -153,11 +153,15 @@ test('react-devtools starts Limrun port reverse through the daemon', async () =>
   assert.equal(request.command, 'runtime');
   assert.deepEqual(request.positionals, ['port-reverse']);
   assert.equal(request.session, 'limrun-android');
-  assert.equal(request.flags?.leaseProvider, 'limrun');
-  assert.equal(request.flags?.devicePort, 8097);
-  assert.equal(request.flags?.hostPort, 8097);
-  assert.equal(request.flags?.portReverseName, 'react-devtools');
-  assert.equal(Object.hasOwn(request.flags ?? {}, 'daemonAuthToken'), false);
+  const flags = request.flags;
+  assert.ok(flags);
+  assert.equal(flags.platform, 'android');
+  assert.equal(flags.leaseId, 'lease-1');
+  assert.equal(flags.leaseProvider, 'limrun');
+  assert.equal(flags.devicePort, 8097);
+  assert.equal(flags.hostPort, 8097);
+  assert.equal(flags.portReverseName, 'react-devtools');
+  assert.equal(Object.hasOwn(flags, 'daemonAuthToken'), false);
   assert.deepEqual(transportOptions, [{ authToken: 'synthetic-direct-token' }]);
   const commandOptions = vi.mocked(runReactDevtoolsCommand).mock.calls[0]?.[1];
   assert.equal(Object.hasOwn(commandOptions?.flags ?? {}, 'daemonAuthToken'), false);

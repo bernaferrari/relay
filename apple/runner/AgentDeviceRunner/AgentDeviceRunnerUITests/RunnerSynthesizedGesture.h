@@ -2,6 +2,10 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+FOUNDATION_EXPORT NSInteger RunnerContinuousDragFrameCount(double durationMs);
+FOUNDATION_EXPORT NSInteger RunnerControlledScrollFrameCount(double durationMs);
+FOUNDATION_EXPORT double RunnerControlledScrollProgress(double t);
+
 @interface RunnerSynthesizedGesture : NSObject
 
 + (NSString * _Nullable)synthesizeSwipeWithApplication:(id)application
@@ -15,8 +19,15 @@ NS_ASSUME_NONNULL_BEGIN
                                                              x:(double)x
                                                              y:(double)y
                                                             x2:(double)x2
-                                                            y2:(double)y2
+                                                             y2:(double)y2
                                                      durationMs:(double)durationMs;
+
++ (NSString * _Nullable)synthesizeControlledScrollWithApplication:(id)application
+                                                                x:(double)x
+                                                                y:(double)y
+                                                               x2:(double)x2
+                                                                y2:(double)y2
+                                                        durationMs:(double)durationMs;
 
 + (NSString * _Nullable)synthesizeTapWithApplication:(id)application
                                                    x:(double)x

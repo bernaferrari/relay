@@ -8,6 +8,7 @@
 
 import { AppError } from '@agent-device/kernel/errors';
 import type { FuzzTarget, SelfCheckTargetName } from './target-types.ts';
+import { judgeValidationCase } from './validation-case.ts';
 
 const SEEDS = ['self-check'];
 
@@ -33,9 +34,51 @@ export const SELF_CHECK_TARGETS: readonly FuzzTarget[] = [
     description: 'never returns (expects a hang failure)',
     run: () => {
       for (;;) {
-        // Spin forever: only the out-of-thread watchdog can end this case.
+        // Spin forever: only the out-of-process watchdog can end this case.
       }
     },
+    seeds: SEEDS,
+  },
+  {
+    // The kind no in-process classifier can produce: the case ends the process it runs in, so
+    // only a runner watching from another process reports anything at all. `process.exit` stands
+    // in for the real thing (a native fault) because it is deterministic and portable — the
+    // runner classifies any death of a worker with a case in flight, whatever ended it.
+    name: 'self-check-crash',
+    description: 'ends the process mid-case (expects a crash failure)',
+    run: () => process.exit(97),
+    seeds: SEEDS,
+  },
+  {
+    // A validation judge that stops reporting silent acceptances would leave the #1433 class
+    // undetectable again; this target accepts an input its expectation marks invalid.
+    name: 'self-check-silent-accept',
+    description: 'accepts a case marked invalid (expects a silent-accept failure)',
+    run: () => {},
+    check: (input) =>
+      judgeValidationCase(
+        'self-check-silent-accept',
+        input,
+        { mutation: 'seeded', expect: { outcome: 'reject', code: 'INVALID_ARGS' } },
+        () => {},
+      ),
+    seeds: SEEDS,
+  },
+  {
+    name: 'self-check-wrong-code',
+    description: 'rejects with a different code than expected (expects a wrong-code failure)',
+    run: () => {
+      throw new AppError('COMMAND_FAILED', 'self-check wrong code', { hint: 'seeded' });
+    },
+    check: (input) =>
+      judgeValidationCase(
+        'self-check-wrong-code',
+        input,
+        { mutation: 'seeded', expect: { outcome: 'reject', code: 'INVALID_ARGS' } },
+        () => {
+          throw new AppError('COMMAND_FAILED', 'self-check wrong code', { hint: 'seeded' });
+        },
+      ),
     seeds: SEEDS,
   },
 ];
@@ -45,4 +88,7 @@ export const SELF_CHECK_EXPECTATIONS = {
   'self-check-untyped-throw': 'untyped-throw',
   'self-check-empty-hint': 'empty-hint',
   'self-check-hang': 'hang',
+  'self-check-crash': 'crash',
+  'self-check-silent-accept': 'silent-accept',
+  'self-check-wrong-code': 'wrong-code',
 } as const satisfies Record<SelfCheckTargetName, string>;

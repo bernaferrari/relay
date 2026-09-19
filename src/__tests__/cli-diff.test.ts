@@ -1,15 +1,17 @@
 import { describe, test } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+// oxlint-disable-next-line no-restricted-imports -- asserts the default diff path under os.tmpdir
 import os from 'node:os';
 import path from 'node:path';
-import { PNG } from '../utils/png.ts';
-import type { DaemonResponse } from '../daemon/client/daemon-client.ts';
+import { PNG } from '@agent-device/capture-kit/png';
+import type { DaemonResponse } from '../daemon-client/daemon-client.ts';
 import {
   runCliCapture as captureCli,
   type CapturedCliRun,
   type CapturedDaemonRequest,
 } from './cli-capture.ts';
+import { mkdtempForTestSync } from './test-utils/tmp-dir.ts';
 
 type RunCliCaptureOptions = {
   preserveHome?: boolean;
@@ -35,7 +37,7 @@ async function runCliCapture(
   argv: string[],
   options: RunCliCaptureOptions = {},
 ): Promise<CapturedCliRun> {
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-diff-home-'));
+  const tempHome = mkdtempForTestSync('cli-diff-home-');
 
   const sendToDaemon = async (req: CapturedDaemonRequest): Promise<DaemonResponse> => {
     if (req.command === 'screenshot') {
@@ -102,8 +104,8 @@ describe('cli diff commands', () => {
     assert.equal(result.code, null);
     assert.equal(result.calls.length, 1);
     assert.match(result.stdout, /^@e2 \[window\]/m);
-    assert.match(result.stdout, /^-  @e3 \[text\] "67"$/m);
-    assert.match(result.stdout, /^\+  @e3 \[text\] "134"$/m);
+    assert.match(result.stdout, /^- {2}@e3 \[text\] "67"$/m);
+    assert.match(result.stdout, /^\+ {2}@e3 \[text\] "134"$/m);
     assert.match(result.stdout, /1 additions, 1 removals, 1 unchanged/);
     assert.equal(result.stderr, '');
   });
@@ -138,8 +140,8 @@ describe('cli diff commands', () => {
     assert.deepEqual(request.positionals, ['snapshot']);
     assert.equal(request.flags?.snapshotDiff, undefined);
     assert.match(result.stdout, /^@e2 \[window\]/m);
-    assert.match(result.stdout, /^-  @e3 \[text\] "67"$/m);
-    assert.match(result.stdout, /^\+  @e3 \[text\] "134"$/m);
+    assert.match(result.stdout, /^- {2}@e3 \[text\] "67"$/m);
+    assert.match(result.stdout, /^\+ {2}@e3 \[text\] "134"$/m);
     assert.match(result.stdout, /1 additions, 1 removals, 1 unchanged/);
     assert.equal(result.stderr, '');
   });
@@ -164,7 +166,7 @@ describe('cli diff commands', () => {
   test('diff screenshot renders human-readable mismatch output', async () => {
     // Create a real baseline PNG (black) so compareScreenshots can run against it.
     // The mock sendToDaemon writes a white PNG as the "current" screenshot.
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-diff-test-'));
+    const dir = mkdtempForTestSync('cli-diff-test-');
     const baseline = path.join(dir, 'baseline.png');
     fs.writeFileSync(baseline, solidPngBuffer(10, 10, { r: 0, g: 0, b: 0 }));
 
@@ -191,7 +193,7 @@ describe('cli diff commands', () => {
   });
 
   test('diff screenshot --json outputs structured result', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-diff-test-'));
+    const dir = mkdtempForTestSync('cli-diff-test-');
     const baseline = path.join(dir, 'baseline.png');
     // Same color as mock current screenshot → should match
     fs.writeFileSync(baseline, solidPngBuffer(10, 10, { r: 255, g: 255, b: 255 }));
@@ -215,7 +217,7 @@ describe('cli diff commands', () => {
   });
 
   test('diff screenshot sends screenshot capture request to daemon', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-diff-test-'));
+    const dir = mkdtempForTestSync('cli-diff-test-');
     const baseline = path.join(dir, 'baseline.png');
     fs.writeFileSync(baseline, solidPngBuffer(10, 10, { r: 255, g: 255, b: 255 }));
 
@@ -242,7 +244,7 @@ describe('cli diff commands', () => {
   });
 
   test('diff screenshot uses supplied current image instead of capturing from daemon', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-diff-test-'));
+    const dir = mkdtempForTestSync('cli-diff-test-');
     const baseline = path.join(dir, 'baseline.png');
     const current = path.join(dir, 'current.png');
     fs.writeFileSync(baseline, solidPngBuffer(10, 10, { r: 0, g: 0, b: 0 }));
@@ -268,8 +270,48 @@ describe('cli diff commands', () => {
     }
   });
 
+  test.each([false, true])(
+    'diff screenshot honors threshold 1 for saved images (json=%s)',
+    async (json) => {
+      const dir = mkdtempForTestSync('cli-diff-threshold-');
+      const baseline = path.join(dir, 'baseline.png');
+      const current = path.join(dir, 'current.png');
+      const diffOut = path.join(dir, 'diff.png');
+      fs.writeFileSync(baseline, solidPngBuffer(2, 2, { r: 0, g: 0, b: 0 }));
+      fs.writeFileSync(current, solidPngBuffer(2, 2, { r: 255, g: 255, b: 255 }));
+      fs.writeFileSync(diffOut, 'stale diff');
+
+      const result = await runCliCapture([
+        'diff',
+        'screenshot',
+        '--baseline',
+        baseline,
+        current,
+        '--threshold',
+        '1',
+        '--out',
+        diffOut,
+        ...(json ? ['--json'] : []),
+      ]);
+      assert.equal(result.code, null);
+      assert.equal(result.calls.length, 0);
+      assert.equal(result.stderr, '');
+      if (json) {
+        const payload = JSON.parse(result.stdout);
+        assert.equal(payload.success, true);
+        assert.equal(payload.data.match, true);
+        assert.equal(payload.data.differentPixels, 0);
+        assert.equal(payload.data.diffPath, undefined);
+      } else {
+        assert.match(result.stdout, /Screenshots match\./);
+        assert.doesNotMatch(result.stdout, /Diff image:/);
+      }
+      assert.equal(fs.existsSync(diffOut), false);
+    },
+  );
+
   test('diff screenshot rejects overlay refs with supplied current image', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-diff-test-'));
+    const dir = mkdtempForTestSync('cli-diff-test-');
     const baseline = path.join(dir, 'baseline.png');
     const current = path.join(dir, 'current.png');
     fs.writeFileSync(baseline, solidPngBuffer(10, 10, { r: 0, g: 0, b: 0 }));
@@ -293,7 +335,7 @@ describe('cli diff commands', () => {
   });
 
   test('diff screenshot uses os.tmpdir for temporary current capture', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-diff-test-'));
+    const dir = mkdtempForTestSync('cli-diff-test-');
     const baseline = path.join(dir, 'baseline.png');
     fs.writeFileSync(baseline, solidPngBuffer(10, 10, { r: 255, g: 255, b: 255 }));
 
@@ -312,7 +354,7 @@ describe('cli diff commands', () => {
   });
 
   test('diff screenshot expands ~/ for baseline and out paths', async () => {
-    const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-diff-home-'));
+    const fakeHome = mkdtempForTestSync('cli-diff-home-');
     const originalHome = process.env.HOME;
     const baselineRelative = path.join('fixtures', 'baseline.png');
     const diffRelative = path.join('fixtures', 'diff.png');
@@ -357,7 +399,7 @@ describe('cli diff commands', () => {
   });
 
   test('diff screenshot --overlay-refs writes a separate current overlay guide', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cli-diff-test-'));
+    const dir = mkdtempForTestSync('cli-diff-test-');
     const baseline = path.join(dir, 'baseline.png');
     const diffOut = path.join(dir, 'diff.png');
     const overlayOut = path.join(dir, 'diff.current-overlay.png');

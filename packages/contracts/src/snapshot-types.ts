@@ -15,6 +15,7 @@ export type ScreenshotResultData = {
   logicalHeight?: number;
   pixelDensity?: number;
   overlayRefs?: ScreenshotOverlayRef[];
+  warnings?: string[];
 };
 export type BackendSnapshotResult = {
   nodes?: SnapshotNode[];
@@ -59,5 +60,12 @@ export type AndroidSnapshotBackendMetadata = {
   nodeCount?: number;
   helperTruncated?: boolean;
   elapsedMs?: number;
+  presentationFailure?: {
+    phase: 'deadline' | 'complexity' | 'regular-invariant';
+    workUnits: number;
+    maxWorkUnits?: number;
+  };
+  /** API 23 exposes no sibling drawing order, so same-window occlusion fails conservative. */
+  occlusionScanUnavailable?: boolean;
 };
 export type FindLocator = 'any' | 'text' | 'label' | 'value' | 'role' | 'id';

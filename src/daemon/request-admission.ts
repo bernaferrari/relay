@@ -1,6 +1,12 @@
 import { AppError } from '@agent-device/kernel/errors';
 import { normalizeTenantId, resolveSessionIsolationMode } from './config.ts';
-import { isLeaseAdmissionExempt } from './daemon-command-registry.ts';
+import { isTenantOwnedSessionName, tenantScopedSessionName } from './session-tenant-scope.ts';
+import {
+  isLeaseAdmissionExempt,
+  isHumanControlMutation,
+  resolveSessionlessLeaseAdmissionExemption,
+} from './daemon-command-registry.ts';
+import type { DeviceLease, ProviderAppCatalog } from '@agent-device/contracts/device';
 import {
   DEFAULT_PROXY_LEASE_TTL_MS,
   findMissingProxyLeaseFields,
@@ -8,10 +14,10 @@ import {
   resolveLeaseScope,
   resolveRequestOrSessionLeaseScope,
 } from './lease-context.ts';
-import { leaseScopeToHeartbeatRequest } from '../core/lease-scope.ts';
+import { leaseScopeToHeartbeatRequest } from '@agent-device/contracts/lease-scope';
 import type { LeaseRegistry } from './lease-registry.ts';
-import type { DeviceLease } from '@agent-device/contracts/device';
-import type { DaemonRequest, SessionState } from './types.ts';
+import type { DaemonRequest } from './daemon-request.ts';
+import type { SessionState } from './session-state.ts';
 
 export function scopeRequestSession(req: DaemonRequest): DaemonRequest {
   const isolation = resolveSessionIsolationMode(
@@ -36,7 +42,7 @@ export function scopeRequestSession(req: DaemonRequest): DaemonRequest {
     );
   }
   const requestedSession = req.session || 'default';
-  if (requestedSession.startsWith(`${tenant}:`)) {
+  if (isTenantOwnedSessionName(tenant, requestedSession)) {
     return {
       ...req,
       meta: {
@@ -48,7 +54,7 @@ export function scopeRequestSession(req: DaemonRequest): DaemonRequest {
   }
   return {
     ...req,
-    session: `${tenant}:${requestedSession}`,
+    session: tenantScopedSessionName(tenant, requestedSession),
     meta: {
       ...req.meta,
       tenantId: tenant,
@@ -61,6 +67,7 @@ export function assertRequestLeaseAdmission(
   req: DaemonRequest,
   leaseRegistry: LeaseRegistry,
   session?: SessionState,
+  options: Readonly<{ providerAppCatalog?: ProviderAppCatalog }> = {},
 ): DeviceLease | undefined {
   if (isLeaseAdmissionExempt(req.command)) {
     return undefined;
@@ -68,7 +75,20 @@ export function assertRequestLeaseAdmission(
   const requestLeaseScope = resolveLeaseScope(req);
   assertProxyOpenLeaseMetadata(req, requestLeaseScope);
   const sessionLease = session?.lease;
-  if (!sessionLease && req.meta?.sessionIsolation !== 'tenant') {
+  if (
+    session === undefined &&
+    !requestLeaseScope.leaseId &&
+    hasSessionlessLeaseAdmissionExemption(req, options.providerAppCatalog)
+  ) {
+    return undefined;
+  }
+  if (req.command === 'human_control' && !sessionLease && !requestLeaseScope.leaseId) {
+    throw new AppError(
+      'UNSUPPORTED_OPERATION',
+      'Takeover requires an active remote device lease. Local takeover is not supported.',
+    );
+  }
+  if (req.command !== 'human_control' && !sessionLease && req.meta?.sessionIsolation !== 'tenant') {
     if (!requestLeaseScope.leaseId) return undefined;
     if (!requestLeaseScope.tenantId && !requestLeaseScope.runId) return undefined;
   }
@@ -81,7 +101,21 @@ export function assertRequestLeaseAdmission(
       (isProxyLeaseScope(leaseScope) ? DEFAULT_PROXY_LEASE_TTL_MS : undefined),
   };
   leaseRegistry.assertLeaseAdmission(leaseScopeToHeartbeatRequest(leaseScope));
-  return leaseRegistry.heartbeatLease(leaseScopeToHeartbeatRequest(heartbeatLeaseScope));
+  const lease = leaseRegistry.heartbeatLease(leaseScopeToHeartbeatRequest(heartbeatLeaseScope));
+  if (isHumanControlMutation(req)) leaseRegistry.assertHumanControlAdmission(lease);
+  return lease;
+}
+
+function hasSessionlessLeaseAdmissionExemption(
+  req: DaemonRequest,
+  providerAppCatalog: ProviderAppCatalog | undefined,
+): boolean {
+  const exemption = resolveSessionlessLeaseAdmissionExemption(req);
+  if (exemption?.kind === 'unconditional') return true;
+  return (
+    exemption?.kind === 'provider-app-catalog' &&
+    providerAppCatalog?.supports(exemption.provider) === true
+  );
 }
 
 export function assertRequestLeaseAdmissionPreflight(req: DaemonRequest): void {

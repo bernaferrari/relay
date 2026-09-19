@@ -9,9 +9,10 @@
 // own static module graph.
 //
 // Two files are removed from whatever Vitest returns:
-//   - the subprocess-stub group (it spawns stubbed binaries and waits real
-//     subprocess/retry/poll time — out of scope by the issue's constraint, and
-//     thousands of mutant runs would turn it into timeout noise);
+//   - the real-subprocess-spawn tests (MUTATION_EXCLUDED_TESTS in vitest.config.ts —
+//     spawns stubbed binaries and waits real subprocess/retry/poll time, out of scope
+//     by the issue's constraint, and thousands of mutant runs would turn it into
+//     timeout noise regardless of whether Vitest itself still serializes it, #1823);
 //   - tests that cannot run in the thread pool Stryker's vitest runner forces:
 //     the in-process CLI-capture tests (`process.chdir` throws in a worker
 //     thread) and the `node:worker_threads` PNG pipeline tests (a worker inside
@@ -21,12 +22,12 @@
 //     assert over the repo's own registries rather than any decision kernel
 //     and own their CI job.
 //
-// Nothing here weakens the ratchet: a mutant only an excluded test could kill
+// Nothing here inflates the score: a mutant only an excluded test could kill
 // shows up as a survivor — visible work, never a silent pass.
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { runCmdSync } from '../../src/utils/exec.ts';
+import { runCmdSync } from '@agent-device/host-kit/command';
 import { readWorkspacePackages } from '../layering/package-boundaries.ts';
 import { walkFiles } from '../lib/walk-files.ts';
 import { isKernelTestFile, normalizePath } from './modules.ts';

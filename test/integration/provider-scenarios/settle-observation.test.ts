@@ -6,7 +6,7 @@ import { createProviderScenarioHarness, withProviderScenarioResource } from './h
 import {
   createAppleRunnerProviderFromTranscript,
   createRecordingAppleToolProvider,
-  simctlListDevicesHandler,
+  simctlDeviceLifecycleHandler,
 } from './providers.ts';
 import { createProviderTranscript, type ProviderScenarioProviderEntry } from './transcript.ts';
 
@@ -188,7 +188,7 @@ test('Provider-backed integration press --settle returns the settled diff and fr
     'ios.runner',
   );
   const appleTool = createRecordingAppleToolProvider({
-    simctl: simctlListDevicesHandler('com.apple.CoreSimulator.SimRuntime.iOS-18-0', [
+    simctl: simctlDeviceLifecycleHandler('com.apple.CoreSimulator.SimRuntime.iOS-18-0', [
       { name: PROVIDER_SCENARIO_IOS_SIMULATOR.name, udid: DEVICE_ID },
     ]),
   });
@@ -307,7 +307,7 @@ test('Provider-backed integration never-settled press --settle does not issue di
     'ios.runner',
   );
   const appleTool = createRecordingAppleToolProvider({
-    simctl: simctlListDevicesHandler('com.apple.CoreSimulator.SimRuntime.iOS-18-0', [
+    simctl: simctlDeviceLifecycleHandler('com.apple.CoreSimulator.SimRuntime.iOS-18-0', [
       { name: PROVIDER_SCENARIO_IOS_SIMULATOR.name, udid: DEVICE_ID },
     ]),
   });
@@ -372,7 +372,7 @@ test('Provider-backed integration modal-dismiss press --settle attaches the unch
     'ios.runner',
   );
   const appleTool = createRecordingAppleToolProvider({
-    simctl: simctlListDevicesHandler('com.apple.CoreSimulator.SimRuntime.iOS-18-0', [
+    simctl: simctlDeviceLifecycleHandler('com.apple.CoreSimulator.SimRuntime.iOS-18-0', [
       { name: PROVIDER_SCENARIO_IOS_SIMULATOR.name, udid: DEVICE_ID },
     ]),
   });
@@ -456,6 +456,9 @@ test('Provider-backed integration modal-dismiss press --settle attaches the unch
 // July 2026, org.reactnavigation.playground rne://stack-prevent-remove Input
 // screen; `snapshot -i --json` before and after `fill @e6 "hello" --settle`,
 // with the 31-key block reduced to 2 representative keys and rects rounded).
+// The retained TextField frames are normalized to the visible content frame after trimming, and
+// the left candidate-bar height is rounded from 69 to 68; those are intentional fixture
+// adjustments, not raw capture claims.
 // The load-bearing real-world facts they preserve:
 // - The keyboard renders in its OWN window; the "Next keyboard" and "Dictate"
 //   candidate-bar buttons are SIBLINGS of the [Keyboard] container's wrapper,
@@ -511,7 +514,7 @@ const FILL_BEFORE_NODES = [
     depth: 4,
     parentIndex: 4,
     type: 'TextField',
-    rect: { x: 12, y: 129, width: 377, height: 41 },
+    rect: { x: 12, y: 145, width: 377, height: 25 },
   },
   {
     index: 6,
@@ -616,7 +619,7 @@ const FILL_SETTLED_NODES = [
     label: 'Next keyboard',
     value: 'Polski',
     hittable: true,
-    rect: { x: 8, y: 806, width: 68, height: 69 },
+    rect: { x: 8, y: 806, width: 68, height: 68 },
   },
   {
     index: 10,
@@ -666,7 +669,7 @@ const FILL_SETTLED_NODES = [
     type: 'TextField',
     label: 'hello',
     value: 'hello',
-    rect: { x: 12, y: 129, width: 377, height: 41 },
+    rect: { x: 12, y: 145, width: 377, height: 25 },
   },
   {
     index: 16,
@@ -704,7 +707,7 @@ test('Provider-backed integration fill --settle summoning the keyboard still att
     'ios.runner',
   );
   const appleTool = createRecordingAppleToolProvider({
-    simctl: simctlListDevicesHandler('com.apple.CoreSimulator.SimRuntime.iOS-18-0', [
+    simctl: simctlDeviceLifecycleHandler('com.apple.CoreSimulator.SimRuntime.iOS-18-0', [
       { name: PROVIDER_SCENARIO_IOS_SIMULATOR.name, udid: DEVICE_ID },
     ]),
   });

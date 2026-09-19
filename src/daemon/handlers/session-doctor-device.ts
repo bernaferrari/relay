@@ -1,7 +1,5 @@
-import {
-  buildDeviceInventoryRequestFromFlags,
-  listDeviceInventory,
-} from '../../core/dispatch-resolve.ts';
+import { buildDeviceInventoryRequestFromFlags } from '@agent-device/device-selection/dispatch-resolve';
+import { listDeviceInventory } from '@agent-device/device-selection/device-inventory-context';
 import {
   countDeviceInventoryByGroup,
   LOCAL_DEVICE_INVENTORY_PLATFORM_SELECTORS,
@@ -17,7 +15,8 @@ import {
   type PublicPlatform,
 } from '@agent-device/kernel/device';
 import { normalizeError } from '@agent-device/kernel/errors';
-import type { DaemonRequest, SessionState } from '../types.ts';
+import type { DaemonRequest } from '../daemon-request.ts';
+import type { SessionState } from '../session-state.ts';
 import type { DoctorCheck } from '@agent-device/contracts/observability';
 import { appendDoctorCheck } from './session-doctor-output.ts';
 
@@ -225,7 +224,7 @@ function deviceInventorySummaryBreakdown(
   if (selector.platform || selector.target) return undefined;
   const groups = countDeviceInventoryByGroup(devices);
   const labels = deviceInventoryGroupLabels();
-  return (['android', 'apple', 'vega', 'linux', 'web'] as const)
+  return (['android', 'harmonyos', 'apple', 'vega', 'linux', 'web'] as const)
     .flatMap((group) => {
       const entry = groups[group];
       return entry.available > 0
@@ -238,6 +237,7 @@ function deviceInventorySummaryBreakdown(
 function deviceInventoryGroupLabels(): Record<DeviceInventoryGroup, string> {
   return {
     android: 'Android',
+    harmonyos: 'HarmonyOS',
     apple: 'Apple',
     vega: 'Vega',
     linux: 'Linux',
@@ -249,6 +249,7 @@ function platformLabel(platform: PlatformSelector): string {
   if (platform === 'ios') return 'iOS';
   if (platform === 'macos') return 'macOS';
   if (platform === 'android') return 'Android';
+  if (platform === 'harmonyos') return 'HarmonyOS';
   if (platform === 'vega') return 'Vega';
   if (platform === 'linux') return 'Linux';
   if (platform === 'web') return 'web';

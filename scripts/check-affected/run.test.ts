@@ -8,7 +8,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { runCmdSync } from '../../src/utils/exec.ts';
+import { runCmdSync } from '@agent-device/host-kit/command';
+import { STALE_NODE_MODULES_MESSAGE } from './lockfile-install-sync.ts';
+import { CHECK_CATALOG } from './checks.ts';
 import { selectChecks } from './model.ts';
 import { type CommandExecutor, readChangedFiles, runChecks } from './run.ts';
 
@@ -87,23 +89,39 @@ test('readChangedFiles unions staged and unstaged so a net diff cannot hide a fi
   }
 });
 
-const ALL_SCRIPTS: Record<string, string> = {
-  'format:check': 'x',
-  lint: 'x',
-  typecheck: 'x',
-  'test-app:typecheck': 'x',
-  'check:layering': 'x',
-  'check:fallow': 'x',
-  'check:mcp-metadata': 'x',
-  build: 'x',
-  'check:package': 'x',
-  'check:unit': 'x',
-  'check:coverage-changed': 'x',
-  'test:integration:provider': 'x',
-  'test:integration:node': 'x',
-  'test:integration:progress:check': 'x',
-  'check:replay-compat': 'x',
-};
+const repoRoot = path.resolve(import.meta.dirname, '../..');
+
+test('readChangedFiles excludes repository-owned host-local workspace roots', () => {
+  const dir = makeRepo();
+  try {
+    fs.copyFileSync(path.join(repoRoot, '.gitignore'), path.join(dir, '.gitignore'));
+    fs.writeFileSync(path.join(dir, 'seed.ts'), 'export const seed = true;\n');
+    git(dir, 'add', '.gitignore', 'seed.ts');
+    git(dir, 'commit', '-q', '-m', 'base');
+    const base = runCmdSync('git', ['rev-parse', 'HEAD'], { cwd: dir }).stdout.trim();
+
+    fs.mkdirSync(path.join(dir, '.codex'), { recursive: true });
+    fs.mkdirSync(path.join(dir, '.worktrees', 'embedded-clone'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.codex', 'config.local.toml'), 'model = "local"\n');
+    fs.writeFileSync(
+      path.join(dir, '.worktrees', 'embedded-clone', 'package.json'),
+      '{"private":true}\n',
+    );
+    fs.writeFileSync(path.join(dir, 'untracked.ts'), 'export const visible = true;\n');
+
+    assert.deepEqual(readChangedFiles(base, 'HEAD', dir), ['untracked.ts']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The real package scripts: a fixture map has to be hand-extended for every new
+// gate, which is the drift the registry exists to remove.
+const ALL_SCRIPTS: Record<string, string> = (
+  JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
+    scripts: Record<string, string>;
+  }
+).scripts;
 
 const ARGS = { base: 'origin/main', head: 'HEAD', json: false, run: true };
 
@@ -121,7 +139,7 @@ test('runChecks runs local checks in order and stops on the first failure', asyn
   assert.equal(code, 1);
   // format then lint, then it stops — nothing after the failing check runs.
   assert.deepEqual(
-    executed.map((command) => command[command.length - 1]),
+    executed.map((command) => command.at(-1)),
     ['format:check', 'lint'],
   );
 });
@@ -160,8 +178,16 @@ test('runChecks skips GitHub-authoritative checks and passes when locals succeed
   assert.equal(plan.failOpen, true);
   const code = await runChecks(plan, { scripts: ALL_SCRIPTS }, ARGS, { execute, cwd: '.' });
   assert.equal(code, 0);
-  const ran = executed.map((command) => command[command.length - 1]);
-  for (const skipped of ['build:xcuitest', 'build:android-snapshot-helper', 'test:smoke:web']) {
+  const ran = executed.map((command) => command.at(-1));
+  // Derived from the catalog rather than hand-listed. A hand-written name goes vacuous the
+  // moment a check is repointed: this list still asserted `build:android-snapshot-helper`
+  // after `android-helpers` moved to `build:android`, so it could not have failed however
+  // the flag was set.
+  const authoritative = CHECK_CATALOG.filter((spec) => !spec.localRunnable).flatMap((spec) =>
+    spec.kind.type === 'script' ? [spec.kind.script] : [],
+  );
+  assert.ok(authoritative.length >= 10, 'the catalog must still mark CI-owned checks');
+  for (const skipped of authoritative) {
     assert.ok(
       !ran.includes(skipped),
       `${skipped} is GitHub-authoritative and must not run locally`,
@@ -169,7 +195,7 @@ test('runChecks skips GitHub-authoritative checks and passes when locals succeed
   }
 });
 
-test('runChecks combines related tests with lightweight changed-line coverage', async () => {
+test('runChecks leaves coverage to CI and runs related tests once through Vitest config', async () => {
   const executed: string[][] = [];
   const execute: CommandExecutor = async (command) => {
     executed.push(command);
@@ -182,8 +208,20 @@ test('runChecks combines related tests with lightweight changed-line coverage', 
   assert.equal(code, 0);
   const related = executed.filter((command) => command.includes('related'));
   assert.equal(related.length, 1);
-  assert.ok(related[0]?.includes('--coverage'));
-  assert.ok(related[0]?.includes('--coverage.reporter=lcov'));
+  assert.ok(
+    !related[0]?.includes('--coverage'),
+    'coverage instrumentation stays GitHub-authoritative; the local run must not add it',
+  );
+  assert.equal(
+    related[0]?.some((arg) => arg.startsWith('--maxWorkers=')),
+    false,
+    'worker sizing belongs to vitest.config.ts',
+  );
+  assert.ok(
+    executed.findIndex((command) => command.includes('test:integration:node')) <
+      executed.findIndex((command) => command.includes('related')),
+    'process-lifecycle integration must run before the related-project workload',
+  );
   assert.equal(
     executed.some((command) => command.includes('test:coverage')),
     false,
@@ -191,13 +229,124 @@ test('runChecks combines related tests with lightweight changed-line coverage', 
   assert.equal(
     executed.some((command) => command.includes('check:unit')),
     false,
+    'related tests cover the selected unit graph without repeating the full suite',
   );
   assert.equal(
     executed.some((command) => command.includes('test:integration:provider')),
     false,
+    'related tests cover the selected provider graph without repeating the full suite',
   );
   assert.equal(
     executed.some((command) => command.includes('check:coverage-changed')),
-    true,
+    false,
+    'the coverage gate is GitHub-authoritative and must not run locally',
   );
+});
+
+test('runChecks fails fast on a stale install before running format or any other check', async () => {
+  const executed: string[][] = [];
+  const execute: CommandExecutor = async (command) => {
+    executed.push(command);
+    return 0;
+  };
+  const plan = selectChecks({
+    changedFiles: ['packages/selectors/src/index.ts'],
+    packageEntryFiles: [],
+  });
+  const code = await runChecks(plan, { scripts: ALL_SCRIPTS }, ARGS, {
+    execute,
+    cwd: '.',
+    checkLockfileSync: () => ({ status: 'out-of-sync', reason: 'stale' }),
+  });
+  assert.equal(code, 1);
+  assert.deepEqual(executed, [], 'no check — including format — may run against a stale install');
+});
+
+test('runChecks fails fast when node_modules was never installed in this checkout', async () => {
+  const executed: string[][] = [];
+  const execute: CommandExecutor = async (command) => {
+    executed.push(command);
+    return 0;
+  };
+  const plan = selectChecks({
+    changedFiles: ['packages/selectors/src/index.ts'],
+    packageEntryFiles: [],
+  });
+  const code = await runChecks(plan, { scripts: ALL_SCRIPTS }, ARGS, {
+    execute,
+    cwd: '.',
+    checkLockfileSync: () => ({ status: 'out-of-sync', reason: 'install-missing' }),
+  });
+  assert.equal(code, 1);
+  assert.deepEqual(executed, []);
+});
+
+test('runChecks does not block when there is no source checkout to compare against', async () => {
+  const executed: string[][] = [];
+  const execute: CommandExecutor = async (command) => {
+    executed.push(command);
+    return 0;
+  };
+  const plan = selectChecks({
+    changedFiles: ['packages/selectors/src/index.ts'],
+    packageEntryFiles: [],
+  });
+  const code = await runChecks(plan, { scripts: ALL_SCRIPTS }, ARGS, {
+    execute,
+    cwd: '.',
+    checkLockfileSync: () => ({ status: 'no-source-checkout' }),
+  });
+  assert.equal(code, 0);
+  assert.ok(executed.length > 0, 'checks still run when there is nothing to compare against');
+});
+
+test('runChecks proceeds normally when the install is in sync', async () => {
+  const executed: string[][] = [];
+  const execute: CommandExecutor = async (command) => {
+    executed.push(command);
+    return 0;
+  };
+  const plan = selectChecks({
+    changedFiles: ['packages/selectors/src/index.ts'],
+    packageEntryFiles: [],
+  });
+  const code = await runChecks(plan, { scripts: ALL_SCRIPTS }, ARGS, {
+    execute,
+    cwd: '.',
+    checkLockfileSync: () => ({ status: 'in-sync' }),
+  });
+  assert.equal(code, 0);
+  assert.ok(executed.some((command) => command.includes('format:check')));
+});
+
+test('runChecks names the real cause on stderr instead of surfacing as an unrelated failure', async () => {
+  const stderrChunks: string[] = [];
+  const originalWrite = process.stderr.write.bind(process.stderr);
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    stderrChunks.push(chunk.toString());
+    return true;
+  }) as typeof process.stderr.write;
+
+  try {
+    const plan = selectChecks({
+      changedFiles: ['packages/selectors/src/index.ts'],
+      packageEntryFiles: [],
+    });
+    const code = await runChecks(plan, { scripts: ALL_SCRIPTS }, ARGS, {
+      execute: async () => 0,
+      cwd: '.',
+      checkLockfileSync: () => ({ status: 'out-of-sync', reason: 'stale' }),
+    });
+    assert.equal(code, 1);
+    assert.ok(
+      stderrChunks.some((chunk) => chunk.includes(STALE_NODE_MODULES_MESSAGE)),
+      `expected stderr to name the stale-install cause, got: ${stderrChunks.join('')}`,
+    );
+    const stderr = stderrChunks.join('');
+    assert.match(stderr, /Worktree: \.\n/);
+    assert.match(stderr, /pnpm install --frozen-lockfile/);
+    assert.doesNotMatch(stderr, /agent-device doctor/);
+  } finally {
+    process.stderr.write = originalWrite;
+  }
 });

@@ -1,22 +1,43 @@
 import { isMacOs } from '@agent-device/kernel/device';
+import { legacyDispatchCapture } from '../../__tests__/legacy-snapshot-capture-fixture.ts';
 import { expect, vi, beforeEach } from 'vitest';
+import { mkdtempForTestSync } from '../../../__tests__/test-utils/tmp-dir.ts';
+import type { AppLogLiveState } from '@agent-device/contracts/app-log-runtime';
+import { localRuntimeOwner } from '@agent-device/contracts/platform-runtime';
+import { createDurableResourceEnvelope } from '@agent-device/capture-kit';
+import { createTestAppLogLiveHandle } from '../../../__tests__/test-utils/app-log-live-handle.ts';
+import type { LogBackend } from '@agent-device/contracts/observability';
 
-vi.mock('../../../core/dispatch.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../core/dispatch.ts')>();
-  return { ...actual, dispatchCommand: vi.fn(async () => ({})), resolveTargetDevice: vi.fn() };
+vi.mock('node:timers/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:timers/promises')>();
+  return { ...actual, setTimeout: vi.fn(async () => undefined) };
 });
-vi.mock('../../device-ready.ts', () => ({ ensureDeviceReady: vi.fn(async () => {}) }));
-vi.mock('../../runtime-hints.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../runtime-hints.ts')>();
+
+vi.mock('@agent-device/device-selection/dispatch-resolve', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@agent-device/device-selection/dispatch-resolve')>();
+  const { selectionFromResolveTargetDevice } =
+    await import('../../__tests__/device-selection-stub.ts');
+  const resolveTargetDevice = vi.fn();
   return {
     ...actual,
-    applyRuntimeHintsToApp: vi.fn(async () => {}),
-    clearRuntimeHintsFromApp: vi.fn(async () => {}),
+    resolveTargetDevice,
+    resolveTargetDeviceSelection: vi.fn(selectionFromResolveTargetDevice(resolveTargetDevice)),
   };
 });
-vi.mock('../../../platforms/apple/core/runner/runner-client.ts', async (importOriginal) => {
+vi.mock('../../device-ready.ts', () => ({ ensureDeviceReady: vi.fn(async () => {}) }));
+vi.mock('../../../platform-runtime-runtime-hints.ts', async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import('../../../platforms/apple/core/runner/runner-client.ts')>();
+    await importOriginal<typeof import('../../../platform-runtime-runtime-hints.ts')>();
+  return {
+    ...actual,
+    applyRuntimeHintValues: vi.fn(async () => {}),
+    clearRuntimeHintValues: vi.fn(async () => {}),
+  };
+});
+vi.mock('@agent-device/platform-apple/runner/operations', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@agent-device/platform-apple/runner/operations')>();
   return {
     ...actual,
     prepareIosRunner: vi.fn(async () => ({
@@ -27,147 +48,102 @@ vi.mock('../../../platforms/apple/core/runner/runner-client.ts', async (importOr
     prewarmAppleRunnerCache: vi.fn(),
     prewarmIosRunnerSession: vi.fn(),
     notifyIosRunnerAppRelaunched: vi.fn(async () => {}),
-    scheduleIosRunnerIdleStop: vi.fn(),
     stopIosRunnerSession: vi.fn(async () => {}),
+    releaseIosRunnerOnClose: vi.fn(async () => {}),
   };
 });
-vi.mock('../../../platforms/apple/os/macos/helper.ts', async (importOriginal) => {
+vi.mock('@agent-device/platform-apple/macos', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agent-device/platform-apple/macos')>();
+  return {
+    ...actual,
+    runMacOsAlertAction: vi.fn(async () => {}),
+  };
+});
+vi.mock('@agent-device/platform-apple/app-resolution', async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import('../../../platforms/apple/os/macos/helper.ts')>();
-  return { ...actual, runMacOsAlertAction: vi.fn(async () => {}) };
+    await importOriginal<typeof import('@agent-device/platform-apple/app-resolution')>();
+  return {
+    ...actual,
+    resolveIosApp: vi.fn(async () => undefined),
+    resolveIosSimulatorDeepLinkBundleId: vi.fn(async () => undefined),
+  };
 });
-vi.mock('../session-device-utils.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../session-device-utils.ts')>();
-  return { ...actual, settleIosSimulator: vi.fn(async () => {}) };
+vi.mock('@agent-device/platform-android/mechanics', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agent-device/platform-android/mechanics')>();
+  return {
+    ...actual,
+    activateAndroidTestIme: vi.fn(async () => ({ activated: false })),
+    restoreAndroidTestIme: vi.fn(async () => ({ restored: false, reason: 'no-record' })),
+    resolveAndroidPackageForOpen: vi.fn(async () => undefined),
+  };
 });
-vi.mock('../session-open-target.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../session-open-target.ts')>();
-  return { ...actual, resolveAndroidPackageForOpen: vi.fn(async () => undefined) };
-});
-vi.mock('../../../platforms/apple/core/simulator.ts', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('../../../platforms/apple/core/simulator.ts')>();
-  return { ...actual, getSimulatorState: vi.fn(async () => null), shutdownSimulator: vi.fn() };
-});
-vi.mock('../../../utils/exec.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../utils/exec.ts')>();
+vi.mock('@agent-device/host-kit/command', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agent-device/host-kit/command')>();
   return { ...actual, runCmd: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })) };
 });
 vi.mock('../../materialized-path-registry.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../materialized-path-registry.ts')>();
   return { ...actual, cleanupRetainedMaterializedPathsForSession: vi.fn(async () => {}) };
 });
-vi.mock('../../../platforms/android/devices.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../platforms/android/devices.ts')>();
-  return {
-    ...actual,
-    listAndroidDevices: vi.fn(async () => []),
-    ensureAndroidEmulatorBooted: vi.fn(),
-  };
-});
-vi.mock('../../../platforms/apple/core/devices.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../platforms/apple/core/devices.ts')>();
-  return { ...actual, listAppleDevices: vi.fn(async () => []) };
-});
-vi.mock('../../../platforms/apple/core/apps.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../platforms/apple/core/apps.ts')>();
-  return {
-    ...actual,
-    listIosApps: vi.fn(async () => []),
-    resolveIosApp: vi.fn(async () => undefined),
-    resolveIosSimulatorDeepLinkBundleId: vi.fn(async () => undefined),
-  };
-});
-vi.mock('../../app-log.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../app-log.ts')>();
-  return {
-    ...actual,
-    runAppLogDoctor: vi.fn(async () => ({ checks: {}, notes: [] })),
-    startAppLog: vi.fn(),
-    stopAppLog: vi.fn(async () => {}),
-  };
-});
-vi.mock('../session-deploy.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../session-deploy.ts')>();
-  return {
-    ...actual,
-    defaultInstallOps: { ios: vi.fn(), android: vi.fn() },
-    defaultReinstallOps: { ios: vi.fn(), android: vi.fn() },
-  };
-});
 
-import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { cleanupRetainedMaterializedPathsForSession } from '../../materialized-path-registry.ts';
 import { SessionStore } from '../../session-store.ts';
-import type { DaemonRequest, DaemonResponse, SessionState } from '../../types.ts';
-import { dispatchCommand, resolveTargetDevice } from '../../../core/dispatch.ts';
+import type { DaemonRequest, DaemonResponse } from '../../daemon-request.ts';
+import type { SessionState } from '../../session-state.ts';
+import { resolveTargetDevice } from '@agent-device/device-selection/dispatch-resolve';
 import { ensureDeviceReady } from '../../device-ready.ts';
-import { applyRuntimeHintsToApp, clearRuntimeHintsFromApp } from '../../runtime-hints.ts';
+import {
+  applyRuntimeHintValues,
+  clearRuntimeHintValues,
+} from '../../../platform-runtime-runtime-hints.ts';
 import {
   prepareIosRunner,
   prewarmAppleRunnerCache,
   prewarmIosRunnerSession,
   notifyIosRunnerAppRelaunched,
-  scheduleIosRunnerIdleStop,
   stopIosRunnerSession,
-} from '../../../platforms/apple/core/runner/runner-client.ts';
-import { runMacOsAlertAction } from '../../../platforms/apple/os/macos/helper.ts';
-import { settleIosSimulator } from '../session-device-utils.ts';
-import { resolveAndroidPackageForOpen } from '../session-open-target.ts';
-import { runCmd } from '../../../utils/exec.ts';
-import { shutdownSimulator } from '../../../platforms/apple/core/simulator.ts';
-import {
-  listAndroidDevices,
-  ensureAndroidEmulatorBooted,
-} from '../../../platforms/android/devices.ts';
-import { listAppleDevices } from '../../../platforms/apple/core/devices.ts';
+  releaseIosRunnerOnClose,
+} from '@agent-device/platform-apple/runner/operations';
+import { runMacOsAlertAction } from '@agent-device/platform-apple/macos';
 import {
   resolveIosApp,
   resolveIosSimulatorDeepLinkBundleId,
-} from '../../../platforms/apple/core/apps.ts';
-import { runAppLogDoctor, startAppLog, stopAppLog } from '../../app-log.ts';
-import { defaultInstallOps, defaultReinstallOps } from '../session-deploy.ts';
+} from '@agent-device/platform-apple/app-resolution';
+import { resolveAndroidPackageForOpen } from '@agent-device/platform-android/mechanics';
+import { runCmd } from '@agent-device/host-kit/command';
+import { dispatchApplicationLifecycleEffect } from '../../__tests__/application-lifecycle-runtime-fixture.ts';
 
-export const mockDispatch = vi.mocked(dispatchCommand);
+export const mockLifecycleDispatch = vi.mocked(dispatchApplicationLifecycleEffect);
 export const mockResolveTargetDevice = vi.mocked(resolveTargetDevice);
 export const mockEnsureDeviceReady = vi.mocked(ensureDeviceReady);
-const mockApplyRuntimeHints = vi.mocked(applyRuntimeHintsToApp);
-export const mockClearRuntimeHints = vi.mocked(clearRuntimeHintsFromApp);
+const mockApplyRuntimeHints = vi.mocked(applyRuntimeHintValues);
+export const mockClearRuntimeHints = vi.mocked(clearRuntimeHintValues);
 export const mockPrewarmIosRunnerSession = vi.mocked(prewarmIosRunnerSession);
 export const mockNotifyIosRunnerAppRelaunched = vi.mocked(notifyIosRunnerAppRelaunched);
 export const mockPrewarmAppleRunnerCache = vi.mocked(prewarmAppleRunnerCache);
 export const mockPrepareIosRunner = vi.mocked(prepareIosRunner);
 export const mockStopIosRunner = vi.mocked(stopIosRunnerSession);
-export const mockScheduleIosRunnerIdleStop = vi.mocked(scheduleIosRunnerIdleStop);
+const mockReleaseRunnerOnClose = vi.mocked(releaseIosRunnerOnClose);
 export const mockDismissMacOsAlert = vi.mocked(runMacOsAlertAction);
-export const mockSettleSimulator = vi.mocked(settleIosSimulator);
 export const mockResolveAndroidPackage = vi.mocked(resolveAndroidPackageForOpen);
 export const mockCleanupRetainedMaterializedPaths = vi.mocked(
   cleanupRetainedMaterializedPathsForSession,
 );
 export const mockRunCmd = vi.mocked(runCmd);
-export const mockShutdownSimulator = vi.mocked(shutdownSimulator);
-export const mockListAndroidDevices = vi.mocked(listAndroidDevices);
-export const mockListAppleDevices = vi.mocked(listAppleDevices);
+/** The retired dispatcher's snapshot leg, now an owned test double (R58). */
+export const mockDispatch = legacyDispatchCapture;
 export const mockResolveIosApp = vi.mocked(resolveIosApp);
 export const mockResolveIosSimulatorDeepLinkBundleId = vi.mocked(
   resolveIosSimulatorDeepLinkBundleId,
 );
-export const mockEnsureAndroidEmulatorBooted = vi.mocked(ensureAndroidEmulatorBooted);
-export const mockStartAppLog = vi.mocked(startAppLog);
-const mockStopAppLog = vi.mocked(stopAppLog);
-export const mockRunAppLogDoctor = vi.mocked(runAppLogDoctor);
-const mockDefaultInstallOpsIos = vi.mocked(defaultInstallOps.ios);
-const mockDefaultInstallOpsAndroid = vi.mocked(defaultInstallOps.android);
-const mockDefaultReinstallOpsIos = vi.mocked(defaultReinstallOps.ios);
-const mockDefaultReinstallOpsAndroid = vi.mocked(defaultReinstallOps.android);
 
 beforeEach(() => {
   vi.useRealTimers();
   mockDispatch.mockReset();
   mockDispatch.mockResolvedValue({});
+  mockLifecycleDispatch.mockReset();
+  mockLifecycleDispatch.mockResolvedValue(undefined);
   mockResolveTargetDevice.mockReset();
   mockEnsureDeviceReady.mockReset();
   mockEnsureDeviceReady.mockResolvedValue(undefined);
@@ -186,24 +162,16 @@ beforeEach(() => {
     healthCheckMs: 3,
   });
   mockStopIosRunner.mockReset();
-  mockScheduleIosRunnerIdleStop.mockReset();
+  mockReleaseRunnerOnClose.mockReset();
   mockStopIosRunner.mockResolvedValue(undefined);
   mockDismissMacOsAlert.mockReset();
   mockDismissMacOsAlert.mockResolvedValue({} as any);
-  mockSettleSimulator.mockReset();
-  mockSettleSimulator.mockResolvedValue(undefined);
   mockResolveAndroidPackage.mockReset();
   mockResolveAndroidPackage.mockResolvedValue(undefined);
   mockCleanupRetainedMaterializedPaths.mockReset();
   mockCleanupRetainedMaterializedPaths.mockResolvedValue(undefined);
   mockRunCmd.mockReset();
   mockRunCmd.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
-  mockShutdownSimulator.mockReset();
-  mockShutdownSimulator.mockResolvedValue({ success: true, exitCode: 0, stdout: '', stderr: '' });
-  mockListAndroidDevices.mockReset();
-  mockListAndroidDevices.mockResolvedValue([]);
-  mockListAppleDevices.mockReset();
-  mockListAppleDevices.mockResolvedValue([]);
   mockResolveIosApp.mockReset();
   mockResolveIosApp.mockImplementation(async (device, app) => {
     const normalizedApp = app.toLowerCase();
@@ -217,30 +185,64 @@ beforeEach(() => {
   });
   mockResolveIosSimulatorDeepLinkBundleId.mockReset();
   mockResolveIosSimulatorDeepLinkBundleId.mockResolvedValue(undefined);
-  mockEnsureAndroidEmulatorBooted.mockReset();
-  mockStartAppLog.mockReset();
-  mockStopAppLog.mockReset();
-  mockStopAppLog.mockResolvedValue(undefined);
-  mockRunAppLogDoctor.mockReset();
-  mockRunAppLogDoctor.mockResolvedValue({ checks: {}, notes: [] });
-  mockDefaultInstallOpsIos.mockReset();
-  mockDefaultInstallOpsAndroid.mockReset();
-  mockDefaultReinstallOpsIos.mockReset();
-  mockDefaultReinstallOpsAndroid.mockReset();
 });
 
 export function makeSessionStore(): SessionStore {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-session-handler-'));
+  const root = mkdtempForTestSync('agent-device-session-handler-');
   return new SessionStore(path.join(root, 'sessions'));
 }
 
 export function makeSession(name: string, device: SessionState['device']): SessionState {
   return {
     name,
+    sessionScope: { kind: 'named-local' },
     device,
     createdAt: Date.now(),
     actions: [],
   };
+}
+
+export function makeTestAppLogResource(
+  session: Pick<SessionState, 'name' | 'device'>,
+  options: {
+    backend: LogBackend;
+    state?: AppLogLiveState;
+    startedAt?: number;
+    outputPath?: string;
+  },
+): NonNullable<SessionState['appLog']> {
+  const outputPath = options.outputPath ?? '/tmp/app.log';
+  const handle = createTestAppLogLiveHandle({
+    inspect: () => ({
+      backend: options.backend,
+      state: options.state ?? 'active',
+      startedAt: options.startedAt ?? Date.now(),
+    }),
+    finish: async () => ({
+      status: 'completed',
+      result: { backend: options.backend, outputPath, completedAt: Date.now() },
+    }),
+    forceCleanup: async () => ({ status: 'cleaned' }),
+  });
+  const envelope = createDurableResourceEnvelope({
+    resourceKind: 'app-log',
+    sessionId: session.name,
+    device: {
+      id: session.device.id,
+      family: session.device.platform,
+      kind: session.device.kind,
+      ...(session.device.appleOs === undefined ? {} : { appleOs: session.device.appleOs }),
+      ...(session.device.target === undefined ? {} : { target: session.device.target }),
+      ...(session.device.iosPhysicalDeviceBackend === undefined
+        ? {}
+        : { iosPhysicalDeviceBackend: session.device.iosPhysicalDeviceBackend }),
+    },
+    owner: localRuntimeOwner(session.device.platform),
+    fence: { token: 'test-fence', generation: 1 },
+    lifecycle: 'open',
+    descriptor: { version: 1, body: {} },
+  });
+  return { handle, envelope };
 }
 
 export const noopInvoke = async (_req: DaemonRequest): Promise<DaemonResponse> => ({

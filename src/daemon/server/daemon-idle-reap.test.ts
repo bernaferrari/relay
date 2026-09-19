@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, test, vi } from 'vitest';
-import { makeIosSession } from '../../__tests__/test-utils/index.ts';
+import { makeIosSession } from '../../__tests__/test-utils/session-factories.ts';
 import { SessionStore } from '../session-store.ts';
-import type { SessionState } from '../types.ts';
+import type { SessionState } from '../session-state.ts';
 import {
   createDaemonIdleReap,
   hasActiveRecording,
@@ -13,12 +12,14 @@ import {
   isDaemonIdle,
   resolveDaemonIdleReapMs,
 } from './daemon-idle-reap.ts';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
+import { makeTestScreenRecordingResource } from '../../__tests__/test-utils/screen-recording-live-handle.ts';
 
 let stateDir: string;
 let sessionStore: SessionStore;
 
 beforeEach(() => {
-  stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-daemon-idle-reap-'));
+  stateDir = mkdtempForTestSync('agent-device-daemon-idle-reap-');
   sessionStore = new SessionStore(path.join(stateDir, 'sessions'));
 });
 
@@ -61,20 +62,14 @@ test('hasActiveRecording is true only when a stored session carries a recording'
   sessionStore.set('default', makeSession());
   assert.equal(hasActiveRecording(sessionStore), false);
 
-  sessionStore.set(
-    'default',
-    makeSession({
-      recording: {
-        platform: 'ios',
-        outPath: '/tmp/demo.mp4',
-        startedAt: Date.now(),
-        showTouches: false,
-        gestureEvents: [],
-        child: { kill: () => true },
-        wait: Promise.resolve({ stdout: '', stderr: '', exitCode: 0 }),
-      },
-    }),
-  );
+  const recordingSession = makeSession();
+  recordingSession.screenRecording = makeTestScreenRecordingResource(recordingSession, {
+    backend: 'simctl recordVideo',
+    outPath: '/tmp/demo.mp4',
+    startedAt: Date.now(),
+    showTouches: false,
+  });
+  sessionStore.set('default', recordingSession);
   assert.equal(hasActiveRecording(sessionStore), true);
 });
 
@@ -190,20 +185,14 @@ test('idle reap does not fire while a session is open', async () => {
 test('idle reap does not fire while a recording is active', async () => {
   vi.useFakeTimers();
   let reaped = 0;
-  sessionStore.set(
-    'default',
-    makeSession({
-      recording: {
-        platform: 'ios',
-        outPath: '/tmp/demo.mp4',
-        startedAt: Date.now(),
-        showTouches: false,
-        gestureEvents: [],
-        child: { kill: () => true },
-        wait: Promise.resolve({ stdout: '', stderr: '', exitCode: 0 }),
-      },
-    }),
-  );
+  const recordingSession = makeSession();
+  recordingSession.screenRecording = makeTestScreenRecordingResource(recordingSession, {
+    backend: 'simctl recordVideo',
+    outPath: '/tmp/demo.mp4',
+    startedAt: Date.now(),
+    showTouches: false,
+  });
+  sessionStore.set('default', recordingSession);
   const idleReap = createDaemonIdleReap({
     sessionStore,
     getInFlightRequestCount: () => 0,

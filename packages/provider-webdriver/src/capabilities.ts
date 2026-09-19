@@ -1,12 +1,10 @@
-import type { SnapshotResult } from '@agent-device/contracts/interaction';
+import type { SnapshotResult } from '@agent-device/contracts/interactor-types';
 import type { CloudWebDriverPlatform } from './runtime.ts';
 
 export type CloudWebDriverOperation =
   | 'lease'
   | 'inventory'
   | 'install'
-  | 'open'
-  | 'close'
   | 'snapshot'
   | 'screenshot'
   | 'tap'
@@ -24,6 +22,7 @@ export type CloudWebDriverOperation =
   | 'clipboard.read'
   | 'clipboard.write'
   | 'settings'
+  | 'alert'
   | 'pinch'
   | 'rotateGesture'
   | 'transformGesture'
@@ -70,8 +69,6 @@ const BASE_WEBDRIVER_CAPABILITIES: CloudWebDriverCapabilityMap = {
     support: 'partial',
     note: 'Requires provider-specific upload or a path visible to the remote Appium server.',
   },
-  open: supported,
-  close: supported,
   snapshot: {
     support: 'partial',
     note: 'Uses Appium page source XML, not agent-device native snapshot backends.',
@@ -110,6 +107,7 @@ const BASE_WEBDRIVER_CAPABILITIES: CloudWebDriverCapabilityMap = {
     note: 'Uses provider/Appium clipboard extension support where available.',
   },
   settings: unsupported,
+  alert: unsupported,
   pinch: unsupported,
   rotateGesture: unsupported,
   transformGesture: unsupported,

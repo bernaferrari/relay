@@ -1,86 +1,151 @@
+import { createTestDeviceInventoryGateways } from '../../__tests__/test-utils/device-inventory-gateways.ts';
+import { legacyDispatchCapture } from './legacy-snapshot-capture-fixture.ts';
 import { test, expect, vi, beforeEach } from 'vitest';
 import fs from 'node:fs';
-import os from 'node:os';
+
 import path from 'node:path';
 import { getResolveTargetDeviceMock } from './request-router-dispatch-mocks.ts';
 
-vi.mock('../device-ready.ts', () => ({ ensureDeviceReady: vi.fn(async () => {}) }));
-vi.mock('../../utils/host-process.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../utils/host-process.ts')>();
-  return { ...actual, readProcessStartTime: vi.fn(() => 'test-process-start') };
-});
+import { replayScriptSourceBundleFor } from '../../__tests__/test-utils/replay-script-source.ts';
 
-import { dispatchCommand } from '../../core/dispatch.ts';
-import { createRequestHandler } from '../request-router.ts';
+vi.mock('../device-ready.ts', () => ({ ensureDeviceReady: vi.fn(async () => {}) }));
+vi.mock('@agent-device/host-kit/process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agent-device/host-kit/process')>();
+  const startTime = 'test-process-start';
+  return {
+    ...actual,
+    readProcessStartTime: vi.fn(() => startTime),
+    // The ownership decision reads all three facts in one call, so it has to answer with the
+    // same fabricated start time this fixture writes into its markers.
+    readProcessIdentityFacts: vi.fn(async (pid: number) => ({
+      startTime,
+      command: actual.readProcessCommand(pid),
+      zombie: false,
+    })),
+  };
+});
+vi.mock('@agent-device/platform-apple/runner/operations', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@agent-device/platform-apple/runner/operations')>();
+  return {
+    ...actual,
+    detachIosSimulatorRunnerSessionsForShutdown: vi.fn(async () => {}),
+    notifyIosRunnerAppRelaunched: vi.fn(async () => {}),
+    prewarmAppleRunnerCache: vi.fn(async () => {}),
+    prewarmIosRunnerSession: vi.fn(async () => {}),
+    prepareIosRunner: vi.fn(async () => ({
+      runner: { currentUptimeMs: 42 },
+      connectMs: 0,
+      healthCheckMs: 0,
+    })),
+    resolveRunnerAppBundleId: vi.fn(() => 'com.callstack.agentdevice.runner'),
+    stopIosRunnerSession: vi.fn(async () => {}),
+    stopAllIosRunnerSessions: vi.fn(async () => {}),
+  };
+});
+vi.mock('@agent-device/platform-apple/app-lifecycle', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@agent-device/platform-apple/app-lifecycle')>();
+  return { ...actual, closeIosApp: vi.fn(async () => {}) };
+});
+vi.mock('@agent-device/platform-apple/app-resolution', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@agent-device/platform-apple/app-resolution')>();
+  return {
+    ...actual,
+    resolveIosApp: vi.fn(async (_device, app) => app),
+  };
+});
+// The reboot-stale claim probe (#2538) must never reach the host's real process table here.
+const mockObserveSimulatorBoot = vi.hoisted(() =>
+  vi.fn(async (): Promise<DeviceBootObservation> => ({
+    observed: false,
+    reason: 'unobserved',
+  })),
+);
+vi.mock('@agent-device/platform-apple/simulator-boot', () => ({
+  observeSimulatorBootTimeMs: mockObserveSimulatorBoot,
+}));
+
+import {
+  createRequestHandler,
+  lifecycleDeviceRuntimeGateway,
+} from './test-device-runtime-gateway.ts';
+import { createRequestHandler as createProductionRequestHandler } from '../request-router.ts';
 import { resolveRequestExecutionLockKeys } from '../request-binding.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { ensureDeviceReady } from '../device-ready.ts';
+import {
+  awaitFixtureReadiness,
+  discoverReadyAndroidEmulators,
+} from './application-lifecycle-runtime-fixture.ts';
 import type { DeviceInfo } from '@agent-device/kernel/device';
+import type { DeviceBootObservation } from '@agent-device/contracts/device-boot';
 import { AppError } from '@agent-device/kernel/errors';
 import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
+import { inspectDeviceClaims } from '../device-claim-inspection.ts';
+import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
+import {
+  createOwnedProcessRecordStore,
+  isProcessAlive,
+  readProcessCommand,
+  readProcessStartTime,
+} from '@agent-device/host-kit/process';
+import { createDurableResourceEnvelope } from '@agent-device/capture-kit';
+import { resolveDaemonPaths } from '../../daemon-resolution.ts';
+import { screenRecordingDurableResource } from '../screen-recording-session-resource.ts';
+import {
+  makeAndroidDevice,
+  makeIosDevice,
+  openRequest,
+  storedClaimUpdatedAt,
+} from './request-router-open-harness.ts';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 
-const mockDispatch = vi.mocked(dispatchCommand);
 const mockResolveTargetDevice = vi.mocked(getResolveTargetDeviceMock());
 const mockEnsureDeviceReady = vi.mocked(ensureDeviceReady);
-
-function makeIosDevice(id: string): DeviceInfo {
-  return {
-    platform: 'apple',
-    id,
-    name: `iPhone ${id}`,
-    kind: 'simulator',
-    target: 'mobile',
-    booted: true,
-  };
-}
-
-function makeAndroidDevice(id: string): DeviceInfo {
-  return {
-    platform: 'android',
-    id,
-    name: `Android ${id}`,
-    kind: 'emulator',
-    target: 'mobile',
-    booted: true,
-  };
-}
+// The open path reaches readiness through its admitted package binding, so router-level
+// serialization is observed at the fixture's emulator-discovery seam.
+const mockDiscoverReadyAndroidEmulators = vi.mocked(discoverReadyAndroidEmulators);
+const mockAwaitFixtureReadiness = vi.mocked(awaitFixtureReadiness);
 
 function createOpenHandler(
   sessionStore: ReturnType<typeof makeSessionStore>,
   leaseRegistry = new LeaseRegistry(),
 ) {
   return createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
     token: 'test-token',
     sessionStore,
     leaseRegistry,
+    deviceRuntimeGateway: lifecycleDeviceRuntimeGateway,
+    deviceInventoryGateways: createTestDeviceInventoryGateways(),
     trackDownloadableArtifact: () => 'artifact-id',
   });
 }
 
-function openRequest(
-  session: string,
-  flags: Record<string, unknown>,
-  requestId: string,
-  meta: Record<string, unknown> = {},
-  positionals: string[] = [],
-) {
-  return {
-    token: 'test-token',
-    session,
-    command: 'open',
-    positionals,
-    flags,
-    meta: { requestId, ...meta },
-  };
-}
-
 beforeEach(() => {
-  mockDispatch.mockReset();
-  mockDispatch.mockResolvedValue({});
+  legacyDispatchCapture.mockReset();
+  legacyDispatchCapture.mockResolvedValue({});
   mockResolveTargetDevice.mockReset();
   mockEnsureDeviceReady.mockReset();
   mockEnsureDeviceReady.mockResolvedValue(undefined);
+  mockAwaitFixtureReadiness.mockReset();
+  mockAwaitFixtureReadiness.mockResolvedValue(undefined);
+  mockDiscoverReadyAndroidEmulators.mockReset();
+  mockObserveSimulatorBoot.mockReset();
+  mockObserveSimulatorBoot.mockImplementation(async () => ({
+    observed: false,
+    reason: 'unobserved',
+  }));
+  mockDiscoverReadyAndroidEmulators.mockImplementation(async (device) => [
+    {
+      ...device,
+      id: device.id.startsWith('emulator-') ? device.id : `emulator-${device.id}`,
+      booted: true,
+    },
+  ]);
 });
 
 // fallow-ignore-next-line complexity
@@ -94,10 +159,6 @@ test('open returns and creates the session state directory', async () => {
   const response = await handler(openRequest('session-a', { platform: 'ios' }, 'req-open-state'));
 
   expect(response.ok).toBe(true);
-  expect(mockEnsureDeviceReady.mock.calls[0]?.[1]).toEqual({
-    deviceHub: false,
-    onIosSimulatorColdBootStart: undefined,
-  });
   if (response.ok) {
     expect(response.data?.session).toBe('session-a');
     expect(response.data?.sessionReused).toBe(false);
@@ -114,6 +175,9 @@ test('open returns and creates the session state directory', async () => {
     expect(fs.existsSync(String(response.data?.sessionStateDir))).toBe(true);
     expect(fs.existsSync(String(response.data?.eventLogPath))).toBe(true);
   }
+  expect(inspectDeviceClaims({ udid: device.id })[0]?.claim?.stateDir).toBe(
+    sessionStore.resolveDaemonStateDir(),
+  );
 });
 
 test('fresh open uses app-aware device selection for advisory locking and dispatch', async () => {
@@ -139,7 +203,7 @@ test('fresh open uses app-aware device selection for advisory locking and dispat
 });
 
 test('fresh replay reserves its authored app simulator before any replay step', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-replay-app-lock-'));
+  const root = mkdtempForTestSync('agent-device-replay-app-lock-');
   const replayPath = path.join(root, 'flow.ad');
   fs.writeFileSync(
     replayPath,
@@ -158,7 +222,7 @@ test('fresh replay reserves its authored app simulator before any replay step', 
       session: 'fresh-replay',
       command: 'replay',
       positionals: [replayPath],
-      flags: {},
+      flags: { replayScriptSource: replayScriptSourceBundleFor(replayPath) },
       meta: { cwd: root },
     },
     sessionName: 'fresh-replay',
@@ -167,13 +231,13 @@ test('fresh replay reserves its authored app simulator before any replay step', 
 
   expect(keys).toEqual(['session:fresh-replay', 'device:SIM-WITH-APP']);
   expect(mockResolveTargetDevice).toHaveBeenCalledWith(
-    { platform: 'ios' },
+    expect.objectContaining({ platform: 'ios' }),
     { appleSimulatorAppTarget: 'com.example.demo' },
   );
 });
 
 test('fresh replay leaves a first deep-link open unbound when a later app target exists', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-replay-deep-link-lock-'));
+  const root = mkdtempForTestSync('agent-device-replay-deep-link-lock-');
   const replayPath = path.join(root, 'flow.ad');
   fs.writeFileSync(
     replayPath,
@@ -187,7 +251,7 @@ test('fresh replay leaves a first deep-link open unbound when a later app target
       session: 'fresh-replay-deep-link',
       command: 'replay',
       positionals: [replayPath],
-      flags: {},
+      flags: { replayScriptSource: replayScriptSourceBundleFor(replayPath) },
       meta: { cwd: root },
     },
     sessionName: 'fresh-replay-deep-link',
@@ -199,7 +263,7 @@ test('fresh replay leaves a first deep-link open unbound when a later app target
 });
 
 test('fresh replay preserves an authored Android platform before advisory locking', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-replay-android-lock-'));
+  const root = mkdtempForTestSync('agent-device-replay-android-lock-');
   const replayPath = path.join(root, 'flow.ad');
   fs.writeFileSync(
     replayPath,
@@ -215,7 +279,7 @@ test('fresh replay preserves an authored Android platform before advisory lockin
       session: 'fresh-replay-android',
       command: 'replay',
       positionals: [replayPath],
-      flags: {},
+      flags: { replayScriptSource: replayScriptSourceBundleFor(replayPath) },
       meta: { cwd: root },
     },
     sessionName: 'fresh-replay-android',
@@ -223,7 +287,10 @@ test('fresh replay preserves an authored Android platform before advisory lockin
   });
 
   expect(keys).toEqual(['session:fresh-replay-android', 'device:ANDROID-EMULATOR']);
-  expect(mockResolveTargetDevice).toHaveBeenCalledWith({ platform: 'android' }, undefined);
+  expect(mockResolveTargetDevice).toHaveBeenCalledWith(
+    expect.objectContaining({ platform: 'android' }),
+    undefined,
+  );
 });
 
 test('open --debug writes bounded open timing diagnostics to requestLogPath', async () => {
@@ -289,6 +356,10 @@ test('open stores admitted lease metadata on the session', async () => {
   );
 
   expect(response.ok).toBe(true);
+  expect(sessionStore.get('tenant-a:default')?.sessionScope).toEqual({
+    kind: 'tenant',
+    id: 'tenant-a',
+  });
   expect(sessionStore.get('tenant-a:default')?.lease).toEqual({
     leaseId: lease.leaseId,
     tenantId: 'tenant-a',
@@ -320,7 +391,7 @@ test('proxy open without required lease metadata fails before device resolution'
     expect(response.error.message).toMatch(/Proxy open requires leaseId/);
   }
   expect(mockResolveTargetDevice).not.toHaveBeenCalled();
-  expect(mockDispatch).not.toHaveBeenCalled();
+  expect(legacyDispatchCapture).not.toHaveBeenCalled();
 });
 
 test('close releases the session lease', async () => {
@@ -359,6 +430,43 @@ test('close releases the session lease', async () => {
   expect(leaseRegistry.listActiveLeases()).toHaveLength(0);
 });
 
+test('close fails synchronously when root composition omits platform resource cleanup', async () => {
+  const sessionStore = makeSessionStore('agent-device-router-open-');
+  sessionStore.set('default', {
+    name: 'default',
+    device: makeIosDevice('SIM-CLOSE-MISSING-CLEANUP'),
+    createdAt: Date.now(),
+    actions: [],
+  });
+  const handler = createProductionRequestHandler({
+    logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
+    token: 'test-token',
+    sessionStore,
+    leaseRegistry: new LeaseRegistry(),
+    deviceRuntimeGateway: lifecycleDeviceRuntimeGateway,
+    deviceInventoryGateways: createTestDeviceInventoryGateways(),
+    trackDownloadableArtifact: () => 'artifact-id',
+  });
+
+  const response = await handler({
+    token: 'test-token',
+    session: 'default',
+    command: 'close',
+    positionals: [],
+    meta: { requestId: 'req-close-missing-cleanup' },
+  });
+
+  expect(response.ok).toBe(false);
+  if (!response.ok) {
+    expect(response.error).toMatchObject({
+      code: 'INTERNAL_ERROR',
+      message: 'Platform resource cleanup was not supplied by root runtime composition',
+    });
+  }
+  expect(sessionStore.get('default')).toBeDefined();
+  expect(legacyDispatchCapture).not.toHaveBeenCalled();
+});
+
 test('close rejects a different client before cleanup', async () => {
   const sessionStore = makeSessionStore('agent-device-router-open-');
   const leaseRegistry = new LeaseRegistry();
@@ -393,7 +501,7 @@ test('close rejects a different client before cleanup', async () => {
   expect(response.ok).toBe(false);
   expect(sessionStore.get('default')).toBeDefined();
   expect(leaseRegistry.listActiveLeases()).toHaveLength(1);
-  expect(mockDispatch).not.toHaveBeenCalled();
+  expect(legacyDispatchCapture).not.toHaveBeenCalled();
 });
 
 test('router serializes same-device open requests before first session creation finishes', async () => {
@@ -431,7 +539,7 @@ test('router serializes same-device open requests before first session creation 
   const firstEnsureStarted = new Promise<void>((resolve) => {
     markFirstEnsureStarted = resolve;
   });
-  mockEnsureDeviceReady.mockImplementation(async () => {
+  mockAwaitFixtureReadiness.mockImplementation(async () => {
     ensureCalls += 1;
     activeEnsures += 1;
     maxActiveEnsures = Math.max(maxActiveEnsures, activeEnsures);
@@ -496,7 +604,7 @@ test('router allows pre-open requests for different devices to proceed concurren
   const bothEnsuresStarted = new Promise<void>((resolve) => {
     markBothEnsuresStarted = resolve;
   });
-  mockEnsureDeviceReady.mockImplementation(async () => {
+  mockAwaitFixtureReadiness.mockImplementation(async () => {
     ensureCalls += 1;
     activeEnsures += 1;
     maxActiveEnsures = Math.max(maxActiveEnsures, activeEnsures);
@@ -529,4 +637,198 @@ test('router allows pre-open requests for different devices to proceed concurren
   expect(firstResponse.ok).toBe(true);
   expect(secondResponse.ok).toBe(true);
   expect(maxActiveEnsures).toBe(2);
+});
+
+// The dead owner's recorded recorder must still run as an orphan: recovery
+// then takes the descriptor-cleanup path — the one that terminates it and
+// clears the owned-process store it was composed with. A plain sleeper with
+// its real observed command and start time satisfies the exact match.
+async function spawnOrphanRecorder() {
+  const child = spawn('sleep', ['120'], { stdio: 'ignore' });
+  await new Promise((resolve) => child.once('spawn', resolve));
+  const pid = child.pid ?? 0;
+  const marker = {
+    pid,
+    startTime: readProcessStartTime(pid) ?? '',
+    command: readProcessCommand(pid) ?? '',
+  };
+  expect(pid).toBeGreaterThan(0);
+  expect(marker.startTime.length).toBeGreaterThan(0);
+  expect(marker.command.length).toBeGreaterThan(0);
+  return { child, marker };
+}
+
+function ownedStoreFor(stateDir: string) {
+  const paths = resolveDaemonPaths(stateDir);
+  return createOwnedProcessRecordStore({
+    stateDir: paths.baseDir,
+    sessionsDir: paths.sessionsDir,
+    resolveSessionDir: (sessionId) => path.join(paths.sessionsDir, sessionId),
+  });
+}
+
+function seedForeignRecordingOwner(
+  foreignStateDir: string,
+  device: DeviceInfo,
+  marker: { pid: number; startTime: string; command: string },
+) {
+  const foreignSessionDir = path.join(resolveDaemonPaths(foreignStateDir).sessionsDir, 'shared');
+  const resourcePath = screenRecordingDurableResource.store.resolvePath(foreignSessionDir);
+  screenRecordingDurableResource.store.write(
+    resourcePath,
+    createDurableResourceEnvelope({
+      resourceKind: 'screen-recording',
+      sessionId: 'shared',
+      device: { id: device.id, family: 'apple', appleOs: 'ios', kind: 'simulator' },
+      owner: { kind: 'local-family', family: 'apple' },
+      fence: { token: 'open-recovery-fence', generation: 1 },
+      lifecycle: 'open',
+      descriptor: {
+        version: 1,
+        body: {
+          backend: 'simctl',
+          outputPath: path.join(foreignSessionDir, 'recording.mp4'),
+          processes: [marker],
+        },
+      },
+    }),
+  );
+  ownedStoreFor(foreignStateDir).replace({ kind: 'session', sessionId: 'shared' }, [
+    { ...marker, purpose: 'simctl-screen-recording' },
+  ]);
+  return { foreignSessionDir, resourcePath };
+}
+
+function seedDeadForeignClaim(claimsDir: string, device: DeviceInfo, foreignStateDir: string) {
+  const deviceKey = `local:apple:ios:${device.id}`;
+  fs.writeFileSync(
+    path.join(claimsDir, `${crypto.createHash('sha256').update(deviceKey).digest('hex')}.json`),
+    JSON.stringify({
+      schemaVersion: 1,
+      deviceKey,
+      device: { platform: 'ios', id: device.id, name: device.name, kind: 'simulator' },
+      session: 'shared',
+      workspace: '/worktrees/dead',
+      stateDir: foreignStateDir,
+      ownerPid: 999_999_999,
+      ownerStartTime: 'old-start-time',
+      ownerToken: 'open-recovery-token',
+      createdAtMs: 1,
+      updatedAtMs: 1,
+    }),
+  );
+}
+
+test('open reconciles a foreign dead owner through that owner state dir, never the daemon store', async () => {
+  // #2168 acquire-path wiring: the router must hand open-time claim
+  // reconciliation the owner-scoped reconciler. With the caller-scoped
+  // reconciler this test goes red — the foreign recording recovery runs
+  // against the daemon's own gateway and store instead of the dead owner's.
+  const sessionStore = makeSessionStore('agent-device-router-open-recovery-');
+  const device = makeIosDevice('SIM-FOREIGN-RECOVERY');
+  mockResolveTargetDevice.mockResolvedValue(device);
+  const claimsDir = mkdtempForTestSync('agent-device-router-open-claims-');
+  const foreignStateDir = mkdtempForTestSync('agent-device-router-open-foreign-');
+  const previousClaimsDir = process.env.AGENT_DEVICE_CLAIMS_DIR;
+  process.env.AGENT_DEVICE_CLAIMS_DIR = claimsDir;
+  const orphan = await spawnOrphanRecorder();
+
+  try {
+    const { foreignSessionDir, resourcePath } = seedForeignRecordingOwner(
+      foreignStateDir,
+      device,
+      orphan.marker,
+    );
+    const daemonStateDir = sessionStore.resolveDaemonStateDir();
+    ownedStoreFor(daemonStateDir).replace({ kind: 'session', sessionId: 'shared' }, [
+      { pid: process.pid, startTime: 'live-marker', command: 'live-probe', purpose: 'test-probe' },
+    ]);
+    const liveRecordPath = path.join(
+      resolveDaemonPaths(daemonStateDir).sessionsDir,
+      'shared',
+      'owned-processes.json',
+    );
+    const liveRecordBefore = fs.readFileSync(liveRecordPath, 'utf8');
+    seedDeadForeignClaim(claimsDir, device, foreignStateDir);
+
+    const response = await createOpenHandler(sessionStore)(
+      openRequest('takeover', { platform: 'ios' }, 'req-open-foreign-recovery'),
+    );
+
+    expect(response.ok).toBe(true);
+    const settled = screenRecordingDurableResource.store.read(resourcePath);
+    expect(settled).toMatchObject({ status: 'decoded', envelope: { lifecycle: 'completed' } });
+    expect(fs.existsSync(path.join(foreignSessionDir, 'owned-processes.json'))).toBe(false);
+    expect(fs.readFileSync(liveRecordPath, 'utf8')).toBe(liveRecordBefore);
+    expect(isProcessAlive(orphan.marker.pid)).toBe(false);
+    expect(inspectDeviceClaims({ udid: device.id })[0]?.claim?.session).toBe('takeover');
+  } finally {
+    try {
+      orphan.child.kill('SIGKILL');
+    } catch {}
+    if (previousClaimsDir === undefined) delete process.env.AGENT_DEVICE_CLAIMS_DIR;
+    else process.env.AGENT_DEVICE_CLAIMS_DIR = previousClaimsDir;
+    fs.rmSync(claimsDir, { recursive: true, force: true });
+    fs.rmSync(foreignStateDir, { recursive: true, force: true });
+  }
+});
+
+// Preparation can boot the device an open is returning to, and the claim has to cover that boot:
+// otherwise the boot an owner caused for itself is what takes the device away from it. The device
+// boots strictly between the two renewals of one reopen, so only the post-preparation renewal can
+// raise the stamp above the boot, and the foreign open asks from its own store, which is where
+// reboot-based claim settlement happens.
+test('an open that booted the device keeps the device against a foreign open', async () => {
+  const sessionStore = makeSessionStore('agent-device-router-open-boot-');
+  const foreignStore = makeSessionStore('agent-device-router-open-boot-foreign-');
+  const device = makeIosDevice('SIM-COLD-BOOTED');
+  mockResolveTargetDevice.mockResolvedValue(device);
+  const claimsDir = mkdtempForTestSync('agent-device-router-open-boot-claims-');
+  const previousClaimsDir = process.env.AGENT_DEVICE_CLAIMS_DIR;
+  process.env.AGENT_DEVICE_CLAIMS_DIR = claimsDir;
+
+  // The fixture's platform tools answer device state through this seam, so a test that wants a boot
+  // during preparation arms it here and the fake device reports that boot to every later probe.
+  let bootedAtMs: number | undefined;
+  let bootArmed = false;
+  mockObserveSimulatorBoot.mockImplementation(async () =>
+    bootedAtMs === undefined
+      ? { observed: false, reason: 'unobserved' }
+      : { observed: true, bootedAtMs },
+  );
+  mockAwaitFixtureReadiness.mockImplementation(async () => {
+    if (bootArmed) {
+      bootArmed = false;
+      bootedAtMs = Date.now();
+    }
+  });
+
+  try {
+    const opened = await createOpenHandler(sessionStore)(
+      openRequest('boot-owner', { platform: 'ios' }, 'req-open-boot-owner', {}, ['FixtureApp']),
+    );
+    expect(opened.ok).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 2));
+
+    bootArmed = true;
+    const reopened = await createOpenHandler(sessionStore)(
+      openRequest('boot-owner', { platform: 'ios' }, 'req-open-boot-reopen', {}, ['FixtureApp']),
+    );
+    expect(reopened.ok).toBe(true);
+    expect(bootedAtMs).toBeTypeOf('number');
+    expect(storedClaimUpdatedAt(device)).toBeGreaterThanOrEqual(bootedAtMs ?? 0);
+
+    const foreign = await createOpenHandler(foreignStore)(
+      openRequest('boot-foreign', { platform: 'ios' }, 'req-open-boot-foreign', {}, ['FixtureApp']),
+    );
+
+    expect(foreign.ok).toBe(false);
+    if (foreign.ok) return;
+    expect(foreign.error.code).toBe('DEVICE_IN_USE');
+    expect(inspectDeviceClaims({ udid: device.id })[0]?.claim?.session).toBe('boot-owner');
+  } finally {
+    if (previousClaimsDir === undefined) delete process.env.AGENT_DEVICE_CLAIMS_DIR;
+    else process.env.AGENT_DEVICE_CLAIMS_DIR = previousClaimsDir;
+    fs.rmSync(claimsDir, { recursive: true, force: true });
+  }
 });

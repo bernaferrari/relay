@@ -1,1 +1,18 @@
-export * from '../replay-divergence.ts';
+export type {
+  ReplayDivergence,
+  ReplayDivergenceCause,
+  ReplayDivergenceKind,
+  ReplayDivergenceOverflow,
+  ReplayDivergenceResume,
+  ReplayDivergenceScreen,
+  ReplayDivergenceScreenRef,
+  ReplayDivergenceStep,
+  ReplayDivergenceStepSource,
+  ReplayDivergenceSuggestion,
+  ReplayDivergenceSuggestionBasis,
+  ReplayDivergenceTargetBinding,
+  ReplayDivergenceTargetBindingKind,
+  ReplayDivergenceTargetCandidate,
+  ReplayDivergenceTargetIdentity,
+  ReplayRepairHint,
+} from '../replay-divergence.ts';

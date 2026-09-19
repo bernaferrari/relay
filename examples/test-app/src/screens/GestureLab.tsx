@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Image, Platform, Text, View, type GestureResponderEvent } from 'react-native';
+import { Image, Platform, Pressable, Text, View, type GestureResponderEvent } from 'react-native';
 import {
   Directions,
   FlingGestureHandler,
@@ -37,6 +37,8 @@ type GestureCounts = {
   twoPointerPan: number;
 };
 
+const panDurationBucketMs = 400;
+
 type AndroidTouchStart = TransformState & {
   angle: number;
   centroidX: number;
@@ -64,8 +66,11 @@ export function GestureLab() {
   const [canaryReady, setCanaryReady] = useState(false);
   const [transform, setTransform] = useState<TransformState>(initialTransform);
   const [counts, setCounts] = useState<GestureCounts>(initialCounts);
+  const [dragCompleted, setDragCompleted] = useState(false);
+  const [panDurationStatus, setPanDurationStatus] = useState('pending');
   const transformRef = useRef<TransformState>(initialTransform);
   const gestureStartRef = useRef<TransformState>(initialTransform);
+  const panDurationStartRef = useRef<number | undefined>(undefined);
   const androidTouchStartRef = useRef<AndroidTouchStart | undefined>(undefined);
   const legacyFlingDownRef = useRef(null);
   const legacyFlingLeftRef = useRef(null);
@@ -191,12 +196,48 @@ export function GestureLab() {
     .minDistance(4)
     .runOnJS(true)
     .onStart(handleTwoPointerPan);
+  const holdDragGesture = Gesture.Pan()
+    .activateAfterLongPress(500)
+    .minDistance(10)
+    .runOnJS(true)
+    .onEnd((event, completed) => {
+      if (completed && Math.hypot(event.translationX, event.translationY) > 60) {
+        setDragCompleted(true);
+      }
+    });
   const legacyFlingRefs = [
     legacyFlingLeftRef,
     legacyFlingRightRef,
     legacyFlingUpRef,
     legacyFlingDownRef,
   ];
+  const panDurationGesture = Gesture.Pan()
+    .minPointers(1)
+    .maxPointers(1)
+    .runOnJS(true)
+    .simultaneousWithExternalGesture(
+      twoPointerPanGesture,
+      legacyPanRef,
+      legacyPinchRef,
+      legacyRotationRef,
+      ...legacyFlingRefs,
+    )
+    .onBegin(() => {
+      panDurationStartRef.current = Date.now();
+    })
+    // `onEnd` only fires after the recognizer reached ACTIVE. `onFinalize` would also run for a
+    // failed or cancelled pan, allowing a long-lived non-gesture to satisfy the duration canary.
+    .onEnd(() => {
+      const start = panDurationStartRef.current;
+      panDurationStartRef.current = undefined;
+      if (start === undefined) return;
+      const durationMs = Date.now() - start;
+      const bucket =
+        durationMs >= panDurationBucketMs
+          ? `>=${panDurationBucketMs}ms`
+          : `<${panDurationBucketMs}ms`;
+      setPanDurationStatus(bucket);
+    });
 
   const androidTransformTarget = (
     <FlingGestureHandler
@@ -276,49 +317,83 @@ export function GestureLab() {
     pinchChanged ? 'yes' : 'no'
   }, rotate changed ${rotateChanged ? 'yes' : 'no'}`;
 
+  const targetView = (
+    <View
+      accessibilityLabel="Gesture test image"
+      onTouchEnd={
+        Platform.OS === 'android' ? () => (androidTouchStartRef.current = undefined) : undefined
+      }
+      onTouchMove={Platform.OS === 'android' ? handleAndroidTouchMove : undefined}
+      onTouchStart={Platform.OS === 'android' ? handleAndroidTouchStart : undefined}
+      style={styles.target}
+      testID="gesture-target"
+    >
+      <Image
+        accessibilityIgnoresInvertColors
+        accessibilityLabel="Gesture test image"
+        resizeMode="cover"
+        source={{ uri: gestureImageUri }}
+        style={[
+          styles.image,
+          {
+            transform: [
+              { translateX: transform.offsetX },
+              { translateY: transform.offsetY },
+              { scale: transform.scale },
+              { rotate: `${rotationDegrees}deg` },
+            ],
+          },
+        ]}
+        testID="gesture-target-image"
+      />
+      {androidTransformTarget}
+      <GestureDetector gesture={twoPointerPanGesture}>
+        <View
+          accessibilityLabel="Exact two-pointer pan target"
+          style={styles.twoPointerTarget}
+          testID="two-pointer-pan-target"
+        />
+      </GestureDetector>
+    </View>
+  );
+
   return (
     <SectionCard
       subtitle={`Image target for pan, pinch, rotate, and fling. ${changeStatusLabel}`}
-      title="Gesture lab"
       testID="gesture-lab-card"
+      title="Gesture lab"
     >
-      <View
-        accessibilityLabel="Gesture test image"
-        onTouchEnd={
-          Platform.OS === 'android' ? () => (androidTouchStartRef.current = undefined) : undefined
-        }
-        onTouchMove={Platform.OS === 'android' ? handleAndroidTouchMove : undefined}
-        onTouchStart={Platform.OS === 'android' ? handleAndroidTouchStart : undefined}
-        style={styles.target}
-        testID="gesture-target"
-      >
-        <Image
-          accessibilityIgnoresInvertColors
-          accessibilityLabel="Gesture test image"
-          resizeMode="cover"
-          source={{ uri: gestureImageUri }}
-          style={[
-            styles.image,
-            {
-              transform: [
-                { translateX: transform.offsetX },
-                { translateY: transform.offsetY },
-                { scale: transform.scale },
-                { rotate: `${rotationDegrees}deg` },
-              ],
-            },
-          ]}
-          testID="gesture-target-image"
-        />
-        {androidTransformTarget}
-        <GestureDetector gesture={twoPointerPanGesture}>
-          <View
-            accessibilityLabel="Exact two-pointer pan target"
-            style={styles.twoPointerTarget}
-            testID="two-pointer-pan-target"
-          />
+      <View style={styles.dragRow} testID="drag-gesture-fixture">
+        <GestureDetector gesture={holdDragGesture}>
+          <Pressable
+            accessibilityLabel="Drag source"
+            accessibilityRole="button"
+            onPress={() => undefined}
+            style={styles.dragEndpoint}
+            testID="drag-source"
+          >
+            <Text style={styles.dragEndpointLabel}>Source</Text>
+          </Pressable>
         </GestureDetector>
+        <Pressable
+          accessibilityLabel="Drag destination"
+          accessibilityRole="button"
+          onPress={() => undefined}
+          style={styles.dragEndpoint}
+          testID="drag-destination"
+        >
+          <Text style={styles.dragEndpointLabel}>Destination</Text>
+        </Pressable>
       </View>
+      <Text style={styles.metric} testID="drag-gesture-status">
+        drag completed {dragCompleted ? 'yes' : 'no'}
+      </Text>
+
+      {Platform.OS === 'ios' ? (
+        <GestureDetector gesture={panDurationGesture}>{targetView}</GestureDetector>
+      ) : (
+        targetView
+      )}
 
       <View style={styles.metrics} testID="gesture-metrics">
         <Text style={styles.metric} testID="gesture-canary-ready">
@@ -332,6 +407,9 @@ export function GestureLab() {
         </Text>
         <Text style={styles.metric} testID="gesture-two-pointer-pan-status">
           two-pointer pan activations {counts.twoPointerPan}
+        </Text>
+        <Text style={styles.metric} testID="gesture-pan-duration-status">
+          pan duration {panDurationStatus}
         </Text>
         <Text style={styles.metric} testID="gesture-change-status">
           {changeStatusLabel}

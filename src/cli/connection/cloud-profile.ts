@@ -1,7 +1,7 @@
 import type { RemoteConfigProfile } from '../../remote/remote-config-schema.ts';
 import { AppError } from '@agent-device/kernel/errors';
 import type { CliFlags } from '@agent-device/contracts/command';
-import type { EnvMap } from '../../utils/env-map.ts';
+import { type EnvMap } from '@agent-device/kernel/source-value';
 import { resolveCloudAccessForConnect } from '../auth-session.ts';
 import { readCloudJsonResponse } from '../cloud-response.ts';
 import { persistAndResolveGeneratedProfile } from './generated-config.ts';
@@ -21,6 +21,9 @@ export async function resolveCloudConnectProfile(options: {
   stateDir: string;
   cwd: string;
   env?: EnvMap;
+  // di-seam-approved: injects the fetch global, which has no module boundary vi.mock can
+  // intercept. Exercised at the CLI layer by cloud-connect-profile.test.ts via
+  // vi.stubGlobal('fetch', ...), a layer where this parameter is not reachable.
   fetchImpl?: typeof fetch;
 }): Promise<{ flags: CliFlags; remoteConfigPath: string }> {
   const auth = await resolveCloudAccessForConnect({
@@ -64,6 +67,8 @@ export async function resolveCloudConnectProfile(options: {
 async function fetchConnectionProfile(options: {
   cloudBaseUrl: string;
   accessToken: string;
+  // di-seam-approved: same fetch-global seam as resolveCloudConnectProfile's fetchImpl above,
+  // on the request itself.
   fetchImpl?: typeof fetch;
 }): Promise<RemoteConfigProfile> {
   const fetchImpl = options.fetchImpl ?? fetch;

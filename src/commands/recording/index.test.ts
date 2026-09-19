@@ -2,11 +2,11 @@ import { describe, expect, test } from 'vitest';
 import type { CliFlags } from '@agent-device/contracts/command';
 import {
   recordCliReader,
-  recordCommandDefinition,
+  recordCommandFacet,
   recordCommandMetadata,
   recordDaemonWriter,
   traceCliReader,
-  traceCommandDefinition,
+  traceCommandFacet,
   traceCommandMetadata,
   traceDaemonWriter,
 } from './index.ts';
@@ -25,16 +25,15 @@ function expectInvalidArgs(fn: () => unknown, messageFragment: string) {
 describe('recording command interface', () => {
   test('owns record and trace public metadata', () => {
     expect(recordCommandMetadata.name).toBe('record');
-    expect(recordCommandDefinition.name).toBe('record');
+    expect(recordCommandFacet.definition.name).toBe('record');
     expect(traceCommandMetadata.name).toBe('trace');
-    expect(traceCommandDefinition.name).toBe('trace');
+    expect(traceCommandFacet.definition.name).toBe('trace');
   });
 
   test('reads record CLI input with recording flags', () => {
     expect(
       recordCliReader(['start', './capture.mp4'], {
         fps: 30,
-        screenshotMaxSize: 1024,
         quality: 'high',
         hideTouches: true,
         recordingScope: 'device',
@@ -43,7 +42,6 @@ describe('recording command interface', () => {
       action: 'start',
       path: './capture.mp4',
       fps: 30,
-      maxSize: 1024,
       quality: 'high',
       hideTouches: true,
       recordingScope: 'device',

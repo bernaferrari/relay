@@ -1,6 +1,6 @@
 import { test, expect } from 'vitest';
 import { RESPONSE_VIEWS } from '../response-views.ts';
-import type { DaemonResponseData } from '../types.ts';
+import type { DaemonResponseData } from '../daemon-request.ts';
 
 const snapshotView = RESPONSE_VIEWS.snapshot;
 const screenshotView = RESPONSE_VIEWS.screenshot;
@@ -49,6 +49,34 @@ test('default and full return today’s shape unchanged (same reference)', () =>
 test('digest tolerates missing/empty node trees', () => {
   const digest = snapshotView!({ truncated: true }, 'digest');
   expect(digest).toMatchObject({ nodeCount: 0, refs: [], truncated: true });
+});
+
+test('snapshot digest keeps sparse fallback screenshot retrieval data', () => {
+  const artifacts = [
+    {
+      field: 'fallbackScreenshotPath',
+      artifactType: 'screenshot',
+      path: '/tmp/snapshot-fallback.png',
+      fileName: 'snapshot-fallback.png',
+    },
+  ];
+  const digest = snapshotView!(
+    {
+      nodes: [],
+      truncated: false,
+      snapshotQuality: { state: 'sparse', backend: 'private-ax' },
+      warnings: ['Use screenshot as visual truth.'],
+      fallbackScreenshotPath: '/tmp/snapshot-fallback.png',
+      artifacts,
+    },
+    'digest',
+  );
+
+  expect(digest).toMatchObject({
+    fallbackScreenshotPath: '/tmp/snapshot-fallback.png',
+    warnings: ['Use screenshot as visual truth.'],
+    artifacts,
+  });
 });
 
 const overlayRef = (ref: string, label: string | undefined) => ({
@@ -128,6 +156,28 @@ test('screenshot default and full return today’s shape unchanged (same referen
 test('screenshot digest tolerates a path-only result with no overlay refs', () => {
   const digest = screenshotView!({ path: '/tmp/s.png' }, 'digest');
   expect(digest).toEqual({ path: '/tmp/s.png', overlayCount: 0, overlayRefs: [] });
+});
+
+test('screenshot digest keeps response-level warnings emitted once', () => {
+  const digest = screenshotView!(
+    {
+      path: '/tmp/s.png',
+      width: 40,
+      height: 20,
+      warnings: [
+        'CROP_PARTIAL_INTERSECTION: the selector frame extends past the captured image; the crop was clipped to the image frame',
+      ],
+    },
+    'digest',
+  );
+  expect(digest).toMatchObject({
+    path: '/tmp/s.png',
+    width: 40,
+    height: 20,
+    warnings: [
+      'CROP_PARTIAL_INTERSECTION: the selector frame extends past the captured image; the crop was clipped to the image frame',
+    ],
+  });
 });
 
 // A verbose matched node as it appears on the `find`/`get` wire: the semantic
@@ -248,6 +298,27 @@ test('get text digest keeps selector + text and drops the node', () => {
 test('get attrs digest compacts the node under a ref target', () => {
   const digest = getView!({ ref: 'e7', node: MATCHED_NODE }, 'digest');
   expect(digest).toEqual({ ref: 'e7', node: COMPACT_NODE });
+});
+
+test('attrs digest keeps explicit false/zero/empty field facts; unavailable ones stay absent (#2288)', () => {
+  const fieldFacts = {
+    value: '',
+    editable: false,
+    password: false,
+    hintShowing: false,
+    selectionStart: 0,
+    selectionEnd: 0,
+  };
+  const digest = getView!({ ref: 'e7', node: { ...MATCHED_NODE, ...fieldFacts } }, 'digest');
+  expect(digest.node).toEqual({ ...COMPACT_NODE, ...fieldFacts });
+  // MATCHED_NODE carries none of the field facts: the digest must not invent them.
+  const unavailable = getView!({ ref: 'e7', node: MATCHED_NODE }, 'digest').node as Record<
+    string,
+    unknown
+  >;
+  for (const field of Object.keys(fieldFacts)) {
+    if (field !== 'value') expect(field in unavailable).toBe(false);
+  }
 });
 
 test('find/get default and full return today’s shape unchanged (same reference)', () => {

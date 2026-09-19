@@ -5,11 +5,7 @@ import type {
   ProviderDeviceInstallOptions,
   ProviderDeviceInstallResult,
 } from '@agent-device/contracts/device';
-import type {
-  Interactor,
-  SnapshotOptions,
-  SnapshotResult,
-} from '@agent-device/contracts/interaction';
+import type { FillBackendResult, Interactor } from '@agent-device/contracts/interactor-types';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
 import type Limrun from '@limrun/api';
@@ -21,8 +17,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { flattenIosTree, toIosSelector, writeBase64File, type IosTreeNode } from './snapshot.ts';
+import { toIosSelector, writeBase64File } from './snapshot.ts';
 import { normalizeOptionalString } from './strings.ts';
+import {
+  awaitLimrunDeploymentOperation,
+  type LimrunRequestOperationDrain,
+} from './request-cancellation.ts';
 import type { LimrunRuntimeDependencies } from './runtime-dependencies.ts';
 
 export type LimrunIosSession = {
@@ -76,18 +76,35 @@ export async function installLimrunIosApp(
   session: LimrunIosSession,
   installablePath: string,
   options?: ProviderDeviceInstallOptions,
+  signal?: AbortSignal,
+  operationDrain?: LimrunRequestOperationDrain,
 ): Promise<ProviderDeviceInstallResult> {
+  signal?.throwIfAborted();
   const prepared = await prepareLimrunIosAsset(installablePath, session.dependencies);
   try {
-    const asset = await limrun.assets.getOrUpload({
-      path: prepared.uploadPath,
-      name: prepared.assetName,
-    });
-    const result = await installLimrunIosRemoteApp(session, asset.signedDownloadUrl, {
-      md5: asset.md5,
-      relaunch: options?.relaunch,
-      appIdentifierHint: options?.appIdentifierHint,
-    });
+    signal?.throwIfAborted();
+    const asset = await awaitLimrunDeploymentOperation(
+      operationDrain,
+      limrun.assets.getOrUpload(
+        {
+          path: prepared.uploadPath,
+          name: prepared.assetName,
+        },
+        { signal },
+      ),
+      signal,
+    );
+    const result = await installLimrunIosRemoteApp(
+      session,
+      asset.signedDownloadUrl,
+      {
+        md5: asset.md5,
+        relaunch: options?.relaunch,
+        appIdentifierHint: options?.appIdentifierHint,
+      },
+      signal,
+      operationDrain,
+    );
     const bundleId = result.appId;
     return {
       ...(bundleId ? { bundleId, launchTarget: bundleId } : {}),
@@ -102,18 +119,36 @@ export async function installLimrunIosRemoteApp(
   session: LimrunIosSession,
   url: string,
   options?: LimrunIosRemoteInstallOptions,
+  signal?: AbortSignal,
+  operationDrain?: LimrunRequestOperationDrain,
 ): Promise<LimrunIosRemoteInstallResult> {
-  const beforeInstallApps = await session.client.listApps().catch(() => undefined);
-  const result = await session.client.installApp(url, {
-    md5: options?.md5,
-    launchMode: options?.relaunch ? 'RelaunchIfRunning' : 'ForegroundIfRunning',
+  signal?.throwIfAborted();
+  const beforeInstallApps = await awaitLimrunDeploymentOperation(
+    operationDrain,
+    session.client.listApps(),
+    signal,
+  ).catch((error: unknown) => {
+    if (signal?.aborted) throw error;
+    return undefined;
   });
+  const result = await awaitLimrunDeploymentOperation(
+    operationDrain,
+    session.client.installApp(url, {
+      md5: options?.md5,
+      launchMode: options?.relaunch ? 'RelaunchIfRunning' : 'ForegroundIfRunning',
+    }),
+    signal,
+  );
   const resultBundleId = normalizeOptionalString(result.bundleId);
   const requestedBundleId = normalizeOptionalString(options?.appIdentifierHint);
   let afterInstallApps: LimrunIosApp[] = [];
   for (const delayMs of IOS_APP_INVENTORY_RETRY_DELAYS_MS) {
-    if (delayMs > 0) await sleep(delayMs);
-    afterInstallApps = await session.client.listApps();
+    if (delayMs > 0) await sleep(delayMs, undefined, { signal });
+    afterInstallApps = await awaitLimrunDeploymentOperation(
+      operationDrain,
+      session.client.listApps(),
+      signal,
+    );
     const verifiedBundleId = resolveInstalledIosAppId({
       resultBundleId,
       requestedBundleId,
@@ -177,13 +212,30 @@ class LimrunIosInteractor implements Interactor {
     await this.session.client.tapElement(toIosSelector(selector));
   }
 
+  /**
+   * Both taps travel in one `performActions` batch so the inter-tap gap is enforced on the
+   * device. Two separate `tap` requests put a network round trip between the taps, which
+   * exceeds the double-tap recognition window and registers as two slow single taps.
+   */
   async doubleTap(x: number, y: number): Promise<void> {
-    await this.tap(x, y);
-    await this.tap(x, y);
+    await this.session.client.performActions([
+      { type: 'tap', x, y },
+      { type: 'wait', durationMs: DOUBLE_TAP_INTERVAL_MS },
+      { type: 'tap', x, y },
+    ]);
   }
 
-  async longPress(): Promise<never> {
-    throw unsupported('longpress', 'Limrun iOS direct sessions do not expose long press yet.');
+  /** One held touch as HID primitives; the hold runs on the device, not across the wire. */
+  async longPress(
+    x: number,
+    y: number,
+    durationMs = DEFAULT_LONG_PRESS_DURATION_MS,
+  ): Promise<void> {
+    await this.session.client.performActions([
+      { type: 'touchDown', x, y },
+      { type: 'wait', durationMs },
+      { type: 'touchUp', x, y },
+    ]);
   }
 
   async focus(x: number, y: number): Promise<void> {
@@ -191,26 +243,53 @@ class LimrunIosInteractor implements Interactor {
   }
 
   async type(text: string, delayMs?: number): Promise<void> {
+    await this.enterText(text, delayMs);
+  }
+
+  async fill(x: number, y: number, text: string, delayMs?: number): Promise<FillBackendResult> {
+    // Loaded on the fill path to keep this provider's declared import-time closure budget.
+    const { awaitLimrunTextEntryFocus, readLimrunUnambiguousTapTargets, readLimrunTextEntryFocus } =
+      await import('./text-entry-focus.ts');
+    // Read before the tap: the witness needs to know what was under this point.
+    const targetsAtPoint = readLimrunUnambiguousTapTargets(
+      await this.session.client.elementTree(),
+      x,
+      y,
+    );
+    await this.tap(x, y);
+    const textEntryReadiness = await awaitLimrunTextEntryFocus({
+      targetsAtPoint,
+      readFocus: async () => readLimrunTextEntryFocus(await this.session.client.elementTree()),
+      sleep: (milliseconds) => sleep(milliseconds),
+      x,
+      y,
+    });
+    // Select first: iOS replaces a selection on the next key, so `fill` replaces and
+    // an empty fill clears.
+    await this.session.client.pressKey('a', ['command']);
+    if (text.length === 0) {
+      await this.session.client.pressKey('delete');
+      return { textEntryReadiness };
+    }
+    await this.enterText(text, delayMs);
+    return { textEntryReadiness };
+  }
+
+  /**
+   * Types into whatever holds text-entry focus, character by character when a delay is
+   * asked for. Focus targeting belongs to the caller, so the provider's own scan for a
+   * globally focused element is skipped: an app can expose fields that take keys without
+   * ever reporting one.
+   */
+  private async enterText(text: string, delayMs?: number): Promise<void> {
     if (delayMs && delayMs > 0) {
       for (const char of Array.from(text)) {
-        await this.session.client.typeText(char);
+        await this.session.client.typeText(char, false, { requireFocus: false });
         await sleep(delayMs);
       }
       return;
     }
-    await this.session.client.typeText(text);
-  }
-
-  async fill(x: number, y: number, text: string): Promise<void> {
-    await this.tap(x, y);
-    await this.session.client.typeText(text);
-  }
-
-  async fillElementSelector(
-    selector: { key: 'id' | 'label' | 'text' | 'value'; value: string },
-    text: string,
-  ): Promise<void> {
-    await this.session.client.setElementValue(text, toIosSelector(selector));
+    await this.session.client.typeText(text, false, { requireFocus: false });
   }
 
   async scroll(direction: 'up' | 'down' | 'left' | 'right', options?: { pixels?: number }) {
@@ -222,10 +301,9 @@ class LimrunIosInteractor implements Interactor {
     await writeBase64File(outPath, screenshot.base64);
   }
 
-  async snapshot(_options?: SnapshotOptions): Promise<SnapshotResult> {
-    const treeJson = await this.session.client.elementTree();
-    const parsed = JSON.parse(treeJson) as IosTreeNode | IosTreeNode[];
-    return { nodes: flattenIosTree(parsed), backend: 'xctest' };
+  async snapshot() {
+    const { captureLimrunIosSnapshot } = await import('./ios-snapshot-adapter.ts');
+    return await captureLimrunIosSnapshot(this.session);
   }
 
   async back(): Promise<void> {
@@ -259,6 +337,22 @@ class LimrunIosInteractor implements Interactor {
 
   async tvRemote(): Promise<never> {
     throw unsupported('tv-remote', 'Limrun iOS direct sessions do not expose tv remote control.');
+  }
+
+  async readAlert(): Promise<never> {
+    throw unsupported('alert', LIMRUN_IOS_ALERT_UNSUPPORTED);
+  }
+
+  async awaitAlert(): Promise<never> {
+    throw unsupported('alert', LIMRUN_IOS_ALERT_UNSUPPORTED);
+  }
+
+  async acceptAlert(): Promise<never> {
+    throw unsupported('alert', LIMRUN_IOS_ALERT_UNSUPPORTED);
+  }
+
+  async dismissAlert(): Promise<never> {
+    throw unsupported('alert', LIMRUN_IOS_ALERT_UNSUPPORTED);
   }
 
   async readClipboard(): Promise<never> {
@@ -324,6 +418,11 @@ function inferAppNameFromPath(appPath: string): string | undefined {
 
 const IOS_APP_INVENTORY_RETRY_DELAYS_MS = [0, 250] as const;
 
+/** Hold applied when the caller names no duration; matches the Android and Linux interactors. */
+const DEFAULT_LONG_PRESS_DURATION_MS = 800;
+/** On-device pause between the two taps of a double tap; well inside the recognizer's window. */
+const DOUBLE_TAP_INTERVAL_MS = 80;
+
 function resolveInstalledIosAppId(params: {
   resultBundleId?: string;
   requestedBundleId?: string;
@@ -359,6 +458,10 @@ export function isUserInstalledIosApp(app: LimrunIosApp): boolean {
     !app.bundleId.startsWith('com.apple.') && !app.installType.toLowerCase().includes('system')
   );
 }
+
+/** One sentence for all four alert legs: this session has no XCUITest runner to read a sheet. */
+const LIMRUN_IOS_ALERT_UNSUPPORTED =
+  'Limrun iOS direct sessions do not expose alert inspection yet.';
 
 function unsupported(command: string, message: string): never {
   throw new AppError('UNSUPPORTED_OPERATION', message, { command });

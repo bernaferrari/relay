@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { PUBLIC_COMMANDS } from '../src/command-catalog.ts';
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
 import { listCommandMetadata } from '../src/commands/command-metadata.ts';
-import { getFlagDefinitions } from '../src/commands/cli-grammar/flag-registry.ts';
+import { getFlagDefinitions } from '@agent-device/command-registry/flag-registry';
 import { walkFiles } from './lib/walk-files.ts';
 
 const EMPTY_COVERAGE_METRIC = { pct: 0 };
@@ -160,6 +160,7 @@ function summarizeProviderScenarioFlagCoverage(files) {
     ['holdMs', 'press hold duration'],
     ['jitterPx', 'press jitter'],
     ['pixels', 'scroll distance'],
+    ['until', 'scroll-until-visible stop condition'],
     ['doubleTap', 'double tap gesture'],
     ['clickButton', 'desktop mouse button selection', ['button']],
     ['backMode', 'explicit app/system back behavior', ['mode']],
@@ -172,7 +173,7 @@ function summarizeProviderScenarioFlagCoverage(files) {
     ['out', 'artifact output path plumbing'],
     ['overlayRefs', 'screenshot ref overlay annotation'],
     ['screenshotFullscreen', 'screenshot full-screen capture mode'],
-    ['screenshotMaxSize', 'screenshot max-size post-processing'],
+    ['screenshotScale', 'screenshot proportional scaling post-processing'],
     ['screenshotNoStabilize', 'screenshot stabilization opt-out', ['stabilize']],
     ['restart', 'logs clear --restart workflow'],
     ['networkInclude', 'network dump include modes', ['include']],
@@ -207,7 +208,7 @@ function summarizeProviderScenarioFlagCoverage(files) {
 }
 
 function countFlagReferences(text, key) {
-  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escaped = key.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
   return text.match(new RegExp(`\\b${escaped}\\s*:`, 'g'))?.length ?? 0;
 }
 
@@ -258,6 +259,7 @@ function summarizeProviderScenarioFlagExclusions() {
         'providerDeviceOrientation',
         'providerGeoLocation',
         'providerTimezone',
+        'providerAppiumVersion',
         'providerLanguage',
         'providerLocale',
         'providerNetworkProfile',
@@ -341,9 +343,34 @@ function summarizeProviderScenarioFlagExclusions() {
       keys: ['headless', 'testIme'],
     },
     {
+      name: 'open foreground auto-resolution (RFC prototype)',
+      owner: 'daemon session-open-foreground lifecycle unit tests',
+      keys: ['foreground'],
+    },
+    {
       name: 'Apple simulator screenshot rendering options',
       owner: 'iOS platform and screenshot-diff runtime tests',
       keys: ['screenshotNormalizeStatusBar', 'screenshotPixelDensity'],
+    },
+    {
+      // Reading accessibility custom actions has no provider-scenario surface:
+      // the values come from the private AX client inside the runner process,
+      // and the fake runner derives its behavior from fixture tables that
+      // cannot fabricate them. Covered instead by the runner's XCTest unit
+      // bundle (option→backend-pin projection, node carry, coverage counting
+      // and disclosure) plus TS presentation and quality-verdict tests.
+      name: 'Apple simulator private-AX capture options',
+      owner: 'runner XCTest unit, snapshot-lines, and snapshot-quality tests',
+      keys: ['snapshotCustomActions'],
+    },
+    {
+      // The crop is daemon-level post-processing: the platform write happens first, then the
+      // daemon crops the PNG against a fresh snapshot whose pixel/tree identity the fake
+      // provider scenario fixtures cannot fabricate. Covered instead by the daemon crop-leaf
+      // unit tests and the live device verification in the feature's PR evidence.
+      name: 'daemon screenshot selector crop',
+      owner: 'daemon screenshot-crop unit and live device verification',
+      keys: ['screenshotCropOn'],
     },
   ];
 }
@@ -545,29 +572,17 @@ function readCommandContractBlocks(text) {
   for (const match of text.matchAll(/\bconst\s+([A-Z0-9_]+)\s*=\s*['"]([^'"]+)['"]/g)) {
     constants.set(match[1], match[2]);
   }
-
-  const metadataNames = new Map();
-  for (const match of text.matchAll(
-    /\bconst\s+([A-Za-z0-9_]+CommandMetadata)\s*=\s*defineFieldCommandMetadata\(\s*([^,\s)]+)/g,
-  )) {
-    metadataNames.set(match[1], readMetadataName(match[2], constants));
-  }
+  const nameOf = (token) => token.match(/^['"]([^'"]+)['"]$/)?.[1] ?? constants.get(token);
 
   const starts = [
-    ...text.matchAll(/defineExecutableCommand\(\s*metadata\(\s*['"]([^'"]+)['"]\s*\)/g),
-    ...[...text.matchAll(/defineExecutableCommand\(\s*([A-Za-z0-9_]+CommandMetadata)\b/g)].flatMap(
-      (match) => {
-        const name = metadataNames.get(match[1]);
-        return name ? [{ ...match, 1: name }] : [];
-      },
-    ),
-    ...text.matchAll(/defineFieldCommand\(\s*['"]([^'"]+)['"]/g),
-    ...text.matchAll(/defineCommand\(\s*\{[\s\S]*?\bname:\s*['"]([^'"]+)['"]/g),
+    ...text.matchAll(/defineCommandFacet\(\s*\{[\s\S]*?\bname:\s*([A-Za-z0-9_]+|['"][^'"]+['"])/g),
+    ...text.matchAll(/defineFieldCommand\(\s*(['"][^'"]+['"])/g),
+    ...text.matchAll(/defineCommand\(\s*\{[\s\S]*?\bname:\s*(['"][^'"]+['"])/g),
   ]
-    .map((match) => ({
-      index: match.index ?? 0,
-      name: match[1],
-    }))
+    .flatMap((match) => {
+      const name = nameOf(match[1]);
+      return name ? [{ index: match.index ?? 0, name }] : [];
+    })
     .sort((a, b) => a.index - b.index);
 
   return starts.map((start, index) => {
@@ -577,12 +592,6 @@ function readCommandContractBlocks(text) {
       source: text.slice(start.index, end),
     };
   });
-}
-
-function readMetadataName(token, constants) {
-  const literal = token.match(/^['"]([^'"]+)['"]$/);
-  if (literal) return literal[1];
-  return constants.get(token);
 }
 
 function extractProviderScenarioCommandReferences(text, clientCommandMethods) {
@@ -605,7 +614,7 @@ function extractLiteralCommandReferences(text) {
 function extractClientCommandReferences(text, clientCommandMethods) {
   const commands = [];
   for (const [method, command] of clientCommandMethods) {
-    const escapedMethod = method.replace('.', '\\.');
+    const escapedMethod = method.replace('.', String.raw`\.`);
     const matches = countPatternReferences(text, new RegExp(`\\.${escapedMethod}\\s*\\(`, 'g'));
     for (let index = 0; index < matches; index += 1) commands.push(command);
   }

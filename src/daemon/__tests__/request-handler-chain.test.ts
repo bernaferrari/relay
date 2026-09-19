@@ -1,23 +1,30 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
 import { test } from 'vitest';
-import { INTERNAL_COMMANDS } from '../../command-catalog.ts';
+import { INTERNAL_COMMANDS } from '@agent-device/command-registry/catalog';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { runRequestHandlerChain } from '../request-handler-chain.ts';
 import { getDaemonRouteOwnerFiles } from '../route-owner-files.ts';
-import type { DaemonRequest, DaemonResponse } from '../types.ts';
-import {
-  LINUX_DEVICE,
-  makeIosSession,
-  makeSession,
-  makeSnapshotState,
-} from '../../__tests__/test-utils/index.ts';
+import type { DaemonRequest, DaemonResponse } from '../daemon-request.ts';
+import { LINUX_DEVICE } from '../../__tests__/test-utils/device-fixtures.ts';
+import { makeIosSession, makeSession } from '../../__tests__/test-utils/session-factories.ts';
+import { makeSnapshotState } from '@agent-device/selectors/snapshot-geometry-fixtures';
 import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
-import { dispatchSwipeViaRuntime } from '../handlers/interaction-gesture.ts';
+import { handleInteractionCommands } from '../interaction/index.ts';
+import { createPlatformRuntimeGateway } from '../../platform-runtime.ts';
+import { createRequestRuntimeBindings } from '../request-runtime-binding.ts';
+import { createLocalLinuxToolProvider, withLinuxToolProvider } from '@agent-device/platform-linux';
 import {
-  createLocalLinuxToolProvider,
-  withLinuxToolProvider,
-} from '../../platforms/linux/tool-provider.ts';
+  unavailableBindDevice,
+  unavailableBindExactDevice,
+  unavailableDeviceRuntimeGateway,
+  unavailableInspectFacts,
+} from './test-device-runtime-gateway.ts';
+import { createScreenRecordingAdmissionLedger } from '../screen-recording-admission-ledger.ts';
+import { createAudioProbeAdmissionLedger } from '../audio-probe-admission-ledger.ts';
+import { createPerfCaptureAdmissionLedger } from '../perf-capture-admission-ledger.ts';
+import { eagerClosureOf } from '../../__tests__/eager-import-closure.fixtures.ts';
 
 function makeRequest(command: string, positionals: string[] = []): DaemonRequest {
   return {
@@ -40,6 +47,24 @@ function makeChainParams(req: DaemonRequest) {
     sessionStore,
     leaseRegistry: new LeaseRegistry(),
     invoke: async (): Promise<DaemonResponse> => ({ ok: true, data: {} }),
+    providerScope: {},
+    bindDevice: unavailableBindDevice,
+    inspectFacts: unavailableInspectFacts,
+    bindExactDevice: unavailableBindExactDevice,
+    reconcileOrphanedDeviceClaim: async () => ({
+      status: 'retained' as const,
+      reason: 'test-no-recovery',
+    }),
+    screenRecordingAdmissionLedger: createScreenRecordingAdmissionLedger(),
+    audioProbeAdmissionLedger: createAudioProbeAdmissionLedger(),
+    perfCaptureAdmissionLedger: createPerfCaptureAdmissionLedger(),
+    requestScope: {
+      signal: new AbortController().signal,
+      diagnostics: { emit: () => {} },
+      progress: { report: () => {} },
+    },
+    retainDeviceExecutionLock: async () => {},
+    throwIfCanceled: () => {},
     contextFromFlags: () => ({ logPath: '/tmp/agent-device-request-chain.log' }),
   };
 }
@@ -72,11 +97,90 @@ test('route owner files match the production module loaders', () => {
   );
 });
 
+test('request handler chain keeps interaction routes out of its eager import closure', () => {
+  const chainFile = path.resolve(import.meta.dirname, '../request-handler-chain.ts');
+  const closure = eagerClosureOf(chainFile);
+
+  assert.ok(closure.length > 20, 'eager closure walk must reach the request chain');
+  assert.equal(
+    closure.includes(path.resolve(import.meta.dirname, '../interaction/index.ts')),
+    false,
+    'interaction routes must stay behind the request chain lazy import',
+  );
+});
+
+test('interaction facade keeps route implementations out of its eager import closure', () => {
+  const facadeFile = path.resolve(import.meta.dirname, '../interaction/index.ts');
+  const closure = eagerClosureOf(facadeFile);
+  const snapshotComposition = path.resolve(
+    import.meta.dirname,
+    '../snapshot-runtime-capture-input.ts',
+  );
+
+  assert.ok(
+    closure.includes(snapshotComposition),
+    'interaction facade eager closure must include its snapshot composition dependency',
+  );
+
+  for (const routeModule of ['find.ts', 'interaction.ts']) {
+    const routePath = path.resolve(import.meta.dirname, `../interaction/internal/${routeModule}`);
+    assert.equal(
+      fs.existsSync(routePath),
+      true,
+      `${routeModule} must exist for this closure check`,
+    );
+    assert.equal(
+      closure.includes(routePath),
+      false,
+      `${routeModule} must stay behind the interaction facade's deferred delegate`,
+    );
+  }
+});
+
 test('request handler chain routes trace commands to the record-trace family', async () => {
   const response = await runRequestHandlerChain(makeChainParams(makeRequest('trace', ['start'])));
 
   assert.equal(response?.ok, true);
   assert.equal(response?.data?.trace, 'started');
+});
+
+test('request handler chain forwards the deferred provider app catalog to inventory', async () => {
+  const req = makeRequest('apps');
+  req.flags = { platform: 'android', leaseProvider: 'limrun' };
+  const response = await runRequestHandlerChain({
+    ...makeChainParams(req),
+    providerAppCatalog: {
+      supports: (provider) => provider === 'limrun',
+      list: async () => ['Example.apk'],
+    },
+  });
+
+  assert.deepEqual(response, { ok: true, data: { apps: ['Example.apk'] } });
+});
+
+// R61 put `react-native dismiss-overlay` behind the owner's own `tapPoint` admission, and the
+// chain had never forwarded the request's runtime bindings to that route — so the dismissal leg
+// had been reaching a missing gateway ever since R48 moved it off the retired dispatcher. Only
+// the no-overlay path returned early enough to hide it, which is why no suite caught it.
+test('request handler chain forwards the request runtime bindings to react-native', async () => {
+  const inspected: string[] = [];
+  const params = makeChainParams(makeRequest('react-native', ['dismiss-overlay']));
+
+  const response = await runRequestHandlerChain({
+    ...params,
+    inspectFacts: async (device) => {
+      inspected.push(device.id);
+      return await unavailableDeviceRuntimeGateway.inspectFacts(device);
+    },
+  });
+
+  // The bindings reached the route, and the owner's refusal — not a missing gateway — is what
+  // came back. A chain that dropped them would answer `runtime-gateway-missing` instead.
+  assert.equal(inspected.length, 1);
+  assert.equal(response?.ok, false);
+  if (response?.ok === false) {
+    assert.match(response.error.message, /react-native dismiss-overlay is not supported/);
+  }
 });
 
 test('request handler chain leaves generic commands for fallback dispatch', async () => {
@@ -141,7 +245,26 @@ test('duration-less public coordinate swipe retains Linux drag behavior', async 
   const sessionStore = makeSessionStore('agent-device-linux-swipe-');
   sessionStore.set('linux-swipe', makeSession('linux-swipe', { device: LINUX_DEVICE }));
   const drags: number[][] = [];
-  const provider = createLocalLinuxToolProvider({
+  let captureCount = 0;
+  const provider = await createLocalLinuxToolProvider({
+    accessibility: {
+      captureTree: async () => {
+        captureCount += 1;
+        return {
+          nodes: [
+            {
+              index: 0,
+              depth: 0,
+              type: 'Application',
+              rect: { x: 0, y: 0, width: 200, height: 200 },
+              visibleToUser: true,
+            },
+          ],
+          truncated: false,
+          surface: 'desktop',
+        };
+      },
+    },
     input: {
       click: async () => {},
       doubleClick: async () => {},
@@ -155,10 +278,38 @@ test('duration-less public coordinate swipe retains Linux drag behavior', async 
     },
   });
 
+  // R44: swipe binds its gesture tier before executing, so this drives the REAL Linux owner
+  // through the composed gateway. Linux advertises no `gestureViewport`, so the coordinate frame
+  // still comes from the capture below — the preferred-operation fallback, unchanged.
+  const gateway = createPlatformRuntimeGateway({
+    resolveSessionArtifacts: () => ({
+      outputPath: '/sessions/linux-swipe/app.log',
+      pidPath: '/sessions/linux-swipe/app-log.pid',
+    }),
+    sessionsDir: '/sessions',
+  });
+  let bindCount = 0;
+  const bindings = createRequestRuntimeBindings({
+    gateway: {
+      ...gateway,
+      bind: async (request) => {
+        bindCount += 1;
+        return await gateway.bind(request);
+      },
+    },
+    scope: {
+      signal: new AbortController().signal,
+      diagnostics: { emit: () => {} },
+      progress: { report: () => {} },
+    },
+    admitDeviceClaim: async () => {},
+  });
   const response = await withLinuxToolProvider(
     provider,
     async () =>
-      await dispatchSwipeViaRuntime({
+      await handleInteractionCommands({
+        inspectFacts: bindings.inspectFacts,
+        bindDevice: bindings.bindDevice,
         req: {
           ...makeRequest('swipe'),
           session: 'linux-swipe',
@@ -167,22 +318,20 @@ test('duration-less public coordinate swipe retains Linux drag behavior', async 
         sessionName: 'linux-swipe',
         sessionStore,
         contextFromFlags: () => ({}),
-        captureSnapshotForSession: async () =>
-          makeSnapshotState([
-            {
-              index: 0,
-              rect: { x: 0, y: 0, width: 200, height: 200 },
-              visibleToUser: true,
-            },
-          ]),
+        captureSnapshotForSession: async (_session, _flags, _store, _context, options) => {
+          assert.ok(options.boundCapture);
+          const captured = await options.boundCapture({ options: { surface: 'desktop' } });
+          return makeSnapshotState(captured.nodes ?? []);
+        },
       }),
   );
 
-  assert.equal(response.ok, true);
-  if (!response.ok) return;
+  assert.ok(response?.ok);
   assert.ok(response.data);
   assert.equal(response.data.kind, 'fling');
   assert.equal(response.data.durationMs, 100);
+  assert.equal(bindCount, 1);
+  assert.equal(captureCount, 1);
   assert.deepEqual(drags, [[10, 20, 110, 20, 100]]);
 });
 

@@ -3,19 +3,28 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'vitest';
-import { ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT } from '../../../src/__tests__/test-utils/index.ts';
-import type { AndroidAdbProvider } from '../../../src/platforms/android/adb-executor.ts';
+import { ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT } from '../../../src/__tests__/test-utils/android-snapshot-helper.ts';
+import type { AndroidAdbProvider } from '@agent-device/platform-android/mechanics';
 import { assertRpcError, assertRpcOk } from './assertions.ts';
 import { androidSettingsXml, androidSnapshotHelperOutput } from './android-world.ts';
+import {
+  androidImeLifecycleAdbResult,
+  createAndroidProviderShellState,
+  updateAndroidProviderImeShellState,
+} from './android-ime-lifecycle-world.ts';
 import { PROVIDER_SCENARIO_ANDROID } from './fixtures.ts';
 import { createProviderScenarioHarness } from './harness.ts';
 
 const SEARCH_SELECTOR = 'id=com.android.settings:id/search';
 
 test('Provider-backed integration: repair close paths (abort, plain close, committed)', async () => {
+  const shellState = createAndroidProviderShellState();
   const adbProvider: AndroidAdbProvider = {
     snapshotHelperArtifact: ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT,
-    exec: async (args) => androidRepairAdbResult(args),
+    exec: async (args) => {
+      updateAndroidProviderImeShellState(args, shellState);
+      return androidRepairAdbResult(args, shellState);
+    },
   };
 
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-repair-close-'));
@@ -101,11 +110,16 @@ test('Provider-backed integration: repair close paths (abort, plain close, commi
   }
 }, 30_000);
 
-function androidRepairAdbResult(args: string[]): {
+function androidRepairAdbResult(
+  args: string[],
+  shellState: ReturnType<typeof createAndroidProviderShellState>,
+): {
   stdout: string;
   stderr: string;
   exitCode: number;
 } {
+  const ime = androidImeLifecycleAdbResult(args.join(' '), args, shellState);
+  if (ime) return ime;
   if (args.join(' ') === 'shell getprop sys.boot_completed') {
     return { stdout: '1\n', stderr: '', exitCode: 0 };
   }

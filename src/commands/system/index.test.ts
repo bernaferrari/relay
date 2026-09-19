@@ -3,10 +3,12 @@ import type {
   AgentDeviceCommandClient,
   AppSwitcherCommandOptions,
   BackCommandOptions,
+  HomeCommandOptions,
   OrientationCommandOptions,
   TvRemoteCommandOptions,
 } from '../../client/client-types.ts';
-import type { CommandResult } from '../../core/command-descriptor/command-result.ts';
+import type { CommandResult } from '@agent-device/command-registry/command-result';
+import { readInputFromCli } from '../cli-grammar/registry.ts';
 import type { CliFlags } from '@agent-device/contracts/command';
 import {
   appStateCliReader,
@@ -25,8 +27,8 @@ import {
   orientationDaemonWriter,
   tvRemoteCliReader,
   tvRemoteDaemonWriter,
-  systemCommandFamily,
 } from './index.ts';
+import { systemCliOutputFormatters } from './output.ts';
 
 function flags(overrides: Partial<CliFlags> = {}): CliFlags {
   return overrides as CliFlags;
@@ -42,9 +44,12 @@ function expectInvalidArgs(fn: () => unknown, messageFragment: string) {
 }
 
 describe('system command interface', () => {
-  test('navigation executable contracts project the public client signatures', () => {
+  test('navigation commands declare the public client signatures', () => {
     expectTypeOf<AgentDeviceCommandClient['back']>().toEqualTypeOf<
       (options?: BackCommandOptions) => Promise<CommandResult<'back'>>
+    >();
+    expectTypeOf<AgentDeviceCommandClient['home']>().toEqualTypeOf<
+      (options?: HomeCommandOptions) => Promise<CommandResult<'home'>>
     >();
     expectTypeOf<AgentDeviceCommandClient['orientation']>().toEqualTypeOf<
       (options: OrientationCommandOptions) => Promise<CommandResult<'orientation'>>
@@ -55,35 +60,6 @@ describe('system command interface', () => {
     expectTypeOf<AgentDeviceCommandClient['tvRemote']>().toEqualTypeOf<
       (options: TvRemoteCommandOptions) => Promise<CommandResult<'tv-remote'>>
     >();
-  });
-
-  test('system command family projects Node client command methods', () => {
-    expect(systemCommandFamily.clientCommandMethods).toEqual({
-      appState: 'appstate',
-      back: 'back',
-      home: 'home',
-      orientation: 'orientation',
-      appSwitcher: 'app-switcher',
-      keyboard: 'keyboard',
-      clipboard: 'clipboard',
-      tvRemote: 'tv-remote',
-    });
-  });
-
-  test('navigation executable contracts own their MCP output schemas', () => {
-    expect(
-      Object.fromEntries(
-        systemCommandFamily.definitions.flatMap((definition) =>
-          'projection' in definition ? [[definition.name, definition.projection.clientMethod]] : [],
-        ),
-      ),
-    ).toEqual({
-      back: 'back',
-      home: 'home',
-      orientation: 'orientation',
-      'app-switcher': 'appSwitcher',
-      'tv-remote': 'tvRemote',
-    });
   });
 
   test('parameterless readers project common selection flags through', () => {
@@ -116,6 +92,56 @@ describe('system command interface', () => {
           .options as Record<string, unknown>
       ).backMode,
     ).toBeUndefined();
+  });
+
+  // #1638: --settle has to survive BOTH back seams — the reader seam that
+  // builds the input (`readInputFromCli`, which merges the trait-derived
+  // settle triple since #1652) and the writer that turns it into daemon
+  // request options.
+  test('back reader and writer carry the settle request through to daemon flags', () => {
+    const input = readInputFromCli(
+      'back',
+      [],
+      flags({ settle: true, settleQuietMs: 250, timeoutMs: 8_000 }),
+    );
+    expect(input).toMatchObject({ settle: true, settleQuietMs: 250, timeoutMs: 8_000 });
+    expect(backDaemonWriter(input).options).toMatchObject({
+      settle: true,
+      settleQuietMs: 250,
+      timeoutMs: 8_000,
+    });
+    expect(readInputFromCli('back', [], flags()).settle).toBeUndefined();
+  });
+
+  test('back CLI output renders the settled observation', () => {
+    const output = systemCliOutputFormatters.back({
+      input: {},
+      result: {
+        action: 'back',
+        mode: 'in-app',
+        message: 'Back',
+        settle: {
+          settled: true,
+          waitedMs: 300,
+          diff: {
+            summary: { additions: 1, removals: 2, unchanged: 5 },
+            lines: [
+              { kind: 'removed', text: '@e9 [button] "Save"' },
+              { kind: 'added', text: '@e3 [button] "Edit"', ref: 'e3' },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(output.text).toBe(
+      [
+        'Back',
+        'settled after 300ms: +1 -2 (~5 unchanged)',
+        '- @e9 [button] "Save"',
+        '+ @e3 [button] "Edit"',
+      ].join('\n'),
+    );
   });
 
   test('orientation reader and writer normalize orientation', () => {

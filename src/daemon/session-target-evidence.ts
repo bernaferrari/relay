@@ -4,7 +4,7 @@
  *
  * `computeTargetEvidence` runs decision 3's "Record-time write" steps 1-5
  * against the tree the resolver already captured; it never captures, and
- * callers gate it on `session.recordSession`. Tree-agnostic spec pieces live
+ * callers gate it on `isSessionRecording`. Tree-agnostic spec pieces live
  * in `@agent-device/ad-script`: local-identity + ancestry-prefix matching
  * (`packages/ad-script/src/internal/target-annotation-identity.ts`) and the
  * classification core (`target-annotation-classification.ts`, relocated
@@ -21,11 +21,14 @@
  */
 
 import type { SnapshotNode } from '@agent-device/kernel/snapshot';
-import { resolveRectCenter } from '../utils/rect-center.ts';
-import { findNearestScrollableContainer } from './snapshot-presentation/tree.ts';
+import { resolveRectCenter } from '@agent-device/kernel/rect-center';
+import { findNearestScrollableContainer } from '@agent-device/capture-kit/ios-snapshot-engine';
 import {
+  buildAncestryChain,
+  buildIndexMap,
   classifyTargetBindingMatch,
   demoteNonUniqueLocalIdentity,
+  filterIdentitySet,
   matchesLocalIdentity,
   readNodeLocalIdentity,
   serializeTargetAnnotationV1,
@@ -35,11 +38,6 @@ import {
   TARGET_ANNOTATION_MAX_ANCESTRY,
   TARGET_ANNOTATION_MAX_PAYLOAD_BYTES,
 } from '@agent-device/ad-script';
-import {
-  buildAncestryChain,
-  buildIndexMap,
-  filterIdentitySet,
-} from '../replay/target-evidence-tree.ts';
 import type {
   TargetAncestryEntry,
   TargetAnnotationV1,

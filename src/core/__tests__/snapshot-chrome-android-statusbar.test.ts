@@ -1,14 +1,17 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { attachRefs, type RawSnapshotNode, type SnapshotNode } from '@agent-device/kernel/snapshot';
-import { collectSettleChromeRefs, withoutSettleChrome } from '../snapshot-chrome.ts';
+import {
+  collectSettleChromeRefs,
+  withoutSettleChrome,
+} from '@agent-device/capture-kit/snapshot-chrome';
 import {
   ANDROID_IME_CAPTURE_RAW_NODES,
   ANDROID_QS_SHADE_CAPTURE_RAW_NODES,
   walkInteractiveOnlyAndroidFixture,
   walkNonRawAndroidFixture,
 } from '../../__tests__/test-utils/android-ui-hierarchy-fixtures.ts';
-import { isAndroidSystemChromeWindowResourceId } from '@agent-device/contracts/platform';
+import { isAndroidSystemChromeWindowResourceId } from '@agent-device/contracts/android-system-chrome';
 
 /**
  * The `walk*AndroidFixture` helpers run a real `--raw` device capture through

@@ -28,12 +28,14 @@ const NOTES = {
   'authored/runflow-child': 'Include target for runflow-main (not parsed as a top-level flow).',
   'authored/doubletap':
     'Coverage: doubleTapOn (upstream 101 uses the unsupported retryTapIfNoChange option).',
+  'authored/label-metadata':
+    'Coverage: outer command labels stay metadata across selector, point, assertion, wait, scroll, swipe, and input commands.',
   'authored/scroll-until-visible':
     'Coverage: scrollUntilVisible (upstream 079 uses unsupported speed/visibilityPercentage).',
   'authored/extended-wait':
     'Coverage: extendedWaitUntil (upstream 042 interpolates ${TIMEOUT} from a flow env block).',
   'authored/repeat':
-    'Coverage: repeat.times (upstream 053 also uses the unsupported evalScript command).',
+    'Coverage: repeat.times with ${output.list.length} (upstream 053 exercises the same evalScript-to-repeat shape).',
   'authored/presskey':
     'Coverage: pressKey supported keys (upstream 034 exercises many unsupported keycodes).',
   'authored/numeric-variable-tap':
@@ -46,8 +48,14 @@ const NOTES = {
     'Coverage: eraseText charactersToErase accepts a ${VAR} token (upstream rejects as integer-typed; agent-device is lenient).',
   'authored/numeric-variable-tap-index':
     'Coverage: tapOn index accepts a ${VAR} token and projects identically through the canonical model.',
+  'authored/tree-relations':
+    'Coverage: recursive selector index, childOf, containsChild, and containsDescendants across tapOn and assertVisible.',
+  'authored/positional-relations':
+    'Coverage: above, below, leftOf, and rightOf recursively across target, assertion, wait, scroll, and swipe commands.',
   'authored/numeric-variable-wait':
     'Coverage: waitForAnimationToEnd timeout accepts a ${VAR} token and projects identically through the canonical model.',
+  'authored/clear-state':
+    'Coverage: standalone clearState with default and explicit appId (no upstream flow exercises it).',
   'invalid/bad-swipe-direction': 'Lenient-guard: unknown SwipeDirection enum value.',
   'invalid/unknown-command': 'Lenient-guard: unknown command name (tapOn typo).',
   'invalid/malformed-selector': 'Lenient-guard: selector given as a sequence.',

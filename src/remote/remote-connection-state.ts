@@ -3,14 +3,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { resolveRemoteConfigPath, resolveRemoteConfigProfile } from './remote-config-core.ts';
 import { AppError } from '@agent-device/kernel/errors';
-import { emitDiagnostic } from '../utils/diagnostics.ts';
+import { publishFileSync } from '@agent-device/host-kit/file';
+import { emitDiagnostic } from '@agent-device/host-kit/diagnostics';
 import type { CliFlags } from '@agent-device/contracts/command';
 import type { LeaseBackend, SessionRuntimeHints } from '@agent-device/kernel/contracts';
 import {
   leaseScopeFromOptions,
   leaseScopeToCommandFlags,
   leaseScopeToConnectionMetadata,
-} from '../core/lease-scope.ts';
+} from '@agent-device/contracts/lease-scope';
 
 export type RemoteConnectionState = {
   version: 1;
@@ -19,7 +20,6 @@ export type RemoteConnectionState = {
   remoteConfigHash: string;
   daemon?: {
     baseUrl?: string;
-    authToken?: string;
     transport?: CliFlags['daemonTransport'];
     serverMode?: CliFlags['daemonServerMode'];
   };
@@ -94,7 +94,6 @@ export function buildRemoteConnectionDaemonState(
 ): RemoteConnectionState['daemon'] {
   return {
     baseUrl: sanitizeDaemonBaseUrl(flags.daemonBaseUrl),
-    authToken: flags.daemonAuthToken,
     transport: flags.daemonTransport,
     serverMode: flags.daemonServerMode,
   };
@@ -154,7 +153,11 @@ export function resolveRemoteConnectionDefaults(options: {
       ...profile,
       remoteConfig: state.remoteConfigPath,
       daemonBaseUrl: state.daemon?.baseUrl ?? profile.daemonBaseUrl,
-      daemonAuthToken: state.daemon?.authToken ?? profile.daemonAuthToken,
+      // Deliberately not sourced from state: the daemon bearer token is never
+      // persisted to the connection-state file (ADR 0007). It is resolved
+      // from the profile here, and from the flag/env/CLI-session chain in
+      // resolveRemoteAuth (src/cli/auth-session.ts) at command dispatch time.
+      daemonAuthToken: profile.daemonAuthToken,
       daemonTransport: state.daemon?.transport ?? profile.daemonTransport,
       daemonServerMode: state.daemon?.serverMode ?? profile.daemonServerMode,
       ...leaseScopeToCommandFlags(leaseScope),
@@ -167,9 +170,31 @@ export function resolveRemoteConnectionDefaults(options: {
 }
 
 export function buildRemoteConnectionRequestMetadata(
-  state: RemoteConnectionState,
+  state: RemoteConnectionRequestMetadata,
 ): RemoteConnectionRequestMetadata | undefined {
   return leaseScopeToConnectionMetadata(leaseScopeFromOptions(state));
+}
+
+export function mergeRemoteConnectionRequestMetadata(
+  primary: RemoteConnectionRequestMetadata,
+  fallback: RemoteConnectionRequestMetadata,
+): RemoteConnectionRequestMetadata {
+  return {
+    leaseProvider: primary.leaseProvider ?? fallback.leaseProvider,
+    clientId: primary.clientId ?? fallback.clientId,
+    deviceKey: primary.deviceKey ?? fallback.deviceKey,
+  };
+}
+
+export function remoteConnectionLeaseIdentityMatches(
+  state: RemoteConnectionState,
+  metadata: RemoteConnectionRequestMetadata | undefined,
+): boolean {
+  if (!metadata) return true;
+  return (
+    (metadata.leaseProvider === undefined || state.leaseProvider === metadata.leaseProvider) &&
+    (metadata.clientId === undefined || state.clientId === metadata.clientId)
+  );
 }
 
 export function hashRemoteConfigFile(configPath: string): string {
@@ -246,11 +271,11 @@ function resolveConnectionProfile(
 }
 
 function writeJsonFile(filePath: string, value: unknown): void {
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, {
-    encoding: 'utf8',
+  publishFileSync({
+    destination: filePath,
+    contents: `${JSON.stringify(value, null, 2)}\n`,
     mode: 0o600,
   });
-  fs.chmodSync(filePath, 0o600);
 }
 
 function sanitizeDaemonBaseUrl(value: string | undefined): string | undefined {
@@ -258,7 +283,7 @@ function sanitizeDaemonBaseUrl(value: string | undefined): string | undefined {
   const url = new URL(value);
   url.username = '';
   url.password = '';
-  for (const key of [...url.searchParams.keys()]) {
+  for (const key of Array.from(url.searchParams.keys())) {
     if (/(auth|key|password|secret|token)/i.test(key)) {
       url.searchParams.delete(key);
     }

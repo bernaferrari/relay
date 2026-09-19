@@ -1,91 +1,68 @@
 import { AppError } from '@agent-device/kernel/errors';
-import { emitDiagnostic } from '../utils/diagnostics.ts';
-import { isMacOs, isApplePlatform } from '@agent-device/kernel/device';
-import { runMacOsAlertAction } from '../platforms/apple/os/macos/helper.ts';
-import { stopAppLog } from './app-log.ts';
-import { stopIosRunnerSession } from '../platforms/apple/core/runner/runner-client.ts';
-import { cleanupAppleXctracePerfCapture } from '../platforms/apple/core/perf-xctrace.ts';
-import { cleanupAndroidNativePerfSession } from '../platforms/android/perf.ts';
-import { stopAndroidSnapshotHelperSessionForDevice } from '../platforms/android/snapshot-helper.ts';
-import { restoreAndroidTestIme } from '../platforms/android/ime-lifecycle.ts';
+import { emitDiagnostic } from '@agent-device/host-kit/diagnostics';
 import { cleanupRetainedMaterializedPathsForSession } from './materialized-path-registry.ts';
-import { stopSessionAudioProbe } from './audio-probe.ts';
-import { stopSessionRecordingForTeardown } from './handlers/record-trace-recording.ts';
-import type { SessionState } from './types.ts';
+import type { SessionState } from './session-state.ts';
+import type { SessionStore } from './session-store.ts';
+import { forceCleanupSessionAppLog } from './app-log-session-resource.ts';
+import { appLogResourceStore } from './app-log-resource-store.ts';
+import { finishLiveScreenRecording } from './screen-recording-session-resource.ts';
+import { finishLiveAudioProbe } from './audio-probe-session-resource.ts';
+import { finishLivePerfCapture } from './perf-capture-session-resource.ts';
+import { openWebSessionNames } from './web-session-names.ts';
+import type { PlatformResourceCleanup } from './platform-resource-cleanup.ts';
 
-export { stopSessionAudioProbe } from './audio-probe.ts';
-
-export async function stopAppleRunnerForClose(session: SessionState): Promise<void> {
-  await stopIosRunnerSession(session.device.id);
-  if (!isMacOs(session.device)) {
-    return;
-  }
-
-  const dismissOptions =
-    session.surface === 'frontmost-app'
-      ? { surface: 'frontmost-app' as const }
-      : session.appBundleId
-        ? { bundleId: session.appBundleId }
-        : {};
-  await runMacOsAlertAction('dismiss', dismissOptions).catch((error) => {
-    emitDiagnostic({
-      level: 'debug',
-      phase: 'macos_close_alert_dismiss_failed',
-      data: {
-        session: session.name,
-        error: error instanceof Error ? error.message : String(error),
-      },
-    });
+export async function stopSessionAppLog(params: {
+  session: SessionState;
+  sessionName: string;
+  sessionStore: SessionStore;
+}): Promise<void> {
+  const { session, sessionName, sessionStore } = params;
+  if (!session.appLog) return;
+  await forceCleanupSessionAppLog({
+    session,
+    sessionName,
+    sessionStore,
+    resourcePath: appLogResourceStore.resolvePath(sessionStore.resolveSessionDir(sessionName)),
   });
 }
 
-export async function stopSessionAppLog(session: SessionState): Promise<void> {
-  if (!session.appLog) return;
-  await stopAppLog(session.appLog);
+export async function stopSessionPerfCapture(params: {
+  session: SessionState;
+  sessionName: string;
+  sessionStore: SessionStore;
+}): Promise<void> {
+  const currentSession = params.sessionStore.get(params.sessionName) ?? params.session;
+  if (!currentSession.perfCapture) return;
+  await finishLivePerfCapture({ ...params, session: currentSession, intent: 'disposal' });
 }
 
-export async function stopSessionApplePerfCapture(session: SessionState): Promise<void> {
-  if (!session.applePerf?.active) return;
-  await cleanupAppleXctracePerfCapture(session.applePerf.active);
-  session.applePerf = { ...(session.applePerf ?? {}), active: undefined };
-}
-
-export async function stopSessionAndroidNativePerfCapture(session: SessionState): Promise<void> {
-  const active = session.nativePerf?.android;
-  if (!active) return;
-  await cleanupAndroidNativePerfSession(session.device, active);
-  session.nativePerf = { ...(session.nativePerf ?? {}), android: undefined };
-}
-
-export async function stopSessionAndroidSnapshotHelper(session: SessionState): Promise<void> {
-  if (session.device.platform !== 'android') return;
-  await stopAndroidSnapshotHelperSessionForDevice(session.device);
-}
-
-export async function restoreSessionAndroidIme(
+export async function stopSessionSnapshotHelper(
   session: SessionState,
-  stateDir?: string,
+  platformCleanup: PlatformResourceCleanup,
 ): Promise<void> {
-  if (session.device.platform !== 'android') return;
-  try {
-    const result = await restoreAndroidTestIme(session.device, { stateDir });
-    if (result.reason !== 'set-failed') return;
-    throw new AppError(
-      'COMMAND_FAILED',
-      `Android test IME could not be restored on ${session.device.name ?? session.device.id}.`,
-      { reason: 'android_test_ime_restore_incomplete', deviceId: session.device.id },
-    );
-  } catch (error) {
-    emitDiagnostic({
-      level: 'warn',
-      phase: 'android_test_ime_restore_failed',
-      data: {
-        session: session.name,
-        error: error instanceof Error ? error.message : String(error),
-      },
-    });
-    throw error;
-  }
+  await platformCleanup.stopSnapshotHelper(session.device);
+}
+
+// Best-effort mirror of the platform close `session close` dispatches for a web session
+// (`shouldDispatchPlatformClose` in
+// `daemon/session-lifecycle/internal/session-close.ts`) so a daemon shutdown or expired-session
+// reap tells agent-browser to close its fleet immediately instead of leaving it
+// for agent-browser's own idle timer (`DEFAULT_AGENT_BROWSER_IDLE_TIMEOUT_MS`). Unlike its
+// siblings above, this has no second caller in the ordinary-close path (that path already
+// reaches the browser through `dispatchTargetedPlatformClose`), so it stays module-private.
+async function stopSessionWebBrowser(params: {
+  session: SessionState;
+  sessionName: string;
+  sessionStore: SessionStore;
+  platformCleanup: PlatformResourceCleanup;
+}): Promise<void> {
+  const { session, sessionName, sessionStore, platformCleanup } = params;
+  await platformCleanup.closeManagedBrowser({
+    device: session.device,
+    sessionName,
+    stateDir: sessionStore.resolveDaemonStateDir(),
+    openSessionNames: () => openWebSessionNames(sessionStore),
+  });
 }
 
 type SessionCleanupStep = { step: string; run: () => Promise<void> };
@@ -142,33 +119,77 @@ export function reportSessionCleanupFailures(params: {
   );
 }
 
+type SessionResourceTeardownRequest = {
+  session: SessionState;
+  sessionName: string;
+  sessionStore: SessionStore;
+  stateDir?: string;
+  appLog: 'run' | 'already-settled';
+  platformCleanup?: PlatformResourceCleanup;
+};
+
 export async function teardownSessionResources(
-  session: SessionState,
-  sessionName: string,
-  stateDir?: string,
+  request: SessionResourceTeardownRequest,
 ): Promise<void> {
+  const { session, sessionName, sessionStore } = request;
+  if (!request.platformCleanup) {
+    throw new AppError(
+      'INTERNAL_ERROR',
+      'Platform resource cleanup was not supplied by root runtime composition',
+    );
+  }
+  const platformCleanup = request.platformCleanup;
+  const appLogSteps: SessionCleanupStep[] =
+    request.appLog === 'run'
+      ? [
+          {
+            step: 'app_log',
+            run: () => stopSessionAppLog({ session, sessionName, sessionStore }),
+          },
+        ]
+      : [];
   const steps: SessionCleanupStep[] = [
     // Finalize any still-active recording BEFORE the Apple runner is stopped
     // below: the runner supplies gesture-telemetry for overlay finalization, and
     // signalling the recorder first prevents a leaked `simctl recordVideo` child
     // (and its 0-byte, slot-holding mp4) when a session is torn down — including
     // on daemon shutdown — without an explicit `record stop`.
-    { step: 'recording', run: () => stopSessionRecordingForTeardown(session) },
-    { step: 'app_log', run: () => stopSessionAppLog(session) },
+    {
+      step: 'recording',
+      run: () =>
+        finishSessionScreenRecording({
+          session,
+          sessionName,
+          sessionStore,
+        }),
+    },
+    ...appLogSteps,
     {
       step: 'audio_probe',
-      run: async () => {
-        await stopSessionAudioProbe(session, 'session-teardown');
-      },
+      run: () => finishSessionAudioProbe({ session, sessionName, sessionStore }),
     },
-    { step: 'apple_perf', run: () => stopSessionApplePerfCapture(session) },
-    { step: 'android_native_perf', run: () => stopSessionAndroidNativePerfCapture(session) },
-    { step: 'android_snapshot_helper', run: () => stopSessionAndroidSnapshotHelper(session) },
-    { step: 'android_ime', run: () => restoreSessionAndroidIme(session, stateDir) },
+    {
+      step: 'perf_capture',
+      run: () => stopSessionPerfCapture({ session, sessionName, sessionStore }),
+    },
+    {
+      step: 'platform_snapshot_helper',
+      run: () => stopSessionSnapshotHelper(session, platformCleanup),
+    },
+    // Runs after the resource steps above (recording, app-log, audio, perf) so nothing is still
+    // reading through the browser when it closes, mirroring the ordering `runSessionCloseTeardown`
+    // uses for an ordinary `session close`: best-effort resources first, platform close after.
+    {
+      step: 'web_browser',
+      run: () =>
+        stopSessionWebBrowser({
+          session,
+          sessionName,
+          sessionStore,
+          platformCleanup,
+        }),
+    },
   ];
-  if (isApplePlatform(session.device.platform)) {
-    steps.push({ step: 'apple_runner', run: () => stopAppleRunnerForClose(session) });
-  }
   steps.push({
     step: 'materialized_paths',
     run: () => cleanupRetainedMaterializedPathsForSession(sessionName),
@@ -180,4 +201,34 @@ export async function teardownSessionResources(
     failures,
   });
   if (aggregate) throw aggregate;
+}
+
+export async function finishSessionScreenRecording(params: {
+  session: SessionState;
+  sessionName: string;
+  sessionStore: SessionStore;
+}): Promise<void> {
+  const currentSession = params.sessionStore.get(params.sessionName) ?? params.session;
+  if (!currentSession.screenRecording) return;
+  await finishLiveScreenRecording({
+    intent: 'disposal',
+    session: currentSession,
+    sessionName: params.sessionName,
+    sessionStore: params.sessionStore,
+  });
+}
+
+export async function finishSessionAudioProbe(params: {
+  session: SessionState;
+  sessionName: string;
+  sessionStore: SessionStore;
+}): Promise<void> {
+  const currentSession = params.sessionStore.get(params.sessionName) ?? params.session;
+  if (!currentSession.audioProbe) return;
+  await finishLiveAudioProbe({
+    intent: 'disposal',
+    session: currentSession,
+    sessionName: params.sessionName,
+    sessionStore: params.sessionStore,
+  });
 }

@@ -1,14 +1,26 @@
-import { readCommandMessage } from '../utils/success-text.ts';
+import { readCommandMessage, readResponseWarnings } from '@agent-device/kernel/success-text';
+import type { CommandProgressState } from './command-progress.ts';
 import type { CliOutput } from './command-contract.ts';
 
-export type CliOutputFormatter = (params: {
+export type CliOutputFormatterParams = {
   input: Record<string, unknown>;
   result: unknown;
-}) => CliOutput;
+  /**
+   * Progress already rendered for this run, when the caller renders progress
+   * itself. Absent for a caller that streams progress somewhere the human
+   * reader of this output will not see (MCP, an SDK sink) — and for one that
+   * asked for no progress at all.
+   */
+  progress?: CommandProgressState;
+};
 
-export function resultOutput<TResult>(
-  formatter: (result: TResult) => CliOutput,
-): CliOutputFormatter {
+export type CliOutputFormatter = (
+  params: CliOutputFormatterParams,
+) => CliOutput | Promise<CliOutput>;
+
+export function resultOutput<TResult, TOutput extends CliOutput | Promise<CliOutput> = CliOutput>(
+  formatter: (result: TResult) => TOutput,
+): (params: CliOutputFormatterParams) => TOutput {
   return ({ result }) => formatter(result as TResult);
 }
 
@@ -16,4 +28,44 @@ export const messageOutput = resultOutput(messageCliOutput);
 
 export function messageCliOutput(result: Record<string, unknown>): CliOutput {
   return { data: result, text: readCommandMessage(result) };
+}
+
+/**
+ * The response message plus one `Warning:` line per entry of the response's `warnings`
+ * array — the composable warnings channel (`open`, `debug`, snapshot capture use it too),
+ * so a warning the daemon appended reaches the human CLI reader, not only `--json`.
+ */
+export function messageWithWarningsText(result: Record<string, unknown>): string | null {
+  const message = readCommandMessage(result);
+  const warnings = readResponseWarnings(result);
+  if (warnings.length === 0) return message;
+  return [message, ...warnings.map((warning) => `Warning: ${collapseWarningText(warning)}`)]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/** Warning text can embed runner newlines; rendered warning lines stay one-per-warning. */
+export function collapseWarningText(warning: string): string {
+  return warning.replaceAll(/\s*\n\s*/g, ' ');
+}
+
+/** `messageCliOutput` carrying {@link messageWithWarningsText} as its text. */
+export const messageWithWarningsOutput = resultOutput(
+  (result: Record<string, unknown>): CliOutput => ({
+    data: result,
+    text: messageWithWarningsText(result),
+  }),
+);
+
+/**
+ * ADR 0014: a reusable ref in a PARTIAL result renders in ready-to-copy
+ * `@eN~s<refsGeneration>` form so a human CLI caller can paste it into the next
+ * mutation without a separate pin step. A mutating result carries no
+ * `refsGeneration`, so its acted ref is never pinned.
+ */
+export function pinnedRefText(ref: unknown, refsGeneration: unknown): string | undefined {
+  if (typeof ref !== 'string' || ref.length === 0) return undefined;
+  if (typeof refsGeneration !== 'number') return undefined;
+  const body = ref.startsWith('@') ? ref.slice(1) : ref;
+  return `@${body}~s${refsGeneration}`;
 }

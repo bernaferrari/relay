@@ -4,35 +4,39 @@ import type {
   ElementTarget,
   InteractionTarget,
 } from '@agent-device/contracts/client';
-import { readOptionalInteger as optionalInteger } from '@agent-device/contracts/command';
 import {
-  DEVICE_TARGETS,
-  PLATFORM_SELECTORS,
-  type DeviceTarget,
-  type PlatformSelector,
-} from '@agent-device/kernel/device';
+  readOptionalInteger as optionalInteger,
+  readOptionalNumber as optionalNumberValue,
+  type CliFlags,
+} from '@agent-device/contracts/command';
+import { getFlagDefinitionsForKey } from '@agent-device/command-registry/flag-registry';
+import type { FlagDefinition, FlagKey } from '@agent-device/command-registry/flag-types';
 import { AppError } from '@agent-device/kernel/errors';
+import type { RepeatedInput } from '@agent-device/contracts/interaction';
 import type { JsonSchema } from './command-contract.ts';
+import {
+  commonProperties,
+  commonToClientOptions,
+  readCommonInput,
+  type CommonCommandInput,
+} from './common-input-fields.ts';
+import type { InputAudience, InputAudienceMap, OperatorInputSource } from './input-audience.ts';
+import {
+  compactRecord,
+  optionalAnyString,
+  optionalBoolean,
+  optionalEnum,
+  optionalRecord,
+  optionalString,
+  optionalStringArray,
+  readInputRecord,
+  readRecordField,
+  requiredEnum,
+  requiredNumber,
+  requiredString,
+} from './input-readers.ts';
 
 const INTERACTION_TARGET_KINDS = ['ref', 'selector', 'point'] as const;
-
-export type CommonCommandInput = Pick<
-  AgentDeviceRequestOverrides,
-  'session' | 'daemonBaseUrl' | 'daemonAuthToken' | 'tenant' | 'runId' | 'leaseId' | 'cwd' | 'debug'
-> & {
-  platform?: PlatformSelector;
-  deviceTarget?: DeviceTarget;
-  device?: string;
-  udid?: string;
-  serial?: string;
-  iosSimulatorDeviceSet?: string;
-  iosXctestrunFile?: string;
-  iosXctestDerivedDataPath?: string;
-  iosXctestEnvDir?: string;
-  androidDeviceAllowlist?: string;
-  /** `--no-record`: common to every recordable command (see `commonInputFromFlags`). */
-  noRecord?: boolean;
-};
 
 export type InteractionTargetInput =
   | { kind: 'ref'; ref: string; label?: string }
@@ -43,14 +47,6 @@ export type ElementTargetInput =
   | { kind: 'ref'; ref: string; label?: string }
   | { kind: 'selector'; selector: string };
 
-export type RepeatedInput = {
-  count?: number;
-  intervalMs?: number;
-  holdMs?: number;
-  jitterPx?: number;
-  doubleTap?: boolean;
-};
-
 export type SelectorSnapshotInput = {
   depth?: number;
   scope?: string;
@@ -58,7 +54,6 @@ export type SelectorSnapshotInput = {
 };
 
 export type PointInput = { x: number; y: number };
-type CommonInputOptions = { readTargetAlias?: boolean };
 
 function commandInputSchema(
   properties: Record<string, JsonSchema>,
@@ -96,8 +91,16 @@ export function stringSchema(description?: string): JsonSchema {
   return { type: 'string', ...(description ? { description } : {}) };
 }
 
-function numberSchema(description?: string): JsonSchema {
-  return { type: 'number', ...(description ? { description } : {}) };
+function numberSchema(
+  description?: string,
+  options: { min?: number; max?: number } = {},
+): JsonSchema {
+  return {
+    type: 'number',
+    ...(description ? { description } : {}),
+    ...(options.min === undefined ? {} : { minimum: options.min }),
+    ...(options.max === undefined ? {} : { maximum: options.max }),
+  };
 }
 
 function integerSchema(description?: string): JsonSchema {
@@ -130,18 +133,20 @@ export type CommandField<T> = {
   schema: JsonSchema;
   required: boolean;
   read: FieldReader<T>;
+  /** Who may write the key. Absent means the model — see `input-audience.ts`. */
+  audience?: InputAudience;
 };
 
 export type CommandFieldMap = Record<string, CommandField<unknown>>;
 
 export type InferCommandFields<TFields extends CommandFieldMap> = {
-  [TKey in keyof TFields as TFields[TKey]['required'] extends true
-    ? TKey
-    : never]: TFields[TKey] extends CommandField<infer TValue> ? TValue : never;
+  [
+    TKey in keyof TFields as TFields[TKey]['required'] extends true ? TKey : never
+  ]: TFields[TKey] extends CommandField<infer TValue> ? TValue : never;
 } & {
-  [TKey in keyof TFields as TFields[TKey]['required'] extends true
-    ? never
-    : TKey]?: TFields[TKey] extends CommandField<infer TValue> ? TValue : never;
+  [
+    TKey in keyof TFields as TFields[TKey]['required'] extends true ? never : TKey
+  ]?: TFields[TKey] extends CommandField<infer TValue> ? TValue : never;
 };
 
 export type InferCommandInput<TFields extends CommandFieldMap> = InferCommandFields<TFields> &
@@ -157,12 +162,56 @@ export function requiredField<T>(
   };
 }
 
-export function stringField(description?: string): CommandField<string> {
-  return optionalField(stringSchema(description), optionalString);
+export function stringField(
+  description?: string,
+  options: { allowEmpty?: boolean } = {},
+): CommandField<string> {
+  return optionalField(
+    stringSchema(description),
+    options.allowEmpty === true ? optionalAnyString : optionalString,
+  );
 }
 
-export function numberField(description?: string): CommandField<number> {
-  return optionalField(numberSchema(description), optionalNumberValue);
+/**
+ * A released input key that was removed. Declared in the field map so the
+ * projection seam (`readFieldInput`) refuses it with migration guidance
+ * instead of silently dropping it; excluded from the JSON schema so tools no
+ * longer advertise it.
+ */
+export function retiredField(message: string): CommandField<never> {
+  return {
+    schema: { type: 'null' },
+    required: false,
+    audience: { kind: 'retired', message },
+    read: (record, key) => {
+      if (Object.hasOwn(record, key)) {
+        throw new AppError('INVALID_ARGS', message);
+      }
+      return undefined;
+    },
+  };
+}
+
+/**
+ * A key the CLI and the Node client accept but no model-facing tool schema may
+ * advertise or admit — a credential, an endpoint a credential is sent to, or an
+ * operator infrastructure path. `source` names how the operator supplies it, and
+ * the refusal is rendered from that.
+ */
+export function operatorField<T>(
+  field: CommandField<T>,
+  source: OperatorInputSource,
+): CommandField<T> {
+  return { ...field, audience: { kind: 'operator', source } };
+}
+
+export function numberField(
+  description?: string,
+  options: { min?: number; max?: number } = {},
+): CommandField<number> {
+  return optionalField(numberSchema(description, options), (record, key) =>
+    optionalNumberValue(record, key, options),
+  );
 }
 
 export function integerField(
@@ -176,6 +225,79 @@ export function integerField(
 
 export function booleanField(description?: string): CommandField<boolean> {
   return optionalField(booleanSchema(description), optionalBoolean);
+}
+
+/**
+ * Builds a command's input field from the option's ONE declaration.
+ *
+ * A hand-written field — `booleanField('Include an initial interactive
+ * snapshot…')` — restates two facts the option already declared: its value type
+ * (`type: 'boolean'` on the `FlagDefinition`) and its description, as a second,
+ * differently-worded copy of the same sentence. Neither copy decides anything
+ * and both drift: `open --foreground` had one description rewritten across four
+ * files at once because no file owned it.
+ *
+ * Derived here instead:
+ *  - the JSON schema shape and its bounds come from the declaration's `type`,
+ *    `enumValues`, `min` and `max`;
+ *  - the description comes from the declaration's `inputDescription`;
+ *  - the TypeScript value type comes from `CliFlags[key]`, which is already
+ *    where that flag's type is declared.
+ *
+ * So an option's description is one edit, and a command cannot advertise an
+ * input its own CLI flag does not parse.
+ */
+export function optionField<TKey extends FlagKey>(
+  key: TKey,
+): CommandField<NonNullable<CliFlags[TKey]>> {
+  return buildOptionField(optionDeclaration(key)) as CommandField<NonNullable<CliFlags[TKey]>>;
+}
+
+/**
+ * Fails closed: a command may derive a field only from an option that actually
+ * declares a tool/SDK audience, rather than publishing an undescribed input.
+ */
+function optionDeclaration(key: FlagKey): FlagDefinition {
+  const declared = getFlagDefinitionsForKey(key).filter(
+    (definition) => definition.inputDescription !== undefined,
+  );
+  const [definition, ...extra] = declared;
+  if (!definition) {
+    throw new Error(`Flag ${key} declares no inputDescription; optionField cannot derive a field`);
+  }
+  if (extra.length > 0) {
+    throw new Error(`Flag ${key} declares inputDescription more than once`);
+  }
+  return definition;
+}
+
+function buildOptionField(definition: FlagDefinition): CommandField<unknown> {
+  const description = definition.inputDescription;
+  const bounds = { min: definition.min, max: definition.max };
+  switch (definition.type) {
+    case 'boolean':
+      return booleanField(description) as CommandField<unknown>;
+    case 'int':
+      return integerField(description, bounds) as CommandField<unknown>;
+    case 'number':
+      return numberField(description, bounds) as CommandField<unknown>;
+    case 'string':
+      return stringField(description) as CommandField<unknown>;
+    case 'enum':
+      return enumField(optionEnumValues(definition), description) as CommandField<unknown>;
+    case 'booleanOrString':
+      throw new Error(
+        `Flag ${definition.key} is booleanOrString; declare its field shape explicitly with jsonSchemaField`,
+      );
+  }
+}
+
+function optionEnumValues(definition: FlagDefinition): readonly string[] {
+  const values = definition.enumValues;
+  if (!values) {
+    throw new Error(`Flag ${definition.key} is an enum with no enumValues`);
+  }
+  return values;
 }
 
 export function enumField<const TValues extends readonly string[]>(
@@ -270,61 +392,6 @@ export function readFieldInput<TFields extends CommandFieldMap>(
   }) as InferCommandInput<TFields>;
 }
 
-export function readInputRecord(input: unknown): Record<string, unknown> {
-  if (input === undefined || input === null) return {};
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    throw new AppError('INVALID_ARGS', 'Expected object arguments.');
-  }
-  return input as Record<string, unknown>;
-}
-
-export function readCommonInput(
-  record: Record<string, unknown>,
-  options: CommonInputOptions = {},
-): CommonCommandInput {
-  return {
-    session: optionalString(record, 'session'),
-    platform: optionalEnum(record, 'platform', PLATFORM_SELECTORS),
-    deviceTarget: readDeviceTarget(record, options),
-    device: optionalString(record, 'device'),
-    udid: optionalString(record, 'udid'),
-    serial: optionalString(record, 'serial'),
-    iosSimulatorDeviceSet: optionalString(record, 'iosSimulatorDeviceSet'),
-    iosXctestrunFile: optionalString(record, 'iosXctestrunFile'),
-    iosXctestDerivedDataPath: optionalString(record, 'iosXctestDerivedDataPath'),
-    iosXctestEnvDir: optionalString(record, 'iosXctestEnvDir'),
-    androidDeviceAllowlist: optionalString(record, 'androidDeviceAllowlist'),
-    // Seam 2 of 3 for `--no-record` (see `commonInputFromFlags`). `readFieldInput`
-    // keeps ONLY declared metadata fields plus this common input, so a flag
-    // absent here is filtered out of every field-based command's input before
-    // the client ever sees it.
-    noRecord: optionalBoolean(record, 'noRecord'),
-    daemonBaseUrl: optionalString(record, 'daemonBaseUrl'),
-    daemonAuthToken: optionalString(record, 'daemonAuthToken'),
-    tenant: optionalString(record, 'tenant'),
-    runId: optionalString(record, 'runId'),
-    leaseId: optionalString(record, 'leaseId'),
-    cwd: optionalString(record, 'cwd'),
-    debug: optionalBoolean(record, 'debug'),
-  };
-}
-
-function readDeviceTarget(
-  record: Record<string, unknown>,
-  options: CommonInputOptions,
-): DeviceTarget | undefined {
-  const deviceTarget = optionalEnum(record, 'deviceTarget', DEVICE_TARGETS);
-  if (options.readTargetAlias === false || record.target === undefined) return deviceTarget;
-  const targetAlias = optionalEnum(record, 'target', DEVICE_TARGETS);
-  if (deviceTarget !== undefined && targetAlias !== deviceTarget) {
-    throw new AppError(
-      'INVALID_ARGS',
-      'Expected target alias to match deviceTarget when both are set.',
-    );
-  }
-  return deviceTarget ?? targetAlias;
-}
-
 function readInteractionTarget(
   record: Record<string, unknown>,
   key: string,
@@ -367,105 +434,6 @@ function readPoint(record: Record<string, unknown>, key: string): PointInput {
   return { x: requiredNumber(point, 'x'), y: requiredNumber(point, 'y') };
 }
 
-function requiredString(record: Record<string, unknown>, key: string): string {
-  const value = record[key];
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new AppError('INVALID_ARGS', `Expected ${key} to be a non-empty string.`);
-  }
-  return value;
-}
-
-function optionalString(record: Record<string, unknown>, key: string): string | undefined {
-  const value = record[key];
-  if (value === undefined) return undefined;
-  if (typeof value !== 'string' || value.length === 0) {
-    throw new AppError('INVALID_ARGS', `Expected ${key} to be a non-empty string.`);
-  }
-  return value;
-}
-
-function requiredNumber(record: Record<string, unknown>, key: string): number {
-  const value = record[key];
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new AppError('INVALID_ARGS', `Expected ${key} to be a finite number.`);
-  }
-  return value;
-}
-
-function optionalNumberValue(record: Record<string, unknown>, key: string): number | undefined {
-  const value = record[key];
-  if (value === undefined) return undefined;
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new AppError('INVALID_ARGS', `Expected ${key} to be a finite number.`);
-  }
-  return value;
-}
-
-function optionalBoolean(record: Record<string, unknown>, key: string): boolean | undefined {
-  const value = record[key];
-  if (value === undefined) return undefined;
-  if (typeof value !== 'boolean') {
-    throw new AppError('INVALID_ARGS', `Expected ${key} to be a boolean.`);
-  }
-  return value;
-}
-
-function requiredEnum<const T extends readonly string[]>(
-  record: Record<string, unknown>,
-  key: string,
-  values: T,
-): T[number] {
-  const value = record[key];
-  if (typeof value !== 'string' || !values.includes(value)) {
-    throw new AppError('INVALID_ARGS', `Expected ${key} to be one of: ${values.join(', ')}.`);
-  }
-  return value;
-}
-
-export function optionalEnum<const T extends readonly string[]>(
-  record: Record<string, unknown>,
-  key: string,
-  values: T,
-): T[number] | undefined {
-  const value = record[key];
-  if (value === undefined) return undefined;
-  if (typeof value !== 'string' || !values.includes(value)) {
-    throw new AppError('INVALID_ARGS', `Expected ${key} to be one of: ${values.join(', ')}.`);
-  }
-  return value;
-}
-
-export function commonToClientOptions(
-  input: CommonCommandInput,
-): AgentDeviceRequestOverrides & AgentDeviceSelectionOptions {
-  return compactRecord({
-    // Seam 3 of 3 for `--no-record` (see `commonInputFromFlags`). Every
-    // `to*Options` projection (`toPressOptions`, `toGetOptions`, ...) rebuilds
-    // the client options object from this helper plus its own named fields, so
-    // a flag absent here is dropped even when the reader forwarded it and
-    // `readCommonInput` kept it.
-    noRecord: input.noRecord,
-    session: input.session,
-    platform: input.platform,
-    target: input.deviceTarget,
-    device: input.device,
-    udid: input.udid,
-    serial: input.serial,
-    iosSimulatorDeviceSet: input.iosSimulatorDeviceSet,
-    iosXctestrunFile: input.iosXctestrunFile,
-    iosXctestDerivedDataPath: input.iosXctestDerivedDataPath,
-    iosXctestEnvDir: input.iosXctestEnvDir,
-    androidDeviceAllowlist: input.androidDeviceAllowlist,
-    daemonBaseUrl: input.daemonBaseUrl,
-    daemonAuthToken: input.daemonAuthToken,
-    tenant: input.tenant,
-    runId: input.runId,
-    leaseId: input.leaseId,
-    cwd: input.cwd,
-    debug: input.debug,
-  }) as AgentDeviceRequestOverrides & AgentDeviceSelectionOptions;
-}
-
 export function toClientInteractionTarget(target: InteractionTargetInput): InteractionTarget {
   switch (target.kind) {
     case 'ref':
@@ -504,22 +472,6 @@ export function toSelectorSnapshotOptions(input: SelectorSnapshotInput): Selecto
   };
 }
 
-export function assertAllowedKeys(
-  record: Record<string, unknown>,
-  allowedKeys: readonly string[],
-  label: string,
-): void {
-  const allowed = new Set(allowedKeys);
-  const unknownKeys = Object.keys(record).filter((key) => !allowed.has(key));
-  if (unknownKeys.length > 0) {
-    throw new AppError('INVALID_ARGS', `${label} has unknown field(s): ${unknownKeys.join(', ')}.`);
-  }
-}
-
-export function compactRecord(record: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
-}
-
 function optionalField<T>(schema: JsonSchema, read: FieldReader<T>): CommandField<T> {
   return { schema, required: false, read };
 }
@@ -536,84 +488,24 @@ function integerSchemaWithBounds(
 }
 
 function fieldProperties(fields: CommandFieldMap): Record<string, JsonSchema> {
-  return Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, field.schema]));
+  return Object.fromEntries(
+    Object.entries(fields)
+      .filter(([, field]) => field.audience?.kind !== 'retired')
+      .map(([key, field]) => [key, field.schema]),
+  );
 }
 
 function requiredFieldNames(fields: CommandFieldMap): string[] {
   return Object.entries(fields).flatMap(([key, field]) => (field.required ? [key] : []));
 }
 
-function optionalRecord(
-  record: Record<string, unknown>,
-  key: string,
-): Record<string, unknown> | undefined {
-  const value = record[key];
-  if (value === undefined) return undefined;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new AppError('INVALID_ARGS', `Expected ${key} to be an object.`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function optionalStringArray(record: Record<string, unknown>, key: string): string[] | undefined {
-  const value = record[key];
-  if (value === undefined) return undefined;
-  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
-    throw new AppError('INVALID_ARGS', `Expected ${key} to be an array of strings.`);
-  }
-  return value as string[];
-}
-
-function commonProperties(): Record<string, JsonSchema> {
-  return {
-    session: { type: 'string', description: 'Agent-device session name.' },
-    platform: {
-      type: 'string',
-      enum: PLATFORM_SELECTORS,
-      description: 'Platform selector used to resolve a device.',
-    },
-    deviceTarget: {
-      type: 'string',
-      enum: DEVICE_TARGETS,
-      description: 'Device target form. Maps to the CLI --target flag.',
-    },
-    target: {
-      type: 'string',
-      enum: DEVICE_TARGETS,
-      description:
-        'Alias for deviceTarget on commands without a UI target field. Interaction commands reserve target for the UI element.',
-    },
-    device: { type: 'string', description: 'Device name selector.' },
-    udid: { type: 'string', description: 'iOS device UDID selector.' },
-    serial: { type: 'string', description: 'Android device or Vega VVD serial selector.' },
-    iosSimulatorDeviceSet: {
-      type: 'string',
-      description: 'iOS simulator device-set path used for device resolution.',
-    },
-    iosXctestrunFile: {
-      type: 'string',
-      description: 'Externally built iOS XCTest runner .xctestrun artifact path.',
-    },
-    iosXctestDerivedDataPath: {
-      type: 'string',
-      description: 'Derived data path for external iOS XCTest runner execution.',
-    },
-    iosXctestEnvDir: {
-      type: 'string',
-      description: 'Writable directory for iOS XCTest runner env overlays.',
-    },
-    androidDeviceAllowlist: {
-      type: 'string',
-      description: 'Android serial allowlist used for device resolution.',
-    },
-    daemonBaseUrl: { type: 'string', description: 'Remote daemon base URL.' },
-    daemonAuthToken: { type: 'string', description: 'Remote daemon auth token.' },
-    tenant: { type: 'string', description: 'Remote tenant identifier.' },
-    runId: { type: 'string', description: 'Lease run identifier.' },
-    leaseId: { type: 'string', description: 'Existing lease identifier.' },
-    cwd: { type: 'string', description: 'Working directory for command execution.' },
-    debug: { type: 'boolean', description: 'Enable debug diagnostics.' },
-  };
+/** Non-model audiences declared by a command's own fields, for the surface boundaries to honor. */
+export function fieldAudiences(fields: CommandFieldMap): InputAudienceMap {
+  return Object.fromEntries(
+    Object.entries(fields).flatMap(([key, field]) =>
+      field.audience ? [[key, field.audience]] : [],
+    ),
+  );
 }
 
 function interactionTargetSchema(): JsonSchema {
@@ -664,12 +556,4 @@ function elementTargetSchemaVariants(): JsonSchema[] {
       additionalProperties: false,
     },
   ];
-}
-
-function readRecordField(record: Record<string, unknown>, key: string): Record<string, unknown> {
-  const value = record[key];
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new AppError('INVALID_ARGS', `Expected ${key} to be an object.`);
-  }
-  return value as Record<string, unknown>;
 }

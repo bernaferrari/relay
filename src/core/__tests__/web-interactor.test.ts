@@ -2,11 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import { createWebInteractor } from '../interactors/web.ts';
 import { AppError } from '@agent-device/kernel/errors';
-import { withWebProvider, type WebProvider } from '../../platforms/web/provider.ts';
+import { withWebProvider, type WebProvider } from '@agent-device/platform-web';
 
 test('web interactor delegates first-slice operations to the scoped provider', async () => {
   const calls: string[] = [];
-  const interactor = createWebInteractor();
   const provider = makeWebProvider({
     async open(target, options) {
       calls.push(`open:${target}:${options?.url ?? ''}`);
@@ -30,6 +29,9 @@ test('web interactor delegates first-slice operations to the scoped provider', a
     async click(x, y) {
       calls.push(`click:${x}:${y}`);
     },
+    async hover(x, y) {
+      calls.push(`hover:${x}:${y}`);
+    },
     async fill(x, y, text, options) {
       calls.push(`fill:${x}:${y}:${text}:${options?.delayMs ?? 0}`);
     },
@@ -42,10 +44,12 @@ test('web interactor delegates first-slice operations to the scoped provider', a
   });
 
   const snapshot = await withWebProvider(provider, async () => {
+    const interactor = await createWebInteractor();
     await interactor.open('https://example.test');
     await interactor.open('app-shell', { url: 'https://example.test/deep' });
     await interactor.close('app-shell');
     await interactor.tap(10, 20);
+    await interactor.hover?.(30, 40);
     await interactor.focus(11, 21);
     await interactor.fill(12, 22, 'hello', 5);
     await interactor.type('world', 6);
@@ -60,6 +64,7 @@ test('web interactor delegates first-slice operations to the scoped provider', a
     'open:https://example.test/deep:https://example.test/deep',
     'close:app-shell',
     'click:10:20',
+    'hover:30:40',
     'click:11:21',
     'fill:12:22:hello:5',
     'type:world:6',
@@ -68,13 +73,24 @@ test('web interactor delegates first-slice operations to the scoped provider', a
     'viewport:1280:900',
     'snapshot:main',
   ]);
+  if ('stage' in snapshot) throw new Error('Web snapshot must be presented');
   assert.equal(snapshot.backend, 'web');
   assert.equal(snapshot.truncated, true);
   assert.deepEqual(snapshot.nodes, [{ index: 0, role: 'button', label: 'Submit' }]);
 });
 
+test('web interactor reports hover unsupported when the provider lacks it', async () => {
+  await withWebProvider(makeWebProvider(), async () => {
+    const interactor = await createWebInteractor();
+    assert.equal(interactor.tapRef, undefined);
+    assert.equal(interactor.hover, undefined);
+    assert.equal(interactor.hoverRef, undefined);
+    assert.equal(interactor.fillRef, undefined);
+  });
+});
+
 test('web interactor reports unsupported operations explicitly', async () => {
-  const interactor = createWebInteractor();
+  const interactor = await createWebInteractor();
 
   await assert.rejects(
     () => interactor.back(),

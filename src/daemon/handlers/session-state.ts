@@ -1,4 +1,11 @@
-import { asAppError } from '@agent-device/kernel/errors';
+import { AppError, asAppError } from '@agent-device/kernel/errors';
+import type { TargetShutdownResult } from '@agent-device/contracts/device';
+import type { RuntimeOperationFact } from '@agent-device/contracts/platform-runtime';
+import {
+  appStateUse,
+  resolveDeviceReadinessRuntimePlan,
+  shutdownTargetUse,
+} from '@agent-device/contracts/platform-runtime-operations';
 import {
   isApplePlatform,
   isIosFamily,
@@ -6,40 +13,79 @@ import {
   publicPlatformString,
   type DeviceInfo,
 } from '@agent-device/kernel/device';
-import type { DaemonRequest, DaemonResponse } from '../types.ts';
+import type { DaemonRequest, DaemonResponse } from '../daemon-request.ts';
 import { SessionStore } from '../session-store.ts';
-import { ensureDeviceReady } from '../device-ready.ts';
-import { shutdownDeviceTarget } from '../target-shutdown.ts';
-import { createAppleRunnerCachePrewarmOnColdBoot } from '../apple-runner-options.ts';
-import { prewarmAppleRunnerCache } from '../../platforms/apple/core/runner/runner-client.ts';
+import { resolveAndroidSerialAllowlist } from '@agent-device/kernel/device-isolation';
 import {
   hasExplicitSessionFlag,
   requireSessionOrExplicitSelector,
-  resolveAndroidEmulatorAvdName,
   resolveCommandDevice,
   selectorTargetsSessionDevice,
-} from './session-device-utils.ts';
-import { errorResponse, requireCommandSupported } from './response.ts';
-
-async function ensureAndroidEmulatorBoot(params: {
-  avdName: string;
-  serial?: string;
-  headless?: boolean;
-}): Promise<DeviceInfo> {
-  const { ensureAndroidEmulatorBooted } = await import('../../platforms/android/devices.ts');
-  return await ensureAndroidEmulatorBooted(params);
-}
+} from '../session-device-resolution.ts';
+import { errorResponse } from '../response.ts';
+import type { BindDeviceRuntime, InspectDeviceRuntimeFacts } from '../request-runtime-binding.ts';
+import {
+  admitRuntimeOperations,
+  admitRuntimeUse,
+  type UnavailableRuntimeResponse,
+} from '../runtime-admission.ts';
+import type { RuntimeCommandHandlerParams } from '../session-runtime-admission.ts';
 
 const IOS_APPSTATE_SESSION_REQUIRED_MESSAGE =
   'iOS appstate requires an active session on the target device. Run open first (for example: open --session sim --platform ios --device "<name>" <app>).';
 const MACOS_APPSTATE_SESSION_REQUIRED_MESSAGE =
   'macOS appstate requires an active session on the target device. Run open first (for example: open --session macos --platform macos "System Settings").';
 
-async function handleAppStateCommand(params: {
-  req: DaemonRequest;
-  sessionName: string;
-  sessionStore: SessionStore;
-}): Promise<DaemonResponse> {
+/** `boot --headless` reports an unsupported cell as a request error, not a device capability gap. */
+function bootUnavailableResponse(headless: boolean): UnavailableRuntimeResponse {
+  return (unavailable) =>
+    errorResponse(
+      headless ? 'INVALID_ARGS' : 'UNSUPPORTED_OPERATION',
+      headless
+        ? 'boot --headless is supported only for Android emulators.'
+        : 'boot is not supported on this device',
+      undefined,
+      unavailable.hint ? { hint: unavailable.hint } : undefined,
+    );
+}
+
+function requireInspectFacts(
+  inspectFacts: InspectDeviceRuntimeFacts | undefined,
+): InspectDeviceRuntimeFacts {
+  if (inspectFacts) return inspectFacts;
+  throw new AppError('COMMAND_FAILED', 'Device runtime facts inspection is unavailable.', {
+    reason: 'runtime-gateway-missing',
+  });
+}
+
+function requireBindDevice(bindDevice: BindDeviceRuntime | undefined): BindDeviceRuntime {
+  if (bindDevice) return bindDevice;
+  throw new AppError('COMMAND_FAILED', 'Device runtime binding is unavailable.', {
+    reason: 'runtime-gateway-missing',
+  });
+}
+
+function shutdownUnavailableResponse(fact: RuntimeOperationFact) {
+  if (fact.available) return null;
+  return errorResponse(
+    'UNSUPPORTED_OPERATION',
+    'shutdown is supported only for Apple simulators and Android emulators.',
+    undefined,
+    fact.hint ? { hint: fact.hint } : undefined,
+  );
+}
+
+function hasAndroidAvdIdentity(
+  selectedName: string | undefined,
+  sessionDevice: DeviceInfo | undefined,
+): boolean {
+  return Boolean(
+    selectedName?.trim() ||
+    (sessionDevice?.platform === 'android' && sessionDevice.kind === 'emulator'),
+  );
+}
+
+async function handleAppStateCommand(params: RuntimeCommandHandlerParams): Promise<DaemonResponse> {
   const { req, sessionName, sessionStore } = params;
   const session = sessionStore.get(sessionName);
   const flags = req.flags ?? {};
@@ -117,7 +163,6 @@ async function handleAppStateCommand(params: {
   const device = await resolveCommandDevice({
     session,
     flags,
-    ensureReady: true,
   });
   if (isIosFamily(device)) {
     return errorResponse('SESSION_NOT_FOUND', IOS_APPSTATE_SESSION_REQUIRED_MESSAGE);
@@ -125,16 +170,33 @@ async function handleAppStateCommand(params: {
   if (isMacOs(device)) {
     return errorResponse('SESSION_NOT_FOUND', MACOS_APPSTATE_SESSION_REQUIRED_MESSAGE);
   }
-  if (device.platform === 'web') {
-    return errorResponse('UNSUPPORTED_OPERATION', 'appstate is not supported on web.');
-  }
-
-  const { getAndroidAppState } = await import('../../platforms/android/app-lifecycle.ts');
-  const state = await getAndroidAppState(device);
+  const admitted = await admitRuntimeUse({
+    command: 'appstate',
+    device,
+    use: appStateUse,
+    inspectFacts: params.inspectFacts,
+    bindDevice: params.bindDevice,
+    unavailableResponse: (unavailable) =>
+      errorResponse(
+        'UNSUPPORTED_OPERATION',
+        device.platform === 'web'
+          ? 'appstate is not supported on web.'
+          : 'appstate is not supported on this device',
+        undefined,
+        unavailable.hint ? { hint: unavailable.hint } : undefined,
+      ),
+  });
+  if (admitted.type === 'response') return admitted.response;
+  const runtime = admitted.runtime;
+  await runtime.operations.ensureReady({
+    serial: flags.serial,
+    androidSerialAllowlist: resolveAndroidSerialAllowlistForAppState(flags.androidDeviceAllowlist),
+  });
+  const state = await runtime.operations.appState();
   return {
     ok: true,
     data: {
-      platform: 'android',
+      platform: publicPlatformString(device),
       package: state.package,
       activity: state.activity,
     },
@@ -144,10 +206,11 @@ async function handleAppStateCommand(params: {
 export async function handleSessionStateCommands(params: {
   req: DaemonRequest;
   sessionName: string;
-  logPath: string;
   sessionStore: SessionStore;
+  inspectFacts?: InspectDeviceRuntimeFacts;
+  bindDevice?: BindDeviceRuntime;
 }): Promise<DaemonResponse | null> {
-  const { req, sessionName, logPath, sessionStore } = params;
+  const { req, sessionName, sessionStore } = params;
 
   if (req.command === 'boot') {
     const session = sessionStore.get(sessionName);
@@ -155,37 +218,26 @@ export async function handleSessionStateCommands(params: {
     const guard = requireSessionOrExplicitSelector(req.command, session, flags);
     if (guard) return guard;
 
-    const normalizedPlatform = flags.platform ?? session?.device.platform;
-    const targetsAndroid = normalizedPlatform === 'android';
-    const wantsAndroidHeadless = flags.headless === true;
-    if (wantsAndroidHeadless && !targetsAndroid) {
-      return errorResponse(
-        'INVALID_ARGS',
-        'boot --headless is supported only for Android emulators.',
-      );
-    }
-
-    const fallbackAvdName = resolveAndroidEmulatorAvdName({
-      flags,
-      sessionDevice: session?.device,
-    });
-    const canFallbackLaunchAndroidEmulator = targetsAndroid && Boolean(fallbackAvdName);
+    const resolvedAndroidSerialAllowlist = resolveAndroidSerialAllowlist(
+      flags.androidDeviceAllowlist,
+    );
+    const androidSerialAllowlist = resolvedAndroidSerialAllowlist
+      ? [...resolvedAndroidSerialAllowlist].sort()
+      : undefined;
+    const plan = resolveDeviceReadinessRuntimePlan({ headless: flags.headless === true });
 
     let device: DeviceInfo;
-    let launchedAndroidEmulator = false;
     try {
       device = await resolveCommandDevice({
         session,
         flags,
-        ensureReady: false,
-        allowStoppedAndroidAvdPlaceholders: true,
+        androidAvdSelection: 'include-stopped',
       });
     } catch (error) {
       const appErr = asAppError(error);
       if (
-        targetsAndroid &&
-        wantsAndroidHeadless &&
-        !fallbackAvdName &&
+        plan.kind === 'boot-target-headless' &&
+        !hasAndroidAvdIdentity(flags.device, session?.device) &&
         appErr.code === 'DEVICE_NOT_FOUND'
       ) {
         return errorResponse(
@@ -193,19 +245,7 @@ export async function handleSessionStateCommands(params: {
           'boot --headless requires --device <avd-name> (or an Android emulator session target).',
         );
       }
-      if (
-        !canFallbackLaunchAndroidEmulator ||
-        appErr.code !== 'DEVICE_NOT_FOUND' ||
-        !fallbackAvdName
-      ) {
-        throw error;
-      }
-      device = await ensureAndroidEmulatorBoot({
-        avdName: fallbackAvdName,
-        serial: flags.serial,
-        headless: wantsAndroidHeadless,
-      });
-      launchedAndroidEmulator = true;
+      throw error;
     }
 
     if (flags.target && (device.target ?? 'mobile') !== flags.target) {
@@ -215,67 +255,21 @@ export async function handleSessionStateCommands(params: {
       );
     }
 
-    if (targetsAndroid && wantsAndroidHeadless) {
-      if (device.platform !== 'android' || device.kind !== 'emulator') {
-        return errorResponse(
-          'INVALID_ARGS',
-          'boot --headless is supported only for Android emulators.',
-        );
-      }
-      if (!launchedAndroidEmulator) {
-        const avdName = resolveAndroidEmulatorAvdName({
-          flags,
-          sessionDevice: session?.device,
-          resolvedDevice: device,
-        });
-        if (!avdName) {
-          return errorResponse(
-            'INVALID_ARGS',
-            'boot --headless requires --device <avd-name> (or an Android emulator session target).',
-          );
-        }
-        device = await ensureAndroidEmulatorBoot({
-          avdName,
-          serial: flags.serial,
-          headless: true,
-        });
-      }
-      await ensureDeviceReady(device);
-    } else if (
-      device.platform === 'android' &&
-      device.kind === 'emulator' &&
-      device.booted !== true
-    ) {
-      device = await ensureAndroidEmulatorBoot({
-        avdName: device.name,
-        serial: flags.serial,
-        headless: false,
-      });
-      await ensureDeviceReady(device);
+    const admitted = await admitRuntimeOperations({
+      command: 'boot',
+      device,
+      required: plan.use.required,
+      inspectFacts: params.inspectFacts,
+      bindDevice: params.bindDevice,
+      unavailableResponse: bootUnavailableResponse(plan.kind === 'boot-target-headless'),
+    });
+    if (admitted.type === 'response') return admitted.response;
+
+    const input = { serial: flags.serial, androidSerialAllowlist };
+    if (plan.kind === 'boot-target-headless') {
+      device = await (await admitted.bind(device, plan.use)).operations.bootTargetHeadless(input);
     } else {
-      const shouldEnsureReady = device.platform !== 'android' || device.booted !== true;
-      if (shouldEnsureReady) {
-        await ensureDeviceReady(device, {
-          onIosSimulatorColdBootStart: createAppleRunnerCachePrewarmOnColdBoot({
-            req,
-            logPath,
-            device,
-            enabled: true,
-          }),
-        });
-      }
-    }
-
-    const unsupported = requireCommandSupported('boot', device);
-    if (unsupported) return unsupported;
-
-    // Cold boots warm the runner artifact cache via the
-    // onIosSimulatorColdBootStart hook above; an already-booted simulator
-    // never fires it, so kick the best-effort warmup here — boot is a
-    // natural fresh-machine entry point and a cached artifact makes this a
-    // fast no-op.
-    if (isIosFamily(device) && device.kind === 'simulator') {
-      void prewarmAppleRunnerCache(device, {});
+      device = await (await admitted.bind(device, plan.use)).operations.bootTarget(input);
     }
 
     return {
@@ -302,13 +296,13 @@ export async function handleSessionStateCommands(params: {
     if (guard) return guard;
 
     const device = await resolveCommandDevice({
-      ensureReady: false,
       flags,
       session: activeSession,
+      androidAvdSelection: 'include-stopped',
     });
-    const unsupported = requireCommandSupported('shutdown', device, {
-      message: 'shutdown is supported only for Apple simulators and Android emulators.',
-    });
+    const inspectFacts = requireInspectFacts(params.inspectFacts);
+    const facts = await inspectFacts(device);
+    const unsupported = shutdownUnavailableResponse(facts.operations.shutdownTarget);
     if (unsupported) return unsupported;
 
     if (
@@ -331,7 +325,10 @@ export async function handleSessionStateCommands(params: {
       );
     }
 
-    const shutdown = await shutdownDeviceTarget(device);
+    const bindDevice = requireBindDevice(params.bindDevice);
+    const shutdown = await (
+      await bindDevice(device, shutdownTargetUse)
+    ).operations.shutdownTarget();
     if (!shutdown.success) {
       return errorResponse(
         shutdown.error?.code ?? 'COMMAND_FAILED',
@@ -369,15 +366,20 @@ export async function handleSessionStateCommands(params: {
       req,
       sessionName,
       sessionStore,
+      inspectFacts: params.inspectFacts,
+      bindDevice: params.bindDevice,
     });
   }
 
   return null;
 }
 
-function shutdownFailureMessage(
-  shutdown: Awaited<ReturnType<typeof shutdownDeviceTarget>>,
-): string {
+function resolveAndroidSerialAllowlistForAppState(value: string | undefined): string[] | undefined {
+  const allowlist = resolveAndroidSerialAllowlist(value);
+  return allowlist ? [...allowlist].sort() : undefined;
+}
+
+function shutdownFailureMessage(shutdown: TargetShutdownResult): string {
   const message = shutdown.error?.message ?? shutdown.stderr.trim();
   return message.length > 0 ? message : 'Shutdown failed';
 }

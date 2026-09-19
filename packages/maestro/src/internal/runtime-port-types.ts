@@ -60,8 +60,6 @@ export type MaestroTargetQuery = {
   readonly selector: MaestroSelector;
   readonly purpose: 'tap' | 'doubleTap' | 'longPress' | 'swipe';
   readonly timeoutMs: number;
-  readonly index?: number;
-  readonly childOf?: MaestroSelector;
   readonly allowAtomicSelectorDispatch?: boolean;
   readonly includeSurfaceSignature?: boolean;
 };
@@ -125,6 +123,7 @@ export type MaestroRuntimeOperations = {
     readonly launchArguments?: MaestroLaunchArguments;
   }>;
   readonly stopApp: MaestroRuntimeOperation<{ readonly appId?: string }>;
+  readonly clearState: MaestroRuntimeOperation<{ readonly appId?: string }>;
   readonly openLink: MaestroRuntimeOperation<{ readonly link: string }>;
 
   readonly tapOn: MaestroRuntimeOperation<{

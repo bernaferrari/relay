@@ -1,8 +1,10 @@
+import type { SessionAction } from '@agent-device/contracts/session';
 import fs from 'node:fs';
 import path from 'node:path';
 import { publicPlatformString } from '@agent-device/kernel/device';
+import { dragGesturePayloadFromPositionals } from '@agent-device/contracts/gesture-normalization';
 import { inferFillText } from './action-utils.ts';
-import { emitDiagnostic } from '../utils/diagnostics.ts';
+import { emitDiagnostic } from '@agent-device/host-kit/diagnostics';
 import { AppError } from '@agent-device/kernel/errors';
 import {
   appendScriptSeriesFlags,
@@ -15,10 +17,12 @@ import {
   stripRecordedRefGeneration,
 } from '@agent-device/ad-script';
 import { expandSessionPath, safeSessionName } from './session-paths.ts';
-import type { SessionAction, SessionState } from './types.ts';
+import { publishFileSync } from '@agent-device/host-kit/file';
+import type { SessionState } from './session-state.ts';
 import {
   NO_SCRIPT_PUBLICATION,
   commitRepair,
+  isRecordingPublication,
   isRepairCommittable,
   scriptTargetPath,
 } from './session-script-publication-state.ts';
@@ -32,7 +36,8 @@ import {
 /**
  * `{ written: true; path }` — committed. `{ written: false }` (no `error`) —
  * intentionally not written (not recording, an aborted/incomplete repair
- * transaction, or an idempotent already-committed no-op). `{ written: false;
+ * transaction, an aborted ordinary authoring recording (#1533), or an
+ * idempotent already-committed no-op). `{ written: false;
  * error }` — ADR 0012 decision 6 (BLOCKER 2): a repair COMMIT was attempted but
  * FAILED (no-clobber refusal, a bare-`@ref` R4 failure, or a filesystem write
  * error). The `error` (a distinct AppError code/message) is surfaced to
@@ -85,6 +90,26 @@ function isRepairArmedWriteBlocked(session: SessionState): boolean {
   return !isRepairCommittable(state);
 }
 
+/**
+ * The single "may this session publish AT ALL" question, asked once by `write()` before any
+ * formatting or filesystem work, and answered entirely from the publication aggregate:
+ *
+ * - a lifecycle that is not recording publishes nothing. That covers the session that never
+ *   armed, the ABORTED authoring recording whose terminality #1533 turned into a rule, and the
+ *   already-PUBLISHED one whose second write must no-op.
+ * - a repair transaction that is committed or not yet committable (above).
+ *
+ * There is no separate ABORTED check here any more. `isRecordingPublication` answers false for a
+ * terminal authoring lifecycle, so the refusal `close` promises the caller ("Retry with plain
+ * close; it will tear down the session without writing") holds from every path reaching the
+ * writer — bare `close`, teardown, idle-reap, active publication — without a second gate that
+ * could disagree with the first.
+ */
+function isPublicationWriteBlocked(session: SessionState): boolean {
+  if (!isRecordingPublication(session.scriptPublication ?? NO_SCRIPT_PUBLICATION)) return true;
+  return isRepairArmedWriteBlocked(session);
+}
+
 export class SessionScriptWriter {
   private readonly sessionsDir: string;
 
@@ -97,8 +122,7 @@ export class SessionScriptWriter {
     const activePublication = options?.publication === 'active';
     let scriptPath: string | undefined;
     try {
-      if (!session.recordSession) return { written: false };
-      if (isRepairArmedWriteBlocked(session)) return { written: false };
+      if (isPublicationWriteBlocked(session)) return { written: false };
       const prepared = prepareSessionScript(session, {
         appendCompleteSentinel: repairArmed,
         activePublication,
@@ -139,7 +163,7 @@ export class SessionScriptWriter {
       return expandSessionPath(targetPath);
     }
     const safeName = safeSessionName(session.name);
-    const timestamp = new Date(session.createdAt).toISOString().replace(/[:.]/g, '-');
+    const timestamp = new Date(session.createdAt).toISOString().replaceAll(/[:.]/g, '-');
     return path.join(this.sessionsDir, `${safeName}-${timestamp}.ad`);
   }
 }
@@ -258,19 +282,12 @@ function publishHealedScriptAtomically(params: {
   force?: boolean;
 }): void {
   const { scriptPath, script, force } = params;
-  const dir = path.dirname(scriptPath);
-  const tempPath = path.join(
-    dir,
-    `.${path.basename(scriptPath)}.${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`,
-  );
-  fs.writeFileSync(tempPath, script);
   try {
-    if (force) {
-      fs.renameSync(tempPath, scriptPath);
-      return;
-    }
-    // Atomic create-exclusive: EEXIST iff a file already sits at scriptPath.
-    fs.linkSync(tempPath, scriptPath);
+    publishFileSync({
+      destination: scriptPath,
+      contents: script,
+      publish: force ? 'replace' : 'link-exclusive',
+    });
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     throw new AppError(
@@ -278,12 +295,6 @@ function publishHealedScriptAtomically(params: {
       `A file already exists at ${scriptPath}; remove it, pass replay --save-script=<other-path>, or pass --force/--overwrite to replace it.`,
       { reason: 'script_target_exists', path: scriptPath },
     );
-  } finally {
-    // linkSync leaves the temp hard-link behind on success; an error leaves
-    // it too — always clean up whatever of our own temp remains. A `force`
-    // rename already consumed tempPath (it no longer exists at this path),
-    // so this is a harmless no-op in that branch.
-    fs.rmSync(tempPath, { force: true });
   }
 }
 
@@ -327,6 +338,14 @@ function buildOptimizedActions(
  * than swallowing it like an ordinary fs failure).
  */
 function assertNoUnresolvedRefFallback(action: SessionAction): void {
+  const drag =
+    action.command === 'gesture'
+      ? dragGesturePayloadFromPositionals(action.positionals ?? [])
+      : undefined;
+  if (drag) {
+    assertNoUnresolvedDragEndpoint(drag);
+    return;
+  }
   if (!isSelectorTargetingCommand(action.command)) return;
   const refPositional =
     action.command === 'get' ? action.positionals?.[1] : action.positionals?.[0];
@@ -337,10 +356,21 @@ function assertNoUnresolvedRefFallback(action: SessionAction): void {
   );
 }
 
+function assertNoUnresolvedDragEndpoint(drag: { source: string; destination: string }): void {
+  const refPositional = [drag.source, drag.destination].find((value) => value.startsWith('@'));
+  if (!refPositional) return;
+  throw new AppError(
+    'COMMAND_FAILED',
+    `Cannot write recorded drag endpoint "${refPositional}" to a script: it never resolved to a selector, so the ref would not resolve in a fresh replay session.`,
+  );
+}
+
 function optimizeSelectorChainAction(action: SessionAction): SessionAction | undefined {
   const selectorExpr = readSelectorChainExpression(action);
   if (!selectorExpr || !isSelectorTargetingCommand(action.command)) return undefined;
-  if (isClickLikeCommand(action.command)) return { ...action, positionals: [selectorExpr] };
+  if (isClickLikeCommand(action.command) || action.command === 'hover') {
+    return { ...action, positionals: [selectorExpr] };
+  }
   if (action.command === 'longpress') return optimizeLongPressAction(action, selectorExpr);
   if (action.command === 'fill') return optimizeFillAction(action, selectorExpr);
   return optimizeGetAction(action, selectorExpr);

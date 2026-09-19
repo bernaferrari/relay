@@ -1,15 +1,17 @@
 import { test, expect } from 'vitest';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { makeIosSession } from '../../__tests__/test-utils/session-factories.ts';
-import { flushDiagnosticsToSessionFile, withDiagnosticsScope } from '../../utils/diagnostics.ts';
+import {
+  flushDiagnosticsToSessionFile,
+  withDiagnosticsScope,
+} from '@agent-device/host-kit/diagnostics';
 import { createDaemonRuntimeSessionStore } from '../runtime-session.ts';
 import type { CommandSessionRecord } from '../../runtime-contract.ts';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 
 test('createDaemonRuntimeSessionStore hides non-matching sessions and scopes writes', async () => {
   const previousHome = process.env.HOME;
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-runtime-session-home-'));
+  const tempHome = mkdtempForTestSync('agent-device-runtime-session-home-');
   const session = makeIosSession('qa-ios');
   const writes: CommandSessionRecord[] = [];
   const store = createDaemonRuntimeSessionStore({
@@ -32,7 +34,7 @@ test('createDaemonRuntimeSessionStore hides non-matching sessions and scopes wri
       { session: 'qa-ios', command: 'snapshot' },
       async () => {
         await store.set({ name: 'other', appBundleId: 'com.example.other' });
-        return flushDiagnosticsToSessionFile({ force: true });
+        return flushDiagnosticsToSessionFile({ force: true })?.path;
       },
     );
 

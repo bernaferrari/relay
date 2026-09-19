@@ -1,26 +1,32 @@
-import { dispatchCommand } from '../../core/dispatch.ts';
-import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
+import {
+  createBoundTouchExecutor,
+  resolveBoundTouchRuntime,
+  type BoundTouchRuntime,
+} from '../touch-runtime.ts';
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
 import {
   analyzeReactNativeOverlay,
   type ReactNativeOverlayDismissTarget,
-} from '../../core/react-native-overlay.ts';
+} from '@agent-device/capture-kit/react-native-overlay';
 import { normalizeError } from '@agent-device/kernel/errors';
-import { stripUndefined } from '../../utils/parsing.ts';
-import { successText } from '../../utils/success-text.ts';
-import type { SnapshotState } from '@agent-device/kernel/snapshot';
+import { stripUndefined } from '@agent-device/kernel/record';
+import { successText } from '@agent-device/kernel/success-text';
+
+import type { SnapshotQualityVerdict, SnapshotState } from '@agent-device/kernel/snapshot';
+import { isSparseSnapshotQualityVerdict } from '@agent-device/capture-kit/snapshot-quality-verdict';
+import type { DaemonResponse } from '../daemon-request.ts';
+import type { SessionState } from '../session-state.ts';
+import { errorResponse, noActiveSessionError } from '../response.ts';
 import {
-  isSparseSnapshotQualityVerdict,
-  type SnapshotQualityVerdict,
-} from '../../snapshot/snapshot-quality.ts';
-import type { DaemonResponse, SessionState } from '../types.ts';
-import { errorResponse, noActiveSessionError, requireCommandSupported } from './response.ts';
-import { captureSnapshotForSession } from './interaction-snapshot.ts';
-import { finalizeTouchInteraction, type InteractionHandlerParams } from './interaction-common.ts';
+  captureSnapshotForSession,
+  finalizeTouchInteraction,
+  type InteractionRouteInput,
+} from '../interaction/index.ts';
 import { expireRefFrame } from '../ref-frame.ts';
-import { readSnapshotNodesReferenceFrame } from './interaction-touch-reference-frame.ts';
+import { readSnapshotNodesReferenceFrame } from '@agent-device/capture-kit/touch-reference-frame';
 
 export async function handleReactNativeCommands(
-  params: InteractionHandlerParams,
+  params: InteractionRouteInput,
 ): Promise<DaemonResponse | null> {
   const { req, sessionName, sessionStore } = params;
   if (req.command !== PUBLIC_COMMANDS.reactNative) return null;
@@ -29,10 +35,30 @@ export async function handleReactNativeCommands(
 
   const session = sessionStore.get(sessionName);
   if (!session) return noActiveSessionError();
-  const unsupported = requireCommandSupported(PUBLIC_COMMANDS.reactNative, session.device, {
-    message: 'react-native dismiss-overlay is not supported on this device',
+  // R61: admission is the owner's own `tapPoint` fact — the one operation this command executes.
+  // It runs before the observing capture, exactly where the retired capability gate ran, so an
+  // owner that cannot dismiss an overlay refuses without first spending a snapshot on it.
+  //
+  // Deliberate widening: the retired bucket was `{apple, android, linux: {}}`, so Linux desktop,
+  // web and HarmonyOS were refused by family. All three admit `tapPoint`, so all three now run —
+  // and answer `detected: false` on a surface with no React Native overlay, which is the truthful
+  // result. A family cannot be a support authority for a migrated command (ADR 0019 §8); the
+  // Linux and web coverage manifests record this, and HarmonyOS has no manifest to record it in.
+  const bound = await resolveBoundTouchRuntime({
+    device: session.device,
+    command: 'press',
+    requiresCapture: false,
+    inspectFacts: params.inspectFacts,
+    bindDevice: params.bindDevice,
+    unavailableResponse: (unavailable) =>
+      errorResponse(
+        'UNSUPPORTED_OPERATION',
+        'react-native dismiss-overlay is not supported on this device',
+        undefined,
+        unavailable.hint ? { hint: unavailable.hint } : undefined,
+      ),
   });
-  if (unsupported) return unsupported;
+  if (!bound.ok) return bound.response;
 
   try {
     const snapshot = await captureSnapshotForSession(
@@ -50,7 +76,7 @@ export async function handleReactNativeCommands(
     if (!target) {
       return responseForMissingReactNativeOverlayTarget(overlay.detected);
     }
-    return await dismissReactNativeOverlayTarget(params, session, snapshot, target);
+    return await executeReactNativeOverlayDismiss(params, session, snapshot, target, bound.runtime);
   } catch (error) {
     return { ok: false, error: normalizeError(error) };
   }
@@ -102,25 +128,38 @@ function responseForSparseReactNativeOverlaySnapshot(
   );
 }
 
-async function dismissReactNativeOverlayTarget(
-  params: InteractionHandlerParams,
+/**
+ * R61 renamed this from `dismissReactNativeOverlayTarget` to record the contract change: it no
+ * longer resolves anything, because admission moved up to the route entry. It receives an
+ * already-bound runtime and executes the one tap.
+ */
+async function executeReactNativeOverlayDismiss(
+  params: InteractionRouteInput,
   session: SessionState,
   snapshot: SnapshotState,
   target: ReactNativeOverlayDismissTarget,
+  runtime: BoundTouchRuntime,
 ): Promise<DaemonResponse> {
   const { req, sessionStore } = params;
+  // The dismissal press rides the same bound `tapPoint` a user-typed `press` does (R48). The
+  // binding is the caller's: admission happened before the overlay was even observed.
+  const context = params.contextFromFlags(req.flags, session.appBundleId, session.trace?.outPath);
+  const executor = createBoundTouchExecutor(runtime, context);
+  // `tapPoint` is this command's one *required* operation, so admission already proved the cell.
+  // The executor still types every leg optional, and reaching it through `?.` would report
+  // `dismissed: true` for a dismissal that never touched the device. Refuse instead of lying.
+  const tapPoint = executor.tapPoint;
+  if (!tapPoint) {
+    return errorResponse(
+      'UNSUPPORTED_OPERATION',
+      'react-native dismiss-overlay is not supported on this device',
+    );
+  }
   const actionStartedAt = Date.now();
   // ADR 0014 side-effect seam: React Native overlay dismissal taps the device;
   // the target is already resolved, so expire the frame before the press.
   expireRefFrame(session);
-  const data =
-    (await dispatchCommand(
-      session.device,
-      'press',
-      [String(target.point.x), String(target.point.y)],
-      req.flags?.out,
-      params.contextFromFlags(req.flags, session.appBundleId, session.trace?.outPath),
-    )) ?? {};
+  const data = await tapPoint(target.point);
   const actionFinishedAt = Date.now();
   const verification = await verifyReactNativeOverlayDismissal(params, session);
   const responseData = stripUndefined({
@@ -154,7 +193,7 @@ async function dismissReactNativeOverlayTarget(
 }
 
 async function verifyReactNativeOverlayDismissal(
-  params: InteractionHandlerParams,
+  params: InteractionRouteInput,
   session: SessionState,
 ): Promise<{
   verified: boolean;

@@ -1,12 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import { doctorCliOutput, managementCliOutputFormatters, openCliOutput } from './output.ts';
-import { markDoctorProgressRendered } from '../../utils/doctor-progress.ts';
-import { withNoColor } from '../../__tests__/test-utils/index.ts';
+import { withNoColorAsync } from '../../__tests__/test-utils/color.ts';
 import type { AppOpenResult } from '@agent-device/contracts/client';
 
 describe('openCliOutput', () => {
-  test('prints session state directory on a second line', () => {
-    const output = openCliOutput({
+  test('prints session state directory on a second line', async () => {
+    const output = await openCliOutput({
       session: 'default',
       sessionStateDir: '/tmp/agent-device/sessions/cwd_123_default',
       identifiers: { session: 'default' },
@@ -21,22 +20,22 @@ describe('openCliOutput', () => {
     });
   });
 
-  test('keeps internal open timing out of public output data', () => {
+  test('keeps internal open timing out of public output data', async () => {
     const result: AppOpenResult & { timing: { totalDurationMs: number } } = {
       session: 'default',
       sessionStateDir: '/tmp/agent-device/sessions/cwd_123_default',
       identifiers: { session: 'default' },
       timing: { totalDurationMs: 42 },
     };
-    const output = openCliOutput(result);
+    const output = await openCliOutput(result);
 
     expect(output.data).not.toHaveProperty('timing');
   });
 
-  test('preserves open warnings in JSON data and renders them immediately', () => {
+  test('preserves open warnings in JSON data and renders them immediately', async () => {
     const warning =
       'Script publication was aborted by a second successful open; start a fresh session.';
-    const output = openCliOutput({
+    const output = await openCliOutput({
       session: 'authoring',
       warnings: [warning],
       identifiers: { session: 'authoring' },
@@ -44,6 +43,108 @@ describe('openCliOutput', () => {
 
     expect(output.data).toMatchObject({ warnings: [warning] });
     expect(output.text).toBe(`Opened: authoring\nWarning: ${warning}`);
+  });
+
+  test('preserves device-selection evidence in the CLI payload', async () => {
+    const output = await openCliOutput({
+      session: 'selected',
+      selection: {
+        reason: 'single-booted-local',
+        source: 'local',
+        candidateCount: 2,
+        bootOccurred: false,
+      },
+      identifiers: { session: 'selected' },
+    });
+
+    expect(output.data).toMatchObject({
+      selection: {
+        reason: 'single-booted-local',
+        source: 'local',
+        candidateCount: 2,
+        bootOccurred: false,
+      },
+    });
+  });
+
+  // #1671 P1: the composed open --foreground snapshot must render on default
+  // stdout through the PRODUCTION formatter route (the family-registry entry
+  // the CLI resolves, not a helper mock), printing the same interactive tree
+  // lines `snapshot -i` prints after the open confirmation.
+  test('production formatter route renders the composed --foreground snapshot tree on default output', async () => {
+    const { formatCliOutput } = await import('../cli-output.ts');
+    const { attachRefs } = await import('@agent-device/kernel/snapshot');
+    const nodes = attachRefs([
+      { index: 0, type: 'Button', label: 'Sign In', depth: 0, hittable: true },
+      { index: 1, type: 'TextField', label: 'Email', depth: 0, hittable: true },
+    ]);
+    const openResult: AppOpenResult = {
+      session: 'default',
+      sessionStateDir: '/tmp/agent-device/sessions/cwd_123_default',
+      appBundleId: 'com.apple.Preferences',
+      snapshot: { nodes, truncated: false, backend: 'xctest', refsGeneration: 1 },
+      identifiers: { session: 'default' },
+    };
+
+    const openOutput = await withNoColorAsync(() =>
+      formatCliOutput({ name: 'open', input: {}, result: openResult }),
+    );
+    const snapshotOutput = await withNoColorAsync(() =>
+      formatCliOutput({
+        name: 'snapshot',
+        input: { interactiveOnly: true },
+        result: { nodes, truncated: false, backend: 'xctest', refsGeneration: 1 },
+      }),
+    );
+
+    if (!openOutput?.text || !snapshotOutput?.text) {
+      throw new Error('production formatter route returned no text output');
+    }
+    // The tree lines are exactly what `snapshot -i` would print, appended
+    // after the open confirmation lines.
+    expect(openOutput.text).toBe(
+      [
+        'Opened: com.apple.Preferences',
+        'Session state: /tmp/agent-device/sessions/cwd_123_default',
+        snapshotOutput.text,
+      ].join('\n'),
+    );
+    expect(openOutput.text).toContain('Sign In');
+    expect(openOutput.text).toContain('Email');
+    // --json carries the same presented snapshot payload snapshot -i emits.
+    const openJsonSnapshot = (openOutput.data as { snapshot?: unknown }).snapshot;
+    expect(openJsonSnapshot).toEqual(snapshotOutput.jsonData ?? snapshotOutput.data);
+  });
+
+  test('renders the initialSnapshotError warning without a tree when the composed capture failed', async () => {
+    const warning =
+      'The session is open, but the initial interactive snapshot failed (COMMAND_FAILED: capture failed). Run: agent-device snapshot -i';
+    const output = await openCliOutput({
+      session: 'default',
+      warnings: [warning],
+      initialSnapshotError: {
+        code: 'COMMAND_FAILED',
+        message: 'capture failed',
+        hint: 'Retry with --debug and inspect diagnostics log for details.',
+        diagnosticId: 'diag-1',
+        logPath: '/tmp/req.ndjson',
+        details: { reason: 'runner_unavailable' },
+      },
+      identifiers: { session: 'default' },
+    });
+
+    expect(output.text).toBe(`Opened: default\nWarning: ${warning}`);
+    // The FULL error shape survives into public JSON output.
+    expect(output.data).toMatchObject({
+      initialSnapshotError: {
+        code: 'COMMAND_FAILED',
+        message: 'capture failed',
+        hint: 'Retry with --debug and inspect diagnostics log for details.',
+        diagnosticId: 'diag-1',
+        logPath: '/tmp/req.ndjson',
+        details: { reason: 'runner_unavailable' },
+      },
+    });
   });
 });
 
@@ -125,8 +226,8 @@ describe('artifactsCliOutput', () => {
 });
 
 describe('doctorCliOutput', () => {
-  test('prints passing checks by default using test-style status markers', () => {
-    const output = withNoColor(() =>
+  test('prints passing checks by default using test-style status markers', async () => {
+    const output = await withNoColorAsync(() =>
       doctorCliOutput({
         status: 'pass',
         summary: 'No blockers found.',
@@ -160,8 +261,8 @@ describe('doctorCliOutput', () => {
     );
   });
 
-  test('keeps warning and failure recovery details under the relevant row', () => {
-    const output = withNoColor(() =>
+  test('keeps warning and failure recovery details under the relevant row', async () => {
+    const output = await withNoColorAsync(() =>
       doctorCliOutput({
         status: 'fail',
         checks: [
@@ -192,10 +293,9 @@ describe('doctorCliOutput', () => {
     );
   });
 
-  test('prints only the summary after streamed progress rendered the checks', () => {
-    const output = withNoColor(() => {
-      markDoctorProgressRendered();
-      return doctorCliOutput({
+  test('prints only the summary after streamed progress rendered the checks', async () => {
+    const output = await withNoColorAsync(async () => {
+      const result = {
         status: 'pass',
         summary: 'No blockers found.',
         checks: [
@@ -205,9 +305,74 @@ describe('doctorCliOutput', () => {
             summary: 'Selected Pixel (android)',
           },
         ],
-      });
+      };
+      return await doctorCliOutput(result, { renderedToStderr: true });
     });
 
     expect(output.text).toBe(['Doctor: pass', 'No blockers found.'].join('\n'));
+  });
+
+  test('keeps the checks when a caller-owned sink consumed the progress events', async () => {
+    // An SDK or MCP caller passing its own `RequestProgressSink` writes nothing to
+    // this process's stderr, so its progress state stays unrendered and the reader
+    // of this output has not seen the checks yet.
+    const output = await withNoColorAsync(async () => {
+      const result = {
+        status: 'pass',
+        summary: 'No blockers found.',
+        checks: [
+          {
+            id: 'device',
+            status: 'pass',
+            summary: 'Selected Pixel (android)',
+          },
+        ],
+      };
+      return await doctorCliOutput(result, { renderedToStderr: false });
+    });
+
+    expect(output.text).toBe(['Doctor: pass', '✓ device: Selected Pixel (android)'].join('\n'));
+  });
+});
+
+describe('devices output', () => {
+  test('carries the projected claim owner through JSON data and the text line', async () => {
+    const output = await managementCliOutputFormatters.devices({
+      input: {},
+      result: [
+        {
+          platform: 'ios',
+          appleOs: 'ios',
+          target: 'mobile',
+          kind: 'simulator',
+          id: 'sim-free',
+          name: 'Free iPhone',
+          booted: true,
+          identifiers: { deviceId: 'sim-free', deviceName: 'Free iPhone', udid: 'sim-free' },
+        },
+        {
+          platform: 'ios',
+          appleOs: 'ios',
+          target: 'mobile',
+          kind: 'simulator',
+          id: 'sim-claimed',
+          name: 'Claimed iPhone',
+          booted: true,
+          identifiers: {
+            deviceId: 'sim-claimed',
+            deviceName: 'Claimed iPhone',
+            udid: 'sim-claimed',
+          },
+          claimedBy: { session: 'qa', workspace: '/worktrees/qa' },
+        },
+      ],
+    });
+
+    const devices = (output.data as { devices: Record<string, unknown>[] }).devices;
+    expect(devices[0]).not.toHaveProperty('claimedBy');
+    expect(devices[1]?.claimedBy).toEqual({ session: 'qa', workspace: '/worktrees/qa' });
+    const lines = (output.text ?? '').split('\n');
+    expect(lines[0]).not.toContain('claimed by');
+    expect(lines[1]).toContain('claimed by session "qa" in /worktrees/qa');
   });
 });

@@ -1,15 +1,23 @@
-import { WAIT_REASONS } from '@agent-device/contracts/interaction';
+import { WAIT_REASONS } from '@agent-device/contracts/wait';
 import type { SnapshotNode } from '@agent-device/kernel/snapshot';
-import type { DaemonRequest, DaemonResponse, SessionState } from './types.ts';
-import { captureSnapshot } from './handlers/snapshot-capture.ts';
-import { errorResponse } from './handlers/response.ts';
+import type { DaemonRequest, DaemonResponse } from './daemon-request.ts';
+import type { SessionState } from './session-state.ts';
+import { captureSnapshot } from './snapshot-capture.ts';
+import { errorResponse } from './response.ts';
 import { normalizeType } from '@agent-device/contracts/snapshot';
+import { buildRuntimeCaptureInput } from './snapshot-runtime-capture-input.ts';
+import type { BoundSelectorCapture } from './selector-capture-binding.ts';
 
 type WaitCurrentSurfaceParams = {
   req: DaemonRequest;
   logPath?: string;
   session: SessionState | undefined;
   device: SessionState['device'];
+  /**
+   * The wait's own request binding. The decoration capture is wait's platform execution too, so
+   * it reuses the single admitted binding rather than reaching a second capture owner.
+   */
+  capture: BoundSelectorCapture;
 };
 
 type CurrentSurfaceDetails = {
@@ -53,14 +61,25 @@ function canInspectWaitSurface(reason: unknown): boolean {
 async function inspectCurrentSurface(
   params: WaitCurrentSurfaceParams,
 ): Promise<{ summary: string; details: CurrentSurfaceDetails } | null> {
+  const flags = {
+    ...params.req.flags,
+    snapshotInteractiveOnly: true,
+  };
   const capture = await captureSnapshot({
     device: params.device,
     session: params.session,
-    flags: {
-      ...params.req.flags,
-      snapshotInteractiveOnly: true,
-    },
+    flags,
     logPath: params.logPath ?? '',
+    captureData: async () =>
+      await params.capture(
+        buildRuntimeCaptureInput({
+          flags,
+          logPath: params.logPath ?? '',
+          meta: params.req.meta,
+          session: params.session,
+          snapshotScope: undefined,
+        }),
+      ),
   });
   const orderedNodes = [...capture.snapshot.nodes].sort(compareSurfacePriority);
   const labels = topSurfaceTexts(orderedNodes, 6, { includeIdentifiers: true });
@@ -121,7 +140,7 @@ function extractSurfaceText(node: SnapshotNode, options: { includeIdentifiers: b
   const value = candidates
     .map((candidate) => (typeof candidate === 'string' ? candidate.trim() : ''))
     .find((candidate) => candidate.length > 0);
-  return value ? value.replace(/\s+/g, ' ').slice(0, 80) : '';
+  return value ? value.replaceAll(/\s+/g, ' ').slice(0, 80) : '';
 }
 
 function isChromeLikeNode(node: SnapshotNode): boolean {

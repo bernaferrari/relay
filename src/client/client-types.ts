@@ -7,9 +7,8 @@
 // both surfaces need has to sit below both.
 //
 // What is still declared HERE is the `AgentDeviceClient` facade plus the shapes that are themselves
-// stated in terms of a HIGHER-ranked zone: `commands/system/navigation-projection.ts` (the projected
-// navigation client) and `core/` (`CommandResult`, `BatchRunResult`). Declaring those in contracts/
-// would trade 28 commands->client inversions for contracts->commands and contracts->core ones — the
+// stated in terms of a HIGHER-ranked zone: `core/` (`CommandResult`, `BatchRunResult`). Declaring
+// those in contracts/ would trade 28 commands->client inversions for contracts->core ones — the
 // foundation depending on the layers above it, which is worse. They can move once their upstream
 // declarations do; see docs/dependency-graph-findings.md §0, which also explains why the facade's
 // own 4 remaining inversions are a position rather than debt.
@@ -38,16 +37,16 @@ export type {
 // fallow-ignore-next-line unused-type
 export type { TargetShutdownResult } from '@agent-device/contracts/device';
 // fallow-ignore-next-line unused-type
-export type { MetroBridgeScope } from './client-companion-tunnel-contract.ts';
+export type { MetroBridgeScope } from '@agent-device/contracts/remote';
 // fallow-ignore-next-line unused-type
 export type { AppsFilter } from '@agent-device/contracts/device';
 // fallow-ignore-next-line unused-type
-export type { AlertAction } from '@agent-device/contracts/interaction';
+export type { AlertAction } from '@agent-device/contracts/alert-contract';
 // fallow-ignore-next-line unused-type
 export type { AppleOS } from '@agent-device/kernel/device';
 // fallow-ignore-next-line unused-type
 export type { JsonObject } from '@agent-device/contracts/client';
-export type { BatchRunResult } from '../core/batch.ts';
+export type { BatchRunResult } from '@agent-device/command-registry/batch';
 
 import type {
   AgentDeviceCapabilitiesResult,
@@ -69,8 +68,10 @@ import type {
   AppOpenResult,
   AppPushOptions,
   AppStateCommandOptions,
+  AppSwitcherCommandOptions,
   AppTriggerEventOptions,
   AudioOptions,
+  BackCommandOptions,
   BatchRunOptions,
   CaptureDiffOptions,
   CaptureScreenshotOptions,
@@ -82,25 +83,30 @@ import type {
   CloudArtifactsOptions,
   CommandRequestResult,
   DeviceBootOptions,
-  DeviceCommandBaseOptions,
   DeviceShutdownOptions,
   DoctorCommandOptions,
+  DragOptions,
   EventsOptions,
   FillOptions,
   FindOptions,
   FlingOptions,
   FocusOptions,
   GetOptions,
+  HomeCommandOptions,
+  HoverOptions,
   IsOptions,
   KeyboardCommandOptions,
   Lease,
   LeaseAllocateOptions,
   LeaseScopedOptions,
+  HumanControlHold,
+  HumanControlHoldOptions,
   LogsOptions,
   LongPressOptions,
   MaterializationReleaseOptions,
   MaterializationReleaseResult,
   NetworkOptions,
+  OrientationCommandOptions,
   PanOptions,
   PerfOptions,
   PinchOptions,
@@ -120,6 +126,7 @@ import type {
   SwipeOptions,
   TraceOptions,
   TransformGestureOptions,
+  TvRemoteCommandOptions,
   TypeTextOptions,
   ViewportCommandOptions,
   WaitCommandOptions,
@@ -131,14 +138,7 @@ import type {
   MetroReloadResult,
 } from '@agent-device/contracts/remote';
 
-import type { RotateCommandResult } from '@agent-device/contracts/interaction';
-
-import type {
-  NavigationCommandOptions,
-  ProjectedNavigationCommandClient,
-} from '../commands/system/navigation-projection.ts';
-
-import type { BatchRunResult } from '../core/batch.ts';
+import type { BatchRunResult } from '@agent-device/command-registry/batch';
 
 import type {
   AgentArtifactsResult,
@@ -146,16 +146,12 @@ import type {
   DebugSymbolsOptions,
   DebugSymbolsResult,
 } from '@agent-device/contracts/observability';
-import type { CommandResult } from '../core/command-descriptor/command-result.ts';
+import type { CommandResult } from '@agent-device/command-registry/command-result';
 
 export type { DiffSnapshotCommandResult } from '@agent-device/contracts/capture';
 export type { PrepareCommandResult, PushCommandResult } from '@agent-device/contracts/command';
 export type { TriggerAppEventCommandResult } from '@agent-device/contracts/device';
-export type {
-  /** @deprecated Renamed to `OrientationCommandResult`. Retained until the next major. */
-  RotateCommandResult,
-  WaitCommandResult,
-} from '@agent-device/contracts/interaction';
+export type { WaitCommandResult } from '@agent-device/contracts/wait';
 export type {
   DebugSymbolsOptions,
   DebugSymbolsResult,
@@ -164,21 +160,12 @@ export type {
 export type { RecordingCommandResult, TraceCommandResult } from '@agent-device/contracts/recording';
 export type { ReplayCommandResult, ReplaySuiteResult } from '@agent-device/contracts/replay';
 
-export type BackCommandOptions = DeviceCommandBaseOptions & NavigationCommandOptions<'back'>;
-
-export type OrientationCommandOptions = DeviceCommandBaseOptions &
-  NavigationCommandOptions<'orientation'>;
-
-/** @deprecated Renamed to `OrientationCommandOptions`. Retained until the next major. */
-export type RotateCommandOptions = OrientationCommandOptions;
-
-export type AppSwitcherCommandOptions = DeviceCommandBaseOptions &
-  NavigationCommandOptions<'app-switcher'>;
-
-export type TvRemoteCommandOptions = DeviceCommandBaseOptions &
-  NavigationCommandOptions<'tv-remote'>;
-
-type NonNavigationCommandClient = {
+export type AgentDeviceCommandClient = {
+  back: (options?: BackCommandOptions) => Promise<CommandResult<'back'>>;
+  home: (options?: HomeCommandOptions) => Promise<CommandResult<'home'>>;
+  orientation: (options: OrientationCommandOptions) => Promise<CommandResult<'orientation'>>;
+  appSwitcher: (options?: AppSwitcherCommandOptions) => Promise<CommandResult<'app-switcher'>>;
+  tvRemote: (options: TvRemoteCommandOptions) => Promise<CommandResult<'tv-remote'>>;
   wait: (options: WaitCommandOptions) => Promise<CommandResult<'wait'>>;
   alert: (options?: AlertCommandOptions) => Promise<CommandRequestResult>;
   appState: (options?: AppStateCommandOptions) => Promise<CommandResult<'appstate'>>;
@@ -192,19 +179,6 @@ type NonNavigationCommandClient = {
    */
   prepare: (options: PrepareCommandOptions) => Promise<CommandResult<'prepare'>>;
   viewport: (options: ViewportCommandOptions) => Promise<CommandResult<'viewport'>>;
-};
-
-export type AgentDeviceCommandClient = ProjectedNavigationCommandClient<DeviceCommandBaseOptions> &
-  NonNavigationCommandClient &
-  DeprecatedCommandClient;
-
-/** Renamed command methods retained for existing consumers until the next major. */
-type DeprecatedCommandClient = {
-  /**
-   * @deprecated Renamed to `orientation`. Delegates to it and returns the legacy
-   * `action: 'rotate'` response contract. Retained until the next major version.
-   */
-  rotate: (options: RotateCommandOptions) => Promise<RotateCommandResult>;
 };
 
 export type AgentDeviceClient = {
@@ -256,6 +230,15 @@ export type AgentDeviceClient = {
     release: (
       options: LeaseScopedOptions,
     ) => Promise<{ released: boolean; provider?: CloudProviderSessionResult }>;
+    humanControl: {
+      list: (options?: AgentDeviceRequestOverrides) => Promise<HumanControlHold[]>;
+      put: (
+        id: string,
+        input?: HumanControlHoldOptions,
+        options?: AgentDeviceRequestOverrides,
+      ) => Promise<HumanControlHold>;
+      remove: (id: string, options?: AgentDeviceRequestOverrides) => Promise<boolean>;
+    };
   };
   metro: {
     prepare: (options: MetroPrepareOptions) => Promise<MetroPrepareResult>;
@@ -270,8 +253,10 @@ export type AgentDeviceClient = {
     click: (options: ClickOptions) => Promise<CommandResult<'click'>>;
     press: (options: PressOptions) => Promise<CommandResult<'press'>>;
     longPress: (options: LongPressOptions) => Promise<CommandResult<'longpress'>>;
+    hover: (options: HoverOptions) => Promise<CommandResult<'hover'>>;
     swipe: (options: SwipeOptions) => Promise<CommandRequestResult>;
     pan: (options: PanOptions) => Promise<CommandRequestResult>;
+    drag: (options: DragOptions) => Promise<CommandRequestResult>;
     fling: (options: FlingOptions) => Promise<CommandRequestResult>;
     swipeGesture: (options: SwipeGestureOptions) => Promise<CommandRequestResult>;
     focus: (options: FocusOptions) => Promise<CommandRequestResult>;
@@ -293,7 +278,7 @@ export type AgentDeviceClient = {
     run: (options: BatchRunOptions) => Promise<BatchRunResult>;
   };
   observability: {
-    perf: (options?: PerfOptions) => Promise<CommandRequestResult>;
+    perf: (options: PerfOptions) => Promise<CommandRequestResult>;
     logs: (options?: LogsOptions) => Promise<CommandRequestResult>;
     events: (options?: EventsOptions) => Promise<CommandRequestResult>;
     network: (options?: NetworkOptions) => Promise<CommandRequestResult>;

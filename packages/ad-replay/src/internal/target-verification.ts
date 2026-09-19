@@ -1,6 +1,6 @@
 /**
  * #1478 P5 stage C2a: the target-verification ENGINE policy — moved verbatim
- * out of `src/daemon/handlers/session-replay-target-verification.ts`, which
+ * out of `src/daemon/replay/internal/session-replay-target-verification.ts`, which
  * keeps the DAEMON-AUTHORITY half (capture, `SessionStore`, resume stamping,
  * wire projection into `DaemonResponse`). This module decides, over already-
  * available plain values, whether/how a recorded target-binding annotation
@@ -71,6 +71,7 @@ export type AdReplayTargetStructuralDenotation = Readonly<{
  * sees the untyped bag itself.
  */
 export type AdReplayGuardMismatchEvidence = Readonly<{
+  targetRole?: 'source' | 'destination';
   observed: LocalIdentity | undefined;
   expectedStructural: AdReplayTargetStructuralDenotation | undefined;
   observedStructural: AdReplayTargetStructuralDenotation | undefined;

@@ -1,6 +1,7 @@
 import type { Point, SnapshotNode } from '@agent-device/kernel/snapshot';
 import type { ResponseCost } from '@agent-device/kernel/contracts';
 import type { ClickButton } from './click-button.ts';
+import type { FillUnconfirmedVerification } from './interactor-types.ts';
 
 export type SelectorTarget = {
   kind: 'selector';
@@ -34,7 +35,11 @@ export type ResolvedTarget =
     };
 
 /** The decisive criterion separating a resolveSelectorChain winner from its strongest runner-up (ADR 0012). */
-export type DisambiguationTiebreak = 'visible' | 'deepest' | 'smallest-area';
+export type DisambiguationTiebreak =
+  | 'visible'
+  | 'deepest'
+  | 'smallest-area'
+  | 'structural-equivalence';
 
 /**
  * A disambiguation winner or losing alternative. `diagnosticRef` is an opaque,
@@ -50,7 +55,7 @@ export type ResolutionDiagnosticEntry = {
 
 /**
  * ADR 0012 decision 2: pre-action disclosure of how the acting path resolved
- * its target, on every press/click/fill/longpress response. Never ref-issuing.
+ * its target, including each endpoint of a target-authored drag. Never ref-issuing.
  * `direct-ios`/`not-observed` = the XCTest fast path has no daemon tree to
  * report from; `ref`/`label-fallback` = a stale `@ref` recovered via
  * first-match label lookup, never exact ref provenance; `alternatives` holds
@@ -86,11 +91,65 @@ export type RecordingTargetOverride = {
   refLabel?: string;
 };
 
+/**
+ * #1654: a target its CALLER already resolved, against a tree the caller
+ * captured itself, handed to the interaction leaf so the leaf does not resolve
+ * the same `@ref` a second time.
+ *
+ * The sole producer is a mutating `find` (`src/daemon/interaction/internal/find.ts`): it
+ * captures, matches by locator, promotes to a hittable ancestor, and mints
+ * `@eN` off the node it chose — then re-enters the interaction leaf. Without
+ * this channel the leaf repeated an in-memory `@eN` lookup after find had
+ * already selected the node. No reachable production path is currently known
+ * to advance the tree in that interval; this type removes the duplicate lookup
+ * structurally and keeps the selected ref/node/tree provenance together.
+ *
+ * What this does NOT skip: the shared guards. Occlusion, hittable-ancestor
+ * promotion, and the off-screen check still run, on this node, at the same
+ * symbols the ADR 0011 `runtime-ref` cells name — the pre-resolution replaces
+ * the LOOKUP, not the guarantees.
+ *
+ * In-process only, like `RecordingTargetOverride` above: it travels on the
+ * daemon-only `internal` request channel (`toDaemonRequest` never copies that
+ * off the wire), carries live node references, and is never serialized into a
+ * response.
+ */
+export type PreresolvedInteractionTarget = {
+  /** The ref minted for `node`; the consumer validates it against the positional target. */
+  ref: string;
+  /** The node the caller resolved, after the caller's own promotion. */
+  node: SnapshotNode;
+  /** The tree `node` came from — the guards read its siblings for occlusion/viewport. */
+  nodes: SnapshotNode[];
+  /**
+   * The in-place iOS system surface `nodes` describes (#2438), absent for ordinary app content.
+   * Travels with the tree so the adopting consumer's post-action comparison knows which surface
+   * its baseline came from.
+   */
+  iosSystemSurfaceBundleId?: string;
+};
+
+/**
+ * One side of a post-action comparison: the nodes, and the SURFACE the capture they came from
+ * described (#2438: the bundle id of an in-place iOS system surface such as a web sign-in sheet,
+ * absent for ordinary app content).
+ *
+ * One value, never two channels: a capture of the sheet and a capture of the app describe
+ * different surfaces, so a `--verify` digest comparison or a `--settle` diff across that boundary
+ * is not about one presentation. Every boundary that carries a baseline carries this type, so
+ * nodes cannot arrive without the surface they describe.
+ */
+export type SurfaceScopedNodes = {
+  nodes: SnapshotNode[];
+  /** Bundle id of the in-place iOS system surface; absent for ordinary app content. */
+  surfaceBundleId?: string;
+};
+
 export type ResolvedInteractionTarget =
   | {
       kind: 'point';
       point: Point;
-      preActionNodes?: SnapshotNode[];
+      preAction?: SurfaceScopedNodes;
     }
   | {
       kind: 'ref';
@@ -101,9 +160,9 @@ export type ResolvedInteractionTarget =
       refLabel?: string;
       targetHittable?: boolean;
       hint?: string;
-      preActionNodes?: SnapshotNode[];
       resolution?: ResolutionDisclosure;
       recordingTarget?: RecordingTargetOverride;
+      preAction?: SurfaceScopedNodes;
     }
   | {
       kind: 'selector';
@@ -114,10 +173,27 @@ export type ResolvedInteractionTarget =
       refLabel?: string;
       targetHittable?: boolean;
       hint?: string;
-      preActionNodes?: SnapshotNode[];
       resolution?: ResolutionDisclosure;
       recordingTarget?: RecordingTargetOverride;
+      preAction?: SurfaceScopedNodes;
     };
+
+/**
+ * A post-action capture that describes a DIFFERENT surface than the pre-action baseline (#2438): an
+ * in-place iOS system surface (a web sign-in or Apple Pay sheet, hosted out of the app's process)
+ * was presented over the app, or left it. `from`/`to` name the two surfaces — a host bundle id, or
+ * `APP_SURFACE` (`@agent-device/contracts/ios-system-surface`) for ordinary app content.
+ *
+ * Its presence IS the refusal of a same-surface claim: the two captures are not one presentation,
+ * so `--verify` reports `changedFromBefore` from this transition instead of from a digest
+ * comparison across it, and `--settle` attaches no settled diff (and therefore no refs) across it.
+ */
+export type PostActionSurfaceChange = {
+  from: string;
+  to: string;
+  /** The one agent-facing sentence for this transition (`@agent-device/contracts/ios-system-surface`). */
+  disclosure: string;
+};
 
 /**
  * Opt-in (`--verify`) cheap post-condition evidence for mutating interaction
@@ -127,6 +203,10 @@ export type ResolvedInteractionTarget =
  * held, so no extra device round trip is spent beyond the one verify capture.
  * `changedFromBefore: false` is evidence, not failure — the command still
  * succeeded.
+ *
+ * When `surfaceChange` is present the two captures describe different surfaces, so the digest
+ * comparison is not made at all: `changedFromBefore` then reports that transition, which replaced
+ * the whole observed surface.
  */
 export type InteractionEvidence = {
   foregroundApp?: string;
@@ -134,6 +214,7 @@ export type InteractionEvidence = {
   interactiveNodeCount: number;
   digest: string;
   changedFromBefore: boolean;
+  surfaceChange?: PostActionSurfaceChange;
 };
 
 export type SettleDiffLine = {
@@ -180,6 +261,18 @@ export type SettleParams = {
   timeoutMs?: number;
 };
 
+/**
+ * The find read-action result, consumed verbatim on both sides of the
+ * daemon/engine boundary (R2: the shape lives below both zones — a daemon-side
+ * structural twin drifted into an identical clone before it moved here).
+ */
+export type FindReadResult =
+  | { kind: 'found'; found: true; waitedMs?: number }
+  | { kind: 'text'; ref: string; text: string; node: SnapshotNode }
+  | { kind: 'attrs'; ref: string; node: SnapshotNode }
+  /** #1625: the read-only inspection surface — every match, never a tap. */
+  | { kind: 'list'; matches: Array<{ ref: string; node: SnapshotNode }> };
+
 export type SettleObservation = {
   settled: boolean;
   waitedMs: number;
@@ -200,7 +293,17 @@ export type SettleObservation = {
    * intentionally omitted.
    */
   refs?: Array<{ ref: string }>;
-  /** Present only for `settled: true` observations that stored the settled tree. */
+  /**
+   * Present when the settled capture describes a different surface than the pre-action baseline
+   * (#2438). The settled tree then replaced the whole surface rather than changing within one, so
+   * `diff` is omitted: its lines (and their refs) would present a surface replacement as an
+   * in-surface change. `hint` says what to do instead.
+   */
+  surfaceChange?: PostActionSurfaceChange;
+  /**
+   * Present only for `settled: true` observations that stored the settled tree, and never across a
+   * `surfaceChange` — a diff describes change WITHIN one surface.
+   */
   diff?: {
     summary: { additions: number; removals: number; unchanged: number };
     lines: SettleDiffLine[];
@@ -296,7 +399,16 @@ export type ClickCommandResponseData = PressCommandResponseData;
 type TouchFillExtras = {
   text: string;
   delayMs?: number;
-};
+} & (
+  | {
+      verification?: never;
+      requested?: never;
+      before?: never;
+      after?: never;
+      target?: never;
+    }
+  | FillUnconfirmedVerification
+);
 
 export type FillCommandResponseData =
   | (TouchResponsePoint & TouchFillExtras)
@@ -312,6 +424,15 @@ export type LongPressCommandResponseData =
   | (TouchResponsePoint & TouchLongPressExtras)
   | (TouchResponseRef & TouchLongPressExtras)
   | (TouchResponseSelector & TouchLongPressExtras);
+
+type TouchHoverExtras = {
+  gesture: 'hover';
+};
+
+export type HoverCommandResponseData =
+  | (TouchResponsePoint & TouchHoverExtras)
+  | (TouchResponseRef & TouchHoverExtras)
+  | (TouchResponseSelector & TouchHoverExtras);
 
 /**
  * Internal runtime result for press/click. The daemon response layer turns
@@ -351,6 +472,17 @@ export type LongPressCommandResult = ResolvedInteractionTarget & {
 };
 
 /**
+ * Internal runtime result for hover. The daemon response layer turns this
+ * into `HoverCommandResponseData` via `buildInteractionResponseData`.
+ */
+export type HoverCommandResult = ResolvedInteractionTarget & {
+  backendResult?: Record<string, unknown>;
+  message?: string;
+  warning?: string;
+  settle?: SettleObservation;
+};
+
+/**
  * Daemon response data for the `find` command. Read-only actions (`exists`,
  * `wait`, `get_text`, `get_attrs`) may issue a pinnable ref with
  * `refsGeneration`; mutating actions (`click`, `fill`, `focus`, `type`) carry
@@ -365,6 +497,8 @@ export type FindCommandResponseData = {
   waitedMs?: number;
   text?: string;
   node?: SnapshotNode;
+  /** Every match of the read-only `list` action (#1625), each ref pinnable at `refsGeneration`. */
+  matches?: Array<{ ref: string; node: SnapshotNode }>;
   locator?: string;
   query?: string;
   x?: number;
@@ -372,4 +506,19 @@ export type FindCommandResponseData = {
   message?: string;
   settle?: SettleObservation;
   cost?: ResponseCost;
+};
+
+/**
+ * Repeated-activation options shared by tap-like interactions: how many
+ * times, how fast, how long each contact holds, and whether the pair is a
+ * double-tap. Declared here (below both its consumers) so the backend
+ * surface and the command-input parsers agree on one shape without either
+ * importing the other.
+ */
+export type RepeatedInput = {
+  count?: number;
+  intervalMs?: number;
+  holdMs?: number;
+  jitterPx?: number;
+  doubleTap?: boolean;
 };

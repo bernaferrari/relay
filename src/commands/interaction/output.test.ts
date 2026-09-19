@@ -50,6 +50,34 @@ describe('find CLI output', () => {
     const output = formatFind({ found: true });
     expect(output.text).toBe('Found: true');
   });
+
+  test('list renders every match with a pinned, paste-ready ref', () => {
+    const output = formatFind({
+      matches: [
+        { ref: '@e5', node: { ref: 'e5', type: 'Button', label: 'Add' } },
+        { ref: '@e9', node: { ref: 'e9', type: 'Cell', value: 'Add another account' } },
+        { ref: '@e12', node: { ref: 'e12', type: 'Other' } },
+      ],
+      refsGeneration: 500014,
+    });
+
+    expect(output.text).toBe(
+      [
+        '3 matches:',
+        '= @e5~s500014 [button] "Add"',
+        '= @e9~s500014 [cell] "Add another account"',
+        '= @e12~s500014 [other]',
+      ].join('\n'),
+    );
+  });
+
+  test('list without a generation still lists refs unpinned rather than hiding them', () => {
+    const output = formatFind({
+      matches: [{ ref: '@e5', node: { ref: 'e5', type: 'Button', label: 'Add' } }],
+    });
+
+    expect(output.text).toBe(['1 match:', '= @e5 [button] "Add"'].join('\n'));
+  });
 });
 
 describe('press CLI output', () => {
@@ -77,6 +105,40 @@ describe('press CLI output', () => {
         'settled after 1200ms: +1 -1 (~8 unchanged)',
         '- @e4 [button] "Search"',
         '+ @e9 [text] "Notifications"',
+      ].join('\n'),
+    );
+  });
+
+  // ADR 0014: a settled diff activates a PARTIAL frame, so only the pinned form
+  // of the refs it issued is admitted. The diff has to hand the CLI caller that
+  // form directly or a copied `@e9` bounces with plain_ref_requires_complete_frame.
+  test('renders added-line refs pinned at the settle generation', () => {
+    const output = formatPress({
+      message: 'Tapped (278, 817)',
+      x: 278,
+      y: 817,
+      settle: {
+        settled: true,
+        waitedMs: 1200,
+        refsGeneration: 41,
+        diff: {
+          summary: { additions: 1, removals: 1, unchanged: 8 },
+          lines: [
+            { kind: 'removed', text: '@e4 [button] "Search"' },
+            { kind: 'added', text: '@e9 [text] "Notifications"', ref: 'e9' },
+          ],
+        },
+      },
+    });
+
+    expect(output.text).toBe(
+      [
+        'Tapped (278, 817)',
+        'settled after 1200ms: +1 -1 (~8 unchanged)',
+        // A removed line names an element that just left: rendered verbatim,
+        // never as a paste-ready target.
+        '- @e4 [button] "Search"',
+        '+ @e9~s41 [text] "Notifications"',
       ].join('\n'),
     );
   });

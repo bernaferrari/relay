@@ -58,9 +58,107 @@ int main(int argc, const char *argv[]) {
 #import <UIKit/UIKit.h>
 
 @interface AgentDeviceRunnerViewController : UIViewController
+@property(nonatomic, strong) UILabel *alertActionStatus;
+@property(nonatomic, assign) NSUInteger firstAlertActions;
+@property(nonatomic, assign) NSUInteger replacementAlertActions;
+@property(nonatomic, assign) BOOL alertFixtureStarted;
+@property(nonatomic, strong) NSTimer *alertActivationBusyBackstop;
 @end
 
 @implementation AgentDeviceRunnerViewController
+
+#if TARGET_OS_IOS
+// An animation that never ends is what "busy" looks like to XCTest while it decides whether the app
+// may receive an event: the app keeps reporting work in flight, which is the state that cost an alert
+// command its whole deadline in #2546. It stops the moment an alert button is answered, since that
+// answer is the event the runner is trying to land, and the backstop stops it even when no answer
+// arrives so a regressed run finishes rather than waiting out XCTest's own timeout. A layer
+// animation on its own is not enough; only a UIView animation counts as in-flight work here.
+static NSTimeInterval const kAgentDeviceAlertActivationBusyWindow = 20.0;
+
+- (void)startAlertActivationBusy {
+  if (self.alertActivationBusyBackstop != nil) {
+    return;
+  }
+  self.alertActivationBusyBackstop = [NSTimer scheduledTimerWithTimeInterval:kAgentDeviceAlertActivationBusyWindow
+                                                                      target:self
+                                                                    selector:@selector(stopAlertActivationBusy)
+                                                                    userInfo:nil
+                                                                     repeats:NO];
+  [UIView animateWithDuration:0.4
+                          delay:0
+                        options:(UIViewAnimationOptionRepeat | UIViewAnimationOptionAutoreverse)
+                     animations:^{
+                       self.alertActionStatus.transform = CGAffineTransformMakeTranslation(0, 8);
+                     }
+                     completion:nil];
+}
+
+- (void)stopAlertActivationBusy {
+  [self.alertActionStatus.layer removeAllAnimations];
+  self.alertActionStatus.transform = CGAffineTransformIdentity;
+  [self.alertActivationBusyBackstop invalidate];
+  self.alertActivationBusyBackstop = nil;
+}
+
+
+- (void)updateAlertActionStatus {
+  self.alertActionStatus.text = [NSString stringWithFormat:@"First actions: %lu; replacement actions: %lu",
+                                                         (unsigned long)self.firstAlertActions,
+                                                         (unsigned long)self.replacementAlertActions];
+}
+
+- (void)presentAlertFixtureReplacement:(BOOL)replacement {
+  NSArray<NSString *> *arguments = NSProcessInfo.processInfo.arguments;
+  BOOL sameTitle = [arguments containsObject:@"--agent-device-alert-same-title"];
+  BOOL sameBody = [arguments containsObject:@"--agent-device-alert-same-body"];
+  NSString *title = replacement && !sameTitle ? @"Next confirmation" : @"First confirmation";
+  NSString *body = replacement && !sameBody ? @"Second request" : @"First request";
+  UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
+                                                               message:body
+                                                        preferredStyle:UIAlertControllerStyleAlert];
+  __weak UIAlertController *weakAlert = alert;
+  for (NSString *buttonTitle in @[@"Cancel", @"OK"]) {
+    UIAlertActionStyle style = [buttonTitle isEqualToString:@"Cancel"]
+        ? UIAlertActionStyleCancel : UIAlertActionStyleDefault;
+    [alert addAction:[UIAlertAction actionWithTitle:buttonTitle style:style handler:^(UIAlertAction *action) {
+      (void)action;
+      [self stopAlertActivationBusy];
+      if (replacement) {
+        self.replacementAlertActions += 1;
+      } else {
+        self.firstAlertActions += 1;
+      }
+      [self updateAlertActionStatus];
+      if (!replacement) {
+        [weakAlert dismissViewControllerAnimated:NO completion:^{
+          [self presentAlertFixtureReplacement:YES];
+        }];
+      }
+    }]];
+  }
+  [self presentViewController:alert animated:NO completion:nil];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+  [super viewDidAppear:animated];
+  if (!self.alertFixtureStarted &&
+      [NSProcessInfo.processInfo.arguments containsObject:@"--agent-device-alert-replacement-regression"]) {
+    self.alertFixtureStarted = YES;
+    [self presentAlertFixtureReplacement:NO];
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--agent-device-alert-activation-busy"]) {
+      [self startAlertActivationBusy];
+    }
+  }
+}
+#endif
+
+- (void)agentDeviceTextEntryDidChange:(UITextField *)textField {
+  if ([NSProcessInfo.processInfo.arguments containsObject:@"--agent-device-text-entry-disappear-after-input"] &&
+      textField.text.length > 0) {
+    [textField removeFromSuperview];
+  }
+}
 
 - (void)viewDidLoad {
   [super viewDidLoad];
@@ -78,6 +176,53 @@ int main(int argc, const char *argv[]) {
     [label.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
     [label.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
   ]];
+
+  // Keep the fixture behind a launch argument so normal runner snapshots remain unchanged.
+#if TARGET_OS_IOS
+  if ([NSProcessInfo.processInfo.arguments containsObject:@"--agent-device-alert-replacement-regression"]) {
+    self.alertActionStatus = label;
+    label.accessibilityIdentifier = @"agent-device-alert-actions";
+    [self updateAlertActionStatus];
+  }
+
+  if ([NSProcessInfo.processInfo.arguments containsObject:@"--agent-device-text-entry-regression"]) {
+    UITextField *textField = [[UITextField alloc] init];
+    textField.accessibilityIdentifier = @"agent-device-hardware-keyboard-input";
+    textField.borderStyle = UITextBorderStyleRoundedRect;
+    textField.inputView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 1, 1)];
+    [textField addTarget:self
+                  action:@selector(agentDeviceTextEntryDidChange:)
+        forControlEvents:UIControlEventEditingChanged];
+    textField.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:textField];
+    [NSLayoutConstraint activateConstraints:@[
+      [textField.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+      [textField.topAnchor constraintEqualToAnchor:label.bottomAnchor constant:24],
+      [textField.widthAnchor constraintEqualToConstant:240],
+      [textField.heightAnchor constraintEqualToConstant:44],
+    ]];
+  }
+
+  if ([NSProcessInfo.processInfo.arguments containsObject:@"--agent-device-selector-read-regression"]) {
+    NSString *const duplicateIdentifier = @"agent-device-selector-read-duplicate";
+
+    UIButton *visibleButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    visibleButton.accessibilityIdentifier = duplicateIdentifier;
+    [visibleButton setTitle:@"Readable target" forState:UIControlStateNormal];
+    visibleButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:visibleButton];
+
+    UILabel *offscreenLabel = [[UILabel alloc] initWithFrame:CGRectMake(-200, -200, 100, 40)];
+    offscreenLabel.accessibilityIdentifier = duplicateIdentifier;
+    offscreenLabel.text = @"Decorative duplicate";
+    [self.view addSubview:offscreenLabel];
+
+    [NSLayoutConstraint activateConstraints:@[
+      [visibleButton.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+      [visibleButton.topAnchor constraintEqualToAnchor:label.bottomAnchor constant:24],
+    ]];
+  }
+#endif
 }
 
 @end

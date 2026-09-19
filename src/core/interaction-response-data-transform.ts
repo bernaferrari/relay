@@ -1,12 +1,27 @@
 import {
   listCommandResponseDataTransformFieldNames,
   resolveCommandResponseDataTransform,
-} from './command-descriptor/registry.ts';
-import type { ResponseDataFieldTransform } from './command-descriptor/types.ts';
+} from '@agent-device/command-registry/registry';
+import type { ResponseDataFieldTransform } from '@agent-device/command-registry/types';
 
 export type InteractionResponseDataTransformCommand = 'click' | 'press' | 'fill';
 
 const controlledResponseDataFieldNames = new Set(listCommandResponseDataTransformFieldNames());
+const internalInteractionDiagnosticFieldNames = new Set([
+  'currentUptimeMs',
+  'gestureEndUptimeMs',
+  'gestureStartUptimeMs',
+  'sequenceResults',
+]);
+
+export function stripInternalInteractionDiagnostics(
+  data: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!data) return undefined;
+  return Object.fromEntries(
+    Object.entries(data).filter(([key]) => !internalInteractionDiagnosticFieldNames.has(key)),
+  );
+}
 
 export function transformInteractionResponseData(params: {
   command: InteractionResponseDataTransformCommand;
@@ -16,7 +31,7 @@ export function transformInteractionResponseData(params: {
   return applyResponseDataFieldTransforms({
     fields: readCommandResponseDataTransformFields(params.command),
     input: params.input ?? {},
-    data: params.data,
+    data: stripInternalInteractionDiagnostics(params.data),
     controlledFields: controlledResponseDataFieldNames,
   });
 }

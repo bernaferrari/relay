@@ -98,16 +98,14 @@ export type ReplayTestSource = Readonly<{
 }>;
 
 /**
- * Expands the caller's inputs and inspects each source (#1478 P3b).
+ * Inspects each source the caller sent (#1478 P3b).
  *
- * Path expansion, file reading, format routing, and per-engine inspection are all host work.
+ * Format routing and per-engine inspection are host work. #1802: so is expansion — the CALLER
+ * expands its own inputs and ships each source's text, so nothing here takes inputs or a cwd.
  * The scheduler keeps discovery *policy* — platform filtering, run/skip classification, and
  * the "no replay tests matched" error — which is the part that is genuinely format-neutral.
  */
-export type ReplayTestDiscoverSources = (params: {
-  inputs: string[];
-  cwd?: string;
-}) => readonly ReplayTestSource[];
+export type ReplayTestDiscoverSources = () => readonly ReplayTestSource[];
 
 /**
  * One execution step an engine reports while an attempt runs (#1478 P3, finding 1).
@@ -146,6 +144,8 @@ export type ReplayTestAttemptFailed = {
   status: 'failed';
   error: ReplayTestAttemptError;
   artifactPaths: readonly string[];
+  /** Warnings accumulated before the failing step (skipped `optional` steps, capture degradations). */
+  warnings: readonly string[];
   snapshotDiagnostics?: SnapshotDiagnosticsSummary;
   /**
    * The host's verdict that this failure is environmental (device/runner/boot) rather than a
@@ -276,6 +276,7 @@ export type ReplayTestExecutionDependencies = Omit<
 export function replayTestAttemptFailure(params: {
   error: ReplayTestAttemptError;
   artifactPaths?: readonly string[];
+  warnings?: readonly string[];
   infrastructure?: boolean;
   snapshotDiagnostics?: SnapshotDiagnosticsSummary;
 }): ReplayTestAttemptFailed {
@@ -283,6 +284,7 @@ export function replayTestAttemptFailure(params: {
     status: 'failed',
     error: params.error,
     artifactPaths: params.artifactPaths ?? [],
+    warnings: params.warnings ?? [],
     infrastructure: params.infrastructure ?? false,
     ...(params.snapshotDiagnostics ? { snapshotDiagnostics: params.snapshotDiagnostics } : {}),
   };

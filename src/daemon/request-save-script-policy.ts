@@ -3,9 +3,9 @@ import {
   emitDiagnostic,
   flushDiagnosticsToSessionFile,
   getDiagnosticsMeta,
-} from '../utils/diagnostics.ts';
+} from '@agent-device/host-kit/diagnostics';
 import { listSaveScriptFlagOwnerCommands, ownsSaveScriptFlag } from './daemon-command-registry.ts';
-import type { DaemonRequest, DaemonResponse } from './types.ts';
+import type { DaemonRequest, DaemonResponse } from './daemon-request.ts';
 
 /**
  * #1478: the released `--save-script` flag owners, read from the command
@@ -22,7 +22,7 @@ const UNSUPPORTED_SAVE_SCRIPT_HINT =
 /**
  * #1478 (P4-pre): `flags.saveScript` arms session-script publication the moment
  * a successful handler records the request's action (`recordActionEntry` sets
- * `recordSession` and the target path), so ANY recordable command that reaches
+ * the authoring lifecycle and the target path), so ANY recordable command that reaches
  * a handler with the raw flag set can arm publication and later write a `.ad`
  * artifact — `record stop` writes one immediately through record-only cleanup,
  * `trace` and the interaction commands publish later on close.
@@ -52,14 +52,14 @@ export function unsupportedSaveScriptFlagResponse(req: DaemonRequest): DaemonRes
   // ADR 0010 decision 6: a failed request always carries its diagnosticId +
   // ndjson logPath, so this rejection is as traceable as a thrown one.
   const meta = getDiagnosticsMeta();
-  const logPath = flushDiagnosticsToSessionFile({ force: true }) ?? undefined;
+  const flushed = flushDiagnosticsToSessionFile({ force: true });
   return {
     ok: false,
     error: normalizeError(
       new AppError('INVALID_ARGS', UNSUPPORTED_SAVE_SCRIPT_MESSAGE, {
         hint: UNSUPPORTED_SAVE_SCRIPT_HINT,
       }),
-      { diagnosticId: meta.diagnosticId, logPath },
+      { diagnosticId: meta.diagnosticId, logPath: flushed?.path, diagnosticsRecord: flushed?.ref },
     ),
   };
 }

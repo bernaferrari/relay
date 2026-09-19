@@ -1,6 +1,7 @@
 import { fingerprint, type RemoteConnectionState } from '../../remote/remote-connection-state.ts';
 import type { ConnectVerification } from '../connection/connect-provider-adapters.ts';
-import { connectionProviderLeaseKind } from '../connection/provider-policy.ts';
+import { connectionProviderCapabilities } from '../connection/provider-policy.ts';
+import { shellQuoteIfNeeded } from '@agent-device/host-kit/command';
 
 export type ConnectReadiness = ConnectVerification & {
   preparationMessage: string;
@@ -20,18 +21,32 @@ export type LeasePreparationNotice = {
   nextSteps: string[];
 };
 
+export type PreviousLeaseReleaseNotice = {
+  status: 'unreleased';
+  message: string;
+};
+
 export function buildLeasePreparationNotice(
   state: RemoteConnectionState,
   verification?: ConnectVerification,
 ): LeasePreparationNotice | undefined {
   if (state.leaseId) return undefined;
-  const leaseKind = connectionProviderLeaseKind(state.leaseProvider);
+  const capabilities = connectionProviderCapabilities(state.leaseProvider);
+  const leaseKind = capabilities.leaseKind;
   if (leaseKind === 'proxy') {
     return {
       status: 'deferred',
       nextSteps: buildConnectWorkflow(state, verification).nextSteps,
       message:
         'No live device session has been created. Run devices to inspect inventory without allocating, then open when ready.',
+    };
+  }
+  if (capabilities.supportsDeferredAppSelection) {
+    return {
+      status: 'deferred',
+      nextSteps: buildConnectWorkflow(state, verification).nextSteps,
+      message:
+        'No live device session has been created. Run apps to inspect uploaded assets without allocating; open <uploaded-asset-name> creates the instance.',
     };
   }
   if (leaseKind === 'direct-device-provider') {
@@ -48,12 +63,12 @@ export function buildLeasePreparationNotice(
       : '';
   return {
     status: 'deferred',
-    nextSteps: [
+    nextSteps: scopeNextSteps(state, [
       'agent-device install-from-source <artifact-url> --platform ios|android',
       'agent-device open <app-id> --relaunch',
       'agent-device snapshot -i',
       'agent-device devices',
-    ],
+    ]),
     message:
       'No live device session has been created. Run a device command when ready to allocate or refresh the lease.' +
       needsPlatform,
@@ -77,14 +92,16 @@ export function renderConnectSuccess(options: {
   state: RemoteConnectionState;
   readiness?: ConnectReadiness;
   runtimePreparation?: RuntimePreparationNotice;
+  previousLeaseNotice?: PreviousLeaseReleaseNotice;
 }): string {
-  const { state, readiness, runtimePreparation } = options;
+  const { state, readiness, runtimePreparation, previousLeaseNotice } = options;
   if (!readiness) {
     const leasePreparation = buildLeasePreparationNotice(state);
     return [
       `Configured remote session "${state.session}" tenant "${state.tenant}" run "${state.runId}"${state.leaseId ? ` lease ${state.leaseId}` : ''}.`,
       leasePreparation?.message,
       runtimePreparation?.message,
+      previousLeaseNotice?.message,
     ]
       .filter((line): line is string => Boolean(line))
       .join('\n');
@@ -104,6 +121,7 @@ export function renderConnectSuccess(options: {
   lines.push(...readiness.nextSteps.map((step) => `  ${step}`));
   lines.push(...(readiness.notes ?? []));
   if (runtimePreparation) lines.push(runtimePreparation.message);
+  if (previousLeaseNotice) lines.push(previousLeaseNotice.message);
   return lines.join('\n');
 }
 
@@ -111,10 +129,10 @@ export function serializeConnectionState(options: {
   state: RemoteConnectionState;
   runtimePreparation?: RuntimePreparationNotice;
   readiness?: ConnectReadiness;
+  previousLeaseNotice?: PreviousLeaseReleaseNotice;
 }): Record<string, unknown> {
-  const { state, runtimePreparation, readiness } = options;
+  const { state, runtimePreparation, readiness, previousLeaseNotice } = options;
   const leasePreparation = buildLeasePreparationNotice(state, readiness);
-  const nextSteps = readiness?.nextSteps ?? leasePreparation?.nextSteps ?? [];
   return {
     connected: true,
     session: state.session,
@@ -129,31 +147,53 @@ export function serializeConnectionState(options: {
     remoteConfig: state.remoteConfigPath,
     remoteConfigHash: state.remoteConfigHash,
     daemonBaseUrlFingerprint: fingerprint(state.daemon?.baseUrl),
-    liveSession: {
-      status: state.leaseId ? 'created' : 'not-created',
-      ...(state.leaseId ? { leaseId: state.leaseId } : {}),
-    },
-    ...(readiness
-      ? {
-          verification: {
-            status: connectionVerificationStatus(readiness),
-            service: readiness.service,
-            message: readiness.verificationMessage,
-            ...(readiness.project ? { project: readiness.project } : {}),
-          },
-          ...(readiness.device ? { device: readiness.device } : {}),
-          ...(readiness.app ? { app: readiness.app } : {}),
-          nextSteps,
-          ...(readiness.notes ? { notes: readiness.notes } : {}),
-        }
-      : {}),
+    liveSession: buildLiveSessionField(state),
+    ...buildReadinessFields(readiness, leasePreparation),
     metro: state.metro
       ? { prepared: true, projectRoot: state.metro.projectRoot }
       : { prepared: false },
-    ...(leasePreparation ? { leasePreparation } : {}),
-    ...(runtimePreparation ? { runtimePreparation } : {}),
+    ...buildConnectionNoticeFields({ leasePreparation, runtimePreparation, previousLeaseNotice }),
     connectedAt: state.connectedAt,
     updatedAt: state.updatedAt,
+  };
+}
+
+function buildLiveSessionField(state: RemoteConnectionState): Record<string, unknown> {
+  return {
+    status: state.leaseId ? 'created' : 'not-created',
+    ...(state.leaseId ? { leaseId: state.leaseId } : {}),
+  };
+}
+
+function buildReadinessFields(
+  readiness: ConnectReadiness | undefined,
+  leasePreparation: LeasePreparationNotice | undefined,
+): Record<string, unknown> {
+  if (!readiness) return {};
+  return {
+    verification: {
+      status: connectionVerificationStatus(readiness),
+      service: readiness.service,
+      message: readiness.verificationMessage,
+      ...(readiness.project ? { project: readiness.project } : {}),
+    },
+    ...(readiness.device ? { device: readiness.device } : {}),
+    ...(readiness.app ? { app: readiness.app } : {}),
+    nextSteps: readiness.nextSteps ?? leasePreparation?.nextSteps ?? [],
+    ...(readiness.notes ? { notes: readiness.notes } : {}),
+  };
+}
+
+function buildConnectionNoticeFields(options: {
+  leasePreparation?: LeasePreparationNotice;
+  runtimePreparation?: RuntimePreparationNotice;
+  previousLeaseNotice?: PreviousLeaseReleaseNotice;
+}): Record<string, unknown> {
+  const { leasePreparation, runtimePreparation, previousLeaseNotice } = options;
+  return {
+    ...(leasePreparation ? { leasePreparation } : {}),
+    ...(runtimePreparation ? { runtimePreparation } : {}),
+    ...(previousLeaseNotice ? { previousLeaseNotice } : {}),
   };
 }
 
@@ -182,7 +222,16 @@ function buildConnectWorkflow(
   state: RemoteConnectionState,
   verification?: ConnectVerification,
 ): Pick<ConnectReadiness, 'nextSteps' | 'notes'> {
-  const leaseKind = connectionProviderLeaseKind(state.leaseProvider);
+  const workflow = buildUnscopedConnectWorkflow(state, verification);
+  return { ...workflow, nextSteps: scopeNextSteps(state, workflow.nextSteps) };
+}
+
+function buildUnscopedConnectWorkflow(
+  state: RemoteConnectionState,
+  verification?: ConnectVerification,
+): Pick<ConnectReadiness, 'nextSteps' | 'notes'> {
+  const capabilities = connectionProviderCapabilities(state.leaseProvider);
+  const leaseKind = capabilities.leaseKind;
   if (leaseKind === 'proxy') {
     return {
       nextSteps: [
@@ -194,13 +243,18 @@ function buildConnectWorkflow(
   if (!verification && leaseKind === 'direct-device-provider') {
     return { nextSteps: defaultDirectProviderLifecycle() };
   }
+  if (connectionProviderCapabilities(verification?.provider).supportsDeferredAppSelection) {
+    return {
+      nextSteps: ['agent-device apps', 'agent-device open <uploaded-asset-name>'],
+    };
+  }
   const appMissing = verification?.app?.status === 'missing';
   return {
     nextSteps: requiresInstall(verification)
       ? installThenOpenWorkflow(state)
       : [...missingAttachedAppRecovery(verification), ...openWorkflow(state).nextSteps],
     ...(supportsProviderArtifacts(verification)
-      ? { notes: providerArtifactNotes(!appMissing) }
+      ? { notes: providerArtifactNotes(state, !appMissing) }
       : {}),
   };
 }
@@ -210,7 +264,7 @@ function requiresInstall(verification?: ConnectVerification): boolean {
 }
 
 function supportsProviderArtifacts(verification?: ConnectVerification): boolean {
-  return verification?.provider === 'browserstack' || verification?.provider === 'aws-device-farm';
+  return connectionProviderCapabilities(verification?.provider).supportsArtifacts;
 }
 
 function missingAttachedAppRecovery(verification?: ConnectVerification): string[] {
@@ -226,12 +280,15 @@ function missingAttachedAppRecovery(verification?: ConnectVerification): string[
   ];
 }
 
-function providerArtifactNotes(includeAppIdNote: boolean): string[] {
+function providerArtifactNotes(state: RemoteConnectionState, includeAppIdNote: boolean): string[] {
   return [
     ...(includeAppIdNote
       ? ['Use the installed package or bundle identifier in open, not the app artifact name.']
       : []),
-    'After close, run agent-device artifacts --json for provider video and logs.',
+    // Notes carry runnable commands too, so they need the same session scoping as
+    // nextSteps: an unscoped artifacts call adopts the host-global active connection
+    // and can hand back another concurrent job's provider video and logs.
+    `After close, run ${scopeCommand(state, 'agent-device artifacts --json')} for provider video and logs.`,
   ];
 }
 
@@ -264,12 +321,32 @@ function defaultDirectProviderLifecycle(): string[] {
   ];
 }
 
+function scopeNextSteps(state: RemoteConnectionState, commands: readonly string[]): string[] {
+  return commands.map((command) => scopeCommand(state, command));
+}
+
+/**
+ * The single place a suggested command is bound to the connection it came from.
+ * Every command-bearing output — nextSteps, notes, deferred-runtime notices —
+ * goes through here so no emitted instruction can resolve against whichever
+ * connection happens to be host-global active when the operator runs it.
+ */
+export function scopeCommand(
+  state: Pick<RemoteConnectionState, 'session'>,
+  command: string,
+): string {
+  return `${command} --session ${shellQuoteIfNeeded(state.session)}`;
+}
+
 function appIdPlaceholder(platform: RemoteConnectionState['platform']): string {
   return platform === 'ios' ? '<bundle-id>' : '<package-id>';
 }
 
 function missingAppLabel(state: RemoteConnectionState): string {
-  if (state.leaseProvider === 'aws-device-farm') return 'not attached';
-  if (state.leaseProvider === 'limrun') return 'not installed yet';
+  const capabilities = connectionProviderCapabilities(state.leaseProvider);
+  if (capabilities.requiresAppAttachment) return 'not attached';
+  if (capabilities.supportsDeferredAppSelection) {
+    return 'not installed yet';
+  }
   return 'not available';
 }

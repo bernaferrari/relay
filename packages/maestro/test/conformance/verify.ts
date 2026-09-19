@@ -11,6 +11,7 @@
 //    flow our engine parses, or be explicitly listed as unverified.
 //  - Bug classes: the four #1217 regressions each assert against their fixture.
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppError } from '@agent-device/kernel/errors';
@@ -23,6 +24,7 @@ import {
 } from './harness.ts';
 import { LAYER2_REFERENCE_ONLY, UNVERIFIED_COMMANDS } from './expected-divergence.ts';
 import { checkFixtureSeal } from './fixture-seal.ts';
+import { checkLayer2TreeVector, type Layer2TreeVector } from './layer2-tree.ts';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const CONFORMANCE_DATA_DIR = path.resolve(HERE, '../../../../scripts/maestro-conformance');
@@ -58,6 +60,7 @@ type Layer1Fixture = {
 type Layer2Fixture = {
   constants: Array<{ id: string; symbol: string; value: number }>;
   modelDefaults: Array<{ id: string; value: number }>;
+  treeVectors: Layer2TreeVector[];
 };
 
 function readJson<T>(file: string): T {
@@ -76,6 +79,13 @@ export function loadLayer2(): Layer2Fixture {
 
 export type SealResult = { file: string; sealed: boolean; expected: string; actual?: string };
 
+type CorpusManifest = {
+  flows: Array<{
+    file: string;
+    origin: { kind: 'authored'; note: string } | { kind: 'upstream'; sha256: string };
+  }>;
+};
+
 /**
  * Recompute each fixture's content seal. This is what makes "generated from
  * upstream" an enforced property rather than a claim in a README: editing a
@@ -86,6 +96,25 @@ export function checkFixtureSeals(): SealResult[] {
     const parsed = readJson<Record<string, unknown>>(path.join(FIXTURES_DIR, file));
     const { expected, actual } = checkFixtureSeal(parsed);
     return { file, sealed: expected === actual, expected, actual: actual as string | undefined };
+  });
+}
+
+/** Verify vendored upstream source bytes in normal, Java-free per-PR CI. */
+export function checkCorpusSeals(): SealResult[] {
+  const manifest = readJson<CorpusManifest>(path.join(CORPUS_DIR, 'manifest.json'));
+  return manifest.flows.flatMap((flow) => {
+    if (flow.origin.kind !== 'upstream') return [];
+    const actual = createHash('sha256')
+      .update(fs.readFileSync(path.join(CORPUS_DIR, flow.file)))
+      .digest('hex');
+    return [
+      {
+        file: flow.file,
+        sealed: actual === flow.origin.sha256,
+        expected: flow.origin.sha256,
+        actual,
+      },
+    ];
   });
 }
 
@@ -174,7 +203,7 @@ export type Layer2Result = {
 export function checkLayer2(): Layer2Result[] {
   const fixture = loadLayer2();
   const vectors = [...fixture.constants, ...fixture.modelDefaults];
-  return vectors.map((vector) => {
+  const results = vectors.map((vector) => {
     if (LAYER2_REFERENCE_ONLY.has(vector.id)) {
       return { id: vector.id, upstream: vector.value, status: 'reference-only' as const };
     }
@@ -189,6 +218,14 @@ export function checkLayer2(): Layer2Result[] {
       status: agent === vector.value ? ('match' as const) : ('mismatch' as const),
     };
   });
+  for (const vector of fixture.treeVectors) {
+    const tree = checkLayer2TreeVector(vector);
+    results.push({
+      id: vector.id,
+      ...tree,
+    });
+  }
+  return results;
 }
 
 // ---------------------------------------------------------------------------

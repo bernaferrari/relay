@@ -1,9 +1,26 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { promises as fs } from 'node:fs';
-import os from 'node:os';
+import nodeFs, { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { runCliCapture } from './cli-capture.ts';
+import { runCliCapture, type CliCaptureOptions } from './cli-capture.ts';
+import { mkdtempForTest, mkdtempForTestSync } from './test-utils/tmp-dir.ts';
+
+/**
+ * #1802: `test <path-or-glob>` expands on the CALLER, so these reporter cases need a real suite
+ * directory to expand. The suite's contents are irrelevant here — every case stubs the daemon
+ * response — but the inputs have to resolve, so each runs from a cwd that has `./suite`.
+ */
+const SUITE_CWD = mkdtempForTestSync('agent-device-cli-suite-');
+nodeFs.mkdirSync(path.join(SUITE_CWD, 'suite'), { recursive: true });
+nodeFs.writeFileSync(path.join(SUITE_CWD, 'suite', '01-flow.ad'), 'open "Demo"\n');
+
+function runTestSuiteCli(
+  argv: string[],
+  responderOrOptions: Parameters<typeof runCliCapture>[1] = {},
+  extraOptions: CliCaptureOptions = {},
+): ReturnType<typeof runCliCapture> {
+  return runCliCapture(argv, responderOrOptions, { ...extraOptions, cwd: SUITE_CWD });
+}
 
 function makeFailedReplayResult() {
   return {
@@ -134,7 +151,7 @@ test('json commands do not opt into progress streaming', async () => {
 });
 
 test('test command prints suite summary and exits non-zero on failures', async () => {
-  const result = await runCliCapture(['test', './suite'], async () => makeReplaySuiteResponse());
+  const result = await runTestSuiteCli(['test', './suite'], async () => makeReplaySuiteResponse());
 
   assert.equal(result.code, 1);
   assert.equal(result.calls.length, 1);
@@ -142,7 +159,7 @@ test('test command prints suite summary and exits non-zero on failures', async (
   assert.doesNotMatch(result.stderr, /Running replay suite\.\.\./);
   assert.doesNotMatch(result.stdout, /✓ 01-pass\.ad \(0\.01s\)/);
   assert.doesNotMatch(result.stdout, /⨯ "Checkout failure" in 02-fail\.ad/);
-  assert.match(result.stdout, /Failures:\n  Checkout failure\n    file: 02-fail\.ad/);
+  assert.match(result.stdout, /Failures:\n {2}Checkout failure\n {4}file: 02-fail\.ad/);
   assert.match(result.stdout, /Replay failed at step 1 \(open Demo\): boom/);
   assert.match(result.stdout, /artifacts: \/tmp\/test-artifacts\/02-fail/);
   assert.doesNotMatch(result.stdout, /SKIP \/tmp\/03-skip\.ad/);
@@ -189,7 +206,7 @@ test('doctor command keeps json output non-streaming', async () => {
 });
 
 test('test command --verbose prints all test statuses', async () => {
-  const result = await runCliCapture(['test', './suite', '--verbose'], async () =>
+  const result = await runTestSuiteCli(['test', './suite', '--verbose'], async () =>
     makeReplaySuiteResponse(),
   );
 
@@ -202,7 +219,7 @@ test('test command --verbose prints all test statuses', async () => {
 });
 
 test('test command colors suite summary segments when color is enabled', async () => {
-  const result = await runCliCapture(
+  const result = await runTestSuiteCli(
     ['test', './suite'],
     async () => ({
       ok: true,
@@ -239,7 +256,7 @@ test('test command colors suite summary segments when color is enabled', async (
 });
 
 test('test command --verbose omits step telemetry for passing tests without debug mode', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-cli-test-verbose-'));
+  const tmpDir = await mkdtempForTest('agent-device-cli-test-verbose-');
   const artifactsDir = path.join(tmpDir, 'auth-flow');
   const attemptDir = path.join(artifactsDir, 'attempt-1');
   await fs.mkdir(attemptDir, { recursive: true });
@@ -282,7 +299,7 @@ test('test command --verbose omits step telemetry for passing tests without debu
   );
 
   try {
-    const result = await runCliCapture(['test', './suite', '--verbose'], async () => ({
+    const result = await runTestSuiteCli(['test', './suite', '--verbose'], async () => ({
       ok: true,
       data: {
         total: 1,
@@ -322,7 +339,7 @@ test('test command --verbose omits step telemetry for passing tests without debu
 });
 
 test('test command --verbose includes step telemetry in completed progress output', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-cli-test-live-verbose-'));
+  const tmpDir = await mkdtempForTest('agent-device-cli-test-live-verbose-');
   const artifactsDir = path.join(tmpDir, 'auth-flow');
   const attemptDir = path.join(artifactsDir, 'attempt-1');
   await fs.mkdir(attemptDir, { recursive: true });
@@ -350,46 +367,49 @@ test('test command --verbose includes step telemetry in completed progress outpu
   );
 
   try {
-    const result = await runCliCapture(['test', './suite', '--verbose'], async (_req, options) => {
-      options?.onProgress?.({
-        type: 'replay-test',
-        file: '/tmp/auth-flow.yml',
-        title: 'Authentication flow',
-        status: 'pass',
-        index: 1,
-        total: 1,
-        durationMs: 500,
-        attempt: 1,
-        artifactsDir,
-      });
-      return {
-        ok: true,
-        data: {
+    const result = await runTestSuiteCli(
+      ['test', './suite', '--verbose'],
+      async (_req, options) => {
+        options?.onProgress?.({
+          type: 'replay-test',
+          file: '/tmp/auth-flow.yml',
+          title: 'Authentication flow',
+          status: 'pass',
+          index: 1,
           total: 1,
-          executed: 1,
-          passed: 1,
-          failed: 0,
-          skipped: 0,
-          notRun: 0,
           durationMs: 500,
-          failures: [],
-          tests: [
-            {
-              file: '/tmp/auth-flow.yml',
-              title: 'Authentication flow',
-              session: 'default:test:suite:1',
-              status: 'passed',
-              durationMs: 500,
-              finalAttemptDurationMs: 500,
-              attempts: 1,
-              artifactsDir,
-              replayed: 1,
-              healed: 0,
-            },
-          ],
-        },
-      };
-    });
+          attempt: 1,
+          artifactsDir,
+        });
+        return {
+          ok: true,
+          data: {
+            total: 1,
+            executed: 1,
+            passed: 1,
+            failed: 0,
+            skipped: 0,
+            notRun: 0,
+            durationMs: 500,
+            failures: [],
+            tests: [
+              {
+                file: '/tmp/auth-flow.yml',
+                title: 'Authentication flow',
+                session: 'default:test:suite:1',
+                status: 'passed',
+                durationMs: 500,
+                finalAttemptDurationMs: 500,
+                attempts: 1,
+                artifactsDir,
+                replayed: 1,
+                healed: 0,
+              },
+            ],
+          },
+        };
+      },
+    );
 
     assert.equal(result.code, null);
     assert.equal(result.calls[0]?.meta?.debug, false);
@@ -403,7 +423,7 @@ test('test command --verbose includes step telemetry in completed progress outpu
 });
 
 test('test command --verbose omits nested passing step telemetry', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-cli-test-verbose-retry-'));
+  const tmpDir = await mkdtempForTest('agent-device-cli-test-verbose-retry-');
   const artifactsDir = path.join(tmpDir, 'material-top-tabs');
   const attemptDir = path.join(artifactsDir, 'attempt-1');
   await fs.mkdir(attemptDir, { recursive: true });
@@ -461,7 +481,7 @@ test('test command --verbose omits nested passing step telemetry', async () => {
   );
 
   try {
-    const result = await runCliCapture(['test', './suite', '--verbose'], async () => ({
+    const result = await runTestSuiteCli(['test', './suite', '--verbose'], async () => ({
       ok: true,
       data: {
         total: 1,
@@ -509,7 +529,7 @@ test('test command --verbose omits nested passing step telemetry', async () => {
 });
 
 test('test command reports flaky passed-on-retry cases in the default summary', async () => {
-  const result = await runCliCapture(['test', './suite'], async () => ({
+  const result = await runTestSuiteCli(['test', './suite'], async () => ({
     ok: true,
     data: {
       total: 1,
@@ -561,7 +581,7 @@ test('test command reports flaky passed-on-retry cases in the default summary', 
 });
 
 test('test command --debug prints failed attempt step window when timing trace exists', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-cli-test-steps-'));
+  const tmpDir = await mkdtempForTest('agent-device-cli-test-steps-');
   const artifactsDir = path.join(tmpDir, 'checkout-flow');
   const attemptDir = path.join(artifactsDir, 'attempt-2');
   await fs.mkdir(attemptDir, { recursive: true });
@@ -649,7 +669,7 @@ test('test command --debug prints failed attempt step window when timing trace e
         message: 'Replay failed at step 3 (assertVisible "Receipt"): selector not found',
       },
     };
-    const result = await runCliCapture(['test', './suite', '--debug'], async () => ({
+    const result = await runTestSuiteCli(['test', './suite', '--debug'], async () => ({
       ok: true,
       data: {
         total: 1,
@@ -684,14 +704,14 @@ test('test command --debug prints failed attempt step window when timing trace e
 });
 
 test('test --maestro forwards Maestro backend and platform for directory suites', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-cli-maestro-suite-'));
+  const tmpDir = await mkdtempForTest('agent-device-cli-maestro-suite-');
   await fs.writeFile(
     path.join(tmpDir, 'auth-flow.yml'),
     ['appId: demo.app', '---', '- launchApp', ''].join('\n'),
   );
 
   try {
-    const result = await runCliCapture(
+    const result = await runTestSuiteCli(
       ['test', '--maestro', '--platform', 'android', tmpDir],
       async () => ({
         ok: true,
@@ -723,7 +743,7 @@ test('test --maestro forwards Maestro backend and platform for directory suites'
 });
 
 test('test forwards shard flags and comma device lists', async () => {
-  const result = await runCliCapture(
+  const result = await runTestSuiteCli(
     ['test', '--maestro', '--device', 'udid1,emulator-5554', '--shard-all', '2', './suite'],
     async () => ({
       ok: true,
@@ -749,11 +769,11 @@ test('test forwards shard flags and comma device lists', async () => {
 });
 
 test('test command writes JUnit report with failure metadata', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-junit-test-'));
+  const tmpDir = await mkdtempForTest('agent-device-junit-test-');
   const reportPath = path.join(tmpDir, 'replays.junit.xml');
 
   try {
-    const result = await runCliCapture(
+    const result = await runTestSuiteCli(
       ['test', './suite', '--report-junit', reportPath],
       async () => ({
         ok: true,
@@ -853,11 +873,11 @@ test('test command writes JUnit report with failure metadata', async () => {
 });
 
 test('test command supports explicit reporter lists', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-reporter-test-'));
+  const tmpDir = await mkdtempForTest('agent-device-reporter-test-');
   const reportPath = path.join(tmpDir, 'replays.junit.xml');
 
   try {
-    const result = await runCliCapture(
+    const result = await runTestSuiteCli(
       ['test', './suite', '--reporter', `junit:${reportPath}`],
       async () => makeReplaySuiteResponse(),
     );
@@ -872,7 +892,7 @@ test('test command supports explicit reporter lists', async () => {
 });
 
 test('test command loads custom reporter modules', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-custom-reporter-test-'));
+  const tmpDir = await mkdtempForTest('agent-device-custom-reporter-test-');
   const reporterPath = path.join(tmpDir, 'custom-reporter.mjs');
   const outputPath = path.join(tmpDir, 'custom-report.json');
 
@@ -894,7 +914,7 @@ test('test command loads custom reporter modules', async () => {
       'utf8',
     );
 
-    const result = await runCliCapture(
+    const result = await runTestSuiteCli(
       ['test', './suite', '--reporter', reporterPath],
       async (_req, options) => {
         options?.onProgress?.({
@@ -922,7 +942,7 @@ test('test command loads custom reporter modules', async () => {
 });
 
 test('test command streams progress to custom reporter modules', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-live-reporter-test-'));
+  const tmpDir = await mkdtempForTest('agent-device-live-reporter-test-');
   const reporterPath = path.join(tmpDir, 'live-reporter.mjs');
 
   try {
@@ -946,7 +966,7 @@ test('test command streams progress to custom reporter modules', async () => {
       'utf8',
     );
 
-    const result = await runCliCapture(
+    const result = await runTestSuiteCli(
       ['test', './suite', '--reporter', reporterPath],
       async (_req, options) => {
         options?.onProgress?.({
@@ -980,7 +1000,7 @@ test('test command streams progress to custom reporter modules', async () => {
 });
 
 test('test command reuses custom reporter instance for progress and final output', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-stateful-reporter-test-'));
+  const tmpDir = await mkdtempForTest('agent-device-stateful-reporter-test-');
   const reporterPath = path.join(tmpDir, 'stateful-reporter.mjs');
 
   try {
@@ -1004,7 +1024,7 @@ test('test command reuses custom reporter instance for progress and final output
       'utf8',
     );
 
-    const result = await runCliCapture(
+    const result = await runTestSuiteCli(
       ['test', './suite', '--reporter', reporterPath],
       async (_req, options) => {
         options?.onProgress?.({
@@ -1027,7 +1047,7 @@ test('test command reuses custom reporter instance for progress and final output
 });
 
 test('test command surfaces a throwing live reporter hook without aborting the run', async () => {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-device-throwing-reporter-test-'));
+  const tmpDir = await mkdtempForTest('agent-device-throwing-reporter-test-');
   const reporterPath = path.join(tmpDir, 'throwing-reporter.mjs');
 
   try {
@@ -1048,7 +1068,7 @@ test('test command surfaces a throwing live reporter hook without aborting the r
       'utf8',
     );
 
-    const result = await runCliCapture(
+    const result = await runTestSuiteCli(
       ['test', './suite', '--reporter', reporterPath],
       async (_req, options) => {
         options?.onProgress?.({

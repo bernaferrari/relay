@@ -19,13 +19,13 @@
 // hand-off cannot be reproduced from a seed.
 
 import type { DeviceInfo } from '@agent-device/kernel/device';
-import type { CommandFlags } from '../../../../src/core/dispatch-context.ts';
-import type { DaemonRequest } from '../../../../src/daemon/types.ts';
+import type { CommandFlags } from '@agent-device/contracts/command';
+import type { DaemonRequest } from '../../../../src/daemon/daemon-request.ts';
 import type { SessionStore } from '../../../../src/daemon/session-store.ts';
 import { resolveRequestExecutionLockKeys } from '../../../../src/daemon/request-binding.ts';
 import { shouldLockSessionExecution } from '../../../../src/daemon/daemon-command-registry.ts';
-import { PUBLIC_COMMANDS } from '../../../../src/command-catalog.ts';
-import { withDeviceInventoryProvider } from '../../../../src/core/dispatch-resolve.ts';
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
+import { withTestDeviceInventoryProvider as withDeviceInventoryProvider } from '../../../../src/__tests__/test-utils/device-inventory-gateways.ts';
 
 import type { LockKey } from './deterministic-scheduler.ts';
 
@@ -83,7 +83,7 @@ export type SessionInstance = {
   mutations: number;
 };
 
-/** The advisory-claim device key the daemon derives for a resolved device. */
+/** The enforced-claim device key the daemon derives for a resolved device. */
 export function deviceClaimKey(device: DeviceInfo): string {
   return `local:${device.platform}:${device.appleOs ?? 'none'}:${device.id}`;
 }

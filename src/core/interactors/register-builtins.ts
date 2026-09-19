@@ -1,52 +1,13 @@
-import type { RunnerContext } from '@agent-device/contracts/interaction';
-import type { PlatformPlugin } from '@agent-device/contracts/platform';
+import type { RunnerContext } from '@agent-device/contracts/interactor-types';
+import type { PlatformPlugin } from '@agent-device/contracts/platform-plugin';
 import { registerPlatformPlugin } from '../platform-plugin-registry.ts';
-import { applePlugin } from '../../platforms/apple/plugin.ts';
-import { vegaPlugin } from '../../platforms/vega/plugin.ts';
-import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
-import { isAudioProbeSupportedDevice } from '@agent-device/contracts/platform';
-import { WEB_DESKTOP_DEVICE, type DeviceInventoryRequest } from '@agent-device/contracts/device';
+import { applePlugin } from '@agent-device/platform-apple';
+import { vegaPlugin } from '@agent-device/platform-vega';
 import type { Platform, DeviceInfo } from '@agent-device/kernel/device';
-import { resolveAndroidDiscoverySerialAllowlist } from '../platform-inventory.ts';
-
-// The builtin-plugin wiring lives at the interactor seam (src/core/interactors/) —
-// the one place R3 (see scripts/layering/check.ts) permits a STATIC value import of
-// `platforms/`, so this module can pull the relocated `applePlugin`
-// (src/platforms/apple/plugin.ts) into the registry while the generic registry + type
-// stay in `core/` (src/core/platform-plugin/plugin.ts) where non-interactor core code
-// like `core/capabilities.ts` may import them. The Apple plugin instance and its
-// capability closures now live under `platforms/apple/`; the android/linux/web wiring
-// stays here. Each plugin WRAPS today's existing factories (src/core/interactors/*) and
-// the inventory if-chain (src/core/platform-inventory.ts) as LAZY methods: the dynamic
-// `import()`s and per-platform list calls are byte-for-byte the same as the
-// hand-authored `getInteractor` switch arms and `listLocalDeviceInventory` branches.
-// `as const satisfies PlatformPlugin` preserves each plugin's literal `platforms` tuple
-// so the totality assertion below is a real compile-time check.
 
 const androidPlugin = {
   id: 'android',
   platforms: ['android'],
-  capability: {
-    bucket: 'android',
-    supportsByDefault: {
-      [PUBLIC_COMMANDS.audio]: isAudioProbeSupportedDevice,
-      [PUBLIC_COMMANDS.tvRemote]: (device) => device.target === 'tv',
-    },
-    unsupportedHintByDefault: {
-      [PUBLIC_COMMANDS.tvRemote]: (device) =>
-        device.target === 'tv' ? undefined : 'tv-remote is supported only on Android TV targets.',
-    },
-  },
-  // Wraps the Android arm of `resolveLogBackend`: every Android device -> 'android'.
-  appLog: { resolveBackend: () => 'android' },
-  // Wraps the Android arm of `supportsPlatformPerfMetrics`: every Android device
-  // reports perf-metrics support. `metricsSamplerTag` wraps the Android arm of the
-  // former `buildPerfResponseData` sampling branch: every supported Android device
-  // routes to the Android `perf metrics` sampler.
-  perf: { supportsMetrics: () => true, metricsSamplerTag: () => 'android' },
-  // Wraps the Android arm of `resolveRecordingBackendForDevice`: every Android device
-  // resolves to the android recording backend.
-  recording: { resolveBackendTag: () => 'android' },
   // Declares the platform-gated request provider resolver the Android family owns (the
   // adb provider, formerly gated by `device.platform === 'android'`).
   providers: { platformGatedResolvers: ['androidAdbProvider'] },
@@ -54,20 +15,20 @@ const androidPlugin = {
     const { createAndroidInteractor } = await import('./android.ts');
     return createAndroidInteractor(device, undefined, runner);
   },
-  discoverDevices: async (request: DeviceInventoryRequest) => {
-    const { listAndroidDevices } = await import('../../platforms/android/devices.ts');
-    return await listAndroidDevices({
-      serialAllowlist: resolveAndroidDiscoverySerialAllowlist(request),
-    });
+} as const satisfies PlatformPlugin;
+
+const harmonyosPlugin = {
+  id: 'harmonyos',
+  platforms: ['harmonyos'],
+  createInteractor: async (device: DeviceInfo, runner: RunnerContext) => {
+    const { createHarmonyInteractor } = await import('./harmonyos.ts');
+    return createHarmonyInteractor(device, runner);
   },
 } as const satisfies PlatformPlugin;
 
 const linuxPlugin = {
   id: 'linux',
   platforms: ['linux'],
-  capability: { bucket: 'linux' },
-  // No recording facet: linux historically fell through to the unsupported recording
-  // backend; the daemon lookup preserves that (`?? 'unsupported'`).
   // Declares the platform-gated request provider resolver the linux family owns (the
   // linux tool provider, formerly gated by `device.platform === 'linux'`).
   providers: { platformGatedResolvers: ['linuxToolProvider'] },
@@ -75,28 +36,18 @@ const linuxPlugin = {
     const { createLinuxInteractor } = await import('./linux.ts');
     return createLinuxInteractor();
   },
-  discoverDevices: async () => {
-    const { listLinuxDevices } = await import('../../platforms/linux/devices.ts');
-    return await listLinuxDevices();
-  },
 } as const satisfies PlatformPlugin;
 
 const webPlugin = {
   id: 'web',
   platforms: ['web'],
-  capability: { bucket: 'web' },
-  // Wraps the web arm of `resolveRecordingBackendForDevice`: the web device resolves to
-  // the web (agent-browser) recording backend.
-  recording: { resolveBackendTag: () => 'web' },
   // Declares the platform-gated request provider resolver the web family owns (the web
   // provider, formerly gated by `device.platform === 'web'`).
   providers: { platformGatedResolvers: ['webProvider'] },
   createInteractor: async () => {
     const { createWebInteractor } = await import('./web.ts');
-    return createWebInteractor();
+    return await createWebInteractor();
   },
-  // Mirrors the `request.platform === 'web'` branch (the single static device).
-  discoverDevices: async () => [WEB_DESKTOP_DEVICE],
 } as const satisfies PlatformPlugin;
 
 /**
@@ -106,6 +57,7 @@ const webPlugin = {
 export const BUILTIN_PLATFORM_PLUGINS = [
   applePlugin,
   androidPlugin,
+  harmonyosPlugin,
   vegaPlugin,
   linuxPlugin,
   webPlugin,

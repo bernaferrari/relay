@@ -5,9 +5,10 @@ import type {
   LeaseLifecycleProvider,
   ProviderExpiredLeaseRecovery,
 } from '@agent-device/contracts/device';
+import { publishFileSync } from '@agent-device/host-kit/file';
 import { releaseExpiredProviderLease } from './lease-lifecycle.ts';
-import { emitDiagnostic } from '../utils/diagnostics.ts';
-import { sleep } from '../utils/timeouts.ts';
+import { emitDiagnostic } from '@agent-device/host-kit/diagnostics';
+import { sleep } from '@agent-device/host-kit/retry';
 
 const DEFAULT_RETRY_DELAY_MS = 1_000;
 const PENDING_RELEASES_FILE = 'expired-provider-leases.json';
@@ -71,13 +72,15 @@ export function createExpiredProviderLeaseReleaser(options: {
         fs.rmSync(filePath, { force: true });
       } else {
         fs.mkdirSync(options.stateDir, { recursive: true, mode: 0o700 });
-        const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
         const record: PersistedExpiredProviderLeases = {
           version: PENDING_RELEASES_VERSION,
           leases: [...pendingRecoveryLeases.values()],
         };
-        fs.writeFileSync(temporaryPath, `${JSON.stringify(record)}\n`, { mode: 0o600 });
-        fs.renameSync(temporaryPath, filePath);
+        publishFileSync({
+          destination: filePath,
+          contents: `${JSON.stringify(record)}\n`,
+          mode: 0o600,
+        });
         fs.chmodSync(filePath, 0o600);
       }
       persistedRecoveryLeaseIds.clear();

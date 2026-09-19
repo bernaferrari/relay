@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import type { InteractionGuarantee } from '@agent-device/contracts/interaction';
+import type { InteractionGuarantee } from '@agent-device/contracts/interaction-guarantees';
 import type { Point } from '@agent-device/kernel/snapshot';
 import { ref } from '../../../src/commands/interaction/runtime/selector-read-utils.ts';
 import { assertRpcOk } from '../provider-scenarios/assertions.ts';
@@ -11,6 +11,8 @@ import {
   closedDrawerSnapshot,
   continueButtonSnapshot,
   coveredButtonSnapshot,
+  fullyTiledParentSnapshot,
+  keyboardCoveredTabBarSnapshot,
   nonHittableCellSnapshot,
   RUNNER_CONTINUE_NODES,
   settledWelcomeSnapshot,
@@ -36,6 +38,52 @@ test(scenario('occlusion'), async () => {
   await assert.rejects(
     () => device.interactions.click(ref('@e2'), { session: 'default' }),
     /Ref @e2 is covered by another visible element/,
+  );
+  assert.deepEqual(taps, []);
+});
+
+test(scenario('parentOwnedTouchPoint'), async () => {
+  const taps: Point[] = [];
+  const device = createContractDevice(fullyTiledParentSnapshot(), {
+    tap: async (_context, point) => {
+      taps.push(point);
+    },
+  });
+
+  await assert.rejects(
+    () => device.interactions.click(ref('@e2'), { session: 'default' }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /Ref @e2 has no parent-owned touch point/);
+      const details = (error as { details?: Record<string, unknown> }).details;
+      assert.equal(details?.reason, 'covered_by_interactive_descendants');
+      assert.equal(details?.ref, '@e2');
+      assert.equal(details?.selector, undefined);
+      return true;
+    },
+  );
+  assert.deepEqual(taps, []);
+});
+
+test(scenario('keyboardOcclusion'), async () => {
+  const taps: Point[] = [];
+  const device = createContractDevice(keyboardCoveredTabBarSnapshot(), {
+    tap: async (_context, point) => {
+      taps.push(point);
+    },
+  });
+
+  await assert.rejects(
+    () => device.interactions.click(ref('@e2'), { session: 'default' }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /Ref @e2 is behind the visible keyboard/);
+      const details = (error as { details?: Record<string, unknown> }).details;
+      assert.equal(details?.reason, 'tap_keyboard_occludes_target');
+      assert.equal(details?.ref, '@e2');
+      assert.ok(typeof details?.hint === 'string');
+      return true;
+    },
   );
   assert.deepEqual(taps, []);
 });

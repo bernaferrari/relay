@@ -1,21 +1,23 @@
 import { isIosFamily } from '@agent-device/kernel/device';
-import type { RecordingGestureEvent, SessionState } from './types.ts';
+import type { RecordingGestureEvent } from '@agent-device/contracts/screen-recording-runtime';
+import type { SessionState } from './session-state.ts';
 import type { SnapshotState } from '@agent-device/kernel/snapshot';
 import {
   resolveGestureDurationMs,
   resolveGestureOffsetMs,
   resolveTapVisualizationOffsetMs,
 } from './recording-timing.ts';
-import { emitDiagnostic } from '../utils/diagnostics.ts';
+import { emitDiagnostic } from '@agent-device/host-kit/diagnostics';
+import { DEFAULT_MOBILE_SCROLL_DURATION_MS } from '@agent-device/contracts/scroll-command';
 import {
-  buildScrollGesturePlan,
   type ScrollDirection,
   type SwipePattern,
-} from '@agent-device/contracts/interaction';
+  buildScrollGesturePlan,
+} from '@agent-device/contracts/scroll-gesture';
 import {
   getSnapshotReferenceFrame,
   type TouchReferenceFrame as ReferenceFrame,
-} from './touch-reference-frame.ts';
+} from '@agent-device/capture-kit/touch-reference-frame';
 import { buildCanonicalGestureEvents, buildSwipeTravelEvent } from './recording-gesture-events.ts';
 import { readRecordingNumber, resolveRecordingDurationMs } from './recording-values.ts';
 
@@ -35,8 +37,9 @@ export function recordTouchVisualizationEvent(
   startedAtMs = Date.now(),
   finishedAtMs = Date.now(),
 ): void {
-  const recording = session.recording;
-  if (!recording) return;
+  const handle = session.screenRecording?.handle;
+  if (!handle) return;
+  const recording = handle.inspect();
 
   const merged = { ...fallback, ...(result ?? {}) };
   const reportedDurationMs =
@@ -45,8 +48,7 @@ export function recordTouchVisualizationEvent(
     recordingStartedAt: recording.startedAt,
     gestureClockOriginAtMs: recording.gestureClockOriginAtMs,
     gestureClockOriginUptimeMs: recording.gestureClockOriginUptimeMs,
-    runnerStartedAtUptimeMs:
-      recording.platform === 'ios-device-runner' ? recording.runnerStartedAtUptimeMs : undefined,
+    runnerStartedAtUptimeMs: recording.runnerStartedAtUptimeMs,
     gestureStartUptimeMs: readRecordingNumber(merged.gestureStartUptimeMs),
     gestureEndUptimeMs: readRecordingNumber(merged.gestureEndUptimeMs),
     fallbackStartedAtMs: startedAtMs,
@@ -75,7 +77,7 @@ export function recordTouchVisualizationEvent(
     referenceFrame,
   );
   if (events.length === 0) return;
-  recording.gestureEvents.push(...events);
+  handle.appendGestureEvents(events);
   emitDiagnostic({
     level: 'debug',
     phase: 'record_touch_visualization_event',
@@ -107,7 +109,8 @@ export function augmentScrollVisualizationResult(
 
   const amountValue = readRecordingNumber(merged.amount) ?? readRecordingNumber(positionals[1]);
   const pixelValue = readRecordingNumber(merged.pixels);
-  const durationMs = readRecordingNumber(merged.durationMs) ?? DEFAULT_SWIPE_DURATION_MS;
+  const durationMs =
+    readRecordingNumber(merged.durationMs) ?? defaultRecordedScrollDurationMs(session);
   const explicitTravel = readTravelCoordinates(merged, []);
   const explicitReferenceWidth = readRecordingNumber(merged.referenceWidth);
   const explicitReferenceHeight = readRecordingNumber(merged.referenceHeight);
@@ -162,6 +165,12 @@ export function augmentScrollVisualizationResult(
     referenceHeight: fallbackReferenceFrame.referenceHeight,
     durationMs,
   };
+}
+
+function defaultRecordedScrollDurationMs(session: SessionState): number {
+  return session.device.target === 'desktop' || session.device.target === 'tv'
+    ? DEFAULT_SWIPE_DURATION_MS
+    : DEFAULT_MOBILE_SCROLL_DURATION_MS;
 }
 
 function buildGestureEvents(

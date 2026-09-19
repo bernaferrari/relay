@@ -1,6 +1,6 @@
 // `pnpm depgraph affected <path>` — the blast radius of one file in one query.
 //
-//   pnpm depgraph affected src/utils/exec.ts
+//   pnpm depgraph affected packages/host-kit/src/command.ts
 //   pnpm depgraph affected src/daemon/ref-frame.ts --json --limit 20
 //
 // Answers, from the sources of truth rather than a second copy of them:
@@ -18,11 +18,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { PUBLIC_COMMANDS } from '../../src/command-catalog.ts';
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
 import {
   INTERACTION_DISPATCH_PATHS,
   type InteractionPathId,
-} from '@agent-device/contracts/interaction';
+} from '@agent-device/contracts/interaction-guarantees';
 import { DAEMON_COMMAND_DESCRIPTORS } from '../../src/daemon/daemon-command-registry.ts';
 import { parseArgs } from 'node:util';
 import { selectChecks, type CheckPlan } from '../check-affected/model.ts';
@@ -55,7 +55,7 @@ const HANDLER_CHAIN_FILE = 'src/daemon/request-handler-chain.ts';
  * needs — command name to owning scenario — so this lane does not depend on the rest of that
  * manifest's vocabulary, and reports honestly when it is not in the tree yet.
  */
-const LIVE_COVERAGE_MANIFEST = 'test/integration/ios-simulator-e2e/coverage-manifest.ts';
+const LIVE_COVERAGE_MANIFEST = 'test/integration/ios-simulator-e2e/coverage.ts';
 const LIVE_COVERAGE_EXPORT = 'IOS_SIMULATOR_E2E_COVERAGE';
 
 type LiveCoverageEntry = { level: string; owner: unknown; assertion: string };

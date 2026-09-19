@@ -1,13 +1,16 @@
 import {
   isIosFamily,
   isMacOs,
+  matchesPlatformSelector,
   type DeviceInfo,
+  type DeviceKind,
   type DeviceTarget,
   type PlatformSelector,
 } from '@agent-device/kernel/device';
 
 export const LOCAL_DEVICE_INVENTORY_PLATFORM_SELECTORS = [
   'android',
+  'harmonyos',
   'apple',
   'vega',
   'linux',
@@ -25,9 +28,23 @@ export type DeviceInventoryRequest = {
   clientId?: string;
   iosSimulatorSetPath?: string;
   androidSerialAllowlist?: string[];
+  /** Internal local-inventory projection filters; not public command grammar. */
+  kind?: DeviceKind;
+  booted?: boolean;
+  /** Internal target-resolution policy; ordinary inventory leaves this absent and lists all AVDs. */
+  androidAvdSelection?: 'running-only' | 'include-stopped';
 };
 
-export type DeviceInventoryGroup = 'android' | 'apple' | 'vega' | 'linux' | 'web';
+export type ProviderDeviceInventoryRequest = Omit<DeviceInventoryRequest, 'booted' | 'kind'>;
+
+export function projectProviderDeviceInventoryRequest(
+  request: Readonly<DeviceInventoryRequest>,
+): ProviderDeviceInventoryRequest {
+  const { booted: _booted, kind: _kind, ...providerRequest } = request;
+  return providerRequest;
+}
+
+export type DeviceInventoryGroup = 'android' | 'harmonyos' | 'apple' | 'vega' | 'linux' | 'web';
 export type DeviceInventoryGroupCounts = Record<
   DeviceInventoryGroup,
   { available: number; booted: number }
@@ -52,19 +69,23 @@ export function countDeviceInventoryByGroup(devices: DeviceInfo[]): DeviceInvent
   return counts;
 }
 
-export function shouldUseHostMacFastPath(selector: {
-  platform?: PlatformSelector;
-  target?: DeviceTarget;
-}): boolean {
-  return (
-    selector.platform === 'macos' ||
-    (selector.platform === 'apple' && selector.target === 'desktop')
+export function filterDeviceInventoryProjection(
+  devices: readonly DeviceInfo[],
+  request: Pick<DeviceInventoryRequest, 'platform' | 'target' | 'kind' | 'booted'>,
+): DeviceInfo[] {
+  return devices.filter(
+    (device) =>
+      matchesPlatformSelector(device, request.platform) &&
+      (request.target === undefined || (device.target ?? 'mobile') === request.target) &&
+      (request.kind === undefined || device.kind === request.kind) &&
+      (request.booted === undefined || device.booted === request.booted),
   );
 }
 
 function emptyDeviceInventoryGroupCounts(): DeviceInventoryGroupCounts {
   return {
     android: { available: 0, booted: 0 },
+    harmonyos: { available: 0, booted: 0 },
     apple: { available: 0, booted: 0 },
     vega: { available: 0, booted: 0 },
     linux: { available: 0, booted: 0 },

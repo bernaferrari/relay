@@ -1,8 +1,7 @@
 import { AppError } from '@agent-device/kernel/errors';
-import type { CommandSchemaOverride } from '../../cli-schema/types.ts';
+import type { CommandSchemaOverride } from '@agent-device/command-registry/command-schema';
 import { enumField, requiredField, stringField } from '../command-input.ts';
 import { defineCommandFacet, defineCommandFamilyFromFacets } from '../family/types.ts';
-import { defineExecutableCommand } from '../command-contract.ts';
 import { defineFieldCommandMetadata } from '../field-command-contract.ts';
 import { commonInputFromFlags } from '../cli-grammar/common.ts';
 import type { CliReader } from '../cli-grammar/types.ts';
@@ -11,7 +10,8 @@ import { debuggingCliOutputFormatters } from './output.ts';
 const DEBUG_COMMAND_NAME = 'debug';
 const DEBUG_ACTION_VALUES = ['symbols'] as const;
 
-const debugCommandDescription = 'Symbolicate crash artifacts with matching debug symbols.';
+const debugCommandDescription =
+  'Symbolicate Apple crash artifacts with matching dSYM UUIDs. This debug namespace is intentionally narrow: use logs for app logs, network for HTTP evidence, perf for performance samples, record/trace for media and traces, and react-devtools for React Native profiles.';
 
 export const debugCommandMetadata = defineFieldCommandMetadata(
   DEBUG_COMMAND_NAME,
@@ -25,19 +25,11 @@ export const debugCommandMetadata = defineFieldCommandMetadata(
   },
 );
 
-export const debugCommandDefinition = defineExecutableCommand(
-  debugCommandMetadata,
-  (client, input) => client.debug.symbols(input),
-);
-
 const debugCliSchema = {
   usageOverride:
     'debug symbols --artifact <crash.ips|crash.log> (--dsym <App.dSYM> | --search-path <dir>) [--out <symbolicated>]',
+  usageFlags: [],
   listUsageOverride: 'debug',
-  helpDescription:
-    'Symbolicate Apple crash artifacts with matching dSYM UUIDs. This debug namespace is intentionally narrow: use logs for app logs, network for HTTP evidence, perf for performance samples, record/trace for media and traces, and react-devtools for React Native profiles.',
-  summary:
-    'Symbolicate Apple crash artifacts with dSYMs; use logs/network/perf for other diagnostics',
   positionalArgs: ['symbols'],
   allowedFlags: ['artifact', 'dsym', 'searchPath', 'out'],
 } as const satisfies CommandSchemaOverride;
@@ -51,10 +43,13 @@ export const debugCliReader: CliReader = (positionals, flags) => ({
   out: flags.out,
 });
 
-const debugCommandFacet = defineCommandFacet({
+export const debugCommandFacet = defineCommandFacet({
   name: DEBUG_COMMAND_NAME,
+  text: {
+    summary: 'Symbolicate Apple crash artifacts',
+  },
   metadata: debugCommandMetadata,
-  definition: debugCommandDefinition,
+  run: (client, input) => client.debug.symbols(input),
   cliSchema: debugCliSchema,
   cliReader: debugCliReader,
   cliOutputFormatter: debuggingCliOutputFormatters.debug,

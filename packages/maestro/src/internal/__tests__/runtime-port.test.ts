@@ -122,6 +122,28 @@ describe('MaestroRuntimePort', () => {
     });
   });
 
+  test('dispatches standalone clearState with an explicit or config app id', async () => {
+    const calls: RecordedCall[] = [];
+    const operations = makeOperations({
+      clearState: vi.fn(async (input, context) => record(calls, 'clearState', input, context)),
+    });
+    const program = parseMaestroProgram(
+      [
+        'appId: com.example.checkout',
+        '---',
+        '- clearState: com.example.checkout',
+        '- clearState',
+      ].join('\n'),
+    );
+
+    const result = await executeMaestroProgram(program, createMaestroRuntimePort(operations));
+
+    expect(result).toMatchObject({ executed: 2, skipped: 0 });
+    expect(calls.map(({ kind }) => kind)).toEqual(['clearState', 'clearState']);
+    expect(calls[0]).toMatchObject({ input: { appId: 'com.example.checkout' } });
+    expect(calls[1]).toMatchObject({ input: { appId: 'com.example.checkout' } });
+  });
+
   test('preserves observation validity after visual waits and scripts', async () => {
     const waitInvalidation = vi.fn();
     const scriptInvalidation = vi.fn();
@@ -454,7 +476,7 @@ describe('MaestroRuntimePort', () => {
     expect(calls[0]).toMatchObject({ kind: 'doubleTapOn', input: { delay: 100 } });
   });
 
-  test('resolves tapOn.index into the target query', async () => {
+  test('resolves tapOn.index inside the recursive target selector', async () => {
     const resolveTarget = vi.fn(
       async (_input: unknown, context: { generation: number }): Promise<MaestroTargetMatch> => ({
         generation: context.generation,
@@ -475,7 +497,7 @@ describe('MaestroRuntimePort', () => {
     });
 
     expect(resolveTarget).toHaveBeenCalledWith(
-      expect.objectContaining({ index: 2 }),
+      expect.objectContaining({ selector: { id: 'button', index: '2' } }),
       expect.anything(),
     );
     expect(tapOn).toHaveBeenCalled();

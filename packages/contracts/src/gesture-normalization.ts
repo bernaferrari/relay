@@ -1,7 +1,12 @@
 import type { Point } from '@agent-device/kernel/snapshot';
 import { AppError } from '@agent-device/kernel/errors';
 import { readGesturePayload, type GESTURE_KINDS, type GesturePayload } from './gesture-input.ts';
-import type { GestureSemanticInput } from './gesture-plan-types.ts';
+import type { GestureCommandInput, GestureSemanticInput } from './gesture-plan-types.ts';
+import {
+  DEFAULT_DRAG_DESTINATION_HOLD_MS,
+  DEFAULT_DRAG_MOVE_MS,
+  DEFAULT_DRAG_SOURCE_HOLD_MS,
+} from './gesture-plan-types.ts';
 
 export type NormalizedPublicGesture = {
   gesture: GestureSemanticInput;
@@ -80,6 +85,11 @@ const PUBLIC_GESTURE_SYNTAX: Record<GestureSyntaxKey, PublicGestureSyntax> = {
   'gesture transform': {
     max: 7,
     usage: 'gesture transform accepts at most 7 arguments: x y dx dy scale degrees [durationMs]',
+  },
+  'gesture drag': {
+    max: 5,
+    usage:
+      'gesture drag accepts at most 5 arguments: source destination [sourceHoldMs] [moveMs] [destinationHoldMs]',
   },
 };
 
@@ -195,7 +205,7 @@ function readOriginDelta(args: readonly string[]): { origin: Point; delta: Point
 /** The explicit parser for the public CLI and `.ad` gesture syntax. */
 // fallow-ignore-next-line complexity
 export function gesturePayloadFromPositionals(
-  positionals: string[],
+  positionals: readonly string[],
   pointerCount?: number,
 ): GesturePayload {
   const kind = positionals[0];
@@ -256,9 +266,29 @@ export function gesturePayloadFromPositionals(
         durationMs: optionalPositionNumber(args[6]),
       });
     }
+    case 'drag': {
+      assertGestureArity('gesture drag', args);
+      return readGesturePayload({
+        kind,
+        source: args[0],
+        destination: args[1],
+        sourceHoldMs: optionalPositionNumber(args[2]),
+        moveMs: optionalPositionNumber(args[3]),
+        destinationHoldMs: optionalPositionNumber(args[4]),
+      });
+    }
     default:
       return readGesturePayload({ kind });
   }
+}
+
+/** Reads the selector-authored drag grammar without exposing its positional layout. */
+export function dragGesturePayloadFromPositionals(
+  positionals: readonly string[],
+): Extract<GesturePayload, { kind: 'drag' }> | undefined {
+  if (positionals[0] !== 'drag') return undefined;
+  const payload = gesturePayloadFromPositionals(positionals);
+  return payload.kind === 'drag' ? payload : undefined;
 }
 
 /** Serializes structured gesture input for `.ad` recordings. */
@@ -294,6 +324,17 @@ export function gesturePayloadToPositionals(input: GesturePayload): string[] {
         input.degrees,
         input.durationMs,
       ]);
+    case 'drag':
+      // Materialize the independent timing slots. Omitting an interior value
+      // would shift every following positional and silently change replay.
+      return [
+        input.kind,
+        input.source,
+        input.destination,
+        String(input.sourceHoldMs ?? DEFAULT_DRAG_SOURCE_HOLD_MS),
+        String(input.moveMs ?? DEFAULT_DRAG_MOVE_MS),
+        String(input.destinationHoldMs ?? DEFAULT_DRAG_DESTINATION_HOLD_MS),
+      ];
   }
 }
 
@@ -355,7 +396,25 @@ export function normalizePublicGesture(input: GesturePayload): NormalizedPublicG
           durationMs: input.durationMs,
         },
       };
+    case 'drag':
+      throw new AppError(
+        'INVALID_ARGS',
+        'gesture drag targets must be resolved before coordinate normalization',
+      );
   }
+}
+
+/** Converts every public gesture payload into the runtime's semantic command shape. */
+export function normalizeGestureCommandInput(input: GesturePayload): GestureCommandInput {
+  if (input.kind !== 'drag') return normalizePublicGesture(input).gesture;
+  return {
+    intent: 'drag',
+    source: input.source,
+    destination: input.destination,
+    sourceHoldMs: input.sourceHoldMs,
+    moveMs: input.moveMs,
+    destinationHoldMs: input.destinationHoldMs,
+  };
 }
 
 export function normalizePublicSwipeMotion(input: {

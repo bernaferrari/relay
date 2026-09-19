@@ -1,7 +1,8 @@
-import { detectProjectRuntimeKind } from '../../utils/project-runtime.ts';
+import { detectProjectRuntimeKind } from '@agent-device/host-kit/project-runtime';
 import { publicPlatformString } from '@agent-device/kernel/device';
 import type { SessionStore } from '../session-store.ts';
-import type { DaemonRequest, SessionState } from '../types.ts';
+import type { DaemonRequest } from '../daemon-request.ts';
+import type { SessionState } from '../session-state.ts';
 import type { DoctorOptions } from './session-doctor-types.ts';
 import type { DoctorCheck, DoctorKind } from '@agent-device/contracts/observability';
 
@@ -25,6 +26,7 @@ const REMOTE_PROVIDER_FLAG_KEYS = [
   'providerDeviceOrientation',
   'providerGeoLocation',
   'providerTimezone',
+  'providerAppiumVersion',
   'providerLanguage',
   'providerLocale',
   'providerNetworkProfile',
@@ -87,16 +89,19 @@ export function sessionChecks(
   session: SessionState | undefined,
   options: { remote?: boolean } = {},
 ): DoctorCheck[] {
+  // Candidates report their ADDRESS — the string `close --session` actually accepts — and the
+  // current session is excluded by address too: two cwd-scoped sessions share the name
+  // `default`, so a name compare would hide them from each other (#2031/#1394).
   const sameDeviceSessions = session
     ? sessionStore
-        .toArray()
+        .listRefs()
         .filter(
           (candidate) =>
-            candidate.name !== session.name &&
-            candidate.device.platform === session.device.platform &&
-            candidate.device.id === session.device.id,
+            candidate.address !== sessionName &&
+            candidate.session.device.platform === session.device.platform &&
+            candidate.session.device.id === session.device.id,
         )
-        .map((candidate) => candidate.name)
+        .map((candidate) => candidate.address)
     : [];
 
   if (!session) {
@@ -129,9 +134,9 @@ export function sessionChecks(
           ? `agent-device close --session ${sameDeviceSessions[0]} --platform ${publicPlatformString(session.device)}`
           : undefined,
       evidence: {
-        session: session.name,
+        session: sessionName,
         sameDeviceSessions,
-        sessionStateDir: sessionStore.resolveSessionDir(session.name),
+        sessionStateDir: sessionStore.resolveSessionDir(sessionName),
       },
     },
   ];

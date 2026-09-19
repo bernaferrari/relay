@@ -1,9 +1,10 @@
-import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
 import type { FindOptions, IsOptions } from '@agent-device/contracts/client';
 import type { CliFlags } from '@agent-device/contracts/command';
 import { AppError } from '@agent-device/kernel/errors';
 import {
   checkIsPredicate,
+  normalizeFindActionToken,
   normalizeIsPositionals,
   UNSUPPORTED_FIND_ACTION_HINT,
 } from '@agent-device/selectors';
@@ -47,6 +48,7 @@ function findPositionals(input: FindOptions): string[] {
     case 'click':
     case 'focus':
     case 'exists':
+    case 'list':
       return input.action ? [...args, input.action] : args;
     case 'getText':
       return [...args, 'get', 'text'];
@@ -73,7 +75,7 @@ function readFindOptionsFromPositionals(positionals: string[], flags: CliFlags):
   const hasExplicitLocator = locator !== undefined;
   const query = hasExplicitLocator ? positionals[1] : positionals[0];
   const actionOffset = hasExplicitLocator ? 2 : 1;
-  const action = positionals[actionOffset];
+  const action = normalizeFindActionToken(positionals[actionOffset]);
   if (action === undefined) return { ...base, locator, query: readRequiredQuery(query) };
   if (action === 'get') {
     const subcommand = positionals[actionOffset + 1];
@@ -95,18 +97,29 @@ function readFindOptionsFromPositionals(positionals: string[], flags: CliFlags):
     };
   }
   if (action === 'fill' || action === 'type') {
+    // An empty value positional is the clear request (#2063); only a MISSING one is refused,
+    // here, so `value` stays present on the typed options.
+    const valuePositionals = positionals.slice(actionOffset + 1);
+    if (valuePositionals.length === 0) {
+      throw new AppError(
+        'INVALID_ARGS',
+        action === 'fill'
+          ? 'find fill requires text (use "" to clear the field)'
+          : 'find type requires text',
+      );
+    }
     return {
       ...base,
       locator,
       query: readRequiredQuery(query),
       action,
-      value: positionals.slice(actionOffset + 1).join(' '),
+      value: valuePositionals.join(' '),
     };
   }
-  if (action === 'click' || action === 'focus' || action === 'exists') {
+  if (action === 'click' || action === 'focus' || action === 'exists' || action === 'list') {
     return { ...base, locator, query: readRequiredQuery(query), action };
   }
-  throw new AppError('INVALID_ARGS', `Unsupported find action: ${action}`, {
+  throw new AppError('INVALID_ARGS', `Unsupported find action: ${positionals[actionOffset]}`, {
     hint: UNSUPPORTED_FIND_ACTION_HINT,
   });
 }
@@ -126,6 +139,12 @@ function readIsOptionsFromPositionals(positionals: string[], flags: CliFlags): I
   // check this replaced compared the raw token, so the CLI used to be stricter than the
   // executor it hands the command to.
   const predicate = admitted.predicate;
+  if (predicate === 'absent') {
+    const refusedOption = absenceCaptureOptionRefusal(base);
+    if (refusedOption) {
+      throw absenceCaptureOptionError(refusedOption);
+    }
+  }
   const split = splitRequiredSelector(normalized.slice(1), {
     preferTrailingValue: predicate === 'text',
   });
@@ -133,6 +152,29 @@ function readIsOptionsFromPositionals(positionals: string[], flags: CliFlags): I
     return { ...base, predicate, selector: split.selectorExpression, value: split.rest.join(' ') };
   }
   return { ...base, predicate, selector: split.selectorExpression };
+}
+
+type AbsenceCaptureOption = 'depth' | 'scope';
+
+function absenceCaptureOptionRefusal(options: {
+  depth?: number;
+  scope?: string;
+}): AbsenceCaptureOption | undefined {
+  if (options.scope !== undefined) return 'scope';
+  if (options.depth !== undefined) return 'depth';
+  return undefined;
+}
+
+function absenceCaptureOptionError(option: AbsenceCaptureOption): AppError {
+  const message =
+    option === 'scope'
+      ? 'is absent does not support --scope; it requires an unscoped capture'
+      : 'is absent does not support --depth; it requires a full-depth capture';
+  return new AppError('INVALID_ARGS', message, {
+    command: 'is',
+    predicate: 'absent',
+    rejectedOption: option,
+  });
 }
 
 function readFindLocator(value: string | undefined): FindOptions['locator'] | undefined {

@@ -1,6 +1,7 @@
 import type { FileOutputRef } from '../io.ts';
 import type { AgentDeviceRuntime, CommandContext } from '../runtime-contract.ts';
 import type { SessionSurface } from '@agent-device/contracts/session';
+import type { SnapshotCommandOptionFields } from '@agent-device/kernel/snapshot';
 
 export type CommandResult = Record<string, unknown>;
 
@@ -49,7 +50,7 @@ export type ScreenshotCommandOptions = CommandContext & {
   fullscreen?: boolean;
   overlayRefs?: boolean;
   pixelDensity?: number;
-  maxSize?: number;
+  scale?: number;
   stabilize?: boolean;
   normalizeStatusBar?: boolean;
   appId?: string;
@@ -57,12 +58,6 @@ export type ScreenshotCommandOptions = CommandContext & {
   surface?: SessionSurface;
 };
 
-export type SnapshotCommandOptions = CommandContext & {
-  interactiveOnly?: boolean;
-  depth?: number;
-  scope?: string;
-  raw?: boolean;
-  forceFull?: boolean;
-};
+export type SnapshotCommandOptions = CommandContext & SnapshotCommandOptionFields;
 
 export type DiffSnapshotCommandOptions = SnapshotCommandOptions;

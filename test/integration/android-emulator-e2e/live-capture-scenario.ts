@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 
-import { PUBLIC_COMMANDS } from '../../../src/command-catalog.ts';
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
 import { assertPngFile } from '../provider-scenarios/assertions.ts';
 import { type LiveContext, runStep, verifyCommand } from './live-harness.ts';
 
@@ -12,8 +12,8 @@ export async function assertCaptureAndClose(context: LiveContext): Promise<void>
   const screenshot = await runStep(context, 'capture fixture screenshot', [
     'screenshot',
     screenshotPath,
-    '--max-size',
-    '900',
+    '--scale',
+    '0.5',
   ]);
   assert.ok(
     JSON.stringify(screenshot.json?.data).includes(screenshotPath),

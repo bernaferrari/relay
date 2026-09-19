@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { type CliJsonResult, formatResultDebug, runBuiltCliJson } from '../cli-json.ts';
+import { collectFailedStepEvidence, type FailedStepEvidence } from './failed-step-evidence.ts';
 
 export type StepRecord = {
   accepted: boolean;
@@ -44,6 +45,17 @@ type HarnessOptions<Context, BehaviorId extends string> = {
   behaviorsForScenario: (scenarioId: string) => readonly BehaviorId[];
   commandsForScenario: (scenarioId: string) => readonly string[];
   commonFlags: (context: Context, args: readonly string[]) => string[];
+  runCli?: (
+    args: string[],
+    env: NodeJS.ProcessEnv,
+    options?: { timeoutMs?: number },
+  ) => Promise<CliJsonResult>;
+  /**
+   * Platform-owned device facts for a failed step (rotation state, system logs), read outside
+   * agent-device so they describe the device even when the CLI path is what failed. Best-effort:
+   * a throw or undefined records nothing.
+   */
+  deviceEvidence?: (context: Context) => Promise<string | undefined>;
   writeCoverageReport: (context: Context) => void;
 };
 
@@ -120,7 +132,7 @@ export function createLiveDeviceHarness<
   ): Promise<CliJsonResult> {
     const fullArgs = buildStepArgs(context, args, stepOptions);
     const startedAt = Date.now();
-    const result = await runBuiltCliJson(fullArgs, context.env, {
+    const result = await (options.runCli ?? runBuiltCliJson)(fullArgs, context.env, {
       timeoutMs: stepOptions.timeoutMs,
     });
     const failedAsExpected = stepOptions.expectFailure === true && result.status !== 0;
@@ -135,7 +147,7 @@ export function createLiveDeviceHarness<
       status: result.status,
       step,
     });
-    assertStepOutcome(context, step, fullArgs, result, failedAsExpected, stepOptions);
+    await assertStepOutcome(context, step, fullArgs, result, failedAsExpected, stepOptions);
     updateSessionState(context, args[0], result.status);
     return result;
   }
@@ -153,21 +165,25 @@ export function createLiveDeviceHarness<
     writeStepHistory(context);
   }
 
-  function assertStepOutcome(
+  async function assertStepOutcome(
     context: Context,
     step: string,
     fullArgs: string[],
     result: CliJsonResult,
     failedAsExpected: boolean,
     stepOptions: RunStepOptions,
-  ): void {
+  ): Promise<void> {
     const unexpectedFailure =
       result.status !== 0 && !failedAsExpected && stepOptions.allowFailure !== true;
     if (unexpectedFailure) {
+      const evidence = await captureFailedStepEvidence(context);
       const message = [
         formatResultDebug(step, fullArgs, result),
         `scenario: ${context.currentScenario}`,
         `artifacts: ${context.artifactDir}`,
+        `screenshot: ${evidence.screenshotPath ?? '(capture failed)'}`,
+        `snapshot: ${evidence.snapshotPath ?? '(capture failed)'}`,
+        `device: ${evidence.devicePath ?? '(not collected)'}`,
       ].join('\n');
       fs.writeFileSync(path.join(context.artifactDir, 'failed-step.txt'), message);
       assert.fail(message);
@@ -175,6 +191,16 @@ export function createLiveDeviceHarness<
     if (stepOptions.expectFailure === true && result.status === 0) {
       assert.fail(`${step} unexpectedly succeeded\ncommand: agent-device ${fullArgs.join(' ')}`);
     }
+  }
+
+  function captureFailedStepEvidence(context: Context): Promise<FailedStepEvidence> {
+    const runCli = options.runCli ?? runBuiltCliJson;
+    const deviceEvidence = options.deviceEvidence;
+    return collectFailedStepEvidence({
+      stem: path.join(context.artifactDir, `failed-step-${context.stepHistory.length}`),
+      runCli: (args) => runCli(options.commonFlags(context, args), context.env),
+      ...(deviceEvidence ? { deviceEvidence: () => deviceEvidence(context) } : {}),
+    });
   }
 
   function updateSessionState(context: Context, command: string | undefined, status: number): void {

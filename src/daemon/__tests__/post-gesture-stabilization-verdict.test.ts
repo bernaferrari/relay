@@ -1,12 +1,27 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { buildInteractionSurfaceSignature } from '../interaction-outcome-policy.ts';
-import { decidePostGestureStabilityVerdict } from '../post-gesture-stabilization.ts';
+import {
+  buildInteractionSurfaceSignature,
+  classifyBaselineSurfaceEvidence,
+  type InteractionSurfaceSignature,
+} from '../interaction-outcome-policy.ts';
+import { decidePostGestureStabilityVerdict as decideWithHooks } from '@agent-device/capture-kit/post-gesture-stability';
 import {
   applicationRootNode,
   keyboardWindowNodes,
   pickupSnapshot,
 } from './post-gesture-stabilization-fixtures.ts';
+
+// The pure verdict takes its baseline comparator as a hook; every case below
+// wires the real classifier, so this file keeps testing the same
+// classify-then-decide composition shipping callers run.
+const decidePostGestureStabilityVerdict = (params: {
+  needsBaselineDistrust: boolean;
+  baselineSignature: InteractionSurfaceSignature | undefined;
+  quietSignature: InteractionSurfaceSignature;
+  elapsedMs: number;
+  distrustCapMs: number;
+}) => decideWithHooks({ ...params, classifyBaselineEvidence: classifyBaselineSurfaceEvidence });
 
 // ---------------------------------------------------------------------------
 // #1542 defect 2: baseline-comparison distrust.
@@ -20,8 +35,7 @@ import {
 //
 // Split out of post-gesture-stabilization.test.ts per #1563 review (the pure
 // verdict coverage, alongside its own shared fixtures, moved to this sibling
-// module so the async-loop test file stays under the repo's 500-line
-// tripwire — see post-gesture-stabilization-fixtures.ts).
+// module — see post-gesture-stabilization-fixtures.ts).
 // ---------------------------------------------------------------------------
 
 test('decidePostGestureStabilityVerdict trusts immediately when the platform does not need baseline distrust', () => {

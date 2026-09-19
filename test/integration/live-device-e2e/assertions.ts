@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 import { assertPngFile } from '../provider-scenarios/assertions.ts';
-import { isPlayableVideo } from '../../../src/utils/video.ts';
+import { isPlayableVideo } from '@agent-device/capture-kit/recording-video';
 import type { CliJsonResult } from '../cli-json.ts';
 import type { LiveDeviceContext } from './runtime.ts';
 
@@ -51,7 +51,7 @@ export function createLiveDeviceAssertions<
   }
 
   async function capturePng(context: Context, step: string, outputPath: string): Promise<void> {
-    await runStep(context, step, ['screenshot', outputPath, '--max-size', '900']);
+    await runStep(context, step, ['screenshot', outputPath, '--scale', '0.5']);
     assertPngFile(outputPath);
   }
 

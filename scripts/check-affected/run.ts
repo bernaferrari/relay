@@ -8,8 +8,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { runCmdStreaming, runCmdSync } from '../../src/utils/exec.ts';
+import { runCmdStreaming, runCmdSync } from '@agent-device/host-kit/command';
+import {
+  checkLockfileInstallSync,
+  STALE_NODE_MODULES_MESSAGE,
+  type LockfileInstallSyncResult,
+} from './lockfile-install-sync.ts';
 import { parseScriptArgs } from '../lib/cli-args.ts';
+import { runEntrypoint } from '../lib/cli-entrypoint.ts';
 import {
   assertCatalogComplete,
   CHECK_CATALOG,
@@ -17,7 +23,16 @@ import {
   resolveCommand,
   type CheckSpec,
 } from './checks.ts';
-import { ALL_CHECKS, selectChecks, type CheckPlan } from './model.ts';
+import { MANUAL_ONLY_OWNERS } from '../gate/declarations.ts';
+import { loadModel, owningLanes } from '../gate/model.ts';
+import { ALL_CHECKS, selectChecks, type CheckId, type CheckPlan } from './model.ts';
+
+// Which GitHub jobs run each check, read off the workflows rather than declared
+// next to the check. A skipped check tells the reader where it is authoritative,
+// and that pointer is only useful if it cannot drift from the workflows.
+function ciJobsByCheck(): Map<CheckId, string[]> {
+  return owningLanes(loadModel(repoRoot, []));
+}
 
 type Args = { base: string; head: string; json: boolean; run: boolean };
 
@@ -87,12 +102,13 @@ function packageEntryFiles(pkg: PackageJson): string[] {
 }
 
 function printPlanJson(plan: CheckPlan, args: Args): void {
+  const ciJobs = ciJobsByCheck();
   const checks = plan.checks.map((id) => {
     const spec = getCheckSpec(id);
     return {
       id,
       label: spec.label,
-      ciJobs: spec.ciJobs,
+      ciJobs: ciJobs.get(id) ?? [],
       localRunnable: spec.localRunnable,
       reasons: plan.reasons.filter((reason) => reason.check === id),
     };
@@ -173,79 +189,67 @@ export async function runChecks(
   plan: CheckPlan,
   pkg: PackageJson,
   args: Args,
-  options: { cwd?: string; execute?: CommandExecutor; changedFiles?: readonly string[] } = {},
+  options: {
+    cwd?: string;
+    execute?: CommandExecutor;
+    changedFiles?: readonly string[];
+    checkLockfileSync?: (cwd: string) => LockfileInstallSyncResult;
+  } = {},
 ): Promise<number> {
   const cwd = options.cwd ?? repoRoot;
+  const checkLockfileSync = options.checkLockfileSync ?? checkLockfileInstallSync;
+  // Fail before any gate can misdiagnose a stale worktree install (#1956).
+  const lockfileSync = checkLockfileSync(cwd);
+  if (lockfileSync.status === 'out-of-sync') {
+    reportStaleInstall(lockfileSync.reason, cwd);
+    return 1;
+  }
   const execute = options.execute ?? streamingExecutor;
   const runnable = plan.checks.map(getCheckSpec).filter((spec: CheckSpec) => spec.localRunnable);
   const skipped = plan.checks.map(getCheckSpec).filter((spec: CheckSpec) => !spec.localRunnable);
-  const coverageSelected = plan.checks.includes('coverage');
+  const relatedSelected = plan.checks.includes('vitest-related');
+  const ciJobs = skipped.length > 0 ? ciJobsByCheck() : new Map<CheckId, string[]>();
   for (const spec of skipped) {
-    process.stdout.write(
-      `\n[skip] ${spec.id} — GitHub-authoritative (jobs: ${spec.ciJobs.join(', ')})\n`,
-    );
+    process.stdout.write(`\n[skip] ${spec.id} — ${describeOwner(spec.id, ciJobs)}\n`);
   }
   for (const spec of runnable) {
-    if (isCoveredByAffectedCoverage(spec, coverageSelected)) {
-      process.stdout.write(`\n[dedupe] ${spec.id} — covered by affected LCOV or GitHub CI\n`);
+    if (isCoveredByRelatedTests(spec, relatedSelected)) {
+      process.stdout.write(`\n[dedupe] ${spec.id} — covered by related tests or GitHub CI\n`);
       continue;
     }
-    const commands = resolveCheckCommands(spec, pkg, args, options.changedFiles ?? []);
-    for (const command of commands) {
-      process.stdout.write(`\n[run] ${spec.id}: ${command.join(' ')}\n`);
-      const exitCode = await execute(command, cwd);
-      if (exitCode !== 0) {
-        process.stderr.write(`\ncheck:affected: ${spec.id} failed.\n`);
-        return 1;
-      }
+    const command = resolveCommand(spec, pkg.scripts, args.base, options.changedFiles ?? []);
+    process.stdout.write(`\n[run] ${spec.id}: ${command.join(' ')}\n`);
+    const exitCode = await execute(command, cwd);
+    if (exitCode !== 0) {
+      process.stderr.write(`\ncheck:affected: ${spec.id} failed.\n`);
+      return 1;
     }
   }
   process.stdout.write('\ncheck:affected: all runnable checks passed.\n');
   return 0;
 }
 
-function isCoveredByAffectedCoverage(spec: CheckSpec, coverageSelected: boolean): boolean {
-  return (
-    coverageSelected &&
-    (spec.id === 'vitest-related' || spec.id === 'unit' || spec.id === 'provider-integration')
+function reportStaleInstall(reason: 'install-missing' | 'stale', cwd: string): void {
+  process.stderr.write(`\ncheck:affected: ${STALE_NODE_MODULES_MESSAGE}\n`);
+  process.stderr.write(
+    reason === 'install-missing'
+      ? '(no node_modules/.pnpm/lock.yaml found — this checkout was never installed)\n'
+      : '(node_modules/.pnpm/lock.yaml disagrees with pnpm-lock.yaml)\n',
   );
+  process.stderr.write(`Worktree: ${cwd}\n`);
+  process.stderr.write('Run `pnpm install --frozen-lockfile` in this worktree, then retry.\n');
 }
 
-function resolveCheckCommands(
-  spec: CheckSpec,
-  pkg: PackageJson,
-  args: Args,
-  changedFiles: readonly string[],
-): string[][] {
-  return spec.id === 'coverage'
-    ? resolveAffectedCoverageCommands(pkg.scripts, args.base, changedFiles)
-    : [resolveCommand(spec, pkg.scripts, args.base, changedFiles)];
+// Where a check the local run skips is authoritative. A parked check has no automatic
+// lane; say so instead of printing an empty job list.
+function describeOwner(id: CheckId, ciJobs: ReadonlyMap<CheckId, string[]>): string {
+  const parked = MANUAL_ONLY_OWNERS[id];
+  if (parked) return `parked, workflow_dispatch only (${parked.lane})`;
+  return `GitHub-authoritative (jobs: ${(ciJobs.get(id) ?? []).join(', ')})`;
 }
 
-function resolveAffectedCoverageCommands(
-  scripts: Readonly<Record<string, string>>,
-  base: string,
-  changedFiles: readonly string[],
-): string[][] {
-  if (!('check:coverage-changed' in scripts)) {
-    throw new Error('Required package.json script "check:coverage-changed" does not exist.');
-  }
-  return [
-    [
-      'pnpm',
-      'exec',
-      'vitest',
-      'related',
-      '--run',
-      '--passWithNoTests',
-      '--coverage',
-      '--coverage.reporter=lcov',
-      '--coverage.thresholds.statements=0',
-      '--coverage.thresholds.lines=0',
-      ...changedFiles,
-    ],
-    ['pnpm', 'run', 'check:coverage-changed', '--base', base],
-  ];
+function isCoveredByRelatedTests(spec: CheckSpec, relatedSelected: boolean): boolean {
+  return relatedSelected && (spec.id === 'unit' || spec.id === 'provider-integration');
 }
 
 async function main(argv = process.argv.slice(2)): Promise<number> {
@@ -269,11 +273,5 @@ async function main(argv = process.argv.slice(2)): Promise<number> {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  main().then(
-    (code) => process.exit(code),
-    (error: unknown) => {
-      process.stderr.write(`check:affected: ${error instanceof Error ? error.message : error}\n`);
-      process.exit(1);
-    },
-  );
+  runEntrypoint('check:affected', () => main());
 }

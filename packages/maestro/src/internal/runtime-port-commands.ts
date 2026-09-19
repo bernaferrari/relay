@@ -29,7 +29,9 @@ type MaestroCommandOf<K extends MaestroRuntimeCommand['kind']> = Extract<
   { kind: K }
 >;
 
-type MaestroLifecycleCommand = MaestroCommandOf<'launchApp' | 'stopApp' | 'openLink'>;
+type MaestroLifecycleCommand = MaestroCommandOf<
+  'launchApp' | 'stopApp' | 'clearState' | 'openLink'
+>;
 type MaestroTargetCommand = MaestroCommandOf<'tapOn' | 'doubleTapOn' | 'longPressOn'>;
 type MaestroTextCommand = MaestroCommandOf<'inputText' | 'eraseText'>;
 type MaestroNavigationCommand = MaestroCommandOf<
@@ -37,7 +39,7 @@ type MaestroNavigationCommand = MaestroCommandOf<
 >;
 type MaestroSupportCommand = MaestroCommandOf<'takeScreenshot' | 'runScript'>;
 type MaestroObservationCommand = MaestroCommandOf<
-  'assertVisible' | 'assertNotVisible' | 'extendedWaitUntil'
+  'assertVisible' | 'assertNotVisible' | 'assertTrue' | 'extendedWaitUntil'
 >;
 type MaestroCommandKind = MaestroRuntimeCommand['kind'];
 type MaestroRuntimeCommandHandler<K extends MaestroCommandKind> = (
@@ -53,6 +55,7 @@ type MaestroRuntimeCommandHandlers = {
 const MAESTRO_RUNTIME_COMMAND_HANDLERS = {
   launchApp: executeLifecycleCommand,
   stopApp: executeLifecycleCommand,
+  clearState: executeLifecycleCommand,
   openLink: executeLifecycleCommand,
   tapOn: executeTargetCommand,
   doubleTapOn: executeTargetCommand,
@@ -68,14 +71,17 @@ const MAESTRO_RUNTIME_COMMAND_HANDLERS = {
   waitForAnimationToEnd: executeNavigationCommand,
   takeScreenshot: executeSupportCommand,
   runScript: executeSupportCommand,
+  evalScript: executeEvaluationCommand,
   assertVisible: executeObservationCommand,
   assertNotVisible: executeObservationCommand,
+  assertTrue: executeObservationCommand,
   extendedWaitUntil: executeObservationCommand,
 } satisfies MaestroRuntimeCommandHandlers;
 
 const MAESTRO_COMMAND_REQUIRES_SETTLED_PREDECESSOR = {
   launchApp: true,
   stopApp: true,
+  clearState: true,
   openLink: true,
   tapOn: true,
   doubleTapOn: true,
@@ -91,8 +97,10 @@ const MAESTRO_COMMAND_REQUIRES_SETTLED_PREDECESSOR = {
   waitForAnimationToEnd: true,
   takeScreenshot: false,
   runScript: false,
+  evalScript: false,
   assertVisible: false,
   assertNotVisible: false,
+  assertTrue: false,
   extendedWaitUntil: false,
 } satisfies Record<MaestroCommandKind, boolean>;
 
@@ -136,6 +144,13 @@ async function executeLifecycleCommand(
     case 'stopApp':
       return await invokeOperation(
         operations.stopApp,
+        { appId: command.appId ?? request.appId },
+        context,
+        'invalidate',
+      );
+    case 'clearState':
+      return await invokeOperation(
+        operations.clearState,
         { appId: command.appId ?? request.appId },
         context,
         'invalidate',
@@ -235,8 +250,6 @@ async function resolveTapOnTarget(
   const query = {
     purpose: 'tap' as const,
     timeoutMs: targetLookupTimeout(command),
-    index: resolveNumeric(command.index, 'tapOn.index'),
-    childOf: command.childOf,
     allowAtomicSelectorDispatch: command.repeat === undefined && command.delay === undefined,
     ...(command.retryTapIfNoChange === true ? { includeSurfaceSignature: true } : {}),
   };
@@ -394,6 +407,15 @@ async function executeObservationCommand(command: MaestroObservationCommand): Pr
   );
 }
 
+function executeEvaluationCommand(
+  command: MaestroCommandOf<'evalScript'>,
+): Promise<MaestroRuntimeResult> {
+  throw new AppError(
+    'COMMAND_FAILED',
+    `Maestro evalScript must be executed by the compute engine at ${command.source.path ?? ''}line ${command.source.line}.`,
+  );
+}
+
 async function invokeOperation<TInput>(
   operation: (
     input: TInput,
@@ -481,7 +503,7 @@ function optionalData(
 
 async function resolveInputTarget(
   authored: MaestroGestureTarget,
-  query: Pick<MaestroTargetQuery, 'purpose' | 'timeoutMs' | 'index' | 'childOf'>,
+  query: Pick<MaestroTargetQuery, 'purpose' | 'timeoutMs'>,
   request: MaestroRuntimeRequest,
   operations: MaestroRuntimeOperations,
 ): Promise<MaestroInputTarget> {

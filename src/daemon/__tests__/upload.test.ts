@@ -1,13 +1,13 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import type { IncomingMessage } from 'node:http';
 import { receiveUpload } from '../upload.ts';
-import { streamReadableToFile } from '../artifact-download.ts';
-import { runCmdSync } from '../../utils/exec.ts';
+import { streamReadableToFile, validateArtifactContentLength } from '../artifact-download.ts';
+import { runCmdSync } from '@agent-device/host-kit/command';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 
 function makeUploadRequest(body: Buffer, headers: Record<string, string>): IncomingMessage {
   return Object.assign(Readable.from(body), { headers }) as IncomingMessage;
@@ -23,8 +23,15 @@ test('receiveUpload rejects uploads that exceed the configured content-length li
   await assert.rejects(async () => await receiveUpload(req), /Upload exceeds maximum size/i);
 });
 
+test('artifact content-length accepts decimal integers only', () => {
+  for (const value of ['+1', '1e3', '0x10', '1.5', '-1']) {
+    assert.throws(() => validateArtifactContentLength(value), value);
+  }
+  assert.doesNotThrow(() => validateArtifactContentLength('0'));
+});
+
 test('receiveUpload rejects app bundle archives containing symlinks', async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-upload-archive-'));
+  const tempRoot = mkdtempForTestSync('agent-device-upload-archive-');
   const appDir = path.join(tempRoot, 'Sample.app');
   const targetFile = path.join(tempRoot, 'payload.txt');
   const archivePath = path.join(tempRoot, 'Sample.tar');
@@ -50,8 +57,41 @@ test('receiveUpload rejects app bundle archives containing symlinks', async () =
   }
 });
 
+test('receiveUpload extracts gzip-compressed app bundle archives', async () => {
+  const tempRoot = mkdtempForTestSync('agent-device-upload-gzip-');
+  const appDir = path.join(tempRoot, 'Sample.app');
+  const archivePath = path.join(tempRoot, 'Sample.tar.gz');
+
+  try {
+    fs.mkdirSync(appDir, { recursive: true });
+    fs.writeFileSync(path.join(appDir, 'payload.txt'), 'payload');
+    runCmdSync('tar', ['czf', archivePath, '-C', tempRoot, 'Sample.app'], {
+      env: { ...process.env, COPYFILE_DISABLE: '1' },
+    });
+    const archive = fs.readFileSync(archivePath);
+    const req = makeUploadRequest(archive, {
+      'x-artifact-type': 'app-bundle',
+      'x-artifact-filename': 'Sample.app',
+      'content-type': 'application/gzip',
+      'content-length': String(archive.length),
+    });
+
+    const upload = await receiveUpload(req);
+    try {
+      assert.equal(
+        fs.readFileSync(path.join(upload.artifactPath, 'payload.txt'), 'utf8'),
+        'payload',
+      );
+    } finally {
+      fs.rmSync(upload.tempDir, { recursive: true, force: true });
+    }
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test('streamReadableToFile removes partial files after stream errors', async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-upload-error-'));
+  const tempRoot = mkdtempForTestSync('agent-device-upload-error-');
   const destPath = path.join(tempRoot, 'partial.bin');
   const source = new Readable({
     read() {

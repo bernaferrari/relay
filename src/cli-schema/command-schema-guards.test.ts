@@ -4,19 +4,21 @@ import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { parseSync } from 'oxc-parser';
 import type { BinaryExpression, Expression, PrivateIdentifier } from 'oxc-parser';
-import { listCapabilityCommands } from '../core/capabilities.ts';
 import {
   INTERNAL_COMMANDS,
   isKnownCliCommandName,
   listCliCommandNames,
   SPECIAL_CLI_COMMANDS,
-} from '../command-catalog.ts';
-import { commandDescriptors } from '../core/command-descriptor/registry.ts';
+} from '@agent-device/command-registry/catalog';
+import {
+  commandDescriptors,
+  listRuntimeFactCommands,
+} from '@agent-device/command-registry/registry';
 import { getCliCommandSchema } from './command-schema.ts';
 
-test('every public capability command has a parser schema entry', () => {
+test('every public runtime-fact command has a parser schema entry', () => {
   const schemaCommands = new Set<string>(listCliCommandNames());
-  for (const command of listCapabilityCommands()) {
+  for (const command of listRuntimeFactCommands()) {
     assert.equal(schemaCommands.has(command), true, `Missing schema for command: ${command}`);
   }
 });
@@ -56,16 +58,18 @@ test('cli.ts command dispatch checks are recognized by parser-level unknown-comm
   }
 });
 
-test('schema capability mappings match capability source-of-truth', () => {
+test('schema runtime-fact mappings match descriptor source-of-truth', () => {
   const cliCommands = new Set<string>(listCliCommandNames());
-  const capabilityCheckedCommands = commandDescriptors
+  const runtimeFactCatalogCommands = commandDescriptors
     .filter(
       (descriptor) =>
-        'capability' in descriptor && descriptor.capability && cliCommands.has(descriptor.name),
+        descriptor.catalog.group === 'public' &&
+        descriptor.platformExecution.kind === 'device-runtime' &&
+        cliCommands.has(descriptor.name),
     )
     .map((descriptor) => descriptor.name)
     .sort();
-  assert.deepEqual(capabilityCheckedCommands, listCapabilityCommands());
+  assert.deepEqual(runtimeFactCatalogCommands, listRuntimeFactCommands());
 });
 
 function collectCliDispatchCommandLiterals(): Set<string> {

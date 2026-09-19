@@ -1,9 +1,14 @@
 import fs from 'node:fs';
-import { isAgentDeviceDaemonProcess } from '../daemon-process.ts';
+import type { DaemonCodeOrigin } from '@agent-device/host-kit/code-signature';
+import { isAgentDeviceDaemonProcess } from '../../daemon-process.ts';
 
-export { readVersion } from '../../utils/version.ts';
-export { readProcessStartTime } from '../../utils/host-process.ts';
-export { resolveDaemonCodeSignature } from '../code-signature.ts';
+export { readVersion } from '@agent-device/host-kit/version';
+export { readProcessStartTime } from '@agent-device/host-kit/process';
+export {
+  type DaemonCodeOrigin,
+  resolveDaemonCodeOrigin,
+  resolveDaemonCodeSignature,
+} from '@agent-device/host-kit/code-signature';
 
 export type DaemonLockInfo = {
   pid: number;
@@ -21,6 +26,7 @@ export function writeInfo(
     httpPort?: number;
     token: string;
     version: string;
+    codeOrigin: DaemonCodeOrigin;
     codeSignature: string;
     processStartTime: string | undefined;
   },
@@ -38,6 +44,7 @@ export function writeInfo(
         token: opts.token,
         pid: process.pid,
         version: opts.version,
+        codeOrigin: opts.codeOrigin,
         codeSignature: opts.codeSignature,
         processStartTime: opts.processStartTime,
         stateDir: baseDir,
@@ -80,9 +87,9 @@ export function acquireDaemonLock(
     try {
       fs.writeFileSync(lockPath, payload, { flag: 'wx', mode: 0o600 });
       return true;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'EEXIST') return false;
-      throw err;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+      throw error;
     }
   };
 

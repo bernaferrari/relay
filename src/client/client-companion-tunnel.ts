@@ -1,3 +1,4 @@
+import type { CompanionTunnelScope } from '@agent-device/contracts/remote';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,15 +17,14 @@ import {
   ENV_COMPANION_TUNNEL_STATE_PATH,
   ENV_COMPANION_TUNNEL_UNREGISTER_PATH,
 } from './client-companion-tunnel-contract.ts';
-import type { CompanionTunnelScope } from './client-companion-tunnel-contract.ts';
-import { normalizeBaseUrl } from '../utils/url.ts';
-import { runCmdDetached } from '../utils/exec.ts';
+import { normalizeBaseUrl } from './base-url.ts';
+import { runCmdDetached } from '@agent-device/host-kit/command';
 import {
   isProcessAlive,
   readProcessCommand,
   readProcessStartTime,
   waitForProcessExit,
-} from '../utils/host-process.ts';
+} from '@agent-device/host-kit/process';
 
 const COMPANION_TUNNEL_TERM_TIMEOUT_MS = 1_000;
 const COMPANION_TUNNEL_KILL_TIMEOUT_MS = 1_000;

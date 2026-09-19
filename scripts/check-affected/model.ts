@@ -19,27 +19,77 @@
 // non-.ts fixture whose owning suite cannot be derived). Existing GitHub CI
 // remains authoritative; this only optimizes local/agent feedback.
 
+import { WIRE_SURFACE_FILES } from '../../test/wire-compat/surface.ts';
+import { deviceLaneOwnership } from './device-lanes.ts';
+
+// The canonical gate universe. Every gate CI runs is one of these — including the
+// ones that drive their own runner (fuzz, mutation, the Maestro differential) and
+// the command-reference docs gate, which used to be reachable only as a workflow
+// job nothing in this repo could name. The run-gate action is the only way a CI lane
+// declares ownership, so `check:gate-manifest` fails when a registered check has no lane.
+// Raw shell earns no ownership credit.
 export type CheckId =
   | 'format'
   | 'lint'
   | 'typecheck'
   | 'test-app-typecheck'
+  | 'test-app-security'
   | 'layering'
+  | 'di-seams'
   | 'fallow'
   | 'mcp-metadata'
   | 'build'
   | 'package'
   | 'vitest-related'
   | 'unit'
+  | 'unit-ci'
   | 'coverage'
   | 'provider-integration'
   | 'integration-node'
+  | 'macos-coverage'
+  | 'ios-snapshot-differential'
   | 'integration-progress'
-  | 'swift-runner'
+  | 'swift-runner-ios'
+  | 'swift-runner-macos'
   | 'android-helpers'
   | 'macos-helper'
   | 'web-smoke'
-  | 'replay-compat';
+  | 'replay-compat'
+  | 'daemon-wire-compat'
+  // Tooling gates: each proves one of the checkers above still behaves.
+  | 'affected-selector'
+  | 'gate-manifest'
+  | 'gate-manifest-model'
+  | 'depgraph'
+  | 'tmpdir-leaks'
+  | 'tmpdir-leaks-model'
+  | 'coverage-model'
+  | 'wire-compat-model'
+  | 'production-exports'
+  | 'bundle-owner-files'
+  | 'freerange'
+  | 'fixture-cache'
+  | 'fixture-fallback'
+  | 'command-docs'
+  | 'agent-guidance'
+  | 'xctest-selection'
+  | 'packaged-runner-swift'
+  // Gates that drive their own runner — declared nowhere, registered here.
+  | 'maestro-conformance'
+  | 'maestro-differential'
+  | 'maestro-regenerate'
+  | 'fuzz-parsers'
+  | 'mutation'
+  | 'mutation-affected'
+  | 'mutation-check'
+  | 'mutation-model'
+  | 'concurrency-torture'
+  | 'replay-ios'
+  | 'replay-ios-device'
+  | 'replay-macos'
+  | 'replay-linux'
+  | 'linux-command-evidence'
+  | 'replay-android';
 
 // The complete local check universe. A fail-open plan selects all of these;
 // keep it in sync with the catalog in checks.ts (asserted by the self-test).
@@ -48,22 +98,63 @@ export const ALL_CHECKS: readonly CheckId[] = [
   'lint',
   'typecheck',
   'test-app-typecheck',
+  'test-app-security',
   'layering',
+  'di-seams',
   'fallow',
   'mcp-metadata',
   'build',
   'package',
+  // Real daemon/process integration owns host-global lifecycle state and must
+  // run before the related-project workload heats the host.
+  'integration-node',
+  'macos-coverage',
+  'ios-snapshot-differential',
   'vitest-related',
   'unit',
+  'unit-ci',
   'coverage',
   'provider-integration',
-  'integration-node',
   'integration-progress',
-  'swift-runner',
+  'swift-runner-ios',
+  'swift-runner-macos',
   'android-helpers',
   'macos-helper',
   'web-smoke',
   'replay-compat',
+  'daemon-wire-compat',
+  'affected-selector',
+  'gate-manifest',
+  'gate-manifest-model',
+  'depgraph',
+  'tmpdir-leaks',
+  'tmpdir-leaks-model',
+  'coverage-model',
+  'wire-compat-model',
+  'production-exports',
+  'bundle-owner-files',
+  'freerange',
+  'fixture-cache',
+  'fixture-fallback',
+  'command-docs',
+  'agent-guidance',
+  'xctest-selection',
+  'packaged-runner-swift',
+  'maestro-conformance',
+  'maestro-differential',
+  'maestro-regenerate',
+  'fuzz-parsers',
+  'mutation',
+  'mutation-affected',
+  'mutation-check',
+  'mutation-model',
+  'concurrency-torture',
+  'replay-ios',
+  'replay-ios-device',
+  'replay-macos',
+  'replay-linux',
+  'linux-command-evidence',
+  'replay-android',
 ];
 
 export type SelectionReason = {
@@ -102,23 +193,14 @@ const ROOT_TOOLING = new Set([
   'tsconfig.lib.json',
   'tsdown.config.ts',
   'vitest.config.ts',
-  '.oxlintrc.json',
+  '.fallowrc.json',
+  'oxlint.config.ts',
   '.oxfmtrc.json',
   '.npmrc',
 ]);
 
-// Prose that specifies this selector's own behavior — the Testing Matrix these
-// ownership rules mirror. It is docs by path, but editing it can invalidate the
-// derivation below, and the selector cannot tell whether it did. Keep this in
-// sync when the matrix moves; the docs short-circuit would otherwise treat it as
-// inert Markdown.
-const SELECTOR_OWNING_DOCS = new Set(['docs/agents/testing.md']);
-
 function isSelectorOwning(file: string): boolean {
-  return (
-    SELECTOR_OWNING_DOCS.has(file) ||
-    (file.startsWith('scripts/check-affected/') && !file.endsWith('.md'))
-  );
+  return file.startsWith('scripts/check-affected/') && !file.endsWith('.md');
 }
 
 function isWorkflowTooling(file: string): boolean {
@@ -133,7 +215,7 @@ function isWorkflowTooling(file: string): boolean {
   );
 }
 
-function isDocs(file: string): boolean {
+export function isDocs(file: string): boolean {
   // skills/ Markdown is agent guidance prose with no owning suite (the
   // SkillGym harness was removed), so it classifies as docs like the rest.
   return (
@@ -183,35 +265,19 @@ const staticTsGates: OwnershipRule = ({ file, isTs, underSrc, underTest }) =>
 
 const srcProdGate: OwnershipRule = ({ file, isSrcProd }) => {
   if (!isSrcProd) return [];
-  const selections = [
+  return [
     reason('layering', file, 'gate:layering', 'layering guard reads production src/ modules'),
     reason('build', file, 'src-prod', 'production source is compiled by the build'),
   ];
-  if (file.startsWith('src/platforms/')) {
-    selections.push(
-      reason(
-        'provider-integration',
-        file,
-        'platform-src',
-        'platform source shapes device/provider wire behavior',
-      ),
-      reason(
-        'coverage',
-        file,
-        'platform-src',
-        'Testing Matrix requires coverage for platform/device-response changes',
-      ),
-    );
-  }
-  return selections;
 };
 
 function isNodeIntegrationPath(file: string): boolean {
-  return (
-    file.startsWith('test/integration/') &&
-    !file.slice('test/integration/'.length).includes('/') &&
-    file.endsWith('.ts')
-  );
+  if (!file.startsWith('test/integration/') || !file.endsWith('.ts')) return false;
+  const rest = file.slice('test/integration/'.length);
+  // command-coverage/ holds the single declaration table every platform's node --test
+  // coverage smoke test projects its record from (#2411): a change there feeds all six
+  // smoke tests even though the file itself sits one level below test/integration/.
+  return !rest.includes('/') || rest.startsWith('command-coverage/');
 }
 
 const vitestRelatedOwnership: OwnershipRule = ({ file, isTs, underSrc, underTest }) =>
@@ -255,9 +321,52 @@ const workspacePackageOwnership: OwnershipRule = ({ file, isTs }) => {
   return selections;
 };
 
+const platformPackageScenarioOwnership: OwnershipRule = ({ file, isTs }) => {
+  if (!isTs || !/^packages\/platform-[^/]+\/src\//.test(file)) {
+    return [];
+  }
+  return [
+    reason(
+      'unit',
+      file,
+      'platform-package-contract',
+      'platform packages must satisfy the shared runtime contract scenarios',
+    ),
+    reason(
+      'provider-integration',
+      file,
+      'platform-package-provider',
+      'platform packages participate in provider-first ownership scenarios',
+    ),
+    reason(
+      'coverage',
+      file,
+      'platform-package-coverage',
+      'platform package changes require affected contract coverage evidence',
+    ),
+  ];
+};
+
 const nodeIntegrationOwnership: OwnershipRule = ({ file }) =>
   isNodeIntegrationPath(file)
     ? [reason('integration-node', file, 'node-integration', 'node --test integration smoke')]
+    : [];
+
+const macosCoverageOwnership: OwnershipRule = ({ file }) =>
+  file === 'test/integration/smoke-macos-coverage.test.ts' ||
+  file.startsWith('test/integration/macos-e2e/') ||
+  // The per-command coverage judgments (macOS included) are declared once here and
+  // projected into macos-e2e/coverage.ts at load time (#2411), so a table edit must
+  // still select the macOS lane the way editing the old macos-e2e manifest did.
+  file.startsWith('test/integration/command-coverage/')
+    ? [
+        reason(
+          'macos-coverage',
+          file,
+          'own:macos-coverage',
+          'the macOS lane executes the command coverage manifest contract',
+        ),
+      ]
     : [];
 
 const testAppOwnership: OwnershipRule = ({ file }) => {
@@ -303,6 +412,34 @@ const replayCompatOwnership: OwnershipRule = ({ file }) => {
   return selections;
 };
 
+// The daemon RPC wire ledger (#1432). The wire SOURCE files are the ones that
+// would otherwise slip: editing `packages/kernel/src/contracts.ts` selects
+// vitest-related, but the wire gate reads that file as TEXT rather than
+// importing it, so it is invisible to the module graph Vitest walks. The file
+// list is read from the manifest instead of restated here, so a declaration
+// added under a new file selects the gate the day it is listed.
+//
+// `ledger.json` needs the rule for the second reason `.ad` corpus data does:
+// a non-.ts file under test/ resolves to `format` alone and would fail open.
+// (`scripts/wire-compat/` needs no branch — all of scripts/ already fails open.)
+const daemonWireCompatOwnership: OwnershipRule = ({ file }) => {
+  if (!file.startsWith('test/wire-compat/') && !WIRE_SURFACE_FILES.includes(file)) return [];
+  return [
+    reason(
+      'daemon-wire-compat',
+      file,
+      'own:daemon-wire-compat',
+      'the wire ledger is compared against the last released tag',
+    ),
+    reason(
+      'unit',
+      file,
+      'own:daemon-wire-compat',
+      'the wire ledger is held to its source by the unit-lane gate',
+    ),
+  ];
+};
+
 const BUILD_OWNERSHIP: ReadonlyArray<{
   check: CheckId;
   rule: string;
@@ -310,10 +447,49 @@ const BUILD_OWNERSHIP: ReadonlyArray<{
   owns: (file: string) => boolean;
 }> = [
   {
-    check: 'swift-runner',
+    check: 'ios-snapshot-differential',
+    rule: 'own:ios-snapshot-differential',
+    detail: 'the required macOS lane runs the Swift/TypeScript snapshot differential',
+    owns: (file) =>
+      file.startsWith('packages/capture-kit/src/ios-snapshot-engine/') ||
+      file.startsWith('apple/snapshot-presentation/') ||
+      file === 'contracts/fixtures/ios-snapshot-engine-conformance.json',
+  },
+  // Both platform builds compile the same runner sources, and each is a separate
+  // gate in a separate lane, so a Swift change owns both.
+  {
+    check: 'swift-runner-ios',
     rule: 'own:swift',
-    detail: 'Swift runner sources require the XCUITest build',
+    detail: 'Swift runner sources require the iOS XCUITest build',
     owns: (file) => file.startsWith('apple/runner/') || file.endsWith('.swift'),
+  },
+  {
+    check: 'swift-runner-macos',
+    rule: 'own:swift',
+    detail: 'Swift runner sources require the macOS XCUITest build',
+    owns: (file) => file.startsWith('apple/runner/') || file.endsWith('.swift'),
+  },
+  // The PR lane names each runner XCTest method it runs, so renaming or deleting one
+  // silently shrinks that lane. Selected here so the drift shows up on the change that
+  // causes it rather than on the next nightly.
+  {
+    check: 'xctest-selection',
+    rule: 'own:xctest-selection',
+    detail: 'runner test methods must stay selected in CI and stripped from the npm source bundle',
+    owns: (file) => file.startsWith('apple/runner/AgentDeviceRunner/AgentDeviceRunnerUITests/'),
+  },
+  // The packager rewrites every runner Swift file on its way into the npm package, and nothing in
+  // this repo reads the result — the first consumer is a user's `xcodebuild`. Both the source and
+  // the two rewriting scripts own the check that the rewrite keeps the file parseable and keeps its
+  // line numbering.
+  {
+    check: 'packaged-runner-swift',
+    rule: 'own:packaged-runner-swift',
+    detail: 'packaged runner Swift must still parse and keep the checkout line numbering',
+    owns: (file) =>
+      file.startsWith('apple/runner/') ||
+      file === 'scripts/package-apple-runner-source.mjs' ||
+      file === 'scripts/strip-swift-comments.mjs',
   },
   {
     check: 'android-helpers',
@@ -321,6 +497,14 @@ const BUILD_OWNERSHIP: ReadonlyArray<{
     detail: 'Android helper packages have their own build',
     owns: (file) =>
       file.startsWith('android/snapshot-helper/') || file.startsWith('android/ime-helper/'),
+  },
+  {
+    check: 'unit',
+    rule: 'own:android-package-test-fixture',
+    detail: 'the Android package test fixture is consumed by the unit suite',
+    owns: (file) =>
+      file ===
+      'packages/platform-android/src/__tests__/test-utils/fixtures/android-helper-apk.fixture',
   },
   {
     check: 'macos-helper',
@@ -333,6 +517,38 @@ const BUILD_OWNERSHIP: ReadonlyArray<{
     rule: 'own:mcp',
     detail: 'MCP registry metadata must stay in sync',
     owns: (file) => file === 'server.json' || file === 'smithery.yaml',
+  },
+  // image-size ships no fixed version for its parser DoS advisories; the in-tree
+  // pnpm patch is the mitigation, and only its defining files own the proof.
+  {
+    check: 'test-app-security',
+    rule: 'own:test-app-security',
+    detail: 'the image-size parser mitigation is proven by the test-app security suite',
+    owns: (file) =>
+      file.startsWith('examples/test-app/patches/') ||
+      file.startsWith('examples/test-app/security/') ||
+      file === 'examples/test-app/pnpm-workspace.yaml',
+  },
+  // TS/Swift golden tables (`contracts/fixtures/*.json`): the vitest parity test and the
+  // runner XCTest twin both read them, so a table edit owns the unit lane and both runner
+  // builds. Without this a `.json` under contracts/ has no derivable owner and fails open.
+  {
+    check: 'unit',
+    rule: 'own:golden-table',
+    detail: 'the vitest parity twin asserts the TS rule against the golden table',
+    owns: (file) => file.startsWith('contracts/fixtures/'),
+  },
+  {
+    check: 'swift-runner-ios',
+    rule: 'own:golden-table',
+    detail: 'the runner XCTest twin asserts the Swift rule against the golden table',
+    owns: (file) => file.startsWith('contracts/fixtures/'),
+  },
+  {
+    check: 'swift-runner-macos',
+    rule: 'own:golden-table',
+    detail: 'the runner XCTest twin asserts the Swift rule against the golden table',
+    owns: (file) => file.startsWith('contracts/fixtures/'),
   },
 ];
 
@@ -354,16 +570,55 @@ const buildOwnership: OwnershipRule = ({ file }, input) => {
   return selections;
 };
 
+// Docs with an owning gate (#1420). Most Markdown has no suite, but these files
+// carry executable contracts and must reach their focused workflow even when the
+// main CI workflow ignores documentation.
+const COMMAND_DOCS = 'website/docs/docs/commands.md';
+const AGENT_GUIDANCE = new Set(['AGENTS.md', 'CONTEXT.md']);
+
+function isAgentGuidance(file: string): boolean {
+  return AGENT_GUIDANCE.has(file) || file.startsWith('docs/agents/');
+}
+
+const docsOwnership: OwnershipRule = ({ file }) =>
+  isAgentGuidance(file)
+    ? [
+        reason(
+          'agent-guidance',
+          file,
+          'own:agent-guidance',
+          'agent guidance is held to glossary, routing, and context-budget contracts',
+        ),
+      ]
+    : file === COMMAND_DOCS
+      ? [
+          reason(
+            'command-docs',
+            file,
+            'own:command-docs',
+            'the command reference is asserted against the CLI in both directions',
+          ),
+        ]
+      : [];
+
+// Live device lanes, by platform family (device-lanes.ts). Selected here alongside the
+// static gates so a TypeScript-only Apple change carries its iOS/macOS lanes in the plan.
+const deviceLaneRule: OwnershipRule = ({ file }) => deviceLaneOwnership(file);
+
 const OWNERSHIP_RULES: readonly OwnershipRule[] = [
   formatGate,
   staticTsGates,
   srcProdGate,
   vitestRelatedOwnership,
   workspacePackageOwnership,
+  platformPackageScenarioOwnership,
   nodeIntegrationOwnership,
+  macosCoverageOwnership,
   testAppOwnership,
   replayCompatOwnership,
+  daemonWireCompatOwnership,
   buildOwnership,
+  deviceLaneRule,
 ];
 
 function fileFacts(file: string): FileFacts {
@@ -409,7 +664,12 @@ export function selectChecks(input: SelectInput): CheckPlan {
       continue;
     }
     if (isDocs(file)) {
-      docsOnlyPaths.push(file);
+      const owned = docsOwnership(fileFacts(file), input);
+      if (owned.length === 0) {
+        docsOnlyPaths.push(file);
+        continue;
+      }
+      reasons.push(...owned);
       continue;
     }
     const facts = fileFacts(file);

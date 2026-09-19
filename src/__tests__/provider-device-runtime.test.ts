@@ -2,21 +2,20 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'vitest';
 import {
   createProviderDeviceRuntimeRequestProviders,
-  configureProviderPortReverse,
   getProviderDeviceInteractor,
-  installProviderDeviceApp,
   setActiveProviderDeviceRuntimes,
 } from '../provider-device-runtime.ts';
 import type { ProviderDeviceRuntime } from '@agent-device/contracts/device';
-import type { Interactor } from '@agent-device/contracts/interaction';
+import type { Interactor } from '@agent-device/contracts/interactor-types';
 import type { SimulatorLease } from '../daemon/lease-registry.ts';
 import type { DeviceInfo } from '@agent-device/kernel/device';
+import type { AppleRunnerScreenRecordingTransport } from '../platform-runtime-screen-recording-apple-runner-transport.ts';
 
 afterEach(() => {
   setActiveProviderDeviceRuntimes([]);
 });
 
-test('provider device runtime registry delegates lifecycle, inventory, interactors, and installs to matching providers', async () => {
+test('provider device runtime registry delegates lifecycle, inventory, and interactors to matching providers', async () => {
   const world = makeProviderRuntimeWorld();
   setActiveProviderDeviceRuntimes([world.missRuntime, world.hitRuntime]);
   const requestProviders = createProviderDeviceRuntimeRequestProviders([
@@ -29,16 +28,100 @@ test('provider device runtime registry delegates lifecycle, inventory, interacto
   });
   await requestProviders.recoverExpiredLease?.(world.lease);
   assert.deepEqual(requestProviders.recoverableProviderIds, ['hit']);
+  assert.equal(requestProviders.providerAppCatalog?.supports('hit'), true);
+  assert.equal(requestProviders.providerAppCatalog?.supports('miss'), false);
+  assert.deepEqual(
+    await requestProviders.providerAppCatalog?.list({ provider: 'hit', platform: 'ios' }),
+    [],
+  );
+  await assert.rejects(
+    () => requestProviders.providerAppCatalog!.list({ provider: 'miss', platform: 'ios' }),
+    /does not expose an app catalog/,
+  );
   assert.deepEqual(world.recoveredLeases, [world.lease]);
   assert.deepEqual(
-    await requestProviders.deviceInventoryProvider?.({
-      platform: 'ios',
-      leaseId: world.lease.leaseId,
-      leaseProvider: 'hit',
-    }),
-    [world.device],
+    await requestProviders.deviceInventorySource?.discover(
+      {
+        platform: 'ios',
+        leaseId: world.lease.leaseId,
+        leaseProvider: 'hit',
+      },
+      new AbortController().signal,
+    ),
+    { kind: 'inventory', devices: [world.device] },
   );
-  await assertProviderRuntimeDelegates(world);
+  assert.equal(getProviderDeviceInteractor(world.device), world.interactor);
+});
+
+test('provider device runtime registry rejects duplicate provider owners', () => {
+  const first = makeMissingRuntime();
+  const second = makeMissingRuntime();
+  assert.throws(
+    () => createProviderDeviceRuntimeRequestProviders([first, second]),
+    /Duplicate provider device runtime: miss/,
+  );
+});
+
+test('provider device runtime composition exposes focused runner recording authority only for its exact device', () => {
+  const device: DeviceInfo = {
+    platform: 'apple',
+    appleOs: 'macos',
+    kind: 'device',
+    target: 'desktop',
+    id: 'provider:macos:lease-a',
+    name: 'Provider Mac',
+    booted: true,
+  };
+  const transport: AppleRunnerScreenRecordingTransport = Object.freeze({
+    authority: 'scoped-provider',
+    available: true,
+    start: async () => ({ runnerSessionId: 'external-session-1' }),
+    inspect: async (_device, runnerSessionId) =>
+      runnerSessionId === 'external-session-1' ? 'owned-alive' : 'ownership-lost',
+    stop: async () => undefined,
+  });
+  const runtime = {
+    ...makeRuntime({
+      provider: 'mac-provider',
+      leaseResult: undefined,
+      devices: [device],
+      interactor: undefined,
+      portReverseResult: undefined,
+    }),
+    getAppleRunnerScreenRecordingTransport: (candidate: DeviceInfo) =>
+      candidate.id === device.id ? transport : undefined,
+  };
+  const resolver = createProviderDeviceRuntimeRequestProviders([
+    runtime,
+  ]).appleRunnerScreenRecordingTransport;
+  assert.equal(resolver?.({ requestedSession: 'default', device }), transport);
+  assert.equal(
+    resolver?.({
+      requestedSession: 'default',
+      device: { ...device, id: 'provider:macos:replacement' },
+    }),
+    undefined,
+  );
+});
+
+test('provider inventory composition forwards cancellation into the legacy provider callback', async () => {
+  let observedSignal: AbortSignal | undefined;
+  const runtime: ProviderDeviceRuntime = {
+    ...makeMissingRuntime(),
+    deviceInventoryProvider: async (_request, signal) => {
+      observedSignal = signal;
+      return await new Promise((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    },
+  };
+  const source = createProviderDeviceRuntimeRequestProviders([runtime]).deviceInventorySource;
+  const controller = new AbortController();
+  const pending = source?.discover({ leaseProvider: 'miss' }, controller.signal);
+  controller.abort(new Error('provider request cancelled'));
+
+  await assert.rejects(() => pending!, /provider request cancelled/);
+  assert.equal(observedSignal, controller.signal);
 });
 
 function makeProviderRuntimeWorld() {
@@ -67,9 +150,9 @@ function makeProviderRuntimeWorld() {
     leaseResult: { provider: 'hit' },
     devices: [device],
     interactor,
-    installResult: { bundleId: 'com.example.app' },
     portReverseResult: { provider: 'hit' },
   });
+  hitRuntime.appCatalog = async () => [];
   hitRuntime.recoverExpiredLease = async (expiredLease) => {
     recoveredLeases.push(expiredLease);
   };
@@ -82,64 +165,16 @@ function makeMissingRuntime(): ProviderDeviceRuntime {
     leaseResult: undefined,
     devices: null,
     interactor: undefined,
-    installResult: undefined,
     portReverseResult: undefined,
   });
 }
-
-async function assertProviderRuntimeDelegates(world: ReturnType<typeof makeProviderRuntimeWorld>) {
-  assert.equal(getProviderDeviceInteractor(world.device), world.interactor);
-  assert.deepEqual(
-    await installProviderDeviceApp(world.device, 'com.example.app', '/tmp/app.ipa'),
-    {
-      bundleId: 'com.example.app',
-    },
-  );
-  assert.deepEqual(
-    await configureProviderPortReverse({
-      leaseId: world.lease.leaseId,
-      provider: 'hit',
-      devicePort: 8097,
-      hostPort: 8097,
-      name: 'devtools',
-    }),
-    { provider: 'hit' },
-  );
-}
-
-test('provider device install fails explicitly when an owning provider has no install hook', async () => {
-  const device: DeviceInfo = {
-    platform: 'android',
-    kind: 'device',
-    id: 'provider:android:lease-a',
-    name: 'Provider Android',
-    booted: true,
-  };
-  const runtime = makeRuntime({
-    provider: 'hit',
-    leaseResult: undefined,
-    devices: [device],
-    interactor: undefined,
-    installResult: undefined,
-    portReverseResult: undefined,
-    installHook: false,
-  });
-  setActiveProviderDeviceRuntimes([runtime]);
-
-  await assert.rejects(
-    () => installProviderDeviceApp(device, 'com.example.app', '/tmp/app.apk'),
-    /does not support install/,
-  );
-});
 
 function makeRuntime(options: {
   provider: string;
   leaseResult: Record<string, unknown> | undefined;
   devices: DeviceInfo[] | null;
   interactor: Interactor | undefined;
-  installResult: { bundleId: string } | undefined;
   portReverseResult: Record<string, unknown> | undefined;
-  installHook?: boolean;
 }): ProviderDeviceRuntime {
   return {
     provider: options.provider,
@@ -151,7 +186,6 @@ function makeRuntime(options: {
     deviceInventoryProvider: async () => options.devices,
     ownsDevice: (device) => options.devices?.some((entry) => entry.id === device.id) ?? false,
     getInteractor: () => options.interactor,
-    ...(options.installHook === false ? {} : { installApp: async () => options.installResult }),
     configurePortReverse: async () => options.portReverseResult,
     shutdown: async () => undefined,
   };

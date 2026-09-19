@@ -4,6 +4,7 @@ import {
   describeReplayGestureArityError,
   gesturePayloadFromPositionals,
   gesturePayloadToPositionals,
+  normalizeGestureCommandInput,
   normalizePublicGesture,
   normalizePublicSwipeMotion,
   swipePayloadFromPositionals,
@@ -56,6 +57,81 @@ test('gesture recording codec round-trips fling with distance', () => {
     distance: 180,
   };
   assert.deepEqual(gesturePayloadFromPositionals(gesturePayloadToPositionals(payload)), payload);
+});
+
+test('gesture recording codec round-trips selector-authored drag timings', () => {
+  const payload = {
+    kind: 'drag' as const,
+    source: 'id="drag-source"',
+    destination: '@e2~s42',
+    sourceHoldMs: 800,
+    moveMs: 700,
+    destinationHoldMs: 250,
+  };
+  assert.deepEqual(gesturePayloadFromPositionals(gesturePayloadToPositionals(payload)), payload);
+});
+
+test('drag recording materializes all timing slots for every sparse option combination', () => {
+  for (let mask = 0; mask < 8; mask += 1) {
+    const payload = {
+      kind: 'drag' as const,
+      source: 'id="source"',
+      destination: 'id="destination"',
+      ...(mask & 1 ? { sourceHoldMs: 900 } : {}),
+      ...(mask & 2 ? { moveMs: 700 } : {}),
+      ...(mask & 4 ? { destinationHoldMs: 200 } : {}),
+    };
+    assert.deepEqual(gesturePayloadFromPositionals(gesturePayloadToPositionals(payload)), {
+      ...payload,
+      sourceHoldMs: payload.sourceHoldMs ?? 800,
+      moveMs: payload.moveMs ?? 500,
+      destinationHoldMs: payload.destinationHoldMs ?? 0,
+    });
+  }
+});
+
+test('drag payloads normalize to one target-authored runtime command', () => {
+  assert.deepEqual(
+    normalizeGestureCommandInput({
+      kind: 'drag',
+      source: 'id="drag-source"',
+      destination: 'id="drop-target"',
+      sourceHoldMs: 700,
+      moveMs: 450,
+      destinationHoldMs: 100,
+    }),
+    {
+      intent: 'drag',
+      source: 'id="drag-source"',
+      destination: 'id="drop-target"',
+      sourceHoldMs: 700,
+      moveMs: 450,
+      destinationHoldMs: 100,
+    },
+  );
+});
+
+test('gesture drag positional syntax requires both endpoints and rejects trailing arguments', () => {
+  assert.throws(() => gesturePayloadFromPositionals(['drag', 'id="drag-source"']), {
+    code: 'INVALID_ARGS',
+  });
+  assert.throws(
+    () =>
+      gesturePayloadFromPositionals([
+        'drag',
+        'id="drag-source"',
+        'id="drop-target"',
+        '800',
+        '500',
+        '0',
+        'extra',
+      ]),
+    {
+      code: 'INVALID_ARGS',
+      message:
+        'gesture drag accepts at most 5 arguments: source destination [sourceHoldMs] [moveMs] [destinationHoldMs].',
+    },
+  );
 });
 
 test('a retired trailing positional reports its migration, not a bare usage line', () => {

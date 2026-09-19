@@ -32,7 +32,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  AGENT_DEVICE_CLI: '--experimental-strip-types src/bin.ts'
+  # Entry script and node flags are separate on purpose: one variable cannot
+  # encode both without either corrupting a path that contains spaces or
+  # spawning the whole line as a single node option.
+  AGENT_DEVICE_CLI: 'src/bin.ts'
+  AGENT_DEVICE_CLI_NODE_FLAGS: '--experimental-strip-types'
   DIFFERENTIAL_ONLY: ${{ github.event.inputs.only || '' }}
   # CI should not phone home, and it keeps `maestro --version` to just the
   # version instead of prefixing an analytics notice.
@@ -45,6 +49,7 @@ jobs:
     timeout-minutes: 90
     env:
       IOS_RUNTIME_VERSION: '26.2'
+      AGENT_DEVICE_XCUITEST_ARCHS: 'arm64'
       AGENT_DEVICE_STATE_DIR: ${{ github.workspace }}/.tmp/agent-device-state
       AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH: ${{ github.workspace }}/.tmp/ios-runner-derived
     steps:
@@ -59,8 +64,8 @@ jobs:
         with:
           derived-path: ${{ env.AGENT_DEVICE_IOS_RUNNER_DERIVED_PATH }}
           cache-key-prefix: ios-runner-prebuilt
-          cache-key-suffix: -ios-${{ env.IOS_RUNTIME_VERSION }}
-          build-command: sh ./scripts/build-xcuitest-apple.sh
+          cache-key-suffix: -ios-${{ env.IOS_RUNTIME_VERSION }}-arm64
+          gate: swift-runner-ios
           xcuitest-platform: ios
           xcuitest-destination: generic/platform=iOS Simulator
 
@@ -125,12 +130,32 @@ jobs:
       # assert engine-side invariants (e.g. the settle loop latches instead of
       # burning its budget) — outcome parity alone cannot see that.
       - name: Run differential
-        run: |
-          pnpm maestro:conformance:differential \
-            --platform ios \
-            --out-dir "${{ github.workspace }}/.tmp/conformance-differential" \
-            --trace-root "${{ github.workspace }}/.agent-device" \
-            ${DIFFERENTIAL_ONLY:+--only "$DIFFERENTIAL_ONLY"}
+        if: env.DIFFERENTIAL_ONLY == ''
+        uses: ./.github/actions/run-gate
+        with:
+          gate: maestro-differential
+          args: |
+            --platform
+            ios
+            --out-dir
+            ${{ github.workspace }}/.tmp/conformance-differential
+            --trace-root
+            ${{ github.workspace }}/.agent-device
+
+      - name: Run filtered differential
+        if: env.DIFFERENTIAL_ONLY != ''
+        uses: ./.github/actions/run-gate
+        with:
+          gate: maestro-differential
+          args: |
+            --platform
+            ios
+            --out-dir
+            ${{ github.workspace }}/.tmp/conformance-differential
+            --trace-root
+            ${{ github.workspace }}/.agent-device
+            --only
+            ${{ env.DIFFERENTIAL_ONLY }}
 
       # Keep the trace, not just the verdict: the engine-side invariants are
       # computed FROM replay-timing.ndjson, so without it a report saying

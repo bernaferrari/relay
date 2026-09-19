@@ -33,6 +33,9 @@ test('producer, consumers, upload, and concurrency use the canonical platform-sc
     (step) => step.name === 'Build the Android Release APK (fallback)',
   );
   const fingerprintStep = workflow.jobs.fingerprint.steps.find((step) => step.id === 'fingerprint');
+  const producerAndroidBuildStep = workflow.jobs.release.steps.find(
+    (step) => step.name === 'Build the Android Release apk',
+  );
   const uploadStep = workflow.jobs.release.steps.find((step) =>
     step.uses?.startsWith('actions/upload-artifact@'),
   );
@@ -51,6 +54,9 @@ test('producer, consumers, upload, and concurrency use the canonical platform-sc
   assert.match(androidFallbackStep.if, /inputs\.platform == 'android'/);
   assert.match(androidFallbackStep.run, /expo prebuild --platform android --no-install/);
   assert.match(androidFallbackStep.run, /:app:assembleRelease/);
+  assert.match(androidFallbackStep.run, /org\.gradle\.jvmargs=-Xmx4g/);
+  assert.match(producerAndroidBuildStep.run, /org\.gradle\.jvmargs=-Xmx4g/);
+  assert.match(fetchArtifact, /producer-state "\$REPOSITORY" "\$EXPECTED_HEAD_SHA" "\$PLATFORM"/);
   assert.match(
     fingerprintStep.run,
     /ARTIFACT_NAME_RESOLVER="\.github\/actions\/setup-fixture-app\/resolve-artifact-name\.sh"/,
@@ -61,6 +67,75 @@ test('producer, consumers, upload, and concurrency use the canonical platform-sc
   assert.equal(
     workflow.jobs.release.concurrency.group,
     'test-app-${{ matrix.artifactName }}-${{ github.event.pull_request.number || github.ref_name }}',
+  );
+});
+
+test('resolve-artifact-name.sh fingerprints examples/test-app, not the workspace root', (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fixture-fingerprint-cwd-'));
+  t.after(() => fs.rmSync(tempRoot, { force: true, recursive: true }));
+
+  // A repo-root native helper dir that must be excluded once the fingerprint
+  // is scoped correctly, and the fixture app's own native module that must be
+  // included.
+  fs.mkdirSync(path.join(tempRoot, 'android'), { recursive: true });
+  fs.mkdirSync(path.join(tempRoot, 'examples/test-app/modules/push-broadcast-lab/android'), {
+    recursive: true,
+  });
+  const fingerprintBinDir = path.join(tempRoot, 'examples/test-app/node_modules/.bin');
+  fs.mkdirSync(fingerprintBinDir, { recursive: true });
+  const sourcesLog = path.join(tempRoot, 'fingerprint-sources.json');
+
+  // Stand-in for @expo/fingerprint: reports every `android` directory
+  // reachable under its own process.cwd(), the same cwd-scoped native-dir
+  // discovery the real tool performs.
+  fs.writeFileSync(
+    path.join(fingerprintBinDir, 'fingerprint'),
+    [
+      '#!/usr/bin/env node',
+      "const fs = require('node:fs');",
+      "const path = require('node:path');",
+      'function findAndroidDirs(dir, found) {',
+      '  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {',
+      "    if (!entry.isDirectory() || entry.name === 'node_modules' || entry.name === '.git') continue;",
+      '    const full = path.join(dir, entry.name);',
+      "    if (entry.name === 'android') found.push(full);",
+      '    findAndroidDirs(full, found);',
+      '  }',
+      '  return found;',
+      '}',
+      'const cwd = process.cwd();',
+      'const dirs = findAndroidDirs(cwd, []).map((p) => path.relative(cwd, p));',
+      "const report = { hash: 'stub-' + dirs.length, sources: dirs.map((filePath) => ({ type: 'dir', filePath })) };",
+      'if (process.env.TEST_FINGERPRINT_SOURCES_LOG) {',
+      '  fs.writeFileSync(process.env.TEST_FINGERPRINT_SOURCES_LOG, JSON.stringify(report));',
+      '}',
+      'process.stdout.write(JSON.stringify(report));',
+      '',
+    ].join('\n'),
+  );
+  fs.chmodSync(path.join(fingerprintBinDir, 'fingerprint'), 0o755);
+
+  const scriptDir = path.join(tempRoot, '.github/actions/setup-fixture-app');
+  fs.mkdirSync(scriptDir, { recursive: true });
+  fs.copyFileSync(
+    '.github/actions/setup-fixture-app/resolve-artifact-name.sh',
+    path.join(scriptDir, 'resolve-artifact-name.sh'),
+  );
+
+  const result = spawnSync('sh', [path.join(scriptDir, 'resolve-artifact-name.sh'), 'android'], {
+    cwd: tempRoot,
+    encoding: 'utf8',
+    env: { ...process.env, TEST_FINGERPRINT_SOURCES_LOG: sourcesLog },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout.trim(), /^fingerprint\.stub-1\.android$/);
+
+  const sources = JSON.parse(fs.readFileSync(sourcesLog, 'utf8')).sources;
+  const sourcePaths = sources.map((source) => source.filePath);
+  assert.deepEqual(sourcePaths, ['modules/push-broadcast-lab/android']);
+  assert.ok(
+    !sourcePaths.includes('android'),
+    `expected the workspace-root android/ helpers to be excluded, got ${JSON.stringify(sourcePaths)}`,
   );
 });
 
@@ -94,7 +169,7 @@ test('Android smoke consumes the restored APK through catalog fixture E2E', (t) 
       .includes(replayEvidence.invocation),
     `missing declared Android replay invocation: ${replayEvidence.invocation}`,
   );
-  assert.equal(restoreStep.with['wait-for-artifact-seconds'], '600');
+  assert.equal(restoreStep.with['wait-for-artifact-seconds'], '1800');
   assert.match(sourceStep.run, /steps\.fixture-app\.outputs\.source/);
   assert.match(assertion, /metadata\.backend !== 'android-helper'/);
   assert.match(assertion, /metadata\.helperVersion !== packageVersion/);
@@ -172,7 +247,7 @@ test('Android APK locator emits an exact APK path and package id, and rejects co
       '#!/bin/sh',
       'if [ "${TEST_AAPT_FAIL:-}" = 1 ]; then exit 23; fi',
       'if [ -n "$TEST_AAPT_PACKAGE" ]; then',
-      '  printf "package: name=\'%s\' versionCode=1 versionName=1\\n" "$TEST_AAPT_PACKAGE"',
+      String.raw`  printf "package: name='%s' versionCode=1 versionName=1\n" "$TEST_AAPT_PACKAGE"`,
       'fi',
       '',
     ].join('\n'),
@@ -230,7 +305,7 @@ test('Android APK repack signs the output and preserves its package id', (t) => 
     path.join(buildTools, 'aapt'),
     [
       '#!/bin/sh',
-      'printf "package: name=\'com.example.fixture\' versionCode=1 versionName=1\\n"',
+      String.raw`printf "package: name='com.example.fixture' versionCode=1 versionName=1\n"`,
       '',
     ].join('\n'),
   );
@@ -242,7 +317,7 @@ test('Android APK repack signs the output and preserves its package id', (t) => 
       'if [ "${2:-}" = --print-certs ]; then',
       '  digest="$TEST_SOURCE_DIGEST"',
       '  if [ "$3" = "$TEST_REPACK_OUTPUT" ]; then digest="$TEST_OUTPUT_DIGEST"; fi',
-      '  printf "Signer #1 certificate SHA-256 digest: %s\\n" "$digest"',
+      String.raw`  printf "Signer #1 certificate SHA-256 digest: %s\n" "$digest"`,
       'fi',
       '',
     ].join('\n'),
@@ -251,7 +326,7 @@ test('Android APK repack signs the output and preserves its package id', (t) => 
     path.join(binDir, 'pnpm'),
     [
       '#!/bin/sh',
-      'printf "%s\\n" "$*" >> "$TEST_COMMAND_LOG"',
+      String.raw`printf "%s\n" "$*" >> "$TEST_COMMAND_LOG"`,
       'while [ "$#" -gt 0 ]; do',
       '  case "$1" in',
       '    --source-app) source="$2"; shift 2 ;;',
@@ -305,14 +380,22 @@ test('Android APK repack signs the output and preserves its package id', (t) => 
   assert.match(mismatch.stderr, /did not preserve the source signing certificate/);
 });
 
-test('producer maps each platform to its resolved lookup and matrix artifact name', (t) => {
+test('producer maps each platform to its resolved lookup and matrix artifact name, and gates has-work when both are cached', (t) => {
   const workflow = parse(fs.readFileSync('.github/workflows/test-app-build-cache.yml', 'utf8'));
   const fingerprintStep = workflow.jobs.fingerprint.steps.find((step) => step.id === 'fingerprint');
+  // #2034: an empty `include` matrix is legal JSON but GitHub Actions rejects it as
+  // `strategy.matrix`, so `release` must be skipped -- not handed a zero-length
+  // matrix -- whenever both fixtures are already cached.
+  assert.equal(
+    workflow.jobs.fingerprint.outputs['has-work'],
+    '${{ steps.fingerprint.outputs.has-work }}',
+  );
+  assert.equal(workflow.jobs.release.if, "needs.fingerprint.outputs.has-work == 'true'");
+
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fixture-producer-name-'));
   t.after(() => fs.rmSync(tempRoot, { force: true, recursive: true }));
   const actionDir = path.join(tempRoot, '.github/actions/setup-fixture-app');
   const binDir = path.join(tempRoot, 'bin');
-  const outputPath = path.join(tempRoot, 'output');
   const resolverLog = path.join(tempRoot, 'resolver-calls');
   const nodeLog = path.join(tempRoot, 'node-calls');
   fs.mkdirSync(actionDir, { recursive: true });
@@ -321,81 +404,135 @@ test('producer maps each platform to its resolved lookup and matrix artifact nam
     path.join(actionDir, 'resolve-artifact-name.sh'),
     [
       '#!/bin/sh',
-      'printf "%s\\n" "$1" >> "$TEST_RESOLVER_LOG"',
-      'printf "fingerprint.%s-hash.%s\\n" "$1" "$1"',
+      String.raw`printf "%s\n" "$1" >> "$TEST_RESOLVER_LOG"`,
+      String.raw`printf "fingerprint.%s-hash.%s\n" "$1" "$1"`,
       '',
     ].join('\n'),
   );
-  fs.writeFileSync(
-    path.join(binDir, 'node'),
-    ['#!/bin/sh', 'printf "%s\\n" "$*" >> "$TEST_NODE_LOG"', ''].join('\n'),
-  );
+  // cachedPlatforms: which platform artifact-name suffixes (".ios", ".android")
+  // the lookup should report as already cached.
+  const writeNodeStub = (cachedPlatforms) =>
+    fs.writeFileSync(
+      path.join(binDir, 'node'),
+      [
+        '#!/bin/sh',
+        String.raw`printf "%s\n" "$*" >> "$TEST_NODE_LOG"`,
+        'case "$4" in',
+        ...cachedPlatforms.map((platform) => `  *.${platform}) printf "111" ;;`),
+        '  *) true ;;',
+        'esac',
+        '',
+      ].join('\n'),
+    );
+  writeNodeStub([]);
   fs.chmodSync(path.join(binDir, 'node'), 0o755);
+
   const run = fingerprintStep.run
     .replaceAll('${{ github.event.pull_request.head.sha || github.sha }}', 'current-head')
     .replaceAll('${{ github.repository }}', 'octo/repo')
     .replaceAll('${{ github.event_name }}', 'pull_request')
     .replaceAll('${{ github.event.pull_request.head.repo.full_name }}', 'octo/repo');
-  const result = spawnSync('bash', ['-c', run], {
-    cwd: tempRoot,
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      GITHUB_OUTPUT: outputPath,
-      PATH: `${binDir}:${process.env.PATH}`,
-      TEST_NODE_LOG: nodeLog,
-      TEST_RESOLVER_LOG: resolverLog,
-    },
-  });
-  assert.equal(result.status, 0, result.stderr);
-  const matrixLine = fs.readFileSync(outputPath, 'utf8').trim();
-  assert.match(matrixLine, /^matrix=/);
-  const matrix = JSON.parse(matrixLine.slice('matrix='.length));
+  const runFingerprint = (outputName) => {
+    const outputPath = path.join(tempRoot, outputName);
+    const result = spawnSync('bash', ['-c', run], {
+      cwd: tempRoot,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GITHUB_OUTPUT: outputPath,
+        PATH: `${binDir}:${process.env.PATH}`,
+        TEST_NODE_LOG: nodeLog,
+        TEST_RESOLVER_LOG: resolverLog,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const lines = fs.readFileSync(outputPath, 'utf8').trim().split('\n');
+    return {
+      hasWork: lines.find((line) => line.startsWith('has-work=')).slice('has-work='.length),
+      matrix: JSON.parse(lines.find((line) => line.startsWith('matrix=')).slice('matrix='.length)),
+    };
+  };
+
+  const neitherCached = runFingerprint('output-neither-cached');
   assert.deepEqual(
-    matrix.include.map(({ platform, artifactName }) => ({ platform, artifactName })),
+    neitherCached.matrix.include.map(({ platform, artifactName }) => ({ platform, artifactName })),
     [
       { platform: 'ios', artifactName: 'fingerprint.ios-hash.ios' },
       { platform: 'android', artifactName: 'fingerprint.android-hash.android' },
     ],
   );
+  assert.equal(neitherCached.hasWork, 'true');
   assert.deepEqual(fs.readFileSync(resolverLog, 'utf8').trim().split('\n'), ['ios', 'android']);
   assert.deepEqual(fs.readFileSync(nodeLog, 'utf8').trim().split('\n'), [
     '.github/actions/setup-fixture-app/trusted-artifact.mjs find octo/repo fingerprint.ios-hash.ios current-head',
     '.github/actions/setup-fixture-app/trusted-artifact.mjs find octo/repo fingerprint.android-hash.android current-head',
   ]);
+
+  // A mistaken `length > 1` in the has-work check would pass here while
+  // wrongly suppressing this valid single-platform build.
+  writeNodeStub(['ios']);
+  const iosCached = runFingerprint('output-ios-cached');
+  assert.deepEqual(
+    iosCached.matrix.include.map(({ platform }) => platform),
+    ['android'],
+  );
+  assert.equal(iosCached.hasWork, 'true');
+
+  writeNodeStub(['ios', 'android']);
+  const bothCached = runFingerprint('output-both-cached');
+  assert.deepEqual(bothCached.matrix, { include: [] });
+  assert.equal(bothCached.hasWork, 'false');
 });
 
 test('artifact name resolver scopes both platforms and rejects invalid output', (t) => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fixture-artifact-name-'));
   t.after(() => fs.rmSync(tempRoot, { force: true, recursive: true }));
   const callLog = path.join(tempRoot, 'calls');
+  const actionDir = path.join(tempRoot, '.github/actions/setup-fixture-app');
+  const fingerprintBinDir = path.join(tempRoot, 'examples/test-app/node_modules/.bin');
   const pnpmStub = path.join(tempRoot, 'pnpm');
+  fs.mkdirSync(actionDir, { recursive: true });
+  fs.mkdirSync(fingerprintBinDir, { recursive: true });
+  fs.copyFileSync(
+    '.github/actions/setup-fixture-app/resolve-artifact-name.sh',
+    path.join(actionDir, 'resolve-artifact-name.sh'),
+  );
   fs.writeFileSync(
     pnpmStub,
     [
       '#!/bin/sh',
-      'printf "%s\\n" "$*" >> "$TEST_CALL_LOG"',
-      'if [ "$TEST_PNPM_EXIT" -ne 0 ]; then exit "$TEST_PNPM_EXIT"; fi',
+      'echo "pnpm must not mediate machine-readable fingerprint output" >&2',
+      'exit 91',
+      '',
+    ].join('\n'),
+  );
+  fs.writeFileSync(
+    path.join(fingerprintBinDir, 'fingerprint'),
+    [
+      '#!/bin/sh',
+      String.raw`printf "%s\n" "$*" >> "$TEST_CALL_LOG"`,
+      'if [ "$TEST_FINGERPRINT_EXIT" -ne 0 ]; then exit "$TEST_FINGERPRINT_EXIT"; fi',
       'if [ -n "$TEST_RAW_OUTPUT" ]; then',
-      '  printf "%s\\n" "$TEST_RAW_OUTPUT"',
+      String.raw`  printf "%s\n" "$TEST_RAW_OUTPUT"`,
       'else',
-      '  printf \'{"hash":"%s"}\\n\' "$TEST_HASH"',
+      String.raw`  printf '{"hash":"%s"}\n' "$TEST_HASH"`,
       'fi',
       '',
     ].join('\n'),
   );
   fs.chmodSync(pnpmStub, 0o755);
+  fs.chmodSync(path.join(fingerprintBinDir, 'fingerprint'), 0o755);
   const resolver = '.github/actions/setup-fixture-app/resolve-artifact-name.sh';
-  const runResolver = (platform, hash, pnpmExit = 0, rawOutput = '') =>
+  const runResolver = (platform, hash, fingerprintExit = 0, rawOutput = '') =>
     spawnSync('sh', platform === undefined ? [resolver] : [resolver, platform], {
-      cwd: process.cwd(),
+      cwd: tempRoot,
       encoding: 'utf8',
       env: {
         ...process.env,
         PATH: `${tempRoot}:${process.env.PATH}`,
         TEST_CALL_LOG: callLog,
         TEST_HASH: hash,
-        TEST_PNPM_EXIT: String(pnpmExit),
+        TEST_FINGERPRINT_EXIT: String(fingerprintExit),
         TEST_RAW_OUTPUT: rawOutput,
       },
     });
@@ -409,13 +546,13 @@ test('artifact name resolver scopes both platforms and rejects invalid output', 
   assert.equal(android.stdout, 'fingerprint.android-hash.android\n');
 
   assert.deepEqual(fs.readFileSync(callLog, 'utf8').trim().split('\n'), [
-    '--dir examples/test-app exec fingerprint fingerprint:generate --platform ios',
-    '--dir examples/test-app exec fingerprint fingerprint:generate --platform android',
+    'fingerprint:generate --platform ios',
+    'fingerprint:generate --platform android',
   ]);
   assert.equal(runResolver(undefined, 'unused').status, 2);
   assert.equal(
     spawnSync('sh', [resolver, 'ios', 'extra'], {
-      cwd: process.cwd(),
+      cwd: tempRoot,
       encoding: 'utf8',
       env: process.env,
     }).status,
@@ -424,7 +561,7 @@ test('artifact name resolver scopes both platforms and rejects invalid output', 
   assert.equal(runResolver('windows', 'unused').status, 2);
   assert.equal(runResolver('ios', 'null').status, 1);
   assert.equal(runResolver('ios', 'bad/hash').status, 1);
-  assert.equal(runResolver('ios', 'unused', 0, '{"hash":"bad\\nhash"}').status, 1);
+  assert.equal(runResolver('ios', 'unused', 0, String.raw`{"hash":"bad\nhash"}`).status, 1);
   assert.equal(runResolver('ios', 'unused', 0, '{"hash":"first"}\n{"hash":"second"}').status, 1);
   assert.equal(runResolver('ios', 'unused', 17).status, 17);
 });
@@ -511,28 +648,110 @@ test('default-branch producer artifacts remain reusable across native-equivalent
 
 test('producer state is derived only from the trusted exact-head workflow run', () => {
   assert.equal(
-    classifyProducerState([], { expectedHeadSha: 'current-head', repository }),
+    classifyProducerState([], [], {
+      expectedHeadSha: 'current-head',
+      repository,
+      platform: 'android',
+    }),
     'absent',
   );
   assert.equal(
-    classifyProducerState([{ ...trustedRun, status: 'queued' }], {
+    classifyProducerState(
+      [trustedRun],
+      [{ conclusion: null, name: 'Android Release', status: 'in_progress' }],
+      { expectedHeadSha: 'current-head', repository, platform: 'android' },
+    ),
+    'in_progress',
+  );
+  assert.equal(
+    classifyProducerState(
+      [trustedRun],
+      [{ conclusion: 'failure', name: 'Android Release', status: 'completed' }],
+      { expectedHeadSha: 'current-head', repository, platform: 'android' },
+    ),
+    'failed',
+  );
+  assert.equal(
+    classifyProducerState(
+      [trustedRun],
+      [{ conclusion: 'success', name: 'Android Release', status: 'completed' }],
+      { expectedHeadSha: 'current-head', repository, platform: 'android' },
+    ),
+    'success',
+  );
+});
+
+// #2251/run 33550746596: the run's own status flickers to `queued` in the gap
+// between its fingerprint job finishing and its platform job starting. A
+// classifier keyed on run.status (the pre-fix behavior) mistakes that gap for
+// "give up"; keying on the platform job's own status does not.
+test('a run that flickers to queued while its platform job is already running classifies as in_progress, not queued', () => {
+  const flickeringRun = { ...trustedRun, status: 'queued' };
+  const runningAndroidJob = { conclusion: null, name: 'Android Release', status: 'in_progress' };
+  assert.equal(
+    classifyProducerState([flickeringRun], [runningAndroidJob], {
       expectedHeadSha: 'current-head',
       repository,
+      platform: 'android',
+    }),
+    'in_progress',
+  );
+});
+
+test('a platform job that has not been scheduled yet classifies by the run instead of going absent', () => {
+  const fingerprintJob = {
+    conclusion: null,
+    name: 'Resolve native fingerprint',
+    status: 'completed',
+  };
+  assert.equal(
+    classifyProducerState([trustedRun], [fingerprintJob], {
+      expectedHeadSha: 'current-head',
+      repository,
+      platform: 'android',
+    }),
+    'queued',
+  );
+  const completedRun = { ...trustedRun, conclusion: 'success', status: 'completed' };
+  assert.equal(
+    classifyProducerState([completedRun], [fingerprintJob], {
+      expectedHeadSha: 'current-head',
+      repository,
+      platform: 'android',
+    }),
+    'failed',
+  );
+});
+
+test('the iOS platform job is looked up by its own matrix name, independent of the Android job', () => {
+  const iosJob = { conclusion: null, name: 'iOS Release', status: 'queued' };
+  const androidJob = { conclusion: 'success', name: 'Android Release', status: 'completed' };
+  assert.equal(
+    classifyProducerState([trustedRun], [iosJob, androidJob], {
+      expectedHeadSha: 'current-head',
+      repository,
+      platform: 'ios',
     }),
     'queued',
   );
   assert.equal(
-    classifyProducerState([{ ...trustedRun, conclusion: 'failure', status: 'completed' }], {
+    classifyProducerState([trustedRun], [iosJob, androidJob], {
       expectedHeadSha: 'current-head',
       repository,
-    }),
-    'failed',
-  );
-  assert.equal(
-    classifyProducerState([{ ...trustedRun, conclusion: 'success', status: 'completed' }], {
-      expectedHeadSha: 'current-head',
-      repository,
+      platform: 'android',
     }),
     'success',
+  );
+});
+
+test('an unrecognized fixture platform is rejected rather than silently matching no job', () => {
+  assert.throws(
+    () =>
+      classifyProducerState([trustedRun], [], {
+        expectedHeadSha: 'current-head',
+        repository,
+        platform: 'windows',
+      }),
+    /unknown fixture platform: windows/,
   );
 });

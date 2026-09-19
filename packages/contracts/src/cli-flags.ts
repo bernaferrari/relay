@@ -4,6 +4,7 @@ import type { BackMode } from './back-mode.ts';
 import type { ClickButton } from './click-button.ts';
 import type { SwipePattern } from './scroll-gesture.ts';
 import type { DeviceTarget, PlatformSelector } from '@agent-device/kernel/device';
+import type { SnapshotPreferredBackend } from '@agent-device/kernel/snapshot';
 import type {
   DaemonInstallSource,
   DaemonServerMode,
@@ -20,10 +21,18 @@ import type {
 } from './remote-config-fields.ts';
 import type { ScreenshotRequestFlags } from './screenshot.ts';
 import type { RecordingScope } from './recording-scope.ts';
+import type { ReplayRequestFields } from './replay-request-fields.ts';
 
+// This is the flag KEY vocabulary, not where an option is described: an
+// option's prose belongs to its one declaration (its `FlagDefinition`, which
+// carries both the `--help` and the tool/SDK audience), so a doc comment
+// repeated here would be a second copy that drifts. Comments below state only
+// facts this type alone knows — that a key has no CLI token, or how two keys
+// interact.
 export type CliFlags = CloudProviderProfileFields &
   RemoteConfigMetroOptions &
-  ScreenshotRequestFlags & {
+  ScreenshotRequestFlags &
+  ReplayRequestFields & {
     json: boolean;
     config?: string;
     remoteConfig?: string;
@@ -71,10 +80,13 @@ export type CliFlags = CloudProviderProfileFields &
     cost?: boolean;
     responseLevel?: ResponseLevel;
     snapshotInteractiveOnly?: boolean;
+    /** Internal (no CLI flag): pin the capture backend for same-backend evidence probes. */
+    snapshotPreferredBackend?: SnapshotPreferredBackend;
     snapshotDiff?: boolean;
     snapshotDepth?: number;
     snapshotScope?: string;
     snapshotRaw?: boolean;
+    snapshotCustomActions?: boolean;
     snapshotForceFull?: boolean;
     artifact?: string;
     dsym?: string;
@@ -97,6 +109,8 @@ export type CliFlags = CloudProviderProfileFields &
     holdMs?: number;
     jitterPx?: number;
     pixels?: number;
+    /** Scroll: repeat passes until this selector is visible on screen. */
+    until?: string;
     doubleTap?: boolean;
     verify?: boolean;
     settle?: boolean;
@@ -114,6 +128,7 @@ export type CliFlags = CloudProviderProfileFields &
     saveScript?: boolean | string;
     shutdown?: boolean;
     relaunch?: boolean;
+    foreground?: boolean;
     surface?: SessionSurface;
     headless?: boolean;
     restart?: boolean;
@@ -130,23 +145,9 @@ export type CliFlags = CloudProviderProfileFields &
     record?: boolean;
     retainPaths?: boolean;
     retentionMs?: number;
-    replayUpdate?: boolean;
     replayMaestro?: boolean;
-    replayEnv?: string[];
-    replayShellEnv?: Record<string, string>;
-    replayFrom?: number;
-    replayPlanDigest?: string;
-    /** Replay: leave the session active by suppressing an authored terminal close in native .ad. */
-    replayKeepSession?: boolean;
-    failFast?: boolean;
-    timeoutMs?: number;
-    retries?: number;
-    recordVideo?: boolean;
-    artifactsDir?: string;
     reporter?: string[];
     reportJunit?: string;
-    shardAll?: number;
-    shardSplit?: number;
     steps?: string;
     stepsFile?: string;
     findFirst?: boolean;

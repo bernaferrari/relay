@@ -1,24 +1,26 @@
+import { createTestDeviceInventoryGateways } from '../../__tests__/test-utils/device-inventory-gateways.ts';
+import { legacyDispatchCapture } from './legacy-snapshot-capture-fixture.ts';
 import { test, expect, vi, beforeEach } from 'vitest';
 import fs from 'node:fs';
-import os from 'node:os';
+
 import path from 'node:path';
 
-vi.mock('../../core/dispatch.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../core/dispatch.ts')>();
-  return { ...actual, dispatchCommand: vi.fn(async () => ({})) };
-});
-
-vi.mock('../../platforms/apple/core/runner/runner-client.ts', async (importOriginal) => {
+vi.mock('@agent-device/platform-apple/runner/operations', async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import('../../platforms/apple/core/runner/runner-client.ts')>();
+    await importOriginal<typeof import('@agent-device/platform-apple/runner/operations')>();
   return { ...actual, stopIosRunnerSession: vi.fn(async () => {}) };
 });
 
 vi.mock('../device-ready.ts', () => ({ ensureDeviceReady: vi.fn(async () => {}) }));
 
-import { dispatchCommand } from '../../core/dispatch.ts';
-import { createRequestHandler } from '../request-router.ts';
-import type { DaemonRequest, SessionState } from '../types.ts';
+import { dispatchApplicationLifecycleEffect } from './application-lifecycle-runtime-fixture.ts';
+import {
+  createRequestHandler,
+  lifecycleDeviceRuntimeGateway,
+  systemRuntimeSpies,
+} from './test-device-runtime-gateway.ts';
+import type { DaemonRequest } from '../daemon-request.ts';
+import type { SessionState } from '../session-state.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
 import {
@@ -28,9 +30,9 @@ import {
 } from '../../__tests__/test-utils/session-factories.ts';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { AppError, retriableForErrorCode } from '@agent-device/kernel/errors';
-import { supportedPlatformsForCommand } from '../../core/capabilities.ts';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 
-const mockDispatch = vi.mocked(dispatchCommand);
+const mockLifecycleEffect = vi.mocked(dispatchApplicationLifecycleEffect);
 
 /**
  * This file pins its own simulator rather than reusing the shared iOS fixture:
@@ -57,10 +59,12 @@ function makeHandler(sessionStore = makeSessionStore('agent-device-router-typed-
   return {
     sessionStore,
     handler: createRequestHandler({
-      logPath: path.join(os.tmpdir(), 'daemon.log'),
+      logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
       token: 'test-token',
       sessionStore,
       leaseRegistry: new LeaseRegistry(),
+      deviceRuntimeGateway: lifecycleDeviceRuntimeGateway,
+      deviceInventoryGateways: createTestDeviceInventoryGateways(),
       trackDownloadableArtifact: () => 'artifact-id',
     }),
   };
@@ -78,7 +82,11 @@ function request(command: string, overrides: Partial<DaemonRequest> = {}): Daemo
 }
 
 beforeEach(() => {
-  mockDispatch.mockReset();
+  legacyDispatchCapture.mockReset();
+  systemRuntimeSpies.appSwitcher.mockReset();
+  systemRuntimeSpies.appSwitcher.mockResolvedValue(undefined);
+  mockLifecycleEffect.mockReset();
+  mockLifecycleEffect.mockResolvedValue(undefined);
 });
 
 test('retriableForErrorCode is a conservative policy: transient => true, others => undefined', () => {
@@ -88,27 +96,41 @@ test('retriableForErrorCode is a conservative policy: transient => true, others 
   expect(retriableForErrorCode('COMMAND_FAILED')).toBeUndefined();
 });
 
-test('UNSUPPORTED_OPERATION errors carry supportedOn derived from the capability matrix', async () => {
+test('fact-owned UNSUPPORTED_OPERATION errors do not fabricate legacy supportedOn metadata', async () => {
   const { sessionStore, handler } = makeHandler();
-  sessionStore.set('typed-error', makeIosSession('typed-error'));
-  mockDispatch.mockRejectedValue(new AppError('UNSUPPORTED_OPERATION', 'nope on this platform'));
+  // Linux refuses native perf from exact runtime facts. The retired capability matrix has no
+  // trustworthy platform summary to graft onto that operation-level refusal.
+  sessionStore.set(
+    'typed-error',
+    makeSession('typed-error', {
+      ...TENANT_SESSION_DEFAULTS,
+      device: {
+        platform: 'linux',
+        id: 'local',
+        name: 'Linux Desktop',
+        kind: 'device',
+        target: 'desktop',
+        booted: true,
+      },
+    }),
+  );
 
-  // `home` routes through the (mocked) generic dispatch and is platform-restricted.
-  const response = await handler(request('home'));
+  const response = await handler(request('perf', { positionals: ['trace', 'start', 'xctrace'] }));
 
   expect(response.ok).toBe(false);
   if (response.ok) return;
-  const expected = supportedPlatformsForCommand('home');
-  expect(expected.length).toBeGreaterThan(0); // home is a platform-restricted command
-  expect(response.error.supportedOn).toBe(expected.join(', '));
+  expect(response.error.code).toBe('UNSUPPORTED_OPERATION');
+  expect(response.error.supportedOn).toBeUndefined();
 });
 
 test('DEVICE_IN_USE errors are flagged retriable; supportedOn stays absent', async () => {
   const { sessionStore, handler } = makeHandler();
   sessionStore.set('typed-error', makeIosSession('typed-error'));
-  mockDispatch.mockRejectedValue(new AppError('DEVICE_IN_USE', 'device busy'));
+  // R56 put `app-switcher` on a bound operation, so the failure is raised where the device work
+  // happens rather than by the retired dispatcher.
+  systemRuntimeSpies.appSwitcher.mockRejectedValue(new AppError('DEVICE_IN_USE', 'device busy'));
 
-  const response = await handler(request('home'));
+  const response = await handler(request('app-switcher'));
 
   expect(response.ok).toBe(false);
   if (response.ok) return;
@@ -123,7 +145,7 @@ test('deterministic errors (INVALID_ARGS) are returned with the default shape â€
   // Conflicting explicit selector under a reject lock policy fails with INVALID_ARGS
   // before dispatch â€” a deterministic error.
   const response = await handler(
-    request('home', { flags: { udid: 'SIM-999' }, meta: { lockPolicy: 'reject' } }),
+    request('app-switcher', { flags: { udid: 'SIM-999' }, meta: { lockPolicy: 'reject' } }),
   );
 
   expect(response.ok).toBe(false);
@@ -131,7 +153,7 @@ test('deterministic errors (INVALID_ARGS) are returned with the default shape â€
   expect(response.error.code).toBe('INVALID_ARGS');
   expect('retriable' in response.error).toBe(false);
   expect('supportedOn' in response.error).toBe(false);
-  expect(mockDispatch).not.toHaveBeenCalled();
+  expect(legacyDispatchCapture).not.toHaveBeenCalled();
 });
 
 // ADR 0012 decision 6, BLOCKER 2 (second follow-up): a repair-armed `close`
@@ -154,7 +176,7 @@ test('BLOCKER 2 (second follow-up): a repair-close platform-close failure surfac
   // DEVICE_NOT_FOUND is not in `retriableForErrorCode`'s conservative allow
   // list â€” if the handler ever regressed to relying on that code-level
   // fallback instead of forcing `retriable: true` itself, this would catch it.
-  mockDispatch.mockRejectedValueOnce(
+  mockLifecycleEffect.mockRejectedValueOnce(
     new AppError('DEVICE_NOT_FOUND', 'device vanished', {
       diagnosticId: 'diag-router-close-1',
       logPath: '/tmp/router-close-1.log',
@@ -185,7 +207,7 @@ test('#1391: an ordinary close-time script-save failure surfaces details.reason/
   const { sessionStore, handler } = makeHandler();
   const session = makeAuthoringSession('typed-error', TENANT_SESSION_DEFAULTS);
   const targetPath = path.join(
-    os.tmpdir(),
+    mkdtempForTestSync('agent-device-router-typed-error'),
     `agent-device-router-typed-error-${Date.now()}-${Math.random().toString(36).slice(2)}.ad`,
   );
   fs.writeFileSync(targetPath, 'pre-existing\n');
@@ -212,7 +234,7 @@ test('#1391: an ordinary close-time script-save failure surfaces details.reason/
     // Unlike the repair-armed case above, an ordinary session's teardown
     // never withholds on a failed script save â€” it is always torn down.
     expect(sessionStore.get('typed-error')).toBeUndefined();
-    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(legacyDispatchCapture).not.toHaveBeenCalled();
   } finally {
     fs.rmSync(targetPath, { force: true });
   }

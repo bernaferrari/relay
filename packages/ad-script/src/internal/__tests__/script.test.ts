@@ -50,16 +50,60 @@ test('formatPortableActionLine preserves inline open runtime hints', () => {
   );
 });
 
-test('record replay script parses fps, max-size, quality, and hide-touches flags', () => {
-  const script =
-    'record start "./capture.mp4" --fps 24 --max-size 1024 --quality high --hide-touches\n';
+test('open replay script round-trips explicit Android test IME selection', () => {
+  const actions: SessionAction[] = [
+    {
+      ts: Date.now(),
+      command: 'open',
+      positionals: ['Demo'],
+      flags: { testIme: false },
+    },
+    {
+      ts: Date.now(),
+      command: 'open',
+      positionals: ['Demo'],
+      flags: { testIme: true },
+    },
+  ];
+
+  const script = formatReplayScriptForTest(actions);
+  assert.match(script, /open "Demo" --no-test-ime/);
+  assert.match(script, /open "Demo" --test-ime/);
+
+  const parsed = parseReplayScriptDetailed(script).actions;
+  assert.equal(parsed[0]?.flags.testIme, false);
+  assert.equal(parsed[1]?.flags.testIme, true);
+  assert.deepEqual(parsed[0]?.positionals, ['Demo']);
+  assert.deepEqual(parsed[1]?.positionals, ['Demo']);
+});
+
+test('record replay script parses fps, quality, and hide-touches flags', () => {
+  const script = 'record start "./capture.mp4" --fps 24 --quality high --hide-touches\n';
   const parsed = parseReplayScriptDetailed(script).actions;
 
   assert.deepEqual(parsed[0]?.positionals, ['start', './capture.mp4']);
   assert.equal(parsed[0]?.flags.fps, 24);
-  assert.equal(parsed[0]?.flags.screenshotMaxSize, 1024);
   assert.equal(parsed[0]?.flags.quality, 'high');
   assert.equal(parsed[0]?.flags.hideTouches, true);
+});
+
+// Parser-level witnesses of the retired `--max-size` refusal. The
+// release-provenance frozen forms live in the replay-compat corpus
+// (test/replay-compat/scripts/docs/{screenshot,record}-max-size.v0.20.5.ad);
+// these fast unit copies pin the same behavior at the parse seam: refusal
+// with migration guidance, never a silent degrade into extra positionals.
+test('released screenshot --max-size lines are refused with migration guidance', () => {
+  assert.throws(() => parseReplayScriptDetailed('screenshot "./page.png" --max-size 1024\n'), {
+    code: 'INVALID_ARGS',
+    message: /screenshot --max-size was removed; use --scale/,
+  });
+});
+
+test('released record --max-size lines are refused with migration guidance', () => {
+  assert.throws(() => parseReplayScriptDetailed('record start "./capture.mp4" --max-size 1024\n'), {
+    code: 'INVALID_ARGS',
+    message: /record --max-size was removed/,
+  });
 });
 
 test('screenshot replay script round-trips screenshot flags', () => {
@@ -71,7 +115,7 @@ test('screenshot replay script round-trips screenshot flags', () => {
       flags: {
         screenshotPixelDensity: 2,
         screenshotFullscreen: true,
-        screenshotMaxSize: 1024,
+        screenshotScale: 0.3,
         screenshotNoStabilize: true,
       },
     },
@@ -80,15 +124,43 @@ test('screenshot replay script round-trips screenshot flags', () => {
   const script = formatReplayScriptForTest(actions);
   assert.match(
     script,
-    /screenshot "\.\/page\.png" --pixel-density 2 --fullscreen --max-size 1024 --no-stabilize/,
+    /screenshot "\.\/page\.png" --pixel-density 2 --fullscreen --scale 0.3 --no-stabilize/,
   );
 
   const parsed = parseReplayScriptDetailed(script).actions;
   assert.deepEqual(parsed[0]?.positionals, ['./page.png']);
   assert.equal(parsed[0]?.flags.screenshotPixelDensity, 2);
   assert.equal(parsed[0]?.flags.screenshotFullscreen, true);
-  assert.equal(parsed[0]?.flags.screenshotMaxSize, 1024);
+  assert.equal(parsed[0]?.flags.screenshotScale, 0.3);
   assert.equal(parsed[0]?.flags.screenshotNoStabilize, true);
+});
+
+test('screenshot replay script round-trips a quoted --crop-on selector', () => {
+  const actions: SessionAction[] = [
+    {
+      ts: Date.now(),
+      command: 'screenshot',
+      positionals: ['./page.png'],
+      flags: {
+        screenshotCropOn: 'role=cell label=General || role=button label=General',
+        screenshotScale: 0.3,
+      },
+    },
+  ];
+
+  const script = formatReplayScriptForTest(actions);
+  assert.match(
+    script,
+    /screenshot "\.\/page\.png" --crop-on "role=cell label=General \|\| role=button label=General" --scale 0\.3/,
+  );
+
+  const parsed = parseReplayScriptDetailed(script).actions;
+  assert.deepEqual(parsed[0]?.positionals, ['./page.png']);
+  assert.equal(
+    parsed[0]?.flags.screenshotCropOn,
+    'role=cell label=General || role=button label=General',
+  );
+  assert.equal(parsed[0]?.flags.screenshotScale, 0.3);
 });
 
 test('snapshot replay script parses full refresh flags', () => {
@@ -242,10 +314,10 @@ test('formatScriptStringLiteral escapes device labels with quotes and backslashe
   // Same assembly the live session-script-writer uses
   // (daemon/session-script-writer.ts's formatScript): `context platform=...
   // device=<literal> kind=... theme=...`.
-  const header = `context platform=android device=${formatScriptStringLiteral('Pixel "QA" \\ Lab')} kind=emulator theme=unknown`;
+  const header = `context platform=android device=${formatScriptStringLiteral(String.raw`Pixel "QA" \ Lab`)} kind=emulator theme=unknown`;
   assert.equal(
     header,
-    'context platform=android device="Pixel \\"QA\\" \\\\ Lab" kind=emulator theme=unknown',
+    String.raw`context platform=android device="Pixel \"QA\" \\ Lab" kind=emulator theme=unknown`,
   );
   // And it round-trips through the reader as ordinary context metadata.
   assert.equal(readReplayScriptMetadata(`${header}\nopen "Demo"\n`).platform, 'android');
@@ -274,7 +346,7 @@ test('a rewritten script preserves significant whitespace and empty string argum
     {
       ts: Date.now(),
       command: 'screenshot',
-      positionals: ['foo\\nbar.png'],
+      positionals: [String.raw`foo\nbar.png`],
       flags: {},
     },
     {
@@ -292,7 +364,7 @@ test('a rewritten script preserves significant whitespace and empty string argum
 
   const script = formatReplayScriptForTest(actions);
 
-  assert.match(script, /type "  leading\\ttrailing  "/);
+  assert.match(script, /type " {2}leading\\ttrailing {2}"/);
   assert.match(script, /fill @e2 ""/);
   assert.match(script, /screenshot " \.\/screens\/final\.png "/);
   assert.match(script, /screenshot "foo\\\\nbar\.png"/);
@@ -302,7 +374,7 @@ test('a rewritten script preserves significant whitespace and empty string argum
   assert.deepEqual(parsed[0]?.positionals, ['  leading\ttrailing  ']);
   assert.deepEqual(parsed[1]?.positionals, ['@e2', '']);
   assert.deepEqual(parsed[2]?.positionals, [' ./screens/final.png ']);
-  assert.deepEqual(parsed[3]?.positionals, ['foo\\nbar.png']);
+  assert.deepEqual(parsed[3]?.positionals, [String.raw`foo\nbar.png`]);
   assert.deepEqual(parsed[4]?.positionals, ['Demo']);
   assert.equal(parsed[4]?.runtime?.metroHost, ' host\t');
   assert.equal(parsed[4]?.runtime?.launchUrl, 'myapp://dev ');
@@ -328,6 +400,7 @@ test('REPLAY_METADATA_PLATFORMS is exactly the non-web leaf platforms', () => {
   assert.deepEqual([...REPLAY_METADATA_PLATFORMS].sort(), [
     'android',
     'apple',
+    'harmonyos',
     'ios',
     'linux',
     'macos',
@@ -336,7 +409,7 @@ test('REPLAY_METADATA_PLATFORMS is exactly the non-web leaf platforms', () => {
 });
 
 test('readReplayScriptMetadata accepts every concrete leaf platform', () => {
-  for (const platform of ['ios', 'android', 'vega', 'macos', 'linux'] as const) {
+  for (const platform of ['ios', 'android', 'harmonyos', 'vega', 'macos', 'linux'] as const) {
     const metadata = readReplayScriptMetadata(`context platform=${platform}\nopen "Demo"\n`);
 
     assert.equal(metadata.platform, platform);
@@ -495,6 +568,18 @@ test('a target-v1 annotation immediately preceding an action line attaches to th
   assert.deepEqual(actions[0]?.targetEvidence, SAVE_EVIDENCE);
 });
 
+test('a targets-v1 annotation binds both drag endpoints to one action', () => {
+  const source = { ...SAVE_EVIDENCE, id: 'source', label: 'Source' };
+  const destination = { ...SAVE_EVIDENCE, id: 'destination', label: 'Destination' };
+  const script = [
+    `# agent-device:targets-v1 ${JSON.stringify({ source, destination })}`,
+    'gesture drag id="source" id="destination" 800 500 0',
+  ].join('\n');
+  const action = parseReplayScriptDetailed(script).actions[0];
+  assert.deepEqual(action?.targetEvidences, { source, destination });
+  assert.equal(action?.targetEvidence, undefined);
+});
+
 test('a target-v1 annotation followed by a blank line before the action is rejected as INVALID_ARGS', () => {
   const script = [SAVE_EVIDENCE_LINE, '', 'click @e12 "Save"'].join('\n');
   assert.throws(
@@ -532,7 +617,7 @@ test('a malformed target-v1 payload is rejected as INVALID_ARGS, not silently dr
 // Found by the nightly parser fuzz lane (#1414): the closing-quote scan accepted these
 // literals and the JSON decode behind it leaked a raw SyntaxError.
 test.each([
-  ['invalid escape', 'fill @e1 --text "hello wor\\ld"'],
+  ['invalid escape', String.raw`fill @e1 --text "hello wor\ld"`],
   ['raw control character', 'fill @e1 --text "hel\u0000lo"'],
   ['raw tab', 'fill @e1 --text "hello\tworld"'],
 ])('a quoted value with an %s is rejected as INVALID_ARGS with a hint', (_case, script) => {
@@ -599,7 +684,7 @@ test('formatDivergenceActionLabel categorically drops fill/type text but keeps t
   // fill selector text (selector token is script-quoted, text dropped)
   assert.equal(
     formatDivergenceActionLabel(mk('fill', ['label="Email"', secret])),
-    'fill "label=\\"Email\\"" <text>',
+    String.raw`fill "label=\"Email\"" <text>`,
   );
   // fill @ref text
   assert.equal(formatDivergenceActionLabel(mk('fill', ['@e5', secret])), 'fill @e5 <text>');
@@ -618,12 +703,12 @@ test('formatDivergenceActionLabel categorically drops fill/type text but keeps t
   // non-typing commands are unchanged (full summary, script-quoted).
   assert.equal(
     formatDivergenceActionLabel(mk('click', ['label="Save"'])),
-    'click "label=\\"Save\\""',
+    String.raw`click "label=\"Save\""`,
   );
 });
 
 // The property test asserting "serializing a parsed script is a fixed point
-// for generated scripts" stays at `src/replay/__tests__/ad-script-round-trip.test.ts`:
+// for generated scripts" stays at `src/commands/replay/ad-script-round-trip.test.ts`:
 // its script generator (`replayScriptArb`) is derived from the root command
 // catalog and selector grammar (`src/__tests__/test-utils/property-arbitraries.ts`),
 // which this package cannot import without an R11 package→root-src escape

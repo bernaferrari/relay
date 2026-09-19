@@ -1,32 +1,32 @@
 import { beforeEach, expect, test, vi } from 'vitest';
-import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { handleReactNativeCommands } from '../react-native.ts';
-import { captureSnapshot } from '../snapshot-capture.ts';
-import { dispatchCommand } from '../../../core/dispatch.ts';
+import { captureSnapshot } from '../../snapshot-capture.ts';
 import { SessionStore } from '../../session-store.ts';
-import type { SessionState } from '../../types.ts';
+import type { SessionState } from '../../session-state.ts';
+import { mkdtempForTestSync } from '../../../__tests__/test-utils/tmp-dir.ts';
+import {
+  getRuntimeBindings,
+  mockTapPoint,
+  resetGetRuntimeFixture,
+} from '../../__tests__/interaction-get-runtime-fixture.ts';
+import { refFrameState } from '../../ref-frame.ts';
 
-vi.mock('../snapshot-capture.ts', () => ({
+vi.mock('../../snapshot-capture.ts', () => ({
   captureSnapshot: vi.fn(),
 }));
 
-vi.mock('../../../core/dispatch.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../core/dispatch.ts')>();
-  return {
-    ...actual,
-    dispatchCommand: vi.fn(async () => ({ x: 379, y: 820 })),
-  };
-});
-
 const mockCaptureSnapshot = vi.mocked(captureSnapshot);
-const mockDispatchCommand = vi.mocked(dispatchCommand);
+/**
+ * R58: overlay dismissal taps through the same bound `tapPoint` every other touch leaf uses, so
+ * this suite watches the bound operation rather than a dispatcher. The recorded point is the
+ * whole assertion — the coordinate the overlay heuristic picked.
+ */
+const mockDismissTap = mockTapPoint;
 
 beforeEach(() => {
   mockCaptureSnapshot.mockReset();
-  mockDispatchCommand.mockReset();
-  mockDispatchCommand.mockResolvedValue({ x: 379, y: 820 });
+  resetGetRuntimeFixture();
 });
 
 test('react-native dismiss-overlay taps collapsed warning close affordance instead of banner center', async () => {
@@ -74,18 +74,15 @@ test('react-native dismiss-overlay taps collapsed warning close affordance inste
     logPath: '/tmp/daemon.log',
     sessionStore,
     contextFromFlags: () => ({}),
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
   // ADR 0014 side-effect seam: overlay dismissal taps the device, so it expires
   // the ref frame.
-  expect(sessionStore.get(sessionName)?.refFrameState).toBe('expired');
-  expect(mockDispatchCommand).toHaveBeenCalledWith(
-    expect.objectContaining({ platform: 'apple' }),
-    'press',
-    ['379', '820'],
-    undefined,
-    expect.any(Object),
+  expect(refFrameState(sessionStore.get(sessionName)!)).toBe('expired');
+  expect(mockDismissTap).toHaveBeenCalledWith(
+    expect.objectContaining({ point: { x: 379, y: 820 } }),
   );
   expect(response?.ok && response.data).toMatchObject({
     action: 'dismiss-overlay',
@@ -101,7 +98,6 @@ test('react-native dismiss-overlay prefers non-trailing collapsed warning close 
   const sessionName = 'rn-session';
   const sessionStore = makeSessionStore();
   sessionStore.set(sessionName, makeSession(sessionName));
-  mockDispatchCommand.mockResolvedValue({ x: 27, y: 820 });
   mockCaptureSnapshot.mockResolvedValue({
     snapshot: {
       nodes: [
@@ -136,15 +132,12 @@ test('react-native dismiss-overlay prefers non-trailing collapsed warning close 
     logPath: '/tmp/daemon.log',
     sessionStore,
     contextFromFlags: () => ({}),
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
-  expect(mockDispatchCommand).toHaveBeenCalledWith(
-    expect.objectContaining({ platform: 'apple' }),
-    'press',
-    ['27', '820'],
-    undefined,
-    expect.any(Object),
+  expect(mockDismissTap).toHaveBeenCalledWith(
+    expect.objectContaining({ point: { x: 27, y: 820 } }),
   );
   expect(response?.ok && response.data).toMatchObject({
     action: 'dismiss-overlay',
@@ -159,7 +152,6 @@ test('react-native dismiss-overlay does not confuse app dismiss buttons with ove
   const sessionName = 'rn-collapsed-with-app-dismiss-session';
   const sessionStore = makeSessionStore();
   sessionStore.set(sessionName, makeSession(sessionName));
-  mockDispatchCommand.mockResolvedValue({ x: 379, y: 820 });
   mockCaptureSnapshot
     .mockResolvedValueOnce({
       snapshot: {
@@ -208,15 +200,12 @@ test('react-native dismiss-overlay does not confuse app dismiss buttons with ove
     logPath: '/tmp/daemon.log',
     sessionStore,
     contextFromFlags: () => ({}),
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
-  expect(mockDispatchCommand).toHaveBeenCalledWith(
-    expect.objectContaining({ platform: 'apple' }),
-    'press',
-    ['369', '813'],
-    undefined,
-    expect.any(Object),
+  expect(mockDismissTap).toHaveBeenCalledWith(
+    expect.objectContaining({ point: { x: 369, y: 813 } }),
   );
   expect(response?.ok && response.data).toMatchObject({
     action: 'dismiss-overlay',
@@ -261,10 +250,11 @@ test('react-native dismiss-overlay rejects unsafe collapsed warning coordinate f
     logPath: '/tmp/daemon.log',
     sessionStore,
     contextFromFlags: () => ({}),
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(false);
-  expect(mockDispatchCommand).not.toHaveBeenCalled();
+  expect(mockDismissTap).not.toHaveBeenCalled();
   expect(!response?.ok && response?.error).toMatchObject({
     code: 'COMMAND_FAILED',
     details: {
@@ -277,7 +267,6 @@ test('react-native dismiss-overlay dismisses RedBox error overlays instead of mi
   const sessionName = 'rn-redbox-session';
   const sessionStore = makeSessionStore();
   sessionStore.set(sessionName, makeSession(sessionName));
-  mockDispatchCommand.mockResolvedValue({ x: 95, y: 752 });
   mockCaptureSnapshot
     .mockResolvedValueOnce({
       snapshot: {
@@ -323,15 +312,12 @@ test('react-native dismiss-overlay dismisses RedBox error overlays instead of mi
     logPath: '/tmp/daemon.log',
     sessionStore,
     contextFromFlags: () => ({}),
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
-  expect(mockDispatchCommand).toHaveBeenCalledWith(
-    expect.objectContaining({ platform: 'apple' }),
-    'press',
-    ['95', '752'],
-    undefined,
-    expect.any(Object),
+  expect(mockDismissTap).toHaveBeenCalledWith(
+    expect.objectContaining({ point: { x: 95, y: 752 } }),
   );
   expect(response?.ok && response.data).toMatchObject({
     action: 'dismiss-overlay',
@@ -351,7 +337,6 @@ test('react-native dismiss-overlay reports unverified dismiss when RedBox contro
   const sessionName = 'rn-redbox-still-full-session';
   const sessionStore = makeSessionStore();
   sessionStore.set(sessionName, makeSession(sessionName));
-  mockDispatchCommand.mockResolvedValue({ x: 95, y: 752 });
   const fullRedBoxSnapshot = {
     snapshot: {
       nodes: [
@@ -393,6 +378,7 @@ test('react-native dismiss-overlay reports unverified dismiss when RedBox contro
     logPath: '/tmp/daemon.log',
     sessionStore,
     contextFromFlags: () => ({}),
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
@@ -412,7 +398,6 @@ test('react-native dismiss-overlay uses Dismiss when RedBox Minimize is absent',
   const sessionName = 'rn-redbox-dismiss-session';
   const sessionStore = makeSessionStore();
   sessionStore.set(sessionName, makeSession(sessionName));
-  mockDispatchCommand.mockResolvedValue({ x: 95, y: 752 });
   mockCaptureSnapshot.mockResolvedValue({
     snapshot: {
       nodes: [
@@ -445,15 +430,12 @@ test('react-native dismiss-overlay uses Dismiss when RedBox Minimize is absent',
     logPath: '/tmp/daemon.log',
     sessionStore,
     contextFromFlags: () => ({}),
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
-  expect(mockDispatchCommand).toHaveBeenCalledWith(
-    expect.objectContaining({ platform: 'apple' }),
-    'press',
-    ['95', '752'],
-    undefined,
-    expect.any(Object),
+  expect(mockDismissTap).toHaveBeenCalledWith(
+    expect.objectContaining({ point: { x: 95, y: 752 } }),
   );
   expect(response?.ok && response.data).toMatchObject({
     action: 'dismiss-overlay',
@@ -467,7 +449,6 @@ test('react-native dismiss-overlay accepts RedBox control labels with keyboard s
   const sessionName = 'rn-redbox-shortcut-session';
   const sessionStore = makeSessionStore();
   sessionStore.set(sessionName, makeSession(sessionName));
-  mockDispatchCommand.mockResolvedValue({ x: 70, y: 722 });
   mockCaptureSnapshot.mockResolvedValue({
     snapshot: {
       nodes: [
@@ -500,15 +481,12 @@ test('react-native dismiss-overlay accepts RedBox control labels with keyboard s
     logPath: '/tmp/daemon.log',
     sessionStore,
     contextFromFlags: () => ({}),
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
-  expect(mockDispatchCommand).toHaveBeenCalledWith(
-    expect.objectContaining({ platform: 'apple' }),
-    'press',
-    ['70', '722'],
-    undefined,
-    expect.any(Object),
+  expect(mockDismissTap).toHaveBeenCalledWith(
+    expect.objectContaining({ point: { x: 70, y: 722 } }),
   );
   expect(response?.ok && response.data).toMatchObject({
     action: 'dismiss-overlay',
@@ -522,7 +500,6 @@ test('react-native dismiss-overlay prefers concrete RedBox buttons over labeled 
   const sessionName = 'rn-redbox-wrapper-session';
   const sessionStore = makeSessionStore();
   sessionStore.set(sessionName, makeSession(sessionName));
-  mockDispatchCommand.mockResolvedValue({ x: 201, y: 827 });
   mockCaptureSnapshot.mockResolvedValue({
     snapshot: {
       nodes: [
@@ -563,6 +540,7 @@ test('react-native dismiss-overlay prefers concrete RedBox buttons over labeled 
     logPath: '/tmp/daemon.log',
     sessionStore,
     contextFromFlags: () => ({}),
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
@@ -579,7 +557,6 @@ test('react-native dismiss-overlay reports verified success after a clean post-d
   const sessionName = 'rn-verify-session';
   const sessionStore = makeSessionStore();
   sessionStore.set(sessionName, makeSession(sessionName, 'android'));
-  mockDispatchCommand.mockResolvedValue({ x: 105, y: 714 });
   mockCaptureSnapshot
     .mockResolvedValueOnce({
       snapshot: {
@@ -626,6 +603,7 @@ test('react-native dismiss-overlay reports verified success after a clean post-d
     logPath: '/tmp/daemon.log',
     sessionStore,
     contextFromFlags: () => ({}),
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
@@ -689,11 +667,12 @@ test('react-native dismiss-overlay reports sparse verdict instead of no overlay 
     logPath: '/tmp/daemon.log',
     sessionStore,
     contextFromFlags: () => ({}),
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(false);
   expect(session.snapshot).toBe(previousSnapshot);
-  expect(mockDispatchCommand).not.toHaveBeenCalled();
+  expect(mockDismissTap).not.toHaveBeenCalled();
   expect(!response?.ok && response?.error).toMatchObject({
     code: 'COMMAND_FAILED',
     message:
@@ -709,7 +688,6 @@ test('react-native dismiss-overlay reports unverified dismiss when post-dismiss 
   const sessionName = 'rn-verify-sparse-session';
   const sessionStore = makeSessionStore();
   sessionStore.set(sessionName, makeSession(sessionName));
-  mockDispatchCommand.mockResolvedValue({ x: 105, y: 714 });
   mockCaptureSnapshot
     .mockResolvedValueOnce({
       snapshot: {
@@ -761,6 +739,7 @@ test('react-native dismiss-overlay reports unverified dismiss when post-dismiss 
     logPath: '/tmp/daemon.log',
     sessionStore,
     contextFromFlags: () => ({}),
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
@@ -777,7 +756,6 @@ test('react-native dismiss-overlay reports still-visible overlays with recovery 
   const sessionName = 'rn-verify-still-visible-session';
   const sessionStore = makeSessionStore();
   sessionStore.set(sessionName, makeSession(sessionName, 'android'));
-  mockDispatchCommand.mockResolvedValue({ x: 105, y: 714 });
   const overlaySnapshot = {
     snapshot: {
       nodes: [
@@ -811,6 +789,7 @@ test('react-native dismiss-overlay reports still-visible overlays with recovery 
     logPath: '/tmp/daemon.log',
     sessionStore,
     contextFromFlags: () => ({}),
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
@@ -853,10 +832,11 @@ test('react-native dismiss-overlay ignores app copy that only mentions RN overla
     logPath: '/tmp/daemon.log',
     sessionStore,
     contextFromFlags: () => ({}),
+    ...getRuntimeBindings(),
   });
 
   expect(response?.ok).toBe(true);
-  expect(mockDispatchCommand).not.toHaveBeenCalled();
+  expect(mockDismissTap).not.toHaveBeenCalled();
   expect(response?.ok && response.data).toMatchObject({
     action: 'dismiss-overlay',
     detected: false,
@@ -865,7 +845,7 @@ test('react-native dismiss-overlay ignores app copy that only mentions RN overla
 });
 
 function makeSessionStore(): SessionStore {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-rn-handler-'));
+  const root = mkdtempForTestSync('agent-device-rn-handler-');
   return new SessionStore(path.join(root, 'sessions'));
 }
 

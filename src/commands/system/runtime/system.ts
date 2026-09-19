@@ -7,12 +7,12 @@ import type {
   BackendTvRemoteOptions,
 } from '../../../backend.ts';
 import type { CommandContext } from '../../../runtime-contract.ts';
-import type { BackMode } from '@agent-device/contracts/interaction';
-import { parseTvRemoteButton } from '@agent-device/contracts/interaction';
+import type { BackMode } from '@agent-device/contracts/back-mode';
+import { parseTvRemoteButton } from '@agent-device/contracts/tv-remote';
 import { AppError } from '@agent-device/kernel/errors';
-import { successText } from '../../../utils/success-text.ts';
-import { requireIntInRange } from '../../../utils/validation.ts';
-import { isKeyboardAction } from '../../../utils/keyboard-actions.ts';
+import { successText } from '@agent-device/kernel/success-text';
+import { isKeyboardAction } from '@agent-device/session-journal/keyboard-actions';
+import { requireIntInRange } from '@agent-device/kernel/validation';
 import {
   toBackendResult,
   type BackendResultEnvelope,
@@ -413,8 +413,8 @@ function normalizeKeyboardDismissResult(
   };
 }
 
-// Mirrors the CLI/daemon dispatch message (src/core/dispatch.ts) so both
-// public surfaces disclose the same thing (#1598): only a dismiss-key tap is as
+// Shared by the CLI and daemon runtime projections so both public surfaces
+// disclose the same thing (#1598): only a dismiss-key tap is as
 // trustworthy as tapping a real dismiss key, and callers should be able to
 // tell the two apart from the message alone.
 function keyboardDismissMessage(state: BackendKeyboardResult): string {

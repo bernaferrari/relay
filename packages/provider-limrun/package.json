@@ -5,14 +5,18 @@
   "type": "module",
   "description": "Limrun provider runtime for agent-device. Internal workspace package bundled into the published artifact.",
   "dependencies": {
+    "@agent-device/capture-kit": "workspace:*",
     "@agent-device/contracts": "workspace:*",
     "@agent-device/kernel": "workspace:*",
-    "@limrun/api": "^0.24.5"
+    "@agent-device/platform-android": "workspace:*"
   },
   "exports": {
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
     }
+  },
+  "devDependencies": {
+    "@limrun/api": "^0.49.3"
   }
 }

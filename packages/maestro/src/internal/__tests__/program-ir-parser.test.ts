@@ -152,21 +152,6 @@ describe('parseMaestroProgram', () => {
     });
   });
 
-  test('keeps selector-map keys aligned with the supported command subset', () => {
-    const program = parseMaestroProgram(['---', '- tapOn:', '    label: Save'].join('\n'));
-    const tap = commandOfKind(program.commands[0], 'tapOn');
-    assert.deepEqual(tap.target, { space: 'target', selector: { label: 'Save' } });
-
-    assert.throws(
-      () => parseMaestroProgram(['---', '- doubleTapOn:', '    label: Save'].join('\n')),
-      /doubleTapOn field "label" is not supported.*line 3/i,
-    );
-    assert.throws(
-      () => parseMaestroProgram(['---', '- assertVisible:', '    label: Save'].join('\n')),
-      /assertVisible field "label" is not supported.*line 3/i,
-    );
-  });
-
   test('parses optional on assertion and target command maps', () => {
     const program = parseMaestroProgram(
       [
@@ -242,6 +227,69 @@ describe('parseMaestroProgram', () => {
       notVisible: { id: 'gone' },
       optional: true,
     });
+  });
+
+  test('parses assertTrue literal, ${VAR} lookup, and map form with optional/label', () => {
+    const program = parseMaestroProgram(
+      [
+        '---',
+        '- assertTrue: true',
+        '- assertTrue: "false"',
+        '- assertTrue: ${FLAG}',
+        '- assertTrue:',
+        '    condition: "false"',
+        '    optional: true',
+        '    label: Flag check',
+      ].join('\n'),
+    );
+
+    assert.deepEqual(program.commands[0], {
+      kind: 'assertTrue',
+      source: { line: 2 },
+      condition: true,
+    });
+    assert.deepEqual(program.commands[1], {
+      kind: 'assertTrue',
+      source: { line: 3 },
+      condition: 'false',
+    });
+    assert.deepEqual(program.commands[2], {
+      kind: 'assertTrue',
+      source: { line: 4 },
+      condition: '${FLAG}',
+    });
+    assert.deepEqual(program.commands[3], {
+      kind: 'assertTrue',
+      source: { line: 5 },
+      condition: 'false',
+      optional: true,
+      label: 'Flag check',
+    });
+  });
+
+  test('rejects a JS-expression assertTrue condition (only literals and bare ${VAR} lookups are supported)', () => {
+    assert.throws(
+      () => parseMaestroProgram(['---', '- assertTrue: ${1+1}'].join('\n')),
+      /assertTrue.*bare.*lookup.*runScript/is,
+    );
+    assert.throws(
+      () =>
+        parseMaestroProgram(
+          ['---', '- assertTrue:', '    condition: "prefix ${FLAG} suffix"'].join('\n'),
+        ),
+      /assertTrue\.condition.*bare.*lookup.*runScript/is,
+    );
+  });
+
+  test('rejects assertTrue with no condition', () => {
+    assert.throws(
+      () => parseMaestroProgram(['---', '- assertTrue:', '    optional: true'].join('\n')),
+      /assertTrue requires condition/i,
+    );
+    assert.throws(
+      () => parseMaestroProgram(['---', '- assertTrue'].join('\n')),
+      /assertTrue requires condition/i,
+    );
   });
 
   test('rejects selectors that contain only optional and no matching criteria', () => {
@@ -361,6 +409,19 @@ describe('parseMaestroProgram', () => {
     });
   });
 
+  test('parses evalScript as a scalar script string', () => {
+    const program = parseMaestroProgram(['---', '- evalScript: ${output.sum = 1 + 2}'].join('\n'));
+    assert.deepEqual(program.commands[0], {
+      kind: 'evalScript',
+      source: { line: 2 },
+      script: '${output.sum = 1 + 2}',
+    });
+    assert.throws(
+      () => parseMaestroProgram(['---', '- evalScript: [1, 2]'].join('\n')),
+      /evalScript expects a scalar value/i,
+    );
+  });
+
   test('reports source lines for unsupported and invalid command shapes', () => {
     assert.throws(
       () =>
@@ -425,6 +486,27 @@ describe('parseMaestroProgram', () => {
         ),
       /command "pasteText" is not supported.*\/flows\/paste\.yaml:line 2/i,
     );
+  });
+
+  test('parses standalone clearState with an explicit or config app id', () => {
+    const program = parseMaestroProgram(
+      `appId: example.app
+---
+- clearState: example.app
+- clearState
+`,
+      { sourcePath: '/flows/clear.yaml' },
+    );
+
+    assert.deepEqual(program.commands[0], {
+      kind: 'clearState',
+      source: { path: '/flows/clear.yaml', line: 3 },
+      appId: 'example.app',
+    });
+    assert.deepEqual(program.commands[1], {
+      kind: 'clearState',
+      source: { path: '/flows/clear.yaml', line: 4 },
+    });
   });
 
   test('preserves source paths for unsupported and malformed flows', () => {
@@ -503,7 +585,10 @@ describe('parseMaestroProgram', () => {
     assert.equal(waitForAnimationToEnd.timeout, '${ANIM_TIMEOUT}');
 
     const tapOn = commandOfKind(program.commands[3], 'tapOn');
-    assert.equal(tapOn.index, '${INDEX}');
+    assert.equal(
+      tapOn.target.space === 'target' ? tapOn.target.selector.index : undefined,
+      '${INDEX}',
+    );
     assert.equal(tapOn.repeat, '${REPEAT}');
     assert.equal(tapOn.delay, 50);
 

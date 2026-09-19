@@ -1,9 +1,8 @@
 import {
-  buildGesturePlan,
-  GESTURE_SAMPLE_INTERVAL_MS,
   gesturePayloadFromPositionals,
   normalizePublicGesture,
-} from '@agent-device/contracts/interaction';
+} from '@agent-device/contracts/gesture-normalization';
+import { GESTURE_SAMPLE_INTERVAL_MS, buildGesturePlan } from '@agent-device/contracts/gesture-plan';
 import { PUBLIC_PLATFORMS } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
 import fc from 'fast-check';
@@ -13,7 +12,7 @@ import {
   COMPACT_VIEWPORTS,
   gestureInViewportArb,
   PROPERTY_RUNS_SMALL,
-} from '../../__tests__/test-utils/index.ts';
+} from '../../__tests__/test-utils/property-arbitraries.ts';
 import {
   assertAllSamplesInViewport,
   isErrorWithReason,

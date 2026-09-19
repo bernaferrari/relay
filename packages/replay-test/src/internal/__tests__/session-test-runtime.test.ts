@@ -1,16 +1,17 @@
 import fs from 'node:fs';
-import os from 'node:os';
+
 import path from 'node:path';
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { runReplayTestAttempt } from '../session-test-runtime.ts';
 
 import type { ReplayTestAttemptOutcome } from '../session-test-types.ts';
+import { mkdtempForTestSync } from '../../tmp-dir.fixtures.ts';
 
 // What the scheduler owes its host around cancellation (#1478 P3b): cancel exactly once when
 // an attempt times out, and always release when it settles. How the daemon then maps that onto
 // its request registry is the adapter's contract, pinned in
-// `src/daemon/handlers/__tests__/session-replay-cancellation.test.ts`.
+// `src/daemon/replay/internal/__tests__/session-test-suite-command-cancellation.test.ts`.
 const cancellations: Array<{ attemptId: string; canceled: number; released: number }> = [];
 
 function trackCancellation() {
@@ -45,7 +46,7 @@ afterEach(() => {
 });
 
 function makeArtifactsDir(label: string): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), `agent-device-test-runtime-${label}-`));
+  return mkdtempForTestSync(`agent-device-test-runtime-${label}-`);
 }
 
 function readTimingEventTypes(artifactsDir: string): string[] {
@@ -117,6 +118,7 @@ test('runReplayTestAttempt keeps cancellation active until a timed-out replay se
     status: 'failed',
     error: { code: 'COMMAND_FAILED', message: 'request canceled' },
     artifactPaths: [],
+    warnings: [],
     infrastructure: false,
   });
   await replaySettled;
@@ -142,6 +144,7 @@ test('runReplayTestAttempt keeps a passing replay passed when finalization fails
       status: 'failed',
       error: { code: 'COMMAND_FAILED', message: 'failed to stop recording' },
       artifactPaths: [],
+      warnings: [],
       infrastructure: false,
     }),
     cleanupSession,
@@ -152,6 +155,34 @@ test('runReplayTestAttempt keeps a passing replay passed when finalization fails
   if (result.status !== 'passed') throw new Error(result.error.message);
   expect(result.warnings).toEqual(['Replay test finalization failed: failed to stop recording']);
   expect(cleanupSession).toHaveBeenCalledWith('default:test:pass');
+});
+
+test('runReplayTestAttempt marks a failed cleanup as infrastructure so the scheduler cannot retry into its session', async () => {
+  const cleanupSession = vi.fn(async () => {
+    throw new Error('macOS session still owns host-macos-local');
+  });
+
+  const result = await runReplayTestAttempt({
+    filePath: '01-cleanup-failure.ad',
+    sessionName: 'default:test:cleanup-failure',
+    requestId: 'req-cleanup-failure',
+    runReplay: async () => ({
+      status: 'failed',
+      error: { code: 'COMMAND_FAILED', message: 'open "System Settings" failed' },
+      artifactPaths: [],
+      warnings: [],
+      infrastructure: false,
+    }),
+    cleanupSession,
+    ...trackCancellation(),
+  });
+
+  expect(result.status).toBe('failed');
+  if (result.status === 'failed') {
+    expect(result.error.message).toBe('open "System Settings" failed');
+    expect(result.infrastructure).toBe(true);
+  }
+  expect(cleanupSession).toHaveBeenCalledWith('default:test:cleanup-failure');
 });
 
 // #1478 P3 characterization: attempt finalization happens before cleanup, always, and the

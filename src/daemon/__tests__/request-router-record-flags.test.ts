@@ -1,3 +1,4 @@
+import { createTestDeviceInventoryGateways } from '../../__tests__/test-utils/device-inventory-gateways.ts';
 /**
  * #1271 stage 2 (ADR 0012 amendment): `--record` and `--no-record` express
  * opposite recording intents for the same action, so both together is
@@ -7,17 +8,19 @@
  */
 import { test, expect } from 'vitest';
 import path from 'node:path';
-import os from 'node:os';
-import { createRequestHandler } from '../request-router.ts';
+
+import { createRequestHandler } from './test-device-runtime-gateway.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 
 function createHandler() {
   return createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
     token: 'test-token',
     sessionStore: makeSessionStore('agent-device-router-record-flags-'),
     leaseRegistry: new LeaseRegistry(),
+    deviceInventoryGateways: createTestDeviceInventoryGateways(),
     trackDownloadableArtifact: () => 'artifact-id',
   });
 }

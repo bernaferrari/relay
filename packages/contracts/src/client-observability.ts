@@ -8,7 +8,8 @@ import type { NetworkIncludeMode } from '@agent-device/kernel/contracts';
 import type { AgentDeviceRequestOverrides, DeviceCommandBaseOptions } from './client-connection.ts';
 
 export type PerfOptions = DeviceCommandBaseOptions & {
-  area?: PerfArea;
+  /** Select focused performance evidence. */
+  area: PerfArea;
   subject?: PerfSubject;
   action?: PerfAction;
   kind?: PerfKind;
@@ -45,7 +46,6 @@ export type RecordOptions = AgentDeviceRequestOverrides & {
   action: 'start' | 'stop';
   path?: string;
   fps?: number;
-  maxSize?: number;
   quality?: RecordingExportQuality;
   hideTouches?: boolean;
   recordingScope?: RecordingScope;

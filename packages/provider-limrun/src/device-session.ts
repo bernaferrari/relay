@@ -1,4 +1,4 @@
-import type { Interactor } from '@agent-device/contracts/interaction';
+import type { Interactor } from '@agent-device/contracts/interactor-types';
 import { resolveAppsFilter, type AppsFilter } from '@agent-device/contracts/device';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import type {
@@ -70,7 +70,7 @@ type LimrunRecordingClient = {
 export type LimrunAndroidDeviceSession = LimrunDeviceSessionBase & {
   readonly platform: 'android';
   readonly adb: LimrunAdbProvider;
-  getForegroundApp(): Promise<LimrunForegroundApp | undefined>;
+  getForegroundApp(signal?: AbortSignal): Promise<LimrunForegroundApp | undefined>;
   getKeyboardState(): Promise<LimrunAndroidKeyboardState>;
   dismissKeyboard(): Promise<LimrunAndroidKeyboardDismissResult>;
   readLogs(lineLimit: number): Promise<string>;
@@ -107,7 +107,8 @@ function createAndroidDeviceSession(session: LimrunAndroidSession): LimrunAndroi
     adb: session.adbProvider,
     listApps: async (filter) =>
       await session.dependencies.android.listApps(adb, resolveAppsFilter(filter)),
-    getForegroundApp: async () => await session.dependencies.android.getForegroundApp(adb),
+    getForegroundApp: async (signal) =>
+      await session.dependencies.android.getForegroundApp(session.device, adb, signal),
     pressKey: async (key, modifiers) => {
       await session.client.pressKey(key, modifiers);
     },

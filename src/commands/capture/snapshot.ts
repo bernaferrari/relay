@@ -1,7 +1,11 @@
-import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
-import { SNAPSHOT_FLAGS } from '../cli-grammar/flag-groups.ts';
-import { booleanField, integerField, stringField } from '../command-input.ts';
-import { defineExecutableCommand } from '../command-contract.ts';
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
+import { SNAPSHOT_BACKEND_CAPABILITIES } from '@agent-device/capture-kit/snapshot-quality-backend-capabilities';
+import {
+  SNAPSHOT_COMMAND_OPTION_KEYS,
+  snapshotOptionsFromFlags,
+} from '@agent-device/kernel/snapshot';
+import { SNAPSHOT_FLAGS } from '@agent-device/command-registry/flag-groups';
+import { booleanField, integerField, optionField, stringField } from '../command-input.ts';
 import {
   commonInputFromFlags,
   direct,
@@ -14,7 +18,15 @@ import { captureCliOutputFormatters } from './output.ts';
 
 const SNAPSHOT_COMMAND_NAME = 'snapshot';
 
-const snapshotCommandDescription = 'Capture an accessibility snapshot.';
+const snapshotCommandDescription =
+  'Capture the accessibility tree or compare it with the previous session baseline. Use the returned refs for subsequent semantic interactions and the diff option to verify UI changes.';
+
+const snapshotBackendCapabilityHelp = Object.entries(SNAPSHOT_BACKEND_CAPABILITIES)
+  .map(([backend, capability]) => {
+    const gaps = capability.knownGaps.map((gap) => `known gap ${gap}`);
+    return `${backend}: hittable=${capability.hittable}, regular-depth=${capability.regularDepth}, deep-extension=${capability.deepExtension}, depth-ladder=${capability.depthLadder}${gaps.length > 0 ? `, ${gaps.join(', ')}` : ''}`;
+  })
+  .join('; ');
 
 const snapshotCommandMetadata = defineFieldCommandMetadata(
   SNAPSHOT_COMMAND_NAME,
@@ -24,6 +36,7 @@ const snapshotCommandMetadata = defineFieldCommandMetadata(
     depth: integerField(),
     scope: stringField(),
     raw: booleanField(),
+    customActions: optionField('snapshotCustomActions'),
     forceFull: booleanField(),
     timeoutMs: integerField('Maximum wall-clock time for the snapshot command.'),
     // #1271 stage 2: `snapshot` is observation-only, so a repair-armed heal
@@ -37,28 +50,21 @@ const snapshotCommandMetadata = defineFieldCommandMetadata(
   },
 );
 
-const snapshotCommandDefinition = defineExecutableCommand(
-  snapshotCommandMetadata,
-  (client, input) => client.capture.snapshot(input),
-);
-
 const snapshotCliSchema = {
-  usageOverride:
-    'snapshot [--diff] [-i] [-d <depth>] [-s <scope>] [--raw] [--force-full] [--timeout <ms>]',
-  helpDescription:
-    'Capture accessibility tree or diff against the previous session baseline. For iOS raw-coordinate fallback after a no-op ref press, inspect rects with snapshot -i --json, press the rect center, then verify with diff snapshot -i or snapshot --diff.',
-  summary: 'Capture accessibility tree or diff against the previous session baseline',
-  allowedFlags: ['snapshotDiff', ...SNAPSHOT_FLAGS, 'snapshotForceFull', 'timeoutMs', 'record'],
+  allowedFlags: [
+    'snapshotDiff',
+    ...SNAPSHOT_FLAGS,
+    'snapshotCustomActions',
+    'snapshotForceFull',
+    'timeoutMs',
+    'record',
+  ],
 } as const;
 
 export const snapshotCliReader: CliReader = (_positionals, flags) => ({
   ...commonInputFromFlags(flags),
   ...observationRecordInputFromFlags(flags),
-  interactiveOnly: flags.snapshotInteractiveOnly,
-  depth: flags.snapshotDepth,
-  scope: flags.snapshotScope,
-  raw: flags.snapshotRaw,
-  forceFull: flags.snapshotForceFull,
+  ...snapshotOptionsFromFlags(flags, SNAPSHOT_COMMAND_OPTION_KEYS),
   timeoutMs: flags.timeoutMs,
 });
 
@@ -66,8 +72,12 @@ const snapshotDaemonWriter: DaemonWriter = direct(PUBLIC_COMMANDS.snapshot);
 
 export const snapshotCommandFacet = defineCommandFacet({
   name: SNAPSHOT_COMMAND_NAME,
+  text: {
+    summary: 'Capture or diff the accessibility tree',
+    cliDetail: `Repeated equivalent unfiltered Android snapshots return a compact unchanged acknowledgement. Use --force-full to re-emit the tree; --json and --raw retain full output. For iOS raw-coordinate fallback after a no-op ref press, inspect rects with snapshot -i --json, press the rect center, then verify with diff snapshot -i or snapshot --diff. iOS backend capability contract: ${snapshotBackendCapabilityHelp}.`,
+  },
   metadata: snapshotCommandMetadata,
-  definition: snapshotCommandDefinition,
+  run: (client, input) => client.capture.snapshot(input),
   cliSchema: snapshotCliSchema,
   cliReader: snapshotCliReader,
   daemonWriter: snapshotDaemonWriter,

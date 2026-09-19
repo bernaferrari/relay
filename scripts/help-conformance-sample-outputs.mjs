@@ -3,7 +3,7 @@
 // exact text the CLI would print for it. Every `output` is pinned to the real
 // renderer by scripts/__tests__/help-conformance-sample-outputs.test.ts, which
 // rebuilds it through src/commands/interaction/output.ts or
-// src/utils/output.ts printHumanError — a rendering change fails that test
+// src/commands/output/error.ts printHumanError — a rendering change fails that test
 // instead of silently leaving the benchmark grading against stale output.
 
 export function sampleText(sample) {
@@ -44,6 +44,24 @@ settled after 480ms: +2 -0 (~11 unchanged)
 + @e22 [text] "3 items"`,
 };
 
+// Visible-first snapshot of a scrollable list whose remaining rows sit below
+// the viewport: the off-screen content is summarized, not listed as refs. The
+// scroll-to-find quiz case hangs off this — the wanted row exists but no ref
+// for it appears anywhere in the output.
+export const OFFSCREEN_TARGET_SNAPSHOT_SAMPLE = {
+  command: 'agent-device snapshot -i',
+  output: `Snapshot: 8 visible nodes (12 total)
+@e1 [application] "Preferences"
+@e2 [window]
+@e3 [collection]
+@e4 [cell] "General"
+@e5 [cell] "Display"
+@e6 [cell] "Sounds"
+@e7 [cell] "Focus"
+@e8 [cell] "Screen Time"
+  [content below collection hidden]`,
+};
+
 // Never-settled press: success response, no diff, NEVER_SETTLED_HINT attached.
 export const NOT_SETTLED_SAMPLE = {
   command: 'agent-device press @e12 --settle',
@@ -54,8 +72,8 @@ hint: The UI kept changing for the whole settle budget (animation, carousel, or 
 
 // Recovered snapshot: the private-ax fallback fired but still exposed
 // actionable refs. Warning wording is renderSnapshotQualityWarnings
-// (src/snapshot/snapshot-quality.ts); lines are the structured snapshot
-// renderer (src/utils/output.ts formatSnapshotText).
+// (packages/capture-kit/src/snapshot/snapshot-presentation/quality-warnings.ts); lines are the structured snapshot
+// renderer (src/commands/output/snapshot.ts formatSnapshotText).
 export const PRIVATE_AX_RECOVERY_SAMPLE = {
   command: 'agent-device snapshot -i',
   output: `Snapshot: 2 nodes
@@ -65,16 +83,24 @@ Detected an overly complex or slow accessibility tree. Fell back to the private-
 };
 
 // DEVICE_IN_USE from buildDeviceInUseBySessionError
-// (src/daemon/handlers/session-open.ts) — the parity test drives that exact
-// producer.
+// (src/daemon/session-recovery-hints.ts) — the parity test drives that exact producer.
 export const DEVICE_IN_USE_SAMPLE = {
   command: `agent-device press 'label="Place order"' --settle`,
   output: `Error (DEVICE_IN_USE): Device is already in use by session "checkout".
 Hint: Run agent-device session list to inspect active sessions. To reuse this device, rerun the command with --session checkout. To open a new session on this device, first run agent-device close --session checkout.`,
 };
 
+// Enforced cross-daemon device claim conflict from
+// src/daemon/device-claim-conflict.ts. This path is deliberately non-retriable:
+// the exact status command is the only safe next step while ownership is live.
+export const DEVICE_CLAIM_IN_USE_SAMPLE = {
+  command: 'agent-device open Demo --platform android --serial emulator-5554',
+  output: `Error (DEVICE_IN_USE): android device emulator-5554 is owned by session "checkout" in workspace "/worktrees/checkout".
+Hint: Inspect the owner with: agent-device device status --platform android --serial emulator-5554`,
+};
+
 // ADR 0014 mutation rejection from
-// src/daemon/handlers/interaction-ref-policy.ts: a pinned ref minted from a
+// src/daemon/interaction/index.ts: a pinned ref minted from a
 // superseded generation is rejected before dispatch. The daemon strips the
 // `~s5` pin at the boundary (interaction-touch-targets.ts), so the message
 // names the plain ref; the hint is the precise resolveRefStalenessWarning.
@@ -84,12 +110,11 @@ export const STALE_REF_SAMPLE = {
 Hint: Ref @e12 was minted from snapshot s5 but the session's ref frame is now s7 — re-run snapshot -i.`,
 };
 
-// AMBIGUOUS_MATCH from buildAmbiguousMatchError (src/daemon/handlers/find.ts)
+// AMBIGUOUS_MATCH from buildAmbiguousMatchError (src/daemon/selector-match-errors.ts)
 // — the parity test drives that exact producer. The by-design rejection
 // instead of silent disambiguation: #1597 made the candidate refs (ref, role,
 // label/identifier — the same compact rendering as snapshot -i) print
-// unconditionally via formatAmbiguousMatchCandidateLines
-// (src/utils/output.ts), capped at AMBIGUOUS_MATCH_CANDIDATE_LIMIT (5) with a
+// unconditionally by the output owners, capped at AMBIGUOUS_MATCH_CANDIDATE_LIMIT (5) with a
 // "+N more" marker. Here all 3 candidates share the identical "Follow" label,
 // so the printed refs still cannot be told apart from this output alone —
 // the agent must re-observe or narrow, not guess which @ref is the right row.
@@ -104,7 +129,7 @@ Candidates:
 };
 
 // APP_NOT_INSTALLED from buildAppNotInstalledError
-// (src/platforms/apple/core/app-resolution.ts) — the parity test drives that
+// (packages/platform-apple/src/core/app-resolution.ts) — the parity test drives that
 // exact producer; the hint is defaultHintForCode('APP_NOT_INSTALLED').
 export const APP_NOT_INSTALLED_SAMPLE = {
   command: 'agent-device open Shoply --platform ios',
@@ -125,7 +150,31 @@ Device: Google Pixel 8 (android 14.0) — verified
 App: sample.apk — verified
 No live device session has been created. The first device command shown below will allocate one.
 Next:
-  agent-device open <package-id> --relaunch
+  agent-device open <package-id> --relaunch --session adc-browserstack
 Use the installed package or bundle identifier in open, not the app artifact name.
-After close, run agent-device artifacts --json for provider video and logs.`,
+After close, run agent-device artifacts --json --session adc-browserstack for provider video and logs.`,
+};
+
+// open --foreground succeeded, but its composed snapshot failed. The session
+// remains usable, so recovery is snapshot -i rather than a second open.
+export const FOREGROUND_SNAPSHOT_FAILURE_SAMPLE = {
+  command: 'agent-device open --foreground',
+  output: `Opened: default
+Warning: The session is open, but the initial interactive snapshot failed (COMMAND_FAILED: capture failed). Run: agent-device snapshot -i`,
+};
+
+// Merged feed-item card on iOS (#1665): the row itself is the only ref — its
+// Reply/Repost/menu controls have no separate child nodes in the tree, so
+// snapshot -i alone would show a plain link with no way to act on it.
+// snapshot -i --actions names the hidden affordances instead of hiding them
+// silently; the names are destination hints, never directly invokable. The
+// parent ref reaches the detail screen, whose settled diff reveals the child
+// control. Coordinates remain the last resort.
+export const MERGED_CARD_ACTIONS_SAMPLE = {
+  command: 'agent-device snapshot -i --actions',
+  output: `Snapshot: 4 nodes
+@e1 [application] "Bluesky"
+@e2 [window]
+@e3 [collection]
+@e72 [link] "feedItem-by-whiskers.test" actions: ["Reply", "Repost", "Open post options menu"]`,
 };

@@ -1,4 +1,4 @@
-import { redactDiagnosticData } from './redaction.ts';
+import { redactDiagnosticData, sanitizeErrorCause as normalizeErrorCause } from './redaction.ts';
 
 /**
  * The known error codes as a value, so gates can enumerate them: every code
@@ -45,13 +45,31 @@ export function toAppErrorCode(
 }
 
 /**
+ * Locator for one request's diagnostics record on the daemon host, in the
+ * daemon's own vocabulary rather than as a filesystem path: `logPath` names
+ * that same record as a path, which only a caller on the daemon host can read.
+ * A remote caller fetches the record by this locator instead
+ * (`GET /sessions/<session>/requests/<requestId>/diagnostics`).
+ */
+export type DiagnosticsRecordRef = {
+  session: string;
+  requestId: string;
+};
+
+export type ErrorCause = {
+  message: string;
+  code?: string;
+};
+
+/**
  * Details bag for AppError. Free-form context is allowed, but these keys carry
  * meaning at normalize/render time and must keep their types:
  * - `hint` — overrides `defaultHintForCode`; re-wraps preserve an existing hint.
- * - `diagnosticId` / `logPath` — lifted onto the normalized error, stripped from details.
+ * - `diagnosticId` / `logPath` / `logPathUnavailable` / `diagnosticsRecord` —
+ *   lifted onto the normalized error, stripped from details.
  * - `processExitError` + `stdout`/`stderr`/`exitCode` — marks a wrap of a real
  *   process exit so normalizeError can surface the first meaningful stderr line;
- *   build these via `execFailureDetails`/`requireExecSuccess` in src/utils/exec.ts
+ *   build these via `execFailureDetails`/`requireExecSuccess` in @agent-device/host-kit/command
  *   rather than by hand.
  * - `retriable` — typed retry signal hoisted to the wire error shape.
  * - `reason` — machine-dispatchable sub-classification within a code.
@@ -60,6 +78,8 @@ export type AppErrorDetails = Record<string, unknown> & {
   hint?: string;
   diagnosticId?: string;
   logPath?: string;
+  logPathUnavailable?: string;
+  diagnosticsRecord?: DiagnosticsRecordRef;
   retriable?: boolean;
   supportedOn?: string;
   processExitError?: boolean;
@@ -73,9 +93,25 @@ export type AppErrorDetails = Record<string, unknown> & {
 export type NormalizedError = {
   code: string;
   message: string;
+  cause?: ErrorCause;
   hint?: string;
   diagnosticId?: string;
+  /**
+   * Diagnostics record path **the reader of this error can open**. A daemon
+   * renders its own host path here; a client talking to a REMOTE daemon
+   * replaces it with the caller-local copy it fetched, or drops it and sets
+   * `logPathUnavailable` (see `localizeRemoteDaemonError`). A path the reader
+   * cannot open never belongs in this field (#1801).
+   */
   logPath?: string;
+  /**
+   * Why no readable `logPath` could be produced, e.g.
+   * `remote daemon https://host, request 8f2c: 404`. Set only in place of
+   * `logPath`, and never carries a daemon-host path.
+   */
+  logPathUnavailable?: string;
+  /** Locator the record can be fetched by when it lives on a remote daemon. */
+  diagnosticsRecord?: DiagnosticsRecordRef;
   /**
    * Lifted from `details.retriable` when a throw site classified the failure as
    * clearly transient (or clearly not). Included only when set, so the default
@@ -86,6 +122,62 @@ export type NormalizedError = {
   details?: Record<string, unknown>;
 };
 
+export type ElementMatchCandidateDetails = {
+  candidates: string[];
+  matches: number;
+  refsGeneration?: number;
+};
+
+export type ErrorCandidateView =
+  | (ElementMatchCandidateDetails & { kind: 'element-match' })
+  | { kind: 'device'; devices: Array<{ id: string; name: string }> };
+
+export function readErrorCandidateViews(
+  details: Record<string, unknown> | undefined,
+): ErrorCandidateView[] {
+  const candidates = readStringArray(details?.candidates);
+  const views: ErrorCandidateView[] = [];
+  if (candidates.length > 0) {
+    const matches = typeof details?.matches === 'number' ? details.matches : candidates.length;
+    const refsGeneration =
+      typeof details?.refsGeneration === 'number' ? details.refsGeneration : undefined;
+    views.push({
+      kind: 'element-match',
+      candidates,
+      matches,
+      ...(refsGeneration !== undefined ? { refsGeneration } : {}),
+    });
+  }
+  const devices = readDeviceList(details?.devices);
+  if (devices.length > 0) views.push({ kind: 'device', devices });
+  return views;
+}
+
+export function readElementMatchCandidateRefs(
+  details: Record<string, unknown> | undefined,
+): string[] {
+  return readStringArray(details?.candidates).flatMap((candidate) => {
+    const match = /^@(e\d+)(?:~s\d+)?(?:\s|$)/.exec(candidate);
+    return match?.[1] ? [match[1]] : [];
+  });
+}
+
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === 'string');
+}
+
+function readDeviceList(value: unknown): Array<{ id: string; name: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (entry): entry is { id: string; name: string } =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      typeof (entry as { id?: unknown }).id === 'string' &&
+      typeof (entry as { name?: unknown }).name === 'string',
+  );
+}
+
 /**
  * Error payload returned by the daemon transport. It is kept beside the local
  * error representation because clients immediately rehydrate this wire shape
@@ -94,9 +186,19 @@ export type NormalizedError = {
 export type DaemonError = {
   code: string;
   message: string;
+  cause?: ErrorCause;
   hint?: string;
   diagnosticId?: string;
+  /** Path on the DAEMON host. Meaningful to a local caller only (#1801). */
   logPath?: string;
+  /** Why no readable path is named; set by the client, never by the daemon. */
+  logPathUnavailable?: string;
+  /**
+   * Additive locator (#1801) for the request diagnostics record `logPath`
+   * names, so a remote caller can fetch it over the daemon API instead of
+   * being handed a path on a filesystem it cannot read.
+   */
+  diagnosticsRecord?: DiagnosticsRecordRef;
   details?: Record<string, unknown>;
   /** Additive retry and platform-support signals; absent when not derivable. */
   retriable?: boolean;
@@ -118,14 +220,69 @@ export class AppError extends Error {
 
 /** Rehydrate a daemon transport error into the error type used by local callers. */
 export function throwDaemonError(error: DaemonError): never {
-  throw new AppError(toAppErrorCode(error.code), error.message, {
-    ...(error.details ?? {}),
-    hint: error.hint,
-    diagnosticId: error.diagnosticId,
-    logPath: error.logPath,
-    retriable: error.retriable,
-    supportedOn: error.supportedOn,
-  });
+  throw new AppError(
+    toAppErrorCode(error.code),
+    error.message,
+    {
+      ...(error.details ?? {}),
+      hint: error.hint,
+      diagnosticId: error.diagnosticId,
+      logPath: error.logPath,
+      logPathUnavailable: error.logPathUnavailable,
+      diagnosticsRecord: error.diagnosticsRecord,
+      retriable: error.retriable,
+      supportedOn: error.supportedOn,
+    },
+    error.cause,
+  );
+}
+
+/**
+ * `details.reason` of a request its requester abandoned — an explicit cancel or
+ * a client disconnect. One definition, so every layer that must let a
+ * cancellation through untouched (retry loops, provider adapters, runner
+ * transports) dispatches on the same typed reason.
+ */
+const REQUEST_CANCELED_REASON = 'request_canceled';
+const REQUEST_CANCELED_MESSAGE = 'request canceled';
+const REQUEST_CANCELED_HINT =
+  'The request was canceled intentionally (explicit cancel or client disconnect) — no retry is needed unless the cancellation was unintended.';
+
+/**
+ * The canceled-request error. `details` may add evidence (what was released,
+ * which command was interrupted) or override the hint; the reason itself is
+ * not overridable, so a caller cannot build one this predicate misses.
+ */
+export function createRequestCanceledError(details?: AppErrorDetails, cause?: unknown): AppError {
+  return new AppError(
+    'COMMAND_FAILED',
+    REQUEST_CANCELED_MESSAGE,
+    { hint: REQUEST_CANCELED_HINT, ...details, reason: REQUEST_CANCELED_REASON },
+    cause,
+  );
+}
+
+/**
+ * The typed reason of a canceled request, for a caller holding the details rather than the error:
+ * a rule table that matches on details needs the same fact {@link isRequestCanceledError} reads, and
+ * must not restate the literal.
+ */
+export function isRequestCanceledDetails(details: AppErrorDetails | undefined): boolean {
+  return details?.reason === REQUEST_CANCELED_REASON;
+}
+
+export function isRequestCanceledError(error: unknown): boolean {
+  if (!(error instanceof AppError)) return false;
+  if (error.code !== 'COMMAND_FAILED') return false;
+  if (isRequestCanceledDetails(error.details)) return true;
+  // Owned debt: canceled errors that crossed a wire without their details keep
+  // the message; do not add new message sniffs beside it.
+  return error.message === REQUEST_CANCELED_MESSAGE;
+}
+
+/** The message of whatever was thrown, for diagnostics that must not themselves throw. */
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function asAppError(err: unknown, fallbackCode: AppErrorCode = 'UNKNOWN'): AppError {
@@ -140,33 +297,43 @@ export function isAgentDeviceError(err: unknown): err is AppError {
   return err instanceof AppError;
 }
 
+export type NormalizeErrorContext = {
+  diagnosticId?: string;
+  logPath?: string;
+  diagnosticsRecord?: DiagnosticsRecordRef;
+};
+
 export function normalizeAgentDeviceError(
   err: unknown,
-  context: { diagnosticId?: string; logPath?: string } = {},
+  context: NormalizeErrorContext = {},
 ): NormalizedError {
   return normalizeError(err, context);
 }
 
-export function normalizeError(
-  err: unknown,
-  context: { diagnosticId?: string; logPath?: string } = {},
-): NormalizedError {
+export function normalizeError(err: unknown, context: NormalizeErrorContext = {}): NormalizedError {
   const appErr = asAppError(err);
   const details = appErr.details ? redactDiagnosticData(appErr.details) : undefined;
   const diagnosticId = stringDetail(details, 'diagnosticId') ?? context.diagnosticId;
   const logPath = stringDetail(details, 'logPath') ?? context.logPath;
+  const logPathUnavailable = stringDetail(details, 'logPathUnavailable');
+  const diagnosticsRecord =
+    readDiagnosticsRecordRef(details?.diagnosticsRecord) ?? context.diagnosticsRecord;
   const hint = stringDetail(details, 'hint') ?? defaultHintForCode(appErr.code);
   const retriable = booleanDetail(details, 'retriable') ?? retriableForErrorCode(appErr.code);
   const supportedOn = stringDetail(details, 'supportedOn');
   const cleanDetails = stripDiagnosticMeta(details);
   const message = maybeEnrichCommandFailedMessage(appErr.code, appErr.message, details);
+  const cause = normalizeErrorCause(appErr.cause);
 
   return {
     code: appErr.code,
     message,
+    ...(cause !== undefined ? { cause } : {}),
     hint,
     diagnosticId,
     logPath,
+    ...(logPathUnavailable !== undefined ? { logPathUnavailable } : {}),
+    ...(diagnosticsRecord !== undefined ? { diagnosticsRecord } : {}),
     // Typed-error signals stay absent unless confidently known (#939 wire shape).
     ...(retriable !== undefined ? { retriable } : {}),
     ...(supportedOn !== undefined ? { supportedOn } : {}),
@@ -226,6 +393,19 @@ function stringDetail(
   return typeof value === 'string' ? value : undefined;
 }
 
+/**
+ * Narrows an untrusted `diagnosticsRecord` — off the wire or out of a details
+ * bag — to the locator type, or `undefined`. One reader, so a daemon payload
+ * and a details bag can never be accepted on different terms.
+ */
+export function readDiagnosticsRecordRef(value: unknown): DiagnosticsRecordRef | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const { session, requestId } = value as Partial<DiagnosticsRecordRef>;
+  if (typeof session !== 'string' || typeof requestId !== 'string') return undefined;
+  if (session.length === 0 || requestId.length === 0) return undefined;
+  return { session, requestId };
+}
+
 function booleanDetail(
   details: Record<string, unknown> | undefined,
   key: string,
@@ -242,6 +422,8 @@ function stripDiagnosticMeta(
   delete output.hint;
   delete output.diagnosticId;
   delete output.logPath;
+  delete output.logPathUnavailable;
+  delete output.diagnosticsRecord;
   delete output.retriable;
   delete output.supportedOn;
   return Object.keys(output).length > 0 ? output : undefined;

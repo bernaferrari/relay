@@ -1,8 +1,8 @@
 import type { SnapshotState } from '@agent-device/kernel/snapshot';
-import { readSessionRuntimeRevision } from './ref-frame.ts';
+import { readSessionRuntimeRevision, refFrame } from './ref-frame.ts';
+import type { RefFrame } from './ref-frame-slot.ts';
 import { markSessionPartialRefsIssued, setSessionSnapshot } from './session-snapshot.ts';
-import { SessionStore } from './session-store.ts';
-import type { SessionState } from './types.ts';
+import type { SessionState } from './session-state.ts';
 
 declare const INTERNAL_OBSERVATION_EVIDENCE: unique symbol;
 
@@ -14,13 +14,6 @@ export type InternalObservationEvidence = {
   readonly [INTERNAL_OBSERVATION_EVIDENCE]: true;
 };
 
-type RefFrameLineage = Readonly<{
-  state: SessionState['refFrameState'];
-  scope: SessionState['refFrameScope'];
-  tree: SessionState['refFrameTree'];
-  generation: SessionState['refFrameGeneration'];
-}>;
-
 type InternalObservationLineage = Readonly<{
   sessionName: string;
   session: SessionState;
@@ -28,7 +21,7 @@ type InternalObservationLineage = Readonly<{
   snapshot: SnapshotState;
   snapshotGeneration: number;
   runtimeRevision: number;
-  refFrame: RefFrameLineage;
+  refFrame: RefFrame;
 }>;
 
 const evidenceLineage = new WeakMap<object, InternalObservationLineage>();
@@ -59,9 +52,14 @@ type InternalObservationAuthority = Readonly<{
 }>;
 
 type BoundInternalObservationSession = Readonly<{
-  sessionStore: SessionStore;
+  sessionStore: InternalObservationSessionStore;
   sessionName: string;
   signal?: AbortSignal;
+}>;
+
+type InternalObservationSessionStore = Readonly<{
+  get: () => SessionState | undefined;
+  update: (mutate: (session: SessionState) => void) => boolean;
 }>;
 
 /**
@@ -92,12 +90,17 @@ function storeInternalObservation(
   snapshot: SnapshotState,
 ): StoredInternalObservation {
   const { sessionStore, sessionName } = params;
-  const session = sessionStore.get(sessionName);
-  if (!session) {
+  let storedSession: SessionState | undefined;
+  if (
+    !sessionStore.update((session) => {
+      setSessionSnapshot(session, snapshot);
+      storedSession = session;
+    }) ||
+    !storedSession
+  ) {
     throw new Error('Internal observation session is no longer available.');
   }
-  setSessionSnapshot(session, snapshot);
-  sessionStore.set(sessionName, session);
+  const session = storedSession;
   const snapshotGeneration = session.snapshotGeneration;
   if (snapshotGeneration === undefined) {
     throw new Error('Internal observation did not establish a snapshot generation.');
@@ -111,7 +114,7 @@ function storeInternalObservation(
     snapshot,
     snapshotGeneration,
     runtimeRevision: readSessionRuntimeRevision(session),
-    refFrame: readRefFrameLineage(session),
+    refFrame: refFrame(session),
   });
   return { evidence, refsGeneration: snapshotGeneration };
 }
@@ -125,7 +128,7 @@ function storeInternalObservation(
  * before the response returns to the client.
  */
 function finalizeClientRefPublication(params: {
-  sessionStore: SessionStore;
+  sessionStore: InternalObservationSessionStore;
   sessionName: string;
   evidence: InternalObservationEvidence;
   projection: ClientRefPublicationProjection;
@@ -162,7 +165,7 @@ function isCurrentLineage(
   params: Pick<BoundInternalObservationSession, 'sessionStore' | 'sessionName'>,
   lineage: InternalObservationLineage,
 ): boolean {
-  const current = params.sessionStore.get(params.sessionName);
+  const current = params.sessionStore.get();
   return (
     params.sessionName === lineage.sessionName &&
     current === lineage.session &&
@@ -170,25 +173,7 @@ function isCurrentLineage(
     current.snapshot === lineage.snapshot &&
     current.snapshotGeneration === lineage.snapshotGeneration &&
     readSessionRuntimeRevision(current) === lineage.runtimeRevision &&
-    sameRefFrameLineage(readRefFrameLineage(current), lineage.refFrame)
-  );
-}
-
-function readRefFrameLineage(session: SessionState): RefFrameLineage {
-  return {
-    state: session.refFrameState,
-    scope: session.refFrameScope,
-    tree: session.refFrameTree,
-    generation: session.refFrameGeneration,
-  };
-}
-
-function sameRefFrameLineage(left: RefFrameLineage, right: RefFrameLineage): boolean {
-  return (
-    left.state === right.state &&
-    left.scope === right.scope &&
-    left.tree === right.tree &&
-    left.generation === right.generation
+    refFrame(current) === lineage.refFrame
   );
 }
 

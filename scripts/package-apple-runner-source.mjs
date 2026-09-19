@@ -2,10 +2,22 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stripSwiftComments } from './strip-swift-comments.mjs';
 
 const UNIT_TEST_CONDITION = 'AGENT_DEVICE_RUNNER_UNIT_TESTS';
 const SOURCE_DIR = path.join('apple', 'runner');
 const OUTPUT_DIR = path.join('dist', 'apple', 'runner');
+const SNAPSHOT_PRESENTATION_SOURCE_DIR = path.join('apple', 'snapshot-presentation');
+const SNAPSHOT_PRESENTATION_OUTPUT_DIR = path.join('dist', 'apple', 'snapshot-presentation');
+const SNAPSHOT_PRESENTATION_RUNNER_MANIFEST = 'Package.runner.swift';
+const SNAPSHOT_PRESENTATION_DEVELOPMENT_DIR_NAMES = new Set([
+  'Tests',
+  'SnapshotPresentationConformance',
+  '.build',
+  '.swiftpm',
+  'UnitTests',
+  'xcuserdata',
+]);
 // Packaged-runner locations from before the apple-runner/ -> apple/runner/ move. `dist` ships
 // wholesale, so a stale tree left by an older build/checkout would double-ship into the npm
 // package (and inflate the bundle-size diff, which packages the base then the PR into one dist).
@@ -14,7 +26,7 @@ const LEGACY_OUTPUT_DIRS = [
   path.join('dist', 'apple-runner'),
   path.join('dist', 'apple', 'apple-runner'),
 ];
-const SKIPPED_DIR_NAMES = new Set(['.build', '.swiftpm', 'xcuserdata']);
+const SKIPPED_DIR_NAMES = new Set(['.build', '.swiftpm', 'UnitTests', 'xcuserdata']);
 const SKIPPED_ROOT_FILES = new Set(['README.md', 'RUNNER_PROTOCOL.md']);
 // XCTest discovers instance methods named test*; anything matching this that survives stripping
 // would ship to (and compile on) every user's machine. Only the runner's command-loop entrypoint
@@ -35,19 +47,57 @@ function packageAppleRunnerSource(options = {}) {
     throw new Error(`Apple runner source not found at ${sourceRoot}`);
   }
 
-  fs.rmSync(outputRoot, { recursive: true, force: true });
-  for (const legacyDir of LEGACY_OUTPUT_DIRS) {
-    fs.rmSync(path.join(root, legacyDir), { recursive: true, force: true });
-  }
+  prepareOutput(root, outputRoot, options.checkOnly);
   const summary = {
     outputRoot,
     copiedFiles: 0,
     strippedFiles: 0,
     strippedBlocks: 0,
+    strippedComments: 0,
+    strippedCommentBytes: 0,
   };
 
-  copyDirectory(sourceRoot, outputRoot, '', summary);
+  processDirectory(sourceRoot, options.checkOnly ? undefined : outputRoot, '', summary);
+  packageSnapshotPresentationSource(root, options, summary);
   return summary;
+}
+
+function packageSnapshotPresentationSource(root, options, summary) {
+  const sourceRoot = path.join(root, SNAPSHOT_PRESENTATION_SOURCE_DIR);
+  if (!fs.existsSync(sourceRoot)) {
+    throw new Error(`Apple snapshot presentation source not found at ${sourceRoot}`);
+  }
+  const outputRoot = path.join(root, SNAPSHOT_PRESENTATION_OUTPUT_DIR);
+  const manifestSource = requireSnapshotPresentationManifest(sourceRoot);
+  processDirectory(sourceRoot, options.checkOnly ? undefined : outputRoot, '', summary, {
+    validateSwift: false,
+    skipDirectoryNames: SNAPSHOT_PRESENTATION_DEVELOPMENT_DIR_NAMES,
+    skipFilePaths: new Set(['Package.swift', SNAPSHOT_PRESENTATION_RUNNER_MANIFEST]),
+  });
+  copySnapshotPresentationManifest(manifestSource, outputRoot, summary, options.checkOnly);
+}
+
+function requireSnapshotPresentationManifest(sourceRoot) {
+  const manifestSource = path.join(sourceRoot, SNAPSHOT_PRESENTATION_RUNNER_MANIFEST);
+  if (fs.existsSync(manifestSource)) return manifestSource;
+  throw new Error(`Apple snapshot presentation runner manifest not found at ${manifestSource}`);
+}
+
+function copySnapshotPresentationManifest(manifestSource, outputRoot, summary, checkOnly) {
+  if (checkOnly) return;
+  fs.copyFileSync(manifestSource, path.join(outputRoot, 'Package.swift'));
+  summary.copiedFiles += 1;
+}
+
+function prepareOutput(root, outputRoot, checkOnly) {
+  if (checkOnly) {
+    return;
+  }
+  fs.rmSync(outputRoot, { recursive: true, force: true });
+  fs.rmSync(path.join(root, SNAPSHOT_PRESENTATION_OUTPUT_DIR), { recursive: true, force: true });
+  for (const legacyDir of LEGACY_OUTPUT_DIRS) {
+    fs.rmSync(path.join(root, legacyDir), { recursive: true, force: true });
+  }
 }
 
 function stripRunnerUnitTestBlocks(source, filePath = '<swift source>') {
@@ -80,6 +130,7 @@ function consumeSwiftLine(state, line) {
   if (isRunnerUnitTestBlockStart(line)) {
     state.skippedDepth = 1;
     state.strippedBlocks += 1;
+    state.output.push(emptiedLine(line));
     return;
   }
   state.output.push(line);
@@ -92,50 +143,105 @@ function consumeSkippedConditionalLine(state, line) {
   if (isConditionalEnd(line)) {
     state.skippedDepth -= 1;
   }
+  state.output.push(emptiedLine(line));
 }
 
-function copyDirectory(sourceDir, outputDir, relativeDir, summary) {
-  fs.mkdirSync(outputDir, { recursive: true });
+/**
+ * A removed line, reduced to its newline. Keeping it is what makes the packaged file's line N the
+ * same line N as the checkout's: a user's `xcodebuild` failure names the packaged path, and the
+ * block strip would otherwise move everything below a unit-test block by hundreds of lines.
+ */
+function emptiedLine(line) {
+  return line.endsWith('\n') ? '\n' : '';
+}
+
+function processDirectory(sourceDir, outputDir, relativeDir, summary, options = {}) {
+  if (outputDir) {
+    fs.mkdirSync(outputDir, { recursive: true });
+  }
   const entries = fs.readdirSync(sourceDir, { withFileTypes: true });
 
   for (const entry of entries) {
-    copyDirectoryEntry(entry, sourceDir, outputDir, relativeDir, summary);
+    processDirectoryEntry(entry, sourceDir, outputDir, relativeDir, summary, options);
   }
 }
 
-function copyDirectoryEntry(entry, sourceDir, outputDir, relativeDir, summary) {
+function processDirectoryEntry(entry, sourceDir, outputDir, relativeDir, summary, options) {
   const relativePath = path.join(relativeDir, entry.name);
-  if (shouldSkipEntry(entry, relativePath)) {
+  if (shouldSkipEntry(entry, relativePath, options)) {
     return;
   }
 
-  const sourcePath = path.join(sourceDir, entry.name);
-  const outputPath = path.join(outputDir, entry.name);
-  if (entry.isDirectory()) {
-    copyDirectory(sourcePath, outputPath, relativePath, summary);
-    return;
-  }
-  if (entry.isFile()) {
-    copyFile(sourcePath, outputPath, relativePath, summary);
-  }
+  processIncludedEntry(entry, sourceDir, outputDir, relativePath, summary, options);
 }
 
-function copyFile(sourcePath, outputPath, relativePath, summary) {
+function processIncludedEntry(entry, sourceDir, outputDir, relativePath, summary, options) {
+  const sourcePath = path.join(sourceDir, entry.name);
+  const outputPath = outputDir ? path.join(outputDir, entry.name) : undefined;
+  if (entry.isDirectory()) {
+    processDirectory(sourcePath, outputPath, relativePath, summary, options);
+    return;
+  }
+  if (!entry.isFile()) {
+    return;
+  }
+  processFile(sourcePath, outputPath, relativePath, summary, options);
+}
+
+function processFile(sourcePath, outputPath, relativePath, summary, options) {
+  if (outputPath) {
+    copyFile(sourcePath, outputPath, relativePath, summary, options);
+    return;
+  }
+  validateFile(sourcePath, relativePath, summary, options);
+}
+
+function copyFile(sourcePath, outputPath, relativePath, summary, options) {
   if (path.extname(sourcePath) !== '.swift') {
     fs.copyFileSync(sourcePath, outputPath);
     summary.copiedFiles += 1;
     return;
   }
 
-  const source = fs.readFileSync(sourcePath, 'utf8');
-  const stripped = stripRunnerUnitTestBlocks(source, sourcePath);
-  assertNoShippedTestMethods(stripped.contents, relativePath);
+  if (options.validateSwift === false) {
+    fs.copyFileSync(sourcePath, outputPath);
+    summary.copiedFiles += 1;
+    return;
+  }
+
+  const stripped = validateSwiftFile(sourcePath, relativePath, summary);
   fs.writeFileSync(outputPath, stripped.contents);
   summary.copiedFiles += 1;
+}
+
+function validateFile(sourcePath, relativePath, summary, options) {
+  if (path.extname(sourcePath) !== '.swift') {
+    return undefined;
+  }
+  if (options.validateSwift === false) {
+    return undefined;
+  }
+  return validateSwiftFile(sourcePath, relativePath, summary);
+}
+
+// The unit-test strip runs first and stays line-based, so which blocks it removes does not depend
+// on comment removal. The comment scanner then reads Swift that is already in its shipped shape,
+// and the shipped-test-method guard sees exactly the text the package will contain. Both passes
+// empty the lines they remove rather than deleting them, so the packaged file has the checkout's
+// line numbering; `pnpm check:packaged-runner-swift` asserts that, file by file.
+function validateSwiftFile(sourcePath, relativePath, summary) {
+  const source = fs.readFileSync(sourcePath, 'utf8');
+  const stripped = stripRunnerUnitTestBlocks(source, sourcePath);
+  const withoutComments = stripSwiftComments(stripped.contents, sourcePath);
+  assertNoShippedTestMethods(withoutComments.contents, relativePath);
   if (stripped.strippedBlocks > 0) {
     summary.strippedFiles += 1;
     summary.strippedBlocks += stripped.strippedBlocks;
   }
+  summary.strippedComments += withoutComments.removedComments;
+  summary.strippedCommentBytes +=
+    Buffer.byteLength(stripped.contents) - Buffer.byteLength(withoutComments.contents);
+  return { contents: withoutComments.contents, strippedBlocks: stripped.strippedBlocks };
 }
 
 function assertNoShippedTestMethods(strippedContents, relativePath) {
@@ -152,16 +258,21 @@ function assertNoShippedTestMethods(strippedContents, relativePath) {
   }
 }
 
-function shouldSkipEntry(entry, relativePath) {
-  return shouldSkipDirectory(entry) || shouldSkipFile(entry, relativePath);
+function shouldSkipEntry(entry, relativePath, options) {
+  return shouldSkipDirectory(entry, options) || shouldSkipFile(entry, relativePath, options);
 }
 
-function shouldSkipDirectory(entry) {
-  return entry.isDirectory() && SKIPPED_DIR_NAMES.has(entry.name);
+function shouldSkipDirectory(entry, options) {
+  return entry.isDirectory() && (options.skipDirectoryNames ?? SKIPPED_DIR_NAMES).has(entry.name);
 }
 
-function shouldSkipFile(entry, relativePath) {
-  return entry.isFile() && (isXcodeUserStateFile(entry) || isSkippedRootFile(entry, relativePath));
+function shouldSkipFile(entry, relativePath, options) {
+  return (
+    entry.isFile() &&
+    (isXcodeUserStateFile(entry) ||
+      isSkippedRootFile(entry, relativePath) ||
+      options.skipFilePaths?.has(relativePath) === true)
+  );
 }
 
 function isXcodeUserStateFile(entry) {
@@ -185,7 +296,7 @@ function isConditionalEnd(line) {
 }
 
 function parseArgs(argv) {
-  const parsed = { root: process.cwd(), quiet: false };
+  const parsed = { root: process.cwd(), quiet: false, checkOnly: false };
   let index = 0;
   while (index < argv.length) {
     index = parseArg(argv, index, parsed);
@@ -197,6 +308,10 @@ function parseArg(argv, index, parsed) {
   const arg = argv[index];
   if (arg === '--quiet') {
     parsed.quiet = true;
+    return index + 1;
+  }
+  if (arg === '--check') {
+    parsed.checkOnly = true;
     return index + 1;
   }
   if (arg === '--root') {
@@ -222,10 +337,18 @@ if (isMainModule()) {
   const options = parseArgs(process.argv.slice(2));
   const summary = packageAppleRunnerSource(options);
   if (!options.quiet) {
-    const relativeOutput = path.relative(path.resolve(options.root), summary.outputRoot);
-    console.log(
-      `Packaged Apple runner source at ${relativeOutput} ` +
-        `(${summary.copiedFiles} files, stripped ${summary.strippedBlocks} unit-test blocks).`,
-    );
+    if (options.checkOnly) {
+      console.log(
+        `Apple runner source package guard passed ` +
+          `(${summary.strippedFiles} files contain ${summary.strippedBlocks} stripped blocks).`,
+      );
+    } else {
+      const relativeOutput = path.relative(path.resolve(options.root), summary.outputRoot);
+      console.log(
+        `Packaged Apple runner source at ${relativeOutput} ` +
+          `(${summary.copiedFiles} files, stripped ${summary.strippedBlocks} unit-test blocks ` +
+          `and ${summary.strippedComments} comments worth ${summary.strippedCommentBytes} bytes).`,
+      );
+    }
   }
 }

@@ -1,11 +1,16 @@
+import { createTestDeviceInventoryGateways } from '../../__tests__/test-utils/device-inventory-gateways.ts';
 import { beforeEach, expect, test } from 'vitest';
-import { createRequestHandler } from '../request-router.ts';
+import { createRequestHandler } from './test-device-runtime-gateway.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { SessionStore } from '../session-store.ts';
 import { AppError } from '@agent-device/kernel/errors';
-import { resetAndroidSnapshotHelperInstallCache } from '../../platforms/android/snapshot-helper-install.ts';
-import { ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT } from '../../__tests__/test-utils/index.ts';
-import type { AndroidAdbProvider } from '../../platforms/android/adb-executor.ts';
+import { resetAndroidSnapshotHelperInstallCache } from '@agent-device/platform-android/mechanics';
+import { ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT } from '../../__tests__/test-utils/android-snapshot-helper.ts';
+import type { AndroidAdbProvider } from '@agent-device/platform-android/mechanics';
+import {
+  createPlatformRuntimeGateway,
+  createRequestPlatformProviders,
+} from '../../platform-runtime.ts';
 
 function makeAndroidSessionStore(name: string): SessionStore {
   const sessionStore = new SessionStore(`/tmp/${name}`);
@@ -26,12 +31,23 @@ function makeAndroidSessionStore(name: string): SessionStore {
 }
 
 function makeHandler(sessionStore: SessionStore, androidAdbProvider: () => AndroidAdbProvider) {
+  const deviceRuntimeGateway = createPlatformRuntimeGateway({
+    sessionsDir: '/tmp/agent-device-snapshot-helper-runtime',
+    resolveSessionArtifacts: (sessionId) => ({
+      outputPath: `/tmp/agent-device-snapshot-helper-runtime/${sessionId}/app.log`,
+      pidPath: `/tmp/agent-device-snapshot-helper-runtime/${sessionId}/app-log.pid`,
+    }),
+  });
   return createRequestHandler({
     logPath: '/tmp/daemon.log',
     token: 'token',
     sessionStore,
     leaseRegistry: new LeaseRegistry(),
-    androidAdbProvider,
+    deviceInventoryGateways: createTestDeviceInventoryGateways(),
+    requestPlatformProviders: createRequestPlatformProviders({
+      providers: { androidAdbProvider },
+    }),
+    deviceRuntimeGateway,
     trackDownloadableArtifact: () => 'artifact-id',
   });
 }

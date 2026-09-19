@@ -7,6 +7,7 @@ import {
   isMaestroControlCommandDescriptor,
   type MaestroEngineEvent,
   type MaestroEngineObserver,
+  type MaestroRuntimeMetrics,
   type MaestroRuntimePort,
 } from './engine-types.ts';
 import { parseMaestroProgram } from './program-ir-parser.ts';
@@ -16,7 +17,7 @@ import type {
   MaestroProgram,
   MaestroSourceLocation,
 } from './program-ir.ts';
-import { createMaestroProgramLoader } from './program-loader.ts';
+import { createMaestroProgramLoader, type MaestroSourceReader } from './program-loader.ts';
 import { formatMaestroCommandProgress } from './progress.ts';
 import {
   compileMaestroReplayPlan,
@@ -49,11 +50,7 @@ export type MaestroActionEvent = {
 
 export type MaestroCompletedActionEvent = MaestroActionEvent & {
   readonly durationMs: number;
-  readonly runtimeMetrics?: {
-    hierarchyCaptures: number;
-    screenshotCaptures: number;
-    tapRetries: number;
-  };
+  readonly runtimeMetrics?: MaestroRuntimeMetrics;
   readonly data?: Record<string, unknown>;
 };
 
@@ -62,6 +59,8 @@ export type MaestroFailedAction = MaestroActionEvent & {
   readonly runtimeMetrics?: MaestroCompletedActionEvent['runtimeMetrics'];
   readonly error: unknown;
   readonly artifactPaths: readonly string[];
+  /** Warnings accumulated before this failure, including skipped `optional` steps. */
+  readonly warnings: readonly string[];
   readonly isControl: boolean;
   readonly redactions: readonly { name: string; value: string }[];
   readonly resume:
@@ -92,6 +91,14 @@ export type MaestroExecutionOptions = {
   readonly planDigest?: string;
   readonly signal?: AbortSignal;
   readonly observer?: MaestroExecutionObserver;
+  /** Forwarded to `MaestroEngineOptions.trustedScripts` — see its doc there. */
+  readonly trustedScripts?: boolean;
+  /**
+   * #1802: how a `runFlow` include's text is obtained. Required — the engine
+   * owns no filesystem, so a run against a remote daemon reads the caller's
+   * bundled flows through exactly the port a local run reads them through.
+   */
+  readonly readSource: MaestroSourceReader;
 };
 
 export type MaestroExecutionOutcome =
@@ -122,11 +129,11 @@ export function inspectMaestroFlow(source: string, sourcePath: string): MaestroF
 export async function executeMaestroFlow(
   flow: MaestroFlow,
   port: MaestroRuntimePort,
-  options: MaestroExecutionOptions = {},
+  options: MaestroExecutionOptions,
 ): Promise<MaestroExecutionOutcome> {
   let failed: MaestroFailedAction | undefined;
   try {
-    const loader = createMaestroProgramLoader(path.dirname(flow.sourcePath));
+    const loader = createMaestroProgramLoader(path.dirname(flow.sourcePath), options.readSource);
     const plan = await compileMaestroReplayPlan(flow[flowProgram], {
       defaults: options.defaults,
       env: options.env,
@@ -148,6 +155,7 @@ export async function executeMaestroFlow(
       loadProgram: loader,
       signal: options.signal,
       startIndex,
+      trustedScripts: options.trustedScripts,
       observer: createObserver(plan, options.observer, (event) => {
         failed = event;
       }),
@@ -179,9 +187,10 @@ export function collectMaestroFailureSuggestions(
   const query = suggestionQuery(failure[failureCommand]);
   const platform = failure[failurePlan].platform;
   if (!query || (platform !== 'android' && platform !== 'ios')) return [];
-  return rankMaestroCandidates(snapshot, query.selector, platform, query.childOf).ranked.map(
-    (node) => ({ node, basis: suggestionBasis(query.selector, node) }),
-  );
+  return rankMaestroCandidates(snapshot, query.selector, platform).ranked.map((node) => ({
+    node,
+    basis: suggestionBasis(query.selector, node),
+  }));
 }
 
 function createObserver(
@@ -208,6 +217,7 @@ function createObserver(
         durationMs: event.durationMs,
         error: event.error,
         artifactPaths: event.artifactPaths,
+        warnings: [...event.warnings],
         isControl: isMaestroControlCommandDescriptor(event.command),
         redactions:
           event.command.kind === 'inputText' && event.command.text.length > 0
@@ -258,15 +268,12 @@ function isStaticAppTarget(value: string | undefined): value is string {
 
 type SuggestionQuery = {
   selector: Extract<MaestroCommand, { kind: 'assertVisible' }>['target'];
-  childOf?: Extract<MaestroCommand, { kind: 'tapOn' }>['childOf'];
 };
 
 function suggestionQuery(command: MaestroEngineEvent['command']): SuggestionQuery | undefined {
   switch (command.kind) {
     case 'tapOn':
-      return command.target.space === 'target'
-        ? { selector: command.target.selector, childOf: command.childOf }
-        : undefined;
+      return command.target.space === 'target' ? { selector: command.target.selector } : undefined;
     case 'doubleTapOn':
     case 'longPressOn':
       return command.target.space === 'target' ? { selector: command.target.selector } : undefined;
@@ -302,5 +309,5 @@ function suggestionBasis(
   ) {
     return 'id';
   }
-  return selector.text !== undefined || selector.label !== undefined ? 'label' : 'other';
+  return selector.text !== undefined ? 'label' : 'other';
 }

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { CloudArtifactsResult } from '@agent-device/contracts/observability';
-import type { LeaseLifecycleContext, ProviderDeviceRuntime } from '@agent-device/contracts/device';
+import type { LeaseLifecycleContext } from '@agent-device/contracts/device';
 import { AppError } from '@agent-device/kernel/errors';
 import type { ProviderWebDriverDependencies } from './dependencies.ts';
 import {
@@ -30,6 +30,7 @@ import {
   buildCloudWebDriverBaseCapabilities,
   createCloudWebDriverRuntime,
   type CloudWebDriverPlatform,
+  type CloudWebDriverRuntime,
 } from './runtime.ts';
 
 export type DefaultCloudWebDriverArtifactEnv = {
@@ -53,7 +54,7 @@ export type DefaultCloudWebDriverProviderRuntimeEnv = DefaultCloudWebDriverArtif
 
 export type CloudWebDriverProviderDefinition = {
   provider: CloudWebDriverKnownProviderName;
-  createRuntime: (env: DefaultCloudWebDriverProviderRuntimeEnv) => ProviderDeviceRuntime;
+  createRuntime: (env: DefaultCloudWebDriverProviderRuntimeEnv) => CloudWebDriverRuntime;
   listArtifactsFromEnv: (
     providerSessionId: string,
     env: DefaultCloudWebDriverArtifactEnv,
@@ -118,6 +119,10 @@ export function createCloudWebDriverProviderDefinitions(
               username,
               accessKey,
               uploadEndpoint: env.BROWSERSTACK_APP_UPLOAD_ENDPOINT,
+              // A local IPA/APK upload can run long (130 MB is routine); an
+              // upload is not a billed resource, so the request's cancellation
+              // may simply abort it — unlike the session creation that follows.
+              signal: request.signal,
             });
             return {
               ...base,
@@ -251,6 +256,7 @@ async function resolveBrowserStackAppReference(options: {
   username: string;
   accessKey: string;
   uploadEndpoint?: string;
+  signal?: AbortSignal;
 }): Promise<string> {
   if (isProviderAppReference(options.app)) return options.app;
   const appPath = path.resolve(options.cwd ?? process.cwd(), options.app);
@@ -261,12 +267,16 @@ async function resolveBrowserStackAppReference(options: {
       { providerApp: options.app },
     );
   }
-  return await uploadBrowserStackApp(appPath, {
-    clientVersion: options.clientVersion,
-    username: options.username,
-    accessKey: options.accessKey,
-    endpoint: options.uploadEndpoint,
-  });
+  return await uploadBrowserStackApp(
+    appPath,
+    {
+      clientVersion: options.clientVersion,
+      username: options.username,
+      accessKey: options.accessKey,
+      endpoint: options.uploadEndpoint,
+    },
+    options.signal,
+  );
 }
 
 function isProviderAppReference(value: string): boolean {
@@ -338,5 +348,5 @@ function readAwsInteractionMode(
 }
 
 function dasherize(value: string): string {
-  return value.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`);
+  return value.replaceAll(/[A-Z]/g, (match) => `-${match.toLowerCase()}`);
 }

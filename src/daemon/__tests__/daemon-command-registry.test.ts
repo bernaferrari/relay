@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
-import { INTERNAL_COMMANDS, PUBLIC_COMMANDS } from '../../command-catalog.ts';
+import { INTERNAL_COMMANDS, PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
 import {
   canOverrideLockPolicySelector,
   canRunReplayScopedAction,
   getDaemonCommandRoute,
   getSessionCommandKind,
+  isHumanControlMutation,
   isLeaseAdmissionExempt,
+  resolveSessionlessLeaseAdmissionExemption,
   shouldBlockForInvalidRecording,
   shouldGuardAndroidBlockingDialog,
   shouldLockSessionExecution,
@@ -15,9 +17,10 @@ import {
   resolveProviderDeviceResolutionIntent,
   usesSessionlessDefaultProviderDevice,
 } from '../daemon-command-registry.ts';
-import type { DaemonRequest } from '../types.ts';
+import type { DaemonRequest } from '../daemon-request.ts';
 
 test('daemon command registry owns specialized handler routes', () => {
+  assert.equal(getDaemonCommandRoute(INTERNAL_COMMANDS.humanControl), 'humanControl');
   for (const command of [
     INTERNAL_COMMANDS.leaseAllocate,
     INTERNAL_COMMANDS.leaseHeartbeat,
@@ -80,6 +83,20 @@ test('daemon command registry preserves request admission traits', () => {
   assert.equal(shouldValidateSessionSelector(INTERNAL_COMMANDS.leaseAllocate), true);
   assert.equal(isLeaseAdmissionExempt(PUBLIC_COMMANDS.open), false);
   assert.equal(shouldLockSessionExecution(PUBLIC_COMMANDS.open), true);
+  assert.deepEqual(
+    resolveSessionlessLeaseAdmissionExemption({
+      ...makeRequest(PUBLIC_COMMANDS.apps),
+      flags: { platform: 'android', leaseProvider: 'limrun' },
+    }),
+    { kind: 'provider-app-catalog', provider: 'limrun' },
+  );
+  assert.equal(
+    resolveSessionlessLeaseAdmissionExemption({
+      ...makeRequest(PUBLIC_COMMANDS.apps),
+      flags: { platform: 'android', leaseProvider: 'limrun', leaseId: 'lease-a' },
+    }),
+    undefined,
+  );
 });
 
 test('daemon command registry preserves replay and recording traits', () => {
@@ -183,7 +200,8 @@ test('daemon command registry preserves provider device resolution traits', () =
   assert.equal(
     resolveProviderDeviceResolutionIntent(makeRequest(PUBLIC_COMMANDS.test), {
       hasExistingSession: false,
-      hasExplicitDeviceSelector: false,
+      hasExplicitDeviceIdentity: false,
+      hasDeviceSelectionInput: false,
     }),
     'skip',
   );
@@ -195,7 +213,8 @@ test('daemon command registry preserves provider device resolution traits', () =
       },
       {
         hasExistingSession: false,
-        hasExplicitDeviceSelector: true,
+        hasExplicitDeviceIdentity: false,
+        hasDeviceSelectionInput: true,
       },
     ),
     'skip',
@@ -203,16 +222,26 @@ test('daemon command registry preserves provider device resolution traits', () =
   assert.equal(
     resolveProviderDeviceResolutionIntent(makeRequest(PUBLIC_COMMANDS.open), {
       hasExistingSession: false,
-      hasExplicitDeviceSelector: false,
+      hasExplicitDeviceIdentity: false,
+      hasDeviceSelectionInput: false,
     }),
     'sessionless-default-device',
   );
   assert.equal(
     resolveProviderDeviceResolutionIntent(makeRequest(PUBLIC_COMMANDS.apps), {
       hasExistingSession: true,
-      hasExplicitDeviceSelector: true,
+      hasExplicitDeviceIdentity: true,
+      hasDeviceSelectionInput: true,
     }),
     'explicit-device',
+  );
+  assert.equal(
+    resolveProviderDeviceResolutionIntent(makeRequest(PUBLIC_COMMANDS.capabilities), {
+      hasExistingSession: true,
+      hasExplicitDeviceIdentity: false,
+      hasDeviceSelectionInput: true,
+    }),
+    'existing-session',
   );
 });
 
@@ -229,11 +258,60 @@ test('every lease-route command skips sessionless provider-device resolution', (
     assert.equal(
       resolveProviderDeviceResolutionIntent(makeRequest(command), {
         hasExistingSession: false,
-        hasExplicitDeviceSelector: true,
+        hasExplicitDeviceIdentity: false,
+        hasDeviceSelectionInput: true,
       }),
       'skip',
       `${command} must not resolve a provider device sessionless`,
     );
+  }
+});
+
+test('takeover passes lease admission and uses the normal execution lock', () => {
+  assert.equal(isLeaseAdmissionExempt(INTERNAL_COMMANDS.humanControl), false);
+  assert.equal(shouldLockSessionExecution(INTERNAL_COMMANDS.humanControl), true);
+});
+
+test('human-control admission derives existing semantics and treats unclassified requests as mutations', () => {
+  for (const command of [
+    'snapshot',
+    'screenshot',
+    'get',
+    'is',
+    'logs',
+    'network',
+    'events',
+    'audio',
+    'trace',
+    'devices',
+    'apps',
+    'appstate',
+    'doctor',
+    'human_control',
+    'lease_heartbeat',
+  ]) {
+    assert.equal(isHumanControlMutation(makeRequest(command)), false, command);
+  }
+  for (const [command, positionals] of [
+    ['clipboard', ['read']],
+    ['keyboard', ['status']],
+    ['alert', ['get']],
+    ['find', ['text', 'Save', 'get', 'text']],
+  ] as const) {
+    assert.equal(isHumanControlMutation(makeRequest(command, [...positionals])), false, command);
+  }
+  for (const [command, positionals] of [
+    ['clipboard', ['write', 'value']],
+    ['clipboard', []],
+    ['keyboard', ['dismiss']],
+    ['alert', ['accept']],
+    ['find', ['text', 'Save', 'click']],
+    ['click', []],
+    ['viewport', []],
+    ['lease_release', []],
+    ['future-command', []],
+  ] as const) {
+    assert.equal(isHumanControlMutation(makeRequest(command, [...positionals])), true, command);
   }
 });
 

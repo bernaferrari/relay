@@ -1,6 +1,7 @@
 import { AppError } from '@agent-device/kernel/errors';
 import { stripUndefined } from './shared.ts';
 import { isMaestroTestFailure, maestroTestFailure } from './compatibility-errors.ts';
+import { isMaestroConditionTruthy } from './engine-truthiness.ts';
 import {
   MAESTRO_COMPATIBILITY_PRESETS,
   type MaestroCompatibilityTimingPolicy,
@@ -79,6 +80,9 @@ async function executeOptionalCommand(
   appId: string | undefined,
   state: MaestroReplayPlanExecutionState,
 ): Promise<MaestroRuntimeResult | undefined> {
+  if (rawCommand.kind === 'evalScript') {
+    return await executeEvalScript(rawCommand, state);
+  }
   const command = resolveCommand(rawCommand, state.context);
   try {
     return await executeResolvedCommand(command, appId, state);
@@ -103,6 +107,25 @@ function isOptionalCommand(command: MaestroRuntimeCommand): boolean {
   return 'optional' in command && command.optional === true;
 }
 
+async function executeEvalScript(
+  command: Extract<MaestroRuntimeCommand, { kind: 'evalScript' }>,
+  state: MaestroReplayPlanExecutionState,
+): Promise<undefined> {
+  // ponytail: function-scoped import keeps engine-eval-script (and node:vm) out of the maestro eager closure.
+  const { evaluateMaestroEvalScript } = await import('./engine-eval-script.ts');
+  if (state.options.trustedScripts === false) {
+    throw new AppError(
+      'UNAUTHORIZED',
+      'Maestro evalScript is not permitted for flows received over the remote daemon surface: ' +
+        'node:vm is not a security sandbox, so an untrusted expression can escape to the host.',
+    );
+  }
+  const outputEnv = await evaluateMaestroEvalScript(command.script, state.context.values);
+  state.context.replaceOutput(outputEnv);
+  state.executed += 1;
+  return undefined;
+}
+
 async function executeResolvedCommand(
   command: MaestroRuntimeCommand,
   appId: string | undefined,
@@ -111,7 +134,7 @@ async function executeResolvedCommand(
   switch (command.kind) {
     case 'assertVisible':
       await requireObservation(
-        { kind: 'visible', selector: command.target, childOf: command.childOf },
+        { kind: 'visible', selector: command.target },
         state.timing.assertVisibleTimeoutMs,
         state,
       );
@@ -119,10 +142,18 @@ async function executeResolvedCommand(
       return undefined;
     case 'assertNotVisible':
       await requireObservation(
-        { kind: 'notVisible', selector: command.target, childOf: command.childOf },
+        { kind: 'notVisible', selector: command.target },
         state.timing.assertNotVisibleTimeoutMs,
         state,
       );
+      state.executed += 1;
+      return undefined;
+    case 'assertTrue':
+      if (!isMaestroConditionTruthy(command.condition)) {
+        throw maestroTestFailure(
+          `Maestro assertTrue condition was falsy: ${JSON.stringify(command.condition)}`,
+        );
+      }
       state.executed += 1;
       return undefined;
     case 'extendedWaitUntil':
