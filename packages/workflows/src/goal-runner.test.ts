@@ -413,6 +413,7 @@ test("an existing managed browser target is opened with the requested fixture, n
   });
   assert.deepEqual(runtime.calls, [
     "target.devices.list",
+    "target.list",
     "target.open",
     "target.browser-device.open",
     "target.observation.capture",

@@ -590,6 +590,14 @@ async function resolveTarget(
   // with the requested fixture or clean state — before any interaction. Listing
   // devices only proves the target exists; it never applies a configuration.
   if (device.platform === "browser") {
+    // Reproduction of a goal started against an existing managed browser
+    // needs the target's durable startUrl; read it from the target registry.
+    const listed = await operations.invoke("target.list", {});
+    const registered = listed.targets.find((target) => target.id === targetId);
+    const browserStartUrl =
+      registered?.browser?.startUrl && registered.browser.startUrl.startsWith("http")
+        ? registered.browser.startUrl
+        : undefined;
     const opened = await operations.invoke("target.open", {
       targetId: device.serial || device.id,
       ...(input.laneId ? { laneId: input.laneId } : {}),
@@ -608,6 +616,7 @@ async function resolveTarget(
       target: {
         targetId: device.serial || device.id,
         platform: targetPlatform("browser"),
+        ...(browserStartUrl ? { startUrl: browserStartUrl } : {}),
         ...(browserDevice.session.sessionId
           ? { runtimeSessionId: browserDevice.session.sessionId }
           : opened.session.sessionId
@@ -1380,15 +1389,50 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
             "A reproduction mutation was recorded as intended before the worker stopped. Review the fresh target; Relay will not replay it.",
           );
         }
+        let replayedSignedOut = false;
         if (!ensured.exists || reproduction.actions.length === 0) {
-          const opened = await options.operations.invoke("target.open", {
-            targetId,
-            ...(record.target.authenticationFixtureReference
-              ? { authenticationFixtureReference: record.target.authenticationFixtureReference }
-              : { signedOut: true as const }),
-            presentation: "embedded",
-          });
+          // Account fixtures are bound to the browser they were issued for.
+          // A fresh reproduction target is a different browser: when the
+          // fixture cannot bind there, replay signed-out and say so — never
+          // silently claim the same account identity.
+          let opened;
+          try {
+            opened = await options.operations.invoke("target.open", {
+              targetId,
+              ...(record.target.authenticationFixtureReference
+                ? { authenticationFixtureReference: record.target.authenticationFixtureReference }
+                : { signedOut: true as const }),
+              presentation: "embedded",
+            });
+          } catch (error) {
+            if (
+              record.target.authenticationFixtureReference &&
+              error &&
+              typeof error === "object" &&
+              "status" in error &&
+              error.status === 409
+            ) {
+              replayedSignedOut = true;
+              opened = await options.operations.invoke("target.open", {
+                targetId,
+                signedOut: true,
+                presentation: "embedded",
+              });
+            } else {
+              throw error;
+            }
+          }
           assertOpenedTarget(opened, targetId);
+          // Reproduction observations and frame-bound input flow through the
+          // browser-device session, exactly like the original goal run.
+          await options.operations.invoke("target.browser-device.open", { targetId });
+          if (replayedSignedOut) {
+            reproduction = {
+              ...reproduction,
+              target: { ...reproduction.target, authenticationFixtureReference: undefined },
+            };
+            await saveReproduction();
+          }
         }
         await saveReproduction();
 
