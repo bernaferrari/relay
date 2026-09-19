@@ -376,7 +376,33 @@ ${globalOptions}
   const paths = friendlyPaths().filter(
     ({ descriptor }) => descriptor.command.split(" ")[0] === family,
   );
-  if (!paths.length) throw new UsageError(`Unknown command family: ${family}. Run 'relay help'.`);
+  if (!paths.length) {
+    // goal/explore are fallback intents parsed after the operation registry;
+    // give them a real usage surface instead of an unknown-family error.
+    if (family === "goal" || family === "explore") {
+      return `Relay ${family} commands
+
+Goal-first execution without a saved Test or Map. Sessions are server-owned:
+start from one client, inspect or cancel from another.
+
+Usage:
+  relay goal run --url <url> --goal <task> --value <key=value> [--auth-fixture <reference>] --confirm
+  relay goal inspect <sessionId>
+  relay goal resume <sessionId> --confirm
+  relay goal cancel <sessionId> --confirm
+  relay goal reproduce <sessionId> --confirm
+  relay goal promote <sessionId> --confirm [--map <id>] [--title <name>]
+  relay explore --url <url> --goal <task> --mission <mission>... --confirm [--agents <1-4>]
+  relay explore --resume <explorationId> --confirm
+  relay explore --inspect <explorationId>
+
+See 'relay help' for the full command list.
+
+${globalOptions}
+`;
+    }
+    throw new UsageError(`Unknown command family: ${family}. Run 'relay help'.`);
+  }
   const commands = paths
     .map(
       ({ descriptor, label }) =>
