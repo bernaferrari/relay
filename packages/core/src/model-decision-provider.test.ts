@@ -59,6 +59,24 @@ function responseBody() {
   };
 }
 
+test("OpenRouter decision provider stays offline when no key is configured", async () => {
+  let fetchCalls = 0;
+  const provider = createOpenRouterDecisionProvider({
+    apiKey: "",
+    fetch: async () => {
+      fetchCalls += 1;
+      throw new Error("the unavailable path must not fetch");
+    },
+  });
+
+  const result = await provider.decide(request());
+
+  assert.equal(result.status, "unavailable");
+  assert.equal(result.error?.code, "provider-unavailable");
+  assert.equal(result.model, "~typesafe/jev-latest");
+  assert.equal(fetchCalls, 0);
+});
+
 test("OpenRouter decision provider returns validated typed answers and redacts egress", async () => {
   let sent: Record<string, unknown> | undefined;
   const provider = createOpenRouterDecisionProvider({
