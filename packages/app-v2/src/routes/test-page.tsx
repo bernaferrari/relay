@@ -20,7 +20,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@relay/ui-react/components/tabs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { Camera, ChevronLeft, MoreHorizontal } from "lucide-react";
+import { Camera, ChevronLeft, MoreHorizontal, SlidersHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
@@ -50,7 +50,9 @@ import { productLinkClassName } from "../lib/class-names";
 const routeApi = getRouteApi("/tests/$testId");
 
 export function TestPage() {
-  const { runService, platform, queryClient } = useRouteContext({ from: "__root__" });
+  const { runService, platform, queryClient } = useRouteContext({
+    from: "__root__",
+  });
   const { testId } = routeApi.useParams();
   const search = routeApi.useSearch() as {
     run?: unknown;
@@ -120,7 +122,10 @@ export function TestPage() {
   const configuration = usePersistedRunConfiguration({
     storage: platform.storage,
     key: scope.key,
-    targetOptions: targets.data?.map((target) => ({ id: target.targetId, label: target.name })),
+    targetOptions: targets.data?.map((target) => ({
+      id: target.targetId,
+      label: target.name,
+    })),
   });
   const recordingTargetId = typeof search.target === "string" ? search.target : undefined;
   useEffect(() => {
@@ -143,6 +148,20 @@ export function TestPage() {
   const profileBlocker = admission.blockers.find((item) => item.id === "saved-profile");
   const paired = usePairedConfigurationWorkspace(platform);
   const usePairs = configuration.selection.usePairedWorkspace === true;
+  // The resolved configuration determines the meaning of everything a Run
+  // produces, so it stays visible beside Run — not folded into a hidden
+  // settings popover (product direction: one configuration contract).
+  const selectedProfile = profiles.data?.find(
+    (profile) => profile.id === configuration.selection.savedProfileId,
+  );
+  const configurationLabel = usePairs
+    ? `${paired.workspace.rows.length} paired configurations`
+    : selectedProfile
+      ? selectedProfile.account
+        ? `${selectedProfile.name} · ${selectedProfile.account.name}`
+        : selectedProfile.name
+      : (targets.data?.find((target) => target.targetId === targetId)?.name ??
+        "Choose configuration");
   const canStart =
     (usePairs ? paired.workspace.rows.length > 0 : targetReady) &&
     !configuration.loading &&
@@ -171,7 +190,11 @@ export function TestPage() {
         inspect: (workflowId) => runService.inspect(workflowId),
         remember: async (durable, workflowId, runId) => {
           await writeRunPointer(platform, { workflowId, runId, testId });
-          queryClient.setQueryData(runQueryKeys.pointer, { workflowId, runId, testId });
+          queryClient.setQueryData(runQueryKeys.pointer, {
+            workflowId,
+            runId,
+            testId,
+          });
           queryClient.setQueryData(runQueryKeys.workflow(workflowId), durable);
           startedForTestId.current = testId;
         },
@@ -183,7 +206,10 @@ export function TestPage() {
     onSuccess: (state) => {
       if (state.batchId) {
         startedForTestId.current = testId;
-        void navigate({ to: "/batches/$batchId", params: { batchId: state.batchId } });
+        void navigate({
+          to: "/batches/$batchId",
+          params: { batchId: state.batchId },
+        });
         return;
       }
       const runId = state.run?.runId;
@@ -192,7 +218,12 @@ export function TestPage() {
 
         setPinnedRunId(runId);
         void navigate({
-          search: (previous) => ({ ...previous, setup: undefined, run: runId, view: "run" }),
+          search: (previous) => ({
+            ...previous,
+            setup: undefined,
+            run: runId,
+            view: "run",
+          }),
           replace: true,
         });
       }
@@ -226,7 +257,10 @@ export function TestPage() {
     if (decision.kind === "skip") return;
     appliedDestination.current = workspaceDestination.data?.targetId;
     if (decision.kind === "remember") return;
-    configuration.setSelection({ ...selectionRef.current, targetId: decision.targetId });
+    configuration.setSelection({
+      ...selectionRef.current,
+      targetId: decision.targetId,
+    });
   }, [
     configuration.loading,
     configuration.edited,
@@ -302,6 +336,18 @@ export function TestPage() {
             Tests
           </Button>
           <div className="flex shrink-0 items-center gap-2">
+            {!activeRun ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={focusRunSetup}
+                aria-label="Run configuration — opens run setup"
+                className="max-w-64"
+              >
+                <SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />
+                <span className="truncate">{configurationLabel}</span>
+              </Button>
+            ) : null}
             {activeRun && attachedRunId ? (
               <Button
                 nativeButton={false}
@@ -427,7 +473,7 @@ export function TestPage() {
               <SavedTestWorkspace
                 settingsOpen={settingsOpen}
                 onSettingsOpenChange={setSettingsOpen}
-                deviceName={targets.data?.find((target) => target.targetId === targetId)?.name}
+                deviceName={configurationLabel}
                 outline={
                   <section
                     className="min-w-0 p-3"
@@ -579,10 +625,16 @@ export function TestPage() {
                           label: targetLabel(target).title,
                           detail: targetLabel(target).detail,
                         }))}
-                        selection={{ ...configuration.selection, targetProfileId: targetId }}
+                        selection={{
+                          ...configuration.selection,
+                          targetProfileId: targetId,
+                        }}
                         onSelectionChange={(selection) => {
                           const { targetProfileId: selectedTargetId, ...rest } = selection;
-                          configuration.setSelection({ ...rest, targetId: selectedTargetId });
+                          configuration.setSelection({
+                            ...rest,
+                            targetId: selectedTargetId,
+                          });
                         }}
                         loading={configuration.loading || targets.isPending}
                         error={scope.error ?? configuration.error}

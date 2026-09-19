@@ -612,6 +612,14 @@ describe("Run and Report", () => {
       })]: saved,
     });
     await renderRun("/tests/test-1?target=emulator-5554", fake.service, storage.platform);
+
+    // The resolved configuration is visible beside Run before any popover is
+    // opened — a person comparing Admin and Member must not have to dig.
+    expect(
+      document.querySelector<HTMLButtonElement>(
+        'button[aria-label="Run configuration — opens run setup"]',
+      )?.textContent,
+    ).toContain("Member · Member");
     await openRunSettings();
 
     expect(
