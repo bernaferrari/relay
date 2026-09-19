@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type {
   ArtifactRefProjection,
+  GoalSessionAction,
   GoalSessionRecord,
   ModelDecisionRecord,
   OperationId,
@@ -565,5 +566,66 @@ test("a long inference cannot overshoot the budget into a late mutation", async 
   });
   assert.equal(result.status, "blocked");
   assert.equal(result.stopReason?.code, "budget-exhausted");
+  assert.equal(runtime.calls.includes("target.interact"), false);
+});
+
+test("a restarted reproduction with an unresolved mutation fences instead of skipping it", async () => {
+  const runtime = operations();
+  const acknowledgedAction: GoalSessionAction = {
+    id: "action-1",
+    step: 1,
+    candidateId: "c1",
+    label: "Next",
+    interaction: { kind: "identifier", target: { identifier: "next" } },
+    status: "acknowledged",
+    observationDigestBefore: "sha256:" + "1".repeat(64),
+    evidenceRefs: [],
+    at: 1,
+  };
+  const seeded: GoalSessionRecord = {
+    schemaVersion: GOAL_SESSION_SCHEMA_VERSION,
+    id: "goal-repro-fence",
+    goal: "Reach the next screen",
+    target: {
+      targetId: "goal-goal-repro-fence",
+      platform: "browser",
+      startUrl: "https://example.test",
+    },
+    budget: { maxSteps: 10, maxDurationMs: 900_000 },
+    status: "completed",
+    step: 1,
+    createdAt: 1,
+    updatedAt: 2,
+    observations: [],
+    actions: [acknowledgedAction],
+    findings: [],
+    reproduction: {
+      id: "repro-goal-repro-fence",
+      sourceSessionId: "goal-repro-fence",
+      target: {
+        targetId: "goal-repro-goal-repro-fence",
+        platform: "browser",
+        startUrl: "https://example.test",
+      },
+      status: "running",
+      startedAt: 3,
+      updatedAt: 4,
+      actions: [{ ...acknowledgedAction, id: "repro-action-1", status: "intended" }],
+      observations: [],
+      pendingAction: {
+        actionId: "repro-action-1",
+        candidateId: "c1",
+        observationDigest: "sha256:" + "2".repeat(64),
+        intendedAt: 5,
+      },
+    },
+  };
+  const result = await createGoalSessionRunner({
+    operations: runtime.port,
+    store: memoryStore([seeded]),
+    id: () => "goal-repro-fence",
+  }).reproduce("goal-repro-fence");
+  assert.equal(result.reproduction?.status, "uncertain");
+  assert.equal(result.reproduction?.pendingAction?.actionId, "repro-action-1");
   assert.equal(runtime.calls.includes("target.interact"), false);
 });

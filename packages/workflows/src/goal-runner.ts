@@ -54,10 +54,15 @@ export type GoalSessionRunnerOptions = {
   signal?: AbortSignal;
 };
 
+export type GoalSessionCallOptions = {
+  /** Cancellation scoped to this one session (server job cancellation). */
+  signal?: AbortSignal;
+};
+
 export type GoalSessionRunner = {
-  start(input: GoalSessionStartInput): Promise<GoalSessionResult>;
-  resume(sessionId: string): Promise<GoalSessionResult>;
-  reproduce(sessionId: string): Promise<GoalSessionResult>;
+  start(input: GoalSessionStartInput, call?: GoalSessionCallOptions): Promise<GoalSessionResult>;
+  resume(sessionId: string, call?: GoalSessionCallOptions): Promise<GoalSessionResult>;
+  reproduce(sessionId: string, call?: GoalSessionCallOptions): Promise<GoalSessionResult>;
   inspect(sessionId: string): Promise<GoalSessionRecord>;
 };
 
@@ -582,11 +587,6 @@ function appendFinding(
 
 export function createGoalSessionRunner(options: GoalSessionRunnerOptions): GoalSessionRunner {
   const store = options.store ?? createFileStore();
-  // The default provider inherits the runner's cancellation signal so a
-  // cancelled job bounds its inference, not only its loop.
-  const provider =
-    options.decisionProvider ??
-    createOpenRouterDecisionProvider(options.signal ? { signal: options.signal } : {});
   const now = options.now ?? Date.now;
   const id = options.id ?? randomUUID;
   const locks = new Map<string, Promise<GoalSessionResult>>();
@@ -636,7 +636,16 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
     return compact;
   };
 
-  const run = async (starting: GoalSessionRecord): Promise<GoalSessionResult> => {
+  const run = async (
+    starting: GoalSessionRecord,
+    callSignal?: AbortSignal,
+  ): Promise<GoalSessionResult> => {
+    const signal = callSignal ?? options.signal;
+    // The default provider inherits this run's cancellation signal so a
+    // cancelled job bounds its inference, not only its loop.
+    const provider =
+      options.decisionProvider ??
+      createOpenRouterDecisionProvider(signal ? { signal } : {});
     let record = starting;
     if (record.pendingAction) {
       record = stop(
@@ -662,7 +671,7 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
     }
 
     for (;;) {
-      if (options.signal?.aborted) {
+      if (signal?.aborted) {
         record = stop(
           record,
           "cancelled",
@@ -809,12 +818,12 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
       }
       const interaction = interactionFor(candidate);
       const remainingBudget = record.budget.maxDurationMs - (now() - record.createdAt);
-      if (options.signal?.aborted || remainingBudget <= 0) {
+      if (signal?.aborted || remainingBudget <= 0) {
         record = stop(
           record,
-          options.signal?.aborted ? "cancelled" : "blocked",
-          options.signal?.aborted ? "cancelled" : "budget-exhausted",
-          options.signal?.aborted
+          signal?.aborted ? "cancelled" : "blocked",
+          signal?.aborted ? "cancelled" : "budget-exhausted",
+          signal?.aborted
             ? "The goal session was cancelled before dispatching the selected control."
             : `Goal worker budget exhausted before dispatching action ${record.step + 1}.`,
           now(),
@@ -936,7 +945,7 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
   };
 
   return {
-    async start(input) {
+    async start(input, call) {
       const sessionId = input.sessionId ?? id();
       assertSessionId(sessionId);
       const goal = boundedGoal(input.goal);
@@ -960,18 +969,19 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
         findings: [],
       };
       await store.save(record);
-      return exclusive(sessionId, () => run(record));
+      return exclusive(sessionId, () => run(record, call?.signal));
     },
-    async resume(sessionId) {
+    async resume(sessionId, call) {
       assertSessionId(sessionId);
       const record = await store.load(sessionId);
       if (!record) throw new TypeError(`Goal session ${sessionId} was not found.`);
-      return exclusive(sessionId, () => run(record));
+      return exclusive(sessionId, () => run(record, call?.signal));
     },
-    async reproduce(sessionId) {
+    async reproduce(sessionId, call) {
       assertSessionId(sessionId);
       const loaded = await store.load(sessionId);
       if (!loaded) throw new TypeError(`Goal session ${sessionId} was not found.`);
+      const reproSignal = call?.signal;
       return exclusive(sessionId, async () => {
         let record = (await store.load(sessionId)) ?? loaded;
         if (record.reproduction && record.reproduction.status !== "running") {
@@ -1026,6 +1036,11 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
           actions: record.reproduction?.actions ?? [],
           observations: record.reproduction?.observations ?? [],
           findings: record.reproduction?.findings ?? [],
+          // An interrupted reproduction keeps its exact unresolved mutation:
+          // the fence below must see it after a restart, not skip it.
+          ...(record.reproduction?.pendingAction
+            ? { pendingAction: record.reproduction.pendingAction }
+            : {}),
           ...(record.reproduction?.lastObservation
             ? { lastObservation: record.reproduction.lastObservation }
             : {}),
@@ -1072,7 +1087,9 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
           reproduction = {
             ...reproduction,
             status,
-            pendingAction: undefined,
+            // An unresolved mutation survives an uncertain finish — it is the
+            // thing being fenced. Only a settled outcome clears it.
+            pendingAction: status === "uncertain" ? reproduction.pendingAction : undefined,
             findings: [
               ...(reproduction.findings ?? []).filter((item) => item.id !== finding.id),
               finding,
@@ -1168,11 +1185,11 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
               "Reproduction has no current observation.",
             );
           const reproductionElapsed = now() - reproduction.startedAt;
-          if (options.signal?.aborted || reproductionElapsed >= record.budget.maxDurationMs) {
+          if (reproSignal?.aborted || reproductionElapsed >= record.budget.maxDurationMs) {
             return finish(
               "cancelled",
-              options.signal?.aborted ? "cancelled" : "budget-exhausted",
-              options.signal?.aborted
+              reproSignal?.aborted ? "cancelled" : "budget-exhausted",
+              reproSignal?.aborted
                 ? "The reproduction was cancelled before replaying its next action."
                 : "The reproduction exceeded the session duration budget before replaying its next action.",
             );
