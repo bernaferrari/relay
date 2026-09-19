@@ -48,3 +48,6 @@ jobs:
 
       - name: Run architecture contract tests
         run: pnpm run test:architecture
+
+      - name: Run package test suites
+        run: pnpm run test:packages
