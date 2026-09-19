@@ -236,7 +236,10 @@ export async function handleInteractionRoute(input: InteractionRouteInput): Prom
     try {
       result = await interact(interaction, {
         serial: resolved.serial,
-        ...(overlay ? { overlay } : {}),
+        // Project scope is required to resolve a saved browser fixture; every
+        // interact carries its request scope so the exact-configuration
+        // session can be reused instead of silently reopened anonymous.
+        overlay: { ...overlay, projectId: scope.projectId },
       });
     } catch (error) {
       if (error instanceof IosMutationOutcomeUnknownError) {

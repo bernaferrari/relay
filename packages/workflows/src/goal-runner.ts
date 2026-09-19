@@ -289,15 +289,112 @@ function systemCandidate(observation: CompactGoalObservation, candidateId: strin
   return candidate;
 }
 
+/** Frame binding for browser-device control inputs. Stale sequences are
+ * rejected server-side BEFORE dispatch, which is what makes a bounded retry
+ * safe. */
+type BrowserFrameBinding = { sessionId: string; pageId: string; sequence: number };
+
+async function currentBrowserFrame(
+  operations: RelayOperationPort,
+  targetId: string,
+): Promise<BrowserFrameBinding | undefined> {
+  const result = await operations.invoke("target.browser-device.frame", { targetId });
+  const frame = result.frame;
+  return frame
+    ? { sessionId: frame.sessionId, pageId: frame.pageId, sequence: frame.sequence }
+    : undefined;
+}
+
+/** Dispatch one typed goal action. Browser targets drive the same
+ * frame-bound browser-device session the observations came from; native
+ * targets use the semantic interact operation. */
+async function dispatchGoalAction(
+  operations: RelayOperationPort,
+  record: GoalSessionRecord,
+  action: GoalSessionAction,
+  frame: BrowserFrameBinding | undefined,
+): Promise<void> {
+  const interaction = action.interaction;
+  if (record.target.platform !== "browser") {
+    await operations.invoke("target.interact", interactionInput(record, action));
+    return;
+  }
+  if (interaction.kind === "wait" || interaction.kind === "capture") return;
+  const targetId = record.target.targetId;
+  const binding = frame ?? (await currentBrowserFrame(operations, targetId));
+  if (!binding) {
+    throw new Error("Browser goal target has no open browser-device session.");
+  }
+  const bound = { sessionId: binding.sessionId, pageId: binding.pageId };
+  if (interaction.kind === "fill") {
+    const point = interaction.target.point;
+    if (!point) throw new Error("Browser fill requires the field's observed point.");
+    await operations.invoke("target.browser-device.control", {
+      targetId,
+      input: { ...bound, expectedSequence: binding.sequence, kind: "click", x: point.x, y: point.y },
+    });
+    const next = await currentBrowserFrame(operations, targetId);
+    if (!next) throw new Error("Browser goal target lost its browser-device session mid-fill.");
+    await operations.invoke("target.browser-device.control", {
+      targetId,
+      input: {
+        sessionId: next.sessionId,
+        pageId: next.pageId,
+        expectedSequence: next.sequence,
+        kind: "text",
+        text: interaction.value,
+      },
+    });
+    return;
+  }
+  if (interaction.kind === "key") {
+    if (interaction.key !== "back") {
+      throw new Error(`Browser goal key ${interaction.key} is not mapped to a control input.`);
+    }
+    await operations.invoke("target.browser-device.control", {
+      targetId,
+      input: { ...bound, expectedSequence: binding.sequence, kind: "history", direction: "back" },
+    });
+    return;
+  }
+  if (interaction.kind === "swipe") {
+    await operations.invoke("target.browser-device.control", {
+      targetId,
+      input: {
+        ...bound,
+        expectedSequence: binding.sequence,
+        kind: "wheel",
+        x: interaction.from.x,
+        y: interaction.from.y,
+        deltaX: interaction.to.x - interaction.from.x,
+        deltaY: interaction.to.y - interaction.from.y,
+      },
+    });
+    return;
+  }
+  const point = interaction.target.point;
+  if (!point) {
+    // No observed geometry: fall through to the semantic interact operation,
+    // which resolves the selector server-side.
+    await operations.invoke("target.interact", interactionInput(record, action));
+    return;
+  }
+  await operations.invoke("target.browser-device.control", {
+    targetId,
+    input: { ...bound, expectedSequence: binding.sequence, kind: "click", x: point.x, y: point.y },
+  });
+}
+
 function interactionFor(candidate: {
   target: GoalSessionInteractionTarget;
 }): GoalSessionAction["interaction"] {
-  if (candidate.target.identifier) {
-    return { kind: "identifier", target: { identifier: candidate.target.identifier } };
-  }
-  if (candidate.target.ref) return { kind: "ref", target: { ref: candidate.target.ref } };
-  if (candidate.target.label) return { kind: "label", target: { label: candidate.target.label } };
-  if (candidate.target.point) return { kind: "point", target: { point: candidate.target.point } };
+  // Keep every observed targeting fact: the semantic selector drives native
+  // dispatch, and the observed point drives frame-bound browser control.
+  const target = { ...candidate.target };
+  if (candidate.target.identifier) return { kind: "identifier", target };
+  if (candidate.target.ref) return { kind: "ref", target };
+  if (candidate.target.label) return { kind: "label", target };
+  if (candidate.target.point) return { kind: "point", target };
   throw new TypeError("Goal candidate has no actionable selector.");
 }
 
@@ -453,6 +550,11 @@ async function resolveTarget(
       presentation: "embedded",
     });
     assertOpenedTarget(opened, targetId);
+    // Observations flow through the browser-device session; it attaches to
+    // the same fixture-bound live session the open above created.
+    const device = await operations.invoke("target.browser-device.open", { targetId });
+    const runtimeSessionId =
+      device.session.sessionId ?? opened.session.sessionId ?? undefined;
     return {
       target: {
         targetId,
@@ -462,9 +564,7 @@ async function resolveTarget(
         ...(input.authenticationFixtureReference
           ? { authenticationFixtureReference: input.authenticationFixtureReference }
           : { signedOut: true as const }),
-        ...(opened.session.sessionId
-          ? { runtimeSessionId: opened.session.sessionId }
-          : {}),
+        ...(runtimeSessionId ? { runtimeSessionId } : {}),
         ...(opened.session.configurationDigest
           ? { configurationDigest: opened.session.configurationDigest }
           : {}),
@@ -497,10 +597,18 @@ async function resolveTarget(
       presentation: "embedded",
     });
     assertOpenedTarget(opened, device.serial || device.id);
+    const browserDevice = await operations.invoke("target.browser-device.open", {
+      targetId: device.serial || device.id,
+    });
     return {
       target: {
         targetId: device.serial || device.id,
         platform: targetPlatform("browser"),
+        ...(browserDevice.session.sessionId
+          ? { runtimeSessionId: browserDevice.session.sessionId }
+          : opened.session.sessionId
+            ? { runtimeSessionId: opened.session.sessionId }
+            : {}),
         ...(input.laneId ? { laneId: input.laneId } : {}),
         ...(input.authenticationFixtureReference
           ? { authenticationFixtureReference: input.authenticationFixtureReference }
@@ -652,10 +760,14 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
     await store.save({ ...record, updatedAt: now() });
   };
 
+  let browserFrame: BrowserFrameBinding | undefined;
   const capture = async (record: GoalSessionRecord): Promise<CompactGoalObservation> => {
     const observation = await options.operations.invoke("target.observation.capture", {
       serial: record.target.targetId,
     });
+    if (record.target.platform === "browser") {
+      browserFrame = await currentBrowserFrame(options.operations, record.target.targetId);
+    }
     const compact = compactGoalObservation({
       goal: record.goal,
       sessionId: record.id,
@@ -995,16 +1107,18 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
       try {
         if (interaction.kind === "wait") {
           await new Promise((resolve) => setTimeout(resolve, Math.min(interaction.ms, 10_000)));
-        } else if (interaction.kind !== "capture") {
-          const interactionResult = await options.operations.invoke(
-            "target.interact",
-            interactionInput(record, action),
-          );
-          if (
-            "iosMutation" in interactionResult &&
-            interactionResult.iosMutation?.outcome === "outcome-unknown"
-          ) {
-            throw new Error("target interaction outcome-unknown; review required before resume");
+        } else {
+          try {
+            await dispatchGoalAction(options.operations, record, action, browserFrame);
+          } catch (error) {
+            // A stale frame is provably pre-dispatch (rejected by sequence CAS
+            // before any input): one bounded retry against the current frame.
+            if (error instanceof Error && /BROWSER_STALE_INPUT/u.test(error.message)) {
+              const fresh = await currentBrowserFrame(options.operations, record.target.targetId);
+              await dispatchGoalAction(options.operations, record, action, fresh);
+            } else {
+              throw error;
+            }
           }
         }
         const acknowledged = { ...action, status: "acknowledged" as const, at: now() };
@@ -1016,6 +1130,12 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
           updatedAt: now(),
         };
         await persist(record);
+        // A browser interaction can trigger navigation; capturing in the same
+        // tick would observe the pre-action page. A bounded settle keeps the
+        // next observation honest without inventing a navigation verifier.
+        if (record.target.platform === "browser") {
+          await new Promise((resolve) => setTimeout(resolve, 600));
+        }
       } catch (error) {
         const unknown = isOutcomeUnknown(error) || !isProvablePreDispatchRejection(error);
         const failed = {
@@ -1362,20 +1482,12 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
           };
           await saveReproduction();
           try {
-            const interactionResult = await options.operations.invoke(
-              "target.interact",
-              interactionInput(
-                { ...record, target: reproduction.target },
-                action,
-                reproduction.target.targetId,
-              ),
+            await dispatchGoalAction(
+              options.operations,
+              { ...record, target: reproduction.target },
+              action,
+              await currentBrowserFrame(options.operations, reproduction.target.targetId),
             );
-            if (
-              "iosMutation" in interactionResult &&
-              interactionResult.iosMutation?.outcome === "outcome-unknown"
-            ) {
-              throw new Error("target interaction outcome-unknown; review required before resume");
-            }
             reproduction = {
               ...reproduction,
               actions: reproduction.actions.map((item) =>

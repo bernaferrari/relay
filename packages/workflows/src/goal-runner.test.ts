@@ -192,6 +192,41 @@ function operations(options: { uncertain?: boolean; openTargetMismatch?: boolean
           },
         } as OperationOutput<Id>;
       }
+      if (id === "target.browser-device.open") {
+        const input = _input as OperationInput<"target.browser-device.open">;
+        return {
+          session: {
+            schemaVersion: 1 as const,
+            sessionId: "runtime-ctx-device",
+            targetId: input.targetId,
+            status: "streaming" as const,
+            ownership: "controlled" as const,
+            sequence: 1,
+            activePageId: "page-1",
+            pages: [],
+            profile: { startUrl: "https://example.test" },
+            startedAt: 1,
+          },
+        } as unknown as OperationOutput<Id>;
+      }
+      if (id === "target.browser-device.frame") {
+        captureCount += 1;
+        return {
+          session: { schemaVersion: 1 as const, sessionId: "runtime-ctx-device", targetId: "frame", status: "streaming" as const, ownership: "controlled" as const, sequence: 1, activePageId: "page-1", pages: [], profile: {}, startedAt: 1 },
+          frame: {
+            schemaVersion: 1 as const,
+            sessionId: "runtime-ctx-device",
+            pageId: "page-1",
+            sequence: captureCount,
+            capturedAt: captureCount,
+            mime: "image/jpeg" as const,
+            bytes: 1,
+            visualFingerprint: `frame-${captureCount}`,
+            width: 100,
+            height: 100,
+          },
+        } as unknown as OperationOutput<Id>;
+      }
       if (id === "target.devices.list") {
         return {
           devices: [
@@ -208,7 +243,7 @@ function operations(options: { uncertain?: boolean; openTargetMismatch?: boolean
         captureCount += 1;
         return observation(captureCount) as OperationOutput<Id>;
       }
-      if (id === "target.interact") {
+      if (id === "target.browser-device.control") {
         if (options.uncertain) throw new Error("target interaction outcome-unknown");
         return { ok: true } as OperationOutput<Id>;
       }
@@ -241,9 +276,12 @@ test("goal runner persists redacted observation and intent before one safe actio
   assert.deepEqual(runtime.calls, [
     "target.create",
     "target.open",
+    "target.browser-device.open",
     "target.observation.capture",
-    "target.interact",
+    "target.browser-device.frame",
+    "target.browser-device.control",
     "target.observation.capture",
+    "target.browser-device.frame",
   ]);
   assert.equal(result.actions[0]?.status, "acknowledged");
   assert.deepEqual(result.findings, []);
@@ -262,7 +300,7 @@ test("goal runner reports unavailable OpenRouter without mutating the target", a
   assert.equal(result.status, "blocked");
   assert.equal(result.stopReason?.code, "provider-unavailable");
   assert.equal(result.findings[0]?.kind, "blocked-exploration");
-  assert.equal(runtime.calls.includes("target.interact"), false);
+  assert.equal(runtime.calls.includes("target.browser-device.control"), false);
 });
 
 test("goal runner fails closed when target.open returns a different target", async () => {
@@ -289,7 +327,7 @@ test("uncertain target interaction is terminal and is never automatically retrie
   }).start({ goal: "Do the thing", startUrl: "https://example.test" });
   assert.equal(result.status, "uncertain");
   assert.equal(result.stopReason?.code, "action-uncertain");
-  assert.equal(runtime.calls.filter((id) => id === "target.interact").length, 1);
+  assert.equal(runtime.calls.filter((id) => id === "target.browser-device.control").length, 1);
   assert.equal(result.actions[0]?.status, "unknown");
   assert.equal(result.findings[0]?.kind, "possible-issue");
 });
@@ -357,7 +395,7 @@ test("fresh reproduction replays acknowledged actions on an isolated browser tar
   assert.equal(reproduced.reproduction?.target.targetId, "goal-repro-goal-reproduce");
   assert.equal(reproduced.reproduction?.actions[0]?.status, "acknowledged");
   assert.equal(reproduced.reproduction?.findings?.[0]?.kind, "reproduction-lead");
-  assert.equal(runtime.calls.filter((id) => id === "target.interact").length, 2);
+  assert.equal(runtime.calls.filter((id) => id === "target.browser-device.control").length, 2);
   assert.equal(store.values.get(original.sessionId)?.reproduction?.pendingAction, undefined);
 });
 
@@ -376,7 +414,9 @@ test("an existing managed browser target is opened with the requested fixture, n
   assert.deepEqual(runtime.calls, [
     "target.devices.list",
     "target.open",
+    "target.browser-device.open",
     "target.observation.capture",
+    "target.browser-device.frame",
   ]);
   assert.deepEqual(runtime.openInputs, [
     {
@@ -435,7 +475,7 @@ test("a decision bound to a different observation digest cannot authorize input"
   }).start({ goal: "Reach the next screen", startUrl: "https://example.test" });
   assert.equal(result.status, "blocked");
   assert.equal(result.stopReason?.code, "action-rejected");
-  assert.equal(runtime.calls.includes("target.interact"), false);
+  assert.equal(runtime.calls.includes("target.browser-device.control"), false);
 });
 
 test("a control with unknown enabled state is never an authorized tap candidate", async () => {
@@ -474,7 +514,7 @@ test("a socket failure after submission stays unknown and fenced", async () => {
       id: Id,
       input: OperationInput<Id>,
     ): Promise<OperationOutput<Id>> {
-      if (id === "target.interact") {
+      if (id === "target.browser-device.control") {
         throw new Error("Socket closed after request was submitted");
       }
       return runtime.port.invoke(id, input);
@@ -501,7 +541,7 @@ test("a provable pre-dispatch admission refusal is a rejection, not uncertainty"
       id: Id,
       input: OperationInput<Id>,
     ): Promise<OperationOutput<Id>> {
-      if (id === "target.interact") throw refused;
+      if (id === "target.browser-device.control") throw refused;
       return runtime.port.invoke(id, input);
     },
   };
@@ -525,7 +565,7 @@ test("cancellation stops the session before dispatching the selected control", a
       id: Id,
       input: OperationInput<Id>,
     ): Promise<OperationOutput<Id>> {
-      if (id === "target.interact") {
+      if (id === "target.browser-device.control") {
         controller.abort();
       }
       return runtime.port.invoke(id, input);
@@ -540,7 +580,7 @@ test("cancellation stops the session before dispatching the selected control", a
   }).start({ goal: "Reach the next screen", startUrl: "https://example.test" });
   assert.equal(result.status, "cancelled");
   assert.equal(result.stopReason?.code, "cancelled");
-  assert.equal(runtime.calls.includes("target.interact"), true);
+  assert.equal(runtime.calls.includes("target.browser-device.control"), true);
   // The one dispatched interaction completed and was acknowledged; nothing
   // further runs after the cancel signal.
   assert.equal(result.actions.filter((action) => action.status === "acknowledged").length, 1);
@@ -566,7 +606,7 @@ test("a long inference cannot overshoot the budget into a late mutation", async 
   });
   assert.equal(result.status, "blocked");
   assert.equal(result.stopReason?.code, "budget-exhausted");
-  assert.equal(runtime.calls.includes("target.interact"), false);
+  assert.equal(runtime.calls.includes("target.browser-device.control"), false);
 });
 
 test("a restarted reproduction with an unresolved mutation fences instead of skipping it", async () => {
@@ -627,7 +667,7 @@ test("a restarted reproduction with an unresolved mutation fences instead of ski
   }).reproduce("goal-repro-fence");
   assert.equal(result.reproduction?.status, "uncertain");
   assert.equal(result.reproduction?.pendingAction?.actionId, "repro-action-1");
-  assert.equal(runtime.calls.includes("target.interact"), false);
+  assert.equal(runtime.calls.includes("target.browser-device.control"), false);
 });
 
 test("fill actions resolve task values locally and never leak them to the model", async () => {
@@ -779,5 +819,5 @@ test("a fill without a usable value reference stops with a clear needs-input req
   assert.equal(result.status, "blocked");
   assert.equal(result.stopReason?.code, "needs-input");
   assert.match(result.stopReason?.message ?? "", /password/u);
-  assert.equal(runtime.calls.includes("target.interact"), false);
+  assert.equal(runtime.calls.includes("target.browser-device.control"), false);
 });

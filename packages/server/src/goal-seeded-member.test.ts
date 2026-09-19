@@ -225,24 +225,25 @@ test(
 
       // Exact Member identity: the app itself reports the session role.
       const member = await runGoal(memberFx.reference);
-      console.log("MEMBER STOP:", JSON.stringify(member.stopReason), "actions:", JSON.stringify(member.actions.map((a) => [a.candidateId, a.status, a.error])));
       assert.equal(member.status, "completed");
       assert.equal(member.stopReason?.code, "goal-achieved");
       assert.equal(member.target.appliedAuthenticationFixtureId, memberFx.reference);
-      const memberRole = member.lastObservation?.candidates.find(
-        (candidate) => candidate.label === "Account",
+      console.log("FINAL CANDIDATES:", JSON.stringify(member.lastObservation?.candidates.map((c) => [c.target.identifier, c.label, c.text])));
+      // Identity is proven by the app's own server-rendered, role-dependent
+      // chrome — not by stored labels. With the defect on, the Member settings
+      // page hides both admin-only and permission-gated controls.
+      const memberManageTeam = member.lastObservation?.candidates.find(
+        (candidate) => candidate.target.identifier === "manage-team",
       );
-      assert.equal(memberRole?.text, "member");
-      const memberSeats = member.lastObservation?.candidates.find(
-        (candidate) => candidate.label === "Team seats remaining",
+      assert.equal(memberManageTeam, undefined);
+      const memberManageOrg = member.lastObservation?.candidates.find(
+        (candidate) => candidate.target.identifier === "manage-org",
       );
-      // Defect on: the seeded permissions defect shows 5 seats and hides
-      // Manage team — observable, never a verified success.
-      assert.equal(memberSeats?.text, "5");
-      const manageTeam = member.lastObservation?.candidates.find(
-        (candidate) => candidate.label === "Manage team permissions",
+      assert.equal(memberManageOrg, undefined);
+      const memberSave = member.lastObservation?.candidates.find(
+        (candidate) => candidate.target.identifier === "save-settings",
       );
-      assert.equal(manageTeam, undefined);
+      assert.ok(memberSave, "expected the member settings page chrome");
       // The explicit capture produced review-linked evidence.
       const captureAction = member.actions.find(
         (action) => action.interaction.kind === "capture",
@@ -255,14 +256,16 @@ test(
       const admin = await runGoal(adminFx.reference);
       assert.equal(admin.status, "completed");
       assert.equal(admin.target.appliedAuthenticationFixtureId, adminFx.reference);
-      const adminRole = admin.lastObservation?.candidates.find(
-        (candidate) => candidate.label === "Account",
+      // The wrong-account probe sees the Admin-only organization control the
+      // Member session can never render — the fixture was actually applied.
+      const adminManageOrg = admin.lastObservation?.candidates.find(
+        (candidate) => candidate.target.identifier === "manage-org",
       );
-      assert.equal(adminRole?.text, "admin");
-      const adminSeats = admin.lastObservation?.candidates.find(
-        (candidate) => candidate.label === "Team seats remaining",
+      assert.ok(adminManageOrg, "expected admin-only organization controls");
+      const adminManageTeam = admin.lastObservation?.candidates.find(
+        (candidate) => candidate.target.identifier === "manage-team",
       );
-      assert.equal(adminSeats?.text, "99");
+      assert.ok(adminManageTeam, "expected admin team permission controls");
     } finally {
       await closeBrowserTarget(SEEDED_MEMBER_TARGET_ID).catch(() => undefined);
       await closeBrowserHostPool().catch(() => undefined);

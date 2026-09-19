@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type http from "node:http";
 import {
   captureBrowserDeviceFrame,
+  inspectBrowserDevice,
   captureScreenshot,
   captureSnapshot,
   cleanupScreenshot,
@@ -33,6 +34,28 @@ type DurableTargetObservationDependencies = {
   captureSemantics(serial: string): Promise<SnapshotPayload>;
   cleanupPixels(path: string): Promise<void>;
   readBrowserTarget?(serial: string): Promise<{ id: string } | null>;
+  /** Live DOM semantics for a managed browser target. Absent means the
+   * deployment did not open a browser-device session; the observation then
+   * reports semantics honestly unavailable. */
+  captureBrowserSemantics?(
+    targetId: string,
+  ): Promise<
+    | {
+        status: "current";
+        capturedAt: number;
+        controls: Array<{
+          identifier?: string;
+          label?: string;
+          text?: string;
+          role?: string;
+          enabled?: boolean;
+          selected?: boolean;
+          rect?: { x: number; y: number; width: number; height: number };
+        }>;
+        nodeCount: number;
+      }
+    | { status: "unavailable"; message: string }
+  >;
   captureBrowserPixels?(serial: string): Promise<{
     capturedAt: number;
     mime: "image/jpeg" | "image/png";
@@ -94,6 +117,57 @@ function controls(snapshot: SnapshotPayload | undefined): TargetObservationContr
  * Session or a Run: it is a small read-only evidence record for the ordinary
  * observe → act → observe loop.
  */
+/** Live DOM semantics for a managed browser target via its browser-device
+ * session. Any failure — closed session, unstable page — returns honestly
+ * unavailable; never an invented current tree. */
+async function defaultCaptureBrowserSemantics(
+  targetId: string,
+): Promise<
+  | {
+      status: "current";
+      capturedAt: number;
+      controls: Array<{
+        identifier?: string;
+        label?: string;
+        text?: string;
+        role?: string;
+        enabled?: boolean;
+        selected?: boolean;
+        rect?: { x: number; y: number; width: number; height: number };
+      }>;
+      nodeCount: number;
+    }
+  | { status: "unavailable"; message: string }
+> {
+  try {
+    const { frame } = await captureBrowserDeviceFrame(targetId);
+    const { overlay } = await inspectBrowserDevice(targetId, {
+      sessionId: frame.sessionId,
+      pageId: frame.pageId,
+      expectedSequence: frame.sequence,
+    });
+    return {
+      status: "current",
+      capturedAt: overlay.capturedAt,
+      nodeCount: overlay.candidates.length,
+      controls: overlay.candidates.map((candidate) => ({
+        ...(candidate.identifier ? { identifier: candidate.identifier } : {}),
+        ...(candidate.label ? { label: candidate.label } : {}),
+        ...(candidate.value !== undefined ? { text: candidate.value } : {}),
+        role: candidate.role,
+        enabled: candidate.enabled,
+        selected: candidate.selected,
+        rect: candidate.rect,
+      })),
+    };
+  } catch (error) {
+    return {
+      status: "unavailable",
+      message: `Browser semantics unavailable: ${message(error, "browser-device session is not open")}`,
+    };
+  }
+}
+
 async function captureDurableBrowserObservation(
   serial: string,
   dependencies: DurableTargetObservationDependencies,
@@ -121,6 +195,10 @@ async function captureDurableBrowserObservation(
       { code: "TARGET_INPUT_RECONCILIATION_EVIDENCE_UNAVAILABLE" },
     );
   }
+  const semantics =
+    (await (dependencies.captureBrowserSemantics ?? defaultCaptureBrowserSemantics)(
+      managedBrowserTargetIdFromSchedulingKey(serial) ?? serial,
+    )) ?? { status: "unavailable" as const, message: "Browser semantics were not captured." };
   const bytes = Buffer.from(frame.base64, "base64");
   const persisted = await persistCapturedAuthoringObservation({
     capturedAt: frame.capturedAt,
@@ -164,14 +242,23 @@ async function captureDurableBrowserObservation(
       width: frame.width,
       height: frame.height,
     },
-    semantics: {
-      status: "unavailable",
-      artifact: projectAuthoringEvidenceArtifact(semanticEvidence),
-      capturedAt: frame.capturedAt,
-      nodeCount: 0,
-      controls: [],
-      message: "Browser reconcile uses the current painted frame, not a historic rectangle.",
-    },
+    semantics:
+      semantics.status === "current"
+        ? {
+            status: "current",
+            artifact: projectAuthoringEvidenceArtifact(semanticEvidence),
+            capturedAt: semantics.capturedAt,
+            nodeCount: semantics.nodeCount,
+            controls: semantics.controls,
+          }
+        : {
+            status: "unavailable",
+            artifact: projectAuthoringEvidenceArtifact(semanticEvidence),
+            capturedAt: frame.capturedAt,
+            nodeCount: 0,
+            controls: [],
+            message: semantics.message,
+          },
   };
 }
 
