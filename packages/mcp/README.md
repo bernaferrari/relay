@@ -144,6 +144,30 @@ fields directly. For example, capture a screenshot with
 contracts expose specific required fields, types, and enums; intentionally generic Relay operations
 remain extensible objects and are still validated by the canonical protocol parser before invocation.
 
+## Run an existing Test
+
+With the default operator profile, call `relay_run` directly with the saved Test identity:
+
+```json
+{ "appMapId": "checkout", "testId": "signed-in-home", "lane": "qa-member" }
+```
+
+There is no manual tap or exploration prerequisite. Use `relay_wait` with the returned job ID;
+`{"jobId":"job-1","wait":false}` reads current progress once without waiting. Keep that job ID
+through disconnections instead of starting the Test again. Execution completion is separate from
+human screenshot acceptance.
+
+For manual observation and control, `relay_snapshot`, `relay_preview`, `relay_tap`, `relay_type`,
+and `relay_swipe` accept either `serial` or `lane`. Use the same Lane as the Test to preserve the
+browser/account context. Do not combine a serial with a Lane. `laneId` is an equivalent alias;
+conflicting aliases are rejected. `relay_screenshot` and `relay_recover` still require a serial;
+a Lane-aware `relay_preview` returns pixels without committing the interaction.
+
+For a long Plan, set `wait:false` on `relay_plan_run`. It returns the batch and job IDs immediately.
+Inspect those jobs with `relay_wait`, then use `relay_findings` after completion. `findings`,
+`triage`, and `export` cannot be combined with `wait:false`. The `export` option is a boolean,
+not a destination path. The existing blocking behavior remains the default.
+
 ## Agent quickstart: verify one flow across languages
 
 Run the Relay service first (`pnpm ensure:serve`). Operator verbs (`relay_screenshot`,

@@ -2464,3 +2464,13 @@ test("rejects screenshot results without canonical PNG base64", async () => {
 function pngSignatureBase64(): string {
   return Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString("base64");
 }
+
+test("profile instructions distinguish saved Test execution from manual exploration", () => {
+  for (const profile of ["operator", "outcome", "full"] as const) {
+    const instructions = relayMcpInstructionsForProfile(profile);
+    assert.match(instructions, /For a requested saved Test, run it directly/);
+    assert.doesNotMatch(instructions, /Do not start with test run/);
+    if (profile === "outcome") assert.match(instructions, /Omit appMapId and targetId/);
+    else assert.doesNotMatch(instructions, /Omit.*appMapId/);
+  }
+});

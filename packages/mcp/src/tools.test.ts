@@ -153,7 +153,7 @@ test("maps screenshot capture to its stable Relay tool descriptor", () => {
       operationId: "target.screenshot.capture",
       title: "Capture target screenshot",
       description:
-        "Capture target screenshot. Pass operation fields directly. Project role: viewer. Target capabilities: screenshot. Lease: shared. Happy path 1/3: capture pixels, then interact, then screenshot again. iOS 17+ pixels need go-ios tunnel, not target.open. A missing XCTest session is not a failed screenshot. Do not start with test run, survey, or recover. Do not retry snapshot in a loop if the tree is missing.",
+        "Capture target screenshot. Pass operation fields directly. Project role: viewer. Target capabilities: screenshot. Lease: shared. Happy path 1/3: capture pixels, then interact, then screenshot again. iOS 17+ pixels need go-ios tunnel, not target.open. A missing XCTest session is not a failed screenshot. For a requested saved Test, run it directly; this observation loop is for manual control. Do not retry snapshot in a loop if the tree is missing.",
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -174,7 +174,10 @@ test("lets agents tap by accessibility identifier", () => {
   assert.match(interact.description, /Prefer identifier/);
   assert.match(interact.description, /Happy path 2\/3/);
   assert.match(interact.description, /PNG image/);
-  assert.match(interact.description, /Do not start with app-map.test.run/);
+  assert.match(
+    interact.description,
+    /A requested saved Test can start directly with app-map.test.run/,
+  );
   assert.match(interact.description, /missing XCTest runner is not a reason to retry a point tap/);
   assert.doesNotMatch(interact.description, /Retry the tap/);
   assert.deepEqual(

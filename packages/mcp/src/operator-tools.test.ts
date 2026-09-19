@@ -1077,3 +1077,101 @@ test("operator advanced leftover Close 004 cannot fill dest on remaining job/flo
     false,
   );
 });
+
+test("Lane observation and controls preserve the exact saved account without a serial", async () => {
+  for (const [name, args, operationId] of [
+    ["relay_snapshot", { full: true }, "target.snapshot.capture"],
+    ["relay_preview", { label: "Settings" }, "target.interact"],
+    ["relay_tap", { label: "Settings" }, "target.interact"],
+    ["relay_type", { text: "hello" }, "target.interact"],
+    ["relay_swipe", { from: { x: 10, y: 80 }, to: { x: 10, y: 20 } }, "target.interact"],
+  ] as const) {
+    const { invoker, calls } = recordingInvoker(() => ({}));
+    await invokeRelayOperatorTool({
+      name,
+      argumentsValue: { lane: "signed-in", ...args },
+      confirmed: false,
+      invoker,
+      actorId: "agent:test",
+      signal: new AbortController().signal,
+    });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.operationId, operationId);
+    assert.equal((calls[0]?.input as Record<string, unknown>).laneId, "signed-in");
+    assert.equal(Object.hasOwn(calls[0]?.input as object, "serial"), false);
+    if (name === "relay_preview")
+      assert.equal((calls[0]?.input as Record<string, unknown>).preview, true);
+    for (const selection of [
+      {},
+      { serial: "other", lane: "signed-in" },
+      { lane: "signed-in", laneId: "signed-out" },
+    ]) {
+      await assert.rejects(
+        invokeRelayOperatorTool({
+          name,
+          argumentsValue: { ...selection, ...args },
+          confirmed: false,
+          invoker,
+          actorId: "agent:test",
+          signal: new AbortController().signal,
+        }),
+      );
+    }
+    assert.equal(calls.length, 1, "invalid selections must fail before any device operation");
+  }
+});
+
+test("nonblocking Plan start returns continuation IDs without polling or accepting visual evidence", async () => {
+  const { invoker, calls } = recordingInvoker(() => ({
+    batch: { id: "batch-1" },
+    jobs: [{ id: "job-1", status: "running" }],
+  }));
+  const result = (await invokeRelayOperatorTool({
+    name: "relay_plan_run",
+    argumentsValue: { appMapId: "app", combineId: "plan", wait: false },
+    confirmed: false,
+    invoker,
+    actorId: "agent:test",
+    signal: new AbortController().signal,
+  })) as Record<string, unknown>;
+  assert.equal(result.status, "started");
+  assert.equal(result.batchId, "batch-1");
+  assert.deepEqual(result.jobIds, ["job-1"]);
+  assert.deepEqual(
+    calls.map((call) => call.operationId),
+    ["job.combine.start"],
+  );
+  for (const args of [
+    { wait: false, export: true },
+    { wait: false, findings: true },
+    { export: "/ignored/path" },
+  ]) {
+    await assert.rejects(
+      invokeRelayOperatorTool({
+        name: "relay_plan_run",
+        argumentsValue: { appMapId: "app", combineId: "plan", ...args },
+        confirmed: false,
+        invoker,
+        actorId: "agent:test",
+        signal: new AbortController().signal,
+      }),
+    );
+  }
+  assert.equal(calls.length, 1);
+});
+
+test("job inspection returns running truth once without waiting or restarting", async () => {
+  const { invoker, calls } = recordingInvoker(() => ({ job: { id: "job-1", status: "running" } }));
+  const result = (await invokeRelayOperatorTool({
+    name: "relay_wait",
+    argumentsValue: { jobId: "job-1", wait: false },
+    confirmed: false,
+    invoker,
+    actorId: "agent:test",
+    signal: new AbortController().signal,
+  })) as Record<string, unknown>;
+  assert.equal(result.status, "running");
+  assert.equal(result.terminal, false);
+  assert.equal(result.ok, undefined);
+  assert.deepEqual(calls, [{ operationId: "job.get", input: { jobId: "job-1" } }]);
+});

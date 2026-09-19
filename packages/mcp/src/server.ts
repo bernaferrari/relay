@@ -96,12 +96,14 @@ export function relayMcpInstructionsForProfile(profile: RelayMcpProfile): string
       : profile === "outcome"
         ? "Prefer outcome tools: connect, observe, record, run, repeat, inspect, debug, repair, and export evidence."
         : "Use only tools registered in the selected profile; start with read-only inspection and choose the narrowest tool that can complete the requested task.",
-    "Omit the advanced appMapId and targetId fields when exactly one Test workspace and one ready Device exist.",
+    profile === "outcome"
+      ? "Omit appMapId and targetId when exactly one Test workspace and one ready Device exist."
+      : "Supply the required fields in each tool schema. Keep the same saved Lane or explicit target throughout observation and execution.",
     "Never retry an outcome whose snapshot says the mutation outcome is unknown; inspect its continuation reference.",
     "Repeat runs one representative case first and requires explicit confirmation before remaining values.",
     "Replay Lab accepts only explicit bounded TracePack payloads and always keeps future target behavior unknown.",
     "Repair tools create reviewable proposals; they never silently rewrite an approved Test.",
-    "Happy path: screenshot → preview/tap → screenshot. Do not start with test run, survey, recover, or wait-for recipes.",
+    "For a requested saved Test, run it directly. For exploration or manual control, observe → preview/act → observe. Recover only when target readiness requires it.",
     "For advanced Device control, capture a screenshot before interacting and prefer identifier, then label, text, and point.",
     "A missing accessibility tree is not a failed session; pixels and point control remain usable.",
     "Never displace another actor's Device control implicitly, and wait or cancel an active reserved Run before sending input.",

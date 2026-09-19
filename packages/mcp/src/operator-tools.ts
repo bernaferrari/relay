@@ -86,16 +86,31 @@ function verb(
   });
 }
 
+const controlTargetFields = { serial: identifier.optional(), ...laneFields };
+
+function requireControlTarget(
+  value: { serial?: string; lane?: string; laneId?: string },
+  context: z.RefinementCtx,
+): void {
+  if (!value.serial && !value.lane && !value.laneId)
+    context.addIssue({ code: "custom", message: "Provide serial or lane." });
+  if (value.serial && (value.lane || value.laneId))
+    context.addIssue({ code: "custom", message: "Choose serial or lane, not both." });
+  if (value.lane && value.laneId && value.lane !== value.laneId)
+    context.addIssue({ code: "custom", message: "lane and laneId must match." });
+}
+
 const interactTarget = z
   .object({
-    serial: identifier,
+    ...controlTargetFields,
     identifier: identifier.optional(),
     label: identifier.optional(),
     text: z.string().min(1).optional(),
     x: z.number().optional(),
     y: z.number().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine(requireControlTarget);
 
 function requireTapTarget(
   value: {
@@ -139,7 +154,7 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_screenshot",
     "Capture screenshot",
-    'When to use: happy path 1/3 — capture pixels before a tap; missing trees are fine. Then preview/tap, then screenshot again. Do not start with relay_run. iOS 17+ needs go-ios tunnel, not target.open. Example: {serial:"RQCY104BG8X"} returns the current PNG.',
+    'When to use: happy path 1/3 — capture pixels before a tap; missing trees are fine. Then preview/tap, then screenshot again. For a saved Test, use relay_run directly. iOS 17+ needs go-ios tunnel, not target.open. Example: {serial:"RQCY104BG8X"} returns the current PNG.',
     z
       .object({
         serial: identifier,
@@ -153,7 +168,10 @@ export const relayOperatorTools = Object.freeze([
     "relay_snapshot",
     "Capture snapshot",
     'When to use: read app/header/controls digest; do not retry if the tree is missing. Example: {serial:"ipad"} → digest; pass full:true for nodes.',
-    z.object({ serial: identifier, full: z.boolean().optional() }).strict(),
+    z
+      .object({ ...controlTargetFields, full: z.boolean().optional() })
+      .strict()
+      .superRefine(requireControlTarget),
     ro,
   ),
   verb(
@@ -178,12 +196,13 @@ export const relayOperatorTools = Object.freeze([
     'When to use: type into the focused field or a named control. Example: {serial:"ipad",text:"hello"}.',
     z
       .object({
-        serial: identifier,
+        ...controlTargetFields,
         text: z.string(),
         identifier: identifier.optional(),
         label: identifier.optional(),
       })
-      .strict(),
+      .strict()
+      .superRefine(requireControlTarget),
     rw,
   ),
   verb(
@@ -192,12 +211,13 @@ export const relayOperatorTools = Object.freeze([
     'When to use: scroll or dismiss with a gesture. Example: {serial:"ipad",from:{x:200,y:800},to:{x:200,y:200}}.',
     z
       .object({
-        serial: identifier,
+        ...controlTargetFields,
         from: point,
         to: point,
         durationMs: z.number().int().positive().optional(),
       })
-      .strict(),
+      .strict()
+      .superRefine(requireControlTarget),
     rw,
   ),
   verb(
@@ -228,7 +248,7 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_run",
     "Run a Test",
-    'When to use: run one saved Test after a live poke; not a first move. Default is one case; pass executionMode all only when asked. wait-for/expect-screen can sit on an unchanged screen. Example: {appMapId:"grok-web",testId:"logged-out-home",lane:"grok-daily"}.',
+    'When to use: run one saved Test directly when requested; no manual interaction is needed first. Default is one case; pass executionMode all only when asked. wait-for/expect-screen can sit on an unchanged screen. Example: {appMapId:"grok-web",testId:"logged-out-home",lane:"grok-daily"}.',
     z
       .object({
         appMapId: identifier,
@@ -260,16 +280,37 @@ export const relayOperatorTools = Object.freeze([
         executionMode: z.enum(["all"]).optional(),
         findings: z.boolean().optional(),
         triage: z.literal("jev").optional(),
-        export: z.union([z.boolean(), identifier]).optional(),
+        export: z.boolean().optional(),
+        wait: z
+          .boolean()
+          .optional()
+          .describe(
+            "Defaults to true. Set false to return job IDs immediately; follow with relay_wait.",
+          ),
       })
-      .strict(),
+      .strict()
+      .superRefine((value, context) => {
+        if (value.wait === false && (value.findings || value.export || value.triage))
+          context.addIssue({
+            code: "custom",
+            message: "With wait:false, fetch findings or export after the jobs finish.",
+          });
+        if (value.lane && value.laneId && value.lane !== value.laneId)
+          context.addIssue({ code: "custom", message: "lane and laneId must match." });
+      }),
     rw,
   ),
   verb(
     "relay_wait",
     "Wait for a job",
-    'When to use: poll until a job is terminal and return the CLI JSON envelope. Example: {jobId:"job-1"} → {type:"result",ok:true,operationId:"job.get",result}.',
-    z.object({ jobId: identifier, timeoutMs: z.number().int().positive().optional() }).strict(),
+    'When to use: inspect a job with wait:false, or wait until terminal. A running job is not a failed Test. Example: {jobId:"job-1"} → {type:"result",ok:true,operationId:"job.get",result}.',
+    z
+      .object({
+        jobId: identifier,
+        wait: z.boolean().optional(),
+        timeoutMs: z.number().int().positive().optional(),
+      })
+      .strict(),
     ro,
   ),
   verb(
@@ -365,8 +406,13 @@ function serialFrom(input: Record<string, unknown>): string | undefined {
 }
 
 function interactKind(parsed: Record<string, unknown>, preview = false): Record<string, unknown> {
-  const serial = parsed.serial as string;
-  const base: Record<string, unknown> = preview ? { serial, preview: true } : { serial };
+  const base = withLane(
+    {
+      ...(typeof parsed.serial === "string" ? { serial: parsed.serial } : {}),
+      ...(preview ? { preview: true } : {}),
+    },
+    parsed,
+  );
   if (object(parsed.from) && object(parsed.to)) {
     return {
       ...base,
@@ -662,16 +708,22 @@ export async function invokeRelayOperatorTool(input: {
     });
   }
   if (input.name === "relay_snapshot") {
-    return call("target.snapshot.capture", {
-      serial: parsed.serial,
-      ...(parsed.full === true ? { full: true } : {}),
-    });
+    return call(
+      "target.snapshot.capture",
+      withLane(
+        {
+          ...(typeof parsed.serial === "string" ? { serial: parsed.serial } : {}),
+          ...(parsed.full === true ? { full: true } : {}),
+        },
+        parsed,
+      ),
+    );
   }
   if (input.name === "relay_preview") return call("target.interact", interactKind(parsed, true));
   if (input.name === "relay_tap") return call("target.interact", interactKind(parsed));
   if (input.name === "relay_type") {
     return call("target.interact", {
-      serial: parsed.serial,
+      ...withLane(typeof parsed.serial === "string" ? { serial: parsed.serial } : {}, parsed),
       kind: "type",
       text: parsed.text,
       ...(typeof parsed.identifier === "string" || typeof parsed.label === "string"
@@ -686,7 +738,7 @@ export async function invokeRelayOperatorTool(input: {
   }
   if (input.name === "relay_swipe") {
     return call("target.interact", {
-      serial: parsed.serial,
+      ...withLane(typeof parsed.serial === "string" ? { serial: parsed.serial } : {}, parsed),
       kind: "swipe",
       from: parsed.from,
       to: parsed.to,
@@ -760,6 +812,16 @@ export async function invokeRelayOperatorTool(input: {
         parsed,
       ),
     );
+    if (parsed.wait === false) {
+      return {
+        operationId: "job.combine.start",
+        status: "started",
+        batchId: planBatchId(started),
+        jobIds: startedJobIds(started),
+        result: summarizeExecutionOperationResult("job.combine.start", started),
+        next: "Call relay_wait for each jobId, then relay_findings with batchId. Do not start the Plan again to check progress.",
+      };
+    }
     const waited: unknown[] = [];
     for (const jobId of startedJobIds(started)) {
       waited.push(await waitForJob(invoker, jobId, signal, pollIntervalMs));
@@ -811,6 +873,19 @@ export async function invokeRelayOperatorTool(input: {
     };
   }
   if (input.name === "relay_wait") {
+    if (parsed.wait === false) {
+      const result = await invoker.invoke("job.get", { jobId: parsed.jobId }, { signal });
+      const status = jobStatus(result);
+      if (terminalJobStatuses.has(status)) return waitEnvelope(result);
+      return {
+        operationId: "job.get",
+        jobId: parsed.jobId,
+        status,
+        terminal: false,
+        result: summarizeExecutionOperationResult("job.get", result),
+        next: "Inspect this job again with relay_wait; do not start another run.",
+      };
+    }
     const result = await waitForJob(
       invoker,
       parsed.jobId as string,
