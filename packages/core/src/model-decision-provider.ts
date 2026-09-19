@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { generateText, jsonSchema, Output } from "ai";
+import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type {
   ModelChoiceAnswer,
   ModelDecisionAnswer,
@@ -47,21 +49,6 @@ export type ModelDecisionProvider = {
   decide(request: ModelDecisionRequest): Promise<ModelDecisionRecord>;
 };
 
-type OpenRouterResponse = {
-  id?: unknown;
-  model?: unknown;
-  choices?: Array<{
-    message?: { content?: unknown };
-  }>;
-  usage?: {
-    input_tokens?: unknown;
-    output_tokens?: unknown;
-    prompt_tokens?: unknown;
-    completion_tokens?: unknown;
-  };
-  error?: { message?: unknown };
-};
-
 function finiteNumber(
   value: unknown,
   minimum = 0,
@@ -84,29 +71,6 @@ function sameKeys(actual: Record<string, unknown>, expected: readonly string[]):
     keys.length === expected.length &&
     keys.every((key, index) => key === [...expected].sort()[index])
   );
-}
-
-function parseContent(content: unknown): unknown {
-  if (typeof content === "string") {
-    const trimmed = content.trim();
-    if (!trimmed) return null;
-    try {
-      return JSON.parse(trimmed) as unknown;
-    } catch {
-      return null;
-    }
-  }
-  if (Array.isArray(content)) {
-    const text = content
-      .map((part) => {
-        const record = objectValue(part);
-        return typeof record?.text === "string" ? record.text : "";
-      })
-      .join("")
-      .trim();
-    return text ? parseContent(text) : null;
-  }
-  return content;
 }
 
 function choiceAnswer(
@@ -323,21 +287,56 @@ function requestError(request: ModelDecisionRequest): string | null {
   return null;
 }
 
-function responseUsage(
-  body: OpenRouterResponse,
-): { inputTokens: number; outputTokens: number } | undefined {
-  if (!body.usage) return undefined;
-  const input = finiteNumber(body.usage.input_tokens ?? body.usage.prompt_tokens, 0);
-  const output = finiteNumber(body.usage.output_tokens ?? body.usage.completion_tokens, 0);
+function openRouterBaseUrl(endpoint: string): string {
+  return endpoint.replace(/\/chat\/completions\/?$/u, "");
+}
+
+function errorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const value =
+    (error as { statusCode?: unknown; status?: unknown }).statusCode ??
+    (error as { status?: unknown }).status;
+  return typeof value === "number" && Number.isInteger(value) ? value : undefined;
+}
+
+function errorText(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (error && typeof error === "object") {
+    const record = error as { responseBody?: unknown; message?: unknown };
+    if (typeof record.message === "string" && record.message.trim()) return record.message;
+    if (typeof record.responseBody === "string" && record.responseBody.trim()) {
+      return record.responseBody;
+    }
+  }
+  return "OpenRouter request failed";
+}
+
+function isInvalidProviderResponse(error: unknown, status: number | undefined): boolean {
+  if (error && typeof error === "object") {
+    const name = (error as { name?: unknown }).name;
+    if (typeof name === "string" && /No(?:Object|Output)GeneratedError/u.test(name)) return true;
+  }
+  if (
+    /(?:invalid json response|no choice in response|type validation failed|no (?:object|output) generated)/iu.test(
+      errorText(error),
+    )
+  ) {
+    return true;
+  }
+  // A successful HTTP response that the SDK cannot validate is a malformed
+  // provider response, not a transient provider outage.
+  return status !== undefined && status >= 200 && status < 300;
+}
+
+function sdkUsage(usage: {
+  inputTokens?: number;
+  outputTokens?: number;
+}): { inputTokens: number; outputTokens: number } | undefined {
+  const input = finiteNumber(usage.inputTokens, 0);
+  const output = finiteNumber(usage.outputTokens, 0);
   return input !== null && output !== null
     ? { inputTokens: Math.trunc(input), outputTokens: Math.trunc(output) }
     : undefined;
-}
-
-function errorMessage(body: OpenRouterResponse, status: number): string {
-  return typeof body.error?.message === "string"
-    ? body.error.message
-    : `OpenRouter returned HTTP ${status}`;
 }
 
 function recordBase(
@@ -384,6 +383,19 @@ export function createOpenRouterDecisionProvider(
     1,
     Math.min(MAX_ATTEMPTS, Math.trunc(options.maxAttempts ?? MAX_ATTEMPTS)),
   );
+  const openrouter =
+    apiKey && fetchImpl
+      ? createOpenRouter({
+          apiKey,
+          baseURL: openRouterBaseUrl(endpoint),
+          fetch: fetchImpl,
+          headers: {
+            ...(options.httpReferer ? { "HTTP-Referer": options.httpReferer } : {}),
+            ...(options.appTitle ? { "X-Title": options.appTitle } : {}),
+          },
+          compatibility: "strict",
+        })
+      : undefined;
 
   return {
     id: "openrouter",
@@ -415,89 +427,78 @@ export function createOpenRouterDecisionProvider(
         string,
         ModelDecisionQuestion
       >;
-      const body = {
-        model: request.model || model,
-        messages: [
-          {
-            role: "user",
-            content: JSON.stringify({ state: safeState, questions: safeQuestions }),
-          },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "relay_model_decision",
-            strict: true,
-            schema: responseSchema(request.questions),
-          },
-        },
-        usage: { include: true },
-      };
-      let response: Response | undefined;
-      let responseBody: OpenRouterResponse = {};
+      const requestedModel = request.model || model;
+      const output = Output.object({
+        schema: jsonSchema<{ answers: unknown }>(responseSchema(request.questions)),
+        name: "relay_model_decision",
+      });
+      let generated:
+        | {
+            output: { answers: unknown };
+            response: { modelId: string };
+            usage: { inputTokens?: number; outputTokens?: number };
+          }
+        | undefined;
+      let lastError: unknown;
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
-          response = await fetchImpl(endpoint, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
-              ...(options.httpReferer ? { "HTTP-Referer": options.httpReferer } : {}),
-              ...(options.appTitle ? { "X-Title": options.appTitle } : {}),
-            },
-            body: JSON.stringify(body),
+          generated = await generateText({
+            model: openrouter!.chat(requestedModel),
+            messages: [
+              {
+                role: "user",
+                content: JSON.stringify({ state: safeState, questions: safeQuestions }),
+              },
+            ],
+            output,
+            maxRetries: 0,
           });
-          responseBody = (await response.json().catch(() => ({}))) as OpenRouterResponse;
         } catch (error) {
-          const completedAt = now();
-          return {
-            ...recordBase(request, id, startedAt, completedAt),
-            status: "unavailable",
-            model: body.model,
-            error: {
-              code: "provider-unavailable",
-              message: error instanceof Error ? error.message : "OpenRouter request failed",
-            },
-          };
+          lastError = error;
+          const status = errorStatus(error);
+          if (!RETRYABLE_STATUSES.has(status ?? 0) || attempt === maxAttempts) break;
+          await sleep(250 * 2 ** (attempt - 1));
         }
-        if (response.ok || !RETRYABLE_STATUSES.has(response.status) || attempt === maxAttempts)
-          break;
-        await sleep(250 * 2 ** (attempt - 1));
+        if (generated) break;
       }
 
       const completedAt = now();
-      if (!response?.ok) {
-        const retryable = response ? RETRYABLE_STATUSES.has(response.status) : true;
-        const rejected = Boolean(response && response.status >= 400 && response.status < 500);
+      if (!generated) {
+        const status = errorStatus(lastError);
+        const retryable = RETRYABLE_STATUSES.has(status ?? 0);
+        const rejected = typeof status === "number" && status >= 400 && status < 500;
+        const invalidResponse = isInvalidProviderResponse(lastError, status);
         return {
           ...recordBase(request, id, startedAt, completedAt),
-          status: rejected ? "invalid" : "unavailable",
-          model: body.model,
+          status: rejected || invalidResponse ? "invalid" : "unavailable",
+          model: requestedModel,
           error: {
-            code: rejected ? "request-rejected" : "provider-unavailable",
-            message: `${retryable ? "OpenRouter remained unavailable" : "OpenRouter rejected the request"}: ${errorMessage(responseBody, response?.status ?? 0)}`,
+            code: rejected
+              ? "request-rejected"
+              : invalidResponse
+                ? "invalid-response"
+                : "provider-unavailable",
+            message: `${retryable ? "OpenRouter remained unavailable" : rejected ? "OpenRouter rejected the request" : invalidResponse ? "OpenRouter returned an invalid response" : "OpenRouter request failed"}: ${errorText(lastError)}`,
           },
         };
       }
 
-      const rawContent = responseBody.choices?.[0]?.message?.content;
-      const parsed = parseContent(rawContent);
-      const validated = validateAnswers(parsed, request.questions);
+      const validated = validateAnswers(generated.output, request.questions);
       if ("error" in validated) {
         return {
           ...recordBase(request, id, startedAt, completedAt),
           status: "invalid",
-          model: typeof responseBody.model === "string" ? responseBody.model : body.model,
-          usage: responseUsage(responseBody),
+          model: generated.response.modelId || requestedModel,
+          usage: sdkUsage(generated.usage),
           error: { code: "invalid-response", message: validated.error },
         };
       }
       return {
         ...recordBase(request, id, startedAt, completedAt),
         status: "ok",
-        model: typeof responseBody.model === "string" ? responseBody.model : body.model,
+        model: generated.response.modelId || requestedModel,
         answers: validated.answers,
-        usage: responseUsage(responseBody),
+        usage: sdkUsage(generated.usage),
       };
     },
   };

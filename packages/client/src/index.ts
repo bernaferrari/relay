@@ -32,6 +32,12 @@ import {
   type ReorderAuthoringTakeInput,
   type ReplaceAuthoringActionInput,
   type TrimAuthoringTakeInput,
+  type GoalExplorationRecord,
+  type GoalExplorationResult,
+  type GoalExplorationStartInput,
+  type GoalSessionRecord,
+  type GoalSessionResult,
+  type GoalSessionStartInput,
 } from "@relay/protocol";
 
 export class ApiError<T = unknown> extends Error {
@@ -159,6 +165,28 @@ export type BinaryResource = {
   headers: Headers;
 };
 
+/** Goal mutations are deliberately opt-in at the client boundary. */
+export type GoalControlOptions = {
+  confirmControl: true;
+  signal?: AbortSignal;
+  requestId?: string;
+  idempotencyKey?: string;
+};
+
+export type GoalPromotionInput = {
+  sessionId: string;
+  title?: string;
+  appMapId?: string;
+};
+
+/** The authoring snapshot is intentionally opaque to @relay/client. Its
+ * detailed shape belongs to the workflow package, while callers can still
+ * inspect the stable discriminator and pass it to their own authoring UI. */
+export type GoalPromotionResult = {
+  kind: "author-test";
+  [key: string]: unknown;
+};
+
 const DEFAULT_MAX_BINARY_RESOURCE_BYTES = 32 * 1024 * 1024;
 
 function operationRequest<Id extends OperationId>(
@@ -241,6 +269,51 @@ function registeredTransport(
     }
   }
   return best ? { definition: best.definition, input: best.input } : null;
+}
+
+function requireObject(value: unknown, label: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new ApiError(502, `${label} returned an invalid response`, value);
+  return value;
+}
+
+function parseGoalSessionResponse<T extends GoalSessionRecord | GoalSessionResult>(
+  value: unknown,
+  label: string,
+): T {
+  const record = requireObject(value, label);
+  const id = record.sessionId ?? record.id;
+  if (typeof id !== "string" || !id.trim()) {
+    throw new ApiError(502, `${label} returned a response without a session id`, value);
+  }
+  if (typeof record.status !== "string") {
+    throw new ApiError(502, `${label} returned a response without a status`, value);
+  }
+  if (!Array.isArray(record.actions) || !Array.isArray(record.observations)) {
+    throw new ApiError(502, `${label} returned an incomplete session response`, value);
+  }
+  return value as T;
+}
+
+function parseGoalExplorationResponse<T extends GoalExplorationRecord | GoalExplorationResult>(
+  value: unknown,
+  label: string,
+): T {
+  const record = requireObject(value, label);
+  if (typeof record.id !== "string" || !record.id.trim()) {
+    throw new ApiError(502, `${label} returned a response without an exploration id`, value);
+  }
+  if (typeof record.status !== "string" || !Array.isArray(record.workers)) {
+    throw new ApiError(502, `${label} returned an incomplete exploration response`, value);
+  }
+  return value as T;
+}
+
+function parseGoalPromotionResponse(value: unknown): GoalPromotionResult {
+  const record = requireObject(value, "Goal promotion");
+  if (record.kind !== "author-test") {
+    throw new ApiError(502, "Goal promotion returned an unexpected result", value);
+  }
+  return value as GoalPromotionResult;
 }
 
 export class RelayClient {
@@ -336,6 +409,28 @@ export class RelayClient {
       );
     }
     return body;
+  }
+
+  private async goalRequest<T>(
+    path: string,
+    init: RequestInit = {},
+    options: Pick<GoalControlOptions, "signal" | "requestId" | "idempotencyKey"> = {},
+  ): Promise<T> {
+    const headers = new Headers(init.headers);
+    headers.set("X-Relay-Request-Id", options.requestId ?? crypto.randomUUID());
+    if (init.method && init.method.toUpperCase() !== "GET") {
+      headers.set("Idempotency-Key", options.idempotencyKey ?? crypto.randomUUID());
+    }
+    const body = await this.requestUnknown(
+      path,
+      {
+        ...init,
+        headers,
+        ...(options.signal ? { signal: options.signal } : {}),
+      },
+      this.timeoutMs,
+    );
+    return body as T;
   }
 
   private operationHeaders(id: OperationId, options: InvokeOptions = {}): Headers {
@@ -774,6 +869,99 @@ export class RelayClient {
   }
   generate(input: GenerationRequest): Promise<GenerationResult> {
     return this.invoke("generation.create", input);
+  }
+
+  /** Start one bounded goal without requiring a saved Test or App Map. */
+  async startGoal(
+    input: GoalSessionStartInput,
+    options: GoalControlOptions,
+  ): Promise<GoalSessionResult> {
+    const body = await this.goalRequest<unknown>(
+      "/goal",
+      {
+        method: "POST",
+        body: JSON.stringify({ ...input, confirmControl: options.confirmControl }),
+      },
+      options,
+    );
+    return parseGoalSessionResponse(body, "Goal start");
+  }
+
+  /** Start independent bounded workers against isolated signed-out browser targets. */
+  async startExploration(
+    input: GoalExplorationStartInput,
+    options: GoalControlOptions,
+  ): Promise<GoalExplorationResult> {
+    const body = await this.goalRequest<unknown>(
+      "/explore",
+      {
+        method: "POST",
+        body: JSON.stringify({ ...input, confirmControl: options.confirmControl }),
+      },
+      options,
+    );
+    return parseGoalExplorationResponse(body, "Goal exploration start");
+  }
+
+  inspectGoal(sessionId: string, signal?: AbortSignal): Promise<GoalSessionRecord> {
+    return this.goalRequest<unknown>(`/goal/${encodeURIComponent(sessionId)}`, {
+      signal,
+    }).then((body) => parseGoalSessionResponse(body, "Goal inspection"));
+  }
+
+  inspectExploration(explorationId: string, signal?: AbortSignal): Promise<GoalExplorationRecord> {
+    return this.goalRequest<unknown>(`/explore/${encodeURIComponent(explorationId)}`, {
+      signal,
+    }).then((body) => parseGoalExplorationResponse(body, "Goal exploration inspection"));
+  }
+
+  async resumeGoal(sessionId: string, options: GoalControlOptions): Promise<GoalSessionResult> {
+    const body = await this.goalRequest<unknown>(
+      `/goal/${encodeURIComponent(sessionId)}/resume`,
+      { method: "POST", body: JSON.stringify({ confirmControl: options.confirmControl }) },
+      options,
+    );
+    return parseGoalSessionResponse(body, "Goal resume");
+  }
+
+  async resumeExploration(
+    explorationId: string,
+    options: GoalControlOptions,
+  ): Promise<GoalExplorationResult> {
+    const body = await this.goalRequest<unknown>(
+      `/explore/${encodeURIComponent(explorationId)}/resume`,
+      { method: "POST", body: JSON.stringify({ confirmControl: options.confirmControl }) },
+      options,
+    );
+    return parseGoalExplorationResponse(body, "Goal exploration resume");
+  }
+
+  async reproduceGoal(sessionId: string, options: GoalControlOptions): Promise<GoalSessionResult> {
+    const body = await this.goalRequest<unknown>(
+      `/goal/${encodeURIComponent(sessionId)}/reproduce`,
+      { method: "POST", body: JSON.stringify({ confirmControl: options.confirmControl }) },
+      options,
+    );
+    return parseGoalSessionResponse(body, "Goal reproduction");
+  }
+
+  async promoteGoal(
+    input: GoalPromotionInput,
+    options: GoalControlOptions,
+  ): Promise<GoalPromotionResult> {
+    const body = await this.goalRequest<unknown>(
+      `/goal/${encodeURIComponent(input.sessionId)}/promote`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          ...(input.title?.trim() ? { title: input.title.trim() } : {}),
+          ...(input.appMapId?.trim() ? { appMapId: input.appMapId.trim() } : {}),
+          confirmControl: options.confirmControl,
+        }),
+      },
+      options,
+    );
+    return parseGoalPromotionResponse(body);
   }
 
   async events(

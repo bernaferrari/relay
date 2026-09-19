@@ -8,6 +8,7 @@ function request(): ModelDecisionRequest {
     schemaVersion: 1,
     provider: "openrouter",
     model: "~typesafe/jev-latest",
+    observationDigest: "sha256:observation",
     state: {
       screen: "profile",
       password: "do-not-send",
@@ -30,10 +31,15 @@ function request(): ModelDecisionRequest {
 
 function responseBody() {
   return {
+    id: "chatcmpl-test",
+    object: "chat.completion",
+    created: 1,
     model: "typesafe/jev-1.13",
     choices: [
       {
+        index: 0,
         message: {
+          role: "assistant",
           content: JSON.stringify({
             answers: {
               route: {
@@ -46,9 +52,10 @@ function responseBody() {
             },
           }),
         },
+        finish_reason: "stop",
       },
     ],
-    usage: { input_tokens: 120, output_tokens: 18 },
+    usage: { prompt_tokens: 120, completion_tokens: 18, total_tokens: 138 },
   };
 }
 
@@ -117,16 +124,36 @@ test("OpenRouter decision provider rejects incomplete or contradictory answers",
     fetch: async () =>
       new Response(
         JSON.stringify({
+          id: "chatcmpl-invalid",
+          object: "chat.completion",
+          created: 1,
+          model: "typesafe/jev-1.13",
           choices: [
             {
+              index: 0,
               message: {
+                role: "assistant",
                 content: JSON.stringify({ answers: { urgency: { type: "noul", noul: 2 } } }),
               },
+              finish_reason: "stop",
             },
           ],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
         }),
         { status: 200 },
       ),
+  });
+
+  const result = await provider.decide(request());
+
+  assert.equal(result.status, "invalid");
+  assert.equal(result.error?.code, "invalid-response");
+});
+
+test("OpenRouter decision provider classifies a malformed successful SDK response as invalid", async () => {
+  const provider = createOpenRouterDecisionProvider({
+    apiKey: "test-key",
+    fetch: async () => new Response(JSON.stringify({ choices: [] }), { status: 200 }),
   });
 
   const result = await provider.decide(request());

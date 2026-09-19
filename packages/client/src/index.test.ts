@@ -711,3 +711,118 @@ test("recovery and accessibility reads have bounded cold-start budgets", async (
   await assert.rejects(explicit.invoke("target.recover", { serial: "emulator-5554" }));
   assert.deepEqual(budgets, [180000, 90000, 1234]);
 });
+
+test("goal façade keeps control explicit and reuses scoped transport", async () => {
+  const requests: Request[] = [];
+  const session = {
+    schemaVersion: 1,
+    sessionId: "goal/1",
+    goal: "Reach checkout",
+    target: { targetId: "target-1", platform: "browser", startUrl: "https://app.test" },
+    status: "completed",
+    step: 1,
+    budget: { maxSteps: 12, maxDurationMs: 300_000 },
+    actions: [],
+    observations: [],
+    findings: [],
+  };
+  const client = new RelayClient(
+    {
+      url: "https://relay.test/",
+      auth: { type: "bearer", token: "secret" },
+      organizationId: "acme",
+      projectId: "checkout",
+      actorId: "agent:playwright",
+      actorKind: "agent",
+    },
+    {
+      fetch: async (input, init) => {
+        const request = new Request(input, init);
+        requests.push(request);
+        return new Response(JSON.stringify(session), { status: 200 });
+      },
+    },
+  );
+
+  const result = await client.startGoal(
+    { goal: "Reach checkout", startUrl: "https://app.test", maxSteps: 12 },
+    { confirmControl: true, requestId: "goal-request", idempotencyKey: "goal-idempotency" },
+  );
+
+  assert.equal(result.sessionId, "goal/1");
+  assert.equal(requests[0]?.url, "https://relay.test/goal");
+  assert.equal(requests[0]?.method, "POST");
+  assert.equal(requests[0]?.headers.get("authorization"), "Bearer secret");
+  assert.equal(requests[0]?.headers.get("x-relay-request-id"), "goal-request");
+  assert.equal(requests[0]?.headers.get("idempotency-key"), "goal-idempotency");
+  assert.deepEqual(await requests[0]?.clone().json(), {
+    goal: "Reach checkout",
+    startUrl: "https://app.test",
+    maxSteps: 12,
+    confirmControl: true,
+  });
+});
+
+test("goal façade covers inspection, reproduction, exploration, and promotion routes", async () => {
+  const paths: string[] = [];
+  const client = new RelayClient(
+    {
+      url: "https://relay.test",
+      auth: { type: "none" },
+      organizationId: "local",
+      projectId: "default",
+      actorId: "agent:test",
+      actorKind: "agent",
+    },
+    {
+      fetch: async (input) => {
+        paths.push(new URL(String(input)).pathname);
+        const path = new URL(String(input)).pathname;
+        if (path.startsWith("/explore")) {
+          return new Response(
+            JSON.stringify({
+              id: "explore/1",
+              goal: "Explore checkout",
+              agents: 2,
+              status: "completed",
+              workers: [],
+              summary: { workers: 2, completed: 2, partial: 0, blocked: 0, uncertain: 0 },
+            }),
+          );
+        }
+        if (path.endsWith("/promote")) return new Response(JSON.stringify({ kind: "author-test" }));
+        return new Response(
+          JSON.stringify({
+            schemaVersion: 1,
+            sessionId: "goal/1",
+            goal: "Reach checkout",
+            target: { targetId: "target-1", platform: "browser" },
+            status: "completed",
+            step: 1,
+            budget: { maxSteps: 12, maxDurationMs: 300_000 },
+            actions: [],
+            observations: [],
+            findings: [],
+          }),
+        );
+      },
+    },
+  );
+  await client.inspectGoal("goal/1");
+  await client.reproduceGoal("goal/1", { confirmControl: true });
+  await client.startExploration(
+    { goal: "Explore checkout", startUrl: "https://app.test", agents: 2 },
+    { confirmControl: true },
+  );
+  await client.inspectExploration("explore/1");
+  await client.resumeExploration("explore/1", { confirmControl: true });
+  await client.promoteGoal({ sessionId: "goal/1", title: "Checkout" }, { confirmControl: true });
+  assert.deepEqual(paths, [
+    "/goal/goal%2F1",
+    "/goal/goal%2F1/reproduce",
+    "/explore",
+    "/explore/explore%2F1",
+    "/explore/explore%2F1/resume",
+    "/goal/goal%2F1/promote",
+  ]);
+});
