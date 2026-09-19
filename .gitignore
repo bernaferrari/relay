@@ -70,6 +70,6 @@ packages/ios-hid-tap/ios-hid-tap.exe
 .dolt/
 *.db
 .beads-credential-key
-# bd worktree
-.worktrees/gj1-4-foreground/
+# git worktrees (e.g. .worktrees/next-feature)
+.worktrees/
 packages/ios-preview-producer/ios-preview-producer
