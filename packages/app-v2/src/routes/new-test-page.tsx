@@ -7,7 +7,7 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-reac
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { CircleDot, Play, RotateCcw } from "lucide-react";
+import { CircleDot, Compass, Play, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type {
   LiveTargetBrowserContext,
@@ -543,7 +543,23 @@ export function NewTestPage() {
                     className="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)]"
                     aria-label="Device preview"
                   >
-                    <div className="flex justify-end">
+                    <div className="flex items-center justify-end gap-1">
+                      {browserContext?.pageUrl ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            void navigate({
+                              to: "/goals",
+                              search: { url: browserContext.pageUrl },
+                            })
+                          }
+                        >
+                          <Compass aria-hidden="true" />
+                          Ask Relay
+                        </Button>
+                      ) : null}
                       {previewIssue ? (
                         <Button
                           type="button"

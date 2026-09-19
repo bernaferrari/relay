@@ -116,6 +116,7 @@ export type RouteDefinition = {
     | "returnTo"
     | "run"
     | "setup"
+    | "url"
   )[];
   primaryAction: ContextualAction | null;
 };
@@ -247,7 +248,7 @@ export const ROUTE_DEFINITIONS = [
     "q",
   ]),
   d("/devices/:deviceId", "/devices", "Device", "Device", "devices", "inspect-device", ["view"]),
-  d("/goals", "/home", "Explore", null, "goals", null),
+  d("/goals", "/home", "Explore", null, "goals", null, ["url"]),
   d("/prototype/workbench", "/tests", "Workbench Prototype", "Test", "tests", null),
   d("/debug", "/sessions", "Agent Debug", "Session", "sessions", null, ["target", "runId"]),
   ...(["general", "evidence", "integrations", "appearance", "advanced", "about"] as const).map(

@@ -6,7 +6,7 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@relay/ui-react
 import { Input } from "@relay/ui-react/components/input";
 import { Textarea } from "@relay/ui-react/components/textarea";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useRouteContext } from "@tanstack/react-router";
+import { useLocation, useRouteContext } from "@tanstack/react-router";
 import { Compass, RefreshCw, RotateCcw, Save } from "lucide-react";
 import { useState, type FormEvent, type KeyboardEvent } from "react";
 import type { GoalExplorationRecord, GoalFinding, GoalSessionRecord } from "@relay/protocol";
@@ -64,8 +64,14 @@ function PromotionResult({ result }: { result: AuthorTestSnapshot }) {
 
 export function GoalPage() {
   const { goalService } = useRouteContext({ from: "__root__" });
+  // Ask Relay arrives from the live workbench with the page the user is
+  // already operating; treat that URL as the starting context, not a blank form.
+  const rawSearch = useLocation({ select: (state) => state.search });
+  const requestedUrl = (rawSearch as Readonly<Record<string, unknown>>).url;
+  const prefillUrl =
+    typeof requestedUrl === "string" && isHttpUrl(requestedUrl.trim()) ? requestedUrl.trim() : "";
   const [goal, setGoal] = useState("");
-  const [startUrl, setStartUrl] = useState("");
+  const [startUrl, setStartUrl] = useState(prefillUrl);
   const [agents, setAgents] = useState("1");
   const [maxSteps, setMaxSteps] = useState("12");
   const [maxDurationMinutes, setMaxDurationMinutes] = useState("5");

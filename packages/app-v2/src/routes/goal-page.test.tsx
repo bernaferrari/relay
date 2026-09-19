@@ -117,8 +117,8 @@ function goalService(startResult = sessionResult()): GoalProductService {
   };
 }
 
-async function render(service = goalService()) {
-  const history = createMemoryHistory({ initialEntries: ["/goals"] });
+async function render(service = goalService(), initialEntry = "/goals") {
+  const history = createMemoryHistory({ initialEntries: [initialEntry] });
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -257,6 +257,30 @@ describe("Goal page", () => {
     await settle();
 
     expect(service.resumeSession).toHaveBeenCalledWith("goal-1");
+  });
+
+  it("prefills the start URL carried from the live workbench", async () => {
+    const { host } = await render(
+      goalService(),
+      "/goals?url=https%3A%2F%2Fstaging.example.test%2Faccount",
+    );
+
+    const input = document.getElementById("goal-start-url");
+    expect(input).toBeInstanceOf(HTMLInputElement);
+    expect((input as HTMLInputElement).value).toBe("https://staging.example.test/account");
+
+    // The carried URL satisfies the start form; only the goal text and control
+    // confirmation remain before Explore becomes available.
+    await setValue("goal-description", "Open language settings and capture the screen");
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[aria-label="Confirm target control"]')
+        ?.closest("label")
+        ?.click();
+    });
+    await settle();
+    expect(button("Explore goal").disabled).toBe(false);
+    expect(host.textContent).toContain("Start from a goal");
   });
 });
 
