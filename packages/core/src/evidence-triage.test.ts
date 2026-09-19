@@ -1,11 +1,44 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { CombineEvidenceAnalysisReport, ModelDecisionRecord } from "@relay/protocol";
+import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type {
+  CombineEvidenceAnalysisReport,
+  JevEvidenceTriage,
+  ModelDecisionRecord,
+} from "@relay/protocol";
 import {
   evidenceTriageRequest,
+  latestEvidenceTriage,
+  listEvidenceTriageHistory,
+  saveEvidenceTriage,
   triageEvidenceReport,
   type ModelDecisionProvider,
 } from "./index.js";
+import * as fs from "node:fs/promises";
+
+function triageFixture(completedAt: number, batchId = "batch-1"): JevEvidenceTriage {
+  return {
+    schemaVersion: 1,
+    status: "suggested",
+    provider: "openrouter",
+    batchId,
+    findingIds: ["finding-critical"],
+    rationale: "fixture",
+    decision: {
+      schemaVersion: 1,
+      status: "ok",
+      provider: "openrouter",
+      model: `typesafe/jev-${completedAt}`,
+      requestId: `request-${completedAt}`,
+      startedAt: 0,
+      completedAt,
+      durationMs: completedAt,
+      evidenceRefs: [],
+    },
+  };
+}
 
 function report(): CombineEvidenceAnalysisReport {
   return {
@@ -111,4 +144,34 @@ test("evidence triage preserves provider unavailability as an honest suggestion 
   assert.equal(triage.status, "unavailable");
   assert.deepEqual(triage.findingIds, []);
   assert.match(triage.rationale, /missing key/u);
+});
+
+test("triage history is append-only and re-evaluation never rewrites it", async () => {
+  const previous = process.env.RELAY_WORKSPACE_ROOT;
+  const root = await fs.mkdtemp(join(tmpdir(), "relay-triage-"));
+  process.env.RELAY_WORKSPACE_ROOT = root;
+  try {
+    const base = triageFixture(1);
+    const firstPath = await saveEvidenceTriage(base);
+    assert.ok(firstPath.includes(join(".relay", "combine-evidence", "batch-1", "triage")));
+    await saveEvidenceTriage(triageFixture(2));
+    const history = await listEvidenceTriageHistory("batch-1");
+    assert.equal(history.length, 2);
+    assert.equal(history[0]?.triage.decision.model, "typesafe/jev-1");
+    assert.equal(history[1]?.triage.decision.model, "typesafe/jev-2");
+    const latest = await latestEvidenceTriage("batch-1");
+    assert.equal(latest?.decision.model, "typesafe/jev-2");
+    // The first record is untouched after re-evaluation.
+    const first = JSON.parse(await fs.readFile(firstPath, "utf8")) as JevEvidenceTriage;
+    assert.equal(first.decision.model, "typesafe/jev-1");
+    assert.equal(await latestEvidenceTriage("missing-batch"), undefined);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+    else process.env.RELAY_WORKSPACE_ROOT = previous;
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test("triage history rejects unsafe batch ids", async () => {
+  await assert.rejects(() => saveEvidenceTriage(triageFixture(1, "../escape")));
 });
