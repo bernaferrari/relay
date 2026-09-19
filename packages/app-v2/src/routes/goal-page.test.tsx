@@ -105,7 +105,6 @@ function uncertainSessionResult(): GoalSessionResult {
 }
 
 function goalService(startResult = sessionResult()): GoalProductService {
-  const reproduced = { value: false };
   return {
     start: vi.fn(async () => startResult),
     inspectSession: vi.fn(async () => startResult as never),
@@ -113,10 +112,7 @@ function goalService(startResult = sessionResult()): GoalProductService {
     resumeSession: vi.fn(async () => sessionResult()),
     resumeExploration: vi.fn(async () => ({}) as never),
     cancelSession: vi.fn(async () => sessionResult()),
-    reproduceSession: vi.fn(async () => {
-      reproduced.value = true;
-      return sessionResult(true);
-    }),
+    reproduceSession: vi.fn(async () => sessionResult(true)),
     promoteSession: vi.fn(async () => ({ title: "Checkout", stage: "reviewing" }) as never),
   };
 }

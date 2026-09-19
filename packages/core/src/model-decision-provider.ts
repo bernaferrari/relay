@@ -434,7 +434,10 @@ export function createOpenRouterDecisionProvider(
           error: { code: "provider-unavailable", message: "OpenRouter is not configured" },
         };
       }
-      const egressBlocked = modelEgressBlockedReason(endpoint, options.allowedEndpointOrigins ?? []);
+      const egressBlocked = modelEgressBlockedReason(
+        endpoint,
+        options.allowedEndpointOrigins ?? [],
+      );
       if (egressBlocked) {
         const completedAt = now();
         return {

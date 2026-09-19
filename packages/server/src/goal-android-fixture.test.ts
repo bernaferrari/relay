@@ -162,10 +162,9 @@ test(
     // focus instead of guessing a fixed settle delay (real emulator).
     await adb(["shell", "am", "start", "-S", "-n", "dev.relay.prooffixture/.MainActivity"]);
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      const focus = await adb([
-        "shell",
-        "dumpsys window windows | grep -m1 mCurrentFocus",
-      ]).catch(() => "");
+      const focus = await adb(["shell", "dumpsys window windows | grep -m1 mCurrentFocus"]).catch(
+        () => "",
+      );
       if (focus.includes("dev.relay.prooffixture")) break;
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
