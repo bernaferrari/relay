@@ -1,6 +1,6 @@
-import { emitDiagnostic } from '../../utils/diagnostics.ts';
+import { emitDiagnostic } from '@agent-device/host-kit/diagnostics';
 import type { SessionStore } from '../session-store.ts';
-import type { SessionState } from '../types.ts';
+import type { SessionState } from '../session-state.ts';
 import { isUncommittedRepairSession } from '../session-replay-transaction.ts';
 
 // Bounds the daemon's own lifetime when nothing is using it. Each
@@ -50,12 +50,12 @@ function isReapableRepairSession(session: SessionState): boolean {
   return isUncommittedRepairSession(session);
 }
 
-// Recording lifecycle is session-scoped (session.recording), so a recording
+// Recording lifecycle is session-scoped (session.screenRecording), so a recording
 // only ever exists alongside an open session. Kept as an explicit,
 // independently testable guard so a future recording path that outlives its
 // session cannot silently lose this protection.
 export function hasActiveRecording(sessionStore: SessionStore): boolean {
-  return sessionStore.toArray().some((session) => Boolean(session.recording));
+  return sessionStore.toArray().some((session) => Boolean(session.screenRecording));
 }
 
 export function isDaemonIdle(params: {

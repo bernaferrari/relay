@@ -1,8 +1,8 @@
-import { ALERT_ACTIONS, type AlertAction } from '@agent-device/contracts/interaction';
-import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
+import { ALERT_ACTIONS, type AlertAction } from '@agent-device/contracts/alert-contract';
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
 import type { AlertCommandOptions } from '@agent-device/contracts/client';
-import { compactRecord, enumField, integerField } from '../command-input.ts';
-import { defineExecutableCommand } from '../command-contract.ts';
+import { enumField, integerField } from '../command-input.ts';
+import { compactRecord } from '../input-readers.ts';
 import {
   commonInputFromFlags,
   direct,
@@ -17,7 +17,8 @@ import { AppError } from '@agent-device/kernel/errors';
 
 const ALERT_COMMAND_NAME = 'alert';
 
-const alertCommandDescription = 'Inspect or handle platform alerts.';
+const alertCommandDescription =
+  'Inspect, wait for, accept, or dismiss a platform alert. Use get before acting when the alert content matters; accept and dismiss change the active alert state. Each iOS XCTest execution activates once, then only observes. Inspect again after an unconfirmed action; never assume a timeout means nothing happened.';
 
 const alertCommandMetadata = defineFieldCommandMetadata(
   ALERT_COMMAND_NAME,
@@ -26,10 +27,6 @@ const alertCommandMetadata = defineFieldCommandMetadata(
     action: enumField(ALERT_ACTIONS),
     timeoutMs: integerField(),
   },
-);
-
-const alertCommandDefinition = defineExecutableCommand(alertCommandMetadata, (client, input) =>
-  client.command.alert(input),
 );
 
 const alertCliSchema = {
@@ -48,8 +45,11 @@ export const alertDaemonWriter: DaemonWriter = direct(PUBLIC_COMMANDS.alert, (in
 
 export const alertCommandFacet = defineCommandFacet({
   name: ALERT_COMMAND_NAME,
+  text: {
+    summary: 'Inspect, accept, or dismiss a platform alert',
+  },
   metadata: alertCommandMetadata,
-  definition: alertCommandDefinition,
+  run: (client, input) => client.command.alert(input),
   cliSchema: alertCliSchema,
   cliReader: alertCliReader,
   daemonWriter: alertDaemonWriter,

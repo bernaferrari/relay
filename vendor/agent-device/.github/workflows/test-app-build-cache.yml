@@ -33,6 +33,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       matrix: ${{ steps.fingerprint.outputs.matrix }}
+      has-work: ${{ steps.fingerprint.outputs.has-work }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -46,7 +47,14 @@ jobs:
         uses: ./.github/actions/setup-test-app-dependencies
 
       - name: Typecheck test app
-        run: pnpm test-app:typecheck
+        uses: ./.github/actions/run-gate
+        with: { gate: test-app-typecheck }
+
+      # image-size has no fixed release for its parser DoS advisories; this gate
+      # proves the in-tree pnpm patch still terminates the zero-length vectors.
+      - name: Run the image-size parser security test
+        uses: ./.github/actions/run-gate
+        with: { gate: test-app-security }
 
       - name: Resolve native fingerprint
         id: fingerprint
@@ -76,29 +84,29 @@ jobs:
             --argjson iosBuild "$IOS_BUILD" \
             --arg androidName "$ANDROID_NAME" \
             --argjson androidBuild "$ANDROID_BUILD" \
-            '{
-              include: [
-                {
-                  name: "iOS Release",
-                  platform: "ios",
-                  runsOn: (if $iosBuild then "macos-26" else "ubuntu-latest" end),
-                  artifactName: $iosName,
-                  build: $iosBuild
-                },
-                {
-                  name: "Android Release",
-                  platform: "android",
-                  runsOn: "ubuntu-latest",
-                  artifactName: $androidName,
-                  build: $androidBuild
-                }
-              ]
-            }')"
+            '[
+              {
+                name: "iOS Release",
+                platform: "ios",
+                runsOn: (if $iosBuild then "macos-26" else "ubuntu-latest" end),
+                artifactName: $iosName,
+                build: $iosBuild
+              },
+              {
+                name: "Android Release",
+                platform: "android",
+                runsOn: "ubuntu-latest",
+                artifactName: $androidName,
+                build: $androidBuild
+              }
+            ] | { include: map(select(.build)) }')"
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "has-work=$(jq -r '.include | length > 0' <<<"$MATRIX")" >> "$GITHUB_OUTPUT"
 
   release:
     name: ${{ matrix.name }}
     needs: fingerprint
+    if: needs.fingerprint.outputs.has-work == 'true'
     runs-on: ${{ matrix.runsOn }}
     timeout-minutes: 60
     concurrency:
@@ -180,6 +188,10 @@ jobs:
         run: |
           set -euo pipefail
           pnpm --dir examples/test-app exec expo prebuild --platform android --no-install
+          # expo prebuild's generated gradle.properties has no trailing newline, so a bare
+          # `echo >>` corrupts its last line (e.g. `expo.inlineModules.watchedDirectories=[]org.gradle.jvmargs=...`),
+          # which fails Gradle's JSON.parse of that property at configure time. Lead with a newline.
+          printf '\n%s\n' 'org.gradle.jvmargs=-Xmx4g' >> examples/test-app/android/gradle.properties
           (
             cd examples/test-app/android
             ./gradlew :app:assembleRelease
@@ -228,6 +240,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ matrix.artifactName }}
+          include-hidden-files: true
           path: .tmp/test-app-artifact/binary.tar.gz
           if-no-files-found: error
           compression-level: 0 # already gzipped

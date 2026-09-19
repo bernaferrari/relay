@@ -2,7 +2,7 @@ import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { AppError } from '@agent-device/kernel/errors';
 import { ANDROID_EMULATOR, IOS_SIMULATOR } from '../../__tests__/test-utils/device-fixtures.ts';
-import type { SessionState } from '../types.ts';
+import type { SessionState } from '../session-state.ts';
 import {
   deriveDirectIosNodeSelector,
   isDirectIosSelectorFallbackError,
@@ -86,7 +86,7 @@ test('transport-level COMMAND_FAILED errors fall back, semantic ones do not', ()
 });
 
 // #1542: isLocalIosRunnerSession is the ONE shared eligibility predicate for
-// both the direct-selector tap fast path and the offscreen refusal
+// both the Maestro selector-tap route and the offscreen refusal
 // double-check probe. Its two callers differ in exactly one parameter.
 
 test('isLocalIosRunnerSession: iOS local sessions are eligible, Android and undefined are not', () => {
@@ -108,7 +108,7 @@ test('isLocalIosRunnerSession: iOS local sessions are eligible, Android and unde
 
 test('isLocalIosRunnerSession: skipPendingPostGestureStabilization:true excludes a pending session (the tap fast path)', () => {
   const pending = makeSession('ios', {
-    postGestureStabilization: { action: 'scroll', markedAt: Date.now() },
+    postGestureStabilization: { action: 'scroll', positionals: [], markedAt: Date.now() },
   });
   assert.equal(
     isLocalIosRunnerSession(pending, { skipPendingPostGestureStabilization: true }),
@@ -118,7 +118,7 @@ test('isLocalIosRunnerSession: skipPendingPostGestureStabilization:true excludes
 
 test('isLocalIosRunnerSession: skipPendingPostGestureStabilization:false keeps a pending session eligible (the offscreen double-check)', () => {
   const pending = makeSession('ios', {
-    postGestureStabilization: { action: 'scroll', markedAt: Date.now() },
+    postGestureStabilization: { action: 'scroll', positionals: [], markedAt: Date.now() },
   });
   assert.equal(
     isLocalIosRunnerSession(pending, { skipPendingPostGestureStabilization: false }),

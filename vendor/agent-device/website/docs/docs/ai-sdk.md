@@ -4,57 +4,42 @@ title: AI SDK
 
 # AI SDK
 
-[Vercel's AI SDK](https://ai-sdk.dev/) can expose `agent-device` client methods as typed tools in a Node.js agent. `ToolLoopAgent` owns the model loop, while `createAgentDeviceClient()` owns the device session and keeps tool implementations aligned with the CLI command contracts.
-
-Install the integration dependencies:
+Use `agent-device/ai-sdk` to give an [AI SDK](https://ai-sdk.dev/) agent a typed set of tools for navigating and inspecting an app. The tools run in-process, share one named session, and default to the focused perceive-and-act surface most agents need.
 
 ```bash
-pnpm add agent-device ai zod
+pnpm add agent-device ai
 ```
 
-The example below gives the model two deliberately small tools: one for observing the current UI and one for pressing an element returned by that observation.
+Make an iOS simulator or device [available to agent-device](/docs/agent-setup), then configure an AI SDK model. String model IDs use AI Gateway by default:
+
+```dotenv
+AI_GATEWAY_API_KEY=your_api_key
+AI_MODEL=provider/model
+```
+
+Alternatively, pass a model from your configured AI SDK provider. See the AI SDK guide to [choosing a provider](https://ai-sdk.dev/docs/getting-started/choosing-a-provider).
 
 ```ts
-import { ToolLoopAgent, tool } from 'ai';
-import { createAgentDeviceClient } from 'agent-device';
-import { z } from 'zod';
+import { ToolLoopAgent } from 'ai';
+import { createAgentDeviceTools } from 'agent-device/ai-sdk';
 
-const client = createAgentDeviceClient({
+const { tools, client } = await createAgentDeviceTools({
   session: 'ai-sdk-agent',
-  lockPolicy: 'reject',
+  platform: 'ios',
 });
 
 const agent = new ToolLoopAgent({
   model: process.env.AI_MODEL!,
-  instructions: [
-    'Inspect the current UI before acting.',
-    'Only press an element ref returned by the latest snapshot.',
-    'Stop and explain when the requested state cannot be verified.',
-  ].join('\n'),
-  tools: {
-    snapshot: tool({
-      description: 'Return the interactive elements in the current device UI.',
-      inputSchema: z.object({}),
-      execute: async () => await client.capture.snapshot({ interactiveOnly: true }),
-    }),
-    press: tool({
-      description: 'Press an element from the latest snapshot by its @e ref.',
-      inputSchema: z.object({
-        ref: z.string().regex(/^@e\d+$/),
-      }),
-      execute: async ({ ref }) => await client.interactions.press({ ref }),
-    }),
-  },
+  tools,
 });
 
 try {
-  await client.apps.open({
-    app: 'com.example.app',
-    platform: 'ios',
-  });
-
   const result = await agent.generate({
-    prompt: 'Navigate to Notifications and verify that notifications are enabled.',
+    prompt: [
+      'Open Settings on the iOS device.',
+      'Navigate to Calendar notifications.',
+      'Report whether Allow Notifications is enabled.',
+    ].join(' '),
   });
 
   console.log(result.text);
@@ -63,16 +48,13 @@ try {
 }
 ```
 
-Set `AI_MODEL` to a model available through your configured AI SDK provider. See the AI SDK references for [`ToolLoopAgent`](https://ai-sdk.dev/docs/reference/ai-sdk-core/tool-loop-agent) and [`tool()`](https://ai-sdk.dev/docs/reference/ai-sdk-core/tool).
+Set `AI_MODEL` to a model available through your configured AI SDK provider. The agent sees the available device tools and chooses the calls needed to complete the prompt. The returned `client` targets the same session; keep cleanup in `finally` so the device is released even if generation fails.
 
-## Designing device tools
+## Options
 
-Prefer focused tools over a single tool that accepts an arbitrary command name and arguments:
+`set: 'core'` is the default. It exposes the perceive-and-act loop: open, close, snapshot, click, press, fill, type, get, is, find, wait, back, scroll, swipe, alert, and screenshot.
 
-- Validate tool input with a schema. In particular, constrain element refs to values such as `@e12` and make the model observe before acting.
-- Keep the `agent-device` client outside tool execution so calls share one named session.
-- Return typed client results directly unless the result needs an application-specific projection.
-- Let the host application own session cleanup with `try`/`finally`; do not rely on the model to close the session.
-- Use AI SDK's `needsApproval` option for actions that require human confirmation in your product.
+- Pass `set: 'all'` when the agent also needs device-management or observability commands.
+- Pass `approval: { close: 'user-approval' }` to require approval for a command. `createAgentDeviceTools()` returns the map as `toolApproval`, ready to pass to [`ToolLoopAgent`](https://ai-sdk.dev/docs/agents/tool-approvals).
 
-See [Node.js API](/docs/client-api) for the complete client surface and runnable, typechecked `agent-device` examples.
+See the [Node.js API](/docs/client-api) when the host application needs deterministic setup or other direct device control outside the agent loop. See the AI SDK reference for [`ToolLoopAgent`](https://ai-sdk.dev/docs/reference/ai-sdk-core/tool-loop-agent).

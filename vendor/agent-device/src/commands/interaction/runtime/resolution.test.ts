@@ -2,11 +2,15 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import type { BackendSnapshotOptions } from '../../../backend.ts';
 import { ref, selector } from './selector-read-utils.ts';
-import { resolveActionableTouchResolution } from '../../../core/interaction-targeting.ts';
-import { throwIfOffscreenInteractionTarget, tryResolveRefNode } from './resolution.ts';
-import { resolveSelectorChain } from '@agent-device/selectors';
-import { makeSnapshotState } from '../../../__tests__/test-utils/index.ts';
+import {
+  buildRefResolution,
+  throwIfOffscreenInteractionTarget,
+  tryResolveRefNode,
+} from './resolution.ts';
+import { resolveRecordedTarget } from '@agent-device/selectors';
+import { makeSnapshotState } from '@agent-device/selectors/snapshot-geometry-fixtures';
 import type { Point } from '@agent-device/kernel/snapshot';
+import { INTERACTION_ERROR_REASONS } from '@agent-device/selectors/interaction-error';
 import {
   clickRefE2,
   coveredByTabBarSnapshot,
@@ -82,6 +86,21 @@ test('runtime selector interactions fall back to a full snapshot when interactiv
     { interactiveOnly: true, includeRects: true },
     { interactiveOnly: false, includeRects: true },
   ]);
+});
+
+test('runtime selector misses carry a structured reason for retrying adapters', async () => {
+  const device = createInteractionDevice(makeSnapshotState([]));
+
+  await assert.rejects(
+    () => device.interactions.press(selector('id="profile-button"'), { session: 'default' }),
+    (error: unknown) => {
+      assert.equal(
+        (error as { details?: Record<string, unknown> }).details?.reason,
+        INTERACTION_ERROR_REASONS.selectorNotFound,
+      );
+      return true;
+    },
+  );
 });
 
 test('runtime press refuses a selector that resolves to an off-screen element', async () => {
@@ -168,10 +187,10 @@ test('runtime press names a direction for a partial clip whose center is off-scr
       assert.equal(details?.reason, 'offscreen_selector');
       assert.equal(details?.scrollDirection, 'down');
       assert.match(String(details?.hint), /scroll down/i);
-      // #1366 recovery must be bounded: a single large (fling) scroll overshoots,
-      // so the hint steers to small steps / a bounded gesture pan.
-      assert.match(String(details?.hint), /small steps/i);
-      assert.match(String(details?.hint), /gesture pan/i);
+      // #1366 recovery must be bounded. `--until` is what bounds it now: it checks the same
+      // selector between passes, so the hint names one command rather than a manual step loop.
+      assert.match(String(details?.hint), /scroll down --until 'label=Cash'/);
+      assert.match(String(details?.hint), /stops on the target/i);
       return true;
     },
   );
@@ -372,12 +391,12 @@ test('runtime fill #1280: fill is excluded from retargeting — the chain stays 
   assert.deepEqual(result.selectorChain, ['role="edittext" editable=true']);
   // ...and it resolves back to the editable container on the record-time
   // tree — the saved script stays replayable.
-  const resolved = resolveSelectorChain(snapshot.nodes, result.selectorChain!.join(' || '), {
+  const resolved = resolveRecordedTarget(result.selectorChain!.join(' || '), snapshot.nodes, {
     platform: 'android',
     requireRect: true,
-    requireUnique: true,
+    allowDisambiguation: false,
   });
-  assert.equal(resolved?.node.type, 'EditText');
+  assert.equal(resolved.kind === 'resolved' ? resolved.winner.type : undefined, 'EditText');
 });
 
 test('runtime fill surfaces targetHittable and a hint for a non-hittable selector match (Maps pin case, #1037)', async () => {
@@ -414,104 +433,6 @@ test('runtime click still promotes non-touchable nodes to hittable ancestors', a
   assert.deepEqual(calls, [{ x: 160, y: 60 }]);
   assert.equal(result.kind, 'ref');
   assert.equal(result.node?.label, 'Clickable group');
-});
-
-test('touch resolution promotes static text inside a hittable row to the row', () => {
-  const snapshot = makeSnapshotState([
-    {
-      index: 0,
-      depth: 0,
-      type: 'XCUIElementTypeCell',
-      label: 'Account row',
-      rect: { x: 10, y: 20, width: 300, height: 60 },
-      hittable: true,
-    },
-    {
-      index: 1,
-      depth: 1,
-      parentIndex: 0,
-      type: 'XCUIElementTypeStaticText',
-      label: 'Account',
-      rect: { x: 24, y: 32, width: 80, height: 20 },
-      hittable: false,
-    },
-  ]);
-
-  const resolution = resolveActionableTouchResolution(snapshot.nodes, snapshot.nodes[1]!);
-
-  assert.equal(resolution.reason, 'hittable-ancestor');
-  assert.equal(resolution.node.label, 'Account row');
-});
-
-test('touch resolution prefers same-rect hittable descendants over semantic targets', () => {
-  const snapshot = makeSnapshotState([
-    {
-      index: 0,
-      depth: 0,
-      type: 'XCUIElementTypeButton',
-      label: 'Profile',
-      rect: { x: 30, y: 40, width: 120, height: 50 },
-      hittable: false,
-    },
-    {
-      index: 1,
-      depth: 1,
-      parentIndex: 0,
-      type: 'XCUIElementTypeImage',
-      identifier: 'profile-hit-area',
-      rect: { x: 30, y: 40, width: 120, height: 50 },
-      hittable: true,
-    },
-  ]);
-
-  const resolution = resolveActionableTouchResolution(snapshot.nodes, snapshot.nodes[0]!);
-
-  assert.equal(resolution.reason, 'same-rect-descendant');
-  assert.equal(resolution.node.identifier, 'profile-hit-area');
-});
-
-test('touch resolution prevents full-screen window-like ancestors from stealing taps', () => {
-  const snapshot = makeSnapshotState([
-    {
-      index: 0,
-      depth: 0,
-      type: 'XCUIElementTypeApplication',
-      label: 'Example',
-      rect: { x: 0, y: 0, width: 390, height: 844 },
-      hittable: true,
-    },
-    {
-      index: 1,
-      depth: 1,
-      parentIndex: 0,
-      type: 'XCUIElementTypeStaticText',
-      label: 'Status',
-      rect: { x: 24, y: 72, width: 80, height: 24 },
-      hittable: false,
-    },
-  ]);
-
-  const resolution = resolveActionableTouchResolution(snapshot.nodes, snapshot.nodes[1]!);
-
-  assert.equal(resolution.reason, 'overly-broad-ancestor');
-  assert.equal(resolution.node.label, 'Status');
-});
-
-test('touch resolution falls back to the original node when no usable touch target exists', () => {
-  const snapshot = makeSnapshotState([
-    {
-      index: 0,
-      depth: 0,
-      type: 'XCUIElementTypeOther',
-      label: 'Virtual item',
-      hittable: false,
-    },
-  ]);
-
-  const resolution = resolveActionableTouchResolution(snapshot.nodes, snapshot.nodes[0]!);
-
-  assert.equal(resolution.reason, 'original');
-  assert.equal(resolution.node.label, 'Virtual item');
 });
 
 test('runtime interactions reject unsupported macOS desktop and menubar surfaces', async () => {
@@ -613,6 +534,21 @@ test('tryResolveRefNode discloses exact for a resolved ref and label-fallback fo
   });
 
   assert.equal(tryResolveRefNode(nodes, '@e9', { fallbackLabel: '' }), null);
+});
+
+test('buildRefResolution is the shared exact and label-fallback disclosure constructor', () => {
+  const node = selectorSnapshot().nodes[0]!;
+
+  assert.deepEqual(buildRefResolution('e1', node, 'exact').resolution, {
+    source: 'ref',
+    phase: 'pre-action',
+    kind: 'exact',
+  });
+  assert.deepEqual(buildRefResolution('e1', node, 'label-fallback').resolution, {
+    source: 'ref',
+    phase: 'pre-action',
+    kind: 'label-fallback',
+  });
 });
 
 // #1542: throwIfOffscreenInteractionTarget is exported for ADR 0011 registry

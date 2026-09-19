@@ -1,3 +1,17 @@
+// Catches: a daemon module writing a SessionState field it does not own — aliasing through
+//   SessionStore.get()/set() lets any module mutate store-owned state, and only a full-graph
+//   AST walk over every assignment site (not a review of one module) can tell whose write
+//   it was.
+// Evidence: PR #1392 (e8b779cb32) fixed a close-time script-save failure leaking the session/
+//   device claim — a symptom of unowned SessionState writes; the field-owner table this file
+//   enforces is the durable fix.
+// Cost: 262 LOC (no dedicated test file; exercised through daemon-modularity.test.ts and
+//   model.test.ts).
+// Kill criterion: none enforced today; retire only by maintainer decision that per-field
+//   SessionState write ownership no longer matters. SessionStore hands out the live record
+//   through get()/set(), so a `session.<field> =` from any module type-checks; no owner exists
+//   at the type level.
+//
 // R7 session-state ownership.
 //
 // `SessionStore.get()` hands back the live `SessionState` out of a private Map, and `set()`
@@ -11,8 +25,10 @@
 // the set of writers that exist, so the gate's job is to stop the set from growing quietly.
 // Adding a field to `SessionState` forces a deliberate owner; writing an existing field from
 // a new module fails until that module is either declared an owner or, better, calls the
-// owner instead. ADR 0014's ref frame is the worked example — its four fields moved together
-// across two modules until `activateRefFrame` took the transition.
+// owner instead. ADR 0014's ref frame is the worked example, and the one that has since been
+// taken further than this table can go: its four fields moved together across two modules
+// until `activateRefFrame` took the transition, and they are now a single value whose nominal
+// type no other module can construct, edit, or derive from an existing frame.
 //
 // Detection is AST-based (`oxc-parser`, already a devDependency) rather than a line regex. A
 // regex has to enumerate assignment operators, and the ones it forgets are exactly the ones
@@ -35,19 +51,20 @@ export type SessionStateWrite = {
  * owner list has one entry is a field only that module can get wrong.
  */
 export const SESSION_STATE_FIELD_OWNERS: Readonly<Record<string, readonly string[]>> = {
-  // ADR 0014 ref frame: the four frame fields move together or the frame is incoherent, so
-  // both issuance forms go through ref-frame.ts.
-  refFrameState: ['src/daemon/ref-frame.ts'],
-  refFrameScope: ['src/daemon/ref-frame.ts'],
-  refFrameTree: ['src/daemon/ref-frame.ts'],
-  refFrameGeneration: ['src/daemon/ref-frame.ts'],
+  // ADR 0014 ref frame. The four frame fields this row replaced moved together or the frame was
+  // incoherent, and only this table said so; `RefFrame` is now a nominal type (`#`-private
+  // fields) that no other module can construct, edit, or spread into a new frame, and the
+  // transitions replace it whole. The row stays because the type cannot judge a whole frame
+  // moved unchanged: assigning `undefined` (a reset to the pristine frame) and assigning a
+  // frame read off another session.
+  refFrame: ['src/daemon/ref-frame.ts'],
   // Scoped-snapshot lineage is cleared at two distinct events: crossing a device side-effect
   // seam (ref-frame.ts) and replacing the stored observation (session-snapshot.ts).
   snapshotScopeSource: ['src/daemon/ref-frame.ts', 'src/daemon/session-snapshot.ts'],
   snapshot: ['src/daemon/session-snapshot.ts'],
   snapshotGeneration: ['src/daemon/session-snapshot.ts'],
   lastComparisonSafeSnapshot: ['src/daemon/session-snapshot.ts'],
-  androidSnapshotFreshness: ['src/daemon/android-snapshot-freshness.ts'],
+  androidSnapshotFreshness: ['src/daemon/session-snapshot-freshness.ts'],
   // One-shot deferred-warning latch (#1587 follow-up): the transition function is the only
   // writer, so the latch's window semantics live in a single module.
   recoveredSnapshotWarningLatch: ['src/daemon/snapshot-quality-latch.ts'],
@@ -56,37 +73,37 @@ export const SESSION_STATE_FIELD_OWNERS: Readonly<Record<string, readonly string
   // `saveScript*`/`scriptRecordingState`/`repair*` fields; its ONLY writers are the two
   // daemon-private projections (`session-replay-transaction.ts`,
   // `session-script-publication-capability.ts`) and the writer's commit transition.
-  // `recordSession` is the broader "record actions" flag and is deliberately set on its own by
-  // paths that record without arming a publication.
+  // It also absorbed `recordSession`, whose separate ownership let handler surfaces arm
+  // recording without moving the lifecycle that authorized it (#1533). Recording is now derived
+  // (`isRecordingPublication`), so there is no second field to keep in step.
   scriptPublication: [
     'src/daemon/session-replay-transaction.ts',
     'src/daemon/session-script-publication-capability.ts',
     'src/daemon/session-script-writer.ts',
-  ],
-  recordSession: [
-    'src/daemon/handlers/session-close-script.ts',
-    'src/daemon/session-replay-transaction.ts',
-    'src/daemon/session-script-publication-capability.ts',
   ],
   // #1478 P4b: moved from `session-replay-resume.ts` into the `ReplayCoordinator`
   // (`session-replay-coordinator.ts`) — the one locked gateway a native replay request uses to
   // reach both this watermark and the P4a `scriptPublication` transitions above.
   pendingRecordAndHeal: ['src/daemon/session-replay-coordinator.ts'],
 
-  trace: ['src/daemon/handlers/record-trace.ts'],
-  recording: ['src/daemon/handlers/record-trace-recording.ts'],
-  applePerf: ['src/daemon/handlers/session-perf-xctrace.ts', 'src/daemon/session-teardown.ts'],
-  nativePerf: ['src/daemon/session-teardown.ts'],
-  audioProbe: ['src/daemon/audio-probe.ts'],
+  trace: ['src/daemon/handlers/trace-runtime.ts'],
   pendingInteractionOutcome: ['src/daemon/interaction-outcome-policy.ts'],
-  postGestureStabilization: ['src/daemon/post-gesture-stabilization.ts'],
+  postGestureStabilization: ['src/daemon/deferred-interaction-outcome.ts'],
 
-  // Snapshot lineage on a freshly BUILT record. snapshot-runtime.ts constructs a new
+  // Snapshot lineage on a freshly BUILT record. snapshot-command-runtime.ts constructs a new
   // SessionState rather than mutating the stored one, so it cannot call setSessionSnapshot —
   // but the rule is the same, so the two-field transition lives in session-snapshot.ts.
-  appName: ['src/daemon/snapshot-runtime.ts'],
-  lease: ['src/daemon/handlers/session-open.ts'],
-  deviceClaim: ['src/daemon/handlers/session-open.ts'],
+  appName: ['src/daemon/snapshot-command-runtime.ts'],
+  // Open execution owns the paired lease/claim transition after the handler has admitted one
+  // lifecycle binding. Keeping the records together prevents request-policy routing from gaining
+  // a second durable owner as the execution seam stays package-bound.
+  lease: ['src/daemon/session-lifecycle/internal/session-open-execution.ts'],
+  deviceClaim: ['src/daemon/session-lifecycle/internal/session-open-execution.ts'],
+
+  // #1398 (ADR 0017 session-scoped echo protection amendment): the ephemeral
+  // literal->placeholder registry is populated and consulted only at the
+  // recorder's single choke point.
+  recordedFillLiterals: ['src/daemon/session-action-recorder.ts'],
 };
 
 /**
@@ -105,10 +122,14 @@ export const STORE_OWNED_SESSION_STATE_FIELDS: ReadonlySet<string> = new Set([
   'appBundleId',
   'appLog',
   'appLogFailure',
+  'audioProbe',
   'createdAt',
   'device',
+  'lastPerfProfile',
   'name',
   'recordOnlySession',
+  'perfCapture',
+  'screenRecording',
   'sessionScope',
   'snapshotDiagnostics',
   'surface',
@@ -145,13 +166,30 @@ export function fieldClassificationDrift(fields: readonly string[]): FieldClassi
   return drift.sort((left, right) => left.field.localeCompare(right.field));
 }
 
+const SESSION_STATE_DECLARATION = /export type SessionState = \{([\s\S]*?)\n\};/;
+
+/**
+ * The daemon module that declares `SessionState`, found by the declaration rather than by a
+ * recorded path. `sessionStateWritePressure` below measures the merge-base tree with the same
+ * function, and that tree's declaration may still sit where this tree no longer has it — a
+ * path constant would silently measure such a tree as zero pressure and bank the headroom.
+ */
+export function sessionStateDeclarationFile(
+  sources: ReadonlyMap<string, string>,
+): string | undefined {
+  for (const [file, source] of sources) {
+    if (file.startsWith('src/daemon/') && SESSION_STATE_DECLARATION.test(source)) return file;
+  }
+  return undefined;
+}
+
 /**
  * Field names declared by `SessionState` itself, so the scan cannot be fooled by a daemon
  * module with an unrelated local named `session` (a provider session, a runner session).
  */
 export function sessionStateFields(typesSource: string): string[] {
-  const declaration = /export type SessionState = \{([\s\S]*?)\n\};/.exec(typesSource);
-  if (!declaration) throw new Error('SessionState declaration not found in daemon/types.ts');
+  const declaration = SESSION_STATE_DECLARATION.exec(typesSource);
+  if (!declaration) throw new Error('SessionState declaration not found');
   return [...declaration[1]!.matchAll(/^ {2}([a-zA-Z][A-Za-z0-9]*)\??:/gm)].map(
     (match) => match[1]!,
   );
@@ -255,4 +293,32 @@ export function findSessionStateWrites(
   return writes.sort(
     (left, right) => left.file.localeCompare(right.file) || left.line - right.line,
   );
+}
+
+export type SessionStateWritePressure = Readonly<{
+  /** Declared fields that some daemon module writes directly. */
+  writerOwnedFields: number;
+  /** Distinct (field, writing module) pairs — what `SESSION_STATE_FIELD_OWNERS` claims. */
+  ownerFileClaims: number;
+}>;
+
+/**
+ * R10's measurement of R7 pressure: how many declared fields have a direct writer, and how many
+ * module claims that takes. Read from the tree rather than from the ownership table, so the same
+ * function measures a merge-base tree whose table is not in scope. On a tree R7 accepts, both
+ * numbers equal the table's own size.
+ */
+export function sessionStateWritePressure(
+  sources: ReadonlyMap<string, string>,
+): SessionStateWritePressure {
+  const declarationFile = sessionStateDeclarationFile(sources);
+  if (!declarationFile) return { writerOwnedFields: 0, ownerFileClaims: 0 };
+  const writes = findSessionStateWrites(
+    sources,
+    sessionStateFields(sources.get(declarationFile)!),
+  ).filter((write) => write.field !== '[computed]');
+  return {
+    writerOwnedFields: new Set(writes.map((write) => write.field)).size,
+    ownerFileClaims: new Set(writes.map((write) => `${write.field}\0${write.file}`)).size,
+  };
 }

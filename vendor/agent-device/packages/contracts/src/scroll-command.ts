@@ -1,6 +1,13 @@
 import { AppError } from '@agent-device/kernel/errors';
+import type { SettleObservation } from './interaction.ts';
+import type { ScrollDirection } from './scroll-gesture.ts';
 
 export const SCROLL_DURATION_MAX_MS = 10_000;
+export const DEFAULT_MOBILE_SCROLL_DURATION_MS = 300;
+export const DEFAULT_IOS_SCROLL_DURATION_MS = 400;
+export const DEFAULT_IOS_SCROLL_AMOUNT = 0.65;
+
+export type ScrollReleaseBehavior = 'controlled' | 'inertial';
 
 export type ScrollDistanceOptions = {
   amount?: number;
@@ -13,6 +20,24 @@ export type ScrollTimingOptions = {
 
 export type ScrollCommandOptions = ScrollDistanceOptions & ScrollTimingOptions;
 
+export type ScrollExecutionOptions = ScrollCommandOptions & {
+  releaseBehavior?: ScrollReleaseBehavior;
+};
+
+export type ResolvedScrollExecutionOptions = ScrollCommandOptions & {
+  releaseBehavior: ScrollReleaseBehavior;
+};
+
+export function resolveScrollExecutionOptions(
+  options: ScrollCommandOptions,
+  edge?: 'top' | 'bottom',
+): ResolvedScrollExecutionOptions {
+  return {
+    ...options,
+    releaseBehavior: edge === undefined ? 'controlled' : 'inertial',
+  };
+}
+
 export function assertExclusiveScrollDistanceInputs(
   options: ScrollDistanceOptions,
   message = 'scroll accepts either a relative amount or --pixels, not both',
@@ -20,6 +45,24 @@ export function assertExclusiveScrollDistanceInputs(
   if (options.amount !== undefined && options.pixels !== undefined) {
     throw new AppError('INVALID_ARGS', message);
   }
+}
+
+/**
+ * `top`/`bottom` are scroll-to-extreme requests that already carry a stop condition, so pairing one
+ * with `--until` names two and the request has no single meaning. Rejected at the surface rather
+ * than resolved by precedence, so neither stop condition can silently win.
+ */
+export function assertScrollUntilCompatible(
+  input: Readonly<{ edge?: 'top' | 'bottom'; until?: string }>,
+): void {
+  if (input.until === undefined || input.edge === undefined) return;
+  throw new AppError(
+    'INVALID_ARGS',
+    `scroll ${input.edge} already scrolls to the ${input.edge} edge and cannot take --until`,
+    {
+      hint: `Use scroll ${input.edge === 'bottom' ? 'down' : 'up'} --until <selector> to stop at the target, or scroll ${input.edge} to reach the edge.`,
+    },
+  );
 }
 
 export function normalizeScrollDurationMs(
@@ -39,8 +82,51 @@ export function normalizeScrollDurationMs(
   return durationMs;
 }
 
+/** The travel the planner produced, which saturates below a large requested amount. */
+export function honoredScrollPixels(
+  result: Record<string, unknown> | undefined,
+): number | undefined {
+  return typeof result?.pixels === 'number' ? result.pixels : undefined;
+}
+
 export function honoredScrollDurationMs(
   result: Record<string, unknown> | undefined,
 ): number | undefined {
   return typeof result?.durationMs === 'number' ? result.durationMs : undefined;
 }
+
+/**
+ * `scroll` — the generic-route result built by `buildDispatchedScrollResult`
+ * (src/core/dispatch-scroll.ts): the resolved direction, the edge-pass
+ * bookkeeping for `top`/`bottom` scrolls, the honored distance/timing echo,
+ * and the success message. Platform leaves add gesture-plan coordinates
+ * (`x1`/`y1`/`x2`/`y2`, reference frame) on top; the output schema stays
+ * non-strict so those additive fields validate. The one field the dispatcher
+ * itself may add: `settle`, the opt-in `--settle` observation (#1638),
+ * attached after the command — same shape as `BackCommandResult`.
+ */
+export type ScrollCommandResult = {
+  direction: ScrollDirection;
+  /** Set for `top`/`bottom` requests: the extreme being scrolled to. */
+  edge?: 'top' | 'bottom';
+  /** Set for `--until` requests: the selector the passes stopped on. */
+  until?: string;
+  /** Edge and until scrolls only: how many scroll-and-check passes ran. */
+  passes?: number;
+  amount?: number;
+  pixels?: number;
+  durationMs?: number;
+  message?: string;
+  settle?: SettleObservation;
+  /**
+   * Set only when an on-screen keyboard made the owner clip the swipe into the band above it
+   * (#2500). Absent means the swipe was not clipped, which is not the same claim as `false`: a
+   * platform that never runs the clip has nothing to report. The platform leaf's `referenceHeight`
+   * names the shortened axis the reported `pixels` were planned against, and `keyboardMinY` names
+   * where the keyboard began. A surface the owner refused to swipe at all fails instead, under the
+   * `scroll_keyboard_occludes_surface` reason.
+   */
+  keyboardAvoided?: true;
+  /** The keyboard's edge in the same unit as the gesture coordinates, when the swipe was clipped. */
+  keyboardMinY?: number;
+};

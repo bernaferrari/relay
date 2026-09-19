@@ -1,5 +1,4 @@
 import type { Reporter, TestCase, TestModule } from 'vitest/node';
-import { recordRunBlocker } from './lib/run-blocker-bus.ts';
 
 /**
  * Slow-test ratchet (see docs/agents/testing.md "Speed rules").
@@ -23,7 +22,9 @@ const ENFORCE_FACTOR = 2;
 type Offender = { key: string; durationMs: number; budgetMs: number; enforce: boolean };
 
 function budgetForPath(relativePath: string): number {
-  return relativePath.startsWith('src/') ? UNIT_BUDGET_MS : INTEGRATION_BUDGET_MS;
+  return relativePath.startsWith('src/') || relativePath.startsWith('packages/')
+    ? UNIT_BUDGET_MS
+    : INTEGRATION_BUDGET_MS;
 }
 
 /**
@@ -98,13 +99,7 @@ export default function slowTestGateReporter(): Reporter {
     },
     onTestRunEnd(): void {
       // eslint-disable-next-line no-console
-      if (reportSlowTests(offenders, (message) => console.error(message))) {
-        process.exitCode = 1;
-        recordRunBlocker({
-          kind: 'slow-test gate',
-          detail: `${offenders.filter((offender) => offender.enforce).length} test(s) exceeded the wall-clock budget`,
-        });
-      }
+      if (reportSlowTests(offenders, (message) => console.error(message))) process.exitCode = 1;
     },
   };
 }

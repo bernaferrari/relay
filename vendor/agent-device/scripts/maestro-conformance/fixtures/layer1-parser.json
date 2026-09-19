@@ -3220,6 +3220,45 @@
       }
     },
     {
+      "id": "authored/clear-state",
+      "file": "authored/clear-state.yaml",
+      "status": "parsed",
+      "commands": [
+        {
+          "type": "ApplyConfigurationCommand",
+          "fields": {
+            "config": {
+              "appId": "com.example.app",
+              "name": null,
+              "tags": [],
+              "ext": {},
+              "onFlowStart": null,
+              "onFlowComplete": null,
+              "properties": {}
+            },
+            "label": null,
+            "optional": false
+          }
+        },
+        {
+          "type": "ClearStateCommand",
+          "fields": {
+            "appId": "com.example.app",
+            "label": null,
+            "optional": false
+          }
+        },
+        {
+          "type": "ClearStateCommand",
+          "fields": {
+            "appId": "another.app",
+            "label": null,
+            "optional": false
+          }
+        }
+      ]
+    },
+    {
       "id": "authored/doubletap",
       "file": "authored/doubletap.yaml",
       "status": "parsed",
@@ -3370,6 +3409,322 @@
       ]
     },
     {
+      "id": "authored/label-metadata",
+      "file": "authored/label-metadata.yaml",
+      "status": "parsed",
+      "commands": [
+        {
+          "type": "ApplyConfigurationCommand",
+          "fields": {
+            "config": {
+              "appId": "com.example.app",
+              "name": null,
+              "tags": [],
+              "ext": {},
+              "onFlowStart": null,
+              "onFlowComplete": null,
+              "properties": {}
+            },
+            "label": null,
+            "optional": false
+          }
+        },
+        {
+          "type": "TapOnElementCommand",
+          "fields": {
+            "selector": {
+              "textRegex": "Login",
+              "idRegex": null,
+              "size": null,
+              "below": null,
+              "above": null,
+              "leftOf": null,
+              "rightOf": null,
+              "containsChild": null,
+              "containsDescendants": null,
+              "traits": null,
+              "index": null,
+              "enabled": null,
+              "optional": false,
+              "selected": null,
+              "checked": null,
+              "focused": null,
+              "childOf": null,
+              "css": null
+            },
+            "retryIfNoChange": false,
+            "waitUntilVisible": false,
+            "longPress": false,
+            "repeat": null,
+            "waitToSettleTimeoutMs": null,
+            "relativePoint": null,
+            "label": "login tap",
+            "optional": false
+          }
+        },
+        {
+          "type": "TapOnPointV2Command",
+          "fields": {
+            "point": "20,30",
+            "retryIfNoChange": false,
+            "longPress": false,
+            "repeat": null,
+            "waitToSettleTimeoutMs": null,
+            "label": "coordinate tap",
+            "optional": false
+          }
+        },
+        {
+          "type": "TapOnElementCommand",
+          "fields": {
+            "selector": {
+              "textRegex": "Save",
+              "idRegex": null,
+              "size": null,
+              "below": null,
+              "above": null,
+              "leftOf": null,
+              "rightOf": null,
+              "containsChild": null,
+              "containsDescendants": null,
+              "traits": null,
+              "index": null,
+              "enabled": null,
+              "optional": false,
+              "selected": null,
+              "checked": null,
+              "focused": null,
+              "childOf": null,
+              "css": null
+            },
+            "retryIfNoChange": false,
+            "waitUntilVisible": false,
+            "longPress": false,
+            "repeat": {
+              "repeat": 2,
+              "delay": 100
+            },
+            "waitToSettleTimeoutMs": null,
+            "relativePoint": null,
+            "label": "save twice",
+            "optional": false
+          }
+        },
+        {
+          "type": "TapOnElementCommand",
+          "fields": {
+            "selector": {
+              "textRegex": "Hold",
+              "idRegex": null,
+              "size": null,
+              "below": null,
+              "above": null,
+              "leftOf": null,
+              "rightOf": null,
+              "containsChild": null,
+              "containsDescendants": null,
+              "traits": null,
+              "index": null,
+              "enabled": null,
+              "optional": false,
+              "selected": null,
+              "checked": null,
+              "focused": null,
+              "childOf": null,
+              "css": null
+            },
+            "retryIfNoChange": false,
+            "waitUntilVisible": false,
+            "longPress": true,
+            "repeat": null,
+            "waitToSettleTimeoutMs": null,
+            "relativePoint": null,
+            "label": "hold action",
+            "optional": false
+          }
+        },
+        {
+          "type": "AssertConditionCommand",
+          "fields": {
+            "condition": {
+              "platform": null,
+              "visible": {
+                "textRegex": "Ready",
+                "idRegex": null,
+                "size": null,
+                "below": null,
+                "above": null,
+                "leftOf": null,
+                "rightOf": null,
+                "containsChild": null,
+                "containsDescendants": null,
+                "traits": null,
+                "index": null,
+                "enabled": null,
+                "optional": false,
+                "selected": null,
+                "checked": null,
+                "focused": null,
+                "childOf": null,
+                "css": null
+              },
+              "notVisible": null,
+              "scriptCondition": null,
+              "label": null
+            },
+            "timeout": null,
+            "label": "ready assertion",
+            "optional": false
+          }
+        },
+        {
+          "type": "AssertConditionCommand",
+          "fields": {
+            "condition": {
+              "platform": null,
+              "visible": null,
+              "notVisible": {
+                "textRegex": "Gone",
+                "idRegex": null,
+                "size": null,
+                "below": null,
+                "above": null,
+                "leftOf": null,
+                "rightOf": null,
+                "containsChild": null,
+                "containsDescendants": null,
+                "traits": null,
+                "index": null,
+                "enabled": null,
+                "optional": false,
+                "selected": null,
+                "checked": null,
+                "focused": null,
+                "childOf": null,
+                "css": null
+              },
+              "scriptCondition": null,
+              "label": null
+            },
+            "timeout": null,
+            "label": "gone assertion",
+            "optional": false
+          }
+        },
+        {
+          "type": "AssertConditionCommand",
+          "fields": {
+            "condition": {
+              "platform": null,
+              "visible": {
+                "textRegex": "Loaded",
+                "idRegex": null,
+                "size": null,
+                "below": null,
+                "above": null,
+                "leftOf": null,
+                "rightOf": null,
+                "containsChild": null,
+                "containsDescendants": null,
+                "traits": null,
+                "index": null,
+                "enabled": null,
+                "optional": false,
+                "selected": null,
+                "checked": null,
+                "focused": null,
+                "childOf": null,
+                "css": null
+              },
+              "notVisible": null,
+              "scriptCondition": null,
+              "label": null
+            },
+            "timeout": "1000",
+            "label": "loaded wait",
+            "optional": false
+          }
+        },
+        {
+          "type": "ScrollUntilVisibleCommand",
+          "fields": {
+            "selector": {
+              "textRegex": "Item",
+              "idRegex": null,
+              "size": null,
+              "below": null,
+              "above": null,
+              "leftOf": null,
+              "rightOf": null,
+              "containsChild": null,
+              "containsDescendants": null,
+              "traits": null,
+              "index": null,
+              "enabled": null,
+              "optional": false,
+              "selected": null,
+              "checked": null,
+              "focused": null,
+              "childOf": null,
+              "css": null
+            },
+            "direction": "DOWN",
+            "scrollDuration": "40",
+            "visibilityPercentage": 100,
+            "timeout": "20000",
+            "waitToSettleTimeoutMs": null,
+            "centerElement": false,
+            "originalSpeedValue": "40",
+            "label": "item scroll",
+            "optional": false,
+            "visibilityPercentageNormalized": 1
+          }
+        },
+        {
+          "type": "SwipeCommand",
+          "fields": {
+            "direction": "LEFT",
+            "startPoint": null,
+            "endPoint": null,
+            "elementSelector": {
+              "textRegex": "Card",
+              "idRegex": null,
+              "size": null,
+              "below": null,
+              "above": null,
+              "leftOf": null,
+              "rightOf": null,
+              "containsChild": null,
+              "containsDescendants": null,
+              "traits": null,
+              "index": null,
+              "enabled": null,
+              "optional": false,
+              "selected": null,
+              "checked": null,
+              "focused": null,
+              "childOf": null,
+              "css": null
+            },
+            "startRelative": null,
+            "endRelative": null,
+            "duration": 400,
+            "waitToSettleTimeoutMs": null,
+            "label": "card swipe",
+            "optional": false
+          }
+        },
+        {
+          "type": "InputTextCommand",
+          "fields": {
+            "text": "value",
+            "label": "field input",
+            "optional": false
+          }
+        }
+      ]
+    },
+    {
       "id": "authored/numeric-variable-doubletap",
       "file": "authored/numeric-variable-doubletap.yaml",
       "status": "rejected",
@@ -3486,6 +3841,454 @@
           "type": "WaitForAnimationToEndCommand",
           "fields": {
             "timeout": "${TIMEOUT}",
+            "label": null,
+            "optional": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "authored/positional-relations",
+      "file": "authored/positional-relations.yaml",
+      "status": "parsed",
+      "commands": [
+        {
+          "type": "ApplyConfigurationCommand",
+          "fields": {
+            "config": {
+              "appId": "com.example",
+              "name": null,
+              "tags": [],
+              "ext": {},
+              "onFlowStart": null,
+              "onFlowComplete": null,
+              "properties": {}
+            },
+            "label": null,
+            "optional": false
+          }
+        },
+        {
+          "type": "TapOnElementCommand",
+          "fields": {
+            "selector": {
+              "textRegex": null,
+              "idRegex": null,
+              "size": null,
+              "below": {
+                "textRegex": "Email",
+                "idRegex": null,
+                "size": null,
+                "below": null,
+                "above": null,
+                "leftOf": null,
+                "rightOf": null,
+                "containsChild": null,
+                "containsDescendants": null,
+                "traits": null,
+                "index": null,
+                "enabled": null,
+                "optional": false,
+                "selected": null,
+                "checked": null,
+                "focused": null,
+                "childOf": null,
+                "css": null
+              },
+              "above": null,
+              "leftOf": null,
+              "rightOf": null,
+              "containsChild": null,
+              "containsDescendants": null,
+              "traits": null,
+              "index": null,
+              "enabled": null,
+              "optional": false,
+              "selected": null,
+              "checked": null,
+              "focused": null,
+              "childOf": null,
+              "css": null
+            },
+            "retryIfNoChange": false,
+            "waitUntilVisible": false,
+            "longPress": false,
+            "repeat": null,
+            "waitToSettleTimeoutMs": null,
+            "relativePoint": null,
+            "label": null,
+            "optional": false
+          }
+        },
+        {
+          "type": "TapOnElementCommand",
+          "fields": {
+            "selector": {
+              "textRegex": null,
+              "idRegex": null,
+              "size": null,
+              "below": null,
+              "above": {
+                "textRegex": null,
+                "idRegex": "submit",
+                "size": null,
+                "below": null,
+                "above": null,
+                "leftOf": null,
+                "rightOf": null,
+                "containsChild": null,
+                "containsDescendants": null,
+                "traits": null,
+                "index": null,
+                "enabled": null,
+                "optional": false,
+                "selected": null,
+                "checked": null,
+                "focused": null,
+                "childOf": null,
+                "css": null
+              },
+              "leftOf": null,
+              "rightOf": null,
+              "containsChild": null,
+              "containsDescendants": null,
+              "traits": null,
+              "index": null,
+              "enabled": null,
+              "optional": false,
+              "selected": null,
+              "checked": null,
+              "focused": null,
+              "childOf": null,
+              "css": null
+            },
+            "retryIfNoChange": false,
+            "waitUntilVisible": false,
+            "longPress": false,
+            "repeat": {
+              "repeat": 2,
+              "delay": 100
+            },
+            "waitToSettleTimeoutMs": null,
+            "relativePoint": null,
+            "label": null,
+            "optional": false
+          }
+        },
+        {
+          "type": "TapOnElementCommand",
+          "fields": {
+            "selector": {
+              "textRegex": null,
+              "idRegex": null,
+              "size": null,
+              "below": null,
+              "above": null,
+              "leftOf": {
+                "textRegex": "Menu",
+                "idRegex": null,
+                "size": null,
+                "below": null,
+                "above": null,
+                "leftOf": null,
+                "rightOf": null,
+                "containsChild": null,
+                "containsDescendants": null,
+                "traits": null,
+                "index": null,
+                "enabled": null,
+                "optional": false,
+                "selected": null,
+                "checked": null,
+                "focused": null,
+                "childOf": null,
+                "css": null
+              },
+              "rightOf": null,
+              "containsChild": null,
+              "containsDescendants": null,
+              "traits": null,
+              "index": null,
+              "enabled": null,
+              "optional": false,
+              "selected": null,
+              "checked": null,
+              "focused": null,
+              "childOf": null,
+              "css": null
+            },
+            "retryIfNoChange": false,
+            "waitUntilVisible": false,
+            "longPress": true,
+            "repeat": null,
+            "waitToSettleTimeoutMs": null,
+            "relativePoint": null,
+            "label": null,
+            "optional": false
+          }
+        },
+        {
+          "type": "AssertConditionCommand",
+          "fields": {
+            "condition": {
+              "platform": null,
+              "visible": {
+                "textRegex": null,
+                "idRegex": null,
+                "size": null,
+                "below": null,
+                "above": null,
+                "leftOf": null,
+                "rightOf": {
+                  "textRegex": null,
+                  "idRegex": "navigation",
+                  "size": null,
+                  "below": null,
+                  "above": null,
+                  "leftOf": null,
+                  "rightOf": null,
+                  "containsChild": null,
+                  "containsDescendants": null,
+                  "traits": null,
+                  "index": null,
+                  "enabled": null,
+                  "optional": false,
+                  "selected": null,
+                  "checked": null,
+                  "focused": null,
+                  "childOf": null,
+                  "css": null
+                },
+                "containsChild": null,
+                "containsDescendants": null,
+                "traits": null,
+                "index": null,
+                "enabled": null,
+                "optional": false,
+                "selected": null,
+                "checked": null,
+                "focused": null,
+                "childOf": null,
+                "css": null
+              },
+              "notVisible": null,
+              "scriptCondition": null,
+              "label": null
+            },
+            "timeout": null,
+            "label": null,
+            "optional": false
+          }
+        },
+        {
+          "type": "AssertConditionCommand",
+          "fields": {
+            "condition": {
+              "platform": null,
+              "visible": null,
+              "notVisible": {
+                "textRegex": null,
+                "idRegex": null,
+                "size": null,
+                "below": {
+                  "textRegex": null,
+                  "idRegex": "hidden-caption",
+                  "size": null,
+                  "below": null,
+                  "above": null,
+                  "leftOf": null,
+                  "rightOf": null,
+                  "containsChild": null,
+                  "containsDescendants": null,
+                  "traits": null,
+                  "index": null,
+                  "enabled": null,
+                  "optional": false,
+                  "selected": null,
+                  "checked": null,
+                  "focused": null,
+                  "childOf": null,
+                  "css": null
+                },
+                "above": null,
+                "leftOf": null,
+                "rightOf": null,
+                "containsChild": null,
+                "containsDescendants": null,
+                "traits": null,
+                "index": null,
+                "enabled": null,
+                "optional": false,
+                "selected": null,
+                "checked": null,
+                "focused": null,
+                "childOf": null,
+                "css": null
+              },
+              "scriptCondition": null,
+              "label": null
+            },
+            "timeout": null,
+            "label": null,
+            "optional": false
+          }
+        },
+        {
+          "type": "AssertConditionCommand",
+          "fields": {
+            "condition": {
+              "platform": null,
+              "visible": {
+                "textRegex": null,
+                "idRegex": null,
+                "size": null,
+                "below": null,
+                "above": {
+                  "textRegex": "Complete",
+                  "idRegex": null,
+                  "size": null,
+                  "below": null,
+                  "above": null,
+                  "leftOf": null,
+                  "rightOf": null,
+                  "containsChild": null,
+                  "containsDescendants": null,
+                  "traits": null,
+                  "index": null,
+                  "enabled": null,
+                  "optional": false,
+                  "selected": null,
+                  "checked": null,
+                  "focused": null,
+                  "childOf": null,
+                  "css": null
+                },
+                "leftOf": null,
+                "rightOf": null,
+                "containsChild": null,
+                "containsDescendants": null,
+                "traits": null,
+                "index": null,
+                "enabled": null,
+                "optional": false,
+                "selected": null,
+                "checked": null,
+                "focused": null,
+                "childOf": null,
+                "css": null
+              },
+              "notVisible": null,
+              "scriptCondition": null,
+              "label": null
+            },
+            "timeout": null,
+            "label": null,
+            "optional": false
+          }
+        },
+        {
+          "type": "ScrollUntilVisibleCommand",
+          "fields": {
+            "selector": {
+              "textRegex": null,
+              "idRegex": null,
+              "size": null,
+              "below": {
+                "textRegex": "More",
+                "idRegex": null,
+                "size": null,
+                "below": null,
+                "above": null,
+                "leftOf": null,
+                "rightOf": null,
+                "containsChild": null,
+                "containsDescendants": null,
+                "traits": null,
+                "index": null,
+                "enabled": null,
+                "optional": false,
+                "selected": null,
+                "checked": null,
+                "focused": null,
+                "childOf": null,
+                "css": null
+              },
+              "above": null,
+              "leftOf": null,
+              "rightOf": null,
+              "containsChild": null,
+              "containsDescendants": null,
+              "traits": null,
+              "index": null,
+              "enabled": null,
+              "optional": false,
+              "selected": null,
+              "checked": null,
+              "focused": null,
+              "childOf": null,
+              "css": null
+            },
+            "direction": "DOWN",
+            "scrollDuration": "40",
+            "visibilityPercentage": 100,
+            "timeout": "20000",
+            "waitToSettleTimeoutMs": null,
+            "centerElement": false,
+            "originalSpeedValue": "40",
+            "label": null,
+            "optional": false,
+            "visibilityPercentageNormalized": 1
+          }
+        },
+        {
+          "type": "SwipeCommand",
+          "fields": {
+            "direction": "LEFT",
+            "startPoint": null,
+            "endPoint": null,
+            "elementSelector": {
+              "textRegex": null,
+              "idRegex": null,
+              "size": null,
+              "below": null,
+              "above": null,
+              "leftOf": null,
+              "rightOf": {
+                "textRegex": null,
+                "idRegex": "rail",
+                "size": null,
+                "below": null,
+                "above": null,
+                "leftOf": null,
+                "rightOf": null,
+                "containsChild": null,
+                "containsDescendants": null,
+                "traits": null,
+                "index": null,
+                "enabled": null,
+                "optional": false,
+                "selected": null,
+                "checked": null,
+                "focused": null,
+                "childOf": null,
+                "css": null
+              },
+              "containsChild": null,
+              "containsDescendants": null,
+              "traits": null,
+              "index": null,
+              "enabled": null,
+              "optional": false,
+              "selected": null,
+              "checked": null,
+              "focused": null,
+              "childOf": null,
+              "css": null
+            },
+            "startRelative": null,
+            "endRelative": null,
+            "duration": 400,
+            "waitToSettleTimeoutMs": null,
             "label": null,
             "optional": false
           }
@@ -4040,7 +4843,177 @@
           }
         }
       ]
+    },
+    {
+      "id": "authored/tree-relations",
+      "file": "authored/tree-relations.yaml",
+      "status": "parsed",
+      "commands": [
+        {
+          "type": "ApplyConfigurationCommand",
+          "fields": {
+            "config": {
+              "appId": "com.example",
+              "name": null,
+              "tags": [],
+              "ext": {},
+              "onFlowStart": null,
+              "onFlowComplete": null,
+              "properties": {}
+            },
+            "label": null,
+            "optional": false
+          }
+        },
+        {
+          "type": "TapOnElementCommand",
+          "fields": {
+            "selector": {
+              "textRegex": null,
+              "idRegex": "save",
+              "size": null,
+              "below": null,
+              "above": null,
+              "leftOf": null,
+              "rightOf": null,
+              "containsChild": {
+                "textRegex": "Save",
+                "idRegex": null,
+                "size": null,
+                "below": null,
+                "above": null,
+                "leftOf": null,
+                "rightOf": null,
+                "containsChild": null,
+                "containsDescendants": null,
+                "traits": null,
+                "index": null,
+                "enabled": null,
+                "optional": false,
+                "selected": null,
+                "checked": null,
+                "focused": null,
+                "childOf": null,
+                "css": null
+              },
+              "containsDescendants": [
+                {
+                  "textRegex": null,
+                  "idRegex": "icon",
+                  "size": null,
+                  "below": null,
+                  "above": null,
+                  "leftOf": null,
+                  "rightOf": null,
+                  "containsChild": null,
+                  "containsDescendants": null,
+                  "traits": null,
+                  "index": null,
+                  "enabled": null,
+                  "optional": false,
+                  "selected": null,
+                  "checked": null,
+                  "focused": null,
+                  "childOf": null,
+                  "css": null
+                }
+              ],
+              "traits": null,
+              "index": "${INDEX}",
+              "enabled": null,
+              "optional": false,
+              "selected": null,
+              "checked": null,
+              "focused": null,
+              "childOf": {
+                "textRegex": null,
+                "idRegex": "card",
+                "size": null,
+                "below": null,
+                "above": null,
+                "leftOf": null,
+                "rightOf": null,
+                "containsChild": null,
+                "containsDescendants": null,
+                "traits": null,
+                "index": null,
+                "enabled": null,
+                "optional": false,
+                "selected": null,
+                "checked": null,
+                "focused": null,
+                "childOf": null,
+                "css": null
+              },
+              "css": null
+            },
+            "retryIfNoChange": false,
+            "waitUntilVisible": false,
+            "longPress": false,
+            "repeat": null,
+            "waitToSettleTimeoutMs": null,
+            "relativePoint": null,
+            "label": null,
+            "optional": false
+          }
+        },
+        {
+          "type": "AssertConditionCommand",
+          "fields": {
+            "condition": {
+              "platform": null,
+              "visible": {
+                "textRegex": null,
+                "idRegex": "card",
+                "size": null,
+                "below": null,
+                "above": null,
+                "leftOf": null,
+                "rightOf": null,
+                "containsChild": null,
+                "containsDescendants": [
+                  {
+                    "textRegex": null,
+                    "idRegex": "save",
+                    "size": null,
+                    "below": null,
+                    "above": null,
+                    "leftOf": null,
+                    "rightOf": null,
+                    "containsChild": null,
+                    "containsDescendants": null,
+                    "traits": null,
+                    "index": null,
+                    "enabled": null,
+                    "optional": false,
+                    "selected": null,
+                    "checked": null,
+                    "focused": null,
+                    "childOf": null,
+                    "css": null
+                  }
+                ],
+                "traits": null,
+                "index": null,
+                "enabled": null,
+                "optional": false,
+                "selected": null,
+                "checked": null,
+                "focused": null,
+                "childOf": null,
+                "css": null
+              },
+              "notVisible": null,
+              "scriptCondition": null,
+              "label": null
+            },
+            "timeout": null,
+            "label": null,
+            "optional": false
+          }
+        }
+      ]
     }
   ],
-  "contentHash": "b81dbe35d8b2b95c6c0c0b9f49514c00a0729f618da693574ef84b6feb05a5b4"
+  "contentHash": "3fab6cb48d4ac7ec2640faa223b86a1dd58439d1e181ce442a76a5f754efc725"
 }

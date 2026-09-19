@@ -8,44 +8,175 @@ import {
 } from '@agent-device/kernel/rect';
 import { isScrollableNodeLike } from './snapshot-scroll.ts';
 import { normalizeType } from './snapshot-text.ts';
-import { buildSnapshotNodeMap } from './snapshot-tree.ts';
+import { buildSnapshotNodeMap, findSnapshotAncestor } from './snapshot-tree.ts';
 
 type SnapshotVisibilityNode = Pick<
   SnapshotNode,
   'rect' | 'index' | 'parentIndex' | 'type' | 'role' | 'subrole'
 >;
 
+const snapshotVisibilityBrand: unique symbol = Symbol('SnapshotVisibility');
+
+export type SnapshotVisibilityProbe = {
+  readonly onNodeMapBuilt?: () => void;
+  readonly onViewportRectsCollected?: () => void;
+  readonly onContainingRectFallback?: () => void;
+};
+
+export type SnapshotVisibility = {
+  readonly [snapshotVisibilityBrand]: true;
+  readonly nodeByIndex: ReadonlyMap<number, SnapshotNode>;
+  readonly viewportRects: readonly Rect[];
+  findAncestor<T>(node: SnapshotNode, resolve: (ancestor: SnapshotNode) => T | null): T | null;
+  isVisibleInEffectiveViewport(node: SnapshotVisibilityNode): boolean;
+  isVisibleOnScreen(node: SnapshotVisibilityNode): boolean;
+  resolveEffectiveViewport(node: SnapshotVisibilityNode): Rect | null;
+  resolveViewport(targetRect: Rect): Rect | null;
+};
+
+export function createSnapshotVisibility(
+  nodes: SnapshotNode[],
+  probe: SnapshotVisibilityProbe = {},
+): SnapshotVisibility {
+  let nodeByIndex: ReadonlyMap<number, SnapshotNode> | undefined;
+  let viewportRects: readonly Rect[] | undefined;
+  const getNodeByIndex = (): ReadonlyMap<number, SnapshotNode> => {
+    if (!nodeByIndex) {
+      nodeByIndex = buildSnapshotNodeMap(nodes);
+      probe.onNodeMapBuilt?.();
+    }
+    return nodeByIndex;
+  };
+  const getViewportRects = (): readonly Rect[] => {
+    if (!viewportRects) {
+      viewportRects = collectViewportRects(nodes);
+      probe.onViewportRectsCollected?.();
+    }
+    return viewportRects;
+  };
+  const resolveViewport = (targetRect: Rect): Rect | null =>
+    resolveViewportRectInternal(
+      nodes,
+      targetRect,
+      getViewportRects(),
+      probe.onContainingRectFallback,
+    );
+  const resolveEffectiveViewport = (node: SnapshotVisibilityNode): Rect | null => {
+    const clippingAncestorRect = findNearestScrollableAncestor(node, getNodeByIndex(), (ancestor) =>
+      Boolean(ancestor.rect),
+    )?.rect;
+    if (clippingAncestorRect) return clippingAncestorRect;
+    const roots = getViewportRects();
+    if (roots.length === 0) return null;
+    return resolveViewportRectInternal(
+      nodes,
+      node.rect ?? { x: 0, y: 0, width: 0, height: 0 },
+      roots,
+      probe.onContainingRectFallback,
+    );
+  };
+  const isVisibleInEffectiveViewport = (node: SnapshotVisibilityNode): boolean => {
+    if (!node.rect) return true;
+    const viewport = resolveEffectiveViewport(node);
+    return !viewport || isRectVisibleInViewport(node.rect, viewport);
+  };
+  const isVisibleOnScreen = (node: SnapshotVisibilityNode): boolean => {
+    if (!node.rect) return true;
+    if (!isVisibleInEffectiveViewport(node)) return false;
+    return isTapPointInsideViewport(node.rect, resolveViewport(node.rect));
+  };
+
+  return {
+    [snapshotVisibilityBrand]: true,
+    get nodeByIndex() {
+      return getNodeByIndex();
+    },
+    get viewportRects() {
+      return getViewportRects();
+    },
+    findAncestor(node, resolve) {
+      return findSnapshotAncestor(nodes, node, getNodeByIndex(), resolve);
+    },
+    isVisibleInEffectiveViewport,
+    isVisibleOnScreen,
+    resolveEffectiveViewport,
+    resolveViewport,
+  };
+}
+
+/**
+ * The application/window root: the node a target rect is measured against, and
+ * the node whose own rect is invariant under any gesture.
+ *
+ * One definition for the whole repo. It reads `type`, `role` AND `subrole`
+ * because the macOS helper is the only backend that populates the latter two,
+ * and it is the only backend that can emit a window whose `type` does not say
+ * so — `normalizedSnapshotType` returns the raw subrole for a non-standard
+ * window, so an `AXWindow` with subrole `AXSystemDialog` or `AXUnknown` reads
+ * as neither from `type` alone while `role` names it exactly.
+ *
+ * Substring, not equality: macOS emits unmapped roles with their `AX` prefix
+ * intact and subroles like `AXFloatingWindow` that are windows by any reading.
+ * iOS emits a closed set of 31 short names in which only `Application` and
+ * `Window` contain either word, so substring and equality agree there. Android
+ * emits fully-qualified Java class names and no root node at all, so no
+ * spelling of this predicate matches anything on Android — see
+ * `resolveViewportRect`'s third fallback, which is what Android actually uses.
+ */
+export function isViewportRootNode(node: Pick<SnapshotNode, 'type' | 'role' | 'subrole'>): boolean {
+  const kind = [node.type, node.role, node.subrole]
+    .map((value) => normalizeType(value ?? ''))
+    .join(' ');
+  return kind.includes('application') || kind.includes('window');
+}
+
+/**
+ * The Application/Window rects a target's viewport resolves against — the
+ * whole-tree scan `resolveViewportRect` does per call when no
+ * `precomputedViewportRects` is given. A caller resolving visibility for
+ * several nodes against the SAME tree (e.g. ranking ambiguous selector
+ * candidates) should build this once and thread it through, so N candidates
+ * share one pass instead of each paying its own (#1970).
+ */
+export function collectViewportRects(nodes: RawSnapshotNode[]): Rect[] {
+  return nodes.flatMap((node) =>
+    isViewportRootNode(node) && isPositiveFiniteRect(node.rect) ? [node.rect] : [],
+  );
+}
+
 /**
  * The root viewport a target rect is measured against: the largest
  * Application/Window rect containing the target's center, falling back to the
  * largest such rect, then to the largest containing rect of any node.
  */
-export function resolveViewportRect(nodes: RawSnapshotNode[], targetRect: Rect): Rect | null {
+export function resolveViewportRect(
+  nodes: RawSnapshotNode[],
+  targetRect: Rect,
+  precomputedViewportRects?: readonly Rect[],
+): Rect | null {
+  return resolveViewportRectInternal(
+    nodes,
+    targetRect,
+    precomputedViewportRects ?? collectViewportRects(nodes),
+  );
+}
+
+function resolveViewportRectInternal(
+  nodes: RawSnapshotNode[],
+  targetRect: Rect,
+  viewportRects: readonly Rect[],
+  onContainingRectFallback?: () => void,
+): Rect | null {
   const targetCenter = centerOfRect(targetRect);
-  const rectNodes = nodes.filter((node) => hasValidRect(node.rect));
-  const viewportNodes = rectNodes.filter((node) => {
-    const type = (node.type ?? '').toLowerCase();
-    return type.includes('application') || type.includes('window');
-  });
+  const contains = (rect: Rect) => containsPoint(rect, targetCenter.x, targetCenter.y);
+  const viewport =
+    pickLargestRect(viewportRects.filter(contains)) ?? pickLargestRect(viewportRects);
+  if (viewport) return viewport;
 
-  const containingViewport = pickLargestRect(
-    viewportNodes
-      .map((node) => node.rect as Rect)
-      .filter((rect) => containsPoint(rect, targetCenter.x, targetCenter.y)),
+  onContainingRectFallback?.();
+  return pickLargestRect(
+    nodes.flatMap((node) => (hasValidRect(node.rect) && contains(node.rect) ? [node.rect] : [])),
   );
-  if (containingViewport) return containingViewport;
-
-  const viewportFallback = pickLargestRect(viewportNodes.map((node) => node.rect as Rect));
-  if (viewportFallback) return viewportFallback;
-
-  const genericContaining = pickLargestRect(
-    rectNodes
-      .map((node) => node.rect as Rect)
-      .filter((rect) => containsPoint(rect, targetCenter.x, targetCenter.y)),
-  );
-  if (genericContaining) return genericContaining;
-
-  return null;
 }
 
 function hasValidRect(rect: Rect | undefined): rect is Rect {
@@ -58,21 +189,6 @@ function hasValidRect(rect: Rect | undefined): rect is Rect {
   );
 }
 
-export function isNodeVisibleInEffectiveViewport(
-  node: SnapshotVisibilityNode,
-  nodes: SnapshotNode[],
-  byIndex: ReadonlyMap<number, SnapshotNode> = buildSnapshotNodeMap(nodes),
-): boolean {
-  if (!node.rect) {
-    return true;
-  }
-  const viewport = resolveEffectiveViewportRect(node, nodes, byIndex);
-  if (!viewport) {
-    return true;
-  }
-  return isRectVisibleInViewport(node.rect, viewport);
-}
-
 // Effective-viewport visibility measures a node against its nearest scrollable
 // ancestor, so items inside an off-screen container (e.g. a closed drawer's own
 // ScrollView at negative x) still read as "visible" within that container.
@@ -82,21 +198,6 @@ export function isNodeVisibleInEffectiveViewport(
 // viewport by a fraction of a pixel while its center is far off-screen.
 // Interaction guards and selector disambiguation use this stricter form;
 // scroll-direction summaries keep the effective form.
-export function isNodeVisibleOnScreen(
-  node: SnapshotVisibilityNode,
-  nodes: SnapshotNode[],
-  byIndex: ReadonlyMap<number, SnapshotNode> = buildSnapshotNodeMap(nodes),
-): boolean {
-  if (!node.rect) {
-    return true;
-  }
-  if (!isNodeVisibleInEffectiveViewport(node, nodes, byIndex)) {
-    return false;
-  }
-  const rootViewport = resolveViewportRect(nodes, node.rect);
-  return isTapPointInsideViewport(node.rect, rootViewport);
-}
-
 // The tap-point rule shared with the iOS runner (ADR 0011 Layer 2): the tap
 // point is the rect's exact CENTER; it is inside the viewport iff it lies
 // within the frame, edges inclusive. A missing, empty, or invalid viewport
@@ -109,20 +210,6 @@ export function isTapPointInsideViewport(rect: Rect, viewport: Rect | null): boo
     return true;
   }
   return containsPoint(viewport, rect.x + rect.width / 2, rect.y + rect.height / 2);
-}
-
-export function resolveEffectiveViewportRect(
-  node: SnapshotVisibilityNode,
-  nodes: SnapshotNode[],
-  byIndex: ReadonlyMap<number, SnapshotNode> = buildSnapshotNodeMap(nodes),
-): Rect | null {
-  const clippingAncestorRect = findNearestScrollableAncestor(node, byIndex, (ancestor) =>
-    Boolean(ancestor.rect),
-  )?.rect;
-  if (clippingAncestorRect) {
-    return clippingAncestorRect;
-  }
-  return resolveViewportRect(nodes, node.rect ?? { x: 0, y: 0, width: 0, height: 0 });
 }
 
 /** Finds the nearest scrollable ancestor that satisfies the optional predicate. */

@@ -1,8 +1,5 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import type {
   ClickCommandResponseData,
   FillCommandResponseData,
@@ -13,7 +10,6 @@ import type {
 import {
   createAgentDeviceClient,
   type AgentDeviceClient,
-  type AgentDeviceClientConfig,
   type DiffSnapshotCommandResult,
   type DoctorCommandResult,
   type PrepareCommandResult,
@@ -26,16 +22,30 @@ import {
   type WaitCommandResult,
 } from '../agent-device-client.ts';
 import { runCommand } from '../commands/command-surface.ts';
-import type { CommandResult } from '../core/command-descriptor/command-result.ts';
-import type {
-  DaemonRequest,
-  DaemonResponse,
-  DaemonResponseData,
-} from '@agent-device/kernel/contracts';
+import type { CommandResult } from '@agent-device/command-registry/command-result';
+import type { DaemonResponse, DaemonResponseData } from '@agent-device/kernel/contracts';
 import { AppError } from '@agent-device/kernel/errors';
+import fs from 'node:fs';
+import nodePath from 'node:path';
+import { mkdtempForTestSync } from './test-utils/tmp-dir.ts';
+import { createTransport } from './client-transport-fixture.ts';
 
-// Isolated so open/close metro-session-hint file writes never touch the real state dir.
-const TEST_STATE_DIR = mkdtempSync(path.join(os.tmpdir(), 'agent-device-client-test-'));
+// #1802: replay/test requests carry the script text the CLIENT read, so these cases need real
+// files. `cwd` is what the writer resolves the caller's relative path against.
+const FLOWS_CWD = mkdtempForTestSync('agent-device-client-flows-');
+for (const relativePath of [
+  'flows/login.ad',
+  'flows/login.yaml',
+  'flows/mod-lists.yaml',
+  'e2e/maestro/01-flow.yaml',
+]) {
+  const absolutePath = nodePath.join(FLOWS_CWD, relativePath);
+  fs.mkdirSync(nodePath.dirname(absolutePath), { recursive: true });
+  fs.writeFileSync(
+    absolutePath,
+    relativePath.endsWith('.ad') ? 'open "Demo"\n' : 'appId: demo\n---\n- launchApp\n',
+  );
+}
 
 type Equal<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
@@ -78,37 +88,6 @@ const closedProjectionResponses: Record<string, DaemonResponseData> = {
     message: 'Triggered app event: screenshot_taken',
   },
 };
-
-function createTransport(
-  handler: (req: Omit<DaemonRequest, 'token'>) => Promise<DaemonResponse> | DaemonResponse,
-): {
-  calls: Array<Omit<DaemonRequest, 'token'>>;
-  config: AgentDeviceClientConfig;
-  transport: (req: Omit<DaemonRequest, 'token'>) => Promise<DaemonResponse>;
-} {
-  const calls: Array<Omit<DaemonRequest, 'token'>> = [];
-  const config: AgentDeviceClientConfig = {
-    session: 'qa',
-    stateDir: TEST_STATE_DIR,
-    cwd: '/tmp/agent-device',
-    debug: true,
-    daemonBaseUrl: 'http://daemon.example.test',
-    daemonAuthToken: 'secret',
-    daemonTransport: 'http',
-    tenant: 'acme',
-    sessionIsolation: 'tenant',
-    runId: 'run-123',
-    leaseId: 'lease-123',
-  };
-  return {
-    calls,
-    config,
-    transport: async (req) => {
-      calls.push(req);
-      return await handler(req);
-    },
-  };
-}
 
 test('client exposes narrowed result types for closed daemon projections', async () => {
   const setup = createTransport(async (req) => closedProjectionResponse(req.command));
@@ -177,7 +156,7 @@ test('client exposes narrowed result types for closed daemon projections', async
   assert.equal(triggerResult.transport, 'deep-link');
 });
 
-test('deprecated client.command.rotate delegates to orientation and keeps the legacy action', async () => {
+test('client command surface does not expose removed rotate compatibility', () => {
   const setup = createTransport(async () => ({
     ok: true,
     data: {
@@ -188,13 +167,7 @@ test('deprecated client.command.rotate delegates to orientation and keeps the le
   }));
   const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
 
-  const result = await client.command.rotate({ orientation: 'landscape-left' });
-
-  // The wrapper sends the canonical wire command...
-  assert.equal(setup.calls.at(-1)?.command, 'orientation');
-  // ...and restores the shipped v0.18/v0.19 response contract for old consumers.
-  assert.equal(result.action, 'rotate');
-  assert.equal(result.orientation, 'landscape-left');
+  assert.equal('rotate' in client.command, false);
 });
 
 function closedProjectionResponse(command: string): DaemonResponse {
@@ -210,6 +183,10 @@ test('apps.open resolves session device identifiers from open response', async (
         ok: true,
         data: {
           session: 'qa',
+          sessionStateDir: '/tmp/agent-device/sessions/qa',
+          runnerLogPath: '/tmp/agent-device/sessions/qa/runner.log',
+          requestLogPath: '/tmp/agent-device/sessions/qa/requests/open.ndjson',
+          eventLogPath: '/tmp/agent-device/sessions/qa/events.ndjson',
           appName: 'Settings',
           appBundleId: 'com.apple.Preferences',
           platform: 'ios',
@@ -247,11 +224,80 @@ test('apps.open resolves session device identifiers from open response', async (
   assert.equal(result.identifiers.deviceId, 'SIM-001');
   assert.equal(result.identifiers.udid, 'SIM-001');
   assert.equal(result.identifiers.appId, 'com.apple.Preferences');
+  assert.equal(result.sessionStateDir, '/tmp/agent-device/sessions/qa');
+  assert.equal(result.runnerLogPath, '/tmp/agent-device/sessions/qa/runner.log');
+  assert.equal(result.requestLogPath, '/tmp/agent-device/sessions/qa/requests/open.ndjson');
+  assert.equal(result.eventLogPath, '/tmp/agent-device/sessions/qa/events.ndjson');
   assert.equal(result.device?.name, 'iPhone 16');
   assert.equal(result.device?.ios?.simulatorSetPath, '/tmp/sim-set');
   assert.deepEqual(result.warnings, [
     'Script publication was aborted by a second successful open.',
   ]);
+});
+
+test('apps.open preserves the full initialSnapshotError shape through client normalization', async () => {
+  // open --foreground: open succeeded, composed snapshot did not. The public
+  // client result must carry the FULL daemon error — dropping the boundary
+  // normalization (or truncating to code+message) must fail here.
+  const initialSnapshotError = {
+    code: 'COMMAND_FAILED',
+    message: 'capture failed',
+    hint: 'Run: agent-device snapshot -i',
+    details: { reason: 'runner_capture_failed' },
+    diagnosticId: 'ms-diag-1234',
+    logPath: '/tmp/agent-device/sessions/qa/requests/snap.ndjson',
+    retriable: true,
+  };
+  const setup = createTransport(async (req) => {
+    if (req.command === 'open') {
+      return {
+        ok: true,
+        data: {
+          session: 'qa',
+          appName: 'Settings',
+          appBundleId: 'com.apple.Preferences',
+          platform: 'ios',
+          target: 'mobile',
+          device: 'iPhone 16',
+          id: 'SIM-001',
+          kind: 'simulator',
+          device_udid: 'SIM-001',
+          warnings: ['The session is open, but the initial interactive snapshot failed.'],
+          initialSnapshotError,
+        },
+      };
+    }
+    throw new Error(`Unexpected command: ${req.command}`);
+  });
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  const result = await client.apps.open({ app: 'Settings', platform: 'ios', foreground: true });
+
+  assert.deepEqual(result.initialSnapshotError, initialSnapshotError);
+  assert.equal(result.snapshot, undefined);
+});
+
+test('apps.open drops a malformed initialSnapshotError instead of projecting garbage', async () => {
+  const setup = createTransport(async () => ({
+    ok: true,
+    data: {
+      session: 'qa',
+      appName: 'Settings',
+      appBundleId: 'com.apple.Preferences',
+      platform: 'ios',
+      target: 'mobile',
+      device: 'iPhone 16',
+      id: 'SIM-001',
+      kind: 'simulator',
+      device_udid: 'SIM-001',
+      initialSnapshotError: { code: 'COMMAND_FAILED' },
+    },
+  }));
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  const result = await client.apps.open({ app: 'Settings', platform: 'ios' });
+
+  assert.equal(result.initialSnapshotError, undefined);
 });
 
 test('apps.open forwards explicit runtime hints through the daemon request', async () => {
@@ -767,6 +813,37 @@ test('interactions.pan projects one- and two-finger requests through typed gestu
   );
 });
 
+test('interactions.drag projects generic endpoints and timing phases through structured input', async () => {
+  const setup = createTransport(async () => ({ ok: true, data: { message: 'Dragged' } }));
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  await client.interactions.drag({
+    source: 'id="drag-source"',
+    destination: '@e2~s42',
+    sourceHoldMs: 700,
+    moveMs: 600,
+    destinationHoldMs: 200,
+  });
+
+  assert.deepEqual(
+    setup.calls.map(({ command, positionals, input }) => ({ command, positionals, input })),
+    [
+      {
+        command: 'gesture',
+        positionals: [],
+        input: {
+          kind: 'drag',
+          source: 'id="drag-source"',
+          destination: '@e2~s42',
+          sourceHoldMs: 700,
+          moveMs: 600,
+          destinationHoldMs: 200,
+        },
+      },
+    ],
+  );
+});
+
 // fallow-ignore-next-line complexity
 test('replay.run serializes client-collected AD_VAR shell env into daemon request', async () => {
   const previousAppId = process.env.AD_VAR_APP_ID;
@@ -781,6 +858,7 @@ test('replay.run serializes client-collected AD_VAR shell env into daemon reques
 
     await client.replay.run({
       path: './flows/login.ad',
+      cwd: FLOWS_CWD,
       env: ['APP_ID=cli-override'],
     });
 
@@ -811,6 +889,7 @@ test('replay.run keeps deprecated maestro option as backend alias', async () => 
 
   await client.replay.run({
     path: './flows/login.yaml',
+    cwd: FLOWS_CWD,
     maestro: true,
   });
 
@@ -826,6 +905,7 @@ test('replay.run forwards timeout budget', async () => {
 
   await client.replay.run({
     path: './flows/mod-lists.yaml',
+    cwd: FLOWS_CWD,
     backend: 'maestro',
     timeoutMs: 240_000,
   });
@@ -841,6 +921,7 @@ test('replay.test keeps backend alias for suite discovery', async () => {
 
   await client.replay.test({
     paths: ['./flows/login.yaml'],
+    cwd: FLOWS_CWD,
     backend: 'maestro',
   });
 
@@ -856,6 +937,7 @@ test('replay.test forwards recordVideo for per-attempt video recording', async (
 
   await client.replay.test({
     paths: ['./flows/login.ad'],
+    cwd: FLOWS_CWD,
     recordVideo: true,
   });
 
@@ -870,6 +952,7 @@ test('structured replay.test command forwards Maestro backend for suite discover
 
   await runCommand(client, 'test', {
     paths: ['./e2e/maestro'],
+    cwd: FLOWS_CWD,
     backend: 'maestro',
     platform: 'android',
   });
@@ -887,10 +970,12 @@ test('structured replay commands keep deprecated Maestro boolean alias', async (
 
   await runCommand(client, 'replay', {
     path: './flows/login.yaml',
+    cwd: FLOWS_CWD,
     maestro: true,
   });
   await runCommand(client, 'test', {
     paths: ['./e2e/maestro'],
+    cwd: FLOWS_CWD,
     maestro: true,
     platform: 'android',
   });
@@ -1181,6 +1266,61 @@ test('capture.screenshot normalizes the default-level result (unchanged)', async
   assert.deepEqual(result.identifiers, { session: 'qa' });
 });
 
+test('capture.screenshot forwards public scale as the screenshot sizing flag', async () => {
+  const setup = createTransport(async (req) => {
+    assert.equal(req.command, 'screenshot');
+    assert.equal(req.flags?.screenshotScale, 0.3);
+    return { ok: true, data: { path: '/tmp/shot.png' } };
+  });
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  await client.capture.screenshot({ scale: 0.3 });
+});
+
+test('gesture scale does not leak into screenshot sizing flags', async () => {
+  const setup = createTransport(async (req) => {
+    assert.equal(req.command, 'gesture');
+    assert.deepEqual(req.input, { kind: 'pinch', scale: 0.8 });
+    assert.equal(req.flags?.screenshotScale, undefined);
+    return { ok: true, data: {} };
+  });
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  await client.interactions.pinch({ scale: 0.8 });
+});
+
+// Released Node callers passed `{ maxSize }`; it must be refused with migration
+// guidance instead of being silently dropped into a native-size capture.
+test('capture.screenshot rejects the removed maxSize option before transport', async () => {
+  const setup = createTransport(async () => {
+    throw new Error('transport should not be reached for a retired option');
+  });
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  await assert.rejects(
+    () =>
+      client.capture.screenshot({ maxSize: 1024 } as Parameters<
+        typeof client.capture.screenshot
+      >[0]),
+    /screenshot --max-size was removed; use --scale/,
+  );
+});
+
+test('recording.record rejects the removed maxSize option before transport', async () => {
+  const setup = createTransport(async () => {
+    throw new Error('transport should not be reached for a retired option');
+  });
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  await assert.rejects(
+    () =>
+      client.recording.record({ action: 'start', maxSize: 720 } as Parameters<
+        typeof client.recording.record
+      >[0]),
+    /record --max-size was removed/,
+  );
+});
+
 test('capture.snapshot passes a digest (non-default level) payload through unnormalized', async () => {
   const digest = {
     nodeCount: 3,
@@ -1314,6 +1454,39 @@ test('interactions expose targetKind-discriminated public response data', async 
     [pressType, clickType, fillType, longPressType, findType],
     [true, true, true, true, true],
   );
+});
+
+// #1625: `find … list` through the typed client — `matches` is part of the
+// public response type and rides with the issuing generation, so a caller can
+// pin any listed ref for its next command.
+test('typed client find list returns every match with the issuing generation', async () => {
+  const setup = createTransport(async (req) => {
+    if (req.command === 'find') {
+      assert.deepEqual(req.positionals, ['label', 'Foo', 'list']);
+      return {
+        ok: true,
+        data: {
+          matches: [
+            { ref: '@e5', node: { ref: 'e5', type: 'Button', label: 'Foo' } },
+            { ref: '@e9', node: { ref: 'e9', type: 'Cell', label: 'Foo bar' } },
+          ],
+          refsGeneration: 42,
+        },
+      };
+    }
+    throw new Error(`unexpected command: ${req.command}`);
+  });
+  const client = createAgentDeviceClient(setup.config, { transport: setup.transport });
+
+  const list = await client.interactions.find({ locator: 'label', query: 'Foo', action: 'list' });
+
+  const listType: Equal<typeof list, FindCommandResponseData> = true;
+  assert.ok(listType);
+  assert.deepEqual(
+    list.matches?.map((match) => match.ref),
+    ['@e5', '@e9'],
+  );
+  assert.equal(list.refsGeneration, 42);
 });
 
 test('interaction responses expose additive cost and direct-iOS Maestro fallback fields', async () => {

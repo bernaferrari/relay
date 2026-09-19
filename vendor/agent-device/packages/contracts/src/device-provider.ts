@@ -7,7 +7,7 @@
 
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import type { LeaseBackend } from '@agent-device/kernel/contracts';
-import type { DeviceInventoryRequest } from './device-inventory.ts';
+import type { ProviderDeviceInventoryRequest } from './device-inventory.ts';
 
 export type DeviceLease = {
   leaseId: string;
@@ -24,7 +24,17 @@ export type DeviceLease = {
 
 export type LeaseLifecycleContext = {
   flags?: Readonly<Record<string, unknown>>;
+  initialApp?: string;
   cwd?: string;
+  publicNetworkOnly?: boolean;
+  /** Request-bound cancellation (explicit cancel or client disconnect). */
+  signal?: AbortSignal;
+  /**
+   * Epoch-ms deadline by which `allocate` must have settled; derived from the
+   * same budget as the client's `lease_allocate` envelope, so a provider that
+   * fits its remote phases within it is never abandoned by a client first.
+   */
+  deadline?: number;
 };
 
 export type LeaseLifecycleProvider = {
@@ -43,5 +53,34 @@ export type LeaseLifecycleProvider = {
 };
 
 export type DeviceInventoryProvider = (
-  request: DeviceInventoryRequest,
+  request: ProviderDeviceInventoryRequest,
+  signal?: AbortSignal,
 ) => Promise<DeviceInfo[] | null | undefined>;
+
+export type ProviderDeviceInventoryOutcome =
+  | Readonly<{ kind: 'declined' }>
+  | Readonly<{ kind: 'inventory'; devices: readonly DeviceInfo[] }>;
+
+/** Closed provider-owned inventory source; an empty inventory is authoritative. */
+export type ProviderDeviceInventorySource = Readonly<{
+  discover(
+    request: Readonly<ProviderDeviceInventoryRequest>,
+    signal: AbortSignal,
+  ): Promise<ProviderDeviceInventoryOutcome>;
+}>;
+
+export type ProviderAppCatalogQuery = Readonly<{
+  provider: string;
+  platform: 'android' | 'ios';
+  publicNetworkOnly?: boolean;
+}>;
+
+export type ProviderAppCatalogHandler = (
+  query: ProviderAppCatalogQuery,
+  signal?: AbortSignal,
+) => Promise<readonly string[]>;
+
+export type ProviderAppCatalog = Readonly<{
+  supports(provider: string): boolean;
+  list: ProviderAppCatalogHandler;
+}>;

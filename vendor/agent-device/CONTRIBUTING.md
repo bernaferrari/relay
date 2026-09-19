@@ -7,7 +7,8 @@ reviewable change. Detailed testing and device procedures live in the linked foc
 
 Requirements:
 
-- Node.js 22 or newer
+- Node.js 22.13 or newer — the pinned pnpm requires it. The published package keeps a lower
+  `engines.node` floor of 22.12, which CI verifies separately on the installed tarball.
 - pnpm at the version pinned in `package.json`
 - Android SDK tools (`adb`) for Android work
 - Xcode (`simctl`/`devicectl`) for Apple-platform work
@@ -69,8 +70,35 @@ packages the Apple runner source, and rebuilds both Android helper APKs. Any fai
 packaging. It deliberately does not stop the worktree's development daemon; use `pnpm rebuild:cli`
 when a running daemon needs to pick up a new TypeScript build.
 
+That Android leg needs `AGENT_DEVICE_ANDROID_BUILD_TOOLS` naming the build-tools version to compile
+with. An unpinned build takes the newest version installed on the machine, which CI refuses to do,
+so name the version the CI lanes install and the published helper matches the CI-built one.
+
 `pnpm package:npm` is a release guard, not a routine development command. Use the specific commands
 above while iterating.
+
+### The version on main never equals a published version
+
+`release:publish` runs `release:mark-dev` right after `npm publish`, moving `package.json` (and the
+synchronized `server.json`) to the next patch with a `-dev` prerelease marker (for example
+`0.20.11-dev`). Commit that bump as part of the release. The invariant it protects: MCP registry
+scanners diff the repository's tool surface per version string, so a released number left on `main`
+while `main` keeps changing is indistinguishable from a republished ("rug-pull") version.
+`release:prepare` enforces the inverse direction and refuses to publish while the `-dev` marker is
+still in place — set the real release version first (for example `npm version patch`, which strips
+the prerelease marker), commit, then publish.
+
+### Released-surface baselines roll forward on publish
+
+Compatibility gates baseline against the last **released tag**, not against `main`, so publishing is
+what advances them — there is no separate baseline-refresh step and no regenerate command. Tagging a
+release makes that commit's `test/wire-compat/ledger.json` the new baseline for
+`pnpm check:daemon-wire-compat`, and its `.ad` corpus tags the new ceiling for
+`pnpm check:replay-compat`. The practical consequence for a normal PR: wire churn *within* an
+unreleased branch is free, and only the net change since the last publish has to carry a
+`DAEMON_RPC_PROTOCOL_VERSION` bump or a `compatibleChanges` acknowledgment. After a release that
+bumped the protocol version, the acknowledgments accumulated against the previous one no longer
+match any current digest and are dropped — git history keeps the audit trail.
 
 ## Validate a change
 

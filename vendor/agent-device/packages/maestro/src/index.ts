@@ -11,14 +11,22 @@ export {
   type MaestroFlow,
 } from './internal/facade-execution.ts';
 
+export type { MaestroSourceReader } from './internal/program-loader.ts';
+
+export {
+  collectMaestroFlowSources,
+  type MaestroOptionalSourceReader,
+} from './internal/source-closure.ts';
+
 export {
   exportReplayActionsToMaestro,
-  MAESTRO_SELECTOR_PROJECTION,
   type MaestroExportOptions,
   type MaestroExportResult,
   type MaestroExportWarning,
   type MaestroSelectorProjection,
-} from './internal/facade-export.ts';
+} from './internal/export-flow.ts';
+
+export { MAESTRO_SELECTOR_PROJECTION } from './internal/selector-vocabulary.ts';
 
 export {
   formatMaestroCompatibilityReference,
@@ -36,6 +44,7 @@ export {
   MAESTRO_RUNTIME_ADAPTER_POLICY,
   resolveMaestroScrollableGesture,
   resolveMaestroTargetFromSnapshot,
+  hasMaestroRecursiveRelations,
   type MaestroDispatchSelector,
   type MaestroObservation,
   type MaestroObservationCondition,

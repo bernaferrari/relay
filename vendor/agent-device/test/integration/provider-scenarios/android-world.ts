@@ -7,15 +7,23 @@ import { PassThrough } from 'node:stream';
 import type {
   AndroidAdbProcess,
   AndroidAdbProvider,
-} from '../../../src/platforms/android/adb-executor.ts';
-import type { DeviceInventoryRequest } from '../../../src/core/dispatch-resolve.ts';
+} from '@agent-device/platform-android/mechanics';
+import type { DeviceInventoryRequest } from '@agent-device/device-selection/dispatch-resolve';
+import { ANDROID_IME_HELPER_FIXTURE_ARTIFACT } from '../../../src/__tests__/test-utils/android-ime-helper.ts';
 import {
   ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT,
   androidSnapshotHelperOutput,
-} from '../../../src/__tests__/test-utils/index.ts';
-import { runCmd } from '../../../src/utils/exec.ts';
+} from '../../../src/__tests__/test-utils/android-snapshot-helper.ts';
+import { runCmd, runCmdBackground } from '@agent-device/host-kit/command';
 import { validPng } from './assertions.ts';
 import { PROVIDER_SCENARIO_ANDROID } from './fixtures.ts';
+import {
+  androidImeLifecycleAdbResult,
+  createAndroidProviderShellState,
+  type AndroidProviderShellState,
+  updateAndroidProviderImeShellState,
+} from './android-ime-lifecycle-world.ts';
+import { unexpectedProviderCall } from './providers.ts';
 import {
   createProviderScenarioHarness,
   restoreEnv,
@@ -73,6 +81,7 @@ export async function createAndroidSettingsWorld(options?: {
   );
   const apkPath = path.join(tempRoot, 'Demo.apk');
   const aabPath = path.join(tempRoot, 'Demo.aab');
+  const logcatProcessPath = createScriptedLogcatExecutable(tempRoot);
   const previousAppEventTemplate = process.env.AGENT_DEVICE_ANDROID_APP_EVENT_URL_TEMPLATE;
   process.env.AGENT_DEVICE_ANDROID_APP_EVENT_URL_TEMPLATE =
     'demo://agent-device/event?name={event}&payload={payload}&platform={platform}';
@@ -84,6 +93,7 @@ export async function createAndroidSettingsWorld(options?: {
   });
   const adbProvider: AndroidAdbProvider = {
     snapshotHelperArtifact: ANDROID_SNAPSHOT_HELPER_FIXTURE_ARTIFACT,
+    imeHelperArtifact: ANDROID_IME_HELPER_FIXTURE_ARTIFACT,
     gestureViewport: async () => {
       gestureViewportCalls += 1;
       return { x: 0, y: 0, width: 390, height: 600 };
@@ -94,14 +104,22 @@ export async function createAndroidSettingsWorld(options?: {
       updateAndroidProviderShellState(args, shellState);
       const stateResult = updateAndroidProviderAppState(args, appState);
       if (stateResult) return stateResult;
+      const mutationResult = androidDeviceMutationAdbResult(args);
+      if (mutationResult) return mutationResult;
       const heapResult = androidHeapDumpAdbResult(args);
       if (heapResult) return heapResult;
-      return androidAdbResult(args, shellState.searchText, shellState.clipboardText, {
-        snapshotXml: options?.snapshotXml,
-        dumpsysWindow:
-          options?.dumpsysWindow ?? (() => androidForegroundWindowDump(appState.foreground)),
-        pidof: (packageName) => androidPidofResult(appState, packageName),
-      });
+      return respondToAndroidSettingsAdbCommand(
+        args,
+        shellState.searchText,
+        shellState.clipboardText,
+        {
+          ime: shellState,
+          snapshotXml: options?.snapshotXml,
+          dumpsysWindow:
+            options?.dumpsysWindow ?? (() => androidForegroundWindowDump(appState.foreground)),
+          pidof: (packageName) => androidPidofResult(appState, packageName),
+        },
+      );
     },
     touch: async (request) => {
       touchInjectionCalls.push({ ...request });
@@ -115,33 +133,9 @@ export async function createAndroidSettingsWorld(options?: {
       bundleInstallCalls.push({ bundlePath, mode: bundleOptions.mode });
     },
     spawn: (args) => {
-      const child = makeMockAdbProcess();
+      if (!args.includes('logcat')) return makeMockAdbProcess(args);
+      const child = makeScriptedLogcatProcess(logcatProcessPath, args);
       spawnedLogcat.push(child);
-      queueMicrotask(() => {
-        if (args.includes('logcat')) {
-          child.stdout?.push(`I/AgentDevice(4242): ${args.join(' ')}\n`);
-          child.stdout?.push(
-            [
-              '04-01 10:00:15.000 D/Network(4242):',
-              JSON.stringify({
-                method: 'POST',
-                url: 'https://api.example.com/v1/login',
-                status: 401,
-                headers: { 'x-id': 'abc' },
-                requestBody: { email: 'test@example.com' },
-                responseBody: { error: 'bad_credentials' },
-              }),
-              '\n',
-            ].join(' '),
-          );
-          return;
-        }
-        child.stdout?.push(`I/AgentDevice(4242): ${args.join(' ')}\n`);
-        child.stdout?.push(null);
-        child.stderr?.push(null);
-        child.emit('exit', 0, null);
-        child.emit('close', 0, null);
-      });
       return child;
     },
   };
@@ -153,6 +147,7 @@ export async function createAndroidSettingsWorld(options?: {
     };
   }
   const daemon = await createProviderScenarioHarness({
+    platformRuntime: true,
     androidAdbProvider: () => adbProvider,
     deviceInventoryProvider: async (request) => {
       inventoryRequests.push({ ...request });
@@ -186,6 +181,9 @@ export async function createAndroidSettingsWorld(options?: {
       closed = true;
       restoreEnv('AGENT_DEVICE_ANDROID_APP_EVENT_URL_TEMPLATE', previousAppEventTemplate);
       hostAdbGuard.restore();
+      for (const child of spawnedLogcat) {
+        if (!child.killed && typeof child.exitCode !== 'number') child.kill('SIGKILL');
+      }
       fs.rmSync(tempRoot, { recursive: true, force: true });
       await daemon.close();
     },
@@ -224,27 +222,27 @@ async function createAndroidManifestApk(
   return apkPath;
 }
 
-function androidAdbResult(
+export function respondToAndroidSettingsAdbCommand(
   args: string[],
   searchText: string,
   clipboardText: string,
   options: {
+    ime?: AndroidProviderShellState;
     snapshotXml?: () => string;
     dumpsysWindow?: () => string;
     pidof?: (packageName: string) => AndroidAdbResult | undefined;
   },
 ): { stdout: string; stderr: string; exitCode: number; stdoutBuffer?: Buffer } {
   const key = args.join(' ');
-  return (
-    androidDeviceStateAdbResult(key, args, clipboardText, options.pidof) ??
+  const result =
+    androidDisplayRotationAdbResult(key, options.ime) ??
+    androidDeviceAvailabilityAdbResult(key, args, options.pidof) ??
+    androidImeLifecycleAdbResult(key, args, options.ime) ??
+    androidClipboardAdbResult(key, clipboardText) ??
     androidMetricsAdbResult(key) ??
     androidPackageAdbResult(key, args, options.dumpsysWindow) ??
-    androidCaptureAdbResult(key, searchText, options.snapshotXml) ?? {
-      stdout: '',
-      stderr: '',
-      exitCode: 0,
-    }
-  );
+    androidCaptureAdbResult(key, searchText, options.snapshotXml);
+  return result ?? unexpectedProviderCall('Android', args);
 }
 
 type AndroidAdbResult = {
@@ -254,42 +252,65 @@ type AndroidAdbResult = {
   stdoutBuffer?: Buffer;
 };
 
-type AndroidProviderShellState = {
-  searchText: string;
-  clipboardText: string;
-};
-
-function createAndroidProviderShellState(): AndroidProviderShellState {
-  return { searchText: '', clipboardText: 'hello' };
-}
+const ANDROID_CLIPBOARD_SET_TEXT_PREFIX = ['shell', 'cmd', 'clipboard', 'set', 'text'];
 
 function updateAndroidProviderShellState(args: string[], state: AndroidProviderShellState): void {
+  if (argsStartWith(args, ['shell', 'settings', 'put', 'system', 'user_rotation'])) {
+    state.userRotation = String(args[5] ?? '0');
+    return;
+  }
   if (args[0] === 'shell' && args[1] === 'input' && args[2] === 'text') {
     state.searchText = String(args[3] ?? '').replaceAll('%s', ' ');
     return;
   }
-  if (args.join(' ') === 'shell cmd clipboard set text android otp') {
-    state.clipboardText = 'android otp';
+  if (argsStartWith(args, ANDROID_CLIPBOARD_SET_TEXT_PREFIX)) {
+    state.clipboardText = unquoteAndroidShellArg(
+      String(args[ANDROID_CLIPBOARD_SET_TEXT_PREFIX.length] ?? ''),
+    );
+    return;
   }
+  updateAndroidProviderImeShellState(args, state);
 }
 
-function androidDeviceStateAdbResult(
+function argsStartWith(args: string[], prefix: string[]): boolean {
+  return prefix.every((value, index) => args[index] === value);
+}
+
+// The real device shell unwraps a single-quoted argument (and collapses the
+// `'\''` escape back to `'`) before `cmd` ever sees it, so this harness has
+// to mirror that unwrap to keep modelling what the device actually receives
+// — the inverse of the quoting in @agent-device/host-kit/command.
+function unquoteAndroidShellArg(value: string): string {
+  if (!value.startsWith("'") || !value.endsWith("'") || value.length < 2) return value;
+  return value.slice(1, -1).replaceAll(String.raw`'\''`, "'");
+}
+
+function androidDeviceAvailabilityAdbResult(
   key: string,
   args: string[],
-  clipboardText: string,
   pidof?: (packageName: string) => AndroidAdbResult | undefined,
 ): AndroidAdbResult | undefined {
   if (key === 'shell getprop sys.boot_completed') {
     return { stdout: '1\n', stderr: '', exitCode: 0 };
   }
-  if (key === 'shell cmd clipboard get text') {
-    return { stdout: `clipboard text: ${clipboardText}\n`, stderr: '', exitCode: 0 };
+  if (key === 'emu kill') {
+    return { stdout: '', stderr: '', exitCode: 0 };
   }
   if (key === 'shell dumpsys input_method') {
     return { stdout: 'mInputShown=false inputType=0x1\n', stderr: '', exitCode: 0 };
   }
   if (args[0] === 'shell' && args[1] === 'pidof' && args[2]) {
     return pidof?.(args[2]) ?? { stdout: '4242\n', stderr: '', exitCode: 0 };
+  }
+  return undefined;
+}
+
+function androidClipboardAdbResult(
+  key: string,
+  clipboardText: string,
+): AndroidAdbResult | undefined {
+  if (key === 'shell cmd clipboard get text') {
+    return { stdout: `clipboard text: ${clipboardText}\n`, stderr: '', exitCode: 0 };
   }
   return undefined;
 }
@@ -327,20 +348,177 @@ function stopAndroidProviderApp(
   return { stdout: '', stderr: '', exitCode: 0 };
 }
 
-function startAndroidProviderApp(args: string[], state: AndroidProviderAppState): undefined {
+function startAndroidProviderApp(
+  args: string[],
+  state: AndroidProviderAppState,
+): AndroidAdbResult | undefined {
   if (args[2] !== 'start' && args[2] !== 'start-activity') return undefined;
 
   const componentIndex = args.indexOf('-n');
   const component = componentIndex >= 0 ? args[componentIndex + 1] : undefined;
   if (component) {
     foregroundAndroidComponent(state, component);
-    return undefined;
+    return { stdout: '', stderr: '', exitCode: 0 };
   }
   if (args.includes('android.settings.SETTINGS')) {
     foregroundAndroidComponent(state, 'com.android.settings/.Settings');
   }
+  return { stdout: '', stderr: '', exitCode: 0 };
+}
+
+function androidDeviceMutationAdbResult(args: string[]): AndroidAdbResult | undefined {
+  return (
+    androidAppMutationAdbResult(args) ??
+    androidInputMutationAdbResult(args) ??
+    androidScreenshotDemoAdbResult(args) ??
+    androidSettingsMutationAdbResult(args)
+  );
+}
+
+function androidAppMutationAdbResult(args: string[]): AndroidAdbResult | undefined {
+  if (args[0] === 'uninstall' && args.length === 2) {
+    return { stdout: 'Success\n', stderr: '', exitCode: 0 };
+  }
+  if (
+    args[0] === 'shell' &&
+    args[1] === 'am' &&
+    args[2] === 'broadcast' &&
+    args.includes('-a') &&
+    args.includes('-p')
+  ) {
+    return { stdout: 'Broadcast completed: result=0\n', stderr: '', exitCode: 0 };
+  }
   return undefined;
 }
+
+function androidInputMutationAdbResult(args: string[]): AndroidAdbResult | undefined {
+  return (
+    androidShellInputAdbResult(args) ??
+    androidClipboardMutationAdbResult(args) ??
+    androidDoctorProbeAdbResult(args)
+  );
+}
+
+function androidShellInputAdbResult(args: string[]): AndroidAdbResult | undefined {
+  if (
+    args[0] === 'shell' &&
+    args[1] === 'input' &&
+    (args[2] === 'text' || args[2] === 'keyevent' || args[2] === 'tap' || args[2] === 'swipe')
+  ) {
+    return { stdout: '', stderr: '', exitCode: 0 };
+  }
+  return undefined;
+}
+
+function androidClipboardMutationAdbResult(args: string[]): AndroidAdbResult | undefined {
+  if (argsStartWith(args, ANDROID_CLIPBOARD_SET_TEXT_PREFIX)) {
+    return { stdout: '', stderr: '', exitCode: 0 };
+  }
+  return undefined;
+}
+
+function androidDoctorProbeAdbResult(args: string[]): AndroidAdbResult | undefined {
+  if (args.length === 3 && argsStartWith(args, ['shell', 'echo', 'ok'])) {
+    return { stdout: 'ok\n', stderr: '', exitCode: 0 };
+  }
+  return undefined;
+}
+
+function androidScreenshotDemoAdbResult(args: string[]): AndroidAdbResult | undefined {
+  if (args.length === 2 && ANDROID_SCREENSHOT_DEMO_SHELL_COMMANDS.has(args[1] ?? '')) {
+    return { stdout: '', stderr: '', exitCode: 0 };
+  }
+  return undefined;
+}
+
+function androidSettingsMutationAdbResult(args: string[]): AndroidAdbResult | undefined {
+  return (
+    androidAppearanceMutationAdbResult(args) ??
+    androidLocationMutationAdbResult(args) ??
+    androidFingerprintMutationAdbResult(args) ??
+    androidPermissionMutationAdbResult(args) ??
+    androidSettingsPutAdbResult(args)
+  );
+}
+
+function androidAppearanceMutationAdbResult(args: string[]): AndroidAdbResult | undefined {
+  if (
+    args.length === 5 &&
+    argsStartWith(args, ['shell', 'cmd', 'uimode', 'night']) &&
+    (args[4] === 'yes' || args[4] === 'no')
+  ) {
+    return { stdout: '', stderr: '', exitCode: 0 };
+  }
+  return undefined;
+}
+
+function androidLocationMutationAdbResult(args: string[]): AndroidAdbResult | undefined {
+  if (args.length === 5 && argsStartWith(args, ['emu', 'geo', 'fix'])) {
+    return { stdout: '', stderr: '', exitCode: 0 };
+  }
+  return undefined;
+}
+
+function androidFingerprintMutationAdbResult(args: string[]): AndroidAdbResult | undefined {
+  if (
+    args.length === 5 &&
+    argsStartWith(args, ['shell', 'cmd', 'fingerprint']) &&
+    (args[3] === 'touch' || args[3] === 'finger')
+  ) {
+    return { stdout: '', stderr: '', exitCode: 0 };
+  }
+  return undefined;
+}
+
+function androidPermissionMutationAdbResult(args: string[]): AndroidAdbResult | undefined {
+  // #1796: permission mutations name the acting user explicitly, because `pm` defaults
+  // grant/revoke to user 0 rather than the foreground user. The scripted provider answers the
+  // resolution and accepts the `--user <id>` form the production path now sends.
+  if (args.length === 3 && argsStartWith(args, ['shell', 'am', 'get-current-user'])) {
+    return { stdout: '0\n', stderr: '', exitCode: 0 };
+  }
+  const scoped = args[3] === '--user';
+  const verb = args[2];
+  if (
+    argsStartWith(args, ['shell', 'pm']) &&
+    (verb === 'grant' || verb === 'revoke') &&
+    args.length === (scoped ? 7 : 5)
+  ) {
+    return { stdout: '', stderr: '', exitCode: 0 };
+  }
+  return undefined;
+}
+
+/** The scripted display rotates the moment `user_rotation` lands, the way the settle expects. */
+function androidDisplayRotationAdbResult(
+  key: string,
+  state: AndroidProviderShellState | undefined,
+): AndroidAdbResult | undefined {
+  if (key !== 'shell dumpsys display') return undefined;
+  return {
+    stdout: `    mCurrentOrientation=${state?.userRotation ?? '0'}\n`,
+    stderr: '',
+    exitCode: 0,
+  };
+}
+
+function androidSettingsPutAdbResult(args: string[]): AndroidAdbResult | undefined {
+  if (
+    args.length === 6 &&
+    argsStartWith(args, ['shell', 'settings', 'put']) &&
+    (args[3] === 'global' || args[3] === 'secure' || args[3] === 'system')
+  ) {
+    return { stdout: '', stderr: '', exitCode: 0 };
+  }
+  return undefined;
+}
+
+const ANDROID_SCREENSHOT_DEMO_SHELL_COMMANDS = new Set([
+  'settings put global sysui_demo_allowed 1',
+  'am broadcast -a com.android.systemui.demo -e command clock -e hhmm 0941',
+  'am broadcast -a com.android.systemui.demo -e command notifications -e visible false',
+  'am broadcast -a com.android.systemui.demo -e command exit',
+]);
 
 function foregroundAndroidComponent(state: AndroidProviderAppState, component: string): void {
   const packageName = component.split('/')[0];
@@ -378,6 +556,9 @@ function androidMetricsAdbResult(key: string): AndroidAdbResult | undefined {
       exitCode: 0,
     };
   }
+  if (key.endsWith(' reset') && key.startsWith('shell dumpsys gfxinfo ')) {
+    return { stdout: '', stderr: '', exitCode: 0 };
+  }
   if (key === 'shell dumpsys meminfo com.example.demo') {
     return {
       stdout: [
@@ -397,7 +578,7 @@ function androidMetricsAdbResult(key: string): AndroidAdbResult | undefined {
     return {
       stdout: [
         'Uptime: 10000',
-        'Stats since: 9000000000',
+        'Stats since: 5000000000',
         'Total frames rendered: 4',
         'Janky frames: 1 (25.00%)',
       ].join('\n'),
@@ -413,6 +594,25 @@ function androidPackageAdbResult(
   args: string[],
   dumpsysWindow?: () => string,
 ): AndroidAdbResult | undefined {
+  return (
+    androidSnapshotHelperProbeAdbResult(key) ??
+    androidLaunchablePackagesAdbResult(args) ??
+    androidInstalledPackagesAdbResult(key) ??
+    androidForegroundReadAdbResult(key, dumpsysWindow)
+  );
+}
+
+function androidSnapshotHelperProbeAdbResult(key: string): AndroidAdbResult | undefined {
+  if (
+    key ===
+    'shell cmd package list packages --show-versioncode com.callstack.agentdevice.snapshothelper'
+  ) {
+    return { stdout: '', stderr: '', exitCode: 1 };
+  }
+  return undefined;
+}
+
+function androidLaunchablePackagesAdbResult(args: string[]): AndroidAdbResult | undefined {
   if (
     args.slice(0, 7).join(' ') ===
     'shell cmd package query-activities --brief -a android.intent.action.MAIN'
@@ -423,14 +623,30 @@ function androidPackageAdbResult(
       exitCode: 0,
     };
   }
-  if (key === 'shell pm list packages -3') {
+  return undefined;
+}
+
+function androidInstalledPackagesAdbResult(key: string): AndroidAdbResult | undefined {
+  if (key === 'shell pm list packages -3' || key === 'shell pm list packages') {
     return {
       stdout: 'package:com.example.demo\npackage:com.example.serviceonly\n',
       stderr: '',
       exitCode: 0,
     };
   }
-  if (key === 'shell dumpsys window windows' || key === 'shell dumpsys window') {
+  return undefined;
+}
+
+function androidForegroundReadAdbResult(
+  key: string,
+  dumpsysWindow?: () => string,
+): AndroidAdbResult | undefined {
+  if (
+    key === 'shell dumpsys window windows' ||
+    key === 'shell dumpsys window' ||
+    key === 'shell dumpsys activity activities' ||
+    key === 'shell dumpsys activity'
+  ) {
     return {
       stdout: dumpsysWindow?.() ?? 'mCurrentFocus=Window{42 u0 com.android.settings/.Settings}\n',
       stderr: '',
@@ -507,8 +723,8 @@ function installFakeHostAdbGuard(): { argsLogPath: string; restore: () => void }
     adbPath,
     [
       '#!/bin/sh',
-      'printf "%s\\n" "$*" >> "$AGENT_DEVICE_TEST_ADB_ARGS_FILE"',
-      'printf "host adb must not be used in Provider scenario tests\\n" >&2',
+      String.raw`printf "%s\n" "$*" >> "$AGENT_DEVICE_TEST_ADB_ARGS_FILE"`,
+      String.raw`printf "host adb must not be used in Provider scenario tests\n" >&2`,
       'exit 99',
       '',
     ].join('\n'),
@@ -551,7 +767,16 @@ function escapeXml(value: string): string {
     .replaceAll('>', '&gt;');
 }
 
-function makeMockAdbProcess(): EventEmitter & AndroidAdbProcess {
+function makeScriptedLogcatProcess(executable: string, args: string[]): AndroidAdbProcess {
+  const background = runCmdBackground(executable, args, {
+    allowFailure: true,
+    captureOutput: false,
+  });
+  void background.wait.catch(() => undefined);
+  return background.child;
+}
+
+function makeMockAdbProcess(args: string[]): EventEmitter & AndroidAdbProcess {
   const child = new EventEmitter() as EventEmitter & AndroidAdbProcess;
   child.stdin = null;
   child.stdout = new PassThrough();
@@ -565,7 +790,40 @@ function makeMockAdbProcess(): EventEmitter & AndroidAdbProcess {
     queueMicrotask(() => child.emit('close', 0, null));
     return true;
   };
+  queueMicrotask(() => {
+    child.stdout?.push(`I/AgentDevice(4242): ${args.join(' ')}\n`);
+    child.stdout?.push(null);
+    child.stderr?.push(null);
+    child.emit('exit', 0, null);
+    child.emit('close', 0, null);
+  });
   return child;
+}
+
+function createScriptedLogcatExecutable(tempRoot: string): string {
+  const executable = path.join(tempRoot, 'provider-logcat');
+  const networkEntry = JSON.stringify({
+    method: 'POST',
+    url: 'https://api.example.com/v1/login',
+    status: 401,
+    headers: { 'x-id': 'abc' },
+    requestBody: { email: 'test@example.com' },
+    responseBody: { error: 'bad_credentials' },
+  });
+  fs.writeFileSync(
+    executable,
+    [
+      '#!/bin/sh',
+      String.raw`printf "I/AgentDevice(4242): provider logcat\n"`,
+      `printf '%s\\n' '04-01 10:00:15.000 D/Network(4242): ${networkEntry}'`,
+      'trap \'test -n "$child" && kill "$child" 2>/dev/null; exit 0\' INT TERM',
+      'while :; do sleep 10 & child=$!; wait "$child"; done',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  fs.chmodSync(executable, 0o755);
+  return executable;
 }
 
 export async function waitForFileContent(filePath: string, expected: string): Promise<void> {

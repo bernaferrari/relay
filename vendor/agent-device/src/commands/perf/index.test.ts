@@ -1,11 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { CliFlags } from '@agent-device/contracts/command';
-import {
-  perfCliReader,
-  perfCommandDefinition,
-  perfCommandMetadata,
-  perfDaemonWriter,
-} from './index.ts';
+import { perfCliReader, perfCommandFacet, perfCommandMetadata, perfDaemonWriter } from './index.ts';
 
 const NO_FLAGS = {} as CliFlags;
 
@@ -21,7 +16,7 @@ function expectInvalidArgs(fn: () => unknown, messageFragment: string) {
 describe('perf command interface', () => {
   test('owns perf public metadata', () => {
     expect(perfCommandMetadata.name).toBe('perf');
-    expect(perfCommandDefinition.name).toBe('perf');
+    expect(perfCommandFacet.definition.name).toBe('perf');
   });
 
   test('reads perf area, action, kind, and out flags', () => {
@@ -38,19 +33,28 @@ describe('perf command interface', () => {
     });
   });
 
-  test('treats a single perf action as metrics action', () => {
-    expect(perfCliReader(['sample'], NO_FLAGS)).toEqual({
-      action: 'sample',
-      kind: undefined,
-      out: undefined,
-    });
-    expect(perfDaemonWriter({ action: 'sample' })).toMatchObject({
+  test('rejects removed aggregate forms and writes focused areas', () => {
+    expectInvalidArgs(() => perfCliReader([], NO_FLAGS), 'Aggregate perf was removed');
+    expectInvalidArgs(() => perfCliReader(['sample'], NO_FLAGS), 'Aggregate perf was removed');
+    expectInvalidArgs(() => perfCliReader(['metrics'], NO_FLAGS), 'Aggregate perf was removed');
+    expect(perfDaemonWriter({ area: 'frames' })).toMatchObject({
       command: 'perf',
-      positionals: ['metrics', 'sample'],
+      positionals: ['frames'],
     });
   });
 
   test('rejects invalid perf positionals', () => {
     expectInvalidArgs(() => perfCliReader(['memory', 'explode'], NO_FLAGS), 'perf action');
+  });
+
+  test('rejects area flags that would otherwise be silently dropped', () => {
+    expectInvalidArgs(
+      () => perfCliReader(['frames'], { kind: 'perfetto' } as CliFlags),
+      '--kind is only supported',
+    );
+    expectInvalidArgs(
+      () => perfCliReader(['memory', 'sample'], { out: './heap.hprof' } as CliFlags),
+      '--out is only supported',
+    );
   });
 });

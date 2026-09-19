@@ -3,7 +3,7 @@
 // Mutation score is the only mechanical answer to "is this test load-bearing or
 // decorative", but a full-suite sweep is unaffordable. This registry is the
 // single source of truth for what Stryker mutates: `stryker.config.json`'s
-// `mutate` globs are asserted against it, and PR-affected gating maps changed
+// `mutate` globs are asserted against it, and PR-affected selection maps changed
 // files onto modules through it.
 //
 // Membership rule: pure decision kernels only — a surviving mutant here means a
@@ -61,8 +61,14 @@ export const KERNEL_MODULES: readonly KernelModule[] = [
   {
     id: 'scroll-edge-state',
     label: 'Scroll edge-state detection',
-    mutate: ['src/utils/scroll-edge-state.ts'],
-    owns: ['src/utils/scroll-edge-state.ts'],
+    mutate: [
+      'packages/capture-kit/src/snapshot/scroll-edge-state.ts',
+      'packages/capture-kit/src/snapshot/scroll-edge-state/**/*.ts',
+    ],
+    owns: [
+      'packages/capture-kit/src/snapshot/scroll-edge-state.ts',
+      'packages/capture-kit/src/snapshot/scroll-edge-state/',
+    ],
   },
   {
     id: 'selectors',
@@ -87,8 +93,8 @@ export const KERNEL_MODULES: readonly KernelModule[] = [
   {
     id: 'snapshot-occlusion',
     label: 'Snapshot occlusion (covered/not-covered) decisions',
-    mutate: ['src/snapshot/snapshot-occlusion.ts'],
-    owns: ['src/snapshot/snapshot-occlusion.ts'],
+    mutate: ['packages/capture-kit/src/snapshot-occlusion.ts'],
+    owns: ['packages/capture-kit/src/snapshot-occlusion.ts'],
   },
 ];
 
@@ -112,10 +118,10 @@ export function mutateGlobs(ids: readonly ModuleId[] = ALL_MODULE_IDS): string[]
 }
 
 /**
- * The module a lane-tooling change proves itself against before graduation.
- * `kernel-errors` is the cheapest real sweep in the registry (one file, ~183
- * mutants), so a change to the ratchet, the config, or the baseline runs actual
- * mutants end to end without paying for the full sweep.
+ * The module a lane-tooling change proves itself against. `kernel-errors` is the
+ * cheapest real sweep in the registry (one file, ~183 mutants), so a change to
+ * the harness or the config runs actual mutants end to end without paying for
+ * the full sweep.
  */
 export const LANE_CANARY: ModuleId = 'kernel-errors';
 

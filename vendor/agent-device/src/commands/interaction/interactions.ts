@@ -8,13 +8,13 @@ import type {
 import {
   assertNoRemovedSwipeInput,
   swipePayloadFromPositionals,
-} from '@agent-device/contracts/interaction';
+} from '@agent-device/contracts/gesture-normalization';
 import { AppError } from '@agent-device/kernel/errors';
-import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
 import {
   readFillTargetFromPositionals,
   readInteractionTargetFromPositionals,
-} from '../../core/interaction-positionals.ts';
+} from '@agent-device/selectors/interaction-positionals';
 import {
   commonInputFromFlags,
   direct,
@@ -30,18 +30,16 @@ import {
   request,
   requiredDaemonString,
   selectorSnapshotInputFromFlags,
-  settleInputFromFlags,
   targetInputFromClientTarget,
 } from '../cli-grammar/common.ts';
 import type { CliReader, DaemonWriter } from '../cli-grammar/types.ts';
-import type { ScrollInputDirection } from './runtime/gestures.ts';
+import type { ScrollInputDirection } from '@agent-device/contracts/scroll-gesture';
 
 export const interactionCliReaders = {
   click: (positionals, flags) => ({
     ...commonInputFromFlags(flags),
     ...selectorSnapshotInputFromFlags(flags),
     ...repeatedInputFromFlags(flags),
-    ...settleInputFromFlags(flags),
     target: targetInputFromClientTarget(readInteractionTargetFromPositionals(positionals)),
     button: flags.clickButton,
     verify: flags.verify,
@@ -50,7 +48,6 @@ export const interactionCliReaders = {
     ...commonInputFromFlags(flags),
     ...selectorSnapshotInputFromFlags(flags),
     ...repeatedInputFromFlags(flags),
-    ...settleInputFromFlags(flags),
     target: targetInputFromClientTarget(readInteractionTargetFromPositionals(positionals)),
     verify: flags.verify,
   }),
@@ -59,11 +56,15 @@ export const interactionCliReaders = {
     return {
       ...commonInputFromFlags(flags),
       ...selectorSnapshotInputFromFlags(flags),
-      ...settleInputFromFlags(flags),
       target: targetInputFromClientTarget(decoded),
       durationMs: decoded.durationMs,
     };
   },
+  hover: (positionals, flags) => ({
+    ...commonInputFromFlags(flags),
+    ...selectorSnapshotInputFromFlags(flags),
+    target: targetInputFromClientTarget(readInteractionTargetFromPositionals(positionals)),
+  }),
   swipe: (positionals, flags) => ({
     ...commonInputFromFlags(flags),
     ...swipePayloadFromPositionals(positionals, {
@@ -87,7 +88,6 @@ export const interactionCliReaders = {
     return {
       ...commonInputFromFlags(flags),
       ...selectorSnapshotInputFromFlags(flags),
-      ...settleInputFromFlags(flags),
       target: targetInputFromClientTarget(decoded.target),
       text: decoded.text,
       delayMs: flags.delayMs,
@@ -101,6 +101,7 @@ export const interactionCliReaders = {
     amount: optionalCliNumber(positionals[1]),
     pixels: flags.pixels,
     durationMs: flags.durationMs,
+    until: flags.until,
   }),
   // The one observation-only reader in this file: `get` can be excluded from a
   // repair-armed heal by default, so it also takes the `--record` opt-in
@@ -126,6 +127,9 @@ export const interactionDaemonWriters = {
   ),
   longpress: direct(PUBLIC_COMMANDS.longPress, (input) =>
     longPressPositionals(input as LongPressOptions),
+  ),
+  hover: direct(PUBLIC_COMMANDS.hover, (input) =>
+    interactionTargetPositionals(input as InteractionTarget),
   ),
   swipe: (input) => {
     assertNoRemovedSwipeInput(input);

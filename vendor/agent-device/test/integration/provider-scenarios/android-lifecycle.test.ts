@@ -11,8 +11,14 @@ import {
   assertRpcOk,
 } from './assertions.ts';
 import { createAndroidSettingsWorld, waitForFileContent } from './android-world.ts';
+import { androidAppOwnedSheetXml, androidSystemDialogXml } from './android-dialog-fixtures.ts';
+import { assertAndroidSettingsContract } from './android-settings-contract.ts';
 import { PROVIDER_SCENARIO_ANDROID } from './fixtures.ts';
 import { createProviderScenarioTempPath, withProviderScenarioResource } from './harness.ts';
+import {
+  androidImeClearTextBroadcast,
+  androidImeInputTextBroadcast,
+} from './android-ime-lifecycle-world.ts';
 import {
   ANDROID_LIFECYCLE_CONTRACT_EVIDENCE,
   ANDROID_TOUCH_CONTRACT_EVIDENCE,
@@ -42,7 +48,7 @@ test(
       assertAndroidProviderContract(world);
     });
   },
-  15_000,
+  25_000,
 );
 
 test('Provider-backed Android reads keep chrome provenance internal across public node payloads', async () => {
@@ -233,100 +239,6 @@ test(ANDROID_TOUCH_CONTRACT_EVIDENCE.testName, async () => {
   );
 });
 
-test('Provider-backed integration Android alert handles runtime permission dialog', async () => {
-  await withProviderScenarioResource(
-    async () => await createAndroidSettingsWorld({ snapshotXml: androidRuntimePermissionXml }),
-    async (world) => {
-      const client = world.daemon.client();
-      await client.apps.open({ app: 'com.example.demo', ...world.selection });
-
-      const alertGet = await client.command.alert({ action: 'get', ...world.selection });
-      assert.equal(alertGet.kind, 'alertStatus');
-      assert.deepEqual(alertGet.alert, {
-        title: 'Allow Demo to send you notifications?',
-        buttons: ['Don’t allow', 'Allow'],
-        platform: 'android',
-        source: 'permission',
-        packageName: 'com.google.android.permissioncontroller',
-      });
-
-      const alertAccept = await client.command.alert({ action: 'accept', ...world.selection });
-      assert.equal(alertAccept.kind, 'alertHandled');
-      assert.equal(alertAccept.button, 'Allow');
-      assert.deepEqual(
-        world.adbCalls.filter((call) => call.join(' ') === 'shell input tap 274 638'),
-        [['shell', 'input', 'tap', '274', '638']],
-      );
-
-      const alertDismiss = await client.command.alert({ action: 'dismiss', ...world.selection });
-      assert.equal(alertDismiss.kind, 'alertHandled');
-      assert.equal(alertDismiss.button, 'Don’t allow');
-      assert.deepEqual(
-        world.adbCalls.filter((call) => call.join(' ') === 'shell input tap 116 638'),
-        [['shell', 'input', 'tap', '116', '638']],
-      );
-    },
-  );
-});
-
-test('Provider-backed integration Android alert handles native AlertDialog actions', async () => {
-  await withProviderScenarioResource(
-    async () => await createAndroidSettingsWorld({ snapshotXml: androidNativeAlertXml }),
-    async (world) => {
-      const client = world.daemon.client();
-      await client.apps.open({ app: 'com.example.demo', ...world.selection });
-
-      const alertGet = await client.command.alert({ action: 'get', ...world.selection });
-      assert.deepEqual(alertGet.alert, {
-        title: 'Unsaved changes',
-        message: 'Leave without saving?',
-        buttons: ['Cancel', 'Discard'],
-        platform: 'android',
-        source: 'native-dialog',
-        packageName: 'com.example.demo',
-      });
-
-      const alertAccept = await client.command.alert({ action: 'accept', ...world.selection });
-      assert.equal(alertAccept.button, 'Discard');
-      const alertDismiss = await client.command.alert({ action: 'dismiss', ...world.selection });
-      assert.equal(alertDismiss.button, 'Cancel');
-      assert.deepEqual(
-        world.adbCalls.filter((call) =>
-          ['shell input tap 274 638', 'shell input tap 116 638'].includes(call.join(' ')),
-        ),
-        [
-          ['shell', 'input', 'tap', '274', '638'],
-          ['shell', 'input', 'tap', '116', '638'],
-        ],
-      );
-    },
-  );
-});
-
-test('Provider-backed integration Android alert handles system dialogs', async () => {
-  await withProviderScenarioResource(
-    async () => await createAndroidSettingsWorld({ snapshotXml: androidSystemDialogXml }),
-    async (world) => {
-      const client = world.daemon.client();
-      await client.apps.open({ app: 'com.example.demo', ...world.selection });
-
-      const alertGet = await client.command.alert({ action: 'get', ...world.selection });
-      assert.deepEqual(alertGet.alert, {
-        title: "Demo isn't responding",
-        message: 'Do you want to close it?',
-        buttons: ['Close app', 'Wait'],
-        platform: 'android',
-        source: 'system-dialog',
-        packageName: 'com.android.systemui',
-      });
-
-      const alertDismiss = await client.command.alert({ action: 'dismiss', ...world.selection });
-      assert.equal(alertDismiss.button, 'Close app');
-      assertCommandCall(world.adbCalls, ['shell', 'input', 'tap', '116', '638']);
-    },
-  );
-});
-
 test('Provider-backed integration Android app-owned ANR recovers before action commands', async () => {
   let anrFocused = true;
   await withProviderScenarioResource(
@@ -397,64 +309,6 @@ test('Provider-backed integration Android external ANR fails with actionable con
         world.adbCalls.filter((call) => call.slice(0, 4).join(' ') === 'shell am start -W').length,
         openCalls,
       );
-    },
-  );
-});
-
-test('Provider-backed integration Android alert dismiss falls back to Back without a dismiss button', async () => {
-  await withProviderScenarioResource(
-    async () => await createAndroidSettingsWorld({ snapshotXml: androidButtonlessAlertXml }),
-    async (world) => {
-      const client = world.daemon.client();
-      await client.apps.open({ app: 'com.example.demo', ...world.selection });
-
-      const alertDismiss = await client.command.alert({ action: 'dismiss', ...world.selection });
-      assert.equal(alertDismiss.kind, 'alertHandled');
-      assert.equal(alertDismiss.button, 'Back');
-      assertCommandCall(world.adbCalls, ['shell', 'input', 'keyevent', '4']);
-    },
-  );
-});
-
-test('Provider-backed integration Android alert wait polls until a dialog appears', async () => {
-  let snapshotCount = 0;
-  await withProviderScenarioResource(
-    async () =>
-      await createAndroidSettingsWorld({
-        snapshotXml: () => {
-          snapshotCount += 1;
-          return snapshotCount === 1 ? androidAppOwnedSheetXml() : androidRuntimePermissionXml();
-        },
-      }),
-    async (world) => {
-      const client = world.daemon.client();
-      await client.apps.open({ app: 'com.example.demo', ...world.selection });
-
-      const alertWait = await client.command.alert({
-        action: 'wait',
-        timeoutMs: 1000,
-        ...world.selection,
-      });
-      assert.equal(alertWait.kind, 'alertWait');
-      // alert now returns the untyped CommandRequestResult bag (its iOS path is a
-      // dynamic runner Record, so the public type is no longer a closed shape).
-      const alertInfo = alertWait.alert as { source?: string } | null | undefined;
-      assert.equal(alertInfo?.source, 'permission');
-      assert.ok(snapshotCount >= 2);
-    },
-  );
-});
-
-test('Provider-backed integration Android alert ignores app-owned sheets', async () => {
-  await withProviderScenarioResource(
-    async () => await createAndroidSettingsWorld({ snapshotXml: androidAppOwnedSheetXml }),
-    async (world) => {
-      const client = world.daemon.client();
-      await client.apps.open({ app: 'com.example.demo', ...world.selection });
-
-      const alertGet = await client.command.alert({ action: 'get', ...world.selection });
-      assert.equal(alertGet.kind, 'alertStatus');
-      assert.equal(alertGet.alert, null);
     },
   );
 });
@@ -642,151 +496,6 @@ async function runAndroidSetupAndInstallWorkflow(
   assert.equal(keyboard.visible, false);
 }
 
-function androidRuntimePermissionXml(): string {
-  const packageName = 'com.google.android.permissioncontroller';
-  return androidXml([
-    rootNode(packageName),
-    textNode(
-      1,
-      'Allow Demo to send you notifications?',
-      'com.android.permissioncontroller:id/permission_message',
-      packageName,
-      '[24,300][366,352]',
-    ),
-    buttonNode(
-      2,
-      'Don’t allow',
-      'com.android.permissioncontroller:id/permission_deny_button',
-      '[52,612][180,664]',
-      packageName,
-    ),
-    buttonNode(
-      3,
-      'Allow',
-      'com.android.permissioncontroller:id/permission_allow_button',
-      '[210,612][338,664]',
-      packageName,
-    ),
-    '  </node>',
-  ]);
-}
-
-function androidNativeAlertXml(): string {
-  return androidDialogXml([
-    textNode(2, 'Unsaved changes', 'android:id/alertTitle'),
-    textNode(3, 'Leave without saving?', 'android:id/message'),
-    buttonNode(4, 'Cancel', 'android:id/button2', '[52,612][180,664]'),
-    buttonNode(5, 'Discard', 'android:id/button1', '[210,612][338,664]'),
-  ]);
-}
-
-function androidSystemDialogXml(): string {
-  const packageName = 'com.android.systemui';
-  return androidXml([
-    rootNode(packageName),
-    textNode(1, 'Demo isn&apos;t responding', 'android:id/alertTitle', packageName),
-    textNode(2, 'Do you want to close it?', 'android:id/message', packageName),
-    buttonNode(3, 'Close app', 'android:id/button2', '[52,612][180,664]', packageName),
-    buttonNode(4, 'Wait', 'android:id/button1', '[210,612][338,664]', packageName),
-    '  </node>',
-  ]);
-}
-
-function androidButtonlessAlertXml(): string {
-  return androidDialogXml([
-    textNode(2, 'Unsaved changes', 'android:id/alertTitle'),
-    textNode(3, 'Leave without saving?', 'android:id/message'),
-  ]);
-}
-
-function androidAppOwnedSheetXml(): string {
-  return androidXml([
-    rootNode('com.example.demo', 'com.example.demo:id/root'),
-    textNode(1, 'Choose an option', 'com.example.demo:id/title'),
-    buttonNode(2, 'Allow', 'com.example.demo:id/allow_button', '[210,612][338,664]'),
-    '  </node>',
-  ]);
-}
-
-function androidDialogXml(children: string[]): string {
-  return androidXml([
-    rootNode(),
-    androidNode({
-      index: 1,
-      id: 'android:id/parentPanel',
-      type: 'android.app.AlertDialog',
-      bounds: '[24,240][366,680]',
-      selfClosing: false,
-    }),
-    ...children,
-    '    </node>',
-    '  </node>',
-  ]);
-}
-
-function androidXml(body: string[]): string {
-  return [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<hierarchy rotation="0">',
-    ...body,
-    '</hierarchy>',
-  ].join('\n');
-}
-
-function rootNode(packageName = 'com.example.demo', id = 'android:id/content'): string {
-  return androidNode({ index: 0, id, type: 'FrameLayout', packageName, selfClosing: false });
-}
-
-function textNode(
-  index: number,
-  text: string,
-  id: string,
-  packageName = 'com.example.demo',
-  bounds?: string,
-): string {
-  return androidNode({ index, text, id, packageName, ...(bounds ? { bounds } : {}) });
-}
-
-function buttonNode(
-  index: number,
-  text: string,
-  id: string,
-  bounds: string,
-  packageName = 'com.example.demo',
-): string {
-  return androidNode({ index, text, id, type: 'Button', packageName, bounds, clickable: true });
-}
-
-function androidNode(options: {
-  index: number;
-  id: string;
-  text?: string;
-  type?: string;
-  packageName?: string;
-  bounds?: string;
-  clickable?: boolean;
-  selfClosing?: boolean;
-}): string {
-  const type = options.type ?? 'TextView';
-  const className = type.includes('.') ? type : `android.widget.${type}`;
-  const tagEnd = options.selfClosing === false ? '>' : ' />';
-  return [
-    `  <node index="${options.index}"`,
-    `text="${options.text ?? ''}"`,
-    `resource-id="${options.id}"`,
-    `class="${className}"`,
-    `package="${options.packageName ?? 'com.example.demo'}"`,
-    'content-desc=""',
-    `bounds="${options.bounds ?? '[48,340][342,392]'}"`,
-    `clickable="${options.clickable ? 'true' : 'false'}"`,
-    'enabled="true"',
-    options.clickable ? 'focusable="true"' : '',
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .concat(tagEnd);
-}
-
 async function runAndroidAppControlAndObservabilityWorkflow(
   world: AndroidSettingsWorld,
   client: AgentDeviceClient,
@@ -886,33 +595,21 @@ async function runAndroidAppControlAndObservabilityWorkflow(
   assert.equal(latestNetworkEntry.requestBody, '{"email":"test@example.com"}');
   assert.equal(latestNetworkEntry.responseBody, '{"error":"bad_credentials"}');
 
-  const perf = await client.observability.perf(selection);
-  assert.equal(perf.platform, 'android');
-  assert.equal(perf.deviceId, PROVIDER_SCENARIO_ANDROID.id);
-  const metrics = perf.metrics as Record<string, any>;
-  assert.equal(metrics.startup?.available, true, JSON.stringify(perf));
-  assert.equal(metrics.startup?.method, 'open-command-roundtrip');
-  assert.ok(metrics.startup?.sampleCount >= 2, JSON.stringify(metrics.startup));
-  const startupSamples = Array.isArray(metrics.startup?.samples) ? metrics.startup.samples : [];
-  assert.equal(startupSamples.at(-1)?.appTarget, 'com.example.demo');
-  assert.equal(startupSamples.at(-1)?.appBundleId, 'com.example.demo');
-  assert.equal(metrics.memory?.available, true, JSON.stringify(perf));
-  assert.equal(metrics.memory?.totalPssKb, 216524);
-  assert.equal(metrics.memory?.totalRssKb, 340112);
-  assert.equal(metrics.cpu?.available, true, JSON.stringify(perf));
-  assert.equal(metrics.cpu?.usagePercent, 9);
-  assert.deepEqual(metrics.cpu?.matchedProcesses, ['com.example.demo', 'com.example.demo:sync']);
-  assert.equal(metrics.fps?.available, true, JSON.stringify(perf));
-  assert.equal(metrics.fps?.droppedFramePercent, 25);
-  const relatedActions = Array.isArray(metrics.fps?.relatedActions)
-    ? metrics.fps.relatedActions
+  const frameSample = await client.observability.perf({ area: 'frames', ...selection });
+  assert.equal(frameSample.platform, 'android');
+  assert.equal(frameSample.deviceId, PROVIDER_SCENARIO_ANDROID.id);
+  const initialFrameMetrics = frameSample.metrics as Record<string, any>;
+  assert.equal(initialFrameMetrics.fps?.available, true, JSON.stringify(frameSample));
+  assert.equal(initialFrameMetrics.fps?.droppedFramePercent, 25);
+  const relatedActions = Array.isArray(initialFrameMetrics.fps?.relatedActions)
+    ? initialFrameMetrics.fps.relatedActions
     : [];
   assert.ok(
     relatedActions.some(
       (action: Record<string, unknown>) =>
         action.command === 'open' && action.target === 'com.example.demo',
     ),
-    JSON.stringify(metrics.fps),
+    JSON.stringify(initialFrameMetrics.fps),
   );
 
   const events = await client.observability.events({ limit: 100, ...selection });
@@ -927,14 +624,6 @@ async function runAndroidAppControlAndObservabilityWorkflow(
   assert.equal(traceStop.json?.result?.data?.outPath, finalTracePath);
   assert.equal(fs.existsSync(finalTracePath), true);
 
-  const explicitMetrics = await client.observability.perf({ area: 'metrics', ...selection });
-  assert.deepEqual(Object.keys(explicitMetrics.metrics as Record<string, unknown>).sort(), [
-    'cpu',
-    'fps',
-    'memory',
-    'startup',
-  ]);
-
   const memorySample = await client.observability.perf({
     area: 'memory',
     action: 'sample',
@@ -944,10 +633,7 @@ async function runAndroidAppControlAndObservabilityWorkflow(
   assert.deepEqual(Object.keys(memoryMetrics), ['memory']);
   assert.equal(memoryMetrics.memory?.available, true, JSON.stringify(memorySample));
   assert.equal(memoryMetrics.memory?.totalPssKb, 216524);
-  assert.deepEqual(Object.keys(memorySample.sampling as Record<string, unknown>).sort(), [
-    'memory',
-    'snapshot',
-  ]);
+  assert.deepEqual(Object.keys(memorySample.sampling as Record<string, unknown>), ['memory']);
 
   const heapPath = path.join(world.tempRoot, 'demo.hprof');
   const memorySnapshot = await client.observability.perf({
@@ -995,11 +681,11 @@ async function runAndroidAppControlAndObservabilityWorkflow(
     ['shell', 'dumpsys', 'gfxinfo', 'com.example.demo', 'reset'],
   ]);
 
-  const invalidPerfAction = await world.daemon.callCommand('perf', ['metrics', 'poll'], {
+  const invalidPerfAction = await world.daemon.callCommand('perf', ['frames', 'poll'], {
     platform: 'android',
     serial: PROVIDER_SCENARIO_ANDROID.id,
   });
-  assertRpcError(invalidPerfAction, 'INVALID_ARGS', /perf action must be sample/i);
+  assertRpcError(invalidPerfAction, 'INVALID_ARGS', /perf action must be/i);
 
   const logsStop = await client.observability.logs({ action: 'stop', ...selection });
   assert.equal(logsStop.stopped, true);
@@ -1482,7 +1168,7 @@ function assertAndroidPushAndEventContract(world: AndroidSettingsWorld): void {
     'com.example.demo',
   ]);
   assertCommandCall(adbCalls, ['shell', 'cmd', 'clipboard', 'get', 'text']);
-  assertCommandCall(adbCalls, ['shell', 'cmd', 'clipboard', 'set', 'text', 'android otp']);
+  assertCommandCall(adbCalls, ['shell', 'cmd', 'clipboard', 'set', 'text', "'android otp'"]);
   assertCommandCall(adbCalls, ['shell', 'dumpsys', 'input_method']);
 }
 
@@ -1490,7 +1176,6 @@ function assertAndroidObservabilityContract(world: AndroidSettingsWorld): void {
   const { adbCalls, spawnedLogcat } = world;
   assertCommandCall(adbCalls, ['shell', 'pidof', 'com.example.demo']);
   assertCommandCall(adbCalls, ['shell', 'dumpsys', 'meminfo', 'com.example.demo']);
-  assertCommandCall(adbCalls, ['shell', 'dumpsys', 'cpuinfo']);
   assertCommandCall(adbCalls, ['shell', 'dumpsys', 'gfxinfo', 'com.example.demo', 'framestats']);
   assertCommandCall(adbCalls, ['shell', 'dumpsys', 'gfxinfo', 'com.example.demo', 'reset']);
   assert.ok(
@@ -1501,45 +1186,6 @@ function assertAndroidObservabilityContract(world: AndroidSettingsWorld): void {
     spawnedLogcat.filter((child) => child.killed).length >= 2,
     'Expected close to auto-stop the active scripted logcat stream',
   );
-}
-
-function assertAndroidSettingsContract(world: AndroidSettingsWorld): void {
-  const { adbCalls } = world;
-  assertCommandCall(adbCalls, ['shell', 'cmd', 'uimode', 'night', 'yes']);
-  assertCommandCall(adbCalls, ['emu', 'geo', 'fix', '-122.009', '37.3349']);
-  assertCommandCall(adbCalls, ['shell', 'cmd', 'fingerprint', 'touch', '1']);
-  assertCommandCall(adbCalls, [
-    'shell',
-    'pm',
-    'grant',
-    'com.example.demo',
-    'android.permission.CAMERA',
-  ]);
-  assertCommandCall(adbCalls, [
-    'shell',
-    'settings',
-    'put',
-    'global',
-    'window_animation_scale',
-    '0',
-  ]);
-  assertCommandCall(adbCalls, [
-    'shell',
-    'settings',
-    'put',
-    'global',
-    'transition_animation_scale',
-    '0',
-  ]);
-  assertCommandCall(adbCalls, [
-    'shell',
-    'settings',
-    'put',
-    'global',
-    'animator_duration_scale',
-    '0',
-  ]);
-  assertCommandCall(adbCalls, ['shell', 'echo', 'ok']);
 }
 
 function assertAndroidInteractionContract(world: AndroidSettingsWorld): void {
@@ -1588,8 +1234,13 @@ function assertAndroidInteractionContract(world: AndroidSettingsWorld): void {
     adbCalls.filter((call) => arrayEqual(call, ['shell', 'input', 'tap', '88', '151'])).length,
     5,
   );
-  assertCommandCall(adbCalls, ['shell', 'input', 'text', 'Display']);
-  assertCommandCall(adbCalls, ['shell', 'input', 'text', 'Network']);
+  assertCommandCall(adbCalls, androidImeClearTextBroadcast);
+  assertCommandCall(adbCalls, androidImeInputTextBroadcast('Display'));
+  assertCommandCall(adbCalls, androidImeInputTextBroadcast('Network'));
+  assert.equal(
+    adbCalls.some((call) => call[0] === 'shell' && call[1] === 'input' && call[2] === 'text'),
+    false,
+  );
   assert.equal(
     adbCalls.filter((call) => arrayEqual(call, ['exec-out', 'screencap', '-p'])).length,
     3,

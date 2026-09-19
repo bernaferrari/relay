@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-import { PUBLIC_COMMANDS } from '../../../src/command-catalog.ts';
+import type { AgentDeviceDaemonTransport } from '@agent-device/contracts/client';
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
+import { sendToDaemon } from '../../../src/daemon-client/daemon-client.ts';
 import { assertPngFile } from '../provider-scenarios/assertions.ts';
 import {
   assertFilesDiffer,
@@ -12,6 +16,8 @@ import {
 } from './live-assertions.ts';
 import { assertAutomationInput } from './live-automation-scenario.ts';
 import { assertDeviceLifecycle } from './live-device-lifecycle.ts';
+import { assertRegularVisibleDepthFrontier } from './live-snapshot-depth-frontier.ts';
+import { assertWebViewRemoteContent } from './live-webview-remote-content.ts';
 import {
   assertLifecycleAndSystem,
   assertObservabilityAndArtifacts,
@@ -30,8 +36,35 @@ import {
   writeCoverageReport,
 } from './live-harness.ts';
 import { bindIosSimulatorScenarios } from './scenarios.ts';
+import {
+  assertSnapshotBackendConformance,
+  createSnapshotBackendConformanceTransport,
+  SNAPSHOT_BACKEND_CONFORMANCE_TARGETS,
+  loadSnapshotBackendConformanceFixture,
+  snapshotBackendEvidence,
+} from './snapshot-backend-conformance.ts';
 
 const C = PUBLIC_COMMANDS;
+
+type AgentDeviceSdk = typeof import('../../../src/sdk/index.ts');
+
+const sendToDaemonTransport: AgentDeviceDaemonTransport = async (request, context) => {
+  if (request.session === undefined) {
+    throw new Error('Snapshot conformance transport requires an explicit session.');
+  }
+  return await sendToDaemon({ ...request, session: request.session }, context);
+};
+
+async function loadBuiltAgentDeviceClient() {
+  // The live harness drives the built CLI, so use the built SDK entry as well. Importing the
+  // source SDK here would intentionally take over the daemon on code-signature mismatch and make
+  // the forced-backend evidence come from a different runtime than the rest of the scenario.
+  const builtSdk = (await import(
+    pathToFileURL(path.resolve('dist/src/index.js')).href
+  )) as AgentDeviceSdk;
+  return builtSdk.createAgentDeviceClient;
+}
+
 const LIVE_SCENARIOS = bindIosSimulatorScenarios<LiveContext>({
   automationInput: assertAutomationInput,
   captureClose: async (context) => {
@@ -44,6 +77,8 @@ const LIVE_SCENARIOS = bindIosSimulatorScenarios<LiveContext>({
   inventoryInstall: assertInventoryAndInstall,
   lifecycleSystem: assertLifecycleAndSystem,
   observabilityArtifacts: assertObservabilityAndArtifacts,
+  snapshotDepthFrontier: assertRegularVisibleDepthFrontier,
+  webviewRemoteContent: assertWebViewRemoteContent,
 });
 
 export async function runIosSimulatorE2E(): Promise<void> {
@@ -177,6 +212,20 @@ async function assertFormInput(context: LiveContext): Promise<void> {
   assert.equal(editable.json?.data?.pass, true, JSON.stringify(editable.json));
 
   await runStep(context, 'seed email field', ['fill', 'id="field-email"', 'ada@example']);
+  // Pins the exact point a truncated field value first appears, rather than inferring it from
+  // the final read. If this fails, `fill` itself lost the seed — the dismiss/refocus/type steps
+  // below never ran on the wrong content in the first place.
+  const seededEmail = await runStep(context, 'read seeded email before dismiss', [
+    'get',
+    'attrs',
+    'id="field-email"',
+  ]);
+  assertJsonContains(
+    seededEmail,
+    'ada@example',
+    'seeded email should be observable before dismiss',
+  );
+
   const keyboardVisiblePath = path.join(context.artifactDir, 'keyboard-visible.png');
   await capturePng(context, 'capture visible input keyboard', keyboardVisiblePath);
   const keyboard = await runStep(context, 'dismiss input keyboard', ['keyboard', 'dismiss']);
@@ -194,6 +243,18 @@ async function assertFormInput(context: LiveContext): Promise<void> {
     C.keyboard,
     'dismiss reports dismissed=true and visible=false while before/after pixels differ',
   );
+  // Pins whether `keyboard dismiss` itself clears the field, independent of the coordinate
+  // refocus + type steps that follow.
+  const emailAfterDismiss = await runStep(context, 'read email after dismiss', [
+    'get',
+    'attrs',
+    'id="field-email"',
+  ]);
+  assertJsonContains(
+    emailAfterDismiss,
+    'ada@example',
+    'seeded email should survive keyboard dismiss, before any refocus or further typing',
+  );
 
   const formSnapshot = await runStep(context, 'locate email coordinates', ['snapshot', '-i']);
   const emailRect = requireNodeRect(formSnapshot, 'field-email');
@@ -202,7 +263,16 @@ async function assertFormInput(context: LiveContext): Promise<void> {
     String(emailRect.x + emailRect.width / 2),
     String(emailRect.y + emailRect.height / 2),
   ]);
-  await runStep(context, 'append email suffix from coordinate focus', ['type', '.test']);
+  const typedSuffix = await runStep(context, 'append email suffix from coordinate focus', [
+    'type',
+    '.test',
+  ]);
+  assert.ok(context.runnerLogPath, 'cold-launch open response should retain runnerLogPath');
+  assert.equal(
+    typedSuffix.json?.data?.textEntryRoute,
+    'synthesized-first-responder',
+    'bare iOS type should use the AX-independent first-responder route',
+  );
   const email = await runStep(context, 'read typed email', ['get', 'attrs', 'id="field-email"']);
   assertJsonContains(email, 'ada@example.test', 'typed email suffix should be observable');
   verifyBehavior(
@@ -211,7 +281,53 @@ async function assertFormInput(context: LiveContext): Promise<void> {
     'fill showed the keyboard, dismissal changed pixels, and coordinate focus enabled typed text',
   );
   verifyCommand(context, C.focus, 'snapshot-derived coordinate focus directs subsequent typing');
-  verifyCommand(context, C.type, 'typed suffix is read back from the coordinate-focused field');
+  verifyCommand(
+    context,
+    C.type,
+    'AX-independent first-responder typing appends a suffix to the coordinate-focused field',
+  );
+
+  await assertSnapshotBackendConformanceLive(context);
+}
+
+async function assertSnapshotBackendConformanceLive(context: LiveContext): Promise<void> {
+  await runStep(context, 'dismiss keyboard before backend conformance capture', [
+    'keyboard',
+    'dismiss',
+  ]);
+  const fixture = loadSnapshotBackendConformanceFixture();
+  const createAgentDeviceClient = await loadBuiltAgentDeviceClient();
+  const evidence = [];
+
+  for (const backend of SNAPSHOT_BACKEND_CONFORMANCE_TARGETS) {
+    const client = createAgentDeviceClient(
+      {
+        session: context.session,
+        stateDir: context.stateDir,
+      },
+      { transport: createSnapshotBackendConformanceTransport(backend, sendToDaemonTransport) },
+    );
+    const snapshot = await client.capture.snapshot({
+      interactiveOnly: true,
+      platform: 'ios',
+      udid: context.udid,
+    });
+    assertSnapshotBackendConformance(snapshot, backend, fixture);
+    if (backend === 'tree') {
+      assert.equal(
+        snapshot.snapshotQuality?.reasonCode,
+        'requested-backend',
+        'tree conformance capture must disclose that the force seam was honored',
+      );
+    }
+    evidence.push(snapshotBackendEvidence(snapshot, backend));
+  }
+
+  const evidencePath = path.join(context.artifactDir, 'snapshot-backend-conformance.json');
+  fs.writeFileSync(
+    evidencePath,
+    JSON.stringify({ fixture: fixture.screen, captures: evidence }, null, 2),
+  );
 }
 
 async function assertCapture(context: LiveContext): Promise<void> {
@@ -219,8 +335,8 @@ async function assertCapture(context: LiveContext): Promise<void> {
   const screenshot = await runStep(context, 'capture fixture screenshot', [
     'screenshot',
     screenshotPath,
-    '--max-size',
-    '900',
+    '--scale',
+    '0.5',
   ]);
   assertJsonContains(screenshot, screenshotPath, 'screenshot response should return artifact path');
   assertPngFile(screenshotPath);

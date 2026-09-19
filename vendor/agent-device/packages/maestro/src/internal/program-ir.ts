@@ -13,14 +13,26 @@ export type MaestroCoordinate =
   | { space: 'absolute'; x: number; y: number }
   | { space: 'percent'; x: number; y: number };
 
-export type MaestroSelectorMap = {
+export type MaestroLeafSelector = {
   text?: string;
   id?: string;
-  label?: string;
   enabled?: boolean;
   selected?: boolean;
   optional?: boolean;
 };
+
+export type MaestroRelationalSelectorFields = {
+  index?: number | string;
+  childOf?: MaestroSelector;
+  below?: MaestroSelector;
+  above?: MaestroSelector;
+  leftOf?: MaestroSelector;
+  rightOf?: MaestroSelector;
+  containsChild?: MaestroSelector;
+  containsDescendants?: MaestroSelector[];
+};
+
+export type MaestroSelectorMap = MaestroLeafSelector & MaestroRelationalSelectorFields;
 
 export type MaestroSelector = MaestroSelectorMap;
 
@@ -55,8 +67,6 @@ export type MaestroTapOnCommand = MaestroOptionalCommand & {
   repeat?: number | string;
   delay?: number | string;
   label?: string;
-  index?: number | string;
-  childOf?: MaestroSelector;
 };
 
 export type MaestroDoubleTapOnCommand = MaestroOptionalCommand & {
@@ -64,12 +74,14 @@ export type MaestroDoubleTapOnCommand = MaestroOptionalCommand & {
   source: MaestroSourceLocation;
   target: MaestroGestureTarget;
   delay?: number | string;
+  label?: string;
 };
 
 export type MaestroLongPressOnCommand = MaestroOptionalCommand & {
   kind: 'longPressOn';
   source: MaestroSourceLocation;
   target: MaestroGestureTarget;
+  label?: string;
 };
 
 export type MaestroSwipeGesture =
@@ -89,13 +101,13 @@ export type MaestroSwipeGesture =
       from: MaestroSelector;
       direction: MaestroDirection;
       duration?: number | string;
-      label?: string;
     };
 
 export type MaestroSwipeCommand = MaestroOptionalCommand & {
   kind: 'swipe';
   source: MaestroSourceLocation;
   gesture: MaestroSwipeGesture;
+  label?: string;
 };
 
 export type MaestroInputTextCommand = {
@@ -121,14 +133,21 @@ export type MaestroAssertVisibleCommand = MaestroOptionalCommand & {
   kind: 'assertVisible';
   source: MaestroSourceLocation;
   target: MaestroSelector;
-  childOf?: MaestroSelector;
+  label?: string;
 };
 
 export type MaestroAssertNotVisibleCommand = MaestroOptionalCommand & {
   kind: 'assertNotVisible';
   source: MaestroSourceLocation;
   target: MaestroSelector;
-  childOf?: MaestroSelector;
+  label?: string;
+};
+
+export type MaestroAssertTrueCommand = MaestroOptionalCommand & {
+  kind: 'assertTrue';
+  source: MaestroSourceLocation;
+  condition: string | number | boolean;
+  label?: string;
 };
 
 export type MaestroExtendedWaitUntilCommand = MaestroOptionalCommand & {
@@ -137,6 +156,7 @@ export type MaestroExtendedWaitUntilCommand = MaestroOptionalCommand & {
   visible?: MaestroSelector;
   notVisible?: MaestroSelector;
   timeout?: number | string;
+  label?: string;
 };
 
 export type MaestroTakeScreenshotCommand = {
@@ -156,6 +176,7 @@ export type MaestroScrollUntilVisibleCommand = MaestroOptionalCommand & {
   element: MaestroSelector;
   direction?: MaestroDirection;
   timeout?: number | string;
+  label?: string;
 };
 
 export type MaestroHideKeyboardCommand = {
@@ -186,11 +207,23 @@ export type MaestroStopAppCommand = {
   appId?: string;
 };
 
+export type MaestroClearStateCommand = {
+  kind: 'clearState';
+  source: MaestroSourceLocation;
+  appId?: string;
+};
+
 export type MaestroRunScriptCommand = {
   kind: 'runScript';
   source: MaestroSourceLocation;
   file: string;
   env?: Record<string, string | number | boolean>;
+};
+
+export type MaestroEvalScriptCommand = {
+  kind: 'evalScript';
+  source: MaestroSourceLocation;
+  script: string;
 };
 
 export type MaestroRunFlowCondition = {
@@ -234,6 +267,7 @@ export type MaestroCommand =
   | MaestroOpenLinkCommand
   | MaestroAssertVisibleCommand
   | MaestroAssertNotVisibleCommand
+  | MaestroAssertTrueCommand
   | MaestroExtendedWaitUntilCommand
   | MaestroTakeScreenshotCommand
   | MaestroScrollCommand
@@ -243,7 +277,9 @@ export type MaestroCommand =
   | MaestroBackCommand
   | MaestroWaitForAnimationToEndCommand
   | MaestroStopAppCommand
+  | MaestroClearStateCommand
   | MaestroRunScriptCommand
+  | MaestroEvalScriptCommand
   | MaestroRunFlowCommand
   | MaestroRepeatCommand
   | MaestroRetryCommand;

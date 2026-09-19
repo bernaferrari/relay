@@ -12,6 +12,11 @@ dist/*
 coverage/
 .tmp/
 .DS_Store
+
+# Host-local Codex state and embedded worktree clones
+/.codex/
+/.worktrees/
+
 __pycache__/
 *.pyc
 *.log
@@ -46,3 +51,6 @@ android/ime-helper/dist/
 # Workspace package declaration output (tsc -b project references)
 packages/*/dist-types/
 *.tsbuildinfo
+
+# Reproducible AX bridge captures are published on the evidence branch.
+docs/evidence/ios-simulator-ax-bridge-*.json.gz

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { PNG } from '../../../src/utils/png.ts';
+import { PNG } from '@agent-device/capture-kit/png';
 import type { ProviderScenarioRpcResult } from './harness.ts';
 
 export function assertCommandCall(calls: readonly string[][], expected: readonly string[]): void {
@@ -106,4 +106,10 @@ function pngSignature(): Buffer {
 
 export function assertPngFile(filePath: string): void {
   assert.deepEqual(fs.readFileSync(filePath).subarray(0, 8), pngSignature());
+}
+
+export function assertPngDimensions(filePath: string, width: number, height: number): void {
+  const png = PNG.sync.read(fs.readFileSync(filePath));
+  assert.equal(png.width, width);
+  assert.equal(png.height, height);
 }

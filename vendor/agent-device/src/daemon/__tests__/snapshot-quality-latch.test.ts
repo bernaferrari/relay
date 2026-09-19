@@ -1,4 +1,3 @@
-import os from 'node:os';
 import path from 'node:path';
 import { expect, test, vi } from 'vitest';
 import type { SnapshotQualityVerdict } from '@agent-device/kernel/snapshot';
@@ -6,23 +5,22 @@ import { makeIosSession } from '../../__tests__/test-utils/session-factories.ts'
 import {
   recoveredSnapshotQualityWarning,
   renderSnapshotQualityWarnings,
-} from '../../snapshot/snapshot-quality.ts';
+} from '@agent-device/capture-kit/quality-warnings';
 import {
   applyRecoveredWarningLatch,
   resolveRecoveredWarningLatch,
 } from '../snapshot-quality-latch.ts';
-import { dispatchSnapshotDiffViaRuntime, dispatchSnapshotViaRuntime } from '../snapshot-runtime.ts';
+import { dispatchSnapshotDiffViaRuntime } from '../snapshot-diff-runtime.ts';
+import { dispatchSnapshotViaRuntime } from '../snapshot-runtime.ts';
 import { SessionStore } from '../session-store.ts';
-import type { SessionState } from '../types.ts';
+import type { SessionState } from '../session-state.ts';
+import { legacyDispatchCapture } from './legacy-snapshot-capture-fixture.ts';
+import { snapshotRuntimeFixture } from './snapshot-runtime-fixture.ts';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 
-const dispatchCommandMock = vi.hoisted(() => vi.fn());
-
-vi.mock('../../core/dispatch.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../core/dispatch.ts')>();
-  return {
-    ...actual,
-    dispatchCommand: dispatchCommandMock,
-  };
+vi.mock('../snapshot-interactor-capture.ts', async () => {
+  const fixture = await import('./legacy-snapshot-capture-fixture.ts');
+  return { captureSnapshotWithInteractor: fixture.captureSnapshotThroughLegacyDispatchFixture };
 });
 
 const FULL_WARNING = recoveredSnapshotQualityWarning('private-ax');
@@ -116,6 +114,23 @@ test('resolveRecoveredWarningLatch transitions', () => {
   expect(switched.latch).toEqual({ appBundleId: 'com.example.other' });
 });
 
+test('Android helper quality never mutates the iOS penalty latch', () => {
+  const latch = { appBundleId: 'com.example.app' };
+  for (const state of ['healthy', 'recovered', 'sparse'] as const) {
+    const decision = resolveRecoveredWarningLatch({
+      verdict: {
+        state,
+        backend: 'android-helper',
+        reasonCode: state === 'recovered' ? 'presentation-failed' : undefined,
+      },
+      appBundleId: 'com.example.app',
+      latch,
+    });
+    expect(decision.warning).toBeUndefined();
+    expect(decision.latch).toBe(latch);
+  }
+});
+
 test('internal observation responses neither consume nor clear the latch', () => {
   const session = makeIosSession('default', { appBundleId: 'com.example.app' });
 
@@ -150,8 +165,28 @@ test('sessionless responses pass through unchanged', () => {
   ).toBe(data);
 });
 
+test('the recovered warning rides the shared warnings channel and foreign entries are dropped', () => {
+  const session = makeIosSession('default', { appBundleId: 'com.example.app' });
+
+  const out = applyRecoveredWarningLatch({
+    session,
+    data: { warnings: ['a note', 42, { nested: true }] },
+    verdict: deferredVerdict(),
+    internalObservation: false,
+  });
+
+  const warnings = out.warnings as string[];
+  expect(warnings).toHaveLength(2);
+  expect(typeof warnings[0]).toBe('string');
+  expect(warnings[0]).not.toBe('a note');
+  expect(warnings[1]).toBe('a note');
+});
+
 function scenario() {
-  const root = path.join(os.tmpdir(), `agent-device-quality-latch-${crypto.randomUUID()}`);
+  const root = path.join(
+    mkdtempForTestSync('agent-device-quality-latch'),
+    `agent-device-quality-latch-${crypto.randomUUID()}`,
+  );
   const sessionStore = new SessionStore(path.join(root, 'sessions'));
   const sessionName = 'default';
   const session = makeIosSession(sessionName, { appBundleId: 'com.example.app' });
@@ -160,7 +195,7 @@ function scenario() {
 }
 
 function seedCapture(verdict: SnapshotQualityVerdict, label = 'Continue') {
-  dispatchCommandMock.mockResolvedValue({
+  legacyDispatchCapture.mockResolvedValue({
     backend: 'xctest',
     truncated: false,
     quality: verdict,
@@ -183,6 +218,7 @@ async function dispatchPublicSnapshot(input: ReturnType<typeof scenario>) {
     sessionName: input.sessionName,
     logPath: input.logPath,
     sessionStore: input.sessionStore,
+    ...snapshotRuntimeFixture(),
   });
 }
 
@@ -215,6 +251,7 @@ test('an internally armed penalty warns once on the first public deferred snapsh
     sessionName: input.sessionName,
     logPath: input.logPath,
     sessionStore: input.sessionStore,
+    ...snapshotRuntimeFixture(),
   });
   expect(responseWarnings(internal)).not.toContain(FULL_WARNING);
   expect(storedLatch(input)).toBeUndefined();
@@ -266,9 +303,13 @@ test('an empty ref-scoped diff latches on the captured verdict, not the retained
       },
     ],
   };
-  // The deferred capture holds no node labeled 'Continue', so the '@e1' scope
-  // resolves to zero nodes and the retention path runs.
-  seedCapture(deferredVerdict(), 'Something else');
+  // The runner owns scope publication and returns the healthy empty projection for a miss.
+  legacyDispatchCapture.mockResolvedValue({
+    backend: 'xctest',
+    truncated: false,
+    quality: deferredVerdict(),
+    nodes: [],
+  });
 
   const diff = await dispatchSnapshotDiffViaRuntime({
     req: {
@@ -281,6 +322,7 @@ test('an empty ref-scoped diff latches on the captured verdict, not the retained
     sessionName: input.sessionName,
     logPath: input.logPath,
     sessionStore: input.sessionStore,
+    ...snapshotRuntimeFixture(),
   });
 
   // The retention actually happened: the stored snapshot (and its healthy

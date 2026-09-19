@@ -3,6 +3,7 @@
 // conformance-differential workflow.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
@@ -11,7 +12,14 @@ import {
   DIFFERENTIAL_SCENARIOS,
   type DivergenceSignature,
 } from './scenarios.ts';
-import { matchesSignature, parseRunnerArgs, selectScenarios, validateScenarios } from './run.ts';
+import { parseMaestroConformanceSource } from '../harness.ts';
+import {
+  matchesSignature,
+  parseRunnerArgs,
+  runScenario,
+  selectScenarios,
+  validateScenarios,
+} from './run.ts';
 
 const CONFORMANCE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -142,12 +150,142 @@ describe('knownDivergence signature matching', () => {
   });
 });
 
+test('an ordinary Maestro process failure cannot satisfy a behavioral waiver', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'maestro-failure-'));
+  const maestroCli = path.join(root, 'maestro.mjs');
+  const agentDeviceCli = path.join(root, 'agent-device.mjs');
+  try {
+    fs.writeFileSync(maestroCli, 'process.exit(1);\n');
+    fs.writeFileSync(agentDeviceCli, 'process.exit(0);\n');
+
+    const report = runScenario(
+      {
+        id: 'maestro-infrastructure-failure',
+        flow: 'differential/flows/settle-after-tap.yaml',
+        comparesAcrossEngines: 'test fixture',
+        expect: 'pass',
+        divergenceMeans: 'test fixture',
+        knownDivergence: {
+          reason: 'A behavioral Maestro failure is temporarily accepted for this test fixture.',
+          tracking: 'https://github.com/callstack/agent-device/issues/1',
+          expected: { maestro: 'fail', agentDevice: 'pass' },
+        },
+      },
+      {
+        dryRun: false,
+        maestroBin: `${process.execPath} ${maestroCli}`,
+        agentDeviceCliArgv: [agentDeviceCli],
+      },
+    );
+
+    assert.equal(report.maestro.failureKind, 'infrastructure');
+    assert.equal(report.status, 'infrastructure-failed');
+    assert.equal(report.failed, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// The production route the P1 review asked for: environment -> parseRunnerArgs ->
+// runScenario -> spawn. Calling runAgentDeviceEngine with a hand-built argv proves
+// the spawn, but not that the two variables reach it intact — and it is the
+// environment contract that broke the nightly and that a whitespace-split
+// AGENT_DEVICE_CLI would break again in the other direction.
+describe('the agent-device CLI environment route', () => {
+  const ROUTE_SCENARIO = {
+    id: 'cli-env-route',
+    flow: 'differential/flows/settle-after-tap.yaml',
+    comparesAcrossEngines: 'test fixture',
+    expect: 'pass',
+    divergenceMeans: 'test fixture',
+  } as const;
+
+  /** Run one scenario with AGENT_DEVICE_CLI* set, restoring the environment after. */
+  function reportForEnvironment(entry: string, nodeFlags: string, maestroCli: string) {
+    const previous = {
+      entry: process.env.AGENT_DEVICE_CLI,
+      flags: process.env.AGENT_DEVICE_CLI_NODE_FLAGS,
+    };
+    process.env.AGENT_DEVICE_CLI = entry;
+    process.env.AGENT_DEVICE_CLI_NODE_FLAGS = nodeFlags;
+    try {
+      const options = parseRunnerArgs([]);
+      return {
+        argv: options.agentDeviceCliArgv,
+        report: runScenario(ROUTE_SCENARIO, {
+          ...options,
+          maestroBin: `${process.execPath} ${maestroCli}`,
+        }),
+      };
+    } finally {
+      restoreEnv('AGENT_DEVICE_CLI', previous.entry);
+      restoreEnv('AGENT_DEVICE_CLI_NODE_FLAGS', previous.flags);
+    }
+  }
+
+  function restoreEnv(name: string, value: string | undefined): void {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+
+  /**
+   * `spaced` is a subdirectory whose NAME carries the space, so the entry path
+   * holds one whatever the file is called. The maestro stub deliberately stays
+   * out of it: `runMaestroEngine` still splits its command on spaces, and a
+   * spaced stub path would fail this test for the other engine's reason.
+   */
+  function withFixtureRoot(run: (spaced: string, maestroCli: string) => void): void {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-env-route-'));
+    const spaced = path.join(root, 'agent device');
+    fs.mkdirSync(spaced);
+    const maestroCli = path.join(root, 'maestro.mjs');
+    fs.writeFileSync(maestroCli, 'process.exit(0);\n');
+    try {
+      run(spaced, maestroCli);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  test('a CLI path containing spaces reaches the spawn unsplit', () => {
+    withFixtureRoot((spaced, maestroCli) => {
+      const entry = path.join(spaced, 'cli.mjs');
+      fs.writeFileSync(entry, 'process.exit(0);\n');
+
+      const { argv, report } = reportForEnvironment(entry, '', maestroCli);
+
+      assert.deepEqual(argv, [entry], 'the entry path must stay one argument');
+      assert.equal(report.agentDevice.outcome, 'pass');
+      assert.equal(report.failed, false);
+    });
+  });
+
+  test('node flags stay separate arguments alongside a spaced path', () => {
+    withFixtureRoot((spaced, maestroCli) => {
+      const entry = path.join(spaced, 'cli.ts');
+      fs.writeFileSync(entry, 'const code: number = 0;\nprocess.exit(code);\n');
+
+      const { argv, report } = reportForEnvironment(
+        entry,
+        '--experimental-strip-types',
+        maestroCli,
+      );
+
+      // Neither property is expressible in a single whitespace-joined variable.
+      assert.deepEqual(argv, ['--experimental-strip-types', entry]);
+      assert.equal(report.agentDevice.outcome, 'pass');
+      assert.equal(report.failed, false);
+    });
+  });
+});
+
 test('every device flow targets the fixture app the workflow installs', () => {
   for (const scenario of DIFFERENTIAL_SCENARIOS) {
-    const body = fs.readFileSync(path.join(CONFORMANCE_DIR, scenario.flow), 'utf8');
-    assert.match(
-      body,
-      new RegExp(`^appId:\\s*${DIFFERENTIAL_APP_ID}$`, 'm'),
+    const flowPath = path.join(CONFORMANCE_DIR, scenario.flow);
+    const parsed = parseMaestroConformanceSource(fs.readFileSync(flowPath, 'utf8'), flowPath);
+    assert.equal(
+      parsed.appId,
+      DIFFERENTIAL_APP_ID,
       `${scenario.id} must target ${DIFFERENTIAL_APP_ID}; a flow against any other app cannot run on the CI simulator`,
     );
   }

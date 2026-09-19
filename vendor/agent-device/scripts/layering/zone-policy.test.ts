@@ -2,10 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { policyLead, policyViolation, ZONE_POLICIES } from './zone-policy.ts';
 
-// R2-R3 (and the retired R1) were predicate functions with no unit test for eight months: the only thing
-// exercising them was the real tree, which is clean, so a rule that had silently stopped matching
-// would have looked exactly like a rule that was being obeyed. These tests assert each boundary
-// fires AND each documented exemption holds, so the table cannot quietly become decoration.
+// The folder policies originally had no unit test: the only thing exercising them was a clean real
+// tree, so a rule that silently stopped matching looked like one being obeyed. These tests keep the
+// remaining R2 policy from becoming decoration.
 
 type Kind = { typeOnly?: boolean; dynamic?: boolean };
 
@@ -19,6 +18,8 @@ function edge(file: string, fromZone: string, toZone: string, kind: Kind = {}) {
       line: 1,
       dynamic: kind.dynamic ?? false,
       typeOnly: kind.typeOnly ?? false,
+      symbols: [],
+      bindingResidue: false,
     },
   };
 }
@@ -28,8 +29,8 @@ function firing(e: ReturnType<typeof edge>): string[] {
   return ZONE_POLICIES.filter((policy) => policyViolation(policy, e) !== null).map((p) => p.rule);
 }
 
-test('R2 commands-floor closes the four zones below the command surface, whatever the kind', () => {
-  for (const zone of ['platforms', 'core', 'daemon']) {
+test('R2 commands-floor closes the remaining zones below the command surface, whatever the kind', () => {
+  for (const zone of ['core', 'daemon']) {
     for (const kind of [{}, { typeOnly: true }, { dynamic: true }]) {
       assert.ok(
         firing(edge(`src/${zone}/thing.ts`, zone, 'commands', kind)).includes('R2 commands-floor'),
@@ -43,28 +44,27 @@ test('R2 commands-floor closes the four zones below the command surface, whateve
   assert.deepEqual(firing(edge('src/mcp/tools.ts', 'mcp', 'commands')), []);
 });
 
-test('R3 platforms-seam closes static value imports and opens the three declared seam owners', () => {
-  // Closed from an ordinary zone.
-  assert.deepEqual(firing(edge('src/cli/run.ts', 'cli', 'platforms')), ['R3 platforms-seam']);
-
-  // Open to the seam owners.
-  for (const file of [
-    'src/core/interactors/android.ts',
-    'src/daemon/handlers/perf.ts',
-    'src/sdk/android-adb.ts',
-  ]) {
-    assert.deepEqual(firing(edge(file, 'core', 'platforms')), [], `${file} is a seam owner`);
+test('R2 commands-floor places commands below the cli-schema layer, whatever the kind', () => {
+  // #2543: cli-schema renders the facets commands authors, so it reads commands and commands never
+  // reads it back. The direction holds for value, type-only, and dynamic forms alike.
+  for (const kind of [{}, { typeOnly: true }, { dynamic: true }]) {
+    assert.ok(
+      firing(edge('src/commands/thing.ts', 'commands', 'cli-schema', kind)).includes(
+        'R2 commands-floor',
+      ),
+      `commands -> cli-schema ${JSON.stringify(kind)} must violate R2`,
+    );
   }
 
-  // daemon/client/ is inside the daemon prefix but is NOT part of the seam: it is the client half
-  // of the process boundary (ADR 0008), so it must not reach platform code at all.
-  assert.deepEqual(firing(edge('src/daemon/client/daemon-client.ts', 'daemon', 'platforms')), [
-    'R3 platforms-seam',
-  ]);
+  // The declared direction — cli-schema reading the facets — must stay silent.
+  assert.deepEqual(firing(edge('src/cli-schema/command-schema.ts', 'cli-schema', 'commands')), []);
+});
 
-  // Both tolerated kinds are the documented escape hatch that preserves CLI cold-start.
-  assert.deepEqual(firing(edge('src/cli/run.ts', 'cli', 'platforms', { dynamic: true })), []);
-  assert.deepEqual(firing(edge('src/cli/run.ts', 'cli', 'platforms', { typeOnly: true })), []);
+test('the retired R3 platforms seam has no zone-policy declaration', () => {
+  assert.equal(
+    ZONE_POLICIES.some(({ rule }) => rule === 'R3 platforms-seam'),
+    false,
+  );
 });
 
 test('every policy carries a hint, and the lead names the kind it rejected', () => {
@@ -73,17 +73,14 @@ test('every policy carries a hint, and the lead names the kind it rejected', () 
     assert.ok(policy.hint.length > 20, `${policy.rule} needs an actionable hint`);
   }
 
-  assert.match(
-    policyLead(edge('a', 'platforms', 'commands')),
-    /platforms\/ must not import commands\//,
-  );
+  assert.match(policyLead(edge('a', 'core', 'commands')), /core\/ must not import commands\//);
   assert.match(
     policyLead(edge('a', 'core', 'commands', { typeOnly: true })),
     /must not type-only import commands\//,
   );
   assert.match(
-    policyLead(edge('a', 'cli', 'platforms', { dynamic: true })),
-    /must not dynamic import platforms\//,
+    policyLead(edge('a', 'core', 'commands', { dynamic: true })),
+    /must not dynamic import commands\//,
   );
 });
 

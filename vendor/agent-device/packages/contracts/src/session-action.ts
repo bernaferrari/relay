@@ -1,11 +1,12 @@
 import type { SessionRuntimeHints } from '@agent-device/kernel/contracts';
 import type { CommandFlags } from './command-flags.ts';
-import type { TargetAnnotationV1 } from './target-annotation.ts';
+import type { MultiTargetAnnotationV1, TargetAnnotationV1 } from './target-annotation.ts';
 
 // One recorded action in a session's script.
 //
 // `replay/` reads and writes these and the Maestro package exports them, so declaring the
-// shape inside `daemon/types.ts` made both zones depend on the daemon server to describe a file
+// shape inside the daemon's own session record made both zones depend on the daemon server to
+// describe a file
 // format neither of them asks the daemon to produce. The daemon still owns the RECORDING — it is
 // the only thing that appends actions; this is only the shape they are appended in.
 //
@@ -33,4 +34,6 @@ export type SessionAction = {
    * Inert until migration step 4 adds enforcement.
    */
   targetEvidence?: TargetAnnotationV1;
+  /** `targets-v1` evidence for dual-endpoint interactions such as drag. */
+  targetEvidences?: MultiTargetAnnotationV1;
 };

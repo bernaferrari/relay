@@ -1,7 +1,8 @@
 import { AppError } from '@agent-device/kernel/errors';
-import type { MaterializeInstallSource } from '../platforms/install-source.ts';
+import type { LocalInstallSource } from '@agent-device/kernel/contracts';
 import { cleanupUploadedArtifact, prepareUploadedArtifact } from './artifact-tracking.ts';
-import type { DaemonInstallSource, DaemonRequest } from './types.ts';
+import type { DaemonInstallSource } from './daemon-request-wire.ts';
+import type { DaemonRequest } from './daemon-request.ts';
 
 function assertUnsupportedInstallSource(source: never): never {
   throw new AppError(
@@ -10,7 +11,7 @@ function assertUnsupportedInstallSource(source: never): never {
   );
 }
 
-function requireInstallSource(req: DaemonRequest): MaterializeInstallSource {
+function requireInstallSource(req: DaemonRequest): LocalInstallSource {
   const source = req.meta?.installSource;
   if (!source) {
     throw new AppError('INVALID_ARGS', 'install_from_source requires a source payload');
@@ -43,7 +44,7 @@ function requireInstallSource(req: DaemonRequest): MaterializeInstallSource {
 }
 
 export function resolveInstallSource(req: DaemonRequest): {
-  source: MaterializeInstallSource;
+  source: LocalInstallSource;
   cleanup: () => void;
 } {
   const source = requireInstallSource(req);

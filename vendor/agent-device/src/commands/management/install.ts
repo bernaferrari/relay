@@ -1,9 +1,9 @@
-import { INTERNAL_COMMANDS, PUBLIC_COMMANDS } from '../../command-catalog.ts';
+import { INTERNAL_COMMANDS, PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
 import type { DaemonInstallSource } from '@agent-device/kernel/contracts';
 import type { CliFlags } from '@agent-device/contracts/command';
-import type { CommandSchemaOverride } from '../../cli-schema/types.ts';
+import type { CommandSchemaOverride } from '@agent-device/command-registry/command-schema';
 import { AppError } from '@agent-device/kernel/errors';
-import { parseGitHubActionsArtifactInstallSourceSpec } from '../../utils/install-source-config.ts';
+import { parseGitHubActionsArtifactInstallSourceSpec } from '@agent-device/provision-kit/install-source-config';
 import {
   booleanField,
   jsonSchemaField,
@@ -12,7 +12,6 @@ import {
   integerField,
   stringField,
 } from '../command-input.ts';
-import { defineExecutableCommand } from '../command-contract.ts';
 import {
   commonInputFromFlags,
   direct,
@@ -25,14 +24,18 @@ import { defineCommandFacet } from '../family/types.ts';
 import { defineFieldCommandMetadata } from '../field-command-contract.ts';
 import { managementCliOutputFormatters } from './output.ts';
 
-const installCommandMetadata = defineFieldCommandMetadata('install', 'Install an app binary.', {
-  app: stringField('Optional app identifier hint.'),
-  appPath: requiredField(stringField('Path to app binary.')),
-});
+const installCommandMetadata = defineFieldCommandMetadata(
+  'install',
+  'Install an app binary from a local path. Provide an app identifier with the path when the target needs explicit app selection; use reinstall to replace an already installed app.',
+  {
+    app: stringField('Optional app identifier hint.'),
+    appPath: requiredField(stringField('Path to app binary.')),
+  },
+);
 
 const reinstallCommandMetadata = defineFieldCommandMetadata(
   'reinstall',
-  'Reinstall an app binary.',
+  'Replace an installed app with a binary from a local path. Use this when preserving the same app identity while installing a new build on the selected device.',
   {
     app: requiredField(stringField()),
     appPath: requiredField(stringField('Path to app binary.')),
@@ -41,7 +44,7 @@ const reinstallCommandMetadata = defineFieldCommandMetadata(
 
 const installFromSourceCommandMetadata = defineFieldCommandMetadata(
   'install-from-source',
-  'Install an app from a structured source.',
+  'Install app builds from URLs, remote source specs, or CI artifacts resolved by a remote daemon.',
   {
     source: requiredField(
       jsonSchemaField<DaemonInstallSource>(looseObjectSchema('Install source object.')),
@@ -49,20 +52,6 @@ const installFromSourceCommandMetadata = defineFieldCommandMetadata(
     retainPaths: booleanField(),
     retentionMs: integerField(),
   },
-);
-
-const installCommandDefinition = defineExecutableCommand(installCommandMetadata, (client, input) =>
-  client.apps.install(input),
-);
-
-const reinstallCommandDefinition = defineExecutableCommand(
-  reinstallCommandMetadata,
-  (client, input) => client.apps.reinstall(input),
-);
-
-const installFromSourceCommandDefinition = defineExecutableCommand(
-  installFromSourceCommandMetadata,
-  (client, input) => client.apps.installFromSource(input),
 );
 
 const installCliSchema = {
@@ -78,10 +67,8 @@ const reinstallCliSchema = {
 const installFromSourceCliSchema = {
   usageOverride:
     'install-from-source <url> | install-from-source --github-actions-artifact <owner/repo:artifact>',
+  usageFlags: [],
   listUsageOverride: 'install-from-source',
-  helpDescription:
-    'Install app builds from URLs, remote source specs, or CI artifacts resolved by a remote daemon.',
-  summary: 'Install app builds from URLs, remote source specs, or CI artifacts',
   positionalArgs: ['url?'],
   allowedFlags: ['header', 'githubActionsArtifact', 'installSource', 'retainPaths', 'retentionMs'],
 } as const satisfies CommandSchemaOverride;
@@ -116,8 +103,11 @@ const installFromSourceDaemonWriter: DaemonWriter = (input) =>
 
 const installCommandFacet = defineCommandFacet({
   name: 'install',
+  text: {
+    summary: 'Install an app binary from a path',
+  },
   metadata: installCommandMetadata,
-  definition: installCommandDefinition,
+  run: (client, input) => client.apps.install(input),
   cliSchema: installCliSchema,
   cliReader: installCliReader,
   daemonWriter: installDaemonWriter,
@@ -126,8 +116,11 @@ const installCommandFacet = defineCommandFacet({
 
 const reinstallCommandFacet = defineCommandFacet({
   name: 'reinstall',
+  text: {
+    summary: 'Replace an installed app with a new build',
+  },
   metadata: reinstallCommandMetadata,
-  definition: reinstallCommandDefinition,
+  run: (client, input) => client.apps.reinstall(input),
   cliSchema: reinstallCliSchema,
   cliReader: reinstallCliReader,
   daemonWriter: reinstallDaemonWriter,
@@ -136,8 +129,11 @@ const reinstallCommandFacet = defineCommandFacet({
 
 const installFromSourceCommandFacet = defineCommandFacet({
   name: 'install-from-source',
+  text: {
+    summary: 'Install app builds from URLs or CI artifacts',
+  },
   metadata: installFromSourceCommandMetadata,
-  definition: installFromSourceCommandDefinition,
+  run: (client, input) => client.apps.installFromSource(input),
   cliSchema: installFromSourceCliSchema,
   cliReader: installFromSourceCliReader,
   daemonWriter: installFromSourceDaemonWriter,

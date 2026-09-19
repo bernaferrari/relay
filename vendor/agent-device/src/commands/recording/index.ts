@@ -1,18 +1,22 @@
 import type { RecordOptions } from '@agent-device/contracts/client';
 import {
+  RETIRED_SCREENSHOT_MAX_SIZE,
+  validateNoRetiredScreenshotMaxSize,
+} from '@agent-device/contracts/capture';
+import {
   RECORDING_EXPORT_QUALITIES,
   RECORDING_SCOPE_VALUES,
 } from '@agent-device/contracts/recording';
 import { AppError } from '@agent-device/kernel/errors';
-import type { CommandSchemaOverride } from '../../cli-schema/types.ts';
+import type { CommandSchemaOverride } from '@agent-device/command-registry/command-schema';
 import { commonInputFromFlags, direct, optionalString } from '../cli-grammar/common.ts';
 import type { CliReader, DaemonWriter } from '../cli-grammar/types.ts';
-import { defineExecutableCommand } from '../command-contract.ts';
 import {
   booleanField,
   enumField,
   integerField,
   requiredField,
+  retiredField,
   stringField,
 } from '../command-input.ts';
 import { defineCommandFacet, defineCommandFamilyFromFacets } from '../family/types.ts';
@@ -23,8 +27,10 @@ const RECORD_COMMAND_NAME = 'record';
 const TRACE_COMMAND_NAME = 'trace';
 const RECORDING_ACTION_VALUES = ['start', 'stop'] as const;
 
-const recordCommandDescription = 'Start or stop screen recording.';
-const traceCommandDescription = 'Start or stop trace capture.';
+const recordCommandDescription =
+  'Start or stop a screen recording for the active app session or, where supported, the selected device. Long Android recordings can return multiple video artifacts; HarmonyOS supports whole-screen recording on physical devices.';
+const traceCommandDescription =
+  'Start or stop trace-log capture and return the resulting artifact when capture ends. Use the same artifact path for the matching start and stop requests when an explicit path is required.';
 
 export const recordCommandMetadata = defineFieldCommandMetadata(
   RECORD_COMMAND_NAME,
@@ -33,7 +39,7 @@ export const recordCommandMetadata = defineFieldCommandMetadata(
     action: requiredField(enumField(RECORDING_ACTION_VALUES)),
     path: stringField(),
     fps: integerField(),
-    maxSize: integerField(),
+    maxSize: retiredField(RETIRED_SCREENSHOT_MAX_SIZE.migration.record),
     quality: enumField(RECORDING_EXPORT_QUALITIES),
     hideTouches: booleanField(),
     recordingScope: enumField(RECORDING_SCOPE_VALUES),
@@ -49,33 +55,18 @@ export const traceCommandMetadata = defineFieldCommandMetadata(
   },
 );
 
-export const recordCommandDefinition = defineExecutableCommand(
-  recordCommandMetadata,
-  (client, input) => client.recording.record(input as RecordOptions),
-);
-
-export const traceCommandDefinition = defineExecutableCommand(
-  traceCommandMetadata,
-  (client, input) => client.recording.trace(input),
-);
-
 const recordCliSchema = {
   usageOverride:
-    'record start [path] [--scope <app|device|system>] [--fps <n>] [--max-size <px>] [--quality <medium|high>] [--hide-touches] | record stop',
+    'record start [path] [--scope <app|device|system>] [--fps <n>] [--quality <medium|high>] [--hide-touches] | record stop',
+  usageFlags: [],
   listUsageOverride: 'record start [path] | record stop',
-  helpDescription:
-    'Start/stop screen recording. The default --scope app requires an active app session from open <app>; use --scope device/system to explicitly request whole-screen recording where the selected backend supports it. Android record start publishes a durable device manifest, recordings longer than the 180s adb screenrecord limit are returned as multiple MP4 chunks while the daemon stays alive, and daemon-restart recovery uses only manifest-owned chunks. Use --max-size to limit dimensions and --quality to choose medium or high export quality',
-  summary: 'Start or stop screen recording',
   positionalArgs: ['start|stop', 'path?'],
-  allowedFlags: ['recordingScope', 'fps', 'screenshotMaxSize', 'quality', 'hideTouches'],
+  allowedFlags: ['recordingScope', 'fps', 'quality', 'hideTouches'],
 } as const satisfies CommandSchemaOverride;
 
 const traceCliSchema = {
   usageOverride: 'trace start <path> | trace stop <path>',
   listUsageOverride: 'trace start <path> | trace stop <path>',
-  helpDescription:
-    'Start/stop trace log capture; when an artifact path is requested, pass the same positional path to start and stop',
-  summary: 'Start or stop trace capture',
   positionalArgs: ['start|stop', 'path?'],
 } as const satisfies CommandSchemaOverride;
 
@@ -84,7 +75,6 @@ export const recordCliReader: CliReader = (positionals, flags) => ({
   action: readRecordingAction(positionals[0], RECORD_COMMAND_NAME),
   path: positionals[1],
   fps: flags.fps,
-  maxSize: flags.screenshotMaxSize,
   quality: flags.quality as RecordOptions['quality'],
   hideTouches: flags.hideTouches,
   recordingScope: flags.recordingScope,
@@ -96,28 +86,42 @@ export const traceCliReader: CliReader = (positionals, flags) => ({
   path: positionals[1],
 });
 
-export const recordDaemonWriter: DaemonWriter = direct(RECORD_COMMAND_NAME, (input) =>
+const recordDirectWriter = direct(RECORD_COMMAND_NAME, (input) =>
   recordingPositionals(input as RecordOptions),
 );
+
+export const recordDaemonWriter: DaemonWriter = (input) => {
+  validateNoRetiredScreenshotMaxSize('record', input);
+  return recordDirectWriter(input);
+};
 
 export const traceDaemonWriter: DaemonWriter = direct(TRACE_COMMAND_NAME, (input) =>
   recordingPositionals(input as RecordOptions),
 );
 
-const recordCommandFacet = defineCommandFacet({
+export const recordCommandFacet = defineCommandFacet({
   name: RECORD_COMMAND_NAME,
+  text: {
+    summary: 'Start or stop screen recording',
+    cliDetail:
+      'The default --scope app requires an active app session from open <app>; use --scope device/system to explicitly request whole-screen recording where the selected backend supports it. Android record start publishes a durable device manifest, recordings longer than the 180s adb screenrecord limit are returned as multiple MP4 chunks while the daemon stays alive, and daemon-restart recovery uses only manifest-owned chunks. Android screenrecord encodes a frame only when the screen changes, so a clip can end at the last frame the recorder encoded instead of at record stop; durationMs is host wall clock from record start until the export finished, and capturedDurationMs reports the video timeline when it can be measured, with a warning naming how much of the window that video covers. An Android manifest left by an unreachable recording is retired on the next start once its recorders are proven gone; one still owned refuses with non-retriable DEVICE_IN_USE and reason native_recovery_evidence_open naming the session to run record stop for, and a recorder that is still writing an artifact refuses with DEVICE_IN_USE and reason native_recording_artifact_claimed, which clears itself once that recorder ends at the 180s limit. HarmonyOS supports whole-screen recording on physical devices only: use --scope device/system; --fps, --quality, and --hide-touches are unsupported. Use --quality to choose medium or high export quality on supported backends. An iOS simulator host recording lock returns non-retriable DEVICE_IN_USE with reason apple_simulator_recording_busy. Stop the recording in its owning session; if a dead recorder left the host locked, ask the host operator to restart the CoreSimulator stream service. A record stop that cannot produce its export keeps what a retry reads back — on Android the device-side artifact and the native manifest — leaves the recording manifest of that session open, and returns its own error, so retry record stop in that session; only closing the session disposes them. Every stopped recording also reports what became of its recorder and of the file that recorder writes to: recorder is confirmed, or lost when the session holding it died, and nativePathDisposition is retirable while that file still owes a removal or retired once its removal was verified. Both are optional disclosures, not failures; ADR 0024 declares further states (unconfirmed, pending) for the steps that gain those probes, and no stop reports them yet.',
+  },
   metadata: recordCommandMetadata,
-  definition: recordCommandDefinition,
+  run: (client, input) => client.recording.record(input as RecordOptions),
   cliSchema: recordCliSchema,
   cliReader: recordCliReader,
   daemonWriter: recordDaemonWriter,
   cliOutputFormatter: recordingCliOutputFormatters.record,
 });
 
-const traceCommandFacet = defineCommandFacet({
+export const traceCommandFacet = defineCommandFacet({
   name: TRACE_COMMAND_NAME,
+  text: {
+    summary: 'Start or stop trace capture',
+    cliDetail: 'Pass that path as the same positional argument to start and stop.',
+  },
   metadata: traceCommandMetadata,
-  definition: traceCommandDefinition,
+  run: (client, input) => client.recording.trace(input),
   cliSchema: traceCliSchema,
   cliReader: traceCliReader,
   daemonWriter: traceDaemonWriter,

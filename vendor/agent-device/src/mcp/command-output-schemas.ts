@@ -1,14 +1,19 @@
 import type { JsonSchema } from '../commands/command-contract.ts';
-import { projectedSystemCommandOutputSchemas } from '../commands/system/index.ts';
-import type { CommandResultMap } from '../core/command-descriptor/command-result.ts';
+import type { CommandResultMap } from '@agent-device/command-registry/command-result';
+import { commandSupportsSettleObservation } from '@agent-device/command-registry/registry';
 import { booleanSchema, looseObjectSchema, stringSchema } from '../commands/command-input.ts';
+import { BACK_MODES } from '@agent-device/contracts/back-mode';
+import { NATIVE_PATH_DISPOSITION_VALUES } from '@agent-device/contracts/recording-native-path';
+import { RECORDER_OBSERVATION_VALUES } from '@agent-device/contracts/recording-stop-observation';
+import { DEVICE_ROTATIONS } from '@agent-device/contracts/device';
 import { SESSION_SURFACES } from '@agent-device/contracts/session';
+import { TV_REMOTE_BUTTONS } from '@agent-device/contracts/tv-remote';
 import { DEVICE_TARGETS, PUBLIC_PLATFORMS } from '@agent-device/kernel/device';
 
 /**
  * Registry of per-command MCP `outputSchema`s, keyed by the daemon command
  * NAME. It is type-tied to the typed-result spine `CommandResultMap`
- * (src/core/command-descriptor/command-result.ts) via
+ * (@agent-device/command-registry/command-result) via
  * `satisfies Record<keyof CommandResultMap, JsonSchema>`, so the one-for-one
  * invariant is compiler-enforced: a new `CommandResultMap` entry without a schema
  * here is a missing-key error, and a typo'd/extra key is an excess-property error.
@@ -25,6 +30,11 @@ import { DEVICE_TARGETS, PUBLIC_PLATFORMS } from '@agent-device/kernel/device';
  *    fields ride into `structuredContent` and still validate.
  *  - Accurate, never invented: required-vs-optional, enums, `const` discriminants
  *    and discriminated-union branches mirror the source contract types.
+ *
+ * The opt-in `--settle` observation (#1101) is not hand-listed per entry: the
+ * base map carries none and `deriveSettleObservationSchemas` grafts it onto
+ * exactly the entries whose descriptor declares the post-action observation
+ * trait (#1652).
  */
 
 export const DEVICE_KINDS = ['simulator', 'emulator', 'device'] as const;
@@ -39,6 +49,10 @@ function enumSchema(values: readonly string[], description?: string): JsonSchema
 
 function constSchema(value: string): JsonSchema {
   return { type: 'string', const: value };
+}
+
+function nullableStringSchema(description?: string): JsonSchema {
+  return { type: ['string', 'null'], ...(description ? { description } : {}) };
 }
 
 function objectSchema(
@@ -166,7 +180,7 @@ const resolutionDisclosureSchema: JsonSchema = {
         matchCount: numberSchema('Total matches resolveSelectorChain found before disambiguation.'),
         winnerDiagnostic: resolutionDiagnosticEntrySchema,
         tiebreak: enumSchema(
-          ['visible', 'deepest', 'smallest-area'],
+          ['visible', 'deepest', 'smallest-area', 'structural-equivalence'],
           'The comparison that decided the winner.',
         ),
         alternatives: {
@@ -197,6 +211,19 @@ const resolutionDisclosureSchema: JsonSchema = {
   ],
 };
 
+// PostActionSurfaceChange (packages/contracts/src/interaction.ts) — the post-action capture
+// describes a different surface than the pre-action baseline (#2438), so no same-surface
+// comparison is presented across it.
+const postActionSurfaceChangeSchema: JsonSchema = objectSchema(
+  {
+    from: stringSchema('Surface the pre-action baseline described: a host bundle id, or app.'),
+    to: stringSchema('Surface the post-action capture describes: a host bundle id, or app.'),
+    disclosure: stringSchema('Agent-facing sentence explaining the surface transition.'),
+  },
+  ['from', 'to', 'disclosure'],
+  'Present when an in-place system surface (web sign-in or Apple Pay sheet) was presented over the app, or left it.',
+);
+
 // InteractionEvidence (packages/contracts/src/interaction.ts) — opt-in `--verify` cheap
 // post-condition evidence (#1047).
 const interactionEvidenceSchema: JsonSchema = objectSchema(
@@ -206,8 +233,9 @@ const interactionEvidenceSchema: JsonSchema = objectSchema(
     interactiveNodeCount: numberSchema('Subset of nodeCount the platform reports as hittable.'),
     digest: stringSchema('Order-independent digest of the post-action node multiset.'),
     changedFromBefore: booleanSchema(
-      'Whether the post-action digest differs from the pre-action capture digest. false is evidence, not failure.',
+      'Whether the post-action digest differs from the pre-action capture digest. false is evidence, not failure. With surfaceChange present, no digest comparison is made: it reports that surface transition.',
     ),
+    surfaceChange: postActionSurfaceChangeSchema,
   },
   ['nodeCount', 'interactiveNodeCount', 'digest', 'changedFromBefore'],
 );
@@ -235,6 +263,7 @@ const settleObservationSchema: JsonSchema = objectSchema(
         ['ref'],
       ),
     },
+    surfaceChange: postActionSurfaceChangeSchema,
     diff: objectSchema(
       {
         summary: objectSchema(
@@ -292,7 +321,7 @@ const deviceHeaderProperties: Record<string, JsonSchema> = {
 };
 const deviceHeaderRequired = ['platform', 'target', 'device', 'id', 'kind'] as const;
 
-// TargetShutdownResult (src/target-shutdown-contract.ts).
+// TargetShutdownResult (packages/contracts/src/target-shutdown-contract.ts).
 const targetShutdownResultSchema: JsonSchema = objectSchema(
   {
     success: booleanSchema(),
@@ -304,10 +333,41 @@ const targetShutdownResultSchema: JsonSchema = objectSchema(
   ['success', 'exitCode', 'stdout', 'stderr'],
 );
 
+/** Grafts the opt-in `--settle` observation onto a closed schema or union branch. */
+function withSettleObservation(schema: JsonSchema): JsonSchema {
+  // Union-shaped results (fill) carry the observation in EACH branch, never
+  // next to the oneOf.
+  if (schema.oneOf) {
+    return { ...schema, oneOf: schema.oneOf.map(withSettleObservation) };
+  }
+  return {
+    ...schema,
+    properties: { ...(schema.properties ?? {}), settle: settleObservationSchema },
+  };
+}
+
+/**
+ * #1652: whether a command's output schema advertises `settle` derives from
+ * its descriptor post-action observation trait instead of hand-listed
+ * properties per schema. The base map below carries no settle property
+ * anywhere; this pass grafts it onto exactly the trait-capable entries.
+ * Copies only — press and click share one base schema object, so an in-place
+ * graft would leak across them.
+ */
+function deriveSettleObservationSchemas(
+  schemas: Record<keyof CommandResultMap, JsonSchema>,
+): Record<keyof CommandResultMap, JsonSchema> {
+  const derived: Record<keyof CommandResultMap, JsonSchema> = { ...schemas };
+  for (const command of Object.keys(derived) as Array<keyof CommandResultMap>) {
+    if (!commandSupportsSettleObservation(command)) continue;
+    derived[command] = withSettleObservation(derived[command]);
+  }
+  return derived;
+}
+
 const tapInteractionResponseDataSchema = interactionResponseDataSchema({
   properties: {
     evidence: interactionEvidenceSchema,
-    settle: settleObservationSchema,
     button: enumSchema(['secondary', 'middle']),
     count: numberSchema('Number of press/click repetitions.'),
     intervalMs: numberSchema('Delay between repeated press/click actions.'),
@@ -317,24 +377,76 @@ const tapInteractionResponseDataSchema = interactionResponseDataSchema({
   },
 });
 
-export const COMMAND_OUTPUT_SCHEMAS = {
-  // buildInteractionResponseData public payloads for interaction commands.
-  press: tapInteractionResponseDataSchema,
-  click: tapInteractionResponseDataSchema,
-  fill: interactionResponseDataSchema({
-    properties: {
-      text: stringSchema('Text submitted to the field.'),
-      delayMs: numberSchema('Delay between typed characters in milliseconds.'),
-      evidence: interactionEvidenceSchema,
-      settle: settleObservationSchema,
-    },
+const fillResponseProperties = {
+  text: stringSchema('Text submitted to the field.'),
+  delayMs: numberSchema('Delay between typed characters in milliseconds.'),
+  evidence: interactionEvidenceSchema,
+};
+
+const fillVerificationTargetSchema = objectSchema(
+  {
+    resourceId: nullableStringSchema('Android resource id of the exact field that changed.'),
+    className: nullableStringSchema('Android class name of the exact field that changed.'),
+    packageName: nullableStringSchema('Android package name that owns the exact field.'),
+    rect: objectSchema(
+      {
+        x: numberSchema(),
+        y: numberSchema(),
+        width: numberSchema(),
+        height: numberSchema(),
+      },
+      ['x', 'y', 'width', 'height'],
+      'Screen-space rectangle of the exact field that changed.',
+    ),
+  },
+  ['resourceId', 'className', 'packageName', 'rect'],
+  'Target identity captured before fill and matched after fill.',
+);
+
+const confirmedFillResponseSchema: JsonSchema = {
+  ...interactionResponseDataSchema({
+    properties: fillResponseProperties,
     required: ['text'],
   }),
+  // The public result contract omits verification evidence on an ordinary
+  // confirmed fill. Keep this branch disjoint from the unconfirmed branch
+  // without making the response strict to unrelated additive fields.
+  not: objectSchema({}, ['verification']),
+};
+
+const unconfirmedFillResponseSchema = interactionResponseDataSchema({
+  properties: {
+    ...fillResponseProperties,
+    verification: constSchema('unconfirmed'),
+    requested: stringSchema('Literal text requested by the fill command.'),
+    before: nullableStringSchema('Raw target text captured before the fill.'),
+    after: nullableStringSchema('Raw target text captured after the fill.'),
+    target: fillVerificationTargetSchema,
+  },
+  required: ['text', 'verification', 'requested', 'before', 'after', 'target'],
+});
+
+const BASE_COMMAND_OUTPUT_SCHEMAS = {
+  // buildInteractionResponseData public payloads for interaction commands.
+  // #1652: the opt-in `settle` observation is NOT listed here — the trait
+  // derivation pass grafts it onto settle-capable entries below.
+  press: tapInteractionResponseDataSchema,
+  click: tapInteractionResponseDataSchema,
+  fill: {
+    type: 'object',
+    description:
+      'Fill response. Android may return target-bound unconfirmed evidence when the exact app-owned field changed but formatting prevented raw equality.',
+    oneOf: [confirmedFillResponseSchema, unconfirmedFillResponseSchema],
+  },
   longpress: interactionResponseDataSchema({
     properties: {
       durationMs: numberSchema(),
-      settle: settleObservationSchema,
       gesture: constSchema('longpress'),
+    },
+  }),
+  hover: interactionResponseDataSchema({
+    properties: {
+      gesture: constSchema('hover'),
     },
   }),
   find: objectSchema(
@@ -345,12 +457,16 @@ export const COMMAND_OUTPUT_SCHEMAS = {
       waitedMs: numberSchema('Milliseconds waited for a read-only find condition.'),
       text: stringSchema('Text value returned by find get_text.'),
       node: looseObjectSchema('Snapshot node for find get_attrs/get_text.'),
+      matches: {
+        type: 'array',
+        description: 'Every match for the read-only find list action (#1625): { ref, node } each.',
+        items: looseObjectSchema('One listed match with its snapshot ref and node.'),
+      },
       locator: stringSchema('Locator kind used for the find action.'),
       query: stringSchema('Query argument used for the find action.'),
       x: numberSchema('Resolved x coordinate for mutating find actions.'),
       y: numberSchema('Resolved y coordinate for mutating find actions.'),
       message: stringSchema('Diagnostic message for mutating find actions.'),
-      settle: settleObservationSchema,
       cost: responseCostSchema,
     },
     [],
@@ -373,8 +489,43 @@ export const COMMAND_OUTPUT_SCHEMAS = {
     ['width', 'height', 'message'],
   ),
 
-  // packages/contracts/src/navigation.ts, projected from executable command contracts.
-  ...projectedSystemCommandOutputSchemas,
+  // packages/contracts/src/navigation.ts. `back`'s settle observation is grafted
+  // by the derivation pass below.
+  back: objectSchema(
+    {
+      action: constSchema('back'),
+      mode: enumSchema(BACK_MODES),
+      message: stringSchema(),
+    },
+    ['action', 'mode', 'message'],
+  ),
+  home: objectSchema({ action: constSchema('home'), message: stringSchema() }, [
+    'action',
+    'message',
+  ]),
+  orientation: objectSchema(
+    {
+      action: constSchema('orientation'),
+      orientation: enumSchema(DEVICE_ROTATIONS),
+      message: stringSchema(),
+      confirmed: booleanSchema(),
+      warning: stringSchema(),
+    },
+    ['action', 'orientation', 'message'],
+  ),
+  'app-switcher': objectSchema({ action: constSchema('app-switcher'), message: stringSchema() }, [
+    'action',
+    'message',
+  ]),
+  'tv-remote': objectSchema(
+    {
+      action: constSchema('tv-remote'),
+      button: enumSchema(TV_REMOTE_BUTTONS),
+      durationMs: numberSchema(),
+      message: stringSchema(),
+    },
+    ['action', 'button', 'message'],
+  ),
 
   // packages/contracts/src/wait.ts — compact public daemon projection.
   wait: objectSchema(
@@ -389,6 +540,30 @@ export const COMMAND_OUTPUT_SCHEMAS = {
       warning: stringSchema(),
     },
     ['waitedMs'],
+  ),
+
+  // packages/contracts/src/scroll-command.ts — ScrollCommandResult. The
+  // settle-capable generic-route pair must both be typed so the trait
+  // derivation grafts the observation onto each (#1652); platform leaves add
+  // gesture-plan coordinates on top, which the non-strict schema admits.
+  scroll: objectSchema(
+    {
+      direction: enumSchema(['up', 'down', 'left', 'right']),
+      edge: enumSchema(['top', 'bottom']),
+      until: stringSchema('Until scrolls only: the selector the passes stopped on.'),
+      passes: numberSchema('Edge and until scrolls only: how many scroll-and-check passes ran.'),
+      amount: numberSchema(),
+      pixels: numberSchema(),
+      durationMs: numberSchema(),
+      message: stringSchema(),
+      keyboardAvoided: booleanSchema(
+        'Present only when an on-screen keyboard forced the swipe into the band above it; the reported pixels were planned against the shorter referenceHeight.',
+      ),
+      keyboardMinY: numberSchema(
+        'Where the keyboard began, in the same unit as the gesture coordinates. Clipped scrolls only.',
+      ),
+    },
+    ['direction'],
   ),
 
   // packages/contracts/src/prepare.ts — prepare is not MCP-exposed, but the schema stays
@@ -679,6 +854,15 @@ export const COMMAND_OUTPUT_SCHEMAS = {
           recordOnlySession: booleanSchema(),
           activeSessionApp: looseObjectSchema(),
           durationMs: numberSchema(),
+          capturedDurationMs: numberSchema(),
+          recorder: enumSchema(
+            RECORDER_OBSERVATION_VALUES,
+            'What the recorder was observed doing when the recording was stopped: confirmed, or lost when the session holding it died. ADR 0024 reserves unconfirmed for the step that gains the probe.',
+          ),
+          nativePathDisposition: enumSchema(
+            NATIVE_PATH_DISPOSITION_VALUES,
+            'What became of the artifact path the recorder writes to: retirable while it still owes a removal, retired once that removal was verified. ADR 0024 reserves pending.',
+          ),
           showTouches: booleanSchema(),
           warning: stringSchema(),
           overlayWarning: stringSchema(),
@@ -706,3 +890,5 @@ export const COMMAND_OUTPUT_SCHEMAS = {
     ],
   },
 } satisfies Record<keyof CommandResultMap, JsonSchema>;
+
+export const COMMAND_OUTPUT_SCHEMAS = deriveSettleObservationSchemas(BASE_COMMAND_OUTPUT_SCHEMAS);

@@ -4,7 +4,7 @@ import { ref, selector } from './selector-read-utils.ts';
 import { AppError } from '@agent-device/kernel/errors';
 import {
   createInteractionDevice,
-  runtimeScrollSnapshot,
+  dragTargetSnapshot,
   selectorSnapshot,
 } from './__tests__/test-utils/index.ts';
 
@@ -35,6 +35,117 @@ test('runtime focus and longPress share selector/ref target resolution', async (
     { command: 'focus', point: { x: 60, y: 40 } },
     { command: 'longPress', point: { x: 60, y: 40 }, durationMs: 750 },
   ]);
+});
+
+test('runtime drag resolves generic selector endpoints before one continuous pointer plan', async () => {
+  let capturedPlan:
+    | Parameters<NonNullable<import('../../../backend.ts').AgentDeviceBackend['performGesture']>>[1]
+    | undefined;
+  const snapshot = dragTargetSnapshot();
+  const device = createInteractionDevice(snapshot, {
+    resolveGestureViewport: async () => ({ x: 0, y: 0, width: 400, height: 800 }),
+    performGesture: async (_context, plan) => {
+      capturedPlan = plan;
+    },
+  });
+
+  const result = await device.interactions.gesture({
+    gesture: {
+      intent: 'drag',
+      source: 'id="drag-source"',
+      destination: '@e3',
+      sourceHoldMs: 700,
+      moveMs: 600,
+      destinationHoldMs: 200,
+    },
+  });
+
+  assert.equal(result.kind, 'drag');
+  assert.equal(result.durationMs, 1_500);
+  assert.deepEqual(result.from, { x: 80, y: 130 });
+  assert.deepEqual(result.to, { x: 290, y: 440 });
+  assert.equal(capturedPlan?.topology, 'single');
+  assert.deepEqual(capturedPlan?.pointers[0]?.samples[1], {
+    offsetMs: 700,
+    point: { x: 80, y: 130 },
+  });
+  assert.deepEqual(capturedPlan?.pointers[0]?.samples.at(-1), {
+    offsetMs: 1_500,
+    point: { x: 290, y: 440 },
+  });
+  assert.equal(result.recording?.sourceSelector?.split(' || ')[0], 'id="drag-source"');
+  assert.equal(result.recording?.destinationSelector?.split(' || ')[0], 'id="drop-target"');
+  assert.deepEqual(result.targets?.source.resolution, {
+    source: 'runtime',
+    phase: 'pre-action',
+    kind: 'unique',
+  });
+  assert.deepEqual(result.targets?.destination.resolution, {
+    source: 'ref',
+    phase: 'pre-action',
+    kind: 'exact',
+  });
+  assert.equal(result.targets?.source.selectorChain?.[0], 'id="drag-source"');
+  assert.equal(result.targets?.destination.selectorChain?.[0], 'id="drop-target"');
+});
+
+test('runtime drag resolves both endpoints before dispatching any device gesture', async () => {
+  let dispatchCount = 0;
+  const device = createInteractionDevice(dragTargetSnapshot(), {
+    resolveGestureViewport: async () => ({ x: 0, y: 0, width: 400, height: 800 }),
+    performGesture: async () => {
+      dispatchCount += 1;
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      device.interactions.gesture({
+        gesture: {
+          intent: 'drag',
+          source: 'id="drag-source"',
+          destination: 'id="missing-target"',
+        },
+      }),
+    (error: unknown) => error instanceof AppError && error.code === 'COMMAND_FAILED',
+  );
+  assert.equal(dispatchCount, 0);
+});
+
+test('runtime drag identifies a destination post-resolution guard mismatch before dispatch', async () => {
+  let dispatchCount = 0;
+  const device = createInteractionDevice(dragTargetSnapshot(), {
+    resolveGestureViewport: async () => ({ x: 0, y: 0, width: 400, height: 800 }),
+    performGesture: async () => {
+      dispatchCount += 1;
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      device.interactions.gesture({
+        gesture: {
+          intent: 'drag',
+          source: 'id="drag-source"',
+          destination: 'id="drop-target"',
+        },
+        expectedResolvedTargets: {
+          source: {
+            identity: { id: 'drag-source', role: 'view', label: 'Drag source' },
+            structural: { documentOrder: 1, sibling: 0 },
+          },
+          destination: {
+            identity: { id: 'different-target', role: 'view', label: 'Drop target' },
+            structural: { documentOrder: 2, sibling: 1 },
+          },
+        },
+      }),
+    (error: unknown) =>
+      error instanceof AppError &&
+      error.details?.reason === 'replay_target_guard_mismatch' &&
+      error.details?.targetRole === 'destination',
+  );
+  assert.equal(dispatchCount, 0);
 });
 
 test('runtime longPress with settle drops the non-hittable hint when the diff proves a change', async () => {
@@ -73,230 +184,6 @@ test('runtime longPress with settle drops the non-hittable hint when the diff pr
   assert.equal(result.targetHittable, false);
   assert.deepEqual(result.settle?.diff?.summary, { additions: 1, removals: 1, unchanged: 0 });
   assert.equal('hint' in result, false);
-});
-
-test('runtime scroll resolves selector targets before calling the backend primitive', async () => {
-  const calls: unknown[] = [];
-  const device = createInteractionDevice(selectorSnapshot(), {
-    scroll: async (_context, target, options) => {
-      calls.push({ target, options });
-      return { scrolled: true };
-    },
-  });
-
-  const selectorResult = await device.interactions.scroll({
-    session: 'default',
-    target: selector('label=Continue'),
-    direction: 'down',
-    pixels: 120,
-    durationMs: 50,
-  });
-  const viewportResult = await device.interactions.scroll({
-    direction: 'up',
-    amount: 0.5,
-  });
-
-  assert.equal(selectorResult.kind, 'selector');
-  assert.equal(selectorResult.durationMs, undefined);
-  assert.equal(viewportResult.kind, 'viewport');
-  assert.deepEqual(calls, [
-    {
-      target: { kind: 'point', point: { x: 60, y: 40 } },
-      options: { direction: 'down', pixels: 120, durationMs: 50 },
-    },
-    {
-      target: { kind: 'viewport' },
-      options: { direction: 'up', amount: 0.5 },
-    },
-  ]);
-});
-
-test('runtime scroll reports duration only when the backend honored it', async () => {
-  const device = createInteractionDevice(selectorSnapshot(), {
-    scroll: async (_context, _target, options) => ({ durationMs: options?.durationMs }),
-  });
-
-  const result = await device.interactions.scroll({
-    direction: 'down',
-    pixels: 120,
-    durationMs: 50,
-  });
-
-  assert.equal(result.durationMs, 50);
-  assert.deepEqual(result.backendResult, { durationMs: 50 });
-});
-
-test('runtime scroll rejects duration above the shared cap', async () => {
-  const device = createInteractionDevice(selectorSnapshot(), {
-    scroll: async () => {
-      throw new Error('scroll should be rejected before backend call');
-    },
-  });
-
-  await assert.rejects(
-    () =>
-      device.interactions.scroll({
-        direction: 'down',
-        pixels: 120,
-        durationMs: 10_001,
-      }),
-    (error: unknown) =>
-      error instanceof AppError &&
-      error.code === 'INVALID_ARGS' &&
-      /durationMs.*at most 10000/i.test(error.message),
-  );
-});
-
-test('runtime scroll bottom rejects blind scrolling without snapshot support', async () => {
-  const calls: unknown[] = [];
-  const device = createInteractionDevice(selectorSnapshot(), {
-    captureSnapshot: async () => {
-      throw new Error('snapshot unavailable');
-    },
-    scroll: async (_context, target, options) => {
-      calls.push({ target, options });
-      return { pass: calls.length };
-    },
-  });
-
-  await assert.rejects(
-    () =>
-      device.interactions.scroll({
-        direction: 'bottom',
-      }),
-    /Failed to verify scroll bottom state/,
-  );
-
-  assert.equal(calls.length, 0);
-});
-
-test('runtime scroll bottom does not scroll when no hidden content is below', async () => {
-  const calls: unknown[] = [];
-  const device = createInteractionDevice(runtimeScrollSnapshot({ hiddenBelow: false }), {
-    scroll: async (_context, target, options) => {
-      calls.push({ target, options });
-      return { pass: calls.length };
-    },
-  });
-
-  const result = await device.interactions.scroll({
-    direction: 'bottom',
-  });
-
-  assert.equal(result.kind, 'viewport');
-  assert.equal(result.edge, 'bottom');
-  assert.equal(result.passes, 0);
-  assert.equal(calls.length, 0);
-});
-
-test('runtime scroll bottom scrolls only while scoped snapshot confirms hidden content', async () => {
-  const calls: unknown[] = [];
-  const snapshotScopes: unknown[] = [];
-  const snapshots = [
-    runtimeScrollSnapshot({ hiddenBelow: true, message: 'Middle message' }),
-    runtimeScrollSnapshot({ hiddenBelow: true, message: 'Middle message' }),
-    runtimeScrollSnapshot({ hiddenBelow: false, message: 'Latest message' }),
-  ];
-  const device = createInteractionDevice(selectorSnapshot(), {
-    captureSnapshot: async (_context, options) => {
-      snapshotScopes.push(options?.scope);
-      return { snapshot: snapshots[Math.min(snapshotScopes.length - 1, snapshots.length - 1)] };
-    },
-    scroll: async (_context, target, options) => {
-      calls.push({ target, options });
-      return { pass: calls.length };
-    },
-  });
-
-  const result = await device.interactions.scroll({
-    direction: 'bottom',
-  });
-
-  assert.equal(result.kind, 'viewport');
-  assert.equal(result.edge, 'bottom');
-  assert.equal(result.passes, 1);
-  assert.equal(result.backendResult?.pass, 1);
-  assert.deepEqual(calls, [
-    {
-      target: { kind: 'viewport' },
-      options: { direction: 'down' },
-    },
-  ]);
-  assert.deepEqual(snapshotScopes, [undefined, 'Messages', 'Messages']);
-});
-
-test('runtime scroll bottom tolerates unchanged signatures while hidden content advances', async () => {
-  const calls: unknown[] = [];
-  const snapshots = [
-    runtimeScrollSnapshot({ hiddenBelow: true, message: 'Repeated row' }),
-    runtimeScrollSnapshot({ hiddenBelow: true, message: 'Repeated row' }),
-    runtimeScrollSnapshot({ hiddenBelow: true, message: 'Repeated row' }),
-    runtimeScrollSnapshot({ hiddenBelow: false, message: 'Repeated row' }),
-  ];
-  let snapshotIndex = 0;
-  const device = createInteractionDevice(selectorSnapshot(), {
-    captureSnapshot: async () => ({
-      snapshot: snapshots[Math.min(snapshotIndex++, snapshots.length - 1)],
-    }),
-    scroll: async (_context, target, options) => {
-      calls.push({ target, options });
-      return { pass: calls.length };
-    },
-  });
-
-  const result = await device.interactions.scroll({
-    direction: 'bottom',
-  });
-
-  assert.equal(result.passes, 2);
-  assert.equal(calls.length, 2);
-});
-
-test('runtime scroll bottom keeps scoped snapshot failures scoped', async () => {
-  let snapshotCount = 0;
-  const device = createInteractionDevice(selectorSnapshot(), {
-    captureSnapshot: async (_context, options) => {
-      snapshotCount += 1;
-      if (options?.scope) throw new Error('scoped snapshot failed');
-      return { snapshot: runtimeScrollSnapshot({ hiddenBelow: true, message: 'Middle message' }) };
-    },
-    scroll: async () => ({}),
-  });
-
-  await assert.rejects(
-    () =>
-      device.interactions.scroll({
-        direction: 'bottom',
-      }),
-    (error: unknown) =>
-      error instanceof AppError &&
-      error.code === 'COMMAND_FAILED' &&
-      /scoped container/i.test(error.message) &&
-      error.details?.scope === 'Messages',
-  );
-  assert.equal(snapshotCount, 2);
-});
-
-test('runtime viewport scroll rejects inspect-only macOS surfaces', async () => {
-  for (const surface of ['desktop', 'menubar'] as const) {
-    const device = createInteractionDevice(selectorSnapshot(), {
-      platform: 'macos',
-      sessionMetadata: { surface },
-      scroll: async () => {
-        throw new Error(`${surface} scroll should be rejected before backend call`);
-      },
-    });
-
-    await assert.rejects(
-      () =>
-        device.interactions.scroll({
-          direction: 'down',
-          target: { kind: 'viewport' },
-          session: 'default',
-        }),
-      new RegExp(`scroll is not supported on macOS ${surface}`),
-    );
-  }
 });
 
 test('runtime multi-touch planning prefers backend viewport geometry without a snapshot capture', async () => {

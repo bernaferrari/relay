@@ -1,8 +1,15 @@
 import { definePathCoverage } from './coverage-manifest.ts';
 
 export const RUNTIME_SELECTOR_COVERAGE = definePathCoverage('runtime-selector', {
-  disambiguation: 'runtime-selector disambiguation: visible tab wins over the closed-drawer twin',
+  disambiguation: [
+    'runtime-selector disambiguation: one equivalent wrapper chain collapses to its actionable button',
+    'runtime-selector disambiguation: distinct subtrees reject without a geometry winner',
+  ],
   occlusion: 'runtime-selector occlusion: covered button is refused',
+  keyboardOcclusion:
+    'runtime-selector keyboardOcclusion: a selector behind the visible keyboard is refused with tap_keyboard_occludes_target',
+  parentOwnedTouchPoint:
+    'runtime-selector parentOwnedTouchPoint: a fully tiled parent selector preserves selector context and refuses before dispatch',
   offscreen: [
     'runtime-selector offscreen: closed drawer refused with offscreen_selector',
     'runtime-selector offscreen: edge-grazing container is still refused',
@@ -20,7 +27,6 @@ export const RUNTIME_SELECTOR_COVERAGE = definePathCoverage('runtime-selector', 
     'runtime-selector errorTaxonomy: no-match failure carries the shared code and hint',
   resolutionDisclosure: [
     'runtime-selector resolutionDisclosure: a unique match discloses the unique runtime shape',
-    'runtime-selector resolutionDisclosure: an ambiguous match discloses matchCount, winnerDiagnostic, and the deciding tiebreak',
-    'runtime-selector resolutionDisclosure: alternatives are capped at 5 losing candidates and never include the winner',
+    'runtime-selector resolutionDisclosure: an equivalent wrapper chain discloses matchCount, winnerDiagnostic, and structural equivalence',
   ],
 });

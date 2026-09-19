@@ -6,30 +6,25 @@
 // differences (regex-vs-literal selector storage, runScript path-vs-content,
 // nested runFlow expansion) that the two IR designs express differently.
 
-import type {
-  MaestroCommand,
-  MaestroGestureTarget,
-  MaestroProgram,
-  MaestroSelector,
-  MaestroSwipeGesture,
-} from './program-ir.ts';
+import type { MaestroCommand, MaestroProgram, MaestroSwipeGesture } from './program-ir.ts';
 import { MAESTRO_COMPATIBILITY_PRESETS } from './compatibility-policy.ts';
+import { asRecord, bool, dropUndefined, numLike, str } from './conformance-value-coercion.ts';
+import {
+  canonicalizeAgentSelector,
+  canonicalizeAgentPoint,
+  canonicalizeAgentTarget,
+  canonicalizeUpstreamPoint,
+  canonicalizeUpstreamSelector,
+  type CanonicalPoint,
+  type CanonicalSelector,
+  type CanonicalTarget,
+} from './conformance-selector-projection.ts';
 
-export type CanonicalSelector = {
-  text?: string;
-  id?: string;
-  index?: number | string;
-  enabled?: boolean;
-  selected?: boolean;
-  childOf?: CanonicalSelector;
-};
-
-export type CanonicalPoint = { x: number; y: number; unit: 'px' | 'percent'; expr?: string };
-
-export type CanonicalTarget = {
-  selector?: CanonicalSelector;
-  point?: CanonicalPoint;
-};
+export type {
+  CanonicalPoint,
+  CanonicalSelector,
+  CanonicalTarget,
+} from './conformance-selector-projection.ts';
 
 export type CanonicalGesture =
   | { mode: 'direction'; direction: string; duration?: number | string }
@@ -52,23 +47,27 @@ export type CanonicalCommand =
       longPress: boolean;
       repeat: number | string;
       delay?: number | string;
+      label?: string;
       target: CanonicalTarget;
     }
   | {
       kind: 'assert';
-      mode: 'visible' | 'notVisible';
+      mode: 'visible' | 'notVisible' | 'true';
       timed: boolean;
       timeout?: number | string;
+      label?: string;
       selector?: CanonicalSelector;
+      expression?: string;
     }
-  | { kind: 'swipe'; gesture: CanonicalGesture }
-  | { kind: 'inputText'; text?: string }
+  | { kind: 'swipe'; label?: string; gesture: CanonicalGesture }
+  | { kind: 'inputText'; label?: string; text?: string }
   | { kind: 'eraseText'; count?: number | string }
   | { kind: 'openLink'; link?: string }
   | { kind: 'scroll' }
   | {
       kind: 'scrollUntilVisible';
       direction?: string;
+      label?: string;
       selector?: CanonicalSelector;
       timeout?: number | string;
     }
@@ -78,10 +77,12 @@ export type CanonicalCommand =
   | { kind: 'takeScreenshot' }
   | { kind: 'waitForAnimationToEnd'; timeout?: number | string }
   | { kind: 'stopApp' }
+  | { kind: 'clearState'; appId?: string }
   | { kind: 'repeat'; times: string | number }
   | { kind: 'retry'; maxRetries?: string | number }
-  | { kind: 'runFlow'; source: 'file' | 'commands' }
+  | { kind: 'runFlow'; label?: string; source: 'file' | 'commands' }
   | { kind: 'runScript' }
+  | { kind: 'evalScript' }
   | { kind: 'unsupported'; command: string };
 
 // ---------------------------------------------------------------------------
@@ -93,6 +94,27 @@ const UPSTREAM_CONFIG_TYPES = new Set(['ApplyConfigurationCommand', 'DefineVaria
 
 type UpstreamCommand = { type: string; fields: Record<string, unknown> };
 
+function canonicalizeUpstreamLifecycleCommand(
+  command: UpstreamCommand,
+): CanonicalCommand | undefined {
+  const f = command.fields;
+  switch (command.type) {
+    case 'LaunchAppCommand':
+      return dropUndefined({
+        kind: 'launchApp' as const,
+        appId: str(f.appId),
+        clearState: bool(f.clearState),
+        stopApp: bool(f.stopApp),
+      });
+    case 'StopAppCommand':
+      return { kind: 'stopApp' };
+    case 'ClearStateCommand':
+      return dropUndefined({ kind: 'clearState' as const, appId: str(f.appId) });
+    default:
+      return undefined;
+  }
+}
+
 export function canonicalizeUpstreamFlow(commands: UpstreamCommand[]): CanonicalCommand[] {
   return commands
     .filter((command) => !UPSTREAM_CONFIG_TYPES.has(command.type))
@@ -100,22 +122,18 @@ export function canonicalizeUpstreamFlow(commands: UpstreamCommand[]): Canonical
 }
 
 function canonicalizeUpstreamCommand(command: UpstreamCommand): CanonicalCommand {
+  const lifecycle = canonicalizeUpstreamLifecycleCommand(command);
+  if (lifecycle) return lifecycle;
   const f = command.fields;
   switch (command.type) {
-    case 'LaunchAppCommand':
-      return dropUndefined({
-        kind: 'launchApp',
-        appId: str(f.appId),
-        clearState: bool(f.clearState),
-        stopApp: bool(f.stopApp),
-      });
     case 'TapOnElementCommand': {
       const repeat = asRecord(f.repeat);
       return canonicalTap({
         longPress: bool(f.longPress) ?? false,
         repeat: numLike(repeat?.repeat) ?? str(repeat?.repeat) ?? 1,
         delay: numLike(repeat?.delay) ?? str(repeat?.delay),
-        target: { selector: upstreamSelector(f.selector) },
+        label: str(f.label),
+        target: { selector: canonicalizeUpstreamSelector(f.selector) },
       });
     }
     case 'TapOnPointV2Command':
@@ -123,7 +141,8 @@ function canonicalizeUpstreamCommand(command: UpstreamCommand): CanonicalCommand
       return canonicalTap({
         longPress: false,
         repeat: 1,
-        target: { point: upstreamPoint(f.point) },
+        label: str(f.label),
+        target: { point: canonicalizeUpstreamPoint(f.point) },
       });
     case 'AssertConditionCommand': {
       // Upstream serializes every condition slot; the active one is non-null.
@@ -135,7 +154,8 @@ function canonicalizeUpstreamCommand(command: UpstreamCommand): CanonicalCommand
           mode: 'visible',
           timed: f.timeout != null,
           timeout,
-          selector: upstreamSelector(condition.visible),
+          label: str(f.label),
+          selector: canonicalizeUpstreamSelector(condition.visible),
         });
       }
       if (condition.notVisible != null) {
@@ -144,24 +164,36 @@ function canonicalizeUpstreamCommand(command: UpstreamCommand): CanonicalCommand
           mode: 'notVisible',
           timed: f.timeout != null,
           timeout,
-          selector: upstreamSelector(condition.notVisible),
+          label: str(f.label),
+          selector: canonicalizeUpstreamSelector(condition.notVisible),
+        });
+      }
+      if (condition.scriptCondition != null) {
+        return dropUndefined({
+          kind: 'assert',
+          mode: 'true',
+          timed: f.timeout != null,
+          timeout,
+          label: str(f.label),
+          expression: str(condition.scriptCondition),
         });
       }
       return { kind: 'unsupported', command: 'assertTrue' };
     }
     case 'SwipeCommand':
-      return { kind: 'swipe', gesture: upstreamGesture(f) };
+      return dropUndefined({ kind: 'swipe', label: str(f.label), gesture: upstreamGesture(f) });
     case 'ScrollCommand':
       return { kind: 'scroll' };
     case 'ScrollUntilVisibleCommand':
       return dropUndefined({
         kind: 'scrollUntilVisible',
         direction: lower(str(f.direction)),
-        selector: upstreamSelector(f.selector),
+        label: str(f.label),
+        selector: canonicalizeUpstreamSelector(f.selector),
         timeout: numLike(f.timeout) ?? str(f.timeout),
       });
     case 'InputTextCommand':
-      return dropUndefined({ kind: 'inputText', text: str(f.text) });
+      return dropUndefined({ kind: 'inputText', label: str(f.label), text: str(f.text) });
     case 'EraseTextCommand':
       return dropUndefined({
         kind: 'eraseText',
@@ -182,8 +214,6 @@ function canonicalizeUpstreamCommand(command: UpstreamCommand): CanonicalCommand
         kind: 'waitForAnimationToEnd',
         timeout: numLike(f.timeout) ?? str(f.timeout),
       });
-    case 'StopAppCommand':
-      return { kind: 'stopApp' };
     case 'RepeatCommand':
       return { kind: 'repeat', times: numLike(f.times) ?? str(f.times) ?? '' };
     case 'RetryCommand':
@@ -192,9 +222,15 @@ function canonicalizeUpstreamCommand(command: UpstreamCommand): CanonicalCommand
         maxRetries: numLike(f.maxRetries) ?? str(f.maxRetries),
       });
     case 'RunFlowCommand':
-      return { kind: 'runFlow', source: f.sourceDescription != null ? 'file' : 'commands' };
+      return dropUndefined({
+        kind: 'runFlow',
+        label: str(f.label),
+        source: f.sourceDescription != null ? 'file' : 'commands',
+      });
     case 'RunScriptCommand':
       return { kind: 'runScript' };
+    case 'EvalScriptCommand':
+      return { kind: 'evalScript' };
     default:
       return { kind: 'unsupported', command: unsupportedName(command.type) };
   }
@@ -210,6 +246,7 @@ function canonicalTap(tap: {
   longPress: boolean;
   repeat: number | string;
   delay?: number | string;
+  label?: string;
   target: CanonicalTarget;
 }): CanonicalCommand {
   return dropUndefined({
@@ -217,40 +254,9 @@ function canonicalTap(tap: {
     longPress: tap.longPress,
     repeat: tap.repeat,
     delay: typeof tap.repeat === 'number' && tap.repeat <= 1 ? undefined : tap.delay,
+    label: tap.label,
     target: tap.target,
   });
-}
-
-function upstreamSelector(value: unknown): CanonicalSelector | undefined {
-  const record = asRecord(value);
-  if (!record) return undefined;
-  return dropUndefined({
-    text: str(record.textRegex),
-    id: str(record.idRegex),
-    index: numLike(record.index) ?? str(record.index),
-    enabled: bool(record.enabled),
-    selected: bool(record.selected),
-    childOf: upstreamSelector(record.childOf),
-  });
-}
-
-/**
- * A point the upstream parser accepted but we cannot canonicalize is a hole in
- * the oracle, not a value to drop: silently returning undefined would erase the
- * point from BOTH sides of the comparison and make an unequal pair compare equal.
- * Fail loudly so the projection gets fixed instead.
- */
-function upstreamPoint(value: unknown): CanonicalPoint | undefined {
-  const text = str(value);
-  if (!text) return undefined;
-  const match = /^\s*(-?\d+)(%?)\s*,\s*(-?\d+)(%?)\s*$/.exec(text);
-  if (!match) {
-    throw new Error(
-      `Cannot canonicalize upstream point ${JSON.stringify(text)}; extend upstreamPoint() in normalize.ts.`,
-    );
-  }
-  const unit = match[2] === '%' || match[4] === '%' ? 'percent' : 'px';
-  return { x: Number(match[1]), y: Number(match[3]), unit };
 }
 
 function upstreamGesture(f: Record<string, unknown>): CanonicalGesture {
@@ -258,7 +264,7 @@ function upstreamGesture(f: Record<string, unknown>): CanonicalGesture {
   if (f.elementSelector != null) {
     return dropUndefined({
       mode: 'element',
-      from: upstreamSelector(f.elementSelector) ?? {},
+      from: canonicalizeUpstreamSelector(f.elementSelector) ?? {},
       direction: lower(str(f.direction)),
       duration,
     });
@@ -294,42 +300,8 @@ function unsupportedName(type: string): string {
   return base.charAt(0).toLowerCase() + base.slice(1);
 }
 
-// ---------------------------------------------------------------------------
-// Small coercion helpers (upstream stores several fields as strings)
-// ---------------------------------------------------------------------------
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-function str(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined;
-}
-function bool(value: unknown): boolean | undefined {
-  return typeof value === 'boolean' ? value : undefined;
-}
 function lower(value: string | undefined): string | undefined {
   return value?.toLowerCase();
-}
-const VARIABLE_PATTERN = /^\$\{[A-Za-z_][A-Za-z0-9_.]*\}$/;
-
-/** Coerce a literal numeric-or-string field to a number, preserving unresolved ${VAR} tokens. */
-function numLike(value: unknown): number | string | undefined {
-  if (typeof value === 'number') return value;
-  if (typeof value === 'string') {
-    if (VARIABLE_PATTERN.test(value)) return value;
-    const trimmed = value.trim();
-    if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
-  }
-  return undefined;
-}
-
-function dropUndefined<T extends Record<string, unknown>>(value: T): T {
-  for (const key of Object.keys(value)) {
-    if (value[key] === undefined) delete value[key];
-  }
-  return value;
 }
 
 // ---------------------------------------------------------------------------
@@ -348,8 +320,19 @@ export function canonicalizeAgentCommands(
   return program.commands.map((command) => canonicalizeAgentCommand(command, program.config));
 }
 
-function canonicalizeAgentCommand(
-  command: MaestroCommand,
+type AgentLifecycleCommand = Extract<
+  MaestroCommand,
+  { kind: 'launchApp' | 'stopApp' | 'clearState' }
+>;
+
+function isAgentLifecycleCommand(command: MaestroCommand): command is AgentLifecycleCommand {
+  return (
+    command.kind === 'launchApp' || command.kind === 'stopApp' || command.kind === 'clearState'
+  );
+}
+
+function canonicalizeAgentLifecycleCommand(
+  command: AgentLifecycleCommand,
   config: MaestroProgram['config'],
 ): CanonicalCommand {
   switch (command.kind) {
@@ -360,6 +343,19 @@ function canonicalizeAgentCommand(
         clearState: command.clearState,
         stopApp: command.stopApp,
       });
+    case 'stopApp':
+      return { kind: 'stopApp' };
+    case 'clearState':
+      return dropUndefined({ kind: 'clearState', appId: command.appId ?? config.appId });
+  }
+}
+
+function canonicalizeAgentCommand(
+  command: MaestroCommand,
+  config: MaestroProgram['config'],
+): CanonicalCommand {
+  if (isAgentLifecycleCommand(command)) return canonicalizeAgentLifecycleCommand(command, config);
+  switch (command.kind) {
     case 'tapOn': {
       const repeat = numLike(command.repeat) ?? 1;
       const repeatIsNumber = typeof repeat === 'number';
@@ -369,7 +365,8 @@ function canonicalizeAgentCommand(
         delay: repeatIsNumber
           ? (numLike(command.delay) ?? AGENT_REPEAT_DELAY_MS)
           : numLike(command.delay),
-        target: agentTarget(command.target, numLike(command.index), command.childOf),
+        label: command.label,
+        target: canonicalizeAgentTarget(command.target),
       });
     }
     case 'doubleTapOn':
@@ -378,23 +375,39 @@ function canonicalizeAgentCommand(
         longPress: false,
         repeat: 2,
         delay: numLike(command.delay) ?? AGENT_REPEAT_DELAY_MS,
-        target: agentTarget(command.target),
+        label: command.label,
+        target: canonicalizeAgentTarget(command.target),
       });
     case 'longPressOn':
-      return canonicalTap({ longPress: true, repeat: 1, target: agentTarget(command.target) });
+      return canonicalTap({
+        longPress: true,
+        repeat: 1,
+        label: command.label,
+        target: canonicalizeAgentTarget(command.target),
+      });
     case 'assertVisible':
       return dropUndefined({
         kind: 'assert',
         mode: 'visible',
         timed: false,
-        selector: agentSelector(command.target, command.childOf),
+        label: command.label,
+        selector: canonicalizeAgentSelector(command.target),
       });
     case 'assertNotVisible':
       return dropUndefined({
         kind: 'assert',
         mode: 'notVisible',
         timed: false,
-        selector: agentSelector(command.target, command.childOf),
+        label: command.label,
+        selector: canonicalizeAgentSelector(command.target),
+      });
+    case 'assertTrue':
+      return dropUndefined({
+        kind: 'assert',
+        mode: 'true',
+        timed: false,
+        label: command.label,
+        expression: String(command.condition),
       });
     case 'extendedWaitUntil':
       return dropUndefined({
@@ -402,12 +415,13 @@ function canonicalizeAgentCommand(
         mode: command.notVisible ? 'notVisible' : 'visible',
         timed: command.timeout != null,
         timeout: numLike(command.timeout),
-        selector: agentSelector(command.notVisible ?? command.visible),
+        label: command.label,
+        selector: canonicalizeAgentSelector(command.notVisible ?? command.visible),
       });
     case 'swipe':
-      return { kind: 'swipe', gesture: agentGesture(command.gesture) };
+      return { kind: 'swipe', label: command.label, gesture: agentGesture(command.gesture) };
     case 'inputText':
-      return dropUndefined({ kind: 'inputText', text: command.text });
+      return dropUndefined({ kind: 'inputText', label: command.label, text: command.text });
     case 'eraseText':
       return dropUndefined({ kind: 'eraseText', count: numLike(command.charactersToErase) });
     case 'openLink':
@@ -415,10 +429,15 @@ function canonicalizeAgentCommand(
     case 'scroll':
       return { kind: 'scroll' };
     case 'scrollUntilVisible':
+      // Upstream materializes the DOWN default onto the command at parse time;
+      // our engine defers it to execution (runtime-port-commands.ts). Materialize
+      // it here too so the comparison is on effective values, matching the same
+      // pattern used for swipe duration and repeat delay above.
       return dropUndefined({
         kind: 'scrollUntilVisible',
-        direction: command.direction,
-        selector: agentSelector(command.element),
+        direction: command.direction ?? 'down',
+        label: command.label,
+        selector: canonicalizeAgentSelector(command.element),
         timeout: numLike(command.timeout),
       });
     case 'pressKey':
@@ -431,8 +450,6 @@ function canonicalizeAgentCommand(
       return { kind: 'takeScreenshot' };
     case 'waitForAnimationToEnd':
       return dropUndefined({ kind: 'waitForAnimationToEnd', timeout: numLike(command.timeout) });
-    case 'stopApp':
-      return { kind: 'stopApp' };
     case 'repeat':
       return { kind: 'repeat', times: numLike(command.times) ?? str(command.times) ?? '' };
     case 'retry':
@@ -441,47 +458,20 @@ function canonicalizeAgentCommand(
         maxRetries: numLike(command.maxRetries) ?? str(command.maxRetries),
       });
     case 'runFlow':
-      return { kind: 'runFlow', source: command.include.kind === 'file' ? 'file' : 'commands' };
+      return dropUndefined({
+        kind: 'runFlow',
+        label: command.label,
+        source: command.include.kind === 'file' ? 'file' : 'commands',
+      });
     case 'runScript':
       return { kind: 'runScript' };
+    case 'evalScript':
+      return { kind: 'evalScript' };
     default: {
       const exhaustive: never = command;
       throw new Error(`Unhandled agent command: ${JSON.stringify(exhaustive)}`);
     }
   }
-}
-
-function agentTarget(
-  target: MaestroGestureTarget,
-  index?: number | string,
-  childOf?: MaestroSelector,
-): CanonicalTarget {
-  if (target.space === 'target') {
-    return {
-      selector: dropUndefined({
-        ...agentSelector(target.selector),
-        index,
-        childOf: childOf ? agentSelector(childOf) : undefined,
-      }),
-    };
-  }
-  return {
-    point: { x: target.x, y: target.y, unit: target.space === 'percent' ? 'percent' : 'px' },
-  };
-}
-
-function agentSelector(
-  selector: MaestroSelector | undefined,
-  childOf?: MaestroSelector,
-): CanonicalSelector | undefined {
-  if (!selector) return undefined;
-  return dropUndefined({
-    text: selector.text,
-    id: selector.id,
-    enabled: selector.enabled,
-    selected: selector.selected,
-    childOf: childOf ? agentSelector(childOf) : undefined,
-  });
 }
 
 function agentGesture(gesture: MaestroSwipeGesture): CanonicalGesture {
@@ -492,28 +482,16 @@ function agentGesture(gesture: MaestroSwipeGesture): CanonicalGesture {
     case 'coordinates':
       return dropUndefined({
         mode: 'coordinates',
-        start: agentPoint(gesture.start),
-        end: agentPoint(gesture.end),
+        start: canonicalizeAgentPoint(gesture.start),
+        end: canonicalizeAgentPoint(gesture.end),
         duration,
       });
     case 'target':
       return dropUndefined({
         mode: 'element',
-        from: agentSelector(gesture.from) ?? {},
+        from: canonicalizeAgentSelector(gesture.from) ?? {},
         direction: gesture.direction,
         duration,
       });
   }
-}
-
-function agentPoint(coordinate: {
-  space: 'absolute' | 'percent';
-  x: number;
-  y: number;
-}): CanonicalPoint {
-  return {
-    x: coordinate.x,
-    y: coordinate.y,
-    unit: coordinate.space === 'percent' ? 'percent' : 'px',
-  };
 }

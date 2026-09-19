@@ -36,6 +36,37 @@ test('typed target resolution returns target geometry and structured evidence', 
   });
 });
 
+test('recursive tree selectors enforce direct children and descendants', () => {
+  const snapshot = makeSnapshot([
+    { index: 0, type: 'Application', rect: { x: 0, y: 0, width: 320, height: 640 } },
+    { index: 1, identifier: 'card', parentIndex: 0, rect: { x: 0, y: 0, width: 300, height: 200 } },
+    { index: 2, identifier: 'direct', parentIndex: 1, rect: { x: 4, y: 4, width: 80, height: 40 } },
+    { index: 3, identifier: 'nested', parentIndex: 2, rect: { x: 8, y: 8, width: 80, height: 40 } },
+  ]);
+  expect(
+    resolveMaestroTargetFromSnapshot(
+      snapshot,
+      {
+        selector: {
+          id: 'card',
+          containsChild: { id: 'direct' },
+          containsDescendants: [{ id: 'nested' }],
+        },
+      },
+      'android',
+    ),
+  ).toMatchObject({ ok: true, node: { index: 1 } });
+  expect(
+    resolveMaestroTargetFromSnapshot(
+      snapshot,
+      {
+        selector: { id: 'card', containsChild: { id: 'nested' } },
+      },
+      'android',
+    ),
+  ).toMatchObject({ ok: false });
+});
+
 test('typed target resolution applies typed childOf and reports structured misses', () => {
   const snapshot = makeSnapshot([
     { index: 1, identifier: 'row', rect: { x: 0, y: 0, width: 320, height: 80 } },
@@ -50,12 +81,12 @@ test('typed target resolution applies typed childOf and reports structured misse
 
   const result = resolveMaestroTargetFromSnapshot(
     snapshot,
-    { selector: { text: 'Delete' }, childOf: { id: 'row' } },
+    { selector: { text: 'Delete', childOf: { id: 'row' } } },
     'android',
   );
   const missingParent = resolveMaestroTargetFromSnapshot(
     snapshot,
-    { selector: { text: 'Delete' }, childOf: { id: 'missing' } },
+    { selector: { text: 'Delete', childOf: { id: 'missing' } } },
     'android',
   );
 
@@ -83,7 +114,7 @@ test('typed childOf reports a scoped miss when only an outside child matches', (
   expect(
     resolveMaestroTargetFromSnapshot(
       snapshot,
-      { selector: { text: 'Delete' }, childOf: { id: 'row' } },
+      { selector: { text: 'Delete', childOf: { id: 'row' } } },
       'android',
     ),
   ).toMatchObject({
@@ -209,6 +240,210 @@ test('iOS target resolution preserves distinct nested controls matched by one ex
   ]);
 
   expect(
-    resolveMaestroTargetFromSnapshot(snapshot, { selector: { text: 'Save.*' }, index: 1 }, 'ios'),
+    resolveMaestroTargetFromSnapshot(snapshot, { selector: { text: 'Save.*', index: 1 } }, 'ios'),
   ).toMatchObject({ ok: true, node: { index: 1 }, matches: 2 });
+});
+
+test('iOS target resolution keeps semantic identity bound to presented geometry', () => {
+  const semanticSnapshot = makeSnapshot([
+    {
+      index: 0,
+      type: 'Application',
+      rect: { x: 0, y: 0, width: 393, height: 852 },
+    },
+    {
+      index: 1,
+      parentIndex: 0,
+      type: 'Button',
+      label: 'Save',
+      rect: { x: 0, y: 100, width: 80, height: 48 },
+    },
+    {
+      index: 2,
+      parentIndex: 0,
+      type: 'Button',
+      label: 'Save',
+      rect: { x: 200, y: 100, width: 80, height: 48 },
+    },
+  ]);
+  const presentationSnapshot = makeSnapshot([
+    semanticSnapshot.nodes[0]!,
+    { ...semanticSnapshot.nodes[2]!, index: 1 },
+  ]);
+
+  expect(
+    resolveMaestroTargetFromSnapshot(
+      semanticSnapshot,
+      { selector: { text: 'Save' }, allowAtomicSelectorDispatch: true },
+      'ios',
+      {
+        interactiveBounds: true,
+        presentation: {
+          snapshot: presentationSnapshot,
+          presentedIndexesBySourceIndex: new Map([
+            [0, [0]],
+            [1, []],
+            [2, [1]],
+          ]),
+        },
+      },
+    ),
+  ).toMatchObject({
+    ok: true,
+    node: { index: 2 },
+    rect: { x: 200, y: 100, width: 80, height: 48 },
+    dispatchCandidates: 1,
+  });
+});
+
+test('iOS target resolution uses one presented candidate universe for geometry and dispatch', () => {
+  const semanticSnapshot = makeSnapshot([
+    {
+      index: 0,
+      type: 'Button',
+      identifier: 'save',
+      rect: { x: 0, y: 100, width: 80, height: 48 },
+    },
+    {
+      index: 1,
+      type: 'Button',
+      identifier: 'save',
+      rect: { x: 200, y: 100, width: 80, height: 48 },
+    },
+  ]);
+  const presentationSnapshot = makeSnapshot([
+    {
+      ...semanticSnapshot.nodes[1]!,
+      index: 0,
+      rect: { x: 220, y: 120, width: 80, height: 48 },
+    },
+  ]);
+
+  expect(
+    resolveMaestroTargetFromSnapshot(
+      semanticSnapshot,
+      { selector: { id: 'save' }, allowAtomicSelectorDispatch: true },
+      'ios',
+      {
+        interactiveBounds: true,
+        presentation: {
+          snapshot: presentationSnapshot,
+          presentedIndexesBySourceIndex: new Map([
+            [0, []],
+            [1, [0]],
+          ]),
+        },
+      },
+    ),
+  ).toMatchObject({
+    ok: true,
+    node: { index: 1 },
+    rect: { x: 220, y: 120, width: 80, height: 48 },
+    matches: 1,
+    dispatchCandidates: 0,
+  });
+});
+
+test.each([
+  { mode: 'interactive', interactiveBounds: true },
+  { mode: 'non-interactive', interactiveBounds: false },
+])(
+  'iOS $mode target resolution uses presented bounds when the semantic match has none',
+  (options) => {
+    const semanticSnapshot = makeSnapshot([
+      {
+        index: 0,
+        type: 'Application',
+        rect: { x: 0, y: 0, width: 393, height: 852 },
+      },
+      {
+        index: 1,
+        parentIndex: 0,
+        type: 'Other',
+        identifier: 'email-input',
+      },
+    ]);
+    const presentationSnapshot = makeSnapshot([
+      semanticSnapshot.nodes[0]!,
+      {
+        index: 1,
+        parentIndex: 0,
+        type: 'TextField',
+        rect: { x: 20, y: 100, width: 240, height: 44 },
+      },
+    ]);
+
+    expect(
+      resolveMaestroTargetFromSnapshot(
+        semanticSnapshot,
+        { selector: { id: 'email-input' } },
+        'ios',
+        {
+          interactiveBounds: options.interactiveBounds,
+          presentation: {
+            snapshot: presentationSnapshot,
+            presentedIndexesBySourceIndex: new Map([
+              [0, [0]],
+              [1, [1]],
+            ]),
+          },
+        },
+      ),
+    ).toMatchObject({
+      ok: true,
+      node: { index: 1, identifier: 'email-input' },
+      rect: { x: 20, y: 100, width: 240, height: 44 },
+      matches: 1,
+    });
+  },
+);
+
+test('iOS target resolution takes geometry from the representative that proved visibility', () => {
+  const semanticSnapshot = makeSnapshot([
+    {
+      index: 0,
+      type: 'Application',
+      rect: { x: 0, y: 0, width: 393, height: 852 },
+    },
+    {
+      index: 1,
+      parentIndex: 0,
+      type: 'Other',
+      identifier: 'email-input',
+      rect: { x: 20, y: 100, width: 240, height: 44 },
+    },
+  ]);
+  const presentationSnapshot = makeSnapshot([
+    semanticSnapshot.nodes[0]!,
+    {
+      index: 1,
+      parentIndex: 0,
+      type: 'StaticText',
+      rect: { x: 20, y: 900, width: 240, height: 44 },
+    },
+    {
+      index: 2,
+      parentIndex: 0,
+      type: 'TextField',
+      rect: { x: 20, y: 100, width: 240, height: 44 },
+    },
+  ]);
+
+  expect(
+    resolveMaestroTargetFromSnapshot(semanticSnapshot, { selector: { id: 'email-input' } }, 'ios', {
+      interactiveBounds: true,
+      presentation: {
+        snapshot: presentationSnapshot,
+        presentedIndexesBySourceIndex: new Map([
+          [0, [0]],
+          [1, [1, 2]],
+        ]),
+      },
+    }),
+  ).toMatchObject({
+    ok: true,
+    node: { index: 1, identifier: 'email-input' },
+    rect: { x: 20, y: 100, width: 240, height: 44 },
+    matches: 1,
+  });
 });

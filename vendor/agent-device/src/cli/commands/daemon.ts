@@ -1,4 +1,4 @@
-import { resolveDaemonPaths } from '../../daemon/config.ts';
+import { resolveDaemonPaths } from '../../daemon-resolution.ts';
 import {
   readDaemonStopIdentity,
   stopDaemon,
@@ -8,6 +8,9 @@ import { readDaemonShutdownReport } from '../../daemon/daemon-shutdown-report.ts
 import { AppError } from '@agent-device/kernel/errors';
 import { writeCommandOutput } from './shared.ts';
 import type { ClientCommandHandler } from './router-types.ts';
+import { createDaemonOwnerCleanup } from '../../platform-runtime-daemon-owner-cleanup.ts';
+
+const daemonOwnerCleanup = createDaemonOwnerCleanup();
 
 export const daemonCommand: ClientCommandHandler = async ({ positionals, flags }) => {
   const subcommand = positionals[0];
@@ -21,17 +24,13 @@ export const daemonCommand: ClientCommandHandler = async ({ positionals, flags }
   const result = mergeShutdownReport(stopped, report);
   const shouldClean = flags.clean === true && identity !== null && result.stopped;
   if (shouldClean) {
-    const [{ cleanupRunnerLeasesForOwner }, { runnerLeaseCleanupAdapter }] = await Promise.all([
-      import('../../platforms/apple/core/runner/runner-lease.ts'),
-      import('../../platforms/apple/core/runner/runner-disposal.ts'),
-    ]);
-    await cleanupRunnerLeasesForOwner(
-      { pid: identity.pid, startTime: identity.processStartTime },
-      runnerLeaseCleanupAdapter,
-    );
+    await daemonOwnerCleanup.cleanup({
+      pid: identity.pid,
+      startTime: identity.processStartTime,
+    });
   }
   const data = { ...result, clean: shouldClean };
-  writeCommandOutput(flags, data, () => renderDaemonStop(data));
+  await writeCommandOutput(flags, data, () => renderDaemonStop(data));
   return true;
 };
 
@@ -41,7 +40,18 @@ function mergeShutdownReport(
 ): DaemonStopResult {
   if (stopped.mode !== 'graceful' || report) {
     return report
-      ? { ...stopped, providerReleases: { status: 'completed', ...report.providerReleases } }
+      ? {
+          ...stopped,
+          providerReleases: { status: 'completed', ...report.providerReleases },
+          claimsReleased: report.claims.released,
+          claimsOrphaned: report.claims.orphaned,
+          claimsSuperseded: report.claims.superseded,
+          warnings: [
+            ...stopped.warnings,
+            ...supersededClaimWarnings(report.claims.superseded),
+            ...orphanedClaimWarnings(report.claims.orphaned),
+          ],
+        }
       : stopped;
   }
   return {
@@ -53,6 +63,27 @@ function mergeShutdownReport(
       'The graceful shutdown report is unavailable, so provider cleanup state is unknown. Provider allocations may remain active.',
     ],
   };
+}
+
+/** A superseded claim is not a failure to report as one, but the operator's
+ * device is now owned elsewhere, so it must not pass silently. */
+function supersededClaimWarnings(superseded: DaemonStopResult['claimsSuperseded']): string[] {
+  if (superseded.length === 0) return [];
+  const devices = superseded.map((claim) => claim.deviceId).join(', ');
+  return [
+    `Another owner had already claimed ${devices} before this daemon released it, so those devices are now owned elsewhere.`,
+  ];
+}
+
+/** An orphaned claim keeps holding its device after the daemon is gone, and
+ * only `device release --stale` or the next open settles it — say so instead
+ * of leaving the block discoverable through --json alone. */
+function orphanedClaimWarnings(orphaned: DaemonStopResult['claimsOrphaned']): string[] {
+  if (orphaned.length === 0) return [];
+  const devices = orphaned.map((claim) => claim.deviceId).join(', ');
+  return [
+    `Ownership of ${devices} was not released cleanly; the claim now blocks other owners until it is settled. Inspect with: agent-device device status --stale, then release with: agent-device device release --stale.`,
+  ];
 }
 
 function renderDaemonStop(

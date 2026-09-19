@@ -1,34 +1,32 @@
-import { withTargetDeviceResolutionScope } from '../core/dispatch-resolve.ts';
-import type {
-  DeviceInventoryProvider,
-  LeaseLifecycleProvider,
-} from '@agent-device/contracts/device';
+import { withResolveTargetDeviceCacheScope } from '@agent-device/device-selection/dispatch-resolve';
+import { withDeviceInventoryContext } from '@agent-device/device-selection/device-inventory-context';
+import type { LeaseLifecycleProvider, ProviderAppCatalog } from '@agent-device/contracts/device';
+import type { ComposedDeviceInventoryGateways } from '@agent-device/contracts/platform-module';
+import type { DeviceRuntimeGateway } from '@agent-device/contracts/platform-runtime';
+import type { PlatformRuntimeOperations } from '@agent-device/contracts/platform-runtime-operations';
 import {
   AppError,
   normalizeError,
   retriableForErrorCode,
   type DaemonError,
 } from '@agent-device/kernel/errors';
-import { supportedPlatformsForCommand } from '../core/capabilities.ts';
-import { timingSafeStringEqual } from '../utils/timing-safe-equal.ts';
+import { timingSafeStringEqual } from '@agent-device/host-kit/transport';
 import type { DaemonArtifactType, ResponseCost } from '@agent-device/kernel/contracts';
 import type { CloudArtifactProvider } from '@agent-device/contracts/observability';
-import type { DaemonInvokeFn, DaemonRequest, DaemonResponse, DaemonResponseData } from './types.ts';
+import type {
+  RequestPlatformProviderScope,
+  RequestPlatformProviders,
+} from '@agent-device/contracts/platform-providers';
+import type {
+  DaemonInvokeFn,
+  DaemonRequest,
+  DaemonResponse,
+  DaemonResponseData,
+} from './daemon-request.ts';
 import { RESPONSE_VIEWS } from './response-views.ts';
 import { SessionStore } from './session-store.ts';
-import { errorResponse, noActiveSessionError } from './handlers/response.ts';
-import {
-  type AndroidAdbProviderResolver,
-  type AppleRunnerProviderResolver,
-  type AppleToolProviderResolver,
-  type AppLogProviderResolver,
-  type LinuxToolProviderResolver,
-  type RequestPlatformProviderScope,
-  type RecordingProviderResolver,
-  type VegaToolProviderResolver,
-  type WebProviderResolver,
-  withRequestPlatformProviderScope,
-} from './request-platform-providers.ts';
+import { errorResponse, noActiveSessionError } from './response.ts';
+import { resolvePlatformProviderRequestContext } from './request-platform-provider-context.ts';
 import {
   countDiagnosticEventsByPhase,
   emitDiagnostic,
@@ -36,7 +34,7 @@ import {
   getDiagnosticsMeta,
   registerDiagnosticSensitiveValue,
   withDiagnosticsScope,
-} from '../utils/diagnostics.ts';
+} from '@agent-device/host-kit/diagnostics';
 import type { LeaseRegistry } from './lease-registry.ts';
 import {
   loadGenericRequestHandlerModule,
@@ -44,16 +42,37 @@ import {
 } from './request-handler-chain.ts';
 import {
   createRequestExecutionScope,
+  finalizeRequestExecutionScope,
   type LockedRequestScope,
   prepareLockedRequestScope,
   type RequestExecutionScope,
 } from './request-execution-scope.ts';
-import { buildRequestFinishedEvent, shouldRecordEventForRequest } from './session-event-log.ts';
 import { unsupportedSaveScriptFlagResponse } from './request-save-script-policy.ts';
 import { canRunReplayScopedAction } from './daemon-command-registry.ts';
-import { createAgentBrowserWebProvider } from '../platforms/web/agent-browser-provider.ts';
-import { openWebSessionNames } from './web-session-names.ts';
+import { isWebSession } from './web-session-names.ts';
 import { inferFillText } from './action-utils.ts';
+import { createPlatformRequestScope } from './platform-request-scope.ts';
+import { createOwnerScopedDeviceClaimReconciler } from './device-claim-owner-recovery.ts';
+import {
+  createAppLogAdmissionLedger,
+  type AppLogAdmissionLedger,
+} from './app-log-admission-ledger.ts';
+import {
+  createAudioProbeAdmissionLedger,
+  type AudioProbeAdmissionLedger,
+} from './audio-probe-admission-ledger.ts';
+import {
+  createPerfCaptureAdmissionLedger,
+  type PerfCaptureAdmissionLedger,
+} from './perf-capture-admission-ledger.ts';
+import type { HostDiagnostics } from '@agent-device/contracts/host-diagnostics';
+import {
+  createScreenRecordingAdmissionLedger,
+  type ScreenRecordingAdmissionLedger,
+} from './screen-recording-admission-ledger.ts';
+import { resolveGenericRuntimeExecution } from './generic-runtime-execution.ts';
+import type { AndroidObservationAdapter } from '@agent-device/contracts/android-observation';
+import type { PlatformResourceCleanup } from './platform-resource-cleanup.ts';
 
 // ---------------------------------------------------------------------------
 // Request handler API
@@ -61,23 +80,24 @@ import { inferFillText } from './action-utils.ts';
 
 export type RequestRouterDeps = {
   logPath: string;
-  stateDir?: string;
   token: string;
   sessionStore: SessionStore;
   leaseRegistry: LeaseRegistry;
-  androidAdbProvider?: AndroidAdbProviderResolver;
-  appleRunnerProvider?: AppleRunnerProviderResolver;
-  appleToolProvider?: AppleToolProviderResolver;
-  linuxToolProvider?: LinuxToolProviderResolver;
-  vegaToolProvider?: VegaToolProviderResolver;
-  webProvider?: WebProviderResolver;
-  appLogProvider?: AppLogProviderResolver;
-  recordingProvider?: RecordingProviderResolver;
-  deviceInventoryProvider?: DeviceInventoryProvider;
+  requestPlatformProviders?: RequestPlatformProviders;
+  deviceInventoryGateways: ComposedDeviceInventoryGateways;
+  deviceRuntimeGateway: DeviceRuntimeGateway<PlatformRuntimeOperations>;
+  appLogAdmissionLedger?: AppLogAdmissionLedger;
+  audioProbeAdmissionLedger?: AudioProbeAdmissionLedger;
+  perfCaptureAdmissionLedger?: PerfCaptureAdmissionLedger;
+  screenRecordingAdmissionLedger?: ScreenRecordingAdmissionLedger;
+  hostDiagnostics?: HostDiagnostics;
   providerRuntimeIds?: readonly string[];
   providerRuntimeRequiredIds?: readonly string[];
   leaseLifecycleProvider?: LeaseLifecycleProvider;
   cloudArtifactProvider?: CloudArtifactProvider;
+  providerAppCatalog?: ProviderAppCatalog;
+  androidObservation?: AndroidObservationAdapter;
+  platformResourceCleanup?: PlatformResourceCleanup;
   providerDeviceRuntimeScope?: <T>(task: () => Promise<T>) => Promise<T>;
   trackDownloadableArtifact: (opts: {
     artifactPath: string;
@@ -87,24 +107,58 @@ export type RequestRouterDeps = {
   }) => string;
 };
 
+const unavailableAndroidObservation = new Proxy({} as AndroidObservationAdapter, {
+  get() {
+    return async () => {
+      throw new AppError(
+        'INTERNAL_ERROR',
+        'Android observation was not supplied by root runtime composition',
+      );
+    };
+  },
+});
+
+function missingPlatformResourceCleanup(): AppError {
+  return new AppError(
+    'INTERNAL_ERROR',
+    'Platform resource cleanup was not supplied by root runtime composition',
+  );
+}
+
+const unavailablePlatformResourceCleanup: PlatformResourceCleanup = Object.freeze({
+  stopSnapshotHelper: async () => {
+    throw missingPlatformResourceCleanup();
+  },
+  closeManagedBrowser: async () => {
+    throw missingPlatformResourceCleanup();
+  },
+  cleanupSessionlessExecutionHost: async () => {
+    throw missingPlatformResourceCleanup();
+  },
+  retainExecutionHostAfterClose: () => {
+    throw missingPlatformResourceCleanup();
+  },
+});
+
 export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
   const {
     logPath,
-    stateDir,
     token,
-    androidAdbProvider,
-    appleRunnerProvider,
-    appleToolProvider,
-    linuxToolProvider,
-    vegaToolProvider,
-    webProvider,
-    appLogProvider,
-    recordingProvider,
-    deviceInventoryProvider,
+    requestPlatformProviders = EMPTY_REQUEST_PLATFORM_PROVIDERS,
+    deviceInventoryGateways,
+    deviceRuntimeGateway,
+    appLogAdmissionLedger = createAppLogAdmissionLedger(),
+    audioProbeAdmissionLedger = createAudioProbeAdmissionLedger(),
+    perfCaptureAdmissionLedger = createPerfCaptureAdmissionLedger(),
+    screenRecordingAdmissionLedger = createScreenRecordingAdmissionLedger(),
+    hostDiagnostics,
     providerRuntimeIds,
     providerRuntimeRequiredIds,
     leaseLifecycleProvider,
     cloudArtifactProvider,
+    providerAppCatalog,
+    androidObservation = unavailableAndroidObservation,
+    platformResourceCleanup = unavailablePlatformResourceCleanup,
     providerDeviceRuntimeScope,
     trackDownloadableArtifact,
   } = deps;
@@ -123,17 +177,12 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
       },
       async () => {
         const response = await runRequestWithinScope(req);
-        // Phase 2 (typed errors) graft: enrich error responses with additive,
-        // machine-readable signals — `supportedOn` for platform mismatches and
-        // `retriable` for transient failures — so an agent self-corrects without a
-        // wasted round-trip. Returned unchanged when neither applies, so the
-        // default error wire shape is preserved.
         if (!response.ok) {
           // ADR 0012 decision 6, R7 (C5a): a command that finds no session but
           // hits a live repair tombstone gets `REPAIR_SESSION_EXPIRED` with
           // re-run guidance, never a bare SESSION_NOT_FOUND.
           const error = repairExpiredIfTombstoned(req, response.error, sessionStore);
-          return { ok: false, error: enrichDaemonError(req.command, error) };
+          return { ok: false, error: enrichDaemonError(error) };
         }
         // Phase 4 (agent-cost) grafts on the success path. Runs inside the
         // diagnostics scope so cost can read this request's runner-round-trip tally.
@@ -149,26 +198,40 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
     registerParameterizedFillDiagnosticValue(req);
     const invalidRecordingFlags = recordingFlagsResponse(req);
     if (invalidRecordingFlags) return invalidRecordingFlags;
+    const invalidCustomActionFlags = customActionFlagsResponse(req);
+    if (invalidCustomActionFlags) return invalidCustomActionFlags;
     // #1478: raw `flags.saveScript` on a non-owner command never reaches
     // admission, device work, or a handler that could arm publication.
     const unsupportedSaveScript = unsupportedSaveScriptFlagResponse(req);
     if (unsupportedSaveScript) return unsupportedSaveScript;
 
     let scope: RequestExecutionScope | undefined;
+    let response: DaemonResponse;
+    const platformRequestScope = createPlatformRequestScope(req);
     try {
-      return await withTargetDeviceResolutionScope(deviceInventoryProvider, async () => {
-        scope = await createRequestExecutionScope({
-          req,
-          sessionStore,
-          leaseRegistry,
-        });
-        return await executeRequestScope(scope);
-      });
+      response = await withDeviceInventoryContext(
+        {
+          ...deviceInventoryGateways,
+          requestScope: platformRequestScope,
+        },
+        async () =>
+          await withResolveTargetDeviceCacheScope(async () => {
+            scope = await createRequestExecutionScope({
+              req,
+              sessionStore,
+              leaseRegistry,
+              deviceRuntimeGateway,
+              platformRequestScope,
+              platformResourceCleanup,
+              providerAppCatalog,
+            });
+            return await executeRequestScope(scope);
+          }),
+      );
     } catch (error) {
-      const response = finalizeThrownRequestError(error);
-      recordThrownRequestEvent(sessionStore, scope, response);
-      return response;
+      response = finalizeThrownRequestError(error);
     }
+    return await finalizeRequestBindingCleanup(scope, response);
   }
 
   async function executeRequestScope(
@@ -176,7 +239,7 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
     inheritedProviderScope?: RequestPlatformProviderScope,
   ): Promise<DaemonResponse> {
     const run = async (): Promise<DaemonResponse> => {
-      const locked = prepareLockedRequestScope({
+      const locked = await prepareLockedRequestScope({
         scope,
         sessionStore,
         trackDownloadableArtifact,
@@ -195,29 +258,19 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
           : await runLockedRequest();
       };
 
-      return inheritedProviderScope
-        ? await executeLocked(inheritedProviderScope)
-        : await withRequestPlatformProviderScope(
-            {
-              req: lockedScope.req,
-              existingSession: lockedScope.existingSession,
-              providers: {
-                androidAdbProvider,
-                appleRunnerProvider,
-                appleToolProvider,
-                linuxToolProvider,
-                vegaToolProvider,
-                webProvider:
-                  webProvider ??
-                  (shouldUseDefaultWebProvider(lockedScope)
-                    ? createDefaultWebProvider(stateDir, sessionStore)
-                    : undefined),
-                appLogProvider,
-                recordingProvider,
-              },
-            },
-            executeLocked,
-          );
+      if (inheritedProviderScope) return await executeLocked(inheritedProviderScope);
+      const useDefaultWebProvider = shouldUseDefaultWebProvider(lockedScope);
+      if (!requestPlatformProviders.hasConfiguredResolvers && !useDefaultWebProvider) {
+        return await executeLocked({});
+      }
+      const context = await resolvePlatformProviderRequestContext({
+        req: lockedScope.req,
+        existingSession: lockedScope.existingSession,
+        useDefaultWebProvider,
+      });
+      return context
+        ? await requestPlatformProviders.run(context, executeLocked)
+        : await executeLocked({});
     };
 
     return inheritedProviderScope ? await scope.runAdmitted(run) : await scope.runLocked(run);
@@ -229,6 +282,7 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
     allowReplayActions: boolean;
   }): Promise<DaemonResponse> {
     const { lockedScope, providerScope, allowReplayActions } = params;
+    const requestScope = createPlatformRequestScope(lockedScope.req);
     const handlerResponse = await runRequestHandlerChain({
       req: lockedScope.req,
       sessionName: lockedScope.sessionName,
@@ -239,19 +293,35 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
       providerRuntimeIds,
       providerRuntimeRequiredIds,
       cloudArtifactProvider,
+      providerAppCatalog,
       invoke: handleRequest,
       invokeReplayAction: allowReplayActions
         ? createReplayScopedActionInvoker(lockedScope, providerScope)
         : undefined,
-      androidAdbExecutor: providerScope.androidAdbExecutor,
+      providerScope,
+      androidObservation,
+      platformResourceCleanup,
+      bindDevice: lockedScope.bindDevice,
+      inspectFacts: lockedScope.inspectFacts,
+      bindExactDevice: lockedScope.bindExactDevice,
+      reconcileOrphanedDeviceClaim: createOwnerScopedDeviceClaimReconciler(requestScope),
+      appLogAdmissionLedger,
+      audioProbeAdmissionLedger,
+      perfCaptureAdmissionLedger,
+      screenRecordingAdmissionLedger,
+      hostDiagnostics,
+      requestScope,
+      retainDeviceExecutionLock: lockedScope.retainDeviceExecutionLock,
+      throwIfCanceled: lockedScope.throwIfCanceled,
       contextFromFlags: lockedScope.handlerContextFromFlags,
     });
-    if (handlerResponse) return lockedScope.finalize(handlerResponse);
+    if (handlerResponse) return handlerResponse;
 
     return await dispatchGenericForLockedScope({
       lockedScope,
       logPath: lockedScope.logPath,
       sessionStore,
+      androidObservation,
     });
   }
 
@@ -267,43 +337,47 @@ export function createRequestHandler(deps: RequestRouterDeps): DaemonInvokeFn {
       registerParameterizedFillDiagnosticValue(req);
 
       let childScope: RequestExecutionScope | undefined;
+      let response: DaemonResponse;
       try {
         const scopedReq = bindReplayDeviceExecutionLock(req, parentScope);
         childScope = await createRequestExecutionScope({
           req: scopedReq,
           sessionStore,
           leaseRegistry,
+          deviceRuntimeGateway,
+          platformRequestScope: createPlatformRequestScope(scopedReq),
+          platformResourceCleanup,
+          providerAppCatalog,
         });
         // The outer replay keeps its stable session lock plus the device lock
         // from the first device binding through response projection and ref
         // finalization. A same-session replay action reuses that admitted scope
         // instead of reacquiring the non-reentrant locks. Nested changes remain
         // visible to capture lineage through snapshot/frame/runtime/store state.
-        return childScope.sessionName === parentScope.sessionName
-          ? await executeRequestScope(childScope, providerScope)
-          : await executeRequestScope(childScope);
+        response =
+          childScope.sessionName === parentScope.sessionName
+            ? await executeRequestScope(childScope, providerScope)
+            : await executeRequestScope(childScope);
       } catch (error) {
-        const response = finalizeThrownRequestError(error);
-        recordThrownRequestEvent(sessionStore, childScope, response);
-        return response;
+        response = finalizeThrownRequestError(error);
       }
+      return await finalizeRequestBindingCleanup(childScope, response);
     };
   }
 
   return handleRequest;
 }
 
-const createDefaultWebProvider =
-  (stateDir: string | undefined, sessionStore: SessionStore): WebProviderResolver =>
-  ({ req, session }) =>
-    createAgentBrowserWebProvider({
-      session: session?.name ?? req.session,
-      stateDir,
-      openWebSessionNames: () => openWebSessionNames(sessionStore),
-    });
+const EMPTY_REQUEST_PLATFORM_PROVIDERS: RequestPlatformProviders = Object.freeze({
+  hasConfiguredResolvers: false,
+  run: async (_context, task) => await task({}),
+});
 
 function shouldUseDefaultWebProvider(scope: LockedRequestScope): boolean {
-  return scope.existingSession?.device.platform === 'web' || scope.req.flags?.platform === 'web';
+  return (
+    (scope.existingSession !== undefined && isWebSession(scope.existingSession)) ||
+    scope.req.flags?.platform === 'web'
+  );
 }
 
 function unauthorizedResponse(): DaemonResponse {
@@ -336,6 +410,25 @@ function recordingFlagsResponse(req: DaemonRequest): DaemonResponse | undefined 
   return undefined;
 }
 
+/**
+ * `--actions` reads custom actions through the private-AX snapshot path, which
+ * a raw capture deliberately does not take (ADR 0004: raw preserves the tree
+ * backend's own errors). Asking for both is a contradiction, and answering it
+ * with a capture that structurally cannot carry actions would be a requested
+ * capability silently no-opped. Rejected at the request seam so CLI, Node
+ * client, and MCP all get the same answer before any device work.
+ */
+function customActionFlagsResponse(req: DaemonRequest): DaemonResponse | undefined {
+  if (req.flags?.snapshotCustomActions !== true) return undefined;
+  if (req.flags?.snapshotRaw === true) {
+    return errorResponse(
+      'INVALID_ARGS',
+      '--actions and --raw are mutually exclusive: custom actions are only readable through the private-AX snapshot path, which a raw capture does not use.',
+    );
+  }
+  return undefined;
+}
+
 function registerParameterizedFillDiagnosticValue(req: DaemonRequest): void {
   if (req.command !== 'fill' || typeof req.flags?.recordAs !== 'string') return;
   registerDiagnosticSensitiveValue(
@@ -352,12 +445,28 @@ async function dispatchGenericForLockedScope(params: {
   lockedScope: LockedRequestScope;
   logPath: string;
   sessionStore: SessionStore;
+  androidObservation: AndroidObservationAdapter;
 }): Promise<DaemonResponse> {
-  const { lockedScope, logPath, sessionStore } = params;
+  const { lockedScope, logPath, sessionStore, androidObservation } = params;
   const session = sessionStore.get(lockedScope.sessionName);
   if (!session) {
-    return lockedScope.finalize(noActiveSessionError());
+    return noActiveSessionError();
   }
+
+  const runtimeExecution = await resolveGenericRuntimeExecution({
+    req: lockedScope.req,
+    session,
+    // `scroll` parses its distance/timing flags during admission, so the resolved context is
+    // needed before the dispatcher builds its own.
+    context: lockedScope.contextFromFlags(
+      lockedScope.req.flags,
+      session.appBundleId,
+      session.trace?.outPath,
+    ),
+    inspectFacts: lockedScope.inspectFacts,
+    bindDevice: lockedScope.bindDevice,
+  });
+  if (!runtimeExecution.ok) return runtimeExecution.response;
 
   const { dispatchGenericCommand } = await loadGenericRequestHandlerModule();
   const dispatchResponse = await dispatchGenericCommand({
@@ -367,8 +476,11 @@ async function dispatchGenericForLockedScope(params: {
     logPath,
     sessionStore,
     contextFromFlags: lockedScope.contextFromFlags,
+    executePlatformCommand: runtimeExecution.execute,
+    androidObservation,
+    ...(runtimeExecution.recorded ? { recordedRequest: runtimeExecution.recorded } : {}),
   });
-  return lockedScope.finalize(dispatchResponse);
+  return dispatchResponse;
 }
 
 function bindReplayDeviceExecutionLock(
@@ -405,28 +517,39 @@ function finalizeThrownRequestError(error: unknown): DaemonResponse {
     },
   });
   const details = getDiagnosticsMeta();
-  const logPathOnFailure = flushDiagnosticsToSessionFile({ force: true }) ?? undefined;
+  const flushed = flushDiagnosticsToSessionFile({ force: true });
   const normalizedError = normalizeError(error, {
     diagnosticId: details.diagnosticId,
-    logPath: logPathOnFailure,
+    logPath: flushed?.path,
+    diagnosticsRecord: flushed?.ref,
   });
   return { ok: false, error: normalizedError };
 }
 
-function recordThrownRequestEvent(
-  sessionStore: SessionStore,
+async function finalizeRequestBindingCleanup(
   scope: RequestExecutionScope | undefined,
   response: DaemonResponse,
-): void {
-  if (!scope || !shouldRecordEventForRequest(scope.req)) return;
-  sessionStore.recordEvent(
-    scope.sessionName,
-    buildRequestFinishedEvent({
-      req: scope.req,
-      response,
-      durationMs: Math.max(0, Date.now() - scope.startedAtMs),
-    }),
-  );
+): Promise<DaemonResponse> {
+  if (!scope) return response;
+  let finalResponse = response;
+  try {
+    await scope[Symbol.asyncDispose]();
+  } catch (cleanupError) {
+    if (response.ok) {
+      finalResponse = finalizeThrownRequestError(cleanupError);
+    } else {
+      emitDiagnostic({
+        level: 'error',
+        phase: 'request_binding_cleanup_failed',
+        data: {
+          primaryCode: response.error.code,
+          cleanupError: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        },
+      });
+      flushDiagnosticsToSessionFile({ force: true });
+    }
+  }
+  return finalizeRequestExecutionScope(scope, finalResponse);
 }
 
 /**
@@ -472,20 +595,14 @@ function repairExpiredIfTombstoned(
 // Phase 2 typed-error graft: add machine-readable signals to an error response.
 // Returns the error unchanged unless a signal applies, so the default wire shape
 // is preserved for the common codes.
-function enrichDaemonError(command: string, error: DaemonError): DaemonError {
-  const supportedPlatforms =
-    error.code === 'UNSUPPORTED_OPERATION' || error.code === 'UNSUPPORTED_PLATFORM'
-      ? supportedPlatformsForCommand(command)
-      : [];
-  const supportedOn = supportedPlatforms.length > 0 ? supportedPlatforms.join(', ') : undefined;
+function enrichDaemonError(error: DaemonError): DaemonError {
   // A throw-site classification (lifted from details by normalizeError) wins
   // over the conservative code-level policy.
   const retriable = error.retriable ?? retriableForErrorCode(error.code);
-  if (supportedOn === undefined && retriable === undefined) return error;
+  if (retriable === undefined) return error;
   return {
     ...error,
-    ...(retriable !== undefined ? { retriable } : {}),
-    ...(supportedOn !== undefined ? { supportedOn } : {}),
+    retriable,
   };
 }
 

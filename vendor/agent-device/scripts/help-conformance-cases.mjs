@@ -2,8 +2,12 @@ import {
   AMBIGUOUS_MATCH_SAMPLE,
   APP_NOT_INSTALLED_SAMPLE,
   BROWSERSTACK_CONNECT_SAMPLE,
+  DEVICE_CLAIM_IN_USE_SAMPLE,
   DEVICE_IN_USE_SAMPLE,
+  FOREGROUND_SNAPSHOT_FAILURE_SAMPLE,
+  MERGED_CARD_ACTIONS_SAMPLE,
   NOT_SETTLED_SAMPLE,
+  OFFSCREEN_TARGET_SNAPSHOT_SAMPLE,
   SETTLE_DIFF_SAMPLE,
   SETTLE_DIFF_SAMPLE_NOTES,
   SETTLE_TAIL_SAMPLE,
@@ -16,6 +20,11 @@ import {
 const RAW_COORDINATE_TARGET =
   /(?:^|\n)(?:agent-device\s+)?(?:click|fill|press)\s+-?\d+(?:\.\d+)?\s+-?\d+(?:\.\d+)?/i;
 
+// Ref pasted without its leading @: byte-for-byte copying is the contract,
+// and a dropped @ silently stops targeting the observed element.
+const BARE_REF_TARGET =
+  /(?:^|\n)(?:agent-device\s+)?(?:press|tap|click|fill|longpress)\s+['"]?e\d+\b/i;
+
 function quiz(sample, question) {
   return `Read this previous agent-device output, then plan the next command:
 
@@ -24,7 +33,7 @@ ${sampleText(sample)}
 ${question}`;
 }
 
-// Case docs reference help topic ids from src/cli/parser/cli-help.ts plus the
+// Case docs reference help topic ids from src/cli-schema/cli-help.ts plus the
 // synthetic '--help:first30' first-screen slice. Topic coverage is enforced by
 // scripts/__tests__/help-conformance-topic-coverage.test.ts: a new help topic
 // needs a case here or an explicit waiver there.
@@ -46,6 +55,26 @@ export const CASES = [
       'usesSnapshotI',
       'usesSettleOnMutations',
       'noWaitStable',
+    ],
+  },
+  {
+    id: 'focused-type-stops-at-success',
+    docs: ['--help:first30', 'workflow'],
+    task: 'Plan commands to open the installed app com.example.messages, press the visible New message control, focus the Message field, type the exact text "hello", press Send, wait for the explicit "Sent" confirmation, and close. The task ends at Sent; do not open the transient "View message" follow-up.',
+    expectations: [
+      'validPlanCommands',
+      'fullPrefix',
+      'usesSnapshotI',
+      'usesSettleOnMutations',
+      'opensAndCloses',
+    ],
+    matchers: [
+      { id: 'typesExactMessage', pattern: /\bagent-device\s+type\s+(?:"hello"|'hello')/i },
+      { id: 'waitsForSent', pattern: /\bagent-device\s+wait\s+text\s+(?:"Sent"|'Sent')/i },
+    ],
+    forbidden: [
+      { id: 'typeDoesNotUseSettle', pattern: /\bagent-device\s+type\b[^\n]*--settle\b/i },
+      { id: 'stopsBeforeTransientFollowUp', pattern: /View message/i },
     ],
   },
   {
@@ -294,6 +323,86 @@ export const CASES = [
       { id: 'noOpenArtifactPath', pattern: /(?:^|\n)agent-device\s+open\s+[^\n]*\.apk\b/i },
     ],
   },
+  {
+    // Review of the compact workflow card's && guidance found the plan
+    // validator failed a plan that followed it (unquoted && classified as
+    // shell-projection). Both target elements are already named/unambiguous
+    // here, which is exactly the "confident consecutive steps" case the card
+    // describes, so usesConfidentChaining is a real (not just possible)
+    // expectation, and validPlanCommands proves the fixed validator accepts
+    // the chained shape end to end.
+    id: 'chains-confident-consecutive-settle-steps',
+    docs: ['--help:first30', 'workflow'],
+    task: 'The Search tab is visible, labeled "Search", and known to reveal a search field also labeled "Search" with no other candidate on screen. Plan commands to press the Search tab and fill that field with "react native", settling after each step, then close. Plan commands only.',
+    expectations: [
+      'validPlanCommands',
+      'fullPrefix',
+      'usesSettleOnMutations',
+      'usesConfidentChaining',
+    ],
+    matchers: [
+      {
+        id: 'pressesSearchTab',
+        pattern: /\bagent-device\s+press\b[^\n]*label="?search"?[^\n]*--settle\b/i,
+      },
+      {
+        id: 'fillsSearchField',
+        pattern:
+          /\bagent-device\s+fill\b[^\n]*label="?search"?[^\n]*(?:"react native"|'react native')[^\n]*--settle\b/i,
+      },
+    ],
+  },
+  {
+    // help scripting owns --record-as secret-safe fills and save-script
+    // authoring now that this content left the mandatory workflow card;
+    // this proves an agent can actually plan the loop from the topic alone.
+    id: 'scripting-secret-safe-recorded-login',
+    docs: ['--help:first30', 'scripting'],
+    task: 'Author a reusable login script for the installed app com.example.app that never records the literal password. The AD_VAR_PASSWORD environment variable is already set in your shell, so do not plan a shell export line. Arm recording on open with --save-script=login.ad, fill the password field (id="password") from AD_VAR_PASSWORD using --record-as, verify the login succeeded, then publish the script without closing the session. Plan agent-device commands only.',
+    expectations: ['validPlanCommands', 'fullPrefix'],
+    matchers: [
+      {
+        id: 'armsSaveScriptOnOpen',
+        pattern: /\bagent-device\s+open\s+com\.example\.app\b[^\n]*--save-script[=\s]*login\.ad/i,
+      },
+      {
+        id: 'recordsSecretSafeFill',
+        pattern:
+          /\bagent-device\s+fill\s+(?:'|")?id="?password"?(?:'|")?\s+"?\$AD_VAR_PASSWORD"?[^\n]*--record-as\s+PASSWORD\b/i,
+      },
+      {
+        id: 'verifiesLoginSucceeded',
+        pattern: /\b(?:wait|is|get|find)\b/i,
+      },
+      { id: 'publishesWithoutClosing', pattern: /\bagent-device\s+session\s+save-script\b/i },
+    ],
+    forbidden: [
+      { id: 'noBareClose', pattern: /(?:^|\n)agent-device\s+close\b/i },
+      { id: 'noNoRecordOnSecretFill', pattern: /--no-record/i },
+    ],
+  },
+  {
+    // help gestures owns multi-touch shapes now that this content left the
+    // mandatory workflow card. The exact verification text ("pan changed
+    // yes") only appears in the gestures topic's own example, so a correct
+    // plan proves the model actually read it rather than guessing a shape.
+    id: 'gestures-android-transform-then-verify',
+    docs: ['--help:first30', 'gestures'],
+    task: 'On the already-open Android app, plan a combined pan/scale/rotate transform gesture centered at (200, 420) with dx=80, dy=-40, scale=2, rotate=35 degrees over 700ms, then verify the app-reported pan change using the exact confirmation text shown in the gesture reference. Plan commands only.',
+    expectations: ['validPlanCommands', 'fullPrefix'],
+    matchers: [
+      {
+        id: 'runsAndroidTransform',
+        pattern:
+          /\bagent-device\s+gesture\s+transform\s+200\s+420\s+80\s+-40\s+2\s+35\s+700\b[^\n]*--platform\s+android\b/i,
+      },
+      {
+        id: 'verifiesSemanticPanChange',
+        pattern: /\bagent-device\s+wait\s+text\s+"pan changed yes"[^\n]*--platform\s+android\b/i,
+      },
+    ],
+    forbidden: [{ id: 'noRawCoordinateTarget', pattern: RAW_COORDINATE_TARGET }],
+  },
   // Next-command quiz cases: captured output (pinned to the real renderer by
   // scripts/__tests__/help-conformance-sample-outputs.test.ts) plus a task,
   // scored by regex instead of the named expectation scorers above.
@@ -333,6 +442,7 @@ Use the output already shown to determine whether the feed-search UI is present,
       { id: 'noSnapshot', pattern: /\bsnapshot\b/i },
       { id: 'noWaitStable', pattern: /wait\s+stable/i },
       { id: 'noFill', pattern: /\bfill\b/i },
+      { id: 'noBareRefTarget', pattern: BARE_REF_TARGET },
       { id: 'noRawCoordinateTarget', pattern: RAW_COORDINATE_TARGET },
     ],
   },
@@ -354,6 +464,71 @@ Use the output already shown to determine whether the feed-search UI is present,
       { id: 'noWaitStable', pattern: /wait\s+stable/i },
       { id: 'noFill', pattern: /\bfill\b/i },
       { id: 'noCallstackLeakage', pattern: /(?:callstack|@e64)/i },
+      { id: 'noBareRefTarget', pattern: BARE_REF_TARGET },
+      { id: 'noRawCoordinateTarget', pattern: RAW_COORDINATE_TARGET },
+    ],
+  },
+  {
+    // ADR 0014: settled tails pin unchanged interactive refs because the
+    // partial frame admits only refs copied with the response generation.
+    id: 'sample-output-settle-tail-pinned-ref-copied-exactly',
+    docs: ['--help:first30'],
+    task: quiz(
+      SETTLE_TAIL_SAMPLE,
+      'The task is to open the Profile tab. What command should run next?',
+    ),
+    expectations: ['validPlanCommands', 'fullPrefix'],
+    matchers: [
+      {
+        id: 'pressesPinnedTailRefOrExactLabel',
+        pattern:
+          /(?:^|\n)agent-device\s+(?:press|click)\s+(?:@e40~s5\b|'?label="?Profile"?'?)[^\n]*--settle\b/i,
+      },
+    ],
+    forbidden: [
+      { id: 'noUnpinnedRef', pattern: /@e40(?!~s5\b)/i },
+      { id: 'noBareRefTarget', pattern: BARE_REF_TARGET },
+      { id: 'noSnapshot', pattern: /\bsnapshot\b/i },
+      { id: 'noRawCoordinateTarget', pattern: RAW_COORDINATE_TARGET },
+    ],
+  },
+  {
+    // #1638/#1650: the closed --settle grammar grew scroll and back, and this
+    // extension IS the feature's payoff — collapsing scroll-then-observe into
+    // one call. The old guidance framed settle as a mutation suffix, and
+    // scroll reads as navigation, so eligibility generalizing is exactly what
+    // this case checks. The task deliberately does not mention settle: the
+    // wanted row is off-screen with no ref anywhere in the output, the
+    // tempting pre-#1638 plan is `scroll` + a separate `snapshot -i`, and
+    // acceptance is the single settled call.
+    id: 'sample-output-offscreen-target-scrolls-settled',
+    docs: ['--help:first30'],
+    task: quiz(
+      OFFSCREEN_TARGET_SNAPSHOT_SAMPLE,
+      'The task is to open the Notifications row of this list. What command should run next?',
+    ),
+    expectations: ['validPlanCommands', 'fullPrefix'],
+    matchers: [
+      {
+        id: 'scrollsDownSettled',
+        pattern: /(?:^|\n)(?:agent-device\s+)?scroll\s+down\b[^\n]*--settle\b/i,
+      },
+    ],
+    forbidden: [
+      // The two-call habit this case exists to catch: a scroll line without
+      // --settle means a separate observation call is coming.
+      {
+        id: 'noUnsettledScroll',
+        pattern: /(?:^|\n)(?:agent-device\s+)?scroll\b(?:(?!--settle)[^\n])*(?=\n|$)/i,
+      },
+      { id: 'noSnapshot', pattern: /\bsnapshot\b/i },
+      { id: 'noWaitStable', pattern: /wait\s+stable/i },
+      // Notifications never appears in the output, so any bare @eN press is a
+      // guessed ref, not a resolved target.
+      {
+        id: 'noGuessedRef',
+        pattern: /(?:^|\n)(?:agent-device\s+)?(?:press|click|fill|longpress)\s+@e\d/i,
+      },
       { id: 'noRawCoordinateTarget', pattern: RAW_COORDINATE_TARGET },
     ],
   },
@@ -399,6 +574,28 @@ Use the output already shown to determine whether the feed-search UI is present,
       { id: 'noClose', pattern: /(?:^|\n)agent-device\s+close\b/i },
       { id: 'noReopen', pattern: /(?:^|\n)agent-device\s+open\b/i },
       { id: 'noRawCoordinateTarget', pattern: RAW_COORDINATE_TARGET },
+    ],
+  },
+  {
+    id: 'sample-output-device-claim-inspects-owner',
+    docs: ['--help:first30', 'debugging'],
+    recovery: { code: 'DEVICE_IN_USE', sample: DEVICE_CLAIM_IN_USE_SAMPLE },
+    task: quiz(
+      DEVICE_CLAIM_IN_USE_SAMPLE,
+      'A different worktree owns this device and you must not interrupt it. What command should run next?',
+    ),
+    expectations: ['validPlanCommands', 'fullPrefix'],
+    matchers: [
+      {
+        id: 'runsDeviceStatus',
+        pattern:
+          /(?:^|\n)agent-device\s+device\s+status\s+--platform\s+android\s+--serial\s+emulator-5554\b/i,
+      },
+    ],
+    forbidden: [
+      { id: 'noRetryOpen', pattern: /(?:^|\n)agent-device\s+open\b/i },
+      { id: 'noForeignClose', pattern: /(?:^|\n)agent-device\s+close\b/i },
+      { id: 'noPidHunting', pattern: /(?:^|\n)\s*(?:ps|kill|pkill)\b/i },
     ],
   },
   {
@@ -484,6 +681,10 @@ Use the output already shown to determine whether the feed-search UI is present,
         id: 'opensKnownPackage',
         pattern: /(?:^|\n)agent-device\s+open\s+com\.example\.demo\b[^\n]*--relaunch\b/i,
       },
+      {
+        id: 'keepsConnectedSession',
+        pattern: /(?:^|\n)agent-device\s+open\b[^\n]*--session\s+adc-browserstack\b/i,
+      },
     ],
     forbidden: [
       {
@@ -495,6 +696,69 @@ Use the output already shown to determine whether the feed-search UI is present,
         pattern: /(?:^|\n)agent-device\s+open\s+(?:sample\.apk|bs:\/\/app-id)\b/i,
       },
       { id: 'noRedundantInstall', pattern: /(?:^|\n)agent-device\s+install\b/i },
+    ],
+  },
+  {
+    id: 'foreground-attach-single-sim',
+    docs: ['--help:first30', 'workflow'],
+    task: 'You are starting fresh with no active session. The configured iOS target already has com.example.demo in the foreground. Plan the command that keeps this deterministic app/device selection and gets its initial interactive snapshot in a single call, then press the visible Continue control and close the session.',
+    expectations: ['validPlanCommands', 'fullPrefix', 'usesSettleOnMutations', 'opensAndCloses'],
+    matchers: [
+      {
+        id: 'startsWithForegroundOpen',
+        // Flag order is not semantically meaningful; require the known app
+        // and --foreground on the first command, in either order.
+        pattern:
+          /^agent-device\s+open\b(?=[^\n]*\bcom\.example\.demo\b)(?=[^\n]*--foreground\b)[^\n]*$/i,
+      },
+      {
+        id: 'pressesContinueAfterAttach',
+        pattern: /agent-device\s+press\s+[^\n]*continue[^\n]*--settle\b/i,
+      },
+    ],
+    forbidden: [{ id: 'noRawCoordinateTarget', pattern: RAW_COORDINATE_TARGET }],
+  },
+  {
+    id: 'merged-card-actions-not-directly-invokable',
+    docs: ['--help:first30', 'workflow'],
+    task: quiz(
+      MERGED_CARD_ACTIONS_SAMPLE,
+      'The goal is to reply to this post. The actions list names "Reply" as a hidden affordance on @e72, but that name is not a pressable selector. What command should run next?',
+    ),
+    expectations: ['validPlanCommands', 'fullPrefix'],
+    matchers: [
+      {
+        id: 'opensCardToReachReply',
+        pattern: /(?:^|\n)agent-device\s+(?:press|click)\s+@e72\b[^\n]*--settle\b/i,
+      },
+    ],
+    forbidden: [
+      {
+        id: 'noPressingActionNameAsSelector',
+        pattern: /(?:^|\n)agent-device\s+(?:press|click|find)\b[^\n]*(?:label|text)="?reply"?/i,
+      },
+      { id: 'noSnapshotDetour', pattern: /\bsnapshot\b/i },
+      { id: 'noBareRefTarget', pattern: BARE_REF_TARGET },
+      { id: 'noRawCoordinateTarget', pattern: RAW_COORDINATE_TARGET },
+    ],
+  },
+  {
+    id: 'foreground-attach-snapshot-recovery',
+    docs: ['--help:first30', 'workflow'],
+    task: quiz(
+      FOREGROUND_SNAPSHOT_FAILURE_SAMPLE,
+      'The foreground attach succeeded and the session is still open, but its initial snapshot failed. What command should run next to get interactive refs?',
+    ),
+    expectations: ['validPlanCommands', 'fullPrefix', 'usesSnapshotI'],
+    matchers: [
+      {
+        id: 'retriesSnapshotInOpenSession',
+        pattern: /(?:^|\n)agent-device\s+snapshot\s+-i\b/i,
+      },
+    ],
+    forbidden: [
+      { id: 'noSecondOpen', pattern: /(?:^|\n)agent-device\s+open\b/i },
+      { id: 'noPrematureClose', pattern: /(?:^|\n)agent-device\s+close\b/i },
     ],
   },
 ];

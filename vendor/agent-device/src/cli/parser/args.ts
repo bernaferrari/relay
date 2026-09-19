@@ -1,18 +1,22 @@
+import type { CliFlags } from '@agent-device/contracts/command';
 import { AppError } from '@agent-device/kernel/errors';
-import { mergeDefinedFlags } from '../../utils/merge-flags.ts';
+import { mergeDefinedFlags } from '../../cli-schema/merge-flags.ts';
 import {
-  applyCommandDefaults,
   assertCommandPositionalArity,
   getCommandSchema,
   getFlagDefinition,
   getFlagDefinitions,
-  type CliFlags,
   type FlagDefinition,
   type FlagKey,
 } from '../../cli-schema/command-schema.ts';
 import { isFlagSupportedForCommand } from '../../cli-schema/option-schema.ts';
-import { isKnownCliCommandName } from '../../command-catalog.ts';
-import { cliCommandAlias, normalizeCliCommandAlias } from '../../commands/cli-command-aliases.ts';
+import { applyCommandDefaults } from '@agent-device/command-registry/registry';
+import { isKnownCliCommandName } from '@agent-device/command-registry/catalog';
+import {
+  cliCommandAlias,
+  normalizeCliCommandAlias,
+  retiredCliCommandMessage,
+} from '@agent-device/command-registry/cli-command-aliases';
 import { formatUnknownFlagMessage, suggestCommandFor } from './command-suggestions.ts';
 
 type ParsedArgs = {
@@ -301,7 +305,10 @@ function parseFlagValue(
   if (typeof definition.max === 'number' && parsed > definition.max) {
     throw new AppError('INVALID_ARGS', `Invalid ${labelForFlag(token)}: ${value}`);
   }
-  return { value: Math.floor(parsed), consumeNext: inlineValue === undefined };
+  return {
+    value: definition.type === 'int' ? Math.floor(parsed) : parsed,
+    consumeNext: inlineValue === undefined,
+  };
 }
 
 function labelForFlag(token: string): string {
@@ -380,21 +387,17 @@ function formatUnsupportedFlagMessage(command: string | null, unsupported: strin
 // Usage text lives in cli-help.ts, which pulls the full command schema surface.
 // Callers load it lazily so plain command invocations never parse the help text.
 export async function usage(): Promise<string> {
-  const { buildUsageText } = await import('./cli-help.ts');
+  const { buildUsageText } = await import('../../cli-schema/cli-help.ts');
   return buildUsageText();
 }
 
 export async function usageForCommand(command: string): Promise<string | null> {
-  const { buildCommandUsageText } = await import('./cli-help.ts');
+  const { buildCommandUsageText } = await import('../../cli-schema/cli-help.ts');
   return buildCommandUsageText(normalizeCommandAlias(command));
 }
 
 function normalizeCommandAlias(command: string): string {
-  if (command.toLowerCase() === 'rotate') {
-    throw new AppError(
-      'INVALID_ARGS',
-      'rotate was renamed to orientation; for the two-finger gesture use: gesture rotate',
-    );
-  }
+  const retiredMessage = retiredCliCommandMessage(command);
+  if (retiredMessage) throw new AppError('INVALID_ARGS', retiredMessage);
   return normalizeCliCommandAlias(command);
 }

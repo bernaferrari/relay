@@ -1,10 +1,12 @@
 import type { CommandFlags } from '@agent-device/contracts/command';
-import type { SessionState } from './types.ts';
+import type { SessionState } from './session-state.ts';
 import {
   NO_SCRIPT_PUBLICATION,
   abortAuthoring,
   armAuthoring,
   armRepair,
+  isAuthoringAborted,
+  isRecordingPublication,
   isScriptPublished,
   markAuthoringPublished,
   resolveScriptTarget,
@@ -40,7 +42,6 @@ export function armAuthoringOnOpen(
   session: SessionState,
   requested: { path?: string; force?: boolean },
 ): void {
-  session.recordSession = true;
   session.scriptPublication = armAuthoring({
     path: requested.path !== undefined ? expandSessionPath(requested.path) : undefined,
     force: requested.force === true,
@@ -52,8 +53,19 @@ export function armAuthoringOnOpen(
  * the journey no longer starts where the script says it does.
  */
 export function abortAuthoringOnSecondOpen(session: SessionState): void {
-  session.recordSession = false;
   session.scriptPublication = abortAuthoring(publicationState(session));
+}
+
+/**
+ * Whether the session captures recording-time evidence (`isRecordingPublication`).
+ *
+ * The one question every recording-sensitive site asks, answered from the aggregate rather than
+ * from a boolean kept in step with it by hand. No surface can arm recording without moving the
+ * lifecycle that authorizes it, which is what makes #1533's drift unrepresentable rather than
+ * merely guarded against.
+ */
+export function isSessionRecording(session: SessionState | undefined): boolean {
+  return isRecordingPublication(publicationState(session));
 }
 
 /**
@@ -65,16 +77,19 @@ export function abortAuthoringOnSecondOpen(session: SessionState): void {
  *   (2026-08-02) showed it used to let a never-armed `close --save-script` fold into the
  *   authoring lifecycle and publish moments later in the same request — a script with selector
  *   fallback chains but no recording-time `target-v1` evidence, and no signal to the caller.
- *   `session-close.ts`'s `assertTerminalRecordingCloseAllowed` now rejects an unarmed
- *   `close --save-script` before any action recording runs, so this arm only fires for a
- *   future non-close caller of the shared ingress; it is kept as that caller's safety net, not
- *   as a documented close-time behavior.
+ *   `session-lifecycle/internal/session-close.ts`'s `assertTerminalRecordingCloseAllowed` now
+ *   rejects an unarmed `close --save-script` before any action recording runs, so this arm only
+ *   fires for a future non-close caller of the shared ingress; it is kept as that caller's safety
+ *   net, not as a documented close-time behavior.
  * - `authoring` -> retarget under the #1258 per-target force rule (`resolveScriptTarget`).
  * - `repair` -> retarget the repair target the same way (a replayed step may carry the flag).
+ *
+ * - `authoring{aborted}` -> nothing. The lifecycle is terminal (#1533), so the flag neither
+ *   re-arms recording nor retargets: recording-time evidence stopped at the abort.
  */
 export function applyRecordedSaveScriptFlags(session: SessionState, flags: CommandFlags): void {
   if (!flags.saveScript) return;
-  session.recordSession = true;
+  if (isAuthoringAborted(publicationState(session))) return;
   const requested = {
     path: typeof flags.saveScript === 'string' ? expandSessionPath(flags.saveScript) : undefined,
     force: flags.force === true,
@@ -117,10 +132,9 @@ export function retargetActivePublication(
   };
 }
 
-/** Active publication succeeded: record the written path and stop recording (ADR 0016). */
+/** Active publication succeeded: PUBLISHED is terminal, which is what stops recording. */
 export function markActivePublicationDone(session: SessionState, writtenPath: string): void {
   session.scriptPublication = markAuthoringPublished(publicationState(session), writtenPath);
-  session.recordSession = false;
 }
 
 /** Ordinary close publication succeeded: the authoring lifecycle reached `published`. */

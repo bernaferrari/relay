@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'vitest';
 import {
-  buildGesturePlan,
   GESTURE_INITIAL_ANGLE_DEGREES,
-} from '@agent-device/contracts/interaction';
+  buildGesturePlan,
+} from '@agent-device/contracts/gesture-plan';
 import {
   centroid,
   distance,
@@ -211,7 +211,7 @@ test('invalid and non-finite values fail before execution', () => {
   const cases = [
     () =>
       buildGesturePlan(
-        { intent: 'pan', origin: { x: NaN, y: 1 }, delta: { x: 1, y: 1 } },
+        { intent: 'pan', origin: { x: Number.NaN, y: 1 }, delta: { x: 1, y: 1 } },
         PORTRAIT,
       ),
     () =>
@@ -220,7 +220,7 @@ test('invalid and non-finite values fail before execution', () => {
         PORTRAIT,
       ),
     () => buildGesturePlan({ intent: 'pinch', scale: Infinity }, PORTRAIT),
-    () => buildGesturePlan({ intent: 'rotate', degrees: NaN }, PORTRAIT),
+    () => buildGesturePlan({ intent: 'rotate', degrees: Number.NaN }, PORTRAIT),
     () =>
       buildGesturePlan(
         {

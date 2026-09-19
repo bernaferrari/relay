@@ -1,6 +1,7 @@
+import type { CommandFlags } from '@agent-device/contracts/command';
 import { AppError } from '@agent-device/kernel/errors';
-import type { CommandFlags } from '../core/dispatch.ts';
-import type { SessionState, DaemonRequest } from './types.ts';
+import type { DaemonRequest } from './daemon-request.ts';
+import type { SessionRef, SessionState } from './session-state.ts';
 import {
   formatSessionSelectorConflict,
   listSessionSelectorConflicts,
@@ -13,16 +14,33 @@ import {
   type PlatformSelector,
 } from '@agent-device/kernel/device';
 import { buildSessionRecoveryHint, describeSessionDevice } from './session-recovery-hints.ts';
-import { shellQuoteIfNeeded } from '../utils/shell-quote.ts';
+import { shellQuoteIfNeeded } from '@agent-device/host-kit/command';
 import { hasLockableDeviceSelector, hasSelectorValue } from './device-selector-intent.ts';
 import { canOverrideLockPolicySelector } from './daemon-command-registry.ts';
 
 type LockPlatform = NonNullable<DaemonRequest['meta']>['lockPlatform'];
 type NormalizedLockPlatform = NonNullable<PlatformSelector>;
 
+/**
+ * Selectors that name WHICH device, as opposed to narrowing the pool it is chosen from. A conflict
+ * on one of these cannot be resolved by dropping it: the request asked for device A while the lock
+ * names device B, and both cannot be honored. Such a conflict always fails, whatever the lock
+ * policy — `strip` used to delete the selector and continue against the bound device, which is
+ * silently-wrong automation rather than a loud failure.
+ */
+const DEVICE_IDENTITY_CONFLICT_KEYS: ReadonlySet<SessionSelectorConflictKey> = new Set([
+  'udid',
+  'serial',
+  'device',
+]);
+
+function isDeviceIdentityConflict(conflict: SessionSelectorConflict): boolean {
+  return DEVICE_IDENTITY_CONFLICT_KEYS.has(conflict.key);
+}
+
 export function applyRequestLockPolicy(
   req: DaemonRequest,
-  existingSession?: SessionState,
+  existingRef?: SessionRef,
 ): DaemonRequest {
   const lockPolicy = req.meta?.lockPolicy;
   if (!lockPolicy) {
@@ -33,15 +51,13 @@ export function applyRequestLockPolicy(
   const canOverrideSelector = canOverrideLockPolicySelector(req.command);
   const conflicts = canOverrideSelector
     ? []
-    : existingSession
-      ? listSessionSelectorConflicts(existingSession, nextFlags)
+    : existingRef
+      ? listSessionSelectorConflicts(existingRef.session, nextFlags)
       : listFreshSessionConflicts(nextFlags, req.meta?.lockPlatform);
   const lockPlatform = req.meta?.lockPlatform;
 
   if (conflicts.length === 0) {
-    if (
-      shouldApplyLockPlatformDefault(canOverrideSelector, existingSession, nextFlags, lockPlatform)
-    ) {
+    if (shouldApplyLockPlatformDefault(canOverrideSelector, existingRef, nextFlags, lockPlatform)) {
       nextFlags.platform = lockPlatform;
     }
     return {
@@ -50,35 +66,58 @@ export function applyRequestLockPolicy(
     };
   }
 
-  if (lockPolicy === 'strip') {
-    applyStripLockPolicy(nextFlags, conflicts, lockPlatform, existingSession);
+  const identityConflicts = conflicts.filter(isDeviceIdentityConflict);
+  if (lockPolicy === 'strip' && identityConflicts.length === 0) {
+    applyStripLockPolicy(nextFlags, conflicts, lockPlatform, existingRef?.session);
     return {
       ...req,
       flags: nextFlags,
     };
   }
 
-  throw new AppError(
-    'INVALID_ARGS',
-    buildLockPolicyConflictMessage(req, conflicts, existingSession),
-    {
-      session: req.session,
-      conflicts: conflicts.map(formatSessionSelectorConflict),
-      hint: buildLockPolicyConflictHint(req, existingSession),
-    },
-  );
+  throw new AppError('INVALID_ARGS', buildLockPolicyConflictMessage(req, conflicts, existingRef), {
+    session: existingRef?.address ?? req.session,
+    conflicts: conflicts.map(formatSessionSelectorConflict),
+    ...describeConflictingIdentities(identityConflicts, existingRef?.session),
+    hint: buildLockPolicyConflictHint(req, existingRef, identityConflicts),
+  });
+}
+
+/**
+ * Both sides of an identity conflict, structured: what the request asked for and what the lock is
+ * bound to. A caller deciding which of the two recoveries to take needs the identities, not prose.
+ */
+function describeConflictingIdentities(
+  identityConflicts: SessionSelectorConflict[],
+  existingSession: SessionState | undefined,
+): Record<string, unknown> {
+  if (identityConflicts.length === 0) return {};
+  return {
+    requestedDevice: Object.fromEntries(
+      identityConflicts.map((conflict) => [conflict.key, conflict.value]),
+    ),
+    ...(existingSession
+      ? {
+          boundDevice: {
+            platform: existingSession.device.platform,
+            name: existingSession.device.name,
+            id: existingSession.device.id,
+          },
+        }
+      : {}),
+  };
 }
 
 function buildLockPolicyConflictMessage(
   req: DaemonRequest,
   conflicts: SessionSelectorConflict[],
-  existingSession: SessionState | undefined,
+  existingRef: SessionRef | undefined,
 ): string {
   const conflictList = conflicts.map(formatSessionSelectorConflict).join(', ');
-  if (existingSession) {
+  if (existingRef) {
     return (
-      `${req.command} is already bound to session "${existingSession.name}" on ${describeSessionDevice(existingSession)}, ` +
-      `but this request selected ${conflictList}.`
+      `Session "${existingRef.address}" is already bound to ${describeSessionDevice(existingRef.session)}, ` +
+      `but ${req.command} selected ${conflictList}.`
     );
   }
   const lockPlatform = req.meta?.lockPlatform;
@@ -88,16 +127,30 @@ function buildLockPolicyConflictMessage(
 
 function buildLockPolicyConflictHint(
   req: DaemonRequest,
-  existingSession: SessionState | undefined,
+  existingRef: SessionRef | undefined,
+  identityConflicts: SessionSelectorConflict[],
 ): string {
-  if (existingSession) {
-    return buildSessionRecoveryHint(existingSession, 'selector-conflict');
+  // `buildSessionRecoveryHint` already states the two recoveries (close the bound session, or drop
+  // the selectors) and never mentions --session-lock, so a bound session needs no identity branch.
+  if (existingRef) {
+    return buildSessionRecoveryHint(existingRef, 'selector-conflict');
   }
   const lockPlatform = req.meta?.lockPlatform;
   const sessionText = req.session ? ` --session ${shellQuoteIfNeeded(req.session)}` : '';
   const openText = lockPlatform
     ? `Run agent-device open <app>${sessionText} --platform ${lockPlatform} first if no session is active. `
     : `Run agent-device open <app>${sessionText} first if no session is active. `;
+  if (identityConflicts.length > 0) {
+    // NEVER offer --session-lock strip here: stripping a device identity keeps the request running
+    // against the OTHER device, which is the failure this rejection exists to prevent.
+    const selectorList = identityConflicts.map(formatSessionSelectorConflict).join(', ');
+    return (
+      `Remove ${selectorList} and rerun to use the session-lock device, ` +
+      `or drop --session so this command binds to the device you selected. ` +
+      openText +
+      `Run agent-device session list to inspect active sessions.`
+    );
+  }
   return (
     `Remove conflicting device selectors from this command, or use --session-lock strip to let agent-device ignore them. ` +
     openText +
@@ -107,11 +160,11 @@ function buildLockPolicyConflictHint(
 
 function shouldApplyLockPlatformDefault(
   canOverrideSelector: boolean,
-  existingSession: SessionState | undefined,
+  existingRef: SessionRef | undefined,
   flags: CommandFlags,
   lockPlatform: LockPlatform,
 ): boolean {
-  if (!lockPlatform || existingSession || flags.platform !== undefined) {
+  if (!lockPlatform || existingRef || flags.platform !== undefined) {
     return false;
   }
   if (!canOverrideSelector) {
@@ -192,6 +245,7 @@ function targetSelectorsConflict(
 ): boolean {
   switch (lockPlatform) {
     case 'android':
+    case 'harmonyos':
     case 'ios':
       return target === 'desktop';
     case 'vega':
@@ -224,9 +278,10 @@ function freshSessionSelectorKeysForPlatform(
   lockPlatform: NormalizedLockPlatform,
   flags: CommandFlags,
 ): SessionSelectorConflictKey[] {
+  if (isAndroidLikeLockPlatform(lockPlatform)) {
+    return ['udid', 'iosSimulatorDeviceSet'];
+  }
   switch (lockPlatform) {
-    case 'android':
-      return ['udid', 'iosSimulatorDeviceSet'];
     case 'vega':
       return ['udid', 'iosSimulatorDeviceSet', 'androidDeviceAllowlist'];
     case 'ios':
@@ -242,6 +297,12 @@ function freshSessionSelectorKeysForPlatform(
     default:
       return assertNever(lockPlatform);
   }
+}
+
+function isAndroidLikeLockPlatform(
+  platform: NormalizedLockPlatform,
+): platform is 'android' | 'harmonyos' {
+  return platform === 'android' || platform === 'harmonyos';
 }
 
 function isAppleDesktopSelector(flags: CommandFlags): boolean {

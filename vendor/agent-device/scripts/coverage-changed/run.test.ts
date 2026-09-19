@@ -72,6 +72,19 @@ test('passes and prints n/a for a docs-only change without touching coverage', (
   assert.match(out, /0\/0 \(n\/a\)/);
 });
 
+test('reads a large stacked diff beyond the subprocess default buffer', () => {
+  write('README.md', '# large stack\n' + 'documentation line\n'.repeat(80_000));
+  git('add', '-A');
+  git('commit', '-q', '-m', 'large docs stack');
+  writeLcov('SF:src/base.ts\nDA:1,1\nend_of_record\n');
+
+  const { code, out } = capture(() => run(['--base', 'main'], repo));
+
+  assert.equal(code, 0);
+  assert.match(out, /Changed-line coverage gate: PASS/);
+  assert.match(out, /0\/0 \(n\/a\)/);
+});
+
 test('fails when a changed source line is uncovered and names that line', () => {
   write('src/feature.ts', 'export const covered = 1;\nexport const uncovered = 2;\n');
   git('add', '-A');
@@ -81,6 +94,20 @@ test('fails when a changed source line is uncovered and names that line', () => 
   assert.equal(code, 1);
   assert.match(out, /Changed-line coverage gate: FAIL/);
   assert.match(out, /`src\/feature\.ts`: 2/);
+});
+
+test('fails when a changed workspace package line is uncovered and names that line', () => {
+  write(
+    'packages/contracts/src/feature.ts',
+    'export const covered = 1;\nexport const uncovered = 2;\n',
+  );
+  git('add', '-A');
+  git('commit', '-q', '-m', 'package feature');
+  writeLcov('SF:packages/contracts/src/feature.ts\nDA:1,3\nDA:2,0\nend_of_record\n');
+  const { code, out } = capture(() => run(['--base', 'main'], repo));
+  assert.equal(code, 1);
+  assert.match(out, /Changed-line coverage gate: FAIL/);
+  assert.match(out, /`packages\/contracts\/src\/feature\.ts`: 2/);
 });
 
 test('waiver env keeps the job green, still reporting numbers to the job summary', () => {
@@ -119,4 +146,15 @@ test('errors when the lcov report is missing rather than silently passing', () =
   const { code, out } = capture(() => run(['--base', 'main'], repo));
   assert.equal(code, 1);
   assert.match(out, /no lcov report/);
+});
+
+test('a pure move owes nothing regardless of the host diff.renames setting', () => {
+  git('config', 'diff.renames', 'false');
+  git('mv', 'src/base.ts', 'src/moved.ts');
+  git('commit', '-q', '-m', 'move');
+  writeLcov('SF:src/moved.ts\nDA:1,0\nend_of_record\n');
+  const { code, out } = capture(() => run(['--base', 'main'], repo));
+  assert.equal(code, 0);
+  assert.match(out, /Changed-line coverage gate: PASS/);
+  assert.match(out, /0\/0 \(n\/a\)/);
 });

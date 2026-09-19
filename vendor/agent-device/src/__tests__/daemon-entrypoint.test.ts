@@ -1,19 +1,29 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
 import path from 'node:path';
 import { test } from 'vitest';
-import { resolveDaemonPaths } from '../daemon/config.ts';
+import { resolveDaemonPaths } from '../daemon-resolution.ts';
 import { startDaemonRuntime } from '../daemon/server/daemon-runtime.ts';
 import {
   cleanupDownloadableArtifact,
   trackDownloadableArtifact,
 } from '../daemon/artifact-tracking.ts';
-import { runCmdBackground } from '../utils/exec.ts';
-import { isProcessAlive, waitForProcessExit } from '../utils/host-process.ts';
-import { closeLoopbackServer, listenOnLoopback, waitForHttpOk } from './test-utils/index.ts';
+import { runCmdBackground } from '@agent-device/host-kit/command';
+import {
+  createOwnedProcessRecordStore,
+  isProcessAlive,
+  readProcessCommand,
+  readProcessStartTime,
+  waitForProcessExit,
+} from '@agent-device/host-kit/process';
+import { createDurableResourceEnvelope } from '@agent-device/capture-kit';
+import { screenRecordingDurableResource } from '../daemon/screen-recording-session-resource.ts';
+
+import { closeLoopbackServer, listenOnLoopback, waitForHttpOk } from './test-utils/loopback.ts';
+import { mkdtempForTestSync } from './test-utils/tmp-dir.ts';
 
 type DaemonInfoFile = {
   httpPort?: number;
@@ -62,7 +72,7 @@ function waitForStdoutLine(
 }
 
 test('daemon runtime starts HTTP transport in-process and shuts down cleanly', async () => {
-  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-daemon-runtime-'));
+  const stateDir = mkdtempForTestSync('agent-device-daemon-runtime-');
   const paths = resolveDaemonPaths(stateDir);
   const artifactPath = path.join(stateDir, 'runtime-artifact.txt');
   fs.writeFileSync(artifactPath, 'runtime-artifact');
@@ -129,7 +139,7 @@ test('daemon runtime starts HTTP transport in-process and shuts down cleanly', a
 });
 
 test('daemon runtime publishes dual transport metadata', async () => {
-  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-daemon-runtime-dual-'));
+  const stateDir = mkdtempForTestSync('agent-device-daemon-runtime-dual-');
   const paths = resolveDaemonPaths(stateDir);
   const stdout: string[] = [];
   let exitCode: number | undefined;
@@ -170,11 +180,10 @@ test('daemon runtime publishes dual transport metadata', async () => {
   }
 });
 
-test('daemon default provider composition serves cloud artifacts over RPC', async () => {
-  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-daemon-provider-'));
+test('daemon rejects unowned cloud artifacts over RPC', async () => {
+  const stateDir = mkdtempForTestSync('agent-device-daemon-provider-');
   const providerRequests: string[] = [];
-  const providerServer = http.createServer((req, res) => {
-    providerRequests.push(req.url ?? '');
+  const providerServer = http.createServer((_req, res) => {
     res.setHeader('content-type', 'application/json');
     res.end(
       JSON.stringify({
@@ -219,27 +228,14 @@ test('daemon default provider composition serves cloud artifacts over RPC', asyn
       }),
     });
     const body = (await response.json()) as {
-      result?: { ok?: boolean; data?: Record<string, unknown> };
+      error?: { code?: number; message?: string; data?: { code?: string; details?: unknown } };
     };
 
-    assert.equal(response.status, 200);
-    assert.equal(body.result?.ok, true);
-    assert.deepEqual(body.result?.data, {
-      provider: 'browserstack',
-      providerSessionId: 'wd-1',
-      status: 'ready',
-      cloudArtifacts: [
-        {
-          provider: 'browserstack',
-          providerSessionId: 'wd-1',
-          kind: 'video',
-          name: 'Session video',
-          url: 'https://browserstack.example/video.mp4',
-          availability: 'ready',
-        },
-      ],
-    });
-    assert.deepEqual(providerRequests, ['/sessions/wd-1.json']);
+    assert.equal(response.status, 401);
+    assert.equal(body.error?.code, -32000);
+    assert.equal(body.error?.data?.code, 'UNAUTHORIZED');
+    assert.deepEqual(body.error?.data?.details, { reason: 'PROVIDER_SESSION_NOT_OWNED' });
+    assert.deepEqual(providerRequests, []);
   } finally {
     await runtime?.shutdown();
     await closeLoopbackServer(providerServer);
@@ -248,7 +244,7 @@ test('daemon default provider composition serves cloud artifacts over RPC', asyn
 });
 
 test('daemon entrypoint publishes HTTP metadata and cleans up on shutdown', async () => {
-  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-daemon-entrypoint-'));
+  const stateDir = mkdtempForTestSync('agent-device-daemon-entrypoint-');
   const paths = resolveDaemonPaths(stateDir);
   const daemon = runCmdBackground(
     process.execPath,
@@ -296,13 +292,13 @@ test('daemon entrypoint publishes HTTP metadata and cleans up on shutdown', asyn
   }
 });
 
-test('daemon runtime records the startup device-claim prune in daemon.log', async () => {
-  // Regression: the prune ran before publishDaemonInfo, which truncates
+test('daemon runtime records startup device-claim reconciliation in daemon.log', async () => {
+  // Regression: reconciliation ran before publishDaemonInfo, which truncates
   // daemon.log — so the event was written and then wiped, leaving nothing in
   // the log users are told to inspect. Asserted against a real runtime start
-  // rather than the prune in isolation, since the ordering is the bug.
-  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-daemon-prune-log-'));
-  const claimsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-daemon-prune-claims-'));
+  // rather than reconciliation in isolation, since the ordering is the bug.
+  const stateDir = mkdtempForTestSync('agent-device-daemon-prune-log-');
+  const claimsDir = mkdtempForTestSync('agent-device-daemon-prune-claims-');
   const paths = resolveDaemonPaths(stateDir);
   const deviceKey = 'local:android:none:prune-log';
   // resolveDeviceClaimRoot reads process.env directly, not the env passed to
@@ -345,17 +341,160 @@ test('daemon runtime records the startup device-claim prune in daemon.log', asyn
     });
 
     assert.notEqual(runtime, null);
-    assert.deepEqual(fs.readdirSync(claimsDir), [], 'the dead claim should be pruned');
+    assert.deepEqual(fs.readdirSync(claimsDir), [], 'the dead claim should be reconciled');
 
     const log = fs.readFileSync(paths.logPath, 'utf8');
-    assert.match(log, /"phase":"device_claim_prune"/);
-    assert.match(log, /"pruned":1/);
+    assert.match(log, /"phase":"device_claim_reconcile"/);
+    assert.match(log, /"reconciled":1/);
 
     await runtime?.shutdown();
     assert.equal(exitCode, 0);
   } finally {
-    process.env.AGENT_DEVICE_CLAIMS_DIR = previousClaimsDir;
+    if (previousClaimsDir === undefined) delete process.env.AGENT_DEVICE_CLAIMS_DIR;
+    else process.env.AGENT_DEVICE_CLAIMS_DIR = previousClaimsDir;
     fs.rmSync(stateDir, { recursive: true, force: true });
+    fs.rmSync(claimsDir, { recursive: true, force: true });
+  }
+});
+
+test('startup sweep settles a foreign dead owner without touching a live same-named session', async () => {
+  // #2168: the sweep must compose recovery from the STALE CLAIM's state dir.
+  // With the daemon-gateway (caller-scoped) reconciler this test goes red: the
+  // foreign recording cleanup clears session "shared" in THIS daemon's store,
+  // deleting the live record planted below, and leaves the foreign one behind.
+  const daemonStateDir = mkdtempForTestSync('agent-device-daemon-sweep-scope-');
+  const foreignStateDir = mkdtempForTestSync('agent-device-daemon-sweep-foreign-');
+  const claimsDir = mkdtempForTestSync('agent-device-daemon-sweep-claims-');
+  const deviceId = 'sweep-scope-udid';
+  const deviceKey = `local:apple:ios:${deviceId}`;
+  const previousClaimsDir = process.env.AGENT_DEVICE_CLAIMS_DIR;
+  process.env.AGENT_DEVICE_CLAIMS_DIR = claimsDir;
+
+  const sessionStoreFor = (stateDir: string) => {
+    const paths = resolveDaemonPaths(stateDir);
+    return createOwnedProcessRecordStore({
+      stateDir: paths.baseDir,
+      sessionsDir: paths.sessionsDir,
+      resolveSessionDir: (sessionId) => path.join(paths.sessionsDir, sessionId),
+    });
+  };
+
+  // The dead owner's recorded recorder, still running as an orphan: recovery
+  // must find it owned-alive so it takes the descriptor-cleanup path, which
+  // terminates it and clears the owner's process record — through whichever
+  // owned-process store the sweep composed. A plain sleeper with its real
+  // observed command and start time satisfies the exact-identity match.
+  const orphanRecorder = spawn('sleep', ['120'], { stdio: 'ignore' });
+  await new Promise((resolve) => orphanRecorder.once('spawn', resolve));
+  const orphanPid = orphanRecorder.pid;
+  assert.ok(orphanPid);
+  const orphanMarker = {
+    pid: orphanPid,
+    startTime: readProcessStartTime(orphanPid) ?? '',
+    command: readProcessCommand(orphanPid) ?? '',
+  };
+  assert.ok(orphanMarker.startTime.length > 0 && orphanMarker.command.length > 0);
+  let runtime: Awaited<ReturnType<typeof startDaemonRuntime>> = null;
+
+  try {
+    const foreignSessionDir = path.join(resolveDaemonPaths(foreignStateDir).sessionsDir, 'shared');
+    const resourcePath = screenRecordingDurableResource.store.resolvePath(foreignSessionDir);
+    screenRecordingDurableResource.store.write(
+      resourcePath,
+      createDurableResourceEnvelope({
+        resourceKind: 'screen-recording',
+        sessionId: 'shared',
+        device: { id: deviceId, family: 'apple', appleOs: 'ios', kind: 'simulator' },
+        owner: { kind: 'local-family', family: 'apple' },
+        fence: { token: 'sweep-fence', generation: 1 },
+        lifecycle: 'open',
+        descriptor: {
+          version: 1,
+          body: {
+            backend: 'simctl',
+            outputPath: path.join(foreignSessionDir, 'recording.mp4'),
+            processes: [orphanMarker],
+          },
+        },
+      }),
+    );
+    sessionStoreFor(foreignStateDir).replace({ kind: 'session', sessionId: 'shared' }, [
+      { ...orphanMarker, purpose: 'simctl-screen-recording' },
+    ]);
+    // The live same-named session in THIS daemon's state dir. The purpose is
+    // outside the startup reaper's selection, so only a wrong-store recovery
+    // clear can remove it.
+    sessionStoreFor(daemonStateDir).replace({ kind: 'session', sessionId: 'shared' }, [
+      { pid: process.pid, startTime: 'live-marker', command: 'live-probe', purpose: 'test-probe' },
+    ]);
+    const liveRecordPath = path.join(
+      resolveDaemonPaths(daemonStateDir).sessionsDir,
+      'shared',
+      'owned-processes.json',
+    );
+    const liveRecordBefore = fs.readFileSync(liveRecordPath, 'utf8');
+    fs.writeFileSync(
+      path.join(claimsDir, `${crypto.createHash('sha256').update(deviceKey).digest('hex')}.json`),
+      JSON.stringify({
+        schemaVersion: 1,
+        deviceKey,
+        device: { platform: 'ios', id: deviceId, name: 'Sweep Scope iPhone', kind: 'simulator' },
+        session: 'shared',
+        workspace: '/worktrees/dead',
+        stateDir: foreignStateDir,
+        ownerPid: 999_999_999,
+        ownerStartTime: 'old-start-time',
+        ownerToken: 'sweep-scope-token',
+        createdAtMs: 1,
+        updatedAtMs: 1,
+      }),
+    );
+
+    runtime = await startDaemonRuntime({
+      env: {
+        ...process.env,
+        AGENT_DEVICE_STATE_DIR: daemonStateDir,
+        AGENT_DEVICE_DAEMON_SERVER_MODE: 'http',
+        AGENT_DEVICE_CLAIMS_DIR: claimsDir,
+      },
+      exit: () => {},
+      registerProcessHandlers: false,
+      stderr: { write: () => {} },
+      stdout: { write: () => {} },
+    });
+    assert.notEqual(runtime, null);
+
+    assert.deepEqual(fs.readdirSync(claimsDir), [], 'the foreign dead claim should be reconciled');
+    const settled = screenRecordingDurableResource.store.read(resourcePath);
+    assert.equal(settled.status, 'decoded');
+    if (settled.status === 'decoded') {
+      assert.equal(settled.envelope.lifecycle, 'completed');
+    }
+    assert.equal(
+      fs.existsSync(path.join(foreignSessionDir, 'owned-processes.json')),
+      false,
+      "the dead owner's process record should be cleared in the OWNER's state dir",
+    );
+    assert.equal(
+      fs.readFileSync(liveRecordPath, 'utf8'),
+      liveRecordBefore,
+      "the live same-named session's process record must stay byte-identical",
+    );
+
+    assert.equal(
+      isProcessAlive(orphanPid),
+      false,
+      "the dead owner's orphaned recorder should be terminated by recovery",
+    );
+  } finally {
+    await runtime?.shutdown().catch(() => {});
+    try {
+      orphanRecorder.kill('SIGKILL');
+    } catch {}
+    if (previousClaimsDir === undefined) delete process.env.AGENT_DEVICE_CLAIMS_DIR;
+    else process.env.AGENT_DEVICE_CLAIMS_DIR = previousClaimsDir;
+    fs.rmSync(daemonStateDir, { recursive: true, force: true });
+    fs.rmSync(foreignStateDir, { recursive: true, force: true });
     fs.rmSync(claimsDir, { recursive: true, force: true });
   }
 });

@@ -167,8 +167,8 @@ vector).
 
 ## Performance Contract
 
-The migration cannot switch production routing until Android and iOS satisfy all of these on the pager
-and react-navigation corpora:
+The direct engine preserves these properties on Android and iOS across the pager and react-navigation
+corpora:
 
 - total wall time is no slower than the pre-migration compatibility engine;
 - an observation immediately after a mutation polls its authored condition directly; a later mutation uses
@@ -186,30 +186,27 @@ Android verification must prove the bundled helper backend and version. iOS veri
 runner startup from warm command latency. Both platforms rerun the non-Maestro gesture canaries; their
 two-pointer plans, executor selection, and app-observable effects must remain unchanged.
 
-## Migration
-
-Completed. Production Maestro YAML now uses the typed program, immutable replay plan, and direct
-runtime port exclusively. The `SessionAction` lowering path, private `__maestro*` commands,
-`replayControl`, hidden compatibility caches, positional decoders, and their fallback routing were
-deleted in the same change. Generic `.ad` replay remains independent.
-
-1. Add the typed program, runtime port, direct interpreter, and normalized upstream fixtures without
-   changing production routing.
-2. Differentially compare the old lowering path and direct engine at the typed operation boundary.
-3. Move lifecycle, input, screenshot, and keyboard commands.
-4. Move target queries and assertions, deleting unverified fast-path success and assertion-triggered
-   action replay.
-5. Move single-pointer swipes through ADR 0013's normalized input boundary.
-6. Move hooks, includes, conditions, repeat/retry, and trusted `runScript`.
-7. Switch `--maestro` atomically, then delete private Maestro commands, positional decoding, hidden
-   caches, and obsolete converter/runtime tests.
-
-The old and new engines may coexist only in tests during migration. Shipping two production engines or
-a runtime fallback between them is rejected because it doubles semantic and performance ownership.
-
 ## Consequences
 
-- Maestro remains a supported subset with explicit failures; this refactor does not expand parity.
+- agent-device supports selected Maestro Flow syntax and behavior. Unsupported features return
+  explicit errors, and intentional differences are declared in the conformance fixtures.
+- `${...}` interpolation stays variable-lookup-only, by decision (#1292): upstream's GraalJS
+  expression evaluation is not reimplemented outside `evalScript`, so unresolved or
+  expression-shaped payloads fail loud with source context; the escape hatches are `evalScript`
+  (inline expression → `output.*` leaves) and `runScript` (file compute) → `${output.x}` (consume).
+  `evalScript` is the one command whose payload is evaluated as JavaScript: flow env and prior
+  `output` leaves are bound as strings in a `node:vm` context and the assigned `output` object
+  folds back into the flat string-key model, so `${output.uppercaseName}` and
+  `${output.list.length}` resolve. `assertTrue` (#1295) is scoped to that same lookup-only subset —
+  literal values and bare `${VAR}` lookups evaluated with a pinned string-truthiness table.
+  `node:vm` is explicitly not a security sandbox — a bound context's prototype chain still
+  resolves to host `Object`/`Function`, so an untrusted expression can escape it. `runScript`
+  already carried this trust assumption for daemon-local flows; `evalScript` inherits the same
+  assumption but is reachable from a flow accepted over the daemon's remote HTTP surface, so
+  `MaestroEngineOptions.trustedScripts` gates it — set from `publicNetworkOnly` at the HTTP
+  boundary (`restrictRemoteHttpRequest`) — and `evalScript` is refused outright when false.
+- Shipping two production engines or a runtime fallback between them is rejected because it doubles
+  semantic and performance ownership.
 - Source provenance and runtime values stay typed through execution.
 - Compatibility policy remains local while device behavior stays in shared runtimes and backends.
 - Cross-platform correctness may require richer provider query evidence, but not additional round trips.

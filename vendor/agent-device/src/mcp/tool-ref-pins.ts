@@ -1,7 +1,13 @@
+import type { SettleObservation } from '@agent-device/contracts/interaction';
+import { readElementMatchCandidateRefs } from '@agent-device/kernel/errors';
 import type { SnapshotNode } from '@agent-device/kernel/snapshot';
-import type { CommandName } from '../commands/command-metadata.ts';
+import { isCommandName, type CommandName } from '../commands/command-metadata.ts';
 import type { CommandExecutionResult } from '../commands/command-surface.ts';
-import { asOptionalRecord } from '../utils/parsing.ts';
+import {
+  commandDescriptors,
+  commandSupportsSettleObservation,
+} from '@agent-device/command-registry/registry';
+import { asOptionalRecord } from '@agent-device/kernel/record';
 
 export type ToolRefPinStore = {
   pinInput(
@@ -15,7 +21,7 @@ export type ToolRefPinStore = {
     stateDir: string | undefined,
     session: unknown,
   ): void;
-  mergeDivergenceScreen(
+  mergeErrorDetails(
     details: Record<string, unknown> | undefined,
     stateDir: string | undefined,
     session: unknown,
@@ -29,9 +35,27 @@ export function createToolRefPinStore(): ToolRefPinStore {
       pinPlainRefArguments(name, input, getScopePins(refPinsByScope, stateDir, input.session)),
     mergeCommandResult: (name, result, stateDir, session) =>
       mergeCommandResult(refPinsByScope, name, result, stateDir, session),
-    mergeDivergenceScreen: (details, stateDir, session) =>
-      mergeDivergenceScreenRefPins(refPinsByScope, makeScopeKey(stateDir, session), details),
+    mergeErrorDetails: (details, stateDir, session) => {
+      const scopeKey = makeScopeKey(stateDir, session);
+      mergeErrorCandidateRefPins(refPinsByScope, scopeKey, details);
+      mergeDivergenceScreenRefPins(refPinsByScope, scopeKey, details);
+    },
   };
+}
+
+function mergeErrorCandidateRefPins(
+  refPinsByScope: Map<string, Map<string, number>>,
+  scopeKey: string,
+  details: Record<string, unknown> | undefined,
+): void {
+  const refsGeneration = details?.refsGeneration;
+  if (typeof refsGeneration !== 'number') return;
+  mergeIntoScopedPins(
+    refPinsByScope,
+    scopeKey,
+    readElementMatchCandidateRefs(details),
+    refsGeneration,
+  );
 }
 
 /**
@@ -52,26 +76,31 @@ export function createToolRefPinStore(): ToolRefPinStore {
 const REF_ISSUING_TOOLS: ReadonlySet<CommandName> = new Set(['snapshot', 'find'] as const);
 
 /**
- * `--settle` (#1101) makes an interaction response CONDITIONALLY ref-issuing:
- * when it carries `settle.diff` + `settle.refsGeneration`, the diff's added
- * lines hand out refs minted from the freshly stored settled tree. These tools
- * are NOT in REF_ISSUING_TOOLS on purpose — a plain (non-settle) press carries
- * no generation, and treating that as "issuing response without a generation"
+ * `--settle` (#1101) makes a response CONDITIONALLY ref-issuing: when it
+ * carries `settle.diff` + `settle.refsGeneration`, the diff's added lines hand
+ * out refs minted from the freshly stored settled tree. These tools are NOT in
+ * REF_ISSUING_TOOLS on purpose — a plain (non-settle) press carries no
+ * generation, and treating that as "issuing response without a generation"
  * would clear the scope's pins on every ordinary tap. Absent or diff-less
  * settle payloads leave pins untouched.
+ *
+ * Derived from the descriptor trait rather than hand-listed: a command that
+ * grows `--settle` (scroll/back, #1638) issues refs the moment it can produce a
+ * settled diff, and a hand list would silently stop pinning them.
  */
-const SETTLE_REF_ISSUING_TOOLS: ReadonlySet<CommandName> = new Set([
-  'press',
-  'click',
-  'fill',
-  'longpress',
-] as const);
+const SETTLE_REF_ISSUING_TOOLS: ReadonlySet<CommandName> = new Set(
+  commandDescriptors
+    .map((descriptor) => descriptor.name)
+    .filter(isCommandName)
+    .filter((name) => commandSupportsSettleObservation(name)),
+);
 
 const TARGET_REF_TOOLS: ReadonlySet<CommandName> = new Set([
   'press',
   'click',
   'fill',
   'longpress',
+  'hover',
   'get',
 ] as const);
 
@@ -111,11 +140,7 @@ function mergeCommandResult(
 ): void {
   const scopeKey = makeScopeKey(stateDir, session);
   if (SETTLE_REF_ISSUING_TOOLS.has(name)) {
-    mergeSettleIssuedRefPins(
-      refPinsByScope,
-      scopeKey,
-      result as CommandExecutionResult<'press' | 'click' | 'fill' | 'longpress'>,
-    );
+    mergeSettleIssuedRefPins(refPinsByScope, scopeKey, readSettleObservation(result));
     return;
   }
   if (!REF_ISSUING_TOOLS.has(name)) return;
@@ -130,8 +155,9 @@ function mergeCommandResult(
  * MERGE-ONLY update rule: refs present in the issuing response move to its
  * generation; absent refs keep their older pins (an old pin on a replaced
  * tree is exactly what makes the daemon warn). A ref-issuing response WITHOUT
- * a `refsGeneration` (older daemon, find with no ref match) clears the whole
- * scope — never guess.
+ * a `refsGeneration` (older remote daemon, find with no ref match) clears the
+ * whole scope — never guess. (A local daemon always matches the client
+ * version; see the version-skew invariant in CONTEXT.md.)
  */
 type SnapshotPinView = {
   refsGeneration?: number;
@@ -168,13 +194,23 @@ function mergeFindRefPins(
   // identity WITHOUT `refsGeneration` — it is explicitly non-issuing and must
   // leave remembered pins untouched (forwarding the old pin on a later ref is
   // how the daemon produces a precise stale rejection). Only a read-only find
-  // that genuinely found a ref with a generation gets pinned.
+  // that genuinely found refs with a generation gets pinned: the singular
+  // `ref` for single-match actions, every `matches[]` ref for `list` (the
+  // daemon published a partial frame for exactly those bodies, so an unpinned
+  // plain `@eN` follow-up would be rejected with
+  // `plain_ref_requires_complete_frame`).
   const refsGeneration = result.refsGeneration;
-  const ref = result.ref;
-  if (typeof refsGeneration !== 'number' || typeof ref !== 'string' || !ref.startsWith('@')) {
-    return;
+  if (typeof refsGeneration !== 'number') return;
+  const issued: string[] = [];
+  if (typeof result.ref === 'string' && result.ref.startsWith('@')) {
+    issued.push(result.ref.slice(1));
   }
-  mergeIntoScopedPins(refPinsByScope, scopeKey, [ref.slice(1)], refsGeneration);
+  for (const match of result.matches ?? []) {
+    if (typeof match.ref === 'string' && match.ref.length > 0) {
+      issued.push(match.ref.startsWith('@') ? match.ref.slice(1) : match.ref);
+    }
+  }
+  mergeIntoScopedPins(refPinsByScope, scopeKey, issued, refsGeneration);
 }
 
 /**
@@ -188,14 +224,23 @@ function mergeFindRefPins(
 function mergeSettleIssuedRefPins(
   refPinsByScope: Map<string, Map<string, number>>,
   scopeKey: string,
-  result: CommandExecutionResult<'press' | 'click' | 'fill' | 'longpress'>,
+  settle: SettleObservation | undefined,
 ): void {
-  const { settle } = result;
   if (settle?.refsGeneration === undefined) return;
   const issuedRefs = [...(settle.diff?.lines ?? []), ...(settle.refs ?? []), ...(settle.tail ?? [])]
     .map((entry) => entry.ref)
     .filter((ref): ref is string => typeof ref === 'string');
   mergeIntoScopedPins(refPinsByScope, scopeKey, issuedRefs, settle.refsGeneration);
+}
+
+/**
+ * The settle payload as this layer reads it. `scroll`/`back` results are not in
+ * the typed-result spine (CommandResultMap), so the field is read structurally
+ * rather than through a per-command result union.
+ */
+function readSettleObservation(result: CommandExecutionResult): SettleObservation | undefined {
+  const settle = (result as { settle?: unknown }).settle;
+  return settle !== null && typeof settle === 'object' ? (settle as SettleObservation) : undefined;
 }
 
 /** Shared merge-only tail: skip empty issuance, else create-or-reuse the scope's pin map and record. */

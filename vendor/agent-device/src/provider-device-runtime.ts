@@ -1,28 +1,30 @@
 import type {
-  DeviceInventoryProvider,
+  ProviderDeviceInventorySource,
   DeviceLease,
   LeaseLifecycleContext,
   LeaseLifecycleProvider,
-  ProviderDeviceInstallOptions,
-  ProviderDeviceInstallResult,
+  ProviderAppCatalog,
   ProviderDeviceRuntime,
   ProviderExpiredLeaseRecovery,
-  ProviderPortReverseOptions,
 } from '@agent-device/contracts/device';
-import type { Interactor, RunnerContext } from '@agent-device/contracts/interaction';
+import type { Interactor, RunnerContext } from '@agent-device/contracts/interactor-types';
 import type {
   CloudArtifactProvider,
   CloudArtifactsQuery,
   CloudArtifactsResult,
 } from '@agent-device/contracts/observability';
-import { publicPlatformString, type DeviceInfo } from '@agent-device/kernel/device';
+import type { DeviceInfo } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { AppleRunnerProviderResolver } from './daemon/request-platform-providers.ts';
+import type {
+  AppleRunnerProviderResolver,
+  AppleRunnerScreenRecordingTransportResolver,
+} from './platform-runtime.ts';
+import type { AppleRunnerScreenRecordingTransport } from './platform-runtime-screen-recording-apple-runner-transport.ts';
 import type {
   AppleRunnerCommandExecutor,
   AppleRunnerProvider,
-} from './platforms/apple/core/runner/runner-provider.ts';
+} from '@agent-device/platform-apple/runner';
 
 type AppleRunnerRuntimeExtension = ProviderDeviceRuntime & {
   getAppleRunnerProvider(
@@ -30,15 +32,25 @@ type AppleRunnerRuntimeExtension = ProviderDeviceRuntime & {
   ): AppleRunnerProvider | AppleRunnerCommandExecutor | undefined;
 };
 
+type AppleRunnerScreenRecordingRuntimeExtension = ProviderDeviceRuntime & {
+  getAppleRunnerScreenRecordingTransport(
+    device: DeviceInfo,
+  ): AppleRunnerScreenRecordingTransport | undefined;
+};
+
 export type ProviderDeviceRuntimeRequestProviders = {
+  /** Eager provider ownership metadata for the platform-runtime composition boundary. */
+  providerRuntimes: readonly ProviderDeviceRuntime[];
   providerRuntimeIds: readonly string[];
   providerRuntimeRequiredIds: readonly string[];
   recoverableProviderIds: readonly string[];
   leaseLifecycleProvider?: LeaseLifecycleProvider;
   recoverExpiredLease?: ProviderExpiredLeaseRecovery;
   cloudArtifactProvider?: CloudArtifactProvider;
-  deviceInventoryProvider?: DeviceInventoryProvider;
+  providerAppCatalog?: ProviderAppCatalog;
+  deviceInventorySource?: ProviderDeviceInventorySource;
   appleRunnerProvider?: AppleRunnerProviderResolver;
+  appleRunnerScreenRecordingTransport?: AppleRunnerScreenRecordingTransportResolver;
   providerDeviceRuntimeScope?: <T>(task: () => Promise<T>) => Promise<T>;
 };
 
@@ -75,52 +87,6 @@ export function isActiveProviderDevice(device: DeviceInfo): boolean {
   return getActiveProviderDeviceRuntimes().some((runtime) => runtime.ownsDevice(device));
 }
 
-export async function installProviderDeviceApp(
-  device: DeviceInfo,
-  app: string,
-  appPath: string,
-  options?: ProviderDeviceInstallOptions,
-): Promise<ProviderDeviceInstallResult | undefined> {
-  for (const runtime of getActiveProviderDeviceRuntimes()) {
-    if (!runtime.ownsDevice(device)) continue;
-    if (!runtime.installApp) {
-      throw unsupportedProviderOperation(runtime, device, 'install');
-    }
-    const result = await runtime.installApp?.(device, app, appPath, options);
-    if (result) return result;
-    throw unsupportedProviderOperation(runtime, device, 'install');
-  }
-  return undefined;
-}
-
-export async function installProviderDeviceInstallablePath(
-  device: DeviceInfo,
-  installablePath: string,
-  options?: ProviderDeviceInstallOptions,
-): Promise<ProviderDeviceInstallResult | undefined> {
-  for (const runtime of getActiveProviderDeviceRuntimes()) {
-    if (!runtime.ownsDevice(device)) continue;
-    if (!runtime.installInstallablePath) {
-      throw unsupportedProviderOperation(runtime, device, 'install_from_source');
-    }
-    const result = await runtime.installInstallablePath?.(device, installablePath, options);
-    if (result) return result;
-    throw unsupportedProviderOperation(runtime, device, 'install_from_source');
-  }
-  return undefined;
-}
-
-export async function configureProviderPortReverse(
-  options: ProviderPortReverseOptions,
-): Promise<Record<string, unknown> | undefined> {
-  for (const runtime of getActiveProviderDeviceRuntimes()) {
-    if (!runtimeMatchesProvider(runtime, options.provider)) continue;
-    const result = await runtime.configurePortReverse?.(options);
-    if (result) return result;
-  }
-  return undefined;
-}
-
 function getActiveProviderDeviceRuntimes(): ProviderDeviceRuntime[] {
   return providerDeviceRuntimeScope.getStore() ?? activeProviderDeviceRuntimes;
 }
@@ -129,8 +95,10 @@ export function createProviderDeviceRuntimeRequestProviders(
   runtimes: ProviderDeviceRuntime[],
   options: { providerRuntimeRequiredIds?: readonly string[] } = {},
 ): ProviderDeviceRuntimeRequestProviders {
+  assertUniqueProviderRuntimeIds(runtimes);
   const providerRuntimeIds = runtimes.map((runtime) => runtime.provider);
   return {
+    providerRuntimes: Object.freeze([...runtimes]),
     providerRuntimeIds,
     providerRuntimeRequiredIds: uniqueProviderIds([
       ...providerRuntimeIds,
@@ -142,10 +110,29 @@ export function createProviderDeviceRuntimeRequestProviders(
       .map((runtime) => runtime.provider),
     recoverExpiredLease: composeExpiredLeaseRecovery(runtimes),
     cloudArtifactProvider: composeCloudArtifactProvider(runtimes),
-    deviceInventoryProvider: composeDeviceInventoryProvider(runtimes),
+    providerAppCatalog: composeProviderAppCatalog(runtimes),
+    deviceInventorySource: composeDeviceInventorySource(runtimes),
     appleRunnerProvider: composeAppleRunnerProviderResolver(runtimes),
+    appleRunnerScreenRecordingTransport:
+      composeAppleRunnerScreenRecordingTransportResolver(runtimes),
     providerDeviceRuntimeScope: async (task) =>
       await withProviderDeviceRuntimeScope(runtimes, task),
+  };
+}
+
+function composeAppleRunnerScreenRecordingTransportResolver(
+  runtimes: ProviderDeviceRuntime[],
+): AppleRunnerScreenRecordingTransportResolver | undefined {
+  if (!runtimes.some(hasAppleRunnerScreenRecordingTransport)) return undefined;
+  return (context) => {
+    for (const runtime of runtimes) {
+      if (!hasAppleRunnerScreenRecordingTransport(runtime) || !runtime.ownsDevice(context.device)) {
+        continue;
+      }
+      const transport = runtime.getAppleRunnerScreenRecordingTransport(context.device);
+      if (transport) return transport;
+    }
+    return undefined;
   };
 }
 
@@ -168,6 +155,15 @@ function hasAppleRunnerProvider(
 ): runtime is AppleRunnerRuntimeExtension {
   return (
     'getAppleRunnerProvider' in runtime && typeof runtime.getAppleRunnerProvider === 'function'
+  );
+}
+
+function hasAppleRunnerScreenRecordingTransport(
+  runtime: ProviderDeviceRuntime,
+): runtime is AppleRunnerScreenRecordingRuntimeExtension {
+  return (
+    'getAppleRunnerScreenRecordingTransport' in runtime &&
+    typeof runtime.getAppleRunnerScreenRecordingTransport === 'function'
   );
 }
 
@@ -217,18 +213,58 @@ function composeCloudArtifactProvider(
   };
 }
 
-function composeDeviceInventoryProvider(
+function composeProviderAppCatalog(
   runtimes: ProviderDeviceRuntime[],
-): DeviceInventoryProvider | undefined {
-  if (runtimes.length === 0) return undefined;
-  return async (request) => {
-    for (const runtime of runtimes) {
-      if (!runtimeMatchesProvider(runtime, request.leaseProvider)) continue;
-      const devices = await runtime.deviceInventoryProvider(request);
-      if (devices) return devices;
-    }
-    return null;
+): ProviderAppCatalog | undefined {
+  const catalogRuntimes = runtimes.filter((runtime) => runtime.appCatalog !== undefined);
+  if (catalogRuntimes.length === 0) return undefined;
+  return {
+    supports: (provider) =>
+      catalogRuntimes.some((runtime) => runtimeMatchesProvider(runtime, provider)),
+    list: async (query, signal) => {
+      const runtime = catalogRuntimes.find((candidate) =>
+        runtimeMatchesProvider(candidate, query.provider),
+      );
+      if (!runtime?.appCatalog) {
+        throw new AppError(
+          'UNSUPPORTED_OPERATION',
+          `Provider ${query.provider} does not expose an app catalog.`,
+          { provider: query.provider },
+        );
+      }
+      return await runtime.appCatalog(query, signal);
+    },
   };
+}
+
+function composeDeviceInventorySource(
+  runtimes: ProviderDeviceRuntime[],
+): ProviderDeviceInventorySource | undefined {
+  if (runtimes.length === 0) return undefined;
+  return {
+    discover: async (request, signal) => {
+      signal.throwIfAborted();
+      for (const runtime of runtimes) {
+        if (!runtimeMatchesProvider(runtime, request.leaseProvider)) continue;
+        const devices = await runtime.deviceInventoryProvider(request, signal);
+        signal.throwIfAborted();
+        if (devices !== null && devices !== undefined) {
+          return { kind: 'inventory', devices };
+        }
+      }
+      return { kind: 'declined' };
+    },
+  };
+}
+
+function assertUniqueProviderRuntimeIds(runtimes: readonly ProviderDeviceRuntime[]): void {
+  const seen = new Set<string>();
+  for (const runtime of runtimes) {
+    if (seen.has(runtime.provider)) {
+      throw new TypeError(`Duplicate provider device runtime: ${runtime.provider}`);
+    }
+    seen.add(runtime.provider);
+  }
 }
 
 async function firstCloudArtifactsResult(
@@ -263,16 +299,4 @@ function runtimeMatchesProvider(
   provider: string | undefined,
 ): boolean {
   return runtime.provider === provider;
-}
-
-function unsupportedProviderOperation(
-  runtime: ProviderDeviceRuntime,
-  device: DeviceInfo,
-  operation: string,
-): never {
-  throw new AppError(
-    'UNSUPPORTED_OPERATION',
-    `Provider device runtime ${runtime.provider} does not support ${operation} for this device.`,
-    { provider: runtime.provider, deviceId: device.id, platform: publicPlatformString(device) },
-  );
 }

@@ -34,7 +34,21 @@ final class AccessibilityTreeXml {
     if (windowMetadata != null) {
       appendWindowMetadata(xml, windowMetadata);
     }
-    appendNonEmptyAttribute(xml, "text", node.getText());
+    CharSequence text = node.getText();
+    if (text != null) {
+      appendAttribute(xml, "text", text);
+    }
+    // getText() returns the HINT for an empty field on modern Android, so `text` alone cannot
+    // distinguish a cleared field from one whose value equals its hint; only this flag can
+    // (#2063 empty-fill verification).
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      appendAttribute(xml, "hint-showing", Boolean.toString(node.isShowingHintText()));
+    }
+    appendAttribute(xml, "editable", Boolean.toString(node.isEditable()));
+    // Accessibility selection offsets, not a measurement of the value's length. Read-only
+    // selectable text exposes a selection too, so they do not depend on `editable`; -1 = unavailable.
+    appendNonNegativeAttribute(xml, "selection-start", node.getTextSelectionStart());
+    appendNonNegativeAttribute(xml, "selection-end", node.getTextSelectionEnd());
     appendNonEmptyAttribute(xml, "resource-id", node.getViewIdResourceName());
     appendAttribute(xml, "class", node.getClassName());
     appendNonEmptyAttribute(xml, "package", node.getPackageName());
@@ -45,6 +59,11 @@ final class AccessibilityTreeXml {
     appendAttribute(xml, "enabled", Boolean.toString(node.isEnabled()));
     appendTrueAttribute(xml, "focusable", node.isFocusable());
     appendTrueAttribute(xml, "focused", node.isFocused());
+    // Both answers, unlike the omitted-false booleans above: `false` is an observation, while an
+    // absent attribute means the helper could not answer. The host keeps that difference, so an
+    // unselected control reports selected=false and a helper older than this attribute reports
+    // nothing at all.
+    appendAttribute(xml, "selected", Boolean.toString(node.isSelected()));
     boolean scrollable = node.isScrollable();
     if (scrollable) {
       appendAttribute(xml, "scrollable", "true");
@@ -59,7 +78,7 @@ final class AccessibilityTreeXml {
           Boolean.toString(
               hasAccessibilityAction(node, AccessibilityAction.ACTION_SCROLL_BACKWARD)));
     }
-    appendTrueAttribute(xml, "password", node.isPassword());
+    appendAttribute(xml, "password", Boolean.toString(node.isPassword()));
     appendAttribute(
         xml,
         "bounds",
@@ -115,12 +134,21 @@ final class AccessibilityTreeXml {
     appendAttribute(xml, name, value);
   }
 
+  private static void appendNonNegativeAttribute(StringBuilder xml, String name, int value) {
+    if (value >= 0) {
+      appendAttribute(xml, name, Integer.toString(value));
+    }
+  }
+
   private static void appendTrueAttribute(StringBuilder xml, String name, boolean value) {
     if (value) {
       appendAttribute(xml, name, "true");
     }
   }
 
+  // Declared residue (agent-device #1832): checked / checkable / long-clickable are not serialized,
+  // so toggle state is invisible to agents. Adding them is a helper protocol change (new attributes
+  // + host parser + fields on the wire node), tracked there.
   private static void appendDrawingOrderAttribute(StringBuilder xml, AccessibilityNodeInfo node) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
       appendAttribute(xml, "drawing-order", Integer.toString(node.getDrawingOrder()));

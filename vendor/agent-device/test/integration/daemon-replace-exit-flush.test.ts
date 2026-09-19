@@ -4,11 +4,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { skipWhenLoopbackUnavailable } from '../../src/__tests__/test-utils/loopback.ts';
-import { runCmdSync } from '../../src/utils/exec.ts';
-import { stopProcessForTakeover } from '../../src/daemon/daemon-process.ts';
-import { isProcessAlive } from '../../src/utils/host-process.ts';
+import { stopProcessForTakeover } from '../../src/daemon-process.ts';
+import { isProcessAlive } from '@agent-device/host-kit/process';
+import { assertNoDaemonLeaks } from './support/daemon-leak-oracle.ts';
 import { runCliJson } from './test-helpers.ts';
-import { PAYLOAD_MARKER } from './support/exit-payload.ts';
 
 // #1596: a CLI command that finds its recorded daemon unreachable replaces it
 // (`Replacing daemon (pid N, vX) in <state-dir>: unreachable`) and retries
@@ -17,9 +16,6 @@ import { PAYLOAD_MARKER } from './support/exit-payload.ts';
 // has no sessions yet, which is expected). This file locks down that a
 // replace-mid-command always ends in a normal, fully-delivered structured
 // error rather than a truncated or hung process.
-
-const SUPPORT_DIR = path.join(import.meta.dirname, 'support');
-const FIXTURE_TIMEOUT_MS = 10_000;
 
 type DaemonInfo = {
   pid: number;
@@ -33,6 +29,7 @@ test('daemon replace mid-command returns a structured, parseable error and exits
 
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-replace-exit-flush-'));
   let info: DaemonInfo | null = null;
+  const daemonPids: number[] = [];
   try {
     // A real daemon, started by this codebase, so its recorded version/code
     // signature legitimately match — the only way to reach the "unreachable"
@@ -41,6 +38,7 @@ test('daemon replace mid-command returns a structured, parseable error and exits
     assert.equal(started.status, 0, `${started.stderr}\n${started.stdout}`);
 
     info = readDaemonInfo(stateDir);
+    daemonPids.push(info.pid);
     assert.equal(isProcessAlive(info.pid), true, 'expected the started daemon to be alive');
 
     // Kill it out from under its own metadata: daemon.json stays put and
@@ -74,6 +72,19 @@ test('daemon replace mid-command returns a structured, parseable error and exits
     );
 
     info = readDaemonInfo(stateDir);
+    daemonPids.push(info.pid);
+    await stopProcessForTakeover(info.pid, {
+      termTimeoutMs: 1_500,
+      killTimeoutMs: 1_500,
+      expectedStartTime: info.processStartTime,
+    });
+    // #1781 B1: neither the SIGKILLed daemon nor its replacement may leave owned
+    // processes or unclassified state-dir residue once both are gone. `info`
+    // stays set until this passes: `stopProcessForTakeover` is best-effort, so a
+    // failed stop must still reach the `finally` retry below rather than have
+    // the state dir removed out from under a daemon that is still running.
+    await assertNoDaemonLeaks({ stateDir, daemonPids, phase: 'after-shutdown' });
+    info = null;
   } finally {
     if (info) {
       await stopProcessForTakeover(info.pid, {
@@ -85,40 +96,6 @@ test('daemon replace mid-command returns a structured, parseable error and exits
     fs.rmSync(stateDir, { recursive: true, force: true });
   }
 });
-
-// Isolates the exact mechanism from the end-to-end test above: Node flushes
-// stdout/stderr synchronously only to a file or TTY, so `process.exit()`
-// called right after a write can drop that write when the stream is a pipe
-// (this CLI's normal condition, driven as a subprocess). Runs the write+exit
-// sequence directly as a real piped child process, independent of any
-// daemon/device setup, so the mechanism itself is proven deterministically.
-test('a bare process.exit() after a large write truncates it on a piped stream', () => {
-  const { exitCode, stderr } = runFixture('exit-naive.ts');
-  assert.equal(exitCode, 1);
-  assert.ok(
-    !stderr.includes(PAYLOAD_MARKER),
-    'expected the naive exit to truncate before the trailing marker; the pipe-buffer ' +
-      'reproduction this test depends on may not hold on this platform',
-  );
-});
-
-test('exitAfterFlush (the #1596 fix) delivers the full write before the process exits', () => {
-  const { exitCode, stderr } = runFixture('exit-after-flush.ts');
-  assert.equal(exitCode, 1);
-  assert.ok(
-    stderr.includes(PAYLOAD_MARKER),
-    'expected the full payload, including its trailing marker',
-  );
-});
-
-function runFixture(name: string): { exitCode: number; stderr: string } {
-  const result = runCmdSync(
-    process.execPath,
-    ['--experimental-strip-types', path.join(SUPPORT_DIR, name)],
-    { allowFailure: true, timeoutMs: FIXTURE_TIMEOUT_MS },
-  );
-  return { exitCode: result.exitCode, stderr: result.stderr };
-}
 
 async function waitForProcessDeath(pid: number): Promise<void> {
   const deadline = Date.now() + 5_000;

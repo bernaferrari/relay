@@ -1,18 +1,16 @@
-import {
-  getAndroidAppState,
-  getAndroidBlockingDialogFocus,
-  openAndroidApp,
-  type AndroidBlockingDialogFocus,
-} from '../platforms/android/app-lifecycle.ts';
-import { snapshotAndroid } from '../platforms/android/snapshot.ts';
-import { runAndroidAdb } from '../platforms/android/adb.ts';
-import { emitDiagnostic } from '../utils/diagnostics.ts';
-import { AppError } from '@agent-device/kernel/errors';
-import { centerOfRect, attachRefs, type SnapshotNode } from '@agent-device/kernel/snapshot';
-import { sleep } from '../utils/timeouts.ts';
-import { pruneGroupNodes } from '../snapshot/snapshot-processing.ts';
+import type {
+  AndroidBlockingDialogFocus,
+  AndroidObservationAdapter,
+} from '@agent-device/contracts/android-observation';
+import { emitDiagnostic } from '@agent-device/host-kit/diagnostics';
+import { sleep } from '@agent-device/host-kit/retry';
+import { AppError, normalizeError, type NormalizedError } from '@agent-device/kernel/errors';
+import { centerOfRect, type SnapshotNode } from '@agent-device/kernel/snapshot';
+
+import { isSnapshotNodeInteractionBlocked } from '@agent-device/capture-kit/snapshot-occlusion';
 import { expireRefFrame } from './ref-frame.ts';
-import type { SessionState } from './types.ts';
+import type { SessionState } from './session-state.ts';
+import { isActiveProviderDevice } from './provider-device-admission.ts';
 
 const ANDROID_BLOCKING_MODAL_PATTERN = /\bis(?:n(?:'|&apos;|&#39;)?t| not)\s+responding\b/i;
 const ANDROID_CLOSE_APP_PATTERN = /^close app$/i;
@@ -20,12 +18,15 @@ const ANDROID_MODAL_POLL_MS = 500;
 const ANDROID_MODAL_POLL_ATTEMPTS = 12;
 const ANDROID_BLOCKING_DIALOG_HINT =
   'Wait for Android to recover, close the dialog, restart the app, or reboot the emulator, then retry.';
+const ANDROID_BLOCKING_DIALOG_INSPECTION_WARNING =
+  'Android blocking-dialog readiness could not be inspected; the command continued.';
+const ANDROID_BLOCKING_DIALOG_WARNING_TEXT_LIMIT = 240;
 
 export type AndroidBlockingDialogRecoveryResult =
   | { status: 'absent' }
   | { status: 'recovered' }
   | { status: 'failed'; reason: 'tap-failed' | 'dismiss-failed' | 'relaunch-failed' | 'error' }
-  | { status: 'unknown'; reason: 'inspection-failed' };
+  | { status: 'unknown'; reason: 'inspection-failed'; warning: string };
 export type AndroidBlockingDialogReadinessResult =
   | { status: 'clear' }
   | { status: 'recovered'; warning: string };
@@ -38,19 +39,38 @@ type AndroidDialogButtonTapResult =
       stderr: string;
     };
 
+function requireObservation(
+  observation: AndroidObservationAdapter | undefined,
+): AndroidObservationAdapter {
+  if (!observation) {
+    throw new AppError(
+      'INTERNAL_ERROR',
+      'Android observation was not supplied by root runtime composition',
+    );
+  }
+  return observation;
+}
+
 export async function recoverAndroidBlockingSystemDialog(params: {
   session: SessionState;
+  observation?: AndroidObservationAdapter;
 }): Promise<AndroidBlockingDialogRecoveryResult> {
   const { session } = params;
 
-  if (session.device.platform !== 'android' || !session.recording) {
+  if (
+    session.device.platform !== 'android' ||
+    !session.screenRecording ||
+    isProviderOwnedSession(session)
+  ) {
     return { status: 'absent' };
   }
+  const observation = requireObservation(params.observation);
 
   let nodes: SnapshotNode[];
   try {
-    nodes = await readAndroidSnapshotNodes(session);
+    nodes = await readAndroidSnapshotNodes(session, observation);
   } catch (error) {
+    const normalizedError = normalizeError(error);
     emitDiagnostic({
       level: 'warn',
       phase: 'android_blocking_dialog_inspection_failed',
@@ -60,7 +80,11 @@ export async function recoverAndroidBlockingSystemDialog(params: {
         error: error instanceof Error ? error.message : String(error),
       },
     });
-    return { status: 'unknown', reason: 'inspection-failed' };
+    return {
+      status: 'unknown',
+      reason: 'inspection-failed',
+      warning: androidBlockingDialogInspectionWarning(normalizedError),
+    };
   }
 
   const closeAppButton = findCloseAppButton(nodes);
@@ -69,7 +93,7 @@ export async function recoverAndroidBlockingSystemDialog(params: {
   }
 
   try {
-    const tapResult = await tapAndroidDialogButton(session, closeAppButton);
+    const tapResult = await tapAndroidDialogButton(session, closeAppButton, observation);
     if (!tapResult.ok) {
       emitDiagnostic({
         level: 'warn',
@@ -85,7 +109,7 @@ export async function recoverAndroidBlockingSystemDialog(params: {
       return { status: 'failed', reason: 'tap-failed' };
     }
 
-    const dismissed = await waitForBlockingDialogToDismiss(session);
+    const dismissed = await waitForBlockingDialogToDismiss(session, observation);
     if (!dismissed) {
       emitDiagnostic({
         level: 'warn',
@@ -99,8 +123,8 @@ export async function recoverAndroidBlockingSystemDialog(params: {
     }
 
     if (session.appBundleId) {
-      await openAndroidApp(session.device, session.appBundleId);
-      const focused = await waitForAndroidAppFocus(session, session.appBundleId);
+      await observation.openApp(session.device, session.appBundleId);
+      const focused = await waitForAndroidAppFocus(session, session.appBundleId, observation);
       if (!focused) {
         emitDiagnostic({
           level: 'warn',
@@ -145,15 +169,37 @@ export async function ensureAndroidBlockingSystemDialogReady(params: {
   session: SessionState;
   command: string;
   phase: 'before-command' | 'after-command';
+  observation?: AndroidObservationAdapter;
 }): Promise<AndroidBlockingDialogReadinessResult> {
   const { session, command } = params;
-  if (session.device.platform !== 'android') return { status: 'clear' };
+  if (session.device.platform !== 'android' || isProviderOwnedSession(session)) {
+    return { status: 'clear' };
+  }
+  const observation = requireObservation(params.observation);
 
-  const focus = await getAndroidBlockingDialogFocus(session.device);
-  if (!focus) return { status: 'clear' };
+  const dialogObservation = await observation.readBlockingDialog(session.device);
+  if (dialogObservation.status !== 'dialog') {
+    // "No variant printed the focused window" is not "the device is clear". The command still
+    // proceeds — a failed probe has never been a refusal — but the miss is recorded as a miss so
+    // it can never be mistaken for evidence about this device.
+    if (dialogObservation.status === 'unknown') {
+      emitDiagnostic({
+        level: 'warn',
+        phase: 'android_blocking_dialog_unobserved',
+        data: {
+          session: session.name,
+          deviceId: session.device.id,
+          command,
+          commandPhase: params.phase,
+        },
+      });
+    }
+    return { status: 'clear' };
+  }
+  const focus = dialogObservation.focus;
 
   if (isSessionAppAnr(session, focus)) {
-    const recovered = await recoverAppOwnedAndroidBlockingSystemDialogSafely(session);
+    const recovered = await recoverAppOwnedAndroidBlockingSystemDialogSafely(session, observation);
     if (recovered) {
       const warning = `Recovered Android app ANR before ${command}: closed and relaunched ${session.appBundleId}.`;
       if (params.phase === 'before-command') return { status: 'recovered', warning };
@@ -187,9 +233,10 @@ export async function ensureAndroidBlockingSystemDialogReady(params: {
 
 async function recoverAppOwnedAndroidBlockingSystemDialogSafely(
   session: SessionState,
+  observation: AndroidObservationAdapter,
 ): Promise<boolean> {
   try {
-    return await recoverAppOwnedAndroidBlockingSystemDialog(session);
+    return await recoverAppOwnedAndroidBlockingSystemDialog(session, observation);
   } catch (error) {
     emitDiagnostic({
       level: 'warn',
@@ -209,18 +256,21 @@ function isSessionAppAnr(session: SessionState, focus: AndroidBlockingDialogFocu
   return Boolean(session.appBundleId && focus.package === session.appBundleId);
 }
 
-async function recoverAppOwnedAndroidBlockingSystemDialog(session: SessionState): Promise<boolean> {
+async function recoverAppOwnedAndroidBlockingSystemDialog(
+  session: SessionState,
+  observation: AndroidObservationAdapter,
+): Promise<boolean> {
   if (!session.appBundleId) return false;
 
-  const nodes = await readAndroidSnapshotNodes(session);
+  const nodes = await readAndroidSnapshotNodes(session, observation);
   const closeAppButton = findCloseAppButton(nodes, { requireDialogSignal: false });
   if (!closeAppButton?.rect) return false;
 
-  const tapResult = await tapAndroidDialogButton(session, closeAppButton);
+  const tapResult = await tapAndroidDialogButton(session, closeAppButton, observation);
   if (!tapResult.ok) return false;
 
-  await openAndroidApp(session.device, session.appBundleId);
-  const focused = await waitForAndroidAppFocus(session, session.appBundleId, {
+  await observation.openApp(session.device, session.appBundleId);
+  const focused = await waitForAndroidAppFocus(session, session.appBundleId, observation, {
     requireNoBlockingDialog: true,
   });
   if (focused) {
@@ -261,16 +311,34 @@ function formatAndroidBlockingDialogFocus(focus: AndroidBlockingDialogFocus): st
   return focus.package ? `${focus.focusedWindow} (package ${focus.package})` : focus.focusedWindow;
 }
 
-async function readAndroidSnapshotNodes(session: SessionState): Promise<SnapshotNode[]> {
-  const rawSnapshot = await snapshotAndroid(session.device, {
-    interactiveOnly: false,
-  });
-  return attachRefs(pruneGroupNodes(rawSnapshot.nodes));
+function androidBlockingDialogInspectionWarning(error: NormalizedError): string {
+  const details = [`Inspection error: ${boundAndroidWarningText(error.message)}`];
+  if (error.hint) details.push(`Hint: ${boundAndroidWarningText(error.hint)}`);
+  return [ANDROID_BLOCKING_DIALOG_INSPECTION_WARNING, ...details].join(' ');
+}
+
+function boundAndroidWarningText(value: string): string {
+  const singleLine = value.replaceAll(/\s+/g, ' ').trim();
+  if (singleLine.length <= ANDROID_BLOCKING_DIALOG_WARNING_TEXT_LIMIT) return singleLine;
+  return `${singleLine.slice(0, ANDROID_BLOCKING_DIALOG_WARNING_TEXT_LIMIT - 1)}…`;
+}
+
+/**
+ * Blocking-dialog detection reads the SAME presentation an agent's `snapshot` would see: one
+ * daemon presentation (normalize, group prune, occlusion annotation, refs) rather than a hand-rolled
+ * subset that could disagree with it about which button is on top (#1832, the #1784 pattern).
+ */
+async function readAndroidSnapshotNodes(
+  session: SessionState,
+  observation: AndroidObservationAdapter,
+): Promise<SnapshotNode[]> {
+  return await observation.readSnapshotNodes(session.device);
 }
 
 async function tapAndroidDialogButton(
   session: SessionState,
   button: SnapshotNode,
+  observation: AndroidObservationAdapter,
 ): Promise<AndroidDialogButtonTapResult> {
   if (!button.rect) {
     return { ok: false, exitCode: 1, stdout: '', stderr: 'button has no rect' };
@@ -281,11 +349,7 @@ async function tapAndroidDialogButton(
   // effect), even when invoked from apparent readiness work, so a ref action
   // cannot continue against the recovered UI.
   expireRefFrame(session);
-  const result = await runAndroidAdb(
-    session.device,
-    ['shell', 'input', 'tap', String(Math.round(x)), String(Math.round(y))],
-    { allowFailure: true },
-  );
+  const result = await observation.tap(session.device, x, y);
   if (result.exitCode !== 0) {
     return {
       ok: false,
@@ -297,6 +361,12 @@ async function tapAndroidDialogButton(
   return { ok: true, x, y };
 }
 
+/**
+ * Recovery acts on what a user can actually touch, so both decisions read the presentation's
+ * structured occlusion result rather than raw text: a stale "Close app" left under the foreground
+ * surface must neither trigger recovery nor be tapped ahead of the visible one (#1832 review).
+ * `buildSnapshotState` already annotates covered nodes; this is the consumer side of that.
+ */
 function findCloseAppButton(
   nodes: SnapshotNode[],
   options: { requireDialogSignal?: boolean } = {},
@@ -304,49 +374,64 @@ function findCloseAppButton(
   if (options.requireDialogSignal !== false && !containsBlockingDialog(nodes)) {
     return undefined;
   }
-  return nodes.find((node) => {
+  return nodes.filter(isTouchableDialogNode).find((node) => {
     return (
       readNodeTextParts(node).some((text) => ANDROID_CLOSE_APP_PATTERN.test(text)) && node.rect
     );
   });
 }
 
-async function waitForBlockingDialogToDismiss(session: SessionState): Promise<boolean> {
+/** A node the recovery tap can actually reach: present in the tree and not covered by a surface above it. */
+function isTouchableDialogNode(node: SnapshotNode): boolean {
+  return !isSnapshotNodeInteractionBlocked(node);
+}
+
+async function waitForBlockingDialogToDismiss(
+  session: SessionState,
+  observation: AndroidObservationAdapter,
+): Promise<boolean> {
   for (let attempt = 0; attempt < ANDROID_MODAL_POLL_ATTEMPTS; attempt += 1) {
-    const nodes = await readAndroidSnapshotNodes(session);
+    const nodes = await readAndroidSnapshotNodes(session, observation);
     if (!containsBlockingDialog(nodes)) {
       return true;
     }
     await sleep(ANDROID_MODAL_POLL_MS);
   }
-  const nodes = await readAndroidSnapshotNodes(session);
+  const nodes = await readAndroidSnapshotNodes(session, observation);
   return !containsBlockingDialog(nodes);
 }
 
 async function waitForAndroidAppFocus(
   session: SessionState,
   appBundleId: string,
+  observation: AndroidObservationAdapter,
   options: { requireNoBlockingDialog?: boolean } = {},
 ): Promise<boolean> {
   for (let attempt = 0; attempt < ANDROID_MODAL_POLL_ATTEMPTS; attempt += 1) {
-    if (await isAndroidAppFocused(session, appBundleId, options)) {
+    if (await isAndroidAppFocused(session, appBundleId, observation, options)) {
       return true;
     }
     await sleep(ANDROID_MODAL_POLL_MS);
   }
-  return await isAndroidAppFocused(session, appBundleId, options);
+  return await isAndroidAppFocused(session, appBundleId, observation, options);
 }
 
+/**
+ * One window read per poll tick answers both questions this asks, so the loop samples the device
+ * once instead of running a dialog probe and a foreground probe an adb round trip apart — which
+ * could otherwise report a package read after the dialog check that saw a different screen.
+ */
 async function isAndroidAppFocused(
   session: SessionState,
   appBundleId: string,
+  observation: AndroidObservationAdapter,
   options: { requireNoBlockingDialog?: boolean },
 ): Promise<boolean> {
-  if (options.requireNoBlockingDialog && (await getAndroidBlockingDialogFocus(session.device))) {
-    return false;
-  }
-  const state = await getAndroidAppState(session.device);
-  return state.package === appBundleId;
+  return await observation.readAppFocus(session.device, appBundleId, options);
+}
+
+function isProviderOwnedSession(session: SessionState): boolean {
+  return Boolean(session.lease?.leaseProvider) || isActiveProviderDevice(session.device);
 }
 
 function readNodeText(node: {
@@ -372,7 +457,7 @@ function readNodeTextParts(node: {
 }
 
 function containsBlockingDialog(nodes: SnapshotNode[]): boolean {
-  return nodes.some((node) => {
+  return nodes.filter(isTouchableDialogNode).some((node) => {
     const text = readNodeText(node);
     return text.length > 0 && ANDROID_BLOCKING_MODAL_PATTERN.test(text);
   });

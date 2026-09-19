@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { createAgentDeviceClient } from '../../agent-device-client.ts';
 import { parseArgs } from '../../cli/parser/args.ts';
-import { buildCommandUsageText } from '../../cli/parser/cli-help.ts';
+import { buildCommandUsageText } from '../../cli-schema/cli-help.ts';
 import type { DaemonRequest, DaemonResponse } from '@agent-device/kernel/contracts';
 import type { CliFlags } from '@agent-device/contracts/command';
 import { sessionCommandFacet } from './session.ts';
@@ -99,10 +99,15 @@ test.each([
   },
 );
 
-test('session and workflow help expose active publication and literal-secret warning', () => {
+// The compact workflow card (#1663) points to `help scripting` for the full
+// save-script/--record-as mechanics instead of carrying them inline; this
+// test follows that pointer to where the content actually lives now.
+test('session, workflow, and scripting help expose active publication and literal-secret warning', () => {
   expect(buildCommandUsageText('session')).toMatch(/session save-script \[path\] \[--force\]/);
   const workflow = buildCommandUsageText('workflow');
-  expect(workflow).toMatch(/open-to-destination scripts/);
-  expect(workflow).toMatch(/session save-script/);
-  expect(workflow).toMatch(/Do not record passwords, tokens, or other secrets/);
+  expect(workflow).toMatch(/Reusable scripts, secret-safe fills, replay repair: help scripting/);
+  const scripting = buildCommandUsageText('scripting');
+  expect(scripting).toMatch(/Reusable open-to-destination scripts/);
+  expect(scripting).toMatch(/session save-script/);
+  expect(scripting).toMatch(/Do not record passwords\/tokens without --record-as/);
 });

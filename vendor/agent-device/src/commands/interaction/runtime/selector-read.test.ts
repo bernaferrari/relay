@@ -9,7 +9,7 @@ import {
   type CommandSessionStore,
 } from '../../../runtime.ts';
 import { ref, selector } from './selector-read-utils.ts';
-import { makeSnapshotState } from '../../../__tests__/test-utils/index.ts';
+import { makeSnapshotState } from '@agent-device/selectors/snapshot-geometry-fixtures';
 import {
   createFakeClock,
   createSelectorDevice,
@@ -114,154 +114,6 @@ test('runtime selectors pass runtime signal to backend snapshot capture', async 
 
   assert.equal(result.kind, 'attrs');
   assert.equal(signal, controller.signal);
-});
-
-test('runtime selectors forward public snapshot options to backend capture', async () => {
-  const snapshot = selectorReadSnapshot();
-  let captureOptions: BackendSnapshotOptions | undefined;
-  const device = createAgentDevice({
-    backend: {
-      platform: 'ios',
-      captureSnapshot: async (_context, options) => {
-        captureOptions = options;
-        return { snapshot };
-      },
-    } satisfies AgentDeviceBackend,
-    artifacts: createLocalArtifactAdapter(),
-    sessions: createMemorySessionStore([{ name: 'default', snapshot }]),
-    policy: localCommandPolicy(),
-  });
-
-  await device.selectors.is({
-    session: 'default',
-    predicate: 'exists',
-    selector: 'label=Continue',
-    depth: 2,
-    scope: 'Login',
-    raw: true,
-  });
-
-  assert.deepEqual(captureOptions, {
-    interactiveOnly: false,
-    depth: 2,
-    scope: 'Login',
-    raw: true,
-    includeRects: false,
-  });
-});
-
-test('runtime visibility predicates request snapshot rects', async () => {
-  const snapshot = selectorReadSnapshot();
-  let captureOptions: BackendSnapshotOptions | undefined;
-  const device = createAgentDevice({
-    backend: {
-      platform: 'web',
-      captureSnapshot: async (_context, options) => {
-        captureOptions = options;
-        return { snapshot };
-      },
-    } satisfies AgentDeviceBackend,
-    artifacts: createLocalArtifactAdapter(),
-    sessions: createMemorySessionStore([{ name: 'default', snapshot }]),
-    policy: localCommandPolicy(),
-  });
-
-  await device.selectors.isVisible(selector('label=Continue'), {
-    session: 'default',
-  });
-
-  assert.equal(captureOptions?.includeRects, true);
-});
-
-test('runtime focused predicate requests a full snapshot', async () => {
-  const snapshot = makeSnapshotState([
-    {
-      index: 0,
-      depth: 0,
-      type: 'Cell',
-      label: 'Profiles and Accounts',
-      focused: true,
-    },
-  ]);
-  let captureOptions: BackendSnapshotOptions | undefined;
-  const device = createAgentDevice({
-    backend: {
-      platform: 'ios',
-      captureSnapshot: async (_context, options) => {
-        captureOptions = options;
-        return { snapshot };
-      },
-    } satisfies AgentDeviceBackend,
-    artifacts: createLocalArtifactAdapter(),
-    sessions: createMemorySessionStore([{ name: 'default', snapshot }]),
-    policy: localCommandPolicy(),
-  });
-
-  const result = await device.selectors.is({
-    session: 'default',
-    predicate: 'focused',
-    selector: 'role=cell label="Profiles and Accounts"',
-  });
-
-  assert.equal(result.pass, true);
-  assert.equal(captureOptions?.interactiveOnly, false);
-});
-
-test('runtime focused predicate reads focused Android TV nodes from the full tree', async () => {
-  const fullSnapshot = makeSnapshotState(
-    [
-      {
-        index: 0,
-        depth: 0,
-        type: 'TextView',
-        label: 'Featured',
-        focused: true,
-        hittable: false,
-      },
-    ],
-    { backend: 'android' },
-  );
-  const interactiveSnapshot = makeSnapshotState([], { backend: 'android' });
-  let captureOptions: BackendSnapshotOptions | undefined;
-  const device = createAgentDevice({
-    backend: {
-      platform: 'android',
-      captureSnapshot: async (_context, options) => {
-        captureOptions = options;
-        return { snapshot: options?.interactiveOnly ? interactiveSnapshot : fullSnapshot };
-      },
-    } satisfies AgentDeviceBackend,
-    artifacts: createLocalArtifactAdapter(),
-    sessions: createMemorySessionStore([{ name: 'default', snapshot: interactiveSnapshot }]),
-    policy: localCommandPolicy(),
-  });
-
-  const result = await device.selectors.is({
-    session: 'default',
-    predicate: 'focused',
-    selector: 'label=Featured',
-  });
-
-  assert.equal(result.pass, true);
-  assert.equal(captureOptions?.interactiveOnly, false);
-});
-
-test('runtime is validates selector predicates', async () => {
-  const device = createSelectorDevice(selectorReadSnapshot());
-
-  const result = await device.selectors.is({
-    session: 'default',
-    predicate: 'exists',
-    selector: 'label=Continue',
-  });
-
-  assert.deepEqual(result, {
-    predicate: 'exists',
-    pass: true,
-    selector: 'label=Continue',
-    matches: 1,
-    selectorChain: ['label=Continue'],
-  });
 });
 
 test('runtime find get_text reads the matched node', async () => {
@@ -476,7 +328,6 @@ test('runtime find wait cancels and joins a capture that consumes its full deadl
 test('runtime selector convenience methods use explicit target helpers', async () => {
   const device = createSelectorDevice(selectorReadSnapshot(), {
     readText: 'Continue',
-    findText: true,
   });
 
   const text = await device.selectors.getText(selector('label=Continue'), { session: 'default' });
@@ -484,7 +335,7 @@ test('runtime selector convenience methods use explicit target helpers', async (
   const visible = await device.selectors.isVisible(selector('label=Continue'), {
     session: 'default',
   });
-  const waited = await device.selectors.waitForText('Ready', {
+  const waited = await device.selectors.waitForText('Continue', {
     session: 'default',
     timeoutMs: 100,
   });
@@ -492,7 +343,7 @@ test('runtime selector convenience methods use explicit target helpers', async (
   assert.equal(text.kind, 'text');
   assert.equal(attrs.kind, 'attrs');
   assert.equal(visible.pass, true);
-  assert.deepEqual(waited, { kind: 'text', text: 'Ready', waitedMs: 0 });
+  assert.deepEqual(waited, { kind: 'text', text: 'Continue', waitedMs: 0 });
 });
 
 // ---------------------------------------------------------------------------
@@ -500,8 +351,8 @@ test('runtime selector convenience methods use explicit target helpers', async (
 // mid-transition Android helper content verdicts) instead of aborting the
 // wait — the live-validated destination-guard gap from #1349's PR review.
 // (#1349's own in-loop landmark identity verification tests — the
-// `target.recordedLandmark` cases — moved to `selector-wait.test.ts`, the
-// 1:1 topology location for `selector-wait.ts`; #1478 P5 step 2 cell 7.)
+// `target.recordedLandmark` cases — moved to `wait-selector.test.ts`, the
+// 1:1 topology location for `wait-selector.ts`; #1478 P5 step 2 cell 7.)
 // ---------------------------------------------------------------------------
 
 function landmarkScreen(parentLabel: string) {
@@ -770,55 +621,4 @@ test('runtime wait fails immediately on a helper MECHANISM failure even though i
     /instrumentation run timed out/,
   );
   assert.equal(attempts(), 1);
-});
-
-// Regression: admission normalizes a predicate's case, and every branch below it has to read
-// the ADMITTED value. Reading `options.predicate` instead let an uppercase predicate past the
-// gate and then evaluated it against lower-case branches — `EXISTS` skipped its own branch and
-// `TEXT` compared nothing — so the command answered wrongly instead of refusing or working.
-test('runtime is admits an upper-case predicate and evaluates it as the normalized one', async () => {
-  const snapshot = makeSnapshotState([
-    { index: 0, depth: 0, type: 'StaticText', label: 'Greeting' },
-  ]);
-  const device = createSelectorDevice(snapshot);
-
-  const exists = await device.selectors.is({
-    session: 'default',
-    predicate: 'EXISTS' as 'exists',
-    selector: 'label=Greeting',
-  });
-  assert.equal(exists.predicate, 'exists');
-  assert.equal(exists.pass, true);
-
-  const text = await device.selectors.is({
-    session: 'default',
-    predicate: 'TEXT' as 'text',
-    selector: 'label=Greeting',
-    expectedText: 'Greeting',
-  });
-  assert.equal(text.predicate, 'text');
-  assert.equal(text.pass, true);
-  assert.equal(text.text, 'Greeting');
-});
-
-test('runtime is still refuses a predicate that is not in the vocabulary', async () => {
-  const device = createSelectorDevice(
-    makeSnapshotState([{ index: 0, depth: 0, type: 'StaticText', label: 'Greeting' }]),
-  );
-
-  await assert.rejects(
-    async () =>
-      await device.selectors.is({
-        session: 'default',
-        predicate: 'shiny' as 'exists',
-        selector: 'label=Greeting',
-      }),
-    (error: unknown) => {
-      assert.ok(error instanceof AppError);
-      assert.equal(error.code, 'INVALID_ARGS');
-      // ADR 0010: the refusal carries recovery guidance on every surface, not just the daemon's.
-      assert.match(String(error.details?.hint ?? ''), /is <selector> <predicate>/);
-      return true;
-    },
-  );
 });

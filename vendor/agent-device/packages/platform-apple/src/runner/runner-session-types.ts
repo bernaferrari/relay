@@ -1,0 +1,66 @@
+import type { RunnerLogicalLeaseContext } from '@agent-device/contracts/runner-lease-context';
+import type { ExecResult } from './host.ts';
+import type { DeviceInfo } from '@agent-device/kernel/device';
+import type { RunnerXctestrunArtifact } from './runner-xctestrun.ts';
+import type { RunnerLease } from './runner-lease.ts';
+import type { XcodebuildSimulatorSetRedirectHandle } from './runner-device-set.ts';
+
+// The runner process seen through the session: pid for liveness/kill-tree and
+// exitCode for early-exit detection. A spawned ChildProcess satisfies this
+// structurally; adopted runners (whose spawner died) provide a pid-backed
+// surrogate — which is why the session must not assume streams or kill() here.
+export type RunnerProcessHandle = {
+  pid?: number | undefined;
+  exitCode: number | null;
+};
+
+export type RunnerSession = {
+  sessionId: string;
+  device: DeviceInfo;
+  deviceId: string;
+  port: number;
+  xctestrunPath: string;
+  xctestrunArtifact?: RunnerXctestrunArtifact;
+  jsonPath: string;
+  testPromise: Promise<ExecResult>;
+  child: RunnerProcessHandle;
+  ready: boolean;
+  /** Wakes one startup retry when the listener becomes ready or its process exits. */
+  startupRetryWake?: AbortSignal;
+  startupTimeoutMs?: number;
+  // Records the last allowlisted mutating interaction that the runner confirmed
+  // healthy (parsed ok, non-runnerFatal) for a given app bundle. Lives only on
+  // the session object so it dies with every invalidation/restart (#702).
+  lastHealthyMutation?: { atMs: number; appBundleId?: string };
+  /**
+   * Whether the runner reported main-thread XCTest work past its execution watchdog still
+   * draining, as of the most recent runner response. The runner stamps its live main-thread
+   * occupancy onto every successful response and answers new commands with `RUNNER_BUSY` while
+   * that work is outstanding, so this mirrors the runner's own state at the last exchange rather
+   * than reconstructing it. A stuck runner refuses every command until it drains or escalates to
+   * `RUNNER_WEDGED`, so retaining one after `close` hands the same stalled runner back to the next
+   * `open` and `close` recovers nothing (#2552). Lives only on the session so it dies with
+   * invalidation/restart.
+   */
+  runnerMainThreadBusy?: boolean;
+  /**
+   * Started by a prewarm and not yet used by any command. A proven observation-only plan may
+   * release it; the first real command clears the mark and the session stays under idle-stop.
+   */
+  speculative?: boolean;
+  startupTimings?: Record<string, number>;
+  startupTimingsReported?: boolean;
+  logicalLeaseContext?: RunnerLogicalLeaseContext;
+  simulatorSetRedirect?: XcodebuildSimulatorSetRedirectHandle;
+  lease?: RunnerLease;
+};
+
+export function buildRunnerSessionId(deviceId: string, port: number): string {
+  return `${deviceId}:${port}:${Date.now()}`;
+}
+
+export function normalizeRunnerStartupTimeoutMs(value: number | undefined): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
+}

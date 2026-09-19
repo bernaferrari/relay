@@ -7,17 +7,20 @@ import type {
   LeaseLifecycleProvider,
   ProviderDeviceRuntime,
 } from '@agent-device/contracts/device';
-import type { Interactor, RunnerContext } from '@agent-device/contracts/interaction';
-import type { DaemonRequest } from '../../../src/daemon/types.ts';
+import type { Interactor, RunnerContext } from '@agent-device/contracts/interactor-types';
+import type { DaemonRequest } from '../../../src/daemon/daemon-request.ts';
 import type { DeviceInfo } from '@agent-device/kernel/device';
-import { createAppleInteractor } from '../../../src/platforms/apple/interactor.ts';
-import type { RunnerCommand } from '../../../src/platforms/apple/core/runner/runner-contract.ts';
+import { applePlugin } from '@agent-device/platform-apple';
 import type {
   AppleRunnerCommandOptions,
   AppleRunnerProvider,
-} from '../../../src/platforms/apple/core/runner/runner-provider.ts';
+  RunnerCommand,
+} from '@agent-device/platform-apple/runner';
+import { withAppleRunnerProvider } from '@agent-device/platform-apple/runner';
+import { providerRuntimeOwner } from '@agent-device/contracts/platform-runtime';
 import { assertRpcOk } from './assertions.ts';
 import { createProviderScenarioHarness, withProviderScenarioResource } from './harness.ts';
+import { createProviderScenarioLifecycleModule } from './provider-device-runtime.fixtures.ts';
 
 const PROVIDER = 'fake-ios-runner-provider';
 const DEVICE: DeviceInfo = {
@@ -37,9 +40,8 @@ type RunnerTransportCalls = { runner: RecordedRunnerCall[]; opens: number };
 // AppleRunnerProvider transport (plus its own `open`) reuses the SHARED Apple
 // interactor — selector resolution, tap, fill, and snapshot all arrive at the
 // provider transport as runner-protocol commands instead of local XCTest.
-// This world has NO request-boundary resolver, so the interactor's injected
-// transport is the only thing keeping runner traffic off the local runtime:
-// removing the createAppleInteractor provider param fails this test.
+// This world has NO request-boundary resolver, so the fixture's method scope is
+// the only thing keeping runner traffic off the local runtime.
 test('provider-supplied Apple runner transport reuses the shared interactor stack', async () => {
   await withProviderScenarioResource(createInteractorSeamWorld, async ({ daemon, calls }) => {
     const lease = await allocateLease(daemon);
@@ -183,9 +185,17 @@ async function createRunnerTransportWorld(options: { requestScope: boolean }) {
   const calls: RunnerTransportCalls = { runner: [], opens: 0 };
   const runtime = createProviderRuntime(calls, options);
   const providers = createProviderDeviceRuntimeRequestProviders([runtime]);
+  const providerModule = createProviderScenarioLifecycleModule(
+    runtime,
+    providerRuntimeOwner(PROVIDER, 'ios-runner-transport'),
+  );
   const daemon = await createProviderScenarioHarness({
     ...providers,
-    deviceInventoryProvider: providers.deviceInventoryProvider!,
+    deviceInventorySource: providers.deviceInventorySource!,
+    platformRuntime: {
+      providerRuntimes: [runtime],
+      providerModules: [{ runtime, module: providerModule }],
+    },
   });
   return {
     daemon,
@@ -202,6 +212,7 @@ function createProviderRuntime(
   options: { requestScope: boolean },
 ): ProviderDeviceRuntime {
   const transport: AppleRunnerProvider = {
+    hasLiveSession: () => true,
     runCommand: async (_device, command, options) => {
       calls.runner.push({ command, options });
       return runnerResultFor(command);
@@ -237,14 +248,31 @@ function createRunnerTransportInteractor(
   transport: AppleRunnerProvider,
   runnerContext: RunnerContext | undefined,
 ): Interactor {
-  return {
-    ...createAppleInteractor(DEVICE, runnerContext ?? {}, transport),
-    // App lifecycle stays provider-owned: the transport seam covers runner
-    // commands only, so the provider composes its own `open` on top.
-    open: async () => {
-      calls.opens += 1;
+  const runner = runnerContext ?? {};
+  const implementation = applePlugin.createInteractor(DEVICE, runner);
+  return new Proxy({} as Interactor, {
+    get(_target, property) {
+      if (property === 'then') return undefined;
+      if (property === 'open') {
+        return async () => {
+          calls.opens += 1;
+        };
+      }
+      return (...args: unknown[]) =>
+        withAppleRunnerProvider(
+          transport,
+          { deviceId: DEVICE.id, requestId: runner.requestId },
+          async () => {
+            const interactor = await implementation;
+            const operation = interactor[property as keyof Interactor];
+            if (typeof operation !== 'function') {
+              throw new TypeError(`Apple interactor method '${String(property)}' is unavailable`);
+            }
+            return Reflect.apply(operation, interactor, args);
+          },
+        );
     },
-  };
+  });
 }
 
 function runnerResultFor(command: RunnerCommand): Record<string, unknown> {

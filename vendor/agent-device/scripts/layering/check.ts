@@ -1,36 +1,54 @@
 // Import-direction lint — enforces the folder DAG established by the Phase-5
-// folder moves (see CONTEXT.md, "Architecture: folder DAG + layering lint").
+// folder moves. The policies and their tests below are the source of truth.
 //
 // Ranked target spine, as rank groups lowest to highest. `A ◄ B` means B may not
 // be outranked by A (the back-edge order the gate rejects), NOT that every displayed import exists:
-//   { contracts, request, selectors, platforms } ◄ core ◄ { commands, cli-schema }
+//   { contracts, request, selectors } ◄ core ◄ { commands, cli-schema }
 //         ◄ { client, daemon-server } ◄ daemon-client ◄ cli
 // (authoritative ranks: `TARGET_DAG_RANK` in model.ts. The former rank-0 kernel
 // zone lives in packages/kernel since #1490 W0; R11 owns its boundary.)
+// `commands` and `cli-schema` share a rank, so the spine cannot order them; R2 declares the
+// direction instead — cli-schema renders the command facets and reads them, commands never
+// imports cli-schema (#2543).
 //
 // This gate enforces five things, across four scopes:
-//   - GLOBALLY, across every production source file: the R2-R3 move rules and
+//   - GLOBALLY, across every production source file: the remaining R2 move rule and
 //     rejection of all production static value-import cycles (R4). R1 kernel-sink
-//     retired with the kernel's move to packages/kernel (#1490 W0).
+//     retired with the kernel's move to packages/kernel (#1490 W0); R8
+//     zero-dep-job-closure retired with the last `install-deps: false` job
+//     (#1781 A6) — its invariant has no subjects. R14 is reserved for the terminal
+//     src/utils retirement rule (#2149); other new rules take the next free id.
 //   - Over the RANKED SPINE only: rejection of every spine back-edge (R5), i.e.
 //     an import whose source zone outranks its target zone, plus a ratchet on the
 //     same inversion measured over TYPE-ONLY edges (R6).
 //   - Over the DAEMON only: SessionState field ownership (R7), because the session
-//     record is store-owned mutable state that any daemon module can write.
-//   - Over the ZERO-DEP CI JOBS only: their scripts may import nothing that needs
-//     installing (R8), a constraint no local run can feel because `node_modules` is
-//     always there locally and never there in those jobs.
-//   - Over the TYPE GRAPH: the largest type-level import cycle may not grow (R9). R4
-//     keeps the value graph acyclic, so these cycles are free at runtime but bound
-//     what can be read in isolation. Growth-only, deliberately loose.
+//     record is store-owned mutable state that any daemon module can write; and the terminal
+//     concrete-platform boundary (R65), which rejects every import form into the retired
+//     src/platforms path or a platform package.
+//   - Over the TYPE GRAPH: the largest type-level import cycle may not grow past the
+//     merge-base (R9). R4 keeps the value graph acyclic, so these cycles are free at
+//     runtime but bound what can be read in isolation.
 //   - Across the DAEMON MODULARITY MIGRATION: R7 ownership pressure and external
-//     daemon/types.ts importers only shrink, R9 zone membership cannot grow or absorb
+//     daemon request/session-state importers only shrink, R9 zone membership cannot grow or absorb
 //     engine files, and planned logical modules start with zero forbidden/internal imports (R10).
 //   - Over the WORKSPACE PACKAGES: no root back-imports, no relative tunnelling past
 //     an exports map, and every workspace specifier declared + exports-named (R11).
-// Only `(root)` is unranked among src/ zones (see `UNRANKED_ZONES` in model.ts):
-// it holds entrypoints and composition roots. Extracted workspace package zones
-// are classified separately and held behind R11 instead of the src folder spine.
+//   - Over PLATFORM PACKAGE COMPOSITION: six private metadata façades meet at the exact root
+//     composition file; premature implementation loading and forbidden cross-boundary edges fail (R13).
+//   - Over THE APPLE RUNNER SUBTREE: `runner/**` may not value-import `@agent-device/host-kit/*`
+//     directly (R77) — the subtree sits in the eager closure of seven Apple façade entries the
+//     eager-closure-budgets gate holds at a fixed size, so a direct host-kit edge grows all seven;
+//     host-kit reaches the runner only through `runner/host.ts`, bound in `core/runner-host.ts`.
+//   - Over REQUEST-BOUND RUNTIME EXECUTION: facts remain the only admission authority and daemon
+//     code cannot manufacture or repair a narrowed runtime proof (R66).
+//   - Over CONTRACTS PRODUCTION SOURCE: contracts owns vocabulary only — host, process, and timer
+//     mechanics belong in capture-kit or an adapter (R18).
+// R6, R9, and the R10 R7 counts are ratchets with no written-down reference: each is the same
+// measurement taken over the merge-base with origin/main (`ratchet-reference.ts`), so growth
+// fails, a shrink needs no edit, and no change can bank headroom.
+// `(root)` holds entrypoints and composition roots. The retired `src/utils` zone is deliberately
+// outside the spine and is rejected separately by R14; extracted workspace package zones are
+// classified separately and held behind R11 instead of the src folder spine.
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -39,72 +57,93 @@ import { pathToFileURL } from 'node:url';
 import {
   fieldClassificationDrift,
   findSessionStateWrites,
+  sessionStateDeclarationFile,
   sessionStateFields,
   sessionStateFieldCount,
   SESSION_STATE_FIELD_OWNERS,
   STORE_OWNED_SESSION_STATE_FIELDS,
 } from './session-state.ts';
-import { uninstallableImports, zeroDepClosureFiles, zeroDepJobs } from './zero-dep-jobs.ts';
 import {
   backEdgePair,
   findValueImportCycles,
-  largestTypeCycleMembers,
+  memoizedImportParser,
   resolveImportEdges,
   topFolder,
-  typeInversionPair,
   type LayeringViolation,
   type ResolvedImportEdge,
 } from './model.ts';
+import { checkTypeInversions } from './type-inversion-ratchet.ts';
+import {
+  measureRatchets,
+  mergeBaseRatchets,
+  type LayeringRatchets,
+  type MergeBaseRatchets,
+} from './ratchet-reference.ts';
 import {
   checkDaemonModularityRatchets,
+  checkRetiredInteractionPaths,
+  checkRetiredSessionLifecyclePaths,
+  checkRetiredSessionObservabilityPaths,
+  checkRetiredSnapshotExecutionPaths,
   daemonModularitySummary,
-  TYPE_CYCLE_BASELINE,
 } from './daemon-modularity.ts';
 import {
   checkPackageBoundaries,
   packageBoundariesSummary,
   workspaceSpecifierTargets,
 } from './package-boundaries.ts';
+import {
+  checkPlatformPackagePolicy,
+  checkRetiredPlatformsZone,
+  platformPackagePolicySummary,
+} from './platform-package-policy.ts';
+import { appleRunnerHostPortViolations } from './apple-runner-host-port-policy.ts';
+import {
+  listUntrackedProductionTypeScriptFiles,
+  readTrackedPlatformPackageDeclarations,
+} from './platform-package-repository.ts';
 import { policyLead, policyViolation, ZONE_POLICIES } from './zone-policy.ts';
+import { contractsImplementationAuthorityViolations } from './contracts-implementation-policy.ts';
+import { substrateDomainShapeViolations } from './substrate-domain-shape.ts';
+import { selectorPipelineOwnershipViolations } from './selector-pipeline-ownership.ts';
+import { recordRuntimeRegistryJoinViolations } from './record-runtime-registry-policy.ts';
+import { recordRuntimeDaemonMechanicsViolations } from './record-runtime-mechanics-policy.ts';
+import { checkDaemonPlatformBoundary } from './daemon-platform-boundary.ts';
+import {
+  checkDaemonPlatformRuntimeInventory,
+  DAEMON_PLATFORM_RUNTIME_EDGES,
+} from './daemon-platform-runtime-inventory.ts';
+import { checkDaemonClientEntry } from './daemon-client-entry.ts';
+import { checkSessionAuthorityOverlay, handlerOwnedOverlay } from './session-authority-overlay.ts';
+import {
+  listTrackedPlatformZoneFiles,
+  listTrackedProductionSources,
+  listTrackedSrcUtilsFiles,
+  listTrackedTypeScriptFiles,
+} from './tracked-sources.ts';
+import { runtimeExecutionIntegrityViolations } from './runtime-execution-policy.ts';
+import { sourceExecutionCompatibilityViolations } from './source-execution-policy.ts';
+import { sessionResourceOwnershipViolations } from './session-resource-ownership.ts';
+import { applicationLifecycleOwnershipViolations } from './application-lifecycle-policy.ts';
+import { iosSnapshotEngineOwnershipViolations } from './ios-snapshot-engine-policy.ts';
+import { providerSnapshotPresentationViolations } from './provider-snapshot-presentation-policy.ts';
+import { snapshotAssemblyPresentationViolations } from './snapshot-assembly-presentation-policy.ts';
+import { RETIRED_PATH_RULES, retiredPathRuleViolations } from './retired-paths-policy.ts';
 
 const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
   encoding: 'utf8',
 }).trim();
 
+export function listTypeScriptFiles(): string[] {
+  return listTrackedTypeScriptFiles(repoRoot);
+}
+
 export function listSourceFiles(): string[] {
-  // `src/**/*.ts` only matches nested files; root-level `src/*.ts` (e.g.
-  // src/cli.ts, src/command-catalog.ts) needs its own pathspec or it silently
-  // drops out of cycle/back-edge analysis.
-  // Workspace package sources are production files too (#1490 W0): R4 cycle
-  // rejection and the zone staleness guard must see them, and workspace
-  // specifiers resolve across the seam in resolveTargetFile.
-  const out = execFileSync(
-    'git',
-    ['ls-files', 'src/*.ts', 'src/**/*.ts', 'packages/*/src/*.ts', 'packages/*/src/**/*.ts'],
-    {
-      cwd: repoRoot,
-      encoding: 'utf8',
-    },
-  );
-  return out.split('\n').filter(Boolean).filter(isProductionSourceFile);
+  return listTrackedProductionSources(repoRoot);
 }
 
 function readSources(files: readonly string[]): Map<string, string> {
   return new Map(files.map((file) => [file, fs.readFileSync(path.join(repoRoot, file), 'utf8')]));
-}
-
-function fileExists(file: string): boolean {
-  return (
-    fs.existsSync(path.join(repoRoot, file)) && fs.statSync(path.join(repoRoot, file)).isFile()
-  );
-}
-
-function readSourceOrNull(file: string): string | null {
-  return fileExists(file) ? fs.readFileSync(path.join(repoRoot, file), 'utf8') : null;
-}
-
-function isProductionSourceFile(file: string): boolean {
-  return file.endsWith('.ts') && !/(?:^|\/)__tests__\//.test(file) && !/\.test\.ts$/.test(file);
 }
 
 // R1-R3 are declared as a policy table in zone-policy.ts. This walks it; the boundaries
@@ -130,6 +169,20 @@ function checkLayeringRules(edges: readonly ResolvedImportEdge[]): LayeringViola
   return violations;
 }
 
+/**
+ * Catches: a production import cycle — A imports B imports A at the value level — that a
+ *   file-by-file review cannot see because each edge looks locally fine; only walking the
+ *   whole graph exposes the loop. No other gate looks at cycles at all.
+ * Evidence: 3d70943550 (#984) introduced the import-direction DAG gate this cycle check
+ *   anchors; f19864e486 (#1410) added the dependency-graph report built on the same model.
+ * Cost: not attributed (folded into check.ts's whole-graph pass; no standalone module or
+ *   test file to size separately).
+ * Kill criterion: none enforced today; retire only by maintainer decision that an acyclic
+ *   value-import graph no longer matters. tsc rejects a cyclic `references` edge between
+ *   projects, but no tsconfig declares references today and the A4 spike found they are a
+ *   build-cache mechanism, not a boundary: value imports inside one project are never
+ *   cycle-checked, and a cross-package edge resolves through root node_modules with no error.
+ */
 function checkCycles(edges: readonly ResolvedImportEdge[]): LayeringViolation[] {
   return findValueImportCycles(edges).map((cycle) => ({
     rule: 'R4 value-import-cycle',
@@ -139,6 +192,44 @@ function checkCycles(edges: readonly ResolvedImportEdge[]): LayeringViolation[] 
   }));
 }
 
+function checkContractsImplementationAuthority(
+  sources: ReadonlyMap<string, string>,
+): LayeringViolation[] {
+  return contractsImplementationAuthorityViolations(
+    [...sources].map(([path, source]) => ({ path, source })),
+  );
+}
+
+/** Record's descriptor join and mechanics boundary are one permanent ownership rule. */
+function checkRecordRuntimeOwnership(sources: ReadonlyMap<string, string>): LayeringViolation[] {
+  const production = [...sources].map(([file, source]) => ({ path: file, source }));
+  return [
+    ...recordRuntimeRegistryJoinViolations(production),
+    ...recordRuntimeDaemonMechanicsViolations(production),
+  ].map((violation) => {
+    const separator = violation.indexOf(': ');
+    return {
+      rule: 'R16 record-runtime-ownership',
+      file: separator < 0 ? '(record runtime)' : violation.slice(0, separator),
+      line: 1,
+      message: separator < 0 ? violation : violation.slice(separator + 2),
+    };
+  });
+}
+
+/**
+ * Catches: a value import that runs against the ranked target spine's declared order (a lower
+ *   zone importing a higher one) — the runtime-consequential half of what R6 also checks for
+ *   type-only edges; neither zone-policy.ts's table nor the cycle check names direction.
+ * Evidence: 3d70943550 (#984) introduced the ranked spine and its back-edge check; docs/
+ *   dependency-graph-findings.md tracks the count this rule ratchets.
+ * Cost: not attributed (folded into check.ts's whole-graph pass; no standalone module or
+ *   test file to size separately).
+ * Kill criterion: none enforced today; retire only by maintainer decision that the ranked spine's
+ *   import direction no longer matters. Splitting zones into packages would not replace it: the
+ *   A4 spike found an undeclared workspace package still resolves through root node_modules and
+ *   a relative tunnel into another package's src still compiles.
+ */
 function checkBackEdges(edges: readonly ResolvedImportEdge[]): LayeringViolation[] {
   const seen = new Set<string>();
   return edges.flatMap((edge) => {
@@ -157,122 +248,20 @@ function checkBackEdges(edges: readonly ResolvedImportEdge[]): LayeringViolation
   });
 }
 
-// R6 ratchet: type-only spine inversions, per zone pair. R5 cannot see these (a type-only import
-// is free at runtime), but "zone A is declared in terms of zone B" is still a boundary claim, and
-// ranking type edges surfaced 61 of them. Down to 7, and every one of the 7 is now a deliberate
-// architectural position rather than a misplaced declaration:
-//
-//   commands/mcp -> client (4)   `AgentDeviceClient`, used as an opaque handle ("the client this
-//                                command runs against"). It cannot move below `commands/` because
-//                                the facade is BUILT from the command surface's own projection
-//                                registry: AgentDeviceClient -> AgentDeviceCommandClient ->
-//                                ProjectedNavigationCommandClient -> NAVIGATION_COMMAND_PROJECTIONS
-//                                in commands/system/. That is a genuine zone-level cycle, and
-//                                breaking it means deciding where the projection registry belongs —
-//                                a design call, not a file move. R5 is zero here: nothing imports
-//                                the client at runtime, only its type.
-//
-//   core -> daemon-server (2)    `DaemonCommandDescriptor`, which is STATED IN TERMS OF the daemon's
-//                                own server-private `DaemonRequest` (`refFrameEffect`,
-//                                `allowSessionlessDefaultDevice`, `skipSessionlessProviderDevice`
-//                                are all `(req: DaemonRequest) => …`). It therefore cannot be
-//                                declared below the daemon, and having core/ re-declare a parallel
-//                                13-field shape would trade one erased edge for a second source of
-//                                truth. Zones that only need to CLASSIFY a command take
-//                                `contracts/dispatched-command.ts` instead. ADR 0003/0008.
-//
-//   commands -> daemon-server (1)  `DaemonCommandRoute` = `keyof typeof DAEMON_ROUTE_HANDLERS`, so
-//                                it is COMPUTED FROM the daemon's handler table and cannot exist
-//                                below it. `commands/command-explain.ts` uses it to key an
-//                                exhaustive `Record<DaemonCommandRoute, string>` of owner files; a
-//                                hand-written union in contracts/ would drop that exhaustiveness.
-//
-// See docs/dependency-graph-findings.md §0 for the long form. The counts may only go DOWN. Fixing edges without lowering the number fails too, so the baseline
-// cannot quietly stop describing the tree.
-//
-// Exported so scripts/depgraph can assert its own graph build reproduces it — see the
-// baseline-parity test there. The gate remains the authority; the report follows.
-export const TYPE_INVERSION_BASELINE: Readonly<Record<string, number>> = {
-  'commands -> client': 3,
-  'commands -> daemon-server': 1,
-  'core -> daemon-server': 2,
-  'mcp -> client': 1,
-};
-
-function checkTypeInversions(edges: readonly ResolvedImportEdge[]): LayeringViolation[] {
-  const seen = new Set<string>();
-  const countsByPair = new Map<string, number>();
-  const firstEdgeByPair = new Map<string, ResolvedImportEdge>();
-  for (const edge of edges) {
-    const pair = typeInversionPair(edge);
-    if (!pair) continue;
-    const identity = `${edge.file} -> ${edge.target}`;
-    if (seen.has(identity)) continue;
-    seen.add(identity);
-    countsByPair.set(pair, (countsByPair.get(pair) ?? 0) + 1);
-    if (!firstEdgeByPair.has(pair)) firstEdgeByPair.set(pair, edge);
-  }
-
-  const violations: LayeringViolation[] = [];
-  for (const [pair, count] of [...countsByPair].sort(([left], [right]) =>
-    left.localeCompare(right),
-  )) {
-    const allowed = TYPE_INVERSION_BASELINE[pair];
-    const edge = firstEdgeByPair.get(pair)!;
-    if (allowed === undefined) {
-      violations.push({
-        rule: 'R6 type-spine-inversion',
-        file: edge.file,
-        line: edge.line,
-        message:
-          `new type-only ${pair} inversion (${count} edge(s), e.g. ${edge.file} -> ${edge.target}). ` +
-          `Declare the shared type below both zones instead of adding it to TYPE_INVERSION_BASELINE.`,
-      });
-      continue;
-    }
-    if (count > allowed) {
-      violations.push({
-        rule: 'R6 type-spine-inversion',
-        file: edge.file,
-        line: edge.line,
-        message:
-          `type-only ${pair} inversions grew to ${count} (baseline ${allowed}). ` +
-          `Move the shared type below both zones; the baseline may only shrink.`,
-      });
-    }
-  }
-
-  for (const [pair, allowed] of Object.entries(TYPE_INVERSION_BASELINE)) {
-    const count = countsByPair.get(pair) ?? 0;
-    if (count >= allowed) continue;
-    const message =
-      count === 0
-        ? `type-only ${pair} inversions are all gone — delete this entry from TYPE_INVERSION_BASELINE.`
-        : `type-only ${pair} inversions dropped to ${count} — lower TYPE_INVERSION_BASELINE to ${count}.`;
-    violations.push({
-      rule: 'R6 type-spine-inversion',
-      file: 'scripts/layering/check.ts',
-      line: 1,
-      message,
-    });
-  }
-  return violations;
-}
-
 function checkSessionStateOwnership(sources: ReadonlyMap<string, string>): LayeringViolation[] {
-  const types = sources.get('src/daemon/types.ts');
-  if (!types) {
+  const declarationFile = sessionStateDeclarationFile(sources);
+  if (!declarationFile) {
     return [
       {
         rule: 'R7 session-state-ownership',
-        file: 'src/daemon/types.ts',
+        file: 'src/daemon/session-state.ts',
         line: 1,
-        message: 'daemon/types.ts is missing, so SessionState ownership cannot be checked.',
+        message: 'no daemon module declares SessionState, so its ownership cannot be checked.',
       },
     ];
   }
 
-  const fields = sessionStateFields(types);
+  const fields = sessionStateFields(sources.get(declarationFile)!);
   const writes = findSessionStateWrites(sources, fields);
   const violations: LayeringViolation[] = [];
   const seenOwners = new Map<string, Set<string>>();
@@ -366,82 +355,37 @@ function checkSessionStateOwnership(sources: ReadonlyMap<string, string>): Layer
   return violations;
 }
 
-// R8: a CI job that runs with `install-deps: false` has no `node_modules`, so every script it
-// reaches must import only Node builtins and other repo files. Locally the opposite is true —
-// `node_modules` is always present — which is why this needs a gate rather than a convention.
-function repoZeroDepJobs() {
-  const workflows = readSources(
-    execFileSync('git', ['ls-files', '.github/workflows/*.yml'], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-    })
-      .split('\n')
-      .filter(Boolean),
-  );
-  const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
-    scripts?: Record<string, string>;
-  };
-  const packageScripts = new Map(Object.entries(packageJson.scripts ?? {}));
-  return zeroDepJobs(workflows, fileExists, packageScripts);
-}
-
-function checkZeroDepJobs(): LayeringViolation[] {
-  const violations: LayeringViolation[] = [];
-  for (const job of repoZeroDepJobs()) {
-    // Fail closed: a zero-dep job whose commands the entry scan cannot recognize would
-    // otherwise be silently exempt from the rule it is the whole reason for.
-    if (job.entries.length === 0) {
-      violations.push({
-        rule: 'R8 zero-dep-job-closure',
-        file: job.workflow,
-        line: 1,
-        message:
-          `job '${job.job}' runs with install-deps: false but no entry script was found in its ` +
-          `run steps, so its import closure cannot be checked. Invoke the script by path, or ` +
-          `let the job install dependencies.`,
-      });
-      continue;
-    }
-    for (const bare of uninstallableImports(job, readSourceOrNull, fileExists)) {
-      violations.push({
-        rule: 'R8 zero-dep-job-closure',
-        file: bare.file,
-        line: bare.line,
-        message:
-          `'${bare.spec}' is a package, and job '${bare.job}' (${bare.workflow}) runs with ` +
-          `install-deps: false — nothing installs it, so this resolves locally and fails in CI. ` +
-          `Use a Node builtin, inline what you need, or drop install-deps: false from the job.`,
-      });
-    }
-  }
-  return violations;
-}
-
-/** R9 is growth-only, so a shrunk tree is reported rather than failed by the ratchet. */
-function typeCycleNote(actual: number): string {
-  if (actual >= TYPE_CYCLE_BASELINE) {
-    return `the largest type-level cycle is ${actual} files (R9)`;
-  }
-  return (
-    `the largest type-level cycle is down to ${actual} files, under the R9 baseline of ` +
-    `${TYPE_CYCLE_BASELINE} — lower the daemon modularity zone ceilings when convenient`
-  );
-}
-
 function report(
   files: readonly string[],
   violations: readonly LayeringViolation[],
-  typeCycle: number,
+  ratchets: LayeringRatchets,
+  reference: MergeBaseRatchets,
 ): number {
   if (violations.length === 0) {
+    const inversions = Object.values(ratchets.typeInversions).reduce(
+      (sum, count) => sum + count,
+      0,
+    );
+    const measuredOverlay = handlerOwnedOverlay(ratchets.sessionAuthority);
+    const handlerOwnedShapeFiles = measuredOverlay.shapeFiles.length;
+    const handlerOwnedAuthorityFiles = measuredOverlay.authorityFiles.length;
     process.stdout.write(
-      `Layering guard: OK — ${files.length} source files satisfy R2-R3 and contain no ` +
+      `Layering guard: OK — ${files.length} source files satisfy R2 and contain no ` +
         `value-import cycles (both checked globally); the ranked target spine contains no ` +
-        `back-edges (only the composition root is unranked among src zones), and its type-only ` +
-        `inversions match the R6 ratchet (${Object.values(TYPE_INVERSION_BASELINE).reduce((sum, count) => sum + count, 0)} remaining); ` +
+        `back-edges; the ranked spine's type-only inversions hold at or under the merge-base ` +
+        `${reference.ref.slice(0, 10)} per zone pair (R6, ${inversions} remaining); ` +
+        `${RETIRED_PATH_RULES.R14.rule} permits no tracked paths under retired src/utils; ` +
         `all ${sessionStateFieldCount()} SessionState fields are classified and every write is ` +
-        `inside its declared owner (R7); every zero-dep CI job resolves without ` +
-        `node_modules (R8); ${typeCycleNote(typeCycle)}; ${daemonModularitySummary()}; and ${packageBoundariesSummary(repoRoot)}.\n`,
+        `inside its declared owner (R7); the largest type-level cycle is ` +
+        `${ratchets.largestTypeCycle.length} files (R9); ${daemonModularitySummary(reference)}; ` +
+        `${packageBoundariesSummary(repoRoot)}; ${platformPackagePolicySummary()}; ` +
+        `runtime facts remain the only device-command admission authority and daemon code cannot ` +
+        `manufacture narrowed runtime proof (R66); R65 keeps production src/daemon free of ` +
+        `concrete platform imports in every executable and type-only form; ` +
+        `${DAEMON_PLATFORM_RUNTIME_EDGES.length} daemon-to-root platform-runtime edges hold ` +
+        `their #2278 classification (R76); and the handler-owned SessionState/SessionStore ` +
+        `authority overlay holds at or under the merge-base (R75, ` +
+        `${handlerOwnedShapeFiles} shape / ${handlerOwnedAuthorityFiles} authority files).\n`,
     );
     return 0;
   }
@@ -467,27 +411,146 @@ function report(
   return 1;
 }
 
+/** Everything the guard reads once per run, so a rule takes one argument whatever it needs. */
+export type LayeringContext = Readonly<{
+  sourceFiles: readonly string[];
+  sources: ReadonlyMap<string, string>;
+  allTypeScriptSources: ReadonlyMap<string, string>;
+  trackedSrcUtilsFiles: readonly string[];
+  edges: readonly ResolvedImportEdge[];
+  /** The ratcheted measurements of this tree. */
+  ratchets: LayeringRatchets;
+  /** The same measurements at the merge-base with origin/main. */
+  reference: LayeringRatchets;
+}>;
+
+export type LayeringRule = (context: LayeringContext) => LayeringViolation[];
+
+/**
+ * The rules this guard runs. Registering one is writing a key here, which is why the list is data
+ * rather than a hand-written array of spreads: an object cannot hold the same key twice, so a rule
+ * cannot be run — and reported, and ::error-annotated — twice by a copy-paste. `LayeringRuleId`
+ * then makes a missing key a type error rather than a silently retired rule.
+ *
+ * Order is the reporting order: report() groups by rule in first-seen order.
+ */
+export const LAYERING_RULE_IDS = [
+  'zone-policies',
+  'value-import-cycles',
+  'runtime-execution-integrity',
+  'source-execution-compatibility',
+  'record-runtime-ownership',
+  'session-resource-ownership',
+  'application-lifecycle-ownership',
+  'contracts-implementation-authority',
+  'substrate-domain-shape',
+  'selector-pipeline-ownership',
+  'back-edges',
+  'type-spine-inversions',
+  'session-state-ownership',
+  'daemon-modularity-ratchets',
+  'daemon-platform-boundary',
+  'package-boundaries',
+  'platform-package-policy',
+  'apple-runner-host-port',
+  'retired-platforms-zone',
+  'src-utils-retirement',
+  'replay-ownership',
+  'ios-snapshot-engine-ownership',
+  'provider-snapshot-presentation-ownership',
+  'snapshot-assembly-presentation-neutrality',
+  'daemon-platform-runtime-inventory',
+  'daemon-client-entry',
+  'session-authority-overlay',
+] as const;
+
+export type LayeringRuleId = (typeof LAYERING_RULE_IDS)[number];
+
+export const LAYERING_RULES: Readonly<Record<LayeringRuleId, LayeringRule>> = {
+  'zone-policies': (context) => checkLayeringRules(context.edges),
+  'value-import-cycles': (context) => checkCycles(context.edges),
+  'runtime-execution-integrity': (context) => runtimeExecutionIntegrityViolations(context.sources),
+  'source-execution-compatibility': (context) =>
+    sourceExecutionCompatibilityViolations(context.sources),
+  'record-runtime-ownership': (context) => checkRecordRuntimeOwnership(context.sources),
+  'session-resource-ownership': (context) => sessionResourceOwnershipViolations(context.sources),
+  'application-lifecycle-ownership': (context) =>
+    applicationLifecycleOwnershipViolations(context.sources),
+  'contracts-implementation-authority': (context) =>
+    checkContractsImplementationAuthority(context.sources),
+  'substrate-domain-shape': (context) =>
+    substrateDomainShapeViolations(
+      [...context.allTypeScriptSources].map(([path, source]) => ({ path, source })),
+    ),
+  'selector-pipeline-ownership': (context) =>
+    selectorPipelineOwnershipViolations(context.edges, workspaceSpecifierTargets(repoRoot)),
+  'back-edges': (context) => checkBackEdges(context.edges),
+  'type-spine-inversions': (context) =>
+    checkTypeInversions(context.edges, context.reference.typeInversions),
+  'session-state-ownership': (context) => checkSessionStateOwnership(context.sources),
+  'daemon-modularity-ratchets': (context) => [
+    ...checkDaemonModularityRatchets(context.edges, context.ratchets, context.reference),
+    ...checkRetiredSessionLifecyclePaths(context.sourceFiles),
+    ...checkRetiredSessionObservabilityPaths(context.sourceFiles),
+    ...checkRetiredSnapshotExecutionPaths(context.sourceFiles),
+    ...checkRetiredInteractionPaths(context.sourceFiles),
+  ],
+  'daemon-platform-boundary': (context) =>
+    checkDaemonPlatformBoundary([...context.sources].map(([path, source]) => ({ path, source }))),
+  'package-boundaries': () => checkPackageBoundaries(repoRoot),
+  'platform-package-policy': (context) =>
+    checkPlatformPackagePolicy(
+      context.allTypeScriptSources,
+      readTrackedPlatformPackageDeclarations(repoRoot),
+      { untrackedProductionFiles: listUntrackedProductionTypeScriptFiles(repoRoot) },
+    ),
+  'apple-runner-host-port': (context) =>
+    appleRunnerHostPortViolations(context.allTypeScriptSources),
+  'retired-platforms-zone': () => checkRetiredPlatformsZone(listTrackedPlatformZoneFiles(repoRoot)),
+  'src-utils-retirement': (context) =>
+    retiredPathRuleViolations('R14', context.trackedSrcUtilsFiles),
+  'replay-ownership': (context) => retiredPathRuleViolations('R71', context.sourceFiles),
+  'ios-snapshot-engine-ownership': (context) =>
+    iosSnapshotEngineOwnershipViolations(
+      [...context.sources].map(([path, source]) => ({ path, source })),
+    ),
+  'provider-snapshot-presentation-ownership': (context) =>
+    providerSnapshotPresentationViolations(context.sources, context.edges),
+  'snapshot-assembly-presentation-neutrality': (context) =>
+    snapshotAssemblyPresentationViolations(context.sources, context.edges),
+  'daemon-platform-runtime-inventory': (context) =>
+    checkDaemonPlatformRuntimeInventory(context.edges),
+  'daemon-client-entry': (context) => checkDaemonClientEntry(context.edges),
+  'session-authority-overlay': (context) =>
+    checkSessionAuthorityOverlay(
+      context.ratchets.sessionAuthority,
+      context.reference.sessionAuthority,
+    ),
+};
+
 export function main(): number {
   const sourceFiles = listSourceFiles();
   const sources = readSources(sourceFiles);
-  const edges = resolveImportEdges(sources, workspaceSpecifierTargets(repoRoot));
-  // Computed once and threaded: the rule and the success line must report the same number.
-  const typeCycleMembers = largestTypeCycleMembers(edges);
-  const typeCycle = typeCycleMembers.length;
-  const violations = [
-    ...checkLayeringRules(edges),
-    ...checkCycles(edges),
-    ...checkBackEdges(edges),
-    ...checkTypeInversions(edges),
-    ...checkSessionStateOwnership(sources),
-    ...checkDaemonModularityRatchets(edges, typeCycleMembers),
-    ...checkZeroDepJobs(),
-    ...checkPackageBoundaries(
-      repoRoot,
-      zeroDepClosureFiles(repoZeroDepJobs(), readSourceOrNull, fileExists),
-    ),
-  ];
-  return report(sourceFiles, violations, typeCycle);
+  const allTypeScriptSources = readSources(listTypeScriptFiles());
+  const trackedSrcUtilsFiles = listTrackedSrcUtilsFiles(repoRoot);
+  // One memoizing parser for both trees: every file the merge-base shares with the working tree
+  // is parsed once, whichever scan reaches it first.
+  const parse = memoizedImportParser();
+  const edges = resolveImportEdges(sources, workspaceSpecifierTargets(repoRoot), parse);
+  // Measured once and threaded: the rules and the success line must report the same numbers.
+  const ratchets = measureRatchets(sources, edges);
+  const reference = mergeBaseRatchets(repoRoot, parse);
+  const context: LayeringContext = {
+    sourceFiles,
+    sources,
+    allTypeScriptSources,
+    trackedSrcUtilsFiles,
+    edges,
+    ratchets,
+    reference,
+  };
+  const violations = Object.values(LAYERING_RULES).flatMap((rule) => rule(context));
+  return report(sourceFiles, violations, ratchets, reference);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import { CASES } from '../help-conformance-cases.mjs';
-import { helpTopicIds } from '../../src/cli/parser/cli-help.ts';
+import { helpTopicIds } from '../../src/cli-schema/cli-help.ts';
 
 // "What enumerates N": benchmark cases are keyed to help topics, and this gate
 // keys the case list to the topic registry itself. A new help topic must gain
@@ -10,6 +10,8 @@ import { helpTopicIds } from '../../src/cli/parser/cli-help.ts';
 // topics are a visible decision instead of silent drift.
 const WAIVED_TOPICS: Record<string, string> = {
   cdp: 'JS-heap forensics niche; add cases when heap-guidance regressions show up in practice.',
+  commands:
+    'Derived command/configuration reference, not a planning loop; catalog completeness is structurally tested.',
   macos: 'macOS surface guidance is thin and stable; no observed planning regressions yet.',
   maestro: 'Compatibility reference, not a planning loop; conformance is oracle-tested instead.',
   'physical-device': 'Needs device-specific setup guidance; no portable planning task defined yet.',

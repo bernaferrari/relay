@@ -1,24 +1,62 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { matchesPlatformSelector, type PlatformSelector } from '@agent-device/kernel/device';
 import {
-  deviceFieldsFromPublicPlatform,
-  matchesPlatformSelector,
-  type PlatformSelector,
-} from '@agent-device/kernel/device';
-import { classifyOwnerLiveness, type OwnerLiveness } from '../utils/owner-identity.ts';
+  classifyOwnerLivenessFromObservation,
+  type OwnerLiveness,
+  readHostProcessIdentityObservations,
+} from '@agent-device/host-kit/process';
+
+import { isSupersededDaemonOwner } from './daemon-registration.ts';
 import { resolveDeviceClaimRoot } from './device-claim-paths.ts';
-import type { DeviceClaim } from './device-claims.ts';
+import {
+  decodeStoredDeviceClaim,
+  isAllocatorHeldDeviceClaim,
+  looksLikeAllocatorHeldClaim,
+  type AllocatorHeldDeviceClaim,
+  type DeviceClaim,
+  type StoredDeviceClaim,
+} from './device-claim-record.ts';
 
-const DEVICE_CLAIM_SCHEMA_VERSION = 1;
+/**
+ * `allocator-held` is a statement about the principal, not about liveness: the claim belongs to an
+ * installation and an allocator identity incarnation, so there is no process to classify.
+ * `allocator-inconsistent` is the same statement made unreliable: the raw record declares the
+ * allocator schema version but does not decode, so it is not provably a non-allocator record.
+ */
+export type DeviceClaimClassification =
+  | OwnerLiveness
+  | 'inconsistent'
+  | 'allocator-inconsistent'
+  | 'owner-daemon-superseded'
+  | 'allocator-held';
 
-export type DeviceClaimClassification = OwnerLiveness | 'inconsistent';
+type ProcessOwnedClaimClassification = Exclude<DeviceClaimClassification, 'allocator-held'>;
 
-export type InspectedDeviceClaim = {
+/**
+ * One inspected claim file. The two members keep the two principals apart by type: a reader that
+ * reaches for `claim` gets the process-owned record or nothing, so ownership matching, stale
+ * release, the startup sweep and session close cannot be written against an allocator-held claim.
+ */
+export type InspectedDeviceClaim = ProcessOwnedInspectedClaim | AllocatorHeldInspectedClaim;
+
+type ProcessOwnedInspectedClaim = {
   fileName: string;
   deviceKey?: string;
   claim?: DeviceClaim;
-  classification: DeviceClaimClassification;
+  allocatorClaim?: undefined;
+  classification: ProcessOwnedClaimClassification;
   error?: string;
+};
+
+type AllocatorHeldInspectedClaim = {
+  fileName: string;
+  deviceKey: string;
+  claim?: undefined;
+  allocatorClaim: AllocatorHeldDeviceClaim;
+  classification: 'allocator-held';
+  /** Never set: an entry only reaches this member once its record decoded. */
+  error?: undefined;
 };
 
 export type DeviceClaimSelectors = {
@@ -32,11 +70,19 @@ export function inspectDeviceClaims(selectors: DeviceClaimSelectors): InspectedD
   const root = resolveDeviceClaimRoot();
   const listed = readClaimEntries(root);
   if ('claims' in listed) return listed.claims;
-  return listed.entries
+  const parsed = listed.entries
     .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
-    .map((entry) => inspectDeviceClaimFile(path.join(root, entry.name)))
+    .map((entry) => readDeviceClaimFile(path.join(root, entry.name)))
     .filter((entry): entry is InspectedDeviceClaim => entry !== null)
-    .filter((entry) => matchesClaimSelectors(entry.claim, selectors));
+    .filter((entry) => matchesClaimSelectors(entry.claim ?? entry.allocatorClaim, selectors));
+  const observations = readHostProcessIdentityObservations(
+    parsed.flatMap((entry) => (entry.claim ? [entry.claim.ownerPid] : [])),
+  );
+  return parsed.map((entry) =>
+    entry.claim
+      ? classifyInspectedClaim(entry, observations.get(entry.claim.ownerPid) ?? null)
+      : entry,
+  );
 }
 
 function readClaimEntries(
@@ -54,7 +100,7 @@ function readClaimEntries(
 }
 
 function matchesClaimSelectors(
-  claim: DeviceClaim | undefined,
+  claim: StoredDeviceClaim | undefined,
   selectors: DeviceClaimSelectors,
 ): boolean {
   if (!claim) return true;
@@ -65,22 +111,47 @@ function matchesClaimSelectors(
   ].every(Boolean);
 }
 
-function matchesClaimId(claim: DeviceClaim, expectedId: string | undefined): boolean {
+function matchesClaimId(claim: StoredDeviceClaim, expectedId: string | undefined): boolean {
   return !expectedId || claim.device.id === expectedId;
 }
 
-function matchesClaimDevice(claim: DeviceClaim, device: string | undefined): boolean {
+function matchesClaimDevice(claim: StoredDeviceClaim, device: string | undefined): boolean {
   return !device || claim.device.name === device || claim.device.id === device;
 }
 
-function matchesClaimPlatform(claim: DeviceClaim, platform: PlatformSelector | undefined): boolean {
+function matchesClaimPlatform(
+  claim: StoredDeviceClaim,
+  platform: PlatformSelector | undefined,
+): boolean {
   return matchesPlatformSelector(
-    { ...deviceFieldsFromPublicPlatform(claim.device.platform), appleOs: claim.device.appleOs },
+    { platform: claim.device.family, appleOs: claim.device.appleOs },
     platform,
   );
 }
 
 export function inspectDeviceClaimFile(filePath: string): InspectedDeviceClaim | null {
+  const entry = readDeviceClaimFile(filePath);
+  if (!entry?.claim) return entry;
+  const observations = readHostProcessIdentityObservations([entry.claim.ownerPid]);
+  return classifyInspectedClaim(entry, observations.get(entry.claim.ownerPid) ?? null);
+}
+
+/**
+ * The allocator-held claim recorded at this path, or null for every record provably not one. This
+ * kind carries its classification in the record itself, so — unlike {@link inspectDeviceClaimFile}
+ * — nothing here probes host process identity. The ordinary claim gate asks this on every device
+ * binding, and a claim whose owner is an installation has no process to probe.
+ *
+ * A record that declares the allocator schema version but fails to decode (for example, one
+ * corrupted into also carrying a process principal) is not provably absent, so it is returned
+ * too: the caller must refuse rather than treat the device as free for ordinary use.
+ */
+export function readAllocatorHeldClaimFile(filePath: string): InspectedDeviceClaim | null {
+  const entry = readDeviceClaimFile(filePath);
+  return entry?.allocatorClaim || entry?.classification === 'allocator-inconsistent' ? entry : null;
+}
+
+function readDeviceClaimFile(filePath: string): InspectedDeviceClaim | null {
   const fileName = path.basename(filePath);
   try {
     return inspectClaimContents(fileName, fs.readFileSync(filePath, 'utf8'));
@@ -97,59 +168,103 @@ export function inspectDeviceClaimFile(filePath: string): InspectedDeviceClaim |
 
 function inspectClaimContents(fileName: string, contents: string): InspectedDeviceClaim {
   try {
-    const claim = normalizeClaim(JSON.parse(contents) as unknown);
-    if (!claim) return { fileName, classification: 'inconsistent' };
+    const parsed = JSON.parse(contents) as unknown;
+    const record = decodeStoredDeviceClaim(parsed);
+    if (!record) {
+      return {
+        fileName,
+        classification: looksLikeAllocatorHeldClaim(parsed)
+          ? 'allocator-inconsistent'
+          : 'inconsistent',
+      };
+    }
+    if (isAllocatorHeldDeviceClaim(record)) {
+      return {
+        fileName,
+        deviceKey: record.deviceKey,
+        allocatorClaim: record,
+        classification: 'allocator-held',
+      };
+    }
     return {
       fileName,
-      deviceKey: claim.deviceKey,
-      claim,
-      classification: classifyOwnerLiveness({
-        owner: { pid: claim.ownerPid, startTime: claim.ownerStartTime },
-        stateDir: claim.stateDir,
-      }),
+      deviceKey: record.deviceKey,
+      claim: record,
+      classification: 'unknown',
     };
   } catch (error) {
     return { fileName, classification: 'inconsistent', error: String(error) };
   }
 }
 
-function normalizeClaim(value: unknown): DeviceClaim | null {
-  if (!isClaimObject(value)) return null;
-  const raw = value as Partial<DeviceClaim>;
-  return isValidClaimRecord(raw) ? (raw as DeviceClaim) : null;
-}
-
-function isClaimObject(value: unknown): value is object {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isValidClaimRecord(raw: Partial<DeviceClaim>): boolean {
-  return (
-    raw.schemaVersion === DEVICE_CLAIM_SCHEMA_VERSION &&
-    isClaimDevice(raw.device) &&
-    [raw.deviceKey, raw.session, raw.workspace, raw.stateDir, raw.ownerToken].every(
-      isNonEmptyString,
-    ) &&
-    isPositiveInteger(raw.ownerPid) &&
-    isFiniteNumber(raw.createdAtMs) &&
-    isFiniteNumber(raw.updatedAtMs)
+function classifyInspectedClaim(
+  entry: ProcessOwnedInspectedClaim,
+  observation: Parameters<typeof classifyOwnerLivenessFromObservation>[1],
+): InspectedDeviceClaim {
+  const claim = entry.claim;
+  if (!claim) return entry;
+  const owner = { pid: claim.ownerPid, startTime: claim.ownerStartTime };
+  const liveness = classifyOwnerLivenessFromObservation(
+    { owner, stateDir: claim.stateDir },
+    observation,
   );
+  // A live owner holds a device exclusively only while it can still be asked to
+  // release it. #2031: a replaced daemon keeps running and keeps its claim, but
+  // clients reach the successor published for its state dir instead, so the
+  // claim names a session no `session list` reports and no `close` can reach.
+  const superseded =
+    liveness === 'live' && isSupersededDaemonOwner({ ...owner, stateDir: claim.stateDir });
+  return { ...entry, classification: superseded ? 'owner-daemon-superseded' : liveness };
 }
 
-function isClaimDevice(value: unknown): value is DeviceClaim['device'] {
-  if (!isClaimObject(value)) return false;
-  const device = value as Partial<DeviceClaim['device']>;
-  return [device.id, device.name, device.platform, device.kind].every(isNonEmptyString);
+/** Claims hidden by the default status view and exposed through `device status --stale`. */
+export function deviceClaimRequiresStaleInspection(
+  classification: DeviceClaimClassification,
+): boolean {
+  switch (classification) {
+    case 'owner-process-dead':
+    case 'owner-process-reused':
+    case 'owner-state-dir-gone':
+    case 'owner-daemon-superseded':
+      return true;
+    case 'live':
+    case 'unknown':
+    case 'inconsistent':
+      return false;
+    // Corrupted, not leftover: `--stale` release proofs a dead process, which this has none of.
+    case 'allocator-inconsistent':
+      return false;
+    // An allocator-held claim is the normal state of a managed identity, not a leftover.
+    case 'allocator-held':
+      return false;
+  }
 }
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0;
-}
-
-function isPositiveInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0;
-}
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
+/**
+ * Claims whose recorded owner can no longer release them, and which
+ * reconciliation may therefore settle once exact-owner resource recovery
+ * reaches a terminal state. Both members are proofs about the owner, never
+ * about the resource: `owner-process-dead` is a process that exited,
+ * `owner-daemon-superseded` one that still runs but no longer serves the state
+ * dir its claim was taken in.
+ */
+export function deviceClaimOwnerCannotRelease(classification: DeviceClaimClassification): boolean {
+  switch (classification) {
+    case 'owner-process-dead':
+    case 'owner-daemon-superseded':
+      return true;
+    case 'live':
+    case 'owner-process-reused':
+    case 'owner-state-dir-gone':
+    case 'unknown':
+    case 'inconsistent':
+      return false;
+    // No process proof applies to a record that never decoded far enough to name one.
+    case 'allocator-inconsistent':
+      return false;
+    // Its owner is an installation, not a process, so no process proof can settle it: only the
+    // allocator's removal proof clears it, through `releaseAllocatorHeldClaim`.
+    case 'allocator-held':
+      return false;
+  }
 }

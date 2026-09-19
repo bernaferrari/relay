@@ -182,7 +182,9 @@ export type BrowserStackUploadOptions = {
 export async function uploadBrowserStackApp(
   appPath: string,
   options: BrowserStackUploadOptions,
+  signal?: AbortSignal,
 ): Promise<string> {
+  signal?.throwIfAborted();
   const file = await fs.readFile(appPath);
   const form = new FormData();
   form.set('file', new Blob([file]), path.basename(appPath));
@@ -193,6 +195,7 @@ export async function uploadBrowserStackApp(
       Authorization: basicAuthHeader(options),
     },
     body: form,
+    signal,
   });
   const json = (await response.json()) as unknown;
   const appUrl = readBrowserStackAppUrl(json);
@@ -208,8 +211,8 @@ export async function uploadBrowserStackApp(
 export function createBrowserStackUploadApp(
   options: Required<BrowserStackUploadOptions>,
 ): CloudWebDriverUploadApp {
-  return async ({ appPath, options: installOptions }) => {
-    const appReference = await uploadBrowserStackApp(appPath, options);
+  return async ({ appPath, options: installOptions, signal }) => {
+    const appReference = await uploadBrowserStackApp(appPath, options, signal);
     return {
       appReference,
       bundleId: installOptions?.appIdentifierHint,
@@ -219,14 +222,23 @@ export function createBrowserStackUploadApp(
   };
 }
 
+/**
+ * Builds the W3C `alwaysMatch` capabilities for a BrowserStack App Automate session.
+ *
+ * Every key is either W3C-standard (`platformName`), `appium:`-prefixed, or inside
+ * `bstack:options`. The legacy JSON Wire keys (`device`, `os_version`, `app`, `project`, `build`,
+ * `name`) must not appear: when the hub sees any of them it treats the whole request as a legacy
+ * session and reads the labels from the legacy top-level keys instead of `bstack:options`, so the
+ * project/build/session names are silently dropped and the session lands in "Untitled Project".
+ */
 export function buildBrowserStackCapabilities(
   options: BrowserStackCapabilitiesOptions,
 ): Record<string, unknown> {
   const { 'bstack:options': configuredBstackOptions, ...configured } = options.configured ?? {};
   return {
-    device: options.deviceName,
-    os_version: options.osVersion,
-    ...(options.app ? { app: options.app } : {}),
+    'appium:deviceName': options.deviceName,
+    'appium:platformVersion': options.osVersion,
+    ...(options.app ? { 'appium:app': options.app } : {}),
     ...configured,
     // Merged per key, never assigned: `configured` carrying its own `bstack:options` used to
     // replace the whole object and silently drop the session/build labels below.

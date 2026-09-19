@@ -1,15 +1,19 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+// oxlint-disable-next-line no-restricted-imports -- asserts a path under os.homedir
 import os from 'node:os';
 import path from 'node:path';
+import { AppError } from '@agent-device/kernel/errors';
 import { SessionStore } from '../session-store.ts';
-import type { SessionState } from '../types.ts';
-import { buildRequestFinishedEvent } from '../session-event-log.ts';
+import type { SessionState } from '../session-state.ts';
+import { buildRequestFinishedEvent } from '@agent-device/session-journal/session-event-log';
 import { HEAL_COMPLETE_SENTINEL } from '../session-script-writer.ts';
 import { parseReplayScriptDetailed } from '@agent-device/ad-script';
 import type { TargetAnnotationV1 } from '@agent-device/contracts/replay';
 import { repairPublication } from '../../__tests__/test-utils/session-factories.ts';
+
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 
 type RecordActionEntry = Parameters<SessionStore['recordAction']>[1];
 
@@ -49,7 +53,7 @@ function readWrittenSessionScript(root: string): string {
 }
 
 function makeFixture(prefix: string, sessionsDir?: string): SessionStoreFixture {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  const root = mkdtempForTestSync(prefix);
   return {
     root,
     store: new SessionStore(sessionsDir ? path.join(root, sessionsDir) : root),
@@ -106,11 +110,37 @@ test('expandHome resolves tilde, relative-with-cwd, and absolute paths', () => {
 });
 
 test('defaultTracePath sanitizes session name', () => {
-  const store = new SessionStore(path.join(os.tmpdir(), 'agent-device-tests'));
+  const store = new SessionStore(
+    path.join(mkdtempForTestSync('agent-device-tests'), 'agent-device-tests'),
+  );
   const session = makeSession('session with spaces');
   const tracePath = store.defaultTracePath(session);
   assert.match(tracePath, /session_with_spaces/);
   assert.match(tracePath, /\.trace\.log$/);
+});
+
+test('resolveSessionDir keeps every session dir beneath the sessions dir', () => {
+  const sessionsDir = path.join(
+    mkdtempForTestSync('agent-device-tests'),
+    'agent-device-tests',
+    'sessions',
+  );
+  const store = new SessionStore(sessionsDir);
+  assert.equal(store.resolveSessionDir('a/b:c d'), path.join(sessionsDir, 'a_b_c_d'));
+  // `.` and `..` survive `safeSessionName` unchanged, so without an explicit
+  // refusal `path.join` resolves them to the sessions dir itself and its parent
+  // (the daemon state dir): a remote caller's `--session ..` would then land
+  // app.log / runner.log / requests/*.ndjson outside the sessions tree.
+  for (const name of ['.', '..', '']) {
+    assert.throws(
+      () => store.resolveSessionDir(name),
+      (error: unknown) =>
+        error instanceof AppError &&
+        error.code === 'INVALID_ARGS' &&
+        /session name/i.test(error.message),
+      `expected resolveSessionDir(${JSON.stringify(name)}) to reject`,
+    );
+  }
 });
 
 test('session lease metadata round-trips through the store', () => {
@@ -431,7 +461,6 @@ test('writeSessionLog persists record --hide-touches flags in script output', ()
     flags: {
       platform: 'ios',
       fps: 30,
-      screenshotMaxSize: 1024,
       quality: 'high',
       hideTouches: true,
     },
@@ -439,10 +468,7 @@ test('writeSessionLog persists record --hide-touches flags in script output', ()
   });
 
   const script = writeScript(fixture);
-  assert.match(
-    script,
-    /record start "\.\/capture\.mp4" --fps 30 --max-size 1024 --quality high --hide-touches/,
-  );
+  assert.match(script, /record start "\.\/capture\.mp4" --fps 30 --quality high --hide-touches/);
 });
 
 test('writeSessionLog persists screenshot flags in script output', () => {
@@ -451,12 +477,12 @@ test('writeSessionLog persists screenshot flags in script output', () => {
   fixture.store.recordAction(fixture.session, {
     command: 'screenshot',
     positionals: ['./page.png'],
-    flags: { platform: 'ios', screenshotFullscreen: true, screenshotMaxSize: 1024 },
+    flags: { platform: 'ios', screenshotFullscreen: true, screenshotScale: 0.3 },
     result: {},
   });
 
   const script = writeScript(fixture);
-  assert.match(script, /screenshot "\.\/page\.png" --fullscreen --max-size 1024/);
+  assert.match(script, /screenshot "\.\/page\.png" --fullscreen --scale 0\.3/);
 });
 
 test('writeSessionLog persists inline open runtime hints in script output', () => {
@@ -595,6 +621,13 @@ test('writeSessionLog optimizes selector chains and scopes fallback snapshots', 
       durationMs: 800,
     },
   });
+  // #1783: hover @ref publishes as a portable selector line like click/longpress.
+  fixture.store.recordAction(fixture.session, {
+    command: 'hover',
+    positionals: ['@e4~s12'],
+    flags: { platform: 'web', settle: true },
+    result: { selectorChain: ['text="Second message"', 'role=link'] },
+  });
   fixture.store.recordAction(fixture.session, {
     command: 'fill',
     positionals: ['@e2', 'hello world'],
@@ -607,6 +640,7 @@ test('writeSessionLog optimizes selector chains and scopes fallback snapshots', 
   assertScriptMatches(script, [
     /click "text=\\"Continue\\" \|\| role=button" --count 2/,
     /longpress "label=\\"Last message\\" \|\| role=\\"statictext\\"" 800/,
+    /hover "text=\\"Second message\\" \|\| role=link"\n/,
     /snapshot -i -s "Email"/,
     /fill @e2 "Email" "hello world" --delay-ms 5/,
   ]);
@@ -614,7 +648,7 @@ test('writeSessionLog optimizes selector chains and scopes fallback snapshots', 
 
 test('writeSessionLog escapes device labels with quotes and backslashes', () => {
   const fixture = makeFixture('agent-device-session-log-device-label-');
-  fixture.session.device.name = 'QA "Lab" \\ Shelf';
+  fixture.session.device.name = String.raw`QA "Lab" \ Shelf`;
   recordOpen(fixture.store, fixture.session);
 
   const script = writeScript(fixture);
@@ -657,7 +691,7 @@ test('writeSessionLog preserves significant whitespace and empty string argument
 
   const script = writeScript(fixture);
   assertScriptMatches(script, [
-    /type "  leading\\ttrailing  "/,
+    /type " {2}leading\\ttrailing {2}"/,
     /fill @e5 "Search field" ""/,
     /screenshot " \.\/screens\/final\.png "/,
     /--metro-host " host\\t" --launch-url "myapp:\/\/dev "/,
@@ -721,7 +755,7 @@ test('writeSessionLog never fabricates a target-v1 annotation for actions record
 // SESSION_NOT_FOUND into REPAIR_SESSION_EXPIRED with re-run guidance. ---
 
 test('writeRepairTombstone/readRepairTombstone round-trips owner + source path', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-tombstone-'));
+  const root = mkdtempForTestSync('agent-device-tombstone-');
   const store = new SessionStore(path.join(root, 'sessions'));
   const session = makeSession('default');
   session.scriptPublication = repairPublication('armed', {
@@ -738,7 +772,7 @@ test('writeRepairTombstone/readRepairTombstone round-trips owner + source path',
 });
 
 test('readRepairTombstone returns undefined once the tombstone has expired', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-tombstone-expiry-'));
+  const root = mkdtempForTestSync('agent-device-tombstone-expiry-');
   const store = new SessionStore(path.join(root, 'sessions'));
   const session = makeSession('default');
   // TTL 0 => expiresAt <= now => already stale.
@@ -747,7 +781,7 @@ test('readRepairTombstone returns undefined once the tombstone has expired', () 
 });
 
 test('clearRepairTombstone removes a tombstone (a fresh replay --save-script clears the key)', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-tombstone-clear-'));
+  const root = mkdtempForTestSync('agent-device-tombstone-clear-');
   const store = new SessionStore(path.join(root, 'sessions'));
   const session = makeSession('default');
   store.writeRepairTombstone(session);
@@ -763,7 +797,7 @@ test('clearRepairTombstone removes a tombstone (a fresh replay --save-script cle
 // not lost behind a generic "reaped before it was finalized" tombstone. ---
 
 test('BLOCKER 2: finalizeRepairTeardown of a COMPLETE transaction whose commit FAILS preserves the failure in a distinct tombstone, not a generic expiry', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-teardown-commit-fail-'));
+  const root = mkdtempForTestSync('agent-device-teardown-commit-fail-');
   const store = new SessionStore(path.join(root, 'sessions'));
   const healedPath = path.join(root, 'flow.healed.ad');
   // A prior COMPLETE (sentinel-marked) healed artifact already sits at the
@@ -776,7 +810,6 @@ test('BLOCKER 2: finalizeRepairTeardown of a COMPLETE transaction whose commit F
   const before = fs.readFileSync(healedPath, 'utf8');
 
   const session = makeSession('default');
-  session.recordSession = true;
   session.scriptPublication = repairPublication('complete', {
     boundary: 0,
     path: healedPath,
@@ -812,12 +845,11 @@ test('BLOCKER 2: finalizeRepairTeardown of a COMPLETE transaction whose commit F
 // an explicit `close --save-script` commit. ---
 
 test('BLOCKER 3: finalizeRepairTeardown auto-commit records a terminal close, producing a self-contained, fresh-replayable healed .ad', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-teardown-autocommit-close-'));
+  const root = mkdtempForTestSync('agent-device-teardown-autocommit-close-');
   const store = new SessionStore(path.join(root, 'sessions'));
   const healedPath = path.join(root, 'flow.healed.ad');
 
   const session = makeSession('default');
-  session.recordSession = true;
   session.scriptPublication = repairPublication('complete', { boundary: 0, path: healedPath });
   session.actions = [
     { ts: 1, command: 'open', positionals: ['Demo'], flags: {} },

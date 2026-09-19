@@ -1,21 +1,23 @@
+import { createTestDeviceInventoryGateways } from '../../__tests__/test-utils/device-inventory-gateways.ts';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { expect, test } from 'vitest';
-import { makeSessionStore } from '../../__tests__/test-utils/index.ts';
+import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
-import { createRequestHandler } from '../request-router.ts';
+import { createRequestHandler } from './test-device-runtime-gateway.ts';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
+import { replayScriptSourceBundleFor } from '../../__tests__/test-utils/replay-script-source.ts';
 
 function createHarness() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-router-replay-env-'));
+  const root = mkdtempForTestSync('agent-device-router-replay-env-');
   return {
     root,
     handler: createRequestHandler({
       logPath: path.join(root, 'daemon.log'),
-      stateDir: root,
       token: 'test-token',
       sessionStore: makeSessionStore('agent-device-router-replay-env-store-'),
       leaseRegistry: new LeaseRegistry(),
+      deviceInventoryGateways: createTestDeviceInventoryGateways(),
       trackDownloadableArtifact: () => 'artifact-id',
     }),
   };
@@ -32,7 +34,10 @@ test('malformed replay env returns a normalized INVALID_ARGS response', async ()
       session: 'default',
       command: 'replay',
       positionals: [flowPath],
-      flags: { replayEnv: ['NOEQUAL'] },
+      flags: {
+        replayEnv: ['NOEQUAL'],
+        replayScriptSource: replayScriptSourceBundleFor(flowPath),
+      },
       meta: { requestId: 'req-invalid-replay-env' },
     }),
   ).resolves.toMatchObject({
@@ -53,7 +58,13 @@ test('ordinary replay env values do not globally corrupt request diagnostics', a
     session: 'default',
     command: 'replay',
     positionals: [missingPath],
-    flags: { replayEnv: ['RETRIES=2', 'USER=demo'] },
+    // #1802: a request whose bundle does not carry its own entry — the shape a daemon sees when
+    // the caller's script vanished between collection and dispatch. The failure still names the
+    // path, which is what this test is about.
+    flags: {
+      replayEnv: ['RETRIES=2', 'USER=demo'],
+      replayScriptSource: { entry: missingPath, files: {} },
+    },
     meta: { requestId: 'req-ordinary-replay-env' },
   });
 

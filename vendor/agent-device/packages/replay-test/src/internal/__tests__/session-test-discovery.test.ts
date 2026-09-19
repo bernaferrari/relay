@@ -6,7 +6,8 @@ import {
   buildReplayTestSessionName,
   discoverReplayTestEntries,
 } from '../session-test-discovery.ts';
-import { buildReplayTestArtifactSlug, trimEdgeDashes } from '../session-test-artifacts.ts';
+import { trimEdgeDashes } from '@agent-device/kernel/collections';
+import { buildReplayTestArtifactSlug } from '../session-test-artifacts.ts';
 import type { ReplayTestManifest, ReplayTestSource } from '../session-test-types.ts';
 
 // Scheduler-owned discovery policy (#1478 P3b): which sources a --platform filter runs, which
@@ -26,7 +27,6 @@ const sourcesOf =
 
 test('platform filter skips sources that declared no platform', () => {
   const entries = discoverReplayTestEntries({
-    inputs: ['suite'],
     platformFilter: 'android',
     discoverSources: sourcesOf(
       { path: '01-untyped.ad', manifest: unspecified },
@@ -44,7 +44,6 @@ test('platform filter skips sources that declared no platform', () => {
 
 test('platform filter runs caller-bound sources, which take their platform from the invocation', () => {
   const entries = discoverReplayTestEntries({
-    inputs: ['suite'],
     platformFilter: 'android',
     discoverSources: sourcesOf({ path: '01-flow.yaml', manifest: callerBound }),
   });
@@ -55,7 +54,6 @@ test('platform filter runs caller-bound sources, which take their platform from 
 
 test('platform filter drops declared sources that do not match, without a skip entry', () => {
   const entries = discoverReplayTestEntries({
-    inputs: ['suite'],
     platformFilter: 'android',
     discoverSources: sourcesOf(
       { path: '01-ios.ad', manifest: declared('ios') },
@@ -73,7 +71,6 @@ test('a suite that matched nothing after filtering is rejected', () => {
   assert.throws(
     () =>
       discoverReplayTestEntries({
-        inputs: ['suite'],
         platformFilter: 'android',
         discoverSources: sourcesOf({ path: '01-ios.ad', manifest: declared('ios') }),
       }),

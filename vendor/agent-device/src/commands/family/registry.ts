@@ -1,6 +1,6 @@
 import { batchCommandFamily } from '../batch/index.ts';
 import { captureCommandFamily } from '../capture/index.ts';
-import type { CliReader, DaemonWriter } from '../cli-grammar/types.ts';
+import type { AnyDaemonWriter, CliReader } from '../cli-grammar/types.ts';
 import { debuggingCommandFamily } from '../debugging/index.ts';
 import { interactionCommandFamily } from '../interaction/index.ts';
 import { managementCommandFamily } from '../management/index.ts';
@@ -12,13 +12,13 @@ import { reactNativeCommandFamily } from '../react-native/index.ts';
 import { recordingCommandFamily } from '../recording/index.ts';
 import { replayCommandFamily } from '../replay/index.ts';
 import { systemCommandFamily } from '../system/index.ts';
-import type { CommandSchemaOverride } from '../../cli-schema/types.ts';
+import type { CommandSchema } from '@agent-device/command-registry/command-schema';
 import { type CommandFamilyFacet } from './types.ts';
 
 type CommandFamilyRecordMap = {
-  cliSchemas: CommandSchemaOverride;
+  cliSchemas: CommandSchema;
   cliReaders: CliReader;
-  daemonWriters: DaemonWriter;
+  daemonWriters: AnyDaemonWriter;
   cliOutputFormatters: CliOutputFormatter;
 };
 
@@ -49,7 +49,7 @@ export function listCommandFamilyDefinitions(): CommandFamilyDefinition[] {
   return commandFamilies.flatMap((family) => [...family.definitions]);
 }
 
-export function listCommandFamilyCliSchemas(): Record<string, CommandSchemaOverride> {
+export function listCommandFamilyCliSchemas(): Record<string, CommandSchema> {
   return mergeFamilyRecords('cliSchemas');
 }
 
@@ -57,7 +57,7 @@ export function listCommandFamilyCliReaders(): Record<CommandFamilyCommandName, 
   return mergeFamilyRecords('cliReaders') as Record<CommandFamilyCommandName, CliReader>;
 }
 
-export function listCommandFamilyDaemonWriters(): Record<string, DaemonWriter> {
+export function listCommandFamilyDaemonWriters(): Record<string, AnyDaemonWriter> {
   return mergeFamilyRecords('daemonWriters');
 }
 

@@ -1,9 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { runCmd } from '../utils/exec.ts';
 import { AppError } from '@agent-device/kernel/errors';
 import type { CliFlags } from '@agent-device/contracts/command';
-import type { EnvMap } from '../utils/env-map.ts';
+import { type EnvMap } from '@agent-device/kernel/source-value';
 import { readCloudJsonResponse } from './cloud-response.ts';
 
 const DEFAULT_CLOUD_BASE_URL = 'https://cloud.agent-device.dev';
@@ -71,6 +70,8 @@ type AuthIo = {
   stdoutIsTTY?: boolean;
   stderr?: Pick<NodeJS.WriteStream, 'write'>;
   now?: () => number;
+  // di-seam-approved: injects the fetch global, which has no module boundary vi.mock can
+  // intercept. auth-session.test.ts injects it directly for exact per-call assertions.
   fetch?: typeof fetch;
   openBrowser?: (url: string) => Promise<void>;
 };
@@ -223,17 +224,16 @@ export async function loginWithDeviceAuth(options: {
     },
     fetchImpl: options.io?.fetch,
   });
-  assertDeviceAuthStart(start);
+  await assertDeviceAuthStart(start);
 
-  const verificationUrl = start.verificationUriComplete ?? start.verificationUri;
-  const printableUrl =
-    authMode === 'local-browser'
-      ? start.verificationUri
-      : appendUserCode(start.verificationUri, start.userCode);
+  const verificationUrl = hasToken(start.verificationUriComplete)
+    ? start.verificationUriComplete
+    : start.verificationUri;
   if (authMode === 'local-browser') {
     writeStderr(options.io, `Opening ${start.verificationUri}...\n`);
     await openBrowser(verificationUrl, options.io);
   } else {
+    const printableUrl = appendUserCode(start.verificationUri, start.userCode);
     writeStderr(
       options.io,
       `Open this URL on your machine:\n${printableUrl}\n\nWaiting for approval for 10 minutes...\n`,
@@ -408,6 +408,8 @@ async function pollDeviceAuth(options: {
   deviceCode: string;
   expiresIn: number | undefined;
   interval: number | undefined;
+  // di-seam-approved: same fetch-global seam as AuthIo.fetch above, threaded through this
+  // device-auth-poll helper as fetchImpl.
   fetchImpl?: typeof fetch;
   now?: () => number;
 }): Promise<DeviceAuthPollResponse> {
@@ -446,6 +448,8 @@ async function postJson<T>(options: {
   baseUrl: string;
   pathName: string;
   body: Record<string, unknown>;
+  // di-seam-approved: same fetch-global seam as AuthIo.fetch above, threaded through this
+  // postJson helper as fetchImpl.
   fetchImpl?: typeof fetch;
 }): Promise<T> {
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -461,14 +465,42 @@ async function postJson<T>(options: {
   });
 }
 
-function assertDeviceAuthStart(response: DeviceAuthStartResponse): void {
-  if (
-    !hasToken(response.deviceCode) ||
-    !hasToken(response.userCode) ||
-    !hasToken(response.verificationUri)
-  ) {
-    throw new AppError('COMMAND_FAILED', 'Cloud auth start returned an unusable response.');
+type UnusableDeviceAuthStartField =
+  | 'deviceCode'
+  | 'userCode'
+  | 'verificationUri'
+  | 'verificationUriComplete';
+
+/**
+ * Both verification URIs are printed and one of them is launched, so the start response is checked
+ * as it arrives rather than at each use.
+ */
+async function assertDeviceAuthStart(response: DeviceAuthStartResponse): Promise<void> {
+  if (!hasToken(response.deviceCode)) {
+    throw unusableDeviceAuthStartResponse('deviceCode');
   }
+  if (!hasToken(response.userCode)) {
+    throw unusableDeviceAuthStartResponse('userCode');
+  }
+  if (!hasToken(response.verificationUri)) {
+    throw unusableDeviceAuthStartResponse('verificationUri');
+  }
+  const { isSafeBrowserUrl } = await import('./browser-launch.ts');
+  if (!isSafeBrowserUrl(response.verificationUri)) {
+    throw unusableDeviceAuthStartResponse('verificationUri');
+  }
+  if (
+    hasToken(response.verificationUriComplete) &&
+    !isSafeBrowserUrl(response.verificationUriComplete)
+  ) {
+    throw unusableDeviceAuthStartResponse('verificationUriComplete');
+  }
+}
+
+function unusableDeviceAuthStartResponse(field: UnusableDeviceAuthStartField): AppError {
+  return new AppError('COMMAND_FAILED', 'Cloud auth start returned an unusable response.', {
+    field,
+  });
 }
 
 function detectAuthMode(
@@ -545,16 +577,8 @@ async function openBrowser(url: string, io?: AuthIo): Promise<void> {
     await io.openBrowser(url);
     return;
   }
-  const platform = process.platform;
-  try {
-    if (platform === 'darwin') {
-      await runCmd('open', [url], { allowFailure: true, timeoutMs: 5000 });
-    } else if (platform === 'win32') {
-      await runCmd('cmd', ['/c', 'start', '', url], { allowFailure: true, timeoutMs: 5000 });
-    } else {
-      await runCmd('xdg-open', [url], { allowFailure: true, timeoutMs: 5000 });
-    }
-  } catch {
+  const { openUrlInBrowser } = await import('./browser-launch.ts');
+  if (!(await openUrlInBrowser(url))) {
     writeStderr(io, `Open this URL on your machine:\n${url}\n`);
   }
 }

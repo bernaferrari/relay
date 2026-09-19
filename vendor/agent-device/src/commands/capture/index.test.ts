@@ -4,7 +4,6 @@ import { alertCliReader, alertDaemonWriter } from './alert.ts';
 import { diffCliReader } from './diff.ts';
 import { snapshotCliOutput } from './output.ts';
 import { screenshotCliReader, screenshotDaemonWriter } from './screenshot.ts';
-import { settingsCliReader, settingsDaemonWriter } from './settings.ts';
 import { snapshotCliReader } from './snapshot.ts';
 import { waitCliReader, waitDaemonWriter } from './wait.ts';
 
@@ -31,6 +30,7 @@ describe('capture command interface', () => {
           snapshotDepth: 3,
           snapshotScope: 'Login',
           snapshotRaw: true,
+          snapshotCustomActions: true,
           snapshotForceFull: true,
           timeoutMs: 10_000,
         }),
@@ -40,13 +40,14 @@ describe('capture command interface', () => {
       depth: 3,
       scope: 'Login',
       raw: true,
+      customActions: true,
       forceFull: true,
       timeoutMs: 10_000,
     });
   });
 
-  test('routes snapshot diagnostics warning to stderr output', () => {
-    const output = snapshotCliOutput({
+  test('routes snapshot diagnostics warning to stderr output', async () => {
+    const output = await snapshotCliOutput({
       result: {
         nodes: [],
         truncated: false,
@@ -74,13 +75,13 @@ describe('capture command interface', () => {
   test('reads screenshot path and writes screenshot flags', () => {
     const input = screenshotCliReader(
       ['page.png'],
-      flags({ screenshotPixelDensity: 2, screenshotFullscreen: true, screenshotMaxSize: 1024 }),
+      flags({ screenshotPixelDensity: 2, screenshotFullscreen: true, screenshotScale: 0.3 }),
     );
     expect(input).toMatchObject({
       path: 'page.png',
       pixelDensity: 2,
       fullscreen: true,
-      maxSize: 1024,
+      scale: 0.3,
     });
     expect(screenshotDaemonWriter(input)).toMatchObject({
       command: 'screenshot',
@@ -88,7 +89,7 @@ describe('capture command interface', () => {
       options: {
         screenshotPixelDensity: 2,
         screenshotFullscreen: true,
-        screenshotMaxSize: 1024,
+        screenshotScale: 0.3,
       },
     });
   });
@@ -130,6 +131,33 @@ describe('capture command interface', () => {
     expectInvalidArgs(() => waitDaemonWriter({ text: 'Ready', ref: '@e1' }), 'exactly one');
   });
 
+  test('reads and writes strict wait absent targets', () => {
+    expect(waitCliReader(['absent', 'label="Removed"', '5000'], flags())).toMatchObject({
+      absent: 'label="Removed"',
+      timeoutMs: 5000,
+    });
+    expect(waitDaemonWriter({ absent: 'label="Removed"', timeoutMs: 5000 })).toMatchObject({
+      command: 'wait',
+      positionals: ['absent', 'label="Removed"', '5000'],
+    });
+  });
+
+  test('refuses wait absent scope and depth with typed invalid arguments', () => {
+    expectInvalidArgs(
+      () => waitCliReader(['absent', 'label="Removed"'], flags({ snapshotScope: 'Root' })),
+      '--scope',
+    );
+    expectInvalidArgs(
+      () => waitCliReader(['absent', 'label="Removed"'], flags({ snapshotDepth: 2 })),
+      '--depth',
+    );
+    expectInvalidArgs(
+      () => waitDaemonWriter({ absent: 'label="Removed"', scope: 'Root' }),
+      '--scope',
+    );
+    expectInvalidArgs(() => waitDaemonWriter({ absent: 'label="Removed"', depth: 2 }), '--depth');
+  });
+
   test('reads and writes wait stable with defaults', () => {
     expect(waitCliReader(['stable'], flags())).toMatchObject({ stable: true });
     expect(waitDaemonWriter({ stable: true })).toMatchObject({
@@ -169,20 +197,6 @@ describe('capture command interface', () => {
     expect(alertDaemonWriter({ action: 'dismiss', timeoutMs: 1000 })).toMatchObject({
       command: 'alert',
       positionals: ['dismiss', '1000'],
-    });
-  });
-
-  test('reads and writes settings input', () => {
-    const input = settingsCliReader(['permission', 'grant', 'camera', 'limited'], flags());
-    expect(input).toMatchObject({
-      setting: 'permission',
-      state: 'grant',
-      permission: 'camera',
-      mode: 'limited',
-    });
-    expect(settingsDaemonWriter(input)).toMatchObject({
-      command: 'settings',
-      positionals: ['permission', 'grant', 'camera', 'limited'],
     });
   });
 });

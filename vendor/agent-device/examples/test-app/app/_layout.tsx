@@ -26,6 +26,8 @@ function RootLayoutContent() {
         <Stack.Screen name="accessory-setup" />
         <Stack.Screen name="automation" options={{ headerShown: true, title: 'Automation' }} />
         <Stack.Screen name="inert" options={{ presentation: 'fullScreenModal' }} />
+        <Stack.Screen name="snapshot-depth" />
+        <Stack.Screen name="deep-tree" />
         <Stack.Screen name="product/[productId]" />
         <Stack.Screen name="webview" />
       </Stack>

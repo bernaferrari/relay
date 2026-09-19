@@ -1,20 +1,25 @@
+import type { CommandFlags } from '@agent-device/contracts/command';
 import type { BackendSnapshotResult } from '../backend.ts';
-import type { CommandFlags } from '../core/dispatch.ts';
 import {
   buildSnapshotPresentationKey,
   snapshotPresentationOptionsFromFlags,
   type SnapshotState,
 } from '@agent-device/kernel/snapshot';
-import { isSparseSnapshotQualityVerdict } from '../snapshot/snapshot-quality.ts';
-import type { DaemonRequest, SessionState } from './types.ts';
+import { isSparseSnapshotQualityVerdict } from '@agent-device/capture-kit/snapshot-quality-verdict';
+import type { DaemonRequest } from './daemon-request.ts';
+import type { SessionState } from './session-state.ts';
 import { SessionStore } from './session-store.ts';
-import { captureSnapshot } from './handlers/snapshot-capture.ts';
+import { captureSnapshot } from './snapshot-capture.ts';
 import { setSessionSnapshot } from './session-snapshot.ts';
-import { getActiveAndroidSnapshotFreshness } from './android-snapshot-freshness.ts';
+import { getActiveAndroidSnapshotFreshness } from './session-snapshot-freshness.ts';
+import { isPostGestureStabilizationPending } from './deferred-interaction-outcome.ts';
+import type { BoundSelectorCapture } from './selector-capture-binding.ts';
+import { buildRuntimeCaptureInput } from './snapshot-runtime-capture-input.ts';
+import { isLegacySparseIosInteractiveSnapshot } from '@agent-device/selectors/absence-observation';
 
 const SELECTOR_CAPTURE_CACHE_TTL_MS = 750;
 
-type SelectorCaptureRuntimeParams = {
+export type SelectorCaptureRuntimeParams = {
   device: SessionState['device'];
   session: SessionState | undefined;
   sessionStore: SessionStore;
@@ -24,6 +29,12 @@ type SelectorCaptureRuntimeParams = {
   // Sessionless routes have no session record to read the consumed capture back from, so the
   // capture runtime reports every consumed snapshot here for response-level disclosures.
   consumedSnapshot?: { state?: SnapshotState };
+  /**
+   * The request-bound capture from `resolveBoundSelectorCapture`: every cache tier, recovery
+   * re-capture, and poll below reaches the platform through it. Required since find (R35) —
+   * every selector command admits before it captures, so there is no legacy branch left.
+   */
+  capture: BoundSelectorCapture;
 };
 
 /**
@@ -169,18 +180,36 @@ async function runCapture(
   snapshotScope: string | undefined,
   interactiveOnly = request.flags?.snapshotInteractiveOnly,
 ): Promise<SnapshotState> {
+  const flags = {
+    ...request.flags,
+    snapshotInteractiveOnly: interactiveOnly,
+  };
+  const boundCapture = params.capture;
   const capture = await captureSnapshot({
     device: params.device,
     session: params.session,
-    flags: {
-      ...request.flags,
-      snapshotInteractiveOnly: interactiveOnly,
-    },
+    flags,
     outPath: request.outPath ?? params.req.flags?.out,
     logPath: params.logPath ?? '',
     snapshotScope,
     includeRects: request.includeRects,
     signal: request.signal,
+    captureData: async () =>
+      await boundCapture(
+        buildRuntimeCaptureInput({
+          flags,
+          logPath: params.logPath ?? '',
+          meta: params.req.meta,
+          session: params.session,
+          snapshotScope,
+          includeRects: request.includeRects,
+          // The POLL's remaining budget, not the request's. A binding's signal is fixed at
+          // bind time and `wait` binds once and polls many times, so without this the
+          // deadline never reaches the platform: a stalled capture would consume the whole
+          // request instead of producing the `capture-stalled` verdict.
+          signal: request.signal,
+        }),
+      ),
   });
   return capture.snapshot;
 }
@@ -247,7 +276,7 @@ function shouldBypassForPostGestureStabilization(
 ): boolean {
   return (
     request.cache?.bypassForPostGestureStabilization === true &&
-    Boolean(session?.postGestureStabilization)
+    isPostGestureStabilizationPending(session)
   );
 }
 
@@ -286,10 +315,4 @@ function updateSessionSnapshot(params: {
   if (!session || isSparseSnapshotQualityVerdict(snapshot.snapshotQuality)) return;
   setSessionSnapshot(session, snapshot);
   sessionStore.set(sessionName, session);
-}
-
-function isLegacySparseIosInteractiveSnapshot(snapshot: SnapshotState): boolean {
-  if (snapshot.snapshotQuality) return false;
-  if (snapshot.backend !== 'xctest' || snapshot.nodes.length !== 1) return false;
-  return snapshot.nodes[0]?.type === 'Application';
 }

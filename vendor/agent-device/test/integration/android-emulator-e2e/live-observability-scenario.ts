@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { PUBLIC_COMMANDS } from '../../../src/command-catalog.ts';
-import { readDaemonInfo } from '../../../src/daemon/client/daemon-client-metadata.ts';
-import { resolveDaemonPaths } from '../../../src/daemon/config.ts';
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
+import { readDaemonInfo } from '../../../src/daemon-client/daemon-client-metadata.ts';
+import { resolveDaemonPaths } from '../../../src/daemon-resolution.ts';
 import {
   collectPagedEventTimeline,
   type EventTimelinePage,
@@ -29,22 +29,16 @@ export async function assertObservabilityAndArtifacts(context: LiveContext): Pro
 }
 
 async function assertMetrics(context: LiveContext): Promise<void> {
-  const perf = await runStep(context, 'read Android fixture performance metrics', [
+  const perf = await runStep(context, 'read Android fixture memory metrics', [
     'perf',
-    'metrics',
+    'memory',
+    'sample',
   ]);
   const metrics = perf.json?.data?.metrics;
-  assert.equal(metrics?.startup?.available, true, JSON.stringify(perf.json));
-  assert.ok(Number(metrics?.startup?.lastDurationMs) > 0, JSON.stringify(perf.json));
   assert.equal(metrics?.memory?.available, true, JSON.stringify(perf.json));
   assert.ok(Number(metrics?.memory?.totalPssKb) > 0, JSON.stringify(perf.json));
-  assert.equal(metrics?.cpu?.available, true, JSON.stringify(perf.json));
-  assert.ok(Number.isFinite(Number(metrics?.cpu?.usagePercent)), JSON.stringify(perf.json));
-  verifyCommand(
-    context,
-    C.perf,
-    'Android startup, PSS memory, and CPU metrics are typed and numeric',
-  );
+  assert.deepEqual(Object.keys(metrics ?? {}), ['memory']);
+  verifyCommand(context, C.perf, 'Android PSS memory metrics are typed and numeric');
 }
 
 async function assertLogs(context: LiveContext): Promise<void> {
@@ -65,7 +59,9 @@ async function assertLogs(context: LiveContext): Promise<void> {
 
 async function assertTraceAndRecording(context: LiveContext): Promise<void> {
   const tracePath = path.join(context.artifactDir, 'fixture.adtrace');
-  await runStep(context, 'reveal Android quick actions before trace', ['scroll', 'down', '0.7']);
+  // 0.7 of a viewport scrolls the quick actions off the top on the pixel_7 profile the
+  // nightly lane pins; half a viewport puts the whole card on screen.
+  await runStep(context, 'reveal Android quick actions before trace', ['scroll', 'down', '0.5']);
   await runStep(context, 'start Android interaction trace', ['trace', 'start', tracePath]);
   await runStep(context, 'trace Android visible mutation', ['press', 'id="home-open-catalog"']);
   await runStep(context, 'stop Android interaction trace', ['trace', 'stop', tracePath]);
@@ -82,8 +78,6 @@ async function assertTraceAndRecording(context: LiveContext): Promise<void> {
     'start',
     recordingPath,
     '--hide-touches',
-    '--max-size',
-    '720',
   ]);
   await runStep(context, 'return to Android fixture home before recording', [
     'click',
@@ -106,6 +100,10 @@ async function assertBatchAndEvents(context: LiveContext): Promise<void> {
   await runStep(context, 'return to Android fixture home before batch', ['click', 'label="Home"']);
   await runStep(context, 'restore Android fixture home title before batch', ['scroll', 'top']);
   await assertWaitText(context, 'Agent Device Tester');
+  // Android snapshots only carry on-screen nodes, so both batch targets are revealed first.
+  // 0.3 of a viewport is the band where the gesture lab card and the release notice below it
+  // are on screen together on the pixel_7 profile the lane pins; by 0.4 the card is gone.
+  await runStep(context, 'reveal Android batch targets', ['scroll', 'down', '0.3']);
   const batch = await runStep(context, 'run Android nested semantic read batch', [
     'batch',
     '--steps',
@@ -116,7 +114,9 @@ async function assertBatchAndEvents(context: LiveContext): Promise<void> {
       },
       {
         command: 'is',
-        input: { predicate: 'visible', selector: 'id="home-title"' },
+        // A sibling card, not the notice that owns `dismiss-notice`: resolving a child already
+        // proves its parent is present, so a parent target could not fail on its own.
+        input: { predicate: 'visible', selector: 'id="gesture-lab-card"' },
       },
     ]),
   ]);
@@ -137,7 +137,9 @@ async function assertBatchAndEvents(context: LiveContext): Promise<void> {
     const result = await runStep(
       context,
       cursor === undefined ? 'read Android event timeline' : `read Android events from ${cursor}`,
-      cursor === undefined ? ['events', '4'] : ['events', '4', cursor],
+      // Each page read appends its own request events, so a page smaller than that tail
+      // never catches up with a full-tier session's timeline.
+      cursor === undefined ? ['events', '50'] : ['events', '50', cursor],
     );
     return (result.json?.data ?? {}) as EventTimelinePage;
   });

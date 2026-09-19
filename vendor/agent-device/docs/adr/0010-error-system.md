@@ -3,6 +3,11 @@
 - Status: accepted
 - Date: 2026-07-03
 
+> **Amended by [ADR 0019](0019-request-bound-platform-runtime.md).** Existing normalization and
+> cause-preservation rules remain accepted. When an operation and binding/resource cleanup both
+> fail, the operation remains primary and cleanup is structured secondary diagnostic evidence;
+> cleanup-only failure surfaces normally.
+
 ## Context
 
 The error system is centralized in `src/kernel/errors.ts` (`AppError`, `normalizeError`,
@@ -23,7 +28,8 @@ agent failures (selector/ref misses), and consumers that drop fields (MCP tool e
    `err instanceof AppError ? err : new AppError(...)`.
 2. **Code selection.** Use the most specific `KnownAppErrorCode`; `COMMAND_FAILED` is for genuine
    runtime failures of a well-formed request, never a catch-all for capability gaps
-   (`UNSUPPORTED_OPERATION`), contention (`DEVICE_IN_USE`, the only retriable code), or ambiguity
+   (`UNSUPPORTED_OPERATION`), contention (`DEVICE_IN_USE`, the only code retriable by default;
+   the cross-worktree device-claim path overrides it to `retriable: false`), or ambiguity
    (`AMBIGUOUS_MATCH`). New codes are added to the union deliberately; machine-dispatchable
    sub-classification rides in `details.reason` (the lease registry is the model).
 3. **Hints answer "what should the agent run next".** A hint is required wherever the per-code

@@ -1,3 +1,5 @@
+import { isSessionRecording } from '../session-script-publication-capability.ts';
+import { createTestDeviceInventoryGateways } from '../../__tests__/test-utils/device-inventory-gateways.ts';
 /**
  * #1478 (P4-pre): raw-wire counterfactuals for the `flags.saveScript` seam.
  *
@@ -13,21 +15,24 @@
 import fs from 'node:fs';
 import { NO_SCRIPT_PUBLICATION, scriptTargetPath } from '../session-script-publication-state.ts';
 import net from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, test } from 'vitest';
 import { LeaseRegistry } from '../lease-registry.ts';
-import { createRequestHandler } from '../request-router.ts';
+import { REPLAY_SCRIPT_SOURCE_REQUIRED_MESSAGE } from '../replay-script-source.ts';
+import { createRequestHandler } from './test-device-runtime-gateway.ts';
 import { SessionStore } from '../session-store.ts';
 import { createDaemonHttpServer } from '../server/http-server.ts';
 import { createSocketServer, listenNetServer } from '../server/transport.ts';
-import type { DaemonInvokeFn, DaemonResponse, SessionState } from '../types.ts';
-import { makeIosSession } from '../../__tests__/test-utils/index.ts';
+import type { DaemonInvokeFn, DaemonResponse } from '../daemon-request.ts';
+import type { SessionState } from '../session-state.ts';
+import { makeIosSession } from '../../__tests__/test-utils/session-factories.ts';
 import {
   closeLoopbackServer,
   listenOnLoopback,
   skipWhenLoopbackUnavailable,
 } from '../../__tests__/test-utils/loopback.ts';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
+import { flushSessionEventLogWrites } from '@agent-device/session-journal/session-event-log';
 
 const TOKEN = 'save-script-transport-token';
 const SESSION = 'save-script-transport';
@@ -50,12 +55,15 @@ type Harness = {
 
 const roots: string[] = [];
 
-afterEach(() => {
+afterEach(async () => {
+  // #1998: request handling queues fire-and-forget session-event-log appends;
+  // drain them before rmSync or a late append re-creates the dir → ENOTEMPTY.
+  await flushSessionEventLogWrites();
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
 function setup(): Harness {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-save-script-transport-'));
+  const root = mkdtempForTestSync('agent-device-save-script-transport-');
   roots.push(root);
   const sessionStore = new SessionStore(path.join(root, 'sessions'));
   const session = makeIosSession(SESSION);
@@ -65,6 +73,7 @@ function setup(): Harness {
     token: TOKEN,
     sessionStore,
     leaseRegistry: new LeaseRegistry(),
+    deviceInventoryGateways: createTestDeviceInventoryGateways(),
     trackDownloadableArtifact: () => 'artifact-id',
   });
   return { root, sessionStore, session, handleRequest };
@@ -191,8 +200,8 @@ for (const [transport, send] of TRANSPORTS) {
     // No handler work: the trace never started and no action was recorded.
     expect(session.trace).toBe(undefined);
     expect(session.actions).toEqual([]);
-    // No arming: neither the recording marker nor the publication target moved.
-    expect(session.recordSession).toBe(undefined);
+    // No arming: no publication lifecycle, so the session records nothing.
+    expect(isSessionRecording(session)).toBe(false);
     expect(session.scriptPublication).toBe(undefined);
     // No artifact: the write a later close/teardown would attempt publishes nothing.
     expect(sessionStore.writeSessionLog(session)).toEqual({ written: false });
@@ -205,7 +214,7 @@ for (const [transport, send] of TRANSPORTS) {
     expect(accepted.ok).toBe(true);
     expect(session.trace?.outPath).toMatch(/\.trace\.log$/);
     expect(session.actions.map((action) => action.command)).toEqual(['trace']);
-    expect(session.recordSession).toBe(undefined);
+    expect(isSessionRecording(session)).toBe(false);
     expect(listAdArtifacts(root)).toEqual([]);
   });
 
@@ -232,8 +241,8 @@ for (const [transport, send] of TRANSPORTS) {
     if (await skipWhenLoopbackUnavailable(t)) return;
     const { handleRequest } = setup();
 
-    // `replay` is a flag owner, so the seam lets it through and the request
-    // fails only on its own missing-path validation, downstream of admission.
+    // `replay` is a flag owner, so the seam lets it through and the request fails only on its
+    // own missing-script-sources validation (#1802), downstream of admission.
     const response = await send(handleRequest, {
       command: 'replay',
       positionals: [],
@@ -242,7 +251,7 @@ for (const [transport, send] of TRANSPORTS) {
 
     expect(response.ok).toBe(false);
     if (response.ok) return;
-    expect(response.error.message).toBe('replay requires a path');
+    expect(response.error.message).toBe(REPLAY_SCRIPT_SOURCE_REQUIRED_MESSAGE);
   });
 }
 
@@ -267,7 +276,7 @@ test('a batch step cannot smuggle the flag onto a non-owner command', async (t) 
   if (response.ok) return;
   expect(response.error.message).toMatch(UNSUPPORTED_MESSAGE);
   expect(session.trace).toBe(undefined);
-  expect(session.recordSession).toBe(undefined);
+  expect(isSessionRecording(session)).toBe(false);
   expect(listAdArtifacts(root)).toEqual([]);
 });
 
@@ -283,7 +292,7 @@ test('an owner-armed session still records its target and publishes its script',
     flags: { saveScript: target },
     result: { session: SESSION },
   });
-  expect(session.recordSession).toBe(true);
+  expect(isSessionRecording(session)).toBe(true);
   expect(scriptTargetPath(session.scriptPublication ?? NO_SCRIPT_PUBLICATION)).toBe(target);
 
   const result = sessionStore.writeSessionLog(session);

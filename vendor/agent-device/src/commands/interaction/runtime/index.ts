@@ -4,33 +4,27 @@ import {
   clickCommand,
   fillCommand,
   focusCommand,
+  hoverCommand,
   longPressCommand,
   pressCommand,
-  scrollCommand,
-  typeTextCommand,
   type ClickCommandOptions,
   type FillCommandOptions,
   type FillCommandResult,
   type FocusCommandOptions,
   type FocusCommandResult,
+  type HoverCommandOptions,
+  type HoverCommandResult,
   type InteractionTarget,
   type LongPressCommandOptions,
   type LongPressCommandResult,
   type PressCommandOptions,
   type PressCommandResult,
-  type ScrollCommandOptions,
-  type ScrollCommandResult,
-  type TypeTextCommandOptions,
-  type TypeTextCommandResult,
 } from './interactions.ts';
 import {
   findCommand,
   getAttrsCommand,
   getCommand,
   getTextCommand,
-  isCommand,
-  isHiddenCommand,
-  isVisibleCommand,
   waitCommand,
   waitForTextCommand,
   type ElementTarget,
@@ -40,19 +34,25 @@ import {
   type GetCommandOptions,
   type GetCommandResult,
   type GetTextCommandOptions,
-  type IsCommandOptions,
-  type IsCommandResult,
-  type IsSelectorCommandOptions,
-  type SelectorTarget,
   type WaitCommandOptions,
   type WaitCommandResult,
   type WaitForTextCommandOptions,
 } from './selector-read.ts';
 import {
+  isCommand,
+  isHiddenCommand,
+  isVisibleCommand,
+  type IsCommandOptions,
+  type IsCommandResult,
+  type IsSelectorCommandOptions,
+} from './selector-is.ts';
+import {
   gestureCommand,
   type GestureCommandOptions,
   type GestureCommandResult,
 } from './gesture-command.ts';
+import { settleObservationCommand, type SettleObservationCommandOptions } from './settle.ts';
+import type { SelectorTarget, SettleObservation } from '@agent-device/contracts/interaction';
 
 export type SelectorCommands = {
   find: RuntimeCommand<FindReadCommandOptions, FindReadCommandResult>;
@@ -73,11 +73,17 @@ export type InteractionCommands = {
   click: RuntimeCommand<ClickCommandOptions, PressCommandResult>;
   press: RuntimeCommand<PressCommandOptions, PressCommandResult>;
   fill: RuntimeCommand<FillCommandOptions, FillCommandResult>;
-  typeText: RuntimeCommand<TypeTextCommandOptions, TypeTextCommandResult>;
   focus: RuntimeCommand<FocusCommandOptions, FocusCommandResult>;
   longPress: RuntimeCommand<LongPressCommandOptions, LongPressCommandResult>;
-  scroll: RuntimeCommand<ScrollCommandOptions, ScrollCommandResult>;
+  hover: RuntimeCommand<HoverCommandOptions, HoverCommandResult>;
   gesture: RuntimeCommand<GestureCommandOptions, GestureCommandResult>;
+  /**
+   * #1638: the observation half of `--settle` for mutations that resolve no
+   * element (`scroll`/`back`). It performs no device action — the caller's
+   * command already did — so it lives here purely as the seam the generic
+   * daemon route reaches the settle engine through.
+   */
+  settleObservation: RuntimeCommand<SettleObservationCommandOptions, SettleObservation>;
 };
 
 export type BoundSelectorCommands = {
@@ -121,10 +127,6 @@ export type BoundInteractionCommands = {
     text: string,
     options?: Omit<FillCommandOptions, 'target' | 'text'>,
   ) => Promise<FillCommandResult>;
-  typeText: (
-    text: string,
-    options?: Omit<TypeTextCommandOptions, 'text'>,
-  ) => Promise<TypeTextCommandResult>;
   focus: (
     target: InteractionTarget,
     options?: Omit<FocusCommandOptions, 'target'>,
@@ -133,8 +135,12 @@ export type BoundInteractionCommands = {
     target: InteractionTarget,
     options?: Omit<LongPressCommandOptions, 'target'>,
   ) => Promise<LongPressCommandResult>;
-  scroll: BoundRuntimeCommand<ScrollCommandOptions, ScrollCommandResult>;
+  hover: (
+    target: InteractionTarget,
+    options?: Omit<HoverCommandOptions, 'target'>,
+  ) => Promise<HoverCommandResult>;
   gesture: BoundRuntimeCommand<GestureCommandOptions, GestureCommandResult>;
+  settleObservation: BoundRuntimeCommand<SettleObservationCommandOptions, SettleObservation>;
 };
 
 export const selectorCommands: SelectorCommands = {
@@ -153,11 +159,11 @@ export const interactionCommands: InteractionCommands = {
   click: clickCommand,
   press: pressCommand,
   fill: fillCommand,
-  typeText: typeTextCommand,
   focus: focusCommand,
   longPress: longPressCommand,
-  scroll: scrollCommand,
+  hover: hoverCommand,
   gesture: gestureCommand,
+  settleObservation: settleObservationCommand,
 };
 
 export function bindSelectorCommands(runtime: AgentDeviceRuntime): BoundSelectorCommands {
@@ -182,12 +188,12 @@ export function bindInteractionCommands(runtime: AgentDeviceRuntime): BoundInter
     press: (target, options = {}) => interactionCommands.press(runtime, { ...options, target }),
     fill: (target, text, options = {}) =>
       interactionCommands.fill(runtime, { ...options, target, text }),
-    typeText: (text, options = {}) => interactionCommands.typeText(runtime, { ...options, text }),
     focus: (target, options = {}) => interactionCommands.focus(runtime, { ...options, target }),
     longPress: (target, options = {}) =>
       interactionCommands.longPress(runtime, { ...options, target }),
-    scroll: (options) => interactionCommands.scroll(runtime, options),
+    hover: (target, options = {}) => interactionCommands.hover(runtime, { ...options, target }),
     gesture: (options) => interactionCommands.gesture(runtime, options),
+    settleObservation: (options) => interactionCommands.settleObservation(runtime, options),
   };
 }
 

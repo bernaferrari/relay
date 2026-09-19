@@ -1,12 +1,11 @@
 import {
-  GESTURE_KINDS,
-  SCROLL_DIRECTIONS,
-  SWIPE_PRESETS,
+  COORDINATE_GESTURE_KINDS,
   type GesturePayload,
-} from '@agent-device/contracts/interaction';
+} from '@agent-device/contracts/gesture-input';
+import { SCROLL_DIRECTIONS, SWIPE_PRESETS } from '@agent-device/contracts/scroll-gesture';
 import type { Point, RawSnapshotNode, Rect } from '@agent-device/kernel/snapshot';
 import fc from 'fast-check';
-import { INTERNAL_COMMANDS, PUBLIC_COMMANDS } from '../../command-catalog.ts';
+import { INTERNAL_COMMANDS, PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
 
 /**
  * Shared fast-check generators for the pure parse/print and geometry kernels
@@ -17,15 +16,11 @@ import { INTERNAL_COMMANDS, PUBLIC_COMMANDS } from '../../command-catalog.ts';
  *
  * fast-check reports the SHRUNK counterexample plus the seed/path to replay it,
  * so a failure names a minimal input rather than the raw random one.
+ *
+ * `PROPERTY_RUNS` and the interaction touch-point/rect arbitraries live in
+ * `@agent-device/selectors/snapshot-geometry-fixtures` (#2402) — the canonical location
+ * both this file and the selectors package build on.
  */
-
-/**
- * Run budget for every property in the unit suite. Properties share the unit
- * slow-test budget (2.5s per file, see docs/agents/testing.md), so the count is
- * bounded here rather than per call site — raise it in one place, and only with
- * a measured file duration.
- */
-export const PROPERTY_RUNS = 100;
 
 /** Cheaper budget for properties whose single run does real work (diff, planning). */
 export const PROPERTY_RUNS_SMALL = 40;
@@ -91,7 +86,7 @@ function pointInViewportArb(viewport: Rect): fc.Arbitrary<Point> {
  */
 function gesturePayloadArbByKind(
   viewport: Rect,
-): Record<(typeof GESTURE_KINDS)[number], fc.Arbitrary<GesturePayload>> {
+): Record<(typeof COORDINATE_GESTURE_KINDS)[number], fc.Arbitrary<GesturePayload>> {
   const origin = pointInViewportArb(viewport);
   const delta = fc.record({
     x: fc.integer({ min: -viewport.width, max: viewport.width }),
@@ -144,7 +139,7 @@ export const gestureInViewportArb: fc.Arbitrary<{ viewport: Rect; gesture: Gestu
     const byKind = gesturePayloadArbByKind(viewport);
     return fc.record({
       viewport: fc.constant(viewport),
-      gesture: fc.oneof(...GESTURE_KINDS.map((kind) => byKind[kind])),
+      gesture: fc.oneof(...COORDINATE_GESTURE_KINDS.map((kind) => byKind[kind])),
     });
   });
 
@@ -216,8 +211,7 @@ type ReplayLinePlan = fc.Arbitrary<string> | { waived: string };
  * Commands whose `.ad` line is a bare `<command> <token>…` handled by the
  * generic parse/print branch (`appendGenericActionScriptArgs`), whose shape the
  * `wait`/`longpress` templates already exercise. A command that grows its own
- * branch in src/replay/script.ts or src/replay/script-formatting.ts must move
- * to a template.
+ * branch in the replay command's script formatting must move to a template.
  */
 const GENERIC_REPLAY_LINE = {
   waived: 'generic line shape, covered by the wait/longpress templates',
@@ -238,6 +232,7 @@ const REPLAY_SCRIPT_LINE_PLANS = {
       .map(([target, button]) => `press ${target} --button ${button}`),
   ),
   longpress: scriptTargetArb.map((target) => `longpress ${target}`),
+  hover: scriptTargetArb.map((target) => `hover ${target}`),
   wait: fc
     .tuple(scriptTargetArb, fc.integer({ min: 100, max: 5000 }))
     .map(([target, timeout]) => `wait ${target} ${timeout}`),
@@ -324,6 +319,7 @@ const REPLAY_SCRIPT_LINE_PLANS = {
   'trigger-app-event': GENERIC_REPLAY_LINE,
   'tv-remote': GENERIC_REPLAY_LINE,
   viewport: GENERIC_REPLAY_LINE,
+  human_control: { waived: 'host-local control commands are never recorded in replay scripts' },
   install_source: GENERIC_REPLAY_LINE,
   lease_allocate: GENERIC_REPLAY_LINE,
   lease_heartbeat: GENERIC_REPLAY_LINE,
@@ -347,7 +343,8 @@ function replayScriptLineArbs(): fc.Arbitrary<string>[] {
     const plan: ReplayLinePlan | undefined = REPLAY_SCRIPT_LINE_PLANS[command];
     if (plan === undefined) {
       throw new Error(
-        `replay command "${command}" from src/command-catalog.ts is unclassified: ` +
+        `replay command "${command}" from @agent-device/command-registry/catalog is ` +
+          'unclassified: ' +
           'add a line template or a waiver to REPLAY_SCRIPT_LINE_PLANS in ' +
           'src/__tests__/test-utils/property-arbitraries.ts',
       );

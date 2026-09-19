@@ -2,6 +2,7 @@
 // without depending on this zone; re-exported here for existing consumers.
 export type { PrepareMetroRuntimeResult, ReloadMetroResult } from '@agent-device/contracts/remote';
 import type {
+  MetroBridgeScope,
   MetroPrepareKind,
   PrepareMetroRuntimeResult,
   ReloadMetroResult,
@@ -9,9 +10,10 @@ import type {
 } from '@agent-device/contracts/remote';
 import fs from 'node:fs';
 import path from 'node:path';
-import { sleep } from '../utils/timeouts.ts';
+import { runCmdSync, runCmdDetached } from '@agent-device/host-kit/command';
+import { waitForProcessExit } from '@agent-device/host-kit/process';
+import { sleep } from '@agent-device/host-kit/retry';
 import { ensureMetroCompanion } from './client-metro-companion.ts';
-import type { MetroBridgeScope } from '../client/client-companion-tunnel-contract.ts';
 import type {
   MetroBridgeDescriptor,
   MetroBridgeResult,
@@ -19,15 +21,16 @@ import type {
   MetroRuntimeHints,
 } from './metro-types.ts';
 import { AppError, asAppError } from '@agent-device/kernel/errors';
-import { runCmdSync, runCmdDetached } from '../utils/exec.ts';
-import { resolveUserPath } from '../utils/path-resolution.ts';
-import { waitForProcessExit } from '../utils/host-process.ts';
+
+import { resolveUserPath } from '@agent-device/host-kit/file';
+
 import {
   detectProjectRuntimeKindFromPackageJson,
   readProjectPackageJson,
   type PackageJsonShape,
-} from '../utils/project-runtime.ts';
-import { buildBundleUrl, normalizeBaseUrl } from '../utils/url.ts';
+} from '@agent-device/host-kit/project-runtime';
+import { normalizeBaseUrl } from '../client/base-url.ts';
+import { buildBundleUrl } from './bundle-url.ts';
 import {
   EXPO_VIRTUAL_ENTRY_BUNDLE_PATH,
   parsePort,
@@ -41,7 +44,7 @@ const METRO_KILL_TIMEOUT_MS = 1_000;
 type EnvSource = NodeJS.ProcessEnv | Record<string, string | undefined>;
 type RepackBundlerKind = 'rspack' | 'webpack';
 
-export type { MetroBridgeScope } from '../client/client-companion-tunnel-contract.ts';
+export type { MetroBridgeScope } from '@agent-device/contracts/remote';
 
 type PackageManagerConfig = {
   command: string;

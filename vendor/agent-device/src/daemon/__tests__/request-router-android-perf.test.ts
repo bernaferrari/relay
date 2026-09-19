@@ -1,12 +1,17 @@
+import { createTestDeviceInventoryGateways } from '../../__tests__/test-utils/device-inventory-gateways.ts';
 import { expect, test } from 'vitest';
-import { createRequestHandler } from '../request-router.ts';
+import { createRequestHandler } from './test-device-runtime-gateway.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { SessionStore } from '../session-store.ts';
 import { AppError } from '@agent-device/kernel/errors';
 import type {
   AndroidAdbExecutor,
   AndroidAdbProvider,
-} from '../../platforms/android/adb-executor.ts';
+} from '@agent-device/platform-android/mechanics';
+import {
+  createPlatformRuntimeGateway,
+  createRequestPlatformProviders,
+} from '../../platform-runtime.ts';
 
 function makeAndroidSessionStore(name: string): SessionStore {
   const sessionStore = new SessionStore(`/tmp/${name}`);
@@ -27,17 +32,28 @@ function makeAndroidSessionStore(name: string): SessionStore {
 }
 
 function makeHandler(sessionStore: SessionStore, androidAdbProvider: () => AndroidAdbProvider) {
+  const deviceRuntimeGateway = createPlatformRuntimeGateway({
+    sessionsDir: '/tmp/agent-device-perf-runtime',
+    resolveSessionArtifacts: (sessionId) => ({
+      outputPath: `/tmp/agent-device-perf-runtime/${sessionId}/app.log`,
+      pidPath: `/tmp/agent-device-perf-runtime/${sessionId}/app-log.pid`,
+    }),
+  });
   return createRequestHandler({
     logPath: '/tmp/daemon.log',
     token: 'token',
     sessionStore,
     leaseRegistry: new LeaseRegistry(),
-    androidAdbProvider,
+    deviceInventoryGateways: createTestDeviceInventoryGateways(),
+    requestPlatformProviders: createRequestPlatformProviders({
+      providers: { androidAdbProvider },
+    }),
+    deviceRuntimeGateway,
     trackDownloadableArtifact: () => 'artifact-id',
   });
 }
 
-test('request handler reports injected Android adb failures per perf metric', async () => {
+test('request handler reports injected Android adb failures for memory sampling', async () => {
   const sessionStore = makeAndroidSessionStore('agent-device-request-router-perf-unavailable-test');
   const adb: AndroidAdbExecutor = async () => {
     throw new AppError('COMMAND_FAILED', 'Remote Android ADB executor is unavailable');
@@ -48,17 +64,15 @@ test('request handler reports injected Android adb failures per perf metric', as
     token: 'token',
     session: 'default',
     command: 'perf',
-    positionals: [],
+    positionals: ['memory', 'sample'],
     flags: {},
   });
 
   expect(response.ok).toBe(true);
   if (!response.ok) throw new Error('Expected perf response to succeed');
   const metrics = response.data?.metrics as Record<string, any>;
-  for (const metricName of ['memory', 'cpu', 'fps']) {
-    const metric = metrics[metricName];
-    expect(metric.available).toBe(false);
-    expect(metric.reason).toBe('Remote Android ADB executor is unavailable');
-    expect(metric.error.details.metric).toBe(metricName);
-  }
+  const memory = metrics.memory;
+  expect(memory.available).toBe(false);
+  expect(memory.reason).toBe('Remote Android ADB executor is unavailable');
+  expect(memory.error.details.metric).toBe('memory');
 });

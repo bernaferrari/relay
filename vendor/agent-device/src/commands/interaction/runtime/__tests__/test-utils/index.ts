@@ -8,7 +8,8 @@ import {
   type CommandSessionStore,
 } from '../../../../../runtime.ts';
 import { ref } from '../../selector-read-utils.ts';
-import { makeSnapshotState } from '../../../../../__tests__/test-utils/index.ts';
+import { makeSnapshotState } from '@agent-device/selectors/snapshot-geometry-fixtures';
+import { UNVERIFIED_HITTABILITY_WRAPPER_CHAIN_NODES } from '@agent-device/selectors/interaction-targeting-fixtures';
 
 export function selectorSnapshot(): SnapshotState {
   return makeSnapshotState([
@@ -19,6 +20,37 @@ export function selectorSnapshot(): SnapshotState {
       label: 'Continue',
       value: 'Continue',
       rect: { x: 10, y: 20, width: 100, height: 40 },
+      hittable: true,
+    },
+  ]);
+}
+
+export function dragTargetSnapshot(): SnapshotState {
+  return makeSnapshotState([
+    {
+      index: 0,
+      depth: 0,
+      type: 'Application',
+      rect: { x: 0, y: 0, width: 400, height: 800 },
+    },
+    {
+      index: 1,
+      depth: 1,
+      parentIndex: 0,
+      type: 'View',
+      identifier: 'drag-source',
+      label: 'Drag source',
+      rect: { x: 20, y: 100, width: 120, height: 60 },
+      hittable: true,
+    },
+    {
+      index: 2,
+      depth: 1,
+      parentIndex: 0,
+      type: 'View',
+      identifier: 'drop-target',
+      label: 'Drop target',
+      rect: { x: 220, y: 400, width: 140, height: 80 },
       hittable: true,
     },
   ]);
@@ -264,7 +296,8 @@ export function nonTouchableGroupSnapshot(): SnapshotState {
   return makeSnapshotState([
     {
       index: 0,
-      depth: 0,
+      depth: 1,
+      parentIndex: 2,
       type: 'XCUIElementTypeOther',
       label: 'Clickable group',
       rect: { x: 10, y: 20, width: 300, height: 80 },
@@ -272,12 +305,19 @@ export function nonTouchableGroupSnapshot(): SnapshotState {
     },
     {
       index: 1,
-      depth: 1,
+      depth: 2,
       parentIndex: 0,
       type: 'XCUIElementTypeOther',
       label: 'Decorative group',
       rect: { x: 30, y: 40, width: 60, height: 20 },
       hittable: false,
+    },
+    {
+      index: 2,
+      depth: 0,
+      type: 'XCUIElementTypeApplication',
+      rect: { x: 0, y: 0, width: 390, height: 844 },
+      hittable: true,
     },
   ]);
 }
@@ -293,7 +333,6 @@ export function createInteractionDevice(
       | 'tapTarget'
       | 'fill'
       | 'fillTarget'
-      | 'typeText'
       | 'focus'
       | 'longPress'
       | 'scroll'
@@ -321,7 +360,6 @@ export function createInteractionDevice(
       fillTarget: overrides.fillTarget
         ? async (...args) => await overrides.fillTarget?.(...args)
         : undefined,
-      typeText: async (...args) => await overrides.typeText?.(...args),
       focus: overrides.focus ? async (...args) => await overrides.focus?.(...args) : undefined,
       longPress: overrides.longPress
         ? async (...args) => await overrides.longPress?.(...args)
@@ -375,13 +413,176 @@ export function selectorReadSnapshot(): SnapshotState {
   ]);
 }
 
+/**
+ * Two nodes share the label `Save` but differ in depth and area, so the
+ * engine's visible→deepest→smallest-area tiebreak CAN pick a winner. That is
+ * exactly the tree on which the read rows disagree (#1630): `get text`
+ * disambiguates to the inner node, `is` and `get attrs` fail closed on the
+ * same screen, and `find exists` takes the first match.
+ */
+export function ambiguousSelectorReadSnapshot(): SnapshotState {
+  return makeSnapshotState([
+    {
+      index: 0,
+      depth: 0,
+      type: 'Application',
+      rect: { x: 0, y: 0, width: 400, height: 800 },
+    },
+    {
+      index: 1,
+      depth: 1,
+      parentIndex: 0,
+      type: 'Button',
+      label: 'Save',
+      rect: { x: 0, y: 0, width: 300, height: 200 },
+      hittable: true,
+    },
+    {
+      index: 2,
+      depth: 2,
+      parentIndex: 1,
+      type: 'Button',
+      label: 'Save',
+      rect: { x: 10, y: 10, width: 80, height: 24 },
+      hittable: true,
+    },
+  ]);
+}
+
+/**
+ * One control reported twice by a live iOS snapshot (`interaction-targeting.fixtures`):
+ * the uniqueness reads answer about the control instead of refusing.
+ */
+export function unverifiedWrapperChainReadSnapshot(): SnapshotState {
+  return makeSnapshotState(UNVERIFIED_HITTABILITY_WRAPPER_CHAIN_NODES);
+}
+
+/**
+ * The tree the OBSERVATION rows' structural stages are visible on (#1656). One
+ * screen, three shapes a read must answer about rather than refuse or retarget:
+ *
+ * - `Covered action` is annotated covered, so a row whose occlusion stage
+ *   refused would fail instead of reporting it.
+ * - `Scrolled away` sits below the viewport, so a row whose off-screen stage
+ *   refused would fail instead of reporting it.
+ * - `Account` is static text inside a hittable cell, so a row that promoted
+ *   would answer about the CELL instead of the text.
+ *
+ * Every label is unique, so the ambiguity contract is silent here and only the
+ * structural stages can move an answer.
+ */
+export function observationStagesSnapshot(): SnapshotState {
+  return makeSnapshotState([
+    {
+      index: 0,
+      depth: 0,
+      type: 'Application',
+      rect: { x: 0, y: 0, width: 400, height: 800 },
+    },
+    {
+      index: 1,
+      depth: 1,
+      parentIndex: 0,
+      type: 'Button',
+      label: 'Covered action',
+      rect: { x: 20, y: 700, width: 200, height: 40 },
+      hittable: false,
+      interactionBlocked: 'covered',
+    },
+    {
+      index: 2,
+      depth: 1,
+      parentIndex: 0,
+      type: 'Button',
+      label: 'Scrolled away',
+      rect: { x: 20, y: 2000, width: 200, height: 40 },
+      hittable: true,
+    },
+    {
+      index: 3,
+      depth: 1,
+      parentIndex: 0,
+      type: 'XCUIElementTypeCell',
+      label: 'Account row',
+      rect: { x: 20, y: 100, width: 300, height: 60 },
+      hittable: true,
+    },
+    {
+      index: 4,
+      depth: 2,
+      parentIndex: 3,
+      type: 'XCUIElementTypeStaticText',
+      label: 'Account',
+      rect: { x: 30, y: 110, width: 80, height: 20 },
+      hittable: false,
+    },
+  ]);
+}
+
+/**
+ * The tree that separates first-match from uniqueness rows (#1715 review).
+ * Alternative one (`label="Save"`) matches two nodes that are genuinely
+ * indistinguishable — same depth, same area, both on screen — so the engine's
+ * tiebreak DECLINES. Alternative two (`id="save-unique"`) matches exactly one.
+ *
+ * `first-match` therefore answers from alternative one (2 matches), while every
+ * uniqueness row skips the undecidable alternative and answers from alternative
+ * two (1 match). A fixture whose first alternative is merely *tiebreakable*
+ * cannot tell those apart: disambiguation succeeds there and reports the same
+ * count first-match would.
+ */
+export function skippedAlternativeSelectorSnapshot(): SnapshotState {
+  return makeSnapshotState([
+    {
+      index: 0,
+      depth: 0,
+      type: 'Application',
+      rect: { x: 0, y: 0, width: 400, height: 800 },
+    },
+    {
+      index: 1,
+      depth: 1,
+      parentIndex: 0,
+      type: 'Button',
+      label: 'Save',
+      rect: { x: 0, y: 40, width: 100, height: 30 },
+      hittable: true,
+    },
+    {
+      index: 2,
+      depth: 1,
+      parentIndex: 0,
+      type: 'Button',
+      label: 'Save',
+      rect: { x: 0, y: 120, width: 100, height: 30 },
+      hittable: true,
+    },
+    {
+      index: 3,
+      depth: 1,
+      parentIndex: 0,
+      type: 'Button',
+      identifier: 'save-unique',
+      label: 'Confirm',
+      rect: { x: 0, y: 200, width: 100, height: 30 },
+      hittable: true,
+    },
+  ]);
+}
+
 export function createSelectorDevice(
   snapshot: SnapshotState,
   options: {
     readText?: string;
-    findText?: boolean;
     now?: number;
     captureSnapshot?: () => BackendSnapshotResult | Promise<BackendSnapshotResult>;
+    /**
+     * An advancing clock, for routes that poll: with the default frozen clock a
+     * wait that is never satisfied spins instead of reaching its deadline, so a
+     * test asserting what `wait` RESOLVES would hang rather than fail if the
+     * answer ever changed.
+     */
+    clock?: { now: () => number; sleep: (ms: number) => Promise<void> };
   } = {},
 ) {
   const session = { name: 'default', snapshot };
@@ -397,12 +598,11 @@ export function createSelectorDevice(
       captureSnapshot: async () =>
         options.captureSnapshot ? await options.captureSnapshot() : { snapshot },
       readText: async () => ({ text: options.readText ?? '' }),
-      findText: async () => ({ found: options.findText ?? false }),
     } satisfies AgentDeviceBackend,
     artifacts: createLocalArtifactAdapter(),
     sessions,
     policy: localCommandPolicy(),
-    clock: {
+    clock: options.clock ?? {
       now: () => options.now ?? 0,
       sleep: async () => {},
     },

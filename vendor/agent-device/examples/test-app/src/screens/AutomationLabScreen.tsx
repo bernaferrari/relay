@@ -8,15 +8,23 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useColorScheme,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { getRecordingPermissionsAsync, requestRecordingPermissionsAsync } from 'expo-audio';
 import { requireOptionalNativeModule } from 'expo-modules-core';
+import * as SecureStore from 'expo-secure-store';
 
 import { ActionButton, ScreenTitle, SectionCard } from '../components';
 import { useAppColors, type AppColors } from '../theme';
+
+// A fixed key/value pair standing in for a real login token: this screen only
+// needs to prove keychain-backed state survives `clear-app-state` but not
+// `reset-keychain`, not to model an actual auth flow.
+const KEYCHAIN_AUTH_KEY = 'automation-keychain-auth-token';
+const KEYCHAIN_AUTH_VALUE = 'demo-auth-token';
 
 type PushBroadcastLabModule = {
   lastPushBroadcast(): string;
@@ -26,6 +34,19 @@ const pushBroadcastLab =
   Platform.OS === 'android'
     ? requireOptionalNativeModule<PushBroadcastLabModule>('PushBroadcastLab')
     : null;
+
+type ApplePayLabModule = {
+  canMakePayments(): boolean;
+  presentPaymentSheetAsync(): Promise<string>;
+};
+
+const applePayLab =
+  Platform.OS === 'ios' ? requireOptionalNativeModule<ApplePayLabModule>('ApplePayLab') : null;
+
+function initialApplePayResult(): string {
+  if (!applePayLab) return 'unavailable';
+  return applePayLab.canMakePayments() ? 'ready' : 'unsupported';
+}
 
 export function AutomationLabScreen(props: {
   eventName: string;
@@ -41,9 +62,13 @@ export function AutomationLabScreen(props: {
   const [alertResult, setAlertResult] = useState('none');
   const [lastInput, setLastInput] = useState('none');
   const [longPressCount, setLongPressCount] = useState(0);
+  const [maestroSelection, setMaestroSelection] = useState('none');
   const [microphonePermission, setMicrophonePermission] = useState('checking');
   const [lastPushBroadcast, setLastPushBroadcast] = useState('none');
   const [sheetVisible, setSheetVisible] = useState(false);
+  const [keychainAuthStatus, setKeychainAuthStatus] = useState('checking');
+  const [applePayResult, setApplePayResult] = useState(initialApplePayResult);
+  const [flattenedInput, setFlattenedInput] = useState('');
   const permissionReadGeneration = useRef(0);
   const windowMode = dimensions.width > dimensions.height ? 'landscape' : 'portrait';
 
@@ -84,7 +109,10 @@ export function AutomationLabScreen(props: {
     };
   }, []);
 
-  function showAutomationAlert() {
+  useEffect(() => {
+    if (alertResult !== 'opened') return;
+
+    // The opened canary is committed before this effect; the smoke step separately waits for native presentation.
     Alert.alert('Automation confirmation', 'Choose either result to update the visible canary.', [
       {
         style: 'cancel',
@@ -96,6 +124,10 @@ export function AutomationLabScreen(props: {
         onPress: () => setAlertResult('accepted'),
       },
     ]);
+  }, [alertResult]);
+
+  function showAutomationAlert() {
+    setAlertResult('opened');
   }
 
   async function requestMicrophonePermission() {
@@ -117,13 +149,43 @@ export function AutomationLabScreen(props: {
     setLastPushBroadcast(pushBroadcastLab?.lastPushBroadcast() ?? 'unavailable');
   }
 
+  useEffect(() => {
+    let mounted = true;
+    void SecureStore.getItemAsync(KEYCHAIN_AUTH_KEY)
+      .then((value) => {
+        if (mounted)
+          setKeychainAuthStatus(value === KEYCHAIN_AUTH_VALUE ? 'signed-in' : 'signed-out');
+      })
+      .catch(() => {
+        if (mounted) setKeychainAuthStatus('error');
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  async function signInWithKeychain() {
+    await SecureStore.setItemAsync(KEYCHAIN_AUTH_KEY, KEYCHAIN_AUTH_VALUE);
+    setKeychainAuthStatus('signed-in');
+  }
+
+  async function presentApplePaySheet() {
+    if (!applePayLab) return;
+    setApplePayResult('presented');
+    try {
+      setApplePayResult(await applePayLab.presentPaymentSheetAsync());
+    } catch {
+      setApplePayResult('error');
+    }
+  }
+
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <ScreenTitle
         badge="E2E"
         subtitle="Durable outcomes for simulator commands that need app-visible evidence."
-        title="Automation lab"
         testID="automation-title"
+        title="Automation lab"
       />
       <SectionCard title="Runtime state">
         <StateRow label="Window" testID="automation-window" value={windowMode} />
@@ -153,6 +215,29 @@ export function AutomationLabScreen(props: {
         />
       </SectionCard>
 
+      {Platform.OS === 'android' ? (
+        <SectionCard
+          subtitle="The first duplicate is inert; the second duplicate is clickable."
+          title="Maestro clickable ordering"
+        >
+          <View style={styles.maestroTarget} testID="maestro-clickable-first-target">
+            <Text style={styles.maestroTargetLabel}>Inert duplicate target</Text>
+          </View>
+          <Pressable
+            accessibilityLabel="Clickable duplicate target"
+            accessibilityRole="button"
+            onPress={() => setMaestroSelection('clickable')}
+            style={({ pressed }) => [styles.maestroTarget, pressed ? styles.pressed : null]}
+            testID="maestro-clickable-first-target"
+          >
+            <Text style={styles.maestroTargetLabel}>Clickable duplicate target</Text>
+          </Pressable>
+          <Text style={styles.value} testID="maestro-clickable-first-result">
+            Maestro selection: {maestroSelection}
+          </Text>
+        </SectionCard>
+      ) : null}
+
       <SectionCard title="Input canaries">
         <ActionButton
           label="Press canary"
@@ -180,6 +265,47 @@ export function AutomationLabScreen(props: {
         </Text>
       </SectionCard>
 
+      <SectionCard
+        subtitle="accessible={true} hides the field from the accessibility tree; only the keyboard proves focus."
+        title="Flattened input"
+      >
+        <View
+          accessibilityLabel="Flattened input group"
+          accessible
+          style={styles.flattenedGroup}
+          testID="automation-flattened-group"
+        >
+          <Text style={styles.label}>Nickname</Text>
+          <TextInput
+            autoCapitalize="none"
+            autoCorrect={false}
+            onChangeText={setFlattenedInput}
+            placeholder="Tap here, then type"
+            placeholderTextColor={colors.textSoft}
+            style={styles.flattenedInput}
+            testID="automation-flattened-input"
+            value={flattenedInput}
+          />
+        </View>
+        <Text style={styles.value} testID="automation-flattened-value">
+          Flattened value: {flattenedInput === '' ? 'none' : flattenedInput}
+        </Text>
+      </SectionCard>
+
+      {Platform.OS === 'ios' ? (
+        <SectionCard
+          subtitle="The sheet and its billing address form live in com.apple.PassbookUIService, not in this app."
+          title="Apple Pay sheet"
+        >
+          <ActionButton
+            label="Open Apple Pay sheet"
+            onPress={() => void presentApplePaySheet()}
+            testID="automation-open-apple-pay"
+          />
+          <StateRow label="Apple Pay" testID="automation-apple-pay-result" value={applePayResult} />
+        </SectionCard>
+      ) : null}
+
       <SectionCard title="Native alert">
         <ActionButton
           label="Open automation alert"
@@ -201,6 +327,19 @@ export function AutomationLabScreen(props: {
           label="Microphone permission"
           testID="automation-microphone-permission"
           value={microphonePermission}
+        />
+      </SectionCard>
+
+      <SectionCard title="Keychain-backed auth">
+        <ActionButton
+          label="Sign in (write keychain)"
+          onPress={() => void signInWithKeychain()}
+          testID="automation-keychain-signin"
+        />
+        <StateRow
+          label="Auth status"
+          testID="automation-keychain-status"
+          value={keychainAuthStatus}
         />
       </SectionCard>
 
@@ -258,6 +397,22 @@ function createStyles(colors: AppColors) {
     content: {
       paddingBottom: 28,
     },
+    flattenedGroup: {
+      borderColor: colors.lineStrong,
+      borderRadius: 4,
+      borderWidth: StyleSheet.hairlineWidth,
+      gap: 8,
+      padding: 12,
+    },
+    flattenedInput: {
+      borderColor: colors.lineStrong,
+      borderRadius: 4,
+      borderWidth: StyleSheet.hairlineWidth,
+      color: colors.text,
+      fontSize: 15,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
     label: {
       color: colors.text,
       fontSize: 15,
@@ -275,6 +430,19 @@ function createStyles(colors: AppColors) {
       borderWidth: StyleSheet.hairlineWidth,
       paddingHorizontal: 16,
       paddingVertical: 16,
+    },
+    maestroTarget: {
+      alignItems: 'center',
+      borderColor: colors.lineStrong,
+      borderRadius: 4,
+      borderWidth: StyleSheet.hairlineWidth,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+    },
+    maestroTargetLabel: {
+      color: colors.text,
+      fontSize: 15,
+      fontWeight: '700',
     },
     pressed: {
       opacity: 0.8,

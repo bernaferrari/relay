@@ -1,10 +1,12 @@
 import type {
   ClickOptions,
+  DragOptions,
   FillOptions,
   FindOptions,
   FlingOptions,
   FocusOptions,
   GetOptions,
+  HoverOptions,
   IsOptions,
   LongPressOptions,
   PanOptions,
@@ -17,34 +19,30 @@ import type {
   TransformGestureOptions,
   TypeTextOptions,
 } from '@agent-device/contracts/client';
-import type { CommandSchemaOverride } from '../../cli-schema/types.ts';
-import {
-  commandSupportsSettleObservation,
-  commandSupportsVerifyEvidence,
-} from '../../core/command-descriptor/registry.ts';
+import type { CommandSchemaOverride } from '@agent-device/command-registry/command-schema';
 import {
   REPEATED_TOUCH_FLAGS,
   SELECTOR_SNAPSHOT_FLAGS,
-  SETTLE_FLAGS,
-} from '../cli-grammar/flag-groups.ts';
-import { type FlagKey } from '../cli-grammar/flag-types.ts';
-import { defineExecutableCommand } from '../command-contract.ts';
+} from '@agent-device/command-registry/flag-groups';
+import { postActionObservationCliFlags } from '../post-action-observation-grammar.ts';
 import {
-  commonToClientOptions,
   toClientElementTarget,
   toClientInteractionTarget,
   toRepeatedOptions,
   toSelectorSnapshotOptions,
 } from '../command-input.ts';
+import { commonToClientOptions } from '../common-input-fields.ts';
 import { defineCommandFacet, defineCommandFamilyFromFacets } from '../family/types.ts';
 import { gestureCliReaders, gestureDaemonWriters } from './gesture.ts';
 import { interactionCliReaders, interactionDaemonWriters } from './interactions.ts';
 import {
   interactionCommandMetadata,
   type ClickInput,
+  type DragInput,
   type FillInput,
   type FlingInput,
   type GetInput,
+  type HoverInput,
   type LongPressInput,
   type PanInput,
   type PinchInput,
@@ -59,14 +57,14 @@ import { selectorCliReaders, selectorDaemonWriters } from './selectors.ts';
 const interactionCliSchemas = {
   get: {
     usageOverride: 'get text|attrs <@ref|selector>',
+    usageFlags: [],
     positionalArgs: ['subcommand', 'target'],
     allowsExtraPositionals: true,
     allowedFlags: [...SELECTOR_SNAPSHOT_FLAGS, 'record'],
   },
   find: {
     usageOverride: 'find <locator|text> <action> [value] [--first|--last]',
-    helpDescription: 'Find by text/label/value/role/id and run action',
-    summary: 'Find an element and act',
+    usageFlags: [],
     positionalArgs: ['query', 'action', 'value?'],
     allowsExtraPositionals: true,
     allowedFlags: ['snapshotDepth', 'snapshotRaw', 'findFirst', 'findLast', 'record'],
@@ -78,6 +76,7 @@ const interactionCliSchemas = {
   },
   click: {
     usageOverride: 'click <x y|@ref|selector>',
+    usageFlags: [],
     positionalArgs: ['target'],
     allowsExtraPositionals: true,
     allowedFlags: [
@@ -89,8 +88,7 @@ const interactionCliSchemas = {
   },
   press: {
     usageOverride: 'press <x y|@ref|selector>',
-    helpDescription:
-      'Short press a semantic UI target by ref, selector, or point. For native context menus or hold gestures, use longpress <target> <durationMs> instead of press --hold-ms.',
+    usageFlags: [],
     positionalArgs: ['targetOrX', 'y?'],
     allowsExtraPositionals: true,
     allowedFlags: [
@@ -101,14 +99,19 @@ const interactionCliSchemas = {
   },
   longpress: {
     usageOverride: 'longpress <x y|@ref|selector> [durationMs]',
-    helpDescription:
-      'Open native context menus or long-press targets by ref, selector, or point. Duration is positional, for example longpress @e12 800 or longpress 300 500 800.',
+    usageFlags: [],
     positionalArgs: ['targetOrX', 'yOrDurationMs?', 'durationMs?'],
     allowsExtraPositionals: true,
     allowedFlags: [...postActionObservationCliFlags('longpress'), ...SELECTOR_SNAPSHOT_FLAGS],
   },
+  hover: {
+    usageOverride: 'hover <x y|@ref|selector>',
+    usageFlags: [],
+    positionalArgs: ['targetOrX', 'y?'],
+    allowsExtraPositionals: true,
+    allowedFlags: [...postActionObservationCliFlags('hover'), ...SELECTOR_SNAPSHOT_FLAGS],
+  },
   swipe: {
-    helpDescription: 'Quick coordinate fling with optional repeat pattern.',
     positionalArgs: ['x1', 'y1', 'x2', 'y2'],
     // Arity is enforced by swipePayloadFromPositionals (assertGestureArity), so
     // an extra positional reaches that migration-hint error, not this schema's.
@@ -116,12 +119,10 @@ const interactionCliSchemas = {
     allowedFlags: ['count', 'pauseMs', 'pattern'],
   },
   gesture: {
-    usageOverride: 'gesture <pan|fling|swipe|pinch|rotate|transform> ...',
-    listUsageOverride: 'gesture <pan|fling|swipe|pinch|rotate|transform> ...',
-    helpDescription:
-      'Run touch gestures: pan <x> <y> <dx> <dy> [durationMs], fling <up|down|left|right> <x> <y> [distance], swipe <left|right|left-edge|right-edge>, pinch <scale> [x] [y], rotate <degrees> [x] [y], or transform <x> <y> <dx> <dy> <scale> <degrees> [durationMs]. For command plans, output only command lines. Android transform verification should use all app-observable effects, for example wait text "pan changed yes", wait text "pinch changed yes", and wait text "rotate changed yes", not exact transform values.',
-    summary: 'Run pan, fling, swipe, pinch, rotate, or transform gestures',
-    positionalArgs: ['pan|fling|swipe|pinch|rotate|transform', 'args?'],
+    usageOverride: 'gesture <pan|fling|swipe|pinch|rotate|transform|drag> ...',
+    usageFlags: [],
+    listUsageOverride: 'gesture <pan|fling|swipe|pinch|rotate|transform|drag> ...',
+    positionalArgs: ['pan|fling|swipe|pinch|rotate|transform|drag', 'args?'],
     allowsExtraPositionals: true,
     allowedFlags: ['pointerCount'],
   },
@@ -135,6 +136,7 @@ const interactionCliSchemas = {
   },
   fill: {
     usageOverride: 'fill <x> <y> <text> | fill <@ref|selector> <text>',
+    usageFlags: [],
     positionalArgs: ['targetOrX', 'yOrText', 'text?'],
     allowsExtraPositionals: true,
     allowedFlags: [
@@ -145,70 +147,184 @@ const interactionCliSchemas = {
     ],
   },
   scroll: {
-    usageOverride: 'scroll <direction|top|bottom> [amount] [--pixels <n>] [--duration-ms <ms>]',
-    helpDescription: 'Scroll in a direction, or toward the top/bottom edge of scrollable content.',
-    summary: 'Scroll in a direction or to an edge',
+    usageOverride: 'scroll <direction|top|bottom> [amount]',
+    usageFlags: ['until', 'pixels', 'durationMs', 'settle'],
     positionalArgs: ['directionOrEdge', 'amount?'],
-    allowedFlags: ['pixels', 'durationMs'],
+    allowedFlags: ['pixels', 'durationMs', 'until', ...postActionObservationCliFlags('scroll')],
   },
 } as const satisfies Record<string, CommandSchemaOverride>;
 
 type InteractionCommandMetadata = (typeof interactionCommandMetadata)[number];
 type InteractionCommandName = InteractionCommandMetadata['name'];
-function postActionObservationCliFlags(command: InteractionCommandName): readonly FlagKey[] {
-  const flags: FlagKey[] = [];
-  if (commandSupportsVerifyEvidence(command)) flags.push('verify');
-  if (commandSupportsSettleObservation(command)) flags.push(...SETTLE_FLAGS);
-  return flags;
-}
 
-const clickCommandDefinition = defineExecutableCommand(metadata('click'), (client, input) =>
-  client.interactions.click(toClickOptions(input)),
-);
+const clickCommandFacet = defineCommandFacet({
+  name: 'click',
+  text: {
+    summary: 'Click or tap a UI target',
+  },
+  metadata: metadata('click'),
+  run: (client, input) => client.interactions.click(toClickOptions(input)),
+  cliSchema: interactionCliSchemas.click,
+  cliReader: interactionCliReaders.click,
+  daemonWriter: interactionDaemonWriters.click,
+  cliOutputFormatter: interactionCliOutputFormatters.click,
+});
 
-const pressCommandDefinition = defineExecutableCommand(metadata('press'), (client, input) =>
-  client.interactions.press(toPressOptions(input)),
-);
+const pressCommandFacet = defineCommandFacet({
+  name: 'press',
+  text: {
+    summary: 'Short-press a UI target',
+    cliDetail: 'The hold duration is positional on longpress, not press --hold-ms.',
+  },
+  metadata: metadata('press'),
+  run: (client, input) => client.interactions.press(toPressOptions(input)),
+  cliSchema: interactionCliSchemas.press,
+  cliReader: interactionCliReaders.press,
+  daemonWriter: interactionDaemonWriters.press,
+  cliOutputFormatter: interactionCliOutputFormatters.press,
+});
 
-const fillCommandDefinition = defineExecutableCommand(metadata('fill'), (client, input) =>
-  client.interactions.fill(toFillOptions(input)),
-);
+const fillCommandFacet = defineCommandFacet({
+  name: 'fill',
+  text: {
+    summary: 'Replace text in a UI input',
+    cliDetail:
+      'Every positional after an @ref is the replacement text, so fill @e57 good morning enters "good morning"; quote the text when the shell must preserve exact whitespace. Clear a field with an empty text argument: fill @e57 "" (the argument must be present — fill @e57 alone is a missing argument, not a clear). When visible label text also matches a non-input element, constrain the target with editable=true, for example fill \'label="Email" editable=true\' "qa@example.com".',
+  },
+  metadata: metadata('fill'),
+  run: (client, input) => client.interactions.fill(toFillOptions(input)),
+  cliSchema: interactionCliSchemas.fill,
+  cliReader: interactionCliReaders.fill,
+  daemonWriter: interactionDaemonWriters.fill,
+  cliOutputFormatter: interactionCliOutputFormatters.fill,
+});
 
-const longPressCommandDefinition = defineExecutableCommand(metadata('longpress'), (client, input) =>
-  client.interactions.longPress(toLongPressOptions(input)),
-);
+const longPressCommandFacet = defineCommandFacet({
+  name: 'longpress',
+  text: {
+    summary: 'Hold a UI target to open a context menu',
+    cliDetail: 'Duration is positional, for example longpress @e12 800 or longpress 300 500 800.',
+  },
+  metadata: metadata('longpress'),
+  run: (client, input) => client.interactions.longPress(toLongPressOptions(input)),
+  cliSchema: interactionCliSchemas.longpress,
+  cliReader: interactionCliReaders.longpress,
+  daemonWriter: interactionDaemonWriters.longpress,
+  cliOutputFormatter: interactionCliOutputFormatters.longpress,
+});
 
-const swipeCommandDefinition = defineExecutableCommand(metadata('swipe'), (client, input) =>
-  client.interactions.swipe(input as SwipeOptions),
-);
+const hoverCommandFacet = defineCommandFacet({
+  name: 'hover',
+  text: {
+    summary: 'Hover the pointer over a UI target (web only)',
+    cliDetail:
+      'The pointer stays where hover left it: read the revealed UI (--settle or snapshot -i) and act on it before another click or hover moves the pointer away.',
+  },
+  metadata: metadata('hover'),
+  run: (client, input) => client.interactions.hover(toHoverOptions(input)),
+  cliSchema: interactionCliSchemas.hover,
+  cliReader: interactionCliReaders.hover,
+  daemonWriter: interactionDaemonWriters.hover,
+  cliOutputFormatter: interactionCliOutputFormatters.hover,
+});
 
-const focusCommandDefinition = defineExecutableCommand(metadata('focus'), (client, input) =>
-  client.interactions.focus(input as FocusOptions),
-);
+const swipeCommandFacet = defineCommandFacet({
+  name: 'swipe',
+  text: {
+    summary: 'Fling between coordinates',
+  },
+  metadata: metadata('swipe'),
+  run: (client, input) => client.interactions.swipe(input as SwipeOptions),
+  cliSchema: interactionCliSchemas.swipe,
+  cliReader: interactionCliReaders.swipe,
+  daemonWriter: interactionDaemonWriters.swipe,
+});
 
-const typeCommandDefinition = defineExecutableCommand(metadata('type'), (client, input) =>
-  client.interactions.type(input as TypeTextOptions),
-);
+const focusCommandFacet = defineCommandFacet({
+  name: 'focus',
+  text: {
+    summary: 'Focus input at screen coordinates',
+  },
+  metadata: metadata('focus'),
+  run: (client, input) => client.interactions.focus(input as FocusOptions),
+  cliSchema: interactionCliSchemas.focus,
+  cliReader: interactionCliReaders.focus,
+  daemonWriter: interactionDaemonWriters.focus,
+});
 
-const scrollCommandDefinition = defineExecutableCommand(metadata('scroll'), (client, input) =>
-  client.interactions.scroll(input as ScrollOptions),
-);
+const typeCommandFacet = defineCommandFacet({
+  name: 'type',
+  text: {
+    summary: 'Append text to the focused input',
+  },
+  metadata: metadata('type'),
+  run: (client, input) => client.interactions.type(input as TypeTextOptions),
+  cliSchema: interactionCliSchemas.type,
+  cliReader: interactionCliReaders.type,
+  daemonWriter: interactionDaemonWriters.type,
+});
 
-const getCommandDefinition = defineExecutableCommand(metadata('get'), (client, input) =>
-  client.interactions.get(toGetOptions(input)),
-);
+const scrollCommandFacet = defineCommandFacet({
+  name: 'scroll',
+  text: {
+    summary: 'Scroll in a direction or to an edge',
+  },
+  metadata: metadata('scroll'),
+  run: (client, input) => client.interactions.scroll(input as ScrollOptions),
+  cliSchema: interactionCliSchemas.scroll,
+  cliReader: interactionCliReaders.scroll,
+  daemonWriter: interactionDaemonWriters.scroll,
+  cliOutputFormatter: interactionCliOutputFormatters.scroll,
+});
 
-const isCommandDefinition = defineExecutableCommand(metadata('is'), (client, input) =>
-  client.interactions.is(input as IsOptions),
-);
+const getCommandFacet = defineCommandFacet({
+  name: 'get',
+  text: {
+    summary: 'Read element text or attributes',
+  },
+  metadata: metadata('get'),
+  run: (client, input) => client.interactions.get(toGetOptions(input)),
+  cliSchema: interactionCliSchemas.get,
+  cliReader: interactionCliReaders.get,
+  daemonWriter: interactionDaemonWriters.get,
+  cliOutputFormatter: interactionCliOutputFormatters.get,
+});
 
-const findCommandDefinition = defineExecutableCommand(metadata('find'), (client, input) =>
-  client.interactions.find(input as FindOptions),
-);
+const isCommandFacet = defineCommandFacet({
+  name: 'is',
+  text: {
+    summary: 'Check a UI predicate on a selector',
+  },
+  metadata: metadata('is'),
+  run: (client, input) => client.interactions.is(input as IsOptions),
+  cliSchema: interactionCliSchemas.is,
+  cliReader: selectorCliReaders.is,
+  daemonWriter: selectorDaemonWriters.is,
+  cliOutputFormatter: interactionCliOutputFormatters.is,
+});
 
-const gestureCommandDefinition = defineExecutableCommand(
-  metadata('gesture'),
-  async (client, input) => {
+const findCommandFacet = defineCommandFacet({
+  name: 'find',
+  text: {
+    summary: 'Find an element and act',
+  },
+  metadata: metadata('find'),
+  run: (client, input) => client.interactions.find(input as FindOptions),
+  cliSchema: interactionCliSchemas.find,
+  cliReader: selectorCliReaders.find,
+  daemonWriter: selectorDaemonWriters.find,
+  cliOutputFormatter: interactionCliOutputFormatters.find,
+});
+
+const gestureCommandFacet = defineCommandFacet({
+  name: 'gesture',
+  text: {
+    summary: 'Run pan, fling, swipe, pinch, rotate, transform, or drag gestures',
+    cliDetail:
+      'Argument shapes: pan <x> <y> <dx> <dy> [durationMs], fling <up|down|left|right> <x> <y> [distance], swipe <left|right|left-edge|right-edge>, pinch <scale> [x] [y], rotate <degrees> [x] [y], transform <x> <y> <dx> <dy> <scale> <degrees> [durationMs], or drag <source-selector|pinned-ref> <destination-selector|pinned-ref> [sourceHoldMs] [moveMs] [destinationHoldMs]. For command plans, output only command lines. Android transform verification should use all app-observable effects, for example wait text "pan changed yes", wait text "pinch changed yes", and wait text "rotate changed yes", not exact transform values.',
+  },
+  metadata: metadata('gesture'),
+  run: async (client, input) => {
     switch (input.kind) {
       case 'pan':
         return await client.interactions.pan(toPanOptions(input));
@@ -222,120 +338,10 @@ const gestureCommandDefinition = defineExecutableCommand(
         return await client.interactions.rotateGesture(toRotateOptions(input));
       case 'transform':
         return await client.interactions.transformGesture(toTransformOptions(input));
+      case 'drag':
+        return await client.interactions.drag(toDragOptions(input));
     }
   },
-);
-
-const clickCommandFacet = defineCommandFacet({
-  name: 'click',
-  metadata: metadata('click'),
-  definition: clickCommandDefinition,
-  cliSchema: interactionCliSchemas.click,
-  cliReader: interactionCliReaders.click,
-  daemonWriter: interactionDaemonWriters.click,
-  cliOutputFormatter: interactionCliOutputFormatters.click,
-});
-
-const pressCommandFacet = defineCommandFacet({
-  name: 'press',
-  metadata: metadata('press'),
-  definition: pressCommandDefinition,
-  cliSchema: interactionCliSchemas.press,
-  cliReader: interactionCliReaders.press,
-  daemonWriter: interactionDaemonWriters.press,
-  cliOutputFormatter: interactionCliOutputFormatters.press,
-});
-
-const fillCommandFacet = defineCommandFacet({
-  name: 'fill',
-  metadata: metadata('fill'),
-  definition: fillCommandDefinition,
-  cliSchema: interactionCliSchemas.fill,
-  cliReader: interactionCliReaders.fill,
-  daemonWriter: interactionDaemonWriters.fill,
-  cliOutputFormatter: interactionCliOutputFormatters.fill,
-});
-
-const longPressCommandFacet = defineCommandFacet({
-  name: 'longpress',
-  metadata: metadata('longpress'),
-  definition: longPressCommandDefinition,
-  cliSchema: interactionCliSchemas.longpress,
-  cliReader: interactionCliReaders.longpress,
-  daemonWriter: interactionDaemonWriters.longpress,
-  cliOutputFormatter: interactionCliOutputFormatters.longpress,
-});
-
-const swipeCommandFacet = defineCommandFacet({
-  name: 'swipe',
-  metadata: metadata('swipe'),
-  definition: swipeCommandDefinition,
-  cliSchema: interactionCliSchemas.swipe,
-  cliReader: interactionCliReaders.swipe,
-  daemonWriter: interactionDaemonWriters.swipe,
-});
-
-const focusCommandFacet = defineCommandFacet({
-  name: 'focus',
-  metadata: metadata('focus'),
-  definition: focusCommandDefinition,
-  cliSchema: interactionCliSchemas.focus,
-  cliReader: interactionCliReaders.focus,
-  daemonWriter: interactionDaemonWriters.focus,
-});
-
-const typeCommandFacet = defineCommandFacet({
-  name: 'type',
-  metadata: metadata('type'),
-  definition: typeCommandDefinition,
-  cliSchema: interactionCliSchemas.type,
-  cliReader: interactionCliReaders.type,
-  daemonWriter: interactionDaemonWriters.type,
-});
-
-const scrollCommandFacet = defineCommandFacet({
-  name: 'scroll',
-  metadata: metadata('scroll'),
-  definition: scrollCommandDefinition,
-  cliSchema: interactionCliSchemas.scroll,
-  cliReader: interactionCliReaders.scroll,
-  daemonWriter: interactionDaemonWriters.scroll,
-});
-
-const getCommandFacet = defineCommandFacet({
-  name: 'get',
-  metadata: metadata('get'),
-  definition: getCommandDefinition,
-  cliSchema: interactionCliSchemas.get,
-  cliReader: interactionCliReaders.get,
-  daemonWriter: interactionDaemonWriters.get,
-  cliOutputFormatter: interactionCliOutputFormatters.get,
-});
-
-const isCommandFacet = defineCommandFacet({
-  name: 'is',
-  metadata: metadata('is'),
-  definition: isCommandDefinition,
-  cliSchema: interactionCliSchemas.is,
-  cliReader: selectorCliReaders.is,
-  daemonWriter: selectorDaemonWriters.is,
-  cliOutputFormatter: interactionCliOutputFormatters.is,
-});
-
-const findCommandFacet = defineCommandFacet({
-  name: 'find',
-  metadata: metadata('find'),
-  definition: findCommandDefinition,
-  cliSchema: interactionCliSchemas.find,
-  cliReader: selectorCliReaders.find,
-  daemonWriter: selectorDaemonWriters.find,
-  cliOutputFormatter: interactionCliOutputFormatters.find,
-});
-
-const gestureCommandFacet = defineCommandFacet({
-  name: 'gesture',
-  metadata: metadata('gesture'),
-  definition: gestureCommandDefinition,
   cliSchema: interactionCliSchemas.gesture,
   cliReader: gestureCliReaders.gesture,
   daemonWriter: gestureDaemonWriters.gesture,
@@ -349,6 +355,7 @@ export const interactionCommandFamily = defineCommandFamilyFromFacets({
     pressCommandFacet,
     fillCommandFacet,
     longPressCommandFacet,
+    hoverCommandFacet,
     swipeCommandFacet,
     focusCommandFacet,
     typeCommandFacet,
@@ -414,6 +421,15 @@ function toLongPressOptions(input: LongPressInput): LongPressOptions {
   };
 }
 
+function toHoverOptions(input: HoverInput): HoverOptions {
+  return {
+    ...commonToClientOptions(input),
+    ...toClientInteractionTarget(input.target),
+    ...toSelectorSnapshotOptions(input),
+    ...toSettleOptions(input),
+  };
+}
+
 function toSettleOptions(input: {
   settle?: boolean;
   settleQuietMs?: number;
@@ -452,6 +468,17 @@ function toPanOptions(input: PanInput): PanOptions {
     dy: input.delta.y,
     pointerCount: input.pointerCount,
     durationMs: input.durationMs,
+  };
+}
+
+function toDragOptions(input: DragInput): DragOptions {
+  return {
+    ...commonToClientOptions(input),
+    source: input.source,
+    destination: input.destination,
+    sourceHoldMs: input.sourceHoldMs,
+    moveMs: input.moveMs,
+    destinationHoldMs: input.destinationHoldMs,
   };
 }
 

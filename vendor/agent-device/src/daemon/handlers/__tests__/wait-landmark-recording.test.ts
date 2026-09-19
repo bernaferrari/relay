@@ -12,29 +12,35 @@
  * `WAIT_LANDMARK_MISMATCH_REASON` refusal.
  */
 import { test, expect, vi, beforeEach } from 'vitest';
-import { dispatchWaitViaRuntime } from '../../selector-runtime.ts';
-import type { DaemonRequest } from '../../types.ts';
+import { legacyDispatchCapture } from '../../__tests__/legacy-snapshot-capture-fixture.ts';
+import { dispatchWaitViaRuntime } from '../../wait-runtime.ts';
+import type { DaemonRequest } from '../../daemon-request.ts';
 import { WAIT_LANDMARK_MISMATCH_REASON } from '@agent-device/contracts/replay';
 import type { TargetAnnotationV1 } from '@agent-device/contracts/replay';
+import { snapshotRuntimeFixture } from '../../__tests__/snapshot-runtime-fixture.ts';
 import { makeSessionStore } from '../../../__tests__/test-utils/store-factory.ts';
-import { makeAndroidSession } from '../../../__tests__/test-utils/session-factories.ts';
+import {
+  makeAndroidSession,
+  authoringPublication,
+} from '../../../__tests__/test-utils/session-factories.ts';
 
-vi.mock('../../../core/dispatch.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../core/dispatch.ts')>();
+vi.mock('@agent-device/device-selection/dispatch-resolve', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@agent-device/device-selection/dispatch-resolve')>();
   return {
     ...actual,
-    dispatchCommand: vi.fn(async () => ({})),
     resolveTargetDevice: vi.fn(actual.resolveTargetDevice),
   };
+});
+
+vi.mock('../../snapshot-interactor-capture.ts', async () => {
+  const fixture = await import('../../__tests__/legacy-snapshot-capture-fixture.ts');
+  return { captureSnapshotWithInteractor: fixture.captureSnapshotThroughLegacyDispatchFixture };
 });
 
 vi.mock('../../device-ready.ts', () => ({
   ensureDeviceReady: vi.fn(async () => {}),
 }));
-
-import { dispatchCommand } from '../../../core/dispatch.ts';
-
-const mockDispatch = vi.mocked(dispatchCommand);
 
 function screenSnapshot(parentLabel: string) {
   return {
@@ -60,8 +66,8 @@ function screenSnapshot(parentLabel: string) {
 }
 
 beforeEach(() => {
-  mockDispatch.mockReset();
-  mockDispatch.mockImplementation(async (_device: unknown, command: string) => {
+  legacyDispatchCapture.mockReset();
+  legacyDispatchCapture.mockImplementation(async (_device: unknown, command: string) => {
     return command === 'snapshot' ? screenSnapshot('Detail Screen') : {};
   });
 });
@@ -77,23 +83,25 @@ function waitReq(overrides: Partial<DaemonRequest> = {}): DaemonRequest {
   } as DaemonRequest;
 }
 
-async function runWait(options: { recordSession?: boolean; req?: DaemonRequest } = {}) {
+async function runWait(options: { recording?: boolean; req?: DaemonRequest } = {}) {
   const sessionStore = makeSessionStore();
-  const session = makeAndroidSession('default', {
-    recordSession: options.recordSession ?? false,
-  });
+  const session = makeAndroidSession(
+    'default',
+    options.recording ? { scriptPublication: authoringPublication('armed') } : {},
+  );
   sessionStore.set('default', session);
   const response = await dispatchWaitViaRuntime({
     req: options.req ?? waitReq(),
     sessionName: 'default',
     logPath: '/tmp/test.log',
     sessionStore,
+    ...snapshotRuntimeFixture(),
   });
   return { response, sessionStore };
 }
 
 test('a recorded selector wait attaches landmark-mode target-v1 evidence and strips the resolution payload', async () => {
-  const { response, sessionStore } = await runWait({ recordSession: true });
+  const { response, sessionStore } = await runWait({ recording: true });
 
   expect(response.ok).toBe(true);
   if (response.ok) {
@@ -114,7 +122,7 @@ test('a recorded selector wait attaches landmark-mode target-v1 evidence and str
 });
 
 test('a selector wait without recording never computes target-v1 evidence', async () => {
-  const { response, sessionStore } = await runWait({ recordSession: false });
+  const { response, sessionStore } = await runWait({ recording: false });
 
   expect(response.ok).toBe(true);
   const recordedAction = sessionStore.get('default')?.actions[0];
@@ -142,7 +150,7 @@ test('a replayed wait with a landmark guard succeeds when a match carries the re
 });
 
 test('a replayed wait with a landmark guard refuses at the deadline when only impostors matched', async () => {
-  mockDispatch.mockImplementation(async (_device: unknown, command: string) => {
+  legacyDispatchCapture.mockImplementation(async (_device: unknown, command: string) => {
     return command === 'snapshot' ? screenSnapshot('List Screen') : {};
   });
 
@@ -157,4 +165,19 @@ test('a replayed wait with a landmark guard refuses at the deadline when only im
   if (response.ok) return;
   expect(response.error.details?.reason).toBe(WAIT_LANDMARK_MISMATCH_REASON);
   expect(response.error.details?.matchCount).toBe(1);
+});
+
+// #1800: this seam is what BOTH a live CLI wait and a replayed `.ad` wait step
+// dispatch through, so the selector-shaped-text rejection has to happen here,
+// before any device/session work — not just in the CLI-only reader.
+test('a selector-shaped positional list that fails to parse as a selector is rejected before dispatch', async () => {
+  const { response } = await runWait({
+    req: waitReq({ positionals: ['open', 'label="Open"', '25000'] }),
+  });
+
+  expect(response.ok).toBe(false);
+  if (response.ok) return;
+  expect(response.error.code).toBe('INVALID_ARGS');
+  expect(response.error.message).toContain('label="Open"');
+  expect(legacyDispatchCapture).not.toHaveBeenCalled();
 });

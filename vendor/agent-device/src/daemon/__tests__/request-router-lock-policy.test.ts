@@ -1,27 +1,53 @@
+import {
+  createTestDeviceInventoryGateways,
+  createTestDeviceInventoryGatewaysFromProvider,
+} from '../../__tests__/test-utils/device-inventory-gateways.ts';
 import { test, expect, vi, beforeEach } from 'vitest';
-import os from 'node:os';
+import { legacyDispatchCapture } from './legacy-snapshot-capture-fixture.ts';
 import path from 'node:path';
 
-vi.mock('../../core/dispatch.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../core/dispatch.ts')>();
-  return { ...actual, dispatchCommand: vi.fn(async () => ({})) };
-});
-
-vi.mock('../../platforms/apple/core/runner/runner-client.ts', async (importOriginal) => {
+vi.mock('@agent-device/platform-apple/runner/operations', async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import('../../platforms/apple/core/runner/runner-client.ts')>();
+    await importOriginal<typeof import('@agent-device/platform-apple/runner/operations')>();
   return { ...actual, stopIosRunnerSession: vi.fn(async () => {}) };
 });
 
 vi.mock('../device-ready.ts', () => ({ ensureDeviceReady: vi.fn(async () => {}) }));
 
-import { dispatchCommand } from '../../core/dispatch.ts';
-import { createRequestHandler } from '../request-router.ts';
-import type { SessionState } from '../types.ts';
+import {
+  createRequestHandler,
+  lifecycleDeviceRuntimeGateway,
+  systemRuntimeSpies,
+} from './test-device-runtime-gateway.ts';
+import { snapshotRuntimeFixture } from './snapshot-runtime-fixture.ts';
+import type { SessionState } from '../session-state.ts';
 import { LeaseRegistry } from '../lease-registry.ts';
 import { makeSessionStore } from '../../__tests__/test-utils/store-factory.ts';
+import type { DeviceRuntimeGateway } from '@agent-device/contracts/platform-runtime';
+import {
+  type PlatformRuntimeOperations,
+  snapshotRuntimePlanUses,
+} from '@agent-device/contracts/platform-runtime-operations';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
 
-const mockDispatch = vi.mocked(dispatchCommand);
+function snapshotDeviceRuntimeGateway(): DeviceRuntimeGateway<PlatformRuntimeOperations> {
+  const runtime = snapshotRuntimeFixture();
+  return {
+    inspectFacts: runtime.inspectFacts,
+    bind: async ({ device }) => {
+      const [facts, binding] = await Promise.all([
+        runtime.inspectFacts(device),
+        runtime.bindDevice(device, snapshotRuntimePlanUses[2]),
+      ]);
+      return {
+        ...binding,
+        facts,
+        [Symbol.asyncDispose]: async () => {},
+      };
+    },
+    shutdown: async () => {},
+  };
+}
 
 function makeIosSession(name: string): SessionState {
   return {
@@ -57,8 +83,8 @@ function makeAndroidSession(name: string, id = 'emulator-5554'): SessionState {
 }
 
 beforeEach(() => {
-  mockDispatch.mockReset();
-  mockDispatch.mockResolvedValue({ nodes: [] });
+  legacyDispatchCapture.mockReset();
+  legacyDispatchCapture.mockResolvedValue({ nodes: [] });
 });
 
 function installGatedDispatch(): {
@@ -71,7 +97,7 @@ function installGatedDispatch(): {
   let active = 0;
   let maxActive = 0;
 
-  mockDispatch.mockImplementation(async (device, command) => {
+  legacyDispatchCapture.mockImplementation(async (device, command) => {
     order.push(`start-${command}-${device.id}`);
     active += 1;
     maxActive = Math.max(maxActive, active);
@@ -99,10 +125,11 @@ test('direct daemon requests cannot bypass reject lock policy for existing sessi
   sessionStore.set('qa-ios', makeIosSession('qa-ios'));
 
   const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
     token: 'test-token',
     sessionStore,
     leaseRegistry: new LeaseRegistry(),
+    deviceInventoryGateways: createTestDeviceInventoryGateways(),
     trackDownloadableArtifact: () => 'artifact-id',
   });
 
@@ -119,7 +146,7 @@ test('direct daemon requests cannot bypass reject lock policy for existing sessi
     },
   });
 
-  expect(mockDispatch).not.toHaveBeenCalled();
+  expect(legacyDispatchCapture).not.toHaveBeenCalled();
   expect(response.ok).toBe(false);
   if (!response.ok) {
     expect(response.error.code).toBe('INVALID_ARGS');
@@ -134,11 +161,14 @@ test('fresh named sessions with matching explicit serial bind and serialize on t
   const dispatchGate = installGatedDispatch();
 
   const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
     token: 'test-token',
     sessionStore,
     leaseRegistry: new LeaseRegistry(),
-    deviceInventoryProvider: async () => [makeAndroidSession('inventory').device],
+    deviceInventoryGateways: createTestDeviceInventoryGatewaysFromProvider(async () => [
+      makeAndroidSession('inventory').device,
+    ]),
+    deviceRuntimeGateway: snapshotDeviceRuntimeGateway(),
     trackDownloadableArtifact: () => 'artifact-id',
   });
 
@@ -209,11 +239,15 @@ test('fresh named sessions with the same name serialize first binding before rej
   const dispatchGate = installGatedDispatch();
 
   const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
     token: 'test-token',
     sessionStore,
     leaseRegistry: new LeaseRegistry(),
-    deviceInventoryProvider: async () => [firstDevice, secondDevice],
+    deviceInventoryGateways: createTestDeviceInventoryGatewaysFromProvider(async () => [
+      firstDevice,
+      secondDevice,
+    ]),
+    deviceRuntimeGateway: snapshotDeviceRuntimeGateway(),
     trackDownloadableArtifact: () => 'artifact-id',
   });
 
@@ -269,7 +303,7 @@ test('fresh named sessions with the same name serialize first binding before rej
     'end-snapshot-emulator-5554',
   ]);
   expect(dispatchGate.getMaxActive()).toBe(1);
-  expect(mockDispatch).toHaveBeenCalledTimes(1);
+  expect(legacyDispatchCapture).toHaveBeenCalledTimes(1);
   expect(sessionStore.get('qa-android')?.device.id).toBe('emulator-5554');
 });
 
@@ -278,11 +312,14 @@ test('fresh named sessions with only lock platform default serialize on the sele
   const dispatchGate = installGatedDispatch();
 
   const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
     token: 'test-token',
     sessionStore,
     leaseRegistry: new LeaseRegistry(),
-    deviceInventoryProvider: async () => [makeAndroidSession('inventory').device],
+    deviceInventoryGateways: createTestDeviceInventoryGatewaysFromProvider(async () => [
+      makeAndroidSession('inventory').device,
+    ]),
+    deviceRuntimeGateway: snapshotDeviceRuntimeGateway(),
     trackDownloadableArtifact: () => 'artifact-id',
   });
 
@@ -383,11 +420,13 @@ test('fresh named sessions reject incompatible selector combinations before bind
   for (const testCase of cases) {
     const sessionStore = makeSessionStore('agent-device-router-lock-');
     const handler = createRequestHandler({
-      logPath: path.join(os.tmpdir(), 'daemon.log'),
+      logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
       token: 'test-token',
       sessionStore,
       leaseRegistry: new LeaseRegistry(),
-      deviceInventoryProvider: async () => [makeIosSession('inventory').device],
+      deviceInventoryGateways: createTestDeviceInventoryGatewaysFromProvider(async () => [
+        makeIosSession('inventory').device,
+      ]),
       trackDownloadableArtifact: () => 'artifact-id',
     });
 
@@ -408,9 +447,9 @@ test('fresh named sessions reject incompatible selector combinations before bind
       expect(response.error.code).toBe('INVALID_ARGS');
       expect(response.error.message).toMatch(testCase.conflict);
     }
-    expect(mockDispatch).not.toHaveBeenCalled();
+    expect(legacyDispatchCapture).not.toHaveBeenCalled();
     expect(sessionStore.get(testCase.name)).toBeUndefined();
-    mockDispatch.mockClear();
+    legacyDispatchCapture.mockClear();
   }
 });
 
@@ -419,10 +458,11 @@ test('batch steps cannot bypass reject lock policy on nested direct requests', a
   sessionStore.set('qa-ios', makeIosSession('qa-ios'));
 
   const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
     token: 'test-token',
     sessionStore,
     leaseRegistry: new LeaseRegistry(),
+    deviceInventoryGateways: createTestDeviceInventoryGateways(),
     trackDownloadableArtifact: () => 'artifact-id',
   });
 
@@ -446,7 +486,7 @@ test('batch steps cannot bypass reject lock policy on nested direct requests', a
     },
   });
 
-  expect(mockDispatch).not.toHaveBeenCalled();
+  expect(legacyDispatchCapture).not.toHaveBeenCalled();
   expect(response.ok).toBe(false);
   if (!response.ok) {
     expect(response.error.code).toBe('INVALID_ARGS');
@@ -460,17 +500,57 @@ test('batch steps cannot bypass reject lock policy on nested direct requests', a
 test('direct daemon requests apply strip lock policy for existing sessions before dispatch', async () => {
   const sessionStore = makeSessionStore('agent-device-router-lock-');
   sessionStore.set('qa-ios', makeIosSession('qa-ios'));
+  systemRuntimeSpies.appSwitcher.mockClear();
+
+  const handler = createRequestHandler({
+    logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
+    token: 'test-token',
+    sessionStore,
+    leaseRegistry: new LeaseRegistry(),
+    deviceRuntimeGateway: lifecycleDeviceRuntimeGateway,
+    deviceInventoryGateways: createTestDeviceInventoryGateways(),
+    trackDownloadableArtifact: () => 'artifact-id',
+  });
+
+  const response = await handler({
+    token: 'test-token',
+    session: 'qa-ios',
+    command: 'app-switcher',
+    positionals: [],
+    flags: {
+      target: 'tv',
+      device: 'iPhone 16',
+    },
+    meta: {
+      lockPolicy: 'strip',
+    },
+  });
+
+  expect(systemRuntimeSpies.appSwitcher).toHaveBeenCalledTimes(1);
+  expect(response.ok).toBe(true);
+  const action = sessionStore.get('qa-ios')?.actions.at(-1);
+  expect(action?.flags.platform).toBe('ios');
+  expect(action?.flags.target).toBe(undefined);
+  expect(action?.flags.device).toBe('iPhone 16');
+});
+
+test('strip lock policy still refuses a request naming a different device, before dispatch', async () => {
+  // The wrong-device footgun: `strip` used to delete --udid and run the command against the bound
+  // session's device instead. A request that names another device must fail, not silently retarget.
+  const sessionStore = makeSessionStore('agent-device-router-lock-');
+  sessionStore.set('qa-ios', makeIosSession('qa-ios'));
   let dispatchCalls = 0;
-  mockDispatch.mockImplementation(async () => {
+  legacyDispatchCapture.mockImplementation(async () => {
     dispatchCalls += 1;
     return {};
   });
 
   const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
     token: 'test-token',
     sessionStore,
     leaseRegistry: new LeaseRegistry(),
+    deviceInventoryGateways: createTestDeviceInventoryGateways(),
     trackDownloadableArtifact: () => 'artifact-id',
   });
 
@@ -480,22 +560,17 @@ test('direct daemon requests apply strip lock policy for existing sessions befor
     command: 'home',
     positionals: [],
     flags: {
-      target: 'tv',
       udid: 'SIM-999',
-      device: 'iPhone 16',
     },
     meta: {
       lockPolicy: 'strip',
     },
   });
 
-  expect(dispatchCalls).toBe(1);
-  expect(response.ok).toBe(true);
-  const action = sessionStore.get('qa-ios')?.actions.at(-1);
-  expect(action?.flags.platform).toBe('ios');
-  expect(action?.flags.udid).toBe(undefined);
-  expect(action?.flags.target).toBe(undefined);
-  expect(action?.flags.device).toBe('iPhone 16');
+  expect(dispatchCalls).toBe(0);
+  expect(response.ok).toBe(false);
+  expect(response.ok === false && response.error.code).toBe('INVALID_ARGS');
+  expect(response.ok === false && response.error.hint).not.toContain('--session-lock');
 });
 
 test('batch preserves tenant-scoped session names across nested requests', async () => {
@@ -506,17 +581,15 @@ test('batch preserves tenant-scoped session names across nested requests', async
     tenantId: 'tenant-a',
     runId: 'run-1',
   });
-  let dispatchCalls = 0;
-  mockDispatch.mockImplementation(async () => {
-    dispatchCalls += 1;
-    return {};
-  });
+  systemRuntimeSpies.appSwitcher.mockClear();
 
   const handler = createRequestHandler({
-    logPath: path.join(os.tmpdir(), 'daemon.log'),
+    logPath: path.join(mkdtempForTestSync('daemon'), 'daemon.log'),
     token: 'test-token',
     sessionStore,
     leaseRegistry,
+    deviceRuntimeGateway: lifecycleDeviceRuntimeGateway,
+    deviceInventoryGateways: createTestDeviceInventoryGateways(),
     trackDownloadableArtifact: () => 'artifact-id',
   });
 
@@ -526,7 +599,7 @@ test('batch preserves tenant-scoped session names across nested requests', async
     command: 'batch',
     positionals: [],
     flags: {
-      batchSteps: [{ command: 'home' }],
+      batchSteps: [{ command: 'app-switcher' }],
     },
     meta: {
       tenantId: 'tenant-a',
@@ -537,6 +610,6 @@ test('batch preserves tenant-scoped session names across nested requests', async
   });
 
   expect(response.ok).toBe(true);
-  expect(dispatchCalls).toBe(1);
-  expect(sessionStore.get('tenant-a:default')?.actions.at(-1)?.command).toBe('home');
+  expect(systemRuntimeSpies.appSwitcher).toHaveBeenCalledTimes(1);
+  expect(sessionStore.get('tenant-a:default')?.actions.at(-1)?.command).toBe('app-switcher');
 });

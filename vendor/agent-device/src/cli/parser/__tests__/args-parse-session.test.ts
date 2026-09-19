@@ -745,12 +745,15 @@ test('parseArgs recognizes connect device-feature flags and their short aliases'
       '--network-profile',
       '4g-lte-advanced-good',
       '--provider-no-resign-app',
+      '--appium-version',
+      '3.2.0',
     ],
     { strictFlags: true },
   );
   assert.equal(parsed.flags.providerDeviceOrientation, 'portrait');
   assert.equal(parsed.flags.providerGeoLocation, 'US');
   assert.equal(parsed.flags.providerTimezone, 'New_York');
+  assert.equal(parsed.flags.providerAppiumVersion, '3.2.0');
   assert.equal(parsed.flags.providerLanguage, 'Fr');
   assert.equal(parsed.flags.providerLocale, 'Fr');
   assert.equal(parsed.flags.providerNetworkProfile, '4g-lte-advanced-good');
@@ -909,12 +912,6 @@ test('parseArgs accepts --save-script with optional path value', () => {
   assert.equal(ambiguousBareValue.command, 'open');
   assert.deepEqual(ambiguousBareValue.positionals, ['my-flow.ad']);
   assert.equal(ambiguousBareValue.flags.saveScript, true);
-});
-
-test('parseArgs supports metrics alias for perf', () => {
-  const parsed = parseArgs(['metrics'], { strictFlags: true });
-  assert.equal(parsed.command, 'perf');
-  assert.deepEqual(parsed.positionals, []);
 });
 
 test('parseArgs recognizes debug symbols command shape', () => {

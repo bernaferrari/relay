@@ -7,8 +7,8 @@ import type {
 import type { ArtifactDescriptor, FileOutputRef } from '../../../io.ts';
 import type { CommandContext } from '../../../runtime-contract.ts';
 import { AppError } from '@agent-device/kernel/errors';
-import { successText } from '../../../utils/success-text.ts';
-import { requireIntInRange } from '../../../utils/validation.ts';
+import { successText } from '@agent-device/kernel/success-text';
+import { requireIntInRange } from '@agent-device/kernel/validation';
 import {
   recordingQualityInputToExportQuality,
   type RecordingExportQuality,
@@ -25,7 +25,6 @@ export type RecordingRecordCommandOptions = CommandContext & {
   action: 'start' | 'stop';
   out?: FileOutputRef;
   fps?: number;
-  maxSize?: number;
   quality?: RecordingExportQuality;
   hideTouches?: boolean;
 };
@@ -105,9 +104,7 @@ export const traceCommand: RuntimeCommand<
       })
     : undefined;
   try {
-    const backendOptions: BackendTraceOptions = {
-      ...(output?.path ? { outPath: output.path } : {}),
-    };
+    const backendOptions: BackendTraceOptions = output?.path ? { outPath: output.path } : {};
     const result = await method.call(
       runtime.backend,
       toBackendContext(runtime, options),
@@ -129,8 +126,6 @@ function normalizeRecordingOptions(
   if (outPath) backendOptions.outPath = outPath;
   const fps = normalizeRecordingFps(options.fps);
   if (fps !== undefined) backendOptions.fps = fps;
-  const maxSize = normalizeRecordingMaxSize(options.maxSize);
-  if (maxSize !== undefined) backendOptions.maxSize = maxSize;
   const quality = normalizeRecordingExportQuality(options.quality);
   if (quality !== undefined) backendOptions.quality = quality;
   if (options.hideTouches !== undefined) backendOptions.showTouches = options.hideTouches !== true;
@@ -139,12 +134,6 @@ function normalizeRecordingOptions(
 
 function normalizeRecordingFps(value: number | undefined): number | undefined {
   return value === undefined ? undefined : requireIntInRange(value, 'fps', 1, 60);
-}
-
-function normalizeRecordingMaxSize(value: number | undefined): number | undefined {
-  return value === undefined
-    ? undefined
-    : requireIntInRange(value, 'maxSize', 1, Number.MAX_SAFE_INTEGER);
 }
 
 function normalizeRecordingExportQuality(

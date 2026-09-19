@@ -1,6 +1,6 @@
-import type { CommandSchemaOverride } from '../../cli-schema/types.ts';
+import type { CommandSchemaOverride } from '@agent-device/command-registry/command-schema';
+import { messageWithWarningsOutput } from '../output-common.ts';
 import { defineCommandFacet, defineCommandFamilyFromFacets } from '../family/types.ts';
-import { defineExecutableCommand } from '../command-contract.ts';
 import {
   booleanField,
   booleanSchema,
@@ -18,17 +18,25 @@ import {
   requiredDaemonString,
   requiredString,
 } from '../cli-grammar/common.ts';
-import type { CliReader, CommandInput, DaemonWriter } from '../cli-grammar/types.ts';
-import { METRO_RELOAD_FLAGS, REPLAY_FLAGS } from '../cli-grammar/flag-groups.ts';
+import type { AsyncDaemonWriter, CliReader, CommandInput } from '../cli-grammar/types.ts';
+import { METRO_RELOAD_FLAGS, REPLAY_FLAGS } from '@agent-device/command-registry/flag-groups';
 import { withCommandRuntimeHints } from '../runtime-hints.ts';
+import {
+  collectReplayShellEnv,
+  parseReplayCliEnvEntries,
+  readReplayCliEnvEntries,
+} from '@agent-device/ad-script';
+import { loadReplayScriptSourceBundle } from './script-source-bundle.ts';
+import { discoverReplaySourcePaths } from './source-discovery.ts';
 
 const REPLAY_COMMAND_NAME = 'replay';
 const TEST_COMMAND_NAME = 'test';
 
 const REPLAY_SHELL_ENV_PREFIX = 'AD_VAR_';
 
-const replayCommandDescription = 'Replay a recorded session.';
-const testCommandDescription = 'Run one or more replay scripts.';
+const replayCommandDescription =
+  'Run a recorded automation script, including compatible Maestro YAML flows. A script without a terminal close leaves its session active for subsequent automation.';
+const testCommandDescription = 'Run one or more replay scripts as a serial test suite';
 
 export const replayCommandMetadata = defineFieldCommandMetadata(
   REPLAY_COMMAND_NAME,
@@ -52,10 +60,13 @@ export const replayCommandMetadata = defineFieldCommandMetadata(
     keepSession: booleanField(
       'Leave the session active by suppressing exactly an authored terminal close in native .ad.',
     ),
+    timeoutMs: integerField('Maximum wall-clock duration for the replay request.'),
     // ADR 0012 decision 6, R1/R6: arms agent-supervised re-record repair
     // from the first replay attempt; optional string value is the healed
     // script's output path.
-    saveScript: jsonSchemaField<boolean | string>({ oneOf: [booleanSchema(), stringSchema()] }),
+    saveScript: jsonSchemaField<boolean | string>({
+      oneOf: [booleanSchema(), stringSchema()],
+    }),
     // #1258: overwrite an existing --save-script target (arm-time preflight +
     // publish) instead of refusing. Alias: --overwrite.
     force: booleanField(),
@@ -84,20 +95,9 @@ export const testCommandMetadata = defineFieldCommandMetadata(
   },
 );
 
-export const replayCommandDefinition = defineExecutableCommand(
-  replayCommandMetadata,
-  (client, input) => client.replay.run(withCommandRuntimeHints(input)),
-);
-
-export const testCommandDefinition = defineExecutableCommand(testCommandMetadata, (client, input) =>
-  client.replay.test(withCommandRuntimeHints(input)),
-);
-
 const replayCliSchema = {
   usageOverride: 'replay <path> | replay export <file.ad> [--out <path>]',
-  helpDescription:
-    'Replay a recorded session. For Maestro YAML compatibility flows, use replay <flow.yaml> --maestro and keep the target binding such as --platform ios on the replay command. A script with no terminal close leaves its session (and daemon) running until you close it or it idle-reaps — no different from a session opened interactively. For native .ad scripts, --keep-session suppresses exactly an authored terminal close so you can continue interactively.',
-  summary: replayCommandDescription,
+  usageFlags: [],
   positionalArgs: ['path'],
   allowsExtraPositionals: true,
   allowedFlags: [
@@ -123,9 +123,8 @@ const replayCliSchema = {
 
 const testCliSchema = {
   usageOverride: 'test <path-or-glob>...',
+  usageFlags: [],
   listUsageOverride: 'test <path-or-glob>...',
-  helpDescription: 'Run one or more replay scripts as a serial test suite',
-  summary: 'Run replay test suites',
   positionalArgs: ['pathOrGlob'],
   allowsExtraPositionals: true,
   allowedFlags: [
@@ -156,6 +155,7 @@ export const replayCliReader: CliReader = (positionals, flags) => ({
   resumeFrom: flags.replayFrom,
   resumePlanDigest: flags.replayPlanDigest,
   keepSession: flags.replayKeepSession,
+  timeoutMs: flags.timeoutMs,
   saveScript: flags.saveScript,
   force: flags.force,
 });
@@ -178,41 +178,83 @@ export const testCliReader: CliReader = (positionals, flags) => ({
   shardSplit: flags.shardSplit,
 });
 
-export const replayDaemonWriter: DaemonWriter = (input) =>
-  request(REPLAY_COMMAND_NAME, [requiredDaemonString(input.path, 'replay requires path')], {
+export const replayDaemonWriter: AsyncDaemonWriter = async (input) => {
+  const inputPath = requiredDaemonString(input.path, 'replay requires path');
+  const replayBackend = readReplayBackend(input);
+  const replayShellEnv = collectReplayClientShellEnv(process.env);
+  return request(REPLAY_COMMAND_NAME, [inputPath], {
     ...input,
     replayUpdate: input.update,
-    replayBackend: readReplayBackend(input),
+    replayBackend,
     replayEnv: input.env,
-    replayShellEnv: collectReplayClientShellEnv(process.env),
+    replayShellEnv,
+    // #1802: the caller owns the flow files, so it reads them here — the same
+    // client-collects-local-input move `replayShellEnv` already makes — and
+    // the daemon executes only what arrives in this bundle.
+    replayScriptSource: await loadReplayScriptSourceBundle({
+      inputPath,
+      cwd: readReplayClientCwd(input),
+      replayBackend,
+      env: readReplayScriptSourceEnv(input, replayShellEnv),
+    }),
     replayFrom: input.resumeFrom,
     replayPlanDigest: input.resumePlanDigest,
     replayKeepSession: input.keepSession,
     saveScript: input.saveScript,
   });
+};
 
-export const testDaemonWriter: DaemonWriter = (input) =>
-  request(TEST_COMMAND_NAME, input.paths ?? [], {
+export const testDaemonWriter: AsyncDaemonWriter = async (input) => {
+  const inputs = input.paths ?? [];
+  const replayBackend = readReplayBackend(input);
+  const cwd = readReplayClientCwd(input);
+  const replayShellEnv = collectReplayClientShellEnv(process.env);
+  const env = readReplayScriptSourceEnv(input, replayShellEnv);
+  return request(TEST_COMMAND_NAME, inputs, {
     ...stripReplayTestPresentationInput(input),
     replayUpdate: input.update,
-    replayBackend: readReplayBackend(input),
+    replayBackend,
     replayEnv: input.env,
-    replayShellEnv: collectReplayClientShellEnv(process.env),
+    replayShellEnv,
+    // #1802: `test` inputs are paths, directories, and globs on the CALLER's
+    // filesystem. Expanding them here keeps discovery order identical for a
+    // local and a remote daemon and ships each discovered source's text.
+    replayScriptSources: await Promise.all(
+      discoverReplaySourcePaths({ inputs, cwd, replayBackend }).map(
+        async (inputPath) =>
+          await loadReplayScriptSourceBundle({ inputPath, cwd, replayBackend, env }),
+      ),
+    ),
   });
+};
 
-const replayCommandFacet = defineCommandFacet({
+export const replayCommandFacet = defineCommandFacet({
   name: REPLAY_COMMAND_NAME,
+  text: {
+    summary: 'Replay a recorded session or Maestro flow',
+    cliDetail:
+      'For Maestro YAML compatibility flows, use replay <flow.yaml> --maestro and keep the target binding such as --platform ios on the replay command. A script with no terminal close leaves its session (and daemon) running until you close it or it idle-reaps — no different from a session opened interactively. For native .ad scripts, --keep-session suppresses exactly an authored terminal close so you can continue interactively. replay export <file.ad> converts compatible actions to Maestro YAML locally, including app switches with explicit launchApp.appId targets, deep links (including tel: and mailto:) as openLink, and home as pressKey: Home.',
+  },
   metadata: replayCommandMetadata,
-  definition: replayCommandDefinition,
+  run: (client, input) => client.replay.run(withCommandRuntimeHints(input)),
   cliSchema: replayCliSchema,
   cliReader: replayCliReader,
   daemonWriter: replayDaemonWriter,
+  // Replay owns a composable warnings channel (`optional` step skips, capture degradations);
+  // a run that reports success while warnings say otherwise must not render as a bare
+  // success line (#2560).
+  cliOutputFormatter: messageWithWarningsOutput,
 });
 
-const testCommandFacet = defineCommandFacet({
+export const testCommandFacet = defineCommandFacet({
   name: TEST_COMMAND_NAME,
+  text: {
+    summary: 'Run replay test suites',
+    cliDetail:
+      "Relative globs are expanded on the caller from its working directory, whose name is treated literally. Quote glob inputs to defer expansion to test. Copied diagnostic artifacts receive numbered filenames when needed to preserve other artifacts, replay sources, timing traces, and attempt manifests. JUnit reports (--reporter junit:<path>) replace characters forbidden by XML 1.0 with U+FFFD and preserve legal Unicode and whitespace. JSON and other reporters retain the original suite values. Custom reporter getExitCode hooks must return an integer from 0 to 255 or undefined; the highest valid code wins and cannot lower a failing suite's exit code.",
+  },
   metadata: testCommandMetadata,
-  definition: testCommandDefinition,
+  run: (client, input) => client.replay.test(withCommandRuntimeHints(input)),
   cliSchema: testCliSchema,
   cliReader: testCliReader,
   daemonWriter: testDaemonWriter,
@@ -222,6 +264,25 @@ export const replayCommandFamily = defineCommandFamilyFromFacets({
   name: 'replay',
   commands: [replayCommandFacet, testCommandFacet],
 });
+
+/**
+ * The `${VAR}` values a Maestro `runFlow` include path can be resolved from before the run
+ * starts — the same shell (`AD_VAR_*`) and `-e KEY=VALUE` sources the run itself merges into its
+ * environment, read here so collection sees what the run will see.
+ */
+function readReplayScriptSourceEnv(
+  input: CommandInput,
+  replayShellEnv: Record<string, string>,
+): Record<string, string> {
+  return {
+    ...collectReplayShellEnv(replayShellEnv),
+    ...parseReplayCliEnvEntries(readReplayCliEnvEntries(input.env)),
+  };
+}
+
+function readReplayClientCwd(input: CommandInput): string {
+  return typeof input.cwd === 'string' && input.cwd.length > 0 ? input.cwd : process.cwd();
+}
 
 function readReplayBackend(input: CommandInput): string | undefined {
   return input.backend ?? (input.maestro === true ? 'maestro' : undefined);

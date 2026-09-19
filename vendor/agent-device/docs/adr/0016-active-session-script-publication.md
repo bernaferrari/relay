@@ -26,7 +26,9 @@ Normative summary; the binding contracts and refusal cases are in [Decision](#de
   what lets a one-shot client keep the daemon alive on a close-less handoff.
 - Sensitive `fill` inputs must be recorded as placeholders via `fill --record-as <VAR>`
   (ADR 0017, shipped for #1348); unparameterized `fill`/`type` values persist literally into the
-  artifact, so a secret entered without `--record-as` is published.
+  artifact, so a secret entered without `--record-as` is published. The protection is
+  recording-session-scoped (ADR 0017's #1398 amendment): a later action's own recorded evidence can
+  never re-serialize an app-rendered echo of an already-parameterized value either.
 
 ## Context
 
@@ -107,8 +109,58 @@ fresh session is the only re-arming boundary.
 > naming `open --save-script` as the recovery; a plain `close` still tears the session down
 > without writing. This is distinct from
 > [#1533](https://github.com/callstack/agent-device/issues/1533), which is about an
-> already-ARMED-then-ABORTED session whose flag ingress re-enables `recordSession` and lets a
-> *bare* `close` (no `--save-script` on the close itself) publish; that case is unresolved here.
+> already-ARMED-then-ABORTED session whose flag ingress re-enabled recording and let a
+> *bare* `close` (no `--save-script` on the close itself) publish; that case is resolved by the
+> amendments below.
+
+> **Amendment (#1533, shipped).** ABORTED terminality above was enforced only by
+> `abortAuthoringOnSecondOpen` clearing `session.recordSession` — inert by ordering, not by
+> construction. `recordSession` is an evidence-capture flag that several surfaces set directly, so
+> a later `--save-script` re-armed it while the status stayed ABORTED, and a *bare* `close` then
+> published the full session log through a writer that only knew how to refuse repair
+> transactions. The refusal this ADR specifies for `close --save-script` in ABORTED promises the
+> caller that plain `close` "tears down without writing", so the gap also made an existing error
+> message untrue.
+>
+> ABORTED is now terminal by construction. `--save-script` arms recording through one rule owned by
+> the publication projection, which answers "not recording" for an ABORTED lifecycle on every
+> surface that handles the flag — the re-open builder, the close finalizer, and the recorded-action
+> ingress — so the flag can no longer contradict the status. Publication authorization is likewise
+> the aggregate's to answer: the writer asks one publication-blocked question covering
+> not-recording, an uncommittable or committed repair, and an ABORTED authoring lifecycle alike, so
+> every path that reaches it (bare `close`, teardown, idle-reap, active publication) refuses. ARMED
+> and PUBLISHED lifecycles and every repair transaction are unchanged; no state name, transition,
+> or entry point in the lifecycle above is added or altered.
+
+> **Amendment (#1533 follow-up, shipped).** The rule above still relied on a stored
+> `SessionState.recordSession` that every writer had to set in step with the lifecycle. Routing the
+> writes through one place made the two agree; it did not make disagreement unrepresentable, and
+> the field remained a second source of truth for a question the aggregate already answered.
+>
+> Recording is now **derived**, not stored. `isRecordingPublication` reads it off the lifecycle —
+> ordinary authoring records only while ARMED; a repair transaction records for its whole lifetime,
+> terminal statuses included — and the field is gone. Three consequences worth stating, because
+> they are what the derivation buys:
+>
+> - No surface can arm recording without moving the lifecycle that authorizes it, so #1533's drift
+>   is unrepresentable rather than guarded against. `buildNextOpenSession` and the close finalizer
+>   make no recording decision at all now.
+> - The writer's publication gate is answered entirely by the aggregate. Its separate ABORTED check
+>   is gone, because a terminal authoring lifecycle is already not recording — no second gate that
+>   could disagree with the first about *authoring*.
+> - Evidence capture and publication authorization now derive from the same aggregate, but they
+>   remain **distinct predicates**, and deliberately so. They coincide for ordinary authoring:
+>   ARMED both records and publishes, ABORTED and PUBLISHED do neither. They do NOT coincide for
+>   repair — `isRecordingPublication` is true for every repair status, `committed` and `aborted`
+>   included, while publication additionally requires `isRepairArmedWriteBlocked` to pass, which
+>   refuses a committed transaction (idempotent no-op) and one that is not yet committable (ADR
+>   0012 decision 6, C2). A repair that captures evidence is therefore not necessarily a repair
+>   that may publish, and collapsing the two would silently republish or commit a prefix.
+>
+> This is behavior-preserving: the derivation reproduces exactly what the flag held at every
+> transition. Whether a *committed* repair should still capture recording-time evidence is a real
+> question this deliberately does not answer — the old flag said yes, and changing that is a
+> behavior change, not a derivation.
 
 This lifecycle is distinct from ADR 0012's repair transaction. `session save-script` rejects a session
 with `saveScriptBoundary` set and directs the caller to finish or abort the repair through its existing
@@ -136,6 +188,13 @@ record one. V1 does not infer a screen identity from a snapshot or synthesize an
 > `identity-mismatch` `REPLAY_DIVERGENCE` before the wait reports success. The reshuffled-screen
 > false-pass below is covered by a provider-scenario regression (record → publish → replay against a
 > reshuffled tree whose same-label node sits under a different id/ancestry).
+>
+> **Amendment (#1398, ADR 0017).** An identity-empty landmark is not the only case that fails to
+> qualify: a selector wait whose only identity is an app-rendered echo of a literal the recording
+> session already parameterized via `fill --record-as` also records no annotation (ADR 0017's
+> session-scoped echo protection), so it does not qualify as a destination guard either. Publication
+> refuses it with the same recovery hint, directing the author to a stable, non-value-bearing landmark
+> — an enforced version of exactly the fix issue #1398's motivating scenario applied by hand.
 
 The original selector-level caveat, retained as context: the guard proved that an element matching its
 selector exists, not that it is the same landmark element observed while authoring, so a reshuffled
@@ -164,7 +223,7 @@ computed from whether `session` still exists in the daemon's own store when the 
 by re-parsing the script for `close`. This is what lets the real CLI/IPC client (not just the in-process
 handler) actually honor "the session stays active": without an explicit signal in the response, the
 client's one-shot `replay`/`test` teardown had no way to distinguish a still-active handoff from a
-finished one, and tore the owning daemon down regardless (`src/daemon/client/daemon-client-lifecycle.ts`).
+finished one, and tore the owning daemon down regardless (`src/daemon-client/daemon-client-lifecycle.ts`).
 `sessionActive` is `true` for every close-less run (including a `--from` resume) and `false` once the
 script's terminal `close` — or a repair-armed run's deferred equivalent — has executed.
 
@@ -178,6 +237,11 @@ sensitive fills: `fill ... --record-as PASSWORD` sends the live text to the app 
 This is opt-in and fill-only. Unparameterized fill/type inputs remain literal artifact content, so
 authors must use ADR 0017 for each sensitive fill and avoid secret-bearing `type` steps. CLI help states
 both the safe workflow and the remaining literal-input warning next to publication guidance.
+
+ADR 0017's #1398 amendment extends this protection to the whole recording session: a later, unrelated
+recorded action can no longer re-serialize an app-rendered echo of an already-parameterized literal into
+its own result or `target-v1` evidence, so a value protected once by `--record-as` stays protected for
+every action recorded after it in the same session, not only its own originating fill.
 
 ### Artifact contract
 

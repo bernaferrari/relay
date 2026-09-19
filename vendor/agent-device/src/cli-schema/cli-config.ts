@@ -1,16 +1,19 @@
+import type { CliFlags } from '@agent-device/contracts/command';
 import fs from 'node:fs';
 import path from 'node:path';
 import { AppError } from '@agent-device/kernel/errors';
-import { mergeDefinedFlags } from '../utils/merge-flags.ts';
-import { type CliFlags, type FlagKey } from '../commands/cli-grammar/flag-types.ts';
-import { expandUserHomePath, resolveUserPath } from '../utils/path-resolution.ts';
+import { mergeDefinedFlags } from './merge-flags.ts';
+import { type FlagKey } from '@agent-device/command-registry/flag-types';
+import { projectConfigFlagKeys } from '@agent-device/command-registry/flag-registry';
+import { expandUserHomePath, resolveUserPath } from '@agent-device/host-kit/file';
 import {
   getConfigurableOptionSpecs,
   getOptionSpec,
   parseOptionValueFromSource,
 } from './option-schema.ts';
-import { parseInstallSourceConfig } from '../utils/install-source-config.ts';
-import type { EnvMap } from '../utils/env-map.ts';
+import { parseInstallSourceConfig } from '@agent-device/provision-kit/install-source-config';
+import { RETIRED_SCREENSHOT_MAX_SIZE } from '@agent-device/contracts/capture';
+import { type EnvMap } from '@agent-device/kernel/source-value';
 
 export function resolveConfigBackedFlagDefaults(options: {
   command: string | null;
@@ -30,94 +33,10 @@ type ConfigFileSource = 'user' | 'project' | 'explicit';
 
 type ConfigPath = { path: string; required: boolean; source: ConfigFileSource };
 
-// Project config is repository-controlled, so new flags are operator-only by default.
-// Adding a key here is the only way to make it available to ./agent-device.json.
-const PROJECT_CONFIG_FLAG_KEYS = new Set<FlagKey>([
-  'json',
-  'platform',
-  'target',
-  'device',
-  'udid',
-  'serial',
-  'session',
-  'sessionLock',
-  'activity',
-  'launchArgs',
-  'launchUrl',
-  'remote',
-  'deviceHub',
-  'testIme',
-  'appsFilter',
-  'clean',
-  'force',
-  'stale',
-  'relaunch',
-  'shutdown',
-  'surface',
-  'headless',
-  'restart',
-  'noRecord',
-  'record',
-  'recordAs',
-  'snapshotInteractiveOnly',
-  'snapshotDiff',
-  'snapshotDepth',
-  'snapshotScope',
-  'snapshotRaw',
-  'snapshotForceFull',
-  'screenshotPixelDensity',
-  'screenshotFullscreen',
-  'screenshotMaxSize',
-  'screenshotNoStabilize',
-  'screenshotNormalizeStatusBar',
-  'overlayRefs',
-  'networkInclude',
-  'baseline',
-  'threshold',
-  'count',
-  'pointerCount',
-  'fps',
-  'quality',
-  'hideTouches',
-  'recordingScope',
-  'intervalMs',
-  'delayMs',
-  'durationMs',
-  'holdMs',
-  'jitterPx',
-  'pixels',
-  'doubleTap',
-  'verify',
-  'settle',
-  'settleQuietMs',
-  'clickButton',
-  'backMode',
-  'pauseMs',
-  'pattern',
-  'kind',
-  'perfTemplate',
-  'responseLevel',
-  'verbose',
-  'cost',
-  'timeoutMs',
-  'retries',
-  'failFast',
-  'recordVideo',
-  'replayUpdate',
-  'replayMaestro',
-  'replayFrom',
-  'replayPlanDigest',
-  'replayKeepSession',
-  'findFirst',
-  'findLast',
-  'batchOnError',
-  'batchMaxSteps',
-  'retainPaths',
-  'retentionMs',
-  'shardAll',
-  'shardSplit',
-  'noLogin',
-]);
+// Project config is repository-controlled, so a flag stays operator-only unless its
+// own declaration sets `projectConfig: true`. This set derives from those declarations;
+// admitting a new key to ./agent-device.json edits the declaration, not this file.
+const PROJECT_CONFIG_FLAG_KEYS = projectConfigFlagKeys();
 
 function resolveConfigPaths(
   cwd: string,
@@ -199,6 +118,12 @@ function parseConfigObject(
     const key = rawKey as FlagKey;
     const spec = getOptionSpec(key);
     if (!spec) {
+      if (rawKey === RETIRED_SCREENSHOT_MAX_SIZE.flagKey) {
+        throw new AppError(
+          'INVALID_ARGS',
+          `Config key "${rawKey}" in ${origin.label} was removed; use "screenshotScale" (0.01-1) to downscale screenshots. Recordings capture at native resolution.`,
+        );
+      }
       throw new AppError('INVALID_ARGS', `Unknown config key "${rawKey}" in ${origin.label}.`);
     }
     if (!spec.configurable) {
@@ -227,7 +152,24 @@ function parseConfigObject(
   return flags;
 }
 
+// Commands that honored AGENT_DEVICE_SCREENSHOT_MAX_SIZE in released versions.
+// A stale env var must fail closed for them (sizing must not silently vanish)
+// while every other command keeps working.
+const RETIRED_MAX_SIZE_ENV_COMMANDS = new Set(['screenshot', 'record']);
+
 function readEnvFlagDefaults(env: EnvMap, command: string | null): Partial<CliFlags> {
+  const retiredEnvValue = env[RETIRED_SCREENSHOT_MAX_SIZE.envVar];
+  if (
+    command !== null &&
+    RETIRED_MAX_SIZE_ENV_COMMANDS.has(command) &&
+    typeof retiredEnvValue === 'string' &&
+    retiredEnvValue.trim().length > 0
+  ) {
+    throw new AppError(
+      'INVALID_ARGS',
+      `${RETIRED_SCREENSHOT_MAX_SIZE.envVar} was removed. ${RETIRED_SCREENSHOT_MAX_SIZE.migration[command === 'record' ? 'record' : 'screenshot']}`,
+    );
+  }
   const flags: Partial<CliFlags> = {};
   for (const spec of getConfigurableOptionSpecs(command)) {
     if (spec.key === 'installSource') continue;

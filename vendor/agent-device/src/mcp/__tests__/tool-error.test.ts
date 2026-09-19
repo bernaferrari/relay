@@ -5,7 +5,7 @@ import { formatToolErrorText, normalizeToolError } from '../tool-error.ts';
 
 // #1597: an MCP-connected agent reads this text, not the CLI's stderr — the
 // candidate refs must render here too, unconditionally, same as
-// printHumanError (src/utils/output.ts, src/utils/__tests__/output.test.ts).
+// printHumanError (src/commands/output/error.ts, src/commands/output/error.test.ts).
 test('formatToolErrorText lists AMBIGUOUS_MATCH candidates capped with a "+N more" marker', () => {
   const err = new AppError(
     'AMBIGUOUS_MATCH',
@@ -36,19 +36,49 @@ test('formatToolErrorText omits the candidates block for non-ambiguous errors', 
   const text = formatToolErrorText(normalizeToolError(err));
 
   assert.equal(text.includes('Candidates:'), false);
+  assert.equal(text.includes('Warning:'), false);
 });
 
-// P2 review on #1597: device-domain AMBIGUOUS_MATCH (findBootedAppleSimulatorWithApp,
-// src/core/dispatch-resolve.ts) reuses `details.candidates` for `{ id, name }`
-// device objects with no `matches` field — must never render as
-// "Candidates:\n  [object Object]" on the MCP text path either.
-test('formatToolErrorText renders device-domain candidate objects as nothing, never [object Object]', () => {
+// #2560: a failed `replay` carries the run's accumulated warnings at error level;
+// the MCP reader must see them too, not only --json consumers.
+test('formatToolErrorText renders run-level warnings carried in error details', () => {
+  const err = new AppError('REPLAY_DIVERGENCE', 'Replay failed at step 2 (tapOn "Save")', {
+    warnings: ['Optional Maestro assertVisible skipped at line 1: no match'],
+  });
+
+  const text = formatToolErrorText(normalizeToolError(err));
+
+  assert.match(
+    text,
+    /^Error \(REPLAY_DIVERGENCE\)[\s\S]*\nWarning: Optional Maestro assertVisible skipped at line 1: no match/,
+  );
+});
+
+test('formatToolErrorText renders a structured cause', () => {
+  const err = new AppError(
+    'COMMAND_FAILED',
+    'The daemon failed to fetch the app source',
+    undefined,
+    Object.assign(new Error('connect ECONNREFUSED 10.0.0.1:443'), {
+      code: 'ECONNREFUSED',
+    }),
+  );
+
+  const text = formatToolErrorText(normalizeToolError(err));
+
+  assert.match(text, /Cause: ECONNREFUSED connect ECONNREFUSED 10\.0\.0\.1:443/);
+});
+
+// Device-domain AMBIGUOUS_MATCH (findBootedAppleSimulatorWithApp,
+// -device/device-selection/dispatch-resolve) keys its list `devices`, so the MCP text path
+// carries the udids the hint asks for — same block as the CLI.
+test('formatToolErrorText lists device-domain candidates udid-first', () => {
   const err = new AppError(
     'AMBIGUOUS_MATCH',
     'Multiple booted iOS simulators have com.example.app installed',
     {
       appTarget: 'com.example.app',
-      candidates: [
+      devices: [
         { id: 'SIM-001', name: 'iPhone 17 Pro' },
         { id: 'SIM-002', name: 'iPhone 17' },
       ],
@@ -57,6 +87,6 @@ test('formatToolErrorText renders device-domain candidate objects as nothing, ne
 
   const text = formatToolErrorText(normalizeToolError(err));
 
+  assert.match(text, /Devices:\n {2}SIM-001 {2}iPhone 17 Pro\n {2}SIM-002 {2}iPhone 17/);
   assert.equal(text.includes('[object Object]'), false);
-  assert.equal(text.includes('Candidates:'), false);
 });

@@ -13,6 +13,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { LANE_ENVELOPE_SCHEMA_VERSION } from '../lib/lane-envelope.ts';
+import { CASE_GENERATION_INPUTS } from './envelope.ts';
+import { runCases } from './execute.ts';
 import { checkCase } from './invariant.ts';
 import { SELF_CHECK_TARGETS } from './self-check-targets.ts';
 
@@ -52,16 +54,64 @@ describe('fuzz invariant classifier', () => {
     const failure = checkCase(targetNamed('self-check-empty-hint'), 'case');
     expect(failure?.kind).toBe('empty-hint');
   });
+
+  // The two validation-only kinds (#1781 B2): without them a parser that silently accepts
+  // invalid input, or rejects with the wrong code, would read as a pass forever.
+  it('reports a silent acceptance of a case marked invalid as silent-accept', () => {
+    const failure = checkCase(targetNamed('self-check-silent-accept'), 'case');
+    expect(failure?.kind).toBe('silent-accept');
+  });
+
+  it('reports a rejection with an unexpected code as wrong-code', () => {
+    const failure = checkCase(targetNamed('self-check-wrong-code'), 'case');
+    expect(failure?.kind).toBe('wrong-code');
+    expect(failure?.detail).toContain('expected INVALID_ARGS, got COMMAND_FAILED');
+  });
 });
 
 describe('fuzz harness self-check', () => {
-  it('catches an untyped throw, an empty hint, and a wedged worker', () => {
-    const { status, stdout } = runHarness(['--self-check', '--case-timeout-ms', '750']);
+  // One run asserts both the report and its envelope: a second full self-check would cost six
+  // more real worker startups (#1823) for no new signal.
+  it('catches every seeded violation kind and writes the self-check envelope', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fuzz-selfcheck-'));
+    const { status, stdout } = runHarness([
+      '--self-check',
+      '--case-timeout-ms',
+      '750',
+      '--artifact-dir',
+      dir,
+    ]);
     expect(stdout).toContain('ok   self-check-untyped-throw: expected untyped-throw');
     expect(stdout).toContain('ok   self-check-empty-hint: expected empty-hint');
     expect(stdout).toContain('ok   self-check-hang: expected hang, got hang');
+    expect(stdout).toContain('ok   self-check-crash: expected crash, got crash');
+    expect(stdout).toContain('ok   self-check-silent-accept: expected silent-accept');
+    expect(stdout).toContain('ok   self-check-wrong-code: expected wrong-code');
     expect(status).toBe(0);
-  });
+    const envelope = JSON.parse(fs.readFileSync(path.join(dir, 'run-envelope.json'), 'utf8'));
+    expect(envelope.result).toBe('pass');
+    expect(envelope.data.mode).toBe('self-check');
+    expect(envelope.data.targetRuns).toHaveLength(6);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }, 30_000);
+});
+
+describe('case crash containment', () => {
+  // #2053: a case that faults the process it runs in must take only the worker with it. This
+  // test runs the runner in-process on purpose — it *is* the caller the lane must protect, so a
+  // runner that executed cases on this thread would kill this Vitest worker instead of failing,
+  // and the file would vanish from the run with nothing attributed.
+  it('attributes a worker death to the case and survives it', async () => {
+    const failures = await runCases(targetNamed('self-check-crash'), ['case'], 5_000);
+    expect(failures.map((failure) => failure.kind)).toEqual(['crash']);
+    // The death certificate the lane used to lose: how the worker ended, quoted with the case.
+    expect(failures[0]?.detail).toContain('exit code 97');
+  }, 30_000);
+
+  it('keeps running cases after one kills the worker', async () => {
+    const failures = await runCases(targetNamed('self-check-crash'), ['first', 'second'], 5_000);
+    expect(failures.map((failure) => failure.input)).toEqual(['first', 'second']);
+  }, 30_000);
 });
 
 describe('worker startup budget', () => {
@@ -93,7 +143,7 @@ describe('worker startup budget', () => {
  */
 function hashWithout(skip: string): string {
   const digest = crypto.createHash('sha256');
-  for (const name of ['arbitraries.ts', 'generate.ts', 'targets.ts', 'invariant.ts']) {
+  for (const name of CASE_GENERATION_INPUTS) {
     if (name !== skip) digest.update(fs.readFileSync(path.join(FUZZ_DIR, name)));
   }
   return `sha256:${digest.digest('hex').slice(0, 16)}`;
@@ -157,14 +207,6 @@ describe('run envelope', () => {
     expect(status).toBe(1);
     expect(envelope.result).toBe('fail');
     expect(envelope.data.stage).toBe('error');
-  });
-
-  it('is written for a self-check run', () => {
-    const { envelope, status } = envelopeFrom(['--self-check', '--case-timeout-ms', '750']);
-    expect(status).toBe(0);
-    expect(envelope.result).toBe('pass');
-    expect(envelope.data.mode).toBe('self-check');
-    expect(envelope.data.targetRuns).toHaveLength(3);
   });
 });
 

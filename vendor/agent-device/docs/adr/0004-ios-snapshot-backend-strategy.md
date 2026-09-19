@@ -2,17 +2,18 @@
 
 ## Status
 
-Accepted. Amended after iOS snapshot capture was simplified to two public modes:
-regular interactive snapshots and raw diagnostic snapshots.
+Accepted. Amended after local iOS Simulator acquisition moved to the host AX bridge while the
+public surface remained two modes: regular interactive snapshots and raw diagnostic snapshots.
 
-The current implementation is owned by `RunnerTests+SnapshotCapturePlan.swift`. Capture plans
-declare their XCTest backend chain, and structured snapshot quality verdicts make degraded or
-recovered output observable end to end.
+The Apple platform runtime owns acquisition routing and its generation-scoped XCTest fallback.
+Host-side iOS validation, semantic presentation, and publication are owned by
+`@agent-device/capture-kit`; structured snapshot quality verdicts and fallback warnings make
+degraded or recovered output observable end to end.
 
 ## Context
 
-Agent Device exposes iOS UI state through snapshots produced by the long-lived XCTest runner. The
-runner has two durable snapshot needs:
+Agent Device exposes iOS UI state through host AX acquisition on local Simulators and the long-lived
+XCTest runner everywhere else. The snapshot surface has two durable needs:
 
 - agent-facing regular context, where the important contract is the effective user-visible UI,
   fixed controls such as tab bars, and scroll-hidden hints for content outside visible scroll
@@ -35,8 +36,29 @@ predictable.
 
 ## Decision
 
-Keep XCTest as the default iOS automation runner and split iOS snapshot capture into explicit
-strategies:
+Keep XCTest as the iOS automation runner. Route eligible local iOS Simulator snapshots through the
+host AX bridge, present them once through the shared TypeScript engine, and use one typed XCTest
+fallback when bridge acquisition or presentation fails. Disable the bridge for that app generation
+after fallback; a new app generation re-enables it. Physical devices, providers, custom-action
+captures, and interactions remain on their existing owners.
+
+A WebKit page — Safari's, or a `WKWebView`'s — lives in a WebContent process and reaches UIKit's
+tree as an `AXRemoteElement` under the web view, with its children in that other process. The
+bridge reads one process, so it delivers the element as a leaf. The source refuses a tree in which
+such a leaf sits under a `WebView`-typed ancestor and reaches the viewport (`remote-content-boundary`)
+instead of publishing a screen without its page: refs issued from it would target the host views
+around the page rather than the page. A leaf whose frame is zero-area or off screen hosts nothing
+the capture can miss and is published; one that reports no frame is refused, because nothing proves
+it empty. Remote elements outside a web view are not classified — no capture has shown one — and a
+web view truncated away by the node or depth cap stays disclosed as truncation. XCTest resolves
+remote elements, so the fallback serves the page (#2484).
+
+The refusal opens the generation circuit like any other bridge failure, so a hybrid app that showed
+one web screen takes XCTest for its remaining native screens until it relaunches — the 0.20.x path
+for every screen. Re-asking the bridge per capture would instead charge a refused bridge round trip
+to every `wait` poll on the web screen; the circuit keeps that cost to one capture per generation.
+
+Keep the two public snapshot strategies explicit:
 
 - **Regular visible strategy**: use recursive XCTest snapshots, emit the effective user-visible
   tree plus visible ancestors and scroll-hidden hints, and fall back through the capture plan when
@@ -51,16 +73,105 @@ strategies:
   carry the response, fail explicitly instead of silently truncating the tree at a hard node count.
   If XCTest reports a real AX serialization failure, preserve that error instead of pretending the
   UI is empty.
-- **Future AX-service strategy**: treat Bluesky-class failures as evidence that XCTest is
-  not a complete semantic snapshot backend. A robust semantic fix should add a host-side simulator
-  accessibility backend, similar in role to existing simulator accessibility inspection tools,
-  and normalize its output into the same `SnapshotNode` model. That backend can be simulator-only;
-  physical devices should use an equivalent non-XCTest semantic backend only if Apple exposes a
-  supported channel.
+- **Host AX strategy**: acquire local Simulator trees as raw facts through the bounded host bridge.
+  Every result crosses the same presentation boundary before publication. XCTest fallback carries
+  explicit source residue, and comparisons require matching producer, intent, app generation,
+  presentation key, and residue. Physical devices should use an equivalent non-XCTest semantic
+  backend only if Apple exposes a supported channel.
 
 The daemon should make degraded output observable. If an iOS interactive snapshot contains only the
 application root or another sparse shape, surface a structured quality verdict and warning so
 agents know the snapshot is degraded output rather than proof that the screen has no controls.
+
+## Host-side ownership boundary
+
+The shared TypeScript side has one snapshot-presentation facet. The neutral acquisition-to-presented
+carrier and clip-fold geometry contract live in `@agent-device/contracts/snapshot-presentation`, while
+`@agent-device/capture-kit` owns host-side iOS planning, folding, projection, eligibility, semantic
+compaction, validation, and publication. Platform-specific presentation adapters retain only the
+policy mechanics that cannot yet cross their runtime boundary. Daemon assembly owns only the ordering
+of capture, compaction, occlusion, and ref publication. It does not own the presentation vocabulary
+or a second geometry carrier.
+
+Android acquisition remains in its platform module and adapts its raw hierarchy to the shared
+carrier. Swift keeps its runner-side `SnapshotPresentation` implementation because it consumes the
+capture-plan tier before the process boundary. The iOS engine fixture is the shared proof between
+those runtimes; it does not imply that Swift and TypeScript share an implementation.
+The macOS XCTest runner is the desktop-surface exception: its already-presented nodes bypass the iOS
+presentation engine and continue through neutral snapshot assembly.
+
+The same split now holds for the three remaining Wave 4 policies tracked by #1983, so
+`src/snapshot/` is the host-side owner of snapshot policy generally rather than of presentation
+alone:
+
+- **Freshness recovery.** The freshness window, the Android staleness classification and its
+  thresholds, and the retry loop live in `src/snapshot/snapshot-freshness/`. The loop is
+  parameterized by a classifier and a retry schedule, so "how long may a backend lag behind a real
+  transition" is a policy input rather than a constant the loop owns. The schedule is stated as a
+  duration budget; the loop derives the deadline from the window's `markedAt` itself, so the
+  budget is always spent from the action and a caller has no absolute instant it could get wrong.
+  `src/daemon/session-snapshot-freshness.ts` keeps only what needs a session: reading and retiring
+  the window on store-owned `SessionState`, and choosing the comparison baseline from snapshot
+  lineage. It remains the declared R7 owner of `androidSnapshotFreshness`.
+- **Timeout evidence.** Whether a capture failed because the hierarchy never arrived is decided
+  once, at the deepest boundary that has the evidence, from machine-defined values only:
+  `snapshot-capture-failure-reason.ts` maps the helper's structured `errorType` field
+  (`java.util.concurrent.TimeoutException`, by exact equality) and the SIGKILL exit code 137 to
+  the typed reason `accessibility-timeout` (`ANDROID_CAPTURE_FAILURE_REASONS` in
+  `@agent-device/contracts/android-snapshot-quality`). The helper-result, session-protocol, and
+  killed-instrumentation error constructors attach it; every layer above rewraps it rather than
+  reclassifying. No message shape is consulted anywhere on that path, so rewording helper or
+  wrapper prose cannot move the reason, and prose that merely reads like a timeout does not become
+  one — both directions are asserted end to end against the real producer.
+  `src/snapshot/snapshot-timeout-policy.ts` reads the reason; the human-facing hint is derived
+  from it rather than decided alongside it.
+
+  The published `details.androidSnapshotTimeoutScreenshot` payload is vocabulary in
+  `@agent-device/contracts/snapshot-timeout-evidence`, a union whose arms encode which claims can
+  coexist. The annotated arm carries a non-empty ref tuple, so "annotated with zero refs" is not a
+  state a caller can build, and no arm stores a ref count: a count beside the refs is a second
+  source of truth the type system cannot hold in step, so it is derived from the refs instead.
+  The daemon keeps the ordering that genuinely needs it: resolving a bound screenshot runtime,
+  writing the artifact, annotating it from the stored observation, and emitting the diagnostics.
+- **Screenshot-overlay policy.** Which Android nodes earn an overlay ref, and what rectangle an
+  overlay for one of them covers, live in `src/snapshot/screenshot-overlay/`. The daemon keeps
+  approved artifact and ref assembly only: ranking, projection to screenshot pixels, drawing, and
+  PNG IO.
+
+`scripts/layering/snapshot-presentation-boundary.test.ts` enforces the direction for the whole
+facet: nothing under `src/snapshot/` may import `src/daemon/`. It carries a positive control,
+because a filter that stopped matching would look identical to a boundary being obeyed.
+
+The residual call sites #1983 also named are audited and deliberately left in place.
+`src/daemon/direct-ios-selector.ts` carries no presentation policy: `isLocalIosRunnerSession` and
+`readSimpleIosSelectorTarget` are session routing (device family, provider ownership, the
+stabilization window), while `deriveDirectIosNodeSelector` and `isDirectIosSelectorFallbackError`
+are selector derivation and ADR 0011 delegation-on-error. The latter two are pure and
+daemon-independent, but their owner would be the selector pipeline governed by R19, not this
+facet; moving them under ADR 0004 would widen it to a boundary it does not decide. The
+observation and interaction consumers — `selector-capture-runtime.ts`,
+`deferred-interaction-outcome.ts`, `snapshot-capture.ts` and
+`interaction-touch-android-freshness.ts` — now reach freshness only through the facet or its
+session binding.
+
+New consumers must use the facet rather than add another daemon presentation path.
+
+The acquisition/presentation boundary has two explicit vocabularies. An acquired input is raw node
+evidence accompanied by its capture hint, viewport, lineage, and residue; the host engine folds and
+projects that evidence. A presented input is the runner's primary payload plus validation facts; the
+host engine validates it and performs semantic compaction once. Regular eligibility decides which
+nodes belong in the regular presentation, while publication adds refs and emits only the primary
+payload. An optional unscoped quality payload is validated for classification evidence and is never
+published.
+
+Semantic compaction may move an identifier; it may not un-make one. A structural `Other` wrapper
+carrying an identifier and nothing else is suppressed in favour of its content, which is a
+delegation: the identifier goes on living in whatever the wrapper stood for. A wrapper with no
+content has nothing to delegate to, so suppressing it deletes the identifier from every canonical
+view while `is`, `get`, and `click` still resolve it from the same capture. That deletion needs the
+node's own declared `hittable: false`, because it is the only verdict in the capture that says the
+wrapper is inert; a producer that reports no hittability for any node declares nothing, and an
+absent fact is not a negative answer (#2638).
 
 ## Regression Notes
 
@@ -85,6 +196,32 @@ they run a short XCTest probe instead of the full tree slice so healthy screens 
 repeating the hostile-screen grind. The raw diagnostic plan is exempt — it keeps tree-first error
 propagation.
 
+A third shape followed on the same app class once the plan recovered reliably. The query-sweep
+tier's 19 `allElementsBoundByIndex` reads each fail with `kAXErrorIllegalArgument`, and XCTest
+records every one as a test failure worded `Failed to resolve query: ...`. Any recorded failure the
+runner does not mute ends `testCommand` as soon as the main-thread block that recorded it returns,
+whatever `continueAfterFailure` says, so the runner died after (or during) every hostile snapshot
+and the per-bundle penalty and depth memory died with it. The runner now mutes AX-server rejections
+in both XCTest fetch wordings, and every bounded main-thread dispatch that outlives its slice counts
+as occupying the main thread (the tree XPC and the system-modal probe previously kept a second count
+of their own), so a viewport read that grinds makes the plan skip the sweep instead of queueing it.
+
+## Recovery conformance and depth hints
+
+The host AX bridge and the XCTest runner's private AX bridge recover rejected deep requests with
+different native representations, ladders, and completeness evidence, and they stay separate
+implementations. `contracts/fixtures/ios-ax-recovery-conformance.json` is their shared, executable
+recovery contract: each producer replays every case through its own adapter, and the fixture
+records per-producer expectations plus the intentional differences, so a change to either recovery
+path is measured against the same synthetic native world. Common executable policy is extracted only
+where the fixture proves equivalence; a shared engine is not a goal.
+
+The host source additionally keeps a bounded accepted-depth hint per resolved target generation
+and producer. It changes only the native levels the first request asks for, is learned only from a
+finished recovery that observed a rejection, expires by hinted-capture count so ordinary screens
+probe back to the full depth, and is never shared across apps, generations, or producers. The
+route's generation circuit remains the only lifecycle owner.
+
 ## Consequences
 
 Regular snapshots remain the right tool for agents and Maestro compatibility because they describe
@@ -96,7 +233,150 @@ A future AX-service backend is the correct place to regain Bluesky-class semanti
 should be added as a platform backend with its own lifecycle, protocol, normalization, timing
 metrics, and fallback rules, not as another special case inside the XCTest runner.
 
+The acquire/present migration begins with a behavior-preserving typed seam: acquisition backends
+construct `RawAXNode`, `SnapshotPresentation` alone constructs `PresentedNode`, and response payloads
+accept only presented nodes. Its second behavior-preserving step makes every capture-plan backend
+return `SnapshotAcquisition` and routes the exhaustive backend switch through one
+`SnapshotPresentation.present` call. `PresentationOptions` is the stable request-policy input to
+that boundary. Until the remaining migration steps move interpretation into the boundary, acquisition
+still reads those options and raw nodes intentionally carry the derived fields produced by the
+existing backends.
+
+The first semantic migration layer makes regular eligibility backend-neutral inside
+`SnapshotPresentation`: the top-level viewport carrier survives, and every other node needs an
+interactive accessibility type or a non-empty label, identifier, or value. Hittability no longer
+admits an otherwise ineligible node. Raw membership remains unchanged. This is runner eligibility,
+not daemon publication membership; backend-blind daemon compaction retains ownership of its declared
+noise suppressions. When eligibility removes a structural wrapper, presentation reparents its
+surviving descendants to the nearest surviving ancestor and normalizes their indexes and depths.
+
+The second semantic layer makes scope a presentation specification rather than an acquisition or
+daemon-compaction policy. A trimmed non-empty scope selects the first presentation-preorder match
+whose subtree contributes to the requested projection; matching inspects label, identifier, and
+value case-insensitively. The selected subtree is re-rooted, depth is applied relative to that root,
+and no match publishes an empty healthy projection. Swift and TypeScript implementations are pinned
+by `contracts/fixtures/snapshot-scope-policy.json`.
+Scoped iOS acquisition stays broad (including when depth is requested) until an adapter can prove a
+narrowing hint complete. The daemon never reapplies scope after the wire; Android selects its root
+inside its TypeScript presentation and desktop surface runtimes retain their platform projection.
+
+The third semantic layer splits presentation into two projections and gives acquisition one input.
+`SnapshotPresentation.captureHint` derives a `CaptureHint` from the request; backends read the hint,
+never `PresentationOptions`. A hint names the projection the acquisition must serve and may narrow
+acquisition only where the backend can prove the narrowing complete for that projection: scope and
+its relative depth never narrow, raw depth does (raw depth *is* traversal depth), and the raw
+projection never carries `interactiveOnly`. `presentRegular` folds visibility, eligibility, scope,
+and scroll hints; `presentRaw` is the acquired tree, normalized, with scope and depth applied only
+when the request asked for them — so `interactive ⊆ regular ⊆ raw` holds per backend rather than per
+backend implementation. `snapshot --raw -i` therefore returns the acquired tree instead of an
+interactive-filtered one.
+
+Two structural rules keep a backend from answering a request with the other projection, the shape
+that let a recovered `snapshot --raw` return viewport-pruned nodes labeled raw: the raw diagnostic
+plan is derived from `SnapshotBackendKind.supportsRawProjection` rather than hand-listed, so a
+backend with no hierarchy to return (the query sweep) cannot be planned for raw; and presentation
+compares the requested projection with the hint the acquisition was captured under, dropping that
+tier with a structured `IOS_SNAPSHOT_PROJECTION_MISMATCH` failure instead of presenting it under the
+requested label.
+
+The fourth semantic layer moves the clip fold itself into presentation. Acquisition backends are
+fact serializers: every traversed node is emitted at raw traversal depth with its reported frame,
+and `SnapshotAcquisition` carries the viewport. The fold returns a typed carrier with both values:
+`raw.rect` remains runner-internal reported geometry, while regular presentation writes the
+carrier's effective rectangle through the existing wire `rect` field; raw projections and direct
+single-element reads retain reported geometry. `presentRegular` runs the one visibility
+interpreter for every backend — viewport ∩ scroll-container clip, the ancestor projection cursor
+(an out-of-clip Cell or scroll container hides descendants whose clamped frames would otherwise
+leak back into the viewport), the sub-pixel decoration rule, hidden-content hints booked onto
+scroll anchors, and reparenting of survivors with collapsed depth. The fold also narrows the
+emitted `hittable` to the clip: nothing outside its clip, and nothing without geometry, is ever
+hittable regardless of what a backend reported. Platform differences are a `SnapshotFoldPolicy`
+input to the shared algorithm (iOS cursor-projected; macOS/tvOS plain viewport intersection),
+never a backend exception. The presentation owner validates every framed regular node against its
+cumulative effective clip before constructing `SnapshotPresentation.PresentedNode`; frameless and
+degenerate semantic carriers stay
+eligible but are never actionable, while raw projection remains exempt by contract. A violation is
+a typed `IOS_SNAPSHOT_PRESENTATION_FAILED` capture failure with the named `presentation-failed`
+snapshot-quality reason, preserved through recovery and the existing TypeScript verdict/warning
+contract.
+
+The visible-depth frontier completes that migration for unscoped regular captures. `CaptureHint`
+keeps raw traversal depth (`--raw --depth`) separate from regular presented depth. A
+hierarchy-capable tree capture walks through structural wrappers until each branch ends or reaches
+the requested presented depth; regular presentation then applies the depth limit after the shared
+fold and eligibility collapse. This keeps shallow probes bounded by the requested presented
+frontier without inventing a raw-depth multiplier. Scoped captures remain broad because depth is
+relative to the scope root selected in presentation.
+
+Backend capability declarations are part of the contract, and they describe how much acquisition
+work a regular depth request bounds — never whether the backend may answer it. Every backend
+serves a regular `--depth` request because presentation applies the presented-depth cut to
+whatever hierarchy was acquired: the recursive tree stops acquisition at the presented frontier,
+the flat query sweep has only its root and one presented level (so a cut past depth 1 returns the
+sweep unchanged), and private AX walks its raw-depth ladder and is cut afterwards
+(`presentation-cut`). Completeness below an acquisition cap is disclosed the same way it is for an
+unscoped capture — through `truncated` and `effectiveDepth` — because a depth-capped regular
+capture is a subset of the unscoped one from the same backend. Refusing the request instead
+produced no answer at all: a plan pinned or deferred to private AX fell through to the synthetic
+sparse root, which the daemon then rejected as a missing viewport (#2403). Raw depth remains
+acquisition depth for every backend.
+
+Acquisition-side limits remain explicit: raw private-AX captures still disclose their bridge-side
+node cap, the flat query sweep still drops frameless elements because it has no hierarchy to attach
+geometryless semantics to, and the recursive tree still has no raw-depth extension for deep XCTest
+trees. Presentation cannot repair any of those acquisition limits.
+
 When adding new iOS snapshot behavior, maintainers should first decide which strategy owns it. If a
 change tries to make regular snapshots fast by dropping visible controls behind a node budget, or
 tries to make raw snapshots safe by silently truncating, it is probably crossing strategy
 boundaries.
+
+## Amendment: in-place system surfaces (issue #2438)
+
+Some UI is presented out of the app's process by a system bundle — `com.apple.SafariViewService`,
+which hosts `ASWebAuthenticationSession` and `SFSafariViewController` for delegated OAuth/OIDC
+sign-in. Two facts, both verified live on the iOS 26.2 Simulator, shape how it is captured:
+
+- The surface dies if activated. `XCUIApplication.activate()` or `simctl launch` on the host cancels
+  the authentication session and blacks the view. So the host must be observed and driven **in
+  place**, never activated, and `open` refuses to launch a registered host.
+- The local host AX bridge cannot see it. While the sheet is up the app remains the AX `primaryApp`,
+  so the bridge serves the (occluded) app tree as if healthy. Only the XCTest runner, addressing the
+  host by bundle id, can read and drive the sheet.
+
+Decision. A closed registry names these hosts (`contracts/fixtures/ios-system-surface-hosts.json`,
+mirrored by the TypeScript and Swift registries under a parity test). When a registered host is
+genuinely presented, the runner serves and drives it in place and never adopts it as the cached
+session target; the session binding stays on the app, so once the surface is gone the next command
+resolves back to the app. On the Simulator a cheap, device-scoped host-side probe (a registered
+host process running for the device) routes the capture to the runner instead of the bridge; when no
+host is running the bridge fast path is untouched.
+
+A presented surface also outranks an explicitly requested bundle id: the runner checks for a
+presented host before it resolves or activates `command.appBundleId`, so a command that names a
+*different* app is still served the sheet. That is deliberate — the sheet occludes the screen, so
+the named app has nothing readable under it, and the capture discloses which surface it describes —
+and it costs nothing once the sheet is gone, because the session binding never moved.
+
+Presence is `XCUIApplication.state == .runningForeground`, not tree content. The live spike showed a
+torn-down host still serving a *richer* tree than a live one, so content heuristics cannot separate
+live from dead; foreground state can. Crucially, the only way a host is foreground with a stale tree
+is if it was activated or relaunched — which the open guard and the in-place policy both refuse — so
+this fix and the never-activate guard are one design: the guard is what makes the foreground
+predicate sound. This also makes issue #2438's second bug (a stale tree served confidently after
+teardown) unrepresentable for the delegated-auth flow, because the session never binds to the host.
+
+Captures of a system surface carry a response-level `systemSurface` provenance and the shared
+`iosSystemSurfaceDisclosure`, worded per host kind, so the agent is told the controls belong to a
+system sheet (web sign-in, Apple Pay) rather than the app. They are also lineaged to the host rather
+than the app, so their comparison identity differs from an app capture's by construction: every
+consumer that asks "are these two captures the same presentation" refuses a cross-surface pair
+through ordinary key equality, and no comparison site carries a surface check of its own. Physical
+devices always use the runner, so the in-place serve applies there without a route change; the
+Simulator route probe is the only Simulator-specific piece.
+
+The Apple Pay host (`com.apple.PassbookUIService`) joined the registry for text entry as much as for
+snapshots. Its billing, shipping, and contact forms hold text fields the session app's tree cannot
+resolve, and a bare `type` addressed to the app process never sees that keyboard. Addressing the
+host in place is what lets the runner's first-responder route type into them; no text-entry branch
+changed for it.

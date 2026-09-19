@@ -1,11 +1,20 @@
 import XCTest
+import AgentDeviceSnapshotPresentation
 
 #if os(macOS)
 import CoreGraphics
 #endif
 
-private enum RunnerInterfaceOrientation {
+private struct RunnerUnsupportedOperationError: LocalizedError {
+  let message: String
+
+  var errorDescription: String? { message }
+}
+
+enum RunnerInterfaceOrientation {
+#if AGENT_DEVICE_RUNNER_UNIT_TESTS
   static let unknown = 0
+#endif
   static let portrait = 1
   static let portraitUpsideDown = 2
   static let landscapeRight = 3
@@ -18,9 +27,16 @@ extension RunnerTests {
     case sampled
   }
 
-  enum SynthesizedDragProfile {
+  enum SynthesizedDragProfile: Equatable {
     case continuous
+    case controlledScroll
     case fastSwipe
+  }
+
+  func scrollDragProfile(
+    releaseBehavior: ScrollReleaseBehavior?
+  ) -> SynthesizedDragProfile {
+    releaseBehavior == .inertial ? .fastSwipe : .controlledScroll
   }
 
   struct TouchVisualizationFrame {
@@ -129,7 +145,8 @@ extension RunnerTests {
     selectorKey: String,
     selectorValue: String,
     allowNonHittableFallback: Bool = false,
-    expectedPoint: CGPoint? = nil
+    expectedPoint: CGPoint? = nil,
+    rawMatchPolicy: DirectSelectorRawMatchPolicy = .rejectDistinctMatches
   ) -> SelectorElementMatch {
     let value = selectorValue.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !value.isEmpty else {
@@ -149,35 +166,32 @@ extension RunnerTests {
       return SelectorElementMatch(element: nil, isAmbiguous: false, usedNonHittableFallback: false)
     }
 
-    var matchedElement: XCUIElement?
-    var nonHittableElement: XCUIElement?
     let matches = app.descendants(matching: .any).matching(predicate).allElementsBoundByIndex
-    for element in matches where element.exists {
-      if let expectedPoint, !element.frame.contains(expectedPoint) {
-        continue
-      }
-      if !element.isHittable {
-        if allowNonHittableFallback && hasTappableFrame(app: app, element: element) {
-          guard nonHittableElement == nil else {
-            return SelectorElementMatch(element: nil, isAmbiguous: true, usedNonHittableFallback: false)
-          }
-          nonHittableElement = element
-        }
-        continue
-      }
-      guard matchedElement == nil else {
-        return SelectorElementMatch(element: nil, isAmbiguous: true, usedNonHittableFallback: false)
-      }
-      matchedElement = element
+      .filter(\.exists)
+    let facts = matches.map { element in
+      SelectorCandidateFacts(
+        isHittable: element.isHittable,
+        hasTappableFrame: hasTappableFrame(app: app, element: element),
+        containsExpectedPoint: expectedPoint.map(element.frame.contains) ?? true
+      )
     }
-    if let matchedElement {
-      return SelectorElementMatch(element: matchedElement, isAmbiguous: false, usedNonHittableFallback: false)
+    switch classifyDirectSelectorCandidates(
+      facts,
+      allowNonHittableFallback: allowNonHittableFallback,
+      filtersByExpectedPoint: expectedPoint != nil,
+      rawMatchPolicy: rawMatchPolicy
+    ) {
+    case .noMatch:
+      return SelectorElementMatch(element: nil, isAmbiguous: false, usedNonHittableFallback: false)
+    case .ambiguous:
+      return SelectorElementMatch(element: nil, isAmbiguous: true, usedNonHittableFallback: false)
+    case let .selected(index, usedNonHittableFallback):
+      return SelectorElementMatch(
+        element: matches[index],
+        isAmbiguous: false,
+        usedNonHittableFallback: usedNonHittableFallback
+      )
     }
-    return SelectorElementMatch(
-      element: nonHittableElement,
-      isAmbiguous: false,
-      usedNonHittableFallback: nonHittableElement != nil
-    )
   }
 
   // Maestro-compat gate for the non-hittable coordinate fallback: an element
@@ -209,7 +223,17 @@ extension RunnerTests {
   }
 
   func queryElement(app: XCUIApplication, selectorKey: String, selectorValue: String) -> Response {
-    let match = findElement(app: app, selectorKey: selectorKey, selectorValue: selectorValue)
+    // querySelector is a read — it backs get/is/wait and the offscreen-refusal
+    // double-check, none of which mutate. The fail-closed raw-match rule exists
+    // to stop a mutation acting on an unseen duplicate; applying it here would
+    // instead turn a decorative non-hittable duplicate into an AMBIGUOUS_MATCH
+    // for readers that previously resolved the hittable element.
+    let match = findElement(
+      app: app,
+      selectorKey: selectorKey,
+      selectorValue: selectorValue,
+      rawMatchPolicy: .preferHittableMatch
+    )
     if match.isAmbiguous {
       return Response(ok: false, error: ErrorPayload(code: "AMBIGUOUS_MATCH", message: "selector matched multiple elements"))
     }
@@ -221,21 +245,23 @@ extension RunnerTests {
     let identifier = element.identifier.trimmingCharacters(in: .whitespacesAndNewlines)
     let valueText = String(describing: element.value ?? "")
       .trimmingCharacters(in: .whitespacesAndNewlines)
-    let node = SnapshotNode(
-      index: 0,
-      type: elementTypeName(element.elementType),
-      label: label.isEmpty ? nil : label,
-      identifier: identifier.isEmpty ? nil : identifier,
-      value: valueText.isEmpty ? nil : valueText,
-      rect: snapshotRect(from: element.frame),
-      enabled: element.isEnabled,
-      focused: nil,
-      selected: element.isSelected ? true : nil,
-      hittable: element.isHittable,
-      depth: 0,
-      parentIndex: nil,
-      hiddenContentAbove: nil,
-      hiddenContentBelow: nil
+    let node = SnapshotPresentation.singleElementRead(
+      RawAXNode(
+        index: 0,
+        type: elementTypeName(element.elementType),
+        label: label.isEmpty ? nil : label,
+        identifier: identifier.isEmpty ? nil : identifier,
+        value: valueText.isEmpty ? nil : valueText,
+        rect: snapshotRect(from: element.frame),
+        enabled: element.isEnabled,
+        focused: nil,
+        selected: element.isSelected ? true : nil,
+        hittable: element.isHittable,
+        depth: 0,
+        parentIndex: nil,
+        hiddenContentAbove: nil,
+        hiddenContentBelow: nil
+      )
     )
     return Response(
       ok: true,
@@ -245,6 +271,23 @@ extension RunnerTests {
         nodes: [node]
       )
     )
+  }
+
+  /// Shared ordering for point-hit candidates: smallest area wins, then top-to-bottom,
+  /// left-to-right, then stable element-type order for ties.
+  func smallestElementFirst(_ left: XCUIElement, _ right: XCUIElement) -> Bool {
+    let leftArea = max(1, left.frame.width * left.frame.height)
+    let rightArea = max(1, right.frame.width * right.frame.height)
+    if leftArea != rightArea {
+      return leftArea < rightArea
+    }
+    if left.frame.minY != right.frame.minY {
+      return left.frame.minY < right.frame.minY
+    }
+    if left.frame.minX != right.frame.minX {
+      return left.frame.minX < right.frame.minX
+    }
+    return left.elementType.rawValue < right.elementType.rawValue
   }
 
   func readTextAt(app: XCUIApplication, x: Double, y: Double) -> String? {
@@ -260,20 +303,7 @@ extension RunnerTests {
       .filter { element in
         element.exists && !element.frame.isEmpty && element.frame.contains(point)
       }
-      .sorted { left, right in
-        let leftArea = max(1, left.frame.width * left.frame.height)
-        let rightArea = max(1, right.frame.width * right.frame.height)
-        if leftArea != rightArea {
-          return leftArea < rightArea
-        }
-        if left.frame.minY != right.frame.minY {
-          return left.frame.minY < right.frame.minY
-        }
-        if left.frame.minX != right.frame.minX {
-          return left.frame.minX < right.frame.minX
-        }
-        return left.elementType.rawValue < right.elementType.rawValue
-      }
+      .sorted(by: smallestElementFirst)
 
     for element in candidates where prefersExpandedTextRead(element) {
       if let text = readableText(for: element) {
@@ -286,53 +316,6 @@ extension RunnerTests {
       }
     }
     return nil
-  }
-
-  func textInputAt(app: XCUIApplication, x: Double, y: Double) -> XCUIElement? {
-    return textInputCandidatesAt(app: app, point: CGPoint(x: x, y: y)).first
-  }
-
-  private func textInputCandidatesAt(app: XCUIApplication, point: CGPoint) -> [XCUIElement] {
-    safely("TEXT_INPUT_AT_POINT", []) {
-      // Query the text-input element types directly instead of enumerating the entire tree
-      // (app.descendants(.any).allElementsBoundByIndex snapshots every element and is ~10x
-      // slower — it dominated fill latency because resolveTextEntryElement re-runs this on
-      // each verify/repair poll once the focused field reference goes stale).
-      // Prefer the smallest matching field so nested editable controls win over large containers.
-      [
-        app.textFields,
-        app.secureTextFields,
-        app.searchFields,
-        app.textViews,
-      ]
-        .flatMap { $0.allElementsBoundByIndex }
-        .filter { element in
-          guard element.exists else { return false }
-          let frame = element.frame
-          return !frame.isEmpty && frameContainsPoint(frame, point, tolerance: 2)
-        }
-        .sorted { left, right in
-          let leftArea = max(1, left.frame.width * left.frame.height)
-          let rightArea = max(1, right.frame.width * right.frame.height)
-          if leftArea != rightArea {
-            return leftArea < rightArea
-          }
-          if left.frame.minY != right.frame.minY {
-            return left.frame.minY < right.frame.minY
-          }
-          if left.frame.minX != right.frame.minX {
-            return left.frame.minX < right.frame.minX
-          }
-          return left.elementType.rawValue < right.elementType.rawValue
-        }
-    }
-  }
-
-  private func frameContainsPoint(_ frame: CGRect, _ point: CGPoint, tolerance: CGFloat) -> Bool {
-    point.x >= frame.minX - tolerance
-      && point.x <= frame.maxX + tolerance
-      && point.y >= frame.minY - tolerance
-      && point.y <= frame.maxY + tolerance
   }
 
   private func readableText(for element: XCUIElement) -> String? {
@@ -361,16 +344,6 @@ extension RunnerTests {
     }
   }
 
-  func findScopeElement(app: XCUIApplication, scope: String) -> XCUIElement? {
-    let predicate = NSPredicate(
-      format: "label CONTAINS[c] %@ OR identifier CONTAINS[c] %@",
-      scope,
-      scope
-    )
-    let element = app.descendants(matching: .any).matching(predicate).firstMatch
-    return element.exists ? element : nil
-  }
-
   func tapAt(app: XCUIApplication, x: Double, y: Double) -> RunnerInteractionOutcome {
     if let outcome = selectFocusedTvElement(app: app, point: CGPoint(x: x, y: y), action: "tap") {
       return outcome
@@ -387,30 +360,14 @@ extension RunnerTests {
     case "secondary":
       coordinate.rightClick()
     case "middle":
-      throw NSError(
-        domain: "AgentDeviceRunner",
-        code: 1,
-        userInfo: [NSLocalizedDescriptionKey: "middle mouse button is not supported"]
-      )
+      throw RunnerUnsupportedOperationError(message: "middle mouse button is not supported")
     default:
-      throw NSError(
-        domain: "AgentDeviceRunner",
-        code: 1,
-        userInfo: [NSLocalizedDescriptionKey: "unsupported mouse button: \(button)"]
-      )
+      throw RunnerUnsupportedOperationError(message: "unsupported mouse button: \(button)")
     }
 #elseif os(tvOS)
-    throw NSError(
-      domain: "AgentDeviceRunner",
-      code: 1,
-      userInfo: [NSLocalizedDescriptionKey: "mouseClick is not supported on tvOS"]
-    )
+    throw RunnerUnsupportedOperationError(message: "mouseClick is not supported on tvOS")
 #else
-    throw NSError(
-      domain: "AgentDeviceRunner",
-      code: 1,
-      userInfo: [NSLocalizedDescriptionKey: "mouseClick is only supported on macOS"]
-    )
+    throw RunnerUnsupportedOperationError(message: "mouseClick is only supported on macOS")
 #endif
   }
 
@@ -418,22 +375,16 @@ extension RunnerTests {
     app: XCUIApplication,
     x: Double,
     y: Double,
-    direction: String,
+    direction: RunnerScrollDirection,
     pixels: Double,
     durationMs: Double?
   ) throws {
 #if os(macOS)
-    guard let events = desktopScrollWheelDeltaEvents(
+    let events = desktopScrollWheelDeltaEvents(
       direction: direction,
       pixels: pixels,
       durationMs: durationMs
-    ) else {
-      throw NSError(
-        domain: "AgentDeviceRunner",
-        code: 1,
-        userInfo: [NSLocalizedDescriptionKey: "unsupported desktop scroll direction: \(direction)"]
-      )
-    }
+    )
 
     let coordinate = interactionCoordinate(app: app, x: x, y: y)
     let interval = desktopScrollEventIntervalSeconds(durationMs: durationMs, eventCount: events.count)
@@ -449,44 +400,35 @@ extension RunnerTests {
       }
     }
 #elseif os(tvOS)
-    throw NSError(
-      domain: "AgentDeviceRunner",
-      code: 1,
-      userInfo: [NSLocalizedDescriptionKey: "desktopScroll is not supported on tvOS"]
-    )
+    throw RunnerUnsupportedOperationError(message: "desktopScroll is not supported on tvOS")
 #else
-    throw NSError(
-      domain: "AgentDeviceRunner",
-      code: 1,
-      userInfo: [NSLocalizedDescriptionKey: "desktopScroll is only supported on macOS"]
-    )
+    throw RunnerUnsupportedOperationError(message: "desktopScroll is only supported on macOS")
 #endif
   }
 
-  func desktopScrollWheelDeltas(direction: String, pixels: Double) -> (vertical: Int32, horizontal: Int32)? {
+  func desktopScrollWheelDeltas(
+    direction: RunnerScrollDirection,
+    pixels: Double
+  ) -> (vertical: Int32, horizontal: Int32) {
     let magnitude = Int32(max(1, min(Double(Int32.max), pixels.rounded())))
     switch direction {
-    case "up":
+    case .up:
       return (vertical: magnitude, horizontal: 0)
-    case "down":
+    case .down:
       return (vertical: -magnitude, horizontal: 0)
-    case "left":
+    case .left:
       return (vertical: 0, horizontal: magnitude)
-    case "right":
+    case .right:
       return (vertical: 0, horizontal: -magnitude)
-    default:
-      return nil
     }
   }
 
   func desktopScrollWheelDeltaEvents(
-    direction: String,
+    direction: RunnerScrollDirection,
     pixels: Double,
     durationMs: Double?
-  ) -> [(vertical: Int32, horizontal: Int32)]? {
-    guard let totalDeltas = desktopScrollWheelDeltas(direction: direction, pixels: pixels) else {
-      return nil
-    }
+  ) -> [(vertical: Int32, horizontal: Int32)] {
+    let totalDeltas = desktopScrollWheelDeltas(direction: direction, pixels: pixels)
     let magnitude = max(abs(Int(totalDeltas.vertical)), abs(Int(totalDeltas.horizontal)))
     let duration = max(0, durationMs ?? 0)
     let requestedEventCount = duration > 0 ? Int(ceil(duration / 16.0)) : 1
@@ -632,6 +574,15 @@ extension RunnerTests {
     let message = switch profile {
     case .continuous:
       RunnerSynthesizedGesture.synthesizeContinuousDrag(
+        withApplication: app,
+        x: Double(start.x),
+        y: Double(start.y),
+        x2: Double(end.x),
+        y2: Double(end.y),
+        durationMs: durationMs
+      )
+    case .controlledScroll:
+      RunnerSynthesizedGesture.synthesizeControlledScroll(
         withApplication: app,
         x: Double(start.x),
         y: Double(start.y),
@@ -956,18 +907,6 @@ extension RunnerTests {
       height = screenshotSize.height
     }
     return CGRect(x: 0, y: 0, width: width, height: height)
-  }
-
-  func synthesizedFrameAvoidingKeyboardWhenAllowed(
-    app: XCUIApplication,
-    context: SynthesizedCoordinateContext
-  ) -> CGRect {
-#if os(iOS)
-    guard context.allowsKeyboardProbe else { return context.referenceFrame }
-    return frameAvoidingKeyboard(app: app, frame: context.referenceFrame)
-#else
-    return context.referenceFrame
-#endif
   }
 
   func keyboardAvoidingSynthesizedDragPoints(
@@ -1433,24 +1372,23 @@ extension RunnerTests {
     )
   }
 
-  func testDesktopScrollWheelDeltasMapDirections() throws {
-    XCTAssertEqual(try XCTUnwrap(desktopScrollWheelDeltas(direction: "up", pixels: 120)).vertical, 120)
-    XCTAssertEqual(try XCTUnwrap(desktopScrollWheelDeltas(direction: "down", pixels: 120)).vertical, -120)
-    XCTAssertEqual(try XCTUnwrap(desktopScrollWheelDeltas(direction: "left", pixels: 120)).horizontal, 120)
-    XCTAssertEqual(try XCTUnwrap(desktopScrollWheelDeltas(direction: "right", pixels: 120)).horizontal, -120)
-    XCTAssertNil(desktopScrollWheelDeltas(direction: "diagonal", pixels: 120))
+  func testDesktopScrollWheelDeltasMapDirections() {
+    XCTAssertEqual(desktopScrollWheelDeltas(direction: .up, pixels: 120).vertical, 120)
+    XCTAssertEqual(desktopScrollWheelDeltas(direction: .down, pixels: 120).vertical, -120)
+    XCTAssertEqual(desktopScrollWheelDeltas(direction: .left, pixels: 120).horizontal, 120)
+    XCTAssertEqual(desktopScrollWheelDeltas(direction: .right, pixels: 120).horizontal, -120)
   }
 
-  func testDesktopScrollWheelDeltaEventsHonorDurationAndPreservePixels() throws {
-    let events = try XCTUnwrap(desktopScrollWheelDeltaEvents(direction: "down", pixels: 200, durationMs: 50))
+  func testDesktopScrollWheelDeltaEventsHonorDurationAndPreservePixels() {
+    let events = desktopScrollWheelDeltaEvents(direction: .down, pixels: 200, durationMs: 50)
     XCTAssertEqual(events.count, 4)
     XCTAssertEqual(events.map(\.vertical).reduce(0, +), -200)
     XCTAssertEqual(events.map(\.horizontal).reduce(0, +), 0)
     XCTAssertEqual(desktopScrollEventIntervalSeconds(durationMs: 50, eventCount: events.count), 0.05 / 3.0)
   }
 
-  func testDesktopScrollWheelDeltaEventsKeepInstantScrollSingleEvent() throws {
-    let events = try XCTUnwrap(desktopScrollWheelDeltaEvents(direction: "down", pixels: 200, durationMs: 0))
+  func testDesktopScrollWheelDeltaEventsKeepInstantScrollSingleEvent() {
+    let events = desktopScrollWheelDeltaEvents(direction: .down, pixels: 200, durationMs: 0)
     XCTAssertEqual(events.count, 1)
     XCTAssertEqual(events.first?.vertical, -200)
   }

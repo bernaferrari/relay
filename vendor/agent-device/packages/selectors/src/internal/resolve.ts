@@ -1,7 +1,7 @@
 import type { Platform, PublicPlatform } from '@agent-device/kernel/device';
 import type { DisambiguationTiebreak } from '@agent-device/contracts/interaction';
 import type { SnapshotNode, SnapshotState } from '@agent-device/kernel/snapshot';
-import { buildSnapshotNodeMap, isNodeVisibleOnScreen } from '@agent-device/contracts/snapshot';
+import { createSnapshotVisibility } from '@agent-device/contracts/snapshot';
 import { matchesSelector } from './match.ts';
 import type { Selector, SelectorChain } from './parse.ts';
 import type {
@@ -27,44 +27,86 @@ export type AstSelectorResolution = {
   disambiguation?: SelectorDisambiguationDisclosure;
 };
 
+/**
+ * A resolution together with the matched-node domain the SAME pass decided it
+ * over, so a caller that needs both stops re-deriving the second one.
+ *
+ * `matchedNodes` describes the winning alternative when `resolution` is
+ * non-null. When no alternative resolved, it describes the first alternative
+ * that matched anything — the set `listSelectorChainMatches` reports, computed
+ * here by the pass that already visited those nodes.
+ *
+ * `firstMatch` is the SAME "first alternative that matched anything" domain
+ * `listSelectorChainMatches` reports, but populated unconditionally — a
+ * uniqueness row can resolve from a LATER alternative than the one it first
+ * matched (uniqueness skips an ambiguous alternative to try the next one), so
+ * `firstMatch` and `matchedNodes`/`resolution` can name different
+ * alternatives. A caller whose contract is "the first thing that matched",
+ * not "what resolution bound to" (#1970), reads this instead of paying a
+ * second whole-tree scan for `listSelectorChainMatches`.
+ */
+export type AstSelectorChainResolutionDomain = {
+  resolution: AstSelectorResolution | null;
+  matchedNodes: SnapshotNode[];
+  firstMatch: AstSelectorChainMatchList | null;
+};
+
+export function resolveSelectorChainDomain(
+  nodes: SnapshotState['nodes'],
+  chain: SelectorChain,
+  options: SelectorResolutionOptions,
+): AstSelectorChainResolutionDomain {
+  const requireRect = options.requireRect ?? false;
+  const requireUnique = options.requireUnique ?? true;
+  const diagnostics: SelectorDiagnostics[] = [];
+  let firstMatch: AstSelectorChainMatchList | null = null;
+  for (const [i, selector] of chain.selectors.entries()) {
+    const summary = analyzeSelectorMatches(nodes, selector, options.platform, requireRect);
+    diagnostics.push({ selector: selector.raw, matches: summary.count });
+    if (summary.count === 0 || !summary.firstNode) continue;
+    firstMatch ??= { selector, selectorIndex: i, matchedNodes: summary.candidates };
+    if (requireUnique && summary.count !== 1) {
+      if (!options.disambiguateAmbiguous || !summary.disambiguated || !summary.tiebreak) continue;
+      return {
+        matchedNodes: summary.candidates,
+        firstMatch,
+        resolution: {
+          node: summary.disambiguated,
+          selector,
+          selectorIndex: i,
+          matches: summary.count,
+          diagnostics,
+          disambiguation: {
+            matchCount: summary.count,
+            tiebreak: summary.tiebreak,
+            alternatives: summary.candidates.filter(
+              (candidate) => candidate !== summary.disambiguated,
+            ),
+          },
+        },
+      };
+    }
+    return {
+      matchedNodes: summary.candidates,
+      firstMatch,
+      resolution: {
+        node: summary.firstNode,
+        selector,
+        selectorIndex: i,
+        matches: summary.count,
+        diagnostics,
+      },
+    };
+  }
+  return { resolution: null, matchedNodes: firstMatch?.matchedNodes ?? [], firstMatch };
+}
+
 export function resolveSelectorChain(
   nodes: SnapshotState['nodes'],
   chain: SelectorChain,
   options: SelectorResolutionOptions,
 ): AstSelectorResolution | null {
-  const requireRect = options.requireRect ?? false;
-  const requireUnique = options.requireUnique ?? true;
-  const diagnostics: SelectorDiagnostics[] = [];
-  for (const [i, selector] of chain.selectors.entries()) {
-    const summary = analyzeSelectorMatches(nodes, selector, options.platform, requireRect);
-    diagnostics.push({ selector: selector.raw, matches: summary.count });
-    if (summary.count === 0 || !summary.firstNode) continue;
-    if (requireUnique && summary.count !== 1) {
-      if (!options.disambiguateAmbiguous || !summary.disambiguated || !summary.tiebreak) continue;
-      return {
-        node: summary.disambiguated,
-        selector,
-        selectorIndex: i,
-        matches: summary.count,
-        diagnostics,
-        disambiguation: {
-          matchCount: summary.count,
-          tiebreak: summary.tiebreak,
-          alternatives: summary.candidates.filter(
-            (candidate) => candidate !== summary.disambiguated,
-          ),
-        },
-      };
-    }
-    return {
-      node: summary.firstNode,
-      selector,
-      selectorIndex: i,
-      matches: summary.count,
-      diagnostics,
-    };
-  }
-  return null;
+  return resolveSelectorChainDomain(nodes, chain, options).resolution;
 }
 
 /** The parser-side twin of the façade's `SelectorChainMatchList`. */
@@ -99,7 +141,11 @@ export function listSelectorChainMatches(
   return null;
 }
 
-/** The parser-side twin of the façade's `SelectorChainMatch`. */
+/**
+ * A first-match lookup used by existence checks. No façade twin: the root
+ * façade resolves through the policy interface only, so this shape reaches
+ * consumers via the published `./ast` surface alone (#1630).
+ */
 export type AstSelectorChainMatch = {
   selectorIndex: number;
   selector: Selector;
@@ -176,12 +222,12 @@ function analyzeSelectorMatches(
   let firstNode: SnapshotNode | null = null;
   const candidates: SnapshotNode[] = [];
   const state: DisambiguationState = { best: null, bestVisible: false, tie: false };
-  // Lazily built: only ambiguous matches pay for viewport inference.
-  let byIndex: Map<number, SnapshotNode> | undefined;
-  const isVisible = (node: SnapshotNode): boolean => {
-    byIndex ??= buildSnapshotNodeMap(nodes);
-    return isNodeVisibleOnScreen(node, nodes, byIndex);
-  };
+  // Lazily built: only ambiguous matches pay for viewport inference, and both
+  // maps are built once per alternative so N ambiguous candidates share one
+  // whole-tree pass instead of the visibility resolver re-deriving the
+  // viewport rects for each candidate it is asked about (#1970).
+  const visibility = createSnapshotVisibility(nodes);
+  const isVisible = visibility.isVisibleOnScreen;
   for (const node of nodes) {
     if (requireRect && !node.rect) continue;
     if (!matchesSelector(node, selector, platform)) continue;

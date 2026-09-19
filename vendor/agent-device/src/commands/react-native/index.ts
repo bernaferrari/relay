@@ -1,7 +1,6 @@
 import { AppError } from '@agent-device/kernel/errors';
-import type { CommandSchemaOverride } from '../../cli-schema/types.ts';
+import type { CommandSchemaOverride } from '@agent-device/command-registry/command-schema';
 import { defineCommandFacet, defineCommandFamilyFromFacets } from '../family/types.ts';
-import { defineExecutableCommand } from '../command-contract.ts';
 import { enumField, requiredField } from '../command-input.ts';
 import { defineFieldCommandMetadata } from '../field-command-contract.ts';
 import { commonInputFromFlags, direct, requiredDaemonString } from '../cli-grammar/common.ts';
@@ -10,7 +9,8 @@ import type { CliReader, DaemonWriter } from '../cli-grammar/types.ts';
 const REACT_NATIVE_COMMAND_NAME = 'react-native';
 const REACT_NATIVE_ACTION_VALUES = ['dismiss-overlay'] as const;
 
-const reactNativeCommandDescription = 'Run supported React Native app automation helpers.';
+const reactNativeCommandDescription =
+  'Run supported React Native automation helpers. Use dismiss-overlay to close a visible development error overlay before continuing normal UI automation.';
 
 export const reactNativeCommandMetadata = defineFieldCommandMetadata(
   REACT_NATIVE_COMMAND_NAME,
@@ -18,11 +18,6 @@ export const reactNativeCommandMetadata = defineFieldCommandMetadata(
   {
     action: requiredField(enumField(REACT_NATIVE_ACTION_VALUES)),
   },
-);
-
-export const reactNativeCommandDefinition = defineExecutableCommand(
-  reactNativeCommandMetadata,
-  (client, input) => client.command.reactNative(input),
 );
 
 const reactNativeCliSchema = {
@@ -40,10 +35,13 @@ export const reactNativeDaemonWriter: DaemonWriter = direct(REACT_NATIVE_COMMAND
   requiredDaemonString(input.action, 'react-native requires action'),
 ]);
 
-const reactNativeCommandFacet = defineCommandFacet({
+export const reactNativeCommandFacet = defineCommandFacet({
   name: REACT_NATIVE_COMMAND_NAME,
+  text: {
+    summary: 'Run React Native automation helpers',
+  },
   metadata: reactNativeCommandMetadata,
-  definition: reactNativeCommandDefinition,
+  run: (client, input) => client.command.reactNative(input),
   cliSchema: reactNativeCliSchema,
   cliReader: reactNativeCliReader,
   daemonWriter: reactNativeDaemonWriter,

@@ -1,27 +1,29 @@
-import type { CliCommandName } from '../command-catalog.ts';
+import type { CliCommandName } from '@agent-device/command-registry/catalog';
 import { listCommandMetadata } from '../commands/command-metadata.ts';
-import type { CommandSchema } from './types.ts';
+import type { CommandSchema } from '@agent-device/command-registry/command-schema';
 import { getCliCommandOverride, getSchemaOnlyCliCommandSchema } from './command-overrides.ts';
-import { getFlagDefinition, getFlagDefinitions } from '../commands/cli-grammar/flag-registry.ts';
+import {
+  getFlagDefinition,
+  getFlagDefinitions,
+} from '@agent-device/command-registry/flag-registry';
 import {
   COMMON_COMMAND_SUPPORTED_FLAG_KEYS,
+  DEVICE_SELECTION_FLAG_KEYS,
   GLOBAL_FLAG_KEYS,
-} from '../commands/cli-grammar/flag-groups.ts';
-import {
-  type CliFlags,
-  type FlagDefinition,
-  type FlagKey,
-} from '../commands/cli-grammar/flag-types.ts';
+} from '@agent-device/command-registry/flag-groups';
+import { type FlagDefinition, type FlagKey } from '@agent-device/command-registry/flag-types';
 import { AppError } from '@agent-device/kernel/errors';
 
-export type { CliFlags, FlagDefinition, FlagKey };
+export type { FlagDefinition, FlagKey };
 export type { CommandSchema };
-export { getFlagDefinition, getFlagDefinitions, GLOBAL_FLAG_KEYS };
+export { DEVICE_SELECTION_FLAG_KEYS, getFlagDefinition, getFlagDefinitions, GLOBAL_FLAG_KEYS };
 
-const COMMAND_SCHEMA_BASES = new Map<string, CommandSchema>(
+// Bases hold only the flags every command supports; prose arrives with the facet's schema,
+// which always carries a complete `text`.
+const COMMAND_SCHEMA_BASES = new Map<string, Omit<CommandSchema, 'text'>>(
   listCommandMetadata().map((metadata) => [
     metadata.name,
-    { helpDescription: metadata.description, supportedFlags: COMMON_COMMAND_SUPPORTED_FLAG_KEYS },
+    { supportedFlags: COMMON_COMMAND_SUPPORTED_FLAG_KEYS },
   ]),
 );
 
@@ -59,22 +61,6 @@ function readCommandSchema(command: string): CommandSchema | undefined {
   if (schemaOnly) return schemaOnly;
   const base = COMMAND_SCHEMA_BASES.get(command);
   const override = getCliCommandOverride(command);
-  if (!base) return undefined;
-  return override ? { ...base, ...override } : base;
-}
-
-export function applyCommandDefaults(
-  command: string | null,
-  flags: Record<string, unknown>,
-): boolean {
-  const commandSchema = getCommandSchema(command);
-  if (!commandSchema?.defaults) return false;
-  let changed = false;
-  for (const [key, value] of Object.entries(commandSchema.defaults) as Array<[FlagKey, unknown]>) {
-    if (flags[key] === undefined) {
-      flags[key] = value;
-      changed = true;
-    }
-  }
-  return changed;
+  if (!base || !override) return undefined;
+  return { ...base, ...override };
 }

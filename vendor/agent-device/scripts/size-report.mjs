@@ -3,9 +3,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
+import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
+import { formatBytes, formatDiff, formatMaybeBytes } from './size-report-format.mjs';
+import { collectNpmPack } from './size-report-package.mjs';
+import { measureCleanInstalledPackage } from './size-report-install.mjs';
+import { preparePublishAssets } from './prepare-publish-assets.mjs';
 
 const COMMENT_MARKER = '<!-- agent-device-size-report -->';
+const GITHUB_REQUEST_ATTEMPTS = 4;
+// Overridable so the regression tests do not sleep through real backoff.
+const GITHUB_RETRY_BASE_MS = Number(process.env.SIZE_REPORT_RETRY_BASE_MS ?? 1000);
+class TransientGitHubError extends Error {}
 const VALUE_ARGS = new Map([
   ['--cwd', 'cwd'],
   ['--json', 'json'],
@@ -21,29 +30,39 @@ const STARTUP_BENCHMARKS = [
   { name: 'CLI --help', args: ['--help'] },
 ];
 
-const args = parseArgs(process.argv.slice(2));
-const cwd = path.resolve(args.cwd ?? process.cwd());
-
-if (args.postComment) {
-  await postGitHubComment(args.postComment, args.pr);
-  process.exit(0);
+if (isMainModule()) {
+  await run();
 }
 
-const report = collectReport(cwd, {
-  startupRuns: parseNonNegativeInteger(args.startupRuns ?? '0', '--startup-runs'),
-});
-const baseReport = args.compare ? JSON.parse(fs.readFileSync(args.compare, 'utf8')) : null;
+async function run() {
+  const args = parseArgs(process.argv.slice(2));
+  const cwd = path.resolve(args.cwd ?? process.cwd());
 
-if (args.json) {
-  writeFile(args.json, `${JSON.stringify(report, null, 2)}\n`);
+  if (args.postComment) {
+    await postGitHubCommentBestEffort(args.postComment, args.pr);
+    return;
+  }
+
+  const report = collectReport(cwd, {
+    startupRuns: parseNonNegativeInteger(args.startupRuns ?? '0', '--startup-runs'),
+  });
+  const baseReport = args.compare ? JSON.parse(fs.readFileSync(args.compare, 'utf8')) : null;
+
+  if (args.json) {
+    writeFile(args.json, `${JSON.stringify(report, null, 2)}\n`);
+  }
+
+  const markdown = formatMarkdown(report, baseReport);
+
+  if (args.markdown) {
+    writeFile(args.markdown, markdown);
+  } else {
+    process.stdout.write(markdown);
+  }
 }
 
-const markdown = formatMarkdown(report, baseReport);
-
-if (args.markdown) {
-  writeFile(args.markdown, markdown);
-} else {
-  process.stdout.write(markdown);
+function isMainModule() {
+  return process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 }
 
 function parseArgs(argv) {
@@ -105,50 +124,30 @@ function collectReport(root, options) {
   if (jsFiles.length === 0) {
     throw new Error('No dist/src JavaScript files found. Run `pnpm build` before measuring size.');
   }
-  prepareGeneratedPackageAssets(root);
+  preparePublishAssets({ root });
 
-  const chunks = jsFiles
-    .map((file) => {
-      const buffer = fs.readFileSync(file);
-      return {
-        path: path.relative(root, file),
-        rawBytes: buffer.byteLength,
-        gzipBytes: gzipSync(buffer, { level: 9 }).byteLength,
-      };
-    })
-    .sort((left, right) => right.rawBytes - left.rawBytes);
+  const bundled = { files: jsFiles.length, rawBytes: 0, gzipBytes: 0 };
+  for (const file of jsFiles) {
+    const buffer = fs.readFileSync(file);
+    bundled.rawBytes += buffer.byteLength;
+    bundled.gzipBytes += gzipSync(buffer, { level: 9 }).byteLength;
+  }
 
-  const js = chunks.reduce(
-    (total, chunk) => ({
-      files: total.files + 1,
-      rawBytes: total.rawBytes + chunk.rawBytes,
-      gzipBytes: total.gzipBytes + chunk.gzipBytes,
-    }),
-    { files: 0, rawBytes: 0, gzipBytes: 0 },
-  );
+  const npmPackWithArchive = collectNpmPack(root);
+  const { tarballPath, ...npmPack } = npmPackWithArchive;
+  const cleanInstalled = measureCleanInstalledPackage(tarballPath, packageJson.name);
 
   return {
     packageName: packageJson.name,
     version: packageJson.version,
     generatedAt: new Date().toISOString(),
-    js,
-    npmPack: collectNpmPack(root),
+    bundled,
+    npmPack,
+    cleanInstalled,
     ...(options.startupRuns > 0
       ? { startup: collectStartupBenchmarks(root, options.startupRuns) }
       : {}),
-    chunks: chunks.slice(0, 20),
   };
-}
-
-function prepareGeneratedPackageAssets(root) {
-  const packageAppleRunnerScript = path.join(root, 'scripts', 'package-apple-runner-source.mjs');
-  if (!fs.existsSync(packageAppleRunnerScript)) {
-    return;
-  }
-  execFileSync(process.execPath, [packageAppleRunnerScript, '--quiet'], {
-    cwd: root,
-    stdio: ['ignore', 'ignore', 'inherit'],
-  });
 }
 
 function collectStartupBenchmarks(root, runs) {
@@ -203,46 +202,20 @@ function walk(root) {
   });
 }
 
-function collectNpmPack(root) {
-  const cachePath = path.join(root, '.tmp', 'npm-cache');
-  fs.mkdirSync(cachePath, { recursive: true });
-  const stdout = execFileSync(
-    'npm',
-    ['pack', '--dry-run', '--ignore-scripts', '--json', '--cache', cachePath],
-    { cwd: root, encoding: 'utf8' },
-  );
-  const pack = parseNpmPackOutput(stdout);
-  return {
-    filename: pack.filename,
-    tarballBytes: pack.size,
-    unpackedBytes: pack.unpackedSize,
-    files: countNpmPackEntries(pack),
-  };
-}
-
-function parseNpmPackOutput(stdout) {
-  const parsed = JSON.parse(stdout);
-  return Array.isArray(parsed) ? parsed[0] : parsed;
-}
-
-function countNpmPackEntries(pack) {
-  if (typeof pack.entryCount === 'number') return pack.entryCount;
-  return Array.isArray(pack.files) ? pack.files.length : 0;
-}
-
 function formatMarkdown(report, baseReport) {
   const rows = [
-    metricRow('JS raw', baseReport?.js.rawBytes, report.js.rawBytes),
-    metricRow('JS gzip', baseReport?.js.gzipBytes, report.js.gzipBytes),
-    metricRow('npm tarball', baseReport?.npmPack.tarballBytes, report.npmPack.tarballBytes),
-    metricRow('npm unpacked', baseReport?.npmPack.unpackedBytes, report.npmPack.unpackedBytes),
+    metricRow(
+      'Installed (including dependencies)',
+      baseReport?.cleanInstalled?.totalBytes,
+      report.cleanInstalled.totalBytes,
+    ),
+    metricRow(
+      'Package (unpacked)',
+      baseReport?.npmPack.unpackedBytes,
+      report.npmPack.unpackedBytes,
+    ),
+    metricRow('Package (download)', baseReport?.npmPack.tarballBytes, report.npmPack.tarballBytes),
   ];
-
-  const changedChunks = baseReport
-    ? formatChangedChunks(report.chunks, baseReport.chunks ?? [])
-    : formatTopChunks(report.chunks);
-  const startup = formatStartupBenchmarks(report.startup, baseReport?.startup);
-
   return `${COMMENT_MARKER}
 ## Size Report
 
@@ -250,63 +223,11 @@ function formatMarkdown(report, baseReport) {
 |---|---:|---:|---:|
 ${rows.join('\n')}
 
-${startup}
-${changedChunks}
-`;
+${formatStartupBenchmarks(report.startup, baseReport?.startup)}`;
 }
 
 function metricRow(label, base, current) {
   return `| ${label} | ${formatMaybeBytes(base)} | ${formatBytes(current)} | ${formatDiff(base, current)} |`;
-}
-
-function formatTopChunks(chunks) {
-  const rows = chunks.slice(0, 5).map((chunk) => {
-    return `| \`${chunk.path}\` | ${formatBytes(chunk.rawBytes)} | ${formatBytes(chunk.gzipBytes)} |`;
-  });
-  return `Top chunks:
-
-| Chunk | Raw | Gzip |
-|---|---:|---:|
-${rows.join('\n')}
-`;
-}
-
-function formatChangedChunks(currentChunks, baseChunks) {
-  const baseByPath = new Map(baseChunks.map((chunk) => [chunk.path, chunk]));
-  const rows = currentChunks
-    .map((chunk) => {
-      const base = baseByPath.get(chunk.path);
-      return {
-        path: chunk.path,
-        rawDiff: base ? chunk.rawBytes - base.rawBytes : chunk.rawBytes,
-        gzipDiff: base ? chunk.gzipBytes - base.gzipBytes : chunk.gzipBytes,
-      };
-    })
-    .filter((chunk) => chunk.rawDiff !== 0 || chunk.gzipDiff !== 0)
-    .sort((left, right) => Math.abs(right.gzipDiff) - Math.abs(left.gzipDiff))
-    .slice(0, 5)
-    .map((chunk) => {
-      return `| \`${chunk.path}\` | ${formatSignedBytes(chunk.rawDiff)} | ${formatSignedBytes(chunk.gzipDiff)} |`;
-    });
-
-  if (rows.length === 0) {
-    return 'Top changed chunks: no changes in the largest emitted chunks.\n';
-  }
-
-  return `Top changed chunks:
-
-| Chunk | Raw diff | Gzip diff |
-|---|---:|---:|
-${rows.join('\n')}
-`;
-}
-
-function formatMaybeBytes(value) {
-  return typeof value === 'number' ? formatBytes(value) : '-';
-}
-
-function formatDiff(base, current) {
-  return typeof base === 'number' ? formatSignedBytes(current - base) : '-';
 }
 
 function formatStartupBenchmarks(startup, baseStartup) {
@@ -343,31 +264,44 @@ function formatMs(value) {
   return value < 1000 ? `${value.toFixed(1)} ms` : `${(value / 1000).toFixed(2)} s`;
 }
 
-function formatBytes(value) {
-  const absoluteValue = Math.abs(value);
-  if (absoluteValue < 1000) return `${value} B`;
-  if (absoluteValue < 1000 * 1000) return `${(value / 1000).toFixed(1)} kB`;
-  return `${(value / (1000 * 1000)).toFixed(2)} MB`;
-}
-
-function formatSignedBytes(value) {
-  if (value === 0) return '0 B';
-  const sign = value > 0 ? '+' : '-';
-  return `${sign}${formatBytes(Math.abs(value))}`;
-}
-
 function writeFile(filePath, contents) {
   fs.mkdirSync(path.dirname(path.resolve(filePath)), { recursive: true });
   fs.writeFileSync(filePath, contents);
+}
+
+// The PR comment is a convenience surface: the same markdown is already in the
+// job summary. A GitHub outage (5xx / 429 / network error) must not fail the
+// job, but a real misconfiguration (bad token, missing permissions) still does.
+async function postGitHubCommentBestEffort(markdownPath, explicitPrNumber) {
+  try {
+    await postGitHubComment(markdownPath, explicitPrNumber);
+  } catch (error) {
+    if (!(error instanceof TransientGitHubError)) throw error;
+    const message = `Skipping PR size comment after transient GitHub failure: ${error.message}`;
+    process.stdout.write(`::warning::${message}\n`);
+    appendStepSummary(`> ⚠️ ${message} The size report above is authoritative.\n`);
+  }
+}
+
+function appendStepSummary(text) {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (summaryPath) fs.appendFileSync(summaryPath, text);
 }
 
 async function postGitHubComment(markdownPath, explicitPrNumber) {
   const config = readGitHubCommentConfig(explicitPrNumber);
   const body = fs.readFileSync(markdownPath, 'utf8');
   const commentsUrl = buildCommentsUrl(config.repository, config.prNumber);
-  const comments = await listGitHubComments(commentsUrl, config.headers);
+  await retryTransient(() => syncGitHubComment(commentsUrl, config.headers, body));
+}
+
+// Every attempt re-lists before writing: a create whose response was lost
+// (network error / 5xx) may still have landed server-side, and re-listing turns
+// that into an update of the existing marker comment instead of a duplicate.
+async function syncGitHubComment(commentsUrl, headers, body) {
+  const comments = await listGitHubComments(commentsUrl, headers);
   const existing = comments.find((comment) => comment.body?.includes(COMMENT_MARKER));
-  await writeGitHubComment(commentsUrl, config.headers, body, existing?.url);
+  await writeGitHubComment(commentsUrl, headers, body, existing?.url);
 }
 
 function readGitHubCommentConfig(explicitPrNumber) {
@@ -407,21 +341,21 @@ function buildCommentsUrl(repository, prNumber) {
 }
 
 async function listGitHubComments(commentsUrl, headers) {
-  const response = await fetch(`${commentsUrl}?per_page=100`, { headers });
-  if (!response.ok) {
-    throw new Error(`Failed to list PR comments: ${response.status} ${await response.text()}`);
-  }
+  const response = await githubRequest(
+    `${commentsUrl}?per_page=100`,
+    { headers },
+    'list PR comments',
+  );
   return await response.json();
 }
 
 async function writeGitHubComment(commentsUrl, headers, body, existingUrl) {
   const target = commentWriteTarget(commentsUrl, existingUrl);
-  const response = await fetch(target.url, {
-    method: target.method,
-    headers,
-    body: JSON.stringify({ body }),
-  });
-  await assertGitHubWriteResponse(response, target.action);
+  await githubRequest(
+    target.url,
+    { method: target.method, headers, body: JSON.stringify({ body }) },
+    `${target.action} PR comment`,
+  );
 }
 
 function commentWriteTarget(commentsUrl, existingUrl) {
@@ -431,8 +365,54 @@ function commentWriteTarget(commentsUrl, existingUrl) {
   return { url: commentsUrl, method: 'POST', action: 'create' };
 }
 
-async function assertGitHubWriteResponse(response, action) {
-  if (!response.ok) {
-    throw new Error(`Failed to ${action} PR comment: ${response.status} ${await response.text()}`);
+// Re-runs `operation` with exponential backoff while it throws
+// TransientGitHubError; any other error (a non-transient HTTP status, i.e. a
+// configuration problem) propagates immediately and fails the job.
+async function retryTransient(operation) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      await backoffOrRethrow(error, attempt);
+    }
   }
 }
+
+async function backoffOrRethrow(error, attempt) {
+  if (!(error instanceof TransientGitHubError)) throw error;
+  if (attempt >= GITHUB_REQUEST_ATTEMPTS) {
+    throw new TransientGitHubError(`${error.message} after ${attempt} attempts`);
+  }
+  const delayMs = GITHUB_RETRY_BASE_MS * 2 ** (attempt - 1);
+  process.stderr.write(`${error.message} (retrying in ${delayMs}ms)\n`);
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+// One attempt: network errors and 5xx / 429 throw TransientGitHubError;
+// any other non-OK status throws a plain (fatal) Error.
+async function githubRequest(url, init, action) {
+  const response = await fetchOrTransient(url, init, action);
+  if (response.ok) return response;
+  throw await githubStatusError(response, action);
+}
+
+async function fetchOrTransient(url, init, action) {
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    throw new TransientGitHubError(`Failed to ${action}: ${error?.message ?? error}`);
+  }
+}
+
+async function githubStatusError(response, action) {
+  const failure = `Failed to ${action}: ${response.status} ${await response.text()}`;
+  return isTransientGitHubStatus(response.status)
+    ? new TransientGitHubError(failure)
+    : new Error(failure);
+}
+
+function isTransientGitHubStatus(status) {
+  return status === 429 || status >= 500;
+}
+
+export { formatMarkdown };

@@ -2,10 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import type { AgentDeviceClient } from '../../client/client-types.ts';
 import { createCommandToolExecutor, listCommandTools } from '../command-tools.ts';
-import { resolveCommandRecordsSessionAction } from '../../core/command-descriptor/registry.ts';
+import { resolveCommandRecordsSessionAction } from '@agent-device/command-registry/registry';
 import { COMMAND_OUTPUT_SCHEMAS } from '../command-output-schemas.ts';
 import { AppError } from '@agent-device/kernel/errors';
-import { NAVIGATION_COMMAND_PROJECTIONS } from '../../commands/system/navigation-projection.ts';
 import { validateAgainstSchema } from './output-schema-validator.ts';
 
 test('MCP command tool executor hides client creation behind an execution adapter', async () => {
@@ -24,11 +23,11 @@ test('MCP command tool executor hides client creation behind an execution adapte
   });
 
   const result = await executor.execute('wait', {
-    stateDir: '/tmp/agent-device-mcp',
+    includeCost: true,
     mcpOutputFormat: 'optimized',
   });
 
-  assert.deepEqual(createdConfigs, [{ stateDir: '/tmp/agent-device-mcp' }]);
+  assert.deepEqual(createdConfigs, [{ cost: true }]);
   assert.deepEqual(calls, [
     {
       client,
@@ -109,7 +108,7 @@ test('MCP command tool executor renders JSON text when requested', async () => {
 
   const result = await executor.execute('snapshot', { mcpOutputFormat: 'json' });
 
-  assert.match(result.content[0]?.text ?? '', /^\{\n  "nodes": \[/);
+  assert.match(result.content[0]?.text ?? '', /^\{\n {2}"nodes": \[/);
   assert.match(result.content[0]?.text ?? '', /"label": "Continue"/);
 });
 
@@ -117,7 +116,7 @@ test('MCP tool schemas add MCP client config fields at the MCP boundary', () => 
   const devicesTool = listCommandTools().find((tool) => tool.name === 'devices');
 
   assert.ok(devicesTool);
-  assert.ok('stateDir' in (devicesTool.inputSchema.properties ?? {}));
+  assert.equal('stateDir' in (devicesTool.inputSchema.properties ?? {}), false);
   assert.deepEqual(
     (devicesTool.inputSchema.properties?.mcpOutputFormat as { enum?: unknown[] } | undefined)?.enum,
     ['optimized', 'json'],
@@ -129,6 +128,65 @@ test('MCP tool schemas add MCP client config fields at the MCP boundary', () => 
   assert.deepEqual(
     (devicesTool.inputSchema.properties?.responseLevel as { enum?: unknown[] } | undefined)?.enum,
     ['digest', 'default', 'full'],
+  );
+});
+
+// #1625: `list` must be accepted by the MCP input surface, not only the CLI
+// parser — the enum here is what the MCP server validates tool calls against.
+test('MCP find tool schema accepts the read-only list action', () => {
+  const findTool = listCommandTools().find((tool) => tool.name === 'find');
+
+  assert.ok(findTool);
+  const actionEnum = (findTool.inputSchema.properties?.action as { enum?: unknown[] } | undefined)
+    ?.enum;
+  assert.ok(actionEnum?.includes('list'), `find action enum missing 'list': ${actionEnum}`);
+});
+
+// #1625 command-surface chain: after `find … list`, the daemon's PARTIAL frame
+// admits only pinned refs it issued — so the pin store must learn EVERY listed
+// ref, and a follow-up press typed with a plain `@eN` must forward pinned.
+test('MCP pins every find-list ref so a plain follow-up press forwards pinned', async () => {
+  const calls: Array<{ name: string; input: Record<string, unknown> }> = [];
+  const executor = createCommandToolExecutor({
+    createClient: () => ({}) as AgentDeviceClient,
+    runCommand: async (_client, name, input) => {
+      calls.push({ name, input: input as Record<string, unknown> });
+      if (name === 'find') {
+        return {
+          matches: [
+            { ref: '@e5', node: { ref: 'e5', type: 'Button', label: 'Add' } },
+            { ref: '@e9', node: { ref: 'e9', type: 'Cell', label: 'Add another account' } },
+          ],
+          refsGeneration: 41,
+        };
+      }
+      return { ref: 'e9', x: 1, y: 2, message: 'Tapped @e9 (1, 2)' };
+    },
+  });
+
+  const listResult = await executor.execute('find', {
+    session: 'demo',
+    query: 'Add',
+    action: 'list',
+  });
+  // Every match renders as its own line with a paste-ready pinned ref (the
+  // same formatter the CLI uses; singular read-only find already renders
+  // pinned through MCP).
+  assert.equal(
+    listResult.content[0]?.text,
+    ['2 matches:', '= @e5~s41 [button] "Add"', '= @e9~s41 [cell] "Add another account"'].join('\n'),
+  );
+
+  await executor.execute('press', { session: 'demo', target: { kind: 'ref', ref: '@e9' } });
+  await executor.execute('press', { session: 'demo', target: { kind: 'ref', ref: '@e5' } });
+
+  const presses = calls.filter((call) => call.name === 'press');
+  assert.deepEqual(
+    presses.map((call) => call.input.target),
+    [
+      { kind: 'ref', ref: '@e9~s41' },
+      { kind: 'ref', ref: '@e5~s41' },
+    ],
   );
 });
 
@@ -178,6 +236,42 @@ test('MCP gesture metadata exposes pan/transform duration', () => {
     type: 'integer',
     description: 'Pan/transform duration.',
     minimum: 16,
+    maximum: 10_000,
+  });
+});
+
+test('MCP gesture tool exposes generic drag endpoints and bounded timing phases', () => {
+  const gesture = listCommandTools().find((tool) => tool.name === 'gesture');
+  assert.ok(gesture);
+  assert.deepEqual(gesture.inputSchema.properties?.kind, {
+    type: 'string',
+    description: 'Gesture variant.',
+    enum: ['pan', 'fling', 'swipe', 'pinch', 'rotate', 'transform', 'drag'],
+  });
+  assert.deepEqual(gesture.inputSchema.properties?.source, {
+    type: 'string',
+    description: 'Drag source @ref or selector.',
+  });
+  assert.deepEqual(gesture.inputSchema.properties?.destination, {
+    type: 'string',
+    description: 'Drag destination @ref or selector.',
+  });
+  assert.deepEqual(gesture.inputSchema.properties?.sourceHoldMs, {
+    type: 'integer',
+    description: 'Drag activation hold duration.',
+    minimum: 1,
+    maximum: 10_000,
+  });
+  assert.deepEqual(gesture.inputSchema.properties?.moveMs, {
+    type: 'integer',
+    description: 'Drag movement duration.',
+    minimum: 16,
+    maximum: 10_000,
+  });
+  assert.deepEqual(gesture.inputSchema.properties?.destinationHoldMs, {
+    type: 'integer',
+    description: 'Hold before releasing at the destination.',
+    minimum: 0,
     maximum: 10_000,
   });
 });
@@ -355,15 +449,6 @@ test('MCP tv remote outputSchema advertises button values', () => {
   );
 });
 
-test('MCP navigation output schemas are projected from the canonical executable contracts', () => {
-  for (const [name, projection] of Object.entries(NAVIGATION_COMMAND_PROJECTIONS)) {
-    assert.equal(
-      COMMAND_OUTPUT_SCHEMAS[name as keyof typeof COMMAND_OUTPUT_SCHEMAS],
-      projection.outputSchema,
-    );
-  }
-});
-
 test('MCP newly typed outputSchemas advertise public contract keys', () => {
   const tools = listCommandTools();
 
@@ -531,7 +616,7 @@ function prepareResultFor(platform: 'ios' | 'macos') {
 
 test('MCP boot/shutdown schemas advertise public Apple leaves, never internal apple', () => {
   const platformEnum = COMMAND_OUTPUT_SCHEMAS.boot.properties?.platform?.enum;
-  assert.deepEqual(platformEnum, ['ios', 'macos', 'android', 'vega', 'linux', 'web']);
+  assert.deepEqual(platformEnum, ['ios', 'macos', 'android', 'harmonyos', 'vega', 'linux', 'web']);
   assert.equal(platformEnum?.includes('apple'), false);
   // shutdown shares the same resolved-device header.
   assert.deepEqual(COMMAND_OUTPUT_SCHEMAS.shutdown.properties?.platform?.enum, platformEnum);
@@ -588,7 +673,7 @@ test('MCP boot schema rejects the internal apple platform and unknown enum value
 
 test('MCP prepare schema mirrors its PublicPlatform contract', () => {
   const platformEnum = COMMAND_OUTPUT_SCHEMAS.prepare.properties?.platform?.enum;
-  assert.deepEqual(platformEnum, ['ios', 'macos', 'android', 'vega', 'linux', 'web']);
+  assert.deepEqual(platformEnum, ['ios', 'macos', 'android', 'harmonyos', 'vega', 'linux', 'web']);
   assert.equal(platformEnum?.includes('apple'), false);
 
   for (const platform of ['ios', 'macos'] as const) {
@@ -706,7 +791,7 @@ test('MCP tool error is a ref-issuing result: isError, structuredContent, and pi
     },
   });
 
-  const result = await executor.execute('replay', { positionals: ['/tmp/flow.ad'] });
+  const result = await executor.execute('replay', { path: '/tmp/flow.ad' });
 
   assert.equal(result.isError, true);
   const structured = result.structuredContent as {
@@ -736,6 +821,40 @@ test('MCP tool error is a ref-issuing result: isError, structuredContent, and pi
   // response — the caller's next command against @e5 forwards the generation.
   await executor.execute('press', { target: { kind: 'ref', ref: '@e5' } });
   assert.deepEqual(runCalls[1]?.input, { target: { kind: 'ref', ref: '@e5~s12' } });
+});
+
+test('ambiguous interaction errors pin their candidate refs for the next mutation', async () => {
+  const runCalls: Array<{ name: string; input: unknown }> = [];
+  const executor = createCommandToolExecutor({
+    createClient: () => ({}) as AgentDeviceClient,
+    runCommand: async (_client, name, input) => {
+      runCalls.push({ name, input });
+      if (runCalls.length === 1) {
+        throw new AppError('AMBIGUOUS_MATCH', 'Selector matched 2 elements', {
+          matches: 2,
+          candidates: ['@e2 [button] "Team Standup"', '@e5 [cell] "Team Standup"'],
+          refsGeneration: 42,
+        });
+      }
+      return {};
+    },
+  });
+
+  const result = await executor.execute('press', {
+    session: 'demo',
+    target: { kind: 'selector', selector: 'label="Team Standup"' },
+  });
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]?.text ?? '', /@e5~s42 \[cell\] "Team Standup"/);
+
+  await executor.execute('press', {
+    session: 'demo',
+    target: { kind: 'ref', ref: '@e5' },
+  });
+  assert.deepEqual(runCalls[1]?.input, {
+    session: 'demo',
+    target: { kind: 'ref', ref: '@e5~s42' },
+  });
 });
 
 // --- #1262: a `caution` divergence's dual-path must reach a structured caller,
@@ -770,7 +889,7 @@ test("MCP projections carry a caution divergence's alternateFrom (structuredCont
     },
   });
 
-  const result = await executor.execute('replay', { positionals: ['/tmp/flow.ad'] });
+  const result = await executor.execute('replay', { path: '/tmp/flow.ad' });
   assert.equal(result.isError, true);
   const structured = result.structuredContent as {
     details?: { divergence?: { resume?: { from?: number; alternateFrom?: number } } };
@@ -877,4 +996,39 @@ test('MCP forwards noRecord from a press tool call through to the executed comma
       input: { target: { kind: 'ref', ref: '@e5' }, noRecord: true },
     },
   ]);
+});
+
+// Retired-input regressions run the REAL command route (no runCommand
+// injection): field projection used to silently drop the removed `maxSize`
+// key before the daemon writers could refuse it, returning native-size
+// success. The retired-field seam must refuse at projection, before any
+// client method or transport is reached.
+test('MCP screenshot refuses the removed maxSize input with migration guidance', async () => {
+  const executor = createCommandToolExecutor({
+    createClient: () => ({}) as AgentDeviceClient,
+  });
+
+  const result = await executor.execute('screenshot', { maxSize: 1024 });
+
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]?.text ?? '', /screenshot --max-size was removed; use --scale/);
+});
+
+test('MCP record refuses the removed maxSize input with migration guidance', async () => {
+  const executor = createCommandToolExecutor({
+    createClient: () => ({}) as AgentDeviceClient,
+  });
+
+  const result = await executor.execute('record', { action: 'start', maxSize: 720 });
+
+  assert.equal(result.isError, true);
+  assert.match(result.content[0]?.text ?? '', /record --max-size was removed/);
+});
+
+test('MCP screenshot and record schemas do not advertise the retired maxSize input', () => {
+  for (const name of ['screenshot', 'record']) {
+    const tool = listCommandTools().find((candidate) => candidate.name === name);
+    assert.ok(tool);
+    assert.equal('maxSize' in (tool.inputSchema.properties ?? {}), false);
+  }
 });

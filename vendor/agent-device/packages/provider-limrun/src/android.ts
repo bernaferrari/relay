@@ -4,7 +4,7 @@ import {
   createInstanceClient as createAndroidInstanceClient,
   type InstanceClient as LimrunAndroidClient,
 } from '@limrun/api/instance-client';
-import type { Interactor } from '@agent-device/contracts/interaction';
+import type { Interactor } from '@agent-device/contracts/interactor-types';
 import type {
   DeviceLease,
   ProviderDeviceInstallOptions,
@@ -20,7 +20,12 @@ import type {
   LimrunPortReverseEndpoint,
   LimrunRuntimeDependencies,
 } from './runtime-dependencies.ts';
+import type { AndroidAdbInvocation } from '@agent-device/platform-android/mechanics';
 import { normalizeOptionalString } from './strings.ts';
+import {
+  awaitLimrunDeploymentOperation,
+  type LimrunRequestOperationDrain,
+} from './request-cancellation.ts';
 
 type LimrunAdbTunnel = Awaited<ReturnType<LimrunAndroidClient['startAdbTunnel']>>;
 
@@ -84,18 +89,34 @@ export async function installLimrunAndroidApp(
   session: LimrunAndroidSession,
   installablePath: string,
   options?: ProviderDeviceInstallOptions,
+  signal?: AbortSignal,
+  operationDrain?: LimrunRequestOperationDrain,
 ): Promise<ProviderDeviceInstallResult> {
+  signal?.throwIfAborted();
   const packageName = normalizeOptionalString(options?.packageNameHint);
   if (options?.relaunch && packageName) {
     await runLimrunAndroidAdb(session, ['shell', 'am', 'force-stop', packageName], {
       allowFailure: true,
+      signal,
     });
   }
-  const asset = await limrun.assets.getOrUpload({
-    path: installablePath,
-    name: buildAndroidAssetName(packageName, installablePath),
-  });
-  await session.client.sendAsset(asset.signedDownloadUrl);
+  const asset = await awaitLimrunDeploymentOperation(
+    operationDrain,
+    limrun.assets.getOrUpload(
+      {
+        path: installablePath,
+        name: buildAndroidAssetName(packageName, installablePath),
+      },
+      { signal },
+    ),
+    signal,
+  );
+  await awaitLimrunDeploymentOperation(
+    operationDrain,
+    session.client.sendAsset(asset.signedDownloadUrl),
+    signal,
+  );
+  signal?.throwIfAborted();
   const appName = packageName
     ? await session.dependencies.android.inferAppName(packageName)
     : undefined;
@@ -122,7 +143,7 @@ export async function cleanupLimrunAndroidAdbTunnel(session: LimrunAndroidSessio
   if (serial) {
     await cleanupAndroidPortReverse(session);
     await session.dependencies.host
-      .runAdb(['disconnect', serial], {
+      .runAdb(session.dependencies.android.hostAdbInvocation(['disconnect', serial]), {
         allowFailure: true,
         timeoutMs: 10_000,
       })
@@ -155,42 +176,48 @@ async function runLimrunAndroidAdb(
   args: string[],
   options?: LimrunAdbCommandOptions,
 ): Promise<LimrunAdbCommandResult> {
-  const { adbArgs, result } = await executeLimrunAndroidAdb(session, args, options);
+  const { invocation, result } = await executeLimrunAndroidAdb(session, args, options);
   return await requireSuccessfulLimrunAndroidAdb(
-    adbArgs,
+    invocation,
     result,
     options?.allowFailure,
     session.dependencies,
   );
 }
 
+/**
+ * The tunnel serial is this provider's own addressing decision: it goes on the invocation's
+ * target, so the command array the Android cluster handed over reaches the host unchanged.
+ */
 async function executeLimrunAndroidAdb(
   session: LimrunAndroidAdbSession,
   args: string[],
   options?: LimrunAdbCommandOptions,
-): Promise<{ adbArgs: string[]; result: LimrunAdbCommandResult }> {
+): Promise<{ invocation: AndroidAdbInvocation; result: LimrunAdbCommandResult }> {
   const serial = await ensurePersistentAndroidAdbSerial(session);
-  const adbArgs = ['-s', serial, ...args];
-  const result = await session.dependencies.host.runAdb(adbArgs, {
+  const invocation = session.dependencies.android.deviceAdbInvocation(serial, args);
+  const result = await session.dependencies.host.runAdb(invocation, {
     allowFailure: options?.allowFailure,
     binaryStdout: options?.binaryStdout,
     stdin: options?.stdin,
     timeoutMs: options?.timeoutMs ?? 30_000,
     signal: options?.signal,
   });
-  return { adbArgs, result };
+  return { invocation, result };
 }
 
 async function requireSuccessfulLimrunAndroidAdb(
-  adbArgs: string[],
+  invocation: AndroidAdbInvocation,
   result: LimrunAdbCommandResult,
   allowFailure: boolean | undefined,
   dependencies: Pick<LimrunRuntimeDependencies, 'android'>,
 ): Promise<LimrunAdbCommandResult> {
   if (result.exitCode !== 0 && allowFailure !== true) {
-    throw await dependencies.android.adbError('Limrun Android ADB command failed', result, {
-      command: ['adb', ...adbArgs].join(' '),
-    });
+    throw await dependencies.android.adbError(
+      'Limrun Android ADB command failed',
+      result,
+      invocation,
+    );
   }
   return result;
 }
@@ -224,6 +251,6 @@ function tcpEndpoint(port: number): LimrunPortReverseEndpoint {
 
 function buildAndroidAssetName(packageName: string | undefined, artifactPath: string): string {
   const extension = path.extname(artifactPath) || '.apk';
-  const prefix = packageName?.replace(/[^a-zA-Z0-9_.-]+/g, '-') || 'android-app';
+  const prefix = packageName?.replaceAll(/[^a-zA-Z0-9_.-]+/g, '-') || 'android-app';
   return `${prefix}${extension}`;
 }

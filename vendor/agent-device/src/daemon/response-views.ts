@@ -1,6 +1,6 @@
 import type { ResponseLevel } from '@agent-device/kernel/contracts';
 import type { ScreenshotOverlayRef, SnapshotNode } from '@agent-device/kernel/snapshot';
-import type { DaemonResponseData } from './types.ts';
+import type { DaemonResponseData } from './daemon-request.ts';
 
 /**
  * Phase 4 leveled response views. A view maps a command's `default` result data
@@ -16,7 +16,8 @@ const DIGEST_REF_LIMIT = 12;
 /**
  * Token-cheap snapshot digest: the node count plus the first N actionable refs
  * (hittable and not occluded) with a label, and the cheap top-level signals
- * (`truncated`, `visibility`, `snapshotQuality`). The full node tree — the
+ * (`truncated`, `visibility`, `snapshotQuality`) plus any fallback screenshot
+ * retrieval handle. The full node tree — the
  * dominant token sink — is dropped. `full` returns today's shape unchanged
  * (nothing richer is computed yet).
  */
@@ -33,6 +34,11 @@ function snapshotView(data: DaemonResponseData, level: ResponseLevel): DaemonRes
     truncated: data.truncated,
     ...(data.visibility !== undefined ? { visibility: data.visibility } : {}),
     ...(data.snapshotQuality !== undefined ? { snapshotQuality: data.snapshotQuality } : {}),
+    ...(data.warnings !== undefined ? { warnings: data.warnings } : {}),
+    ...(data.fallbackScreenshotPath !== undefined
+      ? { fallbackScreenshotPath: data.fallbackScreenshotPath }
+      : {}),
+    ...(data.artifacts !== undefined ? { artifacts: data.artifacts } : {}),
     // #1076 versioned refs: the one-number generation is the pinning signal for
     // the refs above — cheap, and dropping it would strand auto-pinning clients.
     ...(data.refsGeneration !== undefined ? { refsGeneration: data.refsGeneration } : {}),
@@ -70,6 +76,7 @@ function screenshotView(data: DaemonResponseData, level: ResponseLevel): DaemonR
     ...pickScreenshotDigestMetadata(data),
     overlayCount: overlays.length,
     overlayRefs,
+    ...(data.warnings !== undefined ? { warnings: data.warnings } : {}),
     ...(data.artifacts !== undefined ? { artifacts: data.artifacts } : {}),
   };
 }
@@ -83,10 +90,12 @@ function pickScreenshotDigestMetadata(data: DaemonResponseData): DaemonResponseD
   return metadata;
 }
 
-// The semantic attributes of a single matched node an agent reasons about. The
-// verbose framing a digest drops — geometry (`rect`), tree indices
-// (`index`/`parentIndex`/`depth`), and process/app plumbing
-// (`pid`/`bundleId`/`appName`/`windowTitle`/`surface`/…) — is intentionally absent.
+// The semantic attributes of a single matched node an agent reasons about,
+// including the field facts whose explicit false/zero/empty is the signal (#2288:
+// absent means unavailable). The verbose framing a digest drops — geometry
+// (`rect`), tree indices (`index`/`parentIndex`/`depth`), and process/app
+// plumbing (`pid`/`bundleId`/`appName`/`windowTitle`/`surface`/…) — is
+// intentionally absent.
 const SELECTOR_DIGEST_NODE_FIELDS = [
   'role',
   'type',
@@ -97,6 +106,11 @@ const SELECTOR_DIGEST_NODE_FIELDS = [
   'enabled',
   'selected',
   'focused',
+  'editable',
+  'password',
+  'hintShowing',
+  'selectionStart',
+  'selectionEnd',
   'hittable',
 ] as const;
 
@@ -265,5 +279,6 @@ export const RESPONSE_VIEWS: Record<string, ResponseView> = {
   click: interactionDigestView,
   fill: interactionDigestView,
   longpress: interactionDigestView,
+  hover: interactionDigestView,
   network: networkView,
 };

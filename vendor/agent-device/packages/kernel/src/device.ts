@@ -1,5 +1,14 @@
 import { AppError } from './errors.ts';
 
+export {
+  deviceIdentity,
+  deviceIdentityKey,
+  deviceShape,
+  sameDeviceIdentity,
+  sameDeviceShape,
+  type DeviceIdentity,
+} from './device-identity.ts';
+
 // Legacy Apple leaf platforms. Retained ONLY as accepted `--platform` / read-path
 // input aliases (approach b back-compat) and as the PUBLIC leaf strings the daemon
 // still emits; the internal `Platform` no longer carries them — every Apple OS
@@ -12,11 +21,19 @@ const APPLE_OS_VALUES = ['ios', 'ipados', 'tvos', 'watchos', 'visionos', 'macos'
 export type AppleOS = (typeof APPLE_OS_VALUES)[number];
 // Internal device platforms. Apple OSes collapse to a single `apple` platform; the
 // `appleOs` field on DeviceInfo is the sole OS discriminant.
-export const PLATFORMS = ['apple', 'android', 'vega', 'linux', 'web'] as const;
+export const PLATFORMS = ['apple', 'android', 'harmonyos', 'vega', 'linux', 'web'] as const;
 export type Platform = (typeof PLATFORMS)[number];
 // The PUBLIC leaf platform strings the daemon emits and clients parse (approach b:
 // output never changes). Equals the pre-collapse `Platform` set.
-export const PUBLIC_PLATFORMS = ['ios', 'macos', 'android', 'vega', 'linux', 'web'] as const;
+export const PUBLIC_PLATFORMS = [
+  'ios',
+  'macos',
+  'android',
+  'harmonyos',
+  'vega',
+  'linux',
+  'web',
+] as const;
 export type PublicPlatform = (typeof PUBLIC_PLATFORMS)[number];
 // Accepted `--platform` selectors: the internal platforms plus the legacy Apple leaf
 // aliases `ios`/`macos`, which still resolve to `apple` devices (read-path back-compat).
@@ -51,9 +68,17 @@ export type DeviceSelector = {
   serial?: string;
 };
 
+/** Device identity is narrower than platform/target filtering for precedence decisions. */
+export function hasExplicitDeviceIdentitySelector(
+  selector: Pick<DeviceSelector, 'deviceName' | 'udid' | 'serial'>,
+): boolean {
+  return [selector.deviceName, selector.udid, selector.serial].some(
+    (value) => typeof value === 'string' && value.trim().length > 0,
+  );
+}
+
 type DeviceSelectionContext = {
   simulatorSetPath?: string;
-  allowStoppedAndroidAvdPlaceholders?: boolean;
 };
 
 export function isApplePlatform(
@@ -90,7 +115,11 @@ export function isMobilePlatform(device: Pick<DeviceInfo, 'platform' | 'appleOs'
   // Phone/tablet device family: Android plus every Apple OS except the macOS desktop
   // host. Preserves the pre-collapse `platform === 'ios' || platform === 'android'`
   // set exactly (the old `ios` platform covered iOS/iPadOS/tvOS/visionOS).
-  return device.platform === 'android' || (isApplePlatform(device.platform) && !isMacOs(device));
+  return (
+    device.platform === 'android' ||
+    device.platform === 'harmonyos' ||
+    (isApplePlatform(device.platform) && !isMacOs(device))
+  );
 }
 
 /**
@@ -244,40 +273,132 @@ export async function resolveDevice(
 ): Promise<DeviceInfo> {
   let candidates = devices.filter((device) => matchesDeviceSelector(device, selector));
 
-  if (selector.udid) {
-    const match = candidates.find(
-      (device) => device.id === selector.udid && isApplePlatform(device.platform),
-    );
-    if (!match)
-      throw new AppError('DEVICE_NOT_FOUND', `No Apple device with UDID ${selector.udid}`);
-    return match;
-  }
+  const explicitlySelected = resolveExplicitDevice(candidates, selector);
+  if (explicitlySelected) return explicitlySelected;
 
-  if (selector.serial) {
-    const match = candidates.find(
-      (device) => device.id === selector.serial && isSerialAddressablePlatform(device.platform),
-    );
-    if (!match) {
-      throw new AppError('DEVICE_NOT_FOUND', serialDeviceNotFoundMessage(selector));
-    }
-    return match;
-  }
-
-  if (context.allowStoppedAndroidAvdPlaceholders !== true) {
-    candidates = candidates.filter((device) => !isStoppedAndroidAvdPlaceholder(device));
-  }
-
-  if (selector.deviceName) {
-    const normalizedName = normalizeDeviceName(selector.deviceName);
-    const match = candidates.find((device) => normalizeDeviceName(device.name) === normalizedName);
-    if (!match) throw new AppError('DEVICE_NOT_FOUND', `No device named ${selector.deviceName}`);
-    return match;
-  }
+  const namedDevice = resolveDeviceByName(candidates, selector.deviceName);
+  if (namedDevice) return namedDevice;
 
   if (isAppleDeviceCandidateSet(candidates)) {
     candidates = sortAppleDevicesForSelection(candidates);
   }
 
+  return selectDefaultDevice(candidates, selector, context);
+}
+
+function resolveExplicitDevice(
+  candidates: DeviceInfo[],
+  selector: DeviceSelector,
+): DeviceInfo | undefined {
+  assertSelectorFlagMatchesPlatform(selector);
+  if (selector.udid) return resolveAppleDeviceByUdid(candidates, selector.udid);
+  if (selector.serial) return resolveDeviceBySerial(candidates, selector);
+  return undefined;
+}
+
+/**
+ * `--udid` addresses Apple devices and `--serial` addresses serial-addressable ones (Android,
+ * HarmonyOS). Passing the wrong pair used to reach resolution and fail as "No Apple device with
+ * UDID emulator-5580" on an explicitly `--platform android` request — an answer about the wrong
+ * platform, which reads as a missing device rather than a mistyped flag.
+ */
+function assertSelectorFlagMatchesPlatform(selector: DeviceSelector): void {
+  const platform = selector.platform;
+  if (!platform) return;
+  if (selector.udid && isSerialAddressablePlatform(platform)) {
+    throw new AppError(
+      'INVALID_ARGS',
+      `--udid selects Apple devices, but this request selected --platform ${platform}.`,
+      { hint: `Use --serial ${selector.udid} for ${platform} devices.` },
+    );
+  }
+  if (selector.serial && isApplePlatform(platform)) {
+    throw new AppError(
+      'INVALID_ARGS',
+      `--serial selects Android and HarmonyOS devices, but this request selected --platform ${platform}.`,
+      { hint: `Use --udid ${selector.serial} for Apple devices.` },
+    );
+  }
+}
+
+function resolveAppleDeviceByUdid(candidates: DeviceInfo[], udid: string): DeviceInfo {
+  const match = candidates.find((device) => device.id === udid && isApplePlatform(device.platform));
+  if (!match) throw new AppError('DEVICE_NOT_FOUND', `No Apple device with UDID ${udid}`);
+  return match;
+}
+
+function resolveDeviceBySerial(candidates: DeviceInfo[], selector: DeviceSelector): DeviceInfo {
+  const match = candidates.find(
+    (device) => device.id === selector.serial && isSerialAddressablePlatform(device.platform),
+  );
+  if (!match) throw new AppError('DEVICE_NOT_FOUND', serialDeviceNotFoundMessage(selector));
+  return match;
+}
+
+function resolveDeviceByName(
+  candidates: DeviceInfo[],
+  deviceName: string | undefined,
+): DeviceInfo | undefined {
+  if (!deviceName) return undefined;
+  const normalizedName = normalizeDeviceName(deviceName);
+  const match = candidates.find((device) => normalizeDeviceName(device.name) === normalizedName);
+  if (!match) {
+    const hint = deviceIdentityMistakenForNameHint(candidates, deviceName);
+    throw new AppError(
+      'DEVICE_NOT_FOUND',
+      `No device named ${deviceName}`,
+      hint === undefined ? undefined : { hint },
+    );
+  }
+  return match;
+}
+
+/**
+ * `--device` takes a device NAME, and `--udid`/`--serial` take a device IDENTITY. Passing an
+ * identity to `--device` reached name resolution and answered "No device named
+ * 204BFFD9-9644-4830-B2C1-1B946597A07C" (#2064) — literally true, and unactionable: it names
+ * neither the flag that does take that value nor the fact that one exists. It is the same class of
+ * mistake `assertSelectorFlagMatchesPlatform` already answers for a mismatched identity flag, so
+ * answer it the same way: name the flag the value belongs to. Only an observed identity earns the
+ * hint — the candidates' own ids, with the flag derived from that device's platform; guessing from
+ * the value's shape would have to reimplement every platform's identity syntax here. A platform
+ * with no identity flag at all (web, linux) earns no hint either: `--udid` resolves only Apple
+ * devices, so naming it would send the user to a flag that provably cannot work.
+ */
+function deviceIdentityMistakenForNameHint(
+  candidates: DeviceInfo[],
+  deviceName: string,
+): string | undefined {
+  const identityMatch = candidates.find((device) => device.id === deviceName);
+  if (!identityMatch) return undefined;
+  const flag = deviceIdentityFlag(identityMatch.platform);
+  if (!flag) return undefined;
+  return (
+    `${deviceName} is the id of ${JSON.stringify(identityMatch.name)}, not its name. ` +
+    `Did you mean ${flag} ${deviceName}?`
+  );
+}
+
+/** The identity flag that can actually resolve a device on this platform, if one exists. */
+function deviceIdentityFlag(platform: Platform): '--udid' | '--serial' | undefined {
+  if (isApplePlatform(platform)) return '--udid';
+  if (isSerialAddressablePlatform(platform)) return '--serial';
+  return undefined;
+}
+
+/**
+ * SINGULAR RESOLUTION. Every caller of `resolveDevice` needs exactly one concrete device, so when
+ * the request carries no device identity and more than one candidate survives the preference tiers,
+ * this refuses with the candidates rather than picking one. A quietly chosen device produces a
+ * successful response describing the WRONG device — indistinguishable from the right one — and
+ * reads are no safer than writes: three successful snapshots of the wrong emulator are still three
+ * wrong answers. Multi-device operations (`devices`) never enter this path.
+ */
+function selectDefaultDevice(
+  candidates: DeviceInfo[],
+  selector: DeviceSelector,
+  context: DeviceSelectionContext,
+): DeviceInfo {
   const onlyCandidate = candidates[0];
   if (onlyCandidate !== undefined && candidates.length === 1) return onlyCandidate;
 
@@ -285,27 +406,65 @@ export async function resolveDevice(
     throwNoDevicesFound(selector, context);
   }
 
-  const virtual = candidates.filter((device) => device.kind !== 'device');
-  const selectable = virtual.length > 0 ? virtual : candidates;
-  const booted = selectable.filter((device) => device.booted);
-  const onlyBooted = booted[0];
-  if (onlyBooted && booted.length === 1 && !isAppleDeviceCandidateSet(selectable)) {
-    return onlyBooted;
-  }
-  const selected = isAppleDeviceCandidateSet(selectable)
-    ? selectable[0]
-    : (booted[0] ?? selectable[0]);
+  const preferred = preferredDeviceCandidates(candidates);
+  if (preferred.length > 1) throwAmbiguousDeviceSelection(preferred);
+  const selected = preferred[0];
   if (!selected) throwNoDevicesFound(selector, context);
   return selected;
 }
 
-function isStoppedAndroidAvdPlaceholder(device: DeviceInfo): boolean {
-  return (
-    device.platform === 'android' &&
-    device.kind === 'emulator' &&
-    device.booted === false &&
-    !/^emulator-\d+$/.test(device.id)
+const AMBIGUOUS_DEVICE_CANDIDATE_LIMIT = 10;
+
+function throwAmbiguousDeviceSelection(candidates: DeviceInfo[]): never {
+  const listed = candidates.slice(0, AMBIGUOUS_DEVICE_CANDIDATE_LIMIT);
+  throw new AppError(
+    'AMBIGUOUS_MATCH',
+    `${candidates.length} devices match this request equally; select one explicitly.`,
+    {
+      // The declared device-candidate details domain (@agent-device/kernel/errors), so the CLI
+      // and MCP renderers print these candidates without a new shape to learn.
+      devices: listed.map((device) => ({ id: device.id, name: device.name })),
+      matches: candidates.length,
+      hint: buildAmbiguousDeviceHint(listed),
+    },
   );
+}
+
+function buildAmbiguousDeviceHint(candidates: DeviceInfo[]): string {
+  const first = candidates[0];
+  const identitySelector =
+    first && isSerialAddressablePlatform(first.platform)
+      ? `--serial ${first.id}`
+      : `--udid ${first?.id ?? '<id>'}`;
+  return (
+    `Select the intended device explicitly, for example ${identitySelector} ` +
+    `or --device ${JSON.stringify(first?.name ?? '<name>')}. ` +
+    `Run agent-device devices to list them.`
+  );
+}
+
+/**
+ * The candidates left after every ESTABLISHED preference — virtual over physical (Apple ranks its
+ * kinds/targets instead), then booted over offline. Whatever survives is equally preferred: the
+ * comparator's remaining tie-breaks are name order and discovery order, which encode nothing about
+ * intent.
+ */
+function preferredDeviceCandidates(candidates: DeviceInfo[]): DeviceInfo[] {
+  const ranked = isAppleDeviceCandidateSet(candidates)
+    ? candidatesWithBestAppleRank(candidates)
+    : preferVirtualCandidates(candidates);
+  const booted = ranked.filter((device) => device.booted);
+  return booted.length > 0 ? booted : ranked;
+}
+
+function preferVirtualCandidates(candidates: DeviceInfo[]): DeviceInfo[] {
+  const virtual = candidates.filter((device) => device.kind !== 'device');
+  return virtual.length > 0 ? virtual : candidates;
+}
+
+function candidatesWithBestAppleRank(candidates: DeviceInfo[]): DeviceInfo[] {
+  const bestRank = Math.min(...candidates.map((device) => appleDeviceSelectionRank(device)));
+  return candidates.filter((device) => appleDeviceSelectionRank(device) === bestRank);
 }
 
 export function matchesDeviceSelector(
@@ -341,8 +500,8 @@ function matchesExplicitDeviceSelector(device: DeviceInfo, selector: DeviceSelec
 
 export function isSerialAddressablePlatform(
   platform: Platform | PublicPlatform,
-): platform is 'android' | 'vega' {
-  return platform === 'android' || platform === 'vega';
+): platform is 'android' | 'harmonyos' | 'vega' {
+  return platform === 'android' || platform === 'harmonyos' || platform === 'vega';
 }
 
 function serialDeviceNotFoundMessage(selector: DeviceSelector): string {
@@ -352,7 +511,10 @@ function serialDeviceNotFoundMessage(selector: DeviceSelector): string {
   if (selector.platform === 'vega') {
     return `No Vega VVD with serial ${selector.serial}`;
   }
-  return `No Android device or Vega VVD with serial ${selector.serial}`;
+  if (selector.platform === 'harmonyos') {
+    return `No HarmonyOS device with serial ${selector.serial}`;
+  }
+  return `No Android, HarmonyOS device, or Vega VVD with serial ${selector.serial}`;
 }
 
 function throwNoDevicesFound(selector: DeviceSelector, context: DeviceSelectionContext): never {
@@ -368,7 +530,7 @@ function throwNoDevicesFound(selector: DeviceSelector, context: DeviceSelectionC
 }
 
 function normalizeDeviceName(value: string): string {
-  return value.toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+  return value.toLowerCase().replaceAll('_', ' ').replaceAll(/\s+/g, ' ').trim();
 }
 
 function compareAppleDevicesForSelection<TDevice extends DeviceInfo>(

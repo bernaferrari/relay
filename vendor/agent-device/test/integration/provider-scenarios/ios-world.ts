@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { DeviceInventoryRequest } from '../../../src/core/dispatch-resolve.ts';
-import { buildGesturePlan } from '@agent-device/contracts/interaction';
+import type { DeviceInventoryRequest } from '@agent-device/device-selection/dispatch-resolve';
+import { buildGesturePlan } from '@agent-device/contracts/gesture-plan';
 import type { RawSnapshotNode } from '@agent-device/kernel/snapshot';
-import type { ProviderScenarioTranscript } from './transcript.ts';
+import { type ProviderScenarioTranscript, createProviderTranscript } from './transcript.ts';
 import {
   createDemoIosApp,
   PROVIDER_SCENARIO_IOS_REINSTALL_DEVICE,
@@ -16,7 +16,6 @@ import {
   simctlListDevicesResult,
   type FlatToolCall,
 } from './providers.ts';
-import { createProviderTranscript } from './transcript.ts';
 
 type IosSettingsWorld = {
   daemon: ProviderScenarioHarness;
@@ -142,31 +141,12 @@ export async function createIosSettingsWorld(): Promise<IosSettingsWorld> {
       },
       result: { transformed: true },
     },
-    {
-      command: 'ios.runner.querySelector',
-      deviceId: PROVIDER_SCENARIO_IOS_SIMULATOR.id,
-      platform: 'apple',
-      request: {
-        command: 'querySelector',
-        selectorKey: 'label',
-        selectorValue: 'General',
-        appBundleId: 'com.apple.Preferences',
-      },
-      result: {
-        found: true,
-        nodes: [
-          {
-            index: 0,
-            type: 'XCUIElementTypeCell',
-            label: 'General',
-            identifier: 'General',
-            rect: { x: 16, y: 100, width: 360, height: 44 },
-            enabled: true,
-            hittable: true,
-          },
-        ],
-      },
-    },
+    // `is visible label=General` answered from a direct `querySelector` here until R37 retired
+    // that shortcut; it now resolves through the bound capture like every other predicate, so it
+    // consumes a snapshot and issues no runner query at all. The second snapshot is
+    // `find attrs by label`. This transcript is the scripted proof that the bypass is gone: an
+    // unexpected `querySelector` would fail the scenario rather than pass unnoticed.
+    runnerSnapshot(),
     runnerSnapshot(),
     {
       command: 'ios.runner.findText',
@@ -241,6 +221,7 @@ export async function createIosSettingsWorld(): Promise<IosSettingsWorld> {
   });
 
   const daemon = await createProviderScenarioHarness({
+    platformRuntime: true,
     appleRunnerProvider: () => appleRunnerProvider,
     appleToolProvider: () => appleTool.provider,
     deviceInventoryProvider: async (request) => {
@@ -347,6 +328,7 @@ export async function createIosPhysicalReinstallWorld(): Promise<IosPhysicalRein
   const daemon = await createProviderScenarioHarness({
     appleToolProvider: () => appleTool.provider,
     deviceInventoryProvider: async () => [PROVIDER_SCENARIO_IOS_REINSTALL_DEVICE],
+    platformRuntime: true,
   });
   const { tempRoot, appPath } = createDemoIosApp(
     'agent-device-provider-scenario-ios-physical-deploy-',

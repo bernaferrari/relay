@@ -1,15 +1,17 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
-import type { DaemonResponse } from '../../daemon/client/daemon-client.ts';
+import type { DaemonResponse } from '../../daemon-client/daemon-client.ts';
 import {
   runCliCapture as captureCli,
   type CapturedCliRun,
   type CapturedDaemonRequest,
   type CliCaptureOptions,
 } from '../../__tests__/cli-capture.ts';
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
+import { AppError } from '@agent-device/kernel/errors';
+import { createBatchCommandMetadata } from './metadata.ts';
 
 const batchDefaultResponse: DaemonResponse = {
   ok: true,
@@ -47,7 +49,7 @@ test('batch --steps parses JSON and forwards batchSteps only', async () => {
 });
 
 test('batch --steps-file parses file payload', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-batch-'));
+  const tmpDir = mkdtempForTestSync('agent-device-batch-');
   const stepsPath = path.join(tmpDir, 'steps.json');
   fs.writeFileSync(
     stepsPath,
@@ -120,7 +122,82 @@ test('batch rejects structured replay steps before daemon dispatch', async () =>
   assert.match(result.stderr, /not available through command batch/);
 });
 
-test('batch rejects invalid structured runtime without falling back to legacy parsing', async () => {
+// Every step-shape refusal used to name only what was wrong, never what a step looks like, and
+// `help batch` documented no shape and no exclusions — so the boundary was reachable only by
+// trial (#2062). Each refusal now carries the missing half.
+
+test('a non-object step names the step shape', async () => {
+  const result = await runCliCapture(['batch', '--steps', '["press @e12"]']);
+
+  assert.equal(result.code, 1);
+  assert.equal(result.calls.length, 0);
+  assert.match(result.stderr, /Invalid batch step 1/);
+  assert.match(result.stderr, /\{"command":"<name>","input":\{\.\.\.\}\}/);
+  assert.match(result.stderr, /no positional step form/);
+});
+
+test('an args/target step names the step shape instead of only the unknown field', async () => {
+  const result = await runCliCapture(['batch', '--steps', '[{"command":"press","args":["@e12"]}]']);
+
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /has unknown field\(s\): args/);
+  assert.match(result.stderr, /\{"command":"<name>","input":\{\.\.\.\}\}/);
+});
+
+test('a non-batchable command states the boundary and, on the CLI, the help recovery', async () => {
+  const result = await runCliCapture(['batch', '--steps', '[{"command":"session","input":{}}]']);
+
+  assert.equal(result.code, 1);
+  assert.match(result.stderr, /not available through command batch: session/);
+  assert.match(result.stderr, /excluded from batch/);
+  assert.match(result.stderr, /help batch/);
+});
+
+// The same reader backs the MCP/Node surface through the batch metadata, where a terminal
+// recovery step is unrunnable: the shared hint stays surface-neutral (those surfaces read the
+// accepted commands off the step schema's command enum) and only the CLI admission appends the
+// help pointer (#2062). The hint also has to survive the 400-character redaction cap intact —
+// enumerating the roster inline truncated it, help pointer and all.
+test('the MCP/Node availability refusal is surface-neutral and survives redaction whole', () => {
+  const metadata = createBatchCommandMetadata();
+  try {
+    metadata.readInput({ steps: [{ command: 'session', input: {} }] });
+    assert.fail('expected the nested session command to be refused');
+  } catch (error) {
+    assert.ok(error instanceof AppError);
+    const hint = String(error.details?.hint ?? '');
+    assert.match(hint, /excluded from batch/);
+    assert.doesNotMatch(hint, /agent-device /);
+    assert.doesNotMatch(hint, /--[a-z]/);
+    assert.ok(hint.length <= 400, `hint must survive the redaction cap, got ${hint.length}`);
+  }
+  const stepSchema = metadata.inputSchema.properties?.steps as {
+    items?: { properties?: { command?: { enum?: string[] } } };
+  };
+  const commandEnum = stepSchema.items?.properties?.command?.enum ?? [];
+  assert.ok(commandEnum.includes('press'), 'the step schema enum is the machine-readable roster');
+});
+
+// The reported blocker (#2062) was the step shape, not the verb: press/click/fill were never
+// excluded from batch. Pin that so a future exclusion has to be a deliberate registry change.
+test('mutating UI verbs reach daemon dispatch through batch', async () => {
+  const result = await runCliCapture([
+    'batch',
+    '--steps',
+    '[{"command":"press","input":{"target":{"kind":"ref","ref":"@e12"}}},{"command":"fill","input":{"target":{"kind":"ref","ref":"@e13"},"text":"x"}}]',
+    '--json',
+  ]);
+
+  assert.equal(result.code, null);
+  assert.equal(result.calls.length, 1);
+  const steps = result.calls[0]?.flags?.batchSteps ?? [];
+  assert.deepEqual(
+    steps.map((step) => step.command),
+    ['press', 'fill'],
+  );
+});
+
+test('batch rejects invalid structured runtime', async () => {
   const result = await runCliCapture([
     'batch',
     '--steps',
@@ -130,30 +207,51 @@ test('batch rejects invalid structured runtime without falling back to legacy pa
   assert.equal(result.code, 1);
   assert.equal(result.calls.length, 0);
   assert.match(result.stderr, /Batch step 1 runtime is invalid/);
-  assert.doesNotMatch(result.stderr, /unknown legacy field\(s\): input/);
 });
 
-test('batch accepts legacy positionals/flags steps with deprecation warning', async () => {
+test.each([
+  ['missing command', '{"input":{}}', /command is not available through command batch/],
+  [
+    'non-string command',
+    '{"command":42,"input":{}}',
+    /command is not available through command batch/,
+  ],
+  ['non-object input', '{"command":"open","input":"nope"}', /input must be an object/],
+  [
+    'unknown top-level field',
+    '{"command":"open","input":{},"bogus":1}',
+    /has unknown field\(s\): bogus/,
+  ],
+])('batch rejects %s before daemon dispatch', async (_name, step, expected) => {
+  const result = await runCliCapture(['batch', '--steps', `[${step}]`]);
+
+  assert.equal(result.code, 1);
+  assert.equal(result.calls.length, 0);
+  assert.match(result.stderr, expected);
+});
+
+test('batch rejects removed positionals/flags steps with exact migration guidance', async () => {
   const result = await runCliCapture([
     'batch',
     '--steps',
     '[{"command":"open","positionals":["settings"],"flags":{"platform":"ios"}}]',
     '--json',
   ]);
-  assert.equal(result.code, null);
-  assert.match(result.stderr, /positionals\/flags are deprecated.*next major version/);
-  assert.equal(result.calls.length, 1);
-  const req = result.calls[0]!;
-  assert.equal(req.command, 'batch');
-  assert.deepEqual((req.flags?.batchSteps ?? [])[0], {
-    command: 'open',
-    positionals: ['settings'],
-    flags: { platform: 'ios' },
-    runtime: undefined,
-  });
+  assert.equal(result.code, 1);
+  assert.equal(result.calls.length, 0);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.error.code, 'INVALID_ARGS');
+  assert.match(
+    payload.error.message,
+    /Batch step 1 uses removed field\(s\): "positionals", "flags"/,
+  );
+  assert.match(
+    payload.error.message,
+    /\{"command":"open","input":\{"app":"settings","platform":"ios"\}\}/,
+  );
 });
 
-test('batch rejects excess legacy positionals before daemon projection', async () => {
+test('batch rejects removed positionals before interpreting their contents', async () => {
   const result = await runCliCapture([
     'batch',
     '--steps',
@@ -162,13 +260,10 @@ test('batch rejects excess legacy positionals before daemon projection', async (
 
   assert.equal(result.code, 1);
   assert.equal(result.calls.length, 0);
-  assert.match(
-    result.stderr,
-    /Batch step 1 open accepts at most 2 positional argument\(s\), received 3/,
-  );
+  assert.match(result.stderr, /Batch step 1 uses removed field\(s\): "positionals"/);
 });
 
-test('batch accepts a multiword ref label in a legacy get step', async () => {
+test('batch rejects removed positionals even when they were previously normalizable', async () => {
   const result = await runCliCapture([
     'batch',
     '--steps',
@@ -176,23 +271,19 @@ test('batch accepts a multiword ref label in a legacy get step', async () => {
     '--json',
   ]);
 
-  assert.equal(result.code, null);
-  assert.equal(result.calls.length, 1);
-  assert.deepEqual((result.calls[0]?.flags?.batchSteps ?? [])[0]?.positionals, [
-    'text',
-    '@e5~s3',
-    'World Clock',
-  ]);
+  assert.equal(result.code, 1);
+  assert.equal(result.calls.length, 0);
+  assert.match(result.stdout, /Batch step 1 uses removed field\(s\): \\"positionals\\"/);
 });
 
-test('batch rejects hybrid structured and legacy step shapes', async () => {
+test('batch rejects removed fields on an otherwise structured step', async () => {
   const result = await runCliCapture([
     'batch',
     '--steps',
     '[{"command":"open","input":{},"positionals":["settings"]}]',
   ]);
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /unknown legacy field\(s\): input/);
+  assert.match(result.stderr, /Batch step 1 uses removed field\(s\): "positionals"/);
 });
 
 test('batch --steps-file returns clear error for missing file', async () => {
@@ -207,7 +298,7 @@ test('batch --steps-file returns clear error for missing file', async () => {
 });
 
 test('batch --steps-file rejects invalid JSON payload', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-batch-invalid-'));
+  const tmpDir = mkdtempForTestSync('agent-device-batch-invalid-');
   const stepsPath = path.join(tmpDir, 'steps.json');
   fs.writeFileSync(stepsPath, '{"command":"open"', 'utf8');
   const result = await runCliCapture(['batch', '--steps-file', stepsPath]);

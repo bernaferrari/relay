@@ -1,22 +1,25 @@
+import { isSessionRecording } from '../../session-script-publication-capability.ts';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, expect, test } from 'vitest';
-import { INTERNAL_COMMANDS } from '../../../command-catalog.ts';
-import { makeIosSession, makeAuthoringSession } from '../../../__tests__/test-utils/index.ts';
+import { INTERNAL_COMMANDS } from '@agent-device/command-registry/catalog';
 import {
+  makeIosSession,
+  makeAuthoringSession,
   authoringPublication,
   repairPublication,
 } from '../../../__tests__/test-utils/session-factories.ts';
 import type { TargetAnnotationV1 } from '@agent-device/contracts/replay';
 import { SessionStore } from '../../session-store.ts';
-import type { DaemonRequest, SessionState } from '../../types.ts';
+import type { DaemonRequest } from '../../daemon-request.ts';
+import type { SessionState } from '../../session-state.ts';
 import { handleSessionScriptPublication } from '../session-script-publication.ts';
 import {
   NO_SCRIPT_PUBLICATION,
   scriptTargetPath,
   scriptTargetForce,
 } from '../../session-script-publication-state.ts';
+import { mkdtempForTestSync } from '../../../__tests__/test-utils/tmp-dir.ts';
 
 const TARGET_EVIDENCE: TargetAnnotationV1 = {
   id: 'continue',
@@ -43,7 +46,7 @@ let root: string;
 let store: SessionStore;
 
 beforeEach(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-active-publication-'));
+  root = mkdtempForTestSync('agent-device-active-publication-');
   store = new SessionStore(path.join(root, 'sessions'));
 });
 
@@ -96,11 +99,11 @@ test('publishes without close, returns the path/count, and leaves a terminal liv
     ok: true,
     data: { session: 'authoring', savedScript: outputPath, actionCount: 3 },
   });
-  expect(fs.readFileSync(outputPath, 'utf8')).toContain('wait "id=\\"screen-x\\""');
+  expect(fs.readFileSync(outputPath, 'utf8')).toContain(String.raw`wait "id=\"screen-x\""`);
   expect(fs.readFileSync(outputPath, 'utf8')).not.toContain('\nclose');
   expect(store.get('authoring')).toBe(session);
   expect(session.scriptPublication).toMatchObject({ kind: 'authoring', status: 'published' });
-  expect(session.recordSession).toBe(false);
+  expect(isSessionRecording(session)).toBe(false);
 
   const repeated = handleSessionScriptPublication({
     req: request(),

@@ -1,7 +1,7 @@
 // The public API vocabulary for the gesture and text-entry commands.
 
 import type { ClickButton } from './click-button.ts';
-import type { GesturePointerCount } from './gesture-plan.ts';
+import type { GesturePointerCount } from './gesture-plan-types.ts';
 import type {
   ScrollDirection,
   ScrollInputDirection,
@@ -64,6 +64,11 @@ export type LongPressOptions = DeviceCommandBaseOptions &
     durationMs?: number;
   };
 
+export type HoverOptions = DeviceCommandBaseOptions &
+  SelectorSnapshotCommandOptions &
+  InteractionTarget &
+  SettleCommandOptions;
+
 export type SwipeOptions = DeviceCommandBaseOptions & {
   from: { x: number; y: number };
   to: { x: number; y: number };
@@ -79,6 +84,14 @@ export type PanOptions = DeviceCommandBaseOptions & {
   dy: number;
   pointerCount?: GesturePointerCount;
   durationMs?: number;
+};
+
+export type DragOptions = DeviceCommandBaseOptions & {
+  source: string;
+  destination: string;
+  sourceHoldMs?: number;
+  moveMs?: number;
+  destinationHoldMs?: number;
 };
 
 export type FlingOptions = DeviceCommandBaseOptions & {
@@ -127,9 +140,12 @@ export type RotateGestureOptions = DeviceCommandBaseOptions & {
 
 export type TransformGestureOptions = DeviceCommandBaseOptions & TransformGestureParams;
 
-export type ScrollOptions = DeviceCommandBaseOptions & {
-  direction: ScrollInputDirection;
-  amount?: number;
-  pixels?: number;
-  durationMs?: number;
-};
+export type ScrollOptions = DeviceCommandBaseOptions &
+  SettleCommandOptions & {
+    direction: ScrollInputDirection;
+    amount?: number;
+    pixels?: number;
+    durationMs?: number;
+    /** Repeat scroll passes until this selector is visible on screen, then stop. */
+    until?: string;
+  };

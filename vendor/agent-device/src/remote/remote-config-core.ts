@@ -9,10 +9,18 @@ import {
   type ResolvedRemoteConfigProfile,
 } from './remote-config-schema.ts';
 import { AppError } from '@agent-device/kernel/errors';
-import { resolveUserPath } from '../utils/path-resolution.ts';
-import { parseSourceValue } from '../utils/source-value.ts';
+import { resolveUserPath } from '@agent-device/host-kit/file';
+import { parseSourceValue } from '@agent-device/kernel/source-value';
 
-function readRemoteConfigFile(options: RemoteConfigProfileOptions): ResolvedRemoteConfigProfile {
+// Deliberately narrower than `resolveRemoteConfigProfile`: this reads only
+// what the config *file itself* declares, with no ambient environment
+// defaults merged in. Callers that need to know a credential provably
+// belongs to a specific profile (not "some token was available from
+// somewhere") must use this, not the env-merged resolver, or provenance is
+// lost — an env var is global and cannot say which endpoint it belongs to.
+export function readRemoteConfigFile(
+  options: RemoteConfigProfileOptions,
+): ResolvedRemoteConfigProfile {
   const env = options.env ?? process.env;
   const resolvedPath = resolveRemoteConfigPath(options);
   if (!fs.existsSync(resolvedPath)) {

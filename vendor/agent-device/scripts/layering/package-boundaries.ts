@@ -1,3 +1,17 @@
+// Catches: a package reaching back into root src/, a root file tunnelling into packages/*/src
+//   with a relative path, an undeclared workspace import, or a subpath the exports map does not
+//   name — bypasses Node's own resolution error cannot see, because a relative route resolves
+//   fine even though it duplicates the module under its specifier form.
+// Evidence: 76453add71 (#1494, #1490 W0) established the workspace split this rule protects;
+//   83322a3f2f (#1574) pinned exact facade symbols for every workspace package.
+// Cost: 1239 LOC (363 rule + 876 test).
+// Kill criterion: none enforced today; retire only by maintainer decision that the workspace
+//   boundary no longer matters. `pnpm typecheck` already covers two branches for src/ and
+//   packages/ importers (NodeNext rejects a non-exported subpath with TS2307; composite rootDir
+//   rejects a package→root relative escape with TS6059), but the A4 spike found no compiler
+//   mechanism for an undeclared workspace:* dependency, a root→packages/*/src relative tunnel,
+//   or any scripts/ import: project references are a build-cache mechanism, not a boundary.
+//
 // R11 package-boundaries: the workspace rules of #1490, as data the gate walks.
 //
 // Package resolution already makes a deep `@agent-device/*` specifier a runtime
@@ -7,18 +21,18 @@
 // manifest never declared, and a specifier subpath the owning `exports` map
 // does not name.
 //
-// The single tolerated relative route into a package is an R8 zero-dep script
-// importing an exports-named source target. That exception is exactly
-// co-extensive with safety: Node's ESM loader does not realpath specifiers, so
-// a module loaded BOTH relatively and via its package specifier instantiates
-// twice in one process (duplicate AppError, broken instanceof). A zero-dep
-// closure can never coexist with specifier loads — no node_modules — which is
-// the only reason the exception exists at all. Production src/test files never
-// qualify.
+// No relative route into a package is tolerated. Node's ESM loader does not
+// realpath specifiers, so a module loaded BOTH relatively and via its package
+// specifier instantiates twice in one process (duplicate AppError, broken
+// instanceof). The one exception this rule used to grant — a file inside an R8
+// zero-dep job closure, where no node_modules means specifier loads cannot
+// coexist — retired with R8 itself (#1781 A6), because the repo runs no
+// `install-deps: false` job for it to cover.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseImports } from './model.ts';
+import { listTrackedPackageManifests, listTrackedProductionSources } from './tracked-sources.ts';
 
 export type PackageBoundaryViolation = {
   rule: string;
@@ -55,14 +69,35 @@ export function specifierSites(file: string, source: string): SpecifierSite[] {
   return parseImports(source).map((edge) => ({ file, line: edge.line, specifier: edge.spec }));
 }
 
+/**
+ * Every workspace package a gate may reason about, read from TRACKED manifests only.
+ *
+ * A `readdirSync` of `packages/` would also pick up a directory a contributor created but never
+ * committed, and its `exports` map would then contribute entry surfaces to R11 and to the
+ * ADR-0019 loading-shape budgets -- gates whose whole claim is that they describe committed state
+ * (#1965 review). R13's `readTrackedPlatformPackageDeclarations` already enumerated its manifests
+ * this way; this closes the same hole for every workspace package, at the source rather than by
+ * filtering the output.
+ */
 export function readWorkspacePackages(repoRoot: string): WorkspacePackage[] {
-  const packagesDir = path.join(repoRoot, 'packages');
-  if (!fs.existsSync(packagesDir)) return [];
+  return workspacePackagesFromManifests(
+    new Map(
+      listTrackedPackageManifests(repoRoot).map((manifestFile) => [
+        manifestFile,
+        fs.readFileSync(path.join(repoRoot, manifestFile), 'utf8'),
+      ]),
+    ),
+  );
+}
+
+/** The same package model over manifest sources already in hand, e.g. read from a git ref. */
+export function workspacePackagesFromManifests(
+  manifests: ReadonlyMap<string, string>,
+): WorkspacePackage[] {
   const packages: WorkspacePackage[] = [];
-  for (const entry of fs.readdirSync(packagesDir).sort()) {
-    const manifestPath = path.join(packagesDir, entry, 'package.json');
-    if (!fs.existsSync(manifestPath)) continue;
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as {
+  for (const manifestFile of [...manifests.keys()].sort()) {
+    const entry = path.posix.basename(path.posix.dirname(manifestFile));
+    const manifest = JSON.parse(manifests.get(manifestFile)!) as {
       name?: string;
       private?: boolean;
       exports?: Record<string, { default?: string } | string>;
@@ -174,41 +209,28 @@ export function checkPackageInternalSites(
 
 /**
  * Rules for files OUTSIDE packages/ (src, test, scripts): workspace specifiers
- * must be root-declared and exports-named; relative paths into `packages/·/src`
- * are forbidden except the R8 zero-dep exception — a `scripts/` file importing
- * an exports-named source target.
+ * must be root-declared and exports-named, and relative paths into
+ * `packages/·/src` are forbidden outright.
  */
 export function checkRootSites(
   sites: readonly SpecifierSite[],
   packages: readonly WorkspacePackage[],
   rootWorkspaceDependencies: ReadonlySet<string>,
-  zeroDepClosureFiles: ReadonlySet<string>,
 ): PackageBoundaryViolation[] {
   const violations: PackageBoundaryViolation[] = [];
-  const exportedSources = new Set(packages.flatMap((pkg) => [...pkg.exportTargets.values()]));
   for (const site of sites) {
     if (site.specifier.startsWith('.')) {
       const resolved = path.posix.normalize(
         path.posix.join(path.posix.dirname(site.file), site.specifier),
       );
       if (!/^packages\/[^/]+\//.test(resolved)) continue;
-      // The R8 exception requires BOTH membership in an actual zero-dep job
-      // closure (no node_modules -> no coexisting specifier loads -> no dual
-      // instantiation) AND an exports-named target. `scripts/` placement alone
-      // proves neither.
-      const inZeroDepClosure = zeroDepClosureFiles.has(site.file);
-      if (inZeroDepClosure && exportedSources.has(resolved)) continue;
       violations.push({
         rule: 'R11 package-boundaries',
         file: site.file,
         line: site.line,
-        message: inZeroDepClosure
-          ? `'${site.specifier}' targets a non-exported package source — the R8 exception only ` +
-            `covers files named by the package's exports map.`
-          : `'${site.specifier}' bypasses the package boundary — import the package specifier ` +
-            `instead. The relative route is reserved for files inside an R8 zero-dep job ` +
-            `closure; anywhere else, dual specifier/relative loads would instantiate the ` +
-            `module twice.`,
+        message:
+          `'${site.specifier}' bypasses the package boundary — import the package specifier ` +
+          `instead, or dual specifier/relative loads instantiate the module twice.`,
       });
       continue;
     }
@@ -269,6 +291,41 @@ export function rootExternalDependencyRanges(repoRoot: string): Map<string, stri
   return new Map(Object.entries(manifest.dependencies ?? {}));
 }
 
+/**
+ * Every workspace-package entry surface, repo-root-relative and sorted: whatever a package
+ * manifest's `exports` map points at, plus every production source file under a `src/facades/`
+ * directory.
+ *
+ * The single owner of that question. R11's façade gates and the ADR-0019 eager-closure budget
+ * table (`scripts/__tests__/eager-closure-budgets.ts`) both consume this, so the two cannot drift
+ * into disagreeing about what counts as a façade — a gate that scanned a narrower set would
+ * silently exempt files the other one covers, which is exactly the hole #1960 review found (a
+ * one-level `readdir` missed both nested façade files and the six `packages/platform-*`
+ * manifest façades, which have no `facades/` directory at all).
+ *
+ * The `src/facades/` side reads TRACKED production sources (`listTrackedProductionSources`), the
+ * same input every other layering scan uses, and is recursive so a nested façade cannot be
+ * covered by one gate and missed by another. Tracked-only matters: an uncommitted scratch file
+ * under a scanned path must stay invisible, or these gates start describing a contributor's
+ * working directory instead of the committed tree (#1965 review).
+ */
+export function facadeEntryFiles(repoRoot: string): string[] {
+  const tracked = new Set(listTrackedProductionSources(repoRoot));
+  const found = new Set<string>();
+  // Manifests are already tracked-only, but a tracked manifest's WORKING-TREE content can name a
+  // target that is not committed yet, so the targets are intersected too. Both origins go through
+  // the same tracked set: every path this returns is committed, whatever produced it.
+  for (const pkg of readWorkspacePackages(repoRoot)) {
+    for (const target of pkg.exportTargets.values()) {
+      if (tracked.has(target)) found.add(target);
+    }
+  }
+  for (const file of tracked) {
+    if (file.includes('/src/facades/')) found.add(file);
+  }
+  return [...found].filter((file) => fs.existsSync(path.join(repoRoot, file))).sort();
+}
+
 function walkTsFiles(repoRoot: string, relativeDir: string): string[] {
   const absolute = path.join(repoRoot, relativeDir);
   if (!fs.existsSync(absolute)) return [];
@@ -290,18 +347,26 @@ function walkTsFiles(repoRoot: string, relativeDir: string): string[] {
 
 /** Flat `specifier -> repo-relative source` map across all workspace packages. */
 export function workspaceSpecifierTargets(repoRoot: string): Map<string, string> {
+  return specifierTargetsOf(readWorkspacePackages(repoRoot));
+}
+
+/** The same flat map for a manifest set read elsewhere, e.g. at a git ref. */
+export function workspaceSpecifierTargetsFromManifests(
+  manifests: ReadonlyMap<string, string>,
+): Map<string, string> {
+  return specifierTargetsOf(workspacePackagesFromManifests(manifests));
+}
+
+function specifierTargetsOf(packages: readonly WorkspacePackage[]): Map<string, string> {
   const targets = new Map<string, string>();
-  for (const pkg of readWorkspacePackages(repoRoot)) {
+  for (const pkg of packages) {
     for (const [specifier, target] of pkg.exportTargets) targets.set(specifier, target);
   }
   return targets;
 }
 
 /** The real-tree R11 run used by check.ts. */
-export function checkPackageBoundaries(
-  repoRoot: string,
-  zeroDepClosure: ReadonlySet<string>,
-): PackageBoundaryViolation[] {
+export function checkPackageBoundaries(repoRoot: string): PackageBoundaryViolation[] {
   const packages = readWorkspacePackages(repoRoot);
   if (packages.length === 0) return [];
   const rootDependencies = rootWorkspaceDependencyNames(repoRoot);
@@ -315,13 +380,11 @@ export function checkPackageBoundaries(
   for (const root of ['src', 'test', 'scripts']) {
     for (const file of walkTsFiles(repoRoot, root)) {
       // Gate tests under scripts/ carry import syntax inside fixture strings
-      // (same reason R8 parses module records instead of scanning lines);
+      // (which is why this reads module records instead of scanning lines);
       // src/ and test/ suites stay covered — they import packages for real.
       if (root === 'scripts' && file.endsWith('.test.ts')) continue;
       const source = fs.readFileSync(path.join(repoRoot, file), 'utf8');
-      violations.push(
-        ...checkRootSites(specifierSites(file, source), packages, rootDependencies, zeroDepClosure),
-      );
+      violations.push(...checkRootSites(specifierSites(file, source), packages, rootDependencies));
     }
   }
   return violations;

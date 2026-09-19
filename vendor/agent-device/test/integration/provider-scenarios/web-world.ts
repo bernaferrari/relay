@@ -1,5 +1,6 @@
 import fs from 'node:fs';
-import type { WebProvider } from '../../../src/platforms/web/provider.ts';
+import { likelyPlayableWebmContainer } from '../../../src/__tests__/test-utils/video-fixtures.ts';
+import type { WebProvider } from '@agent-device/platform-web';
 import type { RawSnapshotNode } from '@agent-device/kernel/snapshot';
 import { validPng } from './assertions.ts';
 import { PROVIDER_SCENARIO_WEB } from './fixtures.ts';
@@ -42,7 +43,7 @@ export async function createWebDesktopWorld(): Promise<WebDesktopWorld> {
     },
     startRecording: async (outPath) => {
       semanticCalls.push(['web', 'recordStart', outPath]);
-      fs.writeFileSync(outPath, 'webm');
+      fs.writeFileSync(outPath, likelyPlayableWebmContainer());
     },
     stopRecording: async () => {
       semanticCalls.push(['web', 'recordStop']);
@@ -82,6 +83,12 @@ export async function createWebDesktopWorld(): Promise<WebDesktopWorld> {
         state.statusText = 'Submitted';
       }
     },
+    hover: async (x, y) => {
+      semanticCalls.push(['web', 'hover', String(x), String(y)]);
+    },
+    hoverRef: async (ref) => {
+      semanticCalls.push(['web', 'hoverRef', ref]);
+    },
     fill: async (x, y, text, options) => {
       semanticCalls.push([
         'web',
@@ -118,6 +125,7 @@ export async function createWebDesktopWorld(): Promise<WebDesktopWorld> {
   };
 
   const daemon = await createProviderScenarioHarness({
+    platformRuntime: true,
     webProvider: () => provider,
     deviceInventoryProvider: async () => [PROVIDER_SCENARIO_WEB],
   });

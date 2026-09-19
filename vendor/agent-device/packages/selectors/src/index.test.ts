@@ -1,14 +1,18 @@
 import assert from 'node:assert/strict';
+import { resolveSelectorChainWithPolicy } from './engine.ts';
 import { test } from 'vitest';
 import type { SnapshotNode } from '@agent-device/kernel/snapshot';
+import * as selectorsFacade from './index.ts';
+import * as selectorsEngine from './engine.ts';
 import {
   buildSelectorCandidates,
   readReplaySelectorDisplayValue,
   readSelectorExpression,
   resolveRecordedTarget,
   resolveReplaySuggestionCandidate,
-  resolveSelectorChain,
+  SELECTOR_RESOLUTION_POLICIES,
 } from './index.ts';
+import { loginFormNodes } from './internal/__tests__/login-form-nodes.ts';
 
 const saveNode: SnapshotNode = {
   ref: 'e1',
@@ -124,6 +128,50 @@ test('recorded-target resolution keeps the matched domain from the alternative t
   assert.equal(permissive.matchCount, 3);
 });
 
+test('recorded-target resolution preserves resolved and ambiguous match domains', () => {
+  const nodes: SnapshotNode[] = [
+    { ...saveNode, ref: 'e1', label: 'Decoy', identifier: undefined, depth: 1 },
+    { ...saveNode, ref: 'e2', label: 'Decoy', identifier: undefined, depth: 1 },
+    { ...saveNode, ref: 'e4', label: 'Save', identifier: 'save', depth: 1 },
+  ];
+
+  const resolved = resolveRecordedTarget('id="missing" || id="save"', nodes, policy());
+  assert.equal(resolved.kind, 'resolved');
+  if (resolved.kind !== 'resolved') throw new Error('unreachable');
+  assert.equal(resolved.winner.ref, 'e4');
+
+  const unresolved = resolveRecordedTarget('label="Decoy"', nodes, policy());
+  assert.equal(unresolved.kind, 'unresolved');
+  if (unresolved.kind !== 'unresolved') throw new Error('unreachable');
+  assert.equal(unresolved.reason, 'ambiguous');
+  assert.deepEqual(
+    unresolved.matchedNodes.map((node) => node.ref),
+    ['e1', 'e2'],
+  );
+});
+
+test('policy resolution preserves first matched domain when a later alternative resolves (#1970)', () => {
+  for (const row of [
+    SELECTOR_RESOLUTION_POLICIES.readText,
+    SELECTOR_RESOLUTION_POLICIES.readUnique,
+  ]) {
+    const outcome = resolveSelectorChainWithPolicy(
+      loginFormNodes,
+      'label="Continue" || id=auth_continue',
+      row,
+      { platform: 'ios' },
+    );
+    assert.equal(outcome.kind, 'resolved');
+    if (outcome.kind !== 'resolved') throw new Error('unreachable');
+    assert.equal(outcome.resolution.selectorIndex, 1);
+    assert.equal(outcome.resolution.node.ref, 'e2');
+    assert.deepEqual(
+      outcome.matchedNodes.map((node) => node.ref),
+      ['e2', 'e3'],
+    );
+  }
+});
+
 test('recorded-target resolution applies requireRect to both winner and domain', () => {
   const rectless: SnapshotNode = { ...saveNode, label: 'Ghost row', rect: undefined };
   const required = resolveRecordedTarget('label="Ghost row"', [rectless], policy());
@@ -177,11 +225,58 @@ test('replay suggestion resolution and display values stay string-only at the fa
   assert.equal(readReplaySelectorDisplayValue('label="Save"'), 'Save');
   assert.equal(readReplaySelectorDisplayValue('label="Save" || label="Draft"'), undefined);
 
-  const resolved = resolveSelectorChain([saveNode], 'id="save"', {
-    platform: 'ios',
-    requireRect: true,
-    requireUnique: true,
-  });
-  assert.equal(resolved?.selector, 'id="save"');
-  assert.equal(typeof resolved?.selector, 'string');
+  const resolved = resolveSelectorChainWithPolicy(
+    [saveNode],
+    'id="save"',
+    SELECTOR_RESOLUTION_POLICIES.act,
+    { platform: 'ios' },
+  );
+  assert.equal(resolved.kind, 'resolved');
+  assert.equal(resolved.kind === 'resolved' ? resolved.resolution.selector : null, 'id="save"');
+});
+
+/**
+ * #1630 made `resolveSelectorChainWithPolicy` the façade's ONLY resolution
+ * entry: a native caller states its ambiguity contract by naming a policy row
+ * because there is no knob-taking or count-only resolver here to state it
+ * inline with instead.
+ *
+ * This guard is structural on purpose. Restoring either removed lookup is
+ * BEHAVIOURALLY invisible — `findSelectorChainMatch` is equivalent to the
+ * `readAny` row it was migrated to, which is exactly why that migration
+ * preserved semantics — so no fixture-tree assertion can catch a revert
+ * (#1715 review). The absence of the symbol is the only observable.
+ */
+test('the façade exposes no resolver at all, and the engine door exposes only the two entries', () => {
+  const exported = Object.keys(selectorsFacade);
+  // #1656 moved both engine entries behind `./engine`, which R19 reserves for
+  // the selector-pipeline owner: a route that could reach a resolver from the
+  // root façade would get an ambiguity contract while skipping every
+  // structural stage its policy row declares.
+  assert.ok(
+    !exported.includes('resolveSelectorChainWithPolicy'),
+    'resolution belongs to the engine subpath, behind the pipeline owner',
+  );
+  assert.ok(
+    !exported.includes('listSelectorChainMatches'),
+    'enumeration belongs to the engine subpath, behind the pipeline owner',
+  );
+  assert.deepEqual(Object.keys(selectorsEngine).sort(), [
+    'listSelectorChainMatches',
+    'resolveSelectorChainWithPolicy',
+  ]);
+
+  // Unchanged since #1630, on both surfaces: neither door hands out a knob
+  // resolver a call site could rebuild its contract from.
+  for (const [surface, names] of [
+    ['facade', exported],
+    ['engine', Object.keys(selectorsEngine)],
+  ] as const) {
+    assert.ok(!names.includes('resolveSelectorChain'), `${surface}: knob-taking resolver`);
+    assert.ok(
+      !names.includes('findSelectorChainMatch'),
+      `${surface}: count-only existence lookup; \`is exists\` names the readAny row`,
+    );
+    assert.ok(!names.includes('selectorResolutionKnobs'), `${surface}: knob derivation`);
+  }
 });

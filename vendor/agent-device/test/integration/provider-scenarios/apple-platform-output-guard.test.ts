@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'vitest';
-import type { AppleRunnerProvider } from '../../../src/platforms/apple/core/runner/runner-provider.ts';
-import type { RecordingProvider } from '../../../src/daemon/recording-provider.ts';
-import { PUBLIC_COMMANDS } from '../../../src/command-catalog.ts';
+import type { AppleRunnerProvider } from '@agent-device/platform-apple/runner';
+import type { AppleSimulatorScreenRecordingTransport } from '../../../src/platform-runtime-screen-recording-apple-transport.ts';
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
 import { PROVIDER_SCENARIO_IOS_SIMULATOR, PROVIDER_SCENARIO_MACOS } from './fixtures.ts';
 import {
   createProviderIosSimulatorRecordingProcess,
@@ -113,6 +113,8 @@ const DRIVEN_COMMANDS: Record<string, DriveSpec> = {
   [PUBLIC_COMMANDS.click]: () => one(['10', '10']),
   [PUBLIC_COMMANDS.fill]: () => one(['label=General', 'hello']),
   [PUBLIC_COMMANDS.longPress]: () => one(['10', '10']),
+  // Web-only: reaches the capability refusal on Apple; the error must not leak either.
+  [PUBLIC_COMMANDS.hover]: () => one(['10', '10']),
   [PUBLIC_COMMANDS.press]: () => one(['10', '10']),
   [PUBLIC_COMMANDS.type]: () => one(['hello']),
   [PUBLIC_COMMANDS.back]: () => one(),
@@ -233,6 +235,7 @@ function richNodes() {
 
 function permissiveRunner(): AppleRunnerProvider {
   return {
+    hasLiveSession: () => true,
     runCommand: async (_device, command) => {
       switch (command.command) {
         case 'uptime':
@@ -331,10 +334,11 @@ function permissiveTool(world: World) {
   });
 }
 
-function permissiveRecording(): RecordingProvider {
+function permissiveRecording(): AppleSimulatorScreenRecordingTransport {
   return {
-    startIosSimulatorRecording: ({ outPath }) =>
-      createProviderIosSimulatorRecordingProcess(outPath),
+    available: true,
+    mode: 'transport-composed',
+    start: ({ outputPath }) => createProviderIosSimulatorRecordingProcess(outputPath),
   };
 }
 
@@ -343,7 +347,7 @@ async function createWorldDaemon(world: World): Promise<ProviderScenarioHarness>
   return await createProviderScenarioHarness({
     appleRunnerProvider: () => permissiveRunner(),
     appleToolProvider: () => permissiveTool(world).provider,
-    recordingProvider: () => permissiveRecording(),
+    appleSimulatorScreenRecordingTransport: () => permissiveRecording(),
     deviceInventoryProvider: async () => [device],
   });
 }

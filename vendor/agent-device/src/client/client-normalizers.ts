@@ -7,6 +7,7 @@ import type {
   InternalRequestOptions,
   MaterializationReleaseResult,
   StartupPerfSample,
+  DeviceSelectionMetadata,
 } from '@agent-device/contracts/client';
 import type { TargetShutdownResult } from '@agent-device/contracts/device';
 import {
@@ -16,10 +17,15 @@ import {
   isSerialAddressablePlatform,
   type AppleOS,
 } from '@agent-device/kernel/device';
-import { AppError, type NormalizedError } from '@agent-device/kernel/errors';
+import { isSessionRuntimePlatform, type SessionRuntimeHints } from '@agent-device/kernel/contracts';
+import { AppError, type DaemonError } from '@agent-device/kernel/errors';
+import { sanitizeErrorCause } from '@agent-device/kernel/redaction';
 import type { SnapshotNode } from '@agent-device/kernel/snapshot';
-import { leaseScopeFromOptions, leaseScopeToRequestMeta } from '../core/lease-scope.ts';
-import type { DaemonRequest, SessionRuntimeHints } from '../daemon/types.ts';
+import {
+  leaseScopeFromOptions,
+  leaseScopeToRequestMeta,
+} from '@agent-device/contracts/lease-scope';
+import type { DaemonRequest } from '../daemon/daemon-request.ts';
 import {
   asRecord,
   isRecord,
@@ -31,10 +37,10 @@ import {
   readRequiredPlatform,
   readRequiredString,
   stripUndefined,
-} from '../utils/parsing.ts';
-import { buildAppIdentifiers, buildDeviceIdentifiers } from '../utils/result-serialization.ts';
+} from '@agent-device/kernel/record';
+import { buildAppIdentifiers, buildDeviceIdentifiers } from './client-identifiers.ts';
 
-export { readOptionalString, readRequiredString } from '../utils/parsing.ts';
+export { readOptionalString, readRequiredString } from '@agent-device/kernel/record';
 
 const DEFAULT_SESSION_NAME = 'default';
 
@@ -106,8 +112,19 @@ export function normalizeDevice(value: unknown): AgentDeviceDevice {
     // a non-Apple record with a stray appleOs value is not preserved.
     ...(isApplePlatform(platform) && appleOs ? { appleOs } : {}),
     identifiers: buildDeviceIdentifiers(platform, id, name),
+    ...readClaimedBy(record),
     ...buildClientDevicePlatformFields(platform, id),
   };
+}
+
+function readClaimedBy(record: Record<string, unknown>): Pick<AgentDeviceDevice, 'claimedBy'> {
+  const value = record.claimedBy;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const claimedBy = value as Record<string, unknown>;
+  const session = claimedBy.session;
+  const workspace = claimedBy.workspace;
+  if (typeof session !== 'string' || typeof workspace !== 'string') return {};
+  return { claimedBy: { session, workspace } };
 }
 
 export function normalizeSession(value: unknown): AgentDeviceSession {
@@ -120,6 +137,7 @@ export function normalizeSession(value: unknown): AgentDeviceSession {
   };
   return {
     name,
+    address: readOptionalString(record, 'address'),
     createdAt: readRequiredNumber(record, 'createdAt'),
     sessionStateDir: readOptionalString(record, 'sessionStateDir'),
     runnerLogPath: readOptionalString(record, 'runnerLogPath'),
@@ -159,7 +177,7 @@ function buildClientDevicePlatformFields(
   platform: AgentDeviceDevice['platform'],
   id: string,
   options: { simulatorSetPath?: string | null; serial?: string } = {},
-): Pick<AgentDeviceSessionDevice, 'ios' | 'android' | 'vega'> {
+): Pick<AgentDeviceSessionDevice, 'ios' | 'android' | 'harmonyos' | 'vega'> {
   if (platform === 'ios') {
     return {
       ios: {
@@ -172,7 +190,9 @@ function buildClientDevicePlatformFields(
   }
   if (!isSerialAddressablePlatform(platform)) return {};
   const serial = options.serial ?? id;
-  return platform === 'android' ? { android: { serial } } : { vega: { serial } };
+  if (platform === 'android') return { android: { serial } };
+  if (platform === 'harmonyos') return { harmonyos: { serial } };
+  return { vega: { serial } };
 }
 
 export function normalizeRuntimeHints(value: unknown): SessionRuntimeHints | undefined {
@@ -183,7 +203,7 @@ export function normalizeRuntimeHints(value: unknown): SessionRuntimeHints | und
   const bundleUrl = readOptionalString(value, 'bundleUrl');
   const launchUrl = readOptionalString(value, 'launchUrl');
   return {
-    platform: platform === 'ios' || platform === 'android' ? platform : undefined,
+    platform: isSessionRuntimePlatform(platform) ? platform : undefined,
     metroHost,
     metroPort,
     bundleUrl,
@@ -225,6 +245,43 @@ export function normalizeOpenDevice(
   };
 }
 
+const DEVICE_SELECTION_REASONS: readonly DeviceSelectionMetadata['reason'][] = [
+  'explicit-selector',
+  'existing-session',
+  'single-booted-local',
+  'single-bootable-local',
+  'single-app-installed-local',
+  'preferred-local',
+  'single-provider-device',
+];
+
+const DEVICE_SELECTION_SOURCES: readonly DeviceSelectionMetadata['source'][] = [
+  'session',
+  'local',
+  'provider',
+];
+
+export function normalizeDeviceSelection(value: unknown): DeviceSelectionMetadata | undefined {
+  if (!isRecord(value)) return undefined;
+  const { reason, source, candidateCount, bootOccurred } = value;
+  if (
+    !DEVICE_SELECTION_REASONS.includes(reason as DeviceSelectionMetadata['reason']) ||
+    !DEVICE_SELECTION_SOURCES.includes(source as DeviceSelectionMetadata['source']) ||
+    typeof candidateCount !== 'number' ||
+    !Number.isInteger(candidateCount) ||
+    candidateCount < 0 ||
+    typeof bootOccurred !== 'boolean'
+  ) {
+    return undefined;
+  }
+  return {
+    reason: reason as DeviceSelectionMetadata['reason'],
+    source: source as DeviceSelectionMetadata['source'],
+    candidateCount,
+    bootOccurred,
+  };
+}
+
 export function normalizeStartupSample(value: unknown): StartupPerfSample | undefined {
   if (!isRecord(value)) return undefined;
   if (
@@ -253,7 +310,7 @@ export function normalizeTargetShutdownResult(value: unknown): TargetShutdownRes
   ) {
     return undefined;
   }
-  const error = normalizeTargetShutdownError(value.error);
+  const error = normalizeDaemonError(value.error);
   return {
     success: value.success,
     exitCode: value.exitCode,
@@ -263,16 +320,50 @@ export function normalizeTargetShutdownResult(value: unknown): TargetShutdownRes
   };
 }
 
-function normalizeTargetShutdownError(value: unknown): NormalizedError | undefined {
+/**
+ * The one normalizer for daemon errors riding inside otherwise-ok results
+ * (target-shutdown reports, the open --foreground initial-snapshot failure).
+ * Preserves the FULL shape — hint/details/diagnosticId/logPath plus the
+ * additive retriable/supportedOn signals — never a code+message truncation,
+ * so recovery guidance survives to Node/CLI JSON callers.
+ */
+const DAEMON_ERROR_STRING_FIELDS = ['hint', 'diagnosticId', 'logPath', 'supportedOn'] as const;
+
+function normalizeDaemonError(value: unknown): DaemonError | undefined {
   if (!isRecord(value)) return undefined;
   if (typeof value.code !== 'string' || typeof value.message !== 'string') return undefined;
+  const error: DaemonError = { code: value.code, message: value.message };
+  Object.assign(error, normalizeDaemonErrorCause(value.cause));
+  for (const field of DAEMON_ERROR_STRING_FIELDS) {
+    const candidate = value[field];
+    if (typeof candidate === 'string') error[field] = candidate;
+  }
+  if (isRecord(value.details)) error.details = value.details;
+  if (typeof value.retriable === 'boolean') error.retriable = value.retriable;
+  return error;
+}
+
+function normalizeDaemonErrorCause(value: unknown): Pick<DaemonError, 'cause'> | undefined {
+  const cause = sanitizeErrorCause(value);
+  return cause ? { cause } : undefined;
+}
+
+/**
+ * open --foreground composition extras on an ok open response: the initial
+ * snapshot when the foreground-attach capture succeeded, or the FULL capture
+ * error (never a code+message truncation) when open succeeded and the
+ * composed snapshot did not — the session is open and usable either way.
+ */
+export function normalizeOpenForegroundComposition(data: Record<string, unknown>): {
+  snapshot?: Record<string, unknown>;
+  initialSnapshotError?: DaemonError;
+} {
+  const initialSnapshotError = normalizeDaemonError(data.initialSnapshotError);
   return {
-    code: value.code,
-    message: value.message,
-    ...(typeof value.hint === 'string' ? { hint: value.hint } : {}),
-    ...(typeof value.diagnosticId === 'string' ? { diagnosticId: value.diagnosticId } : {}),
-    ...(typeof value.logPath === 'string' ? { logPath: value.logPath } : {}),
-    ...(isRecord(value.details) ? { details: value.details } : {}),
+    ...(data.snapshot && typeof data.snapshot === 'object'
+      ? { snapshot: data.snapshot as Record<string, unknown> }
+      : {}),
+    ...(initialSnapshotError ? { initialSnapshotError } : {}),
   };
 }
 

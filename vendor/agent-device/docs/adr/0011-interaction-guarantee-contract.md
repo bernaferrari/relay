@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (implemented through Layer 3, 2026-07-04: #1080, #1082–#1086, #1091, #1092)
+Accepted (implemented through Layer 3, 2026-07-04: #1080, #1082–#1086, #1091, #1092; ambiguity contract amended 2026-08-07)
 
 ## Context
 
@@ -15,6 +15,7 @@ trade-offs independently:
 | --- | --- | --- |
 | `runtime-selector` | daemon tree capture → `resolveSelectorChain` → guards → coordinate tap | full semantics |
 | `runtime-ref` | session snapshot → ref lookup → guards → coordinate tap | full semantics |
+| `target-drag` | independently resolve source + destination → guards → one pointer plan | dual-endpoint drag semantics |
 | `direct-ios-selector` | selector sent to the XCTest runner, which queries and taps natively | saves a full snapshot round trip |
 | `native-ref` | `backend.tapTarget`/`fillTarget` for `click @ref` / `fill @ref` | saves resolution round trips |
 | `coordinate` | raw x/y tap | escape hatch; semantics intentionally minimal |
@@ -63,7 +64,7 @@ every cell to be classified:
 
 ```ts
 export const INTERACTION_GUARANTEES = [
-  'disambiguation',        // visible > deepest > smallest; ties fail
+  'disambiguation',        // collapse one equivalent wrapper chain; distinct subtrees fail with candidates
   'occlusion',             // covered targets are refused
   'offscreen',             // tap point (rect center) must lie in the root viewport
   'nonHittable',           // promotion + targetHittable/hint annotation
@@ -238,6 +239,57 @@ the daemon there destroyed every healthy app session the daemon owned.
   press guarantees"), which matters for small-model agents that only read the
   contract, never the code.
 
+### 2026-08-07 amendment: mutating ambiguity fails fast
+
+Element-14 realized the matrix's previously owned success-path gap: four exact
+`Team Standup` matches in distinct accessibility subtrees reached ordinary
+runtime selector resolution, whose visible/depth/area ranking silently chose a
+different semantic target. Mutating selectors no longer use geometry to choose
+among distinct subtrees.
+
+The replacement contract is structural. Multiple matches collapse only when
+all matches form one ancestor–descendant chain and every member resolves to the
+same actionable node. Otherwise the mutation fails with `AMBIGUOUS_MATCH`, a
+bounded list of snapshot candidate lines, and a partial ref frame generation so
+the caller can retry one listed candidate immediately. On the direct XCTest path
+this applies to mutating dispatches only: they count all raw exact matches before
+hittability can select a winner and delegate multiple matches to the runtime
+classifier. Reads (`querySelector`, and so `get`/`is`/`wait`) keep the prior rule
+— prefer the single hittable match, ambiguous only when hittable matches compete
+— because a read has no side effect to guard and failing it closed would turn a
+decorative duplicate into an error. Maestro's explicit expected-point /
+non-hittable compatibility path remains intentionally separate.
+
+### 2026-09-11 amendment: one collapse for one control, at both doors
+
+Two clauses of the amendment above went stale as the read paths moved, and the
+structural rule never reached the read door.
+
+- `querySelector` no longer backs `get`/`is`/`wait`. Those reads resolve against a
+  capture, through the `readUnique`/`readAny`/`readText` rows of
+  `packages/selectors/src/selector-pipeline.ts`, so the runner's hittable-preference
+  rule governs only the direct XCTest paths that still query it: the direct-iOS
+  touch fast path and the off-screen target probe.
+- A control reported through its own accessibility wrapper answers a selector
+  twice. A regular iOS snapshot omits unverified hittability, so the ladder that
+  relates a wrapper to its control cannot fire, and #2482 collapsed that chain for
+  mutating resolution only: `is visible` and `get attrs` refused the same screen
+  as ambiguous while `press` tapped it. The collapse now sits beside the
+  classification that asks for it (`resolveUnverifiedWrapperControl`) and applies
+  where a refusal was the answer: the uniqueness rows — `is <predicate>`,
+  `get attrs`, `screenshot --crop-on` — resolve the control instead of reporting
+  no match. A row that resolves before any refusal is untouched by it, and a
+  wrapper chain always resolves before one: depth separates a wrapper from its
+  control, so `get text` ranks onto the control and `wait`/`is exists` answer from
+  the document-order head without asking which element was meant. A candidate set
+  the rule does not recognize as one control — a cell and the button inside it, or
+  matches in distinct subtrees — still refuses.
+- Replay verifies a recorded target by resolving its recorded selector again under
+  the same row's refusal rules, so the screen dispatch had resolved read as an
+  identity mismatch on the step's first replay. Verification names the collapsed
+  control too, which is the node dispatch acted on and the node the recorded
+  identity carries.
+
 ### Synthesized iOS gesture policy
 
 Synthesized iOS gestures (`scroll`, synthesized coordinate `tap`, synthesized
@@ -265,6 +317,10 @@ dimensions as their only frame source; cheaper frame sources such as
 `app.frame`, windows, accessibility frames, or native screen bounds are
 intentionally excluded because they can diverge from full-screen screenshot
 coordinates on affected simulators.
+
+Target-authored `gesture drag` is classified as the `target-drag` path above because it resolves two
+elements and therefore inherits the element guarantees and ADR 0012 identity requirements for both.
+Coordinate-authored drag remains outside this matrix.
 
 Two-contact pan/pinch/rotate/transform planning is now owned by the typed
 gesture-plan contract in [ADR 0013](0013-unified-gesture-plans.md). It remains a
@@ -300,3 +356,24 @@ Each step lands green and independently useful:
 - **More integration tests without the registry**: this is the status quo
   plus effort. Without the matrix as code, nothing forces a new path to
   acquire the existing suite, which is exactly how this week's bugs happened.
+
+### Optional observation before an iOS coordinate tap
+
+A coordinate tap must not depend on a preceding XCTest snapshot failure. Its
+optional text-input lookup may establish a concrete identity for a later bare
+`type`; an absent or unavailable lookup establishes no typing witness. A runner
+snapshot penalty can skip this work, but is only a performance optimization.
+
+The lookup owns a thread-bound issue scope in the runner recorder and returns a
+typed result. Any recorded issue, including one otherwise handled by AX suppression,
+discards partial candidates. The scope excludes gesture dispatch and required
+text-entry reads. Those failures retain the existing mutation-outcome rules.
+
+The iOS PR lane exercises a fresh runner with an unavailable probe, a suppressed
+AX issue with a matching candidate, healthy coordinate tap followed by typing,
+and failures outside the optional observation scope. These tests must not seed a
+snapshot penalty to make the first tap safe.
+
+The recorder consumes optional-read issues before forwarding to XCTest. XCTest's
+expected-failure API must not own this scope: in a long-lived command test it can
+complete the enclosing test even when the command response succeeds.

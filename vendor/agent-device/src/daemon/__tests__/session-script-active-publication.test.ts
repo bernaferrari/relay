@@ -1,6 +1,6 @@
+import type { SessionAction } from '@agent-device/contracts/session';
 import { describe, expect, test } from 'vitest';
 import type { TargetAnnotationV1 } from '@agent-device/contracts/replay';
-import type { SessionAction } from '../types.ts';
 import {
   assertActivePublicationPortability,
   validateActivePublicationActions,
@@ -53,6 +53,7 @@ describe('ADR 0016 active publication contract', () => {
     ['stable', ['stable']],
     ['ref', ['@e7']],
     ['text', ['text', 'Screen X']],
+    ['absent', ['absent', 'label="Screen X"']],
   ])('rejects %s wait as the destination guard', (_kind, waitPositionals) => {
     expect(() =>
       validateActivePublicationActions([action('open', ['Demo']), action('wait', waitPositionals)]),
@@ -134,6 +135,29 @@ describe('ADR 0016 active publication contract', () => {
         action('find', ['text', '@handle', 'get', 'text']),
       ]),
     ).not.toThrow();
+  });
+
+  test('requires portable selectors and targets-v1 evidence for both drag endpoints', () => {
+    const drag = action('gesture', ['drag', 'id="source"', 'id="destination"', '800', '500', '0']);
+    expect(() => assertActivePublicationPortability([drag])).toThrow(
+      /recording-time target identity evidence is missing/,
+    );
+    expect(() =>
+      assertActivePublicationPortability([
+        {
+          ...drag,
+          targetEvidences: {
+            source: { ...TARGET_EVIDENCE, id: 'source' },
+            destination: { ...TARGET_EVIDENCE, id: 'destination' },
+          },
+        },
+      ]),
+    ).not.toThrow();
+    expect(() =>
+      assertActivePublicationPortability([
+        { ...drag, positionals: ['drag', '@e2', 'id="destination"'] },
+      ]),
+    ).toThrow(/session-local ref/);
   });
 
   test('refuses mutating find actions until they record target identity evidence', () => {

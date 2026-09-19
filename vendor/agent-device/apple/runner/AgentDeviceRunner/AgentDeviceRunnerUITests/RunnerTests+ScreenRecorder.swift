@@ -7,7 +7,6 @@ extension RunnerTests {
   final class ScreenRecorder {
     private let outputPath: String
     private let fps: Int32?
-    private let maxSize: Int?
     private var effectiveFps: Int32 {
       max(1, fps ?? RunnerTests.defaultRecordingFps)
     }
@@ -26,10 +25,9 @@ extension RunnerTests {
     private var startedSession = false
     private var startError: Error?
 
-    init(outputPath: String, fps: Int32?, maxSize: Int?) {
+    init(outputPath: String, fps: Int32?) {
       self.outputPath = outputPath
       self.fps = fps
-      self.maxSize = maxSize
     }
 
     func start(captureFrame: @escaping () -> RunnerImage?) throws {
@@ -50,7 +48,7 @@ extension RunnerTests {
       while Date() < bootstrapDeadline {
         if let image = captureFrame(), let cgImage = runnerCGImage(from: image) {
           bootstrapImage = image
-          dimensions = scaledDimensions(width: cgImage.width, height: cgImage.height)
+          dimensions = CGSize(width: cgImage.width, height: cgImage.height)
           break
         }
         Thread.sleep(forTimeInterval: 0.05)
@@ -201,16 +199,9 @@ extension RunnerTests {
       }
       guard input.isReadyForMoreMediaData else { return }
       guard let pixelBuffer = makePixelBuffer(from: cgImage) else { return }
-      let nowUptime = ProcessInfo.processInfo.systemUptime
-      if recordingStartUptime == nil {
-        recordingStartUptime = nowUptime
-      }
-      let elapsed = max(0, nowUptime - (recordingStartUptime ?? nowUptime))
+      let candidateTimestampValue = timestampCandidateValue(for: ProcessInfo.processInfo.systemUptime)
+      let timestampValue = monotonicTimestampValue(for: candidateTimestampValue)
       let timescale = effectiveFps
-      var timestampValue = Int64((elapsed * Double(timescale)).rounded(.down))
-      if timestampValue <= lastTimestampValue {
-        timestampValue = lastTimestampValue + 1
-      }
       let timestamp = CMTime(value: timestampValue, timescale: timescale)
       if !adaptor.append(pixelBuffer, withPresentationTime: timestamp) {
         startError = writer.error ?? NSError(
@@ -221,6 +212,20 @@ extension RunnerTests {
         return
       }
       lastTimestampValue = timestampValue
+    }
+
+    private func timestampCandidateValue(for nowUptime: TimeInterval) -> Int64 {
+      let startUptime = recordingStartUptime ?? nowUptime
+      recordingStartUptime = startUptime
+      let elapsed = max(0, nowUptime - startUptime)
+      return Int64((elapsed * Double(effectiveFps)).rounded(.down))
+    }
+
+    private func monotonicTimestampValue(for candidateTimestampValue: Int64) -> Int64 {
+      if candidateTimestampValue <= lastTimestampValue {
+        return lastTimestampValue + 1
+      }
+      return candidateTimestampValue
     }
 
     private func shouldStop() -> Bool {
@@ -261,23 +266,18 @@ extension RunnerTests {
       return pixelBuffer
     }
 
-    private func scaledDimensions(width: Int, height: Int) -> CGSize {
-      guard let maxSize, maxSize > 0 else {
-        return CGSize(width: width, height: height)
-      }
-      let longest = max(width, height)
-      guard longest > maxSize else {
-        return CGSize(width: width, height: height)
-      }
-      let scale = Double(maxSize) / Double(longest)
-      return CGSize(
-        width: scaledEvenDimension(width, scale: scale),
-        height: scaledEvenDimension(height, scale: scale)
-      )
-    }
-
-    private func scaledEvenDimension(_ value: Int, scale: Double) -> Int {
-      max(2, Int((Double(value) * scale / 2.0).rounded()) * 2)
-    }
   }
 }
+
+#if AGENT_DEVICE_RUNNER_UNIT_TESTS
+extension RunnerTests.ScreenRecorder {
+  @discardableResult
+  func allocateTimestampForTesting(_ candidateTimestampValue: Int64) -> Int64 {
+    lock.lock()
+    defer { lock.unlock() }
+    let allocatedTimestamp = monotonicTimestampValue(for: candidateTimestampValue)
+    lastTimestampValue = allocatedTimestamp
+    return allocatedTimestamp
+  }
+}
+#endif

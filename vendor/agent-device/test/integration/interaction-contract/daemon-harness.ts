@@ -8,7 +8,7 @@ import {
 import {
   createAppleRunnerProviderFromTranscript,
   createRecordingAppleToolProvider,
-  simctlListDevicesHandler,
+  simctlDeviceLifecycleHandler,
 } from '../provider-scenarios/providers.ts';
 import {
   createProviderTranscript,
@@ -21,7 +21,7 @@ const CONTRACT_DEVICE_ID = PROVIDER_SCENARIO_IOS_SIMULATOR.id;
 
 /**
  * Provider-transcript harness for contract scenarios whose path involves the
- * iOS runner (direct-ios-selector, maestro-non-hittable-fallback) or that
+ * iOS runner (maestro-non-hittable-fallback) or that
  * prove daemon-level response construction. The transcript is the proof
  * vehicle: `assertComplete` after `run` guarantees exactly the scripted
  * runner conversation happened — a path that dispatched differently either
@@ -35,7 +35,7 @@ export async function withIosContractDaemon(
   const transcript = createProviderTranscript(entries);
   const appleRunnerProvider = createAppleRunnerProviderFromTranscript(transcript, 'ios.runner');
   const appleTool = createRecordingAppleToolProvider({
-    simctl: simctlListDevicesHandler('com.apple.CoreSimulator.SimRuntime.iOS-18-0', [
+    simctl: simctlDeviceLifecycleHandler('com.apple.CoreSimulator.SimRuntime.iOS-18-0', [
       { name: PROVIDER_SCENARIO_IOS_SIMULATOR.name, udid: CONTRACT_DEVICE_ID },
     ]),
   });
@@ -67,13 +67,6 @@ export function runnerSnapshotEntry(nodes: readonly unknown[]): ProviderScenario
     platform: 'apple',
     result: { nodes, truncated: false },
   };
-}
-
-// A UI that has gone quiet: every settle capture sees the same tree. How many
-// captures the loop spends reaching that verdict is wall-clock, so the count is
-// not the contract and is never scripted.
-export function quietRunnerSnapshotEntry(nodes: readonly unknown[]): ProviderScenarioProviderEntry {
-  return { ...runnerSnapshotEntry(nodes), repeat: true };
 }
 
 export function runnerTapEntry(
@@ -111,6 +104,26 @@ export function runnerLongPressEntry(
     deviceId: CONTRACT_DEVICE_ID,
     platform: 'apple',
     ...(request ? { request } : {}),
+    result,
+  };
+}
+
+export function runnerGestureViewportEntry(): ProviderScenarioProviderEntry {
+  return {
+    command: 'ios.runner.gestureViewport',
+    deviceId: CONTRACT_DEVICE_ID,
+    platform: 'apple',
+    result: { x: 0, y: 0, x2: 400, y2: 800 },
+  };
+}
+
+export function runnerGestureEntry(
+  result: Record<string, unknown> = {},
+): ProviderScenarioProviderEntry {
+  return {
+    command: 'ios.runner.gesture',
+    deviceId: CONTRACT_DEVICE_ID,
+    platform: 'apple',
     result,
   };
 }

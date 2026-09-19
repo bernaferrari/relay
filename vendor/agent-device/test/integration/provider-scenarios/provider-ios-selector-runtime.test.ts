@@ -7,11 +7,13 @@ import type {
   LeaseLifecycleProvider,
   ProviderDeviceRuntime,
 } from '@agent-device/contracts/device';
-import type { Interactor, SnapshotResult } from '@agent-device/contracts/interaction';
-import type { DaemonRequest } from '../../../src/daemon/types.ts';
+import type { Interactor, SnapshotResult } from '@agent-device/contracts/interactor-types';
+import { providerRuntimeOwner } from '@agent-device/contracts/platform-runtime';
+import type { DaemonRequest } from '../../../src/daemon/daemon-request.ts';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import { assertRpcOk } from './assertions.ts';
 import { createProviderScenarioHarness, withProviderScenarioResource } from './harness.ts';
+import { createProviderScenarioLifecycleModule } from './provider-device-runtime.fixtures.ts';
 
 const PROVIDER = 'fake-ios-provider';
 const DEVICE: DeviceInfo = {
@@ -96,9 +98,17 @@ async function createProviderIosSelectorWorld() {
   };
   const runtime = createProviderRuntime(calls);
   const providers = createProviderDeviceRuntimeRequestProviders([runtime]);
+  const providerModule = createProviderScenarioLifecycleModule(
+    runtime,
+    providerRuntimeOwner(PROVIDER, 'ios-selector-runtime'),
+  );
   const daemon = await createProviderScenarioHarness({
     ...providers,
-    deviceInventoryProvider: providers.deviceInventoryProvider!,
+    deviceInventorySource: providers.deviceInventorySource!,
+    platformRuntime: {
+      providerRuntimes: [runtime],
+      providerModules: [{ runtime, module: providerModule }],
+    },
   });
   return {
     daemon,
@@ -152,6 +162,7 @@ function createProviderInteractor(calls: {
         calls.snapshots += 1;
         return {
           backend: 'xctest',
+          producer: 'apple-runner',
           nodes: [
             {
               index: 0,
@@ -184,7 +195,9 @@ function createProviderInteractor(calls: {
         if (
           property === 'then' ||
           property === 'tapElementSelector' ||
-          property === 'fillElementSelector'
+          property === 'fillElementSelector' ||
+          property === 'pressPoint' ||
+          property === 'alternateClick'
         ) {
           return undefined;
         }

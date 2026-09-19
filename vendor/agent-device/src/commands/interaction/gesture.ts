@@ -1,10 +1,10 @@
-import { PUBLIC_COMMANDS } from '../../command-catalog.ts';
-import { compactRecord } from '../command-input.ts';
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
+import { compactRecord } from '../input-readers.ts';
 import type { CliFlags } from '@agent-device/contracts/command';
 import { commonInputFromFlags, request } from '../cli-grammar/common.ts';
 import type { CliReader, DaemonWriter } from '../cli-grammar/types.ts';
 import { readGestureInput } from './metadata.ts';
-import { gesturePayloadFromPositionals } from '@agent-device/contracts/interaction';
+import { gesturePayloadFromPositionals } from '@agent-device/contracts/gesture-normalization';
 
 export const gestureCliReaders = {
   gesture: gestureInputFromCli,

@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { applyRequestLockPolicy } from '../request-lock-policy.ts';
-import type { SessionState } from '../types.ts';
+import type { SessionRef, SessionState } from '../session-state.ts';
 
 const IOS_SESSION: SessionState = {
   name: 'qa-ios',
@@ -31,6 +31,11 @@ const ANDROID_SESSION: SessionState = {
     booted: true,
   },
 };
+
+/** Both fixtures are explicitly named, so each is stored under — and addressed by — its name. */
+function ref(session: SessionState): SessionRef {
+  return { address: session.name, session };
+}
 
 test('allows compatible fresh-session selectors under request lock policy', () => {
   const req = applyRequestLockPolicy({
@@ -75,7 +80,9 @@ test('allows open to choose a fresh-session target under request lock policy', (
   assert.equal(req.flags?.udid, 'SIM-001');
 });
 
-test('strips only fresh-session selector conflicts and restores lock platform', () => {
+test('strips only fresh-session SCOPE conflicts and restores lock platform', () => {
+  // `strip` resolves pool-narrowing selectors. Identity selectors (--udid/--serial/--device) are
+  // never stripped: see the identity table below.
   const req = applyRequestLockPolicy({
     token: 'token',
     session: 'qa-ios',
@@ -84,7 +91,7 @@ test('strips only fresh-session selector conflicts and restores lock platform', 
     flags: {
       platform: 'android',
       target: 'tv',
-      serial: 'emulator-5554',
+      androidDeviceAllowlist: 'emulator-5554',
     },
     meta: {
       lockPolicy: 'strip',
@@ -94,10 +101,10 @@ test('strips only fresh-session selector conflicts and restores lock platform', 
 
   assert.equal(req.flags?.platform, 'ios');
   assert.equal(req.flags?.target, 'tv');
-  assert.equal(req.flags?.serial, undefined);
+  assert.equal(req.flags?.androidDeviceAllowlist, undefined);
 });
 
-test('strips iOS selectors while preserving compatible macOS platform under Apple lock', () => {
+test('strips simulator-set scope while preserving compatible macOS platform under Apple lock', () => {
   const req = applyRequestLockPolicy({
     token: 'token',
     session: 'qa-macos',
@@ -105,7 +112,6 @@ test('strips iOS selectors while preserving compatible macOS platform under Appl
     positionals: [],
     flags: {
       platform: 'macos',
-      udid: 'SIM-001',
       iosSimulatorDeviceSet: '/tmp/tenant-a/set',
     },
     meta: {
@@ -115,7 +121,6 @@ test('strips iOS selectors while preserving compatible macOS platform under Appl
   });
 
   assert.equal(req.flags?.platform, 'macos');
-  assert.equal(req.flags?.udid, undefined);
   assert.equal(req.flags?.iosSimulatorDeviceSet, undefined);
 });
 
@@ -135,9 +140,9 @@ test('rejects existing-session selector conflicts under request lock policy', ()
             lockPolicy: 'reject',
           },
         },
-        IOS_SESSION,
+        ref(IOS_SESSION),
       ),
-    /--serial=emulator-5554/i,
+    /Session "qa-ios" is already bound to apple device "iPhone 16" \(SIM-001\), but snapshot selected --serial=emulator-5554/i,
   );
 });
 
@@ -194,7 +199,7 @@ test('allows matching redundant selectors for existing sessions', () => {
         lockPolicy: 'reject',
       },
     },
-    IOS_SESSION,
+    ref(IOS_SESSION),
   );
 
   assert.equal(req.flags?.udid, 'SIM-001');
@@ -217,7 +222,7 @@ test('rejects mismatching udid selectors for existing sessions', () => {
             lockPolicy: 'reject',
           },
         },
-        IOS_SESSION,
+        ref(IOS_SESSION),
       ),
     /--udid=SIM-999/i,
   );
@@ -238,7 +243,7 @@ test('allows matching serial selectors for existing android sessions', () => {
         lockPolicy: 'reject',
       },
     },
-    ANDROID_SESSION,
+    ref(ANDROID_SESSION),
   );
 
   assert.equal(req.flags?.serial, 'emulator-5554');
@@ -261,7 +266,7 @@ test('rejects mismatching device selectors for existing android sessions', () =>
             lockPolicy: 'reject',
           },
         },
-        ANDROID_SESSION,
+        ref(ANDROID_SESSION),
       ),
     /--device=Pixel 8/i,
   );
@@ -283,13 +288,13 @@ test('rejects mismatching serial selectors for existing android sessions', () =>
             lockPolicy: 'reject',
           },
         },
-        ANDROID_SESSION,
+        ref(ANDROID_SESSION),
       ),
     /--serial=emulator-9999/i,
   );
 });
 
-test('strips only conflicting selectors for existing sessions', () => {
+test('strips only conflicting scope selectors for existing sessions, keeping matching identity', () => {
   const req = applyRequestLockPolicy(
     {
       token: 'token',
@@ -300,17 +305,18 @@ test('strips only conflicting selectors for existing sessions', () => {
         platform: 'ios',
         target: 'tv',
         device: 'iPhone 16',
-        serial: 'emulator-5554',
+        androidDeviceAllowlist: 'emulator-5554',
       },
       meta: {
         lockPolicy: 'strip',
       },
     },
-    IOS_SESSION,
+    ref(IOS_SESSION),
   );
 
   assert.equal(req.flags?.platform, 'ios');
   assert.equal(req.flags?.target, undefined);
+  // --device names the bound device, so it never conflicted and survives.
   assert.equal(req.flags?.device, 'iPhone 16');
-  assert.equal(req.flags?.serial, undefined);
+  assert.equal(req.flags?.androidDeviceAllowlist, undefined);
 });

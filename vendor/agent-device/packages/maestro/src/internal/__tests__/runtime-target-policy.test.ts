@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 import { matchesMaestroTypedSelector } from '../runtime-target-policy.ts';
+import type { MaestroSelector } from '../program-ir.ts';
 import { makeSnapshot } from './runtime-target-fixtures.ts';
 
 test('typed Maestro text selectors match visible text and state without expression strings', () => {
@@ -19,7 +20,7 @@ test('typed Maestro text selectors match visible text and state without expressi
   expect(matchesMaestroTypedSelector(node, { text: 'Subtotal', selected: false })).toBe(false);
 });
 
-test('typed Maestro id and label selectors keep their primary field semantics', () => {
+test('typed Maestro id and text selectors keep their primary field semantics', () => {
   const node = makeSnapshot([
     {
       index: 1,
@@ -30,8 +31,8 @@ test('typed Maestro id and label selectors keep their primary field semantics', 
   ]).nodes[0]!;
 
   expect(matchesMaestroTypedSelector(node, { id: 'checkout-submit' })).toBe(true);
-  expect(matchesMaestroTypedSelector(node, { label: 'Submit' })).toBe(false);
-  expect(matchesMaestroTypedSelector(node, { label: '^Submit.*' })).toBe(true);
+  expect(matchesMaestroTypedSelector(node, { text: 'Submit' })).toBe(false);
+  expect(matchesMaestroTypedSelector(node, { text: '^Submit.*' })).toBe(true);
 });
 
 test('intersects every field in a compound Maestro selector', () => {
@@ -49,7 +50,6 @@ test('intersects every field in a compound Maestro selector', () => {
     matchesMaestroTypedSelector(node, {
       id: 'checkout-submit',
       text: 'Submit order',
-      label: '^Submit.*',
       enabled: true,
     }),
   ).toBe(true);
@@ -70,4 +70,15 @@ test('treats selector values as full Maestro regex without punctuation inference
   expect(matchesMaestroTypedSelector(node, { text: 'item \\d{2} \\[ready' })).toBe(true);
   expect(matchesMaestroTypedSelector(node, { text: 'Item 2' })).toBe(false);
   expect(matchesMaestroTypedSelector(node, { text: 'Item 22 [ready' })).toBe(true);
+});
+
+test('the node-only matcher rejects full selectors at the type boundary', () => {
+  const node = makeSnapshot([{ index: 1, label: 'Save' }]).nodes[0]!;
+  const recursiveSelector: MaestroSelector = { text: 'Save', childOf: { id: 'card' } };
+
+  void (() => {
+    // @ts-expect-error Recursive selectors require snapshot-aware resolution.
+    matchesMaestroTypedSelector(node, recursiveSelector);
+  });
+  expect(node.label).toBe('Save');
 });

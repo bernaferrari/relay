@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 
-import { PUBLIC_COMMANDS } from '../../../src/command-catalog.ts';
-import { parseRect } from '../../../src/utils/parsing.ts';
+import { PUBLIC_COMMANDS } from '@agent-device/command-registry/catalog';
+import { parseRect } from '@agent-device/kernel/record';
 import type { CliJsonResult } from '../cli-json.ts';
 import {
   assertElementText,
@@ -14,7 +14,7 @@ import {
 import { type LiveContext, runStep, verifyBehavior, verifyCommand } from './live-harness.ts';
 
 const C = PUBLIC_COMMANDS;
-const ANDROID_TEST_IME_PACKAGE = 'com.callstack.agentdevice.imehelper';
+export const ANDROID_TEST_IME_PACKAGE = 'com.callstack.agentdevice.imehelper';
 const ANDROID_TEST_IME_SERVICE = `${ANDROID_TEST_IME_PACKAGE}/.TestInputMethodService`;
 const KEYBOARD_VISIBILITY_TIMEOUT_MS = 10_000;
 const KEYBOARD_VISIBILITY_POLL_MS = 250;

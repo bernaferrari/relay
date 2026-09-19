@@ -4,6 +4,12 @@
 
 Accepted
 
+> **Amended by [ADR 0019](0019-request-bound-platform-runtime.md).** `CommandDescriptor` remains
+> the command declaration root. Device-command capability buckets evolve into typed required and
+> preferred runtime use joined with leaf/device/provider-specific runtime facts; inventory commands
+> declare inventory use instead of fabricating a device binding. The descriptor's other derived
+> projections remain accepted.
+
 ## Context
 
 A command's identity is restated, by hand, across roughly ten tables that must stay aligned by
@@ -89,4 +95,4 @@ modules must move those contracts before their client methods can stop returning
 `CommandRequestResult`.
 
 This ADR owns the decision and its constraints; the roadmap that prototyped it has been retired, with
-the delivered end-state recorded in [CONTEXT.md](../../CONTEXT.md) (Architecture).
+the delivered end-state enforced by the descriptor projections and parity gates below.

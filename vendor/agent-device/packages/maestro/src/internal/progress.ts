@@ -22,6 +22,7 @@ export function formatMaestroCommandProgress(
 }
 
 function progressValue(command: MaestroCommand): Pick<MaestroCommandProgress, 'value'> {
+  if ('label' in command && command.label) return valueOf(command.label);
   if (isGestureTargetCommand(command)) return valueOf(formatGestureTarget(command.target));
   if (isSelectorProgressCommand(command)) return selectorProgressValue(command);
   if (command.kind === 'inputText') return valueOf('<text>');
@@ -75,6 +76,7 @@ function commandDetailProgressValue(
   if (command.kind === 'runFlow') {
     return valueOf(command.label ?? (command.include.kind === 'file' ? command.include.path : ''));
   }
+  if (command.kind === 'assertTrue') return valueOf(String(command.condition));
   return {};
 }
 
@@ -124,7 +126,7 @@ function formatGestureTarget(target: MaestroGestureTarget): string | undefined {
 }
 
 function formatSelector(selector: MaestroSelector | undefined): string | undefined {
-  return selector?.id ?? selector?.text ?? selector?.label;
+  return selector?.id ?? selector?.text;
 }
 
 function formatCoordinate(coordinate: { space: 'absolute' | 'percent'; x: number; y: number }) {

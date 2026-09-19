@@ -8,12 +8,32 @@ import {
   type SwipePreset,
 } from './scroll-gesture.ts';
 import {
+  DEFAULT_DRAG_DESTINATION_HOLD_MS,
+  DEFAULT_DRAG_MOVE_MS,
+  DEFAULT_DRAG_SOURCE_HOLD_MS,
   GESTURE_DURATION_MAX_MS,
   GESTURE_DURATION_MIN_MS,
   type GesturePointerCount,
 } from './gesture-plan-types.ts';
 
-export const GESTURE_KINDS = ['pan', 'fling', 'swipe', 'pinch', 'rotate', 'transform'] as const;
+export const COORDINATE_GESTURE_KINDS = [
+  'pan',
+  'fling',
+  'swipe',
+  'pinch',
+  'rotate',
+  'transform',
+] as const;
+export const GESTURE_KINDS = [...COORDINATE_GESTURE_KINDS, 'drag'] as const;
+
+export type DragGesturePayload = {
+  kind: 'drag';
+  source: string;
+  destination: string;
+  sourceHoldMs?: number;
+  moveMs?: number;
+  destinationHoldMs?: number;
+};
 
 export type PanGesturePayload = {
   kind: 'pan';
@@ -62,7 +82,10 @@ export type GesturePayload =
   | SwipeGesturePayload
   | PinchGesturePayload
   | RotateGesturePayload
-  | TransformGesturePayload;
+  | TransformGesturePayload
+  | DragGesturePayload;
+
+export type CoordinateGesturePayload = Exclude<GesturePayload, DragGesturePayload>;
 
 export function readGesturePayload(input: unknown): GesturePayload {
   const record = readRecord(input);
@@ -77,6 +100,9 @@ export function readGesturePayload(input: unknown): GesturePayload {
         | undefined,
       durationMs: readOptionalGestureDuration(record),
     };
+  }
+  if (kind === 'drag') {
+    return readDragGesturePayload(record);
   }
   if (record.pointerCount !== undefined) {
     throw new AppError('INVALID_ARGS', 'pointerCount is supported only for gesture pan');
@@ -137,6 +163,35 @@ export function readGesturePayload(input: unknown): GesturePayload {
   };
 }
 
+function readDragGesturePayload(record: Record<string, unknown>): DragGesturePayload {
+  const sourceHoldMs = readOptionalInteger(record, 'sourceHoldMs', { min: 1, max: 10_000 });
+  const moveMs = readOptionalInteger(record, 'moveMs', { min: 16, max: 10_000 });
+  const destinationHoldMs = readOptionalInteger(record, 'destinationHoldMs', {
+    // Releasing immediately at the destination is valid; activating a drag
+    // at the source requires a positive hold.
+    min: 0,
+    max: 10_000,
+  });
+  const totalDurationMs =
+    (sourceHoldMs ?? DEFAULT_DRAG_SOURCE_HOLD_MS) +
+    (moveMs ?? DEFAULT_DRAG_MOVE_MS) +
+    (destinationHoldMs ?? DEFAULT_DRAG_DESTINATION_HOLD_MS);
+  if (totalDurationMs > GESTURE_DURATION_MAX_MS) {
+    throw new AppError(
+      'INVALID_ARGS',
+      `gesture drag total duration must be at most ${GESTURE_DURATION_MAX_MS}`,
+    );
+  }
+  return {
+    kind: 'drag',
+    source: readNonEmptyString(record, 'source'),
+    destination: readNonEmptyString(record, 'destination'),
+    sourceHoldMs,
+    moveMs,
+    destinationHoldMs,
+  };
+}
+
 function readOptionalGestureDuration(record: Record<string, unknown>): number | undefined {
   const durationMs = readOptionalInteger(record, 'durationMs');
   if (durationMs === undefined) return undefined;
@@ -171,6 +226,14 @@ function readNumber(record: Record<string, unknown>, key: string): number {
     throw new AppError('INVALID_ARGS', `Expected ${key} to be a finite number.`);
   }
   return value;
+}
+
+function readNonEmptyString(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new AppError('INVALID_ARGS', `Expected ${key} to be a non-empty string.`);
+  }
+  return value.trim();
 }
 
 function readEnum<const Values extends readonly string[]>(

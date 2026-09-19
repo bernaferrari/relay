@@ -1,12 +1,23 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
+
 import path from 'node:path';
-import { afterEach, test } from 'vitest';
-import { pruneDeadDeviceClaims } from '../device-claims.ts';
-import { resolveDeviceClaimPath } from '../device-claim-paths.ts';
-import { acquireProcessLock } from '../../utils/process-lock.ts';
-import { readCurrentOwnerIdentity } from '../../utils/owner-identity.ts';
+import { afterEach, test, vi } from 'vitest';
+import { deviceClaimIdentity, reconcileOrphanedDeviceClaims } from '../device-claims.ts';
+import { acquireAllocatorHeldDeviceClaim } from '../device-claim-allocator.ts';
+import { canonicalLocalDeviceKey, resolveDeviceClaimPath } from '../device-claim-paths.ts';
+import { acquireProcessLock } from '@agent-device/host-kit/file';
+import { readCurrentOwnerIdentity } from '@agent-device/host-kit/process';
+import { ANDROID_EMULATOR } from '../../__tests__/test-utils/device-fixtures.ts';
+import { publishDaemonRegistration } from '../../__tests__/test-utils/device-claim-store.ts';
+
+import { mkdtempForTestSync } from '../../__tests__/test-utils/tmp-dir.ts';
+
+vi.mock('@agent-device/host-kit/process', async (importOriginal) =>
+  (await import('../../__tests__/test-utils/host-process-mock.ts')).pinOwnProcessStartTime(
+    importOriginal,
+  ),
+);
 
 const previousClaimsDir = process.env.AGENT_DEVICE_CLAIMS_DIR;
 
@@ -14,7 +25,7 @@ afterEach(() => {
   process.env.AGENT_DEVICE_CLAIMS_DIR = previousClaimsDir;
 });
 
-// Claims live at the hash of their device key; the prune only touches a file
+// Claims live at the hash of their device key; the reconciliation only touches a file
 // that is the canonical path for the key it contains.
 function writeClaim(
   _claimsDir: string,
@@ -32,7 +43,7 @@ function writeClaim(
       workspace: '/worktrees/x',
       stateDir: overrides.stateDir ?? process.cwd(),
       ownerPid: overrides.ownerPid,
-      ownerStartTime: overrides.ownerStartTime ?? undefined,
+      ownerStartTime: overrides.ownerStartTime ?? null,
       ownerToken: `${fileName}-token`,
       createdAtMs: 1,
       updatedAtMs: 1,
@@ -40,14 +51,14 @@ function writeClaim(
   );
 }
 
-test('prunes claims whose owner is gone and keeps every other claim', async () => {
-  const claimsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-prune-claims-'));
+test('reconciles claims whose owner is gone and keeps every other claim', async () => {
+  const claimsDir = mkdtempForTestSync('agent-device-reconciliation-claims-');
   process.env.AGENT_DEVICE_CLAIMS_DIR = claimsDir;
   const owner = readCurrentOwnerIdentity();
   try {
     writeClaim(claimsDir, 'dead.json', { ownerPid: 999_999_999, ownerStartTime: 'old' });
     writeClaim(claimsDir, 'live.json', { ownerPid: owner.pid, ownerStartTime: owner.startTime });
-    // Live process whose state dir vanished: pruning this could hand its device
+    // A live process whose state dir vanished cannot be reconciled safely: doing so could hand its device
     // to a second session, so it is reported stale but never deleted.
     writeClaim(claimsDir, 'state-dir-gone.json', {
       ownerPid: owner.pid,
@@ -56,10 +67,13 @@ test('prunes claims whose owner is gone and keeps every other claim', async () =
     });
     fs.writeFileSync(path.join(claimsDir, 'garbage.json'), 'not json');
 
-    const { pruned } = await pruneDeadDeviceClaims();
+    const summary = await reconcileOrphanedDeviceClaims(
+      async () => ({ status: 'reconciled' }),
+      process.cwd(),
+    );
 
     const claimPathFor = (name: string) => resolveDeviceClaimPath(`local:android:none:${name}`);
-    assert.equal(pruned, 1);
+    assert.deepEqual(summary, { examined: 1, reconciled: 1, retained: 0, changed: 0 });
     assert.equal(fs.existsSync(claimPathFor('dead.json')), false);
     assert.equal(fs.existsSync(claimPathFor('live.json')), true);
     assert.equal(fs.existsSync(claimPathFor('state-dir-gone.json')), true);
@@ -69,17 +83,28 @@ test('prunes claims whose owner is gone and keeps every other claim', async () =
   }
 });
 
-test('prunes nothing when the claim store does not exist', async () => {
-  process.env.AGENT_DEVICE_CLAIMS_DIR = path.join(os.tmpdir(), 'agent-device-prune-absent-store');
-  assert.deepEqual(await pruneDeadDeviceClaims(), { pruned: 0 });
+test('reconciles nothing when the claim store does not exist', async () => {
+  process.env.AGENT_DEVICE_CLAIMS_DIR = path.join(
+    mkdtempForTestSync('agent-device-reconciliation-absent-store'),
+    'agent-device-reconciliation-absent-store',
+  );
+  assert.deepEqual(
+    await reconcileOrphanedDeviceClaims(async () => ({ status: 'reconciled' }), process.cwd()),
+    {
+      examined: 0,
+      reconciled: 0,
+      retained: 0,
+      changed: 0,
+    },
+  );
 });
 
-test('leaves a live successor written while the prune waited for the claim lock', async () => {
+test('leaves a live successor written while the reconciliation waited for the claim lock', async () => {
   // Claim paths are derived from the device key, so a concurrent daemon can
-  // prune the same dead claim and a new session can write its live successor
+  // reconcile the same dead claim and a new session can write its live successor
   // to that exact path. Holding the lock here reproduces that window: the scan
-  // sees a dead claim, then the file is replaced before the prune can unlink.
-  const claimsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-device-prune-race-'));
+  // sees a dead claim, then the file is replaced before the reconciliation can unlink.
+  const claimsDir = mkdtempForTestSync('agent-device-reconciliation-race-');
   process.env.AGENT_DEVICE_CLAIMS_DIR = claimsDir;
   const owner = readCurrentOwnerIdentity();
   const deviceKey = 'local:android:none:contested';
@@ -95,7 +120,7 @@ test('leaves a live successor written while the prune waited for the claim lock'
         workspace: '/worktrees/x',
         stateDir: process.cwd(),
         ownerPid,
-        ownerStartTime: ownerStartTime ?? undefined,
+        ownerStartTime,
         ownerToken: token,
         createdAtMs: 1,
         updatedAtMs: 1,
@@ -113,14 +138,107 @@ test('leaves a live successor written while the prune waited for the claim lock'
       description: 'test-held device claim lock',
     });
 
-    const pruning = pruneDeadDeviceClaims();
-    // The prune is now blocked on the lock; stand in the live successor.
+    const reconciliation = reconcileOrphanedDeviceClaims(
+      async () => ({ status: 'reconciled' }),
+      process.cwd(),
+    );
+    // The reconciliation is now blocked on the lock; stand in the live successor.
     writeContested(owner.pid, owner.startTime, 'live-token');
     await release();
 
-    assert.deepEqual(await pruning, { pruned: 0 });
+    assert.deepEqual(await reconciliation, {
+      examined: 1,
+      reconciled: 0,
+      retained: 0,
+      changed: 1,
+    });
     assert.equal(fs.existsSync(claimPath), true);
     assert.equal(JSON.parse(fs.readFileSync(claimPath, 'utf8')).ownerToken, 'live-token');
+  } finally {
+    fs.rmSync(claimsDir, { recursive: true, force: true });
+  }
+});
+
+test('reconciles a claim whose owning daemon was replaced while still running', async () => {
+  const claimsDir = mkdtempForTestSync('agent-device-reconciliation-superseded-');
+  process.env.AGENT_DEVICE_CLAIMS_DIR = claimsDir;
+  const stateDir = path.join(claimsDir, 'state');
+  try {
+    // #2031: the daemon-startup scan a replaced daemon leaves behind. Our own
+    // registration serves the state dir, so the still-running owner recorded in
+    // the claim can never be asked to release it.
+    publishDaemonRegistration(stateDir, readCurrentOwnerIdentity());
+    writeClaim(claimsDir, 'superseded.json', {
+      ownerPid: process.ppid,
+      ownerStartTime: null,
+      stateDir,
+    });
+
+    const summary = await reconcileOrphanedDeviceClaims(
+      async () => ({ status: 'reconciled' }),
+      stateDir,
+    );
+
+    assert.deepEqual(summary, { examined: 1, reconciled: 1, retained: 0, changed: 0 });
+    assert.equal(
+      fs.existsSync(resolveDeviceClaimPath('local:android:none:superseded.json')),
+      false,
+    );
+  } finally {
+    fs.rmSync(claimsDir, { recursive: true, force: true });
+  }
+});
+
+test('the startup sweep never examines an allocator-held claim', async () => {
+  const claimsDir = mkdtempForTestSync('agent-device-reconciliation-allocator-');
+  process.env.AGENT_DEVICE_CLAIMS_DIR = claimsDir;
+  const stateDir = path.join(claimsDir, 'state');
+  try {
+    await acquireAllocatorHeldDeviceClaim({
+      device: ANDROID_EMULATOR,
+      principal: { stateDir, instanceId: 'sim-a', identityIncarnationId: 'incarnation-1' },
+    });
+    const claimPath = resolveDeviceClaimPath(
+      canonicalLocalDeviceKey(deviceClaimIdentity(ANDROID_EMULATOR)),
+    );
+    const before = fs.readFileSync(claimPath, 'utf8');
+
+    // The sweep settles claims whose OWNER PROCESS provably cannot release them. An allocator-held
+    // claim has no owner process, so the reconciler must never even be offered it.
+    const summary = await reconcileOrphanedDeviceClaims(async () => {
+      throw new Error('an allocator-held claim reached the reconciler');
+    }, stateDir);
+
+    assert.deepEqual(summary, { examined: 0, reconciled: 0, retained: 0, changed: 0 });
+    assert.equal(fs.readFileSync(claimPath, 'utf8'), before);
+  } finally {
+    fs.rmSync(claimsDir, { recursive: true, force: true });
+  }
+});
+
+test('leaves a superseded owner in another state dir to the device that asks for it', async () => {
+  const claimsDir = mkdtempForTestSync('agent-device-reconciliation-foreign-superseded-');
+  process.env.AGENT_DEVICE_CLAIMS_DIR = claimsDir;
+  const stateDir = path.join(claimsDir, 'other-state');
+  try {
+    // The owner still runs, so finalizing the durable resources attributed to it
+    // is only the business of the daemon that now serves ITS state dir.
+    publishDaemonRegistration(stateDir, readCurrentOwnerIdentity());
+    writeClaim(claimsDir, 'foreign.json', {
+      ownerPid: process.ppid,
+      ownerStartTime: null,
+      stateDir,
+    });
+    const reconcile = vi.fn(async () => ({ status: 'reconciled' as const }));
+
+    const summary = await reconcileOrphanedDeviceClaims(
+      reconcile,
+      path.join(claimsDir, 'our-state'),
+    );
+
+    assert.deepEqual(summary, { examined: 0, reconciled: 0, retained: 0, changed: 0 });
+    assert.equal(reconcile.mock.calls.length, 0);
+    assert.equal(fs.existsSync(resolveDeviceClaimPath('local:android:none:foreign.json')), true);
   } finally {
     fs.rmSync(claimsDir, { recursive: true, force: true });
   }

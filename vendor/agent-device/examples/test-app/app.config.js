@@ -20,6 +20,7 @@ module.exports = {
     buildCacheProvider: { plugin: 'expo-build-disk-cache' },
     plugins: [
       'expo-router',
+      'expo-secure-store',
       [
         'expo-audio',
         {
@@ -33,10 +34,16 @@ module.exports = {
       supportsTablet: true,
       bundleIdentifier: 'com.callstack.agentdevicelab',
       infoPlist: accessoryInfoPlist,
+      // Lets the simulator present the Apple Pay sheet (modules/apple-pay-lab). The merchant id
+      // is a fixture, not a registered merchant.
+      entitlements: {
+        'com.apple.developer.in-app-payments': ['merchant.com.callstack.agentdevicelab'],
+      },
     },
     android: {
       package: 'com.callstack.agentdevicelab',
       predictiveBackGestureEnabled: false,
+      softwareKeyboardLayoutMode: 'pan',
     },
   },
 };

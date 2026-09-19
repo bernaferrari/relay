@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { createAgentDeviceClient } from '../../../src/agent-device-client.ts';
 import type { AgentDeviceDaemonTransport } from '@agent-device/contracts/client';
 import type { AgentDeviceClient } from '../../../src/client/client-types.ts';
@@ -9,12 +10,50 @@ import {
   createRequestHandler,
   type RequestRouterDeps,
 } from '../../../src/daemon/request-router.ts';
-import type { RecordingProcess } from '../../../src/daemon/recording-provider.ts';
+import {
+  createPlatformRuntimeGateway,
+  createRequestPlatformProviders,
+  androidObservation,
+  type PlatformProviderResolvers,
+} from '../../../src/platform-runtime.ts';
+import { platformResourceCleanup } from '../../../src/platform-runtime-resource-cleanup.ts';
+import type { AppleSimulatorScreenRecordingProcess } from '../../../src/platform-runtime-screen-recording-apple-transport.ts';
 import { trackDownloadableArtifact } from '../../../src/daemon/artifact-tracking.ts';
 import { LeaseRegistry } from '../../../src/daemon/lease-registry.ts';
 import { SessionStore } from '../../../src/daemon/session-store.ts';
-import type { DaemonRequest, DaemonResponse, SessionState } from '../../../src/daemon/types.ts';
-import type { ExecResult } from '../../../src/utils/exec.ts';
+import type {
+  DaemonInvokeFn,
+  DaemonRequest,
+  DaemonResponse,
+} from '../../../src/daemon/daemon-request.ts';
+import type { SessionState } from '../../../src/daemon/session-state.ts';
+import { runCmdBackground } from '@agent-device/host-kit/command';
+import { createOwnedProcessRecordStore } from '@agent-device/host-kit/process';
+import { withClientReplayScriptSources } from '../../../src/__tests__/test-utils/replay-script-source.ts';
+import type {
+  DeviceInventoryProvider,
+  ProviderDeviceRuntime,
+  ProviderDeviceInventorySource,
+} from '@agent-device/contracts/device';
+import {
+  createTestDeviceInventoryGateways,
+  createTestDeviceInventoryGatewaysFromProvider,
+} from '../../../src/__tests__/test-utils/device-inventory-gateways.ts';
+import { createHostDiagnostics } from '../../../src/platform-runtime-host-diagnostics.ts';
+import type { PlatformRuntimeProviderRegistration } from '../../../src/platform-runtime-gateway.ts';
+import { createProviderPlatformRuntimeRegistrations } from '../../../src/provider-device-runtimes.ts';
+import { isActiveProviderDevice } from '../../../src/provider-device-runtime.ts';
+import { installProviderDeviceAdmission } from '../../../src/daemon/provider-device-admission.ts';
+import { installInteractorResolution } from '../../../src/daemon/interactor-resolution.ts';
+import { getInteractor } from '../../../src/core/interactors.ts';
+import { unavailableDeviceRuntimeGateway } from '../../../src/daemon/__tests__/test-device-runtime-gateway.ts';
+
+import { openWebSessionNames } from '../../../src/daemon/web-session-names.ts';
+
+// Match daemon composition (src/daemon/server/daemon-runtime.ts): the daemon decides on provider
+// ownership through its own admission seam, which root composition installs.
+installProviderDeviceAdmission({ isActive: (device) => isActiveProviderDevice(device) });
+installInteractorResolution({ resolve: getInteractor });
 
 const PROVIDER_SCENARIO_TOKEN = 'provider-scenario-token';
 const PROVIDER_SCENARIO_TEMP_REMOVE_OPTIONS = {
@@ -39,7 +78,11 @@ export type ProviderScenarioHarness = {
     },
   ) => Promise<ProviderScenarioRpcResult>;
   client: () => AgentDeviceClient;
+  /** The scenario daemon's request boundary, for mounting it behind a real HTTP server. */
+  handleRequest: DaemonInvokeFn;
+  token: string;
   session: (name?: string) => SessionState | undefined;
+  sessionDir: (name?: string) => string;
   setSession: (name: string, session: SessionState) => void;
   close: () => Promise<void>;
 };
@@ -48,23 +91,117 @@ export type ClosableProviderScenarioResource = {
   close: () => Promise<void> | void;
 };
 
+export type ProviderScenarioPlatformRuntime =
+  | boolean
+  | Readonly<{
+      providerRuntimes: readonly ProviderDeviceRuntime[];
+      providerModules: readonly PlatformRuntimeProviderRegistration[];
+    }>;
+
 export async function createProviderScenarioHarness(
-  deps: Partial<RequestRouterDeps> & Pick<RequestRouterDeps, 'deviceInventoryProvider'>,
+  deps: Partial<Omit<RequestRouterDeps, 'deviceInventoryGateways'>> &
+    Partial<PlatformProviderResolvers> &
+    (
+      | { deviceInventoryProvider: DeviceInventoryProvider; deviceInventorySource?: never }
+      | { deviceInventorySource: ProviderDeviceInventorySource; deviceInventoryProvider?: never }
+    ) & {
+      /**
+       * Eager provider ownership metadata used only to build explicit provider registrations for
+       * a scenario. It is intentionally not forwarded as ambient router policy.
+       */
+      providerRuntimes?: readonly ProviderDeviceRuntime[];
+      platformRuntime?: ProviderScenarioPlatformRuntime;
+    },
 ): Promise<ProviderScenarioHarness> {
   const sessionDir = fs.mkdtempSync(
     path.join(os.tmpdir(), 'agent-device-provider-scenario-session-'),
   );
   const sessionStore = new SessionStore(sessionDir);
+  const ownedProcessRecords = createOwnedProcessRecordStore({
+    stateDir: path.dirname(sessionDir),
+    sessionsDir: sessionDir,
+    resolveSessionDir: (sessionId) => sessionStore.resolveSessionDir(sessionId),
+  });
+  const {
+    deviceInventoryProvider,
+    deviceInventorySource,
+    deviceRuntimeGateway: configuredDeviceRuntimeGateway,
+    platformRuntime = true,
+    providerRuntimes,
+    requestPlatformProviders: configuredRequestPlatformProviders,
+    androidAdbProvider,
+    appleRunnerProvider,
+    appleRunnerScreenRecordingTransport,
+    appleToolProvider,
+    linuxToolProvider,
+    vegaToolProvider,
+    webProvider,
+    appleSimulatorScreenRecordingTransport,
+    ...routerDeps
+  } = deps;
+  const platformRuntimeOptions =
+    typeof platformRuntime === 'object'
+      ? platformRuntime
+      : {
+          // Provider runtime mechanics remain implementation-lazy, but their owner metadata is
+          // present before the first facts admission. This matches daemon composition and makes
+          // a missing provider module fail closed instead of falling back to host tooling.
+          providerRuntimes: providerRuntimes ?? [],
+          providerModules: createProviderPlatformRuntimeRegistrations(providerRuntimes ?? []),
+        };
+  const deviceRuntimeGateway =
+    configuredDeviceRuntimeGateway ??
+    (platformRuntime
+      ? createPlatformRuntimeGateway({
+          ...platformRuntimeOptions,
+          sessionsDir: sessionDir,
+          ownedProcesses: ownedProcessRecords,
+          resolveSessionArtifacts: (sessionId) => ({
+            outputPath: sessionStore.resolveAppLogPath(sessionId),
+            pidPath: sessionStore.resolveAppLogPidPath(sessionId),
+          }),
+        })
+      : unavailableDeviceRuntimeGateway);
   const requestHandler = createRequestHandler({
     logPath: path.join(os.tmpdir(), 'agent-device-provider-scenario-daemon.log'),
     token: PROVIDER_SCENARIO_TOKEN,
     sessionStore,
     leaseRegistry: new LeaseRegistry(),
+    deviceInventoryGateways: deviceInventorySource
+      ? createTestDeviceInventoryGateways({ provider: deviceInventorySource })
+      : createTestDeviceInventoryGatewaysFromProvider(deviceInventoryProvider),
+    deviceRuntimeGateway,
     trackDownloadableArtifact,
-    ...deps,
+    // Match daemon composition (src/daemon/server/daemon-runtime.ts): doctor's host-scoped
+    // diagnostics are injected at the root, so the harness composes them the same way.
+    hostDiagnostics: createHostDiagnostics(),
+    androidObservation,
+    platformResourceCleanup,
+    requestPlatformProviders:
+      configuredRequestPlatformProviders ??
+      createRequestPlatformProviders({
+        providers: {
+          androidAdbProvider,
+          appleRunnerProvider,
+          appleRunnerScreenRecordingTransport,
+          appleToolProvider,
+          linuxToolProvider,
+          vegaToolProvider,
+          webProvider,
+          appleSimulatorScreenRecordingTransport,
+        },
+        defaultWebProvider: {
+          stateDir: path.dirname(sessionDir),
+          openWebSessionNames: () => openWebSessionNames(sessionStore),
+          ownedProcessRecords,
+        },
+      }),
+    ...routerDeps,
   });
   const handleRequest: typeof requestHandler = async (request) => {
-    const response = await requestHandler(request);
+    // #1802: a raw `callCommand('replay', [path])` stands in for a client request, and every
+    // request that reaches a daemon carries the script sources the CLIENT read.
+    const response = await requestHandler(await withClientReplayScriptSources(request));
     assertNoInternalChromeProvenance(response);
     return response;
   };
@@ -88,10 +225,14 @@ export async function createProviderScenarioHarness(
         `direct-${command}-${Date.now()}`,
       ),
     client: () => createAgentDeviceClient({}, { transport }),
+    handleRequest,
+    token: PROVIDER_SCENARIO_TOKEN,
     session: (name = 'default') => sessionStore.get(name),
+    sessionDir: (name = 'default') => sessionStore.resolveSessionDir(name),
     setSession: (name, session) => sessionStore.set(name, session),
     close: async () => {
-      removeProviderScenarioTempDir(sessionDir);
+      await deviceRuntimeGateway.shutdown();
+      await removeProviderScenarioTempDir(sessionDir);
     },
   };
 }
@@ -125,18 +266,24 @@ export async function withProviderScenarioTempDir<TResult>(
   try {
     return await run(dir);
   } finally {
-    removeProviderScenarioTempDir(dir);
+    await removeProviderScenarioTempDir(dir);
   }
 }
 
-function removeProviderScenarioTempDir(dir: string): void {
-  fs.rmSync(dir, PROVIDER_SCENARIO_TEMP_REMOVE_OPTIONS);
+async function removeProviderScenarioTempDir(dir: string): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      fs.rmSync(dir, PROVIDER_SCENARIO_TEMP_REMOVE_OPTIONS);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (attempt >= 5 || !['EBUSY', 'ENOTEMPTY', 'EPERM'].includes(code ?? '')) throw error;
+      await sleep(50 * (attempt + 1));
+    }
+  }
 }
 
-export function restoreEnv(key: string, previous: string | undefined): void {
-  if (previous === undefined) delete process.env[key];
-  else process.env[key] = previous;
-}
+export { restoreEnv } from '../../../src/__tests__/test-utils/env.ts';
 
 export function likelyPlayableMp4Container(): Buffer {
   return Buffer.concat([atom('ftyp', Buffer.from('isom0000isom')), atom('moov')]);
@@ -145,22 +292,23 @@ export function likelyPlayableMp4Container(): Buffer {
 export function createProviderIosSimulatorRecordingProcess(
   outPath: string,
   onSignal?: (signal: NodeJS.Signals | number | undefined) => void,
-): RecordingProcess {
+): AppleSimulatorScreenRecordingProcess {
   fs.writeFileSync(outPath, Buffer.alloc(0));
-  let resolveWait: ((result: ExecResult) => void) | undefined;
-  const wait = new Promise<ExecResult>((resolve) => {
-    resolveWait = resolve;
-  });
+  const background = runCmdBackground(
+    process.execPath,
+    ['-e', 'setInterval(() => {}, 1000)', 'provider-screen-recording'],
+    { allowFailure: true, captureOutput: false },
+  );
   return {
     child: {
+      pid: background.child.pid,
       kill: (signal) => {
         onSignal?.(signal);
         fs.writeFileSync(outPath, likelyPlayableMp4Container());
-        resolveWait?.({ stdout: '', stderr: '', exitCode: 0 });
-        return true;
+        return background.child.kill(signal);
       },
     },
-    wait,
+    wait: background.wait,
   };
 }
 

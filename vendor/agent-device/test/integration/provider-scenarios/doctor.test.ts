@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
 import { test } from 'vitest';
-import type { AndroidAdbProvider } from '../../../src/platforms/android/adb-executor.ts';
+import type { AndroidAdbProvider } from '@agent-device/platform-android/mechanics';
 import { assertRpcOk } from './assertions.ts';
 import {
   PROVIDER_SCENARIO_ANDROID,
@@ -108,6 +108,7 @@ test('Provider-backed integration doctor --app verifies an installed app without
   await withProviderScenarioResource(
     async () =>
       await createProviderScenarioHarness({
+        platformRuntime: true,
         androidAdbProvider: () => adbProvider,
         deviceInventoryProvider: async () => [PROVIDER_SCENARIO_ANDROID],
       }),

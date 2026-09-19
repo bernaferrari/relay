@@ -7,11 +7,11 @@ import type {
 import type {
   AppSwitcherCommandResult,
   BackCommandResult,
-  ClipboardCommandResult,
   HomeCommandResult,
   OrientationCommandResult,
   TvRemoteCommandResult,
-} from '@agent-device/contracts/interaction';
+} from '@agent-device/contracts/navigation';
+import type { ClipboardCommandResult } from '@agent-device/contracts/clipboard';
 import {
   daemonRuntimeSchema,
   jsonRpcRequestSchema,
@@ -23,9 +23,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'vitest';
-import type { CommandResult } from '../core/command-descriptor/command-result.ts';
-import { centerOfRect, defaultHintForCode, normalizeError } from '../sdk/contracts.ts';
-import type { DaemonError } from '../sdk/contracts.ts';
+import type { CommandResult } from '@agent-device/command-registry/command-result';
+import {
+  centerOfRect,
+  defaultHintForCode,
+  normalizeError,
+  type DaemonError,
+} from '../sdk/contracts.ts';
 import { AppError } from '../sdk/index.ts';
 
 const invalidArgsCode = 'INVALID_ARGS' satisfies AppErrorCode;

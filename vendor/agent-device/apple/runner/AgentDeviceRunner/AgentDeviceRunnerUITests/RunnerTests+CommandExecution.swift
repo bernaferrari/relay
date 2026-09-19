@@ -1,4 +1,5 @@
 import XCTest
+import AgentDeviceSnapshotPresentation
 
 #if AGENT_DEVICE_RUNNER_UNIT_TESTS && os(iOS)
 import ObjectiveC.runtime
@@ -186,7 +187,9 @@ extension RunnerTests {
     var outcome = RunnerInteractionOutcome.performed
     let timing = measureGesture {
       if idleTimeout {
-        withTemporaryScrollIdleTimeoutIfSupported(app) { outcome = action() }
+        withBoundedInteractionIdleTimeoutIfSupported(app, waits: .bothSkipped) {
+          outcome = action()
+        }
       } else {
         outcome = action()
       }
@@ -430,6 +433,170 @@ extension RunnerTests {
   }
 #endif
 
+#if os(iOS)
+  func testTypeWithoutResolvedInputReturnsTypedFailureBeforeDispatchingText() throws {
+    let command = try runnerCommandFixture(
+      #"{"command":"type","commandId":"type-without-focus","text":"hello"}"#
+    )
+
+    let response = executeTypeCommand(
+      activeApp: XCUIApplication(bundleIdentifier: "com.example.agentdevice.missing-input"),
+      command: command
+    )
+
+    XCTAssertFalse(response.ok)
+    XCTAssertEqual(response.error?.code, "TEXT_INPUT_NOT_FOCUSED")
+    XCTAssertEqual(
+      response.error?.hint,
+      "Focus a visible text input, then retry type or fill. If the input is not exposed by accessibility, use a coordinate focus command before typing."
+    )
+  }
+
+  func testBareTypeUsesTappedInputWhenSoftwareKeyboardIsHidden() throws {
+    // The fixture uses a real text responder with an empty input view to model hardware-keyboard input.
+    app.launchArguments = ["--agent-device-text-entry-regression"]
+    app.launch()
+    defer {
+      invalidateCachedTarget(reason: "unit_test_cleanup")
+      app.terminate()
+    }
+    XCTAssertTrue(app.waitForExistence(timeout: appExistenceTimeout))
+
+    let textField = app.textFields["agent-device-hardware-keyboard-input"]
+    XCTAssertTrue(textField.waitForExistence(timeout: appExistenceTimeout))
+    let frame = textField.frame
+    XCTAssertFalse(frame.isEmpty)
+
+    let tapCommand = try runnerCommandFixture(
+      #"{"command":"tap","commandId":"tap-hardware-keyboard-input","selectorKey":"id","selectorValue":"agent-device-hardware-keyboard-input"}"#
+    )
+    let tapResponse = try executeOnMainPrepared(command: tapCommand, activeApp: app)
+    XCTAssertTrue(tapResponse.ok, String(describing: tapResponse.error))
+    // A precondition, not a product claim. The fixture's empty `inputView` is what keeps the
+    // keyboard down, but nothing in this bundle owns the simulator's own keyboard settings, so an
+    // ambient flip that raised one here would be an environment fact — and reporting it as a
+    // failed assertion is what made this read as a product regression on unrelated PRs (#1874).
+    try XCTSkipIf(
+      isKeyboardVisible(app: app),
+      "software keyboard is up: this simulator cannot exercise the hidden-keyboard responder path"
+    )
+
+    let failureCountBefore = currentXCTestFailureCount()
+    let typeCommand = try runnerCommandFixture(
+      #"{"command":"type","commandId":"type-hardware-keyboard","text":"hardware-keyboard"}"#
+    )
+    let typeResponse = executeTypeCommand(activeApp: app, command: typeCommand)
+
+    XCTAssertTrue(typeResponse.ok, String(describing: typeResponse.error))
+    XCTAssertFalse(didRecordXCTestFailure(since: failureCountBefore))
+    XCTAssertEqual(typeResponse.data?.textEntryRoute, "synthesized-first-responder")
+    XCTAssertEqual(String(describing: textField.value ?? ""), "hardware-keyboard")
+
+    let secondFailureCountBefore = currentXCTestFailureCount()
+    let secondTypeCommand = try runnerCommandFixture(
+      #"{"command":"type","commandId":"type-hardware-keyboard-again","text":"-again"}"#
+    )
+    let secondTypeResponse = executeTypeCommand(activeApp: app, command: secondTypeCommand)
+
+    XCTAssertFalse(secondTypeResponse.ok)
+    XCTAssertEqual(secondTypeResponse.error?.code, "TEXT_INPUT_NOT_FOCUSED")
+    XCTAssertFalse(didRecordXCTestFailure(since: secondFailureCountBefore))
+    XCTAssertEqual(String(describing: textField.value ?? ""), "hardware-keyboard")
+  }
+
+  // `waitForTextEntryReadiness`'s hardware-keyboard fallback returns early only on confirmed
+  // focus (#1874), and `keyboardFocusConfirmed` reads that from the app-wide focus predicate this
+  // bundle otherwise refuses to trust. Two XCTest facts it rests on, neither a repository
+  // invariant: the predicate reports a responder that shows NO software keyboard at all, and it
+  // names the element well enough to tell the tapped field from another one. The fixture field is
+  // the exact shape the fallback exists for — a real responder with an empty `inputView` — so this
+  // is where both are observable. If either regressed, readiness would silently stop taking the
+  // fallback and spend the full readinessTimeout on every hardware-keyboard field, which no other
+  // assertion would notice.
+  func testHardwareKeyboardResponderConfirmsItsOwnKeyboardFocus() throws {
+    app.launchArguments = ["--agent-device-text-entry-regression"]
+    app.launch()
+    defer {
+      invalidateCachedTarget(reason: "unit_test_cleanup")
+      app.terminate()
+    }
+    XCTAssertTrue(app.waitForExistence(timeout: appExistenceTimeout))
+
+    let textField = app.textFields["agent-device-hardware-keyboard-input"]
+    XCTAssertTrue(textField.waitForExistence(timeout: appExistenceTimeout))
+    let otherElement = app.staticTexts["Agent Device Runner"]
+    XCTAssertTrue(otherElement.waitForExistence(timeout: appExistenceTimeout))
+    XCTAssertFalse(
+      keyboardFocusConfirmed(app: app, element: textField),
+      "an untapped field must not confirm focus, or the fallback would fire immediately"
+    )
+
+    let tapCommand = try runnerCommandFixture(
+      #"{"command":"tap","commandId":"tap-focus-confirmation","selectorKey":"id","selectorValue":"agent-device-hardware-keyboard-input"}"#
+    )
+    let tapResponse = try executeOnMainPrepared(command: tapCommand, activeApp: app)
+    XCTAssertTrue(tapResponse.ok, String(describing: tapResponse.error))
+    try XCTSkipIf(
+      isKeyboardVisible(app: app),
+      "software keyboard is up: this simulator cannot exercise the hidden-keyboard responder path"
+    )
+
+    let deadline = Date().addingTimeInterval(TextEntryTiming.readinessTimeout)
+    var confirmed = keyboardFocusConfirmed(app: app, element: textField)
+    while !confirmed && Date() < deadline {
+      sleepFor(TextEntryTiming.pollInterval)
+      confirmed = keyboardFocusConfirmed(app: app, element: textField)
+    }
+    XCTAssertTrue(confirmed, "a tapped responder must confirm its own keyboard focus")
+    XCTAssertFalse(
+      keyboardFocusConfirmed(app: app, element: otherElement),
+      "focus held by another element must read as a refusal, never as this element's focus"
+    )
+  }
+
+  func testBareDelayedTypeFailsWhenTappedInputDisappearsMidCommand() throws {
+    app.launchArguments = [
+      "--agent-device-text-entry-regression",
+      "--agent-device-text-entry-disappear-after-input",
+    ]
+    app.launch()
+    defer {
+      invalidateCachedTarget(reason: "unit_test_cleanup")
+      app.terminate()
+    }
+    XCTAssertTrue(app.waitForExistence(timeout: appExistenceTimeout))
+
+    let textField = app.textFields["agent-device-hardware-keyboard-input"]
+    XCTAssertTrue(textField.waitForExistence(timeout: appExistenceTimeout))
+    let tapCommand = try runnerCommandFixture(
+      #"{"command":"tap","commandId":"tap-disappearing-input","selectorKey":"id","selectorValue":"agent-device-hardware-keyboard-input"}"#
+    )
+    let tapResponse = try executeOnMainPrepared(command: tapCommand, activeApp: app)
+    XCTAssertTrue(tapResponse.ok, String(describing: tapResponse.error))
+
+    let failureCountBefore = currentXCTestFailureCount()
+    let typeCommand = try runnerCommandFixture(
+      #"{"command":"type","commandId":"type-disappearing-input","text":"ab","delayMs":50}"#
+    )
+    let typeResponse = executeTypeCommand(activeApp: app, command: typeCommand)
+
+    XCTAssertFalse(didRecordXCTestFailure(since: failureCountBefore))
+    XCTAssertFalse(typeResponse.ok)
+    XCTAssertEqual(typeResponse.error?.code, "TEXT_INPUT_NOT_FOCUSED")
+    XCTAssertFalse(textField.exists)
+  }
+#endif
+
+  func testInjectedTapRecordedFailureGateIsTapOnlyAndCountGated() {
+    // The seam's recording side cannot run in-bundle (a real XCTIssue would
+    // fail this very test run — same constraint the record(_:) suppression
+    // tests document); the live daemon proof covers it. This pins the gate.
+    XCTAssertFalse(RunnerTests.shouldInjectTapRecordedFailure(command: .tap, remaining: 0))
+    XCTAssertTrue(RunnerTests.shouldInjectTapRecordedFailure(command: .tap, remaining: 1))
+    XCTAssertFalse(RunnerTests.shouldInjectTapRecordedFailure(command: .type, remaining: 1))
+    XCTAssertFalse(RunnerTests.shouldInjectTapRecordedFailure(command: .snapshot, remaining: 1))
+  }
+
   func testXCTestRecordedFailureResponseFailsMutatingSuccesses() throws {
     let command = try runnerCommandFixture(#"{"command":"tap","commandId":"tap-1"}"#)
     let response = Response(ok: true, data: DataPayload(message: "tapped"))
@@ -461,6 +628,11 @@ extension RunnerTests {
     XCTAssertNil(xctestRecordedFailureResponse(command: tapCommand, response: runnerFatalResponse))
   }
 
+  // Simulator-only from here to the matching #endif: these launch the host app, route through
+  // SpringBoard, or assert the iOS-only alert/system-modal branches. Tests outside the
+  // `os(iOS)` regions in this file are pure runner decisions and also run on the macOS host
+  // lane (ci.yml) — see the classification convention in RunnerTests.swift.
+#if os(iOS)
   func testSnapshotSkipsActivationSoClipboardProbeDoesNotStealProductApp() throws {
     let snapshot = try runnerCommandFixture(
       #"{"command":"snapshot","commandId":"snapshot-product","appBundleId":"ai.x.GrokApp"}"#
@@ -491,7 +663,7 @@ extension RunnerTests {
     XCTAssertEqual(currentAppProcessIdentifier, 42)
   }
 
-  func testMissingBundleInteractionStillInvalidatesCompleteCachedTargetState() throws {
+  func testMissingBundleCommandInvalidatesCompleteCachedTargetState() throws {
     app.launch()
     currentApp = app
     currentBundleId = "com.example.stale-target"
@@ -635,16 +807,16 @@ extension RunnerTests {
       if case .busy = self.currentMainThreadBusyState() {
         box.wasBusyBeforeRelease = true
       }
-      box.hadAbandonedProbeBeforeRelease = self.hasAbandonedTreeCapture()
+      box.hadAbandonedProbeBeforeRelease = self.hasAbandonedMainThreadWork()
 
       // The XCTest main thread is blocked inside the injected probe, so this verifier owns the
       // ordered release after recording the command result and abandoned-work state above.
       probeReleaseGate.signal()
       let deadline = Date().addingTimeInterval(5)
-      while self.hasAbandonedTreeCapture(), Date() < deadline {
+      while self.hasAbandonedMainThreadWork(), Date() < deadline {
         self.sleepFor(0.002)
       }
-      box.drained = !self.hasAbandonedTreeCapture()
+      box.drained = !self.hasAbandonedMainThreadWork()
       verificationFinished.fulfill()
     }
 
@@ -659,7 +831,7 @@ extension RunnerTests {
     guard case .idle = currentMainThreadBusyState() else {
       return XCTFail("expected the runner to become idle after the routing probe drained")
     }
-    XCTAssertFalse(hasAbandonedTreeCapture())
+    XCTAssertFalse(hasAbandonedMainThreadWork())
   }
 
   func testSkipAppActivationPreflightRejectsSelectorAndMixedSequenceGestures() throws {
@@ -691,6 +863,10 @@ extension RunnerTests {
     XCTAssertFalse(shouldSkipAppActivationPreflight(mixedSequence))
   }
 
+  // Launches nothing, but still simulator-only: `shouldSkipAppActivationPreflight` is
+  // `#if os(iOS) …guards… #else return false #endif`, so on macOS this asserts a compile-time
+  // literal and no edit to the iOS body could make it red. Its five siblings above and below
+  // are gated for the same reason.
   func testSkipAppActivationPreflightRequiresCachedForegroundTarget() throws {
     currentApp = nil
     currentBundleId = nil
@@ -737,6 +913,7 @@ extension RunnerTests {
 
     XCTAssertTrue(shouldSkipAppActivationPreflight(alert))
   }
+#endif
 
   func testExecuteDispatchedReturnsBusyBeforeMainThreadFastPath() throws {
     let command = try runnerCommandFixture(#"{"command":"snapshot","commandId":"snapshot-busy"}"#)
@@ -770,155 +947,10 @@ extension RunnerTests {
     XCTAssertTrue(response.error?.hint?.contains("runner session will be restarted") == true)
   }
 
-  func testAlertResolutionCannotBypassRequestedDeadline() throws {
-    final class ResultBox {
-      var error: Error?
-      var probeDeadline: Date?
-      var observedDeadline: Date?
-      var commandStartedAt: Date?
-    }
-    let box = ResultBox()
-    let releaseResolution = DispatchSemaphore(value: 0)
-    let resolutionExited = expectation(description: "bounded alert resolution exited")
-    let commandFinished = expectation(description: "alert command respected its deadline")
-    let command = try runnerCommandFixture(
-      #"{"command":"alert","commandId":"alert-deadline","appBundleId":"com.apple.springboard","action":"get","timeoutMs":500}"#
-    )
-    currentApp = springboard
-    currentBundleId = Self.springboardBundleId
-    systemModalProbeOverrideForTesting = { deadline in
-      box.probeDeadline = deadline
-      return nil
-    }
-    alertResolutionOverrideForTesting = { deadline in
-      box.observedDeadline = deadline
-      _ = releaseResolution.wait(timeout: .now() + 1)
-      resolutionExited.fulfill()
-      return nil
-    }
+  func testPostSnapshotDelayMarkDoesNotQueueBehindAbandonedMainThreadWork() {
+    abandonedMainThreadWorkCount = 1
     defer {
-      releaseResolution.signal()
-      systemModalProbeOverrideForTesting = nil
-      alertResolutionOverrideForTesting = nil
-      currentApp = nil
-      currentBundleId = nil
-    }
-
-    DispatchQueue(label: "agent-device.runner.tests.alert-deadline").async {
-      box.commandStartedAt = Date()
-      do {
-        _ = try self.executeDispatched(command: command)
-      } catch {
-        box.error = error
-      }
-      commandFinished.fulfill()
-    }
-
-    wait(for: [commandFinished], timeout: 1)
-    let error = box.error as NSError?
-    XCTAssertEqual(error?.domain, RunnerErrorDomain.general)
-    XCTAssertEqual(error?.code, RunnerErrorCode.mainThreadExecutionTimedOut)
-    XCTAssertNotNil(box.probeDeadline)
-    XCTAssertNotNil(box.observedDeadline)
-    if let probeDeadline = box.probeDeadline,
-      let observedDeadline = box.observedDeadline,
-      let commandStartedAt = box.commandStartedAt
-    {
-      XCTAssertEqual(probeDeadline.timeIntervalSince(observedDeadline), 0, accuracy: 0.01)
-      XCTAssertEqual(observedDeadline.timeIntervalSince(commandStartedAt), 0.5, accuracy: 0.05)
-    }
-
-    releaseResolution.signal()
-    wait(for: [resolutionExited], timeout: 1)
-  }
-
-  func testRunMainThreadWorkExecutesOffMainCallerOnMainThread() {
-    final class ResultBox {
-      var observedMainThread: Bool?
-      var error: Error?
-    }
-    let box = ResultBox()
-    let finished = expectation(description: "off-main caller finished")
-
-    DispatchQueue(label: "agent-device.runner.tests.off-main").async {
-      do {
-        box.observedMainThread = try self.runMainThreadWork(
-          command: nil,
-          timeout: 1,
-          timeoutError: self.mainThreadExecutionTimeoutError
-        ) {
-          Thread.isMainThread
-        }
-      } catch {
-        box.error = error
-      }
-      finished.fulfill()
-    }
-
-    wait(for: [finished], timeout: 2)
-    XCTAssertNil(box.error)
-    XCTAssertEqual(box.observedMainThread, true)
-  }
-
-  func testRunMainThreadWorkTimeoutMarksAbandonedUntilDrained() {
-    final class ResultBox {
-      var error: Error?
-      var abandonedCount: Int?
-      var abandonedSinceSet: Bool?
-      var drainedCount: Int?
-      var drainedSinceCleared: Bool?
-    }
-    let box = ResultBox()
-    let releaseWork = DispatchSemaphore(value: 0)
-    let observedAbandoned = DispatchSemaphore(value: 0)
-    let finished = expectation(description: "off-main caller timed out")
-    let drained = expectation(description: "abandoned main work drained")
-
-    DispatchQueue(label: "agent-device.runner.tests.timeout").async {
-      do {
-        _ = try self.runMainThreadWork(
-          command: nil,
-          timeout: 0,
-          timeoutError: self.mainThreadExecutionTimeoutError,
-          onAbandoned: {
-            box.abandonedCount = self.abandonedMainThreadWorkCount
-            box.abandonedSinceSet = self.abandonedMainThreadWorkSince != nil
-            observedAbandoned.signal()
-          },
-          onDrained: {
-            self.mainThreadWorkLock.lock()
-            box.drainedCount = self.abandonedMainThreadWorkCount
-            box.drainedSinceCleared = self.abandonedMainThreadWorkSince == nil
-            self.mainThreadWorkLock.unlock()
-            drained.fulfill()
-          }
-        ) {
-          _ = releaseWork.wait(timeout: .now() + 1)
-          return true
-        }
-      } catch {
-        box.error = error
-      }
-      finished.fulfill()
-    }
-
-    DispatchQueue(label: "agent-device.runner.tests.release-timeout").async {
-      _ = observedAbandoned.wait(timeout: .now() + 1)
-      releaseWork.signal()
-    }
-
-    wait(for: [finished, drained], timeout: 2)
-    XCTAssertEqual((box.error as NSError?)?.code, RunnerErrorCode.mainThreadExecutionTimedOut)
-    XCTAssertEqual(box.abandonedCount, 1)
-    XCTAssertEqual(box.abandonedSinceSet, true)
-    XCTAssertEqual(box.drainedCount, 0)
-    XCTAssertEqual(box.drainedSinceCleared, true)
-  }
-
-  func testPostSnapshotDelayMarkDoesNotQueueBehindAbandonedTreeCapture() {
-    abandonedTreeCaptureCount = 1
-    defer {
-      abandonedTreeCaptureCount = 0
+      abandonedMainThreadWorkCount = 0
       needsPostSnapshotInteractionDelay = false
     }
 
@@ -932,10 +964,69 @@ extension RunnerTests {
     mainThreadWorkLock.lock()
     let abandonedWorkCount = abandonedMainThreadWorkCount
     mainThreadWorkLock.unlock()
-    XCTAssertEqual(abandonedWorkCount, 0)
+    XCTAssertEqual(abandonedWorkCount, 1, "the skipped mark must not add an abandoned unit")
+    XCTAssertFalse(needsPostSnapshotInteractionDelay)
+  }
+
+  func testSnapshotFailureInvalidationQueuesBehindAbandonedMainThreadWorkWithoutWaiting() {
+    currentBundleId = "com.example.stale-target"
+    defer { currentBundleId = nil }
+
+    final class ResultBox {
+      var elapsed: TimeInterval?
+      var bundleStillCachedWhileBlocked: Bool?
+      var abandonedWhileBlocked: Int?
+    }
+    let box = ResultBox()
+    let mainBlocked = DispatchSemaphore(value: 0)
+    let releaseMain = DispatchSemaphore(value: 0)
+    let finished = expectation(description: "invalidation returned while main was blocked")
+
+    DispatchQueue(label: "agent-device.runner.tests.snapshot-invalidation").async {
+      _ = try? self.runMainThreadWork(
+        "command_execution",
+        timeout: 0,
+        timeoutError: self.mainThreadExecutionTimeoutError
+      ) {
+        mainBlocked.signal()
+        _ = releaseMain.wait(timeout: .now() + 5)
+        return true
+      }
+      _ = mainBlocked.wait(timeout: .now() + 2)
+      let startedAt = Date()
+      self.invalidateCachedTargetAfterSnapshotFailure()
+      box.elapsed = Date().timeIntervalSince(startedAt)
+      box.bundleStillCachedWhileBlocked = self.currentBundleId != nil
+      self.mainThreadWorkLock.lock()
+      box.abandonedWhileBlocked = self.abandonedMainThreadWorkCount
+      self.mainThreadWorkLock.unlock()
+      releaseMain.signal()
+      finished.fulfill()
+    }
+
+    wait(for: [finished], timeout: 8)
+    let drainDeadline = Date().addingTimeInterval(2)
+    while hasAbandonedMainThreadWork() || currentBundleId != nil, Date() < drainDeadline {
+      sleepFor(0.005)
+    }
+
+    XCTAssertLessThan(
+      box.elapsed ?? .infinity,
+      0.5,
+      "the failed capture must not wait behind abandoned main-thread work"
+    )
+    XCTAssertEqual(
+      box.bundleStillCachedWhileBlocked,
+      true,
+      "the drop must queue behind the blocked main thread, not run early"
+    )
+    XCTAssertEqual(box.abandonedWhileBlocked, 1, "the deferred drop must not add an abandoned unit")
+    XCTAssertFalse(hasAbandonedMainThreadWork())
+    XCTAssertNil(currentBundleId, "the drop must run once the main thread frees")
   }
 #endif
 
+#if AGENT_DEVICE_RUNNER_UNIT_TESTS
   func execute(command: Command) throws -> Response {
     if command.command == .status {
       return executeStatus(command: command)
@@ -946,6 +1037,7 @@ extension RunnerTests {
     commandJournal.accept(command: command)
     return try executeAccepted(command: command)
   }
+#endif
 
   func executeAccepted(command: Command) throws -> Response {
     commandJournal.start(command: command)
@@ -961,9 +1053,7 @@ extension RunnerTests {
 
   func executeStatus(command: Command) -> Response {
     guard
-      let statusCommandId = command.statusCommandId?
-        .trimmingCharacters(in: .whitespacesAndNewlines),
-      !statusCommandId.isEmpty
+      let statusCommandId = command.statusCommandId?.trimmedNonEmpty
     else {
       return Response(
         ok: false,
@@ -974,7 +1064,7 @@ extension RunnerTests {
         )
       )
     }
-    return Response(ok: true, data: commandJournal.status(commandId: statusCommandId))
+    return Response(ok: true, data: commandJournal.status(normalizedCommandId: statusCommandId))
   }
 
   func executeUptime() -> Response {
@@ -986,37 +1076,15 @@ extension RunnerTests {
     )
   }
 
-  /// Tracks one main-queue dispatch so the watchdog and the dispatched block can agree —
-  /// under `mainThreadWorkLock` — on exactly one of: finished in time, or abandoned.
-  private final class MainThreadWorkState {
-    var finished = false
-    var abandoned = false
-  }
-
   struct ActiveCommandContext {
     let app: XCUIApplication
+    /// Set when `app` is a system surface served in place over the still-bound session app (#2438).
+    var systemSurface: SystemSurfaceHost? = nil
   }
 
   enum ActiveCommandPreparation {
     case response(Response)
     case context(ActiveCommandContext)
-  }
-
-  enum MainThreadBusyState {
-    case idle
-    case busy(abandonedForSeconds: TimeInterval)
-    case wedged(abandonedForSeconds: TimeInterval)
-  }
-
-  func currentMainThreadBusyState() -> MainThreadBusyState {
-    mainThreadWorkLock.lock()
-    defer { mainThreadWorkLock.unlock() }
-    guard abandonedMainThreadWorkCount > 0 else { return .idle }
-    let abandonedFor = abandonedMainThreadWorkSince.map { Date().timeIntervalSince($0) } ?? 0
-    if abandonedFor > mainThreadWedgeThreshold {
-      return .wedged(abandonedForSeconds: abandonedFor)
-    }
-    return .busy(abandonedForSeconds: abandonedFor)
   }
 
   private func runnerBusyResponse(command: Command, abandonedForSeconds: TimeInterval) -> Response {
@@ -1080,10 +1148,7 @@ extension RunnerTests {
       ? Date().addingTimeInterval(Self.alertCommandTimeout(timeoutMs: command.timeoutMs))
       : nil
     if Thread.isMainThread {
-      let routeToSpringboard = shouldRouteToSpringboardBlockingSystemModal(
-        command,
-        deadline: alertDeadline
-      )
+      let routeToSpringboard = shouldRouteToSpringboardBlockingSystemModal(command)
       return try executeOnMainSafely(
         command: command,
         alertDeadline: alertDeadline,
@@ -1093,10 +1158,7 @@ extension RunnerTests {
     // Resolve this before the command's outer main-thread block. If the bounded probe abandons
     // slow XCTest enumeration, return the established recoverable response instead of queueing
     // command preparation behind work that may outlive the 30-second command watchdog.
-    let routeToSpringboard = shouldRouteToSpringboardBlockingSystemModal(
-      command,
-      deadline: alertDeadline
-    )
+    let routeToSpringboard = shouldRouteToSpringboardBlockingSystemModal(command)
     if let unavailable = runnerUnavailableResponse(command: command) {
       return unavailable
     }
@@ -1105,7 +1167,7 @@ extension RunnerTests {
     }
     if command.command == .alert, let deadline = alertDeadline {
       return try runMainThreadWork(
-        command: command,
+        "command_execution",
         timeout: max(0.001, deadline.timeIntervalSinceNow),
         timeoutError: mainThreadExecutionTimeoutError
       ) {
@@ -1117,84 +1179,12 @@ extension RunnerTests {
       }
     }
     return try runMainThreadWork(
-      command: command,
+      "command_execution",
       timeout: mainThreadExecutionTimeout,
       timeoutError: mainThreadExecutionTimeoutError
     ) {
       try self.executeOnMainSafely(command: command, routeToSpringboard: routeToSpringboard)
     }
-  }
-
-  func runMainThreadWork<T>(
-    command: Command?,
-    timeout: TimeInterval,
-    timeoutError: @escaping () -> Error,
-    onAbandoned: (() -> Void)? = nil,
-    onDrained: (() -> Void)? = nil,
-    _ work: @escaping () throws -> T
-  ) throws -> T {
-    if Thread.isMainThread {
-      return try work()
-    }
-    var result: Result<T, Error>?
-    let semaphore = DispatchSemaphore(value: 0)
-    let workState = MainThreadWorkState()
-    DispatchQueue.main.async {
-      do {
-        result = .success(try work())
-      } catch {
-        result = .failure(error)
-      }
-      self.mainThreadWorkLock.lock()
-      if workState.abandoned {
-        self.abandonedMainThreadWorkCount -= 1
-        if self.abandonedMainThreadWorkCount == 0 {
-          self.abandonedMainThreadWorkSince = nil
-          NSLog("AGENT_DEVICE_RUNNER_ABANDONED_WORK_DRAINED")
-        }
-        self.mainThreadWorkLock.unlock()
-        onDrained?()
-      } else {
-        workState.finished = true
-        self.mainThreadWorkLock.unlock()
-      }
-      semaphore.signal()
-    }
-    let waitResult = semaphore.wait(timeout: .now() + timeout)
-    if waitResult == .timedOut {
-      mainThreadWorkLock.lock()
-      let stillRunning = !workState.finished
-      if stillRunning {
-        workState.abandoned = true
-        abandonedMainThreadWorkCount += 1
-        if abandonedMainThreadWorkSince == nil {
-          abandonedMainThreadWorkSince = Date()
-        }
-        onAbandoned?()
-      }
-      mainThreadWorkLock.unlock()
-      throw timeoutError()
-    }
-    switch result {
-    case .success(let value):
-      return value
-    case .failure(let error):
-      throw error
-    case .none:
-      throw NSError(
-        domain: RunnerErrorDomain.general,
-        code: RunnerErrorCode.noResponseFromMainThread,
-        userInfo: [NSLocalizedDescriptionKey: "no response from main thread"]
-      )
-    }
-  }
-
-  private func mainThreadExecutionTimeoutError() -> Error {
-    NSError(
-      domain: RunnerErrorDomain.general,
-      code: RunnerErrorCode.mainThreadExecutionTimedOut,
-      userInfo: [NSLocalizedDescriptionKey: "main thread execution timed out"]
-    )
   }
 
   // MARK: - Command Handling
@@ -1248,6 +1238,20 @@ extension RunnerTests {
           userInfo: [NSLocalizedDescriptionKey: "command returned no response"]
         )
       }
+#if AGENT_DEVICE_RUNNER_UNIT_TESTS
+      // #1605 merge gate: the REAL gesture already executed above; recording a
+      // production-shaped issue here makes the per-command failure-count
+      // conversion below fire exactly as in the field (bsky-24: activation
+      // lands, bookkeeping records a failure). Compiled out of production.
+      if consumeInjectedTapRecordedFailureForTesting(command: command.command) {
+        record(
+          XCTIssue(
+            type: .assertionFailure,
+            compactDescription: "Injected tap recorded-failure (#1605 corroboration merge gate)"
+          )
+        )
+      }
+#endif
       if didRecordXCTestFailure(since: failureCountBefore),
         let failureResponse = xctestRecordedFailureResponse(command: command, response: response)
       {
@@ -1284,7 +1288,7 @@ extension RunnerTests {
     var hasRetried = false
     while true {
       let failureCountBefore = try runMainThreadWork(
-        command: command,
+        "recorded_failure_count",
         timeout: mainThreadExecutionTimeout,
         timeoutError: mainThreadExecutionTimeoutError
       ) {
@@ -1293,7 +1297,7 @@ extension RunnerTests {
       let response = try perform()
       // Recovered independently — re-entering main for bookkeeping would queue behind the still-
       // abandoned XCTest query and re-stall the command (#1244), so skip it until that work drains.
-      if hasAbandonedTreeCapture() {
+      if hasAbandonedMainThreadWork() {
         NSLog(
           "AGENT_DEVICE_RUNNER_DISPATCH_RECOVERY_SKIPPED_XCTEST_OCCUPIED command=%@",
           command.command.rawValue
@@ -1301,7 +1305,7 @@ extension RunnerTests {
         return response
       }
       let recordedFailureResponse = try runMainThreadWork(
-        command: command,
+        "recorded_failure_count",
         timeout: mainThreadExecutionTimeout,
         timeoutError: mainThreadExecutionTimeoutError
       ) {
@@ -1311,7 +1315,7 @@ extension RunnerTests {
       }
       if let recordedFailureResponse {
         try runMainThreadWork(
-          command: command,
+          "target_invalidation",
           timeout: mainThreadExecutionTimeout,
           timeoutError: mainThreadExecutionTimeoutError
         ) {
@@ -1326,7 +1330,7 @@ extension RunnerTests {
         )
         hasRetried = true
         try runMainThreadWork(
-          command: command,
+          "target_invalidation",
           timeout: mainThreadExecutionTimeout,
           timeoutError: mainThreadExecutionTimeoutError
         ) {
@@ -1341,7 +1345,7 @@ extension RunnerTests {
 
   private func executeSnapshotDispatchedOnce(command: Command) throws -> Response {
     let preparation = try runMainThreadWork(
-      command: command,
+      "command_preparation",
       timeout: mainThreadExecutionTimeout,
       timeoutError: mainThreadExecutionTimeoutError
     ) {
@@ -1351,23 +1355,50 @@ extension RunnerTests {
     case .response(let response):
       return response
     case .context(let context):
-      return try executeSnapshotPrepared(command: command, activeApp: context.app)
+      return try executeSnapshotPrepared(
+        command: command,
+        activeApp: context.app,
+        systemSurface: context.systemSurface
+      )
     }
   }
 
-  private func executeSnapshotPrepared(command: Command, activeApp: XCUIApplication) throws -> Response {
-    let options = SnapshotOptions(
+  /// Pure command→options projection, extracted so the runner unit bundle can
+  /// prove the decoded wire field actually reaches presentation options (#1634 P2).
+  static func presentationOptions(from command: Command) -> PresentationOptions {
+    let customActions = command.customActions ?? false
+    return PresentationOptions(
       interactiveOnly: command.interactiveOnly ?? false,
       depth: command.depth,
       scope: command.scope,
-      raw: command.raw ?? false
+      raw: command.raw ?? false,
+      // Custom actions are only readable through the private AX client, so
+      // asking for them pins that backend rather than silently returning a
+      // capture that structurally cannot carry them. An explicit pin wins.
+      preferredBackend: command.preferredBackend
+        ?? (customActions ? SnapshotBackendKind.privateAX.rawValue : nil),
+      customActions: customActions
     )
+  }
+
+  private func executeSnapshotPrepared(
+    command: Command,
+    activeApp: XCUIApplication,
+    systemSurface: SystemSurfaceHost? = nil
+  ) throws -> Response {
+    let options = Self.presentationOptions(from: command)
     do {
-      let payload: DataPayload
+      var payload: DataPayload
       if options.raw {
         payload = try snapshotRaw(app: activeApp, options: options)
       } else {
         payload = try snapshotFast(app: activeApp, options: options)
+      }
+      if let systemSurface {
+        payload.systemSurface = SystemSurfaceProvenancePayload(
+          bundleId: systemSurface.bundleId,
+          kind: systemSurface.kind.rawValue
+        )
       }
       setNeedsPostSnapshotInteractionDelay()
       return Response(ok: true, data: payload)
@@ -1389,13 +1420,13 @@ extension RunnerTests {
       needsPostSnapshotInteractionDelay = true
       return
     }
-    guard !hasAbandonedTreeCapture() else {
+    guard !hasAbandonedMainThreadWork() else {
       NSLog("AGENT_DEVICE_RUNNER_POST_SNAPSHOT_DELAY_MARK_SKIPPED_XCTEST_OCCUPIED")
       return
     }
     do {
       try runMainThreadWork(
-        command: nil,
+        "post_snapshot_delay_mark",
         timeout: 1,
         timeoutError: mainThreadExecutionTimeoutError
       ) {
@@ -1411,9 +1442,18 @@ extension RunnerTests {
       invalidateCachedTarget(reason: "ax_snapshot_failure")
       return
     }
+    // Abandoned work ahead of this hop cannot be cancelled: queue the drop behind it without
+    // waiting, so the failed capture answers now and the next command still finds the target gone.
+    guard !hasAbandonedMainThreadWork() else {
+      NSLog("AGENT_DEVICE_RUNNER_SNAPSHOT_INVALIDATION_DEFERRED_XCTEST_OCCUPIED")
+      DispatchQueue.main.async {
+        self.invalidateCachedTarget(reason: "ax_snapshot_failure")
+      }
+      return
+    }
     do {
       try runMainThreadWork(
-        command: nil,
+        "target_invalidation",
         timeout: 1,
         timeoutError: mainThreadExecutionTimeoutError
       ) {
@@ -1496,24 +1536,18 @@ extension RunnerTests {
       if let requestedFps = command.fps, (requestedFps < minRecordingFps || requestedFps > maxRecordingFps) {
         return Response(ok: false, error: ErrorPayload(message: "recordStart fps must be between \(minRecordingFps) and \(maxRecordingFps)"))
       }
-      if let requestedMaxSize = command.maxSize, requestedMaxSize < 1 {
-        return Response(ok: false, error: ErrorPayload(message: "recordStart maxSize must be a positive integer"))
-      }
       do {
         let resolvedOutPath = resolveRecordingOutPath(requestedOutPath)
         let fpsLabel = command.fps.map(String.init) ?? String(RunnerTests.defaultRecordingFps)
-        let maxSizeLabel = command.maxSize.map(String.init) ?? "native"
         NSLog(
-          "AGENT_DEVICE_RUNNER_RECORD_START requestedOutPath=%@ resolvedOutPath=%@ fps=%@ maxSize=%@",
+          "AGENT_DEVICE_RUNNER_RECORD_START requestedOutPath=%@ resolvedOutPath=%@ fps=%@",
           requestedOutPath,
           resolvedOutPath,
-          fpsLabel,
-          maxSizeLabel
+          fpsLabel
         )
         let recorder = ScreenRecorder(
           outputPath: resolvedOutPath,
-          fps: command.fps.map { Int32($0) },
-          maxSize: command.maxSize
+          fps: command.fps.map { Int32($0) }
         )
         try recorder.start { [weak self] in
           return self?.captureRunnerFrame()
@@ -1526,7 +1560,11 @@ extension RunnerTests {
       }
     case .recordStop:
       guard let recorder = activeRecording else {
-        return Response(ok: false, error: ErrorPayload(message: "no active recording"))
+        // The runner protocol is the durable cleanup primitive. A daemon may crash after the
+        // native stop succeeds but before it commits the resource transition, so exact-owner
+        // recovery must be able to repeat this command safely. Public `record stop` still owns
+        // its user-facing no-active validation through the daemon session manifest.
+        return Response(ok: true, data: DataPayload(message: "recording already stopped"))
       }
       do {
         try recorder.stop()
@@ -1575,10 +1613,20 @@ extension RunnerTests {
     routeToSpringboard: Bool = false
   ) -> ActiveCommandPreparation {
     var activeApp = currentApp ?? app
+    var systemSurface: SystemSurfaceHost? = nil
     if routeToSpringboard {
       activeApp = springboard
     } else if shouldSkipAppActivationPreflight(command) {
       activeApp = resolveAppWithoutActivation(command: command)
+    } else if let presented = presentedSystemSurfaceHost() {
+      // Serve and drive the presented surface IN PLACE: never activate it (that cancels what it
+      // presents) and never adopt it as the cached session target, so once it is gone the next
+      // command resolves back to the still-bound session app (#2438).
+      activeApp = presented.app
+      systemSurface = presented.host
+      if isInteractionCommand(command.command) {
+        applyInteractionStabilizationIfNeeded()
+      }
     } else if !isRunnerLifecycleCommand(command.command) {
       let normalizedBundleId = command.appBundleId?
         .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1646,15 +1694,36 @@ extension RunnerTests {
         applyInteractionStabilizationIfNeeded()
       }
     }
-    return .context(ActiveCommandContext(app: activeApp))
+    return .context(ActiveCommandContext(app: activeApp, systemSurface: systemSurface))
   }
 
-  private func executeOnMainPrepared(
+  /// A registered system surface host that is genuinely on screen, or nil. Presence is foreground
+  /// state, not tree content: a torn-down host still serves a rich tree, and it can only be
+  /// foreground-with-a-stale-tree if something activated it, which the open guard refuses. `state`
+  /// never activates and is cheap when the host is absent. See docs/adr/0004.
+  private func presentedSystemSurfaceHost() -> (host: SystemSurfaceHost, app: XCUIApplication)? {
+#if os(iOS)
+    for host in SystemSurfaceHostRegistry.hosts {
+      let candidate = XCUIApplication(bundleIdentifier: host.bundleId)
+      if candidate.state == .runningForeground {
+        return (host, candidate)
+      }
+    }
+    return nil
+#else
+    return nil
+#endif
+  }
+
+  func executeOnMainPrepared(
     command: Command,
     activeApp: XCUIApplication,
     alertDeadline: Date? = nil
   ) throws -> Response {
     var activeApp = activeApp
+    if command.command != .tap && command.command != .type && !isReadOnlyCommand(command) {
+      clearRememberedTextEntryTap()
+    }
     switch command.command {
     case .status, .activate, .terminate, .targetReset, .shutdown, .recordStart, .recordStop, .uptime:
       return Response(
@@ -1928,6 +1997,7 @@ extension RunnerTests {
           expectedPoint: expectedPoint
         )
         if match.isAmbiguous {
+          clearRememberedTextEntryTap()
           return Response(ok: false, error: ErrorPayload(code: "AMBIGUOUS_MATCH", message: "selector matched multiple elements"))
         }
         if let element = match.element {
@@ -1946,6 +2016,7 @@ extension RunnerTests {
               elementFrame: frame,
               windowFrame: onScreenWindowFrame(app: activeApp)
             ) {
+            clearRememberedTextEntryTap()
             return Response(ok: false, error: ErrorPayload(
               code: "ELEMENT_OFFSCREEN",
               message: "element resolved off-screen at (\(Int(frame.midX)), \(Int(frame.midY)))"))
@@ -1981,6 +2052,7 @@ extension RunnerTests {
               if isTextEntry {
                 waitForTextEntryReadinessAfterTap(app: activeApp, element: element)
               }
+              rememberTextEntryTap(isTextEntry ? element : nil)
               return gestureResponse(
                 message: match.usedNonHittableFallback
                   ? "tapped via non-hittable coordinate fallback"
@@ -2011,11 +2083,13 @@ extension RunnerTests {
             return activateElement(app: activeApp, element: element, action: "tap by selector")
           }
           if let response = unsupportedResponse(for: outcome) {
+            clearRememberedTextEntryTap()
             return response
           }
           if isTextEntry {
             waitForTextEntryReadinessAfterTap(app: activeApp, element: element)
           }
+          rememberTextEntryTap(isTextEntry ? element : nil)
           return gestureResponse(
             message: match.usedNonHittableFallback ? "tapped via non-hittable coordinate fallback" : "tapped",
             timing: timing,
@@ -2027,9 +2101,27 @@ extension RunnerTests {
               : nil
           )
         }
+        clearRememberedTextEntryTap()
         return Response(ok: false, error: ErrorPayload(code: "ELEMENT_NOT_FOUND", message: "element not found"))
       }
       if let x = command.x, let y = command.y {
+        let xCTestChannelPenalized = isSnapshotXCTestChannelPenalized(
+          bundleId: currentBundleId
+        )
+        let xCTestTextInputProbeSkipped = !shouldProbeCoordinateTapTextInput(
+          xCTestChannelPenalized: xCTestChannelPenalized
+        )
+        let textInput: XCUIElement?
+        if !xCTestTextInputProbeSkipped {
+          textInput = coordinateTapTextInputAt(app: activeApp, x: x, y: y)
+        } else {
+          // A process-scoped tap cannot authorize later typing without concrete element identity.
+          textInput = nil
+          NSLog(
+            "AGENT_DEVICE_RUNNER_COORDINATE_TAP_TEXT_INPUT_PROBE_SKIPPED bundle=%@",
+            currentBundleId ?? ""
+          )
+        }
         var fallback: GestureFallback?
         if command.synthesized == true {
           let policyKind = SynthesizedGesturePolicyKind.coordinateTap
@@ -2042,6 +2134,7 @@ extension RunnerTests {
           }
           if case .performed = outcome {
             logSynthesizedGesturePolicyDecision(kind: policyKind, context: context, fallbackAttempted: false)
+            rememberTextEntryTap(textInput)
             return gestureResponse(message: "tapped", timing: timing)
           }
           logSynthesizedGesturePolicyDecision(kind: policyKind, context: context, fallbackAttempted: true)
@@ -2050,8 +2143,10 @@ extension RunnerTests {
         let touchFrame = resolvedTouchVisualizationFrame(app: activeApp, x: x, y: y)
         let (timing, outcome) = performGesture(activeApp) { tapAt(app: activeApp, x: x, y: y) }
         if let response = unsupportedResponse(for: outcome) {
+          clearRememberedTextEntryTap()
           return response
         }
+        rememberTextEntryTap(textInput)
         return gestureResponse(
           message: "tapped",
           timing: timing,
@@ -2059,6 +2154,7 @@ extension RunnerTests {
           fallback: fallback
         )
       }
+      clearRememberedTextEntryTap()
       return Response(ok: false, error: ErrorPayload(message: "tap requires a selector or x/y"))
     case .mouseClick:
       guard let x = command.x, let y = command.y else {
@@ -2100,13 +2196,14 @@ extension RunnerTests {
       guard let x = command.x, let y = command.y, let x2 = command.x2, let y2 = command.y2 else {
         return Response(ok: false, error: ErrorPayload(message: "drag requires x, y, x2, and y2"))
       }
+      let defaults = runnerDragCommandDefaults(command)
       return executeDragGesture(
         activeApp: activeApp,
         x: x,
         y: y,
         x2: x2,
         y2: y2,
-        durationMs: command.durationMs,
+        durationMs: defaults.durationMs,
         synthesized: command.synthesized == true,
         message: "dragged",
         synthesizedPolicyKind: .synthesizedDrag
@@ -2115,16 +2212,10 @@ extension RunnerTests {
       // Fused frame-resolve + drag scroll for non-tvOS. On iOS this intentionally stays on the
       // AX-free synthesized coordinate lane so scroll keeps working when XCTest cannot serialize
       // the accessibility tree.
-      guard let direction = command.direction,
-        direction == "up" || direction == "down" || direction == "left" || direction == "right"
+      guard let rawDirection = command.direction,
+        let direction = RunnerScrollDirection(rawValue: rawDirection)
       else {
-        return Response(
-          ok: false,
-          error: ErrorPayload(
-            code: "INVALID_ARGS",
-            message: "scroll requires direction up|down|left|right"
-          )
-        )
+        return invalidScrollDirectionResponse(commandName: "scroll")
       }
       let scrollPolicyKind = SynthesizedGesturePolicyKind.scroll
       guard let scrollContext = synthesizedCoordinateContext(
@@ -2136,20 +2227,25 @@ extension RunnerTests {
           error: ErrorPayload(message: "scroll could not resolve a usable interaction frame")
         )
       }
-      let frame = scrollReferenceFrame(app: activeApp, context: scrollContext)
-      guard frame.width > 0, frame.height > 0 else {
+      let viewport = resolvedScrollViewport(app: activeApp, context: scrollContext)
+      let defaults = runnerDragCommandDefaults(command)
+      switch viewport.gestureDispatch(
+        direction: direction,
+        amount: defaults.scrollAmount,
+        pixels: command.pixels
+      ) {
+      case .occluded(let occlusionKeyboardMinY, let visibleHeight):
+        return scrollKeyboardOccludedResponse(
+          direction: direction.rawValue,
+          keyboardMinY: occlusionKeyboardMinY,
+          visibleHeight: visibleHeight
+        )
+      case .unusableFrame:
         return Response(
           ok: false,
           error: ErrorPayload(message: "scroll could not resolve a usable interaction frame")
         )
-      }
-      guard let plan = runnerScrollGesturePlan(
-        direction: direction,
-        amount: command.amount,
-        pixels: command.pixels,
-        referenceWidth: frame.width,
-        referenceHeight: frame.height
-      ) else {
+      case .unusablePlan:
         return Response(
           ok: false,
           error: ErrorPayload(
@@ -2157,41 +2253,29 @@ extension RunnerTests {
             message: "scroll could not compute a gesture plan"
           )
         )
-      }
-      if let durationMs = command.durationMs,
-        durationMs.isFinite == false || durationMs < 0 || durationMs > 10000
-      {
-        return Response(
-          ok: false,
-          error: ErrorPayload(
-            code: "INVALID_ARGS",
-            message: "scroll durationMs must be between 0 and 10000"
+      case .gesture(let gesture):
+        guard scrollDurationIsValid(command.durationMs) else {
+          return invalidScrollDurationResponse(commandName: "scroll")
+        }
+        return gesture.attachingEvidence(
+          to: executeScrollDragGesture(
+            activeApp: activeApp,
+            x: gesture.planFrame.minX + gesture.plan.x1,
+            y: gesture.planFrame.minY + gesture.plan.y1,
+            x2: gesture.planFrame.minX + gesture.plan.x2,
+            y2: gesture.planFrame.minY + gesture.plan.y2,
+            durationMs: defaults.durationMs,
+            message: "scrolled",
+            context: scrollContext.withReferenceFrame(gesture.coordinateFrame),
+            releaseBehavior: command.scrollReleaseBehavior
           )
         )
       }
-      return executeDragGesture(
-        activeApp: activeApp,
-        x: frame.minX + plan.x1,
-        y: frame.minY + plan.y1,
-        x2: frame.minX + plan.x2,
-        y2: frame.minY + plan.y2,
-        durationMs: command.durationMs,
-        synthesized: shouldUseSynthesizedScrollPath(),
-        message: "scrolled",
-        synthesizedContext: scrollContext.withReferenceFrame(frame),
-        synthesizedPolicyKind: scrollPolicyKind
-      )
     case .desktopScroll:
-      guard let direction = command.direction,
-        direction == "up" || direction == "down" || direction == "left" || direction == "right"
+      guard let rawDirection = command.direction,
+        let direction = RunnerScrollDirection(rawValue: rawDirection)
       else {
-        return Response(
-          ok: false,
-          error: ErrorPayload(
-            code: "INVALID_ARGS",
-            message: "desktopScroll requires direction up|down|left|right"
-          )
-        )
+        return invalidScrollDirectionResponse(commandName: "desktopScroll")
       }
       let appFrame = activeApp.frame
       let frame = resolvedTouchReferenceFrame(app: activeApp, appFrame: appFrame)
@@ -2220,16 +2304,8 @@ extension RunnerTests {
       let y = frame.midY
       let localX = x - (appFrame.isEmpty ? frame.minX : appFrame.minX)
       let localY = y - (appFrame.isEmpty ? frame.minY : appFrame.minY)
-      if let durationMs = command.durationMs,
-        durationMs.isFinite == false || durationMs < 0 || durationMs > 10000
-      {
-        return Response(
-          ok: false,
-          error: ErrorPayload(
-            code: "INVALID_ARGS",
-            message: "desktopScroll durationMs must be between 0 and 10000"
-          )
-        )
+      guard scrollDurationIsValid(command.durationMs) else {
+        return invalidScrollDurationResponse(commandName: "desktopScroll")
       }
       let touchFrame = resolvedTouchVisualizationFrame(
         app: activeApp,
@@ -2273,7 +2349,7 @@ extension RunnerTests {
       return Response(ok: true, data: DataPayload(message: "remote pressed"))
     case .type:
       var response: Response?
-      withTemporaryScrollIdleTimeoutIfSupported(activeApp) {
+      withBoundedInteractionIdleTimeoutIfSupported(activeApp, waits: .bothSkipped) {
         response = executeTypeCommand(activeApp: activeApp, command: command)
       }
       return response ?? Response(ok: false, error: ErrorPayload(message: "type produced no response"))
@@ -2285,7 +2361,7 @@ extension RunnerTests {
       // keeps raw measureGesture and only routes the success payload through gestureResponse.
       var executedFrame: DragVisualizationFrame?
       let timing = measureGesture {
-        withTemporaryScrollIdleTimeoutIfSupported(activeApp) {
+        withBoundedInteractionIdleTimeoutIfSupported(activeApp, waits: .bothSkipped) {
           executedFrame = swipe(app: activeApp, direction: direction)
         }
       }
@@ -2385,7 +2461,7 @@ extension RunnerTests {
             code: "UNSUPPORTED_OPERATION",
             message: "Unable to dismiss the iOS keyboard: the keyboard exposes no dismiss key, and background taps are never attempted (no tap outside the keyboard can be proven side-effect-free)",
             hint:
-              "The on-screen keyboard usually does not block agent-device interactions: press the next target directly instead of retrying dismiss. If that press fails or reports no visible effect, scroll the target into view, or use keyboard enter to press the return key when submission is wanted."
+              "An element whose center sits behind the on-screen keyboard is refused with tap_keyboard_occludes_target; one whose center stays above the keys presses normally. To end editing, tap the app's own Done/Cancel control, or use keyboard enter to press the return key when submission is wanted."
           )
         )
       }
@@ -2424,7 +2500,12 @@ extension RunnerTests {
         Self.alertCommandTimeout(timeoutMs: command.timeoutMs)
       )
       guard let alert = resolveAlert(app: activeApp, deadline: deadline) else {
-        return Response(ok: false, error: ErrorPayload(message: "alert not found"))
+        // Typed so the host retries on absence alone: a transport or runner failure carries no
+        // code and must not be mistaken for "no alert yet" (ALERT_NOT_FOUND_RUNNER_CODE).
+        return Response(
+          ok: false,
+          error: ErrorPayload(code: "ALERT_NOT_FOUND", message: "alert not found")
+        )
       }
       return handleAlert(alert, action: action, deadline: deadline)
     case .gesture:
@@ -2476,9 +2557,73 @@ extension RunnerTests {
     }
   }
 
-  /// Shared drag execution for `.drag` and the fused `.scroll`. The iOS synthesized lane keeps
-  /// each command's fallback policy explicit: scroll requires private synthesis, while explicit
-  /// synthesized drag can still use the coordinate fallback unless AX is known unavailable.
+  private func invalidScrollDirectionResponse(commandName: String) -> Response {
+    Response(
+      ok: false,
+      error: ErrorPayload(
+        code: "INVALID_ARGS",
+        message: "\(commandName) requires direction up|down|left|right"
+      )
+    )
+  }
+
+  private func scrollDurationIsValid(_ durationMs: Double?) -> Bool {
+    guard let durationMs else { return true }
+    return durationMs.isFinite && durationMs >= 0 && durationMs <= 10000
+  }
+
+  private func invalidScrollDurationResponse(commandName: String) -> Response {
+    return Response(
+      ok: false,
+      error: ErrorPayload(
+        code: "INVALID_ARGS",
+        message: "\(commandName) durationMs must be between 0 and 10000"
+      )
+    )
+  }
+
+  private func executeScrollDragGesture(
+    activeApp: XCUIApplication,
+    x: Double,
+    y: Double,
+    x2: Double,
+    y2: Double,
+    durationMs: Double,
+    message: String,
+    context: SynthesizedCoordinateContext,
+    releaseBehavior: ScrollReleaseBehavior?
+  ) -> Response {
+#if os(iOS)
+    return executeDragGesture(
+      activeApp: activeApp,
+      x: x,
+      y: y,
+      x2: x2,
+      y2: y2,
+      durationMs: durationMs,
+      synthesized: true,
+      message: message,
+      synthesizedContext: context,
+      synthesizedPolicyKind: .scroll,
+      synthesizedProfile: scrollDragProfile(releaseBehavior: releaseBehavior)
+    )
+#else
+    return executeDragGesture(
+      activeApp: activeApp,
+      x: x,
+      y: y,
+      x2: x2,
+      y2: y2,
+      durationMs: durationMs,
+      synthesized: false,
+      message: message,
+      synthesizedPolicyKind: .scroll
+    )
+#endif
+  }
+
+  /// Shared drag execution for explicit drag commands. The iOS synthesized lane keeps its
+  /// fallback policy explicit; viewport scrolling owns a separate single drag specification.
   private func executeDragGesture(
     activeApp: XCUIApplication,
     x: Double,
@@ -2492,6 +2637,7 @@ extension RunnerTests {
     synthesizedPolicyKind: SynthesizedGesturePolicyKind,
     synthesizedProfile: SynthesizedDragProfile = .continuous
   ) -> Response {
+    let durationMs = durationMs ?? runnerDefaultDragDurationMs
     let commandName = dragCommandName(message: message)
     guard x.isFinite, y.isFinite, x2.isFinite, y2.isFinite else {
       return Response(
@@ -2523,7 +2669,7 @@ extension RunnerTests {
     )
     var fallback: GestureFallback?
     if synthesized {
-      let durationMs = min(max(durationMs ?? 250, 16), 10000)
+      let durationMs = min(max(durationMs, 16), 10000)
       let context = synthesizedCoordinateContext(
         app: activeApp,
         policy: synthesizedGesturePolicy(synthesizedPolicyKind)
@@ -2546,7 +2692,7 @@ extension RunnerTests {
       fallback = gestureFallback(strategy: "xctest-coordinate-drag", from: outcome)
     }
     let holdDuration = synthesized
-      ? synthesizedSwipeFallbackHoldDuration(durationMs: durationMs ?? 250)
+      ? synthesizedSwipeFallbackHoldDuration(durationMs: durationMs)
       : coordinateDragHoldDuration()
     let (timing, outcome) = performGesture(activeApp) {
       dragAt(
@@ -2575,7 +2721,7 @@ extension RunnerTests {
     y: Double,
     x2: Double,
     y2: Double,
-    durationMs: Double?,
+    durationMs: Double,
     message: String,
     context: SynthesizedCoordinateContext?,
     policyKind: SynthesizedGesturePolicyKind,
@@ -2615,7 +2761,7 @@ extension RunnerTests {
         )
       )
     }
-    let durationMs = min(max(durationMs ?? 250, 16), 10000)
+    let durationMs = min(max(durationMs, 16), 10000)
     let dragFrame = axFreeDragVisualizationFrame(
       x: plan.points.x,
       y: plan.points.y,
@@ -2665,7 +2811,7 @@ extension RunnerTests {
     y: Double,
     x2: Double,
     y2: Double,
-    durationMs: Double?,
+    durationMs: Double,
     message: String,
     fallback: GestureFallback?
   ) -> Response {
@@ -2677,7 +2823,7 @@ extension RunnerTests {
       x2: dragPoints.x2,
       y2: dragPoints.y2
     )
-    let holdDuration = synthesizedSwipeFallbackHoldDuration(durationMs: durationMs ?? 250)
+    let holdDuration = synthesizedSwipeFallbackHoldDuration(durationMs: durationMs)
     let (timing, outcome) = performGesture(activeApp) {
       dragAt(
         app: activeApp,
@@ -2699,31 +2845,41 @@ extension RunnerTests {
     )
   }
 
-  private func scrollReferenceFrame(app: XCUIApplication, context: SynthesizedCoordinateContext) -> CGRect {
-#if os(iOS)
-    return synthesizedFrameAvoidingKeyboardWhenAllowed(app: app, context: context)
-#else
-    return resolvedTouchReferenceFrame(app: app, appFrame: app.frame)
-#endif
-  }
-
-  private func shouldUseSynthesizedScrollPath() -> Bool {
-#if os(iOS)
-    return true
-#else
-    return false
-#endif
+  /// Adds the #2500 avoidance evidence to a scroll response. Only the frame resolver knows whether
+  /// it trimmed the swipe for a keyboard, and only `scroll` has this evidence to carry, so it is
+  /// attached where the frame was resolved rather than threaded through every gesture response.
+  /// The refusal a keyboard forces. It performs no gesture: swiping into the keys would leave the
+  /// surface where it was, which the daemon's no-progress fingerprint reads as a stuck container
+  /// (#2499) and an agent reads as a broken scroll. The TS owner maps the code to the
+  /// `scroll_keyboard_occludes_surface` reason and the "dismiss the keyboard" hint.
+  private func scrollKeyboardOccludedResponse(
+    direction: String,
+    keyboardMinY: Double,
+    visibleHeight: Double
+  ) -> Response {
+    return Response(
+      ok: false,
+      error: ErrorPayload(
+        code: ScrollViewportPolicy.occlusionRunnerCode,
+        message: String(
+          format:
+            "scroll %@ refused: the keyboard leaves %.0fpt of visible surface above it, too little to swipe",
+          direction,
+          visibleHeight
+        )
+      )
+    )
   }
 
   private func dragCommandName(message: String) -> String {
     return message == "scrolled" ? "scroll" : "drag"
   }
 
-  private func currentXCTestFailureCount() -> Int {
+  func currentXCTestFailureCount() -> Int {
     return testRun?.failureCount ?? 0
   }
 
-  private func didRecordXCTestFailure(since failureCountBefore: Int) -> Bool {
+  func didRecordXCTestFailure(since failureCountBefore: Int) -> Bool {
     return currentXCTestFailureCount() > failureCountBefore
   }
 
@@ -2740,14 +2896,16 @@ extension RunnerTests {
       error: ErrorPayload(
         code: "XCTEST_RECORDED_FAILURE",
         message: "XCTest recorded a failure while executing \(command.command.rawValue); the action may not have been performed.",
-        hint: "The iOS runner session will be restarted. Retry after a fresh snapshot, or use screenshot plus coordinate commands when the accessibility tree is unavailable."
+        hint: "The iOS runner session was invalidated. Re-observe with a fresh snapshot before retrying; if the accessibility tree is unavailable, use screenshot plus coordinate commands instead of retrying the tap blindly."
       )
     )
   }
 
-  private func runnerCommandFixture(_ json: String) throws -> Command {
+#if AGENT_DEVICE_RUNNER_UNIT_TESTS
+  func runnerCommandFixture(_ json: String) throws -> Command {
     try JSONDecoder().decode(Command.self, from: Data(json.utf8))
   }
+#endif
 
   private func shouldSkipAppActivationPreflight(_ command: Command) -> Bool {
 #if os(iOS)
@@ -2776,11 +2934,10 @@ extension RunnerTests {
   }
 
   private func shouldRouteToSpringboardBlockingSystemModal(
-    _ command: Command,
-    deadline: Date? = nil
+    _ command: Command
   ) -> Bool {
 #if os(iOS)
-    guard command.command == .alert || isCoordinateOnlyTap(command) else {
+    guard isCoordinateOnlyTap(command) else {
       return false
     }
     #if AGENT_DEVICE_RUNNER_UNIT_TESTS
@@ -2788,8 +2945,7 @@ extension RunnerTests {
       return override
     }
     #endif
-    let budgetDeadline = Date().addingTimeInterval(systemModalProbeBudget)
-    let probeDeadline = deadline.map { min($0, budgetDeadline) } ?? budgetDeadline
+    let probeDeadline = Date().addingTimeInterval(systemModalProbeBudget)
     // `runMainThreadWork` executes inline for a main-thread caller, so that path cannot use its
     // timeout machinery. Direct main-thread dispatch keeps the prior synchronous modal check;
     // normal off-main command dispatch uses the bounded probe and post-probe busy recovery.
@@ -2846,16 +3002,70 @@ extension RunnerTests {
     return XCUIApplication(bundleIdentifier: bundleId)
   }
 
-  private func executeTypeCommand(activeApp: XCUIApplication, command: Command) -> Response {
+  func executeTypeCommand(activeApp: XCUIApplication, command: Command) -> Response {
     guard let text = command.text else {
       return Response(ok: false, error: ErrorPayload(message: "type requires text"))
     }
     let delaySeconds = Double(max(command.delayMs ?? 0, 0)) / 1000.0
     let textEntryMode = resolveTextEntryMode(command)
     let target: TextEntryTarget
+    var resolvedCoordinateContext: SynthesizedCoordinateContext?
     var maestroNonHittableCoordinateFallbackUsed: Bool?
+    if command.allowNonHittableCoordinateFallback == true,
+      command.x != nil,
+      command.y != nil
+    {
+      // The shared runtime has already resolved this node as non-hittable and
+      // deliberately selected Maestro's coordinate compatibility route.
+      maestroNonHittableCoordinateFallbackUsed = true
+    }
     let focusStartedAt = Date()
-    if let selectorKey = command.selectorKey, let selectorValue = command.selectorValue {
+#if os(iOS)
+    let xCTestChannelPenalized = isSnapshotXCTestChannelPenalized(bundleId: currentBundleId)
+    var resolvedCoordinateTarget: TextEntryTarget?
+    if Self.shouldUseResolvedCoordinateTextEntryRoute(
+      repairMode: textEntryMode,
+      hasX: command.x != nil,
+      hasY: command.y != nil,
+      xCTestChannelPenalized: xCTestChannelPenalized
+    ), let x = command.x, let y = command.y {
+      let policyKind = SynthesizedGesturePolicyKind.coordinateTap
+      let context = synthesizedCoordinateContext(
+        app: activeApp,
+        policy: synthesizedGesturePolicy(policyKind)
+      )
+      let (_, outcome) = performGesture(activeApp, idleTimeout: false) {
+        synthesizedTapAt(app: activeApp, x: x, y: y, context: context)
+      }
+      if Self.shouldFallbackFromSynthesizedTextEntryFocus(outcome) {
+        logSynthesizedGesturePolicyDecision(
+          kind: policyKind,
+          context: context,
+          fallbackAttempted: true
+        )
+      } else {
+        logSynthesizedGesturePolicyDecision(
+          kind: policyKind,
+          context: context,
+          fallbackAttempted: false
+        )
+        resolvedCoordinateContext = context
+        resolvedCoordinateTarget = TextEntryTarget(
+          element: nil,
+          refreshPoint: CGPoint(x: x, y: y),
+          prefersFocusedElement: false
+        )
+      }
+    }
+#else
+    let xCTestChannelPenalized = false
+    let resolvedCoordinateTarget: TextEntryTarget? = nil
+#endif
+    if let resolvedCoordinateTarget {
+      target = resolvedCoordinateTarget
+    } else if let selectorKey = command.selectorKey, let selectorValue = command.selectorValue {
+      // Released daemons may still send selector-keyed type commands even though current
+      // daemons resolve fill selectors through the runtime tree before reaching the runner.
       let match = findElement(
         app: activeApp,
         selectorKey: selectorKey,
@@ -2886,7 +3096,16 @@ extension RunnerTests {
       textEntryModeName(textEntryMode)
     )
     if textEntryMode == .replacement {
-      guard target.element != nil else {
+#if os(iOS)
+      let canReplaceResolvedFirstResponder = Self.shouldUseSynthesizedFirstResponderReplacement(
+        hasResolvedElement: target.element != nil,
+        hasRefreshPoint: target.refreshPoint != nil,
+        xCTestChannelPenalized: xCTestChannelPenalized
+      )
+#else
+      let canReplaceResolvedFirstResponder = false
+#endif
+      guard target.element != nil || canReplaceResolvedFirstResponder else {
         let message =
           (command.x != nil && command.y != nil)
           ? "no text input found at the provided coordinates to clear"
@@ -2900,8 +3119,16 @@ extension RunnerTests {
       text: text,
       delaySeconds: delaySeconds,
       repairMode: textEntryMode,
+      xCTestChannelPenalized: xCTestChannelPenalized,
+      synthesizer: PrivateXCTestTextEntrySynthesizer(),
       commandId: command.commandId
     )
+    if let failure = textResult.failure {
+      return Response(
+        ok: false,
+        error: ErrorPayload(code: failure.rawValue, message: failure.message, hint: failure.hint)
+      )
+    }
     if textResult.verified == false {
       let expected = textResult.expectedText ?? ""
       let observed = textResult.observedText ?? ""
@@ -2914,7 +3141,16 @@ extension RunnerTests {
       )
     }
     let point = target.refreshPoint
-    let frame = activeApp.frame
+    let frame: CGRect
+    if let resolvedCoordinateContext {
+      frame = resolvedCoordinateContext.referenceFrame
+    } else if point != nil {
+      frame = activeApp.frame
+    } else {
+      // Bare `type` has no coordinate response to normalize. Avoid serializing the
+      // application AX tree only to emit unused reference dimensions.
+      frame = .zero
+    }
     return Response(
       ok: true,
       data: DataPayload(
@@ -2923,7 +3159,8 @@ extension RunnerTests {
         y: point.map { Double($0.y) },
         referenceWidth: frame.isEmpty ? nil : Double(frame.width),
         referenceHeight: frame.isEmpty ? nil : Double(frame.height),
-        maestroNonHittableCoordinateFallbackUsed: maestroNonHittableCoordinateFallbackUsed
+        maestroNonHittableCoordinateFallbackUsed: maestroNonHittableCoordinateFallbackUsed,
+        textEntryRoute: textResult.textEntryRoute
       )
     )
   }

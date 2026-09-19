@@ -1,4 +1,5 @@
 import {
+  BATCH_STEP_SHAPE_HINT,
   DEFAULT_BATCH_MAX_STEPS,
   assertBatchStepCount,
   isValidBatchMaxSteps,
@@ -11,17 +12,11 @@ import { type SessionRuntimeHints } from '@agent-device/kernel/contracts';
 import {
   STRUCTURED_BATCH_COMMAND_NAMES,
   readStructuredBatchCommandName,
-} from '../../core/batch-policy.ts';
+} from '@agent-device/command-registry/batch-policy';
+import { type CommandMetadata, type JsonSchema } from '../command-contract.ts';
 import {
-  defineCommandMetadata,
-  type CommandMetadata,
-  type JsonSchema,
-} from '../command-contract.ts';
-import {
-  assertAllowedKeys,
   customField,
   enumField,
-  fieldsInputSchema,
   integerField,
   readFieldInput,
   requiredField,
@@ -29,6 +24,8 @@ import {
   type CommandFieldMap,
   type InferCommandInput,
 } from '../command-input.ts';
+import { defineFieldCommandMetadata } from '../field-command-contract.ts';
+import { assertAllowedKeys } from '../input-readers.ts';
 
 export type BatchCommandStep = {
   command: string;
@@ -47,12 +44,12 @@ export function createBatchCommandMetadata(
   nestedCommands: readonly string[] = STRUCTURED_BATCH_COMMAND_NAMES,
 ): CommandMetadata<'batch', BatchInput> {
   const fields = batchFields(nestedCommands);
-  return defineCommandMetadata({
-    name: 'batch',
-    description: 'Run multiple structured command steps in one daemon request.',
-    inputSchema: fieldsInputSchema(fields),
-    readInput: (input) => readBatchInput(input, fields),
-  });
+  return defineFieldCommandMetadata(
+    'batch',
+    'Execute multiple commands in one daemon request.',
+    fields,
+    { readInput: (input) => readBatchInput(input, fields) },
+  );
 }
 
 function batchFields(nestedCommands: readonly string[]) {
@@ -89,6 +86,12 @@ function batchStepSchema(nestedCommands: readonly string[]): JsonSchema {
       input: {
         type: 'object',
         additionalProperties: true,
+        // The accepted keys depend on `command`, so this object cannot be typed
+        // here. `commandInputFor` names the sibling that resolves them, which is
+        // what lets the model-facing admission boundary check a step's input
+        // against that command's own advertised schema instead of waving through
+        // an opaque object (`mcp/command-tools.ts`).
+        commandInputFor: 'command',
         description:
           'Structured command input for the nested command. Use the matching MCP tool schema for this object.',
       },
@@ -128,7 +131,12 @@ function readBatchStep(
   nestedCommands: readonly string[],
 ): BatchCommandStep {
   const record = readBatchStepRecord(step, stepNumber);
-  assertAllowedKeys(record, ['command', 'input', 'runtime'], `Batch step ${stepNumber}`);
+  assertAllowedKeys(
+    record,
+    ['command', 'input', 'runtime'],
+    `Batch step ${stepNumber}`,
+    BATCH_STEP_SHAPE_HINT,
+  );
   return {
     command: readBatchStepCommand(record, stepNumber, nestedCommands),
     input: readBatchStepInputObject(record, stepNumber),
