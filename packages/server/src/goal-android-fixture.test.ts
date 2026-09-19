@@ -30,7 +30,7 @@ import { startServer } from "./index.js";
  * relaunches a clean activity first so the journey is deterministic.
  */
 
-const SERIAL = "emulator-5556";
+const SERIAL = "emulator-5554";
 const organizationId = "local";
 const projectId = "default";
 const actorId = "human:goal-android-fixture";
@@ -145,15 +145,16 @@ test(
           else resolve(stdout);
         });
       });
-    let window: string;
+    let installed: string;
     try {
-      window = await adb(["shell", "dumpsys window"]);
+      // Bounded output: the full window dump can exceed execFile's buffer.
+      installed = await adb(["shell", "pm", "list", "packages", "dev.relay.prooffixture"]);
     } catch {
       t.skip(`emulator ${SERIAL} is not reachable`);
       return;
     }
-    if (!window.includes("dev.relay.prooffixture")) {
-      t.skip(`proof fixture is not installed/foreground on ${SERIAL}`);
+    if (!installed.includes("dev.relay.prooffixture")) {
+      t.skip(`proof fixture is not installed on ${SERIAL}`);
       return;
     }
 
@@ -161,8 +162,11 @@ test(
     // focus instead of guessing a fixed settle delay (real emulator).
     await adb(["shell", "am", "start", "-S", "-n", "dev.relay.prooffixture/.MainActivity"]);
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      const focus = await adb(["shell", "dumpsys", "window"]);
-      if (focus.includes("dev.relay.prooffixture/.MainActivity")) break;
+      const focus = await adb([
+        "shell",
+        "dumpsys window windows | grep -m1 mCurrentFocus",
+      ]).catch(() => "");
+      if (focus.includes("dev.relay.prooffixture")) break;
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
 

@@ -31,6 +31,30 @@ const JSON_LIMITS = {
   maxSerializedBytes: 256 * 1024,
 } as const;
 
+const DEFAULT_MODEL_EGRESS_ORIGINS = ["https://openrouter.ai"];
+
+/** Egress policy gate for model calls. Redaction bounds WHAT leaves this
+ * process; this bounds WHERE it may go. Returns a blocking reason or null. */
+export function modelEgressBlockedReason(
+  endpoint: string,
+  allowedEndpointOrigins: readonly string[] = [],
+): string | null {
+  if (process.env.RELAY_MODEL_EGRESS === "disabled") {
+    return "model egress is disabled by policy (RELAY_MODEL_EGRESS=disabled)";
+  }
+  let origin: string;
+  try {
+    origin = new URL(endpoint).origin;
+  } catch {
+    return `model endpoint ${endpoint} is not a valid URL`;
+  }
+  const allowed = new Set([...DEFAULT_MODEL_EGRESS_ORIGINS, ...allowedEndpointOrigins]);
+  if (!allowed.has(origin)) {
+    return `model endpoint origin ${origin} is not allowed; allow it explicitly via allowedEndpointOrigins`;
+  }
+  return null;
+}
+
 type JsonSchema = Record<string, unknown>;
 
 export type OpenRouterDecisionProviderOptions = {
@@ -44,6 +68,9 @@ export type OpenRouterDecisionProviderOptions = {
   requestId?: () => string;
   sleep?: (milliseconds: number) => Promise<void>;
   maxAttempts?: number;
+  /** Extra endpoint origins this deployment explicitly allows for model
+   * egress. Defaults to the official OpenRouter origin only. */
+  allowedEndpointOrigins?: string[];
 };
 
 export type ModelDecisionProvider = {
@@ -405,6 +432,16 @@ export function createOpenRouterDecisionProvider(
           status: "unavailable",
           model: request.model || model,
           error: { code: "provider-unavailable", message: "OpenRouter is not configured" },
+        };
+      }
+      const egressBlocked = modelEgressBlockedReason(endpoint, options.allowedEndpointOrigins ?? []);
+      if (egressBlocked) {
+        const completedAt = now();
+        return {
+          ...recordBase(request, id, startedAt, completedAt),
+          status: "unavailable",
+          model: request.model || model,
+          error: { code: "provider-unavailable", message: egressBlocked },
         };
       }
 

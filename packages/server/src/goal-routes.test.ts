@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import test from "node:test";
 import type { GoalRouteRuntime } from "./goal-routes.js";
@@ -191,6 +192,115 @@ test("a server-owned goal survives client disconnect and cancels cross-client", 
       workflow?: { status: string };
     };
     assert.equal(settled.workflow?.status, "terminal");
+  } finally {
+    await server.close();
+    if (previousStateDir === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousStateDir;
+    await rm(stateDir, { recursive: true, force: true });
+  }
+});
+
+
+test("a crash-left running goal converges safely on a fresh server", async () => {
+  const previousStateDir = process.env.RELAY_STATE_DIR;
+  const stateDir = await mkdtemp(join(tmpdir(), "relay-goal-crash-"));
+  process.env.RELAY_STATE_DIR = stateDir;
+
+  // The interrupted worker's canonical state: a running record whose last
+  // mutation was persisted as intended but never acknowledged.
+  const record = {
+    schemaVersion: 1,
+    id: "goal-crash-1",
+    goal: "Open settings",
+    target: { targetId: "goal-goal-crash-1", platform: "browser", startUrl: "https://example.test" },
+    budget: { maxSteps: 10, maxDurationMs: 900_000 },
+    status: "running",
+    step: 1,
+    createdAt: 1,
+    updatedAt: 2,
+    observations: [],
+    actions: [
+      {
+        id: "action-1",
+        step: 1,
+        candidateId: "c1",
+        label: "Next",
+        interaction: { kind: "identifier", target: { identifier: "next" } },
+        status: "intended",
+        observationDigestBefore: "sha256:" + "1".repeat(64),
+        evidenceRefs: [],
+        at: 2,
+      },
+    ],
+    pendingAction: {
+      actionId: "action-1",
+      candidateId: "c1",
+      observationDigest: "sha256:" + "1".repeat(64),
+      intendedAt: 2,
+    },
+  };
+  // The route scopes by actor subject; unauthenticated local-trusted
+  // requests use subject "local-user". Seed that exact bucket so the default
+  // runtime reads the record from disk — no injected inspect.
+  const dirs = [createHash("sha256").update("local\0default\0local-user").digest("hex")];
+  for (const dir of dirs) {
+    const sessions = join(stateDir, "goal-sessions", dir, "sessions");
+    await mkdir(sessions, { recursive: true });
+    await writeFile(join(sessions, `${record.id}.json`), JSON.stringify(record));
+  }
+
+  const server = await startServer({
+    host: "127.0.0.1",
+    port: 0,
+  });
+  try {
+    const base = `http://127.0.0.1:${server.port}`;
+
+    // 1. The record remains observable after the "crash" — read from disk
+    //    by the default runtime, with the pending mutation intact.
+    const inspected = (await (await fetch(`${base}/goal/${record.id}`)).json()) as {
+      status: string;
+      pendingAction?: { actionId: string };
+      actions: Array<{ id: string; status: string }>;
+    };
+    assert.equal(inspected.status, "running");
+    assert.equal(inspected.pendingAction?.actionId, "action-1");
+    assert.equal(inspected.actions[0]?.status, "intended");
+
+    // 2. Blind cancel of a running-not-in-process record is refused with the
+    //    actionable 409, never a silent state overwrite.
+    const cancel = await fetch(`${base}/goal/${record.id}/cancel`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirmControl: true }),
+    });
+    assert.equal(cancel.status, 409);
+    assert.match(await cancel.text(), /not executing in this server process/u);
+
+    // 3. Resume explicitly: the pending mutation fences for review — the
+    //    runner loads the disk record and stops at resume-review-required
+    //    without dispatching the intended action again.
+    const resumed = await fetch(`${base}/goal/${record.id}/resume`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ confirmControl: true }),
+    });
+    assert.equal(resumed.status, 200);
+    const resumedBody = (await resumed.json()) as {
+      status: string;
+      stopReason?: { code: string };
+      actions: Array<{ id: string; status: string }>;
+      resumeRequiresReview?: boolean;
+    };
+    assert.equal(resumedBody.status, "uncertain");
+    assert.equal(resumedBody.stopReason?.code, "resume-review-required");
+    assert.equal(resumedBody.resumeRequiresReview, true);
+    assert.equal(resumedBody.actions[0]?.status, "intended");
+    // The disk record still holds the exact unresolved mutation after resume.
+    const after = (await (await fetch(`${base}/goal/${record.id}`)).json()) as {
+      pendingAction?: { actionId: string };
+    };
+    assert.equal(after.pendingAction?.actionId, "action-1");
   } finally {
     await server.close();
     if (previousStateDir === undefined) delete process.env.RELAY_STATE_DIR;

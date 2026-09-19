@@ -179,3 +179,37 @@ test("OpenRouter decision provider classifies a malformed successful SDK respons
   assert.equal(result.status, "invalid");
   assert.equal(result.error?.code, "invalid-response");
 });
+
+test("egress policy blocks disallowed endpoints and disabled mode", async () => {
+  const blocked = await createOpenRouterDecisionProvider({
+    apiKey: "test-key",
+    endpoint: "https://evil.example.test/api/v1/chat/completions",
+    fetch: async () => new Response("{}", { status: 200 }),
+  }).decide(request());
+  assert.equal(blocked.status, "unavailable");
+  assert.match(blocked.error?.message ?? "", /not allowed/u);
+
+  const allowed = await createOpenRouterDecisionProvider({
+    apiKey: "test-key",
+    endpoint: "https://proxy.internal.test/api/v1/chat/completions",
+    allowedEndpointOrigins: ["https://proxy.internal.test"],
+    fetch: async () => new Response("{}", { status: 200 }),
+  }).decide(request());
+  // Passes the gate (fails later for unrelated response reasons, never for egress).
+  assert.notEqual(allowed.error?.message ?? "", undefined);
+  assert.equal((allowed.error?.message ?? "").includes("not allowed"), false);
+
+  const previous = process.env.RELAY_MODEL_EGRESS;
+  process.env.RELAY_MODEL_EGRESS = "disabled";
+  try {
+    const disabled = await createOpenRouterDecisionProvider({
+      apiKey: "test-key",
+      fetch: async () => new Response("{}", { status: 200 }),
+    }).decide(request());
+    assert.equal(disabled.status, "unavailable");
+    assert.match(disabled.error?.message ?? "", /disabled by policy/u);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_MODEL_EGRESS;
+    else process.env.RELAY_MODEL_EGRESS = previous;
+  }
+});
