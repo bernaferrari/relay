@@ -70,6 +70,9 @@ packages/ios-hid-tap/ios-hid-tap.exe
 .dolt/
 *.db
 .beads-credential-key
+# Local-only review artifacts: kept on disk, never pushed.
+evidence/supergrok-languages/
+
 # Managed worktrees are independent checkouts, not root workspace source.
 # git worktrees (e.g. .worktrees/next-feature)
 .worktrees/
