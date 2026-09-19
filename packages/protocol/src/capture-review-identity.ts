@@ -242,7 +242,11 @@ export function captureReviewLeftoverFramePaths(
  * frames until dest identity also exists. Coverage leftover-skip wrappers
  * (`Transition executed`, `Inspect setup skipped…`) are the same class as
  * Run saved Test — they must not fill dest identity when artifacts are absent. */
-export function isCaptureReviewLeftoverCaption(caption?: string): boolean {
+export function isCaptureReviewLeftoverCaption(caption?: string, phase?: string): boolean {
+  // A typed role is authoritative. Legacy caption cleanup must never hide a
+  // new, explicitly phased checkpoint such as "Close account confirmation".
+  if (isCaptureReviewDestPhase(phase)) return false;
+  if (isCaptureReviewLeftoverPhase(phase)) return true;
   const value = caption?.trim() ?? "";
   if (/^(?:close|back)(?:\s|$)/iu.test(value)) return true;
   if (/^after · run saved test$/iu.test(value)) return true;
@@ -261,8 +265,8 @@ export function isCaptureReviewOpenerCaption(caption?: string): boolean {
   return /^tap\b/iu.test(body);
 }
 
-export function leftoverCloseCaption(caption?: string): boolean {
-  return isCaptureReviewLeftoverCaption(caption);
+export function leftoverCloseCaption(caption?: string, phase?: string): boolean {
+  return isCaptureReviewLeftoverCaption(caption, phase);
 }
 
 /** Leftover Close / Run saved Test last-frame after dest identity.
@@ -356,15 +360,10 @@ export function projectCaptureReviewDestIdentity(
 export function destIdentityReviewItems<T extends { phase?: string; caption?: string }>(
   items: readonly T[],
 ): T[] {
-  const hasLeftover = items.some(
-    (item) =>
-      isCaptureReviewLeftoverPhase(item.phase) || isCaptureReviewLeftoverCaption(item.caption),
+  const hasLeftover = items.some((item) =>
+    isCaptureReviewLeftoverCaption(item.caption, item.phase),
   );
-  const kept = items.filter(
-    (item) =>
-      isCaptureReviewDestPhase(item.phase) ||
-      (!isCaptureReviewLeftoverPhase(item.phase) && !isCaptureReviewLeftoverCaption(item.caption)),
-  );
+  const kept = items.filter((item) => !isCaptureReviewLeftoverCaption(item.caption, item.phase));
   if (!hasLeftover) return kept;
   const withoutOpeners = kept.filter((item) => !isCaptureReviewOpenerCaption(item.caption));
   return withoutOpeners.length ? withoutOpeners : kept;

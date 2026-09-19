@@ -1548,6 +1548,53 @@ test("runs collection dest identity is dest wait-for 003, not leftover Close 004
   }
 });
 
+test("runs collection keeps an explicitly phased Close checkpoint", async () => {
+  const session = await connectMcp(
+    fixtureInvoker({
+      "run.list": {
+        runs: [
+          {
+            id: "close-checkpoint",
+            action: "close-account",
+            captureReview: [
+              {
+                captureId: "frames/close-confirmation.png::close-confirmation",
+                caption: "Close account confirmation",
+                status: "pending",
+                framePath: "frames/close-confirmation.png",
+                phase: "dest",
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  try {
+    const content = resourceContent(
+      await session.request("resources/read", { uri: relayMcpResourceUris.runs }),
+    );
+    const envelope = JSON.parse(content.text) as {
+      data: {
+        runs?: Array<{
+          captureReview?: Array<{ caption?: string; framePath?: string; phase?: string }>;
+        }>;
+      };
+    };
+    assert.deepEqual(envelope.data.runs?.[0]?.captureReview, [
+      {
+        captureId: "frames/close-confirmation.png::close-confirmation",
+        caption: "Close account confirmation",
+        relativeName: "frames/close-confirmation.png",
+        phase: "dest",
+        status: "pending",
+      },
+    ]);
+  } finally {
+    await session.close();
+  }
+});
+
 test("runs collection dest identity drops opener Tap beside leftover Transition", async () => {
   const session = await connectMcp(
     fixtureInvoker({

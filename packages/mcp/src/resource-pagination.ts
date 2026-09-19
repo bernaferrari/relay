@@ -262,13 +262,19 @@ function destIdentityCollectionEntries(value: unknown): Record<string, string | 
 function captureReviewCollectionEntries(value: unknown): Record<string, unknown>[] {
   if (!Array.isArray(value)) return [];
   const hasLeftover = value.some((entry) => {
-    const caption = object(entry).caption;
-    return isCaptureReviewLeftoverCaption(typeof caption === "string" ? caption : undefined);
+    const item = object(entry);
+    const caption = item.caption;
+    const phase = item.phase;
+    return isCaptureReviewLeftoverCaption(
+      typeof caption === "string" ? caption : undefined,
+      typeof phase === "string" ? phase : undefined,
+    );
   });
   const entries = value.flatMap((entry) => {
     const rec = object(entry);
     const caption = typeof rec.caption === "string" ? rec.caption.slice(0, 160) : undefined;
-    if (isCaptureReviewLeftoverCaption(caption)) return [];
+    const phase = typeof rec.phase === "string" ? rec.phase : undefined;
+    if (isCaptureReviewLeftoverCaption(caption, phase)) return [];
     const relativeName =
       typeof rec.relativeName === "string"
         ? rec.relativeName.slice(0, 160)

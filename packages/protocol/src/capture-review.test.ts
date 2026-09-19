@@ -1453,6 +1453,19 @@ test("leftover Close / Run saved Test captions are leftover, dest wait-for Obser
   assert.equal(isCaptureReviewLeftoverCaption("Close"), true);
   assert.equal(isCaptureReviewLeftoverCaption("Observe"), false);
   assert.equal(isCaptureReviewLeftoverCaption("step:step-observe:Observe"), false);
+  assert.equal(isCaptureReviewLeftoverCaption("Close account confirmation", "dest"), false);
+  assert.equal(isCaptureReviewLeftoverCaption("Back button focus state", "dest"), false);
+});
+
+test("explicit dest phase wins over legacy caption cleanup", () => {
+  assert.deepEqual(
+    destIdentityReviewItems([
+      { phase: "dest", caption: "Close account confirmation", framePath: "frames/close.png" },
+      { phase: "dest", caption: "Back button focus state", framePath: "frames/back.png" },
+      { caption: "Close", framePath: "frames/leftover.png" },
+    ]).map((item) => item.framePath),
+    ["frames/close.png", "frames/back.png"],
+  );
 });
 
 test("leftover Transition executed / Inspect setup skipped cannot fill dest wait-for", () => {

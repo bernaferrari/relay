@@ -624,7 +624,7 @@ function leftoverLastFrameExtra(
   destArtifacts: readonly CaptureReviewItem[],
 ): boolean {
   if (!destArtifacts.length || isCaptureReviewDestPhase(artifact.phase)) return false;
-  if (isCaptureReviewLeftoverPhase(artifact.phase) || leftoverCloseCaption(artifact.caption)) {
+  if (leftoverCloseCaption(artifact.caption, artifact.phase)) {
     return true;
   }
   const destPaths = destArtifacts.flatMap((item) => (item.framePath ? [item.framePath] : []));
