@@ -34,6 +34,9 @@
   in the app's own orientation space.` — and the route sends that one capture to the runner instead of
   retiring the app generation, so the next capture of a healthy app still uses the bridge. One table
   proves both languages apply one rule: `contracts/fixtures/window-coordinate-space.json` (#2612).
+- Changed (ios): the rotation table and the coordinate-space rule moved from the XCTest runner bundle
+  into the `AgentDeviceSnapshotPresentation` package, where `swift test` replays the golden table
+  without a simulator. No behaviour change.
 - Added (limrun): `longpress` on Limrun iOS direct sessions. The interactor refused it as
   unsupported although the SDK exposes the HID primitives; it now holds one touch as a
   `performActions` batch of `touchDown`, `wait`, `touchUp`, defaulting to the 800 ms the Android
