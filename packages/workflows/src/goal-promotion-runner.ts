@@ -47,20 +47,60 @@ function promotionTitle(goal: string, requested?: string): string {
   return title.slice(0, MAX_TITLE_CHARS);
 }
 
-function authoringInteraction(action: GoalSessionAction): AuthoringInteraction {
-  const selector = action.interaction.target;
-  if (selector.point && !selector.identifier && !selector.ref && !selector.label) {
-    throw new TypeError(
-      `Goal action ${action.id} has only a point selector. Review it manually before promotion.`,
-    );
-  }
-  const target: StepTarget = {
+function stepTarget(selector: {
+  identifier?: string;
+  ref?: string;
+  label?: string;
+  point?: { x: number; y: number };
+}): StepTarget {
+  return {
     ...(selector.identifier ? { identifier: selector.identifier } : {}),
     ...(selector.ref ? { ref: selector.ref } : {}),
     ...(selector.label ? { label: selector.label } : {}),
     ...(selector.point ? { point: { ...selector.point } } : {}),
   };
-  return { kind: "tap", target };
+}
+
+/** Promoted tests keep the executed action shapes: fill, system keys, swipes,
+ * waits, and explicit captures map onto the same authoring vocabulary. */
+function authoringInteraction(action: GoalSessionAction): AuthoringInteraction {
+  const interaction = action.interaction;
+  if (interaction.kind === "fill") {
+    if (
+      interaction.target.point &&
+      !interaction.target.identifier &&
+      !interaction.target.ref &&
+      !interaction.target.label
+    ) {
+      throw new TypeError(
+        `Goal action ${action.id} fills via a point selector only. Review it manually before promotion.`,
+      );
+    }
+    return {
+      kind: "type",
+      text: interaction.value,
+      ...(interaction.mode ? { mode: interaction.mode } : {}),
+      target: stepTarget(interaction.target),
+    };
+  }
+  if (interaction.kind === "key") {
+    return { kind: "key", key: interaction.key };
+  }
+  if (interaction.kind === "swipe") {
+    return { kind: "swipe", from: { ...interaction.from }, to: { ...interaction.to } };
+  }
+  if (interaction.kind === "wait") {
+    return { kind: "wait", ms: interaction.ms };
+  }
+  if (interaction.kind === "capture") {
+    return { kind: "observe" };
+  }
+  if (interaction.target.point && !interaction.target.identifier && !interaction.target.ref && !interaction.target.label) {
+    throw new TypeError(
+      `Goal action ${action.id} has only a point selector. Review it manually before promotion.`,
+    );
+  }
+  return { kind: "tap", target: stepTarget(interaction.target) };
 }
 
 async function prepareTarget(

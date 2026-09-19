@@ -48,9 +48,10 @@ test("compactGoalObservation creates observation-scoped candidates and omits pix
     recentActions: [{ id: "a1", kind: "observe", outcome: "acknowledged", summary: "ok" }],
   });
 
+  assert.deepEqual(result.candidates.slice(0, 2).map((item) => item.id), ["c1", "c2"]);
   assert.deepEqual(
-    result.candidates.map((item) => item.id),
-    ["c1", "c2"],
+    result.candidates.slice(2).map((item) => item.id),
+    ["sys-back", "sys-scroll-down", "sys-scroll-up", "sys-wait", "sys-capture"],
   );
   assert.equal(result.candidates[1]?.text, "[REDACTED]");
   assert.equal("pixels" in result, false);
@@ -96,7 +97,8 @@ test("compactGoalObservation reports truncation instead of hiding it", () => {
   });
   assert.equal(result.omissions.candidatesKept, 40);
   assert.equal(result.omissions.candidatesOmitted, 15);
-  assert.equal(result.candidates.length, 40);
+  // Controls are capped; synthetic loop primitives are always offered.
+  assert.equal(result.candidates.length, 45);
 });
 
 test("compactGoalObservation marks unknown-enabled controls as assumed, not proven", () => {
@@ -114,7 +116,7 @@ test("compactGoalObservation marks unknown-enabled controls as assumed, not prov
     observation: unknown,
   });
   assert.deepEqual(
-    result.candidates.map((item) => [item.enabled, item.enabledAssumed ?? false]),
+    result.candidates.slice(0, 3).map((item) => [item.enabled, item.enabledAssumed ?? false]),
     [
       [true, true],
       [true, false],

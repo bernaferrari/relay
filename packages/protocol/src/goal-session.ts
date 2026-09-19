@@ -21,6 +21,7 @@ export type GoalSessionStopCode =
   | "resume-review-required"
   | "observation-unavailable"
   | "target-unavailable"
+  | "needs-input"
   | "cancelled";
 
 export type GoalSessionTarget = {
@@ -53,15 +54,28 @@ export type GoalSessionInteractionTarget = {
   point?: { x: number; y: number };
 };
 
+/** Typed goal interactions dispatched through the existing target.interact
+ * operation. Values for fill actions are resolved locally from the task's
+ * value map — never from model output. */
+export type GoalSessionInteraction =
+  | { kind: "identifier" | "ref" | "label" | "point"; target: GoalSessionInteractionTarget }
+  | {
+      kind: "fill";
+      target: GoalSessionInteractionTarget;
+      value: string;
+      mode?: "append" | "replace";
+    }
+  | { kind: "swipe"; from: { x: number; y: number }; to: { x: number; y: number } }
+  | { kind: "key"; key: "back" | "home" | "recents" }
+  | { kind: "wait"; ms: number }
+  | { kind: "capture"; label?: string };
+
 export type GoalSessionAction = {
   id: string;
   step: number;
   candidateId: string;
   label: string;
-  interaction: {
-    kind: "identifier" | "ref" | "label" | "point";
-    target: GoalSessionInteractionTarget;
-  };
+  interaction: GoalSessionInteraction;
   status: "intended" | "acknowledged" | "rejected" | "unknown";
   observationDigestBefore: string;
   observationDigestAfter?: string;
@@ -123,6 +137,8 @@ export type GoalSessionRecord = {
   budget: GoalSessionBudget;
   laneId?: string;
   model?: string;
+  /** Plain task values (never model-visible). Stripped from every projection. */
+  values?: Record<string, string>;
   status: GoalSessionStatus;
   step: number;
   createdAt: number;
@@ -151,6 +167,10 @@ export type GoalSessionStartInput = {
   model?: string;
   maxSteps?: number;
   maxDurationMs?: number;
+  /** Non-secret task input values, keyed by reference. The model sees only
+   * the reference keys; values are resolved locally at dispatch. Credentials
+   * belong in an authentication fixture, never here. */
+  values?: Record<string, string>;
 };
 
 export type GoalSessionResult = {

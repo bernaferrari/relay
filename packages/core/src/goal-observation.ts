@@ -42,6 +42,8 @@ export type CompactGoalObservationInput = {
   signals?: readonly GoalObservationSignal[];
   capabilities?: readonly GoalObservationCapability[];
   missingEvidence?: readonly string[];
+  /** Reference keys of the task's value map (never the values). */
+  valueRefs?: readonly string[];
 };
 
 function safeText(value: string | undefined): string | undefined {
@@ -92,9 +94,63 @@ function compactCandidate(
     ...(safeText(control.role) ? { role: safeText(control.role) } : {}),
     enabled: enabledAssumed ? true : control.enabled === true,
     ...(enabledAssumed ? { enabledAssumed: true as const } : {}),
+    ...(editable ? { editable: true as const } : {}),
     ...(control.selected !== undefined ? { selected: control.selected } : {}),
     target: controlTarget(control),
   };
+}
+
+/** Non-control candidates every observation offers: navigation back, gentle
+ * scrolling, a bounded wait, and an explicit named capture. These are loop
+ * primitives dispatched through existing operations — never model code.
+ * Scrolling needs real viewport coordinates, so it is offered only when the
+ * observation carries them. */
+function syntheticCandidates(observation: TargetObservation): GoalObservationCandidate[] {
+  const viewport =
+    observation.pixels.status === "captured" &&
+    typeof observation.pixels.width === "number" &&
+    typeof observation.pixels.height === "number"
+      ? { width: observation.pixels.width, height: observation.pixels.height }
+      : undefined;
+  const center = viewport
+    ? { x: Math.round(viewport.width / 2), y: Math.round(viewport.height / 2) }
+    : undefined;
+  const scrollTargets = center
+    ? [
+        {
+          id: "sys-scroll-down",
+          kind: "scroll" as const,
+          label: "Scroll down",
+          enabled: true,
+          target: { point: center },
+        },
+        {
+          id: "sys-scroll-up",
+          kind: "scroll" as const,
+          label: "Scroll up",
+          enabled: true,
+          target: { point: center },
+        },
+      ]
+    : [];
+  return [
+    { id: "sys-back", kind: "back", label: "Go back", enabled: true, target: {} },
+    ...scrollTargets,
+    {
+      id: "sys-wait",
+      kind: "wait",
+      label: "Wait briefly for the screen to settle",
+      enabled: true,
+      target: {},
+    },
+    {
+      id: "sys-capture",
+      kind: "other",
+      label: "Capture the current screen for review",
+      enabled: true,
+      target: {},
+    },
+  ];
 }
 
 function safeAction(action: GoalObservationAction): GoalObservationAction {
@@ -140,7 +196,10 @@ export function compactGoalObservation(input: CompactGoalObservationInput): Comp
       : {}),
   };
   const keptControls = observation.semantics.controls.slice(0, GOAL_OBSERVATION_MAX_CANDIDATES);
-  const candidates = keptControls.map((control, index) => compactCandidate(control, index));
+  const candidates = [
+    ...keptControls.map((control, index) => compactCandidate(control, index)),
+    ...syntheticCandidates(observation),
+  ];
   const candidatesOmitted = Math.max(
     0,
     observation.semantics.controls.length - keptControls.length,
@@ -163,7 +222,9 @@ export function compactGoalObservation(input: CompactGoalObservationInput): Comp
     },
     candidates,
     omissions: {
-      candidatesKept: candidates.length,
+      // Counts cover observed controls only; synthetic loop primitives are
+      // additional and never counted against the control cap.
+      candidatesKept: keptControls.length,
       candidatesOmitted,
     },
     recentActions: (input.recentActions ?? []).slice(-MAX_ACTIONS).map(safeAction),
@@ -172,6 +233,9 @@ export function compactGoalObservation(input: CompactGoalObservationInput): Comp
     missingEvidence: (input.missingEvidence ?? [])
       .slice(0, MAX_SIGNALS)
       .map((value) => safeText(value) ?? REDACTED),
+    ...(input.valueRefs && input.valueRefs.length > 0
+      ? { valueRefs: input.valueRefs.map((value) => safeText(value) ?? REDACTED) }
+      : {}),
     redacted: true as const,
   };
   return {

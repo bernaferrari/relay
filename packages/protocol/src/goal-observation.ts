@@ -30,6 +30,8 @@ export type GoalObservationCandidate = {
   /** The source control did not report enabled=true; `enabled` is an assumption
    * for presentation and must not be treated as proven actionability. */
   enabledAssumed?: true;
+  /** Editable controls are fill targets; they are never tap-authoritative. */
+  editable?: true;
   selected?: boolean;
   target: {
     identifier?: string;
@@ -84,6 +86,8 @@ export type CompactGoalObservation = {
   signals: GoalObservationSignal[];
   capabilities: GoalObservationCapability[];
   missingEvidence: string[];
+  /** Reference keys of available task values. Values themselves never appear. */
+  valueRefs?: string[];
   /** The projection intentionally contains no screenshots, credentials, or raw traces. */
   redacted: true;
 };

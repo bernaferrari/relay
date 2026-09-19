@@ -463,7 +463,7 @@ test("a control with unknown enabled state is never an authorized tap candidate"
     decisionProvider: providerFor("continue", "complete"),
     id: () => "goal-assumed",
   }).start({ goal: "Reach the next screen", startUrl: "https://example.test" });
-  assert.equal(result.stopReason?.code, "no-action");
+  assert.equal(result.actions[0]?.candidateId, "sys-back");
   assert.equal(result.lastObservation?.candidates[0]?.enabledAssumed, true);
 });
 
@@ -627,5 +627,157 @@ test("a restarted reproduction with an unresolved mutation fences instead of ski
   }).reproduce("goal-repro-fence");
   assert.equal(result.reproduction?.status, "uncertain");
   assert.equal(result.reproduction?.pendingAction?.actionId, "repro-action-1");
+  assert.equal(runtime.calls.includes("target.interact"), false);
+});
+
+test("fill actions resolve task values locally and never leak them to the model", async () => {
+  const runtime = operations();
+  const sentStates: unknown[] = [];
+  const provider: ModelDecisionProvider = {
+    id: "openrouter",
+    async decide(request): Promise<ModelDecisionRecord> {
+      sentStates.push(request.state);
+      const selected = request.questions.progress ? "continue" : "complete";
+      const progress = request.questions.progress;
+      if (!progress || progress.type !== "choice") throw new Error("missing progress");
+      const nextAction = request.questions.next_action;
+      if (!nextAction || nextAction.type !== "choice") throw new Error("missing next_action");
+      const fillable = Object.keys(nextAction.criteria).find(
+        (key) => key !== "none" && key.startsWith("c"),
+      );
+      const valueRef = request.questions.value_ref;
+      return {
+        schemaVersion: 1,
+        status: "ok",
+        provider: "openrouter",
+        model: "fixture",
+        requestId: "request-fill",
+        observationDigest: request.observationDigest,
+        questionDigest: "q",
+        answers: {
+          progress: choice(progress.criteria, request.questions.value_ref ? "continue" : selected),
+          next_action: choice(
+            nextAction.criteria,
+            request.questions.value_ref ? (fillable ?? "none") : "none",
+          ),
+          ...(request.questions.value_ref && valueRef && valueRef.type === "choice"
+            ? { value_ref: choice(valueRef.criteria, "username") }
+            : {}),
+        },
+        startedAt: 1,
+        completedAt: 2,
+        durationMs: 1,
+        evidenceRefs: request.evidenceRefs ?? [],
+      };
+    },
+  };
+  // The observation offers one editable control with a selector.
+  const originalObservation = observation(1);
+  const port: RelayOperationPort = {
+    async invoke<Id extends OperationId>(
+      id: Id,
+      input: OperationInput<Id>,
+    ): Promise<OperationOutput<Id>> {
+      if (id === "target.observation.capture") {
+        const obs = structuredClone(originalObservation);
+        const control = obs.semantics.controls[0];
+        if (control) {
+          control.role = "textbox";
+          control.identifier = "username";
+          control.label = "Username";
+        }
+        return obs as unknown as OperationOutput<Id>;
+      }
+      return runtime.port.invoke(id, input);
+    },
+  };
+  const store = memoryStore();
+  const runner = createGoalSessionRunner({
+    operations: port,
+    store,
+    decisionProvider: provider,
+    id: () => "goal-fill",
+  });
+  const result = await runner.start({
+    goal: "Sign in",
+    startUrl: "https://example.test",
+    values: { username: "member@example.test" },
+  });
+  // The fill was dispatched through target.interact with the locally
+  // resolved value, and acknowledged.
+  const fillAction = result.actions.find((action) => action.interaction.kind === "fill");
+  assert.ok(fillAction, "expected a fill action");
+  if (fillAction.interaction.kind !== "fill") throw new Error("unreachable");
+  assert.equal(fillAction.interaction.value, "member@example.test");
+  assert.equal(fillAction.status, "acknowledged");
+  // The model never saw the value itself — only its reference key.
+  const serializedStates = JSON.stringify(sentStates);
+  assert.equal(serializedStates.includes("member@example.test"), false);
+  assert.ok(serializedStates.includes("username"));
+  // Inspect never returns stored values.
+  const inspected = await runner.inspect("goal-fill");
+  assert.equal("values" in inspected, false);
+  assert.deepEqual(inspected.valueRefs, ["username"]);
+});
+
+test("a fill without a usable value reference stops with a clear needs-input request", async () => {
+  const runtime = operations();
+  const provider: ModelDecisionProvider = {
+    id: "openrouter",
+    async decide(request): Promise<ModelDecisionRecord> {
+      const progress = request.questions.progress;
+      const nextAction = request.questions.next_action;
+      if (!progress || progress.type !== "choice" || !nextAction || nextAction.type !== "choice") {
+        throw new Error("missing questions");
+      }
+      const fillable = Object.keys(nextAction.criteria).find(
+        (key) => key !== "none" && key.startsWith("c"),
+      );
+      return {
+        schemaVersion: 1,
+        status: "ok",
+        provider: "openrouter",
+        model: "fixture",
+        requestId: "request-needs-input",
+        observationDigest: request.observationDigest,
+        questionDigest: "q",
+        answers: {
+          progress: choice(progress.criteria, "continue"),
+          next_action: choice(nextAction.criteria, fillable ?? "none"),
+        },
+        startedAt: 1,
+        completedAt: 2,
+        durationMs: 1,
+        evidenceRefs: [],
+      };
+    },
+  };
+  const originalObservation = observation(1);
+  const port: RelayOperationPort = {
+    async invoke<Id extends OperationId>(
+      id: Id,
+      input: OperationInput<Id>,
+    ): Promise<OperationOutput<Id>> {
+      if (id === "target.observation.capture") {
+        const obs = structuredClone(originalObservation);
+        const control = obs.semantics.controls[0];
+        if (control) {
+          control.role = "textbox";
+          control.identifier = "username";
+        }
+        return obs as unknown as OperationOutput<Id>;
+      }
+      return runtime.port.invoke(id, input);
+    },
+  };
+  const result = await createGoalSessionRunner({
+    operations: port,
+    store: memoryStore(),
+    decisionProvider: provider,
+    id: () => "goal-needs-input",
+  }).start({ goal: "Sign in", startUrl: "https://example.test", values: { password: "x" } });
+  assert.equal(result.status, "blocked");
+  assert.equal(result.stopReason?.code, "needs-input");
+  assert.match(result.stopReason?.message ?? "", /password/u);
   assert.equal(runtime.calls.includes("target.interact"), false);
 });

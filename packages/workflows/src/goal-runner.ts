@@ -252,15 +252,40 @@ function choiceAnswer(
   return answer?.type === "choice" ? answer : undefined;
 }
 
-function safeCandidate(observation: CompactGoalObservation, candidateId: string) {
+function findCandidate(observation: CompactGoalObservation, candidateId: string) {
   if (observation.screen.semantics !== "current") return undefined;
-  const candidate = observation.candidates.find((item) => item.id === candidateId);
+  return observation.candidates.find((item) => item.id === candidateId);
+}
+
+function hasSelector(target: CompactGoalObservation["candidates"][number]["target"]): boolean {
+  return Boolean(target.identifier || target.ref || target.label || target.point);
+}
+
+/** Tap admission: a proven-enabled, non-editable control with a selector. */
+function safeCandidate(observation: CompactGoalObservation, candidateId: string) {
+  const candidate = findCandidate(observation, candidateId);
   if (!candidate || candidate.kind !== "control" || !candidate.enabled) return undefined;
   // Assumed-enabled is presentation data, not proven actionability (GOAL-04).
   if (candidate.enabledAssumed) return undefined;
   if (isEditableGoalControl(candidate.role, candidate.target.identifier)) return undefined;
-  const target = candidate.target;
-  if (!target.identifier && !target.ref && !target.label && !target.point) return undefined;
+  if (!hasSelector(candidate.target)) return undefined;
+  return candidate;
+}
+
+/** Fill admission: a proven-enabled editable control with a selector. */
+function fillCandidate(observation: CompactGoalObservation, candidateId: string) {
+  const candidate = findCandidate(observation, candidateId);
+  if (!candidate || candidate.kind !== "control" || !candidate.enabled) return undefined;
+  if (candidate.enabledAssumed) return undefined;
+  if (!isEditableGoalControl(candidate.role, candidate.target.identifier)) return undefined;
+  if (!hasSelector(candidate.target)) return undefined;
+  return candidate;
+}
+
+/** Synthetic loop primitives are always offered with current semantics. */
+function systemCandidate(observation: CompactGoalObservation, candidateId: string) {
+  const candidate = findCandidate(observation, candidateId);
+  if (!candidate || !candidate.id.startsWith("sys-")) return undefined;
   return candidate;
 }
 
@@ -277,11 +302,43 @@ function interactionFor(candidate: {
 }
 
 function interactionInput(record: GoalSessionRecord, action: GoalSessionAction, targetId?: string) {
-  const selector = action.interaction.target;
-  return {
+  const base = {
     serial: targetId ?? record.target.targetId,
     ...(record.laneId ? { laneId: record.laneId } : {}),
-    kind: action.interaction.kind,
+  };
+  const interaction = action.interaction;
+  if (interaction.kind === "fill") {
+    const selector = interaction.target;
+    return {
+      ...base,
+      kind: "type" as const,
+      text: interaction.value,
+      target: {
+        ...(selector.identifier ? { identifier: selector.identifier } : {}),
+        ...(selector.ref ? { ref: selector.ref } : {}),
+        ...(selector.label ? { label: selector.label } : {}),
+        ...(selector.point ? { point: selector.point } : {}),
+      },
+    };
+  }
+  if (interaction.kind === "key") {
+    return { ...base, kind: "key" as const, key: interaction.key };
+  }
+  if (interaction.kind === "swipe") {
+    return {
+      ...base,
+      kind: "swipe" as const,
+      from: interaction.from,
+      to: interaction.to,
+    };
+  }
+  if (interaction.kind === "wait" || interaction.kind === "capture") {
+    throw new TypeError(`Goal interaction ${interaction.kind} is never dispatched to the target.`);
+  }
+  const selector = interaction.target;
+  return {
+    ...base,
+    kind: interaction.kind,
     ...(selector.identifier ? { identifier: selector.identifier } : {}),
     ...(selector.ref ? { ref: selector.ref } : {}),
     ...(selector.label ? { label: selector.label } : {}),
@@ -695,15 +752,37 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
         return result(record);
       }
 
-      const candidates = observation.candidates.filter((candidate) =>
-        safeCandidate(observation, candidate.id),
+      const tapCandidates = observation.candidates.filter(
+        (candidate) => safeCandidate(observation, candidate.id) !== undefined,
+      );
+      const taskValues = record.values ?? {};
+      const valueRefs = Object.keys(taskValues).filter((key) => taskValues[key] !== undefined);
+      const fillCandidates = valueRefs.length
+        ? observation.candidates.filter(
+            (candidate) => fillCandidate(observation, candidate.id) !== undefined,
+          )
+        : [];
+      const systemCandidates = observation.candidates.filter(
+        (candidate) => systemCandidate(observation, candidate.id) !== undefined,
       );
       const criteria: Record<string, string | null> = {
         none: "No safe action should be executed from this observation.",
         ...Object.fromEntries(
-          candidates.map((candidate) => [
+          tapCandidates.map((candidate) => [
             candidate.id,
-            `${candidate.label ?? candidate.text ?? candidate.role ?? "control"} (${candidate.id})`,
+            `Tap ${candidate.label ?? candidate.text ?? candidate.role ?? "control"} (${candidate.id})`,
+          ]),
+        ),
+        ...Object.fromEntries(
+          fillCandidates.map((candidate) => [
+            candidate.id,
+            `Fill ${candidate.label ?? candidate.role ?? "field"} (${candidate.id}) using one provided value`,
+          ]),
+        ),
+        ...Object.fromEntries(
+          systemCandidates.map((candidate) => [
+            candidate.id,
+            `${candidate.label ?? candidate.id} (${candidate.id})`,
           ]),
         ),
       };
@@ -732,6 +811,24 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
               "Choose one control from this exact observation, or none. Never invent a selector, type text, run code, or use a credential.",
             criteria,
           },
+          ...(fillCandidates.length > 0
+            ? {
+                value_ref: {
+                  type: "choice" as const,
+                  instructions:
+                    "If the next action fills a field, choose which provided value reference to use; otherwise none.",
+                  criteria: {
+                    none: "No value is needed for the selected action.",
+                    ...Object.fromEntries(
+                      Object.keys(record.values ?? {}).map((key) => [
+                        key,
+                        `Use the provided task value "${key}".`,
+                      ]),
+                    ),
+                  },
+                },
+              }
+            : {}),
         },
       };
       let decision: ModelDecisionRecord;
@@ -804,7 +901,10 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
         await persist(record);
         return result(record);
       }
-      const candidate = safeCandidate(observation, candidateId);
+      const candidate =
+        safeCandidate(observation, candidateId) ??
+        fillCandidate(observation, candidateId) ??
+        systemCandidate(observation, candidateId);
       if (!candidate) {
         record = stop(
           record,
@@ -816,7 +916,45 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
         await persist(record);
         return result(record);
       }
-      const interaction = interactionFor(candidate);
+      const availableValueRefs = Object.keys(record.values ?? {});
+      let interaction: GoalSessionAction["interaction"];
+      if (candidate.kind === "control" && isEditableGoalControl(candidate.role, candidate.target.identifier)) {
+        const valueRef = choiceAnswer(decision, "value_ref")?.choice;
+        const value = valueRef ? taskValues[valueRef] : undefined;
+        if (typeof value !== "string" || !value) {
+          record = stop(
+            record,
+            "blocked",
+            "needs-input",
+            `The selected field needs a task value. Provide one of [${availableValueRefs.join(", ") || "no values configured"}] and resume.`,
+            now(),
+          );
+          await persist(record);
+          return result(record);
+        }
+        interaction = {
+          kind: "fill",
+          target: { ...candidate.target },
+          value,
+          mode: "replace",
+        };
+      } else if (candidate.id === "sys-back") {
+        interaction = { kind: "key", key: "back" };
+      } else if (candidate.id === "sys-wait") {
+        interaction = { kind: "wait", ms: 1_500 };
+      } else if (candidate.id === "sys-capture") {
+        interaction = { kind: "capture", label: "capture" };
+      } else if (candidate.kind === "scroll" && candidate.target.point) {
+        const point = candidate.target.point;
+        const down = candidate.id === "sys-scroll-down";
+        interaction = {
+          kind: "swipe",
+          from: { x: point.x, y: point.y },
+          to: { x: point.x, y: Math.max(0, point.y + (down ? 400 : -400)) },
+        };
+      } else {
+        interaction = interactionFor(candidate);
+      }
       const remainingBudget = record.budget.maxDurationMs - (now() - record.createdAt);
       if (signal?.aborted || remainingBudget <= 0) {
         record = stop(
@@ -855,15 +993,19 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
       };
       await persist(record);
       try {
-        const interactionResult = await options.operations.invoke(
-          "target.interact",
-          interactionInput(record, action),
-        );
-        if (
-          "iosMutation" in interactionResult &&
-          interactionResult.iosMutation?.outcome === "outcome-unknown"
-        ) {
-          throw new Error("target interaction outcome-unknown; review required before resume");
+        if (interaction.kind === "wait") {
+          await new Promise((resolve) => setTimeout(resolve, Math.min(interaction.ms, 10_000)));
+        } else if (interaction.kind !== "capture") {
+          const interactionResult = await options.operations.invoke(
+            "target.interact",
+            interactionInput(record, action),
+          );
+          if (
+            "iosMutation" in interactionResult &&
+            interactionResult.iosMutation?.outcome === "outcome-unknown"
+          ) {
+            throw new Error("target interaction outcome-unknown; review required before resume");
+          }
         }
         const acknowledged = { ...action, status: "acknowledged" as const, at: now() };
         record = {
@@ -960,6 +1102,9 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
         budget,
         ...(resolved.laneId ? { laneId: resolved.laneId } : {}),
         ...(input.model?.trim() ? { model: input.model.trim() } : {}),
+        ...(input.values && Object.keys(input.values).length > 0
+          ? { values: input.values }
+          : {}),
         status: "running",
         step: 0,
         createdAt: at,
@@ -1297,7 +1442,12 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
       assertSessionId(sessionId);
       const record = await store.load(sessionId);
       if (!record) throw new TypeError(`Goal session ${sessionId} was not found.`);
-      return record;
+      // Inspect is an observation surface: task values never leave the store.
+      const { values: _values, ...safe } = record;
+      return {
+        ...safe,
+        ...(record.values ? { valueRefs: Object.keys(record.values) } : {}),
+      };
     },
   };
 }
