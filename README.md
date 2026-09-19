@@ -52,11 +52,13 @@ Use **Node.js 24+**, **Corepack**, and the **Vite+ CLI** (`vp`). Android targets
 
 ```bash
 vp install
-pnpm doctor
+pnpm doctor --json
 pnpm dev:desktop
 ```
 
-The desktop app starts the local Relay service for your project.
+The doctor is read-only and reports required workspace failures separately from
+optional browser, Android, and iOS target warnings. The desktop app starts the
+local Relay service for your project.
 
 1. Choose a browser or connected device.
 2. Open **Tests → New Test**, start recording, and walk through the journey.
