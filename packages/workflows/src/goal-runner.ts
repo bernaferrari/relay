@@ -64,6 +64,10 @@ export type GoalSessionRunner = {
   resume(sessionId: string, call?: GoalSessionCallOptions): Promise<GoalSessionResult>;
   reproduce(sessionId: string, call?: GoalSessionCallOptions): Promise<GoalSessionResult>;
   inspect(sessionId: string): Promise<GoalSessionRecord & { valueRefs?: string[] }>;
+  /** Request cancellation. A loop running in this process stops at its next
+   * checkpoint; a running record not owned here can only be fenced after
+   * review. Terminal records are returned unchanged. */
+  cancel(sessionId: string): Promise<GoalSessionRecord>;
 };
 
 function goalStoreRoot(): string {
@@ -755,6 +759,7 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
   const now = options.now ?? Date.now;
   const id = options.id ?? randomUUID;
   const locks = new Map<string, Promise<GoalSessionResult>>();
+  const cancelRequested = new Set<string>();
 
   const persist = async (record: GoalSessionRecord): Promise<void> => {
     await store.save({ ...record, updatedAt: now() });
@@ -840,12 +845,14 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
     }
 
     for (;;) {
-      if (signal?.aborted) {
+      if (signal?.aborted || cancelRequested.has(record.id)) {
         record = stop(
           record,
           "cancelled",
           "cancelled",
-          "The goal session was cancelled before this step.",
+          cancelRequested.has(record.id)
+            ? "The goal session was cancelled by request before this step."
+            : "The goal session was cancelled before this step.",
           now(),
         );
         await persist(record);
@@ -1560,6 +1567,32 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
         ...safe,
         ...(record.values ? { valueRefs: Object.keys(record.values) } : {}),
       };
+    },
+    async cancel(sessionId) {
+      assertSessionId(sessionId);
+      const record = await store.load(sessionId);
+      if (!record) throw new TypeError(`Goal session ${sessionId} was not found.`);
+      if (record.status !== "running") return record;
+      if (record.pendingAction) {
+        throw new TypeError(
+          "The goal session has an unresolved in-flight mutation. Review the target before cancelling.",
+        );
+      }
+      if (locks.has(sessionId)) {
+        // The loop checks this flag at its next checkpoint (before any
+        // mutation) and persists the cancelled terminal record itself.
+        cancelRequested.add(sessionId);
+        return record;
+      }
+      const cancelled = stop(
+        record,
+        "cancelled",
+        "cancelled",
+        "The goal session was cancelled while not executing in this process.",
+        now(),
+      );
+      await persist(cancelled);
+      return cancelled;
     },
   };
 }

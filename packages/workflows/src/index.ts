@@ -128,6 +128,7 @@ export type {
   GoalSessionResumeIntent,
   GoalSessionReproduceIntent,
   GoalSessionInspectIntent,
+  GoalSessionCancelIntent,
   GoalSessionResult,
   GoalSessionStartIntent,
   GoalExplorationResumeIntent,

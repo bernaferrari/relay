@@ -15,6 +15,7 @@ import type {
   GoalSessionResumeIntent,
   GoalSessionReproduceIntent,
   GoalSessionInspectIntent,
+  GoalSessionCancelIntent,
   GoalSessionStartIntent,
   GoalExplorationResumeIntent,
   GoalExplorationInspectIntent,
@@ -49,6 +50,7 @@ export type OutcomeCliIntent =
   | GoalSessionResumeIntent
   | GoalSessionReproduceIntent
   | GoalSessionInspectIntent
+  | GoalSessionCancelIntent
   | GoalExplorationStartIntent
   | GoalExplorationResumeIntent
   | GoalExplorationInspectIntent
@@ -229,6 +231,18 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
       }
       return { kind: "goal-inspect", sessionId: args[1]! };
     }
+    if (verb === "goal" && args[0] === "cancel") {
+      if (args.length !== 2) {
+        throw new UsageError("goal cancel requires one goal session id");
+      }
+      if (!tokens.switches.has("--confirm")) {
+        throw new UsageError("goal cancel requires --confirm before Relay may stop a session");
+      }
+      if (tokens.values.size > 0 || [...tokens.switches].some((flag) => flag !== "--confirm")) {
+        throw new UsageError("goal cancel accepts a session id and --confirm only");
+      }
+      return { kind: "goal-cancel", sessionId: args[1]! };
+    }
     if (verb === "explore" && tokens.values.has("--inspect")) {
       const explorationId = tokens.values.get("--inspect");
       if (
@@ -307,6 +321,19 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
     const rawSteps = tokens.values.get("--max-steps");
     const rawDuration = tokens.values.get("--max-ms");
     const rawAgents = tokens.values.get("--agents");
+    const repeat = (flag: string): string[] =>
+      (tokens.values.get(flag) ?? "").split("\u0000").filter(Boolean);
+    const valueEntries = repeat("--value").map((entry) => {
+      const split = entry.indexOf("=");
+      if (split <= 0 || !entry.slice(0, split).trim() || !entry.slice(split + 1)) {
+        throw new UsageError("--value must be name=text (values are plain inputs, not credentials)");
+      }
+      return [entry.slice(0, split).trim(), entry.slice(split + 1)] as const;
+    });
+    const missions = repeat("--mission").map((entry) => entry.trim()).filter(Boolean);
+    if (missions.length > 0 && verb !== "explore") {
+      throw new UsageError("--mission is only valid on explore; each mission drives one worker");
+    }
     const judge = tokens.values.get("--judge");
     const authenticationFixtureReference = tokens.values.get("--auth-fixture");
     const maxSteps = rawSteps === undefined ? undefined : Number(rawSteps);
@@ -349,12 +376,19 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
         ...(maxSteps === undefined ? {} : { maxSteps }),
         ...(maxDurationMs === undefined ? {} : { maxDurationMs }),
         ...(agents === undefined ? {} : { agents }),
+        ...(missions.length > 0 ? { missions } : {}),
+        ...(valueEntries.length > 0
+          ? { values: Object.fromEntries(valueEntries) }
+          : {}),
       };
       return intent;
     }
     const intent: GoalSessionStartIntent = {
       kind: "goal-start",
       goal,
+      ...(valueEntries.length > 0
+        ? { values: Object.fromEntries(valueEntries) }
+        : {}),
       ...(startUrl ? { startUrl } : {}),
       ...(targetId ? { targetId } : {}),
       ...(tokens.values.get("--lane") ? { laneId: tokens.values.get("--lane") } : {}),

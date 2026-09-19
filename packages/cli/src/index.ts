@@ -396,6 +396,7 @@ async function runOutcomeCommand(input: {
   if (intent.kind === "goal-resume") return jobs.resumeGoal(intent);
   if (intent.kind === "goal-reproduce") return jobs.reproduceGoal(intent);
   if (intent.kind === "goal-inspect") return jobs.inspectGoal(intent);
+  if (intent.kind === "goal-cancel") return jobs.cancelGoal(intent);
   if (intent.kind === "goal-promote") return jobs.promoteGoal(intent);
   if (intent.kind === "goal-explore") return jobs.explore(intent);
   if (intent.kind === "goal-explore-resume") return jobs.resumeExploration(intent);

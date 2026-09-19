@@ -486,6 +486,7 @@ export type GoalSessionStartIntent = GoalSessionStartInput & { kind: "goal-start
 export type GoalSessionResumeIntent = { kind: "goal-resume"; sessionId: string };
 export type GoalSessionReproduceIntent = { kind: "goal-reproduce"; sessionId: string };
 export type GoalSessionInspectIntent = { kind: "goal-inspect"; sessionId: string };
+export type GoalSessionCancelIntent = { kind: "goal-cancel"; sessionId: string };
 export type GoalExplorationStartIntent = GoalExplorationStartInput & { kind: "goal-explore" };
 export type GoalExplorationResumeIntent = {
   kind: "goal-explore-resume";
@@ -723,6 +724,7 @@ export interface RelayOutcomeJobs {
   resumeGoal(intent: GoalSessionResumeIntent): Promise<GoalSessionResult>;
   reproduceGoal(intent: GoalSessionReproduceIntent): Promise<GoalSessionResult>;
   inspectGoal(intent: GoalSessionInspectIntent): Promise<GoalSessionRecord>;
+  cancelGoal(intent: GoalSessionCancelIntent): Promise<GoalSessionRecord>;
   promoteGoal(intent: GoalPromotionIntent): Promise<AuthorTestSnapshot>;
   explore(intent: GoalExplorationStartIntent): Promise<GoalExplorationResult>;
   resumeExploration(intent: GoalExplorationResumeIntent): Promise<GoalExplorationResult>;

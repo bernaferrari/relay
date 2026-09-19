@@ -148,6 +148,8 @@ const valueFlags = new Set([
   "--model",
   "--agents",
   "--judge",
+  "--value",
+  "--mission",
   "--auth-fixture",
 ]);
 const switchFlags = new Set([
@@ -168,7 +170,7 @@ const switchFlags = new Set([
   "--no-restore",
   "--findings",
 ]);
-const repeatableValueFlags = new Set(["--in", "--each"]);
+const repeatableValueFlags = new Set(["--in", "--each", "--value", "--mission"]);
 
 const reviewedOriginConfirmationOperations = new Set([
   "app-map.scroll-surface.origin.review",

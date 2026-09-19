@@ -79,6 +79,9 @@ function fakeSessions(options: { delayMs?: number; finding?: GoalFinding } = {})
         resumed.push(sessionId);
         return settle(sessionId);
       },
+      cancel: async (sessionId: string) => {
+        throw new Error(`cancel not used: ${sessionId}`);
+      },
       reproduce: async (sessionId) => settle(sessionId),
       inspect: async () => {
         throw new Error("not needed");
@@ -215,6 +218,9 @@ test("mission partitioning gives each worker a distinct goal", async () => {
       return result;
     },
     async resume() {
+      throw new Error("not used");
+    },
+    async cancel() {
       throw new Error("not used");
     },
   } as unknown as GoalSessionRunner;
