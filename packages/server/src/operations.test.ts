@@ -191,10 +191,27 @@ test("GET /meta exposes the registry manifest, not a handwritten endpoint list",
     assert.equal(response.status, 200);
     const body = (await response.json()) as {
       operations: Array<{ id: string }>;
+      resources?: Array<{ method: string; path: string }>;
       access?: { role: string; organizationId: string; projectId: string };
       endpoints?: unknown;
     };
     assert.equal(body.endpoints, undefined);
+    assert.deepEqual(body.resources, [
+      { method: "POST", path: "/goal", mediaType: "application/json" },
+      { method: "POST", path: "/explore", mediaType: "application/json" },
+      { method: "GET", path: "/goal/:id", mediaType: "application/json" },
+      { method: "GET", path: "/explore/:id", mediaType: "application/json" },
+      { method: "POST", path: "/goal/:id/resume", mediaType: "application/json" },
+      { method: "POST", path: "/explore/:id/resume", mediaType: "application/json" },
+      { method: "POST", path: "/goal/:id/reproduce", mediaType: "application/json" },
+      { method: "POST", path: "/goal/:id/promote", mediaType: "application/json" },
+      { method: "GET", path: "/events", mediaType: "text/event-stream" },
+      { method: "GET", path: "/device/stream", mediaType: "application/x-relay-h264" },
+      { method: "GET", path: "/runs/:id/frames/:file", mediaType: "image/*" },
+      { method: "GET", path: "/runs/:id/video/:file", mediaType: "video/*" },
+      { method: "GET", path: "/runs/:id/evidence", mediaType: "application/json" },
+      { method: "GET", path: "/authoring-evidence/:sha256", mediaType: "image/*|video/*" },
+    ]);
     assert.deepEqual(
       body.operations.map((item) => item.id),
       operationDefinitions.map((item) => item.id),
