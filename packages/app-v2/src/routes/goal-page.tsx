@@ -13,6 +13,7 @@ import type { GoalExplorationRecord, GoalFinding, GoalSessionRecord } from "@rel
 import type { AuthorTestSnapshot } from "@relay/workflows";
 import type { GoalRunResult, GoalSessionInspect } from "../data/goal-product-service";
 import { FormPage, PageHeader } from "../components/page-layout";
+import { SelectField } from "../components/filter-select";
 
 type GoalEvidence = GoalRunResult | GoalSessionRecord | GoalSessionInspect | GoalExplorationRecord;
 
@@ -63,7 +64,7 @@ function PromotionResult({ result }: { result: AuthorTestSnapshot }) {
 }
 
 export function GoalPage() {
-  const { goalService } = useRouteContext({ from: "__root__" });
+  const { goalService, appResourcesService } = useRouteContext({ from: "__root__" });
   // Ask Relay arrives from the live workbench with the page the user is
   // already operating; treat that URL as the starting context, not a blank form.
   const rawSearch = useLocation({ select: (state) => state.search });
@@ -72,6 +73,7 @@ export function GoalPage() {
     typeof requestedUrl === "string" && isHttpUrl(requestedUrl.trim()) ? requestedUrl.trim() : "";
   const [goal, setGoal] = useState("");
   const [startUrl, setStartUrl] = useState(prefillUrl);
+  const [laneId, setLaneId] = useState("");
   const [agents, setAgents] = useState("1");
   const [maxSteps, setMaxSteps] = useState("12");
   const [maxDurationMinutes, setMaxDurationMinutes] = useState("5");
@@ -112,6 +114,16 @@ export function GoalPage() {
     queryFn: () => goalService.inspectSession(liveSessionId as string),
   });
 
+  // Saved browser Lanes are the account half of the goal configuration: a
+  // fixture Lane carries its sign-in, a signed-out Lane carries its isolated
+  // cookies. Unset means a fresh isolated signed-out browser per worker.
+  const lanes = useQuery({
+    queryKey: ["goal", "account-lanes"],
+    queryFn: () => appResourcesService.listAccountLanes?.() ?? Promise.resolve([]),
+    staleTime: 30_000,
+    retry: false,
+  });
+
   const agentCount = Number(agents);
   const maxStepsValue = Number(maxSteps);
   const maxDurationMinutesValue = Number(maxDurationMinutes);
@@ -143,9 +155,8 @@ export function GoalPage() {
     setConfirmPromotion(false);
     const missions = missionsText
       .split("\n")
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-      .slice(0, 4);
+      .map((line) => line.trim())
+      .filter(Boolean);
     const values: Record<string, string> = {};
     for (const line of valuesText.split("\n")) {
       const split = line.indexOf("=");
@@ -156,6 +167,7 @@ export function GoalPage() {
     run.mutate({
       goal: goal.trim(),
       startUrl: startUrl.trim(),
+      ...(laneId ? { laneId } : {}),
       agents: Number.isInteger(agentCount) ? Math.min(4, Math.max(1, agentCount)) : 1,
       maxSteps: maxStepsValue,
       maxDurationMs: maxDurationMinutesValue * 60_000,
@@ -255,6 +267,33 @@ export function GoalPage() {
               Each worker gets an isolated, signed-out browser target.
             </FieldDescription>
           </Field>
+          {lanes.data && lanes.data.length > 0 ? (
+            <Field>
+              <FieldLabel htmlFor="goal-run-as">Run as</FieldLabel>
+              <SelectField
+                id="goal-run-as"
+                label="Run as"
+                value={laneId}
+                options={[
+                  { value: "", label: "Isolated browser · signed out" },
+                  ...lanes.data.map((lane) => ({
+                    value: lane.id,
+                    label:
+                      lane.kind === "fixture"
+                        ? `${lane.id} · saved sign-in`
+                        : `${lane.id} · signed-out lane`,
+                  })),
+                ]}
+                onValueChange={setLaneId}
+                placeholder="Choose the account context for this goal"
+              />
+              <FieldDescription>
+                {laneId
+                  ? `Workers inherit the ${laneId} Lane — its cookies and sign-in carry into the goal run.`
+                  : "Each worker opens a fresh isolated signed-out browser."}
+              </FieldDescription>
+            </Field>
+          ) : null}
           <Field>
             <FieldLabel htmlFor="goal-agents">Workers</FieldLabel>
             <Input

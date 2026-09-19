@@ -9,7 +9,7 @@ import type { GoalProductService } from "../data/goal-product-service";
 import type { DeviceProductService } from "../data/device-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { Platform } from "../platform/types";
-
+import type { AppResourcesProductService } from "../data/app-resources-product-service";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const roots: Root[] = [];
@@ -117,7 +117,17 @@ function goalService(startResult = sessionResult()): GoalProductService {
   };
 }
 
-async function render(service = goalService(), initialEntry = "/goals") {
+function laneService(
+  lanes: ReadonlyArray<{ id: string; kind: "fixture" | "signed-out" }>,
+): AppResourcesProductService {
+  return { listAccountLanes: vi.fn(async () => lanes) } as unknown as AppResourcesProductService;
+}
+
+async function render(
+  service = goalService(),
+  initialEntry = "/goals",
+  appResources: AppResourcesProductService = laneService([]),
+) {
   const history = createMemoryHistory({ initialEntries: [initialEntry] });
   const host = document.createElement("div");
   document.body.append(host);
@@ -131,6 +141,7 @@ async function render(service = goalService(), initialEntry = "/goals") {
         productService={{ listApps: async () => [] } as unknown as RecordingProductService}
         deviceService={deviceService}
         goalService={service}
+        appResourcesService={appResources}
       />,
     );
   });
@@ -281,6 +292,54 @@ describe("Goal page", () => {
     await settle();
     expect(button("Explore goal").disabled).toBe(false);
     expect(host.textContent).toContain("Start from a goal");
+  });
+
+  it("runs the goal on a saved Lane so its account carries into the run", async () => {
+    const { host, service } = await render(
+      goalService(),
+      "/goals",
+      laneService([
+        { id: "grok-lab", kind: "fixture" },
+        { id: "grok-daily", kind: "signed-out" },
+      ]),
+    );
+
+    expect(host.textContent).toContain("Run as");
+
+    const select = [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
+      b.getAttribute("aria-label")?.includes("Run as"),
+    );
+    expect(select).toBeTruthy();
+    await act(async () => select!.click());
+    await settle();
+    const option = [...document.querySelectorAll("[role='option']")].find((node) =>
+      node.textContent?.includes("grok-lab"),
+    );
+    expect(option).toBeTruthy();
+    await act(async () => {
+      (option as HTMLElement).click();
+    });
+    await settle();
+    expect(host.textContent).toContain("Workers inherit the grok-lab Lane");
+
+    await setValue("goal-description", "Open the signed-in account page");
+    await setValue("goal-start-url", "https://example.test");
+    await act(async () => {
+      document
+        .querySelector<HTMLButtonElement>('[aria-label="Confirm target control"]')
+        ?.closest("label")
+        ?.click();
+    });
+    await settle();
+    await act(async () => button("Explore goal").click());
+    await settle();
+
+    expect(vi.mocked(service.start).mock.calls[0]?.[0]).toMatchObject({
+      goal: "Open the signed-in account page",
+      startUrl: "https://example.test",
+      laneId: "grok-lab",
+      confirmControl: true,
+    });
   });
 });
 

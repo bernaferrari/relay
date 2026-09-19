@@ -11,6 +11,8 @@ import type { Platform } from "../platform/types";
 export type GoalStartInput = {
   goal: string;
   startUrl: string;
+  /** Saved Lane whose overlay the goal workers inherit (isolated signed-out browser when unset). */
+  laneId?: string;
   maxSteps?: number;
   maxDurationMs?: number;
   agents: number;
