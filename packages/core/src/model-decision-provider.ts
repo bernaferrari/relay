@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { generateText, jsonSchema, Output } from "ai";
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import type {
   ModelChoiceAnswer,
   ModelDecisionAnswer,
@@ -30,6 +28,13 @@ const JSON_LIMITS = {
 } as const;
 
 type JsonSchema = Record<string, unknown>;
+
+type OpenRouterAiSdk = {
+  generateText: typeof import("ai").generateText;
+  jsonSchema: typeof import("ai").jsonSchema;
+  Output: typeof import("ai").Output;
+  createOpenRouter: typeof import("@openrouter/ai-sdk-provider").createOpenRouter;
+};
 
 export type OpenRouterDecisionProviderOptions = {
   apiKey?: string;
@@ -339,6 +344,14 @@ function sdkUsage(usage: {
     : undefined;
 }
 
+async function loadOpenRouterAiSdk(): Promise<OpenRouterAiSdk> {
+  const [{ generateText, jsonSchema, Output }, { createOpenRouter }] = await Promise.all([
+    import("ai"),
+    import("@openrouter/ai-sdk-provider"),
+  ]);
+  return { generateText, jsonSchema, Output, createOpenRouter };
+}
+
 function recordBase(
   request: ModelDecisionRequest,
   requestId: string,
@@ -383,19 +396,7 @@ export function createOpenRouterDecisionProvider(
     1,
     Math.min(MAX_ATTEMPTS, Math.trunc(options.maxAttempts ?? MAX_ATTEMPTS)),
   );
-  const openrouter =
-    apiKey && fetchImpl
-      ? createOpenRouter({
-          apiKey,
-          baseURL: openRouterBaseUrl(endpoint),
-          fetch: fetchImpl,
-          headers: {
-            ...(options.httpReferer ? { "HTTP-Referer": options.httpReferer } : {}),
-            ...(options.appTitle ? { "X-Title": options.appTitle } : {}),
-          },
-          compatibility: "strict",
-        })
-      : undefined;
+  let openRouterAiSdkPromise: Promise<OpenRouterAiSdk> | undefined;
 
   return {
     id: "openrouter",
@@ -428,10 +429,6 @@ export function createOpenRouterDecisionProvider(
         ModelDecisionQuestion
       >;
       const requestedModel = request.model || model;
-      const output = Output.object({
-        schema: jsonSchema<{ answers: unknown }>(responseSchema(request.questions)),
-        name: "relay_model_decision",
-      });
       let generated:
         | {
             output: { answers: unknown };
@@ -442,8 +439,25 @@ export function createOpenRouterDecisionProvider(
       let lastError: unknown;
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
+          openRouterAiSdkPromise ??= loadOpenRouterAiSdk();
+          const { generateText, jsonSchema, Output, createOpenRouter } =
+            await openRouterAiSdkPromise;
+          const openrouter = createOpenRouter({
+            apiKey,
+            baseURL: openRouterBaseUrl(endpoint),
+            fetch: fetchImpl,
+            headers: {
+              ...(options.httpReferer ? { "HTTP-Referer": options.httpReferer } : {}),
+              ...(options.appTitle ? { "X-Title": options.appTitle } : {}),
+            },
+            compatibility: "strict",
+          });
+          const output = Output.object({
+            schema: jsonSchema<{ answers: unknown }>(responseSchema(request.questions)),
+            name: "relay_model_decision",
+          });
           generated = await generateText({
-            model: openrouter!.chat(requestedModel),
+            model: openrouter.chat(requestedModel),
             messages: [
               {
                 role: "user",
