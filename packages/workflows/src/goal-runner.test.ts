@@ -992,3 +992,60 @@ function fakeNativeObservation(): TargetObservation {
     },
   };
 }
+
+test("saved path replays with every model credential absent and no provider consultation", async () => {
+  // Reviewer evidence item: the saved Test replays with all model credentials
+  // absent. Scrub provider credentials, then replay a completed session with
+  // a provider that fails loudly if anything consults it.
+  const scrubbed: Array<[string, string | undefined]> = [
+    ["OPENROUTER_API_KEY", process.env.OPENROUTER_API_KEY],
+    ["RELAY_MODEL_PROVIDER", process.env.RELAY_MODEL_PROVIDER],
+  ];
+  for (const [name] of scrubbed) delete process.env[name];
+  const consulted = { count: 0 };
+  const refusingProvider: ModelDecisionProvider = {
+    id: "openrouter",
+    async decide() {
+      consulted.count += 1;
+      throw new Error("replay must never consult a model provider");
+    },
+  };
+  try {
+    const runtime = operations();
+    const runner = createGoalSessionRunner({
+      operations: runtime.port,
+      store: memoryStore(),
+      decisionProvider: refusingProvider,
+      id: () => "goal-model-free-replay",
+    });
+    // Complete the session normally first, then replay it through a second
+    // runner whose provider refuses every call.
+    const store = memoryStore();
+    await createGoalSessionRunner({
+      operations: runtime.port,
+      store,
+      decisionProvider: providerFor("continue", "complete"),
+      id: () => "goal-model-free-replay",
+    }).start({ goal: "Reach the next screen", startUrl: "https://example.test" });
+    // Fresh runtime so the control count below counts ONLY the replay.
+    const replayRuntime = operations();
+    const replayOnly = createGoalSessionRunner({
+      operations: replayRuntime.port,
+      store,
+      decisionProvider: refusingProvider,
+      id: () => "goal-model-free-replay",
+      now: () => 1,
+    });
+    const result = await replayOnly.reproduce("goal-model-free-replay");
+    assert.equal(result.reproduction?.status, "reproduced");
+    assert.equal(consulted.count, 0);
+    assert.equal(
+      replayRuntime.calls.filter((id) => id === "target.browser-device.control").length,
+      1,
+    );
+  } finally {
+    for (const [name, value] of scrubbed) {
+      if (value !== undefined) process.env[name] = value;
+    }
+  }
+});
