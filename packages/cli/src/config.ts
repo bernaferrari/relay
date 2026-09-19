@@ -13,6 +13,7 @@ import {
   parseBudgetMs,
   parseRunOutDir,
 } from "./cli-run-flags.js";
+import { confirmedReviewedOriginInput, tokenize, type ParsedTokens } from "./cli-argv.js";
 
 export type OutputMode = "human" | "json" | "ndjson";
 export type CredentialSource = { type: "none" } | { type: "env"; name: string };
@@ -96,134 +97,6 @@ const defaults = {
   timeout: "180000",
   wait: true,
 } as const;
-
-type ParsedTokens = {
-  positionals: string[];
-  values: Map<string, string>;
-  switches: Set<string>;
-};
-
-const valueFlags = new Set([
-  "--server",
-  "--organization",
-  "--project",
-  "--credential-source",
-  "--actor",
-  "--timeout",
-  "--input",
-  "--input-file",
-  "--file",
-  "--mark",
-  "--dir",
-  "--max-scrolls",
-  "--in",
-  "--each",
-  "--strategy",
-  "--pilot",
-  "--resume",
-  "--inspect",
-  "--lens",
-  "--cell",
-  "--lane",
-  "--target",
-  "--revision",
-  "--commit",
-  "--pr",
-  "--branch",
-  "--budget",
-  "--out",
-  "--device",
-  "--map",
-  "--base",
-  "--config",
-  "--config-file",
-  "--export",
-  "--todo",
-  "--triage",
-  "--url",
-  "--goal",
-  "--title",
-  "--max-steps",
-  "--max-ms",
-  "--model",
-  "--agents",
-  "--judge",
-  "--auth-fixture",
-]);
-const switchFlags = new Set([
-  "-h",
-  "--help",
-  "--json",
-  "--ndjson",
-  "--quiet",
-  "--wait",
-  "--no-wait",
-  "--binary",
-  "--force",
-  "--full",
-  "--preview",
-  "--confirm",
-  "--history",
-  "--all",
-  "--no-restore",
-  "--findings",
-]);
-const repeatableValueFlags = new Set(["--in", "--each"]);
-
-const reviewedOriginConfirmationOperations = new Set([
-  "app-map.scroll-surface.origin.review",
-  "app-map.scroll-surface.origin.revoke",
-]);
-
-function requireReviewedOriginConfirmation(operationId: string, confirmed: boolean): void {
-  if (reviewedOriginConfirmationOperations.has(operationId) && !confirmed) {
-    throw new UsageError(`${operationId} requires --confirm and its fixed assertion literal`);
-  }
-}
-
-/** The CLI's switch is intentionally not trusted as a presentation-only hint.
- * Once explicitly supplied, carry the canonical confirmation into the signed
- * server/core operation payload. */
-function confirmedReviewedOriginInput(
-  operationId: string,
-  input: Record<string, unknown>,
-  confirmed: boolean,
-): Record<string, unknown> {
-  requireReviewedOriginConfirmation(operationId, confirmed);
-  return reviewedOriginConfirmationOperations.has(operationId)
-    ? { ...input, confirmation: "confirm" }
-    : input;
-}
-
-function tokenize(argv: readonly string[]): ParsedTokens {
-  const positionals: string[] = [];
-  const values = new Map<string, string>();
-  const switches = new Set<string>();
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index]!;
-    if (!token.startsWith("-") || token === "-") {
-      positionals.push(token);
-      continue;
-    }
-    const equals = token.indexOf("=");
-    const name = equals >= 0 ? token.slice(0, equals) : token;
-    if (switchFlags.has(name)) {
-      if (equals >= 0) throw new UsageError(`${name} does not take a value`);
-      switches.add(name);
-      continue;
-    }
-    if (!valueFlags.has(name)) throw new UsageError(`Unknown option: ${name}`);
-    const value = equals >= 0 ? token.slice(equals + 1) : argv[++index];
-    if (!value || value.startsWith("--")) throw new UsageError(`${name} requires a value`);
-    if (repeatableValueFlags.has(name)) {
-      const existing = values.get(name);
-      values.set(name, existing ? `${existing}\u0000${value}` : value);
-      continue;
-    }
-    values.set(name, value);
-  }
-  return { positionals, values, switches };
-}
 
 function choose(cli: string | undefined, env: string | undefined, fallback: string): string {
   return cli ?? (env?.trim() || fallback);

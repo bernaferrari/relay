@@ -555,7 +555,7 @@ function RecordingWorkspace({
         {recording.isPending ? <PageLoading label="Restoring the recording…" /> : null}
         {(recording.isError || recording.data?.recovery) && !previewAvailable ? (
           <div className="m-auto grid w-full max-w-sm justify-items-center gap-3 px-6 py-10 text-center">
-            <h2 className="text-lg font-semibold">Connection lost</h2>
+            <h2 className="text-lg font-semibold">Relay session unavailable</h2>
             <p className="text-sm leading-relaxed text-muted-foreground">
               Reconnect to reopen your recording and saved steps.
             </p>

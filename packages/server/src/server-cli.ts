@@ -23,3 +23,21 @@ export async function runServerCli(startServer: ServerStarter): Promise<void> {
   console.log(`@relay/server listening on http://${started.host}:${started.port}`);
   console.log(`  runs → ${runsRoot()}`);
 }
+
+/** Keep direct-module detection out of the HTTP server implementation. */
+export function runServerCliIfInvoked(
+  startServer: ServerStarter,
+  modulePath = process.argv[1],
+): void {
+  const invokedDirectly =
+    modulePath?.endsWith("/server/src/index.ts") ||
+    modulePath?.endsWith("\\server\\src\\index.ts") ||
+    modulePath?.endsWith("/server/index.cjs") ||
+    modulePath?.endsWith("\\server\\index.cjs") ||
+    modulePath?.includes("@relay/server");
+  if (!invokedDirectly) return;
+  void runServerCli(startServer).catch((err: unknown) => {
+    console.error(err instanceof Error ? err.message : err);
+    process.exit(1);
+  });
+}

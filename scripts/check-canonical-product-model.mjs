@@ -21,7 +21,7 @@ const canonicalTeachingBoundary = new Map([
     "packages/server/src/app-map-capture-routes.ts",
     "/app-maps/:appMapId/variables/:variableId/infer",
   ],
-  ["packages/cli/src/commands.ts", '"app-map.variable.infer"'],
+  ["packages/cli/src/cli-operation-descriptors.ts", '"app-map.variable.infer"'],
   ["packages/mcp/src/tools.ts", '"app-map.variable.infer"'],
 ]);
 

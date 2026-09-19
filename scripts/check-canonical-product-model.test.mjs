@@ -11,7 +11,10 @@ const canonicalEntries = [
     path: "packages/server/src/app-map-capture-routes.ts",
     source: 'matchPath(pathname, "/app-maps/:appMapId/variables/:variableId/infer")',
   },
-  { path: "packages/cli/src/commands.ts", source: '"app-map.variable.infer"' },
+  {
+    path: "packages/cli/src/cli-operation-descriptors.ts",
+    source: '"app-map.variable.infer"',
+  },
   { path: "packages/mcp/src/tools.ts", source: '"app-map.variable.infer"' },
 ];
 

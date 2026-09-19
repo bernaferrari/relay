@@ -134,7 +134,7 @@ import type { WorkflowRouteRuntime } from "./workflow-routes.js";
 import { handlePrimaryOperationRoutes } from "./primary-operation-routes.js";
 import type { ChangeVerificationRouteRuntime } from "./change-verification-routes.js";
 import { createProofRuntimeBootstrap } from "./proof-runtime-bootstrap.js";
-import { runServerCli } from "./server-cli.js";
+import { runServerCliIfInvoked } from "./server-cli.js";
 import { requestsBearerAuthentication, setCorsOrigin } from "./cors.js";
 import { respondToRequestError } from "./request-error-response.js";
 export type { StartServerOptions, StartedServer } from "./server-types.js";
@@ -888,16 +888,4 @@ async function startServerWithStateLease(
   return { port, host, close };
 }
 
-const invokedDirectly =
-  process.argv[1]?.endsWith("/server/src/index.ts") ||
-  process.argv[1]?.endsWith("\\server\\src\\index.ts") ||
-  process.argv[1]?.endsWith("/server/index.cjs") ||
-  process.argv[1]?.endsWith("\\server\\index.cjs") ||
-  process.argv[1]?.includes("@relay/server");
-
-if (invokedDirectly) {
-  runServerCli(startServer).catch((err: unknown) => {
-    console.error(err instanceof Error ? err.message : err);
-    process.exit(1);
-  });
-}
+runServerCliIfInvoked(startServer);

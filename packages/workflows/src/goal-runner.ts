@@ -10,7 +10,6 @@ import {
 } from "@relay/core";
 import type {
   CompactGoalObservation,
-  GoalObservationAction,
   GoalSessionAction,
   GoalSessionBudget,
   GoalSessionInteractionTarget,
@@ -18,24 +17,33 @@ import type {
   GoalSessionResult,
   GoalSessionStartInput,
   GoalSessionStopCode,
-  GoalReproductionRecord,
-  GoalFinding,
   ModelChoiceAnswer,
   ModelDecisionRecord,
-  TargetObservation,
 } from "@relay/protocol";
 import {
-  GOAL_FINDING_SCHEMA_VERSION,
   GOAL_SESSION_MAX_ACTIONS,
   GOAL_SESSION_MAX_DURATION_MS,
   GOAL_SESSION_MAX_STEPS,
   GOAL_SESSION_SCHEMA_VERSION,
 } from "@relay/protocol";
+import { runGoalReproduction } from "./goal-reproduction-runner.js";
+import {
+  appendFinding,
+  evidenceRefs,
+  findingForStop,
+  interactionInput,
+  isOutcomeUnknown,
+  normalizeError,
+  observationCapabilities,
+  observationSignals,
+  recentActions,
+  result,
+  MAX_ERROR_CHARS,
+  MAX_EVIDENCE_REFS,
+} from "./goal-session-support.js";
 import type { RelayOperationPort } from "./operation-port.js";
 
 const MAX_GOAL_CHARS = 2_048;
-const MAX_ERROR_CHARS = 1_024;
-const MAX_EVIDENCE_REFS = 8;
 
 export type GoalSessionStore = {
   load(id: string): Promise<GoalSessionRecord | null>;
@@ -64,11 +72,6 @@ function goalStoreRoot(): string {
 
 function validId(value: string): boolean {
   return /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/u.test(value);
-}
-
-function normalizeError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.trim().slice(0, MAX_ERROR_CHARS) || "Relay operation failed";
 }
 
 function boundedGoal(value: string): string {
@@ -167,74 +170,6 @@ function assertOpenedTarget(result: { session: { targetId: string } }, targetId:
   }
 }
 
-function evidenceRefs(sessionId: string, observation: TargetObservation, digest: string): string[] {
-  const refs = [`goal:${sessionId}:observation:${digest}`];
-  const projections = [
-    ...(observation.pixels.status === "captured" ? [observation.pixels.artifact] : []),
-    observation.semantics.artifact,
-  ];
-  for (const projection of projections) {
-    if (projection.status === "available") refs.push(projection.artifact.id);
-  }
-  return [...new Set(refs)].slice(0, MAX_EVIDENCE_REFS);
-}
-
-function recentActions(record: GoalSessionRecord): GoalObservationAction[] {
-  return record.actions.slice(-20).map((action) => ({
-    id: action.id,
-    kind: action.interaction.kind,
-    outcome:
-      action.status === "acknowledged"
-        ? "acknowledged"
-        : action.status === "unknown"
-          ? "unknown"
-          : "rejected",
-    summary: action.label,
-  }));
-}
-
-function observationSignals(observation: TargetObservation) {
-  const signals = [] as Array<{
-    kind: "error" | "network" | "log" | "missing-evidence" | "runtime";
-    severity: "info" | "warning" | "error";
-    summary: string;
-  }>;
-  if (observation.semantics.status !== "current") {
-    signals.push({
-      kind: "missing-evidence",
-      severity: "warning",
-      summary: observation.semantics.message ?? "Semantic controls are not current.",
-    });
-  }
-  if (observation.pixels.status !== "captured") {
-    signals.push({
-      kind: "missing-evidence",
-      severity: "warning",
-      summary: "Pixels are unavailable.",
-    });
-  }
-  return signals;
-}
-
-function observationCapabilities(observation: TargetObservation) {
-  return [
-    {
-      name: "semantic-control",
-      available: observation.semantics.status === "current",
-      ...(observation.semantics.status === "current"
-        ? {}
-        : { reason: "Current semantic control proof is unavailable." }),
-    },
-    {
-      name: "pixels",
-      available: observation.pixels.status === "captured",
-      ...(observation.pixels.status === "captured"
-        ? {}
-        : { reason: "Current pixels are unavailable." }),
-    },
-  ];
-}
-
 function choiceAnswer(
   decision: ModelDecisionRecord | undefined,
   id: string,
@@ -267,48 +202,6 @@ function interactionFor(candidate: {
   if (candidate.target.label) return { kind: "label", target: { label: candidate.target.label } };
   if (candidate.target.point) return { kind: "point", target: { point: candidate.target.point } };
   throw new TypeError("Goal candidate has no actionable selector.");
-}
-
-function interactionInput(record: GoalSessionRecord, action: GoalSessionAction, targetId?: string) {
-  const selector = action.interaction.target;
-  return {
-    serial: targetId ?? record.target.targetId,
-    ...(record.laneId ? { laneId: record.laneId } : {}),
-    kind: action.interaction.kind,
-    ...(selector.identifier ? { identifier: selector.identifier } : {}),
-    ...(selector.ref ? { ref: selector.ref } : {}),
-    ...(selector.label ? { label: selector.label } : {}),
-    ...(selector.point ? { x: selector.point.x, y: selector.point.y } : {}),
-  };
-}
-
-function isOutcomeUnknown(error: unknown): boolean {
-  const message = normalizeError(error).toLowerCase();
-  return message.includes("outcome-unknown") || message.includes("outcome unknown");
-}
-
-function result(record: GoalSessionRecord): GoalSessionResult {
-  return {
-    schemaVersion: GOAL_SESSION_SCHEMA_VERSION,
-    sessionId: record.id,
-    goal: record.goal,
-    target: record.target,
-    status: record.status,
-    step: record.step,
-    budget: record.budget,
-    ...(record.stopReason ? { stopReason: record.stopReason } : {}),
-    ...(record.lastObservation ? { lastObservation: record.lastObservation } : {}),
-    ...(record.lastDecision ? { lastDecision: record.lastDecision } : {}),
-    ...(record.reproduction ? { reproduction: record.reproduction } : {}),
-    findings: record.findings ?? [],
-    actions: record.actions,
-    observations: record.observations,
-    ...(record.pendingAction ||
-    record.stopReason?.code === "action-uncertain" ||
-    record.stopReason?.code === "resume-review-required"
-      ? { resumeRequiresReview: true as const }
-      : {}),
-  };
 }
 
 function stop(
@@ -407,116 +300,6 @@ async function resolveTarget(
     },
     ...(input.laneId ? { laneId: input.laneId } : {}),
   };
-}
-
-async function ensureFreshBrowserTarget(
-  operations: RelayOperationPort,
-  targetId: string,
-  startUrl: string,
-  sessionId: string,
-  authenticationFixtureReference?: string,
-): Promise<{ target: GoalSessionRecord["target"]; exists: boolean }> {
-  const registered = await operations.invoke("target.list", {});
-  const existing = registered.targets.find((target) => target.id === targetId);
-  if (existing) {
-    if (existing.kind !== "browser" || existing.browser?.startUrl !== startUrl) {
-      throw new TypeError("The durable goal target is bound to a different browser configuration.");
-    }
-    return {
-      target: {
-        targetId,
-        platform: "browser",
-        startUrl,
-        ...(authenticationFixtureReference ? { authenticationFixtureReference } : {}),
-      },
-      exists: true,
-    };
-  }
-  const created = await operations.invoke("target.create", {
-    id: targetId,
-    name: `Relay goal ${sessionId.slice(0, 8)}`,
-    startUrl,
-    headless: true,
-    profileRetention: "ephemeral",
-  });
-  if (created.target.id !== targetId || created.target.kind !== "browser") {
-    throw new TypeError("Relay returned an unexpected goal browser target.");
-  }
-  return {
-    target: {
-      targetId,
-      platform: "browser",
-      startUrl,
-      ...(authenticationFixtureReference ? { authenticationFixtureReference } : {}),
-    },
-    exists: false,
-  };
-}
-
-function reproductionEvidenceRefs(
-  sessionId: string,
-  reproductionId: string,
-  observation: TargetObservation,
-  digest: string,
-): string[] {
-  const refs = [`goal:${sessionId}:reproduction:${reproductionId}:observation:${digest}`];
-  const projections = [
-    ...(observation.pixels.status === "captured" ? [observation.pixels.artifact] : []),
-    observation.semantics.artifact,
-  ];
-  for (const projection of projections) {
-    if (projection.status === "available") refs.push(projection.artifact.id);
-  }
-  return [...new Set(refs)].slice(0, MAX_EVIDENCE_REFS);
-}
-
-function findingEvidenceRefs(record: GoalSessionRecord): string[] {
-  return [
-    ...(record.actions.at(-1)?.evidenceRefs ?? []),
-    ...(record.observations.at(-1)?.evidenceRefs ?? []),
-  ].slice(0, MAX_EVIDENCE_REFS);
-}
-
-function findingForStop(
-  record: GoalSessionRecord,
-  code: GoalSessionStopCode,
-  message: string,
-  at: number,
-): GoalFinding | undefined {
-  if (code === "goal-achieved") return undefined;
-  const missingEvidence = code === "observation-unavailable";
-  const uncertainMutation = code === "action-uncertain";
-  return {
-    schemaVersion: GOAL_FINDING_SCHEMA_VERSION,
-    id: `finding-${record.id}-${code}`,
-    sessionId: record.id,
-    kind: missingEvidence
-      ? "missing-evidence"
-      : uncertainMutation
-        ? "possible-issue"
-        : "blocked-exploration",
-    status: uncertainMutation ? "open" : "blocked",
-    title: missingEvidence
-      ? "Exploration stopped with missing evidence"
-      : uncertainMutation
-        ? "Possible issue after an uncertain interaction"
-        : "Exploration stopped before the goal was established",
-    summary: message.slice(0, MAX_ERROR_CHARS),
-    evidenceRefs: findingEvidenceRefs(record),
-    source: "goal-runner",
-    createdAt: at,
-    updatedAt: at,
-    requiresReview: true,
-  };
-}
-
-function appendFinding(
-  record: GoalSessionRecord,
-  finding: GoalFinding | undefined,
-): GoalSessionRecord {
-  if (!finding) return record;
-  const findings = [...(record.findings ?? []).filter((item) => item.id !== finding.id), finding];
-  return { ...record, findings };
 }
 
 export function createGoalSessionRunner(options: GoalSessionRunnerOptions): GoalSessionRunner {
@@ -888,296 +671,14 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
       assertSessionId(sessionId);
       const loaded = await store.load(sessionId);
       if (!loaded) throw new TypeError(`Goal session ${sessionId} was not found.`);
-      return exclusive(sessionId, async () => {
-        let record = (await store.load(sessionId)) ?? loaded;
-        if (record.reproduction && record.reproduction.status !== "running") {
-          return result(record);
-        }
-        if (record.pendingAction) {
-          record = stop(
-            record,
-            "uncertain",
-            "resume-review-required",
-            "The original goal still has an in-flight mutation. Review it before attempting reproduction.",
-            now(),
-          );
-          await persist(record);
-          return result(record);
-        }
-        if (record.target.platform !== "browser" || !record.target.startUrl) {
-          throw new TypeError(
-            "Fresh reproduction currently requires a browser goal with a durable startUrl.",
-          );
-        }
-        if (record.target.laneId) {
-          throw new TypeError(
-            "Fresh reproduction cannot reuse a shared Lane; use a signed-out or fixture-bound browser target.",
-          );
-        }
-        if (record.status !== "completed") {
-          throw new TypeError("Fresh reproduction requires a completed goal session.");
-        }
-        const sourceActions = record.actions.filter((action) => action.status === "acknowledged");
-        if (sourceActions.length === 0 || sourceActions.length !== record.actions.length) {
-          throw new TypeError(
-            "Fresh reproduction requires a goal path whose every recorded action was acknowledged.",
-          );
-        }
-        const reproductionId = record.reproduction?.id ?? `repro-${record.id.slice(0, 120)}`;
-        const targetId = `goal-repro-${record.id.slice(0, 110)}`;
-        const ensured = await ensureFreshBrowserTarget(
-          options.operations,
-          targetId,
-          record.target.startUrl,
-          reproductionId,
-          record.target.authenticationFixtureReference,
-        );
-        let reproduction: GoalReproductionRecord = {
-          id: reproductionId,
-          sourceSessionId: record.id,
-          target: ensured.target,
-          status: "running",
-          startedAt: record.reproduction?.startedAt ?? now(),
-          updatedAt: now(),
-          actions: record.reproduction?.actions ?? [],
-          observations: record.reproduction?.observations ?? [],
-          findings: record.reproduction?.findings ?? [],
-          ...(record.reproduction?.lastObservation
-            ? { lastObservation: record.reproduction.lastObservation }
-            : {}),
-        };
-        const saveReproduction = async (): Promise<void> => {
-          reproduction = { ...reproduction, updatedAt: now() };
-          record = { ...record, reproduction };
-          await persist(record);
-        };
-        const finish = async (
-          status: GoalReproductionRecord["status"],
-          code: GoalSessionStopCode,
-          message: string,
-        ): Promise<GoalSessionResult> => {
-          const at = now();
-          const finding: GoalFinding = {
-            schemaVersion: GOAL_FINDING_SCHEMA_VERSION,
-            id: `finding-${record.id}-reproduction-${status}`,
-            sessionId: record.id,
-            kind:
-              status === "reproduced"
-                ? "reproduction-lead"
-                : status === "uncertain" || status === "unresolved"
-                  ? "possible-issue"
-                  : "missing-evidence",
-            status:
-              status === "reproduced" ? "reproduced" : status === "uncertain" ? "open" : "blocked",
-            title:
-              status === "reproduced"
-                ? "Fresh path replayed; review before saving a Test"
-                : status === "uncertain"
-                  ? "Possible issue needs fresh-target review"
-                  : "Fresh reproduction needs more evidence",
-            summary: message.slice(0, MAX_ERROR_CHARS),
-            evidenceRefs: [
-              ...(reproduction.actions.at(-1)?.evidenceRefs ?? []),
-              ...(reproduction.observations.at(-1)?.evidenceRefs ?? []),
-            ].slice(0, MAX_EVIDENCE_REFS),
-            source: "fresh-reproduction",
-            createdAt: at,
-            updatedAt: at,
-            requiresReview: true,
-          };
-          reproduction = {
-            ...reproduction,
-            status,
-            pendingAction: undefined,
-            findings: [
-              ...(reproduction.findings ?? []).filter((item) => item.id !== finding.id),
-              finding,
-            ],
-            stopReason: { code, message: message.slice(0, MAX_ERROR_CHARS), at },
-            updatedAt: at,
-          };
-          record = { ...record, reproduction };
-          await persist(record);
-          return result(record);
-        };
-        if (reproduction.pendingAction) {
-          return finish(
-            "uncertain",
-            "resume-review-required",
-            "A reproduction mutation was recorded as intended before the worker stopped. Review the fresh target; Relay will not replay it.",
-          );
-        }
-        if (!ensured.exists || reproduction.actions.length === 0) {
-          const opened = await options.operations.invoke("target.open", {
-            targetId,
-            ...(record.target.authenticationFixtureReference
-              ? { authenticationFixtureReference: record.target.authenticationFixtureReference }
-              : { signedOut: true as const }),
-            presentation: "embedded",
-          });
-          assertOpenedTarget(opened, targetId);
-        }
-        await saveReproduction();
-
-        const captureReproduction = async (): Promise<CompactGoalObservation> => {
-          const observation = await options.operations.invoke("target.observation.capture", {
-            serial: targetId,
-          });
-          const compact = compactGoalObservation({
-            goal: record.goal,
-            sessionId: reproduction.id,
-            targetId,
-            platform: "browser",
-            app: observation.foregroundApp,
-            observation,
-            recentActions: recentActions({
-              ...record,
-              id: reproduction.id,
-              target: reproduction.target,
-              actions: reproduction.actions,
-            }),
-            signals: observationSignals(observation),
-            capabilities: observationCapabilities(observation),
-            missingEvidence: [
-              ...(observation.pixels.status === "captured" ? [] : ["pixels"]),
-              ...(observation.semantics.status === "current" ? [] : ["current semantics"]),
-            ],
-          });
-          const refs = reproductionEvidenceRefs(
-            record.id,
-            reproduction.id,
-            observation,
-            compact.observationDigest,
-          );
-          reproduction = {
-            ...reproduction,
-            lastObservation: compact,
-            observations: [
-              ...reproduction.observations,
-              {
-                step: reproduction.actions.length,
-                observationDigest: compact.observationDigest,
-                capturedAt: observation.capturedAt,
-                evidenceRefs: refs,
-              },
-            ].slice(-GOAL_SESSION_MAX_ACTIONS),
-          };
-          await saveReproduction();
-          return compact;
-        };
-
-        try {
-          if (!reproduction.lastObservation) await captureReproduction();
-        } catch (error) {
-          return finish("blocked", "observation-unavailable", normalizeError(error));
-        }
-        for (let index = reproduction.actions.length; index < sourceActions.length; index += 1) {
-          const sourceAction = sourceActions[index]!;
-          const before = reproduction.lastObservation;
-          if (!before)
-            return finish(
-              "blocked",
-              "observation-unavailable",
-              "Reproduction has no current observation.",
-            );
-          const action: GoalSessionAction = {
-            ...sourceAction,
-            id: `repro-action-${index + 1}`,
-            step: index + 1,
-            status: "intended",
-            observationDigestBefore: before.observationDigest,
-            observationDigestAfter: undefined,
-            evidenceRefs: reproduction.observations.at(-1)?.evidenceRefs ?? [],
-            at: now(),
-            error: undefined,
-          };
-          reproduction = {
-            ...reproduction,
-            actions: [...reproduction.actions, action],
-            pendingAction: {
-              actionId: action.id,
-              candidateId: action.candidateId,
-              observationDigest: action.observationDigestBefore,
-              intendedAt: action.at,
-            },
-          };
-          await saveReproduction();
-          try {
-            const interactionResult = await options.operations.invoke(
-              "target.interact",
-              interactionInput(
-                { ...record, target: reproduction.target },
-                action,
-                reproduction.target.targetId,
-              ),
-            );
-            if (
-              "iosMutation" in interactionResult &&
-              interactionResult.iosMutation?.outcome === "outcome-unknown"
-            ) {
-              throw new Error("target interaction outcome-unknown; review required before resume");
-            }
-            reproduction = {
-              ...reproduction,
-              actions: reproduction.actions.map((item) =>
-                item.id === action.id ? { ...item, status: "acknowledged", at: now() } : item,
-              ),
-              pendingAction: undefined,
-            };
-            await saveReproduction();
-          } catch (error) {
-            const unknown = isOutcomeUnknown(error);
-            reproduction = {
-              ...reproduction,
-              actions: reproduction.actions.map((item) =>
-                item.id === action.id
-                  ? {
-                      ...item,
-                      status: unknown ? ("unknown" as const) : ("rejected" as const),
-                      error: normalizeError(error),
-                      at: now(),
-                    }
-                  : item,
-              ),
-            };
-            await saveReproduction();
-            return finish(
-              unknown ? "uncertain" : "unresolved",
-              unknown ? "action-uncertain" : "action-rejected",
-              unknown
-                ? "The fresh reproduction interaction may have been applied. Review the target before any retry."
-                : `The fresh reproduction could not replay the selected control: ${normalizeError(error)}`,
-            );
-          }
-          try {
-            const after = await captureReproduction();
-            const refs = reproduction.observations.at(-1)?.evidenceRefs ?? [];
-            reproduction = {
-              ...reproduction,
-              actions: reproduction.actions.map((item) =>
-                item.id === action.id
-                  ? {
-                      ...item,
-                      observationDigestAfter: after.observationDigest,
-                      evidenceRefs: [...new Set([...item.evidenceRefs, ...refs])].slice(
-                        0,
-                        MAX_EVIDENCE_REFS,
-                      ),
-                    }
-                  : item,
-              ),
-            };
-            await saveReproduction();
-          } catch (error) {
-            return finish("blocked", "observation-unavailable", normalizeError(error));
-          }
-        }
-        return finish(
-          "reproduced",
-          "goal-achieved",
-          "Fresh target replayed every acknowledged goal action and captured each result. Human review is still required before promotion.",
-        );
-      });
+      return exclusive(sessionId, async () =>
+        runGoalReproduction({
+          record: (await store.load(sessionId)) ?? loaded,
+          operations: options.operations,
+          now,
+          persist,
+        }),
+      );
     },
     async inspect(sessionId) {
       assertSessionId(sessionId);

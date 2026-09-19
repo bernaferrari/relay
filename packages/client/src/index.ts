@@ -13,18 +13,13 @@ import {
   parseRunSummary,
   parseJobSummary,
   type JobSummary,
-  type RedactionPolicy,
-  type EvidenceCollectionPolicy,
-  type SensitiveEvidenceChannel,
   type RunSummary,
-  type MatrixExpansion,
   operationDefinition,
   operationDefinitions,
   type OperationDefinition,
   type OperationId,
   type OperationInput,
   type OperationOutput,
-  type SoakReport,
   parseEventEnvelope,
   type EventEnvelope,
   type AuthoringInteraction,
@@ -32,24 +27,32 @@ import {
   type ReorderAuthoringTakeInput,
   type ReplaceAuthoringActionInput,
   type TrimAuthoringTakeInput,
-  type GoalExplorationRecord,
-  type GoalExplorationResult,
-  type GoalExplorationStartInput,
-  type GoalSessionRecord,
-  type GoalSessionResult,
-  type GoalSessionStartInput,
 } from "@relay/protocol";
-
-export class ApiError<T = unknown> extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-    readonly body?: T,
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
+import { ApiError } from "./api-error.js";
+export { ApiError } from "./api-error.js";
+import {
+  inspectExploration as inspectGoalExploration,
+  inspectGoal as inspectGoalSession,
+  promoteGoal as promoteGoalRequest,
+  reproduceGoal as reproduceGoalRequest,
+  resumeExploration as resumeGoalExploration,
+  resumeGoal as resumeGoalSession,
+  startExploration as startGoalExploration,
+  startGoal as startGoalSession,
+  type GoalControlOptions,
+  type GoalPromotionInput,
+  type GoalPromotionResult,
+} from "./goal-client.js";
+import {
+  evidenceCollectionPolicy as getEvidenceCollectionPolicy,
+  health as getHealth,
+  redactionPolicy as getRedactionPolicy,
+  setRedactionEnabled as updateRedactionEnabled,
+  setSensitiveEvidenceConsent as updateSensitiveEvidenceConsent,
+  soakReport as getSoakReport,
+  startSoak as startSoakRequest,
+} from "./workspace-client.js";
+export type { GoalControlOptions, GoalPromotionInput, GoalPromotionResult } from "./goal-client.js";
 
 function firstNonEmptyString(...values: unknown[]): string | undefined {
   for (const value of values) {
@@ -165,28 +168,6 @@ export type BinaryResource = {
   headers: Headers;
 };
 
-/** Goal mutations are deliberately opt-in at the client boundary. */
-export type GoalControlOptions = {
-  confirmControl: true;
-  signal?: AbortSignal;
-  requestId?: string;
-  idempotencyKey?: string;
-};
-
-export type GoalPromotionInput = {
-  sessionId: string;
-  title?: string;
-  appMapId?: string;
-};
-
-/** The authoring snapshot is intentionally opaque to @relay/client. Its
- * detailed shape belongs to the workflow package, while callers can still
- * inspect the stable discriminator and pass it to their own authoring UI. */
-export type GoalPromotionResult = {
-  kind: "author-test";
-  [key: string]: unknown;
-};
-
 const DEFAULT_MAX_BINARY_RESOURCE_BYTES = 32 * 1024 * 1024;
 
 function operationRequest<Id extends OperationId>(
@@ -269,51 +250,6 @@ function registeredTransport(
     }
   }
   return best ? { definition: best.definition, input: best.input } : null;
-}
-
-function requireObject(value: unknown, label: string): Record<string, unknown> {
-  if (!isRecord(value)) throw new ApiError(502, `${label} returned an invalid response`, value);
-  return value;
-}
-
-function parseGoalSessionResponse<T extends GoalSessionRecord | GoalSessionResult>(
-  value: unknown,
-  label: string,
-): T {
-  const record = requireObject(value, label);
-  const id = record.sessionId ?? record.id;
-  if (typeof id !== "string" || !id.trim()) {
-    throw new ApiError(502, `${label} returned a response without a session id`, value);
-  }
-  if (typeof record.status !== "string") {
-    throw new ApiError(502, `${label} returned a response without a status`, value);
-  }
-  if (!Array.isArray(record.actions) || !Array.isArray(record.observations)) {
-    throw new ApiError(502, `${label} returned an incomplete session response`, value);
-  }
-  return value as T;
-}
-
-function parseGoalExplorationResponse<T extends GoalExplorationRecord | GoalExplorationResult>(
-  value: unknown,
-  label: string,
-): T {
-  const record = requireObject(value, label);
-  if (typeof record.id !== "string" || !record.id.trim()) {
-    throw new ApiError(502, `${label} returned a response without an exploration id`, value);
-  }
-  if (typeof record.status !== "string" || !Array.isArray(record.workers)) {
-    throw new ApiError(502, `${label} returned an incomplete exploration response`, value);
-  }
-  return value as T;
-}
-
-function parseGoalPromotionResponse(value: unknown): GoalPromotionResult {
-  const record = requireObject(value, "Goal promotion");
-  if (record.kind !== "author-test") {
-    throw new ApiError(502, "Goal promotion returned an unexpected result", value);
-  }
-  return value as GoalPromotionResult;
 }
 
 export class RelayClient {
@@ -431,6 +367,16 @@ export class RelayClient {
       this.timeoutMs,
     );
     return body as T;
+  }
+
+  private goalTransport() {
+    return {
+      goalRequest: <T>(
+        path: string,
+        init: RequestInit = {},
+        options: Pick<GoalControlOptions, "signal" | "requestId" | "idempotencyKey"> = {},
+      ) => this.goalRequest<T>(path, init, options),
+    };
   }
 
   private operationHeaders(id: OperationId, options: InvokeOptions = {}): Headers {
@@ -644,27 +590,23 @@ export class RelayClient {
   }
 
   health() {
-    return this.invoke("system.health.get", {});
+    return getHealth(this);
   }
-  redactionPolicy(): Promise<{ policy: RedactionPolicy }> {
-    return this.invoke("workspace.privacy.get", {});
+  redactionPolicy() {
+    return getRedactionPolicy(this);
   }
-  setRedactionEnabled(enabled: boolean): Promise<{ policy: RedactionPolicy }> {
-    return this.invoke("workspace.privacy.update", { enabled });
+  setRedactionEnabled(enabled: boolean) {
+    return updateRedactionEnabled(this, enabled);
   }
-  evidenceCollectionPolicy(): Promise<{ policy: EvidenceCollectionPolicy }> {
-    return this.invoke("workspace.evidence.get", {});
+  evidenceCollectionPolicy() {
+    return getEvidenceCollectionPolicy(this);
   }
   setSensitiveEvidenceConsent(
-    channel: SensitiveEvidenceChannel,
+    channel: Parameters<typeof updateSensitiveEvidenceConsent>[1],
     enabled: boolean,
     reason?: string,
-  ): Promise<{ policy: EvidenceCollectionPolicy }> {
-    return this.invoke("workspace.evidence.update", {
-      channel,
-      enabled,
-      ...(reason ? { reason } : {}),
-    });
+  ) {
+    return updateSensitiveEvidenceConsent(this, channel, enabled, reason);
   }
   async jobs(): Promise<{ jobs: JobSummary[] }> {
     const body = await this.invoke("job.list", {});
@@ -696,26 +638,11 @@ export class RelayClient {
       throw new ApiError(502, error instanceof Error ? error.message : String(error), body);
     }
   }
-  startSoak(input: {
-    recipe: string;
-    matrixId: string;
-    repetitions?: number;
-    prodAccountMatch?: string;
-  }): Promise<{
-    jobs: JobSummary[];
-    matrix: MatrixExpansion;
-    batchId: string;
-    repetitions: number;
-  }> {
-    return this.invoke("job.soak.start", input) as Promise<{
-      jobs: JobSummary[];
-      matrix: MatrixExpansion;
-      batchId: string;
-      repetitions: number;
-    }>;
+  startSoak(input: Parameters<typeof startSoakRequest>[1]) {
+    return startSoakRequest(this, input);
   }
-  soakReport(batchId: string): Promise<{ report: SoakReport }> {
-    return this.resource(`/reports/soak/${encodeURIComponent(batchId)}`);
+  soakReport(batchId: string) {
+    return getSoakReport(this, batchId);
   }
   projects(): Promise<{ projects: Project[] }> {
     return this.invoke("project.list", {}) as Promise<{ projects: Project[] }>;
@@ -872,96 +799,37 @@ export class RelayClient {
   }
 
   /** Start one bounded goal without requiring a saved Test or App Map. */
-  async startGoal(
-    input: GoalSessionStartInput,
-    options: GoalControlOptions,
-  ): Promise<GoalSessionResult> {
-    const body = await this.goalRequest<unknown>(
-      "/goal",
-      {
-        method: "POST",
-        body: JSON.stringify({ ...input, confirmControl: options.confirmControl }),
-      },
-      options,
-    );
-    return parseGoalSessionResponse(body, "Goal start");
+  startGoal(input: Parameters<typeof startGoalSession>[1], options: GoalControlOptions) {
+    return startGoalSession(this.goalTransport(), input, options);
   }
 
   /** Start independent bounded workers against isolated signed-out browser targets. */
-  async startExploration(
-    input: GoalExplorationStartInput,
-    options: GoalControlOptions,
-  ): Promise<GoalExplorationResult> {
-    const body = await this.goalRequest<unknown>(
-      "/explore",
-      {
-        method: "POST",
-        body: JSON.stringify({ ...input, confirmControl: options.confirmControl }),
-      },
-      options,
-    );
-    return parseGoalExplorationResponse(body, "Goal exploration start");
+  startExploration(input: Parameters<typeof startGoalExploration>[1], options: GoalControlOptions) {
+    return startGoalExploration(this.goalTransport(), input, options);
   }
 
-  inspectGoal(sessionId: string, signal?: AbortSignal): Promise<GoalSessionRecord> {
-    return this.goalRequest<unknown>(`/goal/${encodeURIComponent(sessionId)}`, {
-      signal,
-    }).then((body) => parseGoalSessionResponse(body, "Goal inspection"));
+  inspectGoal(sessionId: string, signal?: AbortSignal) {
+    return inspectGoalSession(this.goalTransport(), sessionId, signal);
   }
 
-  inspectExploration(explorationId: string, signal?: AbortSignal): Promise<GoalExplorationRecord> {
-    return this.goalRequest<unknown>(`/explore/${encodeURIComponent(explorationId)}`, {
-      signal,
-    }).then((body) => parseGoalExplorationResponse(body, "Goal exploration inspection"));
+  inspectExploration(explorationId: string, signal?: AbortSignal) {
+    return inspectGoalExploration(this.goalTransport(), explorationId, signal);
   }
 
-  async resumeGoal(sessionId: string, options: GoalControlOptions): Promise<GoalSessionResult> {
-    const body = await this.goalRequest<unknown>(
-      `/goal/${encodeURIComponent(sessionId)}/resume`,
-      { method: "POST", body: JSON.stringify({ confirmControl: options.confirmControl }) },
-      options,
-    );
-    return parseGoalSessionResponse(body, "Goal resume");
+  resumeGoal(sessionId: string, options: GoalControlOptions) {
+    return resumeGoalSession(this.goalTransport(), sessionId, options);
   }
 
-  async resumeExploration(
-    explorationId: string,
-    options: GoalControlOptions,
-  ): Promise<GoalExplorationResult> {
-    const body = await this.goalRequest<unknown>(
-      `/explore/${encodeURIComponent(explorationId)}/resume`,
-      { method: "POST", body: JSON.stringify({ confirmControl: options.confirmControl }) },
-      options,
-    );
-    return parseGoalExplorationResponse(body, "Goal exploration resume");
+  resumeExploration(explorationId: string, options: GoalControlOptions) {
+    return resumeGoalExploration(this.goalTransport(), explorationId, options);
   }
 
-  async reproduceGoal(sessionId: string, options: GoalControlOptions): Promise<GoalSessionResult> {
-    const body = await this.goalRequest<unknown>(
-      `/goal/${encodeURIComponent(sessionId)}/reproduce`,
-      { method: "POST", body: JSON.stringify({ confirmControl: options.confirmControl }) },
-      options,
-    );
-    return parseGoalSessionResponse(body, "Goal reproduction");
+  reproduceGoal(sessionId: string, options: GoalControlOptions) {
+    return reproduceGoalRequest(this.goalTransport(), sessionId, options);
   }
 
-  async promoteGoal(
-    input: GoalPromotionInput,
-    options: GoalControlOptions,
-  ): Promise<GoalPromotionResult> {
-    const body = await this.goalRequest<unknown>(
-      `/goal/${encodeURIComponent(input.sessionId)}/promote`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          ...(input.title?.trim() ? { title: input.title.trim() } : {}),
-          ...(input.appMapId?.trim() ? { appMapId: input.appMapId.trim() } : {}),
-          confirmControl: options.confirmControl,
-        }),
-      },
-      options,
-    );
-    return parseGoalPromotionResponse(body);
+  promoteGoal(input: GoalPromotionInput, options: GoalControlOptions) {
+    return promoteGoalRequest(this.goalTransport(), input, options);
   }
 
   async events(
