@@ -263,7 +263,7 @@ test(
         relaunch: true,
       });
       assert.ok(
-        launched.launched?.app === SETTINGS_BUNDLE || launched.app?.app === SETTINGS_BUNDLE,
+        launched.launched?.app === SETTINGS_BUNDLE || launched.observed?.app === SETTINGS_BUNDLE,
         "expected Settings to become the active device session",
       );
       const preObservation = await port.invoke("target.observation.capture", {

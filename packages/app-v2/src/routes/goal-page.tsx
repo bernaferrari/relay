@@ -7,7 +7,7 @@ import { Input } from "@relay/ui-react/components/input";
 import { Textarea } from "@relay/ui-react/components/textarea";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
-import { Compass, ExternalLink, RefreshCw, RotateCcw, Save } from "lucide-react";
+import { Compass, RefreshCw, RotateCcw, Save } from "lucide-react";
 import { useState, type FormEvent, type KeyboardEvent } from "react";
 import type { GoalExplorationRecord, GoalFinding, GoalSessionRecord } from "@relay/protocol";
 import type { AuthorTestSnapshot } from "@relay/workflows";
@@ -207,7 +207,7 @@ export function GoalPage() {
       <PageHeader
         crumbs={[{ label: "Explore" }]}
         title="Start from a goal"
-        description="Give Relay an app and an outcome. It will use bounded OpenRouter decisions, retain the evidence, and leave anything worth promoting for review."
+        description="Give Relay an app and an outcome. It works within a bounded budget using the model configured in Settings, retains the evidence, and leaves anything worth promoting for review."
       />
 
       <div className="grid max-w-5xl gap-6 min-[900px]:grid-cols-[minmax(0,1.1fr)_minmax(260px,0.9fr)]">
@@ -229,7 +229,8 @@ export function GoalPage() {
               spellCheck={false}
             />
             <FieldDescription>
-              Use an observable outcome. Relay will not invent credentials or type into fields.
+              Use an observable outcome. Relay fills fields only from named task values; credentials
+              belong to an account fixture.
             </FieldDescription>
           </Field>
           <Field>
@@ -583,16 +584,9 @@ export function GoalPage() {
             <p className="font-medium text-foreground">Safe boundary</p>
             <p className="mt-1">
               A model suggestion is evidence, not proof. Fresh reproduction and promotion remain
-              explicit review steps.
+              explicit review steps. The configured model and its data handling are recorded with
+              the result — see Settings to review them.
             </p>
-            <a
-              className="mt-3 inline-flex min-h-11 items-center gap-1.5 text-foreground underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
-              href="https://openrouter.ai/typesafe"
-              target="_blank"
-              rel="noreferrer"
-            >
-              OpenRouter Jev details <ExternalLink className="size-3.5" aria-hidden="true" />
-            </a>
           </div>
         </section>
       </div>

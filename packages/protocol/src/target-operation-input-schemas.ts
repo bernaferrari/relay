@@ -114,6 +114,11 @@ export const targetOperationInputSchemas = {
         .describe(
           "Unique nearby heading that scopes an otherwise ambiguous label (Build Mode vs Finance Dismiss)",
         ),
+      match: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Required when kind is 'text-match': visible text to match and tap"),
       text: z
         .string()
         .optional()

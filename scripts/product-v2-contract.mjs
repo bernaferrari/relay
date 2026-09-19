@@ -33,6 +33,7 @@ export const PRODUCT_V2_ROUTES = Object.freeze([
   "/devices",
   "/devices/:deviceId",
   "/goals",
+  "/prototype/workbench",
   "/debug",
   "/settings/general",
   "/settings/evidence",

@@ -29,6 +29,7 @@ export type RoutePattern =
   | "/devices"
   | "/devices/:deviceId"
   | "/goals"
+  | "/prototype/workbench"
   | "/debug"
   | "/settings/general"
   | "/settings/evidence"
@@ -247,6 +248,7 @@ export const ROUTE_DEFINITIONS = [
   ]),
   d("/devices/:deviceId", "/devices", "Device", "Device", "devices", "inspect-device", ["view"]),
   d("/goals", "/home", "Explore", null, "goals", null),
+  d("/prototype/workbench", "/tests", "Workbench Prototype", "Test", "tests", null),
   d("/debug", "/sessions", "Agent Debug", "Session", "sessions", null, ["target", "runId"]),
   ...(["general", "evidence", "integrations", "appearance", "advanced", "about"] as const).map(
     (name) =>
