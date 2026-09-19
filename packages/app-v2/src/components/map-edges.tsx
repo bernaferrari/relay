@@ -470,7 +470,7 @@ export function MapEdges({
           <g
             key={geometry.path.id}
             data-slot="map-edge"
-            className={`[&>path]:fill-transparent [&>path]:stroke-current [&>path]:stroke-1.5 [&>rect]:fill-popover [&>rect]:stroke-border [&>rect]:stroke-0 [&_text]:fill-current [&_text]:font-sans [&_text]:text-xs [&_text]:font-normal ${
+            className={`[&>path]:fill-transparent [&>path]:stroke-current [&>path]:stroke-[1.5] [&>rect]:fill-popover [&>rect]:stroke-border [&>rect]:stroke-0 [&_text]:fill-current [&_text]:font-sans [&_text]:text-xs [&_text]:font-normal ${
               state === "selected"
                 ? "text-info"
                 : state === "muted"

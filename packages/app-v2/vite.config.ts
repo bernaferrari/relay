@@ -41,6 +41,15 @@ export default defineConfig({
   build: {
     target: "esnext",
     sourcemap: true,
+    rolldownOptions: {
+      // Browser builds must not bundle optional Node-side Playwright modules;
+      // the server and Electron hosts own that execution boundary.
+      external: [
+        "chromium-bidi/lib/cjs/bidiMapper/BidiMapper",
+        "chromium-bidi/lib/cjs/cdp/CdpConnection",
+        "kerberos",
+      ],
+    },
   },
   test: {
     environment: "happy-dom",

@@ -130,6 +130,7 @@ export default defineConfig({
             "[background-size:*]",
             "bg-[radial-gradient(*)]",
             "text-[color-mix(*)]",
+            "stroke-[*]",
             "[&*]",
           ],
         },
