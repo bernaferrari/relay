@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  createOpenRouterEvaluationProvider,
   evaluateSemantic,
   evaluationCostUsd,
   normalizeEvaluationResult,
@@ -145,5 +146,49 @@ describe("semantic evaluation providers", () => {
       if (previousProvider === undefined) delete process.env.RELAY_EVALUATION_PROVIDER;
       else process.env.RELAY_EVALUATION_PROVIDER = previousProvider;
     }
+  });
+
+  it("uses the Vercel AI SDK OpenRouter boundary for semantic evaluation", async () => {
+    let requestBody: unknown;
+    const provider = createOpenRouterEvaluationProvider({
+      apiKey: "test-key",
+      model: "test/model",
+      fetch: async (_input, init) => {
+        requestBody = JSON.parse(String(init?.body));
+        return new Response(
+          JSON.stringify({
+            id: "chatcmpl-semantic-test",
+            model: "test/model",
+            choices: [
+              {
+                message: {
+                  role: "assistant",
+                  content: JSON.stringify({
+                    status: "pass",
+                    confidence: 0.98,
+                    score: 1,
+                    summary: "The response names France.",
+                    criteria: [{ id: "criterion-1", passed: true, score: 1, evidence: "France" }],
+                  }),
+                },
+                finish_reason: "stop",
+              },
+            ],
+            usage: { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18, cost: 0.001 },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      },
+    });
+
+    const result = await provider.evaluate({
+      input: "Paris is in France.",
+      criteria: ["Names France"],
+    });
+    assert.equal(result.status, "pass");
+    assert.equal(result.provider, "openrouter");
+    assert.equal(result.model, "test/model");
+    assert.equal(result.costUsd, 0.001);
+    assert.match(JSON.stringify(requestBody), /Names France/u);
   });
 });

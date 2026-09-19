@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { GenerationRequest, GenerationResult, GenerationUsage } from "@relay/protocol";
+import { z } from "zod";
+import { createOpenRouterClient, openRouterCostUsd } from "./openrouter-ai-sdk.js";
 
 export type GenerationProvider = {
   id: string;
@@ -75,54 +77,43 @@ function generationPrompt(input: GenerationRequest): string {
 
 export function createOpenRouterGenerationProvider(
   apiKey: string,
-  options: { model?: string; siteUrl?: string; siteName?: string } = {},
+  options: {
+    model?: string;
+    siteUrl?: string;
+    siteName?: string;
+    fetch?: typeof globalThis.fetch;
+  } = {},
 ): GenerationProvider {
   return {
     id: "openrouter",
     async generate(input) {
       const model = input.model ?? options.model ?? "openai/gpt-4.1-mini";
-      const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          ...(options.siteUrl ? { "HTTP-Referer": options.siteUrl } : {}),
-          ...(options.siteName ? { "X-Title": options.siteName } : {}),
-        },
-        body: JSON.stringify({
-          model,
-          messages: [{ role: "user", content: generationPrompt(input) }],
-          temperature: input.purpose === "test-plan" ? 0.1 : 0.7,
-          response_format: { type: "json_object" },
-        }),
+      const { sdk, provider } = await createOpenRouterClient({
+        apiKey,
+        fetch: options.fetch,
+        httpReferer: options.siteUrl,
+        appTitle: options.siteName ?? "Relay",
       });
-      if (!response.ok) {
-        const detail = (await response.text()).slice(0, 240).trim();
-        throw new Error(
-          `OpenRouter generation failed (${response.status})${detail ? `: ${detail}` : ""}`,
-        );
-      }
-      const body = (await response.json()) as {
-        id?: string;
-        choices?: Array<{ message?: { content?: string | null } }>;
-        usage?: {
-          prompt_tokens?: number;
-          completion_tokens?: number;
-          total_tokens?: number;
-          cost?: number;
-        };
-      };
-      const text = body.choices?.[0]?.message?.content ?? "";
+      const generated = await sdk.generateObject({
+        model: provider.chat(model),
+        prompt: generationPrompt(input),
+        schema: z.object({ values: z.array(z.string()) }),
+        schemaName: "relay_generation_values",
+        temperature: input.purpose === "test-plan" ? 0.1 : 0.7,
+        maxRetries: 0,
+      });
+      const values = generated.object.values.map(String).slice(0, input.count ?? 1);
+      const costUsd = openRouterCostUsd(generated.providerMetadata);
       return {
         provider: "openrouter",
-        model,
-        values: parseValues(text, input.count ?? 1),
+        model: generated.response.modelId || model,
+        values,
         generatedAt: Date.now(),
         usage: {
-          inputTokens: body.usage?.prompt_tokens,
-          outputTokens: body.usage?.completion_tokens,
-          totalTokens: body.usage?.total_tokens,
-          costUsd: body.usage?.cost,
+          inputTokens: generated.usage.inputTokens,
+          outputTokens: generated.usage.outputTokens,
+          totalTokens: generated.usage.totalTokens,
+          ...(costUsd === undefined ? {} : { costUsd }),
         },
       };
     },
@@ -139,133 +130,6 @@ function registerBuiltins(): void {
         siteName: process.env.OPENROUTER_SITE_NAME ?? "Relay",
       }),
     );
-  }
-
-  const openAiKey = process.env.OPENAI_API_KEY;
-  if (openAiKey) {
-    registerGenerationProvider({
-      id: "openai",
-      async generate(input) {
-        const model = input.model ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
-        const response = await fetch("https://api.openai.com/v1/responses", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${openAiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model, input: generationPrompt(input) }),
-        });
-        if (!response.ok) throw new Error(`OpenAI generation failed (${response.status})`);
-        const body = (await response.json()) as {
-          output_text?: string;
-          output?: { content?: { text?: string }[] }[];
-          usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
-        };
-        const text =
-          body.output_text ??
-          body.output
-            ?.flatMap((item) => item.content ?? [])
-            .map((item) => item.text ?? "")
-            .join("\n") ??
-          "";
-        return {
-          provider: "openai",
-          model,
-          values: parseValues(text, input.count ?? 1),
-          generatedAt: Date.now(),
-          usage: {
-            inputTokens: body.usage?.input_tokens,
-            outputTokens: body.usage?.output_tokens,
-            totalTokens: body.usage?.total_tokens,
-          },
-        };
-      },
-    });
-  }
-
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  if (anthropicKey) {
-    registerGenerationProvider({
-      id: "anthropic",
-      async generate(input) {
-        const model = input.model ?? process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-20250514";
-        const response = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "x-api-key": anthropicKey,
-            "anthropic-version": "2023-06-01",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model,
-            max_tokens: 1000,
-            messages: [{ role: "user", content: generationPrompt(input) }],
-          }),
-        });
-        if (!response.ok) throw new Error(`Anthropic generation failed (${response.status})`);
-        const body = (await response.json()) as {
-          content?: { text?: string }[];
-          usage?: { input_tokens?: number; output_tokens?: number };
-        };
-        return {
-          provider: "anthropic",
-          model,
-          values: parseValues(
-            body.content?.map((item) => item.text ?? "").join("\n") ?? "",
-            input.count ?? 1,
-          ),
-          generatedAt: Date.now(),
-          usage: {
-            inputTokens: body.usage?.input_tokens,
-            outputTokens: body.usage?.output_tokens,
-            totalTokens:
-              body.usage?.input_tokens !== undefined && body.usage.output_tokens !== undefined
-                ? body.usage.input_tokens + body.usage.output_tokens
-                : undefined,
-          },
-        };
-      },
-    });
-  }
-
-  const googleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? process.env.GEMINI_API_KEY;
-  if (googleKey) {
-    registerGenerationProvider({
-      id: "google",
-      async generate(input) {
-        const model = input.model ?? process.env.GOOGLE_GENERATIVE_AI_MODEL ?? "gemini-2.0-flash";
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(googleKey)}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ contents: [{ parts: [{ text: generationPrompt(input) }] }] }),
-          },
-        );
-        if (!response.ok) throw new Error(`Google generation failed (${response.status})`);
-        const body = (await response.json()) as {
-          candidates?: { content?: { parts?: { text?: string }[] } }[];
-          usageMetadata?: {
-            promptTokenCount?: number;
-            candidatesTokenCount?: number;
-            totalTokenCount?: number;
-          };
-        };
-        const text =
-          body.candidates
-            ?.flatMap((item) => item.content?.parts ?? [])
-            .map((item) => item.text ?? "")
-            .join("\n") ?? "";
-        return {
-          provider: "google",
-          model,
-          values: parseValues(text, input.count ?? 1),
-          generatedAt: Date.now(),
-          usage: {
-            inputTokens: body.usageMetadata?.promptTokenCount,
-            outputTokens: body.usageMetadata?.candidatesTokenCount,
-            totalTokens: body.usageMetadata?.totalTokenCount,
-          },
-        };
-      },
-    });
   }
 
   const localUrl = process.env.RELAY_LOCAL_GENERATION_URL;

@@ -1,4 +1,10 @@
 import type { SemanticEvaluationRequest, SemanticEvaluationResult } from "@relay/protocol";
+import { z } from "zod";
+import {
+  createOpenRouterClient,
+  openRouterCostUsd,
+  type OpenRouterAiSdkOptions,
+} from "./openrouter-ai-sdk.js";
 
 export type EvaluationProvider = {
   id: string;
@@ -158,39 +164,6 @@ export function formatEvaluationCost(costUsd: number | undefined): string {
 }
 
 function registerBuiltins(): void {
-  const openAiKey = process.env.OPENAI_API_KEY;
-  if (openAiKey) {
-    registerEvaluationProvider({
-      id: "openai",
-      async evaluate(input) {
-        const model = input.model ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
-        const response = await fetch("https://api.openai.com/v1/responses", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${openAiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model, input: promptFor(input) }),
-        });
-        if (!response.ok)
-          throw new Error(`semantic judge unavailable: OpenAI returned ${response.status}`);
-        const body = (await response.json()) as {
-          output_text?: string;
-          output?: { content?: { text?: string }[] }[];
-          usage?: unknown;
-        };
-        const text =
-          body.output_text ??
-          body.output
-            ?.flatMap((item) => item.content ?? [])
-            .map((item) => item.text ?? "")
-            .join("\n") ??
-          "";
-        return attachEvaluationCost(
-          normalizeEvaluationResult(parseEvaluationJson(text), input, "openai", model),
-          body,
-        );
-      },
-    });
-  }
-
   const localUrl = process.env.RELAY_LOCAL_EVALUATION_URL;
   if (localUrl) {
     registerEvaluationProvider({
@@ -211,60 +184,14 @@ function registerBuiltins(): void {
 
   const openRouterKey = process.env.OPENROUTER_API_KEY;
   if (openRouterKey) {
-    registerEvaluationProvider({
-      id: "openrouter",
-      async evaluate(input) {
-        const model = input.model ?? process.env.OPENROUTER_MODEL ?? "openai/gpt-4o-mini";
-        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${openRouterKey}`,
-            "Content-Type": "application/json",
-            ...(process.env.OPENROUTER_HTTP_REFERER
-              ? { "HTTP-Referer": process.env.OPENROUTER_HTTP_REFERER }
-              : {}),
-            ...(process.env.OPENROUTER_APP_TITLE
-              ? { "X-Title": process.env.OPENROUTER_APP_TITLE }
-              : {}),
-          },
-          body: JSON.stringify({
-            model,
-            messages: [{ role: "user", content: promptFor(input) }],
-            response_format: { type: "json_object" },
-            usage: { include: true },
-          }),
-        });
-        const body = (await response.json().catch(() => ({}))) as {
-          choices?: { message?: { content?: unknown } }[];
-          error?: { message?: string; code?: string | number };
-          usage?: unknown;
-        };
-        if (!response.ok) {
-          const detail = body.error?.message ?? `HTTP ${response.status}`;
-          throw new Error(`semantic judge unavailable: OpenRouter ${detail}`);
-        }
-        const content = body.choices?.[0]?.message?.content;
-        const text =
-          typeof content === "string"
-            ? content
-            : Array.isArray(content)
-              ? content
-                  .map((part) =>
-                    part && typeof part === "object" && "text" in part
-                      ? String((part as { text?: unknown }).text ?? "")
-                      : "",
-                  )
-                  .join("\n")
-              : "";
-        if (!text.trim()) {
-          throw new Error("semantic judge unavailable: OpenRouter returned no content");
-        }
-        return attachEvaluationCost(
-          normalizeEvaluationResult(parseEvaluationJson(text), input, "openrouter", model),
-          body,
-        );
-      },
-    });
+    registerEvaluationProvider(
+      createOpenRouterEvaluationProvider({
+        apiKey: openRouterKey,
+        model: process.env.OPENROUTER_MODEL,
+        httpReferer: process.env.OPENROUTER_HTTP_REFERER,
+        appTitle: process.env.OPENROUTER_APP_TITLE ?? "Relay",
+      }),
+    );
   }
 }
 
@@ -273,9 +200,60 @@ registerBuiltins();
 export async function evaluateSemantic(
   input: SemanticEvaluationRequest,
 ): Promise<SemanticEvaluationResult> {
-  const providerId = input.provider ?? process.env.RELAY_EVALUATION_PROVIDER ?? "openai";
+  const providerId = input.provider ?? process.env.RELAY_EVALUATION_PROVIDER ?? "openrouter";
   const provider = providers.get(providerId);
   if (!provider)
     throw new Error(`semantic judge unavailable: provider is not configured (${providerId})`);
   return provider.evaluate(input);
+}
+
+export type OpenRouterEvaluationProviderOptions = Omit<OpenRouterAiSdkOptions, "apiKey"> & {
+  apiKey?: string;
+  model?: string;
+};
+
+const semanticEvaluationSchema = z.record(z.string(), z.unknown());
+
+/** Optional semantic evaluation through the one OpenRouter/Vercel AI SDK seam. */
+export function createOpenRouterEvaluationProvider(
+  options: OpenRouterEvaluationProviderOptions = {},
+): EvaluationProvider {
+  return {
+    id: "openrouter",
+    async evaluate(input) {
+      const apiKey = options.apiKey ?? process.env.OPENROUTER_API_KEY;
+      if (!apiKey) {
+        throw new Error("semantic judge unavailable: OPENROUTER_API_KEY is not configured");
+      }
+      const model =
+        input.model ?? options.model ?? process.env.OPENROUTER_MODEL ?? "openai/gpt-4o-mini";
+      try {
+        const { sdk, provider } = await createOpenRouterClient({
+          apiKey,
+          endpoint: options.endpoint,
+          fetch: options.fetch,
+          httpReferer: options.httpReferer ?? process.env.OPENROUTER_HTTP_REFERER,
+          appTitle: options.appTitle ?? process.env.OPENROUTER_APP_TITLE ?? "Relay",
+        });
+        const generated = await sdk.generateObject({
+          model: provider.chat(model),
+          prompt: promptFor(input),
+          schema: semanticEvaluationSchema,
+          schemaName: "relay_semantic_evaluation",
+          maxRetries: 0,
+        });
+        const result = normalizeEvaluationResult(
+          generated.object,
+          input,
+          "openrouter",
+          generated.response.modelId || model,
+        );
+        const costUsd = openRouterCostUsd(generated.providerMetadata);
+        return costUsd === undefined ? result : { ...result, costUsd };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "request failed";
+        throw new Error(`semantic judge unavailable: OpenRouter ${message}`);
+      }
+    },
+  };
 }

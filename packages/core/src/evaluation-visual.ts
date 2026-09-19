@@ -1,9 +1,7 @@
 import type { SemanticEvaluationResult, VisualEvaluationRequest } from "@relay/protocol";
-import {
-  attachEvaluationCost,
-  normalizeEvaluationResult,
-  parseEvaluationJson,
-} from "./evaluation.js";
+import { z } from "zod";
+import { normalizeEvaluationResult } from "./evaluation.js";
+import { createOpenRouterClient, openRouterCostUsd } from "./openrouter-ai-sdk.js";
 
 function visualPrompt(input: VisualEvaluationRequest): string {
   return [
@@ -33,58 +31,49 @@ export function registerVisualEvaluationProvider(provider: {
   return () => visualProviders.delete(provider.id);
 }
 
-function asDataUrl(image: VisualEvaluationRequest["image"]): string {
-  return `data:${image.mimeType};base64,${image.data}`;
-}
-
 async function evaluateViaOpenRouter(
   input: VisualEvaluationRequest,
 ): Promise<SemanticEvaluationResult> {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error("visual judge unavailable: OPENROUTER_API_KEY is not configured");
   const model = input.model ?? process.env.OPENROUTER_VISION_MODEL ?? "openai/gpt-4o-mini";
-  const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-      ...(process.env.OPENROUTER_HTTP_REFERER
-        ? { "HTTP-Referer": process.env.OPENROUTER_HTTP_REFERER }
-        : {}),
-      ...(process.env.OPENROUTER_APP_TITLE ? { "X-Title": process.env.OPENROUTER_APP_TITLE } : {}),
-    },
-    body: JSON.stringify({
-      model,
+  try {
+    const { sdk, provider } = await createOpenRouterClient({
+      apiKey: key,
+      httpReferer: process.env.OPENROUTER_HTTP_REFERER,
+      appTitle: process.env.OPENROUTER_APP_TITLE ?? "Relay",
+    });
+    const generated = await sdk.generateObject({
+      model: provider.chat(model),
+      schema: z.record(z.string(), z.unknown()),
+      schemaName: "relay_visual_evaluation",
+      maxRetries: 0,
       messages: [
         {
           role: "user",
           content: [
             { type: "text", text: visualPrompt(input) },
-            { type: "image_url", image_url: { url: asDataUrl(input.image) } },
+            {
+              type: "file",
+              data: Buffer.from(input.image.data, "base64"),
+              mediaType: input.image.mimeType,
+            },
           ],
         },
       ],
-      response_format: { type: "json_object" },
-      usage: { include: true },
-    }),
-  });
-  const body = (await response.json().catch(() => ({}))) as {
-    choices?: { message?: { content?: unknown } }[];
-    error?: { message?: string };
-    usage?: unknown;
-  };
-  if (!response.ok) {
-    throw new Error(
-      `visual judge unavailable: OpenRouter ${body.error?.message ?? `HTTP ${response.status}`}`,
+    });
+    const result = normalizeEvaluationResult(
+      generated.object,
+      input,
+      "openrouter",
+      generated.response.modelId || model,
     );
+    const costUsd = openRouterCostUsd(generated.providerMetadata);
+    return costUsd === undefined ? result : { ...result, costUsd };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "request failed";
+    throw new Error(`visual judge unavailable: OpenRouter ${message}`);
   }
-  const content = body.choices?.[0]?.message?.content;
-  const text = typeof content === "string" ? content : "";
-  if (!text.trim()) throw new Error("visual judge unavailable: OpenRouter returned no content");
-  return attachEvaluationCost(
-    normalizeEvaluationResult(parseEvaluationJson(text), input, "openrouter", model),
-    body,
-  );
 }
 
 export async function evaluateVisual(
@@ -93,7 +82,7 @@ export async function evaluateVisual(
   const providerId = input.provider ?? process.env.RELAY_EVALUATION_PROVIDER ?? "openrouter";
   const registered = visualProviders.get(providerId);
   if (registered) return registered.evaluate(input);
-  if (providerId === "openrouter" || providerId === "openai") {
+  if (providerId === "openrouter") {
     return evaluateViaOpenRouter(input);
   }
   throw new Error(`visual judge unavailable: provider is not configured (${providerId})`);

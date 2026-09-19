@@ -11,9 +11,13 @@ import type {
 } from "@relay/protocol";
 import { measureBoundedJsonValue } from "@relay/protocol";
 import { canonicalSha256 } from "./canonical-json.js";
+import {
+  createOpenRouterClient,
+  OPENROUTER_CHAT_COMPLETIONS,
+  type OpenRouterClient,
+} from "./openrouter-ai-sdk.js";
 import { redactSensitiveEvidenceValue } from "./redaction.js";
 
-const OPENROUTER_CHAT_COMPLETIONS = "https://openrouter.ai/api/v1/chat/completions";
 export const DEFAULT_OPENROUTER_DECISION_MODEL = "~typesafe/jev-latest" as const;
 const MAX_QUESTIONS = 16;
 const MAX_ATTEMPTS = 3;
@@ -28,13 +32,6 @@ const JSON_LIMITS = {
 } as const;
 
 type JsonSchema = Record<string, unknown>;
-
-type OpenRouterAiSdk = {
-  generateText: typeof import("ai").generateText;
-  jsonSchema: typeof import("ai").jsonSchema;
-  Output: typeof import("ai").Output;
-  createOpenRouter: typeof import("@openrouter/ai-sdk-provider").createOpenRouter;
-};
 
 export type OpenRouterDecisionProviderOptions = {
   apiKey?: string;
@@ -292,10 +289,6 @@ function requestError(request: ModelDecisionRequest): string | null {
   return null;
 }
 
-function openRouterBaseUrl(endpoint: string): string {
-  return endpoint.replace(/\/chat\/completions\/?$/u, "");
-}
-
 function errorStatus(error: unknown): number | undefined {
   if (!error || typeof error !== "object") return undefined;
   const value =
@@ -344,14 +337,6 @@ function sdkUsage(usage: {
     : undefined;
 }
 
-async function loadOpenRouterAiSdk(): Promise<OpenRouterAiSdk> {
-  const [{ generateText, jsonSchema, Output }, { createOpenRouter }] = await Promise.all([
-    import("ai"),
-    import("@openrouter/ai-sdk-provider"),
-  ]);
-  return { generateText, jsonSchema, Output, createOpenRouter };
-}
-
 function recordBase(
   request: ModelDecisionRequest,
   requestId: string,
@@ -396,7 +381,7 @@ export function createOpenRouterDecisionProvider(
     1,
     Math.min(MAX_ATTEMPTS, Math.trunc(options.maxAttempts ?? MAX_ATTEMPTS)),
   );
-  let openRouterAiSdkPromise: Promise<OpenRouterAiSdk> | undefined;
+  let openRouterAiSdkPromise: Promise<OpenRouterClient> | undefined;
 
   return {
     id: "openrouter",
@@ -439,25 +424,20 @@ export function createOpenRouterDecisionProvider(
       let lastError: unknown;
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
-          openRouterAiSdkPromise ??= loadOpenRouterAiSdk();
-          const { generateText, jsonSchema, Output, createOpenRouter } =
-            await openRouterAiSdkPromise;
-          const openrouter = createOpenRouter({
+          openRouterAiSdkPromise ??= createOpenRouterClient({
             apiKey,
-            baseURL: openRouterBaseUrl(endpoint),
+            endpoint,
             fetch: fetchImpl,
-            headers: {
-              ...(options.httpReferer ? { "HTTP-Referer": options.httpReferer } : {}),
-              ...(options.appTitle ? { "X-Title": options.appTitle } : {}),
-            },
-            compatibility: "strict",
+            httpReferer: options.httpReferer,
+            appTitle: options.appTitle,
           });
-          const output = Output.object({
-            schema: jsonSchema<{ answers: unknown }>(responseSchema(request.questions)),
+          const { sdk, provider } = await openRouterAiSdkPromise;
+          const output = sdk.Output.object({
+            schema: sdk.jsonSchema<{ answers: unknown }>(responseSchema(request.questions)),
             name: "relay_model_decision",
           });
-          generated = await generateText({
-            model: openrouter.chat(requestedModel),
+          generated = await sdk.generateText({
+            model: provider.chat(requestedModel),
             messages: [
               {
                 role: "user",

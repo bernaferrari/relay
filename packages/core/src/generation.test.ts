@@ -31,7 +31,14 @@ test("OpenRouter generation uses structured chat output", async () => {
     requestBody = JSON.parse(String(init?.body));
     return new Response(
       JSON.stringify({
-        choices: [{ message: { content: '{"values":["control-settings"]}' } }],
+        id: "chatcmpl-generation-test",
+        model: "test/model",
+        choices: [
+          {
+            message: { role: "assistant", content: '{"values":["control-settings"]}' },
+            finish_reason: "stop",
+          },
+        ],
         usage: { prompt_tokens: 12, completion_tokens: 4, total_tokens: 16, cost: 0.002 },
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },

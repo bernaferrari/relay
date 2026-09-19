@@ -5,6 +5,7 @@
 import { z } from "zod";
 import type { SnapshotNode } from "./device.js";
 import { profileHeaderAffordances } from "./discovery-semantic-tap.js";
+import { createOpenRouterClient } from "./openrouter-ai-sdk.js";
 import { captureScreenshot, captureSnapshot } from "./workspace-capture.js";
 import { interact, type InteractInput } from "./workspace-interact.js";
 
@@ -103,9 +104,11 @@ export class OpenRouterVisionGrounder implements Grounder {
 
   async groundVision(request: VisionGroundRequest): Promise<VisionGroundHit | null> {
     try {
-      const { generateObject } = await import("ai");
-      const { createOpenRouter } = await import("@openrouter/ai-sdk-provider");
-      const openrouter = createOpenRouter({ apiKey: this.apiKey });
+      const { sdk, provider } = await createOpenRouterClient({
+        apiKey: this.apiKey,
+        httpReferer: this.siteUrl,
+        appTitle: this.siteName,
+      });
       const candidateLines = request.candidates
         .slice(0, 40)
         .map((item, index) => {
@@ -118,8 +121,8 @@ export class OpenRouterVisionGrounder implements Grounder {
         })
         .join("\n");
       const mime = request.mime ?? "image/png";
-      const { object } = await generateObject({
-        model: openrouter(this.model),
+      const { object } = await sdk.generateObject({
+        model: provider.chat(this.model),
         schema: visionSchema,
         messages: [
           {
@@ -136,8 +139,8 @@ export class OpenRouterVisionGrounder implements Grounder {
                 ].join("\n"),
               },
               {
-                type: "image",
-                image: Buffer.from(request.screenshotBase64, "base64"),
+                type: "file",
+                data: Buffer.from(request.screenshotBase64, "base64"),
                 mediaType: mime,
               },
             ],
