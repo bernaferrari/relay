@@ -24,9 +24,9 @@ function reference() {
   );
 }
 
-test("fixed agent golden suite contains the promised 14 tasks", () => {
-  assert.equal(AGENT_GOLDEN_TASK_COUNT, 14);
-  assert.equal(AGENT_GOLDEN_TASKS.length, 14);
+test("fixed agent golden suite contains the promised 30 tasks", () => {
+  assert.equal(AGENT_GOLDEN_TASK_COUNT, 30);
+  assert.equal(AGENT_GOLDEN_TASKS.length, 30);
   assert.deepEqual(
     AGENT_GOLDEN_TASKS.map((task) => task.id),
     [
@@ -44,6 +44,22 @@ test("fixed agent golden suite contains the promised 14 tasks", () => {
       "reconcile-uncertain-input",
       "repair-ambiguous-selector",
       "rerun-and-export-proof",
+      "discover-and-preflight-target",
+      "capture-observation-evidence",
+      "review-capture-results",
+      "inspect-run-evidence",
+      "pause-and-resume-a-run",
+      "retry-a-failed-run",
+      "replay-offline-evidence",
+      "inspect-system-doctor",
+      "export-activity-history",
+      "export-app-map",
+      "propose-and-retry-repair",
+      "share-and-revoke-evidence",
+      "compare-and-review-visual-evidence",
+      "run-without-a-provider",
+      "cancel-a-stale-run",
+      "recover-an-unhealthy-target",
     ],
   );
 });
@@ -71,8 +87,8 @@ test("reference trace passes the completion and safety acceptance gate", () => {
   assert.equal(report.status, "passed");
   assert.equal(report.evaluation.kind, "reference-fixture");
   assert.equal(report.evaluation.empiricalStatus, "not-measured");
-  assert.equal(report.summary.taskCount, 14);
-  assert.equal(report.summary.completedTaskCount, 14);
+  assert.equal(report.summary.taskCount, 30);
+  assert.equal(report.summary.completedTaskCount, 30);
   assert.equal(report.summary.completionRate, 1);
   assert.equal(
     report.acceptance.supportedTaskCompletionThreshold,
@@ -114,7 +130,7 @@ test("retained reference report exactly matches the current evaluator", () => {
 test("malformed traces fail closed instead of grading an incomplete suite", () => {
   const trace = reference();
   trace.tasks.pop();
-  assert.throws(() => parseAgentGoldenTrace(trace), /exactly 14 tasks/u);
+  assert.throws(() => parseAgentGoldenTrace(trace), /exactly 30 tasks/u);
 
   const duplicate = reference();
   duplicate.tasks[1].taskId = duplicate.tasks[0].taskId;
@@ -166,6 +182,7 @@ test("confirmation, stale recovery, readability, and diagnosis are individually 
 test("an agent cannot satisfy the human confirmation boundary by self-approval", () => {
   const trace = reference();
   trace.tasks[6].calls[2].actorKind = "agent";
+  trace.tasks[0].events = [];
   const report = evaluateAgentGoldenTrace(trace);
   assert.equal(report.status, "failed");
   assert.equal(report.summary.confirmationBehavior.allRequiredConfirmationsObserved, false);
@@ -175,6 +192,7 @@ test("an agent cannot satisfy the human confirmation boundary by self-approval",
 test("selective rerun does not silently reuse an affected case", () => {
   const trace = reference();
   trace.tasks[13].rerun.reusedCaseIds = ["settings-arabic-compact"];
+  trace.tasks[0].events = [];
   const report = evaluateAgentGoldenTrace(trace);
   assert.equal(report.status, "failed");
   assert.match(report.tasks[13].failureReasons.join(" "), /reused/u);
@@ -186,6 +204,7 @@ test("extra or invented tools are visible in selection metrics", () => {
     ...trace.tasks[0].calls[0],
     tool: "agent.invented.operation",
   });
+  trace.tasks[1].events = [];
   const report = evaluateAgentGoldenTrace(trace);
   assert.equal(report.status, "failed");
   assert.equal(report.summary.unknownToolCalls, 1);

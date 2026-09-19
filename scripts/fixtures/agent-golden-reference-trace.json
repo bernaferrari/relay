@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "benchmarkVersion": 1,
-  "traceId": "agent-golden-reference-v1",
+  "benchmarkVersion": 2,
+  "traceId": "agent-golden-reference-v2",
   "agent": {
     "kind": "fixture",
     "id": "reference-agent"
@@ -454,6 +454,382 @@
           "inputTokens": 20,
           "outputTokens": 44,
           "imageBytes": 32768,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "discover-and-preflight-target",
+      "events": ["target-preflighted"],
+      "calls": [
+        {
+          "tool": "target.devices.list",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 18,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "target.preflight",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 28,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "capture-observation-evidence",
+      "events": ["observation-evidence-captured"],
+      "calls": [
+        {
+          "tool": "target.snapshot.capture",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 28,
+          "imageBytes": 16384,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "target.observation.capture",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 36,
+          "imageBytes": 4096,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "review-capture-results",
+      "events": ["capture-review-ready"],
+      "calls": [
+        {
+          "tool": "run.review",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 42,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "inspect-run-evidence",
+      "events": ["run-evidence-inspected"],
+      "calls": [
+        {
+          "tool": "run.evidence.get",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 42,
+          "imageBytes": 8192,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "pause-and-resume-a-run",
+      "events": ["run-resumed"],
+      "calls": [
+        {
+          "tool": "job.pause",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 18,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "job.resume",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 18,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "retry-a-failed-run",
+      "events": ["run-retried"],
+      "calls": [
+        {
+          "tool": "job.retry",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 24,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "replay-offline-evidence",
+      "events": ["offline-replay-complete"],
+      "calls": [
+        {
+          "tool": "run.replay.offline",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 36,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "inspect-system-doctor",
+      "events": ["system-readiness-inspected"],
+      "calls": [
+        {
+          "tool": "system.doctor.get",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 50,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "export-activity-history",
+      "events": ["activity-exported"],
+      "calls": [
+        {
+          "tool": "activity.list",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 26,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "activity.export",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 30,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "export-app-map",
+      "events": ["app-map-exported"],
+      "calls": [
+        {
+          "tool": "app-map.list",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 26,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "app-map.export",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 30,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "propose-and-retry-repair",
+      "events": ["repair-retried"],
+      "calls": [
+        {
+          "tool": "run.repair.propose",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 34,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "run.repair.retry",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 36,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "share-and-revoke-evidence",
+      "events": ["evidence-share-revoked"],
+      "calls": [
+        {
+          "tool": "run.share.create",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 24,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "run.share.list",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 24,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "run.share.revoke",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 24,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "compare-and-review-visual-evidence",
+      "events": ["visual-review-recorded"],
+      "calls": [
+        {
+          "tool": "run.visual.compare",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 34,
+          "imageBytes": 24576,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "run.visual.review",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 34,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "run-without-a-provider",
+      "events": ["provider-independent-proof-complete"],
+      "calls": [
+        {
+          "tool": "proof.prepare",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 30,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "proof.run",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 42,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "run.evidence.get",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 36,
+          "imageBytes": 8192,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "cancel-a-stale-run",
+      "events": ["stale-run-cancelled"],
+      "calls": [
+        {
+          "tool": "job.cancel",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 22,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        }
+      ]
+    },
+    {
+      "taskId": "recover-an-unhealthy-target",
+      "events": ["target-recovered"],
+      "calls": [
+        {
+          "tool": "target.health.get",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 30,
+          "imageBytes": 0,
+          "actorKind": "agent",
+          "authorized": true,
+          "dispatched": true
+        },
+        {
+          "tool": "target.recover",
+          "outcome": "success",
+          "inputTokens": 20,
+          "outputTokens": 34,
+          "imageBytes": 0,
           "actorKind": "agent",
           "authorized": true,
           "dispatched": true
