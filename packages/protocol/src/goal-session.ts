@@ -8,7 +8,7 @@ export const GOAL_SESSION_MAX_STEPS = 40 as const;
 export const GOAL_SESSION_MAX_DURATION_MS = 900_000 as const;
 export const GOAL_SESSION_MAX_ACTIONS = 40 as const;
 
-export type GoalSessionStatus = "running" | "completed" | "blocked" | "uncertain";
+export type GoalSessionStatus = "running" | "completed" | "blocked" | "uncertain" | "cancelled";
 
 export type GoalSessionStopCode =
   | "goal-achieved"
@@ -20,7 +20,8 @@ export type GoalSessionStopCode =
   | "action-uncertain"
   | "resume-review-required"
   | "observation-unavailable"
-  | "target-unavailable";
+  | "target-unavailable"
+  | "cancelled";
 
 export type GoalSessionTarget = {
   targetId: string;
@@ -88,7 +89,8 @@ export type GoalReproductionStatus =
   | "reproduced"
   | "unresolved"
   | "blocked"
-  | "uncertain";
+  | "uncertain"
+  | "cancelled";
 
 /** One isolated replay of a completed goal path. It is evidence for review,
  * never an automatic claim that a product defect or Test has been proven. */

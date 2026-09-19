@@ -465,3 +465,105 @@ test("a control with unknown enabled state is never an authorized tap candidate"
   assert.equal(result.stopReason?.code, "no-action");
   assert.equal(result.lastObservation?.candidates[0]?.enabledAssumed, true);
 });
+
+test("a socket failure after submission stays unknown and fenced", async () => {
+  const runtime = operations();
+  const port: RelayOperationPort = {
+    async invoke<Id extends OperationId>(
+      id: Id,
+      input: OperationInput<Id>,
+    ): Promise<OperationOutput<Id>> {
+      if (id === "target.interact") {
+        throw new Error("Socket closed after request was submitted");
+      }
+      return runtime.port.invoke(id, input);
+    },
+  };
+  const result = await createGoalSessionRunner({
+    operations: port,
+    store: memoryStore(),
+    decisionProvider: providerFor("continue", "complete"),
+    id: () => "goal-socket",
+  }).start({ goal: "Reach the next screen", startUrl: "https://example.test" });
+  assert.equal(result.status, "uncertain");
+  assert.equal(result.stopReason?.code, "action-uncertain");
+  assert.equal(result.actions[0]?.status, "unknown");
+  assert.equal(result.resumeRequiresReview, true);
+});
+
+test("a provable pre-dispatch admission refusal is a rejection, not uncertainty", async () => {
+  const runtime = operations();
+  const refused = new Error("admission refused") as Error & { status: number };
+  refused.status = 403;
+  const port: RelayOperationPort = {
+    async invoke<Id extends OperationId>(
+      id: Id,
+      input: OperationInput<Id>,
+    ): Promise<OperationOutput<Id>> {
+      if (id === "target.interact") throw refused;
+      return runtime.port.invoke(id, input);
+    },
+  };
+  const result = await createGoalSessionRunner({
+    operations: port,
+    store: memoryStore(),
+    decisionProvider: providerFor("continue", "complete"),
+    id: () => "goal-refused",
+  }).start({ goal: "Reach the next screen", startUrl: "https://example.test" });
+  assert.equal(result.status, "blocked");
+  assert.equal(result.stopReason?.code, "action-rejected");
+  assert.equal(result.actions[0]?.status, "rejected");
+  assert.equal(result.resumeRequiresReview, undefined);
+});
+
+test("cancellation stops the session before dispatching the selected control", async () => {
+  const controller = new AbortController();
+  const runtime = operations();
+  const port: RelayOperationPort = {
+    async invoke<Id extends OperationId>(
+      id: Id,
+      input: OperationInput<Id>,
+    ): Promise<OperationOutput<Id>> {
+      if (id === "target.interact") {
+        controller.abort();
+      }
+      return runtime.port.invoke(id, input);
+    },
+  };
+  const result = await createGoalSessionRunner({
+    operations: port,
+    store: memoryStore(),
+    decisionProvider: providerFor("continue", "complete"),
+    signal: controller.signal,
+    id: () => "goal-cancel",
+  }).start({ goal: "Reach the next screen", startUrl: "https://example.test" });
+  assert.equal(result.status, "cancelled");
+  assert.equal(result.stopReason?.code, "cancelled");
+  assert.equal(runtime.calls.includes("target.interact"), true);
+  // The one dispatched interaction completed and was acknowledged; nothing
+  // further runs after the cancel signal.
+  assert.equal(result.actions.filter((action) => action.status === "acknowledged").length, 1);
+});
+
+test("a long inference cannot overshoot the budget into a late mutation", async () => {
+  const runtime = operations();
+  let time = 1;
+  const steppingNow = () => {
+    time += 400_000;
+    return time;
+  };
+  const result = await createGoalSessionRunner({
+    operations: runtime.port,
+    store: memoryStore(),
+    decisionProvider: providerFor("continue", "complete"),
+    now: steppingNow,
+    id: () => "goal-late",
+  }).start({
+    goal: "Reach the next screen",
+    startUrl: "https://example.test",
+    maxDurationMs: 900_000,
+  });
+  assert.equal(result.status, "blocked");
+  assert.equal(result.stopReason?.code, "budget-exhausted");
+  assert.equal(runtime.calls.includes("target.interact"), false);
+});

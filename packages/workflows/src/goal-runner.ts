@@ -49,6 +49,9 @@ export type GoalSessionRunnerOptions = {
   store?: GoalSessionStore;
   now?: () => number;
   id?: () => string;
+  /** External cancellation for this runner's sessions (job cancellation or
+   * process shutdown). Checked before every mutation, not only between steps. */
+  signal?: AbortSignal;
 };
 
 export type GoalSessionRunner = {
@@ -284,6 +287,19 @@ function interactionInput(record: GoalSessionRecord, action: GoalSessionAction, 
 function isOutcomeUnknown(error: unknown): boolean {
   const message = normalizeError(error).toLowerCase();
   return message.includes("outcome-unknown") || message.includes("outcome unknown");
+}
+
+/** Classify a dispatch failure that arrived after intent was persisted. Only
+ * a server admission/validation refusal (HTTP 4xx) proves the input never
+ * reached the target. Transport failures, overloads, aborts, and anything
+ * ambiguous stay unknown until reconciled — a socket that closed after a
+ * request was submitted is not evidence of rejection. */
+function isProvablePreDispatchRejection(error: unknown): boolean {
+  if (error && typeof error === "object" && "status" in error) {
+    const status = error.status;
+    if (typeof status === "number") return status >= 400 && status < 500;
+  }
+  return false;
 }
 
 function result(record: GoalSessionRecord): GoalSessionResult {
@@ -566,7 +582,11 @@ function appendFinding(
 
 export function createGoalSessionRunner(options: GoalSessionRunnerOptions): GoalSessionRunner {
   const store = options.store ?? createFileStore();
-  const provider = options.decisionProvider ?? createOpenRouterDecisionProvider();
+  // The default provider inherits the runner's cancellation signal so a
+  // cancelled job bounds its inference, not only its loop.
+  const provider =
+    options.decisionProvider ??
+    createOpenRouterDecisionProvider(options.signal ? { signal: options.signal } : {});
   const now = options.now ?? Date.now;
   const id = options.id ?? randomUUID;
   const locks = new Map<string, Promise<GoalSessionResult>>();
@@ -642,6 +662,17 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
     }
 
     for (;;) {
+      if (options.signal?.aborted) {
+        record = stop(
+          record,
+          "cancelled",
+          "cancelled",
+          "The goal session was cancelled before this step.",
+          now(),
+        );
+        await persist(record);
+        return result(record);
+      }
       const elapsed = now() - record.createdAt;
       if (elapsed >= record.budget.maxDurationMs || record.step >= record.budget.maxSteps) {
         record = stop(
@@ -777,6 +808,20 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
         return result(record);
       }
       const interaction = interactionFor(candidate);
+      const remainingBudget = record.budget.maxDurationMs - (now() - record.createdAt);
+      if (options.signal?.aborted || remainingBudget <= 0) {
+        record = stop(
+          record,
+          options.signal?.aborted ? "cancelled" : "blocked",
+          options.signal?.aborted ? "cancelled" : "budget-exhausted",
+          options.signal?.aborted
+            ? "The goal session was cancelled before dispatching the selected control."
+            : `Goal worker budget exhausted before dispatching action ${record.step + 1}.`,
+          now(),
+        );
+        await persist(record);
+        return result(record);
+      }
       const action: GoalSessionAction = {
         id: `action-${record.actions.length + 1}`,
         step: record.step + 1,
@@ -821,7 +866,7 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
         };
         await persist(record);
       } catch (error) {
-        const unknown = isOutcomeUnknown(error);
+        const unknown = isOutcomeUnknown(error) || !isProvablePreDispatchRejection(error);
         const failed = {
           ...action,
           status: unknown ? ("unknown" as const) : ("rejected" as const),
@@ -1122,6 +1167,16 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
               "observation-unavailable",
               "Reproduction has no current observation.",
             );
+          const reproductionElapsed = now() - reproduction.startedAt;
+          if (options.signal?.aborted || reproductionElapsed >= record.budget.maxDurationMs) {
+            return finish(
+              "cancelled",
+              options.signal?.aborted ? "cancelled" : "budget-exhausted",
+              options.signal?.aborted
+                ? "The reproduction was cancelled before replaying its next action."
+                : "The reproduction exceeded the session duration budget before replaying its next action.",
+            );
+          }
           const action: GoalSessionAction = {
             ...sourceAction,
             id: `repro-action-${index + 1}`,
@@ -1168,7 +1223,7 @@ export function createGoalSessionRunner(options: GoalSessionRunnerOptions): Goal
             };
             await saveReproduction();
           } catch (error) {
-            const unknown = isOutcomeUnknown(error);
+            const unknown = isOutcomeUnknown(error) || !isProvablePreDispatchRejection(error);
             reproduction = {
               ...reproduction,
               actions: reproduction.actions.map((item) =>
