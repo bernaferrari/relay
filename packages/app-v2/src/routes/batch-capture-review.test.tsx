@@ -195,6 +195,45 @@ describe("Plan screenshot review filters", () => {
     ).toContain("min-h-20");
   });
 
+  it("reports the full review accounting including issues and evidence gaps", async () => {
+    const reviewCaptures = vi.fn(async () => ({
+      queue: {
+        items: [],
+        summary: {
+          captured: 27,
+          missing: 2,
+          pending: 5,
+          accepted: 20,
+          issue: 2,
+          needMoreEvidence: 3,
+          planned: 30,
+          blocked: 1,
+        },
+      },
+      results: [],
+    }));
+    const host = await render(reviewCaptures, async () => ({
+      items: [],
+      summary: {
+        captured: 27,
+        missing: 2,
+        pending: 5,
+        accepted: 20,
+        issue: 2,
+        needMoreEvidence: 3,
+        planned: 30,
+        blocked: 1,
+      },
+    }));
+    // A reviewer reads the release summary at a glance: 30 planned, issues and
+    // evidence gaps stay visible — never folded into accepted or pending.
+    expect(host.textContent).toContain("27 of 30 screenshots captured");
+    expect(host.textContent).toContain("20 reviewed as correct");
+    expect(host.textContent).toContain("2 reported issues");
+    expect(host.textContent).toContain("3 need more evidence");
+    expect(host.textContent).toContain("5 to review");
+  });
+
   it("shows blocked iOS Imagine as blocked, not missing, in freeze counts", async () => {
     const host = document.createElement("div");
     document.body.append(host);

@@ -189,6 +189,10 @@ export function PlanCaptureReviewSection({
         {queue.summary.missing ? <span>{queue.summary.missing} missing</span> : null}
         {queue.summary.blocked ? <span>{queue.summary.blocked} blocked</span> : null}
         {queue.summary.accepted ? <span>{queue.summary.accepted} reviewed as correct</span> : null}
+        {queue.summary.issue ? <span>{queue.summary.issue} reported issues</span> : null}
+        {queue.summary.needMoreEvidence ? (
+          <span>{queue.summary.needMoreEvidence} need more evidence</span>
+        ) : null}
       </div>
       {captures.isError ? (
         <div role="alert" className="flex flex-wrap items-center gap-2 px-5 pt-2 text-sm">
