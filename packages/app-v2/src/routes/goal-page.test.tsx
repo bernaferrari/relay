@@ -226,7 +226,7 @@ it("goal page shows live server-owned activity with a cancel control", async () 
   vi.mocked(service.inspectSession).mockImplementation(
     async () =>
       ({
-        ...sessionResult(),
+        ...(sessionResult() as object),
         status: "running",
         actions: [
           {

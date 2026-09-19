@@ -13,6 +13,8 @@ function observation(): TargetObservation {
       capturedAt: 10,
       mime: "image/png",
       bytes: 100,
+      width: 1080,
+      height: 2340,
       artifact: {
         status: "missing",
         source: "run-frame",

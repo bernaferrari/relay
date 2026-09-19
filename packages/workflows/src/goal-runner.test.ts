@@ -897,7 +897,7 @@ test("a pixel-only observation admits no candidates and reports the missing sema
   assert.equal(result.stopReason?.code, "no-action");
   assert.equal(result.actions.length, 0);
   assert.equal(runtime.calls.includes("target.interact"), false);
-  assert.ok(result.lastObservation.missingEvidence.includes("current semantics"));
+  assert.ok(result.lastObservation?.missingEvidence.includes("current semantics"));
 });
 
 function fakeNativeObservation(): TargetObservation {
