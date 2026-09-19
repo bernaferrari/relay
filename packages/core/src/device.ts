@@ -57,11 +57,13 @@ import {
   identifierNodesViaLiveIosRunnerListener,
   isIosSessionMissingSnapshotError,
   labelNodesViaLiveIosRunnerListener,
-  snapshotViaLiveIosRunnerListener,
+  snapshotFromLiveIosRunnerListenerIfReady,
   tapViaLiveIosRunnerListener,
   typeViaLiveIosRunnerListener,
 } from "./ios-runner-listener-command.js";
 import { probeLiveIosRunnerListener } from "./ios-runner-listener.js";
+import { isCoreSimulatorSerial } from "./ios-simulator-serial.js";
+import { buildDeviceTransport } from "./device-client-bindings.js";
 import { captureIosSnapshot, resetIosSnapshotFlights } from "./ios-snapshot-flight.js";
 export {
   IosMutationOutcomeUnknownError,
@@ -182,45 +184,10 @@ export function createDevice(explicitContext?: TargetContext): Device {
     const native = createAgentDeviceClient({
       session: process.env.AGENT_DEVICE_SESSION?.trim() || targetSessionName(context),
     });
-    // agent-device 0.21.x client methods resolve their session and device
-    // transport through `this`; a plain `{...native}` spread leaves the
-    // copies unbound, which silently degrades to default usbmux routing and
-    // loses the session binding (simulators then vanish with "not available
-    // through usbmux"). Rebind every method — two levels deep — to its
-    // owning object before the observation facade copies them onward.
-    const rebound = { ...native } as Record<string, unknown>;
-    const rebind = (clone: Record<string, unknown>, original: Record<string, unknown>): void => {
-      for (const [name, value] of Object.entries(clone)) {
-        const originalValue = original[name];
-        if (typeof value === "function" && typeof originalValue === "function") {
-          clone[name] = (value as (...args: unknown[]) => unknown).bind(original);
-        } else if (
-          value &&
-          typeof value === "object" &&
-          originalValue &&
-          typeof originalValue === "object"
-        ) {
-          rebind(value as Record<string, unknown>, originalValue as Record<string, unknown>);
-        }
-      }
-    };
-    rebind(rebound, native as unknown as Record<string, unknown>);
-    device = observationDevice.createDeviceObservationFacade({
-      ...rebound,
-      ...bindNativeDeviceMutations(native, targetIdentity(context), selectedPlatform(context)),
-      observability: {
-        ...native.observability,
-        crashes: ({ action, since }: { action: "start" | "collect"; since?: number }) =>
-          action === "start"
-            ? Promise.resolve({
-                platform: context.kind === "device" ? context.platform : "android",
-                since,
-                entries: [],
-                truncated: false,
-              })
-            : captureNativeCrashEvidence(since ?? 0),
-      },
-    } as unknown as DeviceTransport);
+    device = buildDeviceTransport(
+      native as unknown as Parameters<typeof buildDeviceTransport>[0],
+      context,
+    );
     devicesByTarget.set(key, device);
   }
   return device;
@@ -260,30 +227,6 @@ export async function sleep(ms: number, device: Device = createDevice()): Promis
   await cooperativeCheckpoint();
 }
 
-async function snapshotFromLiveIosListenerIfReady(
-  context: TargetContext,
-  opts?: {
-    interactiveOnly?: boolean;
-    timeoutMs?: number;
-    includeIdentifiers?: readonly string[];
-    includeLabels?: readonly string[];
-    requestedChromeOnly?: boolean;
-  },
-): Promise<SnapshotNode[] | undefined> {
-  if (context.kind !== "device" || context.platform !== "ios") return undefined;
-  const live = await probeLiveIosRunnerListener(context.serial);
-  if (!live) return undefined;
-  return await snapshotViaLiveIosRunnerListener({
-    serial: context.serial,
-    interactiveOnly: opts?.interactiveOnly ?? false,
-    appBundleId: await rememberedTargetApplication(context),
-    timeoutMs: opts?.timeoutMs,
-    ...(opts?.includeIdentifiers?.length ? { includeIdentifiers: opts.includeIdentifiers } : {}),
-    ...(opts?.includeLabels?.length ? { includeLabels: opts.includeLabels } : {}),
-    ...(opts?.requestedChromeOnly ? { requestedChromeOnly: true } : {}),
-  });
-}
-
 export async function snapshot(
   device: Device,
   opts?: {
@@ -316,7 +259,7 @@ export async function snapshot(
   const serialIsCoreSimulator =
     context?.kind === "device" &&
     context.platform === "ios" &&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(context.serial);
+    isCoreSimulatorSerial(context.serial);
   if (context?.kind === "device" && context.platform === "ios") {
     // Recipes already press/type through the adopted testCommand listener.
     // Recapture / observe / screen-capture must use that same usbmux path.
@@ -326,7 +269,7 @@ export async function snapshot(
     // route through the SDK session below instead.
     const adopted = serialIsCoreSimulator
       ? undefined
-      : await snapshotFromLiveIosListenerIfReady(context, opts);
+      : await snapshotFromLiveIosRunnerListenerIfReady(context, opts);
     if (adopted !== undefined) return adopted;
     try {
       return await captureIosSnapshot(
@@ -473,9 +416,7 @@ async function pressViaLiveIosListener(
   if (context.kind !== "device" || context.platform !== "ios") return false;
   // Simulators have no usbmux; the listener transport cannot reach them and
   // an attempted attach would read as a missing device.
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(context.serial)) {
-    return false;
-  }
+  if (isCoreSimulatorSerial(context.serial)) return false;
   const live = await probeLiveIosRunnerListener(context.serial);
   if (!live) return false;
   const appBundleId = await rememberedTargetApplication(context);

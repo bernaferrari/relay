@@ -10,6 +10,8 @@ export { readUsbmuxDeviceId } from "./ios-usbmux.js";
 import type { SnapshotNode } from "./device-capabilities.js";
 import { resolveNamedControl } from "./device-target-resolution.js";
 import { probeLiveIosRunnerListener, type LiveIosRunnerListener } from "./ios-runner-listener.js";
+import type { TargetContext } from "./target-context.js";
+import { rememberedTargetApplication } from "./device.js";
 
 export type LiveIosRunnerCommand = Record<string, unknown>;
 
@@ -743,4 +745,28 @@ export async function postLiveIosRunnerCommand(
   } finally {
     socket.destroy();
   }
+}
+
+export async function snapshotFromLiveIosRunnerListenerIfReady(
+  context: TargetContext,
+  opts?: {
+    interactiveOnly?: boolean;
+    timeoutMs?: number;
+    includeIdentifiers?: readonly string[];
+    includeLabels?: readonly string[];
+    requestedChromeOnly?: boolean;
+  },
+): Promise<SnapshotNode[] | undefined> {
+  if (context.kind !== "device" || context.platform !== "ios") return undefined;
+  const live = await probeLiveIosRunnerListener(context.serial);
+  if (!live) return undefined;
+  return await snapshotViaLiveIosRunnerListener({
+    serial: context.serial,
+    interactiveOnly: opts?.interactiveOnly ?? false,
+    appBundleId: await rememberedTargetApplication(context),
+    timeoutMs: opts?.timeoutMs,
+    ...(opts?.includeIdentifiers?.length ? { includeIdentifiers: opts.includeIdentifiers } : {}),
+    ...(opts?.includeLabels?.length ? { includeLabels: opts.includeLabels } : {}),
+    ...(opts?.requestedChromeOnly ? { requestedChromeOnly: true } : {}),
+  });
 }

@@ -49,6 +49,7 @@ import {
   isIosHidUnavailable,
   tapIosPointViaPixels,
 } from "./workspace-ios-raw.js";
+import { isCoreSimulatorSerial } from "./ios-simulator-serial.js";
 import { captureScreenshot, captureSnapshot, type ScreenshotPayload } from "./workspace-capture.js";
 import { invalidateTargetSemanticControl } from "./target-runtime-readiness.js";
 import { IosXCTestSessionUnavailableError, diagnoseIosRunnerError } from "./ios-device-adapter.js";
@@ -598,8 +599,7 @@ export async function interact(
       // CoreSimulator serials (UUID-shaped) have no usbmux for the HID
       // preflight or the pixel verifier; tap straight through the XCTest
       // session instead.
-      const pointSerialIsSimulator =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(context.serial);
+      const pointSerialIsSimulator = isCoreSimulatorSerial(context.serial);
       const tap = async () => {
         if (pointSerialIsSimulator) {
           await pressPoint(target.device, input.x, input.y);
@@ -651,7 +651,7 @@ export async function interact(
     const iosSerialIsSimulator =
       context.kind === "device" &&
       context.platform === "ios" &&
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(context.serial);
+      isCoreSimulatorSerial(context.serial);
     if (
       context.kind === "device" &&
       context.platform === "ios" &&
