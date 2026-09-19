@@ -18,6 +18,12 @@ extension RunnerTests {
     let viewport: CGRect
     /** Which way the app's interface is turned from the device's native space (#2612). */
     let interfaceOrientation: Int
+    /**
+     * The keyboard band this capture measured, published beside the tree so the daemon's tap guard
+     * measures against the producer's own reading rather than a band it derives from these rects
+     * (#2660). Nil only where the platform has no iOS keyboard to measure.
+     */
+    let keyboardBand: RunnerKeyboardBandFact?
   }
 
   private struct SnapshotEvaluation {
@@ -114,6 +120,13 @@ extension RunnerTests {
   ]
 
   static let flatInteractiveFallbackBudget: TimeInterval = 1.0
+
+  /// What one capture may spend reading the keyboard band before it gives up on the fact and lets the
+  /// tap guard fall back to the tree rule. The scroll path pays this query per gesture and stays well
+  /// inside a second; the number here is a ceiling for a read that normally returns in milliseconds,
+  /// sized so a hostile keyboard surface cannot extend a capture the way the unbounded read it
+  /// replaced would have (#2660).
+  static let keyboardBandProbeBudget: TimeInterval = 0.3
 
   // The single production entry point -- always compiled, no unit-test overload. A unit test
   // exercises this exact function; the only injectable seam lives inside
@@ -895,18 +908,25 @@ extension RunnerTests {
     }
     let viewport = geometry.viewport
     let interfaceOrientation = geometry.interfaceOrientation
-
     let treeSliceBudget = treeCaptureSliceBudgetOverride ?? treeCaptureSliceBudget
     let slice = min(treeSliceBudget, max(0.5, captureDeadline.timeIntervalSinceNow))
     guard let rootSnapshot = try captureSnapshotRootBounded(app, sliceSeconds: slice) else {
       return nil
     }
 
+    // Read after the tree, so the band is never older than the tree it will be compared against: a
+    // keyboard that appeared while the tree was being captured would otherwise publish `absent`
+    // beside key nodes that the tap guard would then have to trust less than the absence (#2660).
+    // It keeps its own hop and slice rather than joining the geometry pair above, because a keyboard
+    // this capture cannot measure must cost the fact and not the tree tier behind it.
+    let keyboardBand = captureKeyboardBandFact(app: app, deadline: captureDeadline)
+
     return SnapshotTraversalContext(
       queryRoot: app,
       rootSnapshot: rootSnapshot,
       viewport: viewport,
-      interfaceOrientation: interfaceOrientation
+      interfaceOrientation: interfaceOrientation,
+      keyboardBand: keyboardBand
     )
   }
 

@@ -20,7 +20,12 @@ import {
   buildIosSnapshotPresentationKey,
 } from '@agent-device/capture-kit/ios-snapshot-planning';
 import { AppError } from '@agent-device/kernel/errors';
-import type { RawSnapshotNode, SnapshotQualityVerdict } from '@agent-device/kernel/snapshot';
+import { readSnapshotKeyboardBandFact } from '@agent-device/kernel/record';
+import type {
+  RawSnapshotNode,
+  SnapshotKeyboardBandFact,
+  SnapshotQualityVerdict,
+} from '@agent-device/kernel/snapshot';
 import {
   iosSystemSurfaceHost,
   type IosSystemSurfaceProvenance,
@@ -34,18 +39,21 @@ export type AppleRunnerSnapshotResult = Readonly<{
   qualityPayload?: IosRunnerQualityPayloadFacts;
   runnerFatal?: boolean;
   systemSurface?: IosSystemSurfaceProvenance;
+  keyboard?: SnapshotKeyboardBandFact;
 }>;
 
 export function readAppleSnapshotResult(
   result: Record<string, unknown>,
 ): AppleRunnerSnapshotResult {
   const systemSurface = readSystemSurfaceProvenance(result.systemSurface);
+  const keyboard = readSnapshotKeyboardBandFact(result.keyboard);
   return {
     nodes: Array.isArray(result.nodes) ? (result.nodes as RawSnapshotNode[]) : undefined,
     truncated: typeof result.truncated === 'boolean' ? result.truncated : undefined,
     quality: readSnapshotQualityVerdict(result.snapshotQuality),
     qualityPayload: readQualityPayload(result.qualityPayload, systemSurface),
     runnerFatal: result.runnerFatal === true,
+    ...(keyboard ? { keyboard } : {}),
     ...(systemSurface ? { systemSurface } : {}),
     message:
       typeof result.message === 'string' && result.message.trim().length > 0
