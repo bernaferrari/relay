@@ -63,7 +63,7 @@ export type GoalSessionRunner = {
   start(input: GoalSessionStartInput, call?: GoalSessionCallOptions): Promise<GoalSessionResult>;
   resume(sessionId: string, call?: GoalSessionCallOptions): Promise<GoalSessionResult>;
   reproduce(sessionId: string, call?: GoalSessionCallOptions): Promise<GoalSessionResult>;
-  inspect(sessionId: string): Promise<GoalSessionRecord>;
+  inspect(sessionId: string): Promise<GoalSessionRecord & { valueRefs?: string[] }>;
 };
 
 function goalStoreRoot(): string {

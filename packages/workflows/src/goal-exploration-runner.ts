@@ -200,9 +200,13 @@ export function createGoalExplorationRunner(
     await Promise.all(
       activeWorkers.map(async (worker) => {
         try {
+          // A partitioned exploration gives every worker exactly one mission.
+          const missionInput = worker.mission
+            ? { ...sessionInput!, goal: worker.mission }
+            : sessionInput!;
           const result = input
             ? await sessions.start({
-                ...sessionInput!,
+                ...missionInput,
                 sessionId: worker.sessionId,
               })
             : await sessions.resume(worker.sessionId);
@@ -246,7 +250,12 @@ export function createGoalExplorationRunner(
     async start(input) {
       const explorationId = id();
       assertId(explorationId);
-      const agents = agentsFor(input);
+      const missions = (input.missions ?? [])
+        .map((mission) => mission.trim().slice(0, 2_048))
+        .filter(Boolean);
+      // Mission partitioning governs worker count; without missions every
+      // worker would receive the same goal, which buys no new coverage.
+      const agents = missions.length ? Math.max(1, Math.min(missions.length, agentsFor(input))) : agentsFor(input);
       const goal = input.goal.trim();
       const at = now();
       const workers: GoalExplorationWorker[] = Array.from({ length: agents }, (_, index) => ({
@@ -254,6 +263,7 @@ export function createGoalExplorationRunner(
         index: index + 1,
         sessionId: `explore-${explorationId}-${index + 1}`,
         status: "pending",
+        ...(missions[index] ? { mission: missions[index] } : {}),
         ...(input.targetId ? { targetId: input.targetId } : {}),
         ...(input.laneId ? { laneId: input.laneId } : {}),
         ...(input.authenticationFixtureReference
