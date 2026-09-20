@@ -43,13 +43,17 @@ import {
   type IosSessionOperationDiagnostic,
 } from "./workspace-ios-session.js";
 import { rawKey, rawSwipe, rawTap } from "./workspace-android-raw.js";
-import { stopUnknownIosMutation } from "./ios-mutation-policy.js";
 import {
+  dispatchSupervisedIosMutation,
+  rethrowIosMutationOutcomeUnknown,
+  runIosMutationOnce,
+} from "./ios-mutation-policy.js";
+import {
+  dispatchIosHidTap,
+  IosHidUnavailableError,
   iosPointTapRecoverError,
-  isIosHidUnavailable,
-  tapIosPointViaPixels,
 } from "./workspace-ios-raw.js";
-import { isCoreSimulatorSerial } from "./ios-simulator-serial.js";
+import { isSimulatorSdkRoute, resolveAppleControlRoute } from "./apple-control-route.js";
 import { captureScreenshot, captureSnapshot, type ScreenshotPayload } from "./workspace-capture.js";
 import { invalidateTargetSemanticControl } from "./target-runtime-readiness.js";
 import { IosXCTestSessionUnavailableError, diagnoseIosRunnerError } from "./ios-device-adapter.js";
@@ -596,29 +600,31 @@ export async function interact(
       // HID when the DDI advertises it; otherwise XCTest pressPoint. Neither
       // path may surface outcome-unknown as “retry the tap”.
       const bounds = iosLogicalBoundsForSerial(context.serial);
-      // CoreSimulator serials (UUID-shaped) have no usbmux for the HID
-      // preflight or the pixel verifier; tap straight through the XCTest
-      // session instead.
-      const pointSerialIsSimulator = isCoreSimulatorSerial(context.serial);
+      // Simulators have no usbmux for the HID preflight or the pixel
+      // verifier; tap straight through the XCTest session instead.
+      const appleRoute = resolveAppleControlRoute(context);
+      const pointSerialIsSimulator = isSimulatorSdkRoute(appleRoute);
       const tap = async () => {
         if (pointSerialIsSimulator) {
           await pressPoint(target.device, input.x, input.y);
           return;
         }
         try {
-          await tapIosPointViaPixels({
-            serial: context.serial,
-            x: input.x,
-            y: input.y,
-            ...(bounds ? { width: bounds.width, height: bounds.height } : {}),
-          });
+          await runIosMutationOnce(context.serial, "press", () =>
+            dispatchSupervisedIosMutation(context.serial, async () => {
+              const hid = await dispatchIosHidTap({
+                serial: context.serial,
+                x: input.x,
+                y: input.y,
+                ...(bounds ? { width: bounds.width, height: bounds.height } : {}),
+              });
+              if (hid.status === "completed") return hid;
+              throw hid.error;
+            }),
+          );
         } catch (hidError) {
-          // HID absence is pre-dispatch: XCTest may send the first press.
-          // Timeout, transport drop, and watchdog after HID started are
-          // outcome-unknown — never a second TAP/point.
-          if (!isIosHidUnavailable(hidError)) {
-            await stopUnknownIosMutation(context.serial, "press", hidError);
-          }
+          rethrowIosMutationOutcomeUnknown(hidError);
+          if (!(hidError instanceof IosHidUnavailableError)) throw hidError;
           try {
             await pressPoint(target.device, input.x, input.y);
           } catch (xctestError) {
@@ -645,13 +651,10 @@ export async function interact(
     // stale selector that leaves pixels untouched must surface as the typed
     // tap-did-not-change error instead of a silent no-op. Callers opt out
     // explicitly with verifyIosScreenChange === false.
-    // CoreSimulator serials (UUID-shaped) have no usbmux: go-ios pixels and
-    // the HID tap preflight cannot reach them. Their taps verify through the
-    // post-action semantic observation like Android, never a cable raster.
-    const iosSerialIsSimulator =
-      context.kind === "device" &&
-      context.platform === "ios" &&
-      isCoreSimulatorSerial(context.serial);
+    // Simulators have no usbmux: go-ios pixels and the HID tap preflight
+    // cannot reach them. Their taps verify through the post-action semantic
+    // observation like Android, never a cable raster.
+    const iosSerialIsSimulator = isSimulatorSdkRoute(resolveAppleControlRoute(context));
     if (
       context.kind === "device" &&
       context.platform === "ios" &&

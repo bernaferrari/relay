@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { cooperativeCheckpoint, raceCancel, throwIfCancelled } from "./control.js";
 import { noteConfirmedIosSnapshotInput } from "./ios-snapshot-flight.js";
 import { unknownErrorMessage } from "./ios-runner-listener-command.js";
+import { IosHidUnavailableError } from "./workspace-ios-raw.js";
 import { currentTargetContext } from "./target-context.js";
 import { TargetControlReservedError } from "./target-control.js";
 import { invalidateTargetSemanticControl } from "./target-runtime-readiness.js";
@@ -301,6 +302,7 @@ function mutationErrorMessage(error: unknown): string {
  * coordinate press.
  */
 export function iosSelectorWasNotDispatched(error: unknown): boolean {
+  if (error instanceof IosHidUnavailableError) return true;
   const message = mutationErrorMessage(error).trim();
   if (
     /^(?:native )?(?:selector )?(?:did not match an element|no match(?:ing element)?|element not found)(?:[.!])?$/i.test(

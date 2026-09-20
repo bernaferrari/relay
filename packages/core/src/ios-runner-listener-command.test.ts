@@ -196,18 +196,10 @@ test("a live listener type uses the focused field on the testCommand port", asyn
     assert.equal(listener.port, 50937);
     assert.equal(command.appBundleId, "ai.x.GrokApp");
     commands.push(command.command);
-    if (command.command === "querySelector") {
-      assert.equal(command.selectorKey, "id");
-      assert.equal(command.selectorValue, "ask.toolbar.textfield");
-      return {
-        ok: true,
-        data: { nodes: [{ identifier: "ask.toolbar.textfield", label: "Ask Anything" }] },
-      };
-    }
     assert.equal(command.command, "type");
     assert.equal(command.text, "hello");
-    assert.equal(command.selectorKey, "id");
-    assert.equal(command.selectorValue, "ask.toolbar.textfield");
+    assert.equal(command.selectorKey, undefined);
+    assert.equal(command.selectorValue, undefined);
     return { ok: true, data: { message: "typed" } };
   });
   try {
@@ -216,7 +208,7 @@ test("a live listener type uses the focused field on the testCommand port", asyn
       text: "hello",
       appBundleId: "ai.x.GrokApp",
     });
-    assert.deepEqual(commands, ["querySelector", "type"]);
+    assert.deepEqual(commands, ["type"]);
   } finally {
     restore();
     if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
@@ -225,33 +217,28 @@ test("a live listener type uses the focused field on the testCommand port", asyn
   }
 });
 
-test("a live listener type does not dispatch when the composer identifier is missing", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "relay-ios-live-type-miss-"));
-  const serial = "live-type-miss-ipad";
+test("a live listener type with an explicit selector does not invent a Grok composer id", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-ios-live-type-selector-"));
+  const serial = "live-type-selector-ipad";
   const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
   process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR = dir;
   await writeFile(
     join(dir, `${serial}.json`),
     JSON.stringify({ runnerPid: process.pid, port: 50937 }),
   );
-  let typed = 0;
   const restore = setLiveIosRunnerCommandPostForTests(async (_listener, command) => {
-    if (command.command === "type") {
-      typed += 1;
-      return { ok: true, data: { message: "typed" } };
-    }
-    return { ok: true, data: { found: false, nodes: [] } };
+    assert.equal(command.command, "type");
+    assert.equal(command.selectorKey, "id");
+    assert.equal(command.selectorValue, "settings.search");
+    return { ok: true, data: { message: "typed" } };
   });
   try {
-    await assert.rejects(
-      typeViaLiveIosRunnerListener({
-        serial,
-        text: "hello",
-        appBundleId: "ai.x.GrokApp",
-      }),
-      (error: unknown) => error instanceof Error && error.message === "element not found",
-    );
-    assert.equal(typed, 0);
+    await typeViaLiveIosRunnerListener({
+      serial,
+      text: "General",
+      selectorKey: "id",
+      selectorValue: "settings.search",
+    });
   } finally {
     restore();
     if (previous === undefined) delete process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
@@ -260,7 +247,7 @@ test("a live listener type does not dispatch when the composer identifier is mis
   }
 });
 
-test("a failed live listener type is not-applied when the composer value is unchanged", async () => {
+test("a failed live listener type with an explicit selector is not-applied when the value is unchanged", async () => {
   const dir = await mkdtemp(join(tmpdir(), "relay-ios-live-type-unchanged-"));
   const serial = "live-type-unchanged-ipad";
   const previous = process.env.AGENT_DEVICE_IOS_RUNNER_LEASE_DIR;
@@ -274,7 +261,7 @@ test("a failed live listener type is not-applied when the composer value is unch
       return {
         ok: true,
         data: {
-          nodes: [{ identifier: "ask.toolbar.textfield", label: "Ask Anything", value: "" }],
+          nodes: [{ identifier: "settings.search", label: "Search", value: "" }],
         },
       };
     }
@@ -291,7 +278,8 @@ test("a failed live listener type is not-applied when the composer value is unch
       typeViaLiveIosRunnerListener({
         serial,
         text: "hello",
-        appBundleId: "ai.x.GrokApp",
+        selectorKey: "id",
+        selectorValue: "settings.search",
       }),
       (error: unknown) => error instanceof Error && error.message === "element not found",
     );

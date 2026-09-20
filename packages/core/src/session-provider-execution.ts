@@ -51,8 +51,9 @@ export async function runColdAppMapStartup(
   startupMode: "warm" | "cold" | "verified-checkpoint" | undefined,
   originApplication: string | undefined,
   log: (line: string) => void,
-  launch: (device: Device, app: string) => Promise<void> = (target, app) =>
-    openApp(target, app, { relaunch: true }),
+  launch: (device: Device, app: string) => Promise<void> = async (target, app) => {
+    await openApp(target, app, { relaunch: true });
+  },
 ): Promise<void> {
   if (startupMode !== "cold" || job.targetKind === "browser") return;
   // Later iOS Combine cells share one XCTest process. Relaunching Grok between

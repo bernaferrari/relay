@@ -10,12 +10,11 @@ import { createDeviceObservationFacade } from "./device-observation-membrane.js"
 /**
  * Build Relay's canonical Device from a raw agent-device SDK client.
  *
- * agent-device 0.21.x client methods resolve their session and device
- * transport through `this`; a plain `{...native}` spread leaves the copies
- * unbound, which silently degrades to default usbmux routing and loses the
- * session binding (simulators then vanish with "not available through
- * usbmux"). Rebind every method — two levels deep — to its owning object
- * before the observation facade copies them onward.
+ * Session, UDID, and transport are captured in the SDK client's closures
+ * (the public methods are arrows). The observation facade applies nested
+ * methods on their owning objects; do not recursively `.bind()` into the
+ * original client — that mutates shared nested objects and cannot change a
+ * closure's captured session.
  */
 export function buildDeviceTransport(
   // The raw SDK client shape; kept structural so the vendored version can
@@ -23,25 +22,8 @@ export function buildDeviceTransport(
   native: ReturnType<typeof createAgentDeviceClient>,
   context: TargetContext,
 ): Device {
-  const rebound = { ...native } as Record<string, unknown>;
-  const rebind = (clone: Record<string, unknown>, original: Record<string, unknown>): void => {
-    for (const [name, value] of Object.entries(clone)) {
-      const originalValue = original[name];
-      if (typeof value === "function" && typeof originalValue === "function") {
-        clone[name] = (value as (...args: unknown[]) => unknown).bind(original);
-      } else if (
-        value &&
-        typeof value === "object" &&
-        originalValue &&
-        typeof originalValue === "object"
-      ) {
-        rebind(value as Record<string, unknown>, originalValue as Record<string, unknown>);
-      }
-    }
-  };
-  rebind(rebound, native as unknown as Record<string, unknown>);
   return createDeviceObservationFacade({
-    ...rebound,
+    ...native,
     ...bindNativeDeviceMutations(native, targetIdentity(context), selectedPlatform(context)),
     observability: {
       ...native.observability,

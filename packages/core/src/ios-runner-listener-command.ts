@@ -626,8 +626,6 @@ export async function tapViaLiveIosRunnerListener(input: {
   throw new Error(liveIosRunnerFailureMessage(result, "Live XCTest listener tap failed"));
 }
 
-const IOS_COMPOSER_IDENTIFIER = "ask.toolbar.textfield";
-
 function uniqueIdentifierNodes(nodes: readonly SnapshotNode[], identifier: string): SnapshotNode[] {
   return nodes.filter((node) => (node.identifier?.trim() || identifier) === identifier);
 }
@@ -681,37 +679,26 @@ export async function typeViaLiveIosRunnerListener(input: {
     throw new Error("iOS snapshot needs an active XCTest session");
   }
   const timeoutMs = input.timeoutMs ?? 20_000;
-  let selectorKey = input.selectorKey;
-  let selectorValue = input.selectorValue;
-  if (!selectorKey || !selectorValue) {
-    const composers = await queryLiveIosIdentifierNodes(listener, {
-      identifier: IOS_COMPOSER_IDENTIFIER,
-      ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
-      timeoutMs: Math.min(timeoutMs, IOS_CHROME_QUERY_TIMEOUT_MS),
-    });
-    if (composers.length !== 1) {
-      throw new Error("element not found");
-    }
-    selectorKey = "id";
-    selectorValue = IOS_COMPOSER_IDENTIFIER;
-  }
+  const selectorKey = input.selectorKey;
+  const selectorValue = input.selectorValue;
   const command: LiveIosRunnerCommand = {
     command: "type",
     text: input.text,
     allowNonHittableCoordinateFallback: true,
-    selectorKey,
-    selectorValue,
+    ...(selectorKey && selectorValue ? { selectorKey, selectorValue } : {}),
     ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
   };
   const result = await (injectedPost ?? postLiveIosRunnerCommand)(listener, command, timeoutMs);
   if (result.ok === false) {
-    const after = await queryLiveIosIdentifierNodes(listener, {
-      identifier: selectorValue,
-      ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
-      timeoutMs: Math.min(timeoutMs, IOS_CHROME_QUERY_TIMEOUT_MS),
-    }).catch(() => undefined);
-    if (after && after.length === 1 && !nodeHoldsTypedText(after[0], input.text)) {
-      throw new Error("element not found");
+    if (selectorKey === "id" && selectorValue) {
+      const after = await queryLiveIosIdentifierNodes(listener, {
+        identifier: selectorValue,
+        ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+        timeoutMs: Math.min(timeoutMs, IOS_CHROME_QUERY_TIMEOUT_MS),
+      }).catch(() => undefined);
+      if (after && after.length === 1 && !nodeHoldsTypedText(after[0], input.text)) {
+        throw new Error("element not found");
+      }
     }
     throw new Error(liveIosRunnerFailureMessage(result, "Live XCTest listener type failed"));
   }

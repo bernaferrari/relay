@@ -19,6 +19,18 @@ export const IOS_SNAPSHOT_TIMEOUT_MS = 8_000;
  */
 export const IOS_SNAPSHOT_FORCE_EXPIRY_MS = 2 * IOS_SNAPSHOT_TIMEOUT_MS;
 
+let iosSnapshotForceExpiryMs = IOS_SNAPSHOT_FORCE_EXPIRY_MS;
+
+/** Test-only: shrink the wedged-runner ceiling without changing production policy. */
+export function setIosSnapshotForceExpiryMsForTests(ms?: number): void {
+  iosSnapshotForceExpiryMs =
+    ms === undefined ? IOS_SNAPSHOT_FORCE_EXPIRY_MS : Math.max(1, Math.round(ms));
+}
+
+function snapshotForceExpiryMs(): number {
+  return iosSnapshotForceExpiryMs;
+}
+
 /** Extra time a recovery probe may wait for the current traversal to settle
  * before concluding the tree is slow (not dead) and preserving the session. */
 export const IOS_SNAPSHOT_SETTLE_WAIT_MS = IOS_SNAPSHOT_TIMEOUT_MS;
@@ -109,6 +121,8 @@ type IosSnapshotFlight = {
   inputEpoch: number;
   interactiveOnly: boolean;
   timedOut: boolean;
+  /** The waiter expired past the hard ceiling; native work may still be running. */
+  wedged: boolean;
   startedAt: number;
   result: Promise<SnapshotNode[]>;
 };
@@ -221,13 +235,13 @@ export async function snapshotIosSingleFlight(
     // It cannot answer a post-input assertion, and iOS cannot safely overlap
     // it with a replacement traversal.
     if (existing.inputEpoch !== inputEpoch) throw new IosSnapshotInFlightError(elapsedMs);
+    if (existing.wedged || Date.now() - existing.startedAt >= snapshotForceExpiryMs()) {
+      // The waiter expired. Native XCTest is still the outstanding work —
+      // do not start a second traversal, and do not treat the missing
+      // waiter as proof that the runner settled.
+      throw new IosSnapshotRunnerWedgedError(elapsedMs);
+    }
     if (existing.timedOut) {
-      // Past twice the daemon budget this traversal is not merely slow: the
-      // flight is force-expired and surfaced as runner-wedged, which is
-      // recovery-worthy instead of failing fast forever.
-      if (Date.now() - existing.startedAt >= IOS_SNAPSHOT_FORCE_EXPIRY_MS) {
-        throw new IosSnapshotRunnerWedgedError(elapsedMs);
-      }
       throw new IosSnapshotInFlightError(elapsedMs);
     }
     // A full tree is a safe superset of an interactive-only tree, so those
@@ -248,7 +262,7 @@ export async function snapshotIosSingleFlight(
       }
       return nodes;
     });
-  flight = { inputEpoch, interactiveOnly, timedOut: false, startedAt, result };
+  flight = { inputEpoch, interactiveOnly, timedOut: false, wedged: false, startedAt, result };
   iosSnapshotFlights.set(key, flight);
 
   // Retain the lock until the actual native request settles, not merely until
@@ -279,22 +293,22 @@ export async function snapshotIosSingleFlight(
 
   // Hard ceiling at twice the daemon budget: an eternally in-flight traversal
   // is force-expired and surfaces as runner-wedged, which is recovery-worthy.
-  // Without it every later read fails fast as in-flight forever until a human
-  // presses Reconnect by hand. The lock is released so recovery may start a
-  // fresh traversal; the zombie request itself can never be cancelled.
+  // Expire the waiter, not the record of outstanding native work. Recovery
+  // may start a fresh traversal only after native settlement or an explicit
+  // reset that confirms the old runner generation is gone.
   void Promise.race([
     native,
     new Promise<never>((_, reject) => {
       const ceiling = setTimeout(() => {
         reject(new IosSnapshotRunnerWedgedError(Math.max(0, Date.now() - startedAt)));
-      }, IOS_SNAPSHOT_FORCE_EXPIRY_MS);
+      }, snapshotForceExpiryMs());
       ceiling.unref?.();
     }),
-  ])
-    .finally(() => {
-      if (iosSnapshotFlights.get(key) === flight) iosSnapshotFlights.delete(key);
-    })
-    .catch(() => undefined);
+  ]).catch((error: unknown) => {
+    if (error instanceof IosSnapshotRunnerWedgedError && iosSnapshotFlights.get(key) === flight) {
+      flight.wedged = true;
+    }
+  });
 
   return await result;
 }

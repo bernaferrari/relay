@@ -62,7 +62,11 @@ import {
   typeViaLiveIosRunnerListener,
 } from "./ios-runner-listener-command.js";
 import { probeLiveIosRunnerListener } from "./ios-runner-listener.js";
-import { isCoreSimulatorSerial } from "./ios-simulator-serial.js";
+import {
+  isPhysicalRunnerRoute,
+  isSimulatorSdkRoute,
+  resolveAppleControlRoute,
+} from "./apple-control-route.js";
 import { buildDeviceTransport } from "./device-client-bindings.js";
 import { captureIosSnapshot, resetIosSnapshotFlights } from "./ios-snapshot-flight.js";
 export {
@@ -74,6 +78,7 @@ export type { IosMutationAttemptDiagnostic, IosMutationOperation } from "./ios-m
 export {
   IOS_SNAPSHOT_TIMEOUT_MS,
   IosSnapshotInFlightError,
+  IosSnapshotRunnerWedgedError,
   IosSnapshotTimedOutError,
   isIosAccessibilityQueryInFlightError,
 } from "./ios-snapshot-flight.js";
@@ -252,24 +257,17 @@ export async function snapshot(
   } catch {
     context = undefined;
   }
-  // CoreSimulator serials are UUID-shaped; the adopted testCommand listener
-  // rides usbmux, which only exists for physical devices. A simulator with a
-  // live runner lease must use the SDK session path instead of throwing a
-  // usbmux attach failure that reads as a missing device.
-  const serialIsCoreSimulator =
-    context?.kind === "device" &&
-    context.platform === "ios" &&
-    isCoreSimulatorSerial(context.serial);
+  const appleRoute = resolveAppleControlRoute(context);
   if (context?.kind === "device" && context.platform === "ios") {
     // Recipes already press/type through the adopted testCommand listener.
     // Recapture / observe / screen-capture must use that same usbmux path.
     // The bounded SDK probe looks at Relay’s Copy-probe session, not the
     // LISTENER_READY runner — adopt first, and do not recover-kill it.
-    // A simulator (UUID serial) has no usbmux; its live runner lease must
-    // route through the SDK session below instead.
-    const adopted = serialIsCoreSimulator
-      ? undefined
-      : await snapshotFromLiveIosRunnerListenerIfReady(context, opts);
+    // Simulators have no usbmux; their live runner lease must route through
+    // the SDK session below instead.
+    const adopted = isPhysicalRunnerRoute(appleRoute)
+      ? await snapshotFromLiveIosRunnerListenerIfReady(context, opts)
+      : undefined;
     if (adopted !== undefined) return adopted;
     try {
       return await captureIosSnapshot(
@@ -290,29 +288,30 @@ export async function snapshot(
   return (result.nodes ?? []) as SnapshotNode[];
 }
 
+export type LaunchResult = {
+  launch: "completed" | "not-dispatched" | "outcome-unknown";
+  semanticSession: "attached" | "unavailable" | "not-requested";
+};
+
 export async function openApp(
   device: Device,
   app: string,
   opts?: { relaunch?: boolean },
-): Promise<void> {
+): Promise<LaunchResult> {
   const context = currentTargetContext();
-  if (context.kind === "device" && context.platform === "ios") {
+  const appleRoute = resolveAppleControlRoute(context);
+  if (isPhysicalRunnerRoute(appleRoute) && context.kind === "device") {
+    // Sidecar launch is the one activation. There is no supported
+    // non-activating SDK attach for physical devices, so do not disguise a
+    // second `apps.open` as session binding — that can foreground the app
+    // again and swallow attachment failure.
     await openPhysicalIosApp({
       context,
       app,
       relaunch: opts?.relaunch ?? true,
       rememberApplication: rememberTargetApplication,
     });
-    // agent-device 0.21.6 requires the app to be opened inside the SDK's own
-    // session before its snapshot/interact paths answer; the physical launch
-    // above (devicectl/go-ios) is invisible to that session. Establish it
-    // best-effort: the launch above stays authoritative for foregrounding,
-    // and a session-open failure must not fail an otherwise-good launch.
-    await nativeDevice(device)
-      .apps.open({ ...base(), app })
-      .then(() => rememberTargetApplication(app))
-      .catch(() => undefined);
-    return;
+    return { launch: "completed", semanticSession: "not-requested" };
   }
   const opened = await controlledMutation("app-open", () =>
     nativeDevice(device).apps.open({
@@ -322,7 +321,8 @@ export async function openApp(
     }),
   );
   await rememberTargetApplication(opened.appBundleId ?? opened.appId ?? app);
-  await sleep(2000, device);
+  if (!isSimulatorSdkRoute(appleRoute)) await sleep(2000, device);
+  return { launch: "completed", semanticSession: "attached" };
 }
 
 /**
@@ -413,18 +413,16 @@ async function pressViaLiveIosListener(
   } catch {
     return false;
   }
-  if (context.kind !== "device" || context.platform !== "ios") return false;
-  // Simulators have no usbmux; the listener transport cannot reach them and
-  // an attempted attach would read as a missing device.
-  if (isCoreSimulatorSerial(context.serial)) return false;
-  const live = await probeLiveIosRunnerListener(context.serial);
+  const pressRoute = resolveAppleControlRoute(context);
+  if (!isPhysicalRunnerRoute(pressRoute)) return false;
+  const live = await probeLiveIosRunnerListener(pressRoute.udid);
   if (!live) return false;
   const appBundleId = await rememberedTargetApplication(context);
   // One usbmux tap on the LISTENER_READY runner. Do not also dispatch through
   // the unbound SDK session — that is a second press with unknown outcome.
   await controlledMutation("press", () =>
     tapViaLiveIosRunnerListener({
-      serial: context.serial,
+      serial: pressRoute.udid,
       selectorKey,
       selectorValue,
       ...(appBundleId ? { appBundleId } : {}),
@@ -835,13 +833,14 @@ async function typeViaLiveIosListener(text: string): Promise<boolean> {
   } catch {
     return false;
   }
-  if (context.kind !== "device" || context.platform !== "ios") return false;
-  const live = await probeLiveIosRunnerListener(context.serial);
+  const typeRoute = resolveAppleControlRoute(context);
+  if (!isPhysicalRunnerRoute(typeRoute)) return false;
+  const live = await probeLiveIosRunnerListener(typeRoute.udid);
   if (!live) return false;
   const appBundleId = await rememberedTargetApplication(context);
   await controlledMutation("type", () =>
     typeViaLiveIosRunnerListener({
-      serial: context.serial,
+      serial: typeRoute.udid,
       text,
       ...(appBundleId ? { appBundleId } : {}),
     }),

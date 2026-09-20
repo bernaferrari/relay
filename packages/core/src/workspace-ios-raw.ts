@@ -76,13 +76,55 @@ export function iosErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Proven pre-dispatch HID refusal. XCTest may still be the first input. */
+export class IosHidUnavailableError extends Error {
+  readonly dispatch = "not-dispatched" as const;
+
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "IosHidUnavailableError";
+  }
+}
+
+export type IosHidTapDispatch =
+  | { status: "completed" }
+  | { status: "not-dispatched"; error: IosHidUnavailableError }
+  | { status: "outcome-unknown"; error: Error };
+
 /** This DDI/host cannot deliver a CoreDevice HID press — fall back to XCTest. */
 export function isIosHidUnavailable(error: unknown): boolean {
+  if (error instanceof IosHidUnavailableError) return true;
   const message = iosErrorMessage(error);
   return (
     /universalhidservice|dtuhidd|not available in RSD|ios-hid-tap:build/i.test(message) ||
     message.includes(IOS_PIXEL_TAP_MISSING_HELPER)
   );
+}
+
+function asHidUnavailable(error: unknown): IosHidUnavailableError {
+  return error instanceof IosHidUnavailableError
+    ? error
+    : new IosHidUnavailableError(iosErrorMessage(error), { cause: error });
+}
+
+/**
+ * Dispatch one HID point tap and report whether the press left this process.
+ * Callers must not treat `not-dispatched` and `outcome-unknown` as the same
+ * fallback: only a proven pre-dispatch refusal may try XCTest next.
+ */
+export async function dispatchIosHidTap(input: IosPixelTapInput): Promise<IosHidTapDispatch> {
+  try {
+    await tapIosPointViaPixels(input);
+    return { status: "completed" };
+  } catch (error) {
+    if (isIosHidUnavailable(error)) {
+      return { status: "not-dispatched", error: asHidUnavailable(error) };
+    }
+    return {
+      status: "outcome-unknown",
+      error: error instanceof Error ? error : new Error(String(error)),
+    };
+  }
 }
 
 export function iosPointTapRecoverError(hidError?: unknown, xctestError?: unknown): Error {

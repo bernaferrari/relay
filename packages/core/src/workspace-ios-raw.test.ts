@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  dispatchIosHidTap,
   IOS_PIXEL_TAP_FAILED,
   IOS_PIXEL_TAP_MISSING_HELPER,
   IOS_POINT_TAP_RECOVER,
+  IosHidUnavailableError,
   isIosHidUnavailable,
   iosPointTapRecoverError,
   setIosPixelTapForTests,
@@ -104,6 +106,43 @@ test("tests may inject a pixel tap without spawning the helper", async () => {
   try {
     await tapIosPointViaPixels({ serial: "ipad", x: 3, y: 4 });
     assert.deepEqual(seen, [{ serial: "ipad", x: 3, y: 4 }]);
+  } finally {
+    setIosPixelTapForTests();
+  }
+});
+
+test("HID dispatch reports completed, pre-dispatch refusal, and unknown separately", async () => {
+  setIosPixelTapForTests(async () => undefined);
+  try {
+    assert.deepEqual(await dispatchIosHidTap({ serial: "ipad", x: 1, y: 2 }), {
+      status: "completed",
+    });
+  } finally {
+    setIosPixelTapForTests();
+  }
+
+  setIosPixelTapForTests(async () => {
+    throw new Error(
+      "service 'com.apple.coredevice.hid.universalhidservice' is not available in RSD",
+    );
+  });
+  try {
+    const refused = await dispatchIosHidTap({ serial: "ipad", x: 1, y: 2 });
+    assert.equal(refused.status, "not-dispatched");
+    assert.ok(
+      refused.status === "not-dispatched" && refused.error instanceof IosHidUnavailableError,
+    );
+  } finally {
+    setIosPixelTapForTests();
+  }
+
+  setIosPixelTapForTests(async () => {
+    throw new Error("connection reset");
+  });
+  try {
+    const unknown = await dispatchIosHidTap({ serial: "ipad", x: 1, y: 2 });
+    assert.equal(unknown.status, "outcome-unknown");
+    assert.equal(unknown.status === "outcome-unknown" && unknown.error.message, "connection reset");
   } finally {
     setIosPixelTapForTests();
   }

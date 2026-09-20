@@ -356,3 +356,77 @@ test(
     }
   },
 );
+
+test(
+  "cold-start simulator launch and observation need no external SDK priming",
+  { timeout: 240_000 },
+  async (t) => {
+    const simctl = (args: string[]) =>
+      new Promise<string>((resolve, reject) => {
+        execFile("xcrun", ["simctl", ...args], { timeout: 60_000 }, (error, stdout) => {
+          if (error) reject(error);
+          else resolve(stdout);
+        });
+      });
+    if (process.env.RELAY_SKIP_LIVE_DEVICE_TESTS === "1") {
+      t.skip("live device journeys are disabled in this environment");
+      return;
+    }
+    let booted: string;
+    try {
+      booted = await simctl(["list", "devices", "booted"]);
+    } catch {
+      t.skip("simctl is not available");
+      return;
+    }
+    if (!booted.includes(UDID)) {
+      t.skip(`simulator ${UDID} is not booted`);
+      return;
+    }
+
+    const root = await mkdtemp(join(tmpdir(), "relay-goal-ios-cold-"));
+    const previousState = process.env.RELAY_STATE_DIR;
+    const previousWorkspace = process.env.RELAY_WORKSPACE_ROOT;
+    process.env.RELAY_STATE_DIR = root;
+    process.env.RELAY_WORKSPACE_ROOT = root;
+    resetControlDatabaseCache();
+    let server: Awaited<ReturnType<typeof startServer>> | undefined;
+    try {
+      server = await startServer({ host: "127.0.0.1", port: 0 });
+      const client = new RelayClient({
+        url: `http://127.0.0.1:${server.port}`,
+        auth: { type: "none" },
+        organizationId,
+        projectId,
+        actorId: "human:goal-ios-cold-start",
+        actorKind: "human",
+      });
+      const port = createRelayOperationPort(client);
+      const launched = await port.invoke("target.app.launch", {
+        serial: UDID,
+        app: SETTINGS_BUNDLE,
+        relaunch: true,
+      });
+      assert.ok(
+        launched.launched?.app === SETTINGS_BUNDLE || launched.observed?.app === SETTINGS_BUNDLE,
+        "expected Settings to become the active device session from a cold Relay start",
+      );
+      const observation = await port.invoke("target.observation.capture", { serial: UDID });
+      const controls = observation.semantics?.controls ?? [];
+      assert.ok(
+        controls.some((control) => control.label === "General"),
+        `expected Settings General after a cold-start launch, got ${JSON.stringify(
+          controls.slice(0, 8).map((control) => control.label),
+        )}`,
+      );
+    } finally {
+      await server?.close();
+      resetControlDatabaseCache();
+      if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+      else process.env.RELAY_STATE_DIR = previousState;
+      if (previousWorkspace === undefined) delete process.env.RELAY_WORKSPACE_ROOT;
+      else process.env.RELAY_WORKSPACE_ROOT = previousWorkspace;
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);

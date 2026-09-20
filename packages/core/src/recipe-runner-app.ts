@@ -52,7 +52,7 @@ export async function observeForegroundApplication(
 }
 
 export type VerifiedAppOpenDependencies = {
-  open?: typeof openApp;
+  open?: (device: Device, app: string, opts?: { relaunch?: boolean }) => Promise<unknown>;
   observe?: typeof observeForegroundApplication;
 };
 

@@ -16,7 +16,7 @@ type OpenPhysicalIosAppInput = {
   rememberApplication: (app: string) => Promise<void>;
 };
 
-type IosAppOpenRuntime = {
+export type IosAppOpenRuntime = {
   resolveBundleId: typeof resolveIosLaunchBundleId;
   launch: typeof launchIosAppOutsideXctest;
 };
@@ -26,9 +26,16 @@ const defaultRuntime: IosAppOpenRuntime = {
   launch: launchIosAppOutsideXctest,
 };
 
+let testRuntime: IosAppOpenRuntime | undefined;
+
+/** Test-only sidecar launch seam for the public `openApp` contract. */
+export function setIosAppOpenRuntimeForTests(runtime?: IosAppOpenRuntime): void {
+  testRuntime = runtime;
+}
+
 export async function openPhysicalIosApp(
   input: OpenPhysicalIosAppInput,
-  runtime: IosAppOpenRuntime = defaultRuntime,
+  runtime: IosAppOpenRuntime = testRuntime ?? defaultRuntime,
 ): Promise<void> {
   // Input validation is local and conclusively pre-dispatch. The sidecar
   // activation below is the one operation guarded as an exact-once mutation.
