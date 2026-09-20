@@ -228,13 +228,21 @@ export async function sessionFor(
       ? browserLiveIdentityMatches(session.profile, requestedProfile)
       : browserSessionProfileMatches(session.profile, requestedProfile);
     if (
-      (mode === "authoring" || options.reuseMatchingIdentity) &&
       profileMatches &&
       ((options.reuseMatchingIdentity && !options.requirePresentationMatch) ||
         ((options.recordVideo === undefined || session.recordVideo === options.recordVideo) &&
           (options.headless === undefined || session.headless === options.headless)))
-    )
+    ) {
+      // A proof session with the exact frozen profile (engine, viewport,
+      // fixture revision) is the same configuration, not a stale one: reuse
+      // it so consecutive operations in one workflow — snapshot, tap,
+      // snapshot; teach observe, interact, observe — act on the same page.
+      // Minting a fresh browser per operation made every prior operation's
+      // effect invisible to the next (the deterministic "tap did nothing"
+      // illusion) while paying a full launch each time. Mismatched profiles,
+      // presentation, or recording intent still close and rebuild.
       return session;
+    }
     sessions.delete(key);
     await session.close().catch(() => undefined);
   }
