@@ -24,3 +24,11 @@ test("Library marks a signed-in home", () => {
 test("hydrated signed-in surfaces without Library wait rather than fail", () => {
   assert.equal(fixtureCaptureReadiness(["Settings", "Account", "Appearance"]), "waiting");
 });
+
+test("an explicit signed-in role indicator marks non-Grok apps ready", () => {
+  assert.equal(
+    fixtureCaptureReadiness(["Workspace home", "Signed in as member", "Settings"]),
+    "ready",
+  );
+  assert.equal(fixtureCaptureReadiness(["Signed in as admin", "Save"]), "ready");
+});
