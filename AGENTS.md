@@ -158,7 +158,7 @@ bd close <id>         # Complete work
    git status  # MUST show "up to date with origin"
    ```
    Dolt remote sync is retired (`dolt.auto-push: false`; never run `bd dolt
-   push` / `bd dolt pull` — the git-protocol dolt remote misbehaves). Beads
+push` / `bd dolt pull` — the git-protocol dolt remote misbehaves). Beads
    data lives in the local dolt store; run `bd backup` for a JSONL snapshot
    in `.beads/backup/` when you want an off-machine copy.
 5. **Clean up** - Clear stashes, prune remote branches
