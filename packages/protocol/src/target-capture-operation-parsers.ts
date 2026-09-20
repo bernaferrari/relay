@@ -218,7 +218,11 @@ export function createTargetCaptureOperationParsers(input: {
   const targetScreenshotInputParser = objectParser<OperationInput<"target.screenshot.capture">>(
     "target screenshot input",
     (value) => {
-      targetInputParser.parse(value);
+      if (value.serial !== undefined) string(value.serial, "target serial");
+      if (value.laneId !== undefined) string(value.laneId, "target screenshot laneId");
+      if (!value.serial && !value.laneId) {
+        fail("target screenshot", "serial or laneId is required");
+      }
       if (value.caption !== undefined) string(value.caption, "screenshot caption");
       if (value.jobId !== undefined) string(value.jobId, "screenshot jobId");
       optionalQueryBoolean(value.ephemeral, "screenshot ephemeral");

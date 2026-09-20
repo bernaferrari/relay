@@ -74,14 +74,24 @@ export const coreTargetOperationInputSchemas = {
     }),
   "target.screenshot.capture": z
     .object({
-      ...targetReference,
+      serial: identifier("Connected device or managed target identifier").optional(),
+      laneId: identifier("Saved Lane whose exact fixture overlay the pixels come from").optional(),
       previewX: z.coerce.number().optional(),
       previewY: z.coerce.number().optional(),
       caption: z.string().min(1).optional(),
       jobId: z.string().min(1).optional(),
       ephemeral: queryBoolean.optional(),
     })
-    .strict(),
+    .strict()
+    .superRefine((input, context) => {
+      if (!input.serial && !input.laneId) {
+        context.addIssue({
+          code: "custom",
+          message: "serial or laneId is required",
+          path: ["serial"],
+        });
+      }
+    }),
   "target.observation.capture": z.object(targetReference).strict(),
   "target.health.get": z.object(targetReference).strict(),
   "target.input.reconcile": z

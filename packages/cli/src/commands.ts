@@ -81,19 +81,31 @@ export type ResolvedResourceCommand = {
 export function resolveCommand(
   positionals: readonly string[],
   input: Readonly<Record<string, unknown>> = {},
+  options: { laneSelected?: boolean } = {},
 ): ResolvedCommand {
   for (const descriptor of mappedCommandDescriptors) {
     for (const candidate of descriptor.paths) {
       const tokens = candidate.command.split(" ");
       const argumentKeys = candidate.arguments ?? [];
-      if (positionals.length !== tokens.length + argumentKeys.length) continue;
+      const laneFillsSerial =
+        options.laneSelected === true &&
+        argumentKeys[0] === "serial" &&
+        !positionals[tokens.length];
+      if (positionals.length !== tokens.length + argumentKeys.length - (laneFillsSerial ? 1 : 0))
+        continue;
       if (!tokens.every((token, index) => positionals[index] === token)) continue;
 
       let constructed = mergeRecords({}, input);
       if (candidate.fixedInput) constructed = mergeRecords(constructed, candidate.fixedInput);
-      argumentKeys.forEach((key, index) => {
-        setInputPath(constructed, key, positionals[tokens.length + index]!);
-      });
+      if (laneFillsSerial) {
+        argumentKeys.slice(1).forEach((key, index) => {
+          setInputPath(constructed, key, positionals[tokens.length + index]!);
+        });
+      } else {
+        argumentKeys.forEach((key, index) => {
+          setInputPath(constructed, key, positionals[tokens.length + index]!);
+        });
+      }
       return {
         operationId: descriptor.operationId,
         commandPath: candidate.command,
@@ -111,7 +123,11 @@ export function resolveCommand(
   if (incomplete) {
     const argumentKeys = incomplete.candidate.arguments ?? [];
     const providedArguments = Math.max(0, positionals.length - incomplete.tokens.length);
-    const missingArguments = argumentKeys.slice(providedArguments);
+    // With --lane selected the serial positional is optional for the
+    // Lane-aware operations; the server fills it from the saved Lane.
+    const laneOptionalSerial =
+      options.laneSelected === true && argumentKeys[0] === "serial" && providedArguments === 0;
+    const missingArguments = laneOptionalSerial ? [] : argumentKeys.slice(providedArguments);
     if (missingArguments.length) {
       const required = missingArguments
         .map((key, index) => {

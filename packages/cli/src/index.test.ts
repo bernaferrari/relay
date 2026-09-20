@@ -14,6 +14,8 @@ import {
 import { parseCli } from "./config.js";
 import { ExitCode } from "./errors.js";
 import { runCli, waitForOutcome } from "./index.js";
+import { tokenize } from "./cli-argv.js";
+import { parseOutcomeCliIntent } from "./outcome-command.js";
 import type { RelayOutcomeJobs, RepeatTestSnapshot } from "@relay/workflows";
 import type { OperationInvoker } from "./invoke.js";
 
@@ -3643,4 +3645,45 @@ test("unknown operations are usage errors without invoking a client", async () =
   assert.equal(code, ExitCode.usage);
   assert.equal(created, false);
   assert.equal(io.stderr(), "");
+});
+
+test("device screenshot accepts --lane instead of a positional serial", async () => {
+  const io = capture();
+  const dir = await mkdtemp(join(tmpdir(), "relay-lane-shot-"));
+  let invokedWithLane = false;
+  let invokedOperation = "";
+  const code = await runCli(
+    ["device", "screenshot", "--lane", "member-lane", "--file", join(dir, "shot.png")],
+    {
+      streams: io.streams,
+      env: {},
+      registerSignalHandlers: false,
+      createClient: () => ({
+        invoke: async (operationId: string, input: Record<string, unknown>) => {
+          invokedOperation = operationId;
+          invokedWithLane = input.laneId === "member-lane" && input.serial === undefined;
+          // 1x1 transparent PNG — the screenshot emitter validates the signature.
+          return {
+            base64:
+              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+            mime: "image/png",
+          };
+        },
+        events: async () => {},
+      }),
+    },
+  );
+  assert.equal(code, ExitCode.success, io.stderr());
+  assert.equal(invokedOperation, "target.screenshot.capture");
+  assert.equal(invokedWithLane, true);
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("everyday inspect and export aliases map onto the outcome operations", () => {
+  const inspect = parseOutcomeCliIntent(tokenize(["inspect", "wf-1"]));
+  assert.deepEqual(inspect, { kind: "inspect-workflow", workflowId: "wf-1" });
+  const legacy = parseOutcomeCliIntent(tokenize(["inspect", "relay-workflow.v1.abc"]));
+  assert.deepEqual(legacy, { kind: "inspect-workflow", legacyRef: "relay-workflow.v1.abc" });
+  const exported = parseOutcomeCliIntent(tokenize(["export", "run-42"]));
+  assert.deepEqual(exported, { kind: "export-evidence", runId: "run-42" });
 });

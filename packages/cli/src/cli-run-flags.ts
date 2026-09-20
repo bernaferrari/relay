@@ -113,6 +113,7 @@ const LANE_OPERATIONS = new Set([
   "job.combine.start",
   "target.interact",
   "target.snapshot.capture",
+  "target.screenshot.capture",
 ]);
 
 /** `--lane <id>` becomes operation `laneId`. The server calls resolveLaneExecution. */
@@ -127,7 +128,7 @@ export function applyLaneFlag(
   if (!laneId) throw new UsageError("--lane requires a Lane identifier");
   if (!LANE_OPERATIONS.has(operationId)) {
     throw new UsageError(
-      "--lane is only valid on test run, combine run, plan run, device interact, or device snapshot",
+      "--lane is only valid on test run, combine run, plan run, device interact, snapshot, or screenshot",
     );
   }
   if (tokens.values.has("--target") || tokens.values.has("--revision")) {

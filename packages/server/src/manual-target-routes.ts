@@ -116,19 +116,35 @@ export async function handleManualTargetRoute(input: ManualTargetRouteInput): Pr
   }
 
   if (method === "GET" && pathname === "/screenshot") {
-    const serial = url.searchParams.get("serial") ?? undefined;
+    const requestedSerial = url.searchParams.get("serial") ?? undefined;
+    const laneId = url.searchParams.get("laneId")?.trim() || undefined;
     const caption = url.searchParams.get("caption") ?? undefined;
     const jobId = url.searchParams.get("jobId") ?? undefined;
     const ephemeral =
       url.searchParams.get("ephemeral") === "1" || url.searchParams.get("ephemeral") === "true";
     const previewX = optionalFiniteSearchNumber(url.searchParams, "previewX");
     const previewY = optionalFiniteSearchNumber(url.searchParams, "previewY");
+    // A Lane fills the target and applies its exact browser fixture overlay, so
+    // pixels come from the same who-and-where as the rest of the workflow —
+    // never an anonymous context that would mislabel the account.
+    let serial = requestedSerial;
+    let overlay: ReturnType<typeof runtimeOverlayFromLaneResolution> = undefined;
+    if (laneId) {
+      const resolved = await applyLaneToInteractOrThrow({
+        projectId: scope.projectId,
+        laneId,
+        ...(requestedSerial ? { serial: requestedSerial } : {}),
+      });
+      serial = resolved.serial;
+      overlay = runtimeOverlayFromLaneResolution(resolved, scope.projectId);
+    }
     assertTargetObservation(scope, serial);
     const shot = await captureTargetScreenshot({
       serial,
       caption: caption ?? undefined,
       jobId,
       ephemeral,
+      ...(overlay ? { overlay } : {}),
       // Screenshots must not take an accessibility tree — that wedges XCTest
       // on physical iPads and blocks the next interact/snapshot.
       includeScreenMatch: false,

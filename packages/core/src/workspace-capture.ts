@@ -682,9 +682,12 @@ export async function captureScreenshot(opts?: {
   semanticNodes?: readonly SnapshotNode[];
   /** Draw a tap preview ring; does not touch the device. */
   previewTap?: { x: number; y: number };
+  /** Saved who-and-where: capture pixels under the Lane's exact fixture
+   * overlay instead of an anonymous context (the wrong-account guard). */
+  overlay?: RuntimeTargetOverlay;
 }): Promise<ScreenshotPayload> {
   const captureStartedAt = now();
-  const target = await resolveRuntimeTarget(opts?.serial, opts?.device);
+  const target = await resolveRuntimeTarget(opts?.serial, opts?.device, opts?.overlay);
   // A capture hands its private temporary path to the caller only after the
   // complete payload is available. If any part of capture/normalization/
   // attachment fails first, this function retains ownership and removes the

@@ -38,7 +38,7 @@ const globalOptions = `Global options:
   --revision current               Resolve the latest saved topology revision for an advanced run
   --device <id>                    Choose a connected Device for an outcome command
   --map <id>                       Choose backing topology when more than one exists (advanced)
-  --lane <id>                      Saved who+where on test run, combine/plan run, interact, or device snapshot. Server resolves revision and overlay; --input-file is not needed
+  --lane <id>                      Saved who+where on test run, combine/plan run, interact, snapshot, or screenshot. Server resolves revision and overlay; --input-file is not needed
 
 Screenshot and snapshot output:
   --file <path>                    Save screenshot PNG or snapshot JSON to a file
@@ -146,9 +146,9 @@ Everyday tasks:
   Run across accounts     relay repeat <testId> --each <dimension>=<values|all>
   Run a saved Plan        relay plan run <planId> [--lane <lane>]
   Ask Relay to explore    relay explore --url <url> --goal <goal> --confirm
-  Inspect a Run           relay inspect-workflow <workflowId>
+  Inspect a Run           relay inspect <runOrWorkflowId>
   Review captured shots   relay plan capture review <batchId>
-  Export the evidence     relay export-evidence <runId>
+  Export the evidence     relay export <runId>
   Verify a change         relay prove --base <ref> [--confirm]
 
 Full command reference:
@@ -172,11 +172,11 @@ Full command reference:
     [--strategy <cartesian|zip|pairwise>] [--pilot <representative|first|dimension=value,...>]
     [--resume <untouched|failed|all>] [--map <id>] [--device <id>] [--confirm]
   relay continue-repeat <workflowId> <expectedVersion> --confirm
-  relay inspect-workflow <workflowId|legacyV1Ref>
+  relay inspect <workflowId|legacyV1Ref> | relay inspect-workflow <workflowId>
   relay cancel-run <workflowId> <expectedVersion> --confirm
   relay inspect-failure <runId>
   relay propose-repair <runId> <checkId> <accept-current|disable> <reason>
-  relay export-evidence <runId>
+  relay export <runId> | relay export-evidence <runId>
   relay replay-lab <compare|visual-localization|all> <oldest.tracepack.json> <newest.tracepack.json> [...]
   relay prove --base <ref> [--config-file <path>] [--confirm]
   relay prove <proof-id> [--wait | --no-wait]

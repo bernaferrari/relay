@@ -509,7 +509,11 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
       confirmRemaining: true,
     };
   }
-  if (verb === "inspect-workflow" && args.length === 1) {
+  // Everyday aliases: `relay inspect r_123` / `relay export r_123` map onto
+  // the same product operations as inspect-workflow / export-evidence.
+  const normalizedVerb =
+    verb === "inspect" ? "inspect-workflow" : verb === "export" ? "export-evidence" : verb;
+  if (normalizedVerb === "inspect-workflow" && args.length === 1) {
     if (args[0]!.startsWith("relay-workflow.v1.") && args[0]!.length > 96 * 1024) {
       throw new UsageError("legacy workflow reference exceeds the bounded input limit");
     }
@@ -554,7 +558,7 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
       reason: args[3]!,
     };
   }
-  if (verb === "export-evidence" && args.length === 1) {
+  if (normalizedVerb === "export-evidence" && args.length === 1) {
     return { kind: "export-evidence", runId: args[0]! };
   }
   if (verb === "replay-lab" && args.length >= 3) {

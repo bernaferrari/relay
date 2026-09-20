@@ -606,7 +606,9 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
 
   let resolved: ReturnType<typeof resolveCommand>;
   try {
-    resolved = resolveCommand(tokens.positionals, input);
+    resolved = resolveCommand(tokens.positionals, input, {
+      laneSelected: tokens.values.has("--lane"),
+    });
   } catch (error) {
     const intent = parseOutcomeCliIntent(tokens);
     if (!intent) throw error;
