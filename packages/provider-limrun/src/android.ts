@@ -98,10 +98,11 @@ export async function installLimrunAndroidApp(
   signal?.throwIfAborted();
   const packageName = normalizeOptionalString(options?.packageNameHint);
   if (options?.relaunch && packageName) {
-    await runLimrunAndroidAdb(session, ['shell', 'am', 'force-stop', packageName], {
-      allowFailure: true,
+    await session.dependencies.android.forceStopApp(
+      async (adbArgs, adbOptions) => await runLimrunAndroidAdb(session, adbArgs, adbOptions),
+      packageName,
       signal,
-    });
+    );
   }
   const asset = await awaitLimrunDeploymentOperation(
     operationDrain,
@@ -176,7 +177,7 @@ async function cleanupAndroidPortReverse(session: LimrunAndroidSession): Promise
 
 async function runLimrunAndroidAdb(
   session: LimrunAndroidAdbSession,
-  args: string[],
+  args: readonly string[],
   options?: LimrunAdbCommandOptions,
 ): Promise<LimrunAdbCommandResult> {
   const { invocation, result } = await executeLimrunAndroidAdb(session, args, options);
@@ -194,7 +195,7 @@ async function runLimrunAndroidAdb(
  */
 async function executeLimrunAndroidAdb(
   session: LimrunAndroidAdbSession,
-  args: string[],
+  args: readonly string[],
   options?: LimrunAdbCommandOptions,
 ): Promise<{ invocation: AndroidAdbInvocation; result: LimrunAdbCommandResult }> {
   const serial = await ensurePersistentAndroidAdbSerial(session);

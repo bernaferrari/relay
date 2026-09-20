@@ -153,6 +153,30 @@
   option → flag round trip and its allowlist carried nothing. Older manifests that still contain
   the field parse unchanged; the field is ignored. The adb provider `install` capability now takes
   only `replace` (#2364).
+- Changed (android, harmonyos): every `adb shell`, `adb exec-out`, and `hdc shell` command now goes
+  through one device-shell funnel that renders each argument for the quoting its transport applies
+  (#2026, #2611). The device shell re-parses the arguments it is handed, so an unquoted dynamic value
+  was a command injection: Android quoted a few sites by hand and HarmonyOS quoted none. The two
+  transports do not quote alike, which is why a caller names the transport (`'adb'` or `'hdc'`) rather
+  than choosing quoting. `adb` escapes nothing, so a word reaches the device inside whatever quotes it
+  is given. `hdc` wraps every element it forwards in double quotes, where a single quote is inert while
+  `$`, a backquote, and `"` stay live: on a nova 14, `fill` text containing `$(id)` came back as the
+  device's own `id` output and a `"` in the text ended its argument, so words on that transport are
+  escaped instead of wrapped. Four effects are visible on a device. HarmonyOS `type` and `fill` text now
+  reaches `uitest uiInput inputText` byte-identical, confirmed with a payload carrying quotes, a command
+  substitution, a pipe, and a redirection. On Android an empty argument renders as `''` rather than
+  vanishing from the command, so a command that read its own shift and its operand as two words no
+  longer misaligns; HDC drops an empty element on the way to the device and cannot carry one, so it is
+  refused with `details.reason` `hdc-empty-word-unsupported`, as is a script fragment, which could only
+  arrive there as literal text. A script body handed to `sh -c` on the adb transport arrives as one
+  argument. Custom adb executors and providers (SDK, MCP, and relay transports such as Limrun's) that
+  pass a raw `['shell', …]` or `['exec-out', …]` argv are now refused with `INVALID_ARGS` and
+  `details.reason` `unguarded-device-shell-argv`, because a command the transport is about to let the
+  device parse has to be one the funnel built. Build it with `runAndroidShell` / `runAndroidExecOut`
+  (a `DeviceInfo`) or `runAdbShell` / `runAdbExecOut` (an `AndroidAdbExecutor`), all exported from
+  `agent-device/android-adb`, and pass each dynamic value as its own word. SDK: `AndroidAdbExecutor`
+  and `AndroidAdbProvider.exec` now receive `readonly string[]`, so a custom executor annotated
+  `(args: string[])` must widen its parameter to take the command.
 - Fixed: BrowserStack sessions honour `--provider-project`, `--provider-build`, and
   `--provider-session-name`. The capability builder emitted the legacy JSON Wire keys `device`,
   `os_version`, and `app` at the top level next to the W3C `bstack:options` block; the hub treats a
