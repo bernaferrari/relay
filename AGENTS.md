@@ -154,10 +154,13 @@ bd close <id>         # Complete work
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
    git pull --rebase
-   bd dolt push
    git push
    git status  # MUST show "up to date with origin"
    ```
+   Dolt remote sync is retired (`dolt.auto-push: false`; never run `bd dolt
+   push` / `bd dolt pull` — the git-protocol dolt remote misbehaves). Beads
+   data lives in the local dolt store; run `bd backup` for a JSONL snapshot
+   in `.beads/backup/` when you want an off-machine copy.
 5. **Clean up** - Clear stashes, prune remote branches
 6. **Verify** - All changes committed AND pushed
 7. **Hand off** - Provide context for next session

@@ -53,3 +53,5 @@ no-db: true
 # - github.org
 # - github.repo
 
+
+dolt.auto-push: false
