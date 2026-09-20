@@ -2420,12 +2420,14 @@ test("scenario steps capture one result frame without recapturing their bound pa
     )?.bindingKind,
     "connections",
   );
-  const diagnostic = compiled.root.steps.find((step) => step.kind === "screenshot");
-  assert.equal(diagnostic?.kind, "screenshot");
-  if (diagnostic?.kind === "screenshot") {
-    assert.equal(diagnostic.review, undefined);
+  const authoredCapture = compiled.root.steps.find((step) => step.kind === "screenshot");
+  assert.equal(authoredCapture?.kind, "screenshot");
+  if (authoredCapture?.kind === "screenshot") {
+    // capture:true declares an expected evidence checkpoint: reviewable by
+    // declaration, distinct from capture completion.
+    assert.deepEqual(authoredCapture.review, { mode: "later", lookFor: "Open the cart" });
   }
-  assert.equal(compiled.plan.plannedSlots?.length ?? 0, 0);
+  assert.equal(compiled.plan.plannedSlots?.length ?? 0, 1);
 });
 
 test("scenario instruction paths reuse their nearest shared checkpoint", () => {

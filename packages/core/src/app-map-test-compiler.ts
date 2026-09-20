@@ -716,10 +716,15 @@ export function compileAppMapScenarioTest(
           recipeSteps.push({
             kind: "screenshot",
             caption: `step:${step.id}:${step.intent}`,
-            // Reviewed recordings produce reviewable checkpoints. Older diagnostic
-            // capture flags retain their existing evidence-only meaning.
+            // A step authored with capture:true is an expected evidence
+            // checkpoint — reviewable by declaration, whether its binding was
+            // proven by a reviewed recording commit or by a teach (both are
+            // reviewed sources; teach commits only after destination proof).
+            // Capture-completed still never means accepted; the human review
+            // decision is recorded separately on the exact evidence.
             ...(step.binding.kind === "connections" &&
-            step.binding.connectionIds.some((id) => map.connections[id]?.recordingSource)
+            (step.capture === true ||
+              step.binding.connectionIds.some((id) => map.connections[id]?.recordingSource))
               ? { review: { mode: "later" as const, lookFor: step.intent } }
               : {}),
           });
