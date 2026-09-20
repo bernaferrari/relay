@@ -1,8 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
 
 export const SEEDED_MEMBER_SESSION_COOKIE = "relay_session";
 export const SEEDED_MEMBER_SESSION_SECRET = "relay-seeded-member-fixture-secret";
@@ -317,20 +315,4 @@ export async function listenSeededMemberApp(input?: {
   });
   const address = server.address() as AddressInfo;
   return { server, port: address.port, url: `http://127.0.0.1:${address.port}/`, app };
-}
-
-if (
-  import.meta.url &&
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
-  const port = Number.parseInt(process.env.SEEDED_MEMBER_PORT ?? "8791", 10);
-  const defect = process.env.SEEDED_MEMBER_DEFECT !== "0";
-  void listenSeededMemberApp({ port, defect }).then(
-    ({ url }) => process.stderr.write(`seeded-member app listening at ${url} defect=${defect}\n`),
-    (error: unknown) => {
-      console.error(error);
-      process.exitCode = 1;
-    },
-  );
 }
