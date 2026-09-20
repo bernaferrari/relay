@@ -135,12 +135,17 @@ export function GoalPage() {
     Number.isInteger(maxDurationMinutesValue) &&
     maxDurationMinutesValue >= 1 &&
     maxDurationMinutesValue <= 15;
+  // Multiple workers cannot share one Lane: a Lane is one signed-in account,
+  // and concurrent workers through one fixture would collide on the same
+  // session. The runtime rejects this; the form states it before submission.
+  const laneSharedByWorkers = agentCount > 1 && Boolean(laneId);
   const valid =
     goal.trim().length > 0 &&
     isHttpUrl(startUrl.trim()) &&
     validAgents &&
     validBudget &&
-    confirmControl;
+    confirmControl &&
+    !laneSharedByWorkers;
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -288,9 +293,11 @@ export function GoalPage() {
                 placeholder="Choose the account context for this goal"
               />
               <FieldDescription>
-                {laneId
-                  ? `Workers inherit the ${laneId} Lane — its cookies and sign-in carry into the goal run.`
-                  : "Each worker opens a fresh isolated signed-out browser."}
+                {laneSharedByWorkers
+                  ? "Multiple workers cannot share one Lane — a Lane is one signed-in account. Use one worker, or run without a Lane for isolated signed-out workers."
+                  : laneId
+                    ? `Relay opens a fresh browser at the URL above, carrying the ${laneId} Lane's saved sign-in. It does not continue your current browser session.`
+                    : "Relay opens a fresh isolated signed-out browser at the URL above — not your current session."}
               </FieldDescription>
             </Field>
           ) : null}
@@ -308,6 +315,7 @@ export function GoalPage() {
             />
             <FieldDescription>
               Use one worker for a focused run; up to four isolated workers are supported.
+              {laneSharedByWorkers ? " Set workers to 1 to use a saved Lane." : ""}
             </FieldDescription>
           </Field>
           <details className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2">

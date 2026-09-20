@@ -132,7 +132,7 @@ test("markdown rendering is deterministic and one line per flow", () => {
     first.split("\n").filter((line) => line.startsWith("- ")),
     ["- ✅ **Login flow** · 900ms"],
   );
-  assert.match(first, /Verdict: \*\*pass\*\*/);
+  assert.match(first, /Execution and configured checks: \*\*passed\*\*/);
 });
 
 test("markdown icons distinguish verdicts", () => {
@@ -144,7 +144,7 @@ test("markdown icons distinguish verdicts", () => {
   const unprovenReport = buildProofReport({ run: run({ status: "queued" }), at: 1 });
   const markdown = renderProofReportMarkdown(unprovenReport);
   assert.match(markdown, /⚠️/);
-  assert.match(markdown, /Verdict: \*\*unproven\*\*/);
+  assert.match(markdown, /Execution: \*\*not proven\*\*/);
 });
 
 test("proof report JSON survives a parse roundtrip through its output parser", async () => {
@@ -217,11 +217,89 @@ test("review accounting rides beside the machine verdict, never into it", () => 
   assert.ok(report.captureReview);
   assert.equal(report.captureReview!.issue, 1);
   const markdown = renderProofReportMarkdown(report);
-  assert.match(markdown, /Review: 1\/1 captured · 0 accepted · 1 issues · 0 need more evidence/);
-  assert.match(markdown, /Verdict: \*\*pass\*\*/);
+  assert.match(
+    markdown,
+    /Visual review: 1\/1 captured · 0 accepted · 1 issues · 0 need more evidence/,
+  );
+  assert.match(markdown, /Execution and configured checks: \*\*passed\*\*/);
 
   // Runs without planned captures keep the previous compact shape.
   const plain = buildProofReport({ run: run({ status: "ok", outcome: "passed" }), at: 3 });
   assert.equal(plain.captureReview, undefined);
   assert.doesNotMatch(renderProofReportMarkdown(plain), /Review:/);
+});
+
+test("report fixture cases: pending review, missing capture, failure with screenshots", () => {
+  const plannedSlot = (checkpointId: string) => ({
+    kind: "app-map-test-execution-intent",
+    capturedAt: 1,
+    data: {
+      plan: { plannedSlots: [{ slotId: `s-${checkpointId}`, checkpointId, caption: "Screen" }] },
+    },
+  });
+  const capture = (checkpointId: string, frame: string) => ({
+    kind: "capture-review",
+    capturedAt: 2,
+    data: {
+      captureId: `${frame}::aaa`,
+      checkpointId,
+      framePath: frame,
+      imageSha256: "aaa",
+      caption: "Screen",
+    },
+  });
+
+  // Pending: captured, no human decision yet.
+  const pending = buildProofReport({
+    run: {
+      ...run({ status: "ok", outcome: "passed" }),
+      artifacts: [
+        plannedSlot("c1"),
+        capture("c1", "frames/001.png"),
+      ] as unknown as PersistedRun["artifacts"],
+    },
+    at: 3,
+  });
+  assert.equal(pending.captureReview?.pending, 1);
+  assert.match(renderProofReportMarkdown(pending), /1 to review/);
+
+  // Missing: the obligation is recorded as a capture-review artifact without
+  // a frame (the run-level evidence of a missed obligation) and stays counted.
+  const missingArtifact = (checkpointId: string) => ({
+    kind: "capture-review",
+    capturedAt: 2,
+    data: { captureId: `missing:${checkpointId}`, checkpointId, caption: "Screen" },
+  });
+  const missing = buildProofReport({
+    run: {
+      ...run({ status: "ok", outcome: "passed" }),
+      artifacts: [
+        plannedSlot("c1"),
+        plannedSlot("c2"),
+        capture("c1", "frames/001.png"),
+        missingArtifact("c2"),
+      ] as unknown as PersistedRun["artifacts"],
+    },
+    at: 3,
+  });
+  assert.equal(missing.captureReview?.missing, 1);
+  assert.equal(missing.captureReview?.captured, 1);
+  assert.match(renderProofReportMarkdown(missing), /1\/2 captured/);
+
+  // Runtime failure with screenshots available: the machine verdict fails and
+  // the captured evidence still rides beside it.
+  const failed = buildProofReport({
+    run: {
+      ...run({ status: "error", outcome: "product-failure", error: "element not found" }),
+      artifacts: [
+        plannedSlot("c1"),
+        capture("c1", "frames/001.png"),
+      ] as unknown as PersistedRun["artifacts"],
+    },
+    at: 3,
+  });
+  assert.equal(failed.verdict, "fail");
+  assert.equal(failed.captureReview?.captured, 1);
+  assert.match(renderProofReportMarkdown(failed), /\*\*failed\*\*/);
+  assert.match(renderProofReportMarkdown(failed), /Visual review:/);
 });

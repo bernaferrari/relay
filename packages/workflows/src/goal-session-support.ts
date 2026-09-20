@@ -503,6 +503,92 @@ export function stop(
   return appendFinding(next, findingForStop(next, code, message, at));
 }
 
+type GoalLaneAccountResolution = {
+  readonly laneId: string;
+  /** Bound browser for a fixture Lane: the fixture lives on this target's
+   * profile, so the goal must attach here rather than mint a fresh browser. */
+  readonly boundBrowserTargetId?: string;
+  readonly fixtureReference?: string;
+  readonly signedOut?: boolean;
+};
+
+/** Resolve a saved Lane into the context a goal may actually run in.
+ *
+ * A Lane is a bound who-and-where, not a portable account label:
+ * - A fixture Lane's sign-in lives on its bound browser profile; a fresh
+ *   ephemeral browser cannot carry it. The goal attaches to the Lane's
+ *   authorized target, and the goal URL must agree with that target's app
+ *   origin — silently opening a different app as this account would be the
+ *   wrong-account bug, not convenience.
+ * - A signed-out (or account-less) Lane defines no sign-in to preserve, so a
+ *   fresh clean browser at the goal URL honors it exactly.
+ * - Device Lanes cannot host URL goals; their target is the Lane. */
+async function resolveGoalLaneAccount(
+  operations: RelayOperationPort,
+  laneId: string,
+  input: GoalSessionStartInput,
+): Promise<GoalLaneAccountResolution> {
+  const listed = await operations.invoke("lane.list", {});
+  const lane = listed.lanes.find((candidate) => candidate.id === laneId);
+  if (!lane) {
+    throw new TypeError(`Lane ${laneId} is not saved in this workspace.`);
+  }
+  if (lane.target.kind !== "browser") {
+    throw new TypeError(
+      `Lane ${laneId} is bound to a connected device; run this goal on that device instead of a URL.`,
+    );
+  }
+  if (lane.account?.kind === "fixture") {
+    const fixtureReference =
+      lane.account.reference ?? `authfx:${lane.account.accountId}:${lane.account.accountRevision}`;
+    if (
+      input.authenticationFixtureReference &&
+      input.authenticationFixtureReference !== fixtureReference
+    ) {
+      throw new TypeError(
+        `Lane ${laneId} carries its own account fixture; remove the conflicting fixture or choose a different Lane.`,
+      );
+    }
+    return { laneId, boundBrowserTargetId: lane.target.browserTargetId, fixtureReference };
+  }
+  if (lane.account?.kind === "signed-out") {
+    if (input.authenticationFixtureReference) {
+      throw new TypeError(
+        `Lane ${laneId} is attested signed out; remove the fixture or choose a different Lane.`,
+      );
+    }
+    return { laneId, signedOut: true };
+  }
+  // Lane without an account binding: a clean signed-out goal context is the
+  // only interpretation that cannot contradict the saved configuration.
+  return { laneId, signedOut: true };
+}
+
+/** A fixture Lane may only attach where its account already lives. The goal
+ * URL and the Lane's bound browser must point at the same application
+ * origin; anything else is an unvalidated account on a foreign app. */
+function assertLaneTargetServesUrl(
+  lane: GoalLaneAccountResolution & { boundBrowserTargetId: string },
+  laneTargetStartUrl: string | undefined,
+  goalUrl: string,
+): void {
+  if (!laneTargetStartUrl) return;
+  let laneOrigin: string;
+  let goalOrigin: string;
+  try {
+    laneOrigin = new URL(laneTargetStartUrl).origin;
+    goalOrigin = new URL(goalUrl).origin;
+  } catch {
+    return;
+  }
+  if (laneOrigin !== goalOrigin) {
+    throw new TypeError(
+      `Lane ${lane.laneId} is bound to ${lane.boundBrowserTargetId} (${laneOrigin}); this goal targets ${goalOrigin}. Ask on that app's Lane, or run without a Lane for a fresh signed-out context.`,
+    );
+  }
+}
+
+
 export async function resolveTarget(
   operations: RelayOperationPort,
   input: GoalSessionStartInput,
@@ -521,6 +607,44 @@ export async function resolveTarget(
   }
   if (!input.startUrl && !input.targetId) {
     throw new TypeError("A goal session needs startUrl or targetId.");
+  }
+  // A URL goal with a saved Lane is "run as this Lane's account, on this
+  // app". Resolve the Lane up front: fixture Lanes attach to their bound
+  // browser (the fixture lives on that profile, and its app origin must match
+  // the goal URL); account-less Lanes permit a fresh clean browser at the URL.
+  let laneAccount: GoalLaneAccountResolution | undefined;
+  if (input.laneId) {
+    laneAccount = await resolveGoalLaneAccount(operations, input.laneId, input);
+  }
+  if (input.startUrl && laneAccount?.boundBrowserTargetId) {
+    const boundLane: GoalLaneAccountResolution & { boundBrowserTargetId: string } = {
+      ...laneAccount,
+      boundBrowserTargetId: laneAccount.boundBrowserTargetId,
+    };
+    let goalUrl: URL;
+    try {
+      goalUrl = new URL(input.startUrl);
+    } catch {
+      throw new TypeError("startUrl must be an absolute URL.");
+    }
+    const registered = await operations.invoke("target.list", {});
+    const laneTarget = registered.targets.find(
+      (target) => target.id === boundLane.boundBrowserTargetId,
+    );
+    assertLaneTargetServesUrl(boundLane, laneTarget?.browser?.startUrl, goalUrl.toString());
+    // Attach to the Lane's authorized target. This is the existing-target
+    // path: the fixture is available on this browser, and the session the
+    // goal drives is the Lane's own.
+    return resolveTarget(
+      operations,
+      {
+        ...input,
+        startUrl: undefined,
+        targetId: boundLane.boundBrowserTargetId,
+        authenticationFixtureReference: boundLane.fixtureReference,
+      },
+      sessionId,
+    );
   }
   if (input.startUrl) {
     let url: URL;
@@ -545,9 +669,11 @@ export async function resolveTarget(
     }
     const opened = await operations.invoke("target.open", {
       targetId,
-      ...(input.laneId ? { laneId: input.laneId } : {}),
-      ...(input.authenticationFixtureReference
-        ? { authenticationFixtureReference: input.authenticationFixtureReference }
+      // The Lane's account defines who this goal runs as; the goal URL
+      // defines where it starts. No laneId on the open — the fresh goal
+      // browser is not the Lane's bound target.
+      ...(laneAccount?.fixtureReference
+        ? { authenticationFixtureReference: laneAccount.fixtureReference }
         : { signedOut: true }),
       presentation: "embedded",
     });
@@ -562,8 +688,8 @@ export async function resolveTarget(
         platform: targetPlatform("browser"),
         startUrl: url.toString(),
         ...(input.laneId ? { laneId: input.laneId } : {}),
-        ...(input.authenticationFixtureReference
-          ? { authenticationFixtureReference: input.authenticationFixtureReference }
+        ...(laneAccount?.fixtureReference
+          ? { authenticationFixtureReference: laneAccount.fixtureReference }
           : { signedOut: true as const }),
         ...(runtimeSessionId ? { runtimeSessionId } : {}),
         ...(opened.session.configurationDigest

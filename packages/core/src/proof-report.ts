@@ -125,16 +125,24 @@ export function renderProofReportMarkdown(report: ProofReport): string {
     return `- ${parts.join(" · ")}`;
   });
   lines.push("");
-  lines.push(
-    `Verdict: **${report.verdict}** (${report.flows.length} flow${report.flows.length === 1 ? "" : "s"})`,
-  );
+  // The headline names which verdict it is. "Verdict: pass" read as broad
+  // acceptance even while unresolved human issues sat beneath it; the machine
+  // field stays on the JSON for compatibility, the rendered label is honest.
+  const flows = `${report.flows.length} flow${report.flows.length === 1 ? "" : "s"}`;
+  if (report.verdict === "pass") {
+    lines.push(`Execution and configured checks: **passed** (${flows})`);
+  } else if (report.verdict === "fail") {
+    lines.push(`Execution and configured checks: **failed** (${flows})`);
+  } else {
+    lines.push(`Execution: **not proven** (${flows}) — Relay could not execute`);
+  }
   // The review line reports human decisions beside the machine verdict;
   if (report.captureReview) {
     const s = report.captureReview;
     const planned = s.captured + s.missing;
     lines.push("");
     lines.push(
-      `Review: ${s.captured}/${planned} captured · ${s.accepted} accepted · ${s.issue} issues · ${s.needMoreEvidence} need more evidence · ${s.pending} to review`,
+      `Visual review: ${s.captured}/${planned} captured · ${s.accepted} accepted · ${s.issue} issues · ${s.needMoreEvidence} need more evidence · ${s.pending} to review`,
     );
   }
   return `${lines.join("\n")}\n`;

@@ -557,7 +557,7 @@ export function NewTestPage() {
                           }
                         >
                           <Compass aria-hidden="true" />
-                          Ask Relay
+                          Ask Relay to explore this page
                         </Button>
                       ) : null}
                       {previewIssue ? (
