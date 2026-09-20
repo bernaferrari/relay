@@ -1,4 +1,4 @@
-import { A as SnapshotCommandOptionFields, B as DaemonError, I as SnapshotUnchanged, L as SnapshotVisibility, P as SnapshotQualityVerdict, S as DeviceTarget, T as PublicPlatform, V as NormalizedError, _ as SessionIsolationMode, a as DaemonRequest, f as LeaseBackend, g as ResponseLevel, i as DaemonLockPolicy, j as SnapshotNode, m as NetworkIncludeMode, o as DaemonResponse, r as DaemonInstallSource, s as DaemonResponseData, t as DaemonArtifact, v as SessionRuntimeHints, w as PlatformSelector, x as DeviceKind, y as AppleOS } from "./sdk-contracts.js";
+import { E as IosTargetActivation, H as DaemonError, I as SnapshotQualityVerdict, M as SnapshotKeyboardBandFact, N as SnapshotNode, R as SnapshotUnchanged, S as DeviceTarget, T as PublicPlatform, U as NormalizedError, _ as SessionIsolationMode, a as DaemonRequest, f as LeaseBackend, g as ResponseLevel, i as DaemonLockPolicy, j as SnapshotCommandOptionFields, m as NetworkIncludeMode, o as DaemonResponse, r as DaemonInstallSource, s as DaemonResponseData, t as DaemonArtifact, v as SessionRuntimeHints, w as PlatformSelector, x as DeviceKind, y as AppleOS, z as SnapshotVisibility } from "./sdk-contracts.js";
 import { t as AppsFilter } from "./app-inventory.js";
 import { B as FindLocator, C as MACOS_PERMISSION_TARGETS, D as BackMode, E as PermissionMode, F as SwipePattern, H as SnapshotDiagnosticsSummary, I as SwipePreset, L as TransformGestureParams, N as ScrollDirection, O as GesturePointerCount, P as ScrollInputDirection, R as ClickButton, S as DeviceRotation, T as PermissionAction, U as SessionSurface, V as ScreenshotResultData, _ as HoverCommandResponseData, b as SettleObservation, g as FindCommandResponseData, h as FillCommandResponseData, m as ClickCommandResponseData, p as ScrollCommandResult, v as LongPressCommandResponseData, w as MOBILE_PERMISSION_TARGETS, x as TvRemoteButton, y as PressCommandResponseData, z as AndroidSnapshotBackendMetadata } from "./sdk-selectors.js";
 import { a as RemoteConnectionProfileFields, c as MetroPrepareResult, i as CloudProviderProfileFields, l as MetroReloadOptions, s as MetroPrepareOptions, u as MetroReloadResult } from "./sdk-remote-config.js";
@@ -195,6 +195,14 @@ type AppOpenOptions = AgentDeviceRequestOverrides & AgentDeviceSelectionOptions 
   /** Startup budget in milliseconds: bounds the Simulator boot wait on a cold device. */
   timeoutMs?: number;
   /**
+   * Block this open for up to n milliseconds (100-120000) while another session holds the device,
+   * then fail with DEVICE_IN_USE naming that session. Only session contention is waited for: a
+   * device claim held by another workspace is refused at once with its recovery command. A device
+   * that never frees, or is taken again while this open waits, costs the full budget, which
+   * extends this command's timeout envelope rather than eating into it.
+   */
+  waitMs?: number;
+  /**
    * Include an initial interactive snapshot in a fresh open response. With no
    * app argument, discover the sole running app on the sole booted iOS
    * simulator; ambiguous environments fail closed.
@@ -313,8 +321,10 @@ type SnapshotCaptureAnnotations = {
   freshness?: SnapshotCaptureFreshness;
   quality?: SnapshotQualityVerdict;
   warnings?: string[];
+  /** The Apple runner re-activated the session app while serving this capture (#2682). */
+  targetActivation?: IosTargetActivation;
 };
-type PublicSnapshotCaptureAnnotations = Pick<SnapshotCaptureAnnotations, 'androidSnapshot' | 'warnings'> & {
+type PublicSnapshotCaptureAnnotations = Pick<SnapshotCaptureAnnotations, 'androidSnapshot' | 'warnings' | 'targetActivation'> & {
   snapshotQuality?: SnapshotQualityVerdict;
 };
 //#endregion
@@ -348,6 +358,13 @@ type CaptureSnapshotResult = {
   visibility?: SnapshotVisibility;
   unchanged?: SnapshotUnchanged;
   snapshotDiagnostics?: SnapshotDiagnosticsSummary;
+  /**
+   * The keyboard band this capture's producer measured (#2660), in the same orientation space as the
+   * node rects. The acting commands read it off the session state they act with; it is published so a
+   * caller can see the band a `tap_keyboard_occludes_target` refusal measured against. Absent means
+   * the producer measured no band and the tap guard derived one from the tree.
+   */
+  keyboard?: SnapshotKeyboardBandFact;
   /**
    * Screenshot captured automatically when the semantic snapshot was sparse.
    * Remote clients receive a materialized local path through the daemon artifact channel.
@@ -998,6 +1015,7 @@ type OrientationCommandOptions = DeviceCommandBaseOptions & {
   orientation: DeviceRotation;
 };
 type AppSwitcherCommandOptions = DeviceCommandBaseOptions;
+type ActionButtonCommandOptions = DeviceCommandBaseOptions;
 type TvRemoteCommandOptions = DeviceCommandBaseOptions & {
   button: TvRemoteButton;
   durationMs?: number;
@@ -1325,6 +1343,16 @@ type AppSwitcherCommandResult = {
   action: 'app-switcher';
   message: string;
 };
+/**
+ * `action-button` — `{ action: 'action-button', message: 'Pressed Action Button' }`.
+ *
+ * Deliberately narrower than `tv-remote`: `XCUIDevice.press(.action)` takes no hold duration, so
+ * there is no `durationMs` to report and no button to name.
+ */
+type ActionButtonCommandResult = {
+  action: 'action-button';
+  message: string;
+};
 /** `tv-remote` — `{ action: 'tv-remote', button, durationMs?, message }`. */
 type TvRemoteCommandResult = {
   action: 'tv-remote';
@@ -1538,6 +1566,7 @@ type TraceCommandResult = {
  * re-read of the handler's literal return; see the per-type docstrings.
  */
 interface CommandResultMap {
+  'action-button': ActionButtonCommandResult;
   'app-switcher': AppSwitcherCommandResult;
   appstate: AppStateCommandResult;
   back: BackCommandResult;
@@ -1582,6 +1611,7 @@ type AgentDeviceCommandClient = {
   home: (options?: HomeCommandOptions) => Promise<CommandResult<'home'>>;
   orientation: (options: OrientationCommandOptions) => Promise<CommandResult<'orientation'>>;
   appSwitcher: (options?: AppSwitcherCommandOptions) => Promise<CommandResult<'app-switcher'>>;
+  actionButton: (options?: ActionButtonCommandOptions) => Promise<CommandResult<'action-button'>>;
   tvRemote: (options: TvRemoteCommandOptions) => Promise<CommandResult<'tv-remote'>>;
   wait: (options: WaitCommandOptions) => Promise<CommandResult<'wait'>>;
   alert: (options?: AlertCommandOptions) => Promise<CommandRequestResult>;

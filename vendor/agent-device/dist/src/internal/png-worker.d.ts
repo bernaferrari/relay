@@ -41,7 +41,10 @@ type PngWorkerJobResult = {
   kind: 'rgb-difference';
 } & PngRgbDifferenceResult) | ({
   kind: 'diff-pixels';
-} & ScreenshotDiffPixelsResult);
+} & ScreenshotDiffPixelsResult) | {
+  kind: 'jpeg-to-png';
+  png: Uint8Array;
+};
 //#endregion
 //#region packages/capture-kit/src/png-worker.d.ts
 /**

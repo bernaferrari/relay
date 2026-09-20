@@ -1,2 +1,5 @@
-import{n as e,t}from"./success-text.js";function n(e){return({result:t})=>e(t)}const r=n(i);function i(e){return{data:e,text:t(e)}}function a(n){let r=t(n),i=e(n);return i.length===0?r:[r,...i.map(e=>`Warning: ${o(e)}`)].filter(Boolean).join(`
-`)}function o(e){return e.replaceAll(/\s*\n\s*/g,` `)}const s=n(e=>({data:e,text:a(e)}));function c(e,t){if(typeof e==`string`&&e.length!==0&&typeof t==`number`)return`@${e.startsWith(`@`)?e.slice(1):e}~s${t}`}export{c as a,s as i,i as n,n as o,r,o as t};
+import{n as e,t}from"./success-text.js";function n(e){return({result:t})=>e(t)}const r=n(i);function i(e){return{data:e,text:t(e)}}function a(t){return[...typeof t.warning==`string`&&t.warning.trim()!==``?[t.warning]:[],...e(t)].map(e=>c(e)).filter(e=>e.length>0)}function o(e,t){let n=e??``,r=a(t).filter(e=>!n.includes(e)).map(e=>`Warning: ${e}`);return r.length===0?e??null:[...n===``?[]:[n],...r].join(`
+`)}function s(e,t,n){let r=t??{};if(n===`text`)return{...e,text:o(e.text,r)};let i=`${e.text??``}\n${e.stderr??``}`,s=a(r).filter(e=>!i.includes(e)).map(e=>`Warning: ${e}`);if(s.length===0)return e;let c=e.stderr??``;return{...e,stderr:`${c}${c===``||c.endsWith(`
+`)?``:`
+`}${s.join(`
+`)}\n`}}function c(e){return e.replaceAll(/\s*\n\s*/g,` `)}function l(e,t){if(typeof e==`string`&&e.length!==0&&typeof t==`number`)return`@${e.startsWith(`@`)?e.slice(1):e}~s${t}`}export{n as a,l as i,i as n,s as o,r,c as t};

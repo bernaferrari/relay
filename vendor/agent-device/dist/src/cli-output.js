@@ -1,1 +1,1 @@
-import{t as e}from"./registry.js";const t=e();async function n(e){return await t[e.name]?.({input:e.input??{},result:e.result,progress:e.progress})}export{n as t};
+import{o as e,t}from"./registry.js";import{o as n}from"./output-common.js";const r=t(),i=new Set(e().filter(e=>e.parseableOutput===!0).map(e=>e.name));async function a(e){let t=await r[e.name]?.({input:e.input??{},result:e.result,progress:e.progress});if(t!==void 0)return n(t,e.result,i.has(e.name)?`stderr`:`text`)}function o(e){return i.has(e)}export{o as n,a as t};

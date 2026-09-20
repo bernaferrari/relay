@@ -1,4 +1,4 @@
-import { O as Rect } from "./sdk-contracts.js";
+import { k as Rect } from "./sdk-contracts.js";
 import { A as PointerTrajectory, M as SinglePointerGesturePlan, j as PointerTrajectorySample, k as MultiTouchGesturePlan } from "./sdk-selectors.js";
 import { Readable, Stream, Writable } from "node:stream";
 //#region packages/platform-android/src/helper-artifacts.d.ts
@@ -114,8 +114,8 @@ type AndroidAdbProcess = {
  * Runs device-scoped adb arguments after the device serial has already been selected.
  * Implementations must be safe to call concurrently for one request.
  */
-type AndroidAdbExecutor = (args: string[], options?: AndroidAdbExecutorOptions) => Promise<AndroidAdbExecutorResult>;
-type AndroidAdbSpawner = (args: string[], options?: AndroidAdbSpawnOptions) => AndroidAdbProcess;
+type AndroidAdbExecutor = (args: readonly string[], options?: AndroidAdbExecutorOptions) => Promise<AndroidAdbExecutorResult>;
+type AndroidAdbSpawner = (args: readonly string[], options?: AndroidAdbSpawnOptions) => AndroidAdbProcess;
 type AndroidPortReverseEndpoint = `tcp:${number}` | `localabstract:${string}`;
 type AndroidPortReverseMapping = {
   local: AndroidPortReverseEndpoint;
@@ -211,4 +211,4 @@ declare function dismissAndroidKeyboardWithAdb(adb: AndroidAdbExecutor): Promise
 declare function readAndroidClipboardWithAdb(adb: AndroidAdbExecutor): Promise<string>;
 declare function writeAndroidClipboardWithAdb(adb: AndroidAdbExecutor, text: string): Promise<void>;
 //#endregion
-export { readAndroidClipboardWithAdb as a, AndroidAdbExecutor as c, AndroidPortReverseEndpoint as d, AndroidPortReverseProvider as f, getAndroidKeyboardStatusWithAdb as i, AndroidAdbExecutorOptions as l, AndroidKeyboardState as n, writeAndroidClipboardWithAdb as o, dismissAndroidKeyboardWithAdb as r, AndroidInputOwner as s, AndroidKeyboardDismissResult as t, AndroidAdbProvider as u };
+export { readAndroidClipboardWithAdb as a, AndroidAdbExecutor as c, AndroidAdbProvider as d, AndroidPortReverseEndpoint as f, getAndroidKeyboardStatusWithAdb as i, AndroidAdbExecutorOptions as l, AndroidKeyboardState as n, writeAndroidClipboardWithAdb as o, AndroidPortReverseProvider as p, dismissAndroidKeyboardWithAdb as r, AndroidInputOwner as s, AndroidKeyboardDismissResult as t, AndroidAdbExecutorResult as u };

@@ -1,1 +1,1 @@
-import{t as e}from"./simctl.js";export{e as buildSimctlArgsForDevice};
+import{t as e}from"./simctl.js";async function t(t,n,r={}){let{appleSimulatorDisplayArgvFragment:i,resolveAppleCaptureDisplay:a}=await import(`./display-inventory.js`).then(e=>e.n),o=await a(t,r);return e(t,[`io`,t.id,`recordVideo`,...i(o),n])}export{t as buildAppleSimulatorRecordVideoArgs,e as buildSimctlArgsForDevice};

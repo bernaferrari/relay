@@ -286,6 +286,42 @@ type RawSnapshotNode = {
    */
   actions?: string[];
 };
+/**
+ * What a capture's producer can say about the software keyboard on screen, measured while the tree
+ * was captured rather than rebuilt from it afterwards.
+ *
+ * A keyboard is its own system surface, so it never reaches the tree as a covering sibling of app
+ * content, and a consumer that wants to refuse a tap behind it has to learn where it is from
+ * somewhere (#2589). A producer that can measure the band directly — the Apple runner, from its
+ * `app.keyboards` query — publishes one fact per capture and says nothing else about it. A consumer therefore gets three
+ * answers and no fourth: a band in the same space as every node rect, a proven absence, or a
+ * producer that could not look.
+ *
+ * A producer that publishes nothing has declared nothing, so absence from a result means the same
+ * thing as `unmeasurable` — which is why the field stays optional on every carrier, including the
+ * three client-side paths that rebuild a state from a bare backend result (#2199). Those consumers
+ * then derive the band from the tree they hold: the rule that stays for the producers that publish
+ * no fact (#2660).
+ */
+type SnapshotKeyboardBandFact =
+/** The band the keyboard occupies, in the same orientation space as this capture's node rects. */
+{
+  kind: 'visible';
+  frame: Rect;
+} |
+/** The producer looked for the keyboard and found none. */
+{
+  kind: 'absent';
+} |
+/**
+ * The producer cannot measure the band on this path, with a stable reason code. Typed rather than
+ * inferred from absence so a log says which path failed to measure without the consumer having to
+ * guess which producer it was talking to.
+ */
+{
+  kind: 'unmeasurable';
+  reason: string;
+};
 type SnapshotNode = RawSnapshotNode & {
   ref: string;
   /**
@@ -347,6 +383,32 @@ type SnapshotStateProvenance = OptionalProducerProvenance<SnapshotProvenance> | 
   backend?: undefined;
   producer?: undefined;
 };
+/**
+ * Reasons the Apple runner can stamp when serving a command required re-activating the session app
+ * (#2682). Mirrors its `activateTarget(bundleId:reason:)` call sites.
+ */
+declare const IOS_TARGET_ACTIVATION_REASONS: readonly ['bundle_changed', 'stale_target', 'missing_after_wait', 'interaction_foreground_guard'];
+type IosTargetActivationReason = (typeof IOS_TARGET_ACTIVATION_REASONS)[number];
+/**
+ * States an activation could have been needed for, in `XCApplicationState` raw order.
+ * `runningForeground` is excluded because the runner skips `activate()` when the app is already
+ * foreground and never stamps a fact there.
+ */
+declare const IOS_TARGET_ACTIVATION_PRIOR_STATES: readonly ['unknown', 'notRunning', 'runningBackground', 'runningBackgroundSuspended'];
+type IosTargetActivationPriorState = (typeof IOS_TARGET_ACTIVATION_PRIOR_STATES)[number];
+/**
+ * Foreground repair the Apple runner performed while serving one command (#2682). `priorState` is
+ * the session app's state BEFORE the runner activated it, so the fact describes what was repaired
+ * rather than what the repair produced. `otherActiveApplicationPid` is present only when exactly one
+ * application other than the session app held an active accessibility session at that moment: a
+ * liveness claim and nothing more, since the private AX client reports no ordering of
+ * `activeApplications`, resolves pids only, and answers no bundle id for an arbitrary app.
+ */
+type IosTargetActivation = Readonly<{
+  reason: IosTargetActivationReason;
+  priorState: IosTargetActivationPriorState;
+  otherActiveApplicationPid?: number;
+}>;
 type SnapshotState = {
   nodes: SnapshotNode[];
   createdAt: number;
@@ -368,6 +430,19 @@ type SnapshotState = {
    * must never be compared as the same presentation; consumers that surface the tree disclose it.
    */
   iosSystemSurfaceBundleId?: string;
+  /**
+   * iOS: the keyboard band this capture's producer measured, when it measured one. The tap-path
+   * keyboard guard prefers this over the band it would otherwise derive from `nodes`, because a
+   * producer that can query the keyboard directly answers in the app's own orientation space and
+   * needs no geometry to be plausible (#2660). Absent means the guard measures the tree as before.
+   */
+  keyboard?: SnapshotKeyboardBandFact;
+  /**
+   * iOS: this capture's own command found the session app out of foreground and the runner
+   * activated it before answering, so an earlier observation in the session described whatever held
+   * the foreground instead (#2682). Consumers that surface this tree disclose the repair.
+   */
+  targetActivation?: IosTargetActivation;
 } & SnapshotStateProvenance;
 type SnapshotUnchanged = {
   ageMs: number;
@@ -533,4 +608,4 @@ type JsonRpcRequestEnvelope<TParams = unknown> = {
   params?: TParams;
 };
 //#endregion
-export { SnapshotCommandOptionFields as A, DaemonError as B, Platform as C, RawSnapshotNode as D, Point as E, SnapshotState as F, normalizeError as G, defaultHintForCode as H, SnapshotUnchanged as I, SnapshotVisibility as L, SnapshotOptions as M, SnapshotProvenance as N, Rect as O, SnapshotQualityVerdict as P, centerOfRect as R, DeviceTarget as S, PublicPlatform as T, isAgentDeviceError as U, NormalizedError as V, normalizeAgentDeviceError as W, SessionIsolationMode as _, DaemonRequest as a, DeviceInfo as b, DaemonServerMode as c, JsonRpcRequestEnvelope as d, LeaseBackend as f, ResponseLevel as g, ResponseCost as h, DaemonLockPolicy as i, SnapshotNode as j, ScreenshotOverlayRef as k, DaemonTransportPreference as l, NetworkIncludeMode as m, DaemonArtifactType as n, DaemonResponse as o, LocalInstallSource as p, DaemonInstallSource as r, DaemonResponseData as s, DaemonArtifact as t, JsonRpcId as u, SessionRuntimeHints as v, PlatformSelector as w, DeviceKind as x, AppleOS as y, AppError as z };
+export { ScreenshotOverlayRef as A, centerOfRect as B, Platform as C, Point as D, IosTargetActivation as E, SnapshotProvenance as F, isAgentDeviceError as G, DaemonError as H, SnapshotQualityVerdict as I, normalizeAgentDeviceError as K, SnapshotState as L, SnapshotKeyboardBandFact as M, SnapshotNode as N, RawSnapshotNode as O, SnapshotOptions as P, SnapshotUnchanged as R, DeviceTarget as S, PublicPlatform as T, NormalizedError as U, AppError as V, defaultHintForCode as W, SessionIsolationMode as _, DaemonRequest as a, DeviceInfo as b, DaemonServerMode as c, JsonRpcRequestEnvelope as d, LeaseBackend as f, ResponseLevel as g, ResponseCost as h, DaemonLockPolicy as i, SnapshotCommandOptionFields as j, Rect as k, DaemonTransportPreference as l, NetworkIncludeMode as m, DaemonArtifactType as n, DaemonResponse as o, LocalInstallSource as p, normalizeError as q, DaemonInstallSource as r, DaemonResponseData as s, DaemonArtifact as t, JsonRpcId as u, SessionRuntimeHints as v, PlatformSelector as w, DeviceKind as x, AppleOS as y, SnapshotVisibility as z };

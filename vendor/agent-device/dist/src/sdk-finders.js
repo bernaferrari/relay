@@ -1,1 +1,1 @@
-import{jn as e}from"./sdk-batch.js";function t(t,n,r,i){return e(t,n,r,typeof i==`boolean`?{requireRect:i}:i)}export{t};
+import{Mn as e}from"./sdk-batch.js";function t(t,n,r,i){return e(t,n,r,typeof i==`boolean`?{requireRect:i}:i)}export{t};

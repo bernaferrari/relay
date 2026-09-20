@@ -74,6 +74,7 @@ const RUNNER_TRANSPORT_METHODS: Record<
   home: { invoke: (i) => i.home(), runnerCommand: 'home' },
   setOrientation: { invoke: (i) => i.setOrientation('portrait'), runnerCommand: 'rotate' },
   appSwitcher: { invoke: (i) => i.appSwitcher(), runnerCommand: 'appSwitcher' },
+  actionButton: { invoke: (i) => i.actionButton(), runnerCommand: 'actionButton' },
   tvRemote: { invoke: (i) => i.tvRemote('select'), runnerCommand: 'remotePress' },
   // Relay fork: the atomic field transactions ride one runner command each. They exist only on
   // a physical iOS device, so the routing test below builds them on IOS_DEVICE.

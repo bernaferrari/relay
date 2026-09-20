@@ -42,6 +42,7 @@ const EXPECTATIONS: {
     input: { selector: { key: 'id', value: 'field' } },
   },
   appSwitcher: { method: 'appSwitcher', input: {} },
+  actionButton: { method: 'actionButton', input: {} },
   triggerAppEvent: { method: 'open', input: { eventUrl: 'myapp://x' } },
   setSetting: {
     method: 'setSetting',

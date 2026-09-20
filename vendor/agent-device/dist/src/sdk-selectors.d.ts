@@ -1,4 +1,4 @@
-import { C as Platform, D as RawSnapshotNode, E as Point, F as SnapshotState, M as SnapshotOptions$1, N as SnapshotProvenance, O as Rect, P as SnapshotQualityVerdict, T as PublicPlatform, h as ResponseCost, j as SnapshotNode, k as ScreenshotOverlayRef } from "./sdk-contracts.js";
+import { A as ScreenshotOverlayRef, C as Platform, D as Point, E as IosTargetActivation, F as SnapshotProvenance, I as SnapshotQualityVerdict, L as SnapshotState, M as SnapshotKeyboardBandFact, N as SnapshotNode, O as RawSnapshotNode, P as SnapshotOptions$1, T as PublicPlatform, h as ResponseCost, k as Rect } from "./sdk-contracts.js";
 //#region packages/contracts/src/session-surface.d.ts
 declare const SESSION_SURFACES: readonly ['app', 'frontmost-app', 'desktop', 'menubar'];
 type SessionSurface = (typeof SESSION_SURFACES)[number];
@@ -810,6 +810,17 @@ type SnapshotResult = Omit<BackendSnapshotResult, 'backend' | 'nodes'> & {
    * over the session app rather than the app itself (#2438).
    */
   systemSurface?: IosSystemSurfaceProvenance;
+  /**
+   * The keyboard band the producer measured while capturing, when it can measure one (#2660). A
+   * producer that publishes nothing measured nothing, so the tap-path guard keeps deriving the band
+   * from `nodes`; see {@link SnapshotKeyboardBandFact}.
+   */
+  keyboard?: SnapshotKeyboardBandFact;
+  /**
+   * Set when this capture's own command had to bring the session app back to the foreground, i.e.
+   * something else held it and an earlier observation described that instead (#2682).
+   */
+  targetActivation?: IosTargetActivation;
 } & SnapshotProvenance;
 type SnapshotRuntimeAcquiredResult = Readonly<{
   stage: 'acquired';
@@ -893,6 +904,12 @@ type Interactor = {
   performGesture?(plan: GesturePlan): Promise<Record<string, unknown> | void>;
   appSwitcher(): Promise<void>;
   tvRemote(button: TvRemoteButton, durationMs?: number): Promise<void>;
+  /**
+   * Presses the iPhone Action Button. Required rather than optional for the same reason `tvRemote`
+   * is: an absent member would let an advertised press resolve as a no-op that reports success.
+   * Owners without the button throw `UNSUPPORTED_OPERATION`.
+   */
+  actionButton(): Promise<void>;
   /** Optional: only Android implements a live status read (see {@link KeyboardStatusResult}). */
   keyboardStatus?(): Promise<KeyboardStatusResult>;
   /** Optional: platforms with no keyboard-dismiss concept leave it undefined. */

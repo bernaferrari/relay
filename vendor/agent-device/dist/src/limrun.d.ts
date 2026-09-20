@@ -2,7 +2,7 @@ import { S as DeviceTarget, b as DeviceInfo, f as LeaseBackend, w as PlatformSel
 import { t as AppsFilter } from "./app-inventory.js";
 import { d as Interactor, f as RunnerContext } from "./sdk-selectors.js";
 import { n as CloudArtifactProvider } from "./cloud-artifacts.js";
-import { n as AndroidKeyboardState, s as AndroidInputOwner, t as AndroidKeyboardDismissResult, u as AndroidAdbProvider } from "./device-input-state.js";
+import { d as AndroidAdbProvider, n as AndroidKeyboardState, s as AndroidInputOwner, t as AndroidKeyboardDismissResult } from "./device-input-state.js";
 //#region packages/contracts/src/device-inventory.d.ts
 type DeviceInventoryRequest = {
   platform?: PlatformSelector;
@@ -114,7 +114,7 @@ type LimrunAdbCommandResult = {
   stderr: string;
   stdoutBuffer?: Buffer;
 };
-type LimrunAdbExecutor = (args: string[], options?: LimrunAdbCommandOptions) => Promise<LimrunAdbCommandResult>;
+type LimrunAdbExecutor = (args: readonly string[], options?: LimrunAdbCommandOptions) => Promise<LimrunAdbCommandResult>;
 type LimrunPortReverseEndpoint = `tcp:${number}` | `localabstract:${string}`;
 type LimrunPortReverseMapping = {
   local: LimrunPortReverseEndpoint;
@@ -204,9 +204,15 @@ type LimrunDeviceSessionBase = {
   startRecording(options?: {
     quality?: LimrunRecordingQuality;
   }): Promise<void>;
-  stopRecording(options: {
+  /** Stops the instance recorder and answers where the finished file is served; nothing is downloaded. */
+  stopRecording(): Promise<{
+    downloadUrl: string;
+  }>;
+  /** Fetches a served recording to `outPath` within a fixed deadline. Retriable while the instance lives. */
+  downloadRecording(input: {
+    downloadUrl: string;
     outPath: string;
-  }): Promise<string>;
+  }): Promise<void>;
 };
 type LimrunAndroidDeviceSession$1 = LimrunDeviceSessionBase & {
   readonly platform: 'android';

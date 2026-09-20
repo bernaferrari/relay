@@ -81,6 +81,7 @@ const APPLE_SIMULATOR_OPERATION_HOSTS: Readonly<
   home: 'runner',
   setOrientation: 'runner',
   appSwitcher: 'runner',
+  actionButton: 'runner',
   tvRemote: 'runner',
   keyboardDismiss: 'runner',
   keyboardEnter: 'runner',
