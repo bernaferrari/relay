@@ -15,17 +15,17 @@ import { recordingQueryKeys } from "../data/recording-queries";
 import { runQueryKeys } from "../data/run-queries";
 import { readRunPointer } from "../data/run-pointer";
 import { readWorkflowPointer } from "../data/workflow-pointer";
+import type { ProductSuite } from "../data/suite-profile-product-service";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 import { productLinkClassName } from "../lib/class-names";
-
 const routeApi = getRouteApi("/tests");
 
 type TestFilter = "all" | "ready" | "needs-review";
 type ResultFilter = "all" | "passed" | "failed" | "running" | "never";
 
 export function TestsPage() {
-  const { catalogService, platform, productService } = useRouteContext({
+  const { catalogService, platform, productService, suiteProfileService } = useRouteContext({
     from: "__root__",
   });
   const search = routeApi.useSearch() as {
@@ -40,6 +40,12 @@ export function TestsPage() {
   const status = testFilter(search.status);
   const result = resultFilter(search.result);
   const app = typeof search.app === "string" ? search.app : "";
+  const plans = useQuery({
+    queryKey: ["suites", "tests-page", app || "all"],
+    queryFn: () => suiteProfileService.listSuites(app || undefined),
+    staleTime: 15_000,
+    retry: false,
+  });
   useEffect(() => {
     setQuery(typeof search.q === "string" ? search.q : "");
   }, [search.q]);
@@ -296,6 +302,28 @@ export function TestsPage() {
         </section>
       ) : null}
 
+      {!tests.isPending && !tests.isError && plans.data?.length ? (
+        <section className="mt-6" aria-labelledby="saved-plans-title">
+          <div className="flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
+            <h2 id="saved-plans-title" className="text-sm font-semibold tabular-nums">
+              {plans.data.length === 1 ? "1 Plan" : `${plans.data.length} Plans`}
+            </h2>
+            <Link
+              to="/suites"
+              search={app ? { app } : {}}
+              className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+            >
+              Saved selections run together →
+            </Link>
+          </div>
+          <ul className="m-0 list-none overflow-hidden rounded-xl border border-border/60 p-0 [&>li]:border-b [&>li]:border-border/60 [&>li:last-child]:border-b-0">
+            {plans.data.map((plan) => (
+              <PlanRow key={`${plan.appMapId}:${plan.id}`} plan={plan} />
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {!tests.isPending && !tests.isError && !visibleTests.length ? (
         tests.data?.length ? (
           <EmptyState
@@ -311,10 +339,10 @@ export function TestsPage() {
           <div className="flex flex-1 items-center justify-center">
             <EmptyState
               title="Create your first test"
-              detail="Open your app and record the steps you want to repeat."
+              detail="Open your app and record the steps you want to repeat, or ask Relay to explore one."
               action={
                 <Link className={productLinkClassName} to="/tests/new">
-                  New test
+                  Open your app
                 </Link>
               }
             />
@@ -375,6 +403,32 @@ function TestRow({ test }: { test: ProductTestSummary }) {
           {test.status === "needs-review" ? "Review steps" : "Run options"}
         </Button>
       </div>
+    </li>
+  );
+}
+
+function PlanRow({ plan }: { plan: ProductSuite }) {
+  const testCount = plan.tests.length;
+  return (
+    <li>
+      <Link
+        to="/apps/$appId/suites/$suiteId"
+        params={{ appId: plan.appMapId, suiteId: plan.id }}
+        className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-4 py-3.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring ${libraryRowSurface}`}
+      >
+        <span className="grid min-w-0 gap-1">
+          <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-foreground">
+            {plan.name}
+          </strong>
+          <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
+            {plan.appName} · {testCount === 1 ? "1 Test" : `${testCount} Tests`}
+            {plan.variableIds.length
+              ? ` · ${plan.variableIds.length} Data ${plan.variableIds.length === 1 ? "set" : "sets"}`
+              : ""}
+          </span>
+        </span>
+        <span className="text-xs text-muted-foreground">Run together</span>
+      </Link>
     </li>
   );
 }

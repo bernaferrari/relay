@@ -2,7 +2,7 @@ import {
   accountFixtureIdsFromListed,
   bindRequestedBrowserIdentity,
 } from "@relay/core/browser-execution-identity";
-import type { OperationInput, OperationOutput } from "@relay/protocol";
+import type { AuthoringTarget, OperationInput, OperationOutput } from "@relay/protocol";
 import {
   createRelayOperationPort,
   type RelayInvokeClient,
@@ -54,6 +54,7 @@ import {
   unavailableDurableRun,
   preDispatchProblem,
   readCompile,
+  resolveRunTestLane,
   selectBrowserTargetProfile,
   selectDeviceTargetProfile,
   type ValidCompile,
@@ -224,7 +225,28 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     return snapshotFromJob({ ref, frozen, job: match.job });
   }
 
-  private async startRunTest(intent: RunTestIntent): Promise<RunTestSnapshot> {
+  private async startRunTest(rawIntent: RunTestIntent): Promise<RunTestSnapshot> {
+    let intent = rawIntent;
+    if (rawIntent.laneId && !rawIntent.target) {
+      const resolved = await resolveRunTestLane(this.operations, rawIntent);
+      if ("problem" in resolved) {
+        return initialProblem({ intent: rawIntent, problem: resolved.problem });
+      }
+      intent = resolved.intent;
+    }
+    const target = intent.target;
+    if (!target) {
+      return initialProblem({
+        intent,
+        problem: {
+          code: "invalid-intent",
+          title: "The Run has no target",
+          detail: "Choose a device, a browser, or a saved Lane that carries the who-and-where.",
+          recovery: "Start the Run again with --device or --lane.",
+          retryable: false,
+        },
+      });
+    }
     if (intent.continuation === "durable" && !intent.workflowRequestId) {
       return initialProblem({
         intent,
@@ -308,12 +330,12 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     let targetProfileId = intent.targetProfileId;
     if (!targetProfileId && intent.account?.kind === "signed-out") {
       targetProfileId = undefined;
-    } else if (!targetProfileId && intent.target.kind === "browser") {
+    } else if (!targetProfileId && target.kind === "browser") {
       try {
         targetProfileId = await selectBrowserTargetProfile(
           this.operations,
           checkedCompile,
-          intent.target.targetId,
+          target.targetId,
         );
       } catch (error) {
         return initialProblem({
@@ -333,9 +355,9 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
               : unavailableProblem("resolve the current browser evidence profile", error),
         });
       }
-    } else if (!targetProfileId && intent.target.kind === "device") {
+    } else if (!targetProfileId && target.kind === "device") {
       try {
-        targetProfileId = selectDeviceTargetProfile(checkedCompile, intent.target);
+        targetProfileId = selectDeviceTargetProfile(checkedCompile, target);
       } catch (error) {
         return initialProblem({
           intent,
@@ -355,7 +377,9 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
         });
       }
     }
-    const effectiveIntent = targetProfileId ? { ...intent, targetProfileId } : intent;
+    const effectiveIntent: RunTestIntent & { target: AuthoringTarget } = targetProfileId
+      ? { ...intent, target, targetProfileId }
+      : { ...intent, target };
     if (targetProfileId && targetProfileId !== intent.targetProfileId) {
       let exactCompiled: OperationOutput<"app-map.test.compile">;
       try {
@@ -445,10 +469,10 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
           : undefined;
       const saved = profile?.browserCaseProfile;
       const listed =
-        intent.target.kind === "browser" && intent.account?.kind === "fixture"
+        target.kind === "browser" && intent.account?.kind === "fixture"
           ? (
               await this.operations.invoke("target.browser-auth.list", {
-                targetId: intent.target.targetId,
+                targetId: target.targetId,
               })
             ).fixtures
           : [];
@@ -463,7 +487,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
             ? { authenticationFixtureId: saved.authenticationFixtureId }
             : {}),
         },
-        platform: intent.target.kind === "browser" ? "browser" : intent.target.platform,
+        platform: target.kind === "browser" ? "browser" : target.platform,
         accountFixtureIds: accountFixtureIdsFromListed(listed),
       });
       if (bound.status === "blocked") {
@@ -528,8 +552,9 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     const runInput: OperationInput<"app-map.test.run"> = {
       appMapId: intent.appMapId,
       testId: intent.testId,
-      expectedRevision: revision,
-      target: { ...intent.target },
+      ...(intent.laneId
+        ? { laneId: intent.laneId }
+        : { expectedRevision: revision, target: { ...target } }),
       ...(targetProfileId ? { targetProfileId } : {}),
       ...(intent.engine ? { engine: intent.engine } : {}),
       ...(intent.account ? { account: intent.account } : {}),

@@ -430,10 +430,15 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
     if (tokens.values.has("--in") || tokens.values.has("--lens") || tokens.switches.has("--all")) {
       throw new UsageError("run executes one Test once; use repeat for selected values");
     }
+    const laneId = tokens.values.get("--lane");
+    if (laneId && targetId) {
+      throw new UsageError("run accepts --lane or --device, not both; the Lane carries the target");
+    }
     return {
       kind: "run-test",
       ...(selectedMap || args.length === 2 ? { appMapId: selectedMap ?? args[0]! } : {}),
       testId: args.at(-1)!,
+      ...(laneId ? { laneId } : {}),
       ...(targetId ? { targetId } : {}),
       ...(tokens.switches.has("--confirm") ? { confirmRisk: true } : {}),
     };

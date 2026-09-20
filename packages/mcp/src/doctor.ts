@@ -21,8 +21,39 @@ function proofToolsForProfile(profile: RelayMcpProfile) {
   );
 }
 
-function expectedProofTools() {
-  return proofToolsForProfile("proof");
+/**
+ * Canonical operations the default operator verbs hard-depend on. The
+ * dispatch table in operator-tool-dispatch.ts is the source of truth; this
+ * diagnostic list only names its non-escape-hatch dependencies. Extend it
+ * when a verb gains a new hard dependency.
+ */
+const operatorCoreOperationIds: readonly string[] = [
+  "system.health.get",
+  "target.devices.list",
+  "lane.list",
+  "lease.create",
+  "lease.list",
+  "target.snapshot.capture",
+  "target.screenshot.capture",
+  "target.interact",
+  "target.recover",
+  "job.get",
+  "job.combine.start",
+  "job.combine.export",
+  "job.combine.analysis",
+  "run.evidence.get",
+  "run.visual.review",
+  "run.visual.compare",
+];
+
+function expectedOperationsForProfile(profile: RelayMcpProfile) {
+  if (profile === "operator") {
+    return operatorCoreOperationIds.map((operationId) => ({ operationId }));
+  }
+  if (profile === "proof" || profile === "full") {
+    return proofToolsForProfile(profile);
+  }
+  return relayMcpToolsForProfile(profile);
 }
 
 export type RelayMcpDoctorCheck = {
@@ -120,15 +151,10 @@ function configForDoctor(
     if (argument === "--json") json = true;
     else configArgs.push(argument);
   }
-  // `doctor` should be useful when copied onto a clean host. Its purpose is
-  // to validate the Proof surface, so make that the only implicit default;
-  // regular MCP startup retains the compact outcome default.
-  if (
-    !configArgs.some((argument) => argument === "--profile" || argument.startsWith("--profile=")) &&
-    !env.RELAY_MCP_PROFILE?.trim()
-  ) {
-    configArgs.push("--profile", "proof");
-  }
+  // Doctor validates exactly the profile the client will run — the default
+  // operator surface on a clean host, or an explicitly selected specialist.
+  // No implicit profile switch: ordinary setup must not be judged by the
+  // Proof lifecycle, and a Proof host passes --profile proof explicitly.
   return { config: parseMcpConfig(configArgs, env), json };
 }
 
@@ -139,18 +165,19 @@ export async function runRelayMcpDoctor(
 ): Promise<RelayMcpDoctorReport> {
   const { config } = configForDoctor(argv, env);
   const checks: RelayMcpDoctorCheck[] = [];
-  const expectedTools = expectedProofTools();
-  const selectedTools = relayMcpToolsForProfile(config.profile);
-  const selectedProofTools = proofToolsForProfile(config.profile);
+  const proofLifecycle = config.profile === "proof" || config.profile === "full";
+  const expectedTools = expectedOperationsForProfile(config.profile);
+  const selectedTools = proofLifecycle
+    ? proofToolsForProfile(config.profile)
+    : relayMcpToolsForProfile(config.profile);
 
   checks.push(
     check(
       "profile",
-      (config.profile === "proof" || config.profile === "full") &&
-        selectedProofTools.length === expectedTools.length,
-      config.profile === "proof" || config.profile === "full"
+      expectedTools.length > 0,
+      proofLifecycle
         ? `${config.profile} exposes the complete Proof lifecycle`
-        : `profile ${config.profile} does not expose the Proof lifecycle; use --profile proof`,
+        : `profile ${config.profile} exposes ${expectedTools.length} tools for ordinary agent work; the Proof lifecycle needs --profile proof`,
     ),
   );
 
@@ -254,7 +281,7 @@ export async function runRelayMcpDoctor(
       meta.status === 0
         ? `could not inspect the server operation manifest (${meta.error ?? "request failed"})`
         : missing.length === 0
-          ? `server exposes all ${expectedTools.length} canonical Proof operations`
+          ? `server exposes all ${expectedTools.length} operations for profile ${config.profile}`
           : `server manifest is missing: ${missing.join(", ")}`,
     ),
   );
@@ -269,7 +296,9 @@ export async function runRelayMcpDoctor(
       actorKind: "agent",
       profile: config.profile,
     }),
-    proofTools: Object.freeze(expectedTools.map(({ operationId }) => relayToolName(operationId))),
+    proofTools: Object.freeze(
+      proofToolsForProfile("proof").map(({ operationId }) => relayToolName(operationId)),
+    ),
     checks: Object.freeze(checks),
   });
 }

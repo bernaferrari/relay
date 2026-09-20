@@ -38,8 +38,23 @@ function fakeFetch(missing: readonly string[] = []): typeof fetch {
   };
 }
 
-test("doctor validates the live Proof profile without exposing credentials", async () => {
+test("doctor validates the default operator surface without exposing credentials", async () => {
   const report = await runRelayMcpDoctor([], env, fakeFetch());
+
+  assert.equal(report.ok, true);
+  assert.equal(report.config.profile, "operator");
+  const profileCheck = report.checks.find(({ name }) => name === "profile");
+  assert.equal(profileCheck?.ok, true);
+  assert.match(profileCheck?.message ?? "", /operator/u);
+  const manifestCheck = report.checks.find(({ name }) => name === "proof-tools");
+  assert.equal(manifestCheck?.ok, true);
+  assert.match(manifestCheck?.message ?? "", /for profile operator/u);
+  assert.ok(report.checks.every(({ message }) => !message.includes("secret")));
+  assert.match(formatRelayMcpDoctor(report), /Relay doctor: READY/u);
+});
+
+test("doctor validates the live Proof profile when explicitly selected", async () => {
+  const report = await runRelayMcpDoctor(["--profile", "proof"], env, fakeFetch());
 
   assert.equal(report.ok, true);
   assert.deepEqual(report.config, {
@@ -56,12 +71,15 @@ test("doctor validates the live Proof profile without exposing credentials", asy
       .filter(({ operationId }) => operationId.startsWith("proof."))
       .map(({ name }) => name),
   );
-  assert.ok(report.checks.every(({ message }) => !message.includes("secret")));
   assert.match(formatRelayMcpDoctor(report), /Relay doctor: READY/u);
 });
 
 test("doctor fails clearly when the server is missing a canonical Proof operation", async () => {
-  const report = await runRelayMcpDoctor([], env, fakeFetch(["proof.rerun-affected"]));
+  const report = await runRelayMcpDoctor(
+    ["--profile", "proof"],
+    env,
+    fakeFetch(["proof.rerun-affected"]),
+  );
 
   assert.equal(report.ok, false);
   const proofCheck = report.checks.find(({ name }) => name === "proof-tools");
@@ -69,12 +87,12 @@ test("doctor fails clearly when the server is missing a canonical Proof operatio
   assert.match(proofCheck?.message ?? "", /proof\.rerun-affected/u);
 });
 
-test("doctor rejects an agent profile that cannot expose the complete Proof surface", async () => {
+test("doctor validates a specialist profile honestly instead of demanding Proof", async () => {
   const report = await runRelayMcpDoctor(["--profile", "observe"], env, fakeFetch());
 
-  assert.equal(report.ok, false);
+  assert.equal(report.config.profile, "observe");
   const profileCheck = report.checks.find(({ name }) => name === "profile");
-  assert.equal(profileCheck?.ok, false);
+  assert.equal(profileCheck?.ok, true);
   assert.match(profileCheck?.message ?? "", /--profile proof/u);
 });
 

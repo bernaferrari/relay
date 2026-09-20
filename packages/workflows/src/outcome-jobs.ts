@@ -381,6 +381,25 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
 
   async run(intent: RunTestOutcomeIntent) {
     const appMapId = await selectAppMap(this.operations, intent.appMapId);
+    if (intent.laneId) {
+      return this.workflows.start({
+        kind: "run-test",
+        appMapId,
+        testId: intent.testId,
+        laneId: intent.laneId,
+        revision: "current",
+        ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
+        ...(intent.sourceRevision
+          ? { sourceRevision: structuredClone(intent.sourceRevision) }
+          : {}),
+        ...(intent.startup ? { startup: structuredClone(intent.startup) } : {}),
+        ...(intent.engine ? { engine: intent.engine } : {}),
+        ...(intent.account ? { account: structuredClone(intent.account) } : {}),
+        workflowRequestId: crypto.randomUUID(),
+        continuation: "durable",
+        ...(intent.confirmRisk ? { confirmRisk: true } : {}),
+      });
+    }
     const target = await selectTarget(this.operations, intent.targetId);
     return this.workflows.start({
       kind: "run-test",

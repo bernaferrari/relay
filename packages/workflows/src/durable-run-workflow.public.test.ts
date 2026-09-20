@@ -285,3 +285,118 @@ test("durable inspect and cancel send only workflow identity plus one CAS versio
   assert.deepEqual(cancelled.workflow, { workflowId: "workflow-1", expectedVersion: 4 });
   assert.equal(cancelled.ref, undefined);
 });
+
+test("a Run Lane resolves the saved who-and-where before compile and dispatch", async () => {
+  const scripted = createScriptedRelayClient([
+    {
+      id: "lane.list",
+      output: {
+        lanes: [
+          {
+            id: "member-daily",
+            appMapId: "settings",
+            target: { kind: "device", serial: "pixel-9", platform: "android" },
+            projectId: "default",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+      },
+    },
+    compile(),
+    {
+      id: "workflow.create",
+      output: { disposition: "created", workflow: workflow(1) },
+    },
+    {
+      id: "app-map.test.run",
+      checkInput: (input) =>
+        assert.deepEqual((input as { laneId?: string }).laneId, "member-daily"),
+      output: {
+        planIdentity: {
+          appMapId: "settings",
+          appMapRevision: 7,
+          testId: "smoke",
+          rootRecipeId: "open-settings",
+        },
+        plan: { rootRecipeId: "open-settings" },
+        job,
+      },
+    },
+    {
+      id: "workflow.transition",
+      output: {
+        workflow: workflow(2, {
+          transition: "run-attached",
+          resource: { kind: "job", id: "job-1" },
+          identity: { ...frozen, rootRecipeId: "open-settings" },
+        }),
+        job,
+      },
+    },
+  ]);
+
+  const snapshot = await createRelayWorkflows(scripted.client).start({
+    ...intent(),
+    target: undefined,
+    laneId: "member-daily",
+  });
+
+  assert.deepEqual(snapshot.workflow, { workflowId: "workflow-1", expectedVersion: 2 });
+  assert.deepEqual(
+    scripted.invocations.map(({ id }) => id),
+    [
+      "lane.list",
+      "app-map.test.compile",
+      "workflow.create",
+      "app-map.test.run",
+      "workflow.transition",
+    ],
+  );
+});
+
+test("a Run Lane for another App is refused before any compile", async () => {
+  const scripted = createScriptedRelayClient([
+    {
+      id: "lane.list",
+      output: {
+        lanes: [
+          {
+            id: "shop-daily",
+            appMapId: "shop",
+            target: { kind: "device", serial: "pixel-9", platform: "android" },
+            projectId: "default",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+      },
+    },
+  ]);
+
+  const snapshot = await createRelayWorkflows(scripted.client).start({
+    ...intent(),
+    target: undefined,
+    laneId: "shop-daily",
+  });
+
+  assert.equal(snapshot.phase, "blocked");
+  assert.match(snapshot.problems[0]!.detail, /bound to App shop/u);
+  assert.deepEqual(
+    scripted.invocations.map(({ id }) => id),
+    ["lane.list"],
+  );
+});
+
+test("an unsaved Run Lane is refused with the save command as recovery", async () => {
+  const scripted = createScriptedRelayClient([{ id: "lane.list", output: { lanes: [] } }]);
+
+  const snapshot = await createRelayWorkflows(scripted.client).start({
+    ...intent(),
+    target: undefined,
+    laneId: "ghost",
+  });
+
+  assert.equal(snapshot.phase, "blocked");
+  assert.match(snapshot.problems[0]!.recovery ?? "", /relay lane save ghost/u);
+});

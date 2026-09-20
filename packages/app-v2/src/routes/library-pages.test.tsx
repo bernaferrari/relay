@@ -334,14 +334,41 @@ async function click(label: string) {
 
 describe("Tests workspace", () => {
   it("lists human Test summaries, recent outcomes, and a dominant creation action", async () => {
-    const { history } = await render("/tests");
+    const { history } = await render(
+      "/tests",
+      catalog(),
+      undefined,
+      {} as RunProductService,
+      {
+        listSuites: async () => [
+          {
+            id: "suite-1",
+            appMapId: "app-1",
+            appMapRevision: 7,
+            appName: "Checkout",
+            name: "Release smoke",
+            testIds: ["test-1"],
+            tests: [{ id: "test-1", name: "Complete checkout", status: "ready" }],
+            variableIds: [],
+            strategy: "cartesian",
+            source: { kind: "app-map-combine", id: "suite-1" },
+          },
+        ],
+      } as unknown as SuiteProfileProductService,
+    );
 
     const devices = document.querySelector<HTMLAnchorElement>('a[href="/devices"]');
-    expect(devices?.textContent?.trim()).toBe("Devices");
+    expect(document.body.textContent).toContain("Release smoke");
+    expect(document.querySelector('a[href="/apps/app-1/suites/suite-1"]')?.textContent).toContain(
+      "1 Test",
+    );
+    expect(devices?.textContent?.trim()).toBe("Devices & browsers");
     expect(devices?.hasAttribute("aria-disabled")).toBe(false);
     expect(document.querySelector('a[href="/tests/new"]')?.textContent).toBe("New Test");
-    expect(document.querySelector('a[href="/suites"]')?.textContent).toBe("Plans");
+    const managePlans = document.querySelector<HTMLAnchorElement>('a[href="/suites"]');
+    expect(managePlans?.textContent).toContain("Saved selections run together");
     expect(document.querySelector('a[href="/changes"]')?.textContent).toBe("Changes");
+    expect(document.querySelector('a[href="/sessions"]')?.textContent).toBe("Activity");
     expect(document.body.textContent).toContain("Change language");
     expect(document.body.textContent).toContain("Complete checkout");
     expect(document.body.textContent).toContain("Passed");

@@ -19,19 +19,48 @@ npm install --global @relay/mcp@0.1.0 # after the public release
 # From this repository before publication:
 npm pack --silent ./packages/mcp
 npm install --global ./relay-mcp-0.1.0.tgz
-relay-mcp doctor --profile proof
+relay-mcp doctor
 ```
 
 The plugin descriptor invokes the installed `relay-mcp` binary. A clean host does not need pnpm or
-the Relay workspace after the package is installed.
+the Relay Workspace after the package is installed.
 
-The local defaults use the loopback Relay service, the local project, actor `agent:cursor`, and
-the `operator` profile (~19 hand-named verbs plus `relay_advanced`). `lease.takeover` is not on
-that profile. This workspace's Cursor MCP (`.cursor/mcp.json`) matches those defaults; reload MCP
-after changing that file. Proof hosts still launch `--profile proof` as below. The `proof`
-profile retains the ordinary `relay_prove_change` outcome and adds the raw `proof.*` lifecycle
-tools for explicit plan review, recovery, publication, and selective reruns. The Proof plugin
-selects `RELAY_MCP_PROFILE=proof`. A human approves a Verification Plan in the app or CLI.
+The default configuration needs no profile flag: the local defaults use the loopback Relay service,
+the local project, actor `agent:cursor`, and the `operator` profile (~19 hand-named verbs plus
+`relay_advanced`). That default is a complete ordinary task surface — resolve a target, observe,
+operate within scope, run saved coverage, inspect progress, save a Test, and export evidence — so
+an agent never switches profiles mid-task. `lease.takeover` is not on that profile. This
+workspace's Cursor MCP (`.cursor/mcp.json`) matches those defaults; reload MCP after changing that
+file.
+
+```json
+{
+  "mcpServers": {
+    "relay": {
+      "command": "relay-mcp"
+    }
+  }
+}
+```
+
+The fail-closed setup check works the same way without a profile. It intentionally reports
+`NOT READY` when the Relay service is unavailable or the scope or role is wrong:
+
+```bash
+relay-mcp doctor --json
+```
+
+It checks server reachability, organization/project scope, the configured agent identity, the
+selected profile's role requirements, and the canonical tools present in the server operation
+manifest for that profile. The report never prints `RELAY_AUTH_TOKEN`.
+
+## Specialist profiles
+
+Trusted orchestrators can opt into a narrower or lower-level profile with `--profile <name>` or
+`RELAY_MCP_PROFILE`. Specialist access is additive, never a prerequisite for ordinary testing.
+Proof hosts launch `--profile proof`: it retains the ordinary `relay_prove_change` outcome and
+adds the raw `proof.*` lifecycle tools for explicit plan review, recovery, publication, and
+selective reruns. A human approves a Verification Plan in the app or CLI.
 
 ```json
 {
@@ -45,17 +74,11 @@ selects `RELAY_MCP_PROFILE=proof`. A human approves a Verification Plan in the a
 }
 ```
 
-The executable also exposes a fail-closed setup check. It intentionally reports `NOT READY` when
-the Relay service is unavailable, the scope or role is wrong, or the server manifest is missing a
-Proof operation:
+The specialist doctor check verifies every canonical Proof tool is present for that profile:
 
 ```bash
 relay-mcp doctor --profile proof --json
 ```
-
-It checks server reachability, organization/project scope, the configured agent identity, the
-selected profile's role requirements, human-only plan approval, and every canonical Proof tool in
-the server operation manifest. The report never prints `RELAY_AUTH_TOKEN`.
 
 For a remote authenticated service, set `RELAY_AUTH_TOKEN` in the environment that launches the MCP
 client and configure its URL and project. Never place a literal token in client configuration,

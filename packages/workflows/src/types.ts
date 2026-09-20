@@ -11,6 +11,7 @@ import type {
   AuthoringTarget,
   AppMapCompiledTest,
   AppMapTestStartup,
+  BrowserEngine,
   OfflineTestPreflightReport,
   RepeatSpec,
   ReplayLabAnalysis,
@@ -53,13 +54,17 @@ export type RunTestIntent = {
   kind: "run-test";
   appMapId: string;
   testId: string;
-  target: AuthoringTarget;
+  /** Required unless laneId carries the who-and-where. */
+  target?: AuthoringTarget;
+  /** Saved who-and-where: the server resolves the Lane's bound target,
+   * runtime profile, engine, and account before execution. */
+  laneId?: string;
   /** Current is read once and frozen before compilation. */
   revision?: "current" | { exact: number };
   startup?: AppMapTestStartup;
   targetProfileId?: string;
   sourceRevision?: SourceRevision;
-  engine?: import("@relay/protocol").BrowserEngine;
+  engine?: BrowserEngine;
   account?: RunTestAccountBinding;
   capture?: { fullSurfaceScreenIds: readonly string[] };
   /** Stable before dispatch so a renderer crash can adopt the queued job. */
@@ -461,10 +466,12 @@ export type RunTestOutcomeIntent = OutcomeTargetSelection & {
   kind: "run-test";
   appMapId?: string;
   testId: string;
+  /** Saved who-and-where; replaces targetId when present. */
+  laneId?: string;
   targetProfileId?: string;
   sourceRevision?: SourceRevision;
   startup?: AppMapTestStartup;
-  engine?: import("@relay/protocol").BrowserEngine;
+  engine?: BrowserEngine;
   account?: RunTestAccountBinding;
   confirmRisk?: true;
 };

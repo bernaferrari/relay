@@ -1,40 +1,56 @@
-import { Compass, FlaskConical, History, Layers3, MonitorSmartphone } from "lucide-react";
+import { Activity, FlaskConical, GitCompare, History, MonitorSmartphone } from "lucide-react";
 
-/** One destination vocabulary for the sidebar and command palette. */
-export const primaryDestinations = [
-  {
-    to: "/goals",
-    label: "Explore",
-    icon: Compass,
-    detail: "Start from a goal",
-    keywords: "goal agent openrouter",
-  },
+/**
+ * One destination vocabulary for the sidebar and command palette, per the
+ * frozen product hierarchy (docs/release/PRODUCT-DIRECTION.md): Tests and
+ * Results are the two everyday destinations; everything else is a utility.
+ * Plans live inside Tests as a collection view; Explore/Ask Relay is a
+ * workbench action, not a destination.
+ */
+export const everydayDestinations = [
   {
     to: "/tests",
     label: "Tests",
+    shortLabel: "Tests",
     icon: FlaskConical,
-    detail: "Reusable journeys",
-    keywords: "record test",
-  },
-  {
-    to: "/suites",
-    label: "Plans",
-    icon: Layers3,
-    detail: "Tests and data sets run together",
-    keywords: "suite batch",
+    detail: "Reusable journeys and saved Plans",
+    keywords: "record test suite plan",
   },
   {
     to: "/runs",
     label: "Results",
+    shortLabel: "Results",
     icon: History,
     detail: "Current and completed runs",
-    keywords: "reports evidence",
-  },
-  {
-    to: "/devices",
-    label: "Devices",
-    icon: MonitorSmartphone,
-    detail: "Connected browsers and devices",
-    keywords: "targets",
+    keywords: "reports evidence review",
   },
 ] as const;
+
+export const utilityDestinations = [
+  {
+    to: "/devices",
+    label: "Devices & browsers",
+    shortLabel: "Devices",
+    icon: MonitorSmartphone,
+    detail: "Connected browsers and devices",
+    keywords: "targets environments browsers",
+  },
+  {
+    to: "/sessions",
+    label: "Activity",
+    shortLabel: "Activity",
+    icon: Activity,
+    detail: "Live sessions and recent work",
+    keywords: "sessions activity live",
+  },
+  {
+    to: "/changes",
+    label: "Changes",
+    shortLabel: "Changes",
+    icon: GitCompare,
+    detail: "Repository verification work",
+    keywords: "changes proof verification",
+  },
+] as const;
+
+export const primaryDestinations = [...everydayDestinations, ...utilityDestinations];

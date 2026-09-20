@@ -14,7 +14,6 @@ import {
   Box,
   CircleDot,
   FlaskConical,
-  GitCompareArrows,
   History,
   Plus,
   KeyRound,
@@ -49,13 +48,6 @@ const workspaceCommands: readonly Command[] = [
     detail: "Builds, accounts, and coverage",
     href: "/apps",
     icon: AppWindow,
-  },
-  {
-    id: "changes",
-    label: "Open Changes",
-    detail: "Review verification work",
-    href: "/changes",
-    icon: GitCompareArrows,
   },
 
   {

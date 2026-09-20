@@ -132,9 +132,26 @@ function renderRootHelp(): string {
     "proof list",
   ];
 
-  return `Relay — record once, prove every build
+  return `Relay — turn important journeys into repeatable, reviewable evidence
 
-Usage:
+Show or tell Relay what to exercise. Run it on the accounts and devices you
+choose. Review what happened together. Reuse the path next time.
+
+Everyday tasks:
+  Open and observe        relay connect [device]
+                          relay observe [device]
+  Record a journey        relay record <title> --confirm
+  Edit the recording      relay edit-recording <workflowId> <expectedVersion> <verb> ...
+  Run a saved Test        relay run <testId> --lane <lane>   (account + browser + profile)
+  Run across accounts     relay repeat <testId> --each <dimension>=<values|all>
+  Run a saved Plan        relay plan run <planId> [--lane <lane>]
+  Ask Relay to explore    relay explore --url <url> --goal <goal> --confirm
+  Inspect a Run           relay inspect-workflow <workflowId>
+  Review captured shots   relay plan capture review <batchId>
+  Export the evidence     relay export-evidence <runId>
+  Verify a change         relay prove --base <ref> [--confirm]
+
+Full command reference:
   relay connect [device]
   relay observe [device]
   relay explore --url <url> --goal <goal> --confirm [--agents <1-4>] [--max-steps <n>] [--max-ms <n>]
@@ -150,7 +167,7 @@ Usage:
   relay goal promote <sessionId> --confirm [--map <id>] [--title <name>]
   relay record <title> [--map <id>] [--device <id>] --confirm
   relay edit-recording <workflowId> <expectedVersion> <remove|reorder|replace|merge|split|rename> ...
-  relay run <testId> [--map <id>] [--device <id>] [--confirm]
+  relay run <testId> [--map <id>] [--lane <lane> | --device <id>] [--confirm]
   relay repeat <testId> --each <dimension>=<values|supported|all> [--each ...]
     [--strategy <cartesian|zip|pairwise>] [--pilot <representative|first|dimension=value,...>]
     [--resume <untouched|failed|all>] [--map <id>] [--device <id>] [--confirm]

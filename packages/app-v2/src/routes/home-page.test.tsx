@@ -341,7 +341,7 @@ describe("Home", () => {
     expect(document.body.textContent).toContain("Create your first test");
     expect(document.body.textContent).not.toContain("Pick one path a person depends on");
     expect(document.body.textContent).not.toContain("Prove one journey that matters");
-    expect(document.body.textContent).toContain("New test");
+    expect(document.body.textContent).toContain("Open your app");
     expect(document.body.textContent).not.toContain("Latest results");
   });
 

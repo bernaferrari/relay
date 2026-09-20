@@ -68,11 +68,9 @@ export type Sidebar =
   | "apps"
   | "tests"
   | "sessions"
-  | "suites"
   | "runs"
   | "changes"
   | "devices"
-  | "goals"
   | "settings";
 export type RouteDefinition = {
   id: RoutePattern;
@@ -182,8 +180,8 @@ export const ROUTE_DEFINITIONS = [
     "app",
     "view",
   ]),
-  d("/suites", "/home", "Plans", "Plan", "suites", "create-suite", ["app", "status", "q"]),
-  d("/apps/:appId/suites/:suiteId", "/suites", "Plan", "Plan", "suites", "run-suite", [
+  d("/suites", "/home", "Plans", "Plan", "tests", "create-suite", ["app", "status", "q"]),
+  d("/apps/:appId/suites/:suiteId", "/suites", "Plan", "Plan", "tests", "run-suite", [
     "view",
     "target",
   ]),
@@ -248,7 +246,7 @@ export const ROUTE_DEFINITIONS = [
     "q",
   ]),
   d("/devices/:deviceId", "/devices", "Device", "Device", "devices", "inspect-device", ["view"]),
-  d("/goals", "/home", "Explore", null, "goals", null, ["url"]),
+  d("/goals", "/home", "Explore", null, "tests", null, ["url"]),
   d("/prototype/workbench", "/tests", "Workbench Prototype", "Test", "tests", null),
   d("/debug", "/sessions", "Agent Debug", "Session", "sessions", null, ["target", "runId"]),
   ...(["general", "evidence", "integrations", "appearance", "advanced", "about"] as const).map(

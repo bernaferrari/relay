@@ -189,11 +189,11 @@ describe("shell overlays", () => {
     const history = await renderShell({ initialEntries: ["/tests?app=checkout"] });
     const navigation = document.querySelector('nav[aria-label="Main navigation"]')!;
     expect([...navigation.querySelectorAll("a")].map((link) => link.textContent)).toEqual([
-      "Explore",
       "Tests",
-      "Plans",
       "Results",
       "Devices",
+      "Activity",
+      "Changes",
     ]);
     expect(navigation.querySelector('[aria-current="page"]')?.textContent).toBe("Tests");
     const results = [...navigation.querySelectorAll("a")].find(

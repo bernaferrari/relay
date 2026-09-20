@@ -161,7 +161,7 @@ export function selectDeviceTargetProfile(
 }
 
 export function frozenIdentity(
-  intent: RunTestIntent,
+  intent: RunTestIntent & { target: AuthoringTarget },
   revision: number,
   planDigest: string,
   rootRecipeId?: string,
@@ -372,5 +372,64 @@ export function preDispatchProblem(error: unknown): WorkflowProblem {
       error instanceof Error ? error.message : "Relay rejected the request before creating a job.",
     recovery: "Correct the reported request or target problem, then start a new Run explicitly.",
     retryable: false,
+  };
+}
+
+export type ResolvedRunTestLane = { intent: RunTestIntent } | { problem: WorkflowProblem };
+
+/** Resolve a saved Lane into the exact who-and-where a Run executes on.
+ *
+ * The Lane is authoritative: its bound target, runtime profile, engine, and
+ * account replace whatever ambient target the caller had, so a Run can never
+ * silently execute on another device or account than the saved configuration
+ * (the wrong-account bug this boundary exists to prevent). */
+export async function resolveRunTestLane(
+  operations: RelayOperationPort,
+  intent: RunTestIntent,
+): Promise<ResolvedRunTestLane> {
+  const laneId = intent.laneId!;
+  let lane: OperationOutput<"lane.list">["lanes"][number] | undefined;
+  try {
+    const listed = await operations.invoke("lane.list", {});
+    lane = listed.lanes.find((candidate) => candidate.id === laneId);
+  } catch (error) {
+    return {
+      problem: mutationUnknownWorkflowProblem("read the saved Lane", error),
+    };
+  }
+  if (!lane) {
+    return {
+      problem: {
+        code: "invalid-intent",
+        title: `Lane ${laneId} is not saved in this workspace`,
+        detail: "A Run Lane must already exist; Relay never creates it implicitly.",
+        recovery: `Save the Lane first (relay lane save ${laneId}), then start the Run again.`,
+        retryable: false,
+      },
+    };
+  }
+  if (lane.appMapId !== intent.appMapId) {
+    return {
+      problem: {
+        code: "invalid-intent",
+        title: `Lane ${laneId} belongs to another App`,
+        detail: `The Lane is bound to App ${lane.appMapId}; this Test belongs to ${intent.appMapId}.`,
+        recovery: "Run the Test on a Lane saved for this App, or without a Lane.",
+        retryable: false,
+      },
+    };
+  }
+  const target: AuthoringTarget =
+    lane.target.kind === "browser"
+      ? { kind: "browser", platform: "browser", targetId: lane.target.browserTargetId }
+      : { kind: "device", platform: lane.target.platform, targetId: lane.target.serial };
+  return {
+    intent: {
+      ...intent,
+      target,
+      ...(lane.targetProfileId ? { targetProfileId: lane.targetProfileId } : {}),
+      ...(lane.engine ? { engine: lane.engine } : {}),
+      ...(lane.account ? { account: lane.account } : {}),
+    },
   };
 }
