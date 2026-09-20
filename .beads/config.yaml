@@ -10,7 +10,7 @@
 
 # Use no-db mode: JSONL-only, no Dolt database
 # When true, bd will use .beads/issues.jsonl as the source of truth
-# no-db: false
+no-db: true
 
 # Enable JSON output by default
 # json: false
@@ -53,4 +53,3 @@
 # - github.org
 # - github.repo
 
-sync.remote: "git+ssh://git@github.com/bernaferrari/relay.git"
