@@ -75,6 +75,7 @@ evidence/
 
 # Editor/agent local state. Do not ship.
 .claude/
+.cursor/
 
 # Managed worktrees are independent checkouts, not root workspace source.
 # git worktrees (e.g. .worktrees/next-feature)
