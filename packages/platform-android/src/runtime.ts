@@ -87,6 +87,16 @@ const hoverUnavailable = Object.freeze({
   available: false,
   reason: 'unsupported-platform-leaf',
 } as const);
+/**
+ * The Action Button is physical iPhone hardware with no Android key event behind it: `input
+ * keyevent` has no code that reaches a Shortcut the way an Action Button press does, so there is no
+ * adb path to admit here even on the kinds every other Android cell admits.
+ */
+const actionButtonUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-platform-leaf',
+  hint: 'action-button presses iPhone Action Button hardware; Android has no equivalent key event.',
+} as const);
 const headlessUnavailable = Object.freeze({
   available: false,
   reason: 'unsupported-device-kind',
@@ -351,6 +361,7 @@ export function createAndroidPlatformRuntime(host: PlatformRuntimeHost): Platfor
         // `app-switcher` shares `home`'s cell: one `input keyevent`, admitted wherever the
         // retired `ANDROID_ALL` bucket admitted it.
         ...appSwitcherRuntimeOperationFacts({ appSwitcher: androidTouchFact(device) }),
+        actionButton: actionButtonUnavailable,
         // The deep link opens through `am start`, admitted wherever the retired `ANDROID_ALL`
         // bucket admitted it.
         ...appEventRuntimeOperationFacts({ triggerAppEvent: androidTouchFact(device) }),

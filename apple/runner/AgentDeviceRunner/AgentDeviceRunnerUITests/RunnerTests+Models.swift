@@ -23,6 +23,7 @@ enum CommandType: String, Codable {
   case home
   case rotate
   case appSwitcher
+  case actionButton
   case keyboardDismiss
   case keyboardReturn
   case alert
@@ -96,6 +97,14 @@ extension CommandType {
     // Runner-lifecycle commands: skip the app-activation preflight.
     case .recordStop, .uptime, .terminate, .targetReset, .shutdown:
       return CommandTraits(isInteraction: false, readOnly: .never, isLifecycle: true)
+
+    // A hardware press mutates, is not an element interaction, and is not runner-lifecycle. It stays
+    // outside the lifecycle group because that flag also exempts a command from the recorded-failure
+    // conversion, and this command has no settle or post-action observation, so that conversion is
+    // the only evidence the press landed. It skips the app-activation preflight on its own terms in
+    // `shouldSkipAppActivationPreflight`, the way `.alert` does (#2699, #2702 review).
+    case .actionButton:
+      return CommandTraits(isInteraction: false, readOnly: .never, isLifecycle: false)
 
     case .status:
       return CommandTraits(isInteraction: false, readOnly: .always, isLifecycle: true)
