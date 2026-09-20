@@ -518,7 +518,7 @@ describe("record, review, replay, and save", () => {
       platformWithStorage().platform,
     );
 
-    await act(async () => click(button("Ask Relay")));
+    await act(async () => click(button("Ask Relay to explore this page")));
     await settle();
     expect(history.location.pathname).toBe("/goals");
     expect(history.location.search).toBe(

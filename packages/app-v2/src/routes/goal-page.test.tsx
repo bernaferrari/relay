@@ -320,7 +320,9 @@ describe("Goal page", () => {
       (option as HTMLElement).click();
     });
     await settle();
-    expect(host.textContent).toContain("Workers inherit the grok-lab Lane");
+    expect(host.textContent).toContain(
+      "Relay opens a fresh browser at the URL above, carrying the grok-lab Lane's saved sign-in. It does not continue your current browser session.",
+    );
 
     await setValue("goal-description", "Open the signed-in account page");
     await setValue("goal-start-url", "https://example.test");
