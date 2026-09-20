@@ -588,7 +588,6 @@ function assertLaneTargetServesUrl(
   }
 }
 
-
 export async function resolveTarget(
   operations: RelayOperationPort,
   input: GoalSessionStartInput,
