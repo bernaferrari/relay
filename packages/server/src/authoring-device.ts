@@ -20,10 +20,29 @@ export type AuthoringDeviceOptions = {
 };
 
 const FIXTURE_HYDRATE_TIMEOUT_MS = 30_000;
+/** A fixture is immutable storage state: once it hydrated a signed-in page,
+ * consecutive captures in the same workflow (teach hops, run steps minutes
+ * apart) need not re-prove it — and must not, because pages legitimately
+ * past the login screen no longer carry a signed-in-home marker. The memo
+ * is short-lived so a fixture whose app-side session later expires still
+ * fails closed on the next workflow. */
+const FIXTURE_HYDRATION_MEMO_MS = 5 * 60_000;
 const fixtureHydratedSessions = new Set<string>();
+const fixtureHydrationMemo = new Map<string, number>();
 
-async function ensureFixtureCaptureHydrated(sessionId: string, device: Device): Promise<void> {
+async function ensureFixtureCaptureHydrated(
+  sessionId: string,
+  device: Device,
+  memoKey?: string,
+): Promise<void> {
   if (fixtureHydratedSessions.has(sessionId)) return;
+  if (memoKey) {
+    const memoizedAt = fixtureHydrationMemo.get(memoKey);
+    if (memoizedAt !== undefined && Date.now() - memoizedAt < FIXTURE_HYDRATION_MEMO_MS) {
+      fixtureHydratedSessions.add(sessionId);
+      return;
+    }
+  }
   const started = performance.now();
   while (performance.now() - started < FIXTURE_HYDRATE_TIMEOUT_MS) {
     const snapshot = await device.capture.snapshot();
@@ -31,6 +50,7 @@ async function ensureFixtureCaptureHydrated(sessionId: string, device: Device): 
     const state = fixtureCaptureReadiness(labels);
     if (state === "ready") {
       fixtureHydratedSessions.add(sessionId);
+      if (memoKey) fixtureHydrationMemo.set(memoKey, Date.now());
       return;
     }
     if (state === "signed-out") {
@@ -82,7 +102,11 @@ export async function deviceFor(
         authenticationFixtureId: fixtureId,
       }),
     });
-    await ensureFixtureCaptureHydrated(session.id, device);
+    await ensureFixtureCaptureHydrated(
+      session.id,
+      device,
+      `${session.target.targetId}#${fixtureId}`,
+    );
     return device;
   });
 }

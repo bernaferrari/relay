@@ -33,6 +33,7 @@ import {
   type NamedControlTarget,
 } from "./device-target-resolution.js";
 import { currentTargetContext, runWithTargetContext } from "./target-context.js";
+import { GroundingError } from "./grounding.js";
 import { verifyIosScreenChanged } from "./ios-app-launch.js";
 import { annotateTapPreview, tapPreviewLogicalBounds } from "./tap-preview.js";
 import { iosLogicalBoundsForSerial } from "./workspace-capture.js";
@@ -161,6 +162,32 @@ function optionalInteractPoint(
 ): { point: InteractPoint } | Record<string, never> {
   if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return {};
   return { point: { x: point.x, y: point.y } };
+}
+
+/**
+ * A named tap that matches no control dispatched nothing. Reporting that as
+ * ok would be a silent no-op success (the missing-scope false-success bug);
+ * the caller gets a typed grounding failure with the tried selector instead.
+ * Miss-tolerant flows (find) keep the older tolerant helper.
+ */
+async function namedInteraction(
+  device: Device,
+  target: Parameters<typeof pressNamedControl>[1],
+): Promise<InteractResult> {
+  try {
+    return { resolution: await pressNamedControl(device, target) };
+  } catch (error) {
+    if (error instanceof Error && error.name === "JobCancelledError") throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    if (/no unique control matched/i.test(message)) {
+      throw new GroundingError(
+        `No control matched ${
+          target.label ? `label "${target.label}"` : `identifier "${target.identifier}"`
+        } on the current page. Nothing was tapped. Wait for the page to settle or retry with the exact visible label.`,
+      );
+    }
+    throw error;
+  }
 }
 
 async function namedOrMiss(
@@ -450,12 +477,12 @@ export async function interactOnDevice(
 ): Promise<InteractResult> {
   switch (input.kind) {
     case "identifier":
-      return namedOrMiss(device, {
+      return namedInteraction(device, {
         identifier: input.identifier,
         ...optionalInteractPoint(input.point),
       });
     case "label":
-      return namedOrMiss(device, {
+      return namedInteraction(device, {
         label: input.label,
         ...(input.heading?.trim() ? { heading: input.heading } : {}),
         ...optionalInteractPoint(input.point),

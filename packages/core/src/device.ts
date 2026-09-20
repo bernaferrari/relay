@@ -1121,6 +1121,22 @@ export async function pressNamedControl(
     return pointOnly;
   }
   let resolved = resolveNamedControl(nodes, target);
+  // A fresh proof context (fixture lanes mint one per operation) can serve
+  // its accessibility tree a beat after the page is interactive. A first
+  // grounding miss on a browser is therefore retried briefly before it is
+  // declared final — the tap must not silently no-op on a page that merely
+  // was not semantic-ready yet.
+  const context = currentTargetContext();
+  const browserGroundingRetry = context.kind === "browser";
+  const groundingDeadline = performance.now() + 3_000;
+  while (!resolved && browserGroundingRetry && performance.now() < groundingDeadline) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 250));
+    nodes = await snapshot(device, {
+      ...(target.identifier?.trim() ? { includeIdentifiers: [target.identifier] } : {}),
+      ...(target.label?.trim() ? { includeLabels: [target.label] } : {}),
+    });
+    resolved = resolveNamedControl(nodes, target);
+  }
   if (!resolved && target.identifier?.trim() && selectedPlatform() === "ios") {
     try {
       const iosContext = currentTargetContext();

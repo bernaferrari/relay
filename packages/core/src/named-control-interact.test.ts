@@ -710,9 +710,74 @@ test("interactOnDevice fails closed when identifier matches nothing", async () =
       rect: { x: 10, y: 700, width: 80, height: 40 },
     },
   ]);
-  const result = await runWithTargetContext(
-    { kind: "device", platform: "ios", serial: "named-miss" },
-    () => interactOnDevice(device, { kind: "identifier", identifier: "sidebar.settings.button" }),
+  await assert.rejects(
+    runWithTargetContext({ kind: "device", platform: "ios", serial: "named-miss" }, () =>
+      interactOnDevice(device, { kind: "identifier", identifier: "sidebar.settings.button" }),
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.name, "GroundingError");
+      assert.match(error.message, /identifier "sidebar\.settings\.button"/u);
+      return true;
+    },
   );
-  assert.equal(result.resolution, undefined);
+});
+
+test("a named tap that matches nothing reports a grounding failure, never ok", async () => {
+  const device = stubDevice([]);
+  await assert.rejects(
+    runWithTargetContext({ kind: "device", platform: "android", serial: "named-miss-test" }, () =>
+      interactOnDevice(device, { kind: "label", label: "Settings" }),
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.name, "GroundingError");
+      assert.match(error.message, /label "Settings"/u);
+      assert.match(error.message, /Nothing was tapped/u);
+      return true;
+    },
+  );
+  assert.deepEqual((device as unknown as { presses: unknown[] }).presses, []);
+});
+
+test("a fresh browser page that is not semantic-ready yet still gets its tap", async () => {
+  const settings = {
+    type: "Link",
+    label: "Settings",
+    enabled: true,
+    hittable: true,
+    rect: { x: 24, y: 150, width: 82, height: 60 },
+  };
+  let reads = 0;
+  const device = {
+    presses: [] as unknown[],
+    interactions: {
+      find: () => Promise.resolve({}),
+      press: (options: unknown) => {
+        (device as unknown as { presses: unknown[] }).presses.push(options);
+        return Promise.resolve({});
+      },
+      longPress: () => Promise.resolve({}),
+      fill: () => Promise.resolve({}),
+      type: () => Promise.resolve({}),
+      swipe: () => Promise.resolve({}),
+      pan: () => Promise.resolve({}),
+    },
+    command: { wait: () => Promise.resolve({}) },
+    capture: {
+      snapshot: () => {
+        reads += 1;
+        // First read: the accessibility tree of a just-opened proof context
+        // has not rendered the control yet. Second read: present.
+        return Promise.resolve({ nodes: reads === 1 ? [] : [settings] });
+      },
+    },
+  } as unknown as Device;
+  const result = await runWithTargetContext(
+    { kind: "browser", platform: "browser", targetId: "fresh-proof-page" },
+    () => interactOnDevice(device, { kind: "label", label: "Settings" }),
+  );
+  assert.equal(result.resolution?.method, "label");
+  assert.equal(reads >= 2, true);
+  assert.equal((device as unknown as { presses: unknown[] }).presses.length, 1);
 });

@@ -32,3 +32,12 @@ test("an explicit signed-in role indicator marks non-Grok apps ready", () => {
   );
   assert.equal(fixtureCaptureReadiness(["Signed in as admin", "Save"]), "ready");
 });
+
+test("a settings page past login is waiting, never signed-out", () => {
+  // The hydration memo covers consecutive captures; when the poll does run,
+  // a page legitimately past login must never be classified signed-out.
+  assert.equal(
+    fixtureCaptureReadiness(["Workspace settings", "Account member", "Save"]),
+    "waiting",
+  );
+});
