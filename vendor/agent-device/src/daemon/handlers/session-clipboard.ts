@@ -112,8 +112,10 @@ async function executeClipboardWrite(
 }
 
 /**
- * Relay fork: `clipboard paste <text> <selectorKey> <selectorValue>`. Write and Paste are one
- * verified runner transaction, so the pasteboard cannot be cleared between them.
+ * `clipboard paste <text> <selectorKey> <selectorValue>`. Write and Paste are
+ * one verified runner command that replaces the entire target field. Empty
+ * text clears the field. This is not rollback-capable: probe-app foreground
+ * and pasteboard writes can happen before an error.
  */
 async function executeClipboardPaste(
   runtime: BoundDeviceRuntime<typeof clipboardPasteUse>,

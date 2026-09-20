@@ -78,18 +78,19 @@ function appleClipboardFact(device: DeviceInfo): RuntimeOperationFact {
 const atomicClipboardUnavailable = Object.freeze({
   available: false,
   reason: 'unsupported-device-kind',
-  hint: 'atomic clipboard paste/copy requires a physical iOS device with a live XCTest runner.',
+  hint: 'verified clipboard paste/copy requires a physical iOS device with a live XCTest runner.',
 } as const);
 
 /**
- * Relay fork: the atomic field transactions ride one verified runner command, so they exist
- * exactly where the interactor implements them — a physical iPhone/iPad, never macOS or a
- * simulator (the runner's pasteboard ownership does not outlive a one-command simulator
- * process the way the atomic transaction requires it to).
+ * Field paste/copy ride one verified runner command, so they exist exactly
+ * where the interactor implements them — a physical iPhone/iPad, never macOS
+ * or a simulator (the runner's pasteboard ownership does not outlive a
+ * one-command simulator process the way the verified workflow requires it to).
  */
 function appleAtomicClipboardFact(device: DeviceInfo): RuntimeOperationFact {
   if (device.kind !== 'device' || isMacOs(device)) return atomicClipboardUnavailable;
-  return resolveDeviceAppleOs(device) === 'ios' ? available : atomicClipboardUnavailable;
+  const os = resolveDeviceAppleOs(device);
+  return os === 'ios' || os === 'ipados' ? available : atomicClipboardUnavailable;
 }
 
 const appEventKindUnavailable = Object.freeze({

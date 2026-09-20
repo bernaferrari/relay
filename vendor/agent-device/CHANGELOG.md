@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Changed (ios): `clipboard paste` is a verified **replace-field** workflow
+  inside one runner command, not a substring `contains` check and not a
+  rollback-capable transaction. Empty text clears the field without launching
+  the probe app. After the probe app runs, the product is reactivated and the
+  target is re-resolved before Paste; an ambiguous or missing target refuses
+  dispatch. A lost response after Paste must not be replayed.
 - Fixed (daemon): `close` now stops an active app-log stream (and audio probe / perf capture /
   recording) on an implicitly cwd-scoped session. Teardown addressed those resources by
   `session.name` (`default`) instead of the store address (`cwd:<hash>:default`), so the record

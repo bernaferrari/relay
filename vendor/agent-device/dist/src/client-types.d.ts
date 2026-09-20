@@ -1349,7 +1349,7 @@ type ClipboardCommandResult = {
   textLength: number;
   message: string;
 } | {
-  /** Relay fork: the atomic field transactions return the transferred text. */
+  /** Field paste/copy return the transferred text after exact-field verification. */
   action: 'paste' | 'copy';
   text: string;
   textLength: number;

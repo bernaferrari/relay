@@ -198,7 +198,28 @@ test('a write-only refusal still admits the read', async () => {
   expect(read.ok).toBe(true);
 });
 
-// Relay fork: the atomic field transactions are their own admitted cells, one bind each.
+test('clipboard paste admits an empty payload as a field-clear', async () => {
+  const spies = harness({ read: available, write: available, paste: available, copy: available });
+  spies.pasteClipboard.mockResolvedValueOnce('');
+  const response = await handleSessionClipboardCommand({
+    ...request(['paste', '', 'label', 'Message']),
+    ...spies,
+  });
+
+  expect(response.ok).toBe(true);
+  expect(response.ok && response.data).toMatchObject({
+    action: 'paste',
+    text: '',
+    textLength: 0,
+  });
+  expect(spies.pasteClipboard).toHaveBeenCalledWith(
+    expect.objectContaining({
+      text: '',
+      selector: { key: 'label', value: 'Message' },
+    }),
+  );
+});
+
 test('clipboard paste admits clipboardPasteUse and reports the transferred text', async () => {
   const spies = harness({ read: available, write: available, paste: available, copy: available });
   const response = await handleSessionClipboardCommand({

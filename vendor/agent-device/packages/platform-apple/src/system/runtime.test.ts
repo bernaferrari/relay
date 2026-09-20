@@ -47,6 +47,22 @@ test.each([
   },
 );
 
+test.each([
+  { appleOs: 'ios', kind: 'simulator', expected: false },
+  { appleOs: 'ios', kind: 'device', expected: true },
+  { appleOs: 'ipados', kind: 'simulator', expected: false },
+  { appleOs: 'ipados', kind: 'device', expected: true },
+  { appleOs: 'macos', kind: 'device', expected: false },
+  { appleOs: 'tvos', kind: 'device', expected: false },
+] as const)(
+  'verified clipboard paste/copy on an Apple $appleOs $kind is available: $expected',
+  ({ appleOs, kind, expected }) => {
+    const facts = appleSystemFacts(appleDevice(appleOs, kind));
+    expect(facts.pasteClipboard.available).toBe(expected);
+    expect(facts.copyClipboard.available).toBe(expected);
+  },
+);
+
 /**
  * `trigger-app-event` carried no Apple admission closure at all: its retired bucket was
  * `{ simulator, device }` flat, so every leaf with a constructible interactor admits it — macOS
@@ -169,6 +185,8 @@ test('binds the system operations for an admitted cell and none for a refused on
   expect(refused.readClipboard).toBeUndefined();
   expect(refused.writeClipboard).toBeUndefined();
   expect(refused.setSetting).toBeUndefined();
+  expect(refused.pasteClipboard).toBeTypeOf('function');
+  expect(refused.copyClipboard).toBeTypeOf('function');
   // The refused cell here is clipboard's and settings' — a physical iOS device, which `alert`
   // deliberately still admits, so its legs stay bound.
   expect(refused.readAlert).toBeTypeOf('function');

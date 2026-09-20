@@ -27,10 +27,17 @@ export type ClipboardFieldSelector = Readonly<{
 }>;
 
 /**
- * One atomic paste: write `text` into the pasteboard and perform the real system Paste
- * on the selected field as a single verified runner transaction. Physical iOS clears
- * runner-owned pasteboard data when a one-command test process exits, so the write and
- * the paste cannot be two requests.
+ * One verified field paste inside a single runner command.
+ *
+ * The command **replaces the entire field** with `text` (empty `text` clears
+ * the field). It is not insert-at-caret, not replace-selection, and not a
+ * rollback-capable transaction: the runner may switch to its probe app, write
+ * the pasteboard, and reactivate the product before Paste. Those intermediate
+ * changes remain if a later step fails. A lost response after Paste was
+ * dispatched is outcome-unknown — the host must not send the command again.
+ *
+ * Physical iOS clears runner-owned pasteboard data when a one-command test
+ * process exits, so the write and the paste cannot be two requests.
  */
 export type ClipboardPasteInput = ClipboardReadInput &
   Readonly<{ text: string; selector: ClipboardFieldSelector }>;
@@ -92,8 +99,8 @@ export type ClipboardRuntimeOperationFactsInput = Readonly<{
   read?: RuntimeOperationFact;
   write?: RuntimeOperationFact;
   /**
-   * The atomic field transactions are Relay-fork extensions that exist only where a
-   * runner can perform them in one verified command; owners that name neither leave
+   * The field-oriented paste/copy commands exist only where a runner can
+   * perform them in one verified command; owners that name neither leave
    * both cells to the family denial above.
    */
   paste?: RuntimeOperationFact;

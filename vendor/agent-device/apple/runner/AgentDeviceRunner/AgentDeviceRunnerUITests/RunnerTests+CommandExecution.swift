@@ -119,6 +119,30 @@ extension RunnerTests {
     return true
   }
 
+  /// Select the whole field so Paste replaces rather than inserting.
+  private func selectEntireField(_ element: XCUIElement) {
+    element.typeKey("a", modifierFlags: .command)
+    sleepFor(0.1)
+  }
+
+  private func clearEntireField(_ element: XCUIElement, in application: XCUIApplication) -> Bool {
+    _ = activateElement(app: application, element: element, action: "focus clipboard clear target")
+    sleepFor(0.15)
+    selectEntireField(element)
+    element.typeText(XCUIKeyboardKey.delete.rawValue)
+    return true
+  }
+
+  private func replaceEntireField(
+    _ element: XCUIElement,
+    in application: XCUIApplication
+  ) -> Bool {
+    _ = activateElement(app: application, element: element, action: "focus clipboard replace target")
+    sleepFor(0.15)
+    selectEntireField(element)
+    return pasteIntoElement(element, in: application)
+  }
+
   private func currentUptimeMs() -> Double {
     ProcessInfo.processInfo.systemUptime * 1000
   }
@@ -1786,6 +1810,10 @@ extension RunnerTests {
 #endif
     case .clipboardPaste:
 #if canImport(UIKit)
+      // Verified replace-field workflow, not a rollback-capable transaction.
+      // Intermediate clipboard contents and a foreground switch to the runner
+      // probe app can occur before an error. If this command is dispatched and
+      // the host loses the response, do not send clipboardPaste again.
       guard let text = command.text else {
         return Response(ok: false, error: ErrorPayload(message: "clipboardPaste requires text"))
       }
@@ -1819,29 +1847,81 @@ extension RunnerTests {
           error: ErrorPayload(code: "INVALID_TARGET", message: "clipboard paste target is not editable text")
         )
       }
-      guard copyRunnerClipboardProbe(text: text) else {
+      if text.isEmpty {
+        // Empty payload clears the field. Do not launch the probe app.
+        guard clearEntireField(element, in: activeApp) else {
+          return Response(
+            ok: false,
+            error: ErrorPayload(
+              code: "CLIPBOARD_PASTE_FAILED",
+              message: "the empty clipboard paste could not clear the field"
+            )
+          )
+        }
+      } else {
+        guard copyRunnerClipboardProbe(text: text) else {
+          activeApp.activate()
+          return Response(
+            ok: false,
+            error: ErrorPayload(
+              code: "CLIPBOARD_PROBE_UNAVAILABLE",
+              message: "the runner could not open its clipboard probe"
+            )
+          )
+        }
+        // Probe launch foregrounds AgentDeviceRunner. Reactivate the product
+        // and re-resolve the target before Paste — a stale unique match can
+        // become missing or ambiguous.
         activeApp.activate()
-        return Response(
-          ok: false,
-          error: ErrorPayload(
-            code: "CLIPBOARD_PROBE_UNAVAILABLE",
-            message: "Relay could not open its clipboard probe"
-          )
+        let reactivated = findElement(
+          app: activeApp,
+          selectorKey: selectorKey,
+          selectorValue: selectorValue,
+          allowNonHittableFallback: false
         )
-      }
-      activeApp.activate()
-      guard pasteIntoElement(element, in: activeApp) else {
-        return Response(
-          ok: false,
-          error: ErrorPayload(
-            code: "EDIT_MENU_UNAVAILABLE",
-            message: "the system Paste action did not appear",
-            hint: "Focus an editable field and retry after the keyboard is ready."
+        switch clipboardPasteDispatchDecision(
+          isAmbiguous: reactivated.isAmbiguous,
+          found: reactivated.element != nil
+        ) {
+        case .refuseAmbiguous:
+          return Response(
+            ok: false,
+            error: ErrorPayload(
+              code: "AMBIGUOUS_MATCH",
+              message: "clipboard paste target is ambiguous after reactivation"
+            )
           )
-        )
+        case .refuseMissing:
+          return Response(
+            ok: false,
+            error: ErrorPayload(
+              code: "ELEMENT_NOT_FOUND",
+              message: "clipboard paste target was not found after reactivation"
+            )
+          )
+        case .dispatch:
+          break
+        }
+        guard let refreshed = reactivated.element, isTextEntryElement(refreshed) else {
+          return Response(
+            ok: false,
+            error: ErrorPayload(code: "INVALID_TARGET", message: "clipboard paste target is not editable text")
+          )
+        }
+        guard replaceEntireField(refreshed, in: activeApp) else {
+          return Response(
+            ok: false,
+            error: ErrorPayload(
+              code: "EDIT_MENU_UNAVAILABLE",
+              message: "the system Paste action did not appear",
+              hint: "Focus an editable field and retry after the keyboard is ready. Paste may already have been dispatched; do not replay this command."
+            )
+          )
+        }
       }
       let deadline = Date().addingTimeInterval(2)
       var observed = ""
+      var matchState = ClipboardPasteFieldMatch.pending
       repeat {
         let refreshed = findElement(
           app: activeApp,
@@ -1850,15 +1930,17 @@ extension RunnerTests {
           allowNonHittableFallback: false
         ).element
         observed = (refreshed?.value as? String) ?? ""
-        if observed.contains(text) { break }
+        matchState = clipboardPasteFieldMatch(observed: observed, expected: text)
+        if matchState != .pending { break }
         sleepFor(0.1)
       } while Date() < deadline
-      guard observed.contains(text) else {
+      guard clipboardPasteFieldMatches(observed: observed, expected: text) else {
         return Response(
           ok: false,
           error: ErrorPayload(
             code: "CLIPBOARD_PASTE_FAILED",
-            message: "Paste was activated but the target did not contain the clipboard text"
+            message: "Paste was activated but the field did not equal the clipboard text",
+            hint: "clipboardPaste replaces the entire field. A lost response after Paste is outcome-unknown; do not dispatch the command again."
           )
         )
       }
@@ -1904,14 +1986,14 @@ extension RunnerTests {
           error: ErrorPayload(code: "INVALID_TARGET", message: "clipboard copy target is not editable text")
         )
       }
-      let clipboardSentinel = "relay-copy-probe-\(UUID().uuidString)"
+      let clipboardSentinel = "agent-device-copy-probe-\(UUID().uuidString)"
       guard copyRunnerClipboardProbe(text: clipboardSentinel) else {
         activeApp.activate()
         return Response(
           ok: false,
           error: ErrorPayload(
             code: "CLIPBOARD_PROBE_UNAVAILABLE",
-            message: "Relay could not prepare its clipboard verification probe"
+            message: "the runner could not prepare its clipboard verification probe"
           )
         )
       }
@@ -1923,6 +2005,29 @@ extension RunnerTests {
         selectorValue: selectorValue,
         allowNonHittableFallback: false
       )
+      switch clipboardPasteDispatchDecision(
+        isAmbiguous: refreshedMatch.isAmbiguous,
+        found: refreshedMatch.element != nil
+      ) {
+      case .refuseAmbiguous:
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "AMBIGUOUS_MATCH",
+            message: "clipboard copy target is ambiguous after reactivation"
+          )
+        )
+      case .refuseMissing:
+        return Response(
+          ok: false,
+          error: ErrorPayload(
+            code: "ELEMENT_NOT_FOUND",
+            message: "clipboard copy target was not found after reactivation"
+          )
+        )
+      case .dispatch:
+        break
+      }
       guard let refreshedElement = refreshedMatch.element,
         copyFromElement(refreshedElement, in: activeApp)
       else {
@@ -1930,7 +2035,7 @@ extension RunnerTests {
           ok: false,
           error: ErrorPayload(
             code: "CLIPBOARD_COPY_FAILED",
-            message: "Relay could not reactivate the copy source"
+            message: "the runner could not reactivate the copy source"
           )
         )
       }
@@ -1940,7 +2045,7 @@ extension RunnerTests {
           ok: false,
           error: ErrorPayload(
             code: "CLIPBOARD_PROBE_UNAVAILABLE",
-            message: "Relay could not open its clipboard probe"
+            message: "the runner could not open its clipboard probe"
           )
         )
       }
@@ -1950,7 +2055,7 @@ extension RunnerTests {
           ok: false,
           error: ErrorPayload(
             code: "EDIT_MENU_UNAVAILABLE",
-            message: "the system Paste action did not appear in Relay's clipboard probe"
+            message: "the system Paste action did not appear in the clipboard probe"
           )
         )
       }
@@ -1959,7 +2064,7 @@ extension RunnerTests {
       guard !copied.isEmpty, copied != clipboardSentinel else {
         return Response(
           ok: false,
-          error: ErrorPayload(code: "CLIPBOARD_COPY_FAILED", message: "Copy did not replace Relay's verification value")
+          error: ErrorPayload(code: "CLIPBOARD_COPY_FAILED", message: "Copy did not replace the verification value")
         )
       }
       if let expected = command.text, copied != expected {

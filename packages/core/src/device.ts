@@ -626,9 +626,10 @@ async function focusClipboardTarget(
   throw new Error("clipboard copy/paste requires an identifier, label, or text target");
 }
 
-/** Perform the actual iOS system Paste action before XCTest exits.
- * Physical iOS clears runner-owned pasteboard data when a one-command test process
- * terminates, so write and Paste must be one verified native transaction. */
+/** Replace the target field through the iOS system Paste action before XCTest
+ * exits. Write and Paste are one verified runner command (empty text clears
+ * the field). Intermediate probe-app foreground and pasteboard writes can
+ * occur before an error; a lost response after Paste must not be replayed. */
 export async function clipboardPaste(
   device: Device,
   text: string,
