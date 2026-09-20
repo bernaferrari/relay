@@ -73,6 +73,9 @@ packages/ios-hid-tap/ios-hid-tap.exe
 # Local-only review artifacts: kept on disk, never pushed.
 evidence/
 
+# Editor/agent local state. Do not ship.
+.claude/
+
 # Managed worktrees are independent checkouts, not root workspace source.
 # git worktrees (e.g. .worktrees/next-feature)
 .worktrees/
