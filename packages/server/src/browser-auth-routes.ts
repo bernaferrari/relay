@@ -106,12 +106,13 @@ export async function handleBrowserAuthRoute(context: BrowserAuthRouteContext): 
         throw browserAuthenticationConflict(error, "Could not save browser sign-in state");
       }
     })();
-    const profile = browserCaseProfileForTarget(target);
-    const updated = await saveTargetBrowserEnvironment(target, {
-      ...profile,
-      authenticationFixtureId: fixture.reference,
-    });
-    json(res, 201, { fixture, target: updated });
+    // The fixture stays an immutable execution identity in the fixture store.
+    // Never persist authenticationFixtureId onto the saved browser
+    // environment: that would make every unsigned open of this target
+    // account-bound (breaking snapshot/interact with the project-scope
+    // guard) and would make fixture Lanes unbindable
+    // (LANE_FIXTURE_PERSIST_ERROR). The saved target is returned unchanged.
+    json(res, 201, { fixture, target });
     return true;
   }
 

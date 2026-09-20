@@ -95,7 +95,7 @@ test(
       assert.match(savedAuthentication.fixture.reference, /^authfx:.+:1$/u);
       assert.equal(
         savedAuthentication.target.browser?.environment?.authenticationFixtureId,
-        savedAuthentication.fixture.reference,
+        undefined,
       );
       const fixtures = await client.invoke("target.browser-auth.list", { targetId: target.id });
       assert.equal(fixtures.fixtures.length, 1);
