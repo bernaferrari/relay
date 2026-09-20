@@ -555,9 +555,13 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
       ...(intent.laneId
         ? { laneId: intent.laneId }
         : { expectedRevision: revision, target: { ...target } }),
-      ...(targetProfileId ? { targetProfileId } : {}),
-      ...(intent.engine ? { engine: intent.engine } : {}),
-      ...(intent.account ? { account: intent.account } : {}),
+      ...(intent.laneId
+        ? {}
+        : {
+            ...(targetProfileId ? { targetProfileId } : {}),
+            ...(intent.engine ? { engine: intent.engine } : {}),
+            ...(intent.account ? { account: intent.account } : {}),
+          }),
       ...(intent.startup ? { startup: { ...intent.startup } } : {}),
       ...(intent.sourceRevision ? { sourceRevision: { ...intent.sourceRevision } } : {}),
       ...(intent.capture
