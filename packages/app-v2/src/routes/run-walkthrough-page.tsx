@@ -8,7 +8,7 @@
  * navigation works with reports removed (plan §6.1). */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { getRouteApi, useNavigate, useRouteContext, useSearch } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
 import { PageHeader, WorkbenchPage } from "../components/page-layout";
@@ -66,6 +66,7 @@ export function RunWalkthroughPage() {
   const { runService } = useRouteContext({ from: "__root__" }) as {
     runService: RunProductService;
   };
+  const queryClient = useQueryClient();
   const manifestQuery = useQuery({
     queryKey: ["run", "player-manifest", runId],
     queryFn: () => runService.getPlayerManifest!(runId),
@@ -74,6 +75,26 @@ export function RunWalkthroughPage() {
     retry: false,
   });
   const manifest = manifestQuery.data;
+  const reviewMutation = useMutation({
+    mutationFn: async (input: {
+      capture: { runId: string; framePath: string; imageSha256: string };
+      action: string;
+      note?: string;
+    }) => {
+      if (!runService.reviewCapture) throw new Error("Review is not available on this surface.");
+      return runService.reviewCapture({
+        runId: input.capture.runId,
+        captureId: `${input.capture.framePath}::${input.capture.imageSha256}`,
+        action: input.action,
+        ...(input.note !== undefined ? { note: input.note } : {}),
+      } as Parameters<NonNullable<RunProductService["reviewCapture"]>>[0]);
+    },
+    onSuccess: async () => {
+      // Refresh the pinned manifest so the decision appears on the exact
+      // capture without leaving the player.
+      await queryClient.invalidateQueries({ queryKey: ["run", "player-manifest", runId] });
+    },
+  });
 
   const historyRef = useRef<string[]>([]);
   const [focusedHotspot, setFocusedHotspot] = useState(0);
@@ -345,6 +366,42 @@ export function RunWalkthroughPage() {
               {finding.note ? <p className="m-0 opacity-80">{finding.note}</p> : null}
               <p className="m-0 text-xs opacity-70">
                 by {finding.decidedBy ?? "unknown"} · {new Date(finding.decidedAt).toLocaleString()}
+              </p>
+            </section>
+          ) : capture && runService.reviewCapture ? (
+            <section aria-label="Review this capture" className="rounded border p-2">
+              <h3 className="mb-1 font-medium">Review this capture</h3>
+              <div className="flex flex-wrap gap-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={reviewMutation.isPending}
+                  onClick={() => reviewMutation.mutate({ capture, action: "accept" })}
+                >
+                  Looks correct
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={reviewMutation.isPending}
+                  onClick={() =>
+                    reviewMutation.mutate({
+                      capture,
+                      action: "report-issue",
+                      note: "Reported from the walkthrough player",
+                    })
+                  }
+                >
+                  Report issue
+                </Button>
+              </div>
+              {reviewMutation.isError ? (
+                <p className="m-0 mt-1 text-xs text-destructive">
+                  {(reviewMutation.error as Error).message}
+                </p>
+              ) : null}
+              <p className="m-0 mt-1 text-xs opacity-70">
+                Decisions bind to this exact capture ({capture.imageSha256.slice(0, 8)}).
               </p>
             </section>
           ) : null}

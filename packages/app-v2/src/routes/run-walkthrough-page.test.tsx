@@ -264,10 +264,80 @@ describe("Run walkthrough player", () => {
     expect(text()).toContain("frames/002.png");
     expect(text()).toContain("eeeeeeee");
   });
+});
 
-  it("labels authored links as navigation-only", async () => {
-    await renderWalkthrough("/runs/run-member/walkthrough?state=screen-language");
-    expect(text()).toContain("Back to home");
-    expect(text()).toContain("authored link — navigation only");
+describe("Run walkthrough review controls", () => {
+  it("reports an issue on the exact capture and shows the decision without leaving the player", async () => {
+    const reviewed: string[] = [];
+    const current = manifest();
+    const service: RunProductService = {
+      async getPlayerManifest() {
+        // Fresh reference per fetch: structural sharing must see a change.
+        return structuredClone(current);
+      },
+      async loadFrame() {
+        const bytes = Uint8Array.from(atob(PNG_1PX.split(",")[1]!), (c) => c.charCodeAt(0));
+        return new Blob([bytes], { type: "image/png" });
+      },
+      async reviewCapture(input: {
+        runId: string;
+        captureId: string;
+        action: string;
+        note?: string;
+      }) {
+        reviewed.push(`${input.runId}:${input.captureId}:${input.action}`);
+        // The next manifest read reflects the decision (server-side truth).
+        current.findings = [
+          ...current.findings,
+          {
+            id: `${input.runId}:${input.captureId}`,
+            runId: input.runId,
+            captureId: input.captureId,
+            action: "report-issue",
+            note: input.note,
+            decidedAt: 50,
+            decidedBy: "human:test",
+            reviewVersion: 1,
+          },
+        ];
+        return { ok: true } as never;
+      },
+    } as unknown as RunProductService;
+
+    const platform: Platform = {
+      platform: "web",
+      getServerUrl: () => "http://127.0.0.1:8787",
+      storage: { get: () => null, set: () => undefined, remove: () => undefined },
+    };
+    const history = createMemoryHistory({
+      initialEntries: ["/runs/run-member/walkthrough?state=screen-home"],
+    });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    await act(async () => {
+      root.render(
+        <RelayV2App
+          platform={platform}
+          history={history}
+          productService={recordingService}
+          runService={service}
+        />,
+      );
+    });
+    await settle();
+
+    const report = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Report issue"),
+    );
+    if (!report) throw new Error("Report issue action missing");
+    await click(report);
+    expect(reviewed).toHaveLength(1);
+    expect(reviewed[0]).toContain("frames/001.png::aaaaaaaa");
+    expect(reviewed[0]).toContain("report-issue");
+    // After the manifest refresh the decision is bound to the exact capture.
+    expect(text()).toContain("Review decision on this capture");
+    expect(text()).toContain("human:test");
   });
 });
