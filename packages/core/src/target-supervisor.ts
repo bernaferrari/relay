@@ -502,6 +502,22 @@ export class TargetSupervisor {
     this.state.counters.pixelCaptures += 1;
     this.sample("pixels", durationMs);
     this.record("PIXELS_CAPTURED", "Fresh pixels are available.");
+    this.clearStaleHumanHold("Fresh pixels prove the device is observable again.");
+  }
+
+  /**
+   * Recovery exhaustion sets `needsHuman` and nothing else clears it, so one
+   * bad stretch (a locked screen, a wedged runner) blocks every later tap and
+   * launch even after the device is healthy. A fresh observation is proof the
+   * device is reachable again. Quarantine is deliberate and stays until an
+   * explicit clear; an uncertain in-flight mutation still needs its receipt.
+   */
+  private clearStaleHumanHold(reason: string): void {
+    if (!this.state.needsHuman || this.state.quarantined) return;
+    if (this.state.input.pending?.uncertainAt !== undefined) return;
+    this.state.needsHuman = false;
+    if (!this.state.input.pending) delete this.state.input.blockedReason;
+    this.record("RECOVERY_COMPLETED", reason);
   }
 
   private beginSemanticTraversal(): string {
@@ -541,6 +557,7 @@ export class TargetSupervisor {
       this.record("SEMANTIC_TRAVERSAL_COMPLETED", "Fresh semantic evidence is current.", {
         traversalToken: event.token,
       });
+      this.clearStaleHumanHold("Fresh semantic evidence proves the device is observable again.");
       return;
     }
     if (event.usable) {

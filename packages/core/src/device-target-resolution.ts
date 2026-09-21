@@ -141,8 +141,48 @@ function isActivationContainer(node: SnapshotNode): boolean {
   return role === "application" || role === "window";
 }
 
-/** A resolver can coalesce duplicate native nodes at the same tap point. Keep
- * the representative stable even if a bridge changes traversal order. */
+/** True when this node encloses a different node carrying the same label.
+ * That makes it the row container around the title text: the better tap. */
+function enclosesMatchingLabel(
+  node: SnapshotNode,
+  nodes: SnapshotNode[],
+  label: string | undefined,
+): boolean {
+  if (!label || !node.rect || typeof node.index !== "number") return false;
+  const own = node.rect;
+  const childrenByParent = new Map<number, SnapshotNode[]>();
+  for (const candidate of nodes) {
+    if (typeof candidate.parentIndex !== "number") continue;
+    const siblings = childrenByParent.get(candidate.parentIndex) ?? [];
+    siblings.push(candidate);
+    childrenByParent.set(candidate.parentIndex, siblings);
+  }
+  const pending = [...(childrenByParent.get(node.index) ?? [])];
+  const seen = new Set<number>();
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    if (typeof current.index === "number" && seen.has(current.index)) continue;
+    if (typeof current.index === "number") seen.add(current.index);
+    const rect = current.rect;
+    // Only the outermost container earns the bonus. The navigation bar also
+    // wraps the title text, and rewarding every wrapper leaves the tie intact.
+    if (
+      current !== node &&
+      rect &&
+      current.label?.trim().toLocaleLowerCase() === label &&
+      rect.x >= own.x &&
+      rect.y >= own.y &&
+      rect.x + rect.width <= own.x + own.width + 1 &&
+      rect.y + rect.height <= own.y + own.height + 1
+    ) {
+      return true;
+    }
+    if (typeof current.index === "number") {
+      pending.push(...(childrenByParent.get(current.index) ?? []));
+    }
+  }
+  return false;
+}
 function compareSnapshotNodeIdentity(left: SnapshotNode, right: SnapshotNode): number {
   const leftIndex = left.index ?? Number.MAX_SAFE_INTEGER;
   const rightIndex = right.index ?? Number.MAX_SAFE_INTEGER;
@@ -381,9 +421,6 @@ function resolveSnapshotTarget(
           : !isFixedChromeControl && point.y > safeBottom
             ? { revealDirection: "down" as const }
             : {}),
-        // Compose often places the title inside an unlabeled tappable row.
-        // Prefer that row over an identically named section heading or
-        // caption, while retaining the child label for semantic matching.
         rank:
           (INTERACTIVE_SNAPSHOT_ROLES.has(role) ? 4 : 0) +
           (node.hittable ? 2 : 0) +
@@ -406,7 +443,7 @@ function resolveSnapshotTarget(
     );
   }
   if (candidates.length === 0) return undefined;
-
+  if (candidates.length === 0) return undefined;
   const activeLocations = candidates
     .filter((candidate) => candidate.independentlyActivatable)
     .filter(
@@ -432,7 +469,19 @@ function resolveSnapshotTarget(
   }
 
   const bestRank = Math.max(...candidates.map((candidate) => candidate.rank));
-  const best = candidates.filter((candidate) => candidate.rank === bestRank);
+  // iPadOS repeats a row's title on the row container, its navigation bar, and
+  // the text inside it, each hittable at a different point. Those are one
+  // control: drop any copy whose bounds sit inside another same-label
+  // candidate, so the title strip does not read as a second target.
+  const collapsed = candidates.filter(
+    (candidate) =>
+      !candidates.some(
+        (other) =>
+          other !== candidate &&
+          enclosesMatchingLabel(other.node, [candidate.node], normalized.label),
+      ),
+  );
+  const best = collapsed.filter((candidate) => candidate.rank === bestRank);
   const distinct = best.filter(
     (candidate, index) =>
       best.findIndex(

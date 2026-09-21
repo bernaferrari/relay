@@ -575,8 +575,11 @@ export async function labelNodesViaLiveIosRunnerListener(input: {
 
 export async function tapViaLiveIosRunnerListener(input: {
   serial: string;
-  selectorKey: "label" | "id";
-  selectorValue: string;
+  selectorKey?: "label" | "id";
+  selectorValue?: string;
+  /** Viewport point. Skips the runner's own label lookup, which picks the
+   * first same-label element and misses the row Relay already resolved. */
+  point?: { x: number; y: number };
   appBundleId?: string;
   timeoutMs?: number;
 }): Promise<void> {
@@ -584,14 +587,22 @@ export async function tapViaLiveIosRunnerListener(input: {
   if (!listener) {
     throw new Error("iOS snapshot needs an active XCTest session");
   }
-  const command: LiveIosRunnerCommand = {
-    command: "tap",
-    selectorKey: input.selectorKey,
-    selectorValue: input.selectorValue,
-    allowNonHittableCoordinateFallback: true,
-    synthesized: true,
-    ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
-  };
+  const command: LiveIosRunnerCommand = input.point
+    ? {
+        command: "tap",
+        synthesized: true,
+        x: input.point.x,
+        y: input.point.y,
+        ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+      }
+    : {
+        command: "tap",
+        selectorKey: input.selectorKey,
+        selectorValue: input.selectorValue,
+        allowNonHittableCoordinateFallback: true,
+        synthesized: true,
+        ...(input.appBundleId ? { appBundleId: input.appBundleId } : {}),
+      };
   const timeoutMs = input.timeoutMs ?? 20_000;
   const post = injectedPost ?? postLiveIosRunnerCommand;
   const result = await post(listener, command, timeoutMs);
