@@ -135,6 +135,7 @@ export * from "./redaction.js";
 export * from "./evidence-policy.js";
 export * from "./run-catalog.js";
 export * from "./run-story.js";
+export * from "./player-manifest.js";
 export * from "./evidence-metrics.js";
 export * from "./workspace-root.js";
 export * from "./workspace-change-context.js";

@@ -43,8 +43,55 @@ export type ProductVisualReviewResult = Pick<
   OperationOutput<"run.visual.review">,
   "decision" | "baseline"
 >;
-export type ProductVisualBaselineApproval = OperationOutput<"run.visual-baseline.update">;
 export type ProductCaptureReviewResult = OperationOutput<"run.capture.review">;
+export type ProductVisualBaselineApproval = OperationOutput<"run.visual-baseline.update">;
+export type PlayerManifestProjection = {
+  schemaVersion: 1;
+  pinned: {
+    appMapId: string;
+    appMapRevision: number;
+    runIds: readonly string[];
+    generatedAt: number;
+  };
+  entryStateId?: string;
+  states: readonly { id: string; title: string }[];
+  variants: readonly { id: string; label: string }[];
+  captures: readonly {
+    id: string;
+    stateId: string;
+    variantId: string;
+    runId: string;
+    framePath: string;
+    imageSha256: string;
+    caption: string;
+    capturedAt: number;
+  }[];
+  connections: readonly {
+    id: string;
+    fromStateId: string;
+    toStateId: string;
+    kind: "recorded" | "authored";
+    label: string;
+    provenance?: { runId: string; captureId?: string };
+    hotspot?: {
+      connectionId: string;
+      point?: { x: number; y: number };
+      rect?: { x: number; y: number; width: number; height: number };
+      actions: readonly { kind: string; label?: string }[];
+    };
+  }[];
+  findings: readonly {
+    id: string;
+    runId: string;
+    captureId: string;
+    action: string;
+    note?: string;
+    decidedAt: number;
+    decidedBy?: string;
+    reviewVersion?: number;
+  }[];
+  missing: readonly { stateId: string; variantId: string; reason: string }[];
+};
 export type RunProductService = {
   getTest(testId: string): Promise<ProductTestSummary | undefined>;
   listTestRuns?(testId: string): Promise<readonly ProductRunSummary[]>;
@@ -85,6 +132,14 @@ export type RunProductService = {
   ): Promise<ProductVisualBaselineApproval>;
   reviewCapture?(input: OperationInput<"run.capture.review">): Promise<ProductCaptureReviewResult>;
   getReport(runId: string, canonical?: ProductRunReport): Promise<ProductRunReportOverview>;
+  /** Read-only captured-app player manifest (delivery plan §6). Composition
+   * needs no report data; the player works without any report present. */
+  getPlayerManifest?(
+    runId: string,
+    withRunIds?: readonly string[],
+  ): Promise<PlayerManifestProjection>;
+  /** One captured frame as a Blob for display (authenticated transport). */
+  loadFrame?(runId: string, framePath: string): Promise<Blob>;
   getRawEvidence(runId: string): Promise<unknown>;
   exportEvidence?(runId: string): Promise<RunEvidenceExportDocument>;
 };

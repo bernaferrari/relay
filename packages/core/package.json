@@ -20,6 +20,7 @@
     "./workspace": "./src/workspace.ts",
     "./trace": "./src/trace.ts",
     "./runs": "./src/runs.ts",
+    "./player-manifest": "./src/player-manifest.ts",
     "./report": "./src/report.ts",
     "./proof-report": "./src/proof-report.ts",
     "./doctor": "./src/doctor.ts",

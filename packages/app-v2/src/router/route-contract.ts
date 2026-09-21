@@ -129,6 +129,11 @@ const routePresentations = {
     eyebrow: "Run",
     description: "Review evidence, checkpoints, and failures for this run.",
   },
+  "/runs/:runId/walkthrough": {
+    path: "/runs/$runId/walkthrough",
+    eyebrow: "Run",
+    description: "Walk the recorded app state by state, configuration by configuration.",
+  },
   "/batches/:batchId": {
     path: "/batches/$batchId",
     eyebrow: "Runs",

@@ -29,6 +29,7 @@ import {
   readVisualBaselineFrame,
   readPersistedRun,
   findDurableWorkflowsByResources,
+  buildPlayerManifest,
   replayPersistedRunOffline,
   analyzeTracePack,
   exportTracePack,
@@ -790,6 +791,35 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
   if (method === "GET" && storyMatch) {
     const run = await loadScopedRun(storyMatch.id!, scope);
     json(response, 200, { story: buildRunStory(run) });
+    return true;
+  }
+
+  const playerManifestMatch = matchPath(pathname, "/runs/:id/player-manifest");
+  if (method === "GET" && playerManifestMatch) {
+    const run = await loadScopedRun(playerManifestMatch.id!, scope);
+    const runs: PersistedRun[] = [run];
+    for (const extraId of (url.searchParams.get("with") ?? "").split(",")) {
+      if (!extraId || extraId === run.id) continue;
+      runs.push(await loadScopedRun(extraId, scope));
+    }
+    const planArtifact = (run.artifacts ?? []).find(
+      (artifact) => artifact.kind === "app-map-test-plan",
+    );
+    const planData =
+      planArtifact?.data !== null &&
+      typeof planArtifact?.data === "object" &&
+      !Array.isArray(planArtifact?.data)
+        ? (planArtifact.data as Record<string, unknown>)
+        : undefined;
+    const appMapId =
+      url.searchParams.get("appMap") ??
+      (typeof planData?.appMapId === "string" ? planData.appMapId : undefined);
+    if (!appMapId) {
+      throw new HttpError(422, "Run has no App Map plan identity; pass ?appMap=<id> explicitly");
+    }
+    const map = await readAppMap(scope.projectId, appMapId);
+    if (!map) throw new HttpError(404, `App Map ${appMapId} not found`);
+    json(response, 200, { manifest: buildPlayerManifest({ map, runs, now: Date.now() }) });
     return true;
   }
 

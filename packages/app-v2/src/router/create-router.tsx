@@ -120,6 +120,10 @@ const SessionsPage = lazyNamedRoute(() => import("../routes/sessions-page"), "Se
 const SessionPage = lazyNamedRoute(() => import("../routes/session-page"), "SessionPage");
 const RunsPage = lazyNamedRoute(() => import("../routes/runs-page"), "RunsPage");
 const RunPage = lazyNamedRoute(() => import("../routes/run-page"), "RunPage");
+const RunWalkthroughPage = lazyNamedRoute(
+  () => import("../routes/run-walkthrough-page"),
+  "RunWalkthroughPage",
+);
 const BatchPage = lazyNamedRoute(() => import("../routes/batch-page"), "BatchPage");
 const ChangesPage = lazyNamedRoute(() => import("../routes/changes-page"), "ChangesPage");
 const ChangePage = lazyNamedRoute(() => import("../routes/change-page"), "ChangePage");
@@ -339,6 +343,11 @@ const runRoute = createRoute({
   path: "/runs/$runId",
   component: RunPage,
 });
+const runWalkthroughRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/runs/$runId/walkthrough",
+  component: RunWalkthroughPage,
+});
 const batchRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/batches/$batchId",
@@ -445,6 +454,7 @@ const routeTree = rootRoute.addChildren([
   sessionRoute,
   runsRoute,
   runRoute,
+  runWalkthroughRoute,
   batchRoute,
   changesRoute,
   changeRoute,

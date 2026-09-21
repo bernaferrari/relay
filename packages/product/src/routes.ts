@@ -23,6 +23,7 @@ export type RoutePattern =
   | "/recordings/:recordingId/review"
   | "/runs"
   | "/runs/:runId"
+  | "/runs/:runId/walkthrough"
   | "/batches/:batchId"
   | "/changes"
   | "/changes/:changeId"
@@ -109,6 +110,8 @@ export type RouteDefinition = {
     | "replayJob"
     | "reportView"
     | "capture"
+    | "state"
+    | "variant"
     | "type"
     | "q"
     | "returnTo"
@@ -229,6 +232,11 @@ export const ROUTE_DEFINITIONS = [
     "screen",
     "replayJob",
     "reportView",
+    "capture",
+  ]),
+  d("/runs/:runId/walkthrough", "/runs/:runId", "Walk through", "Run", "runs", "inspect-run", [
+    "state",
+    "variant",
     "capture",
   ]),
   d("/batches/:batchId", "/runs", "Batch", "Report", "runs", "review-batch", ["status", "view"]),

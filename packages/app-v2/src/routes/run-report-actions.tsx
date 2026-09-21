@@ -120,6 +120,15 @@ export function RunReportActions({
           Open full report
         </Button>
       ) : null}
+      {!embedded ? (
+        <Button
+          nativeButton={false}
+          render={<Link to="/runs/$runId/walkthrough" params={{ runId: report.runId }} />}
+          variant="outline"
+        >
+          Walk through
+        </Button>
+      ) : null}
       {canInvestigate ? (
         <Button
           nativeButton={false}

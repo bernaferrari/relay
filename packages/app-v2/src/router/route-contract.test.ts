@@ -28,6 +28,7 @@ const expectedPaths = {
   "/recordings/:recordingId/review": "/recordings/$recordingId/review",
   "/runs": "/runs",
   "/runs/:runId": "/runs/$runId",
+  "/runs/:runId/walkthrough": "/runs/$runId/walkthrough",
   "/batches/:batchId": "/batches/$batchId",
   "/changes": "/changes",
   "/changes/:changeId": "/changes/$changeId",
