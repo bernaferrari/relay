@@ -6,7 +6,7 @@
  * The player never dispatches app input and never needs report data —
  * reports may add review controls to this surface later, but the
  * navigation works with reports removed (plan §6.1). */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { getRouteApi, useNavigate, useRouteContext, useSearch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -269,16 +269,8 @@ export function RunWalkthroughPage() {
                 .map((connection, index) => {
                   const point = connection.hotspot?.point;
                   const rect = connection.hotspot?.rect;
-                  const style = point
-                    ? { left: `${point.x * 100}%`, top: `${point.y * 100}%` }
-                    : rect
-                      ? {
-                          left: `${rect.x * 100}%`,
-                          top: `${rect.y * 100}%`,
-                          width: `${rect.width * 100}%`,
-                          height: `${rect.height * 100}%`,
-                        }
-                      : undefined;
+                  const left = point ? point.x : rect ? rect.x : 0;
+                  const top = point ? point.y : rect ? rect.y : 0;
                   return (
                     <button
                       key={connection.id}
@@ -288,13 +280,19 @@ export function RunWalkthroughPage() {
                       title={`${connection.label} (${connection.kind})`}
                       aria-label={`${connection.label} — ${connection.kind} link to ${manifest.states.find((state) => state.id === connection.toStateId)?.title ?? "next state"}`}
                       onClick={() => goTo(connection.toStateId)}
-                      className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-primary/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      style={{
-                        ...style,
-                        ...(rect
-                          ? { width: `${rect.width * 100}%`, height: `${rect.height * 100}%` }
-                          : { width: 20, height: 20, borderRadius: 9999 }),
-                      }}
+                      className={
+                        rect
+                          ? "absolute rounded-sm border-2 border-primary bg-primary/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring left-(--hotspot-left) top-(--hotspot-top) w-(--hotspot-width) h-(--hotspot-height)"
+                          : "absolute size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-primary/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring left-(--hotspot-left) top-(--hotspot-top)"
+                      }
+                      style={
+                        {
+                          "--hotspot-left": `${left * 100}%`,
+                          "--hotspot-top": `${top * 100}%`,
+                          "--hotspot-width": `${rect ? rect.width * 100 : 0}%`,
+                          "--hotspot-height": `${rect ? rect.height * 100 : 0}%`,
+                        } as CSSProperties
+                      }
                     />
                   );
                 })}
