@@ -345,11 +345,17 @@ export async function invokeRelayOperatorTool(input: {
   if (input.name === "relay_health") return call("system.health.get", {});
   if (input.name === "relay_devices") return call("target.devices.list", {});
   if (input.name === "relay_screenshot") {
-    return call("target.screenshot.capture", {
-      serial: parsed.serial,
-      ...(typeof parsed.previewX === "number" ? { previewX: parsed.previewX } : {}),
-      ...(typeof parsed.previewY === "number" ? { previewY: parsed.previewY } : {}),
-    });
+    return call(
+      "target.screenshot.capture",
+      withLane(
+        {
+          ...(typeof parsed.serial === "string" ? { serial: parsed.serial } : {}),
+          ...(typeof parsed.previewX === "number" ? { previewX: parsed.previewX } : {}),
+          ...(typeof parsed.previewY === "number" ? { previewY: parsed.previewY } : {}),
+        },
+        parsed,
+      ),
+    );
   }
   if (input.name === "relay_snapshot") {
     return call(

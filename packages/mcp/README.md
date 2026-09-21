@@ -183,7 +183,7 @@ human screenshot acceptance.
 For manual observation and control, `relay_snapshot`, `relay_preview`, `relay_tap`, `relay_type`,
 and `relay_swipe` accept either `serial` or `lane`. Use the same Lane as the Test to preserve the
 browser/account context. Do not combine a serial with a Lane. `laneId` is an equivalent alias;
-conflicting aliases are rejected. `relay_screenshot` and `relay_recover` still require a serial;
+conflicting aliases are rejected. `relay_screenshot` accepts either a serial or a Lane (browser captures go through the Lane's exact account context); `relay_recover` still requires a serial;
 a Lane-aware `relay_preview` returns pixels without committing the interaction.
 
 For a long Plan, set `wait:false` on `relay_plan_run`. It returns the batch and job IDs immediately.

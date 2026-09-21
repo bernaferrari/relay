@@ -201,11 +201,12 @@ test("full-profile SDK initialization lists every generated Relay tool exactly o
       "confirm",
       "ephemeral",
       "jobId",
+      "laneId",
       "previewX",
       "previewY",
       "serial",
     ]);
-    assert.deepEqual(screenshot.inputSchema.required, ["serial"]);
+    assert.equal(screenshot.inputSchema.required, undefined);
     const snapshot = tools.find(({ name }) => name === "relay_target_snapshot_capture");
     assert.ok(snapshot);
     assert.deepEqual(Object.keys(snapshot.inputSchema.properties ?? {}).sort(), [

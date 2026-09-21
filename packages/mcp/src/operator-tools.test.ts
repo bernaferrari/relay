@@ -1175,3 +1175,21 @@ test("job inspection returns running truth once without waiting or restarting", 
   assert.equal(result.ok, undefined);
   assert.deepEqual(calls, [{ operationId: "job.get", input: { jobId: "job-1" } }]);
 });
+
+test("relay_screenshot accepts a lane instead of a serial and forwards laneId", async () => {
+  const { invoker, calls } = recordingInvoker(() => ({ base64: "aGk=", mime: "image/png" }));
+  const result = await invokeRelayOperatorTool({
+    name: "relay_screenshot",
+    argumentsValue: { lane: "member-lane" },
+    confirmed: false,
+    invoker,
+    actorId: "agent:cursor",
+    signal: new AbortController().signal,
+  });
+  assert.equal(calls.length, 1);
+  const [call] = calls as [{ operationId: string; input: Record<string, unknown> }];
+  assert.equal(call.operationId, "target.screenshot.capture");
+  assert.equal(call.input.laneId, "member-lane");
+  assert.equal(call.input.serial, undefined);
+  void result;
+});

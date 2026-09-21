@@ -138,14 +138,16 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_screenshot",
     "Capture screenshot",
-    'When to use: happy path 1/3 — capture pixels before a tap; missing trees are fine. Then preview/tap, then screenshot again. For a saved Test, use relay_run directly. iOS 17+ needs go-ios tunnel, not target.open. Example: {serial:"RQCY104BG8X"} returns the current PNG.',
+    'When to use: happy path 1/3 — capture pixels before a tap; missing trees are fine. Then preview/tap, then screenshot again. For a saved Test, use relay_run directly. iOS 17+ needs go-ios tunnel, not target.open. Example: {serial:"RQCY104BG8X"} returns the current PNG. A browser Lane works too: {lane:"member-lane"} captures through its exact account context.',
     z
       .object({
-        serial: identifier,
+        serial: identifier.optional(),
+        ...laneFields,
         previewX: z.number().optional(),
         previewY: z.number().optional(),
       })
-      .strict(),
+      .strict()
+      .superRefine(requireControlTarget),
     ro,
   ),
   verb(
