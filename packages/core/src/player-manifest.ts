@@ -129,9 +129,35 @@ type CaptureReviewArtifactData = {
   checkpointId?: unknown;
   capturedAt?: unknown;
   configuration?: unknown;
+  observed?: { laneId?: unknown; profileId?: unknown } | null;
 };
 
 const CONFIG_KEY_ORDER = ["app", "account", "browser", "viewport", "locale", "build"] as const;
+
+/** The variant identity combines the declared configuration with the
+ * OBSERVED lane/profile. A compiled plan may carry a stale route label
+ * (two different lanes once both declared browser=grok-com); observation
+ * is the truth that keeps two configurations from collapsing into one
+ * substitutable variant (plan §6.5). */
+function variantKeyOf(data: {
+  configuration?: unknown;
+  observed?: { laneId?: unknown; profileId?: unknown } | null;
+}): { id: PlayerVariantKey; label: string } {
+  const declared = configurationKey(data.configuration);
+  const observedLane =
+    typeof data.observed?.laneId === "string" && data.observed.laneId
+      ? data.observed.laneId
+      : undefined;
+  const observedProfile =
+    typeof data.observed?.profileId === "string" && data.observed.profileId
+      ? data.observed.profileId
+      : undefined;
+  if (!observedLane && !observedProfile) {
+    return { id: declared, label: configurationLabel(data.configuration) };
+  }
+  const observedParts = [observedLane, observedProfile].filter(Boolean).join(" · ");
+  return { id: `${declared} @ ${observedParts}`, label: `${declared} @ ${observedParts}` };
+}
 
 function configurationKey(configuration: unknown): PlayerVariantKey {
   if (!configuration || typeof configuration !== "object" || Array.isArray(configuration)) {
@@ -365,12 +391,10 @@ export function buildPlayerManifest(input: {
       if (!statesById.has(screenId)) {
         statesById.set(screenId, { id: screenId, title: screenTitleOf(map, screenId) });
       }
-      const variantKey = configurationKey(data.configuration);
+      const variant = variantKeyOf(data);
+      const variantKey = variant.id;
       if (!variantKeys.has(variantKey)) {
-        variantKeys.set(variantKey, {
-          id: variantKey,
-          label: configurationLabel(data.configuration),
-        });
+        variantKeys.set(variantKey, variant);
       }
       const capture: PlayerCapture = {
         id: `${run.id}:${data.framePath}:${data.imageSha256}`,

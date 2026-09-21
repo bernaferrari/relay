@@ -88,6 +88,7 @@ function reviewArtifact(input: {
   configuration: Record<string, string>;
   capturedAt: number;
   slotId?: string;
+  laneId?: string;
 }): PersistedRun["artifacts"][number] {
   return {
     kind: "capture-review",
@@ -103,7 +104,7 @@ function reviewArtifact(input: {
       checkpointId: input.checkpointId,
       attempt: 1,
       configuration: input.configuration,
-      observed: { laneId: "slice4-member" },
+      observed: { laneId: input.laneId ?? "slice4-member" },
     },
   };
 }
@@ -174,6 +175,7 @@ test("§6.6 fixture: three states, recorded and authored links, two configuratio
             checkpointId: "member-open-settings",
             configuration: adminConfig,
             capturedAt: 25,
+            laneId: "slice4-admin",
           }),
         ],
       }),
@@ -210,13 +212,13 @@ test("§6.6 fixture: three states, recorded and authored links, two configuratio
   const memberSettings = resolvePlayerCapture(
     manifest,
     "screen-settings",
-    "account=member · browser=firefox",
+    "account=member · browser=firefox @ slice4-member",
   );
   assert.equal(memberSettings?.imageSha256, memberSettingsSha);
   const adminSettings = resolvePlayerCapture(
     manifest,
     "screen-settings",
-    "account=admin · browser=chrome",
+    "account=admin · browser=chrome @ slice4-admin",
   );
   assert.equal(adminSettings?.imageSha256, adminSettingsSha);
 
@@ -224,12 +226,16 @@ test("§6.6 fixture: three states, recorded and authored links, two configuratio
   // resolution under the admin variant returns nothing rather than the
   // member image. The pair is listed as missing.
   assert.equal(
-    resolvePlayerCapture(manifest, "screen-language", "account=admin · browser=chrome"),
+    resolvePlayerCapture(
+      manifest,
+      "screen-language",
+      "account=admin · browser=chrome @ slice4-admin",
+    ),
     undefined,
   );
   assert.deepEqual(
     manifest.missing.map((entry) => [entry.stateId, entry.variantId]),
-    [["screen-language", "account=admin · browser=chrome"]],
+    [["screen-language", "account=admin · browser=chrome @ slice4-admin"]],
   );
 
   // Pinning: the manifest names its evidence.
@@ -325,7 +331,7 @@ test("captions never create identity: two same-caption captures stay distinct", 
   const resolved = resolvePlayerCapture(
     manifest,
     "screen-settings",
-    "account=member · browser=firefox",
+    "account=member · browser=firefox @ slice4-member",
   );
   assert.equal(resolved?.imageSha256, "2".repeat(64));
 });

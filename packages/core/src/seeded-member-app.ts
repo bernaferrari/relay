@@ -179,6 +179,7 @@ export function renderSeededMemberSettings(
 <span id="team-seats" aria-label="المقاعد المتبقية للفريق">${seats}</span>${save}</p>
 ${teamPermissions}
 ${organization}
+<a id="language-link" href="/settings/language">اللغة</a>
 <a href="/">الرئيسية</a>`
       : `<h1>Workspace settings</h1>
 <p>Account <span id="session-role">${role}</span></p>
@@ -186,8 +187,35 @@ ${organization}
 <span id="team-seats" aria-label="Team seats remaining">${seats}</span>${save}</p>
 ${teamPermissions}
 ${organization}
+<a id="language-link" href="/settings/language">Language</a>
 <a href="/">Home</a>`,
     { locale, ...(defectOn ? { bodyClass: "layout-defect" } : {}) },
+  );
+}
+
+export function renderSeededMemberLanguage(
+  role: SeededMemberVisibleRole,
+  locale: SeededMemberLocale = "en",
+): string {
+  if (role === "signed-out") return renderSeededMemberHome("signed-out", locale);
+  return htmlPage(
+    locale === "ar" ? "اللغة المفضلة" : "Preferred language",
+    locale === "ar"
+      ? `<h1>اللغة المفضلة</h1>
+<p>الحساب <span id="session-role">${role}</span></p>
+<ul id="language-options">
+<li><span aria-label="اللغة الحالية">العربية</span></li>
+<li>English</li>
+</ul>
+<a href="/settings">الإعدادات</a>`
+      : `<h1>Preferred language</h1>
+<p>Account <span id="session-role">${role}</span></p>
+<ul id="language-options">
+<li><span aria-label="Current language">English</span></li>
+<li>العربية</li>
+</ul>
+<a href="/settings">Settings</a>`,
+    { locale },
   );
 }
 
@@ -269,6 +297,10 @@ export function createSeededMemberApp(input?: {
         return;
       }
       response.setHeader("content-type", "text/html; charset=utf-8");
+      if (url.pathname === "/settings/language") {
+        response.end(renderSeededMemberLanguage(role, locale));
+        return;
+      }
       if (url.pathname === "/settings" || url.pathname.startsWith("/settings/")) {
         response.end(renderSeededMemberSettings(role, defectOn, locale));
         return;
