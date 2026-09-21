@@ -170,20 +170,32 @@ export function BatchReviewWorkspace({
                     ) : null}
                   </div>
                   {focused.runId ? (
-                    <Button
-                      nativeButton={false}
-                      variant="ghost"
-                      className="min-h-11"
-                      render={
-                        <Link
-                          to="/runs/$runId"
-                          params={{ runId: focused.runId }}
-                          search={{ reportView: "captures" }}
-                        />
-                      }
-                    >
-                      Open full report
-                    </Button>
+                    <>
+                      <Button
+                        nativeButton={false}
+                        variant="ghost"
+                        className="min-h-11"
+                        render={
+                          <Link
+                            to="/runs/$runId"
+                            params={{ runId: focused.runId }}
+                            search={{ reportView: "captures" }}
+                          />
+                        }
+                      >
+                        Open full report
+                      </Button>
+                      <Button
+                        nativeButton={false}
+                        variant="ghost"
+                        className="min-h-11"
+                        render={
+                          <Link to="/runs/$runId/walkthrough" params={{ runId: focused.runId }} />
+                        }
+                      >
+                        Walk through
+                      </Button>
+                    </>
                   ) : null}
                   {isBatchCaseProblem(focused) &&
                   focused.triageStatus !== "resolved" &&

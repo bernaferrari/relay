@@ -146,12 +146,10 @@ export function renderSeededMemberHome(
     locale === "ar"
       ? `<h1>الصفحة الرئيسية لمساحة العمل</h1>
 <p>مسجّل الدخول كـ <span id="session-role">${role}</span></p>
-<nav><a id="open-settings" href="/settings">الإعدادات</a></nav>
-<form method="POST" action="/session/signout"><button type="submit" id="sign-out">تسجيل الخروج</button></form>`
+<nav><a id="open-settings" href="/settings">الإعدادات</a></nav>`
       : `<h1>Workspace home</h1>
 <p>Signed in as <span id="session-role">${role}</span></p>
-<nav><a id="open-settings" href="/settings">Settings</a></nav>
-<form method="POST" action="/session/signout"><button type="submit" id="sign-out">Sign out</button></form>`,
+<nav><a id="open-settings" href="/settings">Settings</a></nav>`,
     { locale },
   );
 }
