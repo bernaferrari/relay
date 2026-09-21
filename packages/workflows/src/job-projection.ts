@@ -116,6 +116,24 @@ function jobPhase(job: CanonicalJob): RunTestSnapshot["phase"] {
   return "needs-attention";
 }
 
+/** Count undecided human-review obligations on capture-review artifacts.
+ * A decided capture carries one of the review verbs; only "pending" (or a
+ * missing status on a fully-formed review entry) still requires a person. */
+function reviewObligations(job: CanonicalJob): { pending: number; decided: number } | undefined {
+  const reviews = (job.artifacts ?? []).filter((artifact) => artifact.kind === "capture-review");
+  if (reviews.length === 0) return undefined;
+  let pending = 0;
+  for (const artifact of reviews) {
+    const data = artifact.data;
+    const status =
+      data !== null && typeof data === "object" && "status" in data
+        ? (data.status as unknown)
+        : undefined;
+    if (status === undefined || status === "pending") pending += 1;
+  }
+  return { pending, decided: reviews.length - pending };
+}
+
 function progressLabel(job: CanonicalJob, phase: RunTestSnapshot["phase"]): string {
   if (phase === "queued") return "Waiting for the selected target";
   if (phase === "running") {
@@ -192,6 +210,19 @@ export function snapshotFromJob(input: {
   }
   const active = phase === "queued" || phase === "running" || phase === "paused";
   const authored = phase === "running" ? authoredProgress(job) : undefined;
+  const review = reviewObligations(job);
+  if (!active && review && review.pending > 0) {
+    problems.push({
+      code: "review-required",
+      title: `${review.pending} capture${review.pending === 1 ? "" : "s"} await${
+        review.pending === 1 ? "s" : ""
+      } human review`,
+      detail:
+        "Collection completed, but acceptance is not final until a person decides on the pending captures.",
+      recovery: `Review the run's captures (run ${runId}), then rerun this command to confirm the final outcome.`,
+      retryable: false,
+    });
+  }
   return {
     schemaVersion: 1,
     kind: "run-test",
@@ -213,6 +244,7 @@ export function snapshotFromJob(input: {
           : {}),
     },
     allowedNextActions: active ? ["inspect", "cancel"] : ["inspect"],
+    ...(review ? { review } : {}),
     problems,
     evidenceRefs: [{ kind: "run", id: runId }],
   };

@@ -61,6 +61,7 @@ Exit codes:
   7  cancelled (SIGINT/SIGTERM)
   8  server error (the call did not run to a verdict)
   9  operation failed (it ran and reported failure: { ok: false } or job status error)
+  10 verification incomplete (collection finished but captures still await human review)
 
 Machine envelopes (--json / --ndjson):
   success: {"type":"result","ok":true,"operationId":"...","result":{...}}

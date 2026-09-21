@@ -2187,6 +2187,42 @@ test("test run starts the canonical exact Test operation and watches its job", a
   assert.match(io.stdout(), /"ok":true/);
 });
 
+/** Minimal valid offline preflight for scripted app-map.test.compile mocks. */
+function preflightSummary() {
+  return {
+    schemaVersion: 1,
+    mode: "offline-test-preflight",
+    appMapId: "slice4-reference",
+    appMapRevision: 3,
+    testId: "test-member-v2",
+    planDigest: "plan-3",
+    executionRisk: {
+      schemaVersion: 1,
+      level: "safe",
+      reasons: [],
+      externalEffects: [],
+      confirmation: "none",
+      expectedAppBoundaries: [],
+      maximumActions: 0,
+      maximumDurationMs: 0,
+      cleanupRequired: false,
+    },
+    summary: {
+      recipes: 1,
+      checkedSelectors: 0,
+      resolvedSelectors: 0,
+      unknownCursorTransitions: 0,
+      reviewRequiredReturns: 0,
+      blockers: 0,
+      warnings: 0,
+    },
+    selectors: [],
+    cursorTimeline: [],
+    returns: [],
+    findings: [],
+  };
+}
+
 test("test run resolves one connected target and current revision before invoking", async () => {
   const io = capture();
   const calls: Array<{ operationId: OperationId; input: unknown }> = [];

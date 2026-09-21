@@ -14,7 +14,7 @@
  * Requires the slice4-reference App Map with the slice4-member Lane and the
  * test-member-v2 Test (created during the Slice 4 pilot; see
  * docs/release/PRODUCT-DIRECTION.md). */
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 const BASE = process.env.RELAY_URL ?? "http://127.0.0.1:8787";
 const APP = process.env.SEEDED_APP_URL ?? "http://127.0.0.1:8791";
@@ -61,15 +61,26 @@ async function setDefect(on) {
 }
 
 function runMemberLane() {
-  const stdout = execFileSync(
+  // Exit 0 = nothing left to decide; exit 10 = collection completed with
+  // captures awaiting human review (the demo reviews them next). Both carry
+  // the run snapshot; any other status fails.
+  const result = spawnSync(
     "./bin/relay",
     ["run", "test-member-v2", "--map", "slice4-reference", "--lane", "slice4-member", "--json"],
-    { env: { ...process.env, RELAY_URL: BASE, RELAY_ACTOR_ID: "agent:demo" }, timeout: 170_000 },
-  ).toString("utf8");
-  const lines = stdout.trim().split("\n");
-  const result = JSON.parse(lines.at(-1) ?? "{}");
-  const runId = result?.result?.execution?.runId ?? result?.error?.details?.execution?.runId;
-  const phase = result?.result?.phase ?? result?.error?.details?.phase;
+    {
+      env: { ...process.env, RELAY_URL: BASE, RELAY_ACTOR_ID: "agent:demo" },
+      timeout: 170_000,
+      encoding: "utf8",
+    },
+  );
+  if (result.status !== 0 && result.status !== 10) {
+    fail("runMemberLane", `exit=${result.status} stderr=${(result.stderr ?? "").slice(-400)}`);
+  }
+  const lines = result.stdout.trim().split("\n");
+  const envelope = JSON.parse(lines.at(-1) ?? "{}");
+  const snapshot = envelope?.result ?? envelope?.error?.details;
+  const runId = snapshot?.execution?.runId;
+  const phase = snapshot?.phase;
   if (!runId || phase !== "succeeded") fail("runMemberLane", `phase=${phase}`);
   return runId;
 }

@@ -13,6 +13,11 @@ export const ExitCode = {
   /** The operation ran on the server and reported failure (`{ ok: false }` or
    * job status `error`). Distinct from 5 so agents retry/report differently. */
   operationFailure: 9,
+  /** The operation completed but required verification is incomplete: a
+   * terminal run still has undecided human-review captures. Distinct from 0
+   * (nothing left to decide) and 9 (the operation itself failed) so agents
+   * and scripts cannot read collection success as acceptance. */
+  verificationIncomplete: 10,
 } as const;
 
 export type ExitCode = (typeof ExitCode)[keyof typeof ExitCode];

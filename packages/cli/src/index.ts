@@ -288,7 +288,7 @@ function outcomeOperationId(kind: string): string {
   return kind === "proof-analyze" ? "outcome.proof-analyze" : `outcome.${kind}`;
 }
 
-function assertOutcomeSucceeded(snapshot: WorkflowSnapshot): void {
+export function assertOutcomeSucceeded(snapshot: WorkflowSnapshot): void {
   if (snapshot.phase === "cancelled") {
     throw new CliError(snapshot.progress.label, ExitCode.cancellation, snapshot);
   }
@@ -300,6 +300,19 @@ function assertOutcomeSucceeded(snapshot: WorkflowSnapshot): void {
     throw new CliError(
       snapshot.problems[0]?.title ?? snapshot.progress.label,
       ExitCode.operationFailure,
+      snapshot,
+    );
+  }
+  // Collection success is not acceptance: a terminal run with undecided
+  // captures exits 10 so no caller reads a generic zero as verification
+  // complete (delivery plan §10.1).
+  if (snapshot.kind === "run-test" && snapshot.review && snapshot.review.pending > 0) {
+    const pending = snapshot.review.pending;
+    throw new CliError(
+      `Run completed; ${pending} capture${pending === 1 ? "" : "s"} still require${
+        pending === 1 ? "s" : ""
+      } human review`,
+      ExitCode.verificationIncomplete,
       snapshot,
     );
   }
