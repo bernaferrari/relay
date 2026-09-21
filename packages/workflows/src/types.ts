@@ -243,6 +243,7 @@ export type RunTestSnapshot = {
   frozen?: FrozenRunTestIdentity;
   execution?: { jobId: string; runId?: string };
   compiled?: { plan: AppMapCompiledTest; preflight: OfflineTestPreflightReport };
+  progress: { label: string; completed?: number; total?: number };
   /** Undecided human-review obligations from the run's capture-review
    * artifacts. Present only when the run produced reviewable captures;
    * `pending > 0` on a terminal run means verification is incomplete —
