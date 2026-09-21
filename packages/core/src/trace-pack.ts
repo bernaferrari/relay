@@ -13,6 +13,7 @@ import {
 } from "@relay/protocol";
 import { destIdentitySourceFrames } from "@relay/protocol";
 import { replayPersistedRunOffline } from "./offline-run-replay.js";
+import { readFrameFile } from "./run-artifact-files.js";
 import type { PersistedRun } from "./runs.js";
 import {
   checkBrowserProofEvidenceReferences,
@@ -77,14 +78,33 @@ function packDigest(pack: Omit<TracePack, "digest">): `sha256:${string}` {
   return sha256(canonicalJson(pack));
 }
 
+/** Compare embedded frame bytes against the image digests recorded by the
+ * capture-review artifacts. A frame whose bytes changed after the run is
+ * tampering; a reviewable frame absent from the closure is missing. */
+function captureIntegrityFailures(run: PersistedRun): Promise<string[]> {
+  const failures: string[] = [];
+  const reviews = run.artifacts.filter((artifact) => artifact.kind === "capture-review");
+  return (async () => {
+    for (const artifact of reviews) {
+      const data = artifact.data;
+      if (data === null || typeof data !== "object" || Array.isArray(data)) continue;
+      const framePath = (data as { framePath?: unknown }).framePath;
+      const imageSha256 = (data as { imageSha256?: unknown }).imageSha256;
+      if (typeof framePath !== "string" || typeof imageSha256 !== "string") continue;
+      const bytes = await readFrameFile(run.dir, framePath);
+      if (!bytes) {
+        failures.push(`missing frame ${framePath}`);
+        continue;
+      }
+      const observed = createHash("sha256").update(bytes).digest("hex");
+      if (observed !== imageSha256) failures.push(`tampered frame ${framePath}`);
+    }
+    return failures;
+  })();
+}
 function frozenRunAppMapId(run: PersistedRun): string | undefined {
   for (const artifact of run.artifacts) {
-    if (
-      (artifact.kind === "app-map-test-plan" || artifact.kind === "app-map-flow-plan") &&
-      artifact.data &&
-      typeof artifact.data === "object" &&
-      !Array.isArray(artifact.data)
-    ) {
+    if (artifact.data && typeof artifact.data === "object" && !Array.isArray(artifact.data)) {
       const appMapId = (artifact.data as { appMapId?: unknown }).appMapId;
       if (typeof appMapId === "string" && appMapId.trim()) return appMapId;
     }
@@ -140,11 +160,20 @@ export async function exportTracePack(
       ? referencedAuthoringSession
       : null;
   const closure = await closeTracePackArtifacts(run, requestedLimits);
-  const androidPacketCapture = androidPacketCaptureProvenance(run);
+  // FIN-14: a pinned export must not ship evidence whose bytes contradict
+  // the digests recorded when the captures were taken. Missing frames are
+  // already listed in the pack's missing set; tampering is a hard failure.
+  const integrityFailures = await captureIntegrityFailures(run);
+  if (integrityFailures.length > 0) {
+    throw new Error(
+      `TracePack export refused: capture evidence fails integrity — ${integrityFailures.join("; ")}`,
+    );
+  }
   const objects = [jsonObject("run.json", "frozen-run", frozenRun(run)), ...closure.objects].sort(
     (left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0),
   );
   const artifactReferences = closure.references;
+  const androidPacketCapture = androidPacketCaptureProvenance(run);
   const browserEvidence = inspectBrowserProofEvidence(run);
   const browserReferenceCheck = browserEvidence.evidence
     ? checkBrowserProofEvidenceReferences(

@@ -110,6 +110,44 @@ test("TracePack export is deterministic, portable, and verifies every content ad
   assert.throws(() => verifyTracePack(tampered), /object integrity/u);
 });
 
+test("export refuses a run whose reviewable frame was tampered or is missing (FIN-14)", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-trace-pack-integrity-"));
+  t.after(async () => {
+    await rm(directory, { recursive: true, force: true });
+  });
+  const frameBytes = Buffer.from("png-bytes-capture-1");
+  await mkdir(join(directory, "frames"), { recursive: true });
+  await writeFile(join(directory, "frames", "004.png"), frameBytes);
+  const run = (): PersistedRun => {
+    const base = persistedRun();
+    base.dir = directory;
+    base.artifacts.push({
+      kind: "capture-review",
+      capturedAt: 5,
+      data: {
+        status: "pending",
+        framePath: "frames/004.png",
+        imageSha256: createHash("sha256").update(frameBytes).digest("hex"),
+        slotId: "test-1::step-1::member",
+        requirementId: "test-1",
+        checkpointId: "step-1",
+      },
+    });
+    return base;
+  };
+
+  // Clean evidence exports.
+  await assert.doesNotReject(exportTracePack(run()));
+
+  // Tampered bytes refuse with the exact frame named.
+  await writeFile(join(directory, "frames", "004.png"), Buffer.from("tampered"));
+  await assert.rejects(exportTracePack(run()), /tampered frame frames\/004\.png/u);
+
+  // A missing reviewable frame refuses too.
+  await rm(join(directory, "frames", "004.png"));
+  await assert.rejects(exportTracePack(run()), /missing frame frames\/004\.png/u);
+});
+
 test("unsupported and consent-denied collectors remain explicit without making the pack partial", async () => {
   const run = persistedRun();
   run.evidence!.channels = {

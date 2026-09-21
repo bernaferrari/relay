@@ -146,10 +146,12 @@ export function renderSeededMemberHome(
     locale === "ar"
       ? `<h1>الصفحة الرئيسية لمساحة العمل</h1>
 <p>مسجّل الدخول كـ <span id="session-role">${role}</span></p>
-<nav><a id="open-settings" href="/settings">الإعدادات</a></nav>`
+<nav><a id="open-settings" href="/settings">الإعدادات</a></nav>
+<form method="POST" action="/session/signout"><button type="submit" id="sign-out">تسجيل الخروج</button></form>`
       : `<h1>Workspace home</h1>
 <p>Signed in as <span id="session-role">${role}</span></p>
-<nav><a id="open-settings" href="/settings">Settings</a></nav>`,
+<nav><a id="open-settings" href="/settings">Settings</a></nav>
+<form method="POST" action="/session/signout"><button type="submit" id="sign-out">Sign out</button></form>`,
     { locale },
   );
 }
@@ -180,6 +182,14 @@ export function renderSeededMemberSettings(
 ${teamPermissions}
 ${organization}
 <a id="language-link" href="/settings/language">اللغة</a>
+<nav id="workspace-nav">
+<a id="nav-profile" href="/profile">الملف الشخصي</a>
+<a id="nav-notifications" href="/notifications">الإشعارات</a>
+<a id="nav-sessions" href="/sessions">الجلسات</a>
+<a id="nav-tokens" href="/tokens">رموز الواجهة</a>
+<a id="nav-usage" href="/usage">الاستخدام</a>
+<a id="nav-audit" href="/audit">سجل التدقيق</a>
+</nav>
 <a href="/">الرئيسية</a>`
       : `<h1>Workspace settings</h1>
 <p>Account <span id="session-role">${role}</span></p>
@@ -188,6 +198,14 @@ ${organization}
 ${teamPermissions}
 ${organization}
 <a id="language-link" href="/settings/language">Language</a>
+<nav id="workspace-nav">
+<a id="nav-profile" href="/profile">Profile</a>
+<a id="nav-notifications" href="/notifications">Notifications</a>
+<a id="nav-sessions" href="/sessions">Active sessions</a>
+<a id="nav-tokens" href="/tokens">API tokens</a>
+<a id="nav-usage" href="/usage">Usage and quota</a>
+<a id="nav-audit" href="/audit">Audit log</a>
+</nav>
 <a href="/">Home</a>`,
     { locale, ...(defectOn ? { bodyClass: "layout-defect" } : {}) },
   );
@@ -214,6 +232,110 @@ export function renderSeededMemberLanguage(
 <li><span aria-label="Current language">English</span></li>
 <li>العربية</li>
 </ul>
+<a href="/settings">Settings</a>`,
+    { locale },
+  );
+}
+
+const WORKSPACE_PAGES = [
+  {
+    path: "/profile",
+    id: "profile",
+    en: "Profile",
+    ar: "الملف الشخصي",
+    bodyEn: "Display name and email for this account.",
+    bodyAr: "الاسم المعروض والبريد الإلكتروني لهذا الحساب.",
+  },
+  {
+    path: "/notifications",
+    id: "notifications",
+    en: "Notifications",
+    ar: "الإشعارات",
+    bodyEn: "Email and in-app notification preferences.",
+    bodyAr: "تفضيلات الإشعارات عبر البريد وداخل التطبيق.",
+  },
+  {
+    path: "/sessions",
+    id: "sessions",
+    en: "Active sessions",
+    ar: "الجلسات النشطة",
+    bodyEn: "Devices currently signed in to this workspace.",
+    bodyAr: "الأجهزة المسجلة حالياً في مساحة العمل هذه.",
+  },
+  {
+    path: "/tokens",
+    id: "tokens",
+    en: "API tokens",
+    ar: "رموز الواجهة",
+    bodyEn: "Personal access tokens for the workspace API.",
+    bodyAr: "رموز وصول شخصية لواجهة مساحة العمل.",
+  },
+  {
+    path: "/usage",
+    id: "usage",
+    en: "Usage and quota",
+    ar: "الاستخدام والحصة",
+    bodyEn: "Seats, storage, and run minutes this month.",
+    bodyAr: "المقاعد والتخزين ودقائق التشغيل لهذا الشهر.",
+  },
+  {
+    path: "/audit",
+    id: "audit",
+    en: "Audit log",
+    ar: "سجل التدقيق",
+    bodyEn: "Recent workspace activity, newest first.",
+    bodyAr: "نشاط مساحة العمل الأخير، الأحدث أولاً.",
+  },
+] as const;
+
+export function seededMemberWorkspacePages(): readonly { path: string; id: string }[] {
+  return WORKSPACE_PAGES.map((page) => ({ path: page.path, id: page.id }));
+}
+
+export function renderSeededMemberTeam(
+  role: SeededMemberVisibleRole,
+  locale: SeededMemberLocale = "en",
+): string {
+  if (role === "signed-out") return renderSeededMemberHome("signed-out", locale);
+  return htmlPage(
+    locale === "ar" ? "أذونات الفريق" : "Team permissions",
+    locale === "ar"
+      ? `<h1>أذونات الفريق</h1>
+<p>الحساب <span id="session-role">${role}</span></p>
+<ul id="permission-list">
+<li>الأعضاء يمكنهم قراءة الإعدادات</li>
+<li>المسؤولون يمكنهم إدارة المقاعد</li>
+</ul>
+<a href="/settings">الإعدادات</a>`
+      : `<h1>Team permissions</h1>
+<p>Account <span id="session-role">${role}</span></p>
+<ul id="permission-list">
+<li>Members can read workspace settings</li>
+<li>Admins can manage seats and invitations</li>
+</ul>
+<a href="/settings">Settings</a>`,
+    { locale },
+  );
+}
+
+export function renderSeededMemberWorkspacePage(
+  pageId: string,
+  role: SeededMemberVisibleRole,
+  locale: SeededMemberLocale = "en",
+): string | undefined {
+  if (role === "signed-out") return renderSeededMemberHome("signed-out", locale);
+  const page = WORKSPACE_PAGES.find((candidate) => candidate.id === pageId);
+  if (!page) return undefined;
+  return htmlPage(
+    locale === "ar" ? page.ar : page.en,
+    locale === "ar"
+      ? `<h1>${page.ar}</h1>
+<p>الحساب <span id="session-role">${role}</span></p>
+<p id="page-detail">${page.bodyAr}</p>
+<a href="/settings">الإعدادات</a>`
+      : `<h1>${page.en}</h1>
+<p>Account <span id="session-role">${role}</span></p>
+<p id="page-detail">${page.bodyEn}</p>
 <a href="/settings">Settings</a>`,
     { locale },
   );
@@ -251,6 +373,16 @@ export function createSeededMemberApp(input?: {
   const handler: http.RequestListener = (request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     void (async () => {
+      if (request.method === "POST" && url.pathname === "/session/signout") {
+        response.statusCode = 303;
+        response.setHeader(
+          "set-cookie",
+          `${SEEDED_MEMBER_SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
+        );
+        response.setHeader("location", "/");
+        response.end();
+        return;
+      }
       if (request.method === "POST" && url.pathname === "/session") {
         const role = requestedRole(request, await readBody(request));
         if (!role || !ROLE_SET.has(role)) {
@@ -299,6 +431,15 @@ export function createSeededMemberApp(input?: {
       response.setHeader("content-type", "text/html; charset=utf-8");
       if (url.pathname === "/settings/language") {
         response.end(renderSeededMemberLanguage(role, locale));
+        return;
+      }
+      if (url.pathname === "/settings/team") {
+        response.end(renderSeededMemberTeam(role, locale));
+        return;
+      }
+      const workspacePage = WORKSPACE_PAGES.find((page) => page.path === url.pathname);
+      if (workspacePage) {
+        response.end(renderSeededMemberWorkspacePage(workspacePage.id, role, locale));
         return;
       }
       if (url.pathname === "/settings" || url.pathname.startsWith("/settings/")) {
