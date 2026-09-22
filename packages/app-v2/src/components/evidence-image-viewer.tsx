@@ -52,7 +52,7 @@ export function EvidenceImageViewer({
           render={
             <Button
               className="absolute right-3 top-3"
-              variant="ghost"
+              variant="secondary"
               size="icon-sm"
               aria-label="Inspect screenshot"
               title="Inspect screenshot"

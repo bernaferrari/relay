@@ -186,7 +186,7 @@ export function WalkthroughView({
           </div>
           <div className="relative">
             {capture && frame.url ? (
-              <figure className="relative m-0">
+              <figure className="relative mx-auto my-0 w-fit max-w-full">
                 <EvidenceImageViewer
                   key={capture.id}
                   frame={{
@@ -195,7 +195,7 @@ export function WalkthroughView({
                     media: { kind: "image", src: frame.url },
                   }}
                   onError={frame.failed}
-                  className="block h-auto w-full"
+                  className="block max-h-[55dvh] w-auto max-w-full"
                 />
                 {outgoing.flatMap((connection, index) => {
                   if (
