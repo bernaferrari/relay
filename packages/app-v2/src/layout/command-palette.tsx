@@ -216,7 +216,7 @@ export function CommandPalette({
       <DialogContent
         finalFocus={returnFocus}
         showCloseButton={false}
-        className="flex min-w-0 flex-col w-[min(560px,calc(100vw-32px))] sm:max-w-[560px] max-h-[min(620px,calc(100dvh-48px))] gap-0 overflow-hidden rounded-xl p-0 shadow-[var(--shadow-lg)]"
+        className="flex min-w-0 flex-col w-[min(560px,calc(100vw-32px))] sm:max-w-140 max-h-[min(620px,calc(100dvh-48px))] gap-0 overflow-hidden rounded-xl p-0 shadow-[var(--shadow-lg)]"
       >
         <DialogTitle className="sr-only">Relay commands</DialogTitle>
         <DialogDescription className="sr-only">
