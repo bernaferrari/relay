@@ -191,11 +191,11 @@ describe("shell overlays", () => {
     expect([...navigation.querySelectorAll("a")].map((link) => link.textContent)).toEqual([
       "Tests",
       "Results",
-      "Devices",
-      "Activity",
-      "Changes",
     ]);
     expect(navigation.querySelector('[aria-current="page"]')?.textContent).toBe("Tests");
+    expect(navigation.querySelector('button[aria-label="More navigation"]')).not.toBeNull();
+    const plans = document.querySelector('nav[aria-label="Test library"] a[href*="suites"]');
+    expect(plans?.getAttribute("href")).toContain("app=checkout");
     const results = [...navigation.querySelectorAll("a")].find(
       (link) => link.textContent === "Results",
     )!;

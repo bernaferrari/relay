@@ -110,7 +110,7 @@ export function SettingsFrame({
       </div>
       <div className="mt-6 grid grid-cols-[168px_minmax(0,1fr)] items-start gap-12 max-[780px]:mt-5 max-[780px]:grid-cols-1 max-[780px]:gap-6">
         <nav
-          className="sticky top-6 grid content-start gap-0.5 max-[780px]:static"
+          className="sticky top-6 grid content-start gap-0.5 max-[780px]:hidden"
           aria-label="Settings sections"
         >
           {settingsCategories.map((item) => (

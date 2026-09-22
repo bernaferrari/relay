@@ -1,3 +1,4 @@
+import { TestLibraryNavigation } from "../components/test-library-navigation";
 /** @jsxImportSource react */
 import {
   Dialog,
@@ -307,6 +308,8 @@ export function SuitesPage() {
           </>
         }
       />
+
+      <TestLibraryNavigation active="plans" app={requestedApp} />
 
       {suites.isPending || apps.isPending ? <PageLoading label="Loading Plans…" /> : null}
       {suites.error || apps.error ? (

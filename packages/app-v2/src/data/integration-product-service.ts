@@ -185,8 +185,7 @@ function slackNotificationStub(): ProductIntegration {
     name: "Slack",
     state: "unsupported",
     capabilities: [],
-    detail:
-      "Slack delivery is not a Relay operation. Daily Plan notices append .relay/notifications.json and optionally POST RELAY_NOTIFY_WEBHOOK.",
+    detail: "Slack notifications are not available in this workspace.",
   };
 }
 

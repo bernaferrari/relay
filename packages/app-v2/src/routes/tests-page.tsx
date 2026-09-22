@@ -1,3 +1,4 @@
+import { TestLibraryNavigation } from "../components/test-library-navigation";
 import { libraryRowSurface } from "../components/library-row-styles";
 /** @jsxImportSource react */
 import type { ProductTestSummary } from "@relay/product/catalog";
@@ -187,6 +188,8 @@ export function TestsPage() {
         }
       />
 
+      <TestLibraryNavigation active="tests" app={app} />
+
       {resumeRecordingId || resumeRunId ? (
         <div
           className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3"
@@ -366,7 +369,7 @@ function TestRow({ test }: { test: ProductTestSummary }) {
           className="grid min-w-0 gap-2 px-4 py-3.5 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-6"
         >
           <span className="grid min-w-0 gap-1">
-            <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-foreground">
+            <strong className="line-clamp-2 text-sm font-semibold text-foreground sm:block sm:overflow-hidden sm:text-ellipsis sm:whitespace-nowrap">
               {test.name}
             </strong>
             <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
@@ -417,7 +420,7 @@ function PlanRow({ plan }: { plan: ProductSuite }) {
         className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-4 py-3.5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring ${libraryRowSurface}`}
       >
         <span className="grid min-w-0 gap-1">
-          <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-semibold text-foreground">
+          <strong className="line-clamp-2 text-sm font-semibold text-foreground sm:block sm:overflow-hidden sm:text-ellipsis sm:whitespace-nowrap">
             {plan.name}
           </strong>
           <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">

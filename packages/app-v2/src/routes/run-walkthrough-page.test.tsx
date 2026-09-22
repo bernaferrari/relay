@@ -161,7 +161,7 @@ function playerService(): RunProductService {
   } as unknown as RunProductService;
 }
 
-async function renderWalkthrough(path: string) {
+async function renderWalkthrough(path: string, service = playerService()) {
   const platform: Platform = {
     platform: "web",
     getServerUrl: () => "http://127.0.0.1:8787",
@@ -182,7 +182,7 @@ async function renderWalkthrough(path: string) {
         platform={platform}
         history={history}
         productService={recordingService}
-        runService={playerService()}
+        runService={service}
       />,
     );
   });
@@ -201,16 +201,52 @@ async function click(element: HTMLElement) {
   await settle();
 }
 
+async function choose(label: string, option: string) {
+  await click(document.querySelector<HTMLElement>(`[role="combobox"][aria-label="${label}"]`)!);
+  const item = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) =>
+    item.textContent?.startsWith(option),
+  );
+  if (!item) throw new Error(`Missing ${label} option: ${option}`);
+  await click(item);
+}
+
 function text(): string {
   return document.body.textContent ?? "";
 }
 
 describe("Run walkthrough player", () => {
+  it("retries an unavailable image and prevents review until it loads", async () => {
+    const service = playerService();
+    const load = service.loadFrame!;
+    let attempts = 0;
+    service.loadFrame = async (...args) => {
+      if (++attempts === 1) throw new Error("Image request failed");
+      return load(...args);
+    };
+    service.reviewCapture = async () => {
+      throw new Error("Should not review during this test");
+    };
+    await renderWalkthrough("/runs/run-member/walkthrough", service);
+    expect(text()).toContain("Screenshot unavailable");
+    const accept = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Looks correct"),
+    )!;
+    expect(accept.disabled).toBe(true);
+    await click(
+      [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.textContent === "Try again",
+      )!,
+    );
+    expect(document.querySelector("img")).not.toBeNull();
+    expect(accept.disabled).toBe(false);
+    expect(attempts).toBe(2);
+  });
+
   it("shows the entry state capture with recorded links, without report data", async () => {
     await renderWalkthrough("/runs/run-member/walkthrough");
     expect(text()).toContain("Member home");
     expect(text()).toContain("Member settings");
-    expect(text()).toContain("recorded");
+    expect(text()).toContain("Recorded connection");
     // The stage shows the exact capture's frame metadata.
     expect(text()).toContain("frames/001.png");
     expect(document.querySelector("img")).not.toBeNull();
@@ -234,7 +270,7 @@ describe("Run walkthrough player", () => {
     expect(text()).toContain("Preferred language");
     await click(
       [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-        (b) => b.textContent === "Back",
+        (b) => b.getAttribute("aria-label") === "Back",
       )!,
     );
     expect(text()).toContain("Workspace settings");
@@ -246,18 +282,14 @@ describe("Run walkthrough player", () => {
     expect(text()).toContain("No capture for this configuration");
     expect(document.querySelector("img")).toBeNull();
     // The state rail marks the missing state for this configuration.
-    expect(text()).toContain("missing in this configuration");
+    expect(document.querySelector('[aria-label="Screen"]')?.textContent).toContain("Not captured");
   });
 
   it("switching variants keeps the current state and resolves exact evidence", async () => {
     await renderWalkthrough("/runs/run-member/walkthrough?state=screen-settings");
     expect(text()).toContain("frames/002.png");
     expect(text()).toContain("bbbbbbbb");
-    await click(
-      [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.includes("chrome · admin"),
-      )!,
-    );
+    await choose("Configuration", "chrome · admin");
     await settle();
     // Same logical state, different exact evidence.
     expect(text()).toContain("Workspace settings");

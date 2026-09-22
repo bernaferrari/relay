@@ -332,19 +332,19 @@ export function TestPage() {
   return (
     <WorkbenchPage className="flex h-full min-h-0 flex-col overflow-auto !p-0">
       <header className="shrink-0 px-5 pt-3 pb-5">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost" size="sm">
             <ChevronLeft aria-hidden="true" />
             Tests
           </Button>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="contents sm:flex sm:shrink-0 sm:items-center sm:gap-2">
             {!activeRun ? (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={focusRunSetup}
                 aria-label="Run configuration — opens run setup"
-                className="max-w-64"
+                className="order-3 w-full max-w-full justify-start sm:order-none sm:w-auto sm:max-w-64"
               >
                 <SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />
                 <span className="truncate">{configurationLabel}</span>

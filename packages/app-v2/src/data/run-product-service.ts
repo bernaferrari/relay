@@ -183,6 +183,18 @@ export function createRunProductService(platform: Platform): RunProductService {
     return (await (await relayClient()).invoke("run.evidence.get", { runId, ...input })).evidence;
   }
   return {
+    async loadFrame(runId, framePath) {
+      if (!/^frames\/[a-zA-Z0-9_-]+\.(?:png|jpe?g|webp)$/u.test(framePath)) {
+        throw new Error("Invalid screenshot path.");
+      }
+      const resource = await (
+        await relayClient()
+      ).binaryResource(`/runs/${encodeURIComponent(runId)}/${framePath}`);
+      return new Blob([new Uint8Array(resource.bytes)], {
+        type: resource.headers.get("content-type") ?? "image/png",
+      });
+    },
+
     async getTest(testId) {
       const { client } = await runtime();
       const { appMaps } = await client.invoke("app-map.list", {});
