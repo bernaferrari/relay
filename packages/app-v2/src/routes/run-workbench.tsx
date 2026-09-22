@@ -251,7 +251,7 @@ export function RunWorkbench({
     );
   return (
     <section
-      className="grid h-full min-h-0 flex-1 min-w-0 gap-5 overflow-hidden max-[720px]:h-auto max-[720px]:overflow-visible min-[721px]:grid-cols-[minmax(0,55%)_minmax(0,1fr)]"
+      className="grid h-full min-h-0 flex-1 min-w-0 gap-5 overflow-hidden max-[1100px]:h-auto max-[1100px]:overflow-visible min-[1101px]:grid-cols-[minmax(0,55%)_minmax(0,1fr)]"
       aria-label="Run workbench"
     >
       <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-background/20">
@@ -436,7 +436,7 @@ export function RunWorkbench({
         >
           <TabsList
             variant="line"
-            className="w-full shrink-0 justify-start overflow-x-auto border-b border-border px-3 group-data-horizontal/tabs:h-12"
+            className="w-full shrink-0 flex-wrap justify-start gap-x-2 gap-y-1 border-b border-border px-3 py-2 group-data-horizontal/tabs:h-auto"
             aria-label="Step views"
           >
             {(
@@ -449,7 +449,7 @@ export function RunWorkbench({
                 ...(report.video ? [["video", "Video"]] : []),
               ] as const
             ).map(([value, label]) => (
-              <TabsTrigger key={value} value={value} className="min-h-10 flex-none px-3">
+              <TabsTrigger key={value} value={value} className="h-10 flex-none px-2 after:bottom-0">
                 {label}
                 {value === "steps" ? (
                   <span className="ml-1 text-xs tabular-nums text-muted-foreground">

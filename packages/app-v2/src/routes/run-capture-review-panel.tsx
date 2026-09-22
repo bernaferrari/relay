@@ -104,6 +104,7 @@ export function CaptureReviewPanel({
   reviewedItemKeys?: readonly string[];
 }) {
   const [layout, setLayout] = useState("gallery");
+  const [selecting, setSelecting] = useState(false);
   const gallery = Boolean(showImage && onReviewMany && layout === "gallery");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   useEffect(() => {
@@ -113,6 +114,8 @@ export function CaptureReviewPanel({
     );
   }, [reviewedItemKeys]);
   const destItems = destIdentityReviewItems(queue.items);
+  const canSelect = Boolean(onReviewMany && destItems.length > 1);
+  const showSelection = canSelect && (showImage || selecting);
   const selected = destItems[Math.min(selectedIndex, Math.max(0, destItems.length - 1))];
   const pendingIndices = destItems.flatMap((item, index) =>
     item.status === "pending" && reviewable(item) && index !== selectedIndex ? [index] : [],
@@ -234,6 +237,20 @@ export function CaptureReviewPanel({
             ) : null}
           </div>
         ) : null}
+        {!showImage && canSelect ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="w-fit"
+            disabled={busy}
+            onClick={() => {
+              setSelecting(!selecting);
+              setSelectedIds(new Set());
+            }}
+          >
+            {selecting ? "Done selecting" : "Select screenshots"}
+          </Button>
+        ) : null}
         {nextPendingIndex !== undefined ? (
           <Button
             className="w-fit"
@@ -278,7 +295,7 @@ export function CaptureReviewPanel({
                 key={key}
                 className={`relative min-w-0 ${showImage && !gallery ? "w-72 shrink-0 lg:w-auto" : ""}`}
               >
-                {reviewable(item) ? (
+                {showSelection && reviewable(item) ? (
                   <label
                     className={`absolute start-0 z-10 flex size-10 items-center justify-center ${gallery ? "top-0 start-0 cursor-pointer" : "top-1/2 -translate-y-1/2"}`}
                   >
@@ -305,7 +322,7 @@ export function CaptureReviewPanel({
                 <button
                   type="button"
                   aria-pressed={gallery ? undefined : index === selectedIndex}
-                  className={`${gallery ? "" : " cursor-pointer hover:bg-accent"} flex min-h-20 w-full gap-3 rounded-lg text-left transition-colors focus-visible:outline-2 ${gallery ? "flex-col overflow-hidden pb-1" : "items-center py-2 pl-10 pr-3"} ${index === selectedIndex ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
+                  className={`${gallery ? "" : " cursor-pointer hover:bg-accent"} flex min-h-20 w-full gap-3 rounded-lg text-left transition-colors focus-visible:outline-2 ${gallery ? "flex-col overflow-hidden pb-1" : `items-center py-3 pr-3 ${showSelection ? "pl-10" : "pl-3"}`} ${index === selectedIndex ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
                   aria-label={gallery ? `Inspect ${caption(item, index)}` : undefined}
                   onClick={() => {
                     onSelect(index);
@@ -364,7 +381,7 @@ export function CaptureReviewPanel({
           className={`grid min-w-0 gap-3 ${showImage ? "rounded-lg border border-border/60 p-4" : ""}`}
           aria-label="Selected screenshot"
         >
-          {caption(selected, selectedIndex) !== fallbackTitle ? (
+          {showImage && caption(selected, selectedIndex) !== fallbackTitle ? (
             <p className="text-sm font-semibold">{caption(selected, selectedIndex)}</p>
           ) : null}
           {showImage &&
@@ -400,7 +417,9 @@ export function CaptureReviewPanel({
               {selected.attempt ? <p>Attempt {selected.attempt}</p> : null}
             </details>
           ) : null}
-          {selected.status !== "pending" || !onReview ? (
+          {(showImage && (selected.status !== "pending" || !onReview)) ||
+          selected.status === "missing" ||
+          selectedMeta.blocked ? (
             <p className="text-xs text-muted-foreground">
               {selectedMeta.blocked
                 ? onReviewMany

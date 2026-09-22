@@ -339,3 +339,54 @@ describe("CaptureReviewPanel selection", () => {
     expect(host.textContent).not.toMatch(/after · Run saved Test/u);
   });
 });
+
+it("keeps bulk selection out of screenshot browsing until requested", () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  roots.push(root);
+  const items = ["Settings", "Home"].map((caption, index) => ({
+    captureId: `frames/${index}.png::hash${index}`,
+    caption,
+    status: "pending" as const,
+    framePath: `frames/${index}.png`,
+    imageSha256: `hash${index}`,
+  }));
+  act(() =>
+    root.render(
+      <CaptureReviewPanel
+        queue={{
+          items,
+          summary: {
+            captured: 2,
+            missing: 0,
+            pending: 2,
+            accepted: 0,
+            issue: 0,
+            needMoreEvidence: 0,
+          },
+        }}
+        frames={[]}
+        selectedIndex={0}
+        onSelect={() => undefined}
+        onReviewMany={vi.fn()}
+        showImage={false}
+      />,
+    ),
+  );
+  expect(host.querySelector('input[type="checkbox"]')).toBeNull();
+  expect(host.querySelector('[aria-label="Selected screenshot"]')?.textContent).not.toContain(
+    "Pending review",
+  );
+  const button = [...host.querySelectorAll("button")].find(
+    (node) => node.textContent === "Select screenshots",
+  )!;
+  act(() => button.click());
+  expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
+  act(() =>
+    [...host.querySelectorAll("button")]
+      .find((node) => node.textContent === "Done selecting")!
+      .click(),
+  );
+  expect(host.querySelector('input[type="checkbox"]')).toBeNull();
+});
