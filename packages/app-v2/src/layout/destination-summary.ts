@@ -196,7 +196,7 @@ export function incompatibleSavedProfile(input: {
   if (input.profilesStatus === "pending" || input.profiles === undefined) {
     return {
       id: "saved-profile",
-      label: "Checking saved profile…",
+      label: "Checking saved setup…",
       detail: "Relay is still loading accounts for this destination.",
       resolving: true,
     };
@@ -205,8 +205,8 @@ export function incompatibleSavedProfile(input: {
   if (!profile) {
     return {
       id: "saved-profile",
-      label: "Saved profile is unavailable",
-      detail: "Choose a profile that matches this device or browser.",
+      label: "Saved setup is unavailable",
+      detail: "Choose a saved setup for this device or browser.",
     };
   }
   if (!input.targetId || profile.targetId === input.targetId) return undefined;
@@ -214,7 +214,7 @@ export function incompatibleSavedProfile(input: {
   return {
     id: "saved-profile",
     label: `${account} is saved for another destination`,
-    detail: "Keep that destination, or choose a different profile before running.",
+    detail: "Choose that device or browser, or use a different saved setup.",
   };
 }
 

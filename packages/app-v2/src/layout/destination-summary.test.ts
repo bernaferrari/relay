@@ -203,7 +203,7 @@ describe("destination summary", () => {
     ).toEqual({
       id: "saved-profile",
       label: "Member is saved for another destination",
-      detail: "Keep that destination, or choose a different profile before running.",
+      detail: "Choose that device or browser, or use a different saved setup.",
     });
     expect(
       incompatibleSavedProfile({

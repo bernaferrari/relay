@@ -56,6 +56,34 @@ export function PageLoading({ label }: { label: string }) {
   );
 }
 
+export function RefreshProblem({
+  subject,
+  onRetry,
+  retrying = false,
+}: {
+  subject: string;
+  onRetry: () => void;
+  retrying?: boolean;
+}) {
+  return (
+    <div
+      role="status"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm"
+    >
+      <div className="min-w-0">
+        <p className="font-medium">Couldn’t refresh {subject}</p>
+        <p className="text-muted-foreground">
+          Showing the last loaded information. It may be out of date.
+        </p>
+      </div>
+      <Button variant="outline" size="sm" disabled={retrying} onClick={onRetry}>
+        <RotateCcw aria-hidden="true" />
+        {retrying ? "Refreshing…" : "Refresh"}
+      </Button>
+    </div>
+  );
+}
+
 export function RecordingProblem({
   recovery,
   error,
@@ -125,7 +153,7 @@ export function RecordingProblem({
       layout={layout}
       action={
         action ??
-        (onRetry && (recovery?.retryable ?? true) ? (
+        (onRetry && (recovery?.retryable ?? (publicRecovery ? projectedError?.retryable : true)) ? (
           <Button
             size={layout === "centered" ? "default" : "sm"}
             variant="outline"

@@ -290,7 +290,7 @@ describe("Tests library", () => {
     expect(
       document.querySelector('a[href="/tests/test-checkout-internal/edit"]')?.textContent,
     ).toContain("Review steps");
-    await clickText("Run options");
+    await clickText("Set up run");
     expect(history.location.pathname).toBe("/tests/test-language-internal");
     expect(history.location.search).toBe("?setup=run");
     expect(history.location.hash).toBe("");
@@ -366,7 +366,7 @@ describe("Tests workspace", () => {
     expect(devices?.hasAttribute("aria-disabled")).toBe(false);
     expect(document.querySelector('a[href="/tests/new"]')?.textContent).toBe("New Test");
     const managePlans = document.querySelector<HTMLAnchorElement>('a[href="/suites"]');
-    expect(managePlans?.textContent).toContain("Saved selections run together");
+    expect(managePlans?.textContent).toContain("Run Tests together");
     expect(document.querySelector('a[href="/changes"]')?.textContent).toBe("Changes");
     expect(document.querySelector('a[href="/sessions"]')?.textContent).toBe("Activity");
     expect(document.body.textContent).toContain("Change language");
@@ -561,7 +561,7 @@ describe("Runs workspace", () => {
     expect(document.querySelector('a[href="/runs/run-passed-internal"]')).toBe(row);
     expect(document.body.textContent).toContain("Couldn’t refresh results");
     unavailable = false;
-    await click("Try again");
+    await click("Refresh");
     await settle();
     expect(document.querySelector('a[href="/runs/run-passed-internal"]')).toBe(row);
     expect(document.body.textContent).not.toContain("Couldn’t refresh results");

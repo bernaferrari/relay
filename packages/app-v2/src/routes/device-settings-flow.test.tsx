@@ -405,6 +405,32 @@ describe("Devices", () => {
     expect(document.body.textContent).not.toContain("Explore your app here");
   });
 
+  it("keeps devices visible after a failed refresh without claiming they are ready", async () => {
+    const service = fakeDeviceService();
+    await renderPath("/devices", { deviceService: service });
+    expect(document.querySelector('[data-slot="device-row"]')?.textContent).toContain(
+      "Design iPad",
+    );
+    const list = service.list;
+    service.list = async () => {
+      throw new TypeError("Failed to fetch");
+    };
+    await click(button("Check again"));
+    await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 1_100))));
+    await settle();
+    const row = [...document.querySelectorAll('[data-slot="device-row"]')].find((item) =>
+      item.textContent?.includes("Design iPad"),
+    );
+    expect(row).toBeDefined();
+    expect(row?.textContent).toContain("Status unavailable");
+    expect(document.body.textContent).toContain("Couldn’t refresh devices");
+    expect(document.querySelector('[data-slot="recovery-centered"]')).toBeNull();
+    service.list = list;
+    await click(button("Refresh"));
+    expect(document.body.textContent).not.toContain("Couldn’t refresh devices");
+    expect(row?.textContent).toContain("Ready");
+  });
+
   it("centers a clear recovery state when the local service cannot check devices", async () => {
     const service: DeviceProductService = {
       ...fakeDeviceService(),
@@ -419,9 +445,9 @@ describe("Devices", () => {
     const recovery = document.querySelector('[data-slot="recovery-centered"]');
     expect(recovery).not.toBeNull();
     expect(recovery?.getAttribute("role")).toBe("alert");
-    expect(recovery?.textContent).toContain("Relay could not check devices");
-    expect(recovery?.textContent).toContain("saved Tests and device settings are safe");
-    expect(button("Check connection")).not.toBeNull();
+    expect(recovery?.textContent).toContain("Relay is not connected");
+    expect(recovery?.textContent).toContain("Your work on this screen is safe");
+    expect(button("Try again")).not.toBeNull();
     expect(
       [...document.querySelectorAll("button")].some(
         (candidate) => candidate.textContent?.trim() === "Check again",

@@ -142,7 +142,10 @@ export function RecoveryState({
   layout?: "compact" | "centered";
   className?: string;
 }) {
-  const supportingText = detail ?? recovery;
+  const supportingText = [detail, recovery]
+    .filter((text): text is string => Boolean(text?.trim()))
+    .filter((text, index, all) => all.indexOf(text) === index)
+    .join(" ");
 
   if (layout === "centered") {
     return (

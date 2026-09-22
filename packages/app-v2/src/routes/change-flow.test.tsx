@@ -7,8 +7,9 @@ import type {
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { RelayV2App } from "../app";
+import * as queryClientModule from "../data/query-client";
 import type {
   ChangeNameIndex,
   ChangeProductService,
@@ -26,6 +27,7 @@ afterEach(async () => {
     for (const root of roots.splice(0)) root.unmount();
   });
   document.body.replaceChildren();
+  vi.restoreAllMocks();
 });
 
 const names: ChangeNameIndex = {
@@ -287,6 +289,28 @@ describe("Change verification", () => {
     expect(document.body.textContent).toContain("Keep Arabic settings readable");
   });
 
+  it("preserves loaded Changes during a failed refresh and recovers in place", async () => {
+    const client = queryClientModule.createRelayQueryClient();
+    vi.spyOn(queryClientModule, "createRelayQueryClient").mockReturnValue(client);
+    const fake = fakeChangeService();
+    await renderChange("/changes", fake.service);
+    const list = fake.service.list;
+    fake.service.list = async () => {
+      throw new TypeError("Failed to fetch");
+    };
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["changes"] });
+    });
+    await settle();
+    expect(document.body.textContent).toContain("Keep Arabic settings readable");
+    expect(document.body.textContent).toContain("Couldn’t refresh changes");
+    expect(document.querySelector('[data-slot="recovery-centered"]')).toBeNull();
+    fake.service.list = list;
+    await click(button("Refresh"));
+    expect(document.body.textContent).not.toContain("Couldn’t refresh changes");
+    expect(document.body.textContent).toContain("Keep Arabic settings readable");
+  });
+
   it("keeps a disconnected service error compact and actionable", async () => {
     const fake = fakeChangeService();
     const service: ChangeProductService = {
@@ -302,9 +326,9 @@ describe("Change verification", () => {
     const recovery = document.querySelector('[data-slot="recovery-centered"]');
     expect(recovery).not.toBeNull();
     expect(recovery?.getAttribute("role")).toBe("alert");
-    expect(recovery?.textContent).toContain("Relay is offline");
-    expect(recovery?.textContent?.match(/your work is safe/gi)).toHaveLength(1);
-    expect(button("Reconnect")).not.toBeNull();
+    expect(recovery?.textContent).toContain("Relay is not connected");
+    expect(recovery?.textContent?.match(/Your work on this screen is safe/gi)).toHaveLength(1);
+    expect(button("Try again")).not.toBeNull();
   });
 
   it("prepares the current Change from the index and routes to its canonical detail", async () => {

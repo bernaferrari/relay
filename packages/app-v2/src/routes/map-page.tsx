@@ -12,7 +12,13 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useRouteContext } from "@tanstack/react-router";
 import { InfiniteMapCanvas } from "../components/infinite-map-canvas";
-import { ChevronLeft, Plus } from "lucide-react";
+import { ChevronLeft, MoreHorizontal, Plus } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@relay/ui-react/components/dropdown-menu";
 import { EmptyState } from "../components/product-patterns";
 import { PageLoading, RecordingProblem } from "./recording-shared";
 import type { ProductMapScreen } from "@relay/product/map-exploration";
@@ -111,9 +117,9 @@ export function MapPage() {
   return (
     <section className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
       <header
-        className={`[-webkit-app-region:drag] flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border px-4 ${platform.platform === "desktop" ? "pl-20" : ""}`}
+        className={`[-webkit-app-region:drag] flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3 ${platform.platform === "desktop" ? "sm:pl-20" : ""}`}
       >
-        <div className="[-webkit-app-region:no-drag] flex min-w-0 items-center gap-3">
+        <div className="[-webkit-app-region:no-drag] flex min-w-0 flex-1 items-center gap-2">
           <Button
             size="icon-sm"
             variant="ghost"
@@ -123,40 +129,12 @@ export function MapPage() {
           >
             <ChevronLeft />
           </Button>
-          <span className="truncate text-sm font-medium">{map.data?.appName ?? "App"}</span>
-          <span className="text-sm text-muted-foreground">/</span>
-          <h1 className="shrink-0 text-sm">App map</h1>
-        </div>
-        <div className="[-webkit-app-region:no-drag] flex shrink-0 items-center gap-3">
-          <Button nativeButton={false} variant="ghost" size="sm" render={<Link to="/sessions" />}>
-            Live sessions
-          </Button>
-          <div className="inline-flex rounded-lg bg-muted p-0.5" aria-label="Map view">
-            <Button
-              size="sm"
-              variant={view === "map" ? "secondary" : "ghost"}
-              aria-pressed={view === "map"}
-              onClick={() => setView("map")}
-            >
-              Map
-            </Button>
-            <Button
-              size="sm"
-              variant={view === "screens" ? "secondary" : "ghost"}
-              aria-pressed={view === "screens"}
-              onClick={() => setView("screens")}
-            >
-              Screens
-            </Button>
-            <Button
-              size="sm"
-              variant={view === "paths" ? "secondary" : "ghost"}
-              aria-pressed={view === "paths"}
-              onClick={() => setView("paths")}
-            >
-              Paths
-            </Button>
+          <div className="min-w-0">
+            <h1 className="text-sm font-semibold">App map</h1>
+            <p className="truncate text-xs text-muted-foreground">{map.data?.appName ?? "App"}</p>
           </div>
+        </div>
+        <div className="[-webkit-app-region:no-drag] flex shrink-0 items-center gap-1">
           <Button
             size="sm"
             nativeButton={false}
@@ -165,6 +143,39 @@ export function MapPage() {
             <Plus />
             Record test
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<Button size="icon-sm" variant="ghost" aria-label="More map actions" />}
+            >
+              <MoreHorizontal aria-hidden="true" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem render={<Link to="/sessions" />}>Activity</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <div
+          className="[-webkit-app-region:no-drag] flex w-full items-center gap-1"
+          role="group"
+          aria-label="Map view"
+        >
+          {(
+            [
+              ["map", "Map"],
+              ["screens", "Screens"],
+              ["paths", "Paths"],
+            ] as const
+          ).map(([id, label]) => (
+            <Button
+              key={id}
+              size="sm"
+              variant={view === id ? "secondary" : "ghost"}
+              aria-pressed={view === id}
+              onClick={() => setView(id)}
+            >
+              {label}
+            </Button>
+          ))}
         </div>
       </header>
       {map.isPending ? <PageLoading label="Loading known screens…" /> : null}

@@ -206,7 +206,7 @@ describe("shell overlays", () => {
     expect(navigation.querySelector('[aria-current="page"]')?.textContent).toBe("Results");
   });
 
-  it("opens Activity Center and shows server-backed Runs and Changes", async () => {
+  it("shows running work and links to full Activity", async () => {
     const run: ProductRunSummary = {
       id: "run-server",
       title: "Checkout",
@@ -236,10 +236,10 @@ describe("shell overlays", () => {
       advisoryVerificationCount: 0,
       updatedAt: Date.now(),
     };
-    await renderShell({ runs: [run], changes: [change] });
+    const history = await renderShell({ runs: [run], changes: [change] });
 
     const trigger = document.querySelector<HTMLButtonElement>(
-      'button[aria-label^="Open Activity Center"]',
+      'button[aria-label^="Open running work"]',
     );
     expect(trigger).toBeTruthy();
     // The global badge is live before opening the center, so closed Activity
@@ -252,6 +252,15 @@ describe("shell overlays", () => {
     expect(document.body.textContent).toContain("Checkout");
     expect(document.body.textContent).toContain("Verify checkout change");
     expect(document.body.textContent).toContain("Verifying");
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Running now");
+    const activityLink = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (link) => link.textContent === "View all activity",
+    );
+    expect(activityLink).toBeTruthy();
+    await act(async () => activityLink?.click());
+    await settle();
+    expect(history.location.pathname).toBe("/sessions");
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it("marks closed Activity unavailable and offers an in-place retry", async () => {
@@ -264,13 +273,13 @@ describe("shell overlays", () => {
     });
 
     const trigger = document.querySelector<HTMLButtonElement>(
-      'button[aria-label^="Open Activity Center"]',
+      'button[aria-label^="Open running work"]',
     );
     expect(trigger?.getAttribute("aria-label")).toContain("unavailable");
     await act(async () => trigger?.click());
     await settle();
 
-    expect(document.body.textContent).toContain("Activity is unavailable");
+    expect(document.body.textContent).toContain("Couldn’t load running work");
     const retry = [...document.querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Try again"),
     );
@@ -279,7 +288,7 @@ describe("shell overlays", () => {
     await act(async () => retry?.click());
     await settle();
     expect(reads).toBeGreaterThan(before);
-    expect(document.body.textContent).toContain("Activity is unavailable");
+    expect(document.body.textContent).toContain("Couldn’t load running work");
   });
 
   it("opens the command palette with the keyboard, searches, and navigates", async () => {

@@ -403,7 +403,7 @@ function TestRow({ test }: { test: ProductTestSummary }) {
             )
           }
         >
-          {test.status === "needs-review" ? "Review steps" : "Run options"}
+          {test.status === "needs-review" ? "Review steps" : "Set up run"}
         </Button>
       </div>
     </li>

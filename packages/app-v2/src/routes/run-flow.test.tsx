@@ -452,15 +452,12 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Test passed");
   });
 
-  it("waits for every data dimension before previewing and labels the selected target", async () => {
-    const fake = fakeRunService(runState("running", ["inspect"]));
-    const preview = vi.fn((input) => ({
-      selected: input.selected,
-      target: input.target,
-      caseCount: 1,
-      pilot: {},
-      scopeLabel: `1 case on ${input.target.label}`,
-    }));
+  it.each([
+    { dimensions: [] },
+    { dimensions: [{ id: "language", name: "Language", kind: "language", values: [] }] },
+  ])("offers a normal run when no complete data set exists (%j)", async ({ dimensions }) => {
+    const fake = fakeRunService();
+    const preview = vi.fn();
     const runAcross = {
       getSetup: vi.fn(async () => ({
         appMapId: "settings-language-proof",
@@ -468,21 +465,7 @@ describe("Run and Report", () => {
         testId: "test-1",
         testName: "Change the app language",
         appName: "Settings Language Proof",
-        dataSet: {
-          name: "Checkout cases",
-          dimensions: [
-            {
-              id: "language",
-              name: "Language",
-              values: [{ id: "en", label: "English" }],
-            },
-            {
-              id: "region",
-              name: "Region",
-              values: [{ id: "us", label: "United States" }],
-            },
-          ],
-        },
+        dataSet: { name: "Default data", dimensions },
       })),
       preview,
     } as unknown as RunAcrossProductService;
@@ -492,22 +475,89 @@ describe("Run and Report", () => {
       platformWithStorage().platform,
       runAcross,
     );
-    await selectOption("Device or browser", "Checkout browser");
+    expect(document.body.textContent).toContain("No data values to run across");
+    expect(document.querySelector('[aria-label="Search values"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Run configuration"]')).toBeNull();
+    const link = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (item) => item.textContent === "Set up a run",
+    );
+    expect(link?.getAttribute("href")).toContain("/tests/test-1?setup=run");
     expect(preview).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("Choose values for the remaining data groups");
-
-    const values = [...document.querySelectorAll<HTMLElement>('[role="checkbox"]')];
-    expect(values).toHaveLength(2);
-    await click(values[0]!.closest("label") ?? values[0]!);
-    expect(preview).not.toHaveBeenCalled();
-    expect(values[0]?.getAttribute("aria-checked")).toBe("true");
-
-    await click(values[1]!.closest("label") ?? values[1]!);
-    expect(values[1]?.getAttribute("aria-checked")).toBe("true");
-    expect(preview).toHaveBeenCalledTimes(1);
-    expect(preview.mock.calls[0]?.[0].target.label).toBe("Checkout browser");
-    expect(document.body.textContent).toContain("1 case on Checkout browser");
   });
+
+  it.each([false, true])(
+    "waits for every data dimension and uses the selected target (stored workspace: %s)",
+    async (usePairedWorkspace) => {
+      const fake = fakeRunService(runState("running", ["inspect"]));
+      const preview = vi.fn((input) => ({
+        selected: input.selected,
+        target: input.target,
+        caseCount: 1,
+        pilot: {},
+        scopeLabel: `1 case on ${input.target.label}`,
+      }));
+      const startPilot = vi.fn(() => new Promise<never>(() => {}));
+      const runAcross = {
+        startPilot,
+        getSetup: vi.fn(async () => ({
+          appMapId: "settings-language-proof",
+          appMapRevision: 1,
+          testId: "test-1",
+          testName: "Change the app language",
+          appName: "Settings Language Proof",
+          dataSet: {
+            name: "Checkout cases",
+            dimensions: [
+              {
+                id: "language",
+                name: "Language",
+                values: [{ id: "en", label: "English" }],
+              },
+              {
+                id: "region",
+                name: "Region",
+                values: [{ id: "us", label: "United States" }],
+              },
+            ],
+          },
+        })),
+        preview,
+      } as unknown as RunAcrossProductService;
+      await renderRun(
+        "/tests/test-1/run-across",
+        fake.service,
+        platformWithStorage({
+          [runConfigurationStorageKey({
+            server: "http://127.0.0.1:8787",
+            appId: "settings-language-proof",
+            entity: "test:test-1",
+          })]: JSON.stringify({ usePairedWorkspace }),
+        }).platform,
+        runAcross,
+      );
+      await selectOption("Device or browser", "Checkout browser");
+      expect(preview).not.toHaveBeenCalled();
+      expect(document.body.textContent).toContain("Choose a value for Language, Region.");
+      expect(document.querySelector('[role="alert"]')).toBeNull();
+      expect(button("Run first case").disabled).toBe(true);
+
+      const values = [...document.querySelectorAll<HTMLElement>('[role="checkbox"]')];
+      expect(values).toHaveLength(2);
+      await click(values[0]!.closest("label") ?? values[0]!);
+      expect(preview).not.toHaveBeenCalled();
+      expect(values[0]?.getAttribute("aria-checked")).toBe("true");
+
+      await click(values[1]!.closest("label") ?? values[1]!);
+      expect(values[1]?.getAttribute("aria-checked")).toBe("true");
+      expect(preview).toHaveBeenCalledTimes(1);
+      expect(preview.mock.calls[0]?.[0].target.label).toBe("Checkout browser");
+      expect(document.body.textContent).toContain("1 case on Checkout browser");
+      await click(button("Run first case"));
+      expect(startPilot).toHaveBeenCalledWith(
+        expect.objectContaining({ target: expect.objectContaining({ label: "Checkout browser" }) }),
+      );
+    },
+  );
 
   it("selects the only ready target so a Test can run immediately", async () => {
     const fake = fakeRunService();
@@ -577,7 +627,7 @@ describe("Run and Report", () => {
     await openRunSettings();
 
     await selectOption("Device or browser", "Pixel 9 Pro");
-    await selectOption("Profile", "Pixel 9 reviewed");
+    await selectOption("Saved setup", "Pixel 9 reviewed");
     await selectOption("Device or browser", "Checkout browser");
     expect(document.body.textContent).toContain("saved for another destination");
     await click(button("Fix setup"));
@@ -653,7 +703,7 @@ describe("Run and Report", () => {
         ?.textContent,
     ).toContain("Checkout browser");
     expect(
-      document.querySelector<HTMLButtonElement>('button[aria-label="Profile"]')?.textContent,
+      document.querySelector<HTMLButtonElement>('button[aria-label="Saved setup"]')?.textContent,
     ).toContain("Member · Member");
   });
 

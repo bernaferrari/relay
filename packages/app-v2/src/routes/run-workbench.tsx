@@ -258,7 +258,7 @@ export function RunWorkbench({
         <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 px-4 text-xs text-muted-foreground">
           <span>
             {showingCapture
-              ? `Capture ${selectedCapture + 1} of ${reviewMode ? reviewItems.length : listedFrames.length}`
+              ? `Screenshot ${selectedCapture + 1} of ${reviewMode ? reviewItems.length : listedFrames.length}`
               : step.phase === "test"
                 ? `Test step ${report.timeline.slice(0, selectedStepIndex + 1).filter((item) => item.phase === "test").length} of ${report.timeline.filter((item) => item.phase === "test").length}`
                 : `Step ${selectedStepIndex + 1} of ${report.timeline.length}`}
@@ -270,7 +270,7 @@ export function RunWorkbench({
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label={showingCapture ? "Previous capture" : "Previous step"}
+              aria-label={showingCapture ? "Previous screenshot" : "Previous step"}
               disabled={(showingCapture ? selectedCapture : selectedStepIndex) === 0}
               onClick={() => {
                 setPlaying(false);
@@ -296,7 +296,7 @@ export function RunWorkbench({
             <Button
               size="icon-sm"
               variant="ghost"
-              aria-label={showingCapture ? "Next capture" : "Next step"}
+              aria-label={showingCapture ? "Next screenshot" : "Next step"}
               disabled={
                 showingCapture
                   ? selectedCapture === (reviewMode ? reviewItems.length : listedFrames.length) - 1
@@ -442,7 +442,7 @@ export function RunWorkbench({
             {(
               [
                 ["steps", "Steps"],
-                ...(listedFrames.length || reviewMode ? [["captures", "Captures"]] : []),
+                ...(listedFrames.length || reviewMode ? [["captures", "Screenshots"]] : []),
                 ...(report.performance?.length ? [["performance", "Performance"]] : []),
                 ...(hasChecks ? [["details", "Checks"]] : []),
                 ["logs", "Logs"],

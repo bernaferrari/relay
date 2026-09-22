@@ -75,7 +75,8 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
   const app = (search as Record<string, unknown>).app;
   const selectedApp = typeof app === "string" ? app : undefined;
   const { isMobile, setOpenMobile } = useSidebar();
-  const settingsActive = pathname.startsWith("/settings/");
+  const helpActive = pathname === "/settings/about";
+  const settingsActive = pathname.startsWith("/settings/") && !helpActive;
   const closeMobileNavigation = () => {
     if (isMobile) setOpenMobile(false);
   };
@@ -134,7 +135,7 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
           </SidebarMenuButton>
           <SidebarMenuButton
             render={<Link to="/settings/about" onClick={closeMobileNavigation} />}
-            isActive={false}
+            isActive={helpActive}
             className=" focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-foreground"
           >
             <CircleHelp className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />

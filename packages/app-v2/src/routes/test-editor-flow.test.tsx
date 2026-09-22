@@ -704,3 +704,21 @@ describe("Test editor", () => {
     expect(harness.edits).toHaveLength(0);
   });
 });
+
+it("keeps an unsaved checkpoint when leaving for Results until leaving is confirmed", async () => {
+  const harness = service();
+  const history = await render(harness.editor);
+  await click("Add checkpoint");
+  const results = document.querySelector<HTMLAnchorElement>('a[href="/runs"]');
+  if (!results) throw new Error("Results destination missing");
+  await act(async () => results.click());
+  await settle();
+  expect(history.location.pathname).toBe("/tests/test-checkout/edit");
+  expect(document.body.textContent).toContain("new screenshot checkpoint will be discarded");
+  await click("Keep editing");
+  expect(history.location.pathname).toBe("/tests/test-checkout/edit");
+  await act(async () => results.click());
+  await settle();
+  await click("Leave without saving");
+  expect(history.location.pathname).toBe("/runs");
+});

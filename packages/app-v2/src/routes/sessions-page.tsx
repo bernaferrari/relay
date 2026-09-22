@@ -85,11 +85,7 @@ export function SessionsPage() {
 
   return (
     <LibraryPage className="flex min-h-full max-w-5xl flex-col">
-      <PageHeader
-        context="Live"
-        title="Live"
-        description="Open a Device or continue something already running."
-      />
+      <PageHeader title="Activity" description="Continue recordings and runs, or open a device." />
       {devices.isPending ? <PageLoading label="Finding devices…" /> : null}
       <RecordingProblem
         error={devices.error}
@@ -98,7 +94,7 @@ export function SessionsPage() {
       />
       {devices.data ? <LiveDevices devices={devices.data} /> : null}
       <LibraryToolbar
-        label="Filter Live"
+        label="Filter activity"
         tabs={
           <Tabs
             className="border-b border-border pb-1.5"

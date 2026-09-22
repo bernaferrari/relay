@@ -1,3 +1,4 @@
+import { useIsMobile } from "@relay/ui-react/hooks/use-mobile";
 import { useMapSelection } from "../hooks/use-map-selection";
 import { separateMapScreens } from "./map-layout";
 import { useQueries } from "@tanstack/react-query";
@@ -133,7 +134,9 @@ export function InfiniteMapCanvas({
     [positions, visibleScreens],
   );
   const [screenSearch, setScreenSearch] = useState("");
-  const [showScreens, setShowScreens] = useState(true);
+  const isMobile = useIsMobile();
+  const [screensPreference, setShowScreens] = useState<boolean | null>(null);
+  const showScreens = screensPreference ?? !isMobile;
   const [handTool, setHandTool] = useState(false);
   const [showInteractionTargets, setShowInteractionTargets] = useState(false);
   const [showControlOrigins, setShowControlOrigins] = useState(false);

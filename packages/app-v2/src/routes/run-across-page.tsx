@@ -1,15 +1,14 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
+import { getRouteApi, Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
+import { EmptyState } from "../components/product-patterns";
 import { FormPage, PageHeader } from "../components/page-layout";
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import { useRunConfigurationKey } from "../data/use-persisted-run-configuration";
 import { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
-import { compileRepeatScope } from "../data/paired-configuration";
-import { usePairedConfigurationWorkspace } from "../data/use-paired-configuration-workspace";
 import { runQueryKeys } from "../data/run-queries";
 import { PageLoading, RecordingProblem, errorMessage } from "./recording-shared";
 
@@ -67,8 +66,12 @@ export function RunAcrossPage() {
       ),
     [selected, setup.data],
   );
+  const hasDataValues = Boolean(
+    setup.data?.dataSet.dimensions.length &&
+    setup.data.dataSet.dimensions.every((dimension) => dimension.values.length > 0),
+  );
   const selectionReady = Boolean(
-    setup.data && !valuesUnavailable && missingDimensions.length === 0,
+    setup.data && hasDataValues && !valuesUnavailable && missingDimensions.length === 0,
   );
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const target = useMemo(
@@ -79,7 +82,6 @@ export function RunAcrossPage() {
     () => (target ? { ...target, label: target.name } : undefined),
     [target],
   );
-  const paired = usePairedConfigurationWorkspace(platform);
   const previewResult = useMemo(() => {
     if (!setup.data || !runTarget || !selectionReady)
       return { preview: undefined, error: undefined };
@@ -89,44 +91,21 @@ export function RunAcrossPage() {
         selected,
         target: runTarget,
       });
-      if (configuration.selection.usePairedWorkspace) {
-        const scope = compileRepeatScope({
-          workspace: paired.workspace,
-          dataCaseCount: preview.caseCount,
-        });
-        return {
-          preview: { ...preview, caseCount: scope.executionCount, scopeLabel: scope.scopeLabel },
-          error: undefined,
-        };
-      }
       return { preview, error: undefined };
     } catch (error) {
       return { preview: undefined, error: errorMessage(error) };
     }
-  }, [
-    configuration.selection.usePairedWorkspace,
-    paired.workspace,
-    previewAttempt,
-    runAcrossService,
-    selected,
-    setup.data,
-    runTarget,
-    selectionReady,
-  ]);
+  }, [previewAttempt, runAcrossService, selected, setup.data, runTarget, selectionReady]);
   const preview = previewResult.preview;
   const start = useMutation({
     mutationFn: () => {
       if (!setup.data || !runTarget || configuration.loading || !preview) {
         throw new TypeError("Choose a ready device or browser and at least one data value.");
       }
-      const pilotTargetId = configuration.selection.usePairedWorkspace
-        ? paired.workspace.rows[0]?.browserId
-        : runTarget.targetId;
-      const target = targets.data?.find((item) => item.targetId === pilotTargetId) ?? runTarget;
       return runAcrossService.startPilot({
         setup: setup.data,
         selected,
-        target: { ...target, label: target.name },
+        target: runTarget,
       });
     },
     onSuccess: async (batch) => {
@@ -140,11 +119,11 @@ export function RunAcrossPage() {
       <PageHeader
         crumbs={[
           { label: "Tests", to: "/tests" },
-          { label: setup.data?.testName ?? "Test" },
-          { label: "Run with data" },
+          { label: setup.data?.testName ?? "Test", to: "/tests/$testId", params: { testId } },
+          { label: "Run across" },
         ]}
-        title="Run across"
-        description="Repeat this Test for each selected value, including screenshots at every capture step."
+        title={setup.data ? `Run across · ${setup.data.testName}` : "Run across"}
+        description="Choose the data to try. Run the first combination, review its screenshots, then continue with the rest."
       />
       {loading ? <PageLoading label="Loading saved data and available devices…" /> : null}
       <RecordingProblem
@@ -156,7 +135,21 @@ export function RunAcrossPage() {
         }}
         retrying={setup.isFetching || targets.isFetching}
       />
-      {!loading && setup.data && !setup.error ? (
+      {!loading && setup.data && !setup.error && !hasDataValues ? (
+        <EmptyState
+          title="No data values to run across"
+          detail="This Test has no complete data set to repeat. You can still run it once and review its screenshots."
+          action={
+            <Button
+              nativeButton={false}
+              render={<Link to="/tests/$testId" params={{ testId }} search={{ setup: "run" }} />}
+            >
+              Set up a run
+            </Button>
+          }
+        />
+      ) : null}
+      {!loading && setup.data && !setup.error && hasDataValues ? (
         <div className="grid gap-6">
           <RunConfigurationComposer
             title={null}
@@ -190,19 +183,7 @@ export function RunAcrossPage() {
                           detail: "Choose another device or browser to continue.",
                         },
                       ]
-                    : !target
-                      ? [{ id: "target", label: "Choose a ready device or browser" }]
-                      : !selectionReady
-                        ? [
-                            {
-                              id: "values",
-                              label: "Choose values for the remaining data groups",
-                              detail: missingDimensions
-                                .map((dimension) => dimension.name)
-                                .join(","),
-                            },
-                          ]
-                        : [],
+                    : [],
               validated: Boolean(preview),
             }}
             targetOptions={targets.data?.map((item) => ({
@@ -227,11 +208,6 @@ export function RunAcrossPage() {
             error={scope.error ?? configuration.error}
             onRetry={scope.error ? scope.retry : configuration.retry}
             targetGroupName="run-across-target"
-            pairedWorkspaceLabel={
-              paired.workspace.rows.length
-                ? `Use saved workspace · ${paired.workspace.rows.length} paired configurations`
-                : undefined
-            }
           >
             {valuesUnavailable ? (
               <Button
@@ -253,14 +229,14 @@ export function RunAcrossPage() {
                 <div className="grid gap-1 text-sm" role="status">
                   <span>{preview.scopeLabel}</span>
                   <small className="text-muted-foreground">
-                    Review the first result, then continue the remaining cases.
+                    Review the first result before starting the remaining combinations.
                   </small>
                 </div>
               ) : (
                 <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
                   {target && missingDimensions.length
-                    ? "Choose at least one value in each data group."
-                    : "Choose at least one value and one ready device or browser."}
+                    ? `Choose a value for ${missingDimensions.map((dimension) => dimension.name).join(", ")}.`
+                    : "Choose a device or browser to continue."}
                 </p>
               )}
               <Button

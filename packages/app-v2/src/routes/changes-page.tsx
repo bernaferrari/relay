@@ -6,10 +6,9 @@ import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { RotateCcw } from "lucide-react";
 import { useMemo } from "react";
-import { EmptyState, RecoveryState } from "../components/product-patterns";
-import { PageLoading, RecordingProblem } from "./recording-shared";
+import { EmptyState } from "../components/product-patterns";
+import { PageLoading, RecordingProblem, RefreshProblem } from "./recording-shared";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 
 const routeApi = getRouteApi("/changes");
@@ -91,30 +90,23 @@ export function ChangesPage() {
         </TabsList>
       </Tabs>
 
-      {changes.isError ? (
-        <RecoveryState
-          className="mt-5"
-          layout="centered"
-          title="Relay is offline"
-          detail="Start the local service, then reconnect. Your work is safe."
-          action={
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void changes.refetch()}
-              disabled={changes.isFetching}
-            >
-              <RotateCcw aria-hidden="true" />
-              {changes.isFetching ? "Reconnecting…" : "Reconnect"}
-            </Button>
-          }
+      <RecordingProblem
+        error={changes.data === undefined ? changes.error : null}
+        onRetry={() => void changes.refetch()}
+        retrying={changes.isFetching}
+        layout="centered"
+      />
+      {changes.isError && changes.data !== undefined ? (
+        <RefreshProblem
+          subject="changes"
+          onRetry={() => void changes.refetch()}
+          retrying={changes.isFetching}
         />
-      ) : (
-        <RecordingProblem recovery={prepare.data?.state.recovery} error={prepare.error} />
-      )}
+      ) : null}
+      <RecordingProblem recovery={prepare.data?.state.recovery} error={prepare.error} />
       {changes.isPending ? <PageLoading label="Loading Changes…" /> : null}
 
-      {!changes.isPending && !changes.isError && visible.length ? (
+      {changes.data !== undefined && visible.length ? (
         <section className="mt-7" aria-labelledby="changes-result-title">
           <div className="flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
             <h2 id="changes-result-title" className="text-sm font-semibold">
@@ -132,7 +124,7 @@ export function ChangesPage() {
         </section>
       ) : null}
 
-      {!changes.isPending && !changes.isError && !visible.length ? (
+      {changes.data !== undefined && !visible.length ? (
         changes.data?.length ? (
           <EmptyState
             layout="filtered"

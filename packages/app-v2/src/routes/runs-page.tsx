@@ -12,7 +12,7 @@ import { EmptyState, OutcomeMark } from "../components/product-patterns";
 import { RunHistoryList, type RunHistoryRowInteraction } from "../components/run-history-list";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
-import { PageLoading, RecordingProblem } from "./recording-shared";
+import { PageLoading, RecordingProblem, RefreshProblem } from "./recording-shared";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
 import { Camera, ChevronRight, Globe } from "lucide-react";
 import {
@@ -188,25 +188,11 @@ export function RunsPage() {
       />
 
       {runs.isError && runs.data !== undefined ? (
-        <div
-          role="status"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border px-4 py-3 text-sm"
-        >
-          <div>
-            <p className="font-medium">Couldn’t refresh results</p>
-            <p className="text-muted-foreground">
-              Showing the last loaded results. Updates will resume when Relay reconnects.
-            </p>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={runs.isFetching}
-            onClick={() => void runs.refetch()}
-          >
-            {runs.isFetching ? "Retrying…" : "Try again"}
-          </Button>
-        </div>
+        <RefreshProblem
+          subject="results"
+          onRetry={() => void runs.refetch()}
+          retrying={runs.isFetching}
+        />
       ) : null}
 
       {runs.data !== undefined && visibleRuns.length ? (

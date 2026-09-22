@@ -215,6 +215,26 @@ function text(): string {
 }
 
 describe("Run walkthrough player", () => {
+  it("retries a walkthrough outage without calling saved evidence missing", async () => {
+    const service = playerService();
+    let attempts = 0;
+    service.getPlayerManifest = async () => {
+      if (++attempts === 1) throw new TypeError("Failed to fetch");
+      return manifest();
+    };
+    await renderWalkthrough("/runs/run-member/walkthrough", service);
+    expect(text()).toContain("Relay is not connected");
+    expect(text()).not.toContain("No player manifest");
+    expect(document.querySelector('a[href="/runs/run-member"]')).not.toBeNull();
+    const retry = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === "Try again",
+    )!;
+    await click(retry);
+    expect(attempts).toBe(2);
+    expect(text()).toContain("Member home");
+    expect(text()).not.toContain("Relay is not connected");
+  });
+
   it("retries an unavailable image and prevents review until it loads", async () => {
     const service = playerService();
     const load = service.loadFrame!;

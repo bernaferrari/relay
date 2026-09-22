@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
 import { useEffect, useState } from "react";
-import { useRouteContext } from "@tanstack/react-router";
+import { Link, useRouteContext } from "@tanstack/react-router";
 import type { DesktopUpdateState } from "../platform/types";
 import { errorMessage } from "./settings-support";
 import { SettingRow, SettingsFrame, SettingsGroup } from "./settings-frame";
@@ -61,7 +61,99 @@ export function AboutSettings() {
 
   return (
     <SettingsFrame category="about">
-      <SettingsGroup>
+      <section aria-labelledby="getting-started-title" className="grid gap-4">
+        <div className="grid gap-1.5">
+          <h2 id="getting-started-title" className="text-lg font-semibold">
+            Your first Test
+          </h2>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Record what you do in your app, run those steps again, then review the screenshots.
+          </p>
+        </div>
+        <ol className="m-0 grid list-none gap-5 p-0">
+          <li className="flex gap-3">
+            <span
+              className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-sm"
+              aria-hidden="true"
+            >
+              1
+            </span>
+            <div className="grid gap-1">
+              <h3 className="text-sm font-medium">Record a journey</h3>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                Choose your app and a browser or device. Record the steps and capture the screens
+                you want to check. Save them as a Test.
+              </p>
+            </div>
+          </li>
+          <li className="flex gap-3">
+            <span
+              className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-sm"
+              aria-hidden="true"
+            >
+              2
+            </span>
+            <div className="grid gap-1">
+              <h3 className="text-sm font-medium">Run the saved Test</h3>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                Open the Test, choose where to run it, and start. Use Run across when you want to
+                try several sets of values.
+              </p>
+            </div>
+          </li>
+          <li className="flex gap-3">
+            <span
+              className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-sm"
+              aria-hidden="true"
+            >
+              3
+            </span>
+            <div className="grid gap-1">
+              <h3 className="text-sm font-medium">Review the result</h3>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                Open Results to see what happened. A completed run means the steps finished; review
+                its screenshots to decide whether the app looks correct.
+              </p>
+            </div>
+          </li>
+        </ol>
+        <div className="flex flex-wrap gap-2">
+          <Button render={<Link to="/tests/new" />}>Record a Test</Button>
+          <Button variant="ghost" render={<Link to="/runs" search={{ view: "needs-review" }} />}>
+            Review screenshots
+          </Button>
+        </div>
+      </section>
+      <details className="border-t border-border pt-4">
+        <summary className="cursor-pointer py-2 text-sm font-medium">
+          Tests, Plans, and Results
+        </summary>
+        <dl className="grid gap-3 pt-2 text-sm leading-relaxed">
+          <div>
+            <dt className="font-medium">Test</dt>
+            <dd className="m-0 text-muted-foreground">A saved journey you can run again.</dd>
+          </div>
+          <div>
+            <dt className="font-medium">Plan</dt>
+            <dd className="m-0 text-muted-foreground">
+              A group of Tests you want to run together. Find Plans inside Tests.
+            </dd>
+          </div>
+          <div>
+            <dt className="font-medium">Result</dt>
+            <dd className="m-0 text-muted-foreground">
+              What happened during a run, including screenshots and any problems.
+            </dd>
+          </div>
+          <div>
+            <dt className="font-medium">Data set</dt>
+            <dd className="m-0 text-muted-foreground">
+              Values a Test uses, such as a language or a search term.
+            </dd>
+          </div>
+        </dl>
+      </details>
+      <SettingsGroup title="About Relay">
         <SettingRow title="Version" description="The build running on this computer.">
           <span className="tabular-nums">
             {platform.version ? `v${platform.version}` : "Development build"}

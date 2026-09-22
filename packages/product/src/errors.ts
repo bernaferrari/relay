@@ -26,13 +26,58 @@ export function projectError(error: unknown): HumanError {
         retryable: true,
       };
     }
-    return {
-      title: "Relay could not complete that request",
-      detail: `Relay returned HTTP ${error.status}.`,
-      recovery:
-        error.status >= 500 ? "Check Relay and try again." : "Review the request and try again.",
-      retryable: error.status >= 500,
-    };
+    switch (error.status) {
+      case 401:
+        return {
+          title: "Reconnect to Relay",
+          detail: "Relay could not verify your access.",
+          recovery: "Check your Relay connection settings and access credentials, then try again.",
+          retryable: false,
+        };
+      case 403:
+        return {
+          title: "You don’t have access to this action",
+          detail: "Your current access does not allow this request.",
+          recovery: "Ask the workspace owner to check your permissions.",
+          retryable: false,
+        };
+      case 404:
+        return {
+          title: "This item is unavailable",
+          detail: "Relay could not find the requested information.",
+          recovery: "Return to the previous page and refresh it to see what is available.",
+          retryable: false,
+        };
+      case 409:
+        return {
+          title: "This action conflicts with the current state",
+          detail: "Relay cannot apply this request as it stands.",
+          recovery: "Review the latest state before choosing your next action.",
+          retryable: false,
+        };
+      case 429:
+        return {
+          title: "Relay needs a moment",
+          detail: "Too many requests arrived at once.",
+          recovery: "Wait a moment, then try the action again.",
+          // No retry deadline is available here; do not offer an immediate repeat.
+          retryable: false,
+        };
+      default:
+        return error.status >= 500
+          ? {
+              title: "Relay could not complete that request",
+              detail: "The service encountered a problem while handling this request.",
+              recovery: "Try again in a moment. If this continues, check the Relay connection.",
+              retryable: true,
+            }
+          : {
+              title: "Relay could not accept this request",
+              detail: "The information sent could not be used for this action.",
+              recovery: "Check your selections and entered values before trying again.",
+              retryable: false,
+            };
+    }
   }
   if (isLocalServiceTransportFailure(error)) {
     return {

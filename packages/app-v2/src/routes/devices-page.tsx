@@ -13,12 +13,12 @@ import { AppWindow, ChevronRight, CircleHelp, Smartphone, Tablet } from "lucide-
 import { useDeferredValue, useEffect, useId, useState } from "react";
 import { LibrarySearch } from "../components/library-toolbar";
 import { LibraryPage, PageHeader } from "../components/page-layout";
-import { EmptyState, RecoveryState } from "../components/product-patterns";
+import { EmptyState } from "../components/product-patterns";
 import { deviceSummaryLine } from "../data/device-label";
 import { deviceQueryKeys, type ProductDevice } from "../data/device-product-service";
 import { readSetupContinuation } from "../data/setup-continuation";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
-import { PageLoading } from "./recording-shared";
+import { PageLoading, RecordingProblem, RefreshProblem } from "./recording-shared";
 
 function searchState(value: unknown): {
   status?: string;
@@ -47,7 +47,15 @@ function deviceGroup(device: ProductDevice): string {
   return "Physical devices";
 }
 
-function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: string }) {
+function DeviceRow({
+  device,
+  returnTo,
+  stale = false,
+}: {
+  device: ProductDevice;
+  returnTo?: string;
+  stale?: boolean;
+}) {
   const DeviceIcon = isBrowser(device)
     ? AppWindow
     : /ipad|tablet/i.test(`${device.name} ${device.kind ?? ""}`)
@@ -83,7 +91,9 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
           data-slot="library-row-status"
           className="flex min-w-20 items-center gap-2 text-xs text-muted-foreground"
         >
-          {!stopped && device.status === "needs-attention" ? (
+          {stale ? (
+            <CircleHelp className="size-3.5" aria-hidden="true" />
+          ) : !stopped && device.status === "needs-attention" ? (
             <CircleHelp className="size-3.5 text-warning-foreground" aria-hidden="true" />
           ) : (
             <span
@@ -95,7 +105,7 @@ function DeviceRow({ device, returnTo }: { device: ProductDevice; returnTo?: str
               }
             />
           )}
-          {statusLabel(device)}
+          {stale ? "Status unavailable" : statusLabel(device)}
         </span>
       </Link>
     </li>
@@ -107,11 +117,13 @@ function DeviceSection({
   devices,
   returnTo,
   bordered = true,
+  stale = false,
 }: {
   title: string;
   devices: readonly ProductDevice[];
   returnTo?: string;
   bordered?: boolean;
+  stale?: boolean;
 }) {
   const headingId = useId();
   return (
@@ -135,7 +147,7 @@ function DeviceSection({
       ) : null}
       <ul className="m-0 list-none p-0 [&>li]:border-b [&>li]:border-border/60 [&>li:last-child]:border-b-0">
         {devices.map((device) => (
-          <DeviceRow key={device.id} device={device} returnTo={returnTo} />
+          <DeviceRow key={device.id} device={device} returnTo={returnTo} stale={stale} />
         ))}
       </ul>
     </section>
@@ -147,11 +159,13 @@ function AvailableSection({
   devices,
   returnTo,
   searchActive,
+  stale = false,
 }: {
   title: string;
   devices: readonly ProductDevice[];
   returnTo?: string;
   searchActive: boolean;
+  stale?: boolean;
 }) {
   const [open, setOpen] = useState(searchActive);
   useEffect(() => {
@@ -175,7 +189,13 @@ function AvailableSection({
           </Badge>
         </CollapsibleTrigger>
         <CollapsibleContent className="border-t border-border">
-          <DeviceSection title="" devices={devices} returnTo={returnTo} bordered={false} />
+          <DeviceSection
+            title=""
+            devices={devices}
+            returnTo={returnTo}
+            bordered={false}
+            stale={stale}
+          />
         </CollapsibleContent>
       </Collapsible>
     </div>
@@ -271,20 +291,21 @@ export function DevicesPage() {
 
       {devices.isPending ? <PageLoading label="Checking Devices and Browsers…" /> : null}
 
-      {devices.isError ? (
-        <RecoveryState
-          layout="centered"
-          title="Relay could not check devices"
-          detail="The local Relay service is not responding. Your saved Tests and device settings are safe."
-          action={
-            <Button variant="default" onClick={() => void devices.refetch()}>
-              Check connection
-            </Button>
-          }
+      <RecordingProblem
+        error={devices.data === undefined ? devices.error : null}
+        onRetry={() => void devices.refetch()}
+        retrying={devices.isFetching}
+        layout="centered"
+      />
+      {devices.isError && devices.data !== undefined ? (
+        <RefreshProblem
+          subject="devices"
+          onRetry={() => void devices.refetch()}
+          retrying={devices.isFetching}
         />
       ) : null}
 
-      {!devices.isPending && !devices.isError && devices.data?.length === 0 ? (
+      {devices.data !== undefined && devices.data?.length === 0 ? (
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
             title="No Devices yet"
@@ -306,7 +327,7 @@ export function DevicesPage() {
         </div>
       ) : null}
 
-      {!devices.isPending && !devices.isError && devices.data?.length && visibleCount === 0 ? (
+      {devices.data !== undefined && devices.data?.length && visibleCount === 0 ? (
         <EmptyState
           title="No devices match your search"
           detail="Try another device name or platform."
@@ -328,7 +349,7 @@ export function DevicesPage() {
         />
       ) : null}
 
-      {!devices.isPending && !devices.isError && visibleCount > 0 ? (
+      {devices.data !== undefined && visibleCount > 0 ? (
         <div className="mt-3 grid gap-4" aria-live="polite">
           {(["Physical devices", "Android emulators", "iOS simulators", "Browsers"] as const).map(
             (title) => {
@@ -344,6 +365,7 @@ export function DevicesPage() {
                   key={title}
                   title={title}
                   devices={devicesInSection}
+                  stale={devices.isError}
                   returnTo={continuation ? search.returnTo : undefined}
                 />
               );
@@ -366,6 +388,7 @@ export function DevicesPage() {
                     devices={simulators}
                     returnTo={continuation ? search.returnTo : undefined}
                     searchActive={Boolean(deferredQuery)}
+                    stale={devices.isError}
                   />
                 ) : null}
                 {android.length ? (
@@ -374,6 +397,7 @@ export function DevicesPage() {
                     devices={android}
                     returnTo={continuation ? search.returnTo : undefined}
                     searchActive={Boolean(deferredQuery)}
+                    stale={devices.isError}
                   />
                 ) : null}
               </div>

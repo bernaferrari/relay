@@ -10,7 +10,7 @@ import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter, useRouteContext } from "@tanstack/react-router";
+import { Link, useRouter, useRouteContext } from "@tanstack/react-router";
 import {
   Activity,
   CircleDot,
@@ -113,10 +113,10 @@ export function ActivityCenterButton() {
         size="sm"
         className="[-webkit-app-region:no-drag]"
         onClick={() => setOpen(true)}
-        aria-label={`Open Activity Center${unavailable ? ", unavailable" : items.length ? `, ${items.length} active` : ""}`}
+        aria-label={`Open running work${unavailable ? ", unavailable" : items.length ? `, ${items.length} active` : ""}`}
       >
         <Activity className="size-4" aria-hidden="true" />
-        <span>Activity</span>
+        <span>Running now</span>
         {unavailable ? (
           <Badge variant="destructive" className="min-w-5 px-1.5">
             !
@@ -150,10 +150,10 @@ export function ActiveWork() {
     <>
       <section
         className="mb-2 grid gap-1 rounded-lg border border-border bg-card p-2"
-        aria-label="Active work"
+        aria-label="Running now"
       >
         <div className="flex min-h-6 items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          <span>Active work</span>
+          <span>Running now</span>
           <Badge variant="secondary" className="min-h-5 px-1.5 text-xs">
             {items.length}
           </Badge>
@@ -179,7 +179,7 @@ export function ActiveWork() {
             className="inline-flex min-h-9 items-center rounded-sm border-0 bg-transparent px-1.5 text-xs font-semibold text-foreground"
             onClick={() => setOpen(true)}
           >
-            View all {items.length} activities
+            View {items.length} running tasks
           </button>
         ) : null}
       </section>
@@ -216,14 +216,14 @@ function ActivityCenter({
       >
         <header className="flex items-center justify-between gap-3 px-4 pt-4 pb-2">
           <div className="min-w-0">
-            <DialogTitle>Activity</DialogTitle>
+            <DialogTitle>Running now</DialogTitle>
             <DialogDescription className="sr-only">
               In-progress recordings and Runs.
             </DialogDescription>
           </div>
           <DialogClose
             render={
-              <Button size="icon-sm" variant="ghost" aria-label="Close Activity Center">
+              <Button size="icon-sm" variant="ghost" aria-label="Close running work">
                 <X className="size-3.5" aria-hidden="true" />
               </Button>
             }
@@ -232,7 +232,7 @@ function ActivityCenter({
         <ScrollArea className="min-h-0 max-h-[min(28rem,calc(100vh-12rem))]">
           {unavailable ? (
             <div className="grid gap-3 px-4 py-5" role="alert">
-              <p className="text-sm text-muted-foreground">Activity is unavailable</p>
+              <p className="text-sm text-muted-foreground">Couldn’t load running work</p>
               <Button
                 variant="outline"
                 size="sm"
@@ -280,6 +280,17 @@ function ActivityCenter({
             </div>
           )}
         </ScrollArea>
+        <footer className="border-t border-border px-4 py-3">
+          <Button
+            nativeButton={false}
+            variant="ghost"
+            size="sm"
+            render={<Link to="/sessions" />}
+            onClick={() => onOpenChange(false)}
+          >
+            View all activity
+          </Button>
+        </footer>
       </DialogContent>
     </Dialog>
   );

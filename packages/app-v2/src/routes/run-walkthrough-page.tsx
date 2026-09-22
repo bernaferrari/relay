@@ -14,6 +14,7 @@ import { WalkthroughView } from "../components/walkthrough-view";
 import { useFrameUrl } from "../hooks/use-walkthrough-frame";
 import { PageHeader, WorkbenchPage } from "../components/page-layout";
 import { EmptyState } from "../components/product-patterns";
+import { RecordingProblem } from "./recording-shared";
 import type { PlayerManifestProjection, RunProductService } from "../data/run-product-service";
 
 /** Newest exact capture for (state, variant). Substitution is structurally
@@ -161,20 +162,36 @@ export function RunWalkthroughPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   });
 
-  if (manifestQuery.isError) {
+  if (manifestQuery.isError && !manifest) {
     return (
       <WorkbenchPage>
-        <PageHeader
-          title="Walk through"
-          context="Run"
-          description={String((manifestQuery.error as Error).message)}
+        <PageHeader title="Walk through" context="Result" />
+        <RecordingProblem
+          error={manifestQuery.error}
+          onRetry={() => void manifestQuery.refetch()}
+          retrying={manifestQuery.isFetching}
         />
+        <Link
+          className="mt-4 inline-flex min-h-11 items-center text-sm underline underline-offset-4"
+          to="/runs/$runId"
+          params={{ runId }}
+        >
+          Back to result
+        </Link>
+      </WorkbenchPage>
+    );
+  }
+
+  if (!runService.getPlayerManifest) {
+    return (
+      <WorkbenchPage>
+        <PageHeader title="Walk through" context="Result" />
         <EmptyState
-          title="No player manifest"
-          detail="This run has no player manifest. The run needs an App Map plan identity and capture evidence."
+          title="Walkthrough unavailable"
+          detail="You can still open the result to review its screenshots and steps."
           action={
             <Link to="/runs/$runId" params={{ runId }}>
-              Open the run result
+              Back to result
             </Link>
           }
         />

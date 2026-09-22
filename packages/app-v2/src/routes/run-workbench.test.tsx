@@ -186,7 +186,7 @@ describe("RunWorkbench", () => {
       timeline: report.timeline.map((step) => ({ ...step, framePaths: [] })),
     };
     const host = render(0, value);
-    expect(host.textContent).toContain("Capture 1 of");
+    expect(host.textContent).toContain("Screenshot 1 of");
     const steps = [...host.querySelectorAll("button")].find((button) =>
       button.textContent?.startsWith("Steps"),
     )!;
@@ -198,7 +198,7 @@ describe("RunWorkbench", () => {
   it("keeps Steps available when the run has no captures", () => {
     const host = render(0, { ...report, stepEvidence: [], evidence: [] });
     expect(host.textContent).toContain("Open the cart");
-    expect(host.textContent).not.toContain("Capture 1 of");
+    expect(host.textContent).not.toContain("Screenshot 1 of");
   });
 
   it("defaults to the result and keeps the tap target on the explicit before frame", () => {
@@ -526,19 +526,21 @@ describe("RunWorkbench", () => {
     const review = vi.fn(async () => undefined);
     const host = render(0, value, review);
     expect(host.querySelector('[role="tablist"][aria-label="Step views"]')).not.toBeNull();
-    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Captures");
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      "Screenshots",
+    );
     expect(host.querySelector('[role="tabpanel"]')).not.toBeNull();
     expect(host.textContent).toContain("2/2 captured");
     expect(host.textContent).toContain("2 pending review");
     expect(host.textContent).not.toContain("passed");
-    const previous = host.querySelector<HTMLButtonElement>('[aria-label="Previous capture"]')!;
-    const next = host.querySelector<HTMLButtonElement>('[aria-label="Next capture"]')!;
+    const previous = host.querySelector<HTMLButtonElement>('[aria-label="Previous screenshot"]')!;
+    const next = host.querySelector<HTMLButtonElement>('[aria-label="Next screenshot"]')!;
     expect(previous.disabled).toBe(true);
     act(() => next.click());
-    expect(host.textContent).toContain("Capture 2 of 2");
+    expect(host.textContent).toContain("Screenshot 2 of 2");
     expect(next.disabled).toBe(true);
     act(() => previous.click());
-    expect(host.textContent).toContain("Capture 1 of 2");
+    expect(host.textContent).toContain("Screenshot 1 of 2");
     const sheet = host.querySelector<HTMLElement>('[aria-label="Screenshot review"]')!;
     expect(host.querySelector("p.text-sm.font-semibold")?.textContent).toBe(
       "Member · Desktop · English",
@@ -640,7 +642,9 @@ describe("RunWorkbench", () => {
       ],
     };
     const host = render(0, value);
-    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Captures");
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      "Screenshots",
+    );
     expect(host.querySelector('[data-slot="evidence-image-frame"] img')?.getAttribute("src")).toBe(
       "/dest-wait.png",
     );

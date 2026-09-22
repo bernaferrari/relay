@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { TestEditorDoneButton } from "./test-editor-done-button";
 import { EditorSaveStatus } from "../components/editor-save-status";
 import { WorkbenchPage, PageHeader, WorkbenchPanes } from "../components/page-layout";
 import type { AppMapScenarioTestStep, AppMapTestStepPlacement } from "@relay/protocol";
@@ -571,13 +572,18 @@ function TestEditorDocument() {
                 Test settings
               </Button>
             ) : null}
-            <Button
-              nativeButton={false}
-              variant="default"
-              render={<Link to="/tests/$testId" params={{ testId }} />}
-            >
-              Done editing
-            </Button>
+            <TestEditorDoneButton
+              saving={
+                edit.isPending || historyAction.isPending || settings.isPending || repair.isPending
+              }
+              hasUnsavedChanges={
+                hasUnsavedDrafts ||
+                settingsName !== (editorDocument?.test.name ?? "") ||
+                settingsOrigin !== (editorDocument?.test.originApplication ?? "")
+              }
+              hasUnsavedCheckpoint={Boolean(pendingCheckpoint)}
+              onLeave={() => void navigate({ to: "/tests/$testId", params: { testId } })}
+            />
           </>
         }
       />

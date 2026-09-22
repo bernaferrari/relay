@@ -66,6 +66,7 @@ export function TestPage() {
   const reviewRecordingId = useTestDocumentReview(platform, search.view);
   const navigate = useNavigate({ from: "/tests/$testId" });
   const [setupAnchor, setSetupAnchor] = useState<HTMLElement | null>(null);
+  const configurationTriggerRef = useRef<HTMLButtonElement>(null);
 
   function selectSource(view: "definition" | "run") {
     void navigate({
@@ -81,6 +82,7 @@ export function TestPage() {
   const [settingsOpen, setSettingsOpen] = useState(search.setup === "run");
   useEffect(() => {
     setSettingsOpen(search.setup === "run");
+    if (search.setup === "run") setSetupAnchor(configurationTriggerRef.current);
   }, [search.setup, testId]);
   const [evidenceStepId, setEvidenceStepId] = useState("");
   const searchRunId = typeof search.run === "string" ? search.run : undefined;
@@ -163,7 +165,7 @@ export function TestPage() {
         ? `${selectedProfile.name} · ${selectedProfile.account.name}`
         : selectedProfile.name
       : (targets.data?.find((target) => target.targetId === targetId)?.name ??
-        "Choose configuration");
+        "Choose device or browser");
   const canStart =
     (usePairs ? paired.workspace.rows.length > 0 : targetReady) &&
     !configuration.loading &&
@@ -342,6 +344,7 @@ export function TestPage() {
                 variant="outline"
                 size="sm"
                 onClick={focusRunSetup}
+                ref={configurationTriggerRef}
                 aria-label="Run configuration — opens run setup"
                 className="order-3 w-full max-w-full justify-start sm:order-none sm:w-auto sm:max-w-64"
               >
@@ -518,7 +521,7 @@ export function TestPage() {
                               onClick={runOrFocusSetup}
                               disabled={start.isPending}
                             >
-                              {canStart ? "Run and capture" : "Choose a device"}
+                              {canStart ? "Run and capture" : "Choose device or browser"}
                             </Button>
                           </div>
                         </div>
@@ -585,10 +588,10 @@ export function TestPage() {
                       >
                         {profiles.data?.length ? (
                           <SelectField
-                            label="Profile"
+                            label="Saved setup"
                             value={configuration.selection.savedProfileId ?? "automatic"}
                             options={[
-                              { value: "automatic", label: "Automatic" },
+                              { value: "automatic", label: "Use device defaults" },
                               ...profiles.data.map((profile) => ({
                                 value: profile.id,
                                 label: `${profile.name}${profile.account ? ` · ${profile.account.name}` : ""}${profile.targetId && profile.targetId !== targetId ? " · other device" : ""}`,
@@ -602,11 +605,14 @@ export function TestPage() {
                             }
                           />
                         ) : null}
+                        {profiles.data?.length ? (
+                          <p className="text-xs leading-relaxed text-muted-foreground">
+                            A saved setup applies its account and run settings to this Test.
+                          </p>
+                        ) : null}
                         {selectedProfile?.account ? (
                           <p className="grid gap-1 text-xs leading-4 text-muted-foreground">
-                            {selectedProfile.account.name} runs through a saved browser sign-in. If
-                            it expired, refresh it and land back here — the Test and this
-                            configuration stay pending.
+                            Runs as {selectedProfile.account.name} using its saved browser sign-in.
                             <Link
                               className={productLinkClassName}
                               to="/environments"

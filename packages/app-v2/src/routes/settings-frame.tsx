@@ -29,8 +29,8 @@ const SETTINGS_COPY: Record<SettingsCategory, { title: string; description: stri
     description: "Relay address and local device support.",
   },
   about: {
-    title: "About",
-    description: "Version, updates, and support.",
+    title: "Help & about",
+    description: "Get started, understand your results, and find support.",
   },
 };
 

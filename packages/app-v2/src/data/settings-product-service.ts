@@ -23,7 +23,7 @@ export const settingsCategories: readonly {
   { id: "integrations", path: "/settings/integrations", label: "Integrations" },
   { id: "appearance", path: "/settings/appearance", label: "Appearance" },
   { id: "advanced", path: "/settings/advanced", label: "Advanced" },
-  { id: "about", path: "/settings/about", label: "About" },
+  { id: "about", path: "/settings/about", label: "Help & about" },
 ] as const;
 
 export const settingsQueryKeys = {

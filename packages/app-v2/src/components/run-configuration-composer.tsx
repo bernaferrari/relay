@@ -1,7 +1,6 @@
 /** @jsxImportSource react */
 import { useId, useState, type ReactNode } from "react";
 import { Languages } from "lucide-react";
-import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { languagePresentation } from "../data/language-presentation";
 import { Button } from "@relay/ui-react/components/button";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
@@ -158,7 +157,11 @@ export function RunConfigurationComposer({
                 label="Device or browser"
                 value={selection?.targetProfileId ?? ""}
                 options={targetOptions.map((option) => ({ value: option.id, label: option.label }))}
-                placeholder="Choose a device"
+                placeholder={
+                  targetOptions.length
+                    ? "Choose a device or browser"
+                    : "No devices or browsers available"
+                }
                 onValueChange={(targetProfileId) =>
                   onSelectionChange({ ...selection, targetProfileId, targetProfileIds: undefined })
                 }
@@ -214,9 +217,11 @@ export function RunConfigurationComposer({
             onChange={(event) => setValueSearch(event.target.value)}
             className="h-11 w-full rounded-md border border-input bg-background px-3 text-base sm:text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
-          <ScrollArea
-            className="h-[42dvh] min-h-0"
-            viewportProps={{ "aria-label": "Available values", className: "overscroll-contain" }}
+          <div
+            className="max-h-[42dvh] min-h-0 overflow-y-auto overscroll-contain"
+            role="region"
+            aria-label="Available values"
+            tabIndex={0}
           >
             <div className="grid grid-cols-1 content-start gap-1 pr-3 sm:grid-cols-2">
               {filteredValues?.map((option) => (
@@ -240,7 +245,7 @@ export function RunConfigurationComposer({
                 <p className="p-3 text-sm text-muted-foreground">No matching values.</p>
               ) : null}
             </div>
-          </ScrollArea>
+          </div>
         </fieldset>
       ) : null}
       {configuration.blockers?.length ? (
