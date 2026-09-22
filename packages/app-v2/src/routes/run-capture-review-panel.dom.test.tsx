@@ -61,7 +61,7 @@ describe("CaptureReviewPanel selection", () => {
     expect(host.querySelector("img")?.getAttribute("src")).toBe("/runs/run-1/frames/001.png");
     expect(host.textContent).toContain("Looks correct");
     expect(host.textContent).toContain("Report issue");
-    expect(host.textContent).toContain("Need more evidence");
+    expect(host.querySelector('[aria-label="More review options"]')).not.toBeNull();
     expect(host.textContent).not.toContain("Use as baseline");
     expect(host.textContent).not.toContain("Approve new baseline");
   });
@@ -186,7 +186,7 @@ describe("CaptureReviewPanel selection", () => {
     expect(host.textContent).toContain("Look for: Save is visible");
     expect(host.textContent).toContain("Looks correct");
     expect(host.textContent).toContain("Report issue");
-    expect(host.textContent).toContain("Need more evidence");
+    expect(host.querySelector('[aria-label="More review options"]')).not.toBeNull();
     expect(host.textContent).not.toContain("Use as baseline");
     expect(host.textContent).not.toContain("Approve new baseline");
 

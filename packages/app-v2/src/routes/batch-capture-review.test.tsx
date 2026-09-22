@@ -155,7 +155,7 @@ describe("Plan screenshot review filters", () => {
     }
     expect(host.textContent).toContain("3 screenshots selected");
     expect(host.textContent).toContain("Report issue");
-    expect(host.textContent).toContain("Need more evidence");
+    expect(host.querySelector('[aria-label="More review options"]')).not.toBeNull();
     const screen = host.querySelector<HTMLButtonElement>(
       '[role="combobox"][aria-label="Filter by screen"]',
     );
@@ -367,6 +367,8 @@ describe("Plan review acknowledgements", () => {
     expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Gallery");
     await act(async () => button(host, "Select unreviewed").click());
     await act(async () => button(host, "Report issue for 3 selected").click());
+    expect(save).not.toHaveBeenCalled();
+    await act(async () => button(host, "Save issue for 3 selected").click());
     expect(save).toHaveBeenCalledWith(
       "plan-1",
       expect.objectContaining({
@@ -374,7 +376,7 @@ describe("Plan review acknowledgements", () => {
         items: expect.arrayContaining([expect.objectContaining({ runId: "run-member-settings" })]),
       }),
     );
-    expect(host.textContent).toContain("Need more evidence for 3 selected");
+    expect(host.querySelector('[aria-label="More review options"]')).not.toBeNull();
     expect(host.textContent).not.toContain("Use as baseline");
   });
 
