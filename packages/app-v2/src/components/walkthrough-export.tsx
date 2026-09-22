@@ -10,35 +10,35 @@ export function WalkthroughExport({
   run(): void;
   file?: { href: string; fileName: string };
 }) {
-  if (file && !pending) {
-    return (
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      {file && !pending ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          render={<a href={file.href} download={file.fileName} />}
+          aria-label="Save walkthrough"
+        >
+          <Download className="size-4" aria-hidden="true" /> Save walkthrough
+        </Button>
+      ) : null}
       <Button
         variant="ghost"
         size="sm"
-        render={<a href={file.href} download={file.fileName} />}
-        aria-label="Save walkthrough"
+        disabled={pending}
+        onClick={run}
+        aria-label="Export walkthrough"
       >
-        <Download className="size-4" aria-hidden="true" /> Save walkthrough
+        {pending ? (
+          <LoaderCircle
+            className="size-4 animate-spin motion-reduce:animate-none"
+            aria-hidden="true"
+          />
+        ) : (
+          <Download className="size-4" aria-hidden="true" />
+        )}
+        {pending ? "Preparing…" : "Export"}
       </Button>
-    );
-  }
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      disabled={pending}
-      onClick={run}
-      aria-label="Export walkthrough"
-    >
-      {pending ? (
-        <LoaderCircle
-          className="size-4 animate-spin motion-reduce:animate-none"
-          aria-hidden="true"
-        />
-      ) : (
-        <Download className="size-4" aria-hidden="true" />
-      )}
-      {pending ? "Preparing…" : "Export"}
-    </Button>
+    </div>
   );
 }
