@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
-import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field";
+import { FieldError } from "@relay/ui-react/components/field";
 import { Button } from "@relay/ui-react/components/button";
-import { Input } from "@relay/ui-react/components/input";
+import { SelectField } from "../components/filter-select";
 import { useState, type FormEvent } from "react";
 import type { ProductPlanSchedule } from "../data/suite-profile-product-service";
 
@@ -27,11 +27,11 @@ export function planScheduleStatus(schedule: ProductPlanSchedule): {
   failure?: string;
 } {
   return {
-    next: planScheduleWhen(schedule.nextRunAt, schedule.timezone),
+    next: schedule.enabled ? planScheduleWhen(schedule.nextRunAt, schedule.timezone) : "Paused",
     last: schedule.lastRunAt ? planScheduleWhen(schedule.lastRunAt, schedule.timezone) : "Never",
     ...(schedule.lastFailure
       ? {
-          failure: `${schedule.lastFailure} Infra. This does not accept a visual baseline.`,
+          failure: `Last run could not start: ${schedule.lastFailure}`,
         }
       : {}),
   };
@@ -43,11 +43,15 @@ export function PlanDailySchedule({
   error,
   schedules = [],
   onSave,
+  onRemove,
+  targetName,
 }: {
   disabled: boolean;
   pending: boolean;
   error?: unknown;
   schedules?: readonly ProductPlanSchedule[];
+  targetName?: string;
+  onRemove?(id: string): void;
   onSave(input: { hour: number; timezone: string }): void;
 }) {
   const [hour, setHour] = useState("8");
@@ -60,59 +64,87 @@ export function PlanDailySchedule({
   }
   return (
     <section className="mt-8 border-t border-border pt-5" aria-labelledby="plan-daily-title">
-      <h2 id="plan-daily-title" className="text-sm font-semibold text-foreground">
-        Run daily
-      </h2>
-      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-        Starts this Plan every day at {clockLabel(Number(hour))} ({timezone}) on the first selected
-        browser or device. Slack is unsupported; Relay writes `.relay/notifications.json` and can
-        POST `RELAY_NOTIFY_WEBHOOK`. Next and last run come from the saved schedule. An admission
-        failure stays Infra and does not accept a visual baseline.
-      </p>
+      <div className="grid gap-1">
+        <h2 id="plan-daily-title" className="text-base font-semibold">
+          Schedule
+        </h2>
+        <p className="text-sm text-muted-foreground">Run this plan automatically each day.</p>
+      </div>
       {schedules.length ? (
-        <ol className="mt-3 grid gap-2 text-xs leading-5 text-muted-foreground">
+        <ul className="mt-4 grid gap-3">
           {schedules.map((schedule) => {
             const status = planScheduleStatus(schedule);
             return (
-              <li key={schedule.id} className="rounded-md border border-border px-3 py-2">
-                <p>
-                  <span className="font-medium text-foreground">Next</span> {status.next}
-                </p>
-                <p>
-                  <span className="font-medium text-foreground">Last</span> {status.last}
-                </p>
-                {status.failure ? <p>{status.failure}</p> : null}
+              <li
+                key={schedule.id}
+                className="flex min-w-0 flex-wrap items-start justify-between gap-3 rounded-lg bg-muted/40 p-4"
+              >
+                <div className="grid min-w-0 gap-1">
+                  <p className="text-sm font-medium">
+                    {schedule.hour === undefined
+                      ? "Recurring run"
+                      : `Daily at ${clockLabel(schedule.hour)}`}
+                    {!schedule.enabled ? " · Paused" : ""}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {schedule.timezone || "Local time"}
+                  </p>
+                  <p className="mt-2 text-sm">Next: {status.next}</p>
+                  <p className="text-xs text-muted-foreground">Last run: {status.last}</p>
+                  {status.failure ? (
+                    <p className="mt-2 text-sm text-destructive">{status.failure}</p>
+                  ) : null}
+                </div>
+                {onRemove ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={pending}
+                    onClick={() => onRemove(schedule.id)}
+                  >
+                    Remove schedule
+                  </Button>
+                ) : null}
               </li>
             );
           })}
-        </ol>
+        </ul>
       ) : (
-        <p className="mt-3 text-xs leading-5 text-muted-foreground">
-          No daily run is scheduled yet.
-        </p>
+        <form className="mt-4 grid gap-4" onSubmit={submit}>
+          <p className="text-sm text-muted-foreground">No automatic runs scheduled.</p>
+          <div className="flex flex-wrap items-end gap-3">
+            <SelectField
+              id="plan-daily-hour"
+              label="Run every day at"
+              value={hour}
+              options={Array.from({ length: 24 }, (_, value) => ({
+                value: String(value),
+                label: clockLabel(value),
+              }))}
+              onValueChange={setHour}
+              disabled={disabled || pending}
+              className="min-w-40 flex-1"
+            />
+            <Button type="submit" disabled={disabled || pending}>
+              {pending ? "Saving…" : "Add schedule"}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {timezone} ·{" "}
+            {targetName
+              ? `Uses ${targetName} and the selected account setup.`
+              : "Choose where to run above first."}
+          </p>
+          {disabled && targetName ? (
+            <p className="text-sm text-muted-foreground">
+              Resolve the run setup issues above before adding a schedule.
+            </p>
+          ) : null}
+        </form>
       )}
-      <form className="mt-3 flex flex-wrap items-end gap-3" onSubmit={submit}>
-        <Field>
-          <FieldLabel htmlFor="plan-daily-hour">Hour (0–23)</FieldLabel>
-          <Input
-            id="plan-daily-hour"
-            type="number"
-            min={0}
-            max={23}
-            className="tabular-nums"
-            value={hour}
-            onChange={(event) => setHour(event.target.value)}
-            disabled={disabled || pending}
-          />
-        </Field>
-        <p className="mb-2 text-xs text-muted-foreground">{clockLabel(Number(hour))}</p>
-        <Button type="submit" variant="outline" disabled={disabled || pending}>
-          {pending ? "Scheduling…" : "Schedule Plan"}
-        </Button>
-      </form>
       {error ? (
         <FieldError>
-          {error instanceof Error ? error.message : "Relay could not schedule this Plan."}
+          {error instanceof Error ? error.message : "Could not update the schedule. Try again."}
         </FieldError>
       ) : null}
     </section>

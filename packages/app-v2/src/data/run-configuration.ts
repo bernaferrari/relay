@@ -12,6 +12,7 @@ export type RunConfigurationValue = {
 
 export type RunConfigurationBlocker = { id: string; label: string; detail?: string };
 export type RunConfigurationOption = {
+  platform?: string;
   id: string;
   label: string;
   detail?: string;

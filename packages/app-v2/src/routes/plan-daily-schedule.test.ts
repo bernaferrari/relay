@@ -30,7 +30,7 @@ describe("plan daily schedule status", () => {
     ).toEqual({
       next: "Fri, Sep 18, 8:00 AM",
       last: "Never",
-      failure: "That browser is offline Infra. This does not accept a visual baseline.",
+      failure: "Last run could not start: That browser is offline",
     });
   });
 });

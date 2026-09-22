@@ -2,6 +2,16 @@ import { describe, expect, it } from "vitest";
 import { friendlySuiteIssue } from "./suite-preflight-copy";
 
 describe("friendlySuiteIssue", () => {
+  it("names the target and explains how to recover from missing setup", () => {
+    expect(
+      friendlySuiteIssue(
+        "No saved runtime profile for target browser:golden — capture a screen on this target first.",
+        [{ id: "browser:golden", name: "Golden Chrome" }],
+      ),
+    ).toBe(
+      "“Golden Chrome” has no saved screen capture to use for setup. Open this browser or device and capture a screen first, or choose another target in Where to run.",
+    );
+  });
   it("keeps the missing runtime profile and target names", () => {
     expect(
       friendlySuiteIssue("Bind a runtime profile to Open grok.com logged-out · logged-out."),

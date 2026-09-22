@@ -62,6 +62,8 @@ export function TestPage() {
     view?: unknown;
     setup?: unknown;
     target?: unknown;
+    plan?: unknown;
+    planApp?: unknown;
   };
   const reviewRecordingId = useTestDocumentReview(platform, search.view);
   const navigate = useNavigate({ from: "/tests/$testId" });
@@ -342,9 +344,25 @@ export function TestPage() {
     <WorkbenchPage className="flex h-full min-h-0 flex-col overflow-auto !p-0">
       <header className="shrink-0 px-5 pt-3 pb-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost" size="sm">
+          <Button
+            nativeButton={false}
+            render={
+              typeof search.plan === "string" && typeof search.planApp === "string" ? (
+                <Link
+                  to="/apps/$appId/suites/$suiteId"
+                  params={{ appId: search.planApp, suiteId: search.plan }}
+                />
+              ) : (
+                <Link to="/tests" />
+              )
+            }
+            variant="ghost"
+            size="sm"
+          >
             <ChevronLeft aria-hidden="true" />
-            Tests
+            {typeof search.plan === "string" && typeof search.planApp === "string"
+              ? "Back to plan"
+              : "Tests"}
           </Button>
           <div className="contents sm:flex sm:shrink-0 sm:items-center sm:gap-2">
             {!activeRun ? (
@@ -354,7 +372,7 @@ export function TestPage() {
                 onClick={focusRunSetup}
                 ref={configurationTriggerRef}
                 aria-label="Run configuration — opens run setup"
-                className="order-3 h-auto min-h-9 w-full max-w-full justify-start py-2 text-left whitespace-normal sm:order-none sm:w-auto sm:max-w-sm"
+                className="order-3 h-auto min-h-9 w-full max-w-full justify-start text-left whitespace-normal sm:order-none sm:w-auto sm:max-w-sm"
               >
                 <SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />
                 <span>{configurationLabel}</span>

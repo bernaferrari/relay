@@ -1,3 +1,4 @@
+import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 /** @jsxImportSource react */
 import {
   Dialog,
@@ -189,6 +190,16 @@ export function SuitePage() {
       await queryClient.invalidateQueries({ queryKey: ["suites", appId, suiteId, "schedules"] });
     },
   });
+  const removeSchedule = useMutation({
+    mutationFn: (id: string) => {
+      if (!suiteProfileService.removePlanSchedule)
+        throw new TypeError("Removing schedules is unavailable.");
+      return suiteProfileService.removePlanSchedule(id);
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["suites", appId, suiteId, "schedules"] });
+    },
+  });
   const planSchedules = useQuery({
     queryKey: ["suites", appId, suiteId, "schedules"],
     queryFn: () => {
@@ -315,7 +326,7 @@ export function SuitePage() {
             </div>
           </dl>
 
-          <div className="mt-6 grid items-start gap-4 lg:grid-cols-2">
+          <div className="mt-6 grid min-w-0 items-start gap-4 min-[1200px]:grid-cols-2">
             <section
               className="min-w-0 rounded-xl border border-border bg-card p-4"
               aria-labelledby="suite-tests-title"
@@ -326,15 +337,16 @@ export function SuitePage() {
               <h2 id="suite-tests-title" className="mt-1 text-base font-semibold text-foreground">
                 Saved Tests
               </h2>
-              <ul className="mt-4 grid list-none gap-2 p-0">
+              <ul className="mt-4 grid min-w-0 list-none gap-2 p-0">
                 {value.tests.map((test) => (
-                  <li key={test.id}>
+                  <li key={test.id} className="min-w-0">
                     <Link
-                      className="flex min-h-9 items-center justify-between gap-3 rounded-md bg-muted px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="flex min-h-11 min-w-0 items-center justify-between gap-3 rounded-md bg-muted px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       to="/tests/$testId"
                       params={{ testId: test.id }}
+                      search={{ plan: suiteId, planApp: appId }}
                     >
-                      <span className="truncate text-sm font-medium text-foreground">
+                      <span className="min-w-0 flex-1 wrap-anywhere text-sm font-medium text-foreground">
                         {test.name}
                       </span>
                       <ReadinessMark
@@ -398,7 +410,8 @@ export function SuitePage() {
                 targetOptions={environments.data?.map((item) => ({
                   id: item.id,
                   label: item.name,
-                  detail: `${item.platform} · ${item.target.name}`,
+                  platform: item.platform,
+                  detail: item.target.name === item.name ? undefined : item.target.name,
                 }))}
                 multipleTargets
                 loading={configuration.loading}
@@ -413,7 +426,7 @@ export function SuitePage() {
                 }
               />
               <div className="mt-3 overflow-hidden rounded-lg border border-border">
-                <table className="w-full text-left text-xs">
+                <table className="w-full table-fixed text-left text-xs [&_td]:wrap-anywhere">
                   <caption className="px-3 py-2 text-left font-medium text-foreground">
                     Selected configurations
                   </caption>
@@ -458,24 +471,18 @@ export function SuitePage() {
               <p className="mt-1 mb-3 text-xs leading-relaxed text-muted-foreground">
                 Run every selected case, or one representative case.
               </p>
-              <div className="flex items-center gap-2" role="group" aria-label="Execution scope">
-                <Button
-                  aria-pressed={executionMode === "pilot"}
-                  variant={executionMode === "pilot" ? "secondary" : "outline"}
-                  size="sm"
-                  onClick={() => setExecutionMode("pilot")}
+              <Tabs
+                value={executionMode}
+                onValueChange={(value) => setExecutionMode(value as "pilot" | "all")}
+              >
+                <TabsList
+                  aria-label="Execution scope"
+                  className="w-full group-data-horizontal/tabs:h-11"
                 >
-                  One case
-                </Button>
-                <Button
-                  aria-pressed={executionMode === "all"}
-                  variant={executionMode === "all" ? "secondary" : "outline"}
-                  size="sm"
-                  onClick={() => setExecutionMode("all")}
-                >
-                  All cases
-                </Button>
-              </div>
+                  <TabsTrigger value="pilot">One case</TabsTrigger>
+                  <TabsTrigger value="all">All cases</TabsTrigger>
+                </TabsList>
+              </Tabs>
               {preview.data || missingAccountBlockers.length ? (
                 <div
                   className={`mt-4 grid gap-1 rounded-lg border p-3 text-xs ${
@@ -487,7 +494,7 @@ export function SuitePage() {
                 >
                   <strong className="font-semibold text-foreground">
                     {previewBlockers.length
-                      ? "Needs attention"
+                      ? "Setup needed before running"
                       : `Full Plan: ${preview.data?.caseCount} ${
                           preview.data?.caseCount === 1 ? "case" : "cases"
                         } ${
@@ -496,7 +503,7 @@ export function SuitePage() {
                             : "ready"
                         }`}
                   </strong>
-                  {preview.data ? (
+                  {preview.data && !previewBlockers.length ? (
                     <span className="text-muted-foreground">
                       {preview.data.checkCount} {preview.data.checkCount === 1 ? "check" : "checks"}
                       {preview.data.expectedScreenshots === undefined
@@ -509,20 +516,35 @@ export function SuitePage() {
                       This run uses one representative case.
                     </span>
                   ) : null}
-                  {preview.data?.execution?.detail ? (
+                  {!previewBlockers.length && preview.data?.execution?.detail ? (
                     <details className="mt-2 text-muted-foreground">
                       <summary className="cursor-pointer py-1">Execution details</summary>
                       <p className="mt-1 leading-5">{preview.data.execution.detail}</p>
                     </details>
                   ) : null}
                   {previewBlockers.slice(0, 1).map((blocker) => (
-                    <small
-                      className="leading-5 text-muted-foreground"
+                    <p
+                      className="text-sm leading-6 text-foreground"
                       key={`${blocker.code}:${"suiteCellId" in blocker ? blocker.suiteCellId : "suite"}`}
                     >
-                      {friendlySuiteIssue(blocker.message)}
-                    </small>
+                      {friendlySuiteIssue(
+                        blocker.message,
+                        environments.data?.map((item) => ({ id: item.targetId, name: item.name })),
+                      )}
+                    </p>
                   ))}
+                  {previewBlockers.length > 1 ? (
+                    <details className="mt-2 text-muted-foreground">
+                      <summary className="cursor-pointer py-1">
+                        More setup details ({previewBlockers.length - 1})
+                      </summary>
+                      <ul className="mt-2 grid gap-2">
+                        {previewBlockers.slice(1).map((blocker, index) => (
+                          <li key={index}>{friendlySuiteIssue(blocker.message)}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  ) : null}
                 </div>
               ) : null}
               {preview.error ? (
@@ -544,9 +566,22 @@ export function SuitePage() {
 
           {suiteProfileService.schedulePlan ? (
             <PlanDailySchedule
-              disabled={!selectedProfileIds.length || Boolean(missingAccountBlockers.length)}
-              pending={schedule.isPending}
-              error={schedule.error}
+              disabled={
+                !selectedProfileIds.length ||
+                Boolean(previewBlockers.length) ||
+                planSchedules.isLoading
+              }
+              pending={schedule.isPending || removeSchedule.isPending}
+              error={removeSchedule.error || schedule.error || planSchedules.error}
+              targetName={environments.data
+                ?.filter((item) => selectedProfileIds.includes(item.id))
+                .map((item) => item.name)
+                .join(", ")}
+              onRemove={
+                suiteProfileService.removePlanSchedule
+                  ? (id) => removeSchedule.mutate(id)
+                  : undefined
+              }
               schedules={planSchedules.data ?? []}
               onSave={(input) => schedule.mutate(input)}
             />
@@ -622,7 +657,7 @@ export function SuitePage() {
                         className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
                       >
                         <span className="grid min-w-0 flex-1 gap-0.5">
-                          <span className="truncate text-sm font-medium text-foreground">
+                          <span className="min-w-0 flex-1 wrap-anywhere text-sm font-medium text-foreground">
                             {test.name}
                           </span>
                           <span className="truncate text-xs leading-snug text-muted-foreground">
@@ -647,7 +682,7 @@ export function SuitePage() {
                           className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
                         >
                           <span className="grid min-w-0 flex-1 gap-0.5">
-                            <span className="truncate text-sm font-medium text-foreground">
+                            <span className="min-w-0 flex-1 wrap-anywhere text-sm font-medium text-foreground">
                               {dataSet.name}
                             </span>
                             <span className="truncate text-xs leading-snug text-muted-foreground">

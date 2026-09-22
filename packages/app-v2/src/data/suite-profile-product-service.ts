@@ -260,6 +260,7 @@ export type SuiteProfileProductService = {
     hour: number;
     timezone: string;
   }): Promise<{ id: string }>;
+  removePlanSchedule?(id: string): Promise<void>;
   listPlanSchedules?(input: { combineId: string }): Promise<readonly ProductPlanSchedule[]>;
 };
 
@@ -876,6 +877,9 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
         ...(profileTargets?.length ? { profileTargets } : {}),
       });
       return { id: result.schedule.id };
+    },
+    async removePlanSchedule(id) {
+      await (await client()).invoke("schedule.delete", { scheduleId: id });
     },
     async listPlanSchedules(input) {
       const combineId = input.combineId.trim();

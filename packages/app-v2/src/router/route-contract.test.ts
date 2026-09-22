@@ -97,3 +97,13 @@ it("accepts restored report tabs and captures", () => {
     assertAllowedRouteSearch("/runs/run-1", { reportView: "captures", capture: "2" }),
   ).not.toThrow();
 });
+
+it("allows a test to retain its source plan when switching views", () => {
+  expect(() =>
+    assertAllowedRouteSearch("/tests/test-one", {
+      plan: "daily",
+      planApp: "grok",
+      view: "definition",
+    }),
+  ).not.toThrow();
+});

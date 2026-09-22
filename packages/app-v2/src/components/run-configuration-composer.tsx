@@ -1,3 +1,4 @@
+import { RunTargetPicker } from "./run-target-picker";
 /** @jsxImportSource react */
 import { useId, useState, type ReactNode } from "react";
 import { Languages } from "lucide-react";
@@ -133,24 +134,12 @@ export function RunConfigurationComposer({
       {targetOptions && onSelectionChange ? (
         <>
           {multipleTargets ? (
-            <fieldset
+            <RunTargetPicker
+              options={targetOptions}
+              selected={selectedTargets}
               disabled={loading}
-              className="grid min-w-0 gap-2 border-0 p-0 [&_legend]:mb-1.5 [&_legend]:text-sm [&_legend]:font-semibold"
-            >
-              <legend>Where to run</legend>
-              {targetOptions.map((option) => (
-                <FieldLabel
-                  key={option.id}
-                  className="flex min-h-11 w-full min-w-0 cursor-pointer items-center gap-3 border-b border-border py-2.5 has-data-checked:[&_[data-slot=run-target-title]]:text-foreground last:border-b-0"
-                >
-                  {optionCopy(option)}
-                  <Checkbox
-                    checked={selectedTargets.includes(option.id)}
-                    onCheckedChange={(checked) => toggleTarget(option.id, checked === true)}
-                  />
-                </FieldLabel>
-              ))}
-            </fieldset>
+              onToggle={toggleTarget}
+            />
           ) : (
             <div className="grid gap-2">
               <SelectField

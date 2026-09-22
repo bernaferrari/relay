@@ -94,6 +94,8 @@ export type RouteDefinition = {
   sidebar: Sidebar;
   back: "history";
   allowedSearchKeys: readonly (
+    | "plan"
+    | "planApp"
     | "status"
     | "app"
     | "view"
@@ -164,6 +166,8 @@ export const ROUTE_DEFINITIONS = [
     "originApplication",
   ]),
   d("/tests/:testId", "/tests", "Test", "Test", "tests", "run-test", [
+    "plan",
+    "planApp",
     "target",
     "setup",
     "view",
