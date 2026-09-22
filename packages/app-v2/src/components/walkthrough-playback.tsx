@@ -55,30 +55,29 @@ export function WalkthroughPlayback({
   });
   return (
     <div className="grid min-w-0">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-4 py-2">
-        <p className="text-xs text-muted-foreground">Playback · no live device</p>
-        <div className="flex items-center gap-1">
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-pressed={showControls}
-            onClick={() => setShowControls((value) => !value)}
-            disabled={!hotspots.length}
-          >
-            <MousePointer2 className="size-4" aria-hidden="true" /> Show controls
-          </Button>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Return to start screen"
-            disabled={!entryStateId || entryStateId === capture.stateId}
-            onClick={() => entryStateId && onNavigate(entryStateId)}
-          >
-            <RotateCcw className="size-4" aria-hidden="true" />
-          </Button>
-        </div>
-      </div>
       <figure className="relative mx-auto my-0 w-fit max-w-full overflow-hidden">
+        {hotspots.length > 0 ? (
+          <div className="absolute bottom-3 right-3 z-10 flex items-center rounded-lg bg-background/95 p-1 shadow-sm">
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-pressed={showControls}
+              onClick={() => setShowControls((value) => !value)}
+            >
+              <MousePointer2 className="size-4" aria-hidden="true" /> Show controls
+            </Button>
+            {entryStateId && entryStateId !== capture.stateId ? (
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Return to start screen"
+                onClick={() => onNavigate(entryStateId)}
+              >
+                <RotateCcw className="size-4" aria-hidden="true" />
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
         <EvidenceImageViewer
           frame={{ id: capture.id, title, media: { kind: "image", src } }}
           onError={onError}
@@ -105,11 +104,11 @@ export function WalkthroughPlayback({
           />
         ))}
       </figure>
-      <p className="px-4 py-3 text-xs leading-relaxed text-muted-foreground" role="status">
-        {hotspots.length
-          ? "Tap a highlighted control to follow its recorded connection. Only collected screens are available."
-          : "No clickable controls were recorded on this screenshot. Explore the connected screens below."}
-      </p>
+      {hotspots.length > 0 ? (
+        <p className="px-4 py-2 text-xs text-muted-foreground">
+          Click a highlighted control to explore saved screens.
+        </p>
+      ) : null}
     </div>
   );
 }

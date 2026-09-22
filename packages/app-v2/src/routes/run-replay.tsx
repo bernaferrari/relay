@@ -12,7 +12,7 @@ import {
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { CircleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ProductRunReportOverview, RunProductService } from "../data/run-product-service";
 
 type RunReport = ProductRunReportOverview;
@@ -173,11 +173,29 @@ export function RunReplayStatus({ runService }: { runService: RunProductService 
       await replayJob.refetch();
     },
   });
-  useEffect(() => {
-    const runId = replayJob.data?.runId;
-    if (!runId || !replayTerminal) return;
-    void navigate({ to: "/runs/$runId", params: { runId }, search: {} });
-  }, [navigate, replayJob.data?.runId, replayTerminal]);
+  const resultRunId = replayJob.data?.runId;
+  if (replayTerminal && resultRunId) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+        <p role="status">
+          {replayJob.data?.status === "cancelled"
+            ? "Replay cancelled"
+            : replayJob.data?.status === "error"
+              ? "Replay failed"
+              : "Replay completed"}
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() =>
+            void navigate({ to: "/runs/$runId", params: { runId: resultRunId }, search: {} })
+          }
+        >
+          View replay result
+        </Button>
+      </div>
+    );
+  }
   if (!replayJobId) return null;
   if (replayJob.error)
     return (
@@ -241,7 +259,7 @@ export function RunReplayStatus({ runService }: { runService: RunProductService 
           ? "Replay paused; waiting for the current operation to continue."
           : replayJob.data?.status === "queued"
             ? "Replay queued on the saved target…"
-            : "Replaying saved steps on the saved target…"}
+            : "Automation running · Relay controls the target"}
       </p>
       {runService.cancelReplay ? (
         <Button
@@ -250,7 +268,11 @@ export function RunReplayStatus({ runService }: { runService: RunProductService 
           disabled={stopReplay.isPending}
           onClick={() => stopReplay.mutate()}
         >
-          {stopReplay.isPending ? "Stopping…" : "Stop replay"}
+          {stopReplay.isPending
+            ? "Stopping…"
+            : replayJob.data?.status === "running"
+              ? "Stop automation"
+              : "Stop replay"}
         </Button>
       ) : null}
       {stopReplay.error ? (

@@ -73,7 +73,6 @@ export function WalkthroughView({
       .map((entry) => ({ id: entry.variantId, label: entry.variantId })),
   ];
 
-
   return (
     <WorkbenchPage>
       <header className="flex items-start justify-between gap-4 pb-5">
@@ -83,7 +82,7 @@ export function WalkthroughView({
             params={{ runId }}
             className="mb-3 inline-flex min-h-9 items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
           >
-            <ArrowLeft className="size-4" /> Result
+            <ArrowLeft className="size-4" /> Review result
           </Link>
           <h1 className="text-2xl font-semibold tracking-tight">Walkthrough</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -92,22 +91,19 @@ export function WalkthroughView({
         </div>
         {exportActions ? <WalkthroughExport {...exportActions} /> : null}
       </header>
-      <div className="mb-5 grid min-w-0 gap-3 sm:grid-cols-2">
-        <SelectField
-          label="Configuration"
-          value={variantId ?? ""}
-          options={walkthroughConfigurationLabels(variants)}
-          onValueChange={switchVariant}
-        />
-        <SelectField
-          label="Screen"
-          value={stateId ?? ""}
-          options={manifest.states.map((state) => ({
-            value: state.id,
-            label: `${state.title}${manifest.captures.some((candidate) => candidate.stateId === state.id && candidate.variantId === variantId) ? "" : " · Not captured"}`,
-          }))}
-          onValueChange={goTo}
-        />
+      <div className="mb-4 min-w-0">
+        {variants.length > 1 ? (
+          <SelectField
+            label="Configuration"
+            value={variantId ?? ""}
+            options={walkthroughConfigurationLabels(variants)}
+            onValueChange={switchVariant}
+          />
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {walkthroughConfigurationLabels(variants)[0]?.label ?? "Saved configuration"}
+          </p>
+        )}
       </div>
       {exportActions?.error ? (
         <p className="pb-3 text-sm text-destructive" role="alert">
@@ -121,45 +117,52 @@ export function WalkthroughView({
           className="overflow-hidden rounded-xl border border-border/60 bg-muted/20"
           aria-label="Selected screenshot"
         >
-          <div className="flex items-center justify-between gap-3 px-4 py-3">
-            <div className="min-w-0">
-              <h2 className="truncate text-sm font-medium">{stateTitle}</h2>
-              <p className="text-xs text-muted-foreground">
-                {capture ? "Saved screenshot" : "No screenshot"}
-              </p>
+          <div className="flex items-end justify-between gap-3 px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <SelectField
+                label="Screen"
+                value={stateId ?? ""}
+                options={manifest.states.map((state) => ({
+                  value: state.id,
+                  label: `${state.title}${manifest.captures.some((candidate) => candidate.stateId === state.id && candidate.variantId === variantId) ? "" : " · Not captured"}`,
+                }))}
+                onValueChange={goTo}
+              />
             </div>
-            <div className="flex gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Back"
-                onClick={goBack}
-                disabled={!canGoBack}
-              >
-                <ChevronLeft className="size-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Forward"
-                onClick={goForward}
-                disabled={!canGoForward}
-              >
-                <ChevronRight className="size-4" />
-              </Button>
-            </div>
+            {canGoBack || canGoForward ? (
+              <div className="flex gap-1">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Back"
+                  onClick={goBack}
+                  disabled={!canGoBack}
+                >
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Forward"
+                  onClick={goForward}
+                  disabled={!canGoForward}
+                >
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
+            ) : null}
           </div>
           <div className="relative">
             {capture && frame.url ? (
               <WalkthroughPlayback
-              capture={capture}
-              src={frame.url}
-              title={`${stateTitle} — captured ${new Date(capture.capturedAt).toLocaleString()}`}
-              connections={outgoing}
-              entryStateId={manifest.entryStateId}
-              onNavigate={goTo}
-              onError={frame.failed}
-            />
+                capture={capture}
+                src={frame.url}
+                title={`${stateTitle} — captured ${new Date(capture.capturedAt).toLocaleString()}`}
+                connections={outgoing}
+                entryStateId={manifest.entryStateId}
+                onNavigate={goTo}
+                onError={frame.failed}
+              />
             ) : capture ? (
               frame.status === "loading" ? (
                 <div
@@ -180,11 +183,36 @@ export function WalkthroughView({
                 />
               )
             ) : missing ? (
-              <EmptyState title="No capture for this configuration" detail={missing.reason} />
+              <EmptyState
+                title="No capture for this configuration"
+                detail={missing.reason}
+                action={
+                  <Button
+                    nativeButton={false}
+                    variant="outline"
+                    render={
+                      <Link to="/runs/$runId" params={{ runId }} search={{ reportView: "steps" }} />
+                    }
+                  >
+                    Inspect run steps
+                  </Button>
+                }
+              />
             ) : (
               <EmptyState
                 title="Not captured in this configuration"
-                detail={`${stateTitle} has no screenshot for this configuration, and no recorded reason is attached.`}
+                detail={`${stateTitle} was not captured. Open the run to inspect its steps or set up another run.`}
+                action={
+                  <Button
+                    nativeButton={false}
+                    variant="outline"
+                    render={
+                      <Link to="/runs/$runId" params={{ runId }} search={{ reportView: "steps" }} />
+                    }
+                  >
+                    Inspect run steps
+                  </Button>
+                }
               />
             )}
           </div>
@@ -213,12 +241,15 @@ export function WalkthroughView({
             >
               <CaptureReviewDecisions
                 key={`${capture.runId}:${capture.imageSha256}`}
-                status={finding ? "Decision saved · choose another action to change it" : "Awaiting your decision"}
+                status={
+                  finding
+                    ? "Decision saved · choose another action to change it"
+                    : "Awaiting your decision"
+                }
                 busy={reviewActions.pending}
                 unavailable={!frame.url}
                 onReview={reviewActions.submit}
               />
-
             </section>
           ) : null}
         </section>
@@ -234,7 +265,14 @@ export function WalkthroughView({
                     <button
                       type="button"
                       data-hotspot-index={index}
-                      onClick={() => goTo(connection.toStateId, connection.kind === "recorded" ? connection.provenance?.captureId : undefined)}
+                      onClick={() =>
+                        goTo(
+                          connection.toStateId,
+                          connection.kind === "recorded"
+                            ? connection.provenance?.captureId
+                            : undefined,
+                        )
+                      }
                       className="w-full rounded-lg bg-muted/30 px-4 py-3 text-left hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {connection.label}
@@ -274,7 +312,12 @@ export function WalkthroughView({
             <details className="text-xs text-muted-foreground">
               <summary className="cursor-pointer py-2">Capture details</summary>
               <dl className="grid gap-2 break-all">
-                <div><dt>Configuration</dt><dd>{variants.find((variant) => variant.id === variantId)?.label ?? variantId}</dd></div>
+                <div>
+                  <dt>Configuration</dt>
+                  <dd>
+                    {variants.find((variant) => variant.id === variantId)?.label ?? variantId}
+                  </dd>
+                </div>
                 <div>
                   <dt>Run</dt>
                   <dd>{capture.runId}</dd>

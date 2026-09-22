@@ -757,7 +757,7 @@ describe("Run and Report", () => {
       document.querySelector<HTMLButtonElement>(
         'button[aria-label="Run configuration — opens run setup"]',
       )?.textContent,
-    ).toContain("Member · Member");
+    ).toContain("Checkout browser · Member · Current build");
     await openRunSettings();
 
     // Account repair happens in context and returns to this Test's run setup.
@@ -860,7 +860,7 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Test passed");
     expect(document.body.textContent).not.toContain("Draft issue");
     await click(button("More Test actions"));
-    expect(document.body.textContent).toContain("Open full report");
+    expect(document.body.textContent).toContain("Review result");
     expect(document.body.textContent).not.toContain("Investigate this failure");
     expect(document.body.textContent).toMatch(/\d+(?:\.\d+)?\s?s/);
     expect([...document.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
@@ -870,9 +870,9 @@ describe("Run and Report", () => {
     expect(storage.values.has("activeRunWorkflow")).toBe(false);
 
     const fullReport = [...document.querySelectorAll("a")].find((item) =>
-      item.textContent?.includes("Open full report"),
+      item.textContent?.includes("Review result"),
     );
-    if (!fullReport) throw new Error("Open full report not found");
+    if (!fullReport) throw new Error("Review result not found");
     await click(fullReport);
     expect(history.location.pathname).toBe("/runs/run-1");
     expect(document.body.textContent).toContain("Test passed");
@@ -913,7 +913,7 @@ describe("Run and Report", () => {
     expect(history.location.pathname).toBe("/tests/test-1");
   });
 
-  it("keeps a queued saved-step replay on the source report until a real run id exists", async () => {
+  it("keeps a replay on the source report until the person opens its completed result", async () => {
     const fake = fakeRunService(runState("succeeded"));
     let replayCalls = 0;
     let jobReads = 0;
@@ -943,6 +943,9 @@ describe("Run and Report", () => {
 
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 1_650))));
     await settle();
+    expect(history.location.pathname).toBe("/runs/run-1");
+    expect(document.body.textContent).toContain("Replay completed");
+    await click(button("View replay result"));
     expect(history.location.pathname).toBe("/runs/run-2");
     expect(history.location.search).toBe("");
     expect(replayCalls).toBe(1);
@@ -979,7 +982,7 @@ describe("Run and Report", () => {
     await settle();
 
     expect(history.location.pathname).toBe("/runs/run-1");
-    expect(document.body.textContent).toContain("Replaying saved steps");
+    expect(document.body.textContent).toContain("Automation running · Relay controls the target");
   });
 
   it("surfaces a terminal replay with no report id as an unavailable result", async () => {
@@ -994,6 +997,79 @@ describe("Run and Report", () => {
 
     expect(document.querySelector('[role="alert"]')).not.toBeNull();
     expect(document.body.textContent).not.toContain("Replaying saved steps on the saved target");
+  });
+
+  it.each([
+    ["error", "Replay failed"],
+    ["cancelled", "Replay cancelled"],
+  ] as const)(
+    "shows the actual %s replay outcome before opening its report",
+    async (status, label) => {
+      const fake = fakeRunService(runState("succeeded"));
+      fake.service.getReplayJob = async () => ({ status, runId: "run-2" });
+      const { history } = await renderRun(
+        "/runs/run-1?replayJob=job-replay",
+        fake.service,
+        platformWithStorage().platform,
+      );
+      expect(document.body.textContent).toContain(label);
+      expect(history.location.pathname).toBe("/runs/run-1");
+      await click(button("View replay result"));
+      expect(history.location.pathname).toBe("/runs/run-2");
+    },
+  );
+
+  it("reconnects to a replay from the URL without starting another execution", async () => {
+    const fake = fakeRunService(runState("succeeded"));
+    let starts = 0;
+    let reads = 0;
+    fake.service.replay = async () => {
+      starts += 1;
+      return { jobId: "unexpected" };
+    };
+    fake.service.getReplayJob = async (jobId) => {
+      expect(jobId).toBe("job-replay");
+      reads += 1;
+      if (reads === 1) throw new Error("Connection lost");
+      return { status: "running", runId: "run-provisional" };
+    };
+    const { history } = await renderRun(
+      "/runs/run-1?replayJob=job-replay",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(document.body.textContent).toContain("Could not check replay progress");
+    await click(button("Try again"));
+    expect(document.body.textContent).toContain("Automation running");
+    expect(document.body.textContent).not.toContain("Could not check replay progress");
+    expect(history.location.pathname).toBe("/runs/run-1");
+    expect(starts).toBe(0);
+  });
+
+  it("keeps failed cancellation recoverable and confirms the stopped replay", async () => {
+    const fake = fakeRunService(runState("succeeded"));
+    let cancellations = 0;
+    let stopped = false;
+    fake.service.getReplayJob = async () =>
+      stopped ? { status: "cancelled", runId: "run-2" } : { status: "running" };
+    fake.service.cancelReplay = async (jobId) => {
+      expect(jobId).toBe("job-replay");
+      cancellations += 1;
+      if (cancellations === 1) throw new Error("Connection lost");
+      stopped = true;
+    };
+    await renderRun(
+      "/runs/run-1?replayJob=job-replay",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await click(button("Stop automation"));
+    expect(document.body.textContent).toContain("Could not stop the replay");
+    expect(document.body.textContent).toContain("Automation running");
+    await click(button("Stop automation"));
+    expect(document.body.textContent).toContain("Replay cancelled");
+    expect(document.body.textContent).not.toContain("Could not stop the replay");
+    expect(cancellations).toBe(2);
   });
 
   it("adopts the durable workflow pointer after reload", async () => {
@@ -1204,7 +1280,7 @@ describe("Run and Report", () => {
     await click(button("More Test actions"));
     expect(
       [...document.querySelectorAll("a")].some((item) =>
-        item.textContent?.includes("Open full report"),
+        item.textContent?.includes("Review result"),
       ),
     ).toBe(true);
     expect(

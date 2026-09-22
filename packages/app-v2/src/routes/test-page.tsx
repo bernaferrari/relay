@@ -158,14 +158,22 @@ export function TestPage() {
   const selectedProfile = profiles.data?.find(
     (profile) => profile.id === configuration.selection.savedProfileId,
   );
+  const selectedTarget = targets.data?.find((target) => target.targetId === targetId);
+  const selectedBuild = builds.data?.find((build) => build.id === configuration.selection.buildId);
   const configurationLabel = usePairs
     ? `${paired.workspace.rows.length} paired configurations`
-    : selectedProfile
-      ? selectedProfile.account
-        ? `${selectedProfile.name} · ${selectedProfile.account.name}`
-        : selectedProfile.name
-      : (targets.data?.find((target) => target.targetId === targetId)?.name ??
-        "Choose device or browser");
+    : selectedTarget
+      ? [
+          selectedTarget.name,
+          selectedProfile?.account?.name ?? selectedProfile?.name,
+          configuration.selection.buildId
+            ? (selectedBuild?.name ?? "Selected build unavailable")
+            : "Current build",
+          configuration.selection.startupMode === "cold" ? "Restart app" : undefined,
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : "Choose device or browser";
   const canStart =
     (usePairs ? paired.workspace.rows.length > 0 : targetReady) &&
     !configuration.loading &&
@@ -346,10 +354,10 @@ export function TestPage() {
                 onClick={focusRunSetup}
                 ref={configurationTriggerRef}
                 aria-label="Run configuration — opens run setup"
-                className="order-3 w-full max-w-full justify-start sm:order-none sm:w-auto sm:max-w-64"
+                className="order-3 h-auto min-h-9 w-full max-w-full justify-start py-2 text-left whitespace-normal sm:order-none sm:w-auto sm:max-w-sm"
               >
                 <SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />
-                <span className="truncate">{configurationLabel}</span>
+                <span>{configurationLabel}</span>
               </Button>
             ) : null}
             {activeRun && attachedRunId ? (
@@ -393,7 +401,7 @@ export function TestPage() {
                   <DropdownMenuItem
                     render={<Link to="/runs/$runId" params={{ runId: attachedRunId }} />}
                   >
-                    Open full report
+                    Review result
                   </DropdownMenuItem>
                 ) : null}
                 {recentRuns.data?.length ? (

@@ -117,7 +117,7 @@ export function RunReportActions({
           variant="ghost"
           size="sm"
         >
-          Open full report
+          Review result
         </Button>
       ) : null}
       {!embedded ? (
@@ -126,7 +126,7 @@ export function RunReportActions({
           render={<Link to="/runs/$runId/walkthrough" params={{ runId: report.runId }} />}
           variant="outline"
         >
-          Walk through
+          Explore screens
         </Button>
       ) : null}
       {canInvestigate ? (

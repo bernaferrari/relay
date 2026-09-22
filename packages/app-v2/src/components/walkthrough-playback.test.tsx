@@ -73,6 +73,25 @@ it("plays only recorded, valid controls and navigates without device input", asy
       host.querySelector<HTMLButtonElement>('[aria-label="Return to start screen"]')!.click(),
     );
     expect(navigate).toHaveBeenLastCalledWith("home");
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <WalkthroughPlayback
+            capture={capture}
+            src="/saved.png"
+            title="Settings"
+            connections={[]}
+            entryStateId="home"
+            onNavigate={navigate}
+            onError={() => {}}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    expect(host.querySelector("[aria-pressed]")).toBeNull();
+    expect(host.querySelector('[aria-label="Return to start screen"]')).toBeNull();
+    expect(host.textContent).not.toContain("No clickable controls");
+    expect(host.querySelector("img")).not.toBeNull();
   } finally {
     await act(async () => root.unmount());
     host.remove();
