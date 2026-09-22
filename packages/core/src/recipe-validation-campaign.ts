@@ -1,4 +1,5 @@
 import type { RecipeStep } from "@relay/protocol";
+import { assertStoredValueIsNotASecret } from "./recipe-validation-support.js";
 
 const PARAMETER_NAME = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 
@@ -24,6 +25,18 @@ export function parseCampaignCheck(
 ): RecipeStep["check"] | undefined {
   if (raw.check !== undefined) {
     if (!isObject(raw.check)) throw stepErr(index, "check must be an object");
+    for (const key of Object.keys(raw.check)) {
+      if (
+        key !== "id" &&
+        key !== "title" &&
+        key !== "recovery" &&
+        key !== "transitionDependencies" &&
+        key !== "warmSourceScreenId" &&
+        key !== "cleanup"
+      ) {
+        throw stepErr(index, `check unknown field: ${key}`);
+      }
+    }
     if (!isString(raw.check.id) || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/u.test(raw.check.id)) {
       throw stepErr(index, "check.id must use letters, numbers, hyphens, and underscores only");
     }
@@ -41,6 +54,17 @@ export function parseCampaignCheck(
     if (raw.check.recovery !== undefined) {
       if (!isObject(raw.check.recovery)) {
         throw stepErr(index, "check.recovery must be an object");
+      }
+      for (const key of Object.keys(raw.check.recovery)) {
+        if (
+          key !== "groupId" &&
+          key !== "recipeId" &&
+          key !== "transitionId" &&
+          key !== "mode" &&
+          key !== "coldRecipeId"
+        ) {
+          throw stepErr(index, `check.recovery unknown field: ${key}`);
+        }
       }
       if (
         !isString(raw.check.recovery.groupId) ||
@@ -115,6 +139,19 @@ export function parseCampaignCheck(
             `check.transitionDependencies[${dependencyIndex}] must be an object`,
           );
         }
+        for (const key of Object.keys(value)) {
+          if (
+            key !== "connectionId" &&
+            key !== "originScreenId" &&
+            key !== "destination" &&
+            key !== "expectedApp"
+          ) {
+            throw stepErr(
+              index,
+              `check.transitionDependencies[${dependencyIndex}] unknown field: ${key}`,
+            );
+          }
+        }
         if (!isString(value.connectionId) || !value.connectionId.trim()) {
           throw stepErr(
             index,
@@ -134,6 +171,14 @@ export function parseCampaignCheck(
           );
         }
         const destination = value.destination;
+        for (const key of Object.keys(destination)) {
+          if (key !== "kind" && key !== "screenId") {
+            throw stepErr(
+              index,
+              `check.transitionDependencies[${dependencyIndex}].destination unknown field: ${key}`,
+            );
+          }
+        }
         if (destination.kind !== "end" && destination.kind !== "screen") {
           throw stepErr(
             index,
@@ -188,6 +233,16 @@ export function parseCampaignCheck(
       if (!isObject(raw.check.cleanup)) {
         throw stepErr(index, "check.cleanup must be an object");
       }
+      for (const key of Object.keys(raw.check.cleanup)) {
+        if (
+          key !== "recipeId" &&
+          key !== "terminalScreenId" &&
+          key !== "onCancel" &&
+          key !== "bindings"
+        ) {
+          throw stepErr(index, `check.cleanup unknown field: ${key}`);
+        }
+      }
       if (
         !isString(raw.check.cleanup.recipeId) ||
         !raw.check.cleanup.recipeId.trim() ||
@@ -224,6 +279,11 @@ export function parseCampaignCheck(
           if (!PARAMETER_NAME.test(name) || !isString(value)) {
             throw stepErr(index, "check.cleanup.bindings must map parameter names to strings");
           }
+          assertStoredValueIsNotASecret(
+            name,
+            value,
+            `step ${index}: check.cleanup.bindings.${name}`,
+          );
           bindings[name] = value;
         }
       }

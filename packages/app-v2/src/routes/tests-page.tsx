@@ -11,7 +11,7 @@ import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
 import { EmptyState, OutcomeMark, ReadinessMark } from "../components/product-patterns";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
-import { homeAttentionRuns } from "../data/home-run-attention";
+import { attentionLinkLabel, homeAttentionRuns } from "../data/home-run-attention";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { runQueryKeys } from "../data/run-queries";
 import { readRunPointer } from "../data/run-pointer";
@@ -281,8 +281,7 @@ export function TestsPage() {
                 className="text-xs text-muted-foreground hover:text-foreground hover:underline"
                 aria-label="Results that need attention"
               >
-                {attentionRuns.length}{" "}
-                {attentionRuns.length === 1 ? "result needs" : "results need"} attention →
+                {attentionLinkLabel(attentionRuns)} →
               </Link>
             ) : resultLabel ? (
               <span className="text-xs text-muted-foreground" aria-live="polite">

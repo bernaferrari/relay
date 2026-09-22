@@ -867,7 +867,7 @@ export async function exportCombineEvidencePack(input: {
         : []),
       "",
       captureReviewHeadline
-        ? "Open index.html for planned / captured / blocked + pending review. Execution ok is not visual acceptance. Looks correct does not approve a visual baseline."
+        ? "Open index.html for planned, captured, blocked, and screenshots awaiting review. Execution ok is not visual acceptance. Looks correct does not approve a visual baseline."
         : "Open index.html for the Test checklist (passed | check failed | could not run | todo) and the frame report. Confirm and Reject never accept a visual baseline; use `relay run visual review <job>`. Each folder is one matrix case: screenshots/ are the rasters (full.png is the stitched long page when a destination survey or stitch was captured), accessibility/ holds the raw tree beside each PNG when one was captured.",
       "manifest.json carries the same findings under `analysis`, and `byCanonicalKey` maps each one to the frame it came from.",
       "",

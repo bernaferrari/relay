@@ -87,6 +87,20 @@ test("doctor fails clearly when the server is missing a canonical Proof operatio
   assert.match(proofCheck?.message ?? "", /proof\.rerun-affected/u);
 });
 
+test("doctor fails when the operator profile cannot cancel, save, or export", async () => {
+  const report = await runRelayMcpDoctor(
+    [],
+    env,
+    fakeFetch(["job.cancel", "app-map.test.save", "run.walkthrough-pack.get"]),
+  );
+  assert.equal(report.ok, false);
+  const tools = report.checks.find(({ name }) => name === "proof-tools");
+  assert.equal(tools?.ok, false);
+  assert.match(tools?.message ?? "", /job\.cancel/u);
+  assert.match(tools?.message ?? "", /app-map\.test\.save/u);
+  assert.match(tools?.message ?? "", /run\.walkthrough-pack\.get/u);
+});
+
 test("doctor validates a specialist profile honestly instead of demanding Proof", async () => {
   const report = await runRelayMcpDoctor(["--profile", "observe"], env, fakeFetch());
 

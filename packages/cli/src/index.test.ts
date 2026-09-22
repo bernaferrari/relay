@@ -2002,10 +2002,12 @@ test("plan run --findings prints Infra markdown when start refuses a signed-out 
   assert.equal(code, ExitCode.conflict);
   assert.match(io.stdout(), /ACCOUNT_NEEDS_RELOGIN/u);
   assert.match(io.stdout(), /Sign-ins/u);
+  assert.match(io.stderr(), /Completed captures are preserved/u);
+  assert.match(io.stderr(), /Refresh the sign-in, then resume this activity/u);
   assert.doesNotMatch(io.stdout(), /approve-new-baseline/i);
 });
 
-test("plan run defaults to every case and accepts a watch budget", () => {
+test("plan run defaults to one case and accepts a watch budget", () => {
   const parsed = parseCli(
     [
       "plan",
@@ -2023,7 +2025,7 @@ test("plan run defaults to every case and accepts a watch budget", () => {
   assert.equal(parsed.command, "invoke");
   if (parsed.command !== "invoke") throw new Error("expected invoke");
   assert.equal(parsed.operationId, "job.combine.start");
-  assert.equal(parsed.input.executionMode, "all");
+  assert.equal(parsed.input.executionMode, "pilot");
   assert.equal(parsed.config.timeoutMs, 180_000);
   assert.equal(parsed.findings, true);
 });
@@ -3722,4 +3724,122 @@ test("everyday inspect and export aliases map onto the outcome operations", () =
   assert.deepEqual(legacy, { kind: "inspect-workflow", legacyRef: "relay-workflow.v1.abc" });
   const exported = parseOutcomeCliIntent(tokenize(["export", "run-42"]));
   assert.deepEqual(exported, { kind: "export-evidence", runId: "run-42" });
+  assert.deepEqual(parseOutcomeCliIntent(tokenize(["export", "run-42", "--output", "./review"])), {
+    kind: "export-evidence",
+    runId: "run-42",
+    outputDir: "./review",
+  });
+});
+
+test("doctor reports toolchain checks, versions, and what is not accepted", async () => {
+  const io = capture();
+  const calls: string[] = [];
+  const code = await runCli(["doctor"], {
+    streams: io.streams,
+    env: {},
+    registerSignalHandlers: false,
+    createClient: () => ({
+      invoke: async (operationId: string) => {
+        calls.push(operationId);
+        if (operationId === "system.doctor.get") {
+          return {
+            ok: true,
+            checks: [{ id: "node", ok: true, message: "Node.js 24.0.0 (>= 22 required)" }],
+          };
+        }
+        if (operationId === "system.health.get") return { version: "0.1.0", pid: 42 };
+        throw new Error(operationId);
+      },
+      events: async () => {},
+    }),
+  });
+  assert.equal(code, ExitCode.success, io.stderr());
+  assert.deepEqual(calls, ["system.doctor.get", "system.health.get"]);
+  assert.match(io.stdout(), /Server: reachable/u);
+  assert.match(io.stdout(), /CLI 0\.1\.0/u);
+  assert.match(io.stdout(), /Server 0\.1\.0/u);
+  assert.match(io.stdout(), /versions match/u);
+  assert.match(io.stdout(), /node: ok — Node\.js 24\.0\.0/u);
+  assert.match(io.stdout(), /Not accepted yet:/u);
+  assert.match(io.stdout(), /design partners/u);
+});
+
+test("doctor exits non-zero when a toolchain check fails", async () => {
+  const io = capture();
+  const code = await runCli(["doctor"], {
+    streams: io.streams,
+    env: {},
+    registerSignalHandlers: false,
+    createClient: () => ({
+      invoke: async (operationId: string) => {
+        if (operationId === "system.doctor.get") {
+          return { ok: false, checks: [{ id: "adb", ok: false, message: "adb is unavailable" }] };
+        }
+        if (operationId === "system.health.get") return { version: "0.1.0" };
+        throw new Error(operationId);
+      },
+      events: async () => {},
+    }),
+  });
+  assert.equal(code, ExitCode.operationFailure);
+  assert.match(io.stdout(), /adb: failed — adb is unavailable/u);
+});
+
+test("doctor exits non-zero when the server version differs", async () => {
+  const io = capture();
+  const code = await runCli(["doctor"], {
+    streams: io.streams,
+    env: {},
+    registerSignalHandlers: false,
+    createClient: () => ({
+      invoke: async (operationId: string) => {
+        if (operationId === "system.doctor.get") return { ok: true, checks: [] };
+        if (operationId === "system.health.get") return { version: "9.9.9" };
+        throw new Error(operationId);
+      },
+      events: async () => {},
+    }),
+  });
+  assert.equal(code, ExitCode.operationFailure);
+  assert.match(io.stdout(), /CLI and server versions differ/u);
+  const json = capture();
+  const jsonCode = await runCli(["doctor", "--json"], {
+    streams: json.streams,
+    env: {},
+    registerSignalHandlers: false,
+    createClient: () => ({
+      invoke: async (operationId: string) => {
+        if (operationId === "system.doctor.get") return { ok: true, checks: [] };
+        if (operationId === "system.health.get") return { version: "9.9.9" };
+        throw new Error(operationId);
+      },
+      events: async () => {},
+    }),
+  });
+  assert.equal(jsonCode, ExitCode.operationFailure);
+  assert.equal(JSON.parse(json.stdout()).ok, false);
+  assert.equal(JSON.parse(json.stdout()).result.schemaVersion, 1);
+});
+
+test("doctor exits non-zero when the server is unreachable", async () => {
+  const io = capture();
+  const code = await runCli(["doctor", "--json"], {
+    streams: io.streams,
+    env: {},
+    registerSignalHandlers: false,
+    createClient: () => ({
+      invoke: async () => {
+        throw new Error("connect ECONNREFUSED");
+      },
+      events: async () => {},
+    }),
+  });
+  assert.equal(code, ExitCode.operationFailure);
+  const parsed = JSON.parse(io.stdout()) as {
+    ok: boolean;
+    result: { schemaVersion: number; server: string };
+  };
+  assert.equal(parsed.ok, false);
+  assert.equal(parsed.result.schemaVersion, 1);
+  assert.equal(parsed.result.server, "unreachable");
 });

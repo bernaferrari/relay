@@ -1,3 +1,4 @@
+import { JobCancelledError, throwIfCancelled } from "./control.js";
 import { InputNotDispatchedError } from "./input-not-dispatched.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
@@ -68,6 +69,7 @@ export async function runSupervisedBrowserMutation<T>(input: {
       throw new BrowserSupervisionRequiredError(input.targetId);
     }
     await input.beforeDispatch?.();
+    throwIfCancelled();
     return input.dispatch();
   }
 
@@ -89,6 +91,7 @@ export async function runSupervisedBrowserMutation<T>(input: {
   let dispatched = false;
   try {
     await input.beforeDispatch?.();
+    throwIfCancelled();
     store.transition(target, { kind: "input.dispatched", mutationId: id });
     dispatched = true;
     const result = await input.dispatch();
@@ -106,7 +109,9 @@ export async function runSupervisedBrowserMutation<T>(input: {
         // The original pre-dispatch failure remains authoritative. A store
         // failure cannot turn it into permission to issue browser input.
       }
-      if (error instanceof InputNotDispatchedError) throw error;
+      if (error instanceof InputNotDispatchedError || error instanceof JobCancelledError) {
+        throw error;
+      }
       throw new InputNotDispatchedError(reason(error), { cause: error });
     }
     try {

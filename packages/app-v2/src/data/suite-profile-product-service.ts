@@ -814,7 +814,7 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
         ).invoke("job.combine.start", {
           appMapId: input.appMapId,
           combineId: input.suiteId,
-          executionMode: input.executionMode ?? "all",
+          executionMode: input.executionMode ?? "pilot",
           profileTargets,
           ...(profile.platform === "browser"
             ? { targetKind: "browser" as const, browserTargetId: profile.targetId }

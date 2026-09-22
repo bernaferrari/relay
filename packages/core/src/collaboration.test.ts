@@ -343,11 +343,21 @@ test("revisioned project data detects conflicts and preserves idempotency", asyn
     assert.equal(first.revision, 1);
     const repeated = await writeProjectVariables("project-a", {
       expectedRevision: 0,
-      value: [],
+      value: first.value,
       idempotencyKey: "once",
     });
     assert.equal(repeated.revision, first.revision);
     assert.deepEqual(repeated.value, first.value);
+    assert.equal(repeated.updatedAt, first.updatedAt);
+    await assert.rejects(
+      writeProjectVariables("project-a", {
+        expectedRevision: 0,
+        value: [],
+        idempotencyKey: "once",
+      }),
+      /different variable input/u,
+    );
+    assert.deepEqual((await readProjectVariables("project-a")).value, first.value);
     assert.equal(repeated.updatedAt, first.updatedAt);
     await assert.rejects(
       writeProjectVariables("project-a", { expectedRevision: 0, value: [] }),

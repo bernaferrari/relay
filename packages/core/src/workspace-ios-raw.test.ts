@@ -111,6 +111,30 @@ test("tests may inject a pixel tap without spawning the helper", async () => {
   }
 });
 
+test("an unauthenticated HID surface is a pre-dispatch miss, not a failed tap", async () => {
+  const refused = await dispatchIosHidTap({
+    serial: "ipad",
+    x: 1181,
+    y: 1228,
+    bin: "/tmp/relay-ios-hid-tap",
+    run: async () => ({
+      exitCode: 1,
+      stdout: "",
+      stderr:
+        "relay-ios-hid-tap: universalhidservice touch was not dispatched: no CoreDevice media stream is authenticating the digitizer, so backboardd drops the report. Remote control requires iOS 27",
+    }),
+  });
+  assert.equal(refused.status, "not-dispatched");
+  assert.equal(
+    refused.status === "not-dispatched" && refused.error instanceof IosHidUnavailableError,
+    true,
+  );
+  assert.doesNotMatch(
+    refused.status === "not-dispatched" ? refused.error.message : "",
+    /Do not retry the same XCTest press/,
+  );
+});
+
 test("HID dispatch reports completed, pre-dispatch refusal, and unknown separately", async () => {
   setIosPixelTapForTests(async () => undefined);
   try {

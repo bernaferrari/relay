@@ -46,7 +46,7 @@ class CapturedResponse {
 async function writeRun(
   root: string,
   id: string,
-  input: { configuration: Record<string, string>; sha: string; checkpointId: string },
+  input: { configuration: Record<string, string>; sha: string; checkpointId: string; appMapId?: string; omitPlan?: boolean },
 ): Promise<void> {
   const dir = join(root, `run_${id}`);
   await mkdir(join(dir, "frames"), { recursive: true });
@@ -63,11 +63,15 @@ async function writeRun(
     startedAt: 1,
     finishedAt: 2,
     artifacts: [
-      {
-        kind: "app-map-test-plan",
-        capturedAt: 1,
-        data: { appMapId: "player-map", appMapRevision: 1 },
-      },
+      ...(input.omitPlan
+        ? []
+        : [
+            {
+              kind: "app-map-test-plan" as const,
+              capturedAt: 1,
+              data: { appMapId: input.appMapId ?? "player-map", appMapRevision: 1 },
+            },
+          ]),
       {
         kind: "capture-review",
         capturedAt: 2,
@@ -242,6 +246,114 @@ test("player-manifest projects pinned run evidence into states, variants, and li
   assert.equal((multi.missing as unknown[]).length, 0);
 });
 
+test("walkthrough-pack exports the joined runs and names a changed frame", async (t) => {
+  const previousState = process.env.RELAY_STATE_DIR;
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  const root = await mkdtemp(join(tmpdir(), "relay-walkthrough-pack-route-"));
+  process.env.RELAY_STATE_DIR = root;
+  process.env.RELAY_RUNS_DIR = join(root, "runs");
+  t.after(async () => {
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    await rm(root, { recursive: true, force: true });
+  });
+  const sha = createHash("sha256").update(PNG).digest("hex");
+  await writeRun(join(root, "runs"), "member-run", {
+    configuration: { browser: "firefox", account: "member" },
+    sha,
+    checkpointId: "open-settings-step",
+  });
+  await writeRun(join(root, "runs"), "admin-run", {
+    configuration: { browser: "chrome", account: "admin" },
+    sha,
+    checkpointId: "open-settings-step",
+  });
+  await importAppMap({
+    organizationId: "org-1",
+    projectId: "project-1",
+    appMap: structuredClone(MAP) as never,
+    conflict: "replace",
+  });
+
+  const packed = await callRoute("/runs/member-run/walkthrough-pack?with=admin-run");
+  assert.equal(packed.status, 200);
+  const pack = (
+    packed.body as {
+      pack: { manifest: { pinned: { runIds: string[] }; captures: unknown[] }; frames: unknown[] };
+    }
+  ).pack;
+  assert.deepEqual(pack.manifest.pinned.runIds, ["member-run", "admin-run"]);
+  assert.equal(pack.manifest.captures.length, 2);
+  assert.equal(pack.frames.length, 2);
+
+  await writeFile(
+    join(root, "runs", "run_admin-run", "frames", "002.png"),
+    Buffer.from("tampered"),
+  );
+  await assert.rejects(
+    () => callRoute("/runs/member-run/walkthrough-pack?with=admin-run"),
+    /tampered frame frames\/002\.png on run admin-run/u,
+  );
+});
+
+test("walkthrough refuses a joined run from another app", async (t) => {
+  const previousState = process.env.RELAY_STATE_DIR;
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  const root = await mkdtemp(join(tmpdir(), "relay-walkthrough-foreign-"));
+  process.env.RELAY_STATE_DIR = root;
+  process.env.RELAY_RUNS_DIR = join(root, "runs");
+  t.after(async () => {
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    await rm(root, { recursive: true, force: true });
+  });
+  const sha = createHash("sha256").update(PNG).digest("hex");
+  await writeRun(join(root, "runs"), "member-run", {
+    configuration: { browser: "firefox", account: "member" },
+    sha,
+    checkpointId: "open-settings-step",
+  });
+  await writeRun(join(root, "runs"), "other-app-run", {
+    configuration: { browser: "chrome", account: "admin" },
+    sha,
+    checkpointId: "open-settings-step",
+    appMapId: "other-map",
+  });
+  await importAppMap({
+    organizationId: "org-1",
+    projectId: "project-1",
+    appMap: structuredClone(MAP) as never,
+    conflict: "replace",
+  });
+
+  await assert.rejects(
+    () => callRoute("/runs/member-run/walkthrough-pack?with=other-app-run"),
+    /Run other-app-run belongs to App Map other-map, not player-map/u,
+  );
+  await assert.rejects(
+    () => callRoute("/runs/member-run/player-manifest?with=other-app-run"),
+    /Run other-app-run belongs to App Map other-map, not player-map/u,
+  );
+  await assert.rejects(
+    () => callRoute("/runs/member-run/walkthrough-pack?appMap=other-map"),
+    /Run member-run belongs to App Map player-map, not other-map/u,
+  );
+  await writeRun(join(root, "runs"), "unscoped-run", {
+    configuration: { browser: "webkit", account: "guest" },
+    sha,
+    checkpointId: "open-settings-step",
+    omitPlan: true,
+  });
+  await assert.rejects(
+    () => callRoute("/runs/member-run/walkthrough-pack?with=unscoped-run"),
+    /Run unscoped-run has no App Map plan identity and cannot be joined/u,
+  );
+});
+
 test("player-manifest rejects runs without plan identity unless appMap is explicit", async (t) => {
   const previousState = process.env.RELAY_STATE_DIR;
   const previousRuns = process.env.RELAY_RUNS_DIR;
@@ -286,3 +398,45 @@ test("player-manifest rejects runs without plan identity unless appMap is explic
     },
   );
 });
+
+test("frame bytes that do not match the recorded digest are not served", async (t) => {
+  const previousState = process.env.RELAY_STATE_DIR;
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  const root = await mkdtemp(join(tmpdir(), "relay-frame-digest-"));
+  process.env.RELAY_STATE_DIR = root;
+  process.env.RELAY_RUNS_DIR = join(root, "runs");
+  t.after(async () => {
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    await rm(root, { recursive: true, force: true });
+  });
+  const sha = createHash("sha256").update(PNG).digest("hex");
+  await writeRun(join(root, "runs"), "member-run", {
+    configuration: { browser: "firefox", account: "member" },
+    sha,
+    checkpointId: "open-settings-step",
+  });
+  assert.equal(await frameStatus("/runs/member-run/frames/002.png"), 200);
+  await writeFile(join(root, "runs", "run_member-run", "frames", "002.png"), Buffer.from("tampered"));
+  await assert.rejects(
+    () => frameStatus("/runs/member-run/frames/002.png"),
+    (error: unknown) => (error as { status?: number }).status === 409,
+  );
+});
+
+async function frameStatus(rawPath: string): Promise<number> {
+  const url = new URL(`http://localhost${rawPath}`);
+  const captured = new CapturedResponse();
+  await handleRunRoute({
+    method: "GET",
+    pathname: url.pathname,
+    url,
+    request: Readable.from([]) as http.IncomingMessage,
+    response: captured as unknown as http.ServerResponse,
+    scope,
+  });
+  return captured.status;
+}
+

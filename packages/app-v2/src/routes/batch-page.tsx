@@ -444,9 +444,9 @@ function BatchDocument({ batchId }: { batchId: string }) {
                     const assignee = resolveTriageActor(actorId);
                     if (assignee) triage.mutate({ caseIds: selectedCaseIds, assignee });
                   }}
-                  onAddNote={(text) => {
+                  onAddNote={async (text) => {
                     const actor = resolveTriageActor(actorId);
-                    if (!actor || !selectedCaseIds[0]) return;
+                    if (!actor || !selectedCaseIds[0]) return false;
                     const next = selectedCaseIds.reduce(
                       (notes, caseId) =>
                         appendBatchReviewNote(notes, {
@@ -457,8 +457,16 @@ function BatchDocument({ batchId }: { batchId: string }) {
                         }),
                       notes,
                     );
+                    try {
+                      await platform.storage.set(
+                        batchReviewNotesKey(batchId),
+                        JSON.stringify(next),
+                      );
+                    } catch {
+                      return false;
+                    }
                     setNotes(next);
-                    void platform.storage.set(batchReviewNotesKey(batchId), JSON.stringify(next));
+                    return true;
                   }}
                 />
                 {totalSelected ? (

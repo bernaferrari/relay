@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { friendlySuiteIssue } from "./suite-preflight-copy";
+import { friendlySuiteIssue, summarizeSuiteSetup } from "./suite-preflight-copy";
 
 describe("friendlySuiteIssue", () => {
   it("names the target and explains how to recover from missing setup", () => {
@@ -33,4 +33,17 @@ describe("friendlySuiteIssue", () => {
       friendlySuiteIssue("Bind a saved runtime profile to every selected Combine cell."),
     ).not.toBe("This browser needs a saved profile before it can run the Plan.");
   });
+});
+
+it("groups repeated test configuration blockers and preserves independent failures", () => {
+  expect(
+    summarizeSuiteSetup([
+      "Bind a runtime profile to Home.",
+      "Bind a runtime profile to Settings.",
+      "Device offline",
+    ]),
+  ).toEqual([
+    "2 tests need a saved run configuration. Set up the selected browser or device, then recheck this plan.",
+    "Device offline",
+  ]);
 });

@@ -7,6 +7,8 @@ import {
   evidencePackCliFlags,
   parseBudgetMs,
   parseRunOutDir,
+  assertRecoverHasTarget,
+  recoverInputFromLane,
   startedPlanBatchId,
 } from "./cli-run-flags.js";
 
@@ -152,4 +154,24 @@ test("--lane is only valid on run and interact verbs", () => {
       ),
     /--lane requires a Lane identifier/,
   );
+});
+
+test("device recover --lane becomes the Lane target serial", () => {
+  assert.deepEqual(
+    recoverInputFromLane(
+      { laneId: "grok-daily" },
+      [{ id: "grok-daily", target: { kind: "browser", browserTargetId: "browser-1" } }],
+    ),
+    { serial: "browser-1" },
+  );
+  assert.throws(
+    () => recoverInputFromLane({ serial: "ipad", laneId: "grok-daily" }, []),
+    /not both/u,
+  );
+});
+
+test("device recover without a serial or Lane is refused", () => {
+  assert.throws(() => assertRecoverHasTarget({}), /serial or --lane/u);
+  assertRecoverHasTarget({ serial: "ipad" });
+  assertRecoverHasTarget({ laneId: "grok-daily" });
 });

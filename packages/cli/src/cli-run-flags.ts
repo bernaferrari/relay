@@ -114,6 +114,7 @@ const LANE_OPERATIONS = new Set([
   "target.interact",
   "target.snapshot.capture",
   "target.screenshot.capture",
+  "target.recover",
 ]);
 
 /** `--lane <id>` becomes operation `laneId`. The server calls resolveLaneExecution. */
@@ -128,7 +129,7 @@ export function applyLaneFlag(
   if (!laneId) throw new UsageError("--lane requires a Lane identifier");
   if (!LANE_OPERATIONS.has(operationId)) {
     throw new UsageError(
-      "--lane is only valid on test run, combine run, plan run, device interact, snapshot, or screenshot",
+      "--lane is only valid on test run, combine run, plan run, device interact, snapshot, screenshot, or recover",
     );
   }
   if (tokens.values.has("--target") || tokens.values.has("--revision")) {
@@ -140,6 +141,33 @@ export function applyLaneFlag(
     throw new UsageError("Use either --lane or laneId in --input, not both");
   }
   return { ...input, laneId };
+}
+
+/** `target.recover` takes a serial. A Lane names that serial or browser target. */
+export function assertRecoverHasTarget(input: Record<string, unknown>): void {
+  const serial = typeof input.serial === "string" ? input.serial.trim() : "";
+  const laneId = typeof input.laneId === "string" ? input.laneId.trim() : "";
+  if (!serial && !laneId) throw new UsageError("device recover requires a serial or --lane");
+}
+
+export function recoverInputFromLane(
+  input: Record<string, unknown>,
+  lanes: readonly {
+    id?: string;
+    target?: { kind?: string; serial?: string; browserTargetId?: string };
+  }[],
+): Record<string, unknown> {
+  const laneId = typeof input.laneId === "string" ? input.laneId : undefined;
+  if (!laneId) return input;
+  if (typeof input.serial === "string" && input.serial.trim()) {
+    throw new UsageError("device recover accepts a serial or --lane, not both");
+  }
+  const lane = lanes.find((item) => item.id === laneId);
+  if (!lane?.target) throw new UsageError(`Lane ${laneId} was not found.`);
+  const serial = lane.target.kind === "device" ? lane.target.serial : lane.target.browserTargetId;
+  if (!serial) throw new UsageError(`Lane ${laneId} has no recoverable target.`);
+  const { laneId: _laneId, ...rest } = input;
+  return { ...rest, serial };
 }
 
 export function assertPlanCliFlags(operationId: string, tokens: CliFlagBag): void {

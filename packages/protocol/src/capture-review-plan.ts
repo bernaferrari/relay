@@ -52,8 +52,14 @@ export type PlanCaptureReviewRunInput = {
   account?: string;
 };
 
+export type PlanCaptureReviewDecision = "pending" | "issues" | "all";
+
 export type PlanCaptureReviewFilter = {
   pending?: boolean;
+  /** Screens density. Pending and issues narrow the gallery; all shows every obligation. */
+  decision?: PlanCaptureReviewDecision;
+  /** Group the same obligations by configuration instead of by checkpoint. */
+  groupBy?: "checkpoint" | "configuration";
   screen?: string;
   device?: string;
   account?: string;
@@ -141,17 +147,26 @@ export function planCaptureReviewScreenLabel(item: {
 
 export function parsePlanCaptureReviewFilter(input: {
   pending?: unknown;
+  decision?: unknown;
+  groupBy?: unknown;
   screen?: unknown;
   device?: unknown;
   account?: unknown;
 }): PlanCaptureReviewFilter | undefined {
   const pending = input.pending === true || input.pending === "true" || input.pending === "1";
+  const decision =
+    input.decision === "pending" || input.decision === "issues" || input.decision === "all"
+      ? input.decision
+      : undefined;
+  const groupBy = input.groupBy === "configuration" ? "configuration" : undefined;
   const screen = typeof input.screen === "string" ? input.screen.trim() : "";
   const device = typeof input.device === "string" ? input.device.trim() : "";
   const account = typeof input.account === "string" ? input.account.trim() : "";
-  if (!pending && !screen && !device && !account) return undefined;
+  if (!pending && !decision && !groupBy && !screen && !device && !account) return undefined;
   return {
     ...(pending ? { pending: true } : {}),
+    ...(decision ? { decision } : {}),
+    ...(groupBy ? { groupBy } : {}),
     ...(screen ? { screen } : {}),
     ...(device ? { device } : {}),
     ...(account ? { account } : {}),
@@ -165,6 +180,14 @@ export function planCaptureReviewItemMatchesFilter(
   if (!filter) return true;
   if (isCaptureReviewLeftoverPhase(item.phase)) return false;
   if (filter.pending && item.status !== "pending") return false;
+  if (filter.decision === "pending" && item.status !== "pending") return false;
+  if (
+    filter.decision === "issues" &&
+    item.status !== "issue" &&
+    item.status !== "need-more-evidence"
+  ) {
+    return false;
+  }
   if (filter.screen) {
     const screen = filter.screen;
     if (
@@ -273,6 +296,40 @@ export function selectedPlanCaptureReviewItems(
     selected.push(item);
   }
   return selected;
+}
+export type PlanCaptureReviewGroup = {
+  id: string;
+  label: string;
+  items: PlanCaptureReviewItem[];
+};
+
+function planCaptureReviewConfigurationLabel(item: PlanCaptureReviewItem): string {
+  const device =
+    normalizedFilterValue(item.device) ||
+    normalizedFilterValue(item.configuration?.app) ||
+    normalizedFilterValue(item.configuration?.browser);
+  const account =
+    normalizedFilterValue(item.account) || normalizedFilterValue(item.configuration?.account);
+  return [device, account].filter(Boolean).join(" · ") || "Unspecified configuration";
+}
+
+/** Screens density groups. Checkpoint is the default; configuration keeps the same items. */
+export function groupPlanCaptureReviewItems(
+  items: readonly PlanCaptureReviewItem[],
+  groupBy: PlanCaptureReviewFilter["groupBy"] = "checkpoint",
+): PlanCaptureReviewGroup[] {
+  const groups = new Map<string, PlanCaptureReviewGroup>();
+  for (const item of items) {
+    const label =
+      groupBy === "configuration"
+        ? planCaptureReviewConfigurationLabel(item)
+        : planCaptureReviewScreenLabel(item) || "Untitled checkpoint";
+    const id = `${groupBy ?? "checkpoint"}:${label.toLowerCase()}`;
+    const existing = groups.get(id);
+    if (existing) existing.items.push(item);
+    else groups.set(id, { id, label, items: [item] });
+  }
+  return [...groups.values()];
 }
 
 /** Unique across a Plan even when two Runs share a framePath hash. */

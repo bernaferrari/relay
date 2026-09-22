@@ -40,6 +40,11 @@ export type ReviewChecklistRow = {
   note?: string;
 };
 
+/** The stored status stays stable. The page says what a reviewer should do. */
+export function reviewChecklistStatusLabel(status: ReviewChecklistStatus): string {
+  return status === "pending review" ? "awaiting review" : status;
+}
+
 export type ReviewChecklistCase = {
   jobId: string;
   name: string;
@@ -303,7 +308,7 @@ export function reviewChecklistSection(
         ? `<code>${escapeHtml(row.visualComparisonId)}</code>`
         : "—";
       const review = row.reviewCommand ? `<code>${escapeHtml(row.reviewCommand)}</code>` : "—";
-      return `<tr data-status="${escapeHtml(row.status)}"><td><b>${escapeHtml(row.test)}</b>${note}</td><td class="status">${escapeHtml(row.status)}</td><td>${pngCell(row.beforePng, `${row.test} before`)}</td><td>${pngCell(row.afterPng, `${row.test} after`)}</td><td>${comparison}</td><td>${review}</td></tr>`;
+      return `<tr data-status="${escapeHtml(row.status)}"><td><b>${escapeHtml(row.test)}</b>${note}</td><td class="status">${escapeHtml(reviewChecklistStatusLabel(row.status))}</td><td>${pngCell(row.beforePng, `${row.test} before`)}</td><td>${pngCell(row.afterPng, `${row.test} after`)}</td><td>${comparison}</td><td>${review}</td></tr>`;
     })
     .join("");
   return `<section id="review-checklist">

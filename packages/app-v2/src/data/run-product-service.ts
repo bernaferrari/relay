@@ -1,7 +1,7 @@
-import { boundedVideoBlob } from "./run-video-loader";
 export { runOutcome } from "./run-outcome";
 import {
   runEvidenceExportDocument,
+  walkthroughExportDocument,
   type RunEvidenceExportDocument,
 } from "@relay/product/run-evidence-export";
 import type {
@@ -70,7 +70,7 @@ export type PlayerManifestProjection = {
     id: string;
     fromStateId: string;
     toStateId: string;
-    kind: "recorded" | "authored";
+    kind: "recorded" | "authored" | "suggested";
     label: string;
     provenance?: { runId: string; captureId?: string };
     hotspot?: {
@@ -108,7 +108,9 @@ export type RunProductService = {
     runId: string,
     mode?: "saved-steps" | "same-configuration",
   ): Promise<{ jobId: string; runId?: string }>;
-  getReplayJob?(jobId: string): Promise<{ status: string; runId?: string; error?: string }>;
+  getReplayJob?(
+    jobId: string,
+  ): Promise<{ status: string; runId?: string; error?: string; waitingForHuman?: boolean }>;
   cancelReplay?(jobId: string): Promise<void>;
   inspect(workflowId: string): Promise<ProductRunState>;
   inspectExecution?(runId: string): Promise<ProductRunState | undefined>;
@@ -142,6 +144,10 @@ export type RunProductService = {
   loadFrame?(runId: string, framePath: string): Promise<Blob>;
   getRawEvidence(runId: string): Promise<unknown>;
   exportEvidence?(runId: string): Promise<RunEvidenceExportDocument>;
+  exportWalkthrough?(
+    runId: string,
+    withRunIds?: readonly string[],
+  ): Promise<RunEvidenceExportDocument>;
 };
 type ProductRuntime = {
   client: Awaited<ReturnType<typeof productClientForPlatform>>["client"];
@@ -183,18 +189,6 @@ export function createRunProductService(platform: Platform): RunProductService {
     return (await (await relayClient()).invoke("run.evidence.get", { runId, ...input })).evidence;
   }
   return {
-    async loadFrame(runId, framePath) {
-      if (!/^frames\/[a-zA-Z0-9_-]+\.(?:png|jpe?g|webp)$/u.test(framePath)) {
-        throw new Error("Invalid screenshot path.");
-      }
-      const resource = await (
-        await relayClient()
-      ).binaryResource(`/runs/${encodeURIComponent(runId)}/${framePath}`);
-      return new Blob([new Uint8Array(resource.bytes)], {
-        type: resource.headers.get("content-type") ?? "image/png",
-      });
-    },
-
     async getTest(testId) {
       const { client } = await runtime();
       const { appMaps } = await client.invoke("app-map.list", {});
@@ -302,10 +296,18 @@ export function createRunProductService(platform: Platform): RunProductService {
     },
     async getReplayJob(jobId) {
       const { job } = await (await runtime()).client.invoke("job.get", { jobId });
+      const waiting = job.waitingFor;
+      const waitingForHuman =
+        Boolean(waiting) &&
+        typeof waiting === "object" &&
+        !Array.isArray(waiting) &&
+        "kind" in waiting &&
+        waiting.kind === "human";
       return {
         status: String(job.status),
         ...(typeof job.runId === "string" ? { runId: job.runId } : {}),
         ...(typeof job.error === "string" ? { error: job.error } : {}),
+        ...(waitingForHuman ? { waitingForHuman: true } : {}),
       };
     },
     async cancelReplay(jobId) {
@@ -390,6 +392,41 @@ export function createRunProductService(platform: Platform): RunProductService {
     async exportEvidence(runId) {
       const result = await (await runtime()).client.invoke("run.trace-pack.get", { runId });
       return runEvidenceExportDocument(runId, result);
+    },
+    async loadFrame(runId, framePath) {
+      if (!/^frames\/[a-zA-Z0-9_-]+\.(?:png|jpe?g|webp)$/u.test(framePath)) {
+        throw new Error("Invalid screenshot path.");
+      }
+      const resource = await (
+        await relayClient()
+      ).binaryResource(`/runs/${encodeURIComponent(runId)}/${framePath}`);
+      return new Blob([new Uint8Array(resource.bytes)], {
+        type: resource.headers.get("content-type") ?? "image/png",
+      });
+    },
+    async getPlayerManifest(runId, withRunIds = []) {
+      const client = await relayClient();
+      const joined = withRunIds.filter((id) => id && id !== runId);
+      const query = joined.length
+        ? `?${joined.map((id) => `with=${encodeURIComponent(id)}`).join("&")}`
+        : "";
+      const response = await client.download(
+        `/runs/${encodeURIComponent(runId)}/player-manifest${query}`,
+      );
+      const payload: unknown = await response.json();
+      if (!payload || typeof payload !== "object" || !("manifest" in payload)) {
+        throw new Error("Player manifest is missing.");
+      }
+      return payload.manifest as PlayerManifestProjection;
+    },
+    async exportWalkthrough(runId, withRunIds = []) {
+      const client = await relayClient();
+      const joined = withRunIds.filter((id) => id && id !== runId);
+      const result = await client.invoke("run.walkthrough-pack.get", {
+        runId,
+        ...(joined.length ? { with: joined } : {}),
+      });
+      return walkthroughExportDocument(runId, result);
     },
     async getReport(runId, canonical) {
       const client = await relayClient();

@@ -1,11 +1,11 @@
 /** @jsxImportSource react */
 import { Check, CircleAlert, LoaderCircle, Pencil } from "lucide-react";
 
-export type EditorSaveState = "dirty" | "saving" | "saved" | "failed" | "conflicted";
+export type EditorSaveState = "dirty" | "saving" | "saved" | "saved-locally" | "failed" | "conflicted";
 
 export function EditorSaveStatus({ state, detail }: { state: EditorSaveState; detail?: string }) {
   const Icon =
-    state === "saved"
+    state === "saved" || state === "saved-locally"
       ? Check
       : state === "saving"
         ? LoaderCircle
@@ -16,8 +16,8 @@ export function EditorSaveStatus({ state, detail }: { state: EditorSaveState; de
     dirty: "Unsaved changes",
     saving: "Saving…",
     saved: "Saved",
-    failed: "Could not save",
-    conflicted: "Revision changed",
+    "saved-locally": "Saved locally",
+    conflicted: "Conflict — your changes are preserved",
   }[state];
   return (
     <span

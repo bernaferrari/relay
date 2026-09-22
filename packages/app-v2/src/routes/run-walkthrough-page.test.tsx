@@ -44,12 +44,12 @@ function manifest(): PlayerManifestProjection {
     ],
     captures: [
       {
-        id: "run-member:frames/001.png:" + "a".repeat(64),
+        id: "run-member:frames/001.png:" + "b".repeat(64),
         stateId: "screen-home",
         variantId: "member",
         runId: "run-member",
         framePath: "frames/001.png",
-        imageSha256: "a".repeat(64),
+        imageSha256: "b".repeat(64),
         caption: "Member home",
         capturedAt: 10,
       },
@@ -97,6 +97,14 @@ function manifest(): PlayerManifestProjection {
     ],
     connections: [
       {
+        id: "open-help",
+        fromStateId: "screen-home",
+        toStateId: "screen-settings",
+        kind: "authored",
+        label: "Authored help",
+        hotspot: { connectionId: "open-help", point: { x: 0.2, y: 0.2 }, actions: [] },
+      },
+      {
         id: "open-settings",
         fromStateId: "screen-home",
         toStateId: "screen-settings",
@@ -124,10 +132,41 @@ function manifest(): PlayerManifestProjection {
         toStateId: "screen-home",
         kind: "authored",
         label: "Back to home",
-        hotspot: { connectionId: "home-shortcut", actions: [{ kind: "tap", label: "Home" }] },
+        hotspot: {
+          connectionId: "home-shortcut",
+          point: { x: 0.9, y: 0.9 },
+          actions: [{ kind: "tap", label: "Home" }],
+        },
+      },
+      {
+        id: "open-missing",
+        fromStateId: "screen-language",
+        toStateId: "screen-missing",
+        kind: "recorded",
+        label: "Missing next",
+        provenance: { runId: "run-member" },
+      },
+      {
+        id: "guess-settings",
+        fromStateId: "screen-home",
+        toStateId: "screen-settings",
+        kind: "suggested",
+        label: "Guess settings",
+        provenance: { runId: "run-member" },
+        hotspot: { connectionId: "guess-settings", point: { x: 0.8, y: 0.8 } },
       },
     ],
     findings: [
+      {
+        id: "run-member:frames/002.png::" + "b".repeat(64) + ":old",
+        runId: "run-member",
+        captureId: "frames/002.png::" + "b".repeat(64),
+        action: "accept",
+        note: "Earlier acceptance",
+        decidedAt: 1,
+        decidedBy: "human:old",
+        reviewVersion: 1,
+      },
       {
         id: "run-member:frames/002.png::" + "b".repeat(64),
         runId: "run-member",
@@ -136,7 +175,7 @@ function manifest(): PlayerManifestProjection {
         note: "Save overlaps the seats row",
         decidedAt: 40,
         decidedBy: "human:demo",
-        reviewVersion: 1,
+        reviewVersion: 2,
       },
     ],
     missing: [
@@ -144,6 +183,11 @@ function manifest(): PlayerManifestProjection {
         stateId: "screen-language",
         variantId: "admin",
         reason: "No capture for this state in configuration chrome · admin.",
+      },
+      {
+        stateId: "screen-home",
+        variantId: "signed-out",
+        reason: "Signed out was not captured.",
       },
     ],
   };
@@ -161,7 +205,7 @@ function playerService(): RunProductService {
   } as unknown as RunProductService;
 }
 
-async function renderWalkthrough(path: string, service = playerService()) {
+async function renderWalkthrough(path: string, service: RunProductService = playerService()) {
   const platform: Platform = {
     platform: "web",
     getServerUrl: () => "http://127.0.0.1:8787",
@@ -235,58 +279,205 @@ describe("Run walkthrough player", () => {
     expect(text()).not.toContain("Relay is not connected");
   });
 
-  it("retries an unavailable image and prevents review until it loads", async () => {
-    const service = playerService();
-    const load = service.loadFrame!;
+  it("distinguishes unavailable images from missing captures and retries before enabling review", async () => {
+    const current = manifest();
+    current.findings = [];
     let attempts = 0;
-    service.loadFrame = async (...args) => {
-      if (++attempts === 1) throw new Error("Image request failed");
-      return load(...args);
-    };
-    service.reviewCapture = async () => {
-      throw new Error("Should not review during this test");
-    };
+    const source = playerService();
+    const service = {
+      ...source,
+      getPlayerManifest: async () => current,
+      loadFrame: async () => {
+        if (++attempts === 1) throw new Error("temporary outage");
+        return source.loadFrame!("run-member", "frames/001.png");
+      },
+      reviewCapture: async () => {
+        throw new Error("must not review without image");
+      },
+    } as RunProductService;
     await renderWalkthrough("/runs/run-member/walkthrough", service);
     expect(text()).toContain("Screenshot unavailable");
-    const accept = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-      button.textContent?.includes("Looks correct"),
+    expect(text()).not.toContain("has no screenshot for this configuration");
+    const approve = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Looks correct",
     )!;
-    expect(accept.disabled).toBe(true);
+    expect(approve.disabled).toBe(true);
     await click(
-      [...document.querySelectorAll<HTMLButtonElement>("button")].find(
-        (button) => button.textContent === "Try again",
+      [...document.querySelectorAll("button")].find(
+        (button) => button.textContent?.trim() === "Try again",
       )!,
     );
-    expect(document.querySelector("img")).not.toBeNull();
-    expect(accept.disabled).toBe(false);
-    expect(attempts).toBe(2);
+    await settle();
+    expect(document.querySelector("img[alt^='Member home']")).not.toBeNull();
+    expect(approve.disabled).toBe(false);
   });
 
   it("shows the entry state capture with recorded links, without report data", async () => {
     await renderWalkthrough("/runs/run-member/walkthrough");
     expect(text()).toContain("Member home");
+    expect(text()).toContain("Browse the screens captured during this run.");
+    expect(document.querySelector('[role="combobox"][aria-label="Screen"]')).not.toBeNull();
     expect(text()).toContain("Member settings");
     expect(text()).toContain("Recorded connection");
     // The stage shows the exact capture's frame metadata.
     expect(text()).toContain("frames/001.png");
+    expect(text()).toContain("Suggested connection");
+    expect(document.querySelector("[data-recorded='false']")).toBeNull();
+    expect(text()).not.toContain("recorded in run undefined");
+    expect(document.querySelector('[aria-label="Configuration"]')?.textContent).toContain(
+      "firefox · member",
+    );
+    expect(text()).not.toContain("Save overlaps the seats row");
     expect(document.querySelector("img")).not.toBeNull();
+    expect(
+      document.querySelector("[data-recorded='true']")?.getAttribute("data-hotspot-index"),
+    ).toBe("1");
+    expect(document.querySelector("[data-recorded='false']")).toBeNull();
+  });
+
+  it("keeps the selected configuration in the address when opening a screen", async () => {
+    const { history } = await renderWalkthrough("/runs/run-member/walkthrough");
+    await choose("Configuration", "chrome · admin");
+    await choose("Screen", "Workspace settings");
+    expect(history.location.search).toMatch(/variant=admin/u);
+    expect(history.location.search).toMatch(/state=screen-settings/u);
+  });
+
+  it("pins the opening configuration in the address", async () => {
+    const { history } = await renderWalkthrough("/runs/run-member/walkthrough");
+    expect(history.location.search).toMatch(/variant=member/u);
+    expect(history.location.search).toMatch(/state=screen-home/u);
+  });
+
+  it("opens a captureless configuration without another account's image", async () => {
+    await renderWalkthrough("/runs/run-member/walkthrough");
+    await choose("Configuration", "signed out");
+    expect(text()).toContain("Signed out was not captured.");
+    expect(document.querySelector("img")).toBeNull();
+    expect(document.querySelector('[aria-label="Screen"]')?.textContent).toContain("Not captured");
+    await choose("Screen", "Workspace settings");
+    expect(text()).toContain("Not captured in this configuration");
+    expect(text()).toContain("Workspace settings was not captured");
+    expect(text()).toContain("No connected screenshots from this screen.");
+    expect(text()).not.toContain("recorded in run");
+    expect(document.querySelector("img")).toBeNull();
+  });
+
+  it("replaces an unknown screen in the address with the entry screen", async () => {
+    const { history } = await renderWalkthrough("/runs/run-member/walkthrough?state=not-a-screen");
+    expect(history.location.search).toMatch(/state=screen-home/u);
+    expect(history.location.search).not.toMatch(/not-a-screen/u);
+  });
+
+  it("replaces an unknown configuration in the address with one that was captured", async () => {
+    const { history } = await renderWalkthrough(
+      "/runs/run-member/walkthrough?variant=not-a-configuration",
+    );
+    expect(history.location.search).toMatch(/variant=member/u);
+    expect(history.location.search).not.toMatch(/not-a-configuration/u);
+  });
+
+  it("says an authored destination was not captured in this configuration", async () => {
+    await renderWalkthrough(
+      "/runs/run-member/walkthrough?variant=signed-out&state=screen-language",
+    );
+    expect(text()).toContain("Planned connection · Screenshot unavailable");
+    expect(document.querySelector("img")).toBeNull();
+  });
+
+  it("says a recorded destination was not captured in this configuration", async () => {
+    await renderWalkthrough("/runs/run-member/walkthrough?state=screen-language");
+    expect(text()).toContain("Recorded connection · Screenshot unavailable");
+    expect(
+      [...document.querySelectorAll("button[data-hotspot-index]")].some((button) =>
+        button.textContent?.includes("Screenshot unavailable"),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not substitute a URL capture that belongs to another configuration", async () => {
+    const memberCapture = "run-member:frames/001.png:" + "b".repeat(64);
+    await renderWalkthrough(
+      `/runs/run-admin/walkthrough?variant=admin&state=screen-home&capture=${encodeURIComponent(memberCapture)}`,
+    );
+    expect(document.querySelector("img")).toBeNull();
+    expect(text()).toContain("Not captured in this configuration");
+  });
+
+  it("exports the walkthrough for every pinned run except the page run", async () => {
+    const joined: string[][] = [];
+    const service = playerService();
+    service.exportWalkthrough = async (id, withRunIds) => {
+      joined.push([id, ...(withRunIds ?? [])]);
+      return { fileName: "pack.json", digest: `sha256:${"a".repeat(64)}`, body: "{}" };
+    };
+    await renderWalkthrough("/runs/run-member/walkthrough", service);
+    const button = [...document.querySelectorAll("button")].find(
+      (item) => item.getAttribute("aria-label") === "Export walkthrough",
+    );
+    if (!button) throw new Error("export walkthrough missing");
+    await click(button);
+    expect(text()).not.toContain("Save walkthrough");
+    expect(joined).toEqual([["run-member", "run-admin"]]);
+  });
+
+  it("shows why a walkthrough export was refused", async () => {
+    const service = playerService();
+    let fail = false;
+    service.exportWalkthrough = async () => {
+      if (fail) {
+        throw new Error("Run unscoped-run has no App Map plan identity and cannot be joined");
+      }
+      return { fileName: "pack.html", digest: `sha256:${"a".repeat(64)}`, body: "<html></html>" };
+    };
+    await renderWalkthrough("/runs/run-member/walkthrough", service);
+    const button = [...document.querySelectorAll("button")].find(
+      (item) => item.getAttribute("aria-label") === "Export walkthrough",
+    );
+    if (!button) throw new Error("export walkthrough missing");
+    await click(button);
+    expect(text()).not.toContain("Save walkthrough");
+    fail = true;
+    await click(button);
+    expect(text()).toContain("Run unscoped-run has no App Map plan identity and cannot be joined");
+    expect(text()).not.toContain("Save walkthrough");
   });
 
   it("follows the exact recorded capture and preserves it through Back and Forward", async () => {
     const data = manifest();
-    const exact = data.captures.find((item) => item.stateId === "screen-settings" && item.variantId === "member")!;
+    const exact = data.captures.find(
+      (item) => item.stateId === "screen-settings" && item.variantId === "member",
+    )!;
     const service = playerService();
-    service.reviewCapture = async () => { throw new Error("Review must not be submitted during navigation"); };
-    service.getPlayerManifest = async () => ({ ...data,
-      captures: [...data.captures, { ...exact, id: "newer-settings", framePath: "frames/newer.png", capturedAt: 999 }],
-      connections: data.connections.map((item) => item.id === "open-settings" ? { ...item, provenance: { runId: "run-member", captureId: exact.id } } : item),
+    service.reviewCapture = async () => {
+      throw new Error("Review must not be submitted during navigation");
+    };
+    service.getPlayerManifest = async () => ({
+      ...data,
+      captures: [
+        ...data.captures,
+        { ...exact, id: "newer-settings", framePath: "frames/newer.png", capturedAt: 999 },
+      ],
+      connections: data.connections.map((item) =>
+        item.id === "open-settings"
+          ? { ...item, provenance: { runId: "run-member", captureId: exact.id } }
+          : item,
+      ),
     });
     const { history } = await renderWalkthrough("/runs/run-member/walkthrough", service);
-    await click([...document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Member settings"))!);
+    await click(
+      [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        button.textContent?.includes("Member settings"),
+      )!,
+    );
     expect(new URLSearchParams(history.location.search).get("capture")).toBe(exact.id);
     expect(text()).toContain("frames/002.png");
     expect(text()).not.toContain("frames/newer.png");
-    expect([...document.querySelectorAll("button")].some((button) => button.textContent?.includes("Looks correct"))).toBe(true);
+    expect(
+      [...document.querySelectorAll("button")].some((button) =>
+        button.textContent?.includes("Looks correct"),
+      ),
+    ).toBe(true);
     await click(document.querySelector<HTMLButtonElement>('[aria-label="Back"]')!);
     await click(document.querySelector<HTMLButtonElement>('[aria-label="Forward"]')!);
     expect(new URLSearchParams(history.location.search).get("capture")).toBe(exact.id);
@@ -300,13 +491,13 @@ describe("Run walkthrough player", () => {
       )!,
     );
     expect(text()).toContain("Workspace settings");
-    expect(text()).toContain("Save overlaps the seats row");
-    // Follow one more link, then Back returns to Settings.
-    await click(
-      [...document.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        b.textContent?.includes("Preferred language"),
-      )!,
+    expect(text()).toContain("Current review · report-issue");
+    expect(text()).not.toContain("Current review · accept");
+    const body = text();
+    expect(body.indexOf("Current review · report-issue")).toBeLessThan(
+      body.indexOf("Earlier review · accept"),
     );
+    await choose("Screen", "Preferred language");
     expect(text()).toContain("Preferred language");
     await click(
       [...document.querySelectorAll<HTMLButtonElement>("button")].find(
@@ -314,7 +505,31 @@ describe("Run walkthrough player", () => {
       )!,
     );
     expect(text()).toContain("Workspace settings");
+    await choose("Configuration", "chrome · admin");
+    expect(text()).toContain("run-admin");
+    await click(
+      [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.getAttribute("aria-label") === "Back",
+      )!,
+    );
+    expect(text()).toContain("Member home");
+    const alt = document.querySelector("img")?.getAttribute("alt") ?? "";
+    expect(alt.startsWith("Member home")).toBe(true);
+    expect(alt.includes("Admin")).toBe(false);
     expect(history.location.pathname).toBe("/runs/run-member/walkthrough");
+    await click(
+      [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.getAttribute("aria-label") === "Forward",
+      )!,
+    );
+    expect(text()).toContain("Preferred language");
+    await choose("Screen", "Preferred language");
+    await click(
+      [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+        (button) => button.getAttribute("aria-label") === "Back",
+      )!,
+    );
+    expect(text()).toContain("Workspace settings");
   });
 
   it("keeps missing states explicit: the admin variant never substitutes member evidence", async () => {
@@ -407,11 +622,13 @@ describe("Run walkthrough review controls", () => {
     await click(report);
     expect(reviewed).toHaveLength(0);
     expect(document.querySelector('[aria-label="Issue note"]')).not.toBeNull();
-    const save = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Save issue"));
+    const save = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Save issue"),
+    );
     if (!save) throw new Error("Save issue action missing");
     await click(save);
     expect(reviewed).toHaveLength(1);
-    expect(reviewed[0]).toContain("frames/001.png::aaaaaaaa");
+    expect(reviewed[0]).toContain("frames/001.png::" + "b".repeat(64));
     expect(reviewed[0]).toContain("report-issue");
     // After the manifest refresh the decision is bound to the exact capture.
     expect(text()).toContain("Review decision on this capture");

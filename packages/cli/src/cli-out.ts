@@ -7,6 +7,9 @@ import {
   destIdentityCheckpointFramePaths,
   isCaptureReviewLeftoverCaption,
   projectCaptureReviewDestIdentity,
+  walkthroughHtml,
+  walkthroughPackExportResponseSchema,
+  walkthroughPackFrameProblem,
 } from "@relay/protocol";
 
 const PNG = /\.png$/iu;
@@ -282,6 +285,66 @@ async function copyNamed(source: string, dest: string, copied: string[]): Promis
   copied.push(dest);
 }
 
+
+/** A teammate can open walkthrough.html. The trace pack stays the machine copy. */
+export async function writeEvidenceReviewDir(input: {
+  dir: string;
+  evidence: unknown;
+  walkthrough: unknown;
+  runId: string;
+}): Promise<void> {
+  const parsed = walkthroughPackExportResponseSchema.safeParse(input.walkthrough);
+  if (!parsed.success) {
+    throw new Error("Relay returned a walkthrough that cannot be handed to a reviewer.");
+  }
+  const sourceRunId = tracePackSourceRunId(input.evidence);
+  if (sourceRunId && sourceRunId !== input.runId) {
+    throw new Error(`Relay returned a trace pack for Run ${sourceRunId}, not ${input.runId}.`);
+  }
+  const pinnedRuns = parsed.data.pack.manifest.pinned.runIds;
+  if (!pinnedRuns.includes(input.runId)) {
+    throw new Error(`Relay returned a walkthrough that does not name Run ${input.runId}.`);
+  }
+  const foreignPinned = pinnedRuns.filter((id) => id !== input.runId);
+  if (foreignPinned.length > 0) {
+    throw new Error(`Relay returned a walkthrough that also names Run ${foreignPinned[0]}.`);
+  }
+  const foreignFrame = parsed.data.pack.frames.find((frame) => frame.runId !== input.runId);
+  if (foreignFrame) {
+    throw new Error(`Relay returned a frame for Run ${foreignFrame.runId}, not ${input.runId}.`);
+  }
+  const foreignCapture = foreignCaptureRunId(parsed.data.pack.manifest, input.runId);
+  if (foreignCapture) {
+    throw new Error(`Relay returned a capture for Run ${foreignCapture}, not ${input.runId}.`);
+  }
+  const frameProblem = walkthroughPackFrameProblem(parsed.data);
+  if (frameProblem) throw new Error(frameProblem);
+  await mkdir(input.dir, { recursive: true });
+  await writeFile(join(input.dir, "trace-pack.json"), `${JSON.stringify(input.evidence)}\n`);
+  await writeFile(join(input.dir, "walkthrough.html"), walkthroughHtml(parsed.data));
+}
+
+function tracePackSourceRunId(evidence: unknown): string | undefined {
+  if (!evidence || typeof evidence !== "object") return undefined;
+  const tracePack = "tracePack" in evidence ? evidence.tracePack : undefined;
+  if (!tracePack || typeof tracePack !== "object" || !("source" in tracePack)) return undefined;
+  const source = tracePack.source;
+  if (!source || typeof source !== "object" || !("runId" in source)) return undefined;
+  return typeof source.runId === "string" ? source.runId : undefined;
+}
+
+function foreignCaptureRunId(manifest: unknown, runId: string): string | undefined {
+  if (!manifest || typeof manifest !== "object" || !("captures" in manifest)) return undefined;
+  const captures = manifest.captures;
+  if (!Array.isArray(captures)) return undefined;
+  for (const capture of captures) {
+    if (!capture || typeof capture !== "object" || !("runId" in capture)) continue;
+    if (typeof capture.runId === "string" && capture.runId.length > 0 && capture.runId !== runId) {
+      return capture.runId;
+    }
+  }
+  return undefined;
+}
 /** Write result.json, stderr.log, and any local PNG paths the job produced. */
 export async function writeRunOutDir(input: {
   dir: string;
@@ -290,6 +353,14 @@ export async function writeRunOutDir(input: {
 }): Promise<string[]> {
   await mkdir(input.dir, { recursive: true });
   await writeFile(join(input.dir, "result.json"), `${JSON.stringify(input.envelope)}\n`);
+  const result =
+    input.envelope && typeof input.envelope === "object" && "result" in input.envelope
+      ? input.envelope.result
+      : undefined;
+  const walkthrough = walkthroughPackExportResponseSchema.safeParse(result);
+  if (walkthrough.success) {
+    await writeFile(join(input.dir, "walkthrough.html"), walkthroughHtml(walkthrough.data));
+  }
   await writeFile(join(input.dir, "stderr.log"), input.stderr);
   const copied: string[] = [];
   const jobs = jobsFromEnvelope(input.envelope);

@@ -209,9 +209,21 @@ export function captureReviewId(input: {
   const imageSha256 = input.imageSha256?.trim();
   const slotId = input.slotId?.trim();
   if (!framePath) return `missing::${slotId || caption}`;
-  if (!imageSha256) return `${framePath}::unhashed`;
-  return `${framePath}::${imageSha256}`;
+  const image = `${framePath}::${imageSha256 || "unhashed"}`;
+  return slotId ? `${slotId}::${image}` : image;
 }
+
+/** True when a review id names this frame and digest, with or without a slot prefix. */
+export function captureReviewIdMatchesFrame(
+  captureId: string,
+  framePath: string,
+  imageSha256: string,
+): boolean {
+  if (!framePath || !imageSha256 || imageSha256 === "unhashed") return false;
+  const suffix = `${framePath}::${imageSha256}`;
+  return captureId === suffix || captureId.endsWith(`::${suffix}`);
+}
+
 
 function sameCaptureReviewPhase(left?: string, right?: string): boolean {
   return (left?.trim() || "") === (right?.trim() || "");
@@ -232,7 +244,7 @@ export function formatCaptureReviewCoverageSummary(
       `${summary.captured} captured`,
       `${summary.blocked ?? 0} blocked`,
       `${summary.missing} missing`,
-      `${summary.pending} pending`,
+      screenshotsAwaitingReview(summary.pending),
       `${summary.accepted} accepted`,
     ];
     if (summary.issue) parts.push(`${summary.issue} issue${summary.issue === 1 ? "" : "s"}`);
@@ -244,7 +256,7 @@ export function formatCaptureReviewCoverageSummary(
     return parts.join(" · ");
   }
   const parts = [captureReviewCoverageLine(summary)];
-  if (summary.pending) parts.push(`${summary.pending} pending review`);
+  if (summary.pending) parts.push(screenshotsAwaitingReview(summary.pending));
   if (summary.accepted) parts.push(`${summary.accepted} accepted`);
   if (summary.issue) parts.push(`${summary.issue} issue${summary.issue === 1 ? "" : "s"}`);
   if (summary.needMoreEvidence) {
@@ -255,6 +267,10 @@ export function formatCaptureReviewCoverageSummary(
   if (summary.missing) parts.push(`${summary.missing} missing`);
   if (summary.blocked) parts.push(`${summary.blocked} blocked`);
   return parts.join(" · ");
+}
+
+function screenshotsAwaitingReview(count: number): string {
+  return `${count} screenshot${count === 1 ? "" : "s"} awaiting review`;
 }
 
 /** Keyboard movement for the capture contact sheet. Unrecognized keys leave selection unchanged. */
@@ -451,9 +467,7 @@ function captureReviewArtifact(data: unknown): CaptureReviewItem | undefined {
       caption,
       ...(framePath ? { framePath } : {}),
       ...(imageSha256 ? { imageSha256 } : {}),
-      ...((explicitSlotId ?? derivedSlotId) && !framePath
-        ? { slotId: explicitSlotId ?? derivedSlotId }
-        : {}),
+      ...(explicitSlotId ? { slotId: explicitSlotId } : {}),
     }),
     caption,
     status,

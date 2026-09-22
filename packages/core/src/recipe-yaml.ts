@@ -2,6 +2,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { isAlias, isMap, isNode, isScalar, isSeq, parseDocument, stringify } from "yaml";
 import { validateRecipeParameters, validateRecipeSteps } from "./recipe-validation.js";
+import { assertStoredValueIsNotASecret } from "./recipe-validation-support.js";
 import type { Recipe, RecipeParameter, RecipeStep } from "./recipes.js";
 import { CURRENT_RECORDING_FORMAT_VERSION } from "./recording-format.js";
 
@@ -62,6 +63,7 @@ export function validateRecipeVariables(value: unknown): Record<string, string> 
       throw new Error(`variables.${name} is not a valid variable name`);
     }
     if (typeof raw !== "string") throw new Error(`variables.${name} must be a string`);
+    assertStoredValueIsNotASecret(name, raw, `variables.${name}`);
     variables[name] = raw;
   }
   return Object.keys(variables).length > 0 ? variables : undefined;

@@ -290,9 +290,15 @@ describe("Batch result presentation", () => {
           status: "blocked",
           values: {},
           findingCode: "ACCOUNT_NEEDS_RELOGIN",
+          identity: { testId: "account-settings" },
         },
-      ]).lane,
-    ).toBe("Infra");
+      ]),
+    ).toMatchObject({
+      lane: "Infra",
+      repair:
+        "Completed captures are preserved. Sign in again, save a new sign-in revision, then choose that revision for the pending configuration. Return to account-settings. Earlier runs stay on their original sign-in. Do not start the same Plan again until that sign-in is saved.",
+      repairTestId: "account-settings",
+    });
     expect(
       batchClusterCopy(cluster({ id: "cancel" }), [
         {

@@ -1,3 +1,5 @@
+import { liveCaptureReviewAccount } from "@relay/protocol";
+
 export type RunConfigurationValue = {
   sourceRevision?: string;
   buildId?: string;
@@ -47,13 +49,14 @@ export type PersistedRunConfiguration = {
 
 /** Projects only persisted execution facts; it never fills missing values from current workspace state. */
 export function projectRunConfiguration(run: PersistedRunConfiguration): RunConfigurationState {
+  const accountName = liveCaptureReviewAccount(run.account?.name);
   const values: RunConfigurationValue = {
     ...(run.sourceRevision?.sha ? { sourceRevision: run.sourceRevision.sha } : {}),
     ...(run.buildId ? { buildId: run.buildId } : {}),
     ...(run.targetProfile?.id ? { targetProfileId: run.targetProfile.id } : {}),
     ...(run.targetProfile?.name ? { targetName: run.targetProfile.name } : {}),
     ...(run.account?.id ? { accountId: run.account.id } : {}),
-    ...(run.account?.name ? { accountName: run.account.name } : {}),
+    ...(accountName ? { accountName } : {}),
     ...(run.browserCaseProfile
       ? {
           browserProfile: [run.browserCaseProfile.engine, run.browserCaseProfile.channel]

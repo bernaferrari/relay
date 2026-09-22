@@ -43,6 +43,9 @@ export function validateRecipeParameters(value: unknown): RecipeParameter[] | un
       throw new Error(`parameters[${index}].description must be a string`);
     if (raw.default !== undefined && !isString(raw.default))
       throw new Error(`parameters[${index}].default must be a string`);
+    if (isString(raw.default)) {
+      assertStoredValueIsNotASecret(raw.name, raw.default, `parameters[${index}].default`);
+    }
     if (raw.required !== undefined && typeof raw.required !== "boolean")
       throw new Error(`parameters[${index}].required must be a boolean`);
     return {
@@ -626,6 +629,7 @@ function parseStepMetadata(
   optional?: boolean;
   check?: RecipeStep["check"];
   when?: RecipeStep["when"];
+  leftoverSkip?: "dest";
 } {
   const metadata: {
     id?: string;
@@ -637,6 +641,7 @@ function parseStepMetadata(
     optional?: boolean;
     check?: RecipeStep["check"];
     when?: RecipeStep["when"];
+    leftoverSkip?: "dest";
   } = {};
   if (raw.id !== undefined) {
     if (!isString(raw.id) || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,95}$/.test(raw.id)) {
@@ -707,6 +712,11 @@ function parseStepMetadata(
   if (check) metadata.check = check;
   if (raw.when !== undefined) {
     if (!isObject(raw.when)) throw stepErr(index, "when must be an object");
+    for (const key of Object.keys(raw.when)) {
+      if (key !== "condition" && key !== "target" && key !== "region") {
+        throw stepErr(index, `when unknown field: ${key}`);
+      }
+    }
     if (!(raw.when.condition === "present" || raw.when.condition === "absent")) {
       throw stepErr(index, 'when.condition must be "present" or "absent"');
     }
@@ -717,6 +727,11 @@ function parseStepMetadata(
     let region: NonNullable<RecipeStep["when"]>["region"];
     if (raw.when.region !== undefined) {
       if (!isObject(raw.when.region)) throw stepErr(index, "when.region must be an object");
+      for (const key of Object.keys(raw.when.region)) {
+        if (key !== "minX" && key !== "maxX" && key !== "minY" && key !== "maxY") {
+          throw stepErr(index, `when.region unknown field: ${key}`);
+        }
+      }
       const parsed: NonNullable<RecipeStep["when"]>["region"] = {};
       for (const key of ["minX", "maxX", "minY", "maxY"] as const) {
         const value = raw.when.region[key];
@@ -740,8 +755,44 @@ function parseStepMetadata(
       ...(region ? { region } : {}),
     };
   }
+  if (raw.leftoverSkip !== undefined) {
+    if (raw.leftoverSkip !== "dest") throw stepErr(index, 'leftoverSkip must be "dest"');
+    metadata.leftoverSkip = "dest";
+  }
   return metadata;
 }
+
+const SECRET_NAME = /(password|passwd|secret|token|api[_-]?key|credential)/iu;
+const SECRET_REFERENCE = /^(?:secret:[A-Za-z0-9_.:-]{1,120}|\{\{[A-Za-z0-9_.:-]+\}\})$/u;
+
+/** A password-shaped name may be saved only as a reference, never as the value. */
+export function assertStoredValueIsNotASecret(name: string, value: string, label: string): void {
+  if (SECRET_NAME.test(name) && !SECRET_REFERENCE.test(value)) {
+    throw new Error(`${label} must be a secret reference, not a stored value`);
+  }
+}
+
+/** A password, token, or credential field. */
+export function isSecretFieldTarget(target: unknown): boolean {
+  if (!isObject(target)) return false;
+  const hint = [target.label, target.text, target.identifier]
+    .filter((item): item is string => typeof item === "string")
+    .join(" ");
+  return SECRET_NAME.test(hint);
+}
+
+export function isSecretReference(value: string): boolean {
+  return SECRET_REFERENCE.test(value);
+}
+
+/** Typing into a password, token, or credential field must stay a reference. */
+export function assertSecretFieldText(target: unknown, text: string, label: string): void {
+  if (isSecretFieldTarget(target) && !isSecretReference(text)) {
+    throw new Error(`${label} must be a secret reference, not a stored value`);
+  }
+}
+
+
 
 /**
  * Validate an unknown steps array field-by-field. Throws `Error` naming the

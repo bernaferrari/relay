@@ -429,7 +429,14 @@ test("--lane maps to laneId and does not require --input-file", () => {
   if (plan.command !== "invoke") return;
   assert.equal(plan.operationId, "job.combine.start");
   assert.equal(plan.input.laneId, "grok-daily");
-  assert.equal(plan.input.executionMode, "all");
+  assert.equal(plan.input.executionMode, "pilot");
+  const planAll = parseCli(
+    ["plan", "run", "grok-web", "grok-web-daily", "--lane", "grok-daily", "--all"],
+    {},
+  );
+  assert.equal(planAll.command, "invoke");
+  if (planAll.command !== "invoke") return;
+  assert.equal(planAll.input.executionMode, "all");
 
   const combine = parseCli(
     ["combine", "run", "grok-web", "grok-hourly", "--lane", "grok-lab", "--all"],
@@ -473,6 +480,12 @@ test("--lane maps to laneId and does not require --input-file", () => {
     visual: true,
   });
 
+  const recover = parseCli(["device", "recover", "--lane", "grok-daily"], {});
+  assert.equal(recover.command, "invoke");
+  if (recover.command === "invoke") {
+    assert.equal(recover.operationId, "target.recover");
+    assert.deepEqual(recover.input, { laneId: "grok-daily" });
+  }
   assert.throws(
     () =>
       parseCli(
@@ -1089,6 +1102,20 @@ test("outcome commands resolve ordinary intent without raw JSON mechanics", () =
     /positive integer/u,
   );
   assert.throws(() => parseCli(["run", "smoke", "--input", "{}"], {}), /do not accept --input/u);
+});
+
+test("export accepts --out and --output as the review directory", () => {
+  for (const flag of ["--out", "--output"] as const) {
+    const parsed = parseCli(["export", "run-42", flag, "./review"], {});
+    assert.equal(parsed.command, "outcome");
+    if (parsed.command === "outcome") {
+      assert.deepEqual(parsed.intent, {
+        kind: "export-evidence",
+        runId: "run-42",
+        outputDir: "./review",
+      });
+    }
+  }
 });
 
 test("browser capture-plan uses shared connection and JSON input parsing", () => {

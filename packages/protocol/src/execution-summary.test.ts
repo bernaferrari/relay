@@ -241,10 +241,12 @@ test("Plan capture review keeps the queue instead of collapsing to an empty job 
     },
   };
   const listed = summarizeExecutionOperationResult("job.combine.capture.review", { queue }) as {
+    review?: string;
     queue?: { summary?: { planned?: number }; items?: Array<{ attempt?: number }> };
   };
   assert.equal(listed.queue?.summary?.planned, 1);
   assert.equal(listed.queue?.items?.[0]?.attempt, 2);
+  assert.match(listed.review ?? "", /1 screenshot awaiting review/u);
   const applied = summarizeExecutionOperationResult("job.combine.capture.review.apply", {
     queue,
     results: [{ runId: "run-8", captureId: "frames/001.png::aaa", status: "applied" }],
@@ -949,6 +951,29 @@ test("run.trace-pack.get dest identity is dest wait-for, not leftover Close 004"
     ["frames/003.png"],
   );
   assert.equal(result.tracePack?.objects?.length, 1);
+});
+
+test("walkthrough pack summaries keep pinned runs and drop embedded frame bytes", () => {
+  const result = summarizeExecutionOperationResult("run.walkthrough-pack.get", {
+    pack: {
+      schemaVersion: 1,
+      kind: "relay-walkthrough-pack",
+      digest: `sha256:${"a".repeat(64)}`,
+      manifest: { pinned: { runIds: ["run-member", "run-admin"] } },
+      frames: [
+        {
+          runId: "run-member",
+          framePath: "frames/001.png",
+          imageSha256: "b".repeat(64),
+          content: "aW1hZ2U=",
+        },
+      ],
+    },
+  }) as { frames?: Array<{ content?: string }>; pinnedRunIds?: string[] };
+  assert.deepEqual(result.pinnedRunIds, ["run-member", "run-admin"]);
+  assert.equal(result.frames?.[0]?.content, undefined);
+  assert.equal(JSON.stringify(result).includes("aW1hZ2U="), false);
+  assert.match(JSON.stringify(result), /A downloaded copy cannot be recalled/u);
 });
 
 const leftoverDestEndJob = {

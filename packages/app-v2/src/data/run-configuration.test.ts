@@ -10,4 +10,17 @@ describe("projectRunConfiguration", () => {
       },
     );
   });
+
+  it("does not present a lane or fixture name as the account", () => {
+    expect(
+      projectRunConfiguration({
+        account: { id: "acct-member", name: "SuperGrok" },
+      }).values.accountName,
+    ).toBeUndefined();
+    expect(
+      projectRunConfiguration({
+        account: { id: "acct-member", name: "Member" },
+      }).values,
+    ).toEqual({ accountId: "acct-member", accountName: "Member" });
+  });
 });

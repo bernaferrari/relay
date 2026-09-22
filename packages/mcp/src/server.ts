@@ -88,7 +88,7 @@ export function relayMcpInstructionsForProfile(profile: RelayMcpProfile): string
     "Use Relay tools only within the configured organization and project scope.",
     "Treat tool results as server-authoritative and preserve Relay actor identity.",
     profile === "operator"
-      ? "Prefer operator verbs: health, devices, screenshot, snapshot, preview, tap, type, swipe, recover, teach, run (optional lane), plan_run, wait, findings, evidence, visual_compare, visual_review (human only), lanes. Use relay_advanced for other operations; lease.takeover is not available. relay_recover adopts a healthy live XCTest runner — do not kill it. Do not bounce :8787 (tsx watch / pnpm dev:app) while a Plan or iPad pack is live."
+      ? "Prefer operator verbs: health, devices, screenshot, snapshot, preview, tap, type, swipe, recover, teach, run (optional lane), plan_run, wait, cancel, save, export, goal (confirm and a startUrl), findings, evidence, visual_compare, visual_review (human only), lanes. Use relay_advanced for other operations; lease.takeover is not available. relay_recover adopts a healthy live XCTest runner — do not kill it. Do not bounce :8787 (tsx watch / pnpm dev:app) while a Plan or iPad pack is live."
       : profile === "outcome"
         ? "Prefer outcome tools: connect, observe, record, run, repeat, inspect, debug, repair, and export evidence."
         : "Use only tools registered in the selected profile; start with read-only inspection and choose the narrowest tool that can complete the requested task.",

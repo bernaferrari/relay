@@ -66,6 +66,46 @@ describe("CaptureReviewPanel selection", () => {
     expect(host.textContent).not.toContain("Approve new baseline");
   });
 
+  it("shows the stored issue note on the screenshot", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    act(() =>
+      root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <CaptureReviewPanel
+            queue={{
+              items: [
+                {
+                  captureId: "frames/001.png::aaa",
+                  caption: "Settings",
+                  status: "issue",
+                  note: "Save overlaps the description",
+                  framePath: "frames/001.png",
+                  imageSha256: "aaa",
+                },
+              ],
+              summary: {
+                captured: 1,
+                missing: 0,
+                pending: 0,
+                accepted: 0,
+                issue: 1,
+                needMoreEvidence: 0,
+              },
+            }}
+            frames={[]}
+            selectedIndex={0}
+            onSelect={() => undefined}
+          />
+        </QueryClientProvider>,
+      ),
+    );
+    expect(host.textContent).toContain("Save overlaps the description");
+    expect(host.textContent).toContain("Issue reported");
+  });
+
   it("review overlays stay off the Looks correct action and are not comparison masks", () => {
     const host = document.createElement("div");
     document.body.append(host);

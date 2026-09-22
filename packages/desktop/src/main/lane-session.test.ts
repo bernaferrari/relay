@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   assertElectronGrokLabTabAllowed,
   electronGrokLabPartitionPresentOnDisk,
+  laneHttpUrl,
   laneSessionPartition,
   laneTabSessionKey,
   laneWindowNeedsNavigation,
@@ -22,6 +23,13 @@ test("desktop partition is the same Lane identity the product UI uses", () => {
     () => laneSessionPartition("grok-com__lane_grok-daily"),
     /cannot reuse Playwright user-data/u,
   );
+});
+
+test("lane pages and cookies reject non-http URLs", () => {
+  assert.equal(laneHttpUrl("https://example.test/settings").href, "https://example.test/settings");
+  assert.throws(() => laneHttpUrl("file:///etc/passwd"), /http\(s\) URLs/u);
+  assert.throws(() => laneHttpUrl("javascript:alert(1)"), /http\(s\) URLs/u);
+  assert.throws(() => laneHttpUrl("not a url"), /http\(s\) URLs/u);
 });
 
 test("reopening a Lane window navigates when the requested URL changed", () => {

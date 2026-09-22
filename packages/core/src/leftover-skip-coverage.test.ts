@@ -11,7 +11,7 @@ import {
   type Screen,
 } from "@relay/protocol";
 import { compileAppMapConnection, compileAppMapRoutine } from "./app-map-compiler.js";
-import { compileAppMapTest } from "./map-work.js";
+import { compileAppMapCombine, compileAppMapTest } from "./map-work.js";
 import { reviewChecklistRows } from "./combine-evidence-review-checklist.js";
 import {
   coverageOutcomesFromArtifacts,
@@ -902,6 +902,46 @@ test("capture-view settings leftover does not skip a later test-action Settings 
   assert.ok(tapPresses.length >= 1, "origin leftover skipped a later test-action Settings TAP");
   assert.equal(skipReasons(tapJob).includes("inspect-setup-skipped"), false);
   assert.ok(executedReasons(tapJob).includes("transition-executed"));
+});
+
+test("a paired suite keeps capture-view setup skippable and the later test-action runnable", () => {
+  const connection = inspectDestEndConnection();
+  connection.fromScreenId = "home";
+  const map = destEndMap(connection);
+  const captureView = destEndTest(connection.id, "capture-view");
+  const laterTap = destEndTest(connection.id, "test-action");
+  laterTap.id = "open-settings-from-home";
+  laterTap.name = "open-settings-from-home";
+  laterTap.startingState = { sourceScreenId: "home" };
+  map.tests[captureView.id] = captureView;
+  map.tests[laterTap.id] = laterTap;
+
+  const compiled = compileAppMapCombine(map, {
+    ...entity("suite"),
+    name: "Settings suite",
+    testIds: [captureView.id, laterTap.id],
+    captures: {},
+  });
+
+  function opener(testId: string) {
+    const check = compiled.root.steps.find(
+      (step) => step.kind === "module" && step.check?.id === testId,
+    );
+    const testRecipe = check?.kind === "module" ? compiled.graph[check.recipeId] : undefined;
+    const dest = testRecipe?.steps.find((step) => step.kind === "module");
+    const destRecipe = dest?.kind === "module" ? compiled.graph[dest.recipeId] : undefined;
+    return destRecipe?.steps.find((step) => step.kind === "tap");
+  }
+
+  const setup = opener(captureView.id);
+  const action = opener(laterTap.id);
+  assert.equal(setup?.coverage, "inspect");
+  assert.equal(inspectSetupSkip(setup!), true);
+  assert.equal(leftoverSkipForbidden(setup!), false);
+  assert.equal(action?.coverage, "transition");
+  assert.equal(action?.leftoverSkip, "dest");
+  assert.equal(inspectSetupSkip(action!), false);
+  assert.notEqual(action?.coverage, setup?.coverage);
 });
 
 test("capture-view Routine leftover Settings skips the opener; test-action Routine taps", () => {

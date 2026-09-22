@@ -35,6 +35,7 @@ const valueFlags = new Set([
   "--branch",
   "--budget",
   "--out",
+  "--output",
   "--device",
   "--map",
   "--base",

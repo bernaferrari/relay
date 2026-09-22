@@ -40,7 +40,7 @@ test("a completed run with undecided review captures fails closed at exit 10, no
     (error: unknown) => {
       assert.ok(error instanceof CliError);
       assert.equal(error.exitCode, ExitCode.verificationIncomplete);
-      assert.match(error.message, /2 captures still require human review/);
+      assert.match(error.message, /2 screenshots awaiting review/);
       return true;
     },
   );

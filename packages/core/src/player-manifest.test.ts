@@ -197,7 +197,13 @@ test("§6.6 fixture: three states, recorded and authored links, two configuratio
   // (destination captures exist) → recorded; home-shortcut → authored.
   const byId = new Map(manifest.connections.map((connection) => [connection.id, connection]));
   assert.equal(byId.get("open-settings")?.kind, "recorded");
-  assert.ok(byId.get("open-settings")?.provenance?.runId);
+  assert.deepEqual(
+    manifest.connections
+      .filter((connection) => connection.id === "open-settings")
+      .map((connection) => connection.provenance?.runId)
+      .sort(),
+    ["run-admin", "run-member"],
+  );
   assert.equal(byId.get("open-language")?.kind, "recorded");
   assert.equal(byId.get("home-shortcut")?.kind, "authored");
   assert.equal(byId.get("home-shortcut")?.provenance, undefined);
@@ -335,3 +341,39 @@ test("captions never create identity: two same-caption captures stay distinct", 
   );
   assert.equal(resolved?.imageSha256, "2".repeat(64));
 });
+
+test("discovery stays suggested and a manual link stays authored even when the destination was captured", () => {
+  const map = fixtureMap();
+  const connections = map.connections as unknown as Record<
+    string,
+    { provenance?: { source: string } }
+  >;
+  connections["open-settings"]!.provenance = { source: "discovery" };
+  connections["home-shortcut"]!.provenance = { source: "manual" };
+  connections["open-language"]!.provenance = { source: "recording" };
+  const manifest = buildPlayerManifest({
+    map,
+    runs: [
+      run({
+        id: "run-member",
+        artifacts: [
+          reviewArtifact({
+            frame: "frames/002.png",
+            sha: "b".repeat(64),
+            checkpointId: "member-open-settings",
+            configuration: { browser: "firefox", account: "member" },
+            capturedAt: 20,
+          }),
+        ],
+      }),
+    ],
+    now: 1,
+  });
+  const byId = new Map(manifest.connections.map((connection) => [connection.id, connection]));
+  assert.equal(byId.get("open-settings")?.kind, "suggested");
+  assert.equal(byId.get("open-settings")?.provenance, undefined);
+  assert.deepEqual(byId.get("open-settings")?.hotspot?.point, { x: 0.5, y: 0.1 });
+  assert.equal(byId.get("home-shortcut")?.kind, "authored");
+  assert.equal(byId.get("open-language")?.kind, "recorded");
+});
+

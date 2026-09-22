@@ -22,7 +22,7 @@
  * - Findings are review decisions bound to exact captures (frame path plus
  *   image digest), scoped per run. */
 
-import type { AppMap } from "@relay/protocol";
+import { captureReviewIdMatchesFrame, playerVariantIdForConfiguration, type AppMap } from "@relay/protocol";
 import type { PersistedRun } from "./runs.js";
 
 export const PLAYER_MANIFEST_SCHEMA_VERSION = 1;
@@ -75,8 +75,8 @@ export type PlayerConnection = {
   id: string;
   fromStateId: string;
   toStateId: string;
-  /** `recorded` carries run provenance; `authored` only enables navigation. */
-  kind: "recorded" | "authored";
+  /** `recorded` was observed. `authored` is a human link. `suggested` was proposed, not executed. */
+  kind: "recorded" | "authored" | "suggested";
   label: string;
   /** Present only for recorded connections. */
   provenance?: { runId: string; captureId?: string };
@@ -132,7 +132,7 @@ type CaptureReviewArtifactData = {
   observed?: { laneId?: unknown; profileId?: unknown } | null;
 };
 
-const CONFIG_KEY_ORDER = ["app", "account", "browser", "viewport", "locale", "build"] as const;
+
 
 /** The variant identity combines the declared configuration with the
  * OBSERVED lane/profile. A compiled plan may carry a stale route label
@@ -163,20 +163,7 @@ function configurationKey(configuration: unknown): PlayerVariantKey {
   if (!configuration || typeof configuration !== "object" || Array.isArray(configuration)) {
     return "unconfigured";
   }
-  const record = configuration as Record<string, unknown>;
-  const parts: string[] = [];
-  for (const key of CONFIG_KEY_ORDER) {
-    const value = record[key];
-    if (value === undefined || value === null || value === "") continue;
-    parts.push(`${key}=${typeof value === "object" ? JSON.stringify(value) : String(value)}`);
-  }
-  for (const key of Object.keys(record).sort()) {
-    if ((CONFIG_KEY_ORDER as readonly string[]).includes(key)) continue;
-    const value = record[key];
-    if (value === undefined || value === null || value === "") continue;
-    parts.push(`${key}=${typeof value === "object" ? JSON.stringify(value) : String(value)}`);
-  }
-  return parts.length > 0 ? parts.join(" · ") : "unconfigured";
+  return playerVariantIdForConfiguration(configuration as Record<string, unknown>) ?? "unconfigured";
 }
 
 function configurationLabel(configuration: unknown): string {
@@ -218,6 +205,7 @@ type MapConnection = {
   destination?: { kind?: string; screenId?: unknown };
   label?: string;
   state?: string;
+  provenance?: { source?: string };
   actions?: readonly { kind?: string; label?: string; target?: unknown }[];
   sourceAnchor?: {
     point?: { x?: unknown; y?: unknown };
@@ -362,6 +350,7 @@ export function buildPlayerManifest(input: {
 
   // 1) Collect exact captures from run evidence, keeping the identity chain.
   const captures: PlayerCapture[] = [];
+  const observedConnection = new Map<string, Map<string, PlayerCapture>>();
   const captureByStateVariant = new Map<string, PlayerCapture>();
   const variantKeys = new Map<PlayerVariantKey, PlayerVariant>();
   const statesById = new Map<string, PlayerState>();
@@ -408,6 +397,20 @@ export function buildPlayerManifest(input: {
         capturedAt: review.capturedAt,
       };
       captures.push(capture);
+      const boundIds = tests[testId]?.steps?.find((step) => step.id === checkpointId)?.binding
+        ?.connectionIds;
+      if (Array.isArray(boundIds)) {
+        for (const connectionId of boundIds) {
+          if (typeof connectionId !== "string") continue;
+          const byVariant =
+            observedConnection.get(connectionId) ?? new Map<string, PlayerCapture>();
+          observedConnection.set(connectionId, byVariant);
+          const previous = byVariant.get(capture.variantId);
+          if (!previous || previous.capturedAt <= capture.capturedAt) {
+            byVariant.set(capture.variantId, capture);
+          }
+        }
+      }
       const slotKey = `${screenId}\u{0}${variantKey}`;
       // Keep the newest capture per (state, variant); earlier attempts stay
       // in `captures` but the resolver never falls back across variants.
@@ -433,18 +436,30 @@ export function buildPlayerManifest(input: {
     if (!statesById.has(toScreenId)) {
       statesById.set(toScreenId, { id: toScreenId, title: screenTitleOf(map, toScreenId) });
     }
-    const recorded = captures.find(
-      (capture) => capture.runId !== undefined && capture.stateId === toScreenId,
-    );
-    playerConnections.push({
-      id: connection.id,
-      fromStateId: fromScreenId,
-      toStateId: toScreenId,
-      kind: recorded ? "recorded" : "authored",
-      label: typeof connection.label === "string" ? connection.label : "Open",
-      ...(recorded ? { provenance: { runId: recorded.runId, captureId: recorded.id } } : {}),
-      ...(connectionHotspot(connection) ? { hotspot: connectionHotspot(connection)! } : {}),
-    });
+    const observed = [...(observedConnection.get(connection.id)?.values() ?? [])];
+    const source = connection.provenance?.source;
+    const kind =
+      source === "discovery"
+        ? "suggested"
+        : source === "manual"
+          ? "authored"
+          : source === "recording" || observed.length > 0
+            ? "recorded"
+            : "authored";
+    const recordedCaptures = kind === "recorded" && observed.length > 0 ? observed : [undefined];
+    for (const destinationCapture of recordedCaptures) {
+      playerConnections.push({
+        id: connection.id,
+        fromStateId: fromScreenId,
+        toStateId: toScreenId,
+        kind,
+        label: typeof connection.label === "string" ? connection.label : "Open",
+        ...(destinationCapture
+          ? { provenance: { runId: destinationCapture.runId, captureId: destinationCapture.id } }
+          : {}),
+        ...(connectionHotspot(connection) ? { hotspot: connectionHotspot(connection)! } : {}),
+      });
+    }
   }
 
   // 3) Missing state×variant pairs: every state referenced by the included
@@ -477,10 +492,10 @@ export function buildPlayerManifest(input: {
   for (const run of runs) {
     for (const decision of run.captureReviews ?? []) {
       const captureId = decision.captureId;
-      const capture = captures.find(
-        (candidate) =>
-          candidate.runId === run.id && candidate.id.endsWith(`:${captureId.split("::")[1] ?? ""}`),
-      );
+      const capture = captures.find((candidate) => {
+        if (candidate.runId !== run.id) return false;
+        return captureReviewIdMatchesFrame(captureId, candidate.framePath, candidate.imageSha256);
+      });
       if (!capture) continue;
       findings.push({
         id: `${run.id}:${captureId}`,

@@ -16,6 +16,7 @@ import {
   resolveRequestContext,
   type RequestContext,
 } from "./security.js";
+import { liveEventVisible } from "./live-event-scope.js";
 import type { ExternalIdentityVerifier } from "./external-identity.js";
 export {
   verifiedExternalIdentity,
@@ -38,7 +39,7 @@ import {
   currentOperationContext,
   defaultTargetDriverRegistry,
   enqueueJob,
-  getActiveJob,
+
   getActiveJobs,
   getJob,
   listActionsWithTrace,
@@ -85,7 +86,7 @@ import { createTargetRuntimeScope } from "./target-runtime-scope.js";
 import { shutdownServerSessions } from "./server-session-shutdown.js";
 import { handleRunRoute, type RunRouteRuntime } from "./run-routes.js";
 import { createPreAuthenticatedRoute } from "./pre-authenticated-routes.js";
-import { handleJobRoute, type JobRouteRuntime } from "./job-routes.js";
+import { handleJobRoute, scopedActiveJob, type JobRouteRuntime } from "./job-routes.js";
 import { assertTargetControl } from "./access-control.js";
 import {
   browserCaseProfileForAdmission,
@@ -324,22 +325,18 @@ async function handleRequest(
     )
       return;
     if (method === "GET" && pathname === "/audit") {
-      json(res, 200, { events: listAuditEvents(parseLimit(url.searchParams.get("limit"), 100)) });
+      json(res, 200, {
+        events: listAuditEvents(parseLimit(url.searchParams.get("limit"), 100), scope),
+      });
       return;
     }
     if (method === "GET" && pathname === "/health") {
-      const currentActive = getActiveJob();
       const visibleActiveJobs = getActiveJobs().filter(
         (job) =>
           scope.localTrusted ||
           (job.projectId === scope.projectId && job.ownerId === scope.subject),
       );
-      const active =
-        currentActive &&
-        (scope.localTrusted ||
-          (currentActive.projectId === scope.projectId && currentActive.ownerId === scope.subject))
-          ? currentActive
-          : undefined;
+      const active = scopedActiveJob(visibleActiveJobs, scope);
       const visibleJobCount = scope.localTrusted
         ? listJobs(50).length
         : listJobs(50).filter(
@@ -388,16 +385,12 @@ async function handleRequest(
     }
 
     if (method === "GET" && pathname === "/events") {
-      sse.attach(req, res, (event) => {
-        if (event.organizationId !== scope.organizationId || event.projectId !== scope.projectId) {
-          return false;
-        }
-        if (scope.localTrusted) return true;
-        const jobId = "jobId" in event.payload ? event.payload.jobId : undefined;
-        if (typeof jobId !== "string") return true;
-        const job = getJob(jobId);
-        return job?.projectId === scope.projectId && job?.ownerId === scope.subject;
-      });
+      sse.attach(req, res, (event) =>
+        liveEventVisible(event, scope, (jobId) => {
+          const job = getJob(jobId);
+          return job ? { projectId: job.projectId, ownerId: job.ownerId } : undefined;
+        }),
+      );
       return;
     }
 

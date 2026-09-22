@@ -15,7 +15,7 @@ describe("captureReviewSummaryLine", () => {
           needMoreEvidence: 0,
         },
       }),
-    ).toBe("8/8 captured · 5 pending review · 2 accepted · 1 issue");
+    ).toBe("8/8 captured · 5 screenshots awaiting review · 2 accepted · 1 issue");
   });
 
   it("shows 47/50 captured when three screenshots are missing", () => {
@@ -31,7 +31,7 @@ describe("captureReviewSummaryLine", () => {
           needMoreEvidence: 0,
         },
       }),
-    ).toBe("47/50 captured · 40 pending review · 5 accepted · 2 issues · 3 missing");
+    ).toBe("47/50 captured · 40 screenshots awaiting review · 5 accepted · 2 issues · 3 missing");
   });
 
   it("reports planned and blocked on a Plan queue without accepting a baseline", () => {
@@ -48,6 +48,6 @@ describe("captureReviewSummaryLine", () => {
           blocked: 1,
         },
       }),
-    ).toBe("2 planned · 1 captured · 1 blocked · 0 missing · 1 pending · 0 accepted");
+    ).toBe("2 planned · 1 captured · 1 blocked · 0 missing · 1 screenshot awaiting review · 0 accepted");
   });
 });

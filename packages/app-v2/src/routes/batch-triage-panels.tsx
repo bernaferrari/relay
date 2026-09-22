@@ -85,6 +85,18 @@ export function BatchFailureClusters({
                   {copy.title}
                 </strong>
                 <p className="text-sm leading-5 text-muted-foreground">{copy.meta}</p>
+                {copy.repair ? (
+                  <p className="text-sm leading-5 text-foreground">{copy.repair}</p>
+                ) : null}
+                {copy.repairTestId ? (
+                  <Link
+                    to="/tests/$testId"
+                    params={{ testId: copy.repairTestId }}
+                    className="text-sm font-medium text-primary"
+                  >
+                    Return to {copy.repairTestId}
+                  </Link>
+                ) : null}
               </div>
               <Link
                 className={`${reportLinkClass} col-start-2 sm:col-start-auto sm:justify-self-end`}

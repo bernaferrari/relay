@@ -17,7 +17,7 @@ import {
   Plus,
   type LucideIcon,
 } from "lucide-react";
-import { homeAttentionRuns } from "../data/home-run-attention";
+import { attentionLinkLabel, homeAttentionRuns } from "../data/home-run-attention";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
 import { catalogQueryKeys } from "../data/catalog-queries";
@@ -105,7 +105,7 @@ export function HomePage() {
         title={selectedApp ? selectedApp.name : "Your workspace"}
         description={
           hasWorkspaceData
-            ? `${scopedTests.length} saved ${scopedTests.length === 1 ? "test" : "tests"} · ${runs.isError ? "Results unavailable" : attentionRuns.length ? `${attentionRuns.length} ${attentionRuns.length === 1 ? "result needs" : "results need"} attention` : "No results need attention"}`
+            ? `${scopedTests.length} saved ${scopedTests.length === 1 ? "test" : "tests"} · ${runs.isError ? "Results unavailable" : attentionRuns.length ? attentionLinkLabel(attentionRuns) : "No results need attention"}`
             : undefined
         }
         actions={

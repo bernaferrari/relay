@@ -216,13 +216,13 @@ export function CommandPalette({
       <DialogContent
         finalFocus={returnFocus}
         showCloseButton={false}
-        className="w-[min(560px,calc(100vw-32px))] max-h-[min(620px,calc(100dvh-48px))] gap-0 overflow-hidden rounded-xl p-0 shadow-[var(--shadow-lg)]"
+        className="flex min-w-0 flex-col w-[min(560px,calc(100vw-32px))] sm:max-w-[560px] max-h-[min(620px,calc(100dvh-48px))] gap-0 overflow-hidden rounded-xl p-0 shadow-[var(--shadow-lg)]"
       >
         <DialogTitle className="sr-only">Relay commands</DialogTitle>
         <DialogDescription className="sr-only">
           Search destinations and common product actions.
         </DialogDescription>
-        <div className="flex min-h-14 items-center gap-3 border-b border-border px-4">
+        <div className="flex min-h-14 min-w-0 shrink-0 items-center gap-3 border-b border-border px-5">
           <Search className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <input
             autoFocus
@@ -244,12 +244,12 @@ export function CommandPalette({
             Esc
           </kbd>
         </div>
-        <ScrollArea className="max-h-[min(480px,calc(100dvh-150px))] p-2">
+        <ScrollArea className="min-h-0 min-w-0 max-h-[min(480px,calc(100dvh-150px))]">
           <div
             id="command-results"
             role="listbox"
             aria-label="Commands"
-            className="flex flex-col gap-0.5"
+            className="flex flex-col gap-1 p-2"
           >
             {tests.isError ? (
               <div
@@ -273,7 +273,7 @@ export function CommandPalette({
                 <button
                   role="option"
                   type="button"
-                  className={`flex min-h-11 w-full items-center gap-3 rounded-md px-2.5 py-2 text-left text-sm${index === activeIndex ? "bg-accent" : ""}`}
+                  className={`flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm ${index === activeIndex ? "bg-accent" : ""}`}
                   key={command.id}
                   id={`${command.id}`}
                   aria-selected={index === activeIndex}

@@ -10,7 +10,7 @@ import type { CatalogProductService } from "../data/catalog-product-service";
 import type { ChangeProductService } from "../data/change-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { Platform } from "../platform/types";
-import { homeAttentionRuns } from "../data/home-run-attention";
+import { attentionLinkLabel, homeAttentionRuns } from "../data/home-run-attention";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -173,6 +173,15 @@ describe("Home", () => {
     };
 
     expect(homeAttentionRuns([failed, passed]).map((run) => run.id)).toEqual(["android-failed"]);
+  });
+
+  it("calls unfinished review awaiting review and keeps failures as needing attention", () => {
+    const review = { outcome: "needs-review", phase: "completed" } as ProductRunSummary;
+    const failure = { outcome: "product-failure", phase: "failed" } as ProductRunSummary;
+    expect(attentionLinkLabel([review])).toBe("1 result awaiting review");
+    expect(attentionLinkLabel([review, review])).toBe("2 results awaiting review");
+    expect(attentionLinkLabel([failure])).toBe("1 result needs attention");
+    expect(attentionLinkLabel([review, failure])).toBe("2 results need attention");
   });
 
   it("does not let queued, cancelled, or unknown runs erase an actionable failure", () => {

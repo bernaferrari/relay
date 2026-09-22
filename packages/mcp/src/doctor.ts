@@ -38,10 +38,13 @@ const operatorCoreOperationIds: readonly string[] = [
   "target.interact",
   "target.recover",
   "job.get",
+  "job.cancel",
   "job.combine.start",
   "job.combine.export",
   "job.combine.analysis",
+  "app-map.test.save",
   "run.evidence.get",
+  "run.walkthrough-pack.get",
   "run.visual.review",
   "run.visual.compare",
 ];

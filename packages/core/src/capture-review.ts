@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   actorKindFromId,
   type ActorKind,
@@ -15,6 +16,7 @@ import {
   type PersistedRun,
 } from "./runs.js";
 import { currentOperationContext } from "./operation-context.js";
+import { readFrameFile } from "./run-artifact-files.js";
 
 export class CaptureReviewError extends Error {
   readonly code:
@@ -232,6 +234,19 @@ export function reviewPersistedCapture(
         "This run is outside the configured Relay run store",
         "Re-open the run from the current project before reviewing screenshots.",
       );
+    }
+    const queued = captureReviewQueueForRun(latest).items.find(
+      (candidate) => candidate.captureId === input.captureId,
+    );
+    if (queued?.framePath && queued.imageSha256) {
+      const bytes = await readFrameFile(latest.dir, queued.framePath);
+      if (bytes && createHash("sha256").update(bytes).digest("hex") !== queued.imageSha256) {
+        throw new CaptureReviewError(
+          "CAPTURE_REVIEW_CONFLICT",
+          `Tampered frame ${queued.framePath} no longer matches the recorded image`,
+          "Restore the original screenshot or recapture it, then review that image.",
+        );
+      }
     }
     const applied = applyCaptureReviewDecision(latest, input);
     const next: PersistedRun = structuredClone(latest);

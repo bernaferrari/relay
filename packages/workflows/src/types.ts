@@ -623,7 +623,12 @@ export type ProposeRepairIntent = {
   reason: string;
 };
 
-export type ExportEvidenceIntent = { kind: "export-evidence"; runId: string };
+export type ExportEvidenceIntent = {
+  kind: "export-evidence";
+  runId: string;
+  /** When set, the CLI writes the trace pack and a passive review page here. */
+  outputDir?: string;
+};
 export type ReplayLabOutcomeIntent = {
   kind: "replay-lab";
   analysis: ReplayLabAnalysis;

@@ -67,7 +67,7 @@ export function RunReportActions({
             {[
               ["Device", report.targetName],
               ["Build", report.executionContext?.buildId],
-              ["Profile", report.executionContext?.targetProfileId],
+              ["Saved setup ID", report.executionContext?.targetProfileId],
               ["Source revision", report.executionContext?.sourceRevision],
             ]
               .filter(([, value]) => value)
@@ -123,7 +123,13 @@ export function RunReportActions({
       {!embedded ? (
         <Button
           nativeButton={false}
-          render={<Link to="/runs/$runId/walkthrough" params={{ runId: report.runId }} />}
+          render={
+            <Link
+              to="/runs/$runId/walkthrough"
+              params={{ runId: report.runId }}
+              search={{ state: undefined, variant: undefined, capture: undefined }}
+            />
+          }
           variant="outline"
         >
           Explore screens

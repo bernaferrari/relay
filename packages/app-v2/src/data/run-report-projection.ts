@@ -10,6 +10,7 @@ import {
   captureReviewIdentityFramePaths,
   isCaptureReviewLeftoverCaption,
   isCaptureReviewOpenerCaption,
+  liveCaptureReviewAccount,
   parseOptionalRunTestStepEvidence,
   resolveCaptureReviewQueue,
 } from "@relay/protocol";
@@ -131,11 +132,7 @@ function evidenceCountPresentation(
       .join(" · ");
     return {
       detail: detail || "Available",
-      summary: requests
-        ? "Review the HTTP requests Relay observed during this Run."
-        : connections
-          ? "Review transport connections observed on the device. Encrypted traffic may not include request details."
-          : "Relay captured network activity, but request-level details are not available.",
+      summary: networkEvidenceSummary(evidence, requests, connections),
     };
   }
   const noun: Partial<Record<EvidenceChannel, string>> = {
@@ -150,6 +147,25 @@ function evidenceCountPresentation(
   };
   const value = noun[id] ?? "item";
   return { detail: `${fallbackCount} ${plural(fallbackCount, value)}` };
+}
+
+/** Name the collector. Packet metadata must not be read as an HTTP body. */
+function networkEvidenceSummary(
+  evidence: Record<string, unknown> | undefined,
+  requests: number,
+  connections: number,
+): string {
+  const capture = record(evidence?.networkCapture);
+  const stated = [text(capture?.label), text(capture?.detail)].filter(Boolean).join(". ");
+  if (stated) return stated.endsWith(".") ? stated : `${stated}.`;
+  if (requests && connections) {
+    return "HTTP rows are observed requests. An encrypted connection does not establish an HTTP body that was not observed.";
+  }
+  if (requests) return "Review the HTTP requests Relay observed during this Run.";
+  if (connections) {
+    return "Transport connections observed on the device. Encrypted traffic does not establish an HTTP body that was not observed.";
+  }
+  return "Relay captured network activity, but request-level details are not available.";
 }
 function evidenceItems(
   rawRun: unknown,
@@ -748,15 +764,30 @@ export function projectRunReport(
   const viewport = record(browserProfile?.viewport);
   const resolvedInputs = record(run.resolvedInputs);
   const account = record(run.account);
+  const authenticationHealth = record(run.authenticationHealth);
+  const accountUnusable =
+    authenticationHealth?.status === "needs-relogin" ||
+    authenticationHealth?.status === "expired" ||
+    authenticationHealth?.status === "revoked" ||
+    authenticationHealth?.status === "error";
+  const platform = text(run.platform)?.toLowerCase();
+  const deviceObserved =
+    platform === "ios" || platform === "android"
+      ? { profileId: `device:${text(run.serial) ?? "run"}` }
+      : undefined;
+  const liveAccount = (value: unknown) => liveCaptureReviewAccount(text(value), deviceObserved);
+  const runtimeAccount = accountUnusable
+    ? undefined
+    : (liveAccount(authenticationHealth?.identity) ??
+      liveAccount(account?.name) ??
+      liveAccount(resolvedInputs?.account));
   const executionContext = {
     ...(text(sourceRevision?.sha) ? { sourceRevision: text(sourceRevision?.sha) } : {}),
     ...(text(sourceRevision?.buildId) ? { buildId: text(sourceRevision?.buildId) } : {}),
     ...(text(browserProfile?.engine) ? { browser: text(browserProfile?.engine) } : {}),
     ...(text(targetProfile?.id) ? { targetProfileId: text(targetProfile?.id) } : {}),
     ...(text(run.appVersion) ? { appVersion: text(run.appVersion) } : {}),
-    ...(text(account?.name) || text(resolvedInputs?.account)
-      ? { account: text(account?.name) ?? text(resolvedInputs?.account) }
-      : {}),
+    ...(runtimeAccount ? { account: runtimeAccount } : {}),
     ...(finite(viewport?.width) !== undefined && finite(viewport?.height) !== undefined
       ? { viewport: `${viewport?.width}×${viewport?.height}` }
       : {}),

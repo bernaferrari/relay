@@ -44,7 +44,12 @@ class CapturedResponse {
   }
 }
 
-async function fixture(root: string, id: string, caseIndex: number): Promise<void> {
+async function fixture(
+  root: string,
+  id: string,
+  caseIndex: number,
+  imageSha256?: string,
+): Promise<void> {
   const dir = join(root, `run_${id}`);
   await mkdir(join(dir, "frames"), { recursive: true });
   await writeFile(join(dir, "frames", "001.png"), PNG);
@@ -79,7 +84,15 @@ async function fixture(root: string, id: string, caseIndex: number): Promise<voi
     ],
     dir,
     writtenAt: 2 + caseIndex,
-    artifacts: [],
+    artifacts: imageSha256
+      ? [
+          {
+            kind: "capture-review" as const,
+            capturedAt: 2,
+            data: { framePath: "frames/001.png", imageSha256 },
+          },
+        ]
+      : [],
     inputDigest: `digest-${id}`,
     resolvedInputs: { language: caseIndex ? "Italian" : "English" },
     batchId: "batch-1",
@@ -161,6 +174,7 @@ test("signed report links expose only grouped public evidence and stop working w
     const report = await publicGet(`/shared/runs/${token}/report`);
     const reportJson = report.body.toString();
     assert.match(reportJson, /"screenshots":2/u);
+    assert.match(reportJson, /A downloaded copy cannot be recalled/u);
     assert.doesNotMatch(reportJson, /resolvedInputs|private-device-id|private log/u);
 
     const image = await publicGet(`/shared/runs/${token}/frames/italian/0`);
@@ -320,3 +334,39 @@ test("an expired share renders a 410 tombstone page with no run data", async () 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("a public share does not serve a frame whose bytes no longer match", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-public-frame-digest-"));
+  const previous = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_RUNS_DIR = root;
+  try {
+    const sha = createHash("sha256").update(PNG).digest("hex");
+    await fixture(root, "english", 0, sha);
+    const created = await authenticated("/runs/english/shares", { expiresInHours: 24 });
+    const token = created.json.token as string;
+    const image = await publicGet(`/shared/runs/${token}/frames/english/0`);
+    assert.equal(image.status, 200);
+    assert.deepEqual(image.body, PNG);
+    await writeFile(join(root, "run_english", "frames", "001.png"), Buffer.from("tampered"));
+    const tampered = await publicGet(`/shared/runs/${token}/frames/english/0`);
+    assert.equal(tampered.status, 409);
+    assert.equal(tampered.body.byteLength, 0);
+    const page = await publicGet(`/shared/runs/${token}`);
+    assert.equal(page.status, 200);
+    assert.match(
+      page.body.toString(),
+      /not embedded because its bytes do not match the recorded digest/u,
+    );
+    assert.match(page.body.toString(), />1<\/strong><span>Withheld<\/span>/u);
+    assert.match(page.body.toString(), /A copy someone already downloaded cannot be recalled/u);
+    assert.equal(page.body.toString().includes("/frames/english/0"), false);
+    const report = await publicGet(`/shared/runs/${token}/report`);
+    assert.match(report.body.toString(), /"withheld":true/u);
+    assert.match(report.body.toString(), /"screenshots":0/u);
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previous;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+

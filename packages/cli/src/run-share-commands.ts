@@ -28,6 +28,29 @@ export const runEvidenceCommandDescriptors: readonly CliOperationDescriptor[] = 
     reason: "Exposed through the read-only `relay run story` resource command.",
   },
   {
+    operationId: "run.walkthrough-pack.get",
+    paths: [
+      {
+        command: "run walkthrough-pack get",
+        arguments: ["runId"],
+        summary: "Export a captured-app walkthrough for one run and any joined runs",
+        note: "Each joined run keeps its own captures. A changed or missing review frame refuses the export and names that frame. Human output is a passive HTML page. --out writes that page as walkthrough.html beside result.json. --json keeps the structured pack. A downloaded copy cannot be recalled.",
+        inputHelp: [
+          {
+            name: "with",
+            type: "string",
+            description: "Comma-separated run ids to join, or a list of run ids.",
+          },
+        ],
+        examples: [
+          "relay run walkthrough-pack get <run-id>",
+          "relay --out ./review run walkthrough-pack get <run-id>",
+          'relay run walkthrough-pack get <run-id> --input \'{"with":["admin-run"]}\'',
+        ],
+      },
+    ],
+  },
+  {
     operationId: "run.share.list",
     paths: [
       {

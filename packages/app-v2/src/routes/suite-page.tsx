@@ -31,10 +31,35 @@ import {
 import { usePairedConfigurationWorkspace } from "../data/use-paired-configuration-workspace";
 import { PlanDailySchedule } from "./plan-daily-schedule";
 import { PageLoading } from "./recording-shared";
-import { friendlySuiteIssue } from "../data/suite-preflight-copy";
+import { friendlySuiteIssue, summarizeSuiteSetup } from "../data/suite-preflight-copy";
 import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/apps/$appId/suites/$suiteId");
+
+/** One representative case. All cases is an explicit choice, not the default. */
+export const defaultPlanExecutionMode = "pilot" as const;
+
+export function planRunCountLabel(input: {
+  blockers: number;
+  plannedCases: number;
+  executionMode: "pilot" | "all";
+}): string {
+  if (input.blockers > 0) return "Setup needed before running";
+  if (input.executionMode === "all") {
+    return `This run: ${input.plannedCases} ${input.plannedCases === 1 ? "case" : "cases"}`;
+  }
+  if (input.plannedCases > 1) return `This run: 1 of ${input.plannedCases} cases`;
+  return `This run: ${input.plannedCases} ${input.plannedCases === 1 ? "case" : "cases"}`;
+}
+
+export function planRunDescription(
+  appName: string | undefined,
+  executionMode: "pilot" | "all",
+): string {
+  const action = executionMode === "all" ? "run every case" : "run one case";
+  const instruction = `Choose where to run, then ${action}.`;
+  return appName ? `${appName}. ${instruction}` : instruction;
+}
 
 export function SuitePage() {
   const { suiteProfileService, queryClient, platform } = useRouteContext({ from: "__root__" });
@@ -42,7 +67,7 @@ export function SuitePage() {
   const navigate = useNavigate();
   const scope = useRunConfigurationKey(platform, `suite:${suiteId}`, appId);
   const [editOpen, setEditOpen] = useState(false);
-  const [executionMode, setExecutionMode] = useState<"pilot" | "all">("all");
+  const [executionMode, setExecutionMode] = useState<"pilot" | "all">(defaultPlanExecutionMode);
   const [removeOpen, setRemoveOpen] = useState(false);
   const [name, setName] = useState("");
   const [testIds, setTestIds] = useState<Set<string>>(() => new Set());
@@ -213,6 +238,8 @@ export function SuitePage() {
   const value = suite.data;
   const needsReview = value?.tests.some((test) => test.status === "needs-review") ?? false;
   const previewBlockers = [...missingAccountBlockers, ...(preview.data?.blockers ?? [])];
+  const plannedCases = preview.data?.caseCount ?? 0;
+  const runningCases = executionMode === "pilot" ? Math.min(1, plannedCases) : plannedCases;
 
   function beginEdit() {
     if (!value) return;
@@ -274,11 +301,7 @@ export function SuitePage() {
           <PageHeader
             crumbs={[{ label: "Plans", to: "/suites" }, { label: value.name }]}
             title={value.name}
-            description={
-              value.appName
-                ? `${value.appName}. Choose where to run, then run every case.`
-                : "Choose where to run, then run every case."
-            }
+            description={planRunDescription(value.appName, executionMode)}
             actions={
               <>
                 <Button variant="ghost" onClick={beginEdit}>
@@ -357,13 +380,42 @@ export function SuitePage() {
                   </li>
                 ))}
               </ul>
-              <p className="mt-4 border-t border-border pt-3 text-xs leading-5 text-muted-foreground">
-                {value.variableIds.length
-                  ? `${value.variableIds.length} saved Data ${
-                      value.variableIds.length === 1 ? "set" : "sets"
-                    } will be applied.`
-                  : "Each Test runs once with its saved defaults."}
-              </p>
+              <div className="mt-4 grid gap-2 border-t border-border pt-3">
+                {value.variableIds.length ? (
+                  <>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-medium">Test inputs</p>
+                      <Button variant="ghost" size="sm" onClick={beginEdit}>
+                        Change inputs
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Saved values to use when these tests run:
+                    </p>
+                    <ul className="grid gap-1 text-sm">
+                      {value.variableIds.map((id) => {
+                        const dataSet = editor.data?.dataSets.find((item) => item.id === id);
+                        return (
+                          <li key={id}>
+                            {dataSet?.name ?? id}
+                            {dataSet ? (
+                              <span className="text-muted-foreground">
+                                {" "}
+                                · {dataSet.optionCount}{" "}
+                                {dataSet.optionCount === 1 ? "value" : "values"}
+                              </span>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Uses each test’s saved input values.
+                  </p>
+                )}
+              </div>
             </section>
 
             <section
@@ -479,21 +531,17 @@ export function SuitePage() {
                 <div
                   className={`mt-4 grid gap-1 rounded-lg border p-3 text-xs ${
                     previewBlockers.length
-                      ? "border-destructive bg-destructive/10"
+                      ? "border-border bg-muted/30"
                       : "border-border bg-muted/30"
                   }`}
                   role="status"
                 >
                   <strong className="font-semibold text-foreground">
-                    {previewBlockers.length
-                      ? "Setup needed before running"
-                      : `Full Plan: ${preview.data?.caseCount} ${
-                          preview.data?.caseCount === 1 ? "case" : "cases"
-                        } ${
-                          preview.data?.execution?.capacity === "unavailable"
-                            ? "previewed"
-                            : "ready"
-                        }`}
+                    {planRunCountLabel({
+                      blockers: previewBlockers.length,
+                      plannedCases,
+                      executionMode,
+                    })}
                   </strong>
                   {preview.data && !previewBlockers.length ? (
                     <span className="text-muted-foreground">
@@ -503,9 +551,14 @@ export function SuitePage() {
                         : ` · about ${preview.data.expectedScreenshots} screenshots`}
                     </span>
                   ) : null}
-                  {!previewBlockers.length && executionMode === "pilot" ? (
+                  {!previewBlockers.length && executionMode === "pilot" && plannedCases > 1 ? (
                     <span className="mt-1 font-medium text-foreground">
-                      This run uses one representative case.
+                      This run uses one representative case. All cases would run {plannedCases}.
+                    </span>
+                  ) : null}
+                  {!previewBlockers.length && executionMode === "all" && plannedCases > 1 ? (
+                    <span className="mt-1 font-medium text-foreground">
+                      Every selected case. This is not one paired row.
                     </span>
                   ) : null}
                   {!previewBlockers.length && preview.data?.execution?.detail ? (
@@ -525,14 +578,50 @@ export function SuitePage() {
                       )}
                     </p>
                   ))}
+                  {previewBlockers.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {selectedProfileIds.length === 1 ? (
+                        <Button
+                          nativeButton={false}
+                          variant="outline"
+                          size="sm"
+                          render={
+                            <Link
+                              to="/environments/$profileId"
+                              params={{ profileId: selectedProfileIds[0]! }}
+                            />
+                          }
+                        >
+                          Open selected setup
+                        </Button>
+                      ) : (
+                        <Button
+                          nativeButton={false}
+                          variant="outline"
+                          size="sm"
+                          render={<Link to="/devices" />}
+                        >
+                          Open devices &amp; browsers
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={preview.isFetching}
+                        onClick={() => void preview.refetch()}
+                      >
+                        {preview.isFetching ? "Checking…" : "Recheck setup"}
+                      </Button>
+                    </div>
+                  ) : null}
                   {previewBlockers.length > 1 ? (
                     <details className="mt-2 text-muted-foreground">
-                      <summary className="cursor-pointer py-1">
-                        More setup details ({previewBlockers.length - 1})
-                      </summary>
-                      <ul className="mt-2 grid gap-2">
-                        {previewBlockers.slice(1).map((blocker, index) => (
-                          <li key={index}>{friendlySuiteIssue(blocker.message)}</li>
+                      <summary className="cursor-pointer py-1">Other setup issues</summary>
+                      <ul className="mt-2 grid gap-2 text-sm leading-6">
+                        {summarizeSuiteSetup(
+                          previewBlockers.slice(1).map((blocker) => blocker.message),
+                        ).map((message) => (
+                          <li key={message}>{message}</li>
                         ))}
                       </ul>
                     </details>

@@ -23,6 +23,8 @@ import {
   assessSequentialStartingState,
   assessTransitionDeclaredSource,
   collectTestEffects,
+  combineCellShareAccountId,
+  mutatingShareStartBlocker,
   transitionOpenerMustRun,
   UnsafeStartingStateError,
 } from "./starting-state-routines.js";
@@ -371,6 +373,44 @@ test("browser Lane isolation is not server-side account isolation", () => {
   ]);
   assert.equal(stillBlocked[0]?.code, "lane-is-not-account");
 });
+
+test("a start is blocked when two mutating tests share one account", () => {
+  const map = mapWith(
+    { "sign-out": signOut, "home-chrome": homeChrome },
+    {
+      "sign-out": moduleTest("sign-out", "sign-out"),
+      home: moduleTest("home", "home-chrome", {
+        startingState: { requires: ["known-account", "home-visible"] },
+      }),
+    },
+  );
+  const blocked = mutatingShareStartBlocker(map, [
+    { testId: "sign-out", accountId: "grok-lab" },
+    { testId: "home", accountId: "grok-lab" },
+  ]);
+  assert.match(blocked ?? "", /cannot be shared/u);
+});
+
+test("a runtime fixture is the account when the account variable is empty", () => {
+  assert.equal(
+    combineCellShareAccountId({
+      values: { account: "member" },
+      accountVariableId: "account",
+      authenticationFixtureId: "authfx:member:8",
+    }),
+    "member",
+  );
+  assert.equal(
+    combineCellShareAccountId({
+      values: {},
+      authenticationFixtureId: "authfx:member:8",
+    }),
+    "authfx:member:8",
+  );
+  assert.equal(combineCellShareAccountId({ values: {} }), undefined);
+});
+
+
 
 function destEndTest(
   id: string,

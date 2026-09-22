@@ -33,17 +33,17 @@ export function stepsForInteraction(
       ];
       break;
     case "type":
-      steps = [
+      steps = checkedSteps([
         {
           kind: "type",
           text: interaction.text,
           ...(interaction.target ? { target: structuredClone(interaction.target) } : {}),
           ...(interaction.mode ? { mode: interaction.mode } : {}),
         },
-      ];
+      ]);
       break;
     case "clipboard":
-      steps = [
+      steps = checkedSteps([
         {
           kind: "clipboard",
           action: interaction.action,
@@ -52,7 +52,7 @@ export function stepsForInteraction(
           ...(interaction.expect !== undefined ? { expect: interaction.expect } : {}),
           ...(interaction.match ? { match: interaction.match } : {}),
         },
-      ];
+      ]);
       break;
     case "app":
       steps = [
@@ -99,19 +99,27 @@ export function stepsForInteraction(
       steps = [];
       break;
     case "reusable":
-      steps = [
+      steps = checkedSteps([
         {
           kind: "module",
           recipeId: interaction.recipeId,
           ...(interaction.bindings ? { bindings: structuredClone(interaction.bindings) } : {}),
         },
-      ];
+      ]);
       break;
     case "steps":
-      steps = validateRecipeSteps(structuredClone(interaction.steps));
+      steps = checkedSteps(structuredClone(interaction.steps));
       break;
   }
   return steps.map((step, index) => stableStep(step, actionId, index, group));
+}
+
+function checkedSteps(steps: unknown): RecipeStep[] {
+  try {
+    return validateRecipeSteps(steps);
+  } catch (error) {
+    throw new AuthoringStateError(error instanceof Error ? error.message : String(error));
+  }
 }
 
 export function actionSource(interaction: AuthoringInteraction): AuthoringAction["source"] {

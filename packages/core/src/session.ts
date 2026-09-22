@@ -290,6 +290,7 @@ export function prepareJobBatch(inputs: readonly SessionBatchInput[]): DeferredS
                     at: now(),
                     message: error instanceof Error ? error.message : String(error),
                     where: "session.durable-worker.finish",
+                    jobId: job.id,
                   }),
               });
             await (supervisorStore ? runWithTargetSupervisorStore(supervisorStore, run) : run());
@@ -424,6 +425,7 @@ export function cancelJob(id: string): TestJob {
             at: now(),
             message: error instanceof Error ? error.message : String(error),
             where: "session.durable-worker.finish",
+            jobId: job.id,
           });
         }
         jobRegistry.pruneTerminalHistory();

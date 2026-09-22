@@ -807,7 +807,7 @@ test("capture-review export keeps 29 pending + 1 blocked Imagine distinct from p
     const checklist = JSON.parse(
       await readFile(join(pack.rootDir, "checklist.json"), "utf8"),
     ) as Array<{ status: string }>;
-    const coverage = "30 planned · 29 captured · 1 blocked · 0 missing · 29 pending · 0 accepted";
+    const coverage = "30 planned · 29 captured · 1 blocked · 0 missing · 29 screenshots awaiting review · 0 accepted";
     assert.equal(
       formatCaptureReviewCoverageSummary({
         planned: 30,
@@ -824,7 +824,7 @@ test("capture-review export keeps 29 pending + 1 blocked Imagine distinct from p
     assert.match(html, new RegExp(coverage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"));
     assert.doesNotMatch(html, /runs passed/u);
     assert.doesNotMatch(html, /\d+ tests passed/u);
-    assert.match(readme, /planned \/ captured \/ blocked \+ pending review/u);
+    assert.match(readme, /screenshots awaiting review/u);
     assert.equal(checklist.filter((row) => row.status === "pending review").length, 29);
     assert.equal(checklist.filter((row) => row.status === "could not run").length, 1);
     assert.equal(checklist.filter((row) => row.status === "passed").length, 0);

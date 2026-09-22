@@ -8,6 +8,10 @@ import {
   isNumber,
   isObject,
   isString,
+  assertSecretFieldText,
+  isSecretFieldTarget,
+  isSecretReference,
+  assertStoredValueIsNotASecret,
   parseStepMetadata,
   parseStepPoint,
   parseTarget,
@@ -36,6 +40,93 @@ import { parseDeviceRecipeStep } from "./recipe-validation-device-steps.js";
 import { parseJudgeRecipeStep, parseNamedPixelRegions } from "./recipe-validation-judges.js";
 import { parseScreenshotReview } from "./recipe-validation-screenshot-review.js";
 
+const STEP_METADATA_FIELDS = [
+  "id",
+  "coverage",
+  "group",
+  "evidence",
+  "note",
+  "reviewedExternalEffects",
+  "optional",
+  "check",
+  "when",
+  "leftoverSkip",
+] as const;
+
+const ORDINARY_STEP_FIELDS: Record<string, readonly string[]> = {
+  tap: [
+    "kind",
+    "target",
+    "expectedApp",
+    "fallbackTargets",
+    "navigationContract",
+    "gesture",
+    "tapCount",
+    "intervalMs",
+    "durationMs",
+    ...STEP_METADATA_FIELDS,
+  ],
+  type: ["kind", "text", "target", "mode", ...STEP_METADATA_FIELDS],
+  key: ["kind", "key", ...STEP_METADATA_FIELDS],
+  sleep: ["kind", "ms", ...STEP_METADATA_FIELDS],
+  swipe: ["kind", "from", "to", "durationMs", ...STEP_METADATA_FIELDS],
+  "wait-for": ["kind", "target", "timeoutMs", ...STEP_METADATA_FIELDS],
+  scroll: ["kind", "direction", "amount", "until", "maxAttempts", ...STEP_METADATA_FIELDS],
+  expect: ["kind", "target", "condition", "timeoutMs", ...STEP_METADATA_FIELDS],
+  screenshot: ["kind", "caption", "review", ...STEP_METADATA_FIELDS],
+  "assert-layout": ["kind", "relation", "first", "second", "timeoutMs", ...STEP_METADATA_FIELDS],
+  "capture-surface": [
+    "kind",
+    "screenId",
+    "screenTitle",
+    "variantId",
+    "surfaceId",
+    "baselineCaptureId",
+    "reason",
+    "maxScrolls",
+    "forceRecapture",
+    "baselineTrust",
+    "baselineTrustReason",
+    "documentOrigin",
+    "documentOriginProof",
+    "reviewedDocumentOrigin",
+    "baseline",
+    ...STEP_METADATA_FIELDS,
+  ],
+  tour: [
+    "kind",
+    "depth",
+    "screenshot",
+    "captureOrigin",
+    "originVerifiedBySetup",
+    "maxStops",
+    "excludeLanguageRows",
+    "originScreenId",
+    "originTitle",
+    "originFingerprint",
+    "originAliases",
+    "originObservations",
+    "preludeStartFingerprint",
+    "preludeStartAliases",
+    "preludeSteps",
+    "fallbackStops",
+    "landmarkStops",
+    "returnAfterLast",
+    "scrollSearch",
+    ...STEP_METADATA_FIELDS,
+  ],
+}
+
+function assertKnownStepFields(raw: Record<string, unknown>, index: number, kind: string): void {
+  const allowed = ORDINARY_STEP_FIELDS[kind];
+  if (!allowed) return;
+  const known = new Set<string>(allowed);
+  for (const key of Object.keys(raw)) {
+    if (!known.has(key)) throw stepErr(index, `unknown field: ${key}`);
+  }
+}
+
+
 export function validateRecipeSteps(steps: unknown): RecipeStep[] {
   if (!Array.isArray(steps)) throw new Error("steps must be an array");
   const out: RecipeStep[] = [];
@@ -44,6 +135,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
     if (!isObject(raw)) throw stepErr(index, "must be an object");
     const kind = raw.kind;
     if (!isString(kind)) throw stepErr(index, "kind is required");
+    assertKnownStepFields(raw, index, kind);
     // optional note on every kind
     const note = raw.note !== undefined && isString(raw.note) ? raw.note : undefined;
     const deviceStep = parseDeviceRecipeStep(raw, kind, index, note);
@@ -77,6 +169,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
       }
       case "type": {
         if (!isString(raw.text)) throw stepErr(index, "type requires text: string");
+        assertSecretFieldText(raw.target, raw.text, `step ${index}: type.text`);
         if (raw.mode !== undefined && raw.mode !== "append" && raw.mode !== "replace") {
           throw stepErr(index, 'type.mode must be "append" or "replace"');
         }
@@ -803,6 +896,7 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
             if (!PARAMETER_NAME.test(name))
               throw stepErr(index, `module.bindings.${name} is invalid`);
             if (!isString(value)) throw stepErr(index, `module.bindings.${name} must be a string`);
+            assertStoredValueIsNotASecret(name, value, `step ${index}: module.bindings.${name}`);
             bindings[name] = value;
           }
         }
@@ -863,6 +957,9 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
           throw stepErr(index, 'clipboard requires action: "read" | "write" | "paste" | "copy"');
         if (raw.action === "write" && !isString(raw.text))
           throw stepErr(index, "clipboard write requires text: string");
+        if ((raw.action === "paste" || raw.action === "write") && isString(raw.text)) {
+          assertSecretFieldText(raw.target, raw.text, `step ${index}: clipboard.text`);
+        }
         const target =
           raw.action === "paste" || raw.action === "copy"
             ? parseTarget(raw.target, index, "target")
@@ -889,6 +986,25 @@ export function validateRecipeSteps(steps: unknown): RecipeStep[] {
       }
       default:
         throw stepErr(index, `unknown step kind: ${kind}`);
+    }
+  });
+  steps.forEach((raw, index) => {
+    if (
+      !isObject(raw) ||
+      raw.kind !== "clipboard" ||
+      raw.action !== "write" ||
+      !isString(raw.text) ||
+      isSecretReference(raw.text)
+    ) {
+      return;
+    }
+    for (let nextIndex = index + 1; nextIndex < steps.length; nextIndex += 1) {
+      const next = steps[nextIndex];
+      if (!isObject(next) || next.kind !== "clipboard") continue;
+      if (next.action === "write") return;
+      if (next.action === "paste" && isSecretFieldTarget(next.target)) {
+        throw stepErr(index + 1, "clipboard.text must be a secret reference, not a stored value");
+      }
     }
   });
   return out.map((step, position) => ({

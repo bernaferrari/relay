@@ -23,6 +23,31 @@ function replayJobFromSearch(search: unknown): string {
     : "";
 }
 
+/** A finished replay offers its result. It does not change the current route. */
+export function replayCompletionAction(
+  status: string | undefined,
+  runId: string | undefined,
+): "stay" | "offer-result" {
+  if (!runId || !status) return "stay";
+  return ["ok", "error", "healed", "cancelled"].includes(status) ? "offer-result" : "stay";
+}
+
+/** A human pause means the person has control. Any other pause is still the machine's wait. */
+export function replayPauseLabel(status: string | undefined, waitingForHuman: boolean): string {
+  if (status === "paused" && waitingForHuman) return "Paused · You have control";
+  if (status === "paused") return "Replay paused; waiting for the current operation to continue.";
+  if (status === "queued") return "Replay queued on the saved target…";
+  if (status === "running") return "Automation running · Relay controls the target";
+  return "Replaying saved steps on the saved target…";
+}
+
+/** Stopping a running replay is the explicit takeover. */
+export function replayStopLabel(status: string | undefined, pending: boolean): string {
+  if (pending) return "Stopping…";
+  if (status === "running") return "Stop automation";
+  return "Stop replay";
+}
+
 export function RunReplayAction({
   report,
   runService,
@@ -178,7 +203,10 @@ export function RunReplayStatus({ runService }: { runService: RunProductService 
     },
   });
   const resultRunId = replayJob.data?.runId;
-  if (replayTerminal && resultRunId) {
+  if (
+    replayCompletionAction(replayJob.data?.status, resultRunId) === "offer-result" &&
+    resultRunId
+  ) {
     return (
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
         <p role="status">
@@ -259,11 +287,7 @@ export function RunReplayStatus({ runService }: { runService: RunProductService 
   return (
     <div className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground flex flex-wrap items-center justify-between gap-3">
       <p role="status">
-        {replayJob.data?.status === "paused"
-          ? "Replay paused; waiting for the current operation to continue."
-          : replayJob.data?.status === "queued"
-            ? "Replay queued on the saved target…"
-            : "Automation running · Relay controls the target"}
+        {replayPauseLabel(replayJob.data?.status, Boolean(replayJob.data?.waitingForHuman))}
       </p>
       {runService.cancelReplay ? (
         <Button
@@ -272,11 +296,7 @@ export function RunReplayStatus({ runService }: { runService: RunProductService 
           disabled={stopReplay.isPending}
           onClick={() => stopReplay.mutate()}
         >
-          {stopReplay.isPending
-            ? "Stopping…"
-            : replayJob.data?.status === "running"
-              ? "Stop automation"
-              : "Stop replay"}
+          {replayStopLabel(replayJob.data?.status, stopReplay.isPending)}
         </Button>
       ) : null}
       {stopReplay.error ? (

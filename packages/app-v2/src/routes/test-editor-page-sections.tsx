@@ -102,6 +102,9 @@ export function TestEditorHistoryBar({
       {latestSummary ? (
         <span className="text-xs text-muted-foreground">Last saved change: {latestSummary}</span>
       ) : null}
+      <span className="text-xs text-muted-foreground">
+        Undo changes the Test. It does not reverse a payment, message, or deletion.
+      </span>
     </div>
   );
 }

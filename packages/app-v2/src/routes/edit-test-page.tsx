@@ -169,7 +169,7 @@ function TestEditorDocument() {
       selectAfterSave.current = undefined;
       setSaveNotice(
         error instanceof ApiError && error.status === 409
-          ? "Revision changed. Your draft is preserved."
+          ? "Conflict — your changes are preserved"
           : "Could not save",
       );
       void queryClient.invalidateQueries({ queryKey: sessionId ? liveQueryKey : queryKey });
@@ -555,7 +555,7 @@ function TestEditorDocument() {
               state={
                 edit.isPending || historyAction.isPending
                   ? "saving"
-                  : saveNotice.startsWith("Revision changed")
+                  : saveNotice.startsWith("Conflict")
                     ? "conflicted"
                     : saveNotice.startsWith("Could not") ||
                         saveNotice.toLowerCase().includes("failed") ||
@@ -573,14 +573,8 @@ function TestEditorDocument() {
               </Button>
             ) : null}
             <TestEditorDoneButton
-              saving={
-                edit.isPending || historyAction.isPending || settings.isPending || repair.isPending
-              }
-              hasUnsavedChanges={
-                hasUnsavedDrafts ||
-                settingsName !== (editorDocument?.test.name ?? "") ||
-                settingsOrigin !== (editorDocument?.test.originApplication ?? "")
-              }
+              saving={edit.isPending || historyAction.isPending || settings.isPending || repair.isPending}
+              hasUnsavedChanges={hasUnsavedDrafts || settingsName !== (editorDocument?.test.name ?? "") || settingsOrigin !== (editorDocument?.test.originApplication ?? "")}
               hasUnsavedCheckpoint={Boolean(pendingCheckpoint)}
               onLeave={() => void navigate({ to: "/tests/$testId", params: { testId } })}
             />

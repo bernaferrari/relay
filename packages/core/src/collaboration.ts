@@ -524,18 +524,24 @@ export async function writeProjectVariables(
   write: RevisionWrite<TestData[]>,
 ): Promise<Revisioned<TestData[]>> {
   return withControlStore((store) => {
+    const validated = validateProjectVariables(write.value);
+    const fingerprint = JSON.stringify(validated);
     const replayKey = write.idempotencyKey
       ? `${projectId}:variables:${write.idempotencyKey}`
       : undefined;
-    if (replayKey && store.idempotency(replayKey)) {
+    const recorded = replayKey ? store.idempotency(replayKey) : undefined;
+    if (recorded !== undefined) {
+      if (typeof recorded === "string" && recorded !== fingerprint) {
+        throw new Error("Idempotency key was already used with different variable input");
+      }
       return store.variables(projectId) ?? revisioned([]);
     }
     const next = writeRevision(store.variables(projectId) ?? revisioned([]), {
       ...write,
-      value: validateProjectVariables(write.value),
+      value: validated,
     });
     store.upsertVariables(projectId, next);
-    if (replayKey) store.upsertIdempotency(replayKey, next.revision);
+    if (replayKey) store.upsertIdempotency(replayKey, fingerprint);
     emit({
       type: "resource.updated",
       at: next.updatedAt,

@@ -23,7 +23,9 @@ import {
   legacyRecipeYamlPath,
   parseRecipeYaml,
   recipeYamlPath,
+  validateRecipeVariables,
 } from "./recipe-yaml.js";
+import { validateRecipeParameters } from "./recipe-validation.js";
 
 // Isolate the on-disk store in a temp dir for the whole suite.
 let tmp = "";
@@ -177,6 +179,46 @@ describe("recipe YAML", () => {
     assert.match(output, /^recordingFormatVersion: 2/m);
     assert.equal(output, formatRecipeYaml(parseRecipeYaml(output)));
     assert.equal(recipe.title, "YAML roundtrip");
+  });
+
+  it("keeps a checkpoint id through a save and reload", () => {
+    const source = [
+      "schemaVersion: 1",
+      "id: checkpoint-roundtrip",
+      "name: Checkpoint roundtrip",
+      "steps:",
+      "  - kind: screenshot",
+      "    id: interrupt-after",
+      "    caption: After reconnect",
+      "    review:",
+      "      mode: later",
+      "      policy: sequence",
+      "      checkpointId: interrupt",
+      "      phase: after",
+    ].join("\n");
+    const recipe = parseRecipeYaml(source);
+    const step = recipe.steps[0];
+    assert.equal(step?.kind === "screenshot" && step.id, "interrupt-after");
+    assert.equal(step?.kind === "screenshot" && step.review?.checkpointId, "interrupt");
+    const reloaded = parseRecipeYaml(formatRecipeYaml(recipe));
+    assert.deepEqual(reloaded.steps, recipe.steps);
+    assert.throws(
+      () =>
+        parseRecipeYaml(
+          [
+            "schemaVersion: 1",
+            "id: checkpoint-typo",
+            "name: Checkpoint typo",
+            "steps:",
+            "  - kind: screenshot",
+            "    caption: After reconnect",
+            "    review:",
+            "      mode: later",
+            "      checkpointID: interrupt",
+          ].join("\n"),
+        ),
+      /screenshot\.review unknown field: checkpointID/u,
+    );
   });
 
   it("reads legacy .relay.yaml recipes and migrates them on the next successful save", async () => {
@@ -1233,6 +1275,177 @@ describe("validateRecipeSteps", () => {
       () => validateRecipeSteps([{ kind: "sleep", ms: 10, optional: "yes" }]),
       /optional must be a boolean/,
     );
+  });
+
+  it("keeps dest leftover skip and rejects an unknown step field", () => {
+    assert.deepEqual(
+      validateRecipeSteps([{ kind: "tap", target: { label: "Save" }, leftoverSkip: "dest" }]),
+      [{ kind: "tap", target: { label: "Save" }, leftoverSkip: "dest" }],
+    );
+    assert.throws(
+      () => validateRecipeSteps([{ kind: "tap", target: { label: "Save" }, mystery: true }]),
+      /unknown field: mystery/u,
+    );
+    assert.throws(
+      () => validateRecipeSteps([{ kind: "sleep", ms: 1, leftoverSkip: "origin" }]),
+      /leftoverSkip must be "dest"/u,
+    );
+    assert.throws(
+      () => validateRecipeSteps([{ kind: "screenshot", caption: "Home", mystery: true }]),
+      /unknown field: mystery/u,
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          { kind: "expect", target: { label: "Save" }, condition: "visible", mystery: true },
+        ]),
+      /unknown field: mystery/u,
+    );
+    assert.throws(
+      () => validateRecipeSteps([{ kind: "capture-surface", mystery: true }]),
+      /unknown field: mystery/u,
+    );
+    assert.throws(
+      () => validateRecipeSteps([{ kind: "tour", mystery: true }]),
+      /unknown field: mystery/u,
+    );
+    assert.throws(
+      () => validateRecipeSteps([{ kind: "tap", target: { label: "Save", mystery: true } }]),
+      /target unknown field: mystery/u,
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            kind: "tap",
+            target: {
+              label: "Save",
+              point: { x: 1, y: 2, anchor: { horizontal: "left", vertical: "top", mystery: true } },
+            },
+          },
+        ]),
+      /target\.point\.anchor unknown field: mystery/u,
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            kind: "sleep",
+            ms: 10,
+            when: { condition: "present", target: { label: "Save" }, mystery: true },
+          },
+        ]),
+      /when unknown field: mystery/u,
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            kind: "sleep",
+            ms: 10,
+            check: { id: "settings", title: "Settings", mystery: true },
+          },
+        ]),
+      /check unknown field: mystery/u,
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            kind: "sleep",
+            ms: 10,
+            check: { id: "settings", title: "Settings", cleanup: { mystery: true } },
+          },
+        ]),
+      /check\.cleanup unknown field: mystery/u,
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            kind: "sleep",
+            ms: 10,
+            check: {
+              id: "settings",
+              title: "Settings",
+              cleanup: {
+                recipeId: "sign-out",
+                terminalScreenId: "home",
+                onCancel: "skip",
+                bindings: { password: "hunter2" },
+              },
+            },
+          },
+        ]),
+      /secret reference/u,
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          {
+            kind: "sleep",
+            ms: 10,
+            check: {
+              id: "settings",
+              title: "Settings",
+              transitionDependencies: [
+                {
+                  connectionId: "open",
+                  originScreenId: "home",
+                  destination: { kind: "screen", screenId: "settings", mystery: true },
+                },
+              ],
+            },
+          },
+        ]),
+      /destination unknown field: mystery/u,
+    );
+  });
+
+  it("keeps a secret as a reference instead of a stored value", () => {
+    assert.deepEqual(validateRecipeVariables({ password: "secret:member" }), {
+      password: "secret:member",
+    });
+    assert.deepEqual(validateRecipeVariables({ account_tier: "Pro" }), { account_tier: "Pro" });
+    assert.throws(() => validateRecipeVariables({ password: "hunter2" }), /secret reference/u);
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          { kind: "module", recipeId: "login", bindings: { password: "hunter2" } },
+        ]),
+      /secret reference/u,
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([{ kind: "type", text: "hunter2", target: { label: "Password" } }]),
+      /secret reference/u,
+    );
+    assert.deepEqual(
+      validateRecipeSteps([{ kind: "type", text: "{{password}}", target: { label: "Password" } }]),
+      [{ kind: "type", text: "{{password}}", target: { label: "Password" } }],
+    );
+    assert.throws(
+      () =>
+        validateRecipeSteps([
+          { kind: "clipboard", action: "write", text: "hunter2" },
+          { kind: "clipboard", action: "paste", target: { label: "Password" } },
+        ]),
+      /secret reference/u,
+    );
+    assert.equal(
+      validateRecipeSteps([
+        { kind: "clipboard", action: "write", text: "{{password}}" },
+        { kind: "clipboard", action: "paste", target: { label: "Password" } },
+      ]).length,
+      2,
+    );
+    assert.throws(
+      () => validateRecipeParameters([{ name: "password", default: "hunter2" }]),
+      /secret reference/u,
+    );
+    assert.deepEqual(validateRecipeParameters([{ name: "password", default: "secret:member" }]), [
+      { name: "password", default: "secret:member" },
+    ]);
   });
 
   it("keeps a strict campaign check boundary separate from optional work", () => {

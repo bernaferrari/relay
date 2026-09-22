@@ -153,5 +153,8 @@ export async function tapIosPointViaPixels(input: IosPixelTapInput): Promise<voi
   );
   if (result.exitCode === 0) return;
   const detail = (result.stderr || result.stdout || `hid tap exited ${result.exitCode}`).trim();
+  // The helper refuses before send when backboardd would drop the report.
+  // That is not a failed tap and must not wear the "do not XCTest" wrapper.
+  if (isIosHidUnavailable(detail)) throw new IosHidUnavailableError(detail);
   throw new Error(`${IOS_PIXEL_TAP_FAILED} ${detail}`);
 }

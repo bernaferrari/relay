@@ -19,6 +19,20 @@ export function laneSessionPartition(laneId: string): string {
   return `persist:lane:${id}`;
 }
 
+/** Lane windows and their cookies stay on http(s). file:, javascript:, and data: are not pages. */
+export function laneHttpUrl(url: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("Lane tabs only open http(s) URLs");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Lane tabs only open http(s) URLs");
+  }
+  return parsed;
+}
+
 export function laneTabSessionKey(laneId: string, targetId: string): string {
   const id = laneId.trim();
   if (!SAFE_LANE_ID.test(id)) {

@@ -12,13 +12,13 @@ import {
   captureHumanInterventionReproof,
   captureScreenshot,
   captureSnapshot,
-  cancelActiveJob,
+
   cancelJob,
   currentOperationContext,
   cleanupScreenshot,
   enqueueJob,
   freezeRecipeExecution,
-  getActiveJob,
+
   getActiveJobs,
   getJob,
   HumanInterventionReproofUnavailableError,
@@ -142,6 +142,22 @@ export type JobRouteContext = {
   runtime?: Partial<JobRouteRuntime>;
 };
 
+/** The job this caller may cancel. Another project's earlier job is not active here. */
+export function scopedActiveJob(
+  jobs: readonly TestJob[],
+  scope: Pick<RequestContext, "localTrusted" | "projectId" | "subject">,
+  targetId?: string,
+): TestJob | undefined {
+  const visible = jobs.filter(
+    (job) =>
+      scope.localTrusted || (job.projectId === scope.projectId && job.ownerId === scope.subject),
+  );
+  if (targetId) {
+    return visible.find((job) => (job.browserTargetId ?? job.serial) === targetId);
+  }
+  return visible.find((job) => job.status === "running") ?? visible.at(-1);
+}
+
 export async function handleJobRoute(context: JobRouteContext): Promise<boolean> {
   const { method, pathname, url, request: req, response: res, scope } = context;
   const runtime = { ...defaultJobRouteRuntime, ...context.runtime };
@@ -175,6 +191,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
       (job) =>
         scope.localTrusted || (job.projectId === scope.projectId && job.ownerId === scope.subject),
     );
+    const active = scopedActiveJob(activeJobs, scope);
     json(res, 200, {
       jobs: (scope.localTrusted
         ? listJobs(limit)
@@ -182,8 +199,8 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
             (job) => job.projectId === scope.projectId && job.ownerId === scope.subject,
           )
       ).map(summarizeJob),
-      // `active` is compatibility-only; `activeJobs` is the truthful capacity-aware view.
-      active: activeJobs.length ? summarizeJob(activeJobs.at(-1)!) : null,
+      // `active` is the job POST /jobs/active/cancel will stop.
+      active: active ? summarizeJob(active) : null,
       activeJobs: activeJobs.map(summarizeJob),
     });
     return true;
@@ -417,9 +434,10 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
   if (method === "POST" && pathname === "/jobs/active/cancel") {
     const body = (await parseJsonBody(req)) as { targetId?: unknown };
     const targetId = typeof body.targetId === "string" ? body.targetId.trim() : undefined;
-    assertJobAccess(scope, getActiveJob(targetId) ?? undefined);
-    const job = cancelActiveJob(targetId);
-    if (!job) throw new HttpError(404, "No active job");
+    const active = scopedActiveJob(getActiveJobs(), scope, targetId);
+    if (!active) throw new HttpError(404, "No active job");
+    assertJobAccess(scope, active);
+    const job = cancelJob(active.id);
     json(res, 200, { job });
     return true;
   }
@@ -591,6 +609,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
             captureId: string;
             imageSha256?: string;
             action?: CaptureReviewAction;
+            note?: string;
             expectedReviewVersion?: number;
           }>,
           ...(filter ? { filter } : {}),

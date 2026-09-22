@@ -4,18 +4,74 @@ import {
   CAPTURE_REVIEW_DEST_PHASE,
   CAPTURE_REVIEW_LEFTOVER_PHASE,
   captureReviewId,
+  captureReviewIdMatchesFrame,
   captureReviewSlotId,
+  resolveCaptureReviewQueue,
 } from "./capture-review.js";
 import {
   captureReviewQueueItemKey,
   filterPlanCaptureReviewQueue,
   formatPlanCaptureReviewQueue,
+  groupPlanCaptureReviewItems,
   parsePlanCaptureReviewFilter,
   planCaptureReviewFilterOptions,
   planCaptureReviewScreenLabel,
   resolvePlanCaptureReviewQueue,
   selectedPlanCaptureReviewItems,
+  type PlanCaptureReviewQueue,
 } from "./capture-review-plan.js";
+
+test("a slot-prefixed review id still names the same frame and digest", () => {
+  const shared = { framePath: "frames/001.png", imageSha256: "aaa" };
+  assert.equal(
+    captureReviewIdMatchesFrame(
+      captureReviewId({ caption: "Settings", ...shared, slotId: "arabic" }),
+      shared.framePath,
+      shared.imageSha256,
+    ),
+    true,
+  );
+  assert.equal(
+    captureReviewIdMatchesFrame(captureReviewId({ caption: "Settings", ...shared }), shared.framePath, "bbb"),
+    false,
+  );
+});
+
+
+test("identical screenshot bytes do not merge two planned review slots", () => {
+  const shared = {
+    caption: "Settings",
+    framePath: "frames/001.png",
+    imageSha256: "aaa",
+  };
+  const queue = resolveCaptureReviewQueue({
+    artifacts: [
+      {
+        kind: "capture-review",
+        data: { ...shared, slotId: "english" },
+      },
+      {
+        kind: "capture-review",
+        data: { ...shared, slotId: "arabic" },
+      },
+    ],
+    decisions: [
+      {
+        captureId: captureReviewId({ ...shared, slotId: "english" }),
+        action: "accept",
+        decidedAt: 1,
+        decidedBy: { id: "human:qa", kind: "human" },
+        reviewVersion: 1,
+      },
+    ],
+  });
+  assert.equal(queue.items.length, 2);
+  assert.equal(queue.summary.captured, 2);
+  assert.equal(queue.summary.accepted, 1);
+  assert.equal(queue.summary.pending, 1);
+  assert.notEqual(queue.items[0]?.captureId, queue.items[1]?.captureId);
+});
+
 
 const settingsStep = {
   id: "settings",
@@ -508,6 +564,57 @@ test("Plan item keys stay unique when two Runs share identical PNG bytes", () =>
   assert.match(formatPlanCaptureReviewQueue(queue), /Looks correct does not approve/u);
 });
 
+test("Screens filters keep the planned denominator and group by checkpoint or configuration", () => {
+  const queue = resolvePlanCaptureReviewQueue([
+    capture("run-member-settings", "frames/001.png", "aaa", {
+      account: "Member",
+      device: "Firefox",
+    }),
+    capture("run-member-home", "frames/002.png", "bbb", {
+      caption: "Home",
+      checkpointId: "home",
+      account: "Member",
+      device: "Firefox",
+    }),
+    capture("run-admin-settings", "frames/003.png", "ccc", {
+      account: "Admin",
+      device: "Chrome",
+      accepted: true,
+    }),
+  ]);
+  const issue = queue.items[0]!;
+  const withIssue: PlanCaptureReviewQueue = {
+    ...queue,
+    items: queue.items.map((item) =>
+      item.captureId === issue.captureId ? { ...item, status: "issue" } : item,
+    ),
+  };
+  const issues = filterPlanCaptureReviewQueue(withIssue, { decision: "issues" });
+  assert.equal(issues.items.length, 1);
+  assert.equal(issues.summary.planned, 3);
+  assert.equal(issues.items[0]?.status, "issue");
+  const all = filterPlanCaptureReviewQueue(withIssue, { decision: "all" });
+  assert.equal(all.items.length, 3);
+  assert.equal(all.summary.planned, 3);
+  const byCheckpoint = groupPlanCaptureReviewItems(all.items);
+  assert.deepEqual(
+    byCheckpoint.map((group) => [group.label, group.items.length]),
+    [
+      ["Settings", 2],
+      ["Home", 1],
+    ],
+  );
+  const byConfiguration = groupPlanCaptureReviewItems(all.items, "configuration");
+  assert.deepEqual(
+    byConfiguration.map((group) => group.label),
+    ["Firefox · Member", "Chrome · Admin"],
+  );
+  assert.equal(
+    byConfiguration.reduce((count, group) => count + group.items.length, 0),
+    3,
+  );
+});
+
 test("Plan review filters pending, screen, and device or account without shrinking coverage counts", () => {
   const queue = resolvePlanCaptureReviewQueue([
     capture("run-member-settings", "frames/001.png", "aaa", {
@@ -639,6 +746,14 @@ test("query pending/screen/device/account parse into a Plan review filter", () =
       account: "Member",
     }),
     { device: "iPad", account: "Member" },
+  );
+  assert.deepEqual(parsePlanCaptureReviewFilter({ decision: "issues", groupBy: "configuration" }), {
+    decision: "issues",
+    groupBy: "configuration",
+  });
+  assert.equal(
+    parsePlanCaptureReviewFilter({ decision: "accepted", groupBy: "screen" }),
+    undefined,
   );
 });
 

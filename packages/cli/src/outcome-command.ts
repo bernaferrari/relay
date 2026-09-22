@@ -31,6 +31,8 @@ import type {
 import { UsageError } from "./errors.js";
 import type { ReplayLabFileIntent } from "./replay-lab-files.js";
 
+export type DoctorIntent = { kind: "doctor" };
+
 export type OutcomeCliIntent =
   | ConnectTargetIntent
   | ObserveTargetIntent
@@ -44,6 +46,7 @@ export type OutcomeCliIntent =
   | ProposeRepairIntent
   | ExportEvidenceIntent
   | EditRecordingOutcomeIntent
+  | DoctorIntent
   | ReplayLabFileIntent
   | VerifyChangeOutcomeIntent
   | GoalSessionStartIntent
@@ -558,8 +561,23 @@ export function parseOutcomeCliIntent(tokens: OutcomeCommandTokens): OutcomeCliI
       reason: args[3]!,
     };
   }
+  if (verb === "doctor") {
+    if (args.length !== 0) throw new UsageError("doctor does not take arguments");
+    const extra = [...tokens.switches].filter(
+      (flag) => flag !== "--json" && flag !== "--ndjson" && flag !== "--quiet",
+    );
+    if (extra.length > 0 || tokens.values.size > 0) {
+      throw new UsageError("doctor does not take options");
+    }
+    return { kind: "doctor" };
+  }
   if (normalizedVerb === "export-evidence" && args.length === 1) {
-    return { kind: "export-evidence", runId: args[0]! };
+    const outputDir = tokens.values.get("--output") ?? tokens.values.get("--out");
+    return {
+      kind: "export-evidence",
+      runId: args[0]!,
+      ...(outputDir ? { outputDir } : {}),
+    };
   }
   if (verb === "replay-lab" && args.length >= 3) {
     const [analysis, ...paths] = args;

@@ -526,12 +526,10 @@ describe("RunWorkbench", () => {
     const review = vi.fn(async () => undefined);
     const host = render(0, value, review);
     expect(host.querySelector('[role="tablist"][aria-label="Step views"]')).not.toBeNull();
-    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
-      "Screenshots",
-    );
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Screenshots");
     expect(host.querySelector('[role="tabpanel"]')).not.toBeNull();
     expect(host.textContent).toContain("2/2 captured");
-    expect(host.textContent).toContain("2 pending review");
+    expect(host.textContent).toContain("2 screenshots awaiting review");
     expect(host.textContent).not.toContain("passed");
     const previous = host.querySelector<HTMLButtonElement>('[aria-label="Previous screenshot"]')!;
     const next = host.querySelector<HTMLButtonElement>('[aria-label="Next screenshot"]')!;
@@ -642,9 +640,7 @@ describe("RunWorkbench", () => {
       ],
     };
     const host = render(0, value);
-    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
-      "Screenshots",
-    );
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Screenshots");
     expect(host.querySelector('[data-slot="evidence-image-frame"] img')?.getAttribute("src")).toBe(
       "/dest-wait.png",
     );
@@ -724,5 +720,38 @@ describe("RunWorkbench", () => {
     expect(host.textContent).toContain("Observe");
     expect(host.textContent).not.toContain("Close");
     expect(host.textContent).not.toMatch(/after · Run saved Test/u);
+  });
+
+  it("states that an encrypted connection is not an HTTP body", () => {
+    const value: ProductRunReportOverview = {
+      ...report,
+      captureReview: undefined,
+      evidence: [
+        {
+          id: "network",
+          label: "Network activity",
+          count: 2,
+          detail: "1 request · 1 connection",
+          summary:
+            "HTTP rows are observed requests. An encrypted connection does not establish an HTTP body that was not observed.",
+          inspectable: true,
+          items: [
+            { id: "request-1", title: "GET example.com/account", detail: "Status 200" },
+            { id: "connection-0", title: "TLS · api.example.com", detail: "Connected" },
+          ],
+        },
+      ],
+    };
+    const host = render(0, value);
+    act(() =>
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "Network")!
+        .click(),
+    );
+    expect(host.textContent).toContain(
+      "An encrypted connection does not establish an HTTP body that was not observed.",
+    );
+    expect(host.textContent).toContain("TLS · api.example.com");
+    expect(host.textContent).toContain("GET example.com/account");
   });
 });

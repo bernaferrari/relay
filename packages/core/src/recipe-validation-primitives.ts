@@ -37,6 +37,12 @@ export function targetHasStrategy(target: StepTarget): boolean {
 
 export function parseTarget(raw: unknown, index: number, field: string): StepTarget {
   if (!isObject(raw)) throw stepErr(index, `${field} must be an object`);
+  assertKnownKeys(
+    raw,
+    ["identifier", "ref", "label", "role", "text", "relation", "point"],
+    index,
+    field,
+  );
   const target: StepTarget = {};
   if (raw.identifier !== undefined) {
     if (!isString(raw.identifier)) throw stepErr(index, `${field}.identifier must be a string`);
@@ -59,7 +65,9 @@ export function parseTarget(raw: unknown, index: number, field: string): StepTar
     target.text = raw.text;
   }
   if (raw.relation !== undefined) {
-    if (!isObject(raw.relation) || raw.relation.kind !== "following-row") {
+    if (!isObject(raw.relation)) throw stepErr(index, `${field}.relation must be an object`);
+    assertKnownKeys(raw.relation, ["kind", "anchor"], index, `${field}.relation`);
+    if (raw.relation.kind !== "following-row") {
       throw stepErr(index, `${field}.relation.kind must be following-row`);
     }
     const anchor = parseTarget(raw.relation.anchor, index, `${field}.relation.anchor`);
@@ -82,6 +90,12 @@ export function parseStepPoint(raw: unknown, index: number, field: string): Step
   if (!isObject(raw) || !isNumber(raw.x) || !isNumber(raw.y)) {
     throw stepErr(index, `${field} must be { x: number, y: number }`);
   }
+  assertKnownKeys(
+    raw,
+    ["x", "y", "fallbackPolicy", "anchor", "referenceBounds", "relativeTo"],
+    index,
+    field,
+  );
   const point: StepPoint = { x: raw.x, y: raw.y };
   if (raw.fallbackPolicy !== undefined) {
     if (raw.fallbackPolicy !== "reviewed") {
@@ -90,8 +104,11 @@ export function parseStepPoint(raw: unknown, index: number, field: string): Step
     point.fallbackPolicy = "reviewed";
   }
   if (raw.anchor !== undefined) {
+    if (!isObject(raw.anchor)) {
+      throw stepErr(index, `${field}.anchor must contain horizontal and vertical anchors`);
+    }
+    assertKnownKeys(raw.anchor, ["horizontal", "vertical"], index, `${field}.anchor`);
     if (
-      !isObject(raw.anchor) ||
       !["left", "center", "right"].includes(String(raw.anchor.horizontal)) ||
       !["top", "center", "bottom"].includes(String(raw.anchor.vertical))
     ) {
@@ -103,8 +120,16 @@ export function parseStepPoint(raw: unknown, index: number, field: string): Step
     };
   }
   if (raw.referenceBounds !== undefined) {
+    if (!isObject(raw.referenceBounds)) {
+      throw stepErr(index, `${field}.referenceBounds must be { width, height }`);
+    }
+    assertKnownKeys(
+      raw.referenceBounds,
+      ["width", "height"],
+      index,
+      `${field}.referenceBounds`,
+    );
     if (
-      !isObject(raw.referenceBounds) ||
       !isNumber(raw.referenceBounds.width) ||
       !isNumber(raw.referenceBounds.height) ||
       raw.referenceBounds.width <= 0 ||
@@ -118,8 +143,19 @@ export function parseStepPoint(raw: unknown, index: number, field: string): Step
     };
   }
   if (raw.relativeTo !== undefined) {
+    if (!isObject(raw.relativeTo)) {
+      throw stepErr(
+        index,
+        `${field}.relativeTo must contain a semantic target and xRatio/yRatio between 0 and 1`,
+      );
+    }
+    assertKnownKeys(
+      raw.relativeTo,
+      ["target", "xRatio", "yRatio"],
+      index,
+      `${field}.relativeTo`,
+    );
     if (
-      !isObject(raw.relativeTo) ||
       !isObject(raw.relativeTo.target) ||
       !isNumber(raw.relativeTo.xRatio) ||
       !isNumber(raw.relativeTo.yRatio) ||
@@ -147,6 +183,18 @@ export function parseStepPoint(raw: unknown, index: number, field: string): Step
     };
   }
   return point;
+}
+
+function assertKnownKeys(
+  raw: Record<string, unknown>,
+  allowed: readonly string[],
+  index: number,
+  field: string,
+): void {
+  const known = new Set<string>(allowed);
+  for (const key of Object.keys(raw)) {
+    if (!known.has(key)) throw stepErr(index, `${field} unknown field: ${key}`);
+  }
 }
 
 /** Parse a required { x, y } coordinate object. */

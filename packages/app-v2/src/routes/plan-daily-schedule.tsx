@@ -89,11 +89,7 @@ export function PlanDailySchedule({
                   <p className="text-xs text-muted-foreground">
                     {schedule.timezone || "Local time"}
                   </p>
-                  <p className="mt-2 text-sm">Next: {status.next}</p>
-                  <p className="text-xs text-muted-foreground">Last run: {status.last}</p>
-                  {status.failure ? (
-                    <p className="mt-2 text-sm text-destructive">{status.failure}</p>
-                  ) : null}
+                  <p className="mt-2 text-sm">Next scheduled run: {status.next}</p>
                 </div>
                 {onRemove ? (
                   <Button
@@ -142,6 +138,26 @@ export function PlanDailySchedule({
           ) : null}
         </form>
       )}
+      {schedules.some((item) => item.lastRunAt || item.lastFailure) ? (
+        <details className="mt-4 text-sm">
+          <summary className="cursor-pointer py-2 text-muted-foreground">
+            Previous scheduled runs
+          </summary>
+          <ul className="grid gap-2 py-2">
+            {schedules
+              .filter((item) => item.lastRunAt || item.lastFailure)
+              .map((item) => {
+                const status = planScheduleStatus(item);
+                return (
+                  <li key={item.id}>
+                    {item.lastRunAt ? <p>Last run: {status.last}</p> : null}
+                    {status.failure ? <p className="text-destructive">{status.failure}</p> : null}
+                  </li>
+                );
+              })}
+          </ul>
+        </details>
+      ) : null}
       {error ? (
         <FieldError>
           {error instanceof Error ? error.message : "Could not update the schedule. Try again."}

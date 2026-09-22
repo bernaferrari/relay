@@ -11,9 +11,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { getRouteApi, useNavigate, useRouteContext, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { WalkthroughView } from "../components/walkthrough-view";
-import { useFrameUrl } from "../hooks/use-walkthrough-frame";
 import { PageHeader, WorkbenchPage } from "../components/page-layout";
+import { useFrameUrl } from "../hooks/use-walkthrough-frame";
+import { WalkthroughView } from "../components/walkthrough-view";
 import { EmptyState } from "../components/product-patterns";
 import { RecordingProblem } from "./recording-shared";
 import type { PlayerManifestProjection, RunProductService } from "../data/run-product-service";
@@ -69,14 +69,59 @@ export function RunWalkthroughPage() {
       await queryClient.invalidateQueries({ queryKey: ["run", "player-manifest", runId] });
     },
   });
+  const [walkthroughFile, setWalkthroughFile] = useState<{ href: string; fileName: string }>();
+  const exportPack = useMutation({
+    mutationFn: () => {
+      if (!runService.exportWalkthrough) throw new Error("Walkthrough export is unavailable.");
+      const pinned = manifestQuery.data?.pinned.runIds ?? [];
+      return runService.exportWalkthrough(
+        runId,
+        pinned.filter((id) => id !== runId),
+      );
+    },
+    onSuccess: (document) => {
+      setWalkthroughFile((current) => {
+        if (current) URL.revokeObjectURL(current.href);
+        return {
+          href: URL.createObjectURL(new Blob([document.body], { type: "text/html" })),
+          fileName: document.fileName,
+        };
+      });
+    },
+    onError: () => {
+      setWalkthroughFile((current) => {
+        if (current) URL.revokeObjectURL(current.href);
+        return undefined;
+      });
+    },
+  });
 
   const historyRef = useRef<{ stateId: string; variantId?: string; captureId?: string }[]>([]);
   const futureRef = useRef<{ stateId: string; variantId?: string; captureId?: string }[]>([]);
   const [navEpoch, setNavEpoch] = useState(0);
   const [focusedHotspot, setFocusedHotspot] = useState(0);
 
-  const variantId = search.variant ?? manifest?.variants[0]?.id;
-  const stateId = search.state ?? manifest?.entryStateId;
+  const variantIsKnown =
+    Boolean(manifest?.variants.some((variant) => variant.id === search.variant)) ||
+    Boolean(manifest?.missing.some((entry) => entry.variantId === search.variant));
+  const variantId = (variantIsKnown ? search.variant : undefined) ?? manifest?.variants[0]?.id;
+  const stateIsKnown =
+    !search.state ||
+    Boolean(manifest?.states.some((state) => state.id === search.state)) ||
+    Boolean(manifest?.missing.some((entry) => entry.stateId === search.state));
+  const stateId = stateIsKnown ? (search.state ?? manifest?.entryStateId) : manifest?.entryStateId;
+  useEffect(() => {
+    if (!variantId || !stateId) return;
+    if (search.variant === variantId && search.state === stateId) return;
+    void navigate({
+      replace: true,
+      search: (previous: WalkthroughSearch) => ({
+        ...previous,
+        variant: variantId,
+        state: stateId,
+      }),
+    });
+  }, [navigate, search.state, search.variant, stateId, variantId]);
 
   const capture = useMemo(() => {
     if (!manifest || !stateId || !variantId) return undefined;
@@ -91,8 +136,13 @@ export function RunWalkthroughPage() {
 
   const outgoing = useMemo(() => {
     if (!manifest || !stateId) return [];
-    return manifest.connections.filter((connection) => connection.fromStateId === stateId);
-  }, [manifest, stateId]);
+    return manifest.connections.filter((connection) => {
+      if (connection.fromStateId !== stateId) return false;
+      const recordedRunId = connection.provenance?.runId;
+      if (connection.kind === "recorded") return recordedRunId === capture?.runId;
+      return !recordedRunId || recordedRunId === capture?.runId;
+    });
+  }, [manifest, stateId, capture?.runId]);
 
   const missing = useMemo(() => {
     if (!manifest || !stateId || !variantId) return undefined;
@@ -101,12 +151,24 @@ export function RunWalkthroughPage() {
     );
   }, [manifest, stateId, variantId]);
 
-  const finding = useMemo(() => {
-    if (!manifest || !capture) return undefined;
-    return manifest.findings.find((candidate) =>
-      capture.id.endsWith(`:${candidate.captureId.split("::")[1] ?? ""}`),
-    );
+  const findings = useMemo(() => {
+    if (!manifest || !capture) return [];
+    const reviewId = `${capture.framePath}::${capture.imageSha256}`;
+    return manifest.findings
+      .filter(
+        (candidate) =>
+          candidate.runId === capture.runId &&
+          (candidate.captureId === capture.id ||
+            candidate.captureId === reviewId ||
+            candidate.captureId.endsWith(`::${reviewId}`)),
+      )
+      .sort(
+        (left, right) =>
+          right.decidedAt - left.decidedAt ||
+          (right.reviewVersion ?? 0) - (left.reviewVersion ?? 0),
+      );
   }, [manifest, capture]);
+  const finding = findings[0];
 
   function goTo(nextStateId: string, captureId?: string) {
     if (!stateId || (nextStateId === stateId && captureId === capture?.id)) return;
@@ -245,6 +307,9 @@ export function RunWalkthroughPage() {
   return (
     <WalkthroughView
       manifest={manifest}
+      runId={runId}
+      stateId={stateId}
+      variantId={variantId}
       recoveryAction={
         <WalkthroughRecovery
           key={variantId}
@@ -253,18 +318,15 @@ export function RunWalkthroughPage() {
           runService={runService}
         />
       }
-      runId={runId}
-      stateId={stateId}
-      variantId={variantId}
       capture={capture}
       missing={missing}
       outgoing={outgoing}
-      findings={finding ? [finding] : []}
+      findings={findings}
       frame={frame}
       canGoBack={navEpoch >= 0 && historyRef.current.length > 0}
       canGoForward={navEpoch >= 0 && futureRef.current.length > 0}
-      goForward={goForward}
       goBack={goBack}
+      goForward={goForward}
       goTo={goTo}
       switchVariant={switchVariant}
       reviewActions={
@@ -275,6 +337,16 @@ export function RunWalkthroughPage() {
               submit: async (action, note) => {
                 await reviewMutation.mutateAsync({ capture, action, note });
               },
+            }
+          : undefined
+      }
+      exportActions={
+        runService.exportWalkthrough
+          ? {
+              pending: exportPack.isPending,
+              error: exportPack.error,
+              run: () => exportPack.mutate(),
+              file: walkthroughFile,
             }
           : undefined
       }

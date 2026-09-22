@@ -617,7 +617,7 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
         "Outcome commands use named arguments and do not accept --input or --input-file",
       );
     }
-    assertNoOutDir(tokens);
+    if (intent.kind !== "export-evidence") assertNoOutDir(tokens);
     return {
       config: {
         connection,

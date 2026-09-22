@@ -61,7 +61,7 @@ Exit codes:
   7  cancelled (SIGINT/SIGTERM)
   8  server error (the call did not run to a verdict)
   9  operation failed (it ran and reported failure: { ok: false } or job status error)
-  10 verification incomplete (collection finished but captures still await human review)
+  10 verification incomplete (the run finished; screenshots are awaiting review)
 
 Machine envelopes (--json / --ndjson):
   success: {"type":"result","ok":true,"operationId":"...","result":{...}}
@@ -145,12 +145,13 @@ Everyday tasks:
   Edit the recording      relay edit-recording <workflowId> <expectedVersion> <verb> ...
   Run a saved Test        relay run <testId> --lane <lane>   (account + browser + profile)
   Run across accounts     relay repeat <testId> --each <dimension>=<values|all>
-  Run a saved Plan        relay plan run <planId> [--lane <lane>]
+  Run a saved Plan        relay plan run <planId> [--lane <lane>] [--all]
   Ask Relay to explore    relay explore --url <url> --goal <goal> --confirm
+  Ask Relay to exercise   relay goal run --url http://127.0.0.1:3000 --goal "Open settings" --confirm
   Inspect a Run           relay inspect <runOrWorkflowId>
   Review captured shots   relay plan capture review <batchId>
-  Export the evidence     relay export <runId>
-  Verify a change         relay prove --base <ref> [--confirm]
+  Export the evidence     relay export <runId> --out ./review
+  Check the local server  relay doctor
 
 Full command reference:
   relay connect [device]
@@ -177,7 +178,8 @@ Full command reference:
   relay cancel-run <workflowId> <expectedVersion> --confirm
   relay inspect-failure <runId>
   relay propose-repair <runId> <checkId> <accept-current|disable> <reason>
-  relay export <runId> | relay export-evidence <runId>
+  relay export <runId> [--out <dir>] | relay export-evidence <runId>
+  relay doctor
   relay replay-lab <compare|visual-localization|all> <oldest.tracepack.json> <newest.tracepack.json> [...]
   relay prove --base <ref> [--config-file <path>] [--confirm]
   relay prove <proof-id> [--wait | --no-wait]
@@ -203,7 +205,7 @@ Goal exploration options:
 Outcome commands:
   connect, observe, explore, goal, record, edit-recording, run, repeat, continue-repeat, inspect-workflow, cancel-run,
   inspect-failure, propose-repair,
-  export-evidence, replay-lab
+  export-evidence, doctor, replay-lab
 
 These resolve the sole connected Device and current Test workspace automatically. Use --device, or
 the advanced --map option, only when selection is ambiguous. The first Record creates its backing

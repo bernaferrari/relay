@@ -11,6 +11,7 @@ import { PlanCaptureReviewSection } from "./batch-capture-review";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const roots: Root[] = [];
 afterEach(() => {
+  sessionStorage.clear();
   act(() => roots.splice(0).forEach((root) => root.unmount()));
   document.body.replaceChildren();
 });
@@ -194,6 +195,19 @@ describe("Plan screenshot review filters", () => {
       host.querySelector('ul[aria-label="Screenshots for review"] button')?.className,
     ).toContain("min-h-20");
   });
+  it("groups screens by checkpoint and keeps planned coverage when issues are empty", async () => {
+    const host = await render(vi.fn(async () => ({ results: [] })));
+    expect(button(host, "By checkpoint").getAttribute("aria-pressed")).toBe("true");
+    expect(host.textContent).toContain("Settings2");
+    expect(host.textContent).toContain("Home1");
+    await act(async () => button(host, "By configuration").click());
+    expect(host.textContent).toContain("iPad · Member2");
+    expect(host.textContent).toContain("Chrome · Admin1");
+    expect(host.textContent).toContain("3 of 3 screenshots captured");
+    await act(async () => button(host, "Issues").click());
+    expect(host.textContent).toContain("No screenshots match these filters.");
+    expect(host.textContent).toContain("3 of 3 screenshots captured");
+  });
 
   it("reports the full review accounting including issues and evidence gaps", async () => {
     const reviewCaptures = vi.fn(async () => ({
@@ -294,7 +308,7 @@ describe("Plan screenshot review filters", () => {
       await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
     }
     expect(host.textContent).toContain(
-      "2 planned · 1 captured · 1 blocked · 0 missing · 1 pending · 0 accepted",
+      "2 planned · 1 captured · 1 blocked · 0 missing · 1 screenshot awaiting review · 0 accepted",
     );
     expect(host.textContent).not.toContain("Imagine Unbound");
     expect(host.textContent).toContain("Blocked");
@@ -303,6 +317,93 @@ describe("Plan screenshot review filters", () => {
       ...host.querySelectorAll('ul[aria-label="Screenshots for review"] [role="checkbox"]'),
     ];
     expect(checks).toHaveLength(1);
+  });
+
+  it("keeps the open screenshot when a newer capture arrives", async () => {
+    const client = new QueryClient();
+    let items = [
+      item({
+        caption: "Settings",
+        captureId: "frames/001.png::aaa",
+        account: "Member",
+        device: "iPad",
+      }),
+    ];
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    const summary = {
+      captured: 1,
+      missing: 0,
+      pending: 1,
+      accepted: 0,
+      issue: 0,
+      needMoreEvidence: 0,
+      planned: 1,
+      blocked: 0,
+    };
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <PlanCaptureReviewSection
+            batchId="plan-1"
+            platform={platform()}
+            runAcrossService={
+              {
+                getCaptureReview: async () => ({ items, summary }),
+                reviewCaptures: async () => ({ queue: { items, summary }, results: [] }),
+              } as unknown as RunAcrossProductService
+            }
+          />
+        </QueryClientProvider>,
+      );
+    });
+    await settleReview();
+    items = [
+      item({
+        runId: "run-new",
+        caption: "Newest",
+        captureId: "frames/009.png::zzz",
+        framePath: "frames/009.png",
+        imageSha256: "zzz",
+      }),
+      ...items,
+    ];
+    await act(async () => {
+      await client.invalidateQueries();
+    });
+    await settleReview();
+    const selected = [...host.querySelectorAll("button")].find((button) =>
+      button.className.includes("ring-1"),
+    );
+    expect(selected?.getAttribute("aria-label")).toBe("Inspect Settings");
+  });
+
+
+  it("keeps the review focus after the section is opened again", async () => {
+    await render(vi.fn(async () => ({ queue: { items: [], summary: { captured: 0, missing: 0, pending: 0, planned: 0 } } })));
+    const issues = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "Issues",
+    );
+    if (!issues) throw new Error("Issues filter missing");
+    await act(async () => issues.click());
+    const grouped = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "By configuration",
+    );
+    if (!grouped) throw new Error("grouping missing");
+    await act(async () => grouped.click());
+    act(() => roots.splice(0).forEach((root) => root.unmount()));
+    document.body.replaceChildren();
+    await render(vi.fn(async () => ({ queue: { items: [], summary: { captured: 0, missing: 0, pending: 0, planned: 0 } } })));
+    const restored = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "Issues",
+    );
+    const restoredGroup = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent === "By configuration",
+    );
+    expect(restored?.getAttribute("aria-pressed")).toBe("true");
+    expect(restoredGroup?.getAttribute("aria-pressed")).toBe("true");
   });
 });
 
@@ -425,6 +526,7 @@ describe("Plan review acknowledgements", () => {
     expect(host.querySelector('[role="alert"]')?.textContent).toContain(
       "1 of 2 review decisions saved",
     );
+    expect(host.textContent).toContain("1 conflicted — review the newer decision");
     expect(host.textContent).toContain("Home: The screenshot or its review changed");
     expect(checks[0]!.getAttribute("aria-checked") === "true").toBe(false);
     expect(checks[1]!.getAttribute("aria-checked") === "true").toBe(true);

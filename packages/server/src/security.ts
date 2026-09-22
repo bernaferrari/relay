@@ -517,7 +517,18 @@ export function recordAudit(
   persistAuditEvent(entry);
 }
 
-export function listAuditEvents(limit = 100): AuditEvent[] {
+export function listAuditEvents(
+  limit = 100,
+  scope?: { organizationId: string; projectId: string; localTrusted?: boolean },
+): AuditEvent[] {
   auditDatabase();
-  return auditEvents.slice(-Math.max(1, Math.min(limit, AUDIT_MEMORY_LIMIT)));
+  const bounded = Math.max(1, Math.min(limit, AUDIT_MEMORY_LIMIT));
+  const visible =
+    !scope || scope.localTrusted
+      ? auditEvents
+      : auditEvents.filter(
+          (event) =>
+            event.organizationId === scope.organizationId && event.projectId === scope.projectId,
+        );
+  return visible.slice(-bounded);
 }

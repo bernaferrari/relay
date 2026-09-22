@@ -183,6 +183,24 @@ export function browserSessionProfileMatches(existing: unknown, requested: unkno
   return canonical(existing) === canonical(requested);
 }
 
+/** Omitting a profile attaches to the open session. Saved view defaults are
+ * not a request to close it. An explicit headless or recording change still is. */
+export function browserAttachKeepsExistingSession(input: {
+  requestedProfile?: unknown;
+  requirePresentationMatch?: boolean;
+  recordVideo?: boolean;
+  sessionRecordVideo: boolean;
+  headless?: boolean;
+  sessionHeadless: boolean;
+}): boolean {
+  if (input.requestedProfile !== undefined) return false;
+  const presentationMatches =
+    (input.recordVideo === undefined || input.recordVideo === input.sessionRecordVideo) &&
+    (input.headless === undefined || input.headless === input.sessionHeadless);
+  return input.requirePresentationMatch !== true || presentationMatches;
+}
+
+
 /** Explicit request wins. Otherwise attach to an already-open live identity
  * before falling back to the saved profile (authoring). */
 export function resolveBrowserDeviceOpenIdentity(input: {

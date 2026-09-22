@@ -10,6 +10,7 @@ import {
   browserLiveSessionKey,
   browserProofSessionKey,
   browserSessionBelongsToTarget,
+  browserAttachKeepsExistingSession,
   browserSessionProfileMatches,
   browserSessionStoreKey,
 } from "./browser-execution-identity.js";
@@ -217,6 +218,18 @@ export async function sessionFor(
   const existing = sessions.get(key);
   if (existing) {
     const session = await existing;
+    if (
+      browserAttachKeepsExistingSession({
+        requestedProfile: options.profile,
+        requirePresentationMatch: options.requirePresentationMatch,
+        recordVideo: options.recordVideo,
+        sessionRecordVideo: session.recordVideo,
+        headless: options.headless,
+        sessionHeadless: session.headless,
+      })
+    ) {
+      return session;
+    }
     const requestedProfile =
       options.profile ??
       (mode === "authoring"

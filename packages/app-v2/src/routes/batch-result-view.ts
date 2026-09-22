@@ -48,6 +48,8 @@ export type BatchClusterCopy = {
   readonly lane: string;
   readonly title: string;
   readonly meta: string;
+  readonly repair?: string;
+  readonly repairTestId?: string;
 };
 
 export function batchResultHeadline(report: ProductBatchReport): string {
@@ -157,7 +159,25 @@ export function batchClusterCopy(
   const count = cluster.caseIds.length;
   const casesLabel = count === 1 ? "1 case" : `${count} cases`;
   const metaParts = [casesLabel, environment].filter((part) => part && part !== title);
-  return { lane, title, meta: metaParts.join(" · ") };
+  const repair = signInRepair(members);
+  const repairTestId = members.find(
+    (item) => item.findingCode === "ACCOUNT_NEEDS_RELOGIN" && item.identity?.testId,
+  )?.identity?.testId;
+  return {
+    lane,
+    title,
+    meta: metaParts.join(" · "),
+    ...(repair ? { repair } : {}),
+    ...(repairTestId ? { repairTestId } : {}),
+  };
+}
+
+function signInRepair(members: readonly ProductBatchCase[]): string | undefined {
+  const expired = members.filter((item) => item.findingCode === "ACCOUNT_NEEDS_RELOGIN");
+  if (!expired.length) return undefined;
+  const testId = expired.find((item) => item.identity?.testId)?.identity?.testId;
+  const destination = testId ? ` Return to ${testId}.` : " Return to this Test.";
+  return `Completed captures are preserved. Sign in again, save a new sign-in revision, then choose that revision for the pending configuration.${destination} Earlier runs stay on their original sign-in. Do not start the same Plan again until that sign-in is saved.`;
 }
 
 export function batchClusterTitle(

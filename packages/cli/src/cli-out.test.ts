@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
-import { pngPathsIn, writeRunOutDir } from "./cli-out.js";
+import { pngPathsIn, writeEvidenceReviewDir, writeRunOutDir } from "./cli-out.js";
 import { ExitCode } from "./errors.js";
 import { runCli } from "./index.js";
 
@@ -40,6 +40,363 @@ test("pngPathsIn collects .png strings from nested job envelopes", () => {
   );
 });
 
+test("writeRunOutDir writes a passive walkthrough page beside the machine result", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-walkthrough-out-"));
+  try {
+    const digest = `sha256:${"a".repeat(64)}`;
+    await writeRunOutDir({
+      dir,
+      stderr: "",
+      envelope: {
+        result: {
+          pack: {
+            schemaVersion: 1,
+            kind: "relay-walkthrough-pack",
+            digest,
+            manifest: {
+              schemaVersion: 1,
+              pinned: {
+                appMapId: "map",
+                appMapRevision: 1,
+                runIds: ["run-member"],
+                generatedAt: 1,
+              },
+              captures: [
+                {
+                  stateId: "home",
+                  variantId: "member",
+                  runId: "run-member",
+                  framePath: "frames/001.png",
+                },
+              ],
+            },
+            frames: [
+              {
+                runId: "run-member",
+                framePath: "frames/001.png",
+                imageSha256: "6105d6cc76af400325e94d588ce511be5bfdbb73b437dc51eca43917d7a43e3d",
+                content: "aW1hZ2U=",
+              },
+            ],
+          },
+        },
+      },
+    });
+    const page = await readFile(join(dir, "walkthrough.html"), "utf8");
+    assert.match(page, /data:image\/png;base64,aW1hZ2U=/u);
+    assert.match(page, /A downloaded copy cannot be recalled/u);
+    assert.equal(page.includes("<script"), false);
+    assert.equal(/https?:\/\//u.test(page), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("writeEvidenceReviewDir saves the trace pack and a passive review page", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-export-review-"));
+  try {
+    const digest = `sha256:${"a".repeat(64)}`;
+    await writeEvidenceReviewDir({
+      dir,
+      runId: "run-member",
+      evidence: { tracePack: { digest, source: { runId: "run-member" } } },
+      walkthrough: {
+        pack: {
+          schemaVersion: 1,
+          kind: "relay-walkthrough-pack",
+          digest,
+          manifest: {
+            schemaVersion: 1,
+            pinned: {
+              appMapId: "map",
+              appMapRevision: 1,
+              runIds: ["run-member"],
+              generatedAt: 1,
+            },
+            captures: [
+              {
+                stateId: "home",
+                variantId: "member",
+                runId: "run-member",
+                framePath: "frames/001.png",
+                imageSha256: "6105d6cc76af400325e94d588ce511be5bfdbb73b437dc51eca43917d7a43e3d",
+              },
+            ],
+          },
+          frames: [
+            {
+              runId: "run-member",
+              framePath: "frames/001.png",
+              imageSha256: "6105d6cc76af400325e94d588ce511be5bfdbb73b437dc51eca43917d7a43e3d",
+              content: "aW1hZ2U=",
+            },
+          ],
+        },
+      },
+    });
+    const page = await readFile(join(dir, "walkthrough.html"), "utf8");
+    const pack = await readFile(join(dir, "trace-pack.json"), "utf8");
+    assert.match(page, /A downloaded copy cannot be recalled/u);
+    assert.equal(page.includes("<script"), false);
+    assert.equal(/https?:/u.test(page), false);
+    assert.match(pack, /run-member/u);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("writeEvidenceReviewDir refuses a walkthrough for a different run", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-export-mismatch-"));
+  const digest = `sha256:${"b".repeat(64)}`;
+  await assert.rejects(
+    writeEvidenceReviewDir({
+      dir,
+      runId: "run-member",
+      evidence: { tracePack: { digest, source: { runId: "run-member" } } },
+      walkthrough: {
+        pack: {
+          schemaVersion: 1,
+          kind: "relay-walkthrough-pack",
+          digest,
+          manifest: {
+            schemaVersion: 1,
+            pinned: {
+              appMapId: "map",
+              appMapRevision: 1,
+              runIds: ["run-other"],
+              generatedAt: 1,
+            },
+            captures: [],
+          },
+          frames: [],
+        },
+      },
+    }),
+    /does not name Run run-member/u,
+  );
+  await assert.rejects(readFile(join(dir, "walkthrough.html"), "utf8"));
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("writeEvidenceReviewDir refuses a trace pack for a different run", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-export-trace-mismatch-"));
+  const digest = `sha256:${"c".repeat(64)}`;
+  await assert.rejects(
+    writeEvidenceReviewDir({
+      dir,
+      runId: "run-member",
+      evidence: { tracePack: { digest, source: { runId: "run-other" } } },
+      walkthrough: {
+        pack: {
+          schemaVersion: 1,
+          kind: "relay-walkthrough-pack",
+          digest,
+          manifest: {
+            schemaVersion: 1,
+            pinned: {
+              appMapId: "map",
+              appMapRevision: 1,
+              runIds: ["run-member"],
+              generatedAt: 1,
+            },
+            captures: [],
+          },
+          frames: [],
+        },
+      },
+    }),
+    /trace pack for Run run-other, not run-member/u,
+  );
+  await assert.rejects(readFile(join(dir, "trace-pack.json"), "utf8"));
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("writeEvidenceReviewDir refuses a frame from another run", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-export-frame-mismatch-"));
+  const digest = `sha256:${"d".repeat(64)}`;
+  await assert.rejects(
+    writeEvidenceReviewDir({
+      dir,
+      runId: "run-member",
+      evidence: { tracePack: { digest, source: { runId: "run-member" } } },
+      walkthrough: {
+        pack: {
+          schemaVersion: 1,
+          kind: "relay-walkthrough-pack",
+          digest,
+          manifest: {
+            schemaVersion: 1,
+            pinned: {
+              appMapId: "map",
+              appMapRevision: 1,
+              runIds: ["run-member"],
+              generatedAt: 1,
+            },
+            captures: [],
+          },
+          frames: [
+            {
+              runId: "run-other",
+              framePath: "frames/001.png",
+              imageSha256: "6105d6cc76af400325e94d588ce511be5bfdbb73b437dc51eca43917d7a43e3d",
+              content: "aW1hZ2U=",
+            },
+          ],
+        },
+      },
+    }),
+    /frame for Run run-other, not run-member/u,
+  );
+  await assert.rejects(readFile(join(dir, "walkthrough.html"), "utf8"));
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("writeEvidenceReviewDir refuses a capture from another run", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-export-capture-mismatch-"));
+  const digest = `sha256:${"f".repeat(64)}`;
+  await assert.rejects(
+    writeEvidenceReviewDir({
+      dir,
+      runId: "run-member",
+      evidence: { tracePack: { digest, source: { runId: "run-member" } } },
+      walkthrough: {
+        pack: {
+          schemaVersion: 1,
+          kind: "relay-walkthrough-pack",
+          digest,
+          manifest: {
+            schemaVersion: 1,
+            pinned: {
+              appMapId: "map",
+              appMapRevision: 1,
+              runIds: ["run-member"],
+              generatedAt: 1,
+            },
+            captures: [{ runId: "run-other", stateId: "home", framePath: "frames/001.png" }],
+          },
+          frames: [],
+        },
+      },
+    }),
+    /capture for Run run-other, not run-member/u,
+  );
+  await assert.rejects(readFile(join(dir, "walkthrough.html"), "utf8"));
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("writeEvidenceReviewDir refuses a frame whose bytes changed", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-export-digest-mismatch-"));
+  const digest = `sha256:${"a".repeat(64)}`;
+  await assert.rejects(
+    writeEvidenceReviewDir({
+      dir,
+      runId: "run-member",
+      evidence: { tracePack: { digest, source: { runId: "run-member" } } },
+      walkthrough: {
+        pack: {
+          schemaVersion: 1,
+          kind: "relay-walkthrough-pack",
+          digest,
+          manifest: {
+            schemaVersion: 1,
+            pinned: {
+              appMapId: "map",
+              appMapRevision: 1,
+              runIds: ["run-member"],
+              generatedAt: 1,
+            },
+            captures: [],
+          },
+          frames: [
+            {
+              runId: "run-member",
+              framePath: "frames/001.png",
+              imageSha256: "b".repeat(64),
+              content: "aW1hZ2U=",
+            },
+          ],
+        },
+      },
+    }),
+    /Frame frames\/001\.png on Run run-member does not match the recorded digest/u,
+  );
+  await assert.rejects(readFile(join(dir, "walkthrough.html"), "utf8"));
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("writeEvidenceReviewDir refuses a capture whose frame was not included", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-export-missing-frame-"));
+  const digest = `sha256:${"a".repeat(64)}`;
+  await assert.rejects(
+    writeEvidenceReviewDir({
+      dir,
+      runId: "run-member",
+      evidence: { tracePack: { digest, source: { runId: "run-member" } } },
+      walkthrough: {
+        pack: {
+          schemaVersion: 1,
+          kind: "relay-walkthrough-pack",
+          digest,
+          manifest: {
+            schemaVersion: 1,
+            pinned: {
+              appMapId: "map",
+              appMapRevision: 1,
+              runIds: ["run-member"],
+              generatedAt: 1,
+            },
+            captures: [
+              {
+                runId: "run-member",
+                framePath: "frames/001.png",
+                imageSha256: "6105d6cc76af400325e94d588ce511be5bfdbb73b437dc51eca43917d7a43e3d",
+              },
+            ],
+          },
+          frames: [],
+        },
+      },
+    }),
+    /Frame frames\/001\.png on Run run-member was not included/u,
+  );
+  await assert.rejects(readFile(join(dir, "walkthrough.html"), "utf8"));
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("writeEvidenceReviewDir refuses a pack that also names another run", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-export-also-names-"));
+  const digest = `sha256:${"e".repeat(64)}`;
+  await assert.rejects(
+    writeEvidenceReviewDir({
+      dir,
+      runId: "run-member",
+      evidence: { tracePack: { digest, source: { runId: "run-member" } } },
+      walkthrough: {
+        pack: {
+          schemaVersion: 1,
+          kind: "relay-walkthrough-pack",
+          digest,
+          manifest: {
+            schemaVersion: 1,
+            pinned: {
+              appMapId: "map",
+              appMapRevision: 1,
+              runIds: ["run-member", "run-other"],
+              generatedAt: 1,
+            },
+            captures: [],
+          },
+          frames: [],
+        },
+      },
+    }),
+    /also names Run run-other/u,
+  );
+  await assert.rejects(readFile(join(dir, "walkthrough.html"), "utf8"));
+  await rm(dir, { recursive: true, force: true });
+});
+
+
 test("writeRunOutDir writes result.json, stderr.log, and copies job PNGs", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-cli-out-"));
   const runDir = join(root, "job-run");
@@ -64,6 +421,126 @@ test("writeRunOutDir writes result.json, stderr.log, and copies job PNGs", async
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("writeEvidenceReviewDir refuses a named frame that has no bytes", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-export-named-missing-"));
+  const digest = `sha256:${"a".repeat(64)}`;
+  await assert.rejects(
+    writeEvidenceReviewDir({
+      dir,
+      runId: "run-member",
+      evidence: { tracePack: { digest, source: { runId: "run-member" } } },
+      walkthrough: {
+        pack: {
+          schemaVersion: 1,
+          kind: "relay-walkthrough-pack",
+          digest,
+          manifest: {
+            schemaVersion: 1,
+            pinned: {
+              appMapId: "map",
+              appMapRevision: 1,
+              runIds: ["run-member"],
+              generatedAt: 1,
+            },
+            captures: [{ runId: "run-member", framePath: "frames/002.png" }],
+          },
+          frames: [],
+        },
+      },
+    }),
+    /Frame frames\/002\.png on Run run-member has no recorded digest/u,
+  );
+  await assert.rejects(readFile(join(dir, "walkthrough.html"), "utf8"));
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("writeEvidenceReviewDir refuses frame bytes that have no recorded digest", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-export-undigested-"));
+  const digest = `sha256:${"a".repeat(64)}`;
+  await assert.rejects(
+    writeEvidenceReviewDir({
+      dir,
+      runId: "run-member",
+      evidence: { tracePack: { digest, source: { runId: "run-member" } } },
+      walkthrough: {
+        pack: {
+          schemaVersion: 1,
+          kind: "relay-walkthrough-pack",
+          digest,
+          manifest: {
+            schemaVersion: 1,
+            pinned: {
+              appMapId: "map",
+              appMapRevision: 1,
+              runIds: ["run-member"],
+              generatedAt: 1,
+            },
+            captures: [{ runId: "run-member", framePath: "frames/001.png" }],
+          },
+          frames: [
+            {
+              runId: "run-member",
+              framePath: "frames/001.png",
+              imageSha256: "6105d6cc76af400325e94d588ce511be5bfdbb73b437dc51eca43917d7a43e3d",
+              content: "aW1hZ2U=",
+            },
+          ],
+        },
+      },
+    }),
+    /Frame frames\/001\.png on Run run-member has no recorded digest/u,
+  );
+  await assert.rejects(readFile(join(dir, "walkthrough.html"), "utf8"));
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("writeEvidenceReviewDir refuses a capture digest that disagrees with the frame bytes", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-export-capture-digest-"));
+  const digest = `sha256:${"a".repeat(64)}`;
+  const bytes = "6105d6cc76af400325e94d588ce511be5bfdbb73b437dc51eca43917d7a43e3d";
+  await assert.rejects(
+    writeEvidenceReviewDir({
+      dir,
+      runId: "run-member",
+      evidence: { tracePack: { digest, source: { runId: "run-member" } } },
+      walkthrough: {
+        pack: {
+          schemaVersion: 1,
+          kind: "relay-walkthrough-pack",
+          digest,
+          manifest: {
+            schemaVersion: 1,
+            pinned: {
+              appMapId: "map",
+              appMapRevision: 1,
+              runIds: ["run-member"],
+              generatedAt: 1,
+            },
+            captures: [
+              {
+                runId: "run-member",
+                framePath: "frames/001.png",
+                imageSha256: "b".repeat(64),
+              },
+            ],
+          },
+          frames: [
+            {
+              runId: "run-member",
+              framePath: "frames/001.png",
+              imageSha256: bytes,
+              content: "aW1hZ2U=",
+            },
+          ],
+        },
+      },
+    }),
+    /does not match the recorded digest/u,
+  );
+  await assert.rejects(readFile(join(dir, "walkthrough.html"), "utf8"));
+  await rm(dir, { recursive: true, force: true });
 });
 
 test("job watch --out captures stderr progress and copies runDir PNGs", async () => {

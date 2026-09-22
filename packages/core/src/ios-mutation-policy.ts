@@ -296,14 +296,16 @@ function mutationErrorMessage(error: unknown): string {
 }
 
 /**
- * Only a native, selector-specific rejection is safe to reinterpret as “no
- * command was dispatched”. Timeout, connection, runner, or generic lookup
- * failures remain ambiguous and must stop for evidence rather than trying a
- * coordinate press.
+ * Only a native rejection that proves the command never left the host is
+ * safe to reinterpret as “no command was dispatched”. Timeout, connection,
+ * runner, or generic lookup failures remain ambiguous and must stop for
+ * evidence rather than trying a coordinate press.
+ * "No active session" is the adapter refusing before it has a session.
  */
 export function iosSelectorWasNotDispatched(error: unknown): boolean {
   if (error instanceof IosHidUnavailableError) return true;
   const message = mutationErrorMessage(error).trim();
+  if (/^no active session\. run open first\.?$/i.test(message)) return true;
   if (
     /^(?:native )?(?:selector )?(?:did not match an element|no match(?:ing element)?|element not found)(?:[.!])?$/i.test(
       message,

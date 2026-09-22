@@ -2228,6 +2228,51 @@ test("TracePack export is a persisted-run evidence query with a strict response"
   assert.throws(() => definition.output.parse({ tracePack: {}, analysis: {} }));
 });
 
+test("walkthrough pack export joins runs without becoming a TracePack", () => {
+  const definition = operationDefinition("run.walkthrough-pack.get");
+  assert.deepEqual(definition.input.parse({ runId: "run-1", with: "admin-run,other" }), {
+    runId: "run-1",
+    with: ["admin-run", "other"],
+  });
+  assert.deepEqual(definition.input.parse({ runId: "run-1", with: ["admin-run"] }), {
+    runId: "run-1",
+    with: ["admin-run"],
+  });
+  assert.deepEqual(definition.transport, {
+    method: "GET",
+    path: "/runs/:runId/walkthrough-pack",
+  });
+  assert.equal(definition.minimumRole, "viewer");
+  const digest = `sha256:${"a".repeat(64)}`;
+  const parsed = definition.output.parse({
+    pack: {
+      schemaVersion: 1,
+      kind: "relay-walkthrough-pack",
+      digest,
+      manifest: {
+        schemaVersion: 1,
+        pinned: {
+          appMapId: "map",
+          appMapRevision: 1,
+          runIds: ["run-1", "admin-run"],
+          generatedAt: 1,
+        },
+        captures: [],
+      },
+      frames: [
+        {
+          runId: "run-1",
+          framePath: "frames/001.png",
+          imageSha256: "b".repeat(64),
+          content: "aW1hZ2U=",
+        },
+      ],
+    },
+  });
+  assert.equal(parsed.pack.kind, "relay-walkthrough-pack");
+  assert.throws(() => definition.output.parse({ tracePack: {}, analysis: {} }));
+});
+
 test("standalone step output keeps an unknown iOS command as terminal review evidence", () => {
   const definition = operationDefinition("step.run");
   const result = {

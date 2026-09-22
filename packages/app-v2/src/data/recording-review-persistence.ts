@@ -83,3 +83,11 @@ export function reviewPersistence(input: {
     editorState: "saved",
   };
 }
+
+/** Verification is not a save state. One passing replay verifies that configuration only. */
+export function reviewVerificationLabel(kind: ReviewPersistenceKind): string | undefined {
+  if (kind === "verified") return "Verified on the selected configuration";
+  if (kind === "changed-since-verified") return "Changed since last run";
+  return undefined;
+}
+

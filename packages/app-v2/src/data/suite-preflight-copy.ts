@@ -24,3 +24,17 @@ export function friendlySuiteIssue(
   }
   return message;
 }
+
+/** Collapse per-test binding fallout without hiding other independent blockers. */
+export function summarizeSuiteSetup(messages: readonly string[]): string[] {
+  const binding = messages.filter((message) => /^Bind a runtime profile to /u.test(message));
+  const other = [...new Set(messages.filter((message) => !binding.includes(message)))];
+  return [
+    ...(binding.length
+      ? [
+          `${binding.length} ${binding.length === 1 ? "test needs" : "tests need"} a saved run configuration. Set up the selected browser or device, then recheck this plan.`,
+        ]
+      : []),
+    ...other.map((message) => friendlySuiteIssue(message)),
+  ];
+}

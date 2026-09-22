@@ -20,7 +20,7 @@ import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
 import { RecordingActionsPanel, RecordingEvidencePanel } from "./recording-review-panels";
 import { replayDetail, useEvidenceObjectUrl } from "./recording-review-presentation";
 
-import { reviewPersistence } from "../data/recording-review-persistence";
+import { reviewPersistence, reviewVerificationLabel } from "../data/recording-review-persistence";
 import { useRecordingNameDraft } from "../data/use-recording-name-draft";
 import { RecordingReviewInspector } from "./recording-review-inspector";
 
@@ -410,6 +410,15 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                 </Button>
               ) : null}
 
+              {persistence.editorState === "saving" ? <EditorSaveStatus state="saving" /> : null}
+              {persistence.kind === "name-only" && persistence.editorState === "saved" ? (
+                <EditorSaveStatus state="saved-locally" />
+              ) : null}
+              {reviewVerificationLabel(persistence.kind) ? (
+                <span role="status" className="text-xs text-muted-foreground">
+                  {reviewVerificationLabel(persistence.kind)}
+                </span>
+              ) : null}
               {persistence.editorState === "failed" ? (
                 <EditorSaveStatus state={persistence.editorState} detail={persistence.label} />
               ) : null}

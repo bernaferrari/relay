@@ -15,6 +15,12 @@ export function parseScreenshotReview(
   if (!isObject(raw)) {
     throw stepErr(index, "screenshot.review must be an object");
   }
+  assertKnownReviewKeys(
+    raw,
+    ["mode", "lookFor", "policy", "phase", "phases", "checkpointId", "caption"],
+    index,
+    "screenshot.review",
+  );
   if (raw.mode !== "later") {
     throw stepErr(index, "screenshot.review.mode must be later");
   }
@@ -64,6 +70,12 @@ export function parseScreenshotReview(
       if (!isObject(item)) {
         throw stepErr(index, `screenshot.review.phases[${phaseIndex}] must be an object`);
       }
+      assertKnownReviewKeys(
+        item,
+        ["id", "caption", "lookFor", "intervalMs"],
+        index,
+        `screenshot.review.phases[${phaseIndex}]`,
+      );
       if (!isString(item.id) || !STEP_IDENTITY.test(item.id)) {
         throw stepErr(index, `screenshot.review.phases[${phaseIndex}].id is required`);
       }
@@ -120,4 +132,16 @@ export function parseScreenshotReview(
     ...(phase ? { phase } : {}),
     ...(phases ? { phases } : {}),
   };
+}
+
+function assertKnownReviewKeys(
+  raw: Record<string, unknown>,
+  allowed: readonly string[],
+  index: number,
+  field: string,
+): void {
+  const known = new Set<string>(allowed);
+  for (const key of Object.keys(raw)) {
+    if (!known.has(key)) throw stepErr(index, `${field} unknown field: ${key}`);
+  }
 }

@@ -346,6 +346,13 @@ const runRoute = createRoute({
 const runWalkthroughRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/runs/$runId/walkthrough",
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { state?: string; variant?: string; capture?: string } => ({
+    ...(typeof search.state === "string" && search.state ? { state: search.state } : {}),
+    ...(typeof search.variant === "string" && search.variant ? { variant: search.variant } : {}),
+    ...(typeof search.capture === "string" && search.capture ? { capture: search.capture } : {}),
+  }),
   component: RunWalkthroughPage,
 });
 const batchRoute = createRoute({

@@ -2,10 +2,12 @@
 //
 // It does not use XCTest, WebDriverAgent, DeviceKit, or `ios ui`. Pixels come
 // from Instruments screenshots elsewhere; this binary only synthesizes a
-// digitizer contact+release. dtuhidd may drop reports unless a CoreDevice
-// media stream is already authenticating the surface (Xcode Mirror or an
-// equivalent mediastreamstart). A missing XCTest runner is not a reason to
-// skip this path.
+// digitizer contact+release. backboardd drops those reports unless a
+// CoreDevice media stream is authenticating the surface. On iOS 17 through
+// 26, starting that stream returns CoreDevice error 9021 (remote control
+// requires iOS 27), so this process refuses before sending and names
+// universalhidservice. That refusal has not touched the glass; the caller
+// may press through XCTest.
 package main
 
 import (
@@ -66,6 +68,10 @@ func run(args []string, stdout io.Writer, _ io.Writer) error {
 			fmt.Fprintln(stdout, name)
 		}
 		return nil
+	}
+
+	if err := requireAuthenticatedHidSurface(device); err != nil {
+		return err
 	}
 
 	hidX, hidY, err := resolveHidPoint(device, options)

@@ -42,6 +42,37 @@ test("iOS point interact uses CoreDevice HID when the helper lands", async () =>
   }
 });
 
+test("iOS point interact presses through XCTest when HID is not authenticated", async () => {
+  const presses: unknown[] = [];
+  setIosPixelTapForTests(async () => {
+    throw new Error(
+      "universalhidservice touch was not dispatched: no CoreDevice media stream is authenticating the digitizer, so backboardd drops the report. Remote control requires iOS 27",
+    );
+  });
+  const device = {
+    interactions: {
+      press: (options: unknown) => {
+        presses.push(options);
+        return Promise.resolve({});
+      },
+    },
+  } as unknown as Device;
+  const supervisors = new TargetSupervisorStore(":memory:");
+  try {
+    await runWithTargetSupervisorStore(supervisors, () =>
+      runWithTargetContext({ kind: "device", platform: "ios", serial: "db0c9b7c" }, () =>
+        interact({ kind: "point", x: 1181, y: 1228 }, { device, verifyIosScreenChange: false }),
+      ),
+    );
+    assert.equal(presses.length, 1);
+    assert.equal((presses[0] as { x: number }).x, 1181);
+    assert.equal((presses[0] as { y: number }).y, 1228);
+  } finally {
+    setIosPixelTapForTests();
+    supervisors.close();
+  }
+});
+
 test("iOS point interact falls back to XCTest when HID is absent from the DDI", async () => {
   const presses: unknown[] = [];
   setIosPixelTapForTests(async () => {

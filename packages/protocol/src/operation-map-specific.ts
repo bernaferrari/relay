@@ -49,6 +49,7 @@ import type {
 import type { CampaignRepairOperationMap } from "./run-repair-operations.js";
 import type { RunShareOperationMap } from "./run-share.js";
 import type { TracePackExportResponse } from "./trace-pack.js";
+import type { WalkthroughPackExportResponse } from "./walkthrough-pack.js";
 import type {
   LocalCampaignAdmissionPreflightRequest,
   LocalCampaignAdmissionPreflightResponse,
@@ -390,6 +391,10 @@ export type SpecificOperationMap = {
   "run.trace-pack.get": {
     input: { runId: string };
     output: TracePackExportResponse;
+  };
+  "run.walkthrough-pack.get": {
+    input: { runId: string; with?: string | readonly string[] };
+    output: WalkthroughPackExportResponse;
   };
   "run.review": {
     input: { runId: string; action: "approve" | "reject" | "defer"; note?: string };

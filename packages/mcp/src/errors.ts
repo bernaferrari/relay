@@ -245,9 +245,11 @@ export function relayMcpError(
 
   const body = object(error.body);
   const suppliedCode = body?.code;
-  const code =
-    suppliedCode === iosMutationOutcomeUnknownCode ||
-    (typeof suppliedCode === "string" && codePattern.test(suppliedCode))
+  const signInBlocked = suppliedCode === "ACCOUNT_NEEDS_RELOGIN";
+  const code = signInBlocked
+    ? suppliedCode
+    : suppliedCode === iosMutationOutcomeUnknownCode ||
+        (typeof suppliedCode === "string" && codePattern.test(suppliedCode))
       ? suppliedCode
       : defaultCode(error.status);
   // The terminal code is the authority. Diagnostic fields are best-effort:
@@ -262,14 +264,16 @@ export function relayMcpError(
   // An unknown physical iOS mutation has already used its one native command.
   // It is categorically different from a stale revision conflict: telling an
   // agent to refresh-and-retry would invite a duplicate press or scroll.
-  const recovery = terminalIosMutationOutcomeUnknown
-    ? { action: "none" as const, retryable: false }
-    : suppliedRecovery(body?.recovery, recoveryFor(error.status, message));
-  // A malformed terminal payload must not smuggle an executable retry action
-  // through the generic recoveryAction field either.
-  const recoveryAction = terminalIosMutationOutcomeUnknown
-    ? undefined
-    : recoveryActionFrom(body?.recoveryAction);
+  // A blocked sign-in is not a retry of the same Plan.
+  const recovery = signInBlocked
+    ? { action: "authenticate" as const, retryable: false }
+    : terminalIosMutationOutcomeUnknown
+      ? { action: "none" as const, retryable: false }
+      : suppliedRecovery(body?.recovery, recoveryFor(error.status, message));
+  const recoveryAction =
+    signInBlocked || terminalIosMutationOutcomeUnknown
+      ? undefined
+      : recoveryActionFrom(body?.recoveryAction);
   const profileSafe = profileSafeRecovery(recovery, recoveryAction, options);
 
   return {
@@ -280,7 +284,14 @@ export function relayMcpError(
     ...(terminalIosMutationOutcomeUnknown ? { terminal: "review-needed" as const } : {}),
     recovery: profileSafe.recovery,
     ...(profileSafe.recoveryAction ? { recoveryAction: profileSafe.recoveryAction } : {}),
-    ...(profileSafe.recoveryGuidance ? { recoveryGuidance: profileSafe.recoveryGuidance } : {}),
+    ...(signInBlocked
+      ? {
+          recoveryGuidance:
+            "Completed captures are preserved. Refresh the sign-in, then resume this activity. Do not start the same Plan again until that sign-in is saved.",
+        }
+      : profileSafe.recoveryGuidance
+        ? { recoveryGuidance: profileSafe.recoveryGuidance }
+        : {}),
     ...(revision === undefined ? {} : { currentRevision: revision }),
     ...(iosReview ? { iosReview } : {}),
   };

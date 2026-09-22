@@ -3,7 +3,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { CAPTURE_REVIEW_DEST_PHASE, RC23_SCREENSHOT_FIRST_TESTS } from "@relay/protocol";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { invokeRelayOperatorTool } from "./operator-tool-dispatch.js";
+import { invokeRelayOperatorTool, planRunExecutionMode, recoverSerialFromLane } from "./operator-tool-dispatch.js";
 import {
   relayOperatorToolNames,
   relayOperatorTools,
@@ -29,6 +29,101 @@ function recordingInvoker(
   };
 }
 
+test("recover uses the Lane target instead of asking for a separate serial", async () => {
+  assert.equal(
+    recoverSerialFromLane(
+      { target: { kind: "browser", browserTargetId: "browser-1" } },
+      "grok-daily",
+    ),
+    "browser-1",
+  );
+  assert.equal(
+    recoverSerialFromLane({ target: { kind: "device", serial: "ipad" } }, "ipad-lab"),
+    "ipad",
+  );
+  assert.throws(() => recoverSerialFromLane(undefined, "missing"), /Lane missing was not found/u);
+
+  const calls: Call[] = [];
+  const result = await invokeRelayOperatorTool({
+    name: "relay_recover",
+    argumentsValue: { lane: "grok-daily" },
+    confirmed: false,
+    actorId: "agent:cursor",
+    signal: AbortSignal.timeout(1000),
+    invoker: {
+      async invoke(operationId, input) {
+        calls.push({ operationId, input });
+        if (operationId === "lane.list") {
+          return {
+            lanes: [{ id: "grok-daily", target: { kind: "browser", browserTargetId: "browser-1" } }],
+          };
+        }
+        return { ok: true, invoked: operationId };
+      },
+    },
+  });
+  assert.deepEqual(calls, [
+    { operationId: "lane.list", input: {} },
+    { operationId: "target.recover", input: { serial: "browser-1" } },
+  ]);
+  assert.deepEqual(result, { ok: true, invoked: "target.recover" });
+});
+
+test("a bounded goal is refused until the caller confirms it", async () => {
+  await assert.rejects(
+    invokeRelayOperatorTool({
+      name: "relay_goal",
+      argumentsValue: example("relay_goal"),
+      confirmed: false,
+      actorId: "agent:cursor",
+      signal: AbortSignal.timeout(1000),
+      invoker: { async invoke() {} },
+    }),
+    /requires confirm: true/u,
+  );
+});
+
+test("a confirmed goal is handed to the existing goal runner", async () => {
+  await assert.rejects(
+    invokeRelayOperatorTool({
+      name: "relay_goal",
+      argumentsValue: example("relay_goal"),
+      confirmed: true,
+      actorId: "agent:cursor",
+      signal: AbortSignal.timeout(2000),
+      invoker: {
+        async invoke() {
+          throw new Error("goal-start-observed");
+        },
+      },
+    }),
+    /goal-start-observed/u,
+  );
+});
+
+test("a bounded goal requires a page to open", () => {
+  const goal = relayOperatorTools.find((tool) => tool.name === "relay_goal");
+  assert.ok(goal);
+  assert.equal(goal.inputSchema.safeParse({ goal: "Open settings" }).success, false);
+  assert.equal(goal.inputSchema.safeParse(example("relay_goal")).success, true);
+  assert.equal(
+    goal.inputSchema.safeParse({
+      goal: "Open settings",
+      startUrl: "https://app.test",
+      laneId: "grok-daily",
+    }).success,
+    true,
+  );
+  assert.equal(
+    goal.inputSchema.safeParse({ goal: "Open settings", startUrl: "javascript:alert(1)" }).success,
+    false,
+  );
+  assert.equal(
+    goal.inputSchema.safeParse({ goal: "Open settings", startUrl: "file:///etc/passwd" }).success,
+    false,
+  );
+});
+
 const examples: Record<RelayOperatorToolDescriptor["name"], Record<string, unknown>> = {
   relay_health: {},
   relay_devices: {},
@@ -53,6 +148,23 @@ const examples: Record<RelayOperatorToolDescriptor["name"], Record<string, unkno
     export: true,
   },
   relay_wait: { jobId: "job-1" },
+  relay_cancel: { jobId: "job-1" },
+  relay_export: { runId: "run-1", with: ["run-2"] },
+  relay_save: {
+    appMapId: "checkout",
+    testId: "smoke",
+    expectedRevision: 7,
+    test: {
+      name: "Checkout smoke",
+      kind: "scenario",
+      intentSchemaVersion: 1,
+      steps: [],
+    },
+  },
+  relay_goal: {
+    goal: "Open settings and capture language options",
+    startUrl: "http://127.0.0.1:3000",
+  },
   relay_findings: { batchId: "camp-1" },
   relay_evidence: { runId: "run-1" },
   relay_visual_compare: { runId: "run-1" },
@@ -73,7 +185,7 @@ function example(name: RelayOperatorToolDescriptor["name"]): Record<string, unkn
 
 test("every operator verb has a schema and a description with a worked example", () => {
   assert.equal(relayOperatorTools.length, relayOperatorToolNames.length);
-  assert.ok(relayOperatorTools.length <= 21);
+  assert.ok(relayOperatorTools.length <= 23);
   assert.deepEqual(relayOperatorToolNames, [
     "relay_health",
     "relay_devices",
@@ -88,6 +200,10 @@ test("every operator verb has a schema and a description with a worked example",
     "relay_run",
     "relay_plan_run",
     "relay_wait",
+    "relay_cancel",
+    "relay_export",
+    "relay_save",
+    "relay_goal",
     "relay_findings",
     "relay_evidence",
     "relay_visual_compare",
@@ -113,7 +229,8 @@ test("operator copy uses Plan language and adopts a live runner", () => {
   assert.doesNotMatch(recover.description, /remount/u);
   const plan = relayOperatorTools.find((tool) => tool.name === "relay_plan_run");
   assert.ok(plan);
-  assert.match(plan.description, /saved Plan \(every selected case\)/u);
+  assert.match(plan.description, /one case of a saved Plan/u);
+  assert.match(plan.description, /executionMode all/u);
   assert.match(plan.description, /Infra columns/u);
   assert.doesNotMatch(plan.description, /\(Combine\)/u);
   const findings = relayOperatorTools.find((tool) => tool.name === "relay_findings");
@@ -126,11 +243,19 @@ test("operator copy uses Plan language and adopts a live runner", () => {
       combineId: "grok-hourly",
       executionMode: "pilot",
     }).success,
-    false,
+    true,
   );
 });
 
-test("operator profile registers at most 21 hand-named verbs and hides takeover", async () => {
+test("plan run executionMode all stays every case", () => {
+  assert.equal(planRunExecutionMode(undefined), "pilot");
+  assert.equal(planRunExecutionMode("pilot"), "pilot");
+  assert.equal(planRunExecutionMode("all"), "all");
+  assert.equal(planRunExecutionMode("everything"), "pilot");
+});
+
+
+test("operator profile registers at most 23 hand-named verbs and hides takeover", async () => {
   const server = createMcpServer({
     invoker: { async invoke() {} },
     scope: { projectId: "default" },
@@ -171,7 +296,7 @@ test("operator profile registers at most 21 hand-named verbs and hides takeover"
     const listed = await request("tools/list", {});
     const names = (listed.result?.tools ?? []).map(({ name }) => name);
     assert.deepEqual(names, relayOperatorToolNames);
-    assert.ok(names.length <= 21);
+    assert.ok(names.length <= 23);
     assert.equal(names.includes("relay_lease_takeover"), false);
     assert.ok(names.includes("relay_screenshot"));
     assert.ok(names.includes("relay_preview"));
@@ -228,6 +353,22 @@ test("operator verbs invoke canonical operations including optional laneId", asy
     operationId: "job.get",
     result: { job: { id: "job-1", status: "ok" } },
   });
+  assert.deepEqual(await run("relay_cancel", { jobId: "job-1" }), {
+    ok: true,
+    invoked: "job.cancel",
+  });
+  assert.deepEqual(await run("relay_export", { runId: "run-1", with: ["run-2"] }), {
+    ok: true,
+    invoked: "run.walkthrough-pack.get",
+  });
+  assert.deepEqual(calls.at(-1), {
+    operationId: "run.walkthrough-pack.get",
+    input: { runId: "run-1", with: ["run-2"] },
+  });
+  assert.deepEqual(
+    await run("relay_save", example("relay_save"), "agent:cursor", true),
+    { ok: true, invoked: "app-map.test.save" },
+  );
 
   assert.ok(
     calls.some(
@@ -241,7 +382,7 @@ test("operator verbs invoke canonical operations including optional laneId", asy
       (call) =>
         call.operationId === "job.combine.start" &&
         (call.input as { laneId?: string; executionMode?: string }).laneId === "grok-lab" &&
-        (call.input as { executionMode?: string }).executionMode === "all",
+        (call.input as { executionMode?: string }).executionMode === "pilot",
     ),
   );
   assert.ok(calls.some((call) => call.operationId === "target.interact"));

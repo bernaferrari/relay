@@ -3,6 +3,7 @@ import type { OutputMode } from "./config.js";
 import type { CliError } from "./errors.js";
 import type { EventEnvelope } from "@relay/protocol";
 import { formatVerifyChangeResult } from "./verify-change-output.js";
+import { formatWalkthroughPackResult } from "./walkthrough-output.js";
 
 export type OutputStreams = {
   stdout: Writable;
@@ -74,6 +75,10 @@ function recoveryDetails(details: unknown): { message?: string; command?: string
     ...(message ? { message } : {}),
     ...(argv.length ? { command: ["relay", ...argv].map(shellArgument).join(" ") } : {}),
   };
+}
+
+function isAccountNeedsRelogin(details: unknown): boolean {
+  return record(details)?.code === "ACCOUNT_NEEDS_RELOGIN";
 }
 
 export class CliOutput {
@@ -164,13 +169,17 @@ export class CliOutput {
     this.streams.stdout.write(value);
   }
 
-  result(operationId: string, result: unknown): void {
-    const terminal = { type: "result", ok: true, operationId, result } as const;
+  result(operationId: string, result: unknown, ok = true): void {
+    const terminal = { type: "result" as const, ok, operationId, result };
     this.terminal = terminal;
     if (this.mode === "json" || this.mode === "ndjson") line(this.streams.stdout, terminal);
     else {
-      const verifyChange = formatVerifyChangeResult(result);
-      this.streams.stdout.write(`${verifyChange ?? JSON.stringify(result, null, 2)}\n`);
+      const readable =
+        formatVerifyChangeResult(result) ??
+        formatWalkthroughPackResult(result) ??
+        formatDoctorResult(result) ??
+        formatRunTestSnapshot(result);
+      this.streams.stdout.write(`${readable ?? JSON.stringify(result, null, 2)}\n`);
     }
   }
 
@@ -192,6 +201,116 @@ export class CliOutput {
       const recovery = recoveryDetails(error.details);
       if (recovery.message) this.streams.stderr.write(`Recovery: ${recovery.message}\n`);
       if (recovery.command) this.streams.stderr.write(`Try: ${recovery.command}\n`);
+      if (isAccountNeedsRelogin(error.details)) {
+        this.streams.stderr.write("Completed captures are preserved.\n");
+        this.streams.stderr.write("Refresh the sign-in, then resume this activity.\n");
+      }
     }
   }
+}
+
+function formatDoctorResult(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || !("kind" in value) || value.kind !== "relay-doctor") {
+    return undefined;
+  }
+  const report = value as {
+    server?: unknown;
+    message?: unknown;
+    cliVersion?: unknown;
+    serverVersion?: unknown;
+    versionMatch?: unknown;
+    doctor?: { ok?: unknown; checks?: Array<{ id?: unknown; ok?: unknown; message?: unknown }> };
+    notAccepted?: unknown;
+  };
+  const lines = ["Relay doctor", `Server: ${String(report.server ?? "unknown")}`];
+  if (typeof report.cliVersion === "string") lines.push(`CLI ${report.cliVersion}`);
+  if (typeof report.serverVersion === "string") lines.push(`Server ${report.serverVersion}`);
+  if (report.versionMatch === false) lines.push("CLI and server versions differ.");
+  if (report.versionMatch === true) lines.push("CLI and server versions match.");
+  const checks = report.doctor?.checks ?? [];
+  if (checks.length) {
+    lines.push("", "Checks:");
+    for (const check of checks) {
+      const state = check.ok === true ? "ok" : "failed";
+      lines.push(`- ${String(check.id ?? "check")}: ${state} — ${String(check.message ?? "")}`);
+    }
+  } else if (typeof report.message === "string" && report.message) {
+    lines.push(report.message);
+  }
+  const pending = Array.isArray(report.notAccepted)
+    ? report.notAccepted.filter((item): item is string => typeof item === "string")
+    : [];
+  if (pending.length) {
+    lines.push("", "Not accepted yet:");
+    for (const item of pending) lines.push(`- ${item}`);
+  }
+  return lines.join("\n");
+}
+
+function formatRunTestSnapshot(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || !("kind" in value) || value.kind !== "run-test") {
+    return undefined;
+  }
+  const snapshot = value as {
+    title?: unknown;
+    phase?: unknown;
+    progress?: { label?: unknown; completed?: unknown; total?: unknown };
+    review?: { pending?: unknown };
+    problems?: Array<{ title?: unknown; detail?: unknown; recovery?: unknown }>;
+    frozen?: {
+      engine?: unknown;
+      account?: { kind?: unknown; accountId?: unknown };
+    };
+  };
+  const lines = [typeof snapshot.title === "string" ? snapshot.title : "Run"];
+  const configuration = runConfigurationLine(snapshot.frozen);
+  if (configuration) lines.push(configuration);
+  if (typeof snapshot.phase === "string") lines.push(snapshot.phase);
+  if (typeof snapshot.progress?.label === "string") lines.push(snapshot.progress.label);
+  const problem = snapshot.problems?.[0];
+  const stopped =
+    snapshot.phase === "blocked" ||
+    snapshot.phase === "failed" ||
+    snapshot.phase === "cancelled" ||
+    snapshot.phase === "needs-attention";
+  const blocked =
+    stopped && typeof problem?.title === "string" && problem.title.length > 0;
+  if (blocked && problem) {
+    lines.push(`Could not continue: ${problem.title}`);
+    if (typeof problem.detail === "string" && problem.detail) lines.push(problem.detail);
+    if (typeof problem.recovery === "string" && problem.recovery) lines.push(problem.recovery);
+  }
+  const completed = snapshot.progress?.completed;
+  const total = snapshot.progress?.total;
+  if (
+    typeof completed === "number" &&
+    typeof total === "number" &&
+    Number.isInteger(completed) &&
+    Number.isInteger(total) &&
+    completed >= 0 &&
+    total > 0
+  ) {
+    const finished = snapshot.phase === "succeeded" || snapshot.phase === "completed";
+    const mark = finished && completed === total ? "✓" : "·";
+    lines.push(`${mark} ${completed} of ${total}`);
+  }
+  const pending = typeof snapshot.review?.pending === "number" ? snapshot.review.pending : 0;
+  if (pending > 0) {
+    lines.push(`${pending} screenshot${pending === 1 ? "" : "s"} awaiting review`);
+  }
+  return lines.join("\n");
+}
+
+function runConfigurationLine(frozen: {
+  engine?: unknown;
+  account?: { kind?: unknown; accountId?: unknown };
+} | undefined): string | undefined {
+  if (!frozen) return undefined;
+  const parts: string[] = [];
+  if (typeof frozen.engine === "string" && frozen.engine) parts.push(frozen.engine);
+  if (frozen.account?.kind === "signed-out") parts.push("Signed out");
+  else if (typeof frozen.account?.accountId === "string" && frozen.account.accountId) {
+    parts.push(frozen.account.accountId);
+  }
+  return parts.length ? parts.join(" · ") : undefined;
 }

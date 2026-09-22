@@ -43,6 +43,8 @@ export type RunShareFrame = {
   capturedAt: number;
   width?: number;
   height?: number;
+  /** The file exists but its bytes no longer match the recorded digest. */
+  withheld?: true;
 };
 
 export type RunShareReportRun = {

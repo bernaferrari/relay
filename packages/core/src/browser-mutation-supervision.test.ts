@@ -11,6 +11,7 @@ import {
   runSupervisedBrowserMutation,
 } from "./browser-mutation-supervision.js";
 import { runWithTargetSupervisorStore, TargetSupervisorStore } from "./target-supervisor-store.js";
+import { clearControl, JobCancelledError, requestCancel, runWithJobControl } from "./control.js";
 
 test("browser mutation supervision persists completed and not-dispatched outcomes", async () => {
   const store = new TargetSupervisorStore(":memory:");
@@ -55,6 +56,41 @@ test("browser mutation supervision persists completed and not-dispatched outcome
         .events.some(({ code }) => code === "INPUT_NOT_DISPATCHED"),
     );
   } finally {
+    store.close();
+  }
+});
+
+test("cancellation after preparation does not dispatch the browser action", async () => {
+  const store = new TargetSupervisorStore(":memory:");
+  try {
+    let dispatched = 0;
+    await assert.rejects(
+      runWithJobControl("job-cancel", () =>
+        runWithTargetSupervisorStore(store, () =>
+          runSupervisedBrowserMutation({
+            targetId: "browser-a",
+            intent: "Click Save",
+            beforeDispatch: () => {
+              requestCancel("job-cancel");
+            },
+            dispatch: async () => {
+              dispatched += 1;
+              return "clicked";
+            },
+          }),
+        ),
+      ),
+      (error: unknown) => error instanceof JobCancelledError,
+    );
+    assert.equal(dispatched, 0);
+    assert.equal(store.health({ id: "browser-a", kind: "browser" }).input.state, "ready");
+    assert.ok(
+      store
+        .health({ id: "browser-a", kind: "browser" })
+        .events.some(({ code }) => code === "INPUT_NOT_DISPATCHED"),
+    );
+  } finally {
+    clearControl("job-cancel");
     store.close();
   }
 });

@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 import { createBrowserCaptureWorkflow, type BrowserCapturePlan } from "@relay/workflows";
+import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { targetExecutionReadiness, renderPlanFindingsMarkdown } from "@relay/core";
 import { type RelayOutcomeJobs, type WorkflowSnapshot } from "@relay/workflows";
@@ -14,7 +15,7 @@ import {
 } from "@relay/protocol";
 import type { OutputMode } from "./config.js";
 import { parseCli } from "./config.js";
-import { startedPlanBatchId } from "./cli-run-flags.js";
+import { assertRecoverHasTarget, recoverInputFromLane, startedPlanBatchId } from "./cli-run-flags.js";
 import { classifyError, CliError, ExitCode, UsageError } from "./errors.js";
 import { planFindingsReportFromError } from "./plan-findings-cli.js";
 import { renderHelp } from "./help.js";
@@ -28,7 +29,7 @@ import {
 } from "./invoke.js";
 import { protocolOperationInput } from "./protocol-input.js";
 import { CliOutput, type OutputStreams } from "./output.js";
-import { teeWritable, writeRunOutDir } from "./cli-out.js";
+import { teeWritable, writeEvidenceReviewDir, writeRunOutDir } from "./cli-out.js";
 import { exportWatchedCombinePack, finalizeCombineExportResult } from "./evidence-pack-cli.js";
 import { emitScreenshot, emitSnapshotFile } from "./screenshot.js";
 import { persistScrollSurvey, scrollSurveyPersistDigest } from "./survey-persist.js";
@@ -309,9 +310,7 @@ export function assertOutcomeSucceeded(snapshot: WorkflowSnapshot): void {
   if (snapshot.kind === "run-test" && snapshot.review && snapshot.review.pending > 0) {
     const pending = snapshot.review.pending;
     throw new CliError(
-      `Run completed; ${pending} capture${pending === 1 ? "" : "s"} still require${
-        pending === 1 ? "s" : ""
-      } human review`,
+      `${pending} screenshot${pending === 1 ? "" : "s"} awaiting review`,
       ExitCode.verificationIncomplete,
       snapshot,
     );
@@ -415,7 +414,60 @@ async function runOutcomeCommand(input: {
   if (intent.kind === "goal-explore-resume") return jobs.resumeExploration(intent);
   if (intent.kind === "goal-explore-inspect") return jobs.inspectExploration(intent);
   if (intent.kind === "propose-repair") return jobs.proposeRepair(intent);
-  if (intent.kind === "export-evidence") return jobs.exportEvidence(intent);
+  if (intent.kind === "doctor") {
+    const cliVersion = cliPackageVersion();
+    const notAccepted = ["signing", "unfamiliar reviewer", "publication", "design partners"];
+    try {
+      const doctor = await invoke(client, "system.doctor.get", {}, signal);
+      let serverVersion: string | undefined;
+      try {
+        const health = await invoke(client, "system.health.get", {}, signal);
+        if (health && typeof health === "object" && "version" in health) {
+          const version = (health as { version?: unknown }).version;
+          if (typeof version === "string") serverVersion = version;
+        }
+      } catch {
+        serverVersion = undefined;
+      }
+      return {
+        schemaVersion: 1,
+        kind: "relay-doctor",
+        server: "reachable",
+        cliVersion,
+        ...(serverVersion ? { serverVersion } : {}),
+        versionMatch: serverVersion === undefined ? undefined : serverVersion === cliVersion,
+        doctor,
+        notAccepted,
+      };
+    } catch (error) {
+      return {
+        schemaVersion: 1,
+        kind: "relay-doctor",
+        server: "unreachable",
+        cliVersion,
+        message: error instanceof Error ? error.message : String(error),
+        notAccepted,
+      };
+    }
+  }
+  if (intent.kind === "export-evidence") {
+    const evidence = await jobs.exportEvidence({ kind: "export-evidence", runId: intent.runId });
+    if (intent.outputDir) {
+      const walkthrough = await invoke(
+        client,
+        "run.walkthrough-pack.get",
+        { runId: intent.runId },
+        signal,
+      );
+      await writeEvidenceReviewDir({
+        dir: intent.outputDir,
+        evidence,
+        walkthrough,
+        runId: intent.runId,
+      });
+    }
+    return evidence;
+  }
   if (intent.kind === "replay-lab") {
     return jobs.replayLab({
       kind: "replay-lab",
@@ -459,6 +511,17 @@ async function resolveCurrentTestRunInput(
   signal: AbortSignal,
   output: CliOutput,
 ): Promise<Record<string, unknown>> {
+  if (parsed.operationId === "target.recover") assertRecoverHasTarget(parsed.input);
+  if (parsed.operationId === "target.recover" && typeof parsed.input.laneId === "string") {
+    const response = object(await invoke(client, "lane.list", {}, signal), "lane.list");
+    const lanes = Array.isArray(response.lanes)
+      ? response.lanes.filter(
+          (value): value is { id?: string; target?: { kind?: string; serial?: string; browserTargetId?: string } } =>
+            Boolean(value) && typeof value === "object",
+        )
+      : [];
+    return recoverInputFromLane(parsed.input, lanes);
+  }
   if (!parsed.currentTarget && !parsed.currentRevision) return parsed.input;
   const appMapId = parsed.input.appMapId;
   if (typeof appMapId !== "string" || !appMapId) {
@@ -609,6 +672,7 @@ export async function runCli(
       process.once("SIGTERM", cancel);
     }
     try {
+      let exitCode: ExitCode = ExitCode.success;
       if (parsed.command === "invoke") validateOperationId(operationId);
       if (
         ((parsed.command === "outcome" && parsed.intent.kind !== "replay-lab") ||
@@ -657,7 +721,13 @@ export async function runCli(
           output,
           pollIntervalMs: dependencies.pollIntervalMs ?? 250,
         });
-        output.result(operationId, result);
+        output.result(
+          operationId,
+          result,
+          doctorExitCode(result) !== ExitCode.operationFailure,
+        );
+        const doctorCode = doctorExitCode(result);
+        if (doctorCode !== undefined) exitCode = doctorCode;
       } else if (parsed.command === "resource") {
         output.progress(operationId, "invoking");
         const result = await readResource(client, parsed.resourcePath, abort.signal);
@@ -792,7 +862,7 @@ export async function runCli(
           );
         }
       }
-      return await persistOut(ExitCode.success);
+      return await persistOut(exitCode);
     } finally {
       if (dependencies.registerSignalHandlers !== false) {
         process.off("SIGINT", cancel);
@@ -808,6 +878,26 @@ export async function runCli(
     output.error(classified, operationId);
     return await persistOut(classified.exitCode);
   }
+}
+
+function doctorExitCode(result: unknown): ExitCode | undefined {
+  if (!result || typeof result !== "object" || !("kind" in result) || result.kind !== "relay-doctor") {
+    return undefined;
+  }
+  const report = result as {
+    server?: unknown;
+    versionMatch?: unknown;
+    doctor?: { ok?: unknown };
+  };
+  if (report.server !== "reachable" || report.versionMatch === false || report.doctor?.ok === false) {
+    return ExitCode.operationFailure;
+  }
+  return ExitCode.success;
+}
+
+function cliPackageVersion(): string {
+  const version = createRequire(import.meta.url)("../package.json").version;
+  return typeof version === "string" && version ? version : "unknown";
 }
 
 const isEntryPoint = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

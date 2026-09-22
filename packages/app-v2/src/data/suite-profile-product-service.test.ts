@@ -818,7 +818,7 @@ describe("suite and environment product projections", () => {
         expect(input).toEqual({
           appMapId: "app-1",
           combineId: combine.id,
-          executionMode: "all",
+          executionMode: "pilot",
           targetKind: "device",
           serial: "ios-1",
           platform: "ios",

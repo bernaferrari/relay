@@ -1,5 +1,5 @@
-import type { TracePackExportResponse } from "@relay/protocol";
-
+import type { TracePackExportResponse, WalkthroughPackExportResponse } from "@relay/protocol";
+import { walkthroughHtml } from "./walkthrough-html.js";
 export type RunEvidenceExportDocument = {
   fileName: string;
   digest: string;
@@ -23,3 +23,19 @@ export function runEvidenceExportDocument(
     body: JSON.stringify(result),
   };
 }
+
+/** Build a walkthrough file only when the pack still names this Run. */
+export function walkthroughExportDocument(
+  runId: string,
+  result: WalkthroughPackExportResponse,
+): RunEvidenceExportDocument {
+  if (!result.pack.manifest.pinned.runIds.includes(runId)) {
+    throw new TypeError("Relay returned a walkthrough for a different Run.");
+  }
+  return {
+    fileName: `relay-walkthrough-${runId}.html`,
+    digest: result.pack.digest,
+    body: walkthroughHtml(result),
+  };
+}
+

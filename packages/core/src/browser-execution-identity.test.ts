@@ -4,6 +4,7 @@ import { compileBrowserEnvironment } from "@relay/protocol";
 import {
   accountFixtureIdsFromListed,
   bindRequestedBrowserIdentity,
+  browserAttachKeepsExistingSession,
   browserLiveIdentityMatches,
   browserLiveSessionKey,
   browserProofSessionKey,
@@ -12,6 +13,7 @@ import {
   browserSessionProfileMatches,
   browserSessionStoreKey,
   fixtureRevisionFromReference,
+  listedFixtureForAccount,
   overlayRequestedBrowserAccountOnTargetProfile,
   liveBrowserSessionKeysToClose,
   resolveBrowserDeviceOpenIdentity,
@@ -183,6 +185,34 @@ test("an already-open session cannot be reused without the requested profile", (
   );
 });
 
+test("attaching without a profile keeps the open session", () => {
+  assert.equal(
+    browserAttachKeepsExistingSession({
+      sessionRecordVideo: false,
+      sessionHeadless: true,
+    }),
+    true,
+  );
+  assert.equal(
+    browserAttachKeepsExistingSession({
+      requestedProfile: { authenticationFixtureId: "authfx:member:7" },
+      sessionRecordVideo: false,
+      sessionHeadless: true,
+    }),
+    false,
+  );
+  assert.equal(
+    browserAttachKeepsExistingSession({
+      requirePresentationMatch: true,
+      headless: false,
+      sessionRecordVideo: false,
+      sessionHeadless: true,
+    }),
+    false,
+  );
+});
+
+
 test("signed-out cannot bind a saved logged-in fixture", () => {
   const bound = bindRequestedBrowserIdentity({
     platform: "browser",
@@ -207,6 +237,36 @@ test("device profileTargets without a browser case are not treated as account ex
 test("fixture references expose their revision", () => {
   assert.equal(fixtureRevisionFromReference("authfx:00000000-0000-4000-8000-000000000000:7"), "7");
 });
+
+test("a newer listed sign-in does not satisfy an older requested revision", () => {
+  const fixtures = [
+    {
+      id: "acct-member",
+      name: "Member",
+      reference: "authfx:11111111-1111-4111-8111-111111111111:8",
+    },
+  ];
+  assert.equal(
+    listedFixtureForAccount(fixtures, {
+      accountId: "acct-member",
+      accountRevision: "7",
+      reference: "authfx:11111111-1111-4111-8111-111111111111:7",
+    }),
+    undefined,
+  );
+  assert.deepEqual(
+    listedFixtureForAccount(fixtures, {
+      accountId: "acct-member",
+      accountRevision: "8",
+      reference: "authfx:11111111-1111-4111-8111-111111111111:8",
+    }),
+    {
+      id: "acct-member",
+      reference: "authfx:11111111-1111-4111-8111-111111111111:8",
+    },
+  );
+});
+
 
 test("Plan account columns freeze the requested fixture onto the queued browser profile", () => {
   const queued = overlayRequestedBrowserAccountOnTargetProfile(

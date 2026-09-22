@@ -869,6 +869,11 @@ test("root help documents exit codes, --confirm, and the machine envelopes", () 
   assert.match(help, /-h, --help/u);
   assert.match(help, /"type":"result","ok":true/u);
   assert.match(help, /"type":"error","ok":false/u);
+  assert.match(help, /relay doctor/u);
+  assert.match(help, /relay goal run --url http:\/\/127\.0\.0\.1:3000 --goal "Open settings" --confirm/u);
+  assert.match(help, /Inspect a Run\s+relay inspect <runOrWorkflowId>/u);
+  assert.match(help, /10 verification incomplete/u);
+  assert.match(help, /screenshots are awaiting review/u);
 });
 
 test("browser commands reuse canonical navigation, capture, and semantic input", () => {

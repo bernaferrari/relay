@@ -1,7 +1,11 @@
 import { VISUAL_REVIEW_ACTIONS, type OperationId } from "@relay/protocol";
 import * as z from "zod/v4";
+import { relayMcpTools } from "./tools.js";
 
 type OperatorInputSchema = z.ZodType<Record<string, unknown>>;
+
+const saveTestSchema = relayMcpTools.find((tool) => tool.operationId === "app-map.test.save");
+if (!saveTestSchema) throw new Error("app-map.test.save is missing from MCP tools");
 
 export type RelayOperatorToolDescriptor = {
   readonly name: `relay_${string}`;
@@ -82,6 +86,30 @@ function requireControlTarget(
     context.addIssue({ code: "custom", message: "Choose serial or lane, not both." });
   if (value.lane && value.laneId && value.lane !== value.laneId)
     context.addIssue({ code: "custom", message: "lane and laneId must match." });
+}
+
+function requireHttpStartUrl(
+  value: { startUrl: string },
+  context: z.RefinementCtx,
+): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(value.startUrl);
+  } catch {
+    context.addIssue({
+      code: "custom",
+      path: ["startUrl"],
+      message: "startUrl must be an http(s) URL",
+    });
+    return;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    context.addIssue({
+      code: "custom",
+      path: ["startUrl"],
+      message: "startUrl must be an http(s) URL",
+    });
+  }
 }
 
 const interactTarget = z
@@ -209,8 +237,8 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_recover",
     "Recover the runner",
-    'When to use: XCTest/session is down or iOS pixels lost the go-ios tunnel; never reboot. Adopts a healthy live runner and restores the userspace tunnel instead of killing either. Do not recover a ready iPad mid-pack. Example: {serial:"ipad"} adopts the live XCTest runner.',
-    z.object({ serial: identifier }).strict(),
+    'When to use: the runner is down. Pass the same Lane used for screenshots, or a serial. Never reboot. Example: {lane:"grok-daily"}.',
+    z.object(controlTargetFields).strict().superRefine(requireControlTarget),
     rw,
   ),
   verb(
@@ -254,7 +282,7 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_plan_run",
     "Run a Plan",
-    'When to use: run a saved Plan (every selected case), optionally wait, print findings, and export the review pack. Missing extra sign-ins or devices fail closed as Infra columns, not a smaller Plan. Set triage:"jev" only for additive, read-only OpenRouter sorting of saved findings. Do not start this while tsx watch would reload :8787 mid-pack. Example: {appMapId:"grok-web",combineId:"grok-hourly",lane:"grok-lab",findings:true,triage:"jev",export:true}.',
+    'When to use: run one case of a saved Plan, optionally wait, print findings, and export the review pack. Pass executionMode all only when every selected case is requested. Missing extra sign-ins or devices fail closed as Infra columns, not a smaller Plan. Set triage:"jev" only for additive, read-only OpenRouter sorting of saved findings. Do not start this while tsx watch would reload :8787 mid-pack. Example: {appMapId:"grok-web",combineId:"grok-hourly",lane:"grok-lab",findings:true,triage:"jev",export:true}.',
     z
       .object({
         appMapId: identifier,
@@ -263,7 +291,7 @@ export const relayOperatorTools = Object.freeze([
         serial: identifier.optional(),
         browserTargetId: identifier.optional(),
         targetKind: z.enum(["device", "browser"]).optional(),
-        executionMode: z.enum(["all"]).optional(),
+        executionMode: z.enum(["pilot", "all"]).optional(),
         findings: z.boolean().optional(),
         triage: z.literal("jev").optional(),
         export: z.boolean().optional(),
@@ -298,6 +326,48 @@ export const relayOperatorTools = Object.freeze([
       })
       .strict(),
     ro,
+  ),
+  verb(
+    "relay_cancel",
+    "Cancel a job",
+    'When to use: stop a running job without starting another profile. Completed captures stay. Example: {jobId:"job-1"}.',
+    z.object({ jobId: identifier }).strict(),
+    rw,
+  ),
+  verb(
+    "relay_export",
+    "Export a walkthrough",
+    'When to use: hand an existing Run to a reviewer without starting another Plan. The summary drops image bytes; HTTP and CLI keep them. A downloaded copy cannot be recalled. Example: {runId:"run-1",with:["run-2"]}.',
+    z
+      .object({
+        runId: identifier,
+        with: z.array(identifier).max(8).optional(),
+      })
+      .strict(),
+    ro,
+  ),
+  verb(
+    "relay_save",
+    "Save a Test",
+    'When to use: save a Test on the current map without switching profiles. Pass the current expectedRevision. A conflicting revision is refused. Example: {appMapId:"checkout",testId:"smoke",expectedRevision:7,test:{name:"Checkout smoke",kind:"scenario",intentSchemaVersion:1,steps:[]}}.',
+    saveTestSchema.inputSchema as OperatorInputSchema,
+    rw,
+    true,
+  ),
+  verb(
+    "relay_goal",
+    "Ask Relay to exercise a bounded goal",
+    'When to use: ask Relay to exercise one bounded browser goal without switching profiles. Pass confirm:true. A saved Test can still replay without a model. Example: {goal:"Open settings and capture language options",startUrl:"http://127.0.0.1:3000"}.',
+    z
+      .object({
+        goal: z.string().trim().min(1).max(2048),
+        startUrl: z.string().trim().min(1).max(2048),
+        laneId: identifier.optional(),
+      })
+      .strict()
+      .superRefine(requireHttpStartUrl),
+    rw,
+    true,
   ),
   verb(
     "relay_findings",

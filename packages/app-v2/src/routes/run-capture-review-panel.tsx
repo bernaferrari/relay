@@ -92,8 +92,16 @@ export function CaptureReviewPanel({
   frames: readonly ReportEvidenceItem[];
   selectedIndex: number;
   onSelect(index: number): void;
-  onReview?(action: CaptureReviewAction, item: CaptureReviewItem): void;
-  onReviewMany?(action: CaptureReviewAction, items: CaptureReviewItem[]): void;
+  onReview?(
+    action: CaptureReviewAction,
+    item: CaptureReviewItem,
+    note?: string,
+  ): void | boolean | Promise<boolean | void>;
+  onReviewMany?(
+    action: CaptureReviewAction,
+    items: CaptureReviewItem[],
+    note?: string,
+  ): void | boolean | Promise<boolean | void>;
   busy?: boolean;
   fallbackConfiguration?: CaptureReviewConfiguration;
   showMasks?: boolean;
@@ -116,7 +124,8 @@ export function CaptureReviewPanel({
   const destItems = destIdentityReviewItems(queue.items);
   const canSelect = Boolean(onReviewMany && destItems.length > 1);
   const showSelection = canSelect && (showImage || selecting);
-  const selected = destItems[Math.min(selectedIndex, Math.max(0, destItems.length - 1))];
+  const selected =
+    selectedIndex >= 0 && selectedIndex < destItems.length ? destItems[selectedIndex] : undefined;
   const pendingIndices = destItems.flatMap((item, index) =>
     item.status === "pending" && reviewable(item) && index !== selectedIndex ? [index] : [],
   );
@@ -203,7 +212,7 @@ export function CaptureReviewPanel({
               <CaptureReviewDecisions
                 busy={busy}
                 bulkCount={bulkItems.length}
-                onReview={(action) => onReviewMany(action, bulkItems)}
+                onReview={(action, note) => onReviewMany(action, bulkItems, note)}
               />
             ) : (
               <Button
@@ -271,7 +280,7 @@ export function CaptureReviewPanel({
           <CaptureReviewDecisions
             busy={busy}
             bulkCount={bulkItems.length}
-            onReview={(action) => onReviewMany(action, bulkItems)}
+            onReview={(action, note) => onReviewMany(action, bulkItems, note)}
           />
         ) : null}
         <ul
@@ -368,6 +377,7 @@ export function CaptureReviewPanel({
                                   ? "More evidence needed"
                                   : "Pending review"}
                       </span>
+                      {item.note ? <span className="min-w-0 basis-full">{item.note}</span> : null}
                     </span>
                   </span>
                 </button>
@@ -438,6 +448,7 @@ export function CaptureReviewPanel({
                         : "Pending review"}
             </p>
           ) : null}
+          {selected.note ? <p className="text-sm">{selected.note}</p> : null}
           {selected.masks?.length && onShowMasksChange ? (
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
               <input
@@ -468,7 +479,7 @@ export function CaptureReviewPanel({
               <CaptureReviewDecisions
                 busy={busy}
                 status={selected.status === "pending" ? "Awaiting your decision" : "Decision saved"}
-                onReview={(action) => onReview(action, selected)}
+                onReview={(action, note) => onReview(action, selected, note)}
               />
             </div>
           ) : null}

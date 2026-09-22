@@ -237,7 +237,7 @@ test("30 planned; 29 captured + 1 blocked + 0 missing = 30; mixed 12 is not comp
   assert.equal(queue.summary.accepted, 0);
   assert.equal(
     formatCaptureReviewCoverageSummary(queue.summary),
-    "30 planned · 29 captured · 1 blocked · 0 missing · 29 pending · 0 accepted",
+    "30 planned · 29 captured · 1 blocked · 0 missing · 29 screenshots awaiting review · 0 accepted",
   );
   assert.equal(counts.captured + counts.blocked + counts.missing, 30);
   assert.notEqual(counts.captured, 12);
@@ -276,7 +276,7 @@ test("product persist mapping keeps Imagine blocked in the denominator, not miss
   assert.equal(counts.accepted, 0);
   assert.equal(
     formatCaptureReviewCoverageSummary(queue.summary),
-    "30 planned · 29 captured · 1 blocked · 0 missing · 29 pending · 0 accepted",
+    "30 planned · 29 captured · 1 blocked · 0 missing · 29 screenshots awaiting review · 0 accepted",
   );
   const imagine = queue.items.find((item) => item.checkpointId === "imagine" && item.blocked);
   assert.ok(imagine);

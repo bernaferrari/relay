@@ -30,7 +30,7 @@ export function BatchTriageControls({
   onNoteOpenChange: (open: boolean) => void;
   onStatus: (status: CombineTriageStatus) => void;
   onAssignToMe: () => void;
-  onAddNote: (text: string) => void;
+  onAddNote: (text: string) => boolean | Promise<boolean>;
 }) {
   const [note, setNote] = useState("");
   const actor = resolveTriageActor(actorId);
@@ -61,9 +61,13 @@ export function BatchTriageControls({
           onSubmit={(event) => {
             event.preventDefault();
             if (!note.trim()) return;
-            onAddNote(note);
-            setNote("");
-            onNoteOpenChange(false);
+            void Promise.resolve(onAddNote(note))
+              .then((saved) => {
+                if (!saved) return;
+                setNote("");
+                onNoteOpenChange(false);
+              })
+              .catch(() => undefined);
           }}
         >
           <Input

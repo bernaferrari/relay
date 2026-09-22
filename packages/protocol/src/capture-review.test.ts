@@ -113,7 +113,7 @@ test("eight intended captures stay pending until a person reviews the exact imag
   assert.equal(captureReviewCoverageLine(queue.summary), "8/8 captured");
   assert.equal(
     formatCaptureReviewCoverageSummary({ ...queue.summary, planned: 8, blocked: 0 }),
-    "8 planned · 8 captured · 0 blocked · 0 missing · 8 pending · 0 accepted",
+    "8 planned · 8 captured · 0 blocked · 0 missing · 8 screenshots awaiting review · 0 accepted",
   );
   assert.deepEqual(queue.summary, {
     captured: 8,
@@ -1242,6 +1242,7 @@ test("Looks correct on attempt 1 does not accept a missing recapture attempt 2",
     caption: "Settings",
     framePath: "frames/001.png",
     imageSha256: "aaa",
+    slotId: captureReviewSlotId(recaptureSlot(1)),
   });
   const queue = resolveCaptureReviewQueue({
     plannedSlots: planned,

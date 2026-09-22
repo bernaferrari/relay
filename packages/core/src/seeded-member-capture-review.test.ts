@@ -660,7 +660,7 @@ test(
       assert.doesNotMatch(html, /\d+ tests passed/u);
       assert.match(html, /Looks correct does not approve a visual baseline/u);
       assert.match(html, /pending review/u);
-      assert.match(readme, /planned \/ captured \/ blocked \+ pending review/u);
+      assert.match(readme, /screenshots awaiting review/u);
       assert.doesNotMatch(readme, /runs passed/u);
     } finally {
       if (previousKey === undefined) delete process.env.OPENROUTER_API_KEY;

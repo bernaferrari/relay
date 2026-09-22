@@ -62,7 +62,7 @@ export type DeviceEventPayload =
       connectionId: string;
       revision: number;
     }
-  | { type: "error"; at: number; message: string; where?: string };
+  | { type: "error"; at: number; message: string; where?: string; jobId?: string };
 
 export type DeviceEvent = EventEnvelope<DeviceEventPayload>;
 export type EventListener = (event: DeviceEvent) => void;

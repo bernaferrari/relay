@@ -185,7 +185,8 @@ function slackNotificationStub(): ProductIntegration {
     name: "Slack",
     state: "unsupported",
     capabilities: [],
-    detail: "Slack notifications are not available in this workspace.",
+    detail:
+      "Slack notifications are not available in this workspace.",
   };
 }
 

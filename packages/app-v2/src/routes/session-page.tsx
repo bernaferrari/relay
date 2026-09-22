@@ -33,7 +33,7 @@ import {
   TalkBackOverlay,
   useTalkBackReview,
 } from "./talkback-review-panel";
-import { isActiveSession, sessionStateLabel } from "./sessions-page";
+import { isActiveSession, sessionStateLabel, sessionWorkbenchMode } from "./sessions-page";
 
 const routeApi = getRouteApi("/sessions/$sessionId");
 
@@ -377,9 +377,7 @@ export function SessionPage() {
           <aside className="grid min-w-0 gap-6" aria-label="Session context">
             {canControl ? (
               <p className="max-w-prose text-sm leading-6 text-muted-foreground">
-                {value.state === "recording"
-                  ? "Recording · captured actions are saved"
-                  : "Live · Not recording"}
+                {sessionWorkbenchMode(value.state)}
               </p>
             ) : null}
             <section className="rounded-xl border border-border bg-card p-5">
@@ -392,7 +390,9 @@ export function SessionPage() {
                 <div className="grid gap-0.5">
                   <dt className="text-xs text-muted-foreground">Workspace mode</dt>
                   <dd className="break-words text-sm font-medium">
-                    {value.state === "recording" ? "Recording" : "Not recording"}
+                    {value.state === "ready" || value.state === "preparing"
+                      ? "Not recording"
+                      : sessionStateLabel(value.state)}
                   </dd>
                 </div>
                 <div className="grid gap-0.5">

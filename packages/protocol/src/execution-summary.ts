@@ -4,6 +4,7 @@ import {
   destIdentityCheckpointFramePaths,
   destIdentityReviewItems,
   destIdentitySourceFrames,
+  formatCaptureReviewCoverageSummary,
   isCaptureReviewLeftoverCaption,
   type CaptureReviewItem,
 } from "./capture-review.js";
@@ -171,8 +172,10 @@ function summarizePlanCaptureReview(response: Record<string, unknown>): unknown 
       )
     : undefined;
   const destIdentity = destItems ? destIdentityVisualFrames(listedReviewFrames(destItems)) : [];
+  const summary = object(queue?.summary);
+  const review = summary ? formatCaptureReviewCoverageSummary(summary as never) : undefined;
   return {
-    ...(destIdentity.length ? { destIdentity } : {}),
+    ...(review ? { review } : {}),
     ...(queue
       ? {
           queue: {
@@ -814,6 +817,35 @@ function summarizeJobEnvelope(response: Record<string, unknown>): unknown {
   return projectAttachedJobResult(response);
 }
 
+/** MCP and command summaries keep the pinned runs and frame identity. The
+ * embedded PNG bytes stay on the HTTP and CLI export. */
+function summarizeWalkthroughPack(response: Record<string, unknown>): unknown {
+  const pack = object(response.pack);
+  if (!pack) return response;
+  const manifest = object(pack.manifest);
+  const pinned = object(manifest?.pinned);
+  const frames = Array.isArray(pack.frames)
+    ? pack.frames.flatMap((frame) => {
+        const item = object(frame);
+        if (!item) return [];
+        return [
+          {
+            runId: item.runId,
+            framePath: item.framePath,
+            imageSha256: item.imageSha256,
+          },
+        ];
+      })
+    : [];
+  return {
+    digest: pack.digest,
+    kind: pack.kind,
+    pinnedRunIds: Array.isArray(pinned?.runIds) ? pinned.runIds : [],
+    frames,
+    notice: "A downloaded copy cannot be recalled. The image bytes stay on the HTTP and CLI export.",
+  };
+}
+
 function isJobEnvelopeOperation(operationId: string): boolean {
   return (
     operationId === "job.combine.start" ||
@@ -840,6 +872,7 @@ export function summarizeExecutionOperationResult(operationId: string, result: u
   if (operationId === "run.capture.review") return summarizeRunCaptureReview(response);
   if (operationId === "run.story.get") return summarizeRunStory(response);
   if (operationId === "run.trace-pack.get") return summarizeTracePackEnvelope(response);
+  if (operationId === "run.walkthrough-pack.get") return summarizeWalkthroughPack(response);
   if (
     operationId === "run.visual.compare" ||
     operationId === "run.visual-baseline.update" ||

@@ -9,7 +9,7 @@ export function captureReviewFeedback(
   results: ReviewResponse["results"],
 ) {
   const savedKeys: string[] = [];
-  const failures: { key: string; message: string }[] = [];
+  const failures: { key: string; message: string; status?: string }[] = [];
   const messages = {
     missing: "The screenshot is missing. Collect new evidence before reviewing it.",
     "not-found": "This screenshot is no longer in the review queue. Refresh screenshots.",
@@ -24,6 +24,7 @@ export function captureReviewFeedback(
     else
       failures.push({
         key,
+        ...(result ? { status: result.status } : {}),
         message: result
           ? result.error || messages[result.status as keyof typeof messages]
           : "Save was not confirmed. Refresh before retrying.",

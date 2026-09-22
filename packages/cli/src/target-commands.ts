@@ -377,8 +377,12 @@ export const targetCommandDescriptors: readonly MappedOperationDescriptor[] = [
       examples: [
         'relay device recover 00008110 --input \'{"reason":"control"}\'',
         "relay device recover RQCY104BG8X",
+        "relay device recover --lane grok-daily",
       ],
-      note: "iPad: first proves the existing XCTest session; only a failed proof gets one bounded runner repair. It never resets the app or restarts the iPad. A dead go-ios userspace tunnel is restored on this same recover — do not spawn `ios tunnel start` as a sidecar and do not reboot. Android: wake the screen and retry labels. Unlock still needs a person. Supplying recoveryFenceAssignmentId is local-host-only and records a new pixel/semantic/pixel proof before any durable fence is released.",
+      note: "Pass a serial or --lane, not both. --lane uses the saved Lane's device serial or managed browser target. iPad: first proves the existing XCTest session; only a failed proof gets one bounded runner repair. It never resets the app or restarts the iPad. A dead go-ios userspace tunnel is restored on this same recover — do not spawn `ios tunnel start` as a sidecar and do not reboot. Android: wake the screen and retry labels. Unlock still needs a person. Supplying recoveryFenceAssignmentId is local-host-only and records a new pixel/semantic/pixel proof before any durable fence is released.",
+    }),
+    path("device recover", [], undefined, {
+      summary: "Repair the target named by --lane",
     }),
   ),
   mapped(

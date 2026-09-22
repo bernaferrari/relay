@@ -49,12 +49,13 @@ export function RunWorkbench({
     captureId: string;
     action: CaptureReviewAction;
     imageSha256?: string;
+    note?: string;
     expectedReviewVersion?: number;
   }): Promise<void>;
   renderEvidence?(section: Report["evidence"][number]): ReactNode;
 }) {
   const [requestedPanel, setRequestedPanel] = useState<
-    "steps" | "captures" | "performance" | "details" | "video" | "logs"
+    "steps" | "captures" | "performance" | "details" | "video" | "logs" | "network"
   >(() =>
     report.captureReview?.items.length
       ? "captures"
@@ -128,8 +129,12 @@ export function RunWorkbench({
     Math.max(0, (reviewMode ? reviewItems.length : listedFrames.length) - 1),
   );
   const selectedReview = reviewItems[selectedCapture];
-  const reviewCaptures = async (action: CaptureReviewAction, items: CaptureReviewItem[]) => {
-    if (!onReviewCapture || reviewInFlight.current) return;
+  const reviewCaptures = async (
+    action: CaptureReviewAction,
+    items: CaptureReviewItem[],
+    note?: string,
+  ) => {
+    if (!onReviewCapture || reviewInFlight.current) return false;
     reviewInFlight.current = true;
     setReviewBusy(true);
     const saved: string[] = [];
@@ -144,14 +149,17 @@ export function RunWorkbench({
           ...(item.reviewVersion !== undefined
             ? { expectedReviewVersion: item.reviewVersion }
             : {}),
+          ...(note ? { note } : {}),
         });
         saved.push(captureReviewQueueItemKey(item));
         setReviewedItemKeys([...saved]);
       }
+      return true;
     } catch (error) {
       setReviewError(
         `${saved.length} of ${items.length} decisions saved. ${error instanceof Error ? error.message : "Save was not confirmed. Refresh before retrying."}`,
       );
+      return false;
     } finally {
       reviewInFlight.current = false;
       setReviewBusy(false);
@@ -170,11 +178,18 @@ export function RunWorkbench({
     return () => clearTimeout(timer);
   }, [playing, selectedStepIndex, report.timeline.length, onSelectStep, requestedPanel]);
   const logs = report.evidence.find((section) => section.id === "logs")?.items ?? [];
+  const network = report.evidence.find((section) => section.id === "network");
   const step = report.timeline[selectedStepIndex] ?? report.timeline[0];
   const hasChecks = Boolean(step?.expected?.trim());
-  const requestedView = ["steps", "captures", "performance", "details", "video", "logs"].includes(
-    view ?? "",
-  )
+  const requestedView = [
+    "steps",
+    "captures",
+    "performance",
+    "details",
+    "video",
+    "logs",
+    "network",
+  ].includes(view ?? "")
     ? (view as typeof requestedPanel)
     : requestedPanel;
   const panel = requestedView === "details" && !hasChecks ? "steps" : requestedView;
@@ -235,6 +250,9 @@ export function RunWorkbench({
           .map((section) => (
             <section className="border-t border-border p-5" key={section.id}>
               <h3 className="text-sm font-semibold">{section.label}</h3>
+              {section.summary ? (
+                <p className="mt-1 text-sm text-muted-foreground">{section.summary}</p>
+              ) : null}
               <ul className="mt-3 grid gap-3">
                 {section.items.map((item) => (
                   <li key={item.id} className="text-sm">
@@ -421,7 +439,7 @@ export function RunWorkbench({
                           : "Awaiting your decision"
                   }
                   busy={reviewBusy}
-                  onReview={(action) => void reviewCaptures(action, [item])}
+                  onReview={(action, reviewNote) => reviewCaptures(action, [item], reviewNote)}
                 />
               </div>
             );
@@ -446,7 +464,7 @@ export function RunWorkbench({
                 ...(report.performance?.length ? [["performance", "Performance"]] : []),
                 ...(hasChecks ? [["details", "Checks"]] : []),
                 ["logs", "Logs"],
-                ...(report.video ? [["video", "Video"]] : []),
+                ...(network?.items.length ? [["network", "Network"] as const] : []),
               ] as const
             ).map(([value, label]) => (
               <TabsTrigger key={value} value={value} className="h-10 flex-none px-2 after:bottom-0">
@@ -558,9 +576,28 @@ export function RunWorkbench({
                 </ScrollArea>
               </aside>
             ) : null}
+            {panel === "network" && network?.items.length ? (
+              <div className="grid gap-3 px-5 py-4">
+                <p className="text-sm text-muted-foreground">{network.summary}</p>
+                <ul className="grid gap-3">
+                  {network.items.map((item) => (
+                    <li key={item.id} className="text-sm">
+                      <p>{item.title}</p>
+                      {item.detail ? (
+                        <p className="mt-1 text-muted-foreground">{item.detail}</p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             {panel === "logs" ? <RunLogPanel logs={logs} /> : null}
             <ScrollArea
-              className={panel === "steps" || panel === "logs" ? "hidden" : "min-h-0 flex-1"}
+              className={
+                panel === "steps" || panel === "logs" || panel === "network"
+                  ? "hidden"
+                  : "min-h-0 flex-1"
+              }
               viewportProps={{ "aria-label": "Step report", className: "overscroll-auto" }}
             >
               {panel === "captures" ? (
@@ -576,7 +613,7 @@ export function RunWorkbench({
                     reviewedItemKeys={reviewedItemKeys}
                     onReviewMany={
                       onReviewCapture
-                        ? (action, items) => void reviewCaptures(action, items)
+                        ? (action, items, note) => reviewCaptures(action, items, note)
                         : undefined
                     }
                     showMasks={showMasks}

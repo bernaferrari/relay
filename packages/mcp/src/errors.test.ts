@@ -98,3 +98,22 @@ test("turns hidden lease acquisition into an operator handoff", () => {
   assert.match(result.recoveryGuidance ?? "", /lease\.create/u);
   assert.match(result.recoveryGuidance ?? "", /selected MCP profile "observe"/u);
 });
+
+test("a refused sign-in keeps captures and does not tell the agent to retry", () => {
+  const result = relayMcpError(
+    "job.combine.start",
+    new ApiError(409, "Member expired. Open Sign-ins, complete OAuth, then Refresh.", {
+      code: "ACCOUNT_NEEDS_RELOGIN",
+      recovery: "Open Sign-ins, complete OAuth, then Refresh.",
+      recoveryAction: {
+        operationId: "job.combine.start",
+        input: { executionMode: "all" },
+      },
+    }),
+  );
+  assert.equal(result.code, "ACCOUNT_NEEDS_RELOGIN");
+  assert.deepEqual(result.recovery, { action: "authenticate", retryable: false });
+  assert.equal(result.recoveryAction, undefined);
+  assert.match(result.recoveryGuidance ?? "", /Completed captures are preserved/u);
+  assert.match(result.recoveryGuidance ?? "", /Do not start the same Plan again/u);
+});

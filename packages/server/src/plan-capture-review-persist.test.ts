@@ -28,7 +28,7 @@ import { startServer } from "./index.js";
 const organizationId = "local";
 const projectId = "default";
 const freezeBatchId = "rc23-screenshot-first-persist";
-const freezeCoverage = "30 planned · 29 captured · 1 blocked · 0 missing · 29 pending · 0 accepted";
+const freezeCoverage = "30 planned · 29 captured · 1 blocked · 0 missing · 29 screenshots awaiting review · 0 accepted";
 
 function client(port: number, actorId: string, actorKind: "human" | "agent"): RelayClient {
   return new RelayClient({

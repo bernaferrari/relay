@@ -85,7 +85,10 @@ export function SessionsPage() {
 
   return (
     <LibraryPage className="flex min-h-full max-w-5xl flex-col">
-      <PageHeader title="Activity" description="Continue recordings and runs, or open a device." />
+      <PageHeader
+        title="Activity"
+        description="Continue recordings and runs, or open a device."
+      />
       {devices.isPending ? <PageLoading label="Finding devices…" /> : null}
       <RecordingProblem
         error={devices.error}
@@ -277,6 +280,18 @@ export function sessionStateLabel(state: ProductSessionSummary["state"]): string
   if (state === "failed") return "Needs attention";
   return "Ended";
 }
+
+/** Longer operating-state text for the open session. A review is not a fresh live session. */
+export function sessionWorkbenchMode(state: ProductSessionSummary["state"]): string {
+  if (state === "recording") return "Recording · captured actions are saved";
+  if (state === "reviewing") return "Reviewing · Not recording";
+  if (state === "committing") return "Saving · Not recording";
+  if (state === "failed") return "Needs attention";
+  if (state === "committed") return "Completed";
+  if (state === "cancelled") return "Ended";
+  return "Live · Not recording";
+}
+
 
 function sessionVariant(
   session: ProductSessionSummary,

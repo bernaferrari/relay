@@ -397,6 +397,29 @@ export function assessMutatingRoutineSharing(
   return issues;
 }
 
+/** The account a queued cell will mutate. The variable wins; otherwise the
+ * runtime fixture is the same server-side account. */
+export function combineCellShareAccountId(input: {
+  values: Readonly<Record<string, string>>;
+  accountVariableId?: string;
+  authenticationFixtureId?: string;
+}): string | undefined {
+  const fromVariable = input.accountVariableId
+    ? input.values[input.accountVariableId]?.trim()
+    : undefined;
+  return fromVariable || input.authenticationFixtureId?.trim() || undefined;
+}
+
+
+/** Refuse a start that would run conflicting mutations against one account. */
+export function mutatingShareStartBlocker(
+  map: AppMap,
+  placements: readonly StartingStateShareContext[],
+): string | undefined {
+  return assessMutatingRoutineSharing(map, placements)[0]?.message;
+}
+
+
 export function transitionOpenerMustRun(step: RecipeStep): boolean {
   return step.coverage === "transition" || leftoverSkipForbidden(step);
 }

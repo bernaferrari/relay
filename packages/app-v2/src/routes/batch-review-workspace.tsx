@@ -190,7 +190,11 @@ export function BatchReviewWorkspace({
                         variant="ghost"
                         className="min-h-11"
                         render={
-                          <Link to="/runs/$runId/walkthrough" params={{ runId: focused.runId }} />
+                          <Link
+                            to="/runs/$runId/walkthrough"
+                            params={{ runId: focused.runId }}
+                            search={{ state: undefined, variant: undefined, capture: undefined }}
+                          />
                         }
                       >
                         Walk through

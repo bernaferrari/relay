@@ -1,6 +1,6 @@
 import { catalogQueryKeys } from "../data/catalog-queries";
 /** @jsxImportSource react */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CaptureReviewAction, PlanCaptureReviewItem } from "@relay/protocol";
 import {
@@ -8,9 +8,11 @@ import {
   captureReviewQueueItemKey,
   filterPlanCaptureReviewQueue,
   formatCaptureReviewCoverageSummary,
+  groupPlanCaptureReviewItems,
   parsePlanCaptureReviewFilter,
   planCaptureReviewFilterOptions,
   planCaptureReviewScreenLabel,
+  type PlanCaptureReviewDecision,
 } from "@relay/protocol";
 import { SelectField } from "../components/filter-select";
 import { Button } from "@relay/ui-react/components/button";
@@ -52,6 +54,41 @@ function planCaptureFrames(
   });
 }
 
+function planReviewViewKey(batchId: string): string {
+  return `relay.plan-review.${batchId}`;
+}
+
+function readPlanReviewView(batchId: string): {
+  selectedKey?: string;
+  decision?: PlanCaptureReviewDecision;
+  groupBy?: "checkpoint" | "configuration";
+  screen?: string;
+  place?: string;
+} {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(planReviewViewKey(batchId)) ?? "") as {
+      selectedKey?: unknown;
+      decision?: unknown;
+      groupBy?: unknown;
+      screen?: unknown;
+      place?: unknown;
+    };
+    return {
+      ...(typeof parsed.selectedKey === "string" ? { selectedKey: parsed.selectedKey } : {}),
+      ...(parsed.decision === "all" || parsed.decision === "pending" || parsed.decision === "issues"
+        ? { decision: parsed.decision }
+        : {}),
+      ...(parsed.groupBy === "checkpoint" || parsed.groupBy === "configuration"
+        ? { groupBy: parsed.groupBy }
+        : {}),
+      ...(typeof parsed.screen === "string" ? { screen: parsed.screen } : {}),
+      ...(typeof parsed.place === "string" ? { place: parsed.place } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
 export function PlanCaptureReviewSection({
   batchId,
   runAcrossService,
@@ -64,10 +101,20 @@ export function PlanCaptureReviewSection({
   streaming?: boolean;
 }) {
   const queryClient = useQueryClient();
-  const [selectedKey, setSelectedKey] = useState<string>();
-  const [pendingOnly, setPendingOnly] = useState(false);
-  const [screen, setScreen] = useState("");
-  const [place, setPlace] = useState("");
+  const remembered = readPlanReviewView(batchId);
+  const [selectedKey, setSelectedKey] = useState<string | undefined>(remembered.selectedKey);
+  const [decision, setDecision] = useState<PlanCaptureReviewDecision>(remembered.decision ?? "all");
+  const [groupBy, setGroupBy] = useState<"checkpoint" | "configuration">(
+    remembered.groupBy ?? "checkpoint",
+  );
+  const [screen, setScreen] = useState(remembered.screen ?? "");
+  const [place, setPlace] = useState(remembered.place ?? "");
+  useEffect(() => {
+    sessionStorage.setItem(
+      planReviewViewKey(batchId),
+      JSON.stringify({ selectedKey, decision, groupBy, screen, place }),
+    );
+  }, [batchId, selectedKey, decision, groupBy, screen, place]);
   const captures = useQuery({
     queryKey: ["run-across", "batch", batchId, "capture-review"],
     queryFn: () => {
@@ -106,27 +153,29 @@ export function PlanCaptureReviewSection({
   const filter = useMemo(
     () =>
       parsePlanCaptureReviewFilter({
-        pending: pendingOnly || undefined,
+        decision,
+        groupBy,
         screen: screen || undefined,
         ...(place.startsWith("device:") ? { device: place.slice("device:".length) } : {}),
         ...(place.startsWith("account:") ? { account: place.slice("account:".length) } : {}),
       }),
-    [pendingOnly, screen, place],
+    [decision, groupBy, screen, place],
   );
   const visible = useMemo(
     () => (queue ? filterPlanCaptureReviewQueue(queue, filter) : undefined),
     [queue, filter],
   );
+  useEffect(() => {
+    if (selectedKey || !visible?.items.length) return;
+    const first = visible.items[0];
+    if (first) setSelectedKey(captureReviewQueueItemKey(first));
+  }, [selectedKey, visible]);
   const options = useMemo(
     () =>
       queue
         ? planCaptureReviewFilterOptions(queue.items)
         : { screens: [], devices: [], accounts: [] },
     [queue],
-  );
-  const selectedIndex = Math.max(
-    0,
-    visible?.items.findIndex((item) => captureReviewQueueItemKey(item) === selectedKey) ?? 0,
   );
   const feedback = useMemo(
     () =>
@@ -163,8 +212,8 @@ export function PlanCaptureReviewSection({
         )}
       </section>
     );
-  const reviewItem = (action: CaptureReviewAction, items: PlanCaptureReviewItem[]) => {
-    review.mutate({
+  const reviewItem = (action: CaptureReviewAction, items: PlanCaptureReviewItem[], note?: string) =>
+    review.mutateAsync({
       action,
       items: items
         .filter((item): item is PlanCaptureReviewItem & { runId: string } => Boolean(item.runId))
@@ -175,9 +224,9 @@ export function PlanCaptureReviewSection({
           ...(item.reviewVersion !== undefined
             ? { expectedReviewVersion: item.reviewVersion }
             : {}),
+          ...(note ? { note } : {}),
         })),
-    });
-  };
+    }).then((result) => result.results.every((entry) => entry.status === "applied"));
   return (
     <section className="mt-4 grid gap-4">
       <h2 className="sr-only">Screenshot review</h2>
@@ -231,6 +280,12 @@ export function PlanCaptureReviewSection({
           <p>
             {feedback.savedKeys.length} of {review.variables?.items.length} review decisions saved.
           </p>
+          {feedback.failures.some((failure) => failure.status === "conflict") ? (
+            <p>
+              {feedback.failures.filter((failure) => failure.status === "conflict").length}{" "}
+              conflicted — review the newer decision
+            </p>
+          ) : null}
           {feedback.failures.length ? (
             <ul className="mt-1 list-disc pl-5 text-muted-foreground">
               {feedback.failures.map((failure) => (
@@ -253,13 +308,43 @@ export function PlanCaptureReviewSection({
         </p>
       ) : null}
       <div className="flex flex-wrap items-center gap-2" aria-label="Screenshot review filters">
-        <Button
-          variant={pendingOnly ? "secondary" : "outline"}
-          aria-pressed={pendingOnly}
-          onClick={() => setPendingOnly((current) => !current)}
-        >
-          Pending
-        </Button>
+        <div className="flex rounded-lg bg-muted p-1" role="group" aria-label="Review focus">
+          {(
+            [
+              ["all", "All"],
+              ["pending", "Pending"],
+              ["issues", "Issues"],
+            ] as const
+          ).map(([value, label]) => (
+            <Button
+              key={value}
+              size="sm"
+              aria-pressed={decision === value}
+              variant={decision === value ? "secondary" : "ghost"}
+              onClick={() => setDecision(value)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+        <div className="flex rounded-lg bg-muted p-1" role="group" aria-label="Screenshot grouping">
+          {(
+            [
+              ["checkpoint", "By checkpoint"],
+              ["configuration", "By configuration"],
+            ] as const
+          ).map(([value, label]) => (
+            <Button
+              key={value}
+              size="sm"
+              aria-pressed={groupBy === value}
+              variant={groupBy === value ? "secondary" : "ghost"}
+              onClick={() => setGroupBy(value)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
         <SelectField
           compact
           label="Filter by screen"
@@ -290,32 +375,48 @@ export function PlanCaptureReviewSection({
       {!visible?.items.length ? (
         <p role="status" className="p-5 text-sm text-muted-foreground">
           {queue.items.length
-            ? "No screenshots match these filters. Try another screen or device, or turn off Pending."
+            ? "No screenshots match these filters. Try another screen, device, or review focus."
             : streaming
               ? "Waiting for the first planned screenshots. New captures will appear here."
               : "No screenshots are available for this Plan."}
         </p>
       ) : (
-        <CaptureReviewPanel
-          key={batchId}
-          reviewedItemKeys={feedback?.savedKeys}
-          queue={visible ?? queue}
-          frames={frames}
-          selectedIndex={selectedIndex}
-          onSelect={(index) => setSelectedKey(captureReviewQueueItemKey(visible.items[index]!))}
-          busy={review.isPending}
-          showCoverage={false}
-          onReview={
-            runAcrossService.reviewCaptures
-              ? (action, item) => reviewItem(action, [item as PlanCaptureReviewItem])
-              : undefined
-          }
-          onReviewMany={
-            runAcrossService.reviewCaptures
-              ? (action, items) => reviewItem(action, items as PlanCaptureReviewItem[])
-              : undefined
-          }
-        />
+        <div className="grid gap-3">
+          <div className="flex flex-wrap gap-2" aria-label="Screenshot groups">
+            {groupPlanCaptureReviewItems(visible.items, groupBy).map((group) => (
+              <span
+                key={group.id}
+                className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground"
+              >
+                {group.label}
+                <span className="ms-1 tabular-nums">{group.items.length}</span>
+              </span>
+            ))}
+          </div>
+          <CaptureReviewPanel
+            key={batchId}
+            reviewedItemKeys={feedback?.savedKeys}
+            queue={visible ?? queue}
+            frames={frames}
+            selectedIndex={visible.items.findIndex(
+              (item) => captureReviewQueueItemKey(item) === selectedKey,
+            )}
+            onSelect={(index) => setSelectedKey(captureReviewQueueItemKey(visible.items[index]!))}
+            busy={review.isPending}
+            showCoverage={false}
+            onReview={
+              runAcrossService.reviewCaptures
+                ? (action, item, note) => reviewItem(action, [item as PlanCaptureReviewItem], note)
+                : undefined
+            }
+            onReviewMany={
+              runAcrossService.reviewCaptures
+                ? (action, items, note) =>
+                    reviewItem(action, items as PlanCaptureReviewItem[], note)
+                : undefined
+            }
+          />
+        </div>
       )}
       <details className="pt-2 text-xs text-muted-foreground">
         <summary className="w-fit cursor-pointer">Coverage and review details</summary>

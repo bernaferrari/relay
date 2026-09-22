@@ -37,6 +37,8 @@ import {
   persistAccountReloginPlanResult,
   prepareAppMapCombineCells,
   preparedCellsFixtureStartBlocker,
+  mutatingShareStartBlocker,
+  combineCellShareAccountId,
   queueablePreparedCombineCells,
   readAppMap,
   listTargets,
@@ -587,6 +589,27 @@ async function executeCombineStartUnlocked(
           persisted?.findings ?? accountReloginFindingsReport({ detail: cellAccountBlocker }),
         ...(persisted ? { batchId: persisted.batchId } : {}),
       });
+    }
+    const accountVariableId = Object.values(map.variables).find(
+      (variable) => variable.kind === "account",
+    )?.id;
+    const sharingBlocker = mutatingShareStartBlocker(
+      map,
+      selectedToQueue.map((cell) => {
+        const accountId = combineCellShareAccountId({
+          values: cell.values,
+          accountVariableId,
+          authenticationFixtureId:
+            cell.selectedRuntimeTargetProfile.browserCaseProfile?.authenticationFixtureId,
+        });
+        return {
+          testId: cell.testId,
+          ...(accountId ? { accountId } : {}),
+        };
+      }),
+    );
+    if (sharingBlocker) {
+      throw new HttpError(409, sharingBlocker, { code: "unsafe-starting-state" });
     }
     if (hasExplicitCellTargets && !body.localAdmission) {
       throw new HttpError(

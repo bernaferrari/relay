@@ -4,6 +4,7 @@ import {
   summarizeExecutionOperationResult,
   type OperationId,
 } from "@relay/protocol";
+import { createRelayOutcomeJobs } from "@relay/workflows/outcomes";
 import { pngScreenshotRecord } from "./png-result.js";
 import { relayMcpExclusions, relayMcpTools } from "./tools.js";
 import { relayOperatorTools, type RelayOperatorToolDescriptor } from "./operator-tools.js";
@@ -37,6 +38,17 @@ function withLane(
 ): Record<string, unknown> {
   const laneId = laneIdFrom(parsed);
   return laneId ? { ...input, laneId } : input;
+}
+
+/** The serial `target.recover` already accepts. A browser Lane uses its managed target id. */
+export function recoverSerialFromLane(
+  lane: { target?: { kind?: string; serial?: string; browserTargetId?: string } } | undefined,
+  laneId: string,
+): string {
+  if (!lane?.target) throw new Error(`Lane ${laneId} was not found.`);
+  const serial = lane.target.kind === "device" ? lane.target.serial : lane.target.browserTargetId;
+  if (!serial) throw new Error(`Lane ${laneId} has no recoverable target.`);
+  return serial;
 }
 
 function serialFrom(input: Record<string, unknown>): string | undefined {
@@ -321,6 +333,11 @@ async function invokeAdvanced(
  * Validate and dispatch an operator verb. Auto-creates a lease on
  * TARGET_CONTROL_LEASE_REQUIRED and rewrites lease-conflict 403s to held-by copy.
  */
+/** One case unless the caller explicitly asks for every selected case. */
+export function planRunExecutionMode(mode: unknown): "pilot" | "all" {
+  return mode === "all" ? "all" : "pilot";
+}
+
 export async function invokeRelayOperatorTool(input: {
   name: RelayOperatorToolDescriptor["name"];
   argumentsValue: Record<string, unknown>;
@@ -395,7 +412,19 @@ export async function invokeRelayOperatorTool(input: {
       ...(typeof parsed.durationMs === "number" ? { durationMs: parsed.durationMs } : {}),
     });
   }
-  if (input.name === "relay_recover") return call("target.recover", { serial: parsed.serial });
+  if (input.name === "relay_recover") {
+    if (typeof parsed.serial === "string") return call("target.recover", { serial: parsed.serial });
+    const laneId = laneIdFrom(parsed);
+    if (!laneId) throw new Error("Provide serial or lane.");
+    const listed = (await invoker.invoke("lane.list", {}, { signal })) as {
+      lanes?: Array<{
+        id: string;
+        target?: { kind?: string; serial?: string; browserTargetId?: string };
+      }>;
+    };
+    const lane = listed.lanes?.find((item) => item.id === laneId);
+    return call("target.recover", { serial: recoverSerialFromLane(lane, laneId) });
+  }
   if (input.name === "relay_teach") {
     const teachTarget = parsed.target as { kind: string; targetId: string };
     let leaseId = typeof parsed.leaseId === "string" ? parsed.leaseId : undefined;
@@ -445,6 +474,7 @@ export async function invokeRelayOperatorTool(input: {
       ),
     );
   }
+
   if (input.name === "relay_plan_run") {
     const started = await call(
       "job.combine.start",
@@ -452,7 +482,7 @@ export async function invokeRelayOperatorTool(input: {
         {
           appMapId: parsed.appMapId,
           combineId: parsed.combineId,
-          executionMode: "all",
+          executionMode: planRunExecutionMode(parsed.executionMode),
           ...(typeof parsed.serial === "string" ? { serial: parsed.serial } : {}),
           ...(typeof parsed.browserTargetId === "string"
             ? { browserTargetId: parsed.browserTargetId }
@@ -545,6 +575,28 @@ export async function invokeRelayOperatorTool(input: {
     );
     return waitEnvelope(result);
   }
+  if (input.name === "relay_cancel") {
+    return invoker.invoke("job.cancel", { jobId: parsed.jobId }, { signal });
+  }
+  if (input.name === "relay_export") {
+    const joined = Array.isArray(parsed.with)
+      ? parsed.with.filter((id): id is string => typeof id === "string" && id !== parsed.runId)
+      : [];
+    return summarizeExecutionOperationResult(
+      "run.walkthrough-pack.get",
+      await invoker.invoke(
+        "run.walkthrough-pack.get",
+        { runId: parsed.runId, ...(joined.length ? { with: joined } : {}) },
+        { signal },
+      ),
+    );
+  }
+  if (input.name === "relay_save") {
+    return summarizeExecutionOperationResult(
+      "app-map.test.save",
+      await call("app-map.test.save", parsed),
+    );
+  }
   if (input.name === "relay_findings") {
     return summarizeExecutionOperationResult(
       "job.combine.analysis",
@@ -589,6 +641,21 @@ export async function invokeRelayOperatorTool(input: {
         { signal },
       ),
     );
+  }
+  if (input.name === "relay_goal") {
+    const jobs = createRelayOutcomeJobs(
+      {
+        invoke: (operationId, operationInput) =>
+          invoker.invoke(operationId, operationInput as never, { signal }),
+      },
+      { actorId: input.actorId },
+    );
+    return jobs.goal({
+      kind: "goal-start",
+      goal: String(parsed.goal),
+      ...(typeof parsed.startUrl === "string" ? { startUrl: parsed.startUrl } : {}),
+      ...(typeof parsed.laneId === "string" ? { laneId: parsed.laneId } : {}),
+    });
   }
   if (input.name === "relay_lanes") return invoker.invoke("lane.list", {}, { signal });
   return invokeAdvanced(parsed, input.confirmed, invoker, signal, input.profile ?? "operator");

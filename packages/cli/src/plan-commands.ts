@@ -3,17 +3,18 @@ import { commandPath as path } from "./command-descriptors.js";
 export const planRunCommandPath = path(
   "plan run",
   ["appMapId", "combineId"],
-  { executionMode: "all" },
+  { executionMode: "pilot" },
   {
-    summary: "Run every case of a saved Plan",
+    summary: "Run one case of a saved Plan",
     argumentHelp: [
       { name: "appMapId", type: "string", description: "App Map identifier" },
       { name: "combineId", type: "string", description: "Saved Plan identifier" },
     ],
     examples: [
       "relay plan run grok-web grok-web-daily --lane grok-daily --budget 10m --findings",
-      "relay plan run grok-web grok-web-judged --lane grok-daily --budget 10m --findings",
-      "relay plan run grok-web grok-hourly --lane grok-lab --export /tmp/hourly --todo ./todo.json --findings",
+      "relay plan run grok-web grok-web-daily --lane grok-daily --all --budget 10m --findings",
+      "relay plan run grok-web grok-web-judged --lane grok-daily --all --budget 10m --findings",
+      "relay plan run grok-web grok-hourly --lane grok-lab --all --export /tmp/hourly --todo ./todo.json --findings",
     ],
     inputHelp: [
       {
@@ -22,7 +23,7 @@ export const planRunCommandPath = path(
         description: "Optional read-only OpenRouter sorting of saved findings for human review.",
       },
     ],
-    note: "Plans default to every selected case. --lane fills browser target, profile, and account overlay so --input-file is not needed. --budget 10m is a watch timeout, not a pack-duration promise. --budget 3m is too tight for the eight-Test logged-out pack. --findings prints markdown after the wait. --export writes the review pack with a Test checklist; optional --todo merges unbound/gated rows. Confirm/Reject never auto-accept visual baselines — use relay run visual review <job>. If watch dies with fetch failed, tsx watch likely restarted :8787 and dropped in-memory jobs — do not recover-kill a live iOS runner, and do not edit core/server while a Plan is live.",
+    note: "One case is the default. Pass --all to run every selected case. --lane fills browser target, profile, and account overlay so --input-file is not needed. --budget 10m is a watch timeout, not a pack-duration promise. --budget 3m is too tight for the eight-Test logged-out pack. --findings prints markdown after the wait. --export writes the review pack with a Test checklist; optional --todo merges unbound/gated rows. Confirm/Reject never auto-accept visual baselines — use relay run visual review <job>. If watch dies with fetch failed, tsx watch likely restarted :8787 and dropped in-memory jobs — do not recover-kill a live iOS runner, and do not edit core/server while a Plan is live.",
     behavior: "job-start-watch",
   },
 );

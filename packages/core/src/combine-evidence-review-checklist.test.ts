@@ -190,6 +190,14 @@ test("dest-phase identity is dest wait-for, not leftover Close last-frame", () =
   assert.notEqual(rows[0]?.afterPng, "android/screenshots/003-005.png");
 });
 
+test("a pending review row is shown as awaiting review", () => {
+  const html = reviewChecklistSection([
+    { id: "settings", test: "Settings", status: "pending review" },
+  ]);
+  assert.match(html, /data-status="pending review"/u);
+  assert.match(html, />awaiting review</u);
+});
+
 test("checklist dest identity pairs dest wait-for 003, not leftover Close 004 last-frame", () => {
   const rows = reviewChecklistRows({
     cases: [

@@ -20,6 +20,27 @@ import { runWithTargetContext } from "./target-context.js";
 import { TargetControlReservedError } from "./target-control.js";
 import { interact } from "./workspace-interact.js";
 
+test("a missing XCTest session has not pressed the glass", async () => {
+  const device = {
+    interactions: {
+      press: async () => {
+        throw new Error("No active session. Run open first.");
+      },
+    },
+  } as unknown as Device;
+  await assert.rejects(
+    () => runWithTargetContext(ios("ipad-no-session-press"), () => pressPoint(device, 10, 20)),
+    (error: unknown) => {
+      assert.ok(!(error instanceof IosMutationOutcomeUnknownError));
+      assert.match(error instanceof Error ? error.message : "", /No active session\. Run open first/);
+      const diagnostic = lastIosMutationAttemptDiagnostic("ipad-no-session-press");
+      assert.equal(diagnostic?.outcome, "selector-miss");
+      assert.equal(diagnostic?.retry.decision, "safe-selector-fallback");
+      return true;
+    },
+  );
+});
+
 const ios = (serial: string) => ({ kind: "device", platform: "ios", serial }) as const;
 const android = (serial: string) => ({ kind: "device", platform: "android", serial }) as const;
 

@@ -519,6 +519,65 @@ describe("run report projection", () => {
     ]);
   });
 
+  it("does not name a selected account when sign-in was not usable", () => {
+    const blocked = projectRunReport(
+      "run-blocked",
+      {
+        outcome: "blocked",
+        resolvedInputs: { account: "member" },
+        authenticationHealth: { status: "needs-relogin" },
+      },
+      { channels: {} },
+    );
+    expect(blocked.executionContext?.account).toBeUndefined();
+
+    const used = projectRunReport(
+      "run-used",
+      {
+        outcome: "passed",
+        resolvedInputs: { account: "member" },
+        authenticationHealth: { status: "ready", identity: "Bernardo Ferrari" },
+      },
+      { channels: {} },
+    );
+    expect(used.executionContext?.account).toBe("Bernardo Ferrari");
+
+    const standIn = projectRunReport(
+      "run-stand-in",
+      {
+        outcome: "passed",
+        resolvedInputs: { account: "SuperGrok" },
+        authenticationHealth: { status: "ready", identity: "grok-lab" },
+      },
+      { channels: {} },
+    );
+    expect(standIn.executionContext?.account).toBeUndefined();
+
+    const device = projectRunReport(
+      "run-device",
+      {
+        outcome: "passed",
+        platform: "ios",
+        resolvedInputs: { account: "signed-out" },
+        authenticationHealth: { status: "ready" },
+      },
+      { channels: {} },
+    );
+    expect(device.executionContext?.account).toBeUndefined();
+
+    const browser = projectRunReport(
+      "run-browser",
+      {
+        outcome: "passed",
+        platform: "browser",
+        resolvedInputs: { account: "signed-out" },
+        authenticationHealth: { status: "ready" },
+      },
+      { channels: {} },
+    );
+    expect(browser.executionContext?.account).toBe("signed-out");
+  });
+
   it("projects persisted TraceStep frames and log as observed legacy evidence", () => {
     const report = projectRunReport(
       "run-trace",
@@ -781,6 +840,8 @@ describe("run report projection", () => {
         id: "network",
         label: "Network activity",
         detail: "1 request · 1 connection",
+        summary:
+          "HTTP rows are observed requests. An encrypted connection does not establish an HTTP body that was not observed.",
         inspectable: true,
         items: [
           expect.objectContaining({
@@ -795,6 +856,26 @@ describe("run report projection", () => {
       }),
     ]);
     expect(JSON.stringify(report)).not.toContain("token=hidden");
+
+    const sourced = projectRunReport(
+      "run-sourced",
+      { outcome: "passed" },
+      {
+        channels: { network: { entries: 1 } },
+        networkCapture: {
+          mode: "emulator-packet",
+          label: "Emulator packet metadata",
+          detail:
+            "Packet capture does not parse HTTP methods, statuses, headers, or bodies; encrypted payloads remain opaque.",
+        },
+        androidNetwork: {
+          flows: [{ protocol: "tls", host: "api.example.com", outcome: "connected" }],
+        },
+      },
+    );
+    expect(sourced.evidence[0]?.summary).toBe(
+      "Emulator packet metadata. Packet capture does not parse HTTP methods, statuses, headers, or bodies; encrypted payloads remain opaque.",
+    );
     expect(JSON.stringify(report)).not.toContain("48 items");
   });
 });
