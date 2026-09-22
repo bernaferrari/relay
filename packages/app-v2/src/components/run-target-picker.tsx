@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@relay/ui-react/components/button";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
@@ -59,11 +60,8 @@ export function RunTargetPicker({
           }
         >
           <span>
-            {selected.length
-              ? `${selected.length} ${selected.length === 1 ? "target" : "targets"} selected`
-              : "Choose browsers or devices"}
+            {selected.length ? "Add or change browsers and devices" : "Choose browsers or devices"}
           </span>
-          {selected.length ? <span className="text-xs text-muted-foreground">Change</span> : null}
         </DialogTrigger>
         <DialogContent className="flex max-h-[85dvh] min-w-0 flex-col gap-4 overflow-hidden">
           <div>
@@ -134,11 +132,36 @@ export function RunTargetPicker({
         </DialogContent>
       </Dialog>
       {selected.length ? (
-        <p className="wrap-anywhere text-xs text-muted-foreground">
-          {selected
-            .map((id) => options.find((option) => option.id === id)?.label ?? "Unavailable target")
-            .join(" · ")}
-        </p>
+        <ul aria-label="Selected browsers and devices" className="grid min-w-0 gap-1">
+          {selected.map((id) => {
+            const option = options.find((item) => item.id === id);
+            const label = option?.label ?? "Unavailable target";
+            return (
+              <li
+                key={id}
+                className="flex min-w-0 items-center justify-between gap-3 rounded-lg bg-muted/40 px-3 py-2"
+              >
+                <div className="grid min-w-0 gap-0.5">
+                  <span title={label} className="truncate text-sm font-medium">
+                    {label}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {option ? groupName(option) : "Choose a replacement"}
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  disabled={disabled}
+                  aria-label={`Remove ${label}`}
+                  onClick={() => onToggle(id, false)}
+                >
+                  <X aria-hidden="true" />
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
       ) : null}
     </div>
   );

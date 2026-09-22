@@ -28,6 +28,11 @@ it("opens grouped choices and retains the selected target without changing it", 
     );
   });
   expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await act(async () =>
+    (host.querySelector('[aria-label="Remove Chrome"]') as HTMLElement).click(),
+  );
+  expect(onToggle).toHaveBeenCalledWith("chrome", false);
+  onToggle.mockClear();
   await act(async () => host.querySelector("button")!.click());
   expect(document.body.textContent).toContain("Browsers");
   expect(document.body.textContent).toContain("Android");

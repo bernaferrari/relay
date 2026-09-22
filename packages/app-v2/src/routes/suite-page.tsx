@@ -425,46 +425,38 @@ export function SuitePage() {
                     : undefined
                 }
               />
-              <div className="mt-3 overflow-hidden rounded-lg border border-border">
-                <table className="w-full table-fixed text-left text-xs [&_td]:wrap-anywhere">
-                  <caption className="px-3 py-2 text-left font-medium text-foreground">
-                    Selected configurations
-                  </caption>
-                  <thead className="bg-muted/40 text-muted-foreground">
-                    <tr>
-                      <th scope="col" className="px-3 py-2 font-medium">
-                        Browser or device
-                      </th>
-                      <th scope="col" className="px-3 py-2 font-medium">
-                        Sign-in
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {configuration.selection.usePairedWorkspace
-                      ? paired.workspace.rows.map((row) => (
-                          <tr key={row.id}>
-                            <td className="px-3 py-2">
-                              {row.browserName} · {row.engine ?? "chromium"}
-                            </td>
-                            <td className="px-3 py-2">
-                              {row.accountName ??
-                                (row.signedOutAttested ? "Signed out" : "Choose a sign-in")}
-                            </td>
-                          </tr>
-                        ))
-                      : (
-                          preview.data?.environments ??
-                          (preview.data?.environment ? [preview.data.environment] : [])
-                        ).map((item) => (
-                          <tr key={item.id}>
-                            <td className="px-3 py-2">{item.name}</td>
-                            <td className="px-3 py-2">Current session</td>
-                          </tr>
-                        ))}
-                  </tbody>
-                </table>
-              </div>
+              {configuration.selection.usePairedWorkspace ? (
+                <div className="mt-3 overflow-hidden rounded-lg border border-border">
+                  <table className="w-full table-fixed text-left text-xs [&_td]:wrap-anywhere">
+                    <caption className="px-3 py-2 text-left font-medium text-foreground">
+                      Selected configurations
+                    </caption>
+                    <thead className="bg-muted/40 text-muted-foreground">
+                      <tr>
+                        <th scope="col" className="px-3 py-2 font-medium">
+                          Browser or device
+                        </th>
+                        <th scope="col" className="px-3 py-2 font-medium">
+                          Sign-in
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {paired.workspace.rows.map((row) => (
+                        <tr key={row.id}>
+                          <td className="px-3 py-2">
+                            {row.browserName} · {row.engine ?? "chromium"}
+                          </td>
+                          <td className="px-3 py-2">
+                            {row.accountName ??
+                              (row.signedOutAttested ? "Signed out" : "Choose a sign-in")}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
               <p className="mt-5 border-t border-border pt-4 text-sm font-medium">
                 How much should run?
               </p>
