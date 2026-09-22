@@ -258,7 +258,7 @@ describe("Suite and Environment routes", () => {
 
   it("renders Suites and navigates to the canonical Suite detail route", async () => {
     const { history } = await render("/suites");
-    expect(document.querySelector("h1")?.textContent).toBe("Plans");
+    expect(document.querySelector("h1")?.textContent).toBe("Tests");
     expect(document.body.textContent).toContain("Release smoke");
     expect(document.body.textContent).toContain("1 Test");
     const link = document.querySelector<HTMLAnchorElement>('a[href="/apps/app-1/suites/suite-1"]');

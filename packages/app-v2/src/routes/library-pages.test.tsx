@@ -358,15 +358,13 @@ describe("Tests workspace", () => {
     );
 
     const devices = document.querySelector<HTMLAnchorElement>('a[href="/devices"]');
-    expect(document.body.textContent).toContain("Release smoke");
-    expect(document.querySelector('a[href="/apps/app-1/suites/suite-1"]')?.textContent).toContain(
-      "1 Test",
-    );
+    expect(document.body.textContent).not.toContain("Release smoke");
+    expect(document.querySelector('a[href="/apps/app-1/suites/suite-1"]')).toBeNull();
     expect(devices?.textContent?.trim()).toBe("Devices & browsers");
     expect(devices?.hasAttribute("aria-disabled")).toBe(false);
     expect(document.querySelector('a[href="/tests/new"]')?.textContent).toBe("New Test");
     const managePlans = document.querySelector<HTMLAnchorElement>('a[href="/suites"]');
-    expect(managePlans?.textContent).toContain("Run Tests together");
+    expect(managePlans?.textContent).toBe("Test plans");
     expect(document.querySelector('a[href="/changes"]')?.textContent).toBe("Changes");
     expect(document.querySelector('a[href="/sessions"]')?.textContent).toBe("Activity");
     expect(document.body.textContent).toContain("Change language");
@@ -428,7 +426,7 @@ describe("Tests workspace", () => {
   it("does not invent Suites from Test checkboxes", async () => {
     await render("/tests");
     expect(document.body.textContent).toContain(
-      "Reusable steps that check your app. Run a Test to get a result.",
+      "A test is a saved journey through your app. Run it on its own, or include it in a test plan.",
     );
     expect(document.querySelectorAll('[data-slot="library-row-select"]')).toHaveLength(0);
     expect(document.body.textContent).not.toContain("Create Suite");

@@ -129,8 +129,8 @@ export function SuitesPage() {
   return (
     <LibraryPage className="max-w-5xl">
       <PageHeader
-        title="Plans"
-        description="Choose Tests to run together across devices and data sets."
+        title="Tests"
+        description="A test plan groups existing tests to run together. You don’t need a plan to run an individual test."
         actions={
           <>
             <Dialog
@@ -142,16 +142,17 @@ export function SuitesPage() {
               }}
             >
               <DialogTrigger render={<Button variant="default" disabled={!apps.data?.length} />}>
-                <Plus aria-hidden="true" /> New Plan
+                <Plus aria-hidden="true" /> New test plan
               </DialogTrigger>
 
               <DialogContent
                 showCloseButton={false}
                 className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto"
               >
-                <DialogTitle>New Plan</DialogTitle>
+                <DialogTitle>New test plan</DialogTitle>
                 <DialogDescription>
-                  Choose an App, then pick the Tests to run together.
+                  Choose existing tests for this plan. Their steps stay in the original tests; you
+                  choose devices and accounts when you run the plan.
                 </DialogDescription>
                 <form onSubmit={submit}>
                   <Field>
@@ -432,8 +433,14 @@ export function SuitesPage() {
                 Clear App filter
               </Button>
             ) : apps.data?.length ? (
-              <Button variant="default" onClick={() => setDialogOpen(true)}>
-                New Plan
+              <Button
+                variant="default"
+                onClick={() => {
+                  resetCreate();
+                  setDialogOpen(true);
+                }}
+              >
+                New test plan
               </Button>
             ) : (
               <Link className={productLinkClassName} to="/apps">
