@@ -120,21 +120,22 @@ export function RecordingProblem({
               ? "Run status needs checking."
               : "Step status needs checking."}
         </span>
-        {!checking && onRetry ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onRetry}
-            disabled={retrying}
-            title={
-              operation === "run"
-                ? "Check whether the run started. This does not start another run."
-                : "Check whether the step was saved. This does not repeat the device action."
-            }
-          >
-            Check status
-          </Button>
-        ) : null}
+        {action ??
+          (!checking && onRetry ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onRetry}
+              disabled={retrying}
+              title={
+                operation === "run"
+                  ? "Check whether the run started. This does not start another run."
+                  : "Check whether the step was saved. This does not repeat the device action."
+              }
+            >
+              Check status
+            </Button>
+          ) : null)}
       </div>
     );
   }

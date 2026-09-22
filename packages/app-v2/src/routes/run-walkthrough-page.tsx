@@ -69,7 +69,9 @@ export function RunWalkthroughPage() {
     },
   });
 
-  const historyRef = useRef<string[]>([]);
+  const historyRef = useRef<{ stateId: string; variantId?: string; captureId?: string }[]>([]);
+  const futureRef = useRef<{ stateId: string; variantId?: string; captureId?: string }[]>([]);
+  const [navEpoch, setNavEpoch] = useState(0);
   const [focusedHotspot, setFocusedHotspot] = useState(0);
 
   const variantId = search.variant ?? manifest?.variants[0]?.id;
@@ -78,7 +80,8 @@ export function RunWalkthroughPage() {
   const capture = useMemo(() => {
     if (!manifest || !stateId || !variantId) return undefined;
     if (search.capture) {
-      return manifest.captures.find((candidate) => candidate.id === search.capture);
+      const pinned = manifest.captures.find((candidate) => candidate.id === search.capture);
+      return pinned?.variantId === variantId && pinned.stateId === stateId ? pinned : undefined;
     }
     return resolveCapture(manifest, stateId, variantId);
   }, [manifest, stateId, variantId, search.capture]);
@@ -104,19 +107,50 @@ export function RunWalkthroughPage() {
     );
   }, [manifest, capture]);
 
-  function goTo(nextStateId: string) {
-    if (stateId) historyRef.current = [...historyRef.current, stateId];
+  function goTo(nextStateId: string, captureId?: string) {
+    if (!stateId || (nextStateId === stateId && captureId === capture?.id)) return;
+    historyRef.current = [...historyRef.current, { stateId, variantId, captureId: capture?.id }];
+    futureRef.current = [];
+    setNavEpoch((epoch) => epoch + 1);
     setFocusedHotspot(0);
     void navigate({
-      search: (previous) => ({ ...previous, state: nextStateId, capture: undefined }),
+      search: (previous) => ({
+        ...previous,
+        state: nextStateId,
+        ...(variantId ? { variant: variantId } : {}),
+        capture: captureId,
+      }),
     });
   }
 
   function goBack() {
     const previous = historyRef.current.pop();
-    if (previous !== undefined) {
+    if (previous !== undefined && stateId) {
+      futureRef.current.push({ stateId, variantId, captureId: capture?.id });
+      setNavEpoch((epoch) => epoch + 1);
       void navigate({
-        search: (current) => ({ ...current, state: previous, capture: undefined }),
+        search: (current) => ({
+          ...current,
+          state: previous.stateId,
+          variant: previous.variantId,
+          capture: previous.captureId,
+        }),
+      });
+    }
+  }
+
+  function goForward() {
+    const next = futureRef.current.pop();
+    if (next !== undefined && stateId) {
+      historyRef.current.push({ stateId, variantId, captureId: capture?.id });
+      setNavEpoch((epoch) => epoch + 1);
+      void navigate({
+        search: (current) => ({
+          ...current,
+          state: next.stateId,
+          variant: next.variantId,
+          capture: next.captureId,
+        }),
       });
     }
   }
@@ -218,7 +252,9 @@ export function RunWalkthroughPage() {
       outgoing={outgoing}
       findings={finding ? [finding] : []}
       frame={frame}
-      canGoBack={historyRef.current.length > 0}
+      canGoBack={navEpoch >= 0 && historyRef.current.length > 0}
+      canGoForward={navEpoch >= 0 && futureRef.current.length > 0}
+      goForward={goForward}
       goBack={goBack}
       goTo={goTo}
       switchVariant={switchVariant}

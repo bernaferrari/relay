@@ -269,7 +269,7 @@ export function GoalPage() {
               required
             />
             <FieldDescription>
-              Each worker gets an isolated, signed-out browser target.
+              Opens this URL in a new browser. Your current browser session is not continued.
             </FieldDescription>
           </Field>
           {lanes.data && lanes.data.length > 0 ? (

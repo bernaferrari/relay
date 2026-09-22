@@ -22,7 +22,7 @@ export function WalkthroughPlayback({
   title: string;
   connections: readonly Connection[];
   entryStateId?: string;
-  onNavigate(stateId: string): void;
+  onNavigate(stateId: string, captureId?: string): void;
   onError(): void;
 }) {
   const [showControls, setShowControls] = useState(true);
@@ -92,7 +92,7 @@ export function WalkthroughPlayback({
             data-recorded="true"
             aria-label={`${connection.label} — recorded link`}
             title={connection.label}
-            onClick={() => onNavigate(connection.toStateId)}
+            onClick={() => onNavigate(connection.toStateId, connection.provenance?.captureId)}
             className={`absolute cursor-pointer rounded-md border-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${showControls ? "border-primary bg-primary/20" : "border-transparent bg-transparent hover:border-primary hover:bg-primary/20 focus-visible:border-primary"} ${rect ? "w-(--hotspot-width) h-(--hotspot-height)" : "size-9 -translate-x-1/2 -translate-y-1/2 rounded-full"} left-(--hotspot-left) top-(--hotspot-top)`}
             style={
               {

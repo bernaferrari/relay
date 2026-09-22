@@ -394,6 +394,74 @@ describe("Run and Report", () => {
     ).toBe("true");
   });
 
+  it("offers setup correction instead of retrying unrelated reads after a blocked start", async () => {
+    const fake = fakeRunService();
+    const start = vi.fn(async () => ({
+      status: "failed" as const,
+      recovery: {
+        code: "compile-blocked" as const,
+        title: "Choose another setup",
+        detail: "Account unavailable",
+        recovery: "Change the saved setup.",
+        retryable: true,
+      },
+    }));
+    fake.service.start = start;
+    fake.service.listTargets = async () => [
+      {
+        kind: "device",
+        platform: "android",
+        targetId: "emulator-5554",
+        name: "QA phone",
+        detail: "Android emulator",
+      },
+    ];
+    await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
+    await click(button("Run now"));
+    expect(document.body.textContent).toContain("Choose another setup");
+    await click(button("Review run setup"));
+    expect(document.body.textContent).not.toContain("Choose another setup");
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).toContain("Run on");
+  });
+
+  it("directs unknown start outcomes to status without repeating the start", async () => {
+    const fake = fakeRunService();
+    const start = vi.fn(async () => ({
+      status: "failed" as const,
+      recovery: {
+        code: "mutation-outcome-unknown" as const,
+        title: "Unknown start",
+        detail: "Acknowledgement lost",
+        recovery: "Inspect before repeating.",
+        retryable: true,
+      },
+    }));
+    fake.service.start = start;
+    fake.service.listTargets = async () => [
+      {
+        kind: "device",
+        platform: "android",
+        targetId: "emulator-5554",
+        name: "QA phone",
+        detail: "Android emulator",
+      },
+    ];
+    const { history } = await renderRun(
+      "/tests/test-1",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await click(button("Run now"));
+    const link = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (item) => item.textContent === "Check run status",
+    );
+    expect(link).toBeDefined();
+    await click(link!);
+    expect(history.location.pathname).toBe("/runs");
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+
   it("offers step review when saved capture controls block compilation", async () => {
     const fake = fakeRunService();
     fake.service.start = async () => ({

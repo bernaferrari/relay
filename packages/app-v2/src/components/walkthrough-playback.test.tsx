@@ -27,7 +27,7 @@ it("plays only recorded, valid controls and navigates without device input", asy
     toStateId: "language",
     kind: "recorded" as const,
     label: "Language",
-    provenance: { runId: "run" },
+    provenance: { runId: "run", captureId: "exact-language" },
     hotspot: {
       connectionId: "open",
       rect: { x: 0.1, y: 0.2, width: 0.3, height: 0.1 },
@@ -65,7 +65,7 @@ it("plays only recorded, valid controls and navigates without device input", asy
     expect(hotspots).toHaveLength(1);
     expect(hotspots[0].style.getPropertyValue("--hotspot-left")).toBe("10%");
     await act(async () => hotspots[0].click());
-    expect(navigate).toHaveBeenLastCalledWith("language");
+    expect(navigate).toHaveBeenLastCalledWith("language", "exact-language");
     await act(async () => host.querySelector<HTMLButtonElement>("[aria-pressed]")!.click());
     expect(host.querySelector("[aria-pressed]")?.getAttribute("aria-pressed")).toBe("false");
     expect(host.querySelectorAll('[data-recorded="true"]')).toHaveLength(1);

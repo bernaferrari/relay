@@ -5,6 +5,7 @@ import type { CaptureReviewAction } from "@relay/protocol";
 import { CaptureReviewDecisions } from "./capture-review-decisions";
 import { WorkbenchPage } from "./page-layout";
 import { SelectField } from "./filter-select";
+import { walkthroughConfigurationLabels } from "./walkthrough-configuration-labels";
 import { WalkthroughExport } from "./walkthrough-export";
 import { WalkthroughPlayback } from "./walkthrough-playback";
 import { EmptyState } from "./product-patterns";
@@ -24,7 +25,7 @@ type Props = {
   canGoForward?: boolean;
   goBack: () => void;
   goForward?: () => void;
-  goTo: (id: string) => void;
+  goTo: (id: string, captureId?: string) => void;
   switchVariant: (id: string) => void;
   reviewActions?: {
     pending: boolean;
@@ -71,10 +72,7 @@ export function WalkthroughView({
       )
       .map((entry) => ({ id: entry.variantId, label: entry.variantId })),
   ];
-  const configurationLabel = (label: string) => {
-    const account = label.split(" @ ")[1]?.split(" · ")[0];
-    return account ? account.replaceAll("-", " ") : label;
-  };
+
 
   return (
     <WorkbenchPage>
@@ -98,10 +96,7 @@ export function WalkthroughView({
         <SelectField
           label="Configuration"
           value={variantId ?? ""}
-          options={variants.map((variant) => ({
-            value: variant.id,
-            label: configurationLabel(variant.label),
-          }))}
+          options={walkthroughConfigurationLabels(variants)}
           onValueChange={switchVariant}
         />
         <SelectField
@@ -210,14 +205,15 @@ export function WalkthroughView({
                 </p>
               ))}
             </section>
-          ) : capture && reviewActions ? (
+          ) : null}
+          {capture && reviewActions ? (
             <section
               aria-label="Review this capture"
               className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 px-4 py-3 text-sm"
             >
               <CaptureReviewDecisions
                 key={`${capture.runId}:${capture.imageSha256}`}
-                status="Awaiting your decision"
+                status={finding ? "Decision saved · choose another action to change it" : "Awaiting your decision"}
                 busy={reviewActions.pending}
                 unavailable={!frame.url}
                 onReview={reviewActions.submit}
@@ -238,7 +234,7 @@ export function WalkthroughView({
                     <button
                       type="button"
                       data-hotspot-index={index}
-                      onClick={() => goTo(connection.toStateId)}
+                      onClick={() => goTo(connection.toStateId, connection.kind === "recorded" ? connection.provenance?.captureId : undefined)}
                       className="w-full rounded-lg bg-muted/30 px-4 py-3 text-left hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {connection.label}

@@ -419,7 +419,17 @@ export function TestPage() {
       <RecordingProblem
         className="mx-4 my-3 !mt-3 !max-w-none"
         operation="run"
-        error={test.error ?? targets.error ?? start.error}
+        error={test.error ?? targets.error}
+        onRetry={() => {
+          if (test.isError) void test.refetch();
+          if (targets.isError) void targets.refetch();
+        }}
+        retrying={test.isFetching || targets.isFetching}
+      />
+      <RecordingProblem
+        className="mx-4 my-3 !mt-3 !max-w-none"
+        operation="run"
+        error={start.error}
         recovery={start.data?.recovery}
         action={
           start.data?.recovery?.sourceCode === "raw-evidence-variant-recapture-required" ? (
@@ -431,13 +441,23 @@ export function TestPage() {
             >
               Review steps
             </Button>
-          ) : undefined
+          ) : start.error || start.data?.recovery?.code === "mutation-outcome-unknown" ? (
+            <Button nativeButton={false} variant="outline" size="sm" render={<Link to="/runs" />}>
+              Check run status
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={(event) => {
+                start.reset();
+                focusRunSetup(event);
+              }}
+            >
+              Review run setup
+            </Button>
+          )
         }
-        onRetry={() => {
-          void test.refetch();
-          void targets.refetch();
-        }}
-        retrying={test.isFetching || targets.isFetching}
       />
 
       {!loading && !test.data && !test.isError ? (

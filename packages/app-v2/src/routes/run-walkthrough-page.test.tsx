@@ -272,6 +272,26 @@ describe("Run walkthrough player", () => {
     expect(document.querySelector("img")).not.toBeNull();
   });
 
+  it("follows the exact recorded capture and preserves it through Back and Forward", async () => {
+    const data = manifest();
+    const exact = data.captures.find((item) => item.stateId === "screen-settings" && item.variantId === "member")!;
+    const service = playerService();
+    service.reviewCapture = async () => { throw new Error("Review must not be submitted during navigation"); };
+    service.getPlayerManifest = async () => ({ ...data,
+      captures: [...data.captures, { ...exact, id: "newer-settings", framePath: "frames/newer.png", capturedAt: 999 }],
+      connections: data.connections.map((item) => item.id === "open-settings" ? { ...item, provenance: { runId: "run-member", captureId: exact.id } } : item),
+    });
+    const { history } = await renderWalkthrough("/runs/run-member/walkthrough", service);
+    await click([...document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Member settings"))!);
+    expect(new URLSearchParams(history.location.search).get("capture")).toBe(exact.id);
+    expect(text()).toContain("frames/002.png");
+    expect(text()).not.toContain("frames/newer.png");
+    expect([...document.querySelectorAll("button")].some((button) => button.textContent?.includes("Looks correct"))).toBe(true);
+    await click(document.querySelector<HTMLButtonElement>('[aria-label="Back"]')!);
+    await click(document.querySelector<HTMLButtonElement>('[aria-label="Forward"]')!);
+    expect(new URLSearchParams(history.location.search).get("capture")).toBe(exact.id);
+  });
+
   it("navigates via a recorded link and Back retains context", async () => {
     const { history } = await renderWalkthrough("/runs/run-member/walkthrough");
     await click(

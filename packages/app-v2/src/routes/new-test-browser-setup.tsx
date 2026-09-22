@@ -99,7 +99,7 @@ export function BrowserSetup({
                 onKeyDown={(event) => {
                   if (event.key !== "Enter") return;
                   event.preventDefault();
-                  if (normalizeWebsite(browserUrl)) onStart();
+                  if (!pending && normalizeWebsite(browserUrl)) onStart();
                 }}
               />
               <Button

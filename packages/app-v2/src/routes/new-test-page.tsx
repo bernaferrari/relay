@@ -108,6 +108,7 @@ export function NewTestPage() {
     await queryClient.invalidateQueries({ queryKey: recordingQueryKeys.targets });
     await targets.refetch();
   }
+  const browserStartInFlight = useRef(false);
   const startBrowser = useMutation({
     mutationFn: async (spaceId?: string) =>
       startManagedBrowser(browserSpacesService, spaceId, browserUrl),
@@ -116,6 +117,16 @@ export function NewTestPage() {
       await adoptBrowser(nextTargetId);
     },
   });
+  function requestBrowserStart(spaceId?: string) {
+    if (browserStartInFlight.current) return;
+    browserStartInFlight.current = true;
+    void startBrowser
+      .mutateAsync(spaceId)
+      .catch(() => undefined)
+      .finally(() => {
+        browserStartInFlight.current = false;
+      });
+  }
   useEffect(() => {
     if (!appId && apps.data?.length === 1) setAppId(apps.data[0]!.id);
   }, [appId, apps.data]);
@@ -419,17 +430,43 @@ export function NewTestPage() {
         <RecordingProblem
           layout={setupOpen ? "compact" : "centered"}
           className={setupOpen ? undefined : "!mt-0 !max-w-none min-h-0 w-full flex-1"}
-          error={apps.error ?? targets.error ?? pathContext.error ?? begin.error}
-          recovery={begin.data?.recovery ?? targets.data?.recovery}
-          onRetry={
-            begin.data?.recovery && activePointer.data
-              ? undefined
-              : () => {
-                  void apps.refetch();
-                  void targets.refetch();
+          error={apps.error ?? targets.error ?? pathContext.error}
+          recovery={targets.data?.recovery}
+          onRetry={() => {
+            if (apps.isError) void apps.refetch();
+            if (targets.isError || targets.data?.recovery) void targets.refetch();
+            if (pathContext.isError) void pathContext.refetch();
+          }}
+          retrying={apps.isFetching || targets.isFetching || pathContext.isFetching}
+        />
+        <RecordingProblem
+          error={begin.error}
+          recovery={begin.data?.recovery}
+          action={
+            begin.error || begin.data?.recovery?.code === "mutation-outcome-unknown" ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  void navigate(
+                    activePointer.data
+                      ? {
+                          to: "/recordings/$recordingId",
+                          params: { recordingId: activePointer.data },
+                        }
+                      : { to: "/sessions" },
+                  )
                 }
+              >
+                Check recording status
+              </Button>
+            ) : (
+              <Button type="button" variant="outline" size="sm" onClick={() => begin.reset()}>
+                Review recording setup
+              </Button>
+            )
           }
-          retrying={apps.isFetching || targets.isFetching}
         />
 
         {!loading &&
@@ -557,7 +594,7 @@ export function NewTestPage() {
                           }
                         >
                           <Compass aria-hidden="true" />
-                          Ask Relay to explore this page
+                          Explore URL in a new browser
                         </Button>
                       ) : null}
                       {previewIssue ? (
@@ -630,7 +667,7 @@ export function NewTestPage() {
                     error={startBrowser.error}
                     onBrowserUrlChange={setBrowserUrl}
                     onToggleNewBrowser={() => setNewBrowserOpen((open) => !open)}
-                    onStart={(spaceId) => startBrowser.mutate(spaceId)}
+                    onStart={requestBrowserStart}
                     onCheckAgain={() => void targets.refetch()}
                   />
                 ) : (
