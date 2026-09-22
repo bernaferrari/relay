@@ -23,7 +23,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@relay/ui-react/compon
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Camera, ChevronLeft, MoreHorizontal, SlidersHorizontal } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type MouseEvent, useEffect, useRef, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
 import { runQueryKeys } from "../data/run-queries";
@@ -65,7 +65,7 @@ export function TestPage() {
   };
   const reviewRecordingId = useTestDocumentReview(platform, search.view);
   const navigate = useNavigate({ from: "/tests/$testId" });
-  const runSetupRef = useRef<HTMLElement>(null);
+  const [setupAnchor, setSetupAnchor] = useState<HTMLElement | null>(null);
 
   function selectSource(view: "definition" | "run") {
     void navigate({
@@ -314,16 +314,15 @@ export function TestPage() {
 
   if (reviewRecordingId) return <ReviewRecordingPage recordingId={reviewRecordingId} />;
 
-  function focusRunSetup() {
+  function focusRunSetup(event: MouseEvent<HTMLButtonElement>) {
+    setSetupAnchor(event.currentTarget);
     selectSource("definition");
     setSettingsOpen(true);
-    runSetupRef.current?.scrollIntoView({ behavior: "auto", block: "center" });
-    runSetupRef.current?.focus({ preventScroll: true });
   }
 
-  function runOrFocusSetup() {
+  function runOrFocusSetup(event: MouseEvent<HTMLButtonElement>) {
     if (!canStart) {
-      focusRunSetup();
+      focusRunSetup(event);
       return;
     }
     start.mutate();
@@ -473,6 +472,8 @@ export function TestPage() {
           ) : (
             <TabsContent value="definition" className="flex min-h-0 flex-col">
               <SavedTestWorkspace
+                settingsAnchor={setupAnchor}
+                onSettingsAnchorChange={setSetupAnchor}
                 settingsOpen={settingsOpen}
                 onSettingsOpenChange={setSettingsOpen}
                 deviceName={configurationLabel}
@@ -528,7 +529,6 @@ export function TestPage() {
                 inspector={
                   !activeRun && !targets.isError ? (
                     <section
-                      ref={runSetupRef}
                       id="test-run-setup"
                       tabIndex={-1}
                       className="min-w-0 scroll-mt-6 p-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/40 [&_select]:w-full [&_select]:min-w-0"

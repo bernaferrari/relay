@@ -584,6 +584,26 @@ describe("Run and Report", () => {
     expect(fake.startInputs).toHaveLength(0);
   });
 
+  it("returns run setup focus to the header control that opened it", async () => {
+    const fake = fakeRunService();
+    await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
+    const trigger = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="Run configuration — opens run setup"]',
+    )!;
+    await click(trigger);
+    const popup = document.querySelector<HTMLElement>(
+      '[role="dialog"][aria-label="Run settings"]',
+    )!;
+    expect(popup).not.toBeNull();
+    expect(popup.getAttribute("data-side")).toBe("bottom");
+    await act(async () => {
+      popup.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await settle();
+    expect(document.activeElement).toBe(trigger);
+    expect(fake.startInputs).toHaveLength(0);
+  });
+
   it("keeps a saved Test browser and profile over workspace and recording defaults", async () => {
     const fake = fakeRunService();
     fake.service.listProfiles = async () => [
