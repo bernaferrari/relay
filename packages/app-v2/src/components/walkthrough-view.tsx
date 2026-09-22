@@ -1,7 +1,9 @@
 import type { CSSProperties } from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeft, ChevronLeft, ChevronRight, Check, Flag } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
+import type { CaptureReviewAction } from "@relay/protocol";
+import { CaptureReviewDecisions } from "./capture-review-decisions";
 import { WorkbenchPage } from "./page-layout";
 import { SelectField } from "./filter-select";
 import { EvidenceImageViewer } from "./evidence-image-viewer";
@@ -27,8 +29,7 @@ type Props = {
   reviewActions?: {
     pending: boolean;
     error?: Error | null;
-    accept: () => void;
-    report: () => void;
+    submit: (action: CaptureReviewAction, note?: string) => Promise<void>;
   };
   exportActions?: {
     pending: boolean;
@@ -285,30 +286,14 @@ export function WalkthroughView({
               aria-label="Review this capture"
               className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 px-4 py-3 text-sm"
             >
-              <h3 className="font-medium">Review screenshot</h3>
-              <div className="flex flex-wrap gap-1">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={reviewActions?.pending || !frame.url}
-                  onClick={() => reviewActions?.accept()}
-                >
-                  <Check className="size-4" /> Looks correct
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={reviewActions?.pending || !frame.url}
-                  onClick={() => reviewActions?.report()}
-                >
-                  <Flag className="size-4" /> Report issue
-                </Button>
-              </div>
-              {reviewActions?.error ? (
-                <p className="m-0 mt-1 text-xs text-destructive">
-                  {(reviewActions?.error as Error).message}
-                </p>
-              ) : null}
+              <CaptureReviewDecisions
+                key={`${capture.runId}:${capture.imageSha256}`}
+                status="Awaiting your decision"
+                busy={reviewActions.pending}
+                unavailable={!frame.url}
+                onReview={reviewActions.submit}
+              />
+
             </section>
           ) : null}
         </section>

@@ -607,7 +607,8 @@ export function TestPage() {
                         ) : null}
                         {profiles.data?.length ? (
                           <p className="text-xs leading-relaxed text-muted-foreground">
-                            A saved setup applies its account and run settings to this Test.
+                            A saved setup applies its account and run settings. Device defaults use
+                            the device’s current state.
                           </p>
                         ) : null}
                         {selectedProfile?.account ? (
@@ -622,39 +623,54 @@ export function TestPage() {
                             </Link>
                           </p>
                         ) : null}
-                        {builds.data?.length ? (
-                          <SelectField
-                            label="Build"
-                            value={configuration.selection.buildId ?? "current"}
-                            options={[
-                              { value: "current", label: "Current build" },
-                              ...builds.data
-                                .filter((build) => build.status === "ready" && build.sourceSha)
-                                .map((build) => ({
-                                  value: build.id,
-                                  label: `${build.name} · ${build.sourceSha?.slice(0, 12)}`,
-                                })),
-                            ]}
-                            onValueChange={(value) =>
-                              configuration.setSelection({
-                                ...configuration.selection,
-                                buildId: value === "current" ? undefined : value,
-                              })
-                            }
-                          />
-                        ) : null}
-                        <label className="flex min-h-11 items-center gap-2 text-sm">
-                          <Checkbox
-                            checked={configuration.selection.startupMode === "cold"}
-                            onCheckedChange={(checked) =>
-                              configuration.setSelection({
-                                ...configuration.selection,
-                                startupMode: checked ? "cold" : undefined,
-                              })
-                            }
-                          />
-                          Restart app before running
-                        </label>
+                        <details
+                          className="group border-t border-border/60 pt-3"
+                          open={
+                            configuration.selection.buildId ||
+                            configuration.selection.startupMode === "cold"
+                              ? true
+                              : undefined
+                          }
+                        >
+                          <summary className="min-h-10 cursor-pointer text-sm font-medium">
+                            Advanced run options
+                          </summary>
+                          <div className="grid gap-3 pt-2">
+                            {builds.data?.length ? (
+                              <SelectField
+                                label="Build"
+                                value={configuration.selection.buildId ?? "current"}
+                                options={[
+                                  { value: "current", label: "Current build" },
+                                  ...builds.data
+                                    .filter((build) => build.status === "ready" && build.sourceSha)
+                                    .map((build) => ({
+                                      value: build.id,
+                                      label: `${build.name} · ${build.sourceSha?.slice(0, 12)}`,
+                                    })),
+                                ]}
+                                onValueChange={(value) =>
+                                  configuration.setSelection({
+                                    ...configuration.selection,
+                                    buildId: value === "current" ? undefined : value,
+                                  })
+                                }
+                              />
+                            ) : null}
+                            <label className="flex min-h-11 items-center gap-2 text-sm">
+                              <Checkbox
+                                checked={configuration.selection.startupMode === "cold"}
+                                onCheckedChange={(checked) =>
+                                  configuration.setSelection({
+                                    ...configuration.selection,
+                                    startupMode: checked ? "cold" : undefined,
+                                  })
+                                }
+                              />
+                              Restart app before running
+                            </label>
+                          </div>
+                        </details>
                         {targets.isPending ? (
                           <PageLoading label="Finding devices…" />
                         ) : !targets.data?.length ? (

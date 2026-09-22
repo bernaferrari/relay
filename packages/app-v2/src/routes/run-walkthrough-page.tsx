@@ -227,13 +227,7 @@ export function RunWalkthroughPage() {
           ? {
               pending: reviewMutation.isPending,
               error: reviewMutation.error,
-              accept: () => reviewMutation.mutate({ capture, action: "accept" }),
-              report: () =>
-                reviewMutation.mutate({
-                  capture,
-                  action: "report-issue",
-                  note: "Reported from the walkthrough player",
-                }),
+              submit: async (action, note) => { await reviewMutation.mutateAsync({ capture, action, note }); },
             }
           : undefined
       }

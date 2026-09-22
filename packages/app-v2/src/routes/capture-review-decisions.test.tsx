@@ -37,6 +37,22 @@ describe("screenshot issue note", () => {
     expect(onReview).toHaveBeenCalledExactlyOnceWith("need-more-evidence", undefined);
   });
 
+  it("does not save a decision when the screenshot is unavailable", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    const onReview = vi.fn();
+    await act(async () => root.render(<CaptureReviewDecisions unavailable onReview={onReview} />));
+    expect(host.textContent).toContain("Load the screenshot to review it");
+    expect(host.textContent).not.toContain("Saving decision");
+    for (const button of host.querySelectorAll("button")) {
+      expect(button.disabled).toBe(true);
+      await act(async () => button.click());
+    }
+    expect(onReview).not.toHaveBeenCalled();
+  });
+
   it("keeps the note when the report is refused and clears it when saved", async () => {
     const host = document.createElement("div");
     document.body.append(host);

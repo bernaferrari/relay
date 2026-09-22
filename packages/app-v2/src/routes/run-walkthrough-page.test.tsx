@@ -385,6 +385,11 @@ describe("Run walkthrough review controls", () => {
     );
     if (!report) throw new Error("Report issue action missing");
     await click(report);
+    expect(reviewed).toHaveLength(0);
+    expect(document.querySelector('[aria-label="Issue note"]')).not.toBeNull();
+    const save = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Save issue"));
+    if (!save) throw new Error("Save issue action missing");
+    await click(save);
     expect(reviewed).toHaveLength(1);
     expect(reviewed[0]).toContain("frames/001.png::aaaaaaaa");
     expect(reviewed[0]).toContain("report-issue");
