@@ -80,7 +80,7 @@ export function appScopeDetailsForLocation(input: {
     );
   }
 
-  const runId = /^\/runs\/([^/]+)$/u.exec(input.pathname)?.[1];
+  const runId = /^\/runs\/([^/]+)(?:\/walkthrough)?$/u.exec(input.pathname)?.[1];
   if (runId) {
     return owned(
       input.runs,

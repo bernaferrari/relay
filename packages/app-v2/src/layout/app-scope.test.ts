@@ -200,3 +200,12 @@ describe("App scope", () => {
     );
   });
 });
+
+it("preserves a run's owning app in its walkthrough, including direct links", () => {
+  const location = { pathname: "/runs/run-1/walkthrough", search: { app: "wrong-app" } };
+  expect(appScopeDetailsForLocation(location)).toEqual({ kind: "loading" });
+  expect(
+    appScopeDetailsForLocation({ ...location, runs: [{ id: "run-1", appMapId: "owned-app" }] }),
+  ).toEqual({ kind: "single", appId: "owned-app" });
+  expect(appScopeDetailsForLocation({ ...location, runs: [] })).toEqual({ kind: "unavailable" });
+});

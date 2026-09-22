@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+import { walkthroughDestinationAvailable } from "./walkthrough-destinations";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
@@ -14,6 +16,7 @@ import type { PlayerManifestProjection } from "../data/run-product-service";
 type Props = {
   manifest: PlayerManifestProjection;
   runId: string;
+  recoveryAction?: ReactNode;
   stateId?: string;
   variantId?: string;
   capture?: PlayerManifestProjection["captures"][number];
@@ -43,6 +46,7 @@ type Props = {
 export function WalkthroughView({
   manifest,
   runId,
+  recoveryAction,
   stateId,
   variantId,
   capture,
@@ -158,7 +162,11 @@ export function WalkthroughView({
                 capture={capture}
                 src={frame.url}
                 title={`${stateTitle} — captured ${new Date(capture.capturedAt).toLocaleString()}`}
-                connections={outgoing}
+                connections={outgoing.map((connection) =>
+                  walkthroughDestinationAvailable(manifest, connection, variantId)
+                    ? connection
+                    : { ...connection, hotspot: undefined },
+                )}
                 entryStateId={manifest.entryStateId}
                 onNavigate={goTo}
                 onError={frame.failed}
@@ -187,15 +195,22 @@ export function WalkthroughView({
                 title="No capture for this configuration"
                 detail={missing.reason}
                 action={
-                  <Button
-                    nativeButton={false}
-                    variant="outline"
-                    render={
-                      <Link to="/runs/$runId" params={{ runId }} search={{ reportView: "steps" }} />
-                    }
-                  >
-                    Inspect run steps
-                  </Button>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {recoveryAction}
+                    <Button
+                      nativeButton={false}
+                      variant="ghost"
+                      render={
+                        <Link
+                          to="/runs/$runId"
+                          params={{ runId }}
+                          search={{ reportView: "steps" }}
+                        />
+                      }
+                    >
+                      Inspect run steps
+                    </Button>
+                  </div>
                 }
               />
             ) : (
@@ -203,15 +218,22 @@ export function WalkthroughView({
                 title="Not captured in this configuration"
                 detail={`${stateTitle} was not captured. Open the run to inspect its steps or set up another run.`}
                 action={
-                  <Button
-                    nativeButton={false}
-                    variant="outline"
-                    render={
-                      <Link to="/runs/$runId" params={{ runId }} search={{ reportView: "steps" }} />
-                    }
-                  >
-                    Inspect run steps
-                  </Button>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {recoveryAction}
+                    <Button
+                      nativeButton={false}
+                      variant="ghost"
+                      render={
+                        <Link
+                          to="/runs/$runId"
+                          params={{ runId }}
+                          search={{ reportView: "steps" }}
+                        />
+                      }
+                    >
+                      Inspect run steps
+                    </Button>
+                  </div>
                 }
               />
             )}
@@ -257,54 +279,58 @@ export function WalkthroughView({
           <section>
             <h3 className="mb-2 text-sm font-medium">Connected screens</h3>
             {outgoing.length === 0 ? (
-              <p className="opacity-70">No links recorded or authored from this state.</p>
+              <p className="opacity-70">No connected screenshots from this screen.</p>
             ) : (
               <ul className="m-0 flex list-none flex-col gap-1 p-0">
-                {outgoing.map((connection, index) => (
-                  <li key={`${connection.id}:${connection.provenance?.runId ?? connection.kind}`}>
-                    <button
-                      type="button"
-                      data-hotspot-index={index}
-                      onClick={() =>
-                        goTo(
-                          connection.toStateId,
-                          connection.kind === "recorded"
-                            ? connection.provenance?.captureId
-                            : undefined,
-                        )
-                      }
-                      className="w-full rounded-lg bg-muted/30 px-4 py-3 text-left hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {connection.label}
-
-                      {connection.kind === "authored" ? (
-                        <span className="block text-xs opacity-70">
-                          Planned connection
-                          {manifest.captures.some(
-                            (candidate) =>
-                              candidate.stateId === connection.toStateId &&
-                              candidate.variantId === variantId,
-                          )
-                            ? ""
-                            : " · Screenshot unavailable"}
-                        </span>
-                      ) : connection.kind === "recorded" ? (
-                        <span className="block text-xs opacity-70">
-                          Recorded connection
-                          {manifest.captures.some(
-                            (candidate) =>
-                              candidate.stateId === connection.toStateId &&
-                              candidate.variantId === variantId,
-                          )
-                            ? ""
-                            : " · Screenshot unavailable"}
-                        </span>
+                {outgoing.map((connection, index) => {
+                  const available = walkthroughDestinationAvailable(
+                    manifest,
+                    connection,
+                    variantId,
+                  );
+                  const kind =
+                    connection.kind === "recorded"
+                      ? "Recorded connection"
+                      : connection.kind === "authored"
+                        ? "Planned connection"
+                        : "Suggested connection";
+                  const content = (
+                    <>
+                      <span className="block font-medium">{connection.label}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {kind}
+                        {available
+                          ? connection.kind === "recorded"
+                            ? " · Open screenshot"
+                            : " · Preview destination"
+                          : " · Screenshot unavailable"}
+                      </span>
+                    </>
+                  );
+                  return (
+                    <li key={`${connection.id}:${connection.provenance?.runId ?? connection.kind}`}>
+                      {available ? (
+                        <button
+                          type="button"
+                          data-hotspot-index={index}
+                          onClick={() =>
+                            goTo(
+                              connection.toStateId,
+                              connection.kind === "recorded"
+                                ? connection.provenance?.captureId
+                                : undefined,
+                            )
+                          }
+                          className="w-full rounded-lg bg-muted/30 px-4 py-3 text-left hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {content}
+                        </button>
                       ) : (
-                        <span className="block text-xs opacity-70">Suggested connection</span>
+                        <div className="px-4 py-3">{content}</div>
                       )}
-                    </button>
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>

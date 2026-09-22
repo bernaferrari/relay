@@ -343,7 +343,7 @@ export function RunInspection({
           ...(activePointer ? [{ label: snapshot?.title ?? "Test" }] : []),
           { label: "Run" },
         ]}
-        title={snapshot?.title ?? "Running Test"}
+        title={snapshot?.title ?? "Run"}
         description={
           snapshot?.target
             ? targetLabel(targetPresentation.data?.[0] ?? snapshot.target).title

@@ -28,16 +28,20 @@ export function RunReplayAction({
   runService,
   variant = "outline",
   label = "Rerun…",
+  setupOnMount = false,
 }: {
   report: RunReport;
   runService: RunProductService;
   variant?: "default" | "outline" | "ghost";
   label?: string;
+  setupOnMount?: boolean;
 }) {
   const search = useLocation({ select: (state) => state.search });
   const replayJobId = replayJobFromSearch(search);
-  const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<"saved-steps" | "same-configuration">("saved-steps");
+  const [open, setOpen] = useState(setupOnMount);
+  const [mode, setMode] = useState<"saved-steps" | "same-configuration">(
+    setupOnMount && report.executionContext?.buildId ? "same-configuration" : "saved-steps",
+  );
   const navigate = useNavigate();
   const replay = useMutation({
     mutationFn: async () => {

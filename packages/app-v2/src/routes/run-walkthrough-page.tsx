@@ -1,3 +1,4 @@
+import { WalkthroughRecovery } from "./walkthrough-recovery";
 /** Walk through — the thin captured-app player on recorded evidence
  * (delivery plan §6.6). Read-only navigation over the run's player
  * manifest: states from the identity chain, exact per-configuration
@@ -244,6 +245,14 @@ export function RunWalkthroughPage() {
   return (
     <WalkthroughView
       manifest={manifest}
+      recoveryAction={
+        <WalkthroughRecovery
+          key={variantId}
+          manifest={manifest}
+          variantId={variantId}
+          runService={runService}
+        />
+      }
       runId={runId}
       stateId={stateId}
       variantId={variantId}
@@ -263,7 +272,9 @@ export function RunWalkthroughPage() {
           ? {
               pending: reviewMutation.isPending,
               error: reviewMutation.error,
-              submit: async (action, note) => { await reviewMutation.mutateAsync({ capture, action, note }); },
+              submit: async (action, note) => {
+                await reviewMutation.mutateAsync({ capture, action, note });
+              },
             }
           : undefined
       }
