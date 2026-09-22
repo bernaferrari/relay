@@ -292,9 +292,13 @@ export function EnvironmentPage() {
               className="mt-2"
               title="This browser needs attention"
               detail={
-                failedChecks[0]?.message ??
-                warningChecks[0]?.message ??
-                "Some checks failed. Open it and try again."
+                /ERR_CONNECTION_REFUSED|connection refused/iu.test(
+                  failedChecks[0]?.message ?? warningChecks[0]?.message ?? "",
+                )
+                  ? "The app at this browser’s address isn’t running or can’t be reached. Start the app, then choose Check again."
+                  : (failedChecks[0]?.message ??
+                    warningChecks[0]?.message ??
+                    "Some checks failed. Open the browser and try again.")
               }
               action={
                 <Button
@@ -320,14 +324,17 @@ export function EnvironmentPage() {
             onOpen={(tab) => openLane.mutate(tab.laneId)}
           />
 
-          <section className="mt-2" aria-labelledby="environment-account-title">
+          <section
+            className="mt-6 border-t border-border pt-5"
+            aria-labelledby="environment-account-title"
+          >
             <h2
               id="environment-account-title"
               className="text-sm font-medium text-muted-foreground"
             >
-              Sign-ins
+              Accounts
             </h2>
-            {fixtures.isPending ? <PageLoading label="Loading sign-ins…" /> : null}
+            {fixtures.isPending ? <PageLoading label="Loading accounts…" /> : null}
             {fixtures.data?.length ? (
               <ul data-slot="environment-accounts" className="mt-2 grid list-none p-0">
                 {fixtures.data.map((fixture) => {
@@ -375,7 +382,9 @@ export function EnvironmentPage() {
                 })}
               </ul>
             ) : !fixtures.isPending ? (
-              <p className="mt-2 text-sm leading-5 text-muted-foreground">No sign-in saved yet.</p>
+              <p className="mt-2 text-sm leading-5 text-muted-foreground">
+                Save the account currently open in this browser to reuse it in tests.
+              </p>
             ) : null}
             {fixtures.error || saveAccount.error || refreshAccount.error || revokeAccount.error ? (
               <FieldError>
@@ -397,8 +406,8 @@ export function EnvironmentPage() {
               </FieldError>
             ) : null}
             <Button
-              className="mt-1"
-              variant="ghost"
+              className="mt-3"
+              variant="outline"
               size="sm"
               onClick={() => {
                 setAccountName("");
@@ -406,7 +415,7 @@ export function EnvironmentPage() {
                 setAccountOpen(true);
               }}
             >
-              Save sign-in
+              Save account
             </Button>
           </section>
 
@@ -438,7 +447,7 @@ export function EnvironmentPage() {
 
           <Dialog open={accountOpen} onOpenChange={setAccountOpen}>
             <DialogContent showCloseButton={false}>
-              <DialogTitle>Save sign-in</DialogTitle>
+              <DialogTitle>Save account</DialogTitle>
               <DialogDescription>
                 Open the browser, sign in, then save it under a name.
               </DialogDescription>

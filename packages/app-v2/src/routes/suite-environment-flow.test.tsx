@@ -423,7 +423,7 @@ describe("Suite and Environment routes", () => {
       history.back();
     });
 
-    await clickButton("Save sign-in");
+    await clickButton("Save account");
     await fill("account-fixture-name", "QA member");
     await clickButton("Save");
     expect(calls.save).toEqual([{ spaceId: "space-1", name: "QA member" }]);
@@ -447,12 +447,17 @@ describe("Suite and Environment routes", () => {
     await render("/apps/app-1/suites/suite-1", {
       suiteService: suiteService({ schedulePlan }),
     });
-    expect(document.body.textContent).toContain("Run daily");
+    expect(document.body.textContent).toContain("Schedule");
     expect(document.body.textContent).toContain("8:00 AM");
     const hour = document.querySelector<HTMLInputElement>("#plan-daily-hour");
     if (!hour) throw new Error("Hour field missing");
-    await fill("plan-daily-hour", "9");
-    await clickButton("Schedule Plan");
+    await act(async () => hour.click());
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) =>
+      item.textContent?.includes("9:00 AM"),
+    );
+    if (!option) throw new Error("9 AM option missing");
+    await act(async () => option.click());
+    await clickButton("Add schedule");
     expect(schedulePlan).toHaveBeenCalledWith({
       appMapId: "app-1",
       combineId: "suite-1",
@@ -482,9 +487,9 @@ describe("Suite and Environment routes", () => {
     expect(document.body.textContent).toContain("Next");
     expect(document.body.textContent).toContain("Fri, Sep 18, 8:00 AM");
     expect(document.body.textContent).toContain("Last");
-    expect(document.body.textContent).toContain("Never");
+    expect(document.body.textContent).not.toContain("Never");
     expect(document.body.textContent).toContain("That browser is offline");
-    expect(document.body.textContent).toContain("does not accept a visual baseline");
+    expect(document.body.textContent).toContain("Previous scheduled runs");
     expect(document.body.textContent).not.toContain("Looks correct");
   });
 });
