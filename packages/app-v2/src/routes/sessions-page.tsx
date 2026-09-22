@@ -15,10 +15,14 @@ import { sessionQueryKeys, type ProductSessionSummary } from "../data/session-pr
 import { PageLoading, RecordingProblem } from "./recording-shared";
 
 const routeApi = getRouteApi("/sessions");
-type SessionView = "active" | "history" | "all";
+type SessionView = "active" | "drafts" | "history" | "all";
 
 export function isActiveSession(session: ProductSessionSummary): boolean {
-  return ["preparing", "ready", "recording", "reviewing", "committing"].includes(session.state);
+  return !session.archived && ["preparing", "recording", "committing"].includes(session.state);
+}
+
+export function isDraftSession(session: ProductSessionSummary): boolean {
+  return !session.archived && ["ready", "reviewing"].includes(session.state);
 }
 
 export function SessionsPage() {
@@ -26,7 +30,9 @@ export function SessionsPage() {
   const navigate = useNavigate({ from: "/sessions" });
   const search = routeApi.useSearch() as { status?: unknown; target?: unknown; q?: unknown };
   const view: SessionView =
-    search.status === "history" || search.status === "all" ? search.status : "active";
+    search.status === "history" || search.status === "all" || search.status === "drafts"
+      ? search.status
+      : "active";
   const query = typeof search.q === "string" ? search.q : "";
   function setQuery(value: string) {
     void navigate({
@@ -56,7 +62,8 @@ export function SessionsPage() {
         .filter((session) => {
           const active = isActiveSession(session);
           if (view === "active" && !active) return false;
-          if (view === "history" && active) return false;
+          if (view === "drafts" && !isDraftSession(session)) return false;
+          if (view === "history" && (active || isDraftSession(session))) return false;
           if (typeof search.target === "string" && session.target.targetId !== search.target) {
             return false;
           }
@@ -85,10 +92,7 @@ export function SessionsPage() {
 
   return (
     <LibraryPage className="flex min-h-full max-w-5xl flex-col">
-      <PageHeader
-        title="Activity"
-        description="Continue recordings and runs, or open a device."
-      />
+      <PageHeader title="Activity" description="Continue recordings and runs, or open a device." />
       {devices.isPending ? <PageLoading label="Finding devices…" /> : null}
       <RecordingProblem
         error={devices.error}
@@ -105,16 +109,16 @@ export function SessionsPage() {
             onValueChange={(value) => setView(value as SessionView)}
           >
             <TabsList variant="line" className="h-9 justify-start" aria-label="Session view">
-              <TabsTrigger value="active">Active</TabsTrigger>
+              <TabsTrigger value="active">Live</TabsTrigger>
+              <TabsTrigger value="drafts">Drafts</TabsTrigger>
               <TabsTrigger value="history">History</TabsTrigger>
-              <TabsTrigger value="all">All</TabsTrigger>
             </TabsList>
           </Tabs>
         }
         search={
           <LibrarySearch
             id="session-search"
-            label="Search Live"
+            label="Search activity"
             value={query}
             placeholder="Search by name, target, or owner"
             onChange={setQuery}
@@ -134,10 +138,23 @@ export function SessionsPage() {
         <section className="mt-7" aria-labelledby="session-results-title">
           <div className="flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
             <h2 className="text-sm font-semibold" id="session-results-title">
-              {visible.length === 1 ? "1 live" : `${visible.length} live`}
+              {visible.length}{" "}
+              {view === "active"
+                ? "live"
+                : view === "drafts"
+                  ? visible.length === 1
+                    ? "draft"
+                    : "drafts"
+                  : visible.length === 1
+                    ? "session"
+                    : "sessions"}
             </h2>
             <span className="text-xs text-muted-foreground" aria-live="polite">
-              {view === "active" ? "Continue where you left off" : "Session history"}
+              {view === "active"
+                ? "Recording or saving now"
+                : view === "drafts"
+                  ? "Saved work to finish later"
+                  : "Past and archived work"}
             </span>
           </div>
           <ul className="m-0 list-none overflow-hidden rounded-xl border border-border bg-card p-0">
@@ -166,11 +183,15 @@ export function SessionsPage() {
         >
           <EmptyState
             title={
-              sessions.data?.length ? "No live sessions match this view" : "No live sessions yet"
+              view === "active"
+                ? "Nothing is recording right now"
+                : view === "drafts"
+                  ? "No unfinished drafts"
+                  : "No sessions match this view"
             }
             detail={
               sessions.data?.length
-                ? "Choose another view or clear the search. Existing sessions remain unchanged."
+                ? "Open Drafts to continue saved work, or History to find older sessions."
                 : "Start recording a Test or open a live target. Relay will keep that work available here."
             }
             action={
@@ -183,14 +204,14 @@ export function SessionsPage() {
                       replace: true,
                       search: (previous) => ({
                         ...previous,
-                        status: undefined,
+                        status: "drafts",
                         target: undefined,
                         q: undefined,
                       }),
                     });
                   }}
                 >
-                  Show active live work
+                  Show drafts
                 </Button>
               ) : (
                 <Button nativeButton={false} variant="default" render={<Link to="/tests/new" />}>
@@ -242,7 +263,7 @@ function SessionRow({
                     : undefined
             }
           >
-            {sessionStateLabel(session.state)}
+            {session.archived ? "Archived" : sessionStateLabel(session.state)}
           </Badge>
         </span>
         <span className="truncate text-xs text-muted-foreground">
@@ -256,10 +277,12 @@ function SessionRow({
         </strong>
         <small className="truncate text-xs text-muted-foreground">
           {active
-            ? "Active session"
-            : session.take
-              ? `${session.take.actionCount} actions`
-              : "No actions yet"}
+            ? "Live now"
+            : isDraftSession(session)
+              ? "Saved draft"
+              : session.take
+                ? `${session.take.actionCount} actions`
+                : "No actions yet"}
         </small>
       </span>
       <ChevronRight
@@ -274,7 +297,7 @@ export function sessionStateLabel(state: ProductSessionSummary["state"]): string
   if (state === "preparing") return "Preparing";
   if (state === "ready") return "Ready";
   if (state === "recording") return "Recording";
-  if (state === "reviewing") return "Reviewing";
+  if (state === "reviewing") return "Draft";
   if (state === "committing") return "Saving";
   if (state === "committed") return "Completed";
   if (state === "failed") return "Needs attention";
@@ -292,13 +315,13 @@ export function sessionWorkbenchMode(state: ProductSessionSummary["state"]): str
   return "Live · Not recording";
 }
 
-
 function sessionVariant(
   session: ProductSessionSummary,
 ): "success" | "warning" | "danger" | "secondary" {
+  if (session.archived || isDraftSession(session)) return "secondary";
   if (session.state === "recording") return "danger";
   if (session.state === "ready" || session.state === "committed") return "success";
-  if (session.state === "failed" || (!session.lease && isActiveSession(session))) return "warning";
+  if (session.state === "failed") return "warning";
   return "secondary";
 }
 

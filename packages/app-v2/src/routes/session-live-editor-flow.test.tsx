@@ -197,14 +197,14 @@ afterEach(async () => {
 });
 
 describe("live Session to Test editor", () => {
-  it("clears status, target, and search constraints when showing active work", async () => {
+  it("clears target and search constraints when opening saved drafts", async () => {
     const history = await render("/sessions?status=history&target=other&q=missing", {
-      sessionService: sessionService(),
+      sessionService: sessionService({ ...session, state: "reviewing" }),
     });
 
-    await click("Show active live work");
+    await click("Show drafts");
 
-    expect(history.location.search).toBe("");
+    expect(history.location.search).toBe("?status=drafts");
     expect(document.body.textContent).toContain("Checkout Session");
   });
 
