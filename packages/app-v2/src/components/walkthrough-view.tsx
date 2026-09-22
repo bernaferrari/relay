@@ -5,6 +5,7 @@ import type { CaptureReviewAction } from "@relay/protocol";
 import { CaptureReviewDecisions } from "./capture-review-decisions";
 import { WorkbenchPage } from "./page-layout";
 import { SelectField } from "./filter-select";
+import { WalkthroughExport } from "./walkthrough-export";
 import { WalkthroughPlayback } from "./walkthrough-playback";
 import { EmptyState } from "./product-patterns";
 import type { PlayerManifestProjection } from "../data/run-product-service";
@@ -91,38 +92,7 @@ export function WalkthroughView({
             Browse the screens captured during this run.
           </p>
         </div>
-        <details className="relative shrink-0 pt-2">
-          <summary className="cursor-pointer rounded-lg px-3 py-2 text-sm hover:bg-accent">
-            Options
-          </summary>
-          <div className="absolute right-0 z-20 mt-2 grid w-64 gap-3 rounded-xl border bg-popover p-4 shadow-lg">
-            {exportActions ? (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={exportActions?.pending}
-                onClick={() => exportActions?.run()}
-              >
-                {exportActions?.pending ? "Preparing…" : "Export walkthrough"}
-              </Button>
-            ) : null}
-            {exportActions ? (
-              <p className="text-xs text-muted-foreground">A downloaded copy cannot be recalled.</p>
-            ) : null}
-            {exportActions?.file ? (
-              <a
-                className="text-sm underline"
-                href={exportActions?.file.href}
-                download={exportActions?.file.fileName}
-              >
-                Save walkthrough
-              </a>
-            ) : null}
-            <p className="break-all text-xs text-muted-foreground">
-              {variants.find((variant) => variant.id === variantId)?.label}
-            </p>
-          </div>
-        </details>
+        {exportActions ? <WalkthroughExport {...exportActions} /> : null}
       </header>
       <div className="mb-5 grid min-w-0 gap-3 sm:grid-cols-2">
         <SelectField
@@ -308,6 +278,7 @@ export function WalkthroughView({
             <details className="text-xs text-muted-foreground">
               <summary className="cursor-pointer py-2">Capture details</summary>
               <dl className="grid gap-2 break-all">
+                <div><dt>Configuration</dt><dd>{variants.find((variant) => variant.id === variantId)?.label ?? variantId}</dd></div>
                 <div>
                   <dt>Run</dt>
                   <dd>{capture.runId}</dd>
