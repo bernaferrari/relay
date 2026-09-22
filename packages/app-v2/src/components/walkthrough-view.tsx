@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
@@ -6,7 +5,7 @@ import type { CaptureReviewAction } from "@relay/protocol";
 import { CaptureReviewDecisions } from "./capture-review-decisions";
 import { WorkbenchPage } from "./page-layout";
 import { SelectField } from "./filter-select";
-import { EvidenceImageViewer } from "./evidence-image-viewer";
+import { WalkthroughPlayback } from "./walkthrough-playback";
 import { EmptyState } from "./product-patterns";
 import type { PlayerManifestProjection } from "../data/run-product-service";
 
@@ -187,55 +186,15 @@ export function WalkthroughView({
           </div>
           <div className="relative">
             {capture && frame.url ? (
-              <figure className="relative mx-auto my-0 w-fit max-w-full">
-                <EvidenceImageViewer
-                  key={capture.id}
-                  frame={{
-                    id: capture.id,
-                    title: `${stateTitle} — captured ${new Date(capture.capturedAt).toLocaleString()}`,
-                    media: { kind: "image", src: frame.url },
-                  }}
-                  onError={frame.failed}
-                  className="block max-h-[55dvh] w-auto max-w-full"
-                />
-                {outgoing.flatMap((connection, index) => {
-                  if (
-                    connection.kind !== "recorded" ||
-                    connection.provenance?.runId !== capture.runId ||
-                    !(connection.hotspot?.point || connection.hotspot?.rect)
-                  ) {
-                    return [];
-                  }
-                  const point = connection.hotspot?.point;
-                  const rect = connection.hotspot?.rect;
-                  const left = point ? point.x : rect ? rect.x : 0;
-                  const top = point ? point.y : rect ? rect.y : 0;
-                  return (
-                    <button
-                      key={`${connection.id}:${connection.provenance?.runId ?? connection.kind}`}
-                      type="button"
-                      data-hotspot-index={index}
-                      data-recorded={connection.kind === "recorded"}
-                      title={`${connection.label} (${connection.kind})`}
-                      aria-label={`${connection.label} — ${connection.kind} link to ${manifest.states.find((state) => state.id === connection.toStateId)?.title ?? "next state"}`}
-                      onClick={() => goTo(connection.toStateId)}
-                      className={
-                        rect
-                          ? "absolute rounded-sm border-2 border-primary bg-primary/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring left-(--hotspot-left) top-(--hotspot-top) w-(--hotspot-width) h-(--hotspot-height)"
-                          : "absolute size-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-primary/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring left-(--hotspot-left) top-(--hotspot-top)"
-                      }
-                      style={
-                        {
-                          "--hotspot-left": `${left * 100}%`,
-                          "--hotspot-top": `${top * 100}%`,
-                          "--hotspot-width": `${rect ? rect.width * 100 : 0}%`,
-                          "--hotspot-height": `${rect ? rect.height * 100 : 0}%`,
-                        } as CSSProperties
-                      }
-                    />
-                  );
-                })}
-              </figure>
+              <WalkthroughPlayback
+              capture={capture}
+              src={frame.url}
+              title={`${stateTitle} — captured ${new Date(capture.capturedAt).toLocaleString()}`}
+              connections={outgoing}
+              entryStateId={manifest.entryStateId}
+              onNavigate={goTo}
+              onError={frame.failed}
+            />
             ) : capture ? (
               frame.status === "loading" ? (
                 <div
