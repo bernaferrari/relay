@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ApiError } from "@relay/client";
-import { projectError } from "./errors";
+import { projectError } from "./errors.js";
 
 for (const [status, title, guidance] of [
   [401, "Reconnect to Relay", /connection settings/],

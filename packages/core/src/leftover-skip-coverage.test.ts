@@ -918,6 +918,7 @@ test("a paired suite keeps capture-view setup skippable and the later test-actio
 
   const compiled = compileAppMapCombine(map, {
     ...entity("suite"),
+    variableIds: [],
     name: "Settings suite",
     testIds: [captureView.id, laterTap.id],
     captures: {},

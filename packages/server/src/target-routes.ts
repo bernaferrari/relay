@@ -17,7 +17,7 @@ import {
   now,
   openBrowserDeviceSession,
   openBrowserTarget,
-  preflightTarget,
+  preflightTargetCached,
   readTarget,
   saveBrowserTarget,
 } from "@relay/core";
@@ -142,7 +142,8 @@ export async function handleTargetRoute(context: TargetRouteContext): Promise<bo
   if (method === "POST" && targetPreflightMatch) {
     const target = await readTarget(targetPreflightMatch.id!);
     if (!target) throw new HttpError(404, "Target not found");
-    json(res, 200, { preflight: await preflightTarget(target) });
+    const fresh = url.searchParams.get("fresh") === "1";
+    json(res, 200, { preflight: await preflightTargetCached(target, { fresh }) });
     return true;
   }
 

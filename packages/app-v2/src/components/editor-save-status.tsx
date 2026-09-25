@@ -1,7 +1,13 @@
 /** @jsxImportSource react */
 import { Check, CircleAlert, LoaderCircle, Pencil } from "lucide-react";
 
-export type EditorSaveState = "dirty" | "saving" | "saved" | "saved-locally" | "failed" | "conflicted";
+export type EditorSaveState =
+  | "dirty"
+  | "saving"
+  | "saved"
+  | "saved-locally"
+  | "failed"
+  | "conflicted";
 
 export function EditorSaveStatus({ state, detail }: { state: EditorSaveState; detail?: string }) {
   const Icon =
@@ -17,6 +23,7 @@ export function EditorSaveStatus({ state, detail }: { state: EditorSaveState; de
     saving: "Saving…",
     saved: "Saved",
     "saved-locally": "Saved locally",
+    failed: "Couldn’t save — your changes are kept",
     conflicted: "Conflict — your changes are preserved",
   }[state];
   return (

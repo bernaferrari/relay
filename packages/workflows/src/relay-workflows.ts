@@ -345,10 +345,11 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
             error instanceof BrowserTargetProfileSelectionError
               ? {
                   code: "compile-blocked",
-                  title: "The browser target does not match one reviewed evidence profile",
+                  title: "This Test wasn’t recorded on this browser",
                   detail: error.message,
-                  recovery:
-                    "Choose the reviewed browser target, or record and replay this Test in the current browser environment.",
+                  recovery: error.recordedOn.length
+                    ? `Run it on ${error.recordedOn[0]}, or record it once on this browser.`
+                    : "Record it once on this browser, then run it again.",
                   retryable: false,
                   sourceCode: error.sourceCode,
                 }
@@ -366,10 +367,10 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
             error instanceof DeviceTargetProfileSelectionError
               ? {
                   code: "compile-blocked",
-                  title: "The device does not match one reviewed evidence profile",
+                  title: "This Test wasn’t recorded on this device",
                   detail: error.message,
                   recovery:
-                    "Record and save this Test on the current device again, or choose a device with one matching reviewed profile.",
+                    "Run it on the device it was recorded on, or record it once on this device.",
                   retryable: false,
                   sourceCode: error.sourceCode,
                 }

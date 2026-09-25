@@ -10,7 +10,7 @@ function exhaustRecovery(store: TargetSupervisorStore): void {
     "refresh-semantics",
     "restart-semantic-runner",
     "prepare-platform-services",
-  ]) {
+  ] as const) {
     store.transition(target, {
       kind: "recovery.step-completed",
       channel: "semantics",

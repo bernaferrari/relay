@@ -1,5 +1,8 @@
 export const runQueryKeys = {
-  test: (testId: string) => ["run", "test", testId] as const,
+  test: (testId: string, appMapId?: string) =>
+    appMapId
+      ? (["run", "test", testId, { app: appMapId }] as const)
+      : (["run", "test", testId] as const),
   testStability: (testId: string) => ["run", "test", testId, "stability"] as const,
   targets: ["run", "targets"] as const,
   targetPresentation: (targetId: string) => ["run", "target-presentation", targetId] as const,

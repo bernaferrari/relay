@@ -22,7 +22,7 @@ const manifest = {
     { variantId: "member", runId: "member-run", capturedAt: 1 },
     { variantId: "admin", runId: "admin-run", capturedAt: 9 },
   ],
-} as PlayerManifestProjection;
+} as unknown as PlayerManifestProjection;
 async function mount(variantId: string, service: RunProductService) {
   const host = document.createElement("div");
   document.body.append(host);

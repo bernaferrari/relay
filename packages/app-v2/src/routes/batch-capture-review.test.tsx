@@ -196,7 +196,7 @@ describe("Plan screenshot review filters", () => {
     ).toContain("min-h-20");
   });
   it("groups screens by checkpoint and keeps planned coverage when issues are empty", async () => {
-    const host = await render(vi.fn(async () => ({ results: [] })));
+    const host = await render(vi.fn(async () => ({ queue: emptyPlanQueue(), results: [] })));
     expect(button(host, "By checkpoint").getAttribute("aria-pressed")).toBe("true");
     expect(host.textContent).toContain("Settings2");
     expect(host.textContent).toContain("Home1");
@@ -380,9 +380,8 @@ describe("Plan screenshot review filters", () => {
     expect(selected?.getAttribute("aria-label")).toBe("Inspect Settings");
   });
 
-
   it("keeps the review focus after the section is opened again", async () => {
-    await render(vi.fn(async () => ({ queue: { items: [], summary: { captured: 0, missing: 0, pending: 0, planned: 0 } } })));
+    await render(vi.fn(async () => ({ queue: emptyPlanQueue(), results: [] })));
     const issues = [...document.querySelectorAll("button")].find(
       (button) => button.textContent === "Issues",
     );
@@ -395,7 +394,7 @@ describe("Plan screenshot review filters", () => {
     await act(async () => grouped.click());
     act(() => roots.splice(0).forEach((root) => root.unmount()));
     document.body.replaceChildren();
-    await render(vi.fn(async () => ({ queue: { items: [], summary: { captured: 0, missing: 0, pending: 0, planned: 0 } } })));
+    await render(vi.fn(async () => ({ queue: emptyPlanQueue(), results: [] })));
     const restored = [...document.querySelectorAll("button")].find(
       (button) => button.textContent === "Issues",
     );
@@ -568,3 +567,10 @@ describe("Plan review acknowledgements", () => {
     expect(host.textContent).toContain("Look for: Composer is empty");
   });
 });
+
+function emptyPlanQueue() {
+  return {
+    items: [],
+    summary: { captured: 0, missing: 0, pending: 0, planned: 0 },
+  } as unknown as Awaited<ReturnType<NonNullable<Parameters<typeof render>[0]>>>["queue"];
+}

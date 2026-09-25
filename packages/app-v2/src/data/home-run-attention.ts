@@ -31,7 +31,13 @@ export function homeAttentionRuns(runs: readonly ProductRunSummary[]): ProductRu
 /** Failures still need attention. A queue that is only unfinished review says so. */
 export function attentionLinkLabel(runs: readonly ProductRunSummary[]): string {
   const count = runs.length;
-  const review = runs.every((run) => (run.outcome ?? run.phase) === "needs-review");
+  const review = runs.every(
+    (run) =>
+      run.phase === "completed" &&
+      run.outcome !== "product-failure" &&
+      run.outcome !== "harness-failure" &&
+      (run.captureSummary?.pending ?? 0) > 0,
+  );
   if (review) {
     return count === 1 ? "1 result awaiting review" : `${count} results awaiting review`;
   }

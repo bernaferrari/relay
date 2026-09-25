@@ -166,6 +166,7 @@ export const ROUTE_DEFINITIONS = [
     "originApplication",
   ]),
   d("/tests/:testId", "/tests", "Test", "Test", "tests", "run-test", [
+    "app",
     "plan",
     "planApp",
     "target",
@@ -176,6 +177,7 @@ export const ROUTE_DEFINITIONS = [
     "run",
   ]),
   d("/tests/:testId/edit", "/tests/:testId", "Edit Test", "Test", "tests", "record-test", [
+    "app",
     "step",
     "screen",
     "session",
@@ -206,7 +208,7 @@ export const ROUTE_DEFINITIONS = [
     "inspect-environment",
     ["view", "returnTo"],
   ),
-  d("/sessions", "/home", "Sessions", "Session", "sessions", "inspect-session", [
+  d("/sessions", "/home", "Activity", "Session", "sessions", "inspect-session", [
     "status",
     "target",
     "q",

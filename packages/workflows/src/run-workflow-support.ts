@@ -27,6 +27,13 @@ export type ValidCompile = {
 
 export class BrowserTargetProfileSelectionError extends Error {
   readonly sourceCode = "browser-target-profile-selection-required";
+  constructor(
+    message: string,
+    /** Names of the browsers this Test has saved screens for. */
+    readonly recordedOn: readonly string[] = [],
+  ) {
+    super(message);
+  }
 }
 
 export class DeviceTargetProfileSelectionError extends Error {
@@ -86,11 +93,23 @@ export async function selectBrowserTargetProfile(
   const targets = registered.targets.filter(
     (target) => target.id === targetId && target.kind === "browser" && target.browser,
   );
+  const recordedOn = [
+    ...new Set(
+      (compiled.plan.rawAccessibilityTargetProfiles ?? [])
+        .filter((profile) => profile.platform === "browser" && profile.targetId !== targetId)
+        .map(
+          (profile) =>
+            registered.targets.find((target) => target.id === profile.targetId)?.name ??
+            profile.targetId,
+        ),
+    ),
+  ];
   if (targets.length !== 1)
     throw new BrowserTargetProfileSelectionError(
       targets.length === 0
-        ? `Managed browser target ${targetId} is not registered.`
-        : `Managed browser target ${targetId} has an ambiguous registration.`,
+        ? "That browser is no longer set up in Relay."
+        : "More than one browser is registered with that name.",
+      recordedOn,
     );
   const current = browserCaseProfileForTarget(targets[0]!);
   const candidates = (compiled.plan.rawAccessibilityTargetProfiles ?? []).filter(
@@ -118,8 +137,11 @@ export async function selectBrowserTargetProfile(
   if (candidates.length !== 1)
     throw new BrowserTargetProfileSelectionError(
       candidates.length === 0
-        ? `No frozen browser evidence profile matches the current environment for ${targetId}.`
-        : `More than one frozen browser evidence profile matches the current environment for ${targetId}.`,
+        ? recordedOn.length
+          ? `This Test was recorded on ${listNames(recordedOn)}. It has no saved screens for this browser yet.`
+          : "This Test has no saved screens for this browser yet."
+        : "This browser matches more than one saved setup for this Test.",
+      recordedOn,
     );
   return candidates[0]!.id;
 }
@@ -154,7 +176,7 @@ export function selectDeviceTargetProfile(
   const eligible = referenced.length ? referenced : candidates;
   if (eligible.length !== 1) {
     throw new DeviceTargetProfileSelectionError(
-      `The reviewed Test matches ${eligible.length} saved evidence profiles for ${target.platform}:${target.targetId}.`,
+      "This device matches more than one saved setup for this Test.",
     );
   }
   return eligible[0]!.id;
@@ -432,4 +454,10 @@ export async function resolveRunTestLane(
       ...(lane.account ? { account: lane.account } : {}),
     },
   };
+}
+
+function listNames(names: readonly string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
 }

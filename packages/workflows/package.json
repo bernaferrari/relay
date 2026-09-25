@@ -8,6 +8,7 @@
     "./outcomes": "./src/outcome-jobs.ts",
     "./run-outcomes": "./src/run-outcome-jobs.ts",
     "./operation-port": "./src/operation-port.ts",
+    "./proof": "./src/proof-workflow.ts",
     "./recording-outcomes": "./src/recording-outcome-jobs.ts",
     "./target-catalog": "./src/target-catalog.ts",
     "./types": "./src/types.ts",

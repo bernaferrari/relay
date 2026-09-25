@@ -54,8 +54,10 @@ function SidebarDestinationLink({
         isActive={active}
         aria-current={active ? "page" : undefined}
         className={classNames(
-          " focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-foreground",
-          active && " bg-accent font-semibold text-foreground shadow-none",
+          " focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm font-medium",
+          active
+            ? " bg-accent font-semibold text-foreground shadow-none"
+            : " text-muted-foreground hover:bg-accent/40 hover:text-foreground",
         )}
       >
         <item.icon

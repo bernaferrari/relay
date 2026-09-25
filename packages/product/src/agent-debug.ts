@@ -5,20 +5,20 @@ import type {
   OperationInput,
   TracePackExportResponse,
 } from "@relay/protocol";
-import {
-  type ExportEvidenceIntent,
-  type DebugBugOutcome,
-  type DebugBugOutcomeIntent,
-  type FailureInspection,
-  type InspectFailureIntent,
-  type ProposeRepairIntent,
-  type RecordTestOutcomeIntent,
-  type RelayInvokeClient,
-  type RelayOperationPort,
-  type RelayOutcomeJobs,
-  type RepairProposalResult,
-  type RunTestOutcomeIntent,
-  type VerifyChangeOutcomeIntent,
+import type {
+  ExportEvidenceIntent,
+  DebugBugOutcome,
+  DebugBugOutcomeIntent,
+  FailureInspection,
+  InspectFailureIntent,
+  ProposeRepairIntent,
+  RecordTestOutcomeIntent,
+  RelayInvokeClient,
+  RelayOperationPort,
+  RelayOutcomeJobs,
+  RepairProposalResult,
+  RunTestOutcomeIntent,
+  VerifyChangeOutcomeIntent,
 } from "@relay/workflows";
 import { createRelayOperationPort } from "@relay/workflows/operation-port";
 

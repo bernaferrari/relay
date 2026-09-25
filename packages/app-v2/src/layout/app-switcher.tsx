@@ -176,9 +176,7 @@ export function AppSwitcher() {
           aria-label={`App: ${contextName}`}
         >
           <span className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="text-sidebar-foreground text-xs font-normal leading-4">
-              {scope.kind === "workspace" ? "Workspace" : "App"}
-            </span>
+            <span className="text-sidebar-foreground text-xs font-normal leading-4">App</span>
             <span className="truncate text-sm font-medium leading-5">{contextName}</span>
           </span>
           <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -299,27 +297,9 @@ function MapPickerItem({
   app: { id: string; name: string };
   onSelect: () => void;
 }) {
-  const { mapService } = useRouteContext({ from: "__root__" });
-  const map = useQuery({
-    queryKey: ["map", app.id],
-    queryFn: () => mapService.get(app.id),
-    staleTime: 30_000,
-    retry: false,
-  });
-  const count = map.data?.screens.length;
   return (
-    <DropdownMenuItem
-      onClick={onSelect}
-      className="min-h-16 flex-col items-start justify-center gap-1 rounded-md px-3 py-2.5"
-    >
+    <DropdownMenuItem onClick={onSelect} className="min-h-10 rounded-md px-3 py-2">
       <span className="w-full whitespace-normal text-sm font-medium leading-5">{app.name}</span>
-      <span className="text-xs leading-4 text-muted-foreground tabular-nums">
-        {count !== undefined
-          ? `${count} ${count === 1 ? "screen" : "screens"}`
-          : map.isError
-            ? "Screen count unavailable"
-            : "Loading screens…"}
-      </span>
     </DropdownMenuItem>
   );
 }

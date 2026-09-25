@@ -39,7 +39,7 @@ export function appScopeDisplayName(
     return apps?.find((app) => app.id === scope.appId)?.name ?? "Unknown app";
   }
   if (scope.kind === "multiple") return "Multiple apps";
-  if (scope.kind === "workspace") return "Workspace";
+  if (scope.kind === "workspace") return "All apps";
   if (scope.kind === "loading") return "Loading app";
   if (scope.kind === "unavailable") return "Unknown app";
   return "All apps";
