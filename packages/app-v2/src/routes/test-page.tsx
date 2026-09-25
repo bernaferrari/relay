@@ -27,6 +27,8 @@ import { type MouseEvent, useEffect, useRef, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
 import { runQueryKeys } from "../data/run-queries";
+import { AmbiguousTestError } from "../data/run-product-service";
+import { ChooseTestApp } from "./choose-test-app";
 import { readRunPointer, writeRunPointer } from "../data/run-pointer";
 import {
   stabilitySamplesFromRuns,
@@ -64,7 +66,9 @@ export function TestPage() {
     target?: unknown;
     plan?: unknown;
     planApp?: unknown;
+    app?: unknown;
   };
+  const appScope = typeof search.app === "string" && search.app ? search.app : undefined;
   const reviewRecordingId = useTestDocumentReview(platform, search.view);
   const navigate = useNavigate({ from: "/tests/$testId" });
   const [setupAnchor, setSetupAnchor] = useState<HTMLElement | null>(null);
@@ -93,8 +97,9 @@ export function TestPage() {
   const testIdRef = useRef(testId);
   testIdRef.current = testId;
   const test = useQuery({
-    queryKey: runQueryKeys.test(testId),
-    queryFn: () => runService.getTest(testId),
+    queryKey: runQueryKeys.test(testId, appScope),
+    queryFn: () => runService.getTest(testId, appScope),
+    retry: (count, error) => !(error instanceof AmbiguousTestError) && count < 2,
   });
   const { recentRuns } = useLatestTestReport(runService, testId);
   const completeStabilityRuns = useQuery({
@@ -442,10 +447,13 @@ export function TestPage() {
       </header>
 
       {loading ? <PageLoading label="Loading the Test and available devices…" /> : null}
+      {test.error instanceof AmbiguousTestError ? (
+        <ChooseTestApp testId={testId} owners={test.error.owners} />
+      ) : null}
       <RecordingProblem
         className="mx-4 my-3 !mt-3 !max-w-none"
         operation="run"
-        error={test.error ?? targets.error}
+        error={(test.error instanceof AmbiguousTestError ? null : test.error) ?? targets.error}
         onRetry={() => {
           if (test.isError) void test.refetch();
           if (targets.isError) void targets.refetch();

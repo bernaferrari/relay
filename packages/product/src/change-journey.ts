@@ -12,7 +12,7 @@ import type {
   OperationInput,
   OperationOutput,
 } from "@relay/protocol";
-import { createChangeVerificationWorkflow } from "@relay/workflows";
+import { createChangeVerificationWorkflow } from "@relay/workflows/proof";
 import { projectError, type HumanError } from "./errors.js";
 import {
   classifyDeliveryLoop,

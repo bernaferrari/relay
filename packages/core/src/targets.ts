@@ -204,6 +204,44 @@ export async function deleteTarget(id: string): Promise<void> {
 /** Capabilities implemented by the managed Playwright adapter. */
 export { BROWSER_TARGET_CAPABILITIES } from "./browser-target-capabilities.js";
 
+const PREFLIGHT_PASS_TTL_MS = 5 * 60_000;
+const PREFLIGHT_FAIL_TTL_MS = 30_000;
+const preflightCache = new Map<
+  string,
+  { key: string; expiresAt: number; result: Promise<TargetPreflight> }
+>();
+
+/**
+ * Readiness for pickers. A real browser launch per target per listing made the
+ * device picker take ~30s with a handful of saved browsers, so recent results
+ * are reused. Concurrent callers share one in-flight check. Runs still call
+ * `preflightTarget` directly before they take control.
+ */
+export function preflightTargetCached(
+  target: TargetDefinition,
+  options: { fresh?: boolean; now?: number } = {},
+): Promise<TargetPreflight> {
+  const now = options.now ?? Date.now();
+  const key = `${target.updatedAt}:${JSON.stringify(target.browser ?? null)}`;
+  const cached = preflightCache.get(target.id);
+  if (!options.fresh && cached && cached.key === key && cached.expiresAt > now) {
+    return cached.result;
+  }
+  const result = preflightTarget(target);
+  const entry = { key, expiresAt: now + PREFLIGHT_FAIL_TTL_MS, result };
+  preflightCache.set(target.id, entry);
+  result.then(
+    (preflight) => {
+      if (preflightCache.get(target.id) !== entry) return;
+      entry.expiresAt = Date.now() + (preflight.ok ? PREFLIGHT_PASS_TTL_MS : PREFLIGHT_FAIL_TTL_MS);
+    },
+    () => {
+      if (preflightCache.get(target.id) === entry) preflightCache.delete(target.id);
+    },
+  );
+  return result;
+}
+
 export async function preflightTarget(target: TargetDefinition): Promise<TargetPreflight> {
   if (target.kind !== "browser" || !target.browser)
     throw new Error("only managed browser targets use this preflight");

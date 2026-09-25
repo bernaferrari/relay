@@ -54,19 +54,23 @@ async function blockedShareFrameKeys(runs: readonly PersistedRun[]): Promise<Set
       if (expected.length === 0) continue;
       const buffer = await readFrameFile(run.dir, frame.path);
       const actual = buffer ? createHash("sha256").update(buffer).digest("hex") : "";
-      if (!buffer || expected.some((digest) => digest !== actual)) blocked.add(`${run.id}:${index}`);
+      if (!buffer || expected.some((digest) => digest !== actual))
+        blocked.add(`${run.id}:${index}`);
     }
   }
   return blocked;
 }
 
-function annotateWithheldFrames(report: RunShareReport, blocked: readonly string[]): RunShareReport {
+function annotateWithheldFrames(
+  report: RunShareReport,
+  blocked: readonly string[],
+): RunShareReport {
   if (blocked.length === 0) return report;
   const withheld = new Set(blocked);
   const runs = report.runs.map((run) => ({
     ...run,
     frames: run.frames.map((frame) =>
-      withheld.has(`${run.id}:${frame.index}`) ? { ...frame, withheld: true } : frame,
+      withheld.has(`${run.id}:${frame.index}`) ? { ...frame, withheld: true as const } : frame,
     ),
   }));
   const withheldCount = runs.reduce(
@@ -326,7 +330,7 @@ export async function handlePublicRunShareRoute(input: {
     const index = Number(frameMatch.index);
     const frame = run && Number.isInteger(index) ? shareableFrames(run)[index] : undefined;
     const buffer = run && frame ? await readFrameFile(run.dir, frame.path) : null;
-    if (!buffer) {
+    if (!run || !frame || !buffer) {
       input.response.writeHead(404, PUBLIC_HEADERS).end();
       return true;
     }

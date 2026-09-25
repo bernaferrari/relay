@@ -48,6 +48,7 @@ import {
   reviewVisualComparison,
   reviewPersistedRun,
   reviewPersistedCapture,
+  rebuildRunCatalog,
   CaptureReviewError,
   revokeRunShare,
   RunReviewError,
@@ -859,10 +860,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
     const actual = createHash("sha256").update(buffer).digest("hex");
     const expected = recordedFrameDigests(run, frameMatch.file!);
     if (expected.length > 0 && expected.some((digest) => digest !== actual)) {
-      throw new HttpError(
-        409,
-        `Frame ${frameMatch.file} bytes do not match the recorded digest`,
-      );
+      throw new HttpError(409, `Frame ${frameMatch.file} bytes do not match the recorded digest`);
     }
     response.writeHead(200, {
       "Content-Type": "image/png",
@@ -941,7 +939,6 @@ function assertJoinedRunSharesAppMap(run: PersistedRun, appMapId: string): void 
     );
   }
 }
-
 
 function joinedRunIds(url: URL, primaryId: string): string[] {
   const ids: string[] = [];

@@ -3,7 +3,7 @@ import { walkthroughDestinationAvailable } from "./walkthrough-destinations";
 import type { PlayerManifestProjection } from "../data/run-product-service";
 const manifest = {
   captures: [{ id: "member-image", stateId: "settings", variantId: "member" }],
-} as PlayerManifestProjection;
+} as unknown as PlayerManifestProjection;
 it("never enables a destination from another configuration or a different recorded capture", () => {
   const connection = {
     id: "settings-link",

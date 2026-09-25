@@ -5,7 +5,11 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { CaptureReviewError, captureReviewQueueForRun, reviewPersistedCapture } from "./capture-review.js";
+import {
+  CaptureReviewError,
+  captureReviewQueueForRun,
+  reviewPersistedCapture,
+} from "./capture-review.js";
 import { persistRun, readCompletedPersistedRun } from "./runs.js";
 import type { TestJob } from "./session.js";
 
@@ -163,7 +167,7 @@ test("a second reviewer cannot replace the first saved decision", async () => {
     assert.ok(captureId);
     const first = await reviewPersistedCapture(root, run, {
       captureId,
-      action: "issue",
+      action: "report-issue",
       note: "Save overlaps the description",
       actor: { id: "human:first", kind: "human" },
     });
@@ -182,7 +186,7 @@ test("a second reviewer cannot replace the first saved decision", async () => {
     );
     const reloaded = await readCompletedPersistedRun(run.dir);
     const kept = reloaded?.captureReviews?.find((item) => item.captureId === captureId);
-    assert.equal(kept?.action, "issue");
+    assert.equal(kept?.action, "report-issue");
     assert.equal(kept?.note, "Save overlaps the description");
     assert.equal(kept?.decidedBy.id, "human:first");
   } finally {
@@ -229,7 +233,7 @@ test("a delayed Looks correct cannot replace the same reviewer's newer issue", a
     });
     const issue = await reviewPersistedCapture(root, run, {
       captureId,
-      action: "issue",
+      action: "report-issue",
       note: "Save overlaps the description",
       actor,
       expectedReviewVersion: accepted.decision.reviewVersion,
@@ -249,13 +253,10 @@ test("a delayed Looks correct cannot replace the same reviewer's newer issue", a
     );
     const reloaded = await readCompletedPersistedRun(run.dir);
     const kept = reloaded?.captureReviews?.find((item) => item.captureId === captureId);
-    assert.equal(kept?.action, "issue");
+    assert.equal(kept?.action, "report-issue");
     assert.equal(kept?.note, "Save overlaps the description");
     assert.equal(kept?.reviewVersion, issue.decision.reviewVersion);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
-
-
-

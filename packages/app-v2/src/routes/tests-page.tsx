@@ -48,6 +48,15 @@ export function TestsPage() {
     queryFn: () => catalogService.listTests(),
     staleTime: 15_000,
   });
+  const sharedTestIds = useMemo(() => {
+    const seen = new Set<string>();
+    const shared = new Set<string>();
+    for (const test of tests.data ?? []) {
+      if (seen.has(test.id)) shared.add(test.id);
+      seen.add(test.id);
+    }
+    return shared;
+  }, [tests.data]);
   const runs = useQuery({
     queryKey: catalogQueryKeys.runs,
     queryFn: () => catalogService.listRuns(),
@@ -291,7 +300,10 @@ export function TestsPage() {
           </div>
           <ul className="m-0 list-none overflow-hidden rounded-xl border border-border/60 p-0 [&>li]:border-b [&>li]:border-border/60 [&>li:last-child]:border-b-0">
             {visibleTests.map((test) => (
-              <TestRow key={`${test.appMapId}:${test.id}`} test={test} />
+              <TestRow
+                key={`${test.appMapId}:${test.id}`}
+                test={sharedTestIds.has(test.id) ? { ...test, sharedId: true } : test}
+              />
             ))}
           </ul>
         </section>
@@ -326,7 +338,7 @@ export function TestsPage() {
   );
 }
 
-function TestRow({ test }: { test: ProductTestSummary }) {
+function TestRow({ test }: { test: ProductTestSummary & { sharedId?: boolean } }) {
   const recent = test.recentRun;
   return (
     <li>
@@ -336,6 +348,7 @@ function TestRow({ test }: { test: ProductTestSummary }) {
         <Link
           to="/tests/$testId"
           params={{ testId: test.id }}
+          search={test.sharedId ? { app: test.appMapId } : {}}
           className="grid min-w-0 gap-2 px-4 py-3.5 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-6"
         >
           <span className="grid min-w-0 gap-1">
@@ -369,7 +382,11 @@ function TestRow({ test }: { test: ProductTestSummary }) {
             test.status === "needs-review" ? (
               <Link to="/tests/$testId/edit" params={{ testId: test.id }} />
             ) : (
-              <Link to="/tests/$testId" params={{ testId: test.id }} search={{ setup: "run" }} />
+              <Link
+                to="/tests/$testId"
+                params={{ testId: test.id }}
+                search={test.sharedId ? { setup: "run", app: test.appMapId } : { setup: "run" }}
+              />
             )
           }
         >

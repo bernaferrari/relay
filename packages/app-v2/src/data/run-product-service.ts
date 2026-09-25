@@ -1,4 +1,5 @@
 export { runOutcome } from "./run-outcome";
+import { boundedVideoBlob } from "./run-video-loader";
 import {
   runEvidenceExportDocument,
   walkthroughExportDocument,
@@ -92,8 +93,16 @@ export type PlayerManifestProjection = {
   }[];
   missing: readonly { stateId: string; variantId: string; reason: string }[];
 };
+/** The same Test id exists in several apps; the caller must say which one. */
+export class AmbiguousTestError extends Error {
+  constructor(readonly owners: readonly { appMapId: string; appName: string }[]) {
+    super("This Test exists in more than one app. Choose the app to open it in.");
+    this.name = "AmbiguousTestError";
+  }
+}
+
 export type RunProductService = {
-  getTest(testId: string): Promise<ProductTestSummary | undefined>;
+  getTest(testId: string, appMapId?: string): Promise<ProductTestSummary | undefined>;
   listTestRuns?(testId: string): Promise<readonly ProductRunSummary[]>;
   listTestRunsComplete?(testId: string): Promise<readonly ProductRunSummary[]>;
   listTargets(): Promise<readonly ProductTargetOption[]>;
@@ -189,15 +198,17 @@ export function createRunProductService(platform: Platform): RunProductService {
     return (await (await relayClient()).invoke("run.evidence.get", { runId, ...input })).evidence;
   }
   return {
-    async getTest(testId) {
-      const { client } = await runtime();
+    async getTest(testId, appMapId) {
+      const client = await relayClient();
       const { appMaps } = await client.invoke("app-map.list", {});
       const matches = appMaps.flatMap((app) => {
         const test = app.tests[testId];
-        return test ? [{ app, test }] : [];
+        return test && (!appMapId || app.id === appMapId) ? [{ app, test }] : [];
       });
       if (matches.length > 1) {
-        throw new TypeError("This Test appears in more than one app and cannot be opened safely.");
+        throw new AmbiguousTestError(
+          matches.map(({ app }) => ({ appMapId: app.id, appName: app.name })),
+        );
       }
       const match = matches[0];
       if (!match) return undefined;
@@ -298,7 +309,7 @@ export function createRunProductService(platform: Platform): RunProductService {
       const { job } = await (await runtime()).client.invoke("job.get", { jobId });
       const waiting = job.waitingFor;
       const waitingForHuman =
-        Boolean(waiting) &&
+        waiting !== null &&
         typeof waiting === "object" &&
         !Array.isArray(waiting) &&
         "kind" in waiting &&

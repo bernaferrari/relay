@@ -153,7 +153,7 @@ function manifest(): PlayerManifestProjection {
         kind: "suggested",
         label: "Guess settings",
         provenance: { runId: "run-member" },
-        hotspot: { connectionId: "guess-settings", point: { x: 0.8, y: 0.8 } },
+        hotspot: { connectionId: "guess-settings", point: { x: 0.8, y: 0.8 }, actions: [] },
       },
     ],
     findings: [

@@ -290,7 +290,11 @@ describe("Batch result presentation", () => {
           status: "blocked",
           values: {},
           findingCode: "ACCOUNT_NEEDS_RELOGIN",
-          identity: { testId: "account-settings" },
+          identity: {
+            testId: "account-settings",
+            environmentId: "default",
+            environmentPlatform: "browser",
+          },
         },
       ]),
     ).toMatchObject({

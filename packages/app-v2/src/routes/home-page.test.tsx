@@ -176,7 +176,18 @@ describe("Home", () => {
   });
 
   it("calls unfinished review awaiting review and keeps failures as needing attention", () => {
-    const review = { outcome: "needs-review", phase: "completed" } as ProductRunSummary;
+    const review = {
+      outcome: "passed",
+      phase: "completed",
+      captureSummary: {
+        captured: 1,
+        missing: 0,
+        pending: 1,
+        accepted: 0,
+        issue: 0,
+        needMoreEvidence: 0,
+      },
+    } as unknown as ProductRunSummary;
     const failure = { outcome: "product-failure", phase: "failed" } as ProductRunSummary;
     expect(attentionLinkLabel([review])).toBe("1 result awaiting review");
     expect(attentionLinkLabel([review, review])).toBe("2 results awaiting review");
