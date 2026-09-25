@@ -48,6 +48,7 @@ import type {
 } from "./capture-review.js";
 import type { CampaignRepairOperationMap } from "./run-repair-operations.js";
 import type { RunShareOperationMap } from "./run-share.js";
+import type { CaptureReferenceOperationMap } from "./capture-reference-operations.js";
 import type { TracePackExportResponse } from "./trace-pack.js";
 import type { WalkthroughPackExportResponse } from "./walkthrough-pack.js";
 import type {
@@ -608,5 +609,6 @@ export type SpecificOperationMap = {
 } & AppMapOperationMap &
   CampaignRepairOperationMap &
   RunShareOperationMap &
+  CaptureReferenceOperationMap &
   WorkflowOperationMap &
   ProofOperationMap;

@@ -39,7 +39,6 @@ import {
   currentOperationContext,
   defaultTargetDriverRegistry,
   enqueueJob,
-
   getActiveJobs,
   getJob,
   listActionsWithTrace,
@@ -85,6 +84,7 @@ import { createFailClosedServerShutdown } from "./server-shutdown.js";
 import { createTargetRuntimeScope } from "./target-runtime-scope.js";
 import { shutdownServerSessions } from "./server-session-shutdown.js";
 import { handleRunRoute, type RunRouteRuntime } from "./run-routes.js";
+import { handleCaptureReferenceRoute } from "./capture-reference-routes.js";
 import { createPreAuthenticatedRoute } from "./pre-authenticated-routes.js";
 import { handleJobRoute, scopedActiveJob, type JobRouteRuntime } from "./job-routes.js";
 import { assertTargetControl } from "./access-control.js";
@@ -602,6 +602,18 @@ async function handleRequest(
         scope,
         liveVideoStream,
         captureTargetScreenshot,
+      })
+    )
+      return;
+
+    if (
+      await handleCaptureReferenceRoute({
+        method,
+        pathname,
+        url,
+        request: req,
+        response: res,
+        scope,
       })
     )
       return;

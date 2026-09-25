@@ -4,7 +4,7 @@ import { resetDeviceClient, type Device } from "./device.js";
 import { closeBrowserTarget } from "./browser-target.js";
 import { runWithTargetContext } from "./target-context.js";
 import type { Glyph, TraceFrameRef, TraceStep } from "./trace.js";
-import { persistRun, writeFramePng, ensureRunDir, type PersistedRun } from "./runs.js";
+import { persistRun, runsRoot, writeFramePng, ensureRunDir, type PersistedRun } from "./runs.js";
 import {
   compensatingCleanupIsArmed,
   JobCancelledError,
@@ -38,6 +38,7 @@ import { TargetWorkerScheduler, type TargetWorkerStatus } from "./target-worker.
 import { requireOperationContext, runWithOperationContext } from "./operation-context.js";
 import { redactText, visualEvidenceAllowed } from "./redaction.js";
 import { projectPersistedAppMapRun } from "./app-map-run-history.js";
+import { applyCaptureReferences } from "./capture-references.js";
 import { JobRegistry } from "./job-registry.js";
 import { releaseTargetControl, reserveTargetControl } from "./target-control.js";
 import {
@@ -323,7 +324,16 @@ export function retryJob(id: string, options?: RetryEnqueueOptions): TestJob {
 const commitTerminalRun = (job: TestJob, log: (line: string) => void) =>
   commitTerminalSessionRun(job, log, {
     persistRun,
-    projectPersistedRun: projectPersistedAppMapRun,
+    projectPersistedRun: async (run) => {
+      await projectPersistedAppMapRun(run);
+      // Unchanged screenshots are approved from their references; a failure
+      // here only leaves them for a person to review.
+      await applyCaptureReferences(runsRoot(), run).catch((error) =>
+        log(
+          `warn: reference comparison skipped: ${error instanceof Error ? error.message : error}`,
+        ),
+      );
+    },
     now,
     setOutcome,
   });

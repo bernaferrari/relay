@@ -211,6 +211,26 @@ export const executionOperationSchemas = {
     })
     .strict(),
   "run.visual-policy.get": runRef,
+  "run.capture.reference.compare": runRef,
+  "run.capture.reference.ignore-regions.update": z
+    .object({
+      runId: identifier("Persisted Run identifier"),
+      captureId: identifier("Capture review identifier"),
+      regions: z
+        .array(
+          z
+            .object({
+              x: z.number().min(0).max(1),
+              y: z.number().min(0).max(1),
+              width: z.number().gt(0).max(1),
+              height: z.number().gt(0).max(1),
+              name: z.string().max(120).optional(),
+            })
+            .strict(),
+        )
+        .max(50),
+    })
+    .strict(),
   "run.visual-policy.update": z
     .object({
       runId: identifier("Persisted Run identifier"),

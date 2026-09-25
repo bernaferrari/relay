@@ -140,7 +140,7 @@ function assertLocalMaintenance(scope: RequestContext): void {
   }
 }
 
-async function loadScopedRun(id: string, scope: RequestContext): Promise<PersistedRun> {
+export async function loadScopedRun(id: string, scope: RequestContext): Promise<PersistedRun> {
   const run = await readPersistedRun(id);
   assertRunAccess(scope, run);
   return run;

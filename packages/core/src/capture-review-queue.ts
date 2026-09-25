@@ -8,7 +8,7 @@ import { executionIntentPlannedSlots } from "./run-test-step-evidence.js";
 
 export type CaptureReviewRun = Pick<
   PersistedRun,
-  "artifacts" | "captureReviews" | "captureReviewReceipts"
+  "artifacts" | "captureReviews" | "captureReviewReceipts" | "captureComparisons"
 > & {
   recipeSnapshot?: {
     steps?: readonly unknown[];
@@ -27,6 +27,7 @@ export function captureReviewQueueForRun(run: CaptureReviewRun): CaptureReviewQu
   return resolveCaptureReviewQueue({
     artifacts: run.artifacts,
     decisions: run.captureReviews,
+    ...(run.captureComparisons ? { comparisons: run.captureComparisons } : {}),
     recipeSteps: run.recipeSnapshot?.steps,
     recipes: run.recipeGraph ?? run.recipeSnapshot?.recipes,
     plannedSlots: plannedSlotsForRun(run),

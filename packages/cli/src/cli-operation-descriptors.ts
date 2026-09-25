@@ -715,7 +715,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
           type: '"accept" | "report-issue" | "need-more-evidence"',
           required: true,
           description:
-            "Looks correct, report an issue, or ask for more evidence. Never a baseline.",
+            "Looks correct (also makes this image the reference for later runs), report an issue, or ask for more evidence.",
         },
         {
           name: "imageSha256",
@@ -727,7 +727,30 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       examples: [
         'relay run capture review <run-id> --input \'{"captureId":"frames/001.png::abc","action":"accept","imageSha256":"abc"}\' --actor human:local-cli',
       ],
-      note: "Looks correct does not approve a visual baseline. Capture-only review does not require an AI key.",
+      note: "Looks correct makes this exact image the reference; later unchanged screenshots are approved automatically. Review does not require an AI key.",
+    }),
+  ),
+  mapped(
+    "run.capture.reference.compare",
+    path("run capture compare", ["runId"], undefined, {
+      summary: "Compare a Run's screenshots with their references again",
+      argumentHelp: [{ name: "runId", type: "string", description: "Persisted run identifier" }],
+    }),
+  ),
+  mapped(
+    "run.capture.reference.ignore-regions.update",
+    path("run capture ignore", ["runId"], undefined, {
+      summary: "Set the areas a screenshot comparison ignores (clocks, live data)",
+      argumentHelp: [{ name: "runId", type: "string", description: "Persisted run identifier" }],
+      inputHelp: [
+        { name: "captureId", type: "string", required: true, description: "Capture identity" },
+        {
+          name: "regions",
+          type: "{x,y,width,height,name?}[]",
+          required: true,
+          description: "Rectangles in 0..1 image coordinates",
+        },
+      ],
     }),
   ),
   mapped("run.visual-policy.get", path("run visual-policy get", ["runId"])),

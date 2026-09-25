@@ -14,7 +14,7 @@ import {
   parseOptionalRunTestStepEvidence,
   resolveCaptureReviewQueue,
 } from "@relay/protocol";
-import type { RunTestStepEvidence } from "@relay/protocol";
+import type { CaptureReferenceComparison, RunTestStepEvidence } from "@relay/protocol";
 import { runOutcome } from "./run-outcome";
 import {
   frameImageMedia,
@@ -837,6 +837,11 @@ export function projectRunReport(
     decisions: Array.isArray(run.captureReviews)
       ? (run.captureReviews as CaptureReviewDecision[])
       : [],
+    ...(record(run.captureComparisons)
+      ? {
+          comparisons: record(run.captureComparisons) as Record<string, CaptureReferenceComparison>,
+        }
+      : {}),
     recipeSteps: array(record(run.recipeSnapshot)?.steps),
     recipes: (record(run.recipeGraph) ?? record(record(run.recipeSnapshot)?.recipes)) as
       | Record<string, { steps?: readonly unknown[] }>

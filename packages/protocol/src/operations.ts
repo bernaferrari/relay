@@ -23,6 +23,7 @@ import { appleDeviceOperationDefinitions } from "./apple-device-operation-defini
 import { browserDeviceOperationDefinitions } from "./browser-device-operation-definitions.js";
 import { runRepairOperationDefinitions } from "./run-repair-operations.js";
 import { runEvidenceOperationDefinitions } from "./run-evidence-operation-definitions.js";
+import { captureReferenceOperationDefinitions } from "./capture-reference-operations.js";
 import { parseActivityExportResponse, type ActivityExport } from "./activity.js";
 import { createAppMapOperationDefinitions } from "./app-map-operation-definitions.js";
 import { campaignCapacityOperationDefinitions } from "./campaign-capacity-operation-definitions.js";
@@ -1177,6 +1178,7 @@ export const operationDefinitions = [
     input: runIdInputParser,
   }),
   ...runEvidenceOperationDefinitions,
+  ...captureReferenceOperationDefinitions,
   command("run.catalog.rebuild", "Rebuild Run catalog", "POST", "/runs/catalog/rebuild", {
     category: "execution",
     confirmation: "confirm",

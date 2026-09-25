@@ -21,6 +21,7 @@ export * from "./workspace.js";
 export * from "./trace.js";
 export * from "./runs.js";
 export * from "./capture-review.js";
+export * from "./capture-references.js";
 export * from "./capture-review-plan.js";
 export * from "./run-shares.js";
 export * from "./proof-report.js";
