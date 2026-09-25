@@ -1,3 +1,4 @@
+import { decidedByReference, type CaptureReferenceComparison } from "./capture-reference.js";
 import type { ActorKind } from "./coordination.js";
 import type { BrowserLaneSessionStoreKind } from "./browser-lane-session.js";
 import type { CaptureRasterPolicy } from "./recipes.js";
@@ -169,6 +170,8 @@ export type CaptureReviewItem = {
   note?: string;
   /** Monotonic review version for optimistic, retry-safe mutations. */
   reviewVersion?: number;
+  /** How this capture compares with its approved reference screenshot. */
+  reference?: CaptureReferenceComparison;
 };
 
 export type CaptureReviewDecision = {
@@ -191,6 +194,12 @@ export type CaptureReviewSummary = {
   accepted: number;
   issue: number;
   needMoreEvidence: number;
+  /** Approved automatically because they match their reference. */
+  unchanged?: number;
+  /** Differ from their reference. */
+  changed?: number;
+  /** Have no reference yet. */
+  new?: number;
 };
 
 export type CaptureReviewQueue = {
@@ -223,7 +232,6 @@ export function captureReviewIdMatchesFrame(
   const suffix = `${framePath}::${imageSha256}`;
   return captureId === suffix || captureId.endsWith(`::${suffix}`);
 }
-
 
 function sameCaptureReviewPhase(left?: string, right?: string): boolean {
   return (left?.trim() || "") === (right?.trim() || "");
@@ -298,6 +306,15 @@ export function summarizeCaptureReview(items: readonly CaptureReviewItem[]): Cap
     needMoreEvidence: 0,
   };
   for (const item of items) {
+    if (item.reference) {
+      if (item.status === "accepted" && decidedByReference(item.decidedBy)) {
+        summary.unchanged = (summary.unchanged ?? 0) + 1;
+      } else if (item.reference.state === "changed") {
+        summary.changed = (summary.changed ?? 0) + 1;
+      } else if (item.reference.state === "new") {
+        summary.new = (summary.new ?? 0) + 1;
+      }
+    }
     if (item.status === "missing") summary.missing += 1;
     else summary.captured += 1;
     if (item.status === "pending") summary.pending += 1;
@@ -736,6 +753,8 @@ export function resolveCaptureReviewQueue(input: {
   plannedSlots?: readonly CaptureReviewPlannedSlot[];
   configuration?: CaptureReviewConfiguration;
   requirementId?: string;
+  /** Reference comparisons keyed by captureId. */
+  comparisons?: Readonly<Record<string, CaptureReferenceComparison>>;
 }): CaptureReviewQueue {
   const artifacts: CaptureReviewItem[] = [];
   const seen = new Set<string>();
@@ -782,6 +801,10 @@ export function resolveCaptureReviewQueue(input: {
         : artifacts),
     );
   }
-  const reviewed = items.map((item) => overlayDecision(item, input.decisions ?? []));
+  const comparisons = input.comparisons ?? {};
+  const reviewed = items.map((item) => {
+    const reference = item.status === "missing" ? undefined : comparisons[item.captureId];
+    return overlayDecision(reference ? { ...item, reference } : item, input.decisions ?? []);
+  });
   return { items: reviewed, summary: summarizeCaptureReview(reviewed) };
 }

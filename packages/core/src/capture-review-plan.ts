@@ -1,3 +1,5 @@
+import { captureReviewQueueForRun } from "./capture-review-queue.js";
+import { revokeCaptureReference, setCaptureReference } from "./capture-references.js";
 import type { ActorKind, CombineCampaign } from "@relay/protocol";
 import {
   filterPlanCaptureReviewQueue,
@@ -43,7 +45,13 @@ export type PlanCaptureReviewItemResult = {
 
 type PlanCaptureReviewRun = Pick<
   PersistedRun,
-  "id" | "artifacts" | "captureReviews" | "captureReviewReceipts" | "outcome" | "status"
+  | "id"
+  | "artifacts"
+  | "captureReviews"
+  | "captureReviewReceipts"
+  | "captureComparisons"
+  | "outcome"
+  | "status"
 > & {
   recipeSnapshot?: {
     steps?: readonly unknown[];
@@ -149,6 +157,7 @@ export function captureReviewQueueForPlan(
       runId: run.id,
       artifacts: run.artifacts,
       decisions: run.captureReviews,
+      ...(run.captureComparisons ? { comparisons: run.captureComparisons } : {}),
       recipeSteps: run.recipeSnapshot?.steps,
       recipes: run.recipeGraph ?? run.recipeSnapshot?.recipes,
       plannedSlots: plannedSlotsForRun(run),
@@ -186,6 +195,7 @@ export function captureReviewQueueForCampaign(
             runId: run.id,
             artifacts: run.artifacts,
             decisions: run.captureReviews,
+            ...(run.captureComparisons ? { comparisons: run.captureComparisons } : {}),
             recipeSteps: run.recipeSnapshot?.steps,
             recipes: run.recipeGraph ?? run.recipeSnapshot?.recipes,
           }
@@ -450,6 +460,19 @@ export async function reviewPersistedPlanCaptures(
       persisted.captureReviewReceipts =
         applied.runs[0]?.captureReviewReceipts ?? latest.captureReviewReceipts;
       await persistPersistedRun(root, latest, persisted, "capture-review");
+      const items = captureReviewQueueForRun(latest).items;
+      for (const [offset, result] of applied.results.entries()) {
+        if (result.status !== "applied") continue;
+        const selection = input.items[indexes[offset]!]!;
+        const item = items.find((candidate) => candidate.captureId === selection.captureId);
+        if (!item) continue;
+        const action = selection.action ?? input.action;
+        await (
+          action === "accept"
+            ? setCaptureReference(root, latest, item, input.actor)
+            : revokeCaptureReference(root, latest, item)
+        ).catch(() => undefined);
+      }
     });
   }
   const refreshedCampaign = await readCombineCampaign(projectId, resolved);

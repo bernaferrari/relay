@@ -38,6 +38,8 @@ export * from "./case-expansion.js";
 export * from "./execution-summary.js";
 export * from "./run-review.js";
 export * from "./capture-review.js";
+export * from "./capture-reference.js";
+export * from "./capture-reference-operations.js";
 export * from "./capture-review-plan.js";
 export * from "./capability-gate.js";
 export * from "./rc23-screenshot-first.js";

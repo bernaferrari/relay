@@ -19,6 +19,7 @@ import {
   parseOptionalSourceRevision,
   type ActorKind,
   type ArtifactRefProjection,
+  type CaptureReferenceComparison,
   type BrowserAuthenticationHealth,
   type BrowserCaseProfile,
   type EvidenceManifest,
@@ -130,6 +131,8 @@ export type PersistedRun = {
   review?: RunReview;
   /** Human screenshot review. Independent of execution outcome and visual baselines. */
   captureReviews?: CaptureReviewDecision[];
+  /** Reference screenshot comparisons keyed by captureId. */
+  captureComparisons?: Record<string, CaptureReferenceComparison>;
   /** Durable acknowledgements for capture-review retries. The current decision
    * remains in captureReviews; this bounded history lets a delayed request
    * replay its own acknowledgement without reverting a newer judgement. */

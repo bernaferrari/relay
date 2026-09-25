@@ -1,3 +1,4 @@
+import type { CaptureReferenceComparison } from "./capture-reference.js";
 import {
   destIdentityReviewItems,
   formatCaptureReviewCoverageSummary,
@@ -44,6 +45,7 @@ export type PlanCaptureReviewRunInput = {
   executionCaseId?: string;
   artifacts?: readonly { kind?: string; data?: unknown }[];
   decisions?: readonly CaptureReviewDecision[];
+  comparisons?: Readonly<Record<string, CaptureReferenceComparison>>;
   recipeSteps?: readonly unknown[];
   recipes?: Record<string, { steps?: readonly unknown[] }>;
   plannedSlots?: readonly CaptureReviewPlannedSlot[];
@@ -95,6 +97,7 @@ export function resolvePlanCaptureReviewQueue(
     const queue = resolveCaptureReviewQueue({
       artifacts: run.artifacts,
       decisions: run.decisions,
+      ...(run.comparisons ? { comparisons: run.comparisons } : {}),
       recipeSteps: run.recipeSteps,
       recipes: run.recipes,
       plannedSlots: run.plannedSlots,

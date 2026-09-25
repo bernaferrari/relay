@@ -5,6 +5,7 @@ import {
   type CaptureReviewAction,
   type CaptureReviewDecision,
   type CaptureReviewQueue,
+  decidedByReference,
 } from "@relay/protocol";
 import { captureReviewQueueForRun, type CaptureReviewRun } from "./capture-review-queue.js";
 export { captureReviewQueueForRun } from "./capture-review-queue.js";
@@ -17,6 +18,7 @@ import {
 } from "./runs.js";
 import { currentOperationContext } from "./operation-context.js";
 import { readFrameFile } from "./run-artifact-files.js";
+import { revokeCaptureReference, setCaptureReference } from "./capture-references.js";
 
 export class CaptureReviewError extends Error {
   readonly code:
@@ -98,9 +100,13 @@ export function applyCaptureReviewDecision(
       "Refresh the Run and review the exact PNG that is displayed. Looks correct never applies to a later screenshot.",
     );
   }
-  const prior = (run.captureReviews ?? []).find(
+  // An automatic "matches reference" approval is a suggestion, not a person's
+  // decision: anyone may replace it without a version or ownership conflict.
+  const priorDecision = (run.captureReviews ?? []).find(
     (decision) => decision.captureId === item.captureId,
   );
+  const prior =
+    priorDecision && decidedByReference(priorDecision.decidedBy) ? undefined : priorDecision;
   const requestId = input.requestId?.trim() || currentOperationContext()?.requestId;
   const receipts = run.captureReviewReceipts ?? [];
   const replay = requestId
@@ -132,7 +138,7 @@ export function applyCaptureReviewDecision(
       changed: false,
     };
   }
-  const currentReviewVersion = prior?.reviewVersion ?? 0;
+  const currentReviewVersion = prior?.reviewVersion ?? priorDecision?.reviewVersion ?? 0;
   if (
     input.expectedReviewVersion !== undefined &&
     input.expectedReviewVersion !== currentReviewVersion
@@ -255,6 +261,16 @@ export function reviewPersistedCapture(
     const persisted = applied.changed
       ? await persistPersistedRun(root, latest, next, "capture-review")
       : latest;
+    if (applied.changed && queued) {
+      // "Looks correct" makes this exact image the reference for later runs;
+      // withdrawing it restores the previous reference.
+      // The person's decision is already saved; a reference failure must not undo it.
+      await (
+        input.action === "accept"
+          ? setCaptureReference(root, latest, queued, input.actor)
+          : revokeCaptureReference(root, latest, queued)
+      ).catch(() => undefined);
+    }
     return {
       run: persisted,
       queue: applied.queue,
