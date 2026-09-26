@@ -11,6 +11,7 @@ import { Button } from "@relay/ui-react/components/button";
 import { X } from "lucide-react";
 import type { CaptureReferenceRegion, CaptureReviewItem } from "@relay/protocol";
 import { reviewQueryKeys, type ReviewProductService } from "../data/review-product-service";
+import { DeviceFrame } from "../components/device-frame";
 
 export type CompareMode = "side" | "diff" | "swipe";
 
@@ -71,17 +72,11 @@ function Shot({
         <span className="font-medium text-foreground">{label}</span>
         {detail ? <span className="truncate text-muted-foreground">{detail}</span> : null}
       </figcaption>
-      <div className="flex min-h-48 items-start justify-center rounded-lg bg-muted/30 p-2">
+      <div className="flex min-h-48 items-start justify-center rounded-xl bg-stage p-4">
         {url ? (
-          <div className="relative inline-block max-w-full">
-            <img
-              src={url}
-              alt={label}
-              draggable={false}
-              className="block max-h-[min(68vh,52rem)] max-w-full rounded-md object-contain select-none"
-            />
+          <DeviceFrame src={url} alt={label}>
             {children}
-          </div>
+          </DeviceFrame>
         ) : (
           <p className="self-center text-sm text-muted-foreground" role="status">
             {failed ? "Screenshot couldn’t load." : loading ? "Loading screenshot…" : ""}

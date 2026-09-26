@@ -66,12 +66,12 @@ export function DeviceFrame({
           ? "w-28"
           : size === "md"
             ? "w-72"
-            : "w-full max-w-xl"
+            : "w-full max-w-lg"
         : size === "sm"
           ? "w-16"
           : size === "md"
             ? "w-56"
-            : "w-full max-w-sm";
+            : "w-full max-w-72";
   if (shape === "window") {
     return (
       <figure
