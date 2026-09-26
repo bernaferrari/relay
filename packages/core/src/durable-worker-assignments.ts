@@ -746,7 +746,11 @@ export class DurableWorkerAssignmentStore {
           assignment.status === "paused" ||
           (assignment.status === "recovery-required" &&
             Boolean(assignment.execution) &&
-            !assignment.recoveryFenceRelease),
+            !assignment.recoveryFenceRelease &&
+            // A managed browser starts clean for the next job; only a device
+            // left mid-action needs a person to look before reuse. The
+            // recovery verdict stays on record either way.
+            assignment.executionTarget.kind !== "local-browser"),
       );
     const targetOwner = active.find(
       (assignment) =>
