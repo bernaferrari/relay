@@ -1,4 +1,5 @@
 import {
+  Sun,
   Activity,
   FlaskConical,
   GitCompare,
@@ -15,6 +16,14 @@ import {
  * workbench action, not a destination.
  */
 export const everydayDestinations = [
+  {
+    to: "/home",
+    label: "Today",
+    shortLabel: "Today",
+    icon: Sun,
+    detail: "What needs you now and the plans you run daily",
+    keywords: "home today dashboard daily",
+  },
   {
     to: "/tests",
     label: "Tests",
