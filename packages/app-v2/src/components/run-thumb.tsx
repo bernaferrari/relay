@@ -4,9 +4,33 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
 import { productClientForPlatform } from "../data/product-client";
 
+/** Blob URL of a Run's last screenshot (the capture people review, else the last frame). */
+export function useRunThumbnail(runId: string | undefined, enabled = true): string | undefined {
+  const { platform } = useRouteContext({ from: "__root__" });
+  const image = useQuery({
+    queryKey: ["run-thumb", runId],
+    queryFn: async () => {
+      const { client } = await productClientForPlatform(platform);
+      const response = await client.download(`/runs/${encodeURIComponent(runId!)}/thumbnail`);
+      if (!response.ok) return null;
+      return response.blob();
+    },
+    enabled: Boolean(runId && enabled),
+    staleTime: Infinity,
+    retry: false,
+  });
+  const [url, setUrl] = useState<string>();
+  useEffect(() => {
+    if (!image.data) return setUrl(undefined);
+    const next = URL.createObjectURL(image.data);
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [image.data]);
+  return url;
+}
+
 /** The last screenshot of a Run in a small device frame; loads when scrolled into view. */
 export function RunThumb({ runId, label }: { runId?: string; label: string }) {
-  const { platform } = useRouteContext({ from: "__root__" });
   const box = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -27,25 +51,7 @@ export function RunThumb({ runId, label }: { runId?: string; label: string }) {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const image = useQuery({
-    queryKey: ["run-thumb", runId],
-    queryFn: async () => {
-      const { client } = await productClientForPlatform(platform);
-      const response = await client.download(`/runs/${encodeURIComponent(runId!)}/thumbnail`);
-      if (!response.ok) return null;
-      return response.blob();
-    },
-    enabled: Boolean(runId && visible),
-    staleTime: Infinity,
-    retry: false,
-  });
-  const [url, setUrl] = useState<string>();
-  useEffect(() => {
-    if (!image.data) return setUrl(undefined);
-    const next = URL.createObjectURL(image.data);
-    setUrl(next);
-    return () => URL.revokeObjectURL(next);
-  }, [image.data]);
+  const url = useRunThumbnail(runId, visible);
   return (
     <div ref={box} className="h-11 w-16 shrink-0" aria-hidden="true">
       {url ? (
