@@ -11,7 +11,9 @@ import {
   catalogSummaries,
   catalogSummaryPage,
   rebuildRunCatalog,
+  setRunPinned,
 } from "./run-catalog.js";
+import { listRunSummariesPageAtRoot } from "./run-summary-pagination.js";
 
 test("run catalog rebuilds from committed manifests and retention is dry-run safe", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-catalog-"));
@@ -167,6 +169,43 @@ test("Run Across retains its Test identity in rebuilt history and scoped pages",
     assert.equal(page.totalCount, 1);
     assert.deepEqual(page.summaries[0]?.sourceTest, { appMapId: "plans", testId: "capture" });
     assert.equal((await catalogSummaryPage(root, 1, undefined, undefined, "other")).totalCount, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an App with no runs is an empty page, not a catalog rebuild", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-catalog-empty-app-"));
+  try {
+    const dir = join(root, "run-a");
+    await mkdir(dir);
+    const run = {
+      schemaVersion: 5,
+      id: "run-a",
+      dir,
+      action: "app-map:settings:main",
+      status: "ok",
+      queuedAt: 1,
+      writtenAt: 1,
+      frames: [],
+      artifacts: [],
+    };
+    const raw = JSON.stringify(run);
+    await writeFile(join(dir, "run.json"), raw);
+    await writeFile(
+      join(dir, ".complete"),
+      JSON.stringify({ digest: createHash("sha256").update(raw).digest("hex") }),
+    );
+    await rebuildRunCatalog(root);
+    assert.equal(await setRunPinned(root, "run-a", true), true);
+    const page = await listRunSummariesPageAtRoot({
+      projectId: "default",
+      appMapId: "no-runs-yet",
+      rootDirectory: root,
+    });
+    assert.equal(page.totalCount, 0);
+    // A rebuild would have cleared the pin.
+    assert.equal((await catalogSummaryPage(root)).summaries[0]?.pinned, true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

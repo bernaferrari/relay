@@ -158,7 +158,13 @@ export async function listRunSummariesPageAtRoot(
     cursor && { writtenAt: cursor.writtenAt, id: cursor.id },
     appMapId,
   );
-  if (!cursor && page.totalCount === 0) {
+  // Rebuild only a catalog that is empty overall. An App with no runs yet is
+  // a normal empty page; rebuilding for it rescans every run on each request.
+  const catalogEmpty =
+    !cursor &&
+    page.totalCount === 0 &&
+    (!appMapId || (await catalogSummaryPage(root, 1)).totalCount === 0);
+  if (catalogEmpty) {
     const catalog = await rebuildRunCatalog(root);
     if (catalog.indexed > 0) {
       page = await catalogSummaryPage(root, limit, undefined, undefined, appMapId);
