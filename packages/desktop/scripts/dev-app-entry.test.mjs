@@ -63,3 +63,22 @@ test("cold entry starts development services and waits before quitting the launc
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("built preview opens Relay without a dev server or inherited renderer URL", () => {
+  const root = mkdtempSync(join(tmpdir(), "relay-built-preview-"));
+  try {
+    mkdirSync(join(root, "out/main"), { recursive: true });
+    writeFileSync(join(root, "out/main/index.js"), "console.log('built Relay')");
+    writeDevAppEntry(join(root, "Resources"), root, { ELECTRON_RENDERER_URL: "" });
+    const result = spawnSync(process.execPath, [join(root, "Resources/app/index.cjs")], {
+      cwd: tmpdir(),
+      env: { ELECTRON_RENDERER_URL: "http://stale-renderer.invalid" },
+      encoding: "utf8",
+      timeout: 5000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.trim(), "built Relay");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
