@@ -32,7 +32,7 @@ function Counter({
   label,
   tone,
 }: {
-  to: "/review" | "/runs" | "/suites";
+  to: "/review" | "/tests" | "/suites";
   icon: typeof Eye;
   value: number | undefined;
   label: string;
@@ -41,7 +41,7 @@ function Counter({
   return (
     <Link
       to={to}
-      {...(to === "/runs" ? { search: { view: "failed" } } : {})}
+      {...(to === "/tests" ? { search: { result: "failed" as const } } : {})}
       className="group/counter flex min-w-0 flex-col items-start gap-2 rounded-xl border border-border bg-card p-3 sm:flex-row sm:items-center sm:gap-3.5 sm:p-4 transition-[border-color,box-shadow] duration-150 ease-out outline-none hover:border-primary/40 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span
@@ -99,23 +99,23 @@ export function TodayPage() {
 
   const toReview = inbox.data?.entries.reduce((total, entry) => total + entry.items.length, 0);
   const recent = [...(runs.data ?? [])].sort((left, right) => runTime(right) - runTime(left));
-  const weekAgo = Date.now() - 86_400_000 * 7;
-  const failed = recent.filter(
-    (run) => runStateOf(run) === "failed" && runTime(run) >= weekAgo && !run.batchId,
-  );
-  // One row per Test: its newest run, when that run needs a person.
+  // One entry per Test: its newest run. The counter and the list share it, so
+  // "2 tests failing" always matches the failed rows under Needs attention.
   const newestPerTest = new Map<string, ProductRunSummary>();
   for (const run of recent) {
     if (run.batchId) continue;
     const key = run.testId ?? run.id;
     if (!newestPerTest.has(key)) newestPerTest.set(key, run);
   }
-  const attention = [...newestPerTest.values()]
-    .filter((run) => {
-      const state = runStateOf(run);
-      return state === "failed" || state === "review";
-    })
-    .slice(0, 6);
+  const weekAgo = Date.now() - 86_400_000 * 7;
+  const failing = [...newestPerTest.values()].filter(
+    (run) => runStateOf(run) === "failed" && runTime(run) >= weekAgo,
+  );
+  // Failures first, then screenshots waiting for a person; newest first within each.
+  const attention = [
+    ...failing,
+    ...[...newestPerTest.values()].filter((run) => runStateOf(run) === "review"),
+  ].slice(0, 6);
   const plans = (suites.data ?? [])
     .map((suite) => {
       const latest = latestRunPerTest(
@@ -155,11 +155,11 @@ export function TodayPage() {
           tone="brand"
         />
         <Counter
-          to="/runs"
+          to="/tests"
           icon={CircleX}
-          value={runs.data ? failed.length : undefined}
-          label="failed this week"
-          tone={failed.length ? "danger" : "quiet"}
+          value={runs.data ? failing.length : undefined}
+          label={failing.length === 1 ? "test failing" : "tests failing"}
+          tone={failing.length ? "danger" : "quiet"}
         />
         <Counter
           to="/suites"

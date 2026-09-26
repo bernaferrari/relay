@@ -10,6 +10,7 @@ import {
   runsRoot,
   updateCaptureReferenceIgnoreRegions,
   type PersistedRun,
+  contentThumbnail,
 } from "@relay/core";
 import { isCaptureReferenceRegion, type CaptureReviewItem } from "@relay/protocol";
 import { CORS_HEADERS, HttpError, json, matchPath, parseJsonBody } from "./http.js";
@@ -78,13 +79,19 @@ export async function handleCaptureReferenceRoute(
     const path = captures.at(-1)?.framePath ?? run.frames?.at(-1)?.path;
     const bytes = path ? await readFrameFile(run.dir, path) : null;
     if (!bytes) throw new HttpError(404, "This run has no screenshot");
+    let thumb: Buffer = bytes;
+    try {
+      thumb = contentThumbnail(bytes);
+    } catch {
+      // Not a PNG we can read; the original still makes a usable thumbnail.
+    }
     response.writeHead(200, {
       "Content-Type": "image/png",
-      "Content-Length": bytes.byteLength,
+      "Content-Length": thumb.byteLength,
       "Cache-Control": "private, max-age=86400, immutable",
       ...CORS_HEADERS,
     });
-    response.end(bytes);
+    response.end(thumb);
     return true;
   }
 
