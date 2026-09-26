@@ -5,6 +5,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useRouteContext } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@relay/ui-react/components/dropdown-menu";
+import {
   Popover,
   PopoverContent,
   PopoverTitle,
@@ -392,32 +398,32 @@ export function ReviewPage() {
             {(inbox.data?.entries ?? []).map((entry) => {
               const entryCards = cards.filter((card) => card.entry.runId === entry.runId);
               if (!entryCards.length) return null;
+              const grouped = entryCards.length > 1;
               return (
-                <div
-                  key={entry.runId}
-                  className="min-w-0 border-b border-border/50 py-4 first:pt-0 last:border-b-0"
-                >
-                  <div className="px-2 pt-1 pb-2.5">
-                    <p
-                      className="line-clamp-2 text-xs leading-5 font-semibold text-foreground"
-                      title={entry.title}
-                    >
-                      {entry.title}
-                    </p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {[entry.targetName, timeAgo(entry.finishedAt)].filter(Boolean).join(" · ")}
-                    </p>
-                  </div>
+                <div key={entry.runId} className="min-w-0 py-1">
+                  {grouped ? (
+                    <div className="px-2.5 pt-4 pb-2">
+                      <p
+                        className="line-clamp-2 text-xs leading-5 font-semibold text-foreground"
+                        title={entry.title}
+                      >
+                        {entry.title}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {[entry.targetName, timeAgo(entry.finishedAt)].filter(Boolean).join(" · ")}
+                      </p>
+                    </div>
+                  ) : null}
                   <ul className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5">
                     {entryCards.map((card) => (
                       <li key={card.key} className="min-w-0">
                         <button
                           type="button"
                           aria-current={card.key === selected?.key ? "true" : undefined}
-                          className={`flex w-full min-w-0 items-start gap-2.5 rounded-lg px-2.5 py-2.5 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${
+                          className={`flex w-full min-w-0 items-start gap-2.5 rounded-md border-l-2 px-2.5 py-2.5 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${
                             card.key === selected?.key
-                              ? "bg-accent font-medium text-foreground ring-1 ring-inset ring-border"
-                              : "text-foreground hover:bg-accent/40"
+                              ? "border-primary bg-accent/70 text-foreground"
+                              : "border-transparent text-foreground hover:bg-accent/40"
                           }`}
                           onClick={() => {
                             setSelectedKey(card.key);
@@ -425,11 +431,20 @@ export function ReviewPage() {
                             setReporting(false);
                           }}
                         >
-                          <span
-                            className="min-w-0 flex-1 line-clamp-2 leading-5 wrap-anywhere"
-                            title={screenshotName(card.item)}
-                          >
-                            {screenshotName(card.item)}
+                          <span className="grid min-w-0 flex-1 gap-1">
+                            <span
+                              className="line-clamp-2 leading-5 wrap-anywhere"
+                              title={entry.title}
+                            >
+                              {screenshotName(card.item)}
+                            </span>
+                            {!grouped ? (
+                              <span className="truncate text-xs text-muted-foreground">
+                                {[entry.targetName, timeAgo(entry.finishedAt)]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </span>
+                            ) : null}
                           </span>
                           <StateBadge item={card.item} />
                         </button>
@@ -471,14 +486,6 @@ export function ReviewPage() {
                       </p>
                     ) : null}
                   </div>
-                  <Button
-                    nativeButton={false}
-                    size="sm"
-                    variant="ghost"
-                    render={<Link to="/runs/$runId" params={{ runId: selected.entry.runId }} />}
-                  >
-                    Open run
-                  </Button>
                 </div>
               </div>
               <div
@@ -571,6 +578,24 @@ export function ReviewPage() {
                       </Button>
                     ) : null}
                     <ReviewShortcuts />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button size="icon-sm" variant="ghost" aria-label="Screenshot options" />
+                        }
+                      >
+                        <MoreHorizontal aria-hidden="true" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        <DropdownMenuItem
+                          render={
+                            <Link to="/runs/$runId" params={{ runId: selected.entry.runId }} />
+                          }
+                        >
+                          Open run
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     <Button
                       size="sm"
                       className="ml-auto h-8"
