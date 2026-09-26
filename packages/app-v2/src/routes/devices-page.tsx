@@ -49,6 +49,24 @@ function deviceGroup(device: ProductDevice): string {
   return "Physical devices";
 }
 
+/** A tiny drawing of the hardware so the grid reads at a glance. */
+function DeviceSilhouette({ kind }: { kind: "phone" | "tablet" | "window" }) {
+  if (kind === "window") {
+    return (
+      <span className="flex h-7 w-9 flex-col overflow-hidden rounded-md border-2 border-foreground/70 bg-card">
+        <span className="h-1.5 border-b border-foreground/40 bg-foreground/10" />
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`relative rounded-md border-2 border-foreground/70 bg-card ${kind === "tablet" ? "h-8 w-6.5" : "h-8 w-4.5"}`}
+    >
+      <span className="absolute top-0.5 left-1/2 h-0.5 w-1.5 -translate-x-1/2 rounded-full bg-foreground/60" />
+    </span>
+  );
+}
+
 function DeviceRow({
   device,
   returnTo,
@@ -71,43 +89,41 @@ function DeviceRow({
         params={isBrowser(device) ? { profileId: device.id } : { deviceId: device.id }}
         search={returnTo ? { returnTo } : undefined}
         data-slot="device-row"
-        className={`${libraryRowSurface} ${libraryRowContent} grid-cols-[minmax(0,1fr)_auto]`}
+        className="group/device flex h-full min-w-0 items-center gap-3.5 rounded-xl border border-border bg-card p-3.5 transition-[border-color,box-shadow] duration-150 ease-out outline-none hover:border-primary/40 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none"
       >
-        <span className="flex min-w-0 items-center gap-3">
-          <span
-            className="flex size-8 shrink-0 items-center justify-center text-muted-foreground"
-            aria-hidden="true"
-          >
-            <DeviceIcon className="size-5" strokeWidth={1.75} />
-          </span>
-          <span className="grid min-w-0 gap-0.5">
-            <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium text-foreground">
-              {device.name}
-            </strong>
-            <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
-              {deviceSummaryLine(device)}
-            </span>
-          </span>
-        </span>
         <span
-          data-slot="library-row-status"
-          className="flex min-w-20 items-center gap-2 text-xs text-muted-foreground"
+          className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-stage"
+          aria-hidden="true"
         >
-          {stale ? (
-            <CircleHelp className="size-3.5" aria-hidden="true" />
-          ) : !stopped && device.status === "needs-attention" ? (
-            <CircleHelp className="size-3.5 text-warning-foreground" aria-hidden="true" />
-          ) : (
-            <span
-              aria-hidden="true"
-              className={
-                stopped
-                  ? "size-1.5 shrink-0 rounded-full border border-muted-foreground/60"
-                  : "size-1.5 shrink-0 rounded-full bg-success"
-              }
-            />
-          )}
-          {stale ? "Status unavailable" : statusLabel(device)}
+          <DeviceSilhouette
+            kind={DeviceIcon === AppWindow ? "window" : DeviceIcon === Tablet ? "tablet" : "phone"}
+          />
+        </span>
+        <span className="grid min-w-0 flex-1 gap-0.5">
+          <strong className="truncate text-sm font-semibold text-foreground">{device.name}</strong>
+          <span className="truncate text-xs text-muted-foreground">
+            {deviceSummaryLine(device)}
+          </span>
+          <span
+            data-slot="library-row-status"
+            className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"
+          >
+            {stale ? (
+              <CircleHelp className="size-3.5" aria-hidden="true" />
+            ) : !stopped && device.status === "needs-attention" ? (
+              <CircleHelp className="size-3.5 text-warning-foreground" aria-hidden="true" />
+            ) : (
+              <span
+                aria-hidden="true"
+                className={
+                  stopped
+                    ? "size-2 shrink-0 rounded-full border border-muted-foreground/60"
+                    : "size-2 shrink-0 rounded-full bg-success"
+                }
+              />
+            )}
+            {stale ? "Status unavailable" : statusLabel(device)}
+          </span>
         </span>
       </Link>
     </li>
@@ -130,12 +146,12 @@ function DeviceSection({
   const headingId = useId();
   return (
     <section
-      className={bordered ? " overflow-hidden rounded-xl border border-border bg-card" : ""}
+      className=""
       aria-labelledby={title ? headingId : undefined}
       aria-label={!title ? "Available devices" : undefined}
     >
       {title ? (
-        <div className="flex min-h-11 items-center gap-2 border-b border-border px-4 py-3">
+        <div className="flex min-h-9 items-center gap-2 px-1 pb-2">
           <h2 id={headingId} className="text-sm font-semibold">
             {title}
           </h2>
@@ -147,7 +163,7 @@ function DeviceSection({
           </Badge>
         </div>
       ) : null}
-      <ul className="m-0 list-none p-0 [&>li]:border-b [&>li]:border-border/60 [&>li:last-child]:border-b-0">
+      <ul className="m-0 grid list-none gap-3 p-0 sm:grid-cols-2 xl:grid-cols-3">
         {devices.map((device) => (
           <DeviceRow key={device.id} device={device} returnTo={returnTo} stale={stale} />
         ))}
