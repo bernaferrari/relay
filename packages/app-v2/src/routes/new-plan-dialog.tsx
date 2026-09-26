@@ -1,0 +1,277 @@
+/** @jsxImportSource react */
+import { useState, type FormEvent } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useNavigate, useRouteContext } from "@tanstack/react-router";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@relay/ui-react/components/dialog";
+import { Field, FieldError, FieldLabel } from "@relay/ui-react/components/field";
+import { Button } from "@relay/ui-react/components/button";
+import { Input } from "@relay/ui-react/components/input";
+import { Checkbox } from "@relay/ui-react/components/checkbox";
+import { FieldLabel as ChoiceLabel } from "@relay/ui-react/components/field";
+import { productTestStatusLabel } from "@relay/product/catalog";
+import { Layers3 } from "lucide-react";
+import { SelectField } from "../components/filter-select";
+import { recordingQueryKeys } from "../data/recording-queries";
+import { PageLoading } from "./recording-shared";
+
+const SUITES_QUERY_KEY = ["suites"] as const;
+
+function suiteIdFor(name: string): string {
+  const stem = name
+    .toLocaleLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-|-$/gu, "")
+    .slice(0, 32);
+  const suffix = globalThis.crypto?.randomUUID?.().slice(0, 8) ?? Date.now().toString(36);
+  return `suite-${stem || "coverage"}-${suffix}`;
+}
+
+/** Group existing tests into a plan you can run together (and schedule). */
+export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) {
+  const { suiteProfileService, productService, queryClient } = useRouteContext({
+    from: "__root__",
+  });
+  const navigate = useNavigate();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [appId, setAppId] = useState("");
+  const [name, setName] = useState("");
+  const [testQuery, setTestQuery] = useState("");
+  const [testIds, setTestIds] = useState<Set<string>>(() => new Set());
+  const [variableIds, setVariableIds] = useState<Set<string>>(() => new Set());
+  const apps = useQuery({
+    queryKey: recordingQueryKeys.apps,
+    queryFn: () => productService.listApps(),
+    staleTime: 15_000,
+  });
+  const editor = useQuery({
+    queryKey: ["suites", "editor", appId],
+    queryFn: () => suiteProfileService.getSuiteEditor(appId),
+    enabled: dialogOpen && Boolean(appId),
+    staleTime: 15_000,
+  });
+  const createSuite = useMutation({
+    mutationFn: async () => {
+      if (!editor.data) throw new TypeError("Choose an App before saving this Plan.");
+      return suiteProfileService.saveSuite({
+        appMapId: editor.data.appMapId,
+        suiteId: suiteIdFor(name),
+        expectedRevision: editor.data.revision,
+        name,
+        testIds: [...testIds],
+        variableIds: [...variableIds],
+        strategy: "cartesian",
+      });
+    },
+    onSuccess: async (suite) => {
+      await queryClient.invalidateQueries({ queryKey: SUITES_QUERY_KEY });
+      setDialogOpen(false);
+      await navigate({
+        to: "/apps/$appId/suites/$suiteId",
+        params: { appId: suite.appMapId, suiteId: suite.id },
+      });
+    },
+  });
+
+  function resetCreate() {
+    setAppId(
+      apps.data?.some((app) => app.id === requestedApp) ? requestedApp : (apps.data?.[0]?.id ?? ""),
+    );
+    setName("");
+    setTestQuery("");
+    setTestIds(new Set());
+    setVariableIds(new Set());
+    createSuite.reset();
+  }
+
+  function toggle(setter: typeof setTestIds, id: string, checked: boolean) {
+    setter((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    createSuite.mutate();
+  }
+
+  return (
+    <Dialog
+      open={dialogOpen}
+      onOpenChange={(open) => {
+        if (!open && createSuite.isPending) return;
+        setDialogOpen(open);
+        if (open) resetCreate();
+      }}
+    >
+      <DialogTrigger render={<Button variant="outline" disabled={!apps.data?.length} />}>
+        <Layers3 aria-hidden="true" /> New plan
+      </DialogTrigger>
+
+      <DialogContent
+        showCloseButton={false}
+        className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto"
+      >
+        <DialogTitle>New test plan</DialogTitle>
+        <DialogDescription>
+          Choose existing tests for this plan. Their steps stay in the original tests; you choose
+          devices and accounts when you run the plan.
+        </DialogDescription>
+        <form onSubmit={submit}>
+          <Field>
+            <SelectField
+              id="suite-app"
+              label="App"
+              placeholder="Choose an App"
+              value={appId}
+              options={(apps.data ?? []).map((app) => ({
+                value: app.id,
+                label: app.name,
+              }))}
+              onValueChange={(value) => {
+                setAppId(value);
+                setTestIds(new Set());
+                setVariableIds(new Set());
+              }}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="suite-name">Plan name</FieldLabel>
+            <Input
+              id="suite-name"
+              value={name}
+              onChange={(event) => setName(event.currentTarget.value)}
+              placeholder="For example, Release smoke"
+              autoComplete="off"
+            />
+          </Field>
+          {editor.isPending && appId ? <PageLoading label="Loading App Tests…" /> : null}
+          {editor.error ? (
+            <FieldError>
+              Relay could not load this App’s Plan editor.{" "}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => void editor.refetch()}
+                disabled={editor.isFetching}
+              >
+                {editor.isFetching ? "Retrying…" : "Try again"}
+              </Button>
+            </FieldError>
+          ) : null}
+          {editor.data ? (
+            <div className="grid min-w-0 gap-5">
+              <fieldset>
+                <legend className="mb-3 text-sm font-medium">
+                  Tests · {testIds.size} selected
+                </legend>
+                <Input
+                  aria-label="Search Tests for this Plan"
+                  placeholder="Find a Test…"
+                  value={testQuery}
+                  onChange={(event) => setTestQuery(event.currentTarget.value)}
+                  className="mb-3"
+                />
+                <div className="grid max-h-64 gap-2 overflow-y-auto p-1">
+                  {!editor.data.tests.some((test) =>
+                    test.name.toLocaleLowerCase().includes(testQuery.trim().toLocaleLowerCase()),
+                  ) ? (
+                    <p className="p-3 text-sm text-muted-foreground">
+                      No Tests match your search. Your selection is preserved.
+                    </p>
+                  ) : null}
+                  {editor.data.tests
+                    .filter((test) =>
+                      test.name.toLocaleLowerCase().includes(testQuery.trim().toLocaleLowerCase()),
+                    )
+                    .map((test) => (
+                      <ChoiceLabel
+                        key={test.id}
+                        className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+                      >
+                        <span className="grid min-w-0 flex-1 gap-0.5">
+                          <span className="truncate text-sm font-medium text-foreground">
+                            {test.name}
+                          </span>
+                          <span className="truncate text-xs leading-snug text-muted-foreground">
+                            {productTestStatusLabel(test.status, test.name)}
+                          </span>
+                        </span>
+                        <Checkbox
+                          checked={testIds.has(test.id)}
+                          onCheckedChange={(checked) =>
+                            toggle(setTestIds, test.id, checked === true)
+                          }
+                        />
+                      </ChoiceLabel>
+                    ))}
+                </div>
+              </fieldset>
+              {editor.data.dataSets.length ? (
+                <fieldset>
+                  <legend>Data sets</legend>
+                  {editor.data.dataSets.map((dataSet) => (
+                    <ChoiceLabel
+                      key={dataSet.id}
+                      className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+                    >
+                      <span className="grid min-w-0 flex-1 gap-0.5">
+                        <span className="truncate text-sm font-medium text-foreground">
+                          {dataSet.name}
+                        </span>
+                        <span className="truncate text-xs leading-snug text-muted-foreground">
+                          {dataSet.optionCount} saved{" "}
+                          {dataSet.optionCount === 1 ? "value" : "values"}
+                        </span>
+                      </span>
+                      <Checkbox
+                        checked={variableIds.has(dataSet.id)}
+                        onCheckedChange={(checked) =>
+                          toggle(setVariableIds, dataSet.id, checked === true)
+                        }
+                      />
+                    </ChoiceLabel>
+                  ))}
+                </fieldset>
+              ) : null}
+            </div>
+          ) : null}
+          {createSuite.error ? (
+            <FieldError>
+              {createSuite.error instanceof Error
+                ? createSuite.error.message
+                : "Relay could not save this Plan."}
+            </FieldError>
+          ) : null}
+          <div className="sticky bottom-0 border-t border-border bg-background pt-4 flex flex-wrap items-center justify-end gap-2.5">
+            <DialogClose
+              render={
+                <Button variant="ghost" disabled={createSuite.isPending}>
+                  Cancel
+                </Button>
+              }
+            />
+            <Button
+              type="submit"
+              variant="default"
+              disabled={!editor.data || !name.trim() || !testIds.size || createSuite.isPending}
+            >
+              {createSuite.isPending ? "Saving…" : "Save Plan"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

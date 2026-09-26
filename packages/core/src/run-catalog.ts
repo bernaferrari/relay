@@ -384,6 +384,41 @@ export async function catalogSummaryPage(
   }
 }
 
+/**
+ * Each saved Test's newest run across the whole history (a page of recent
+ * runs misses Tests that ran last week). Keyed by App Map and Test.
+ */
+export async function catalogLatestRunPerTest(
+  root: string,
+  appMapId?: string,
+): Promise<Array<Omit<CatalogRecord, "dir">>> {
+  await mkdir(root, { recursive: true });
+  const db = database(root);
+  try {
+    const rows = db.prepare("SELECT * FROM runs ORDER BY written_at DESC, id DESC").all() as Array<
+      Record<string, unknown>
+    >;
+    const seen = new Set<string>();
+    const latest: Array<Omit<CatalogRecord, "dir">> = [];
+    for (const row of rows) {
+      const { dir: _dir, ...summary } = rowToRecord(row);
+      const source = (summary as { sourceTest?: { appMapId?: string; testId?: string } })
+        .sourceTest;
+      const action = /^app-map:([^:]+):test:([^:]+)(?::|$)/u.exec(String(row.action ?? ""));
+      const app = source?.appMapId ?? action?.[1];
+      const test = source?.testId ?? action?.[2];
+      if (!app || !test || (appMapId && app !== appMapId)) continue;
+      const key = `${app}\0${test}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      latest.push(summary);
+    }
+    return latest;
+  } finally {
+    db.close();
+  }
+}
+
 export async function catalogRunDirectory(root: string, id: string): Promise<string | null> {
   await mkdir(root, { recursive: true });
   const db = database(root);

@@ -1,5 +1,4 @@
 import {
-  Sun,
   Activity,
   FlaskConical,
   GitCompare,
@@ -10,27 +9,18 @@ import {
 
 /**
  * One destination vocabulary for the sidebar and command palette, per the
- * frozen product hierarchy (docs/release/PRODUCT-DIRECTION.md): Tests and
- * Results are the two everyday destinations; everything else is a utility.
- * Plans live inside Tests as a collection view; Explore/Ask Relay is a
- * workbench action, not a destination.
+ * product hierarchy: Tests (home, with plans as groups), Review, and Results
+ * are everyday; Map follows the chosen App; Devices is setup. Everything
+ * else is reachable from search.
  */
 export const everydayDestinations = [
-  {
-    to: "/home",
-    label: "Today",
-    shortLabel: "Today",
-    icon: Sun,
-    detail: "What needs you now and the plans you run daily",
-    keywords: "home today dashboard daily",
-  },
   {
     to: "/tests",
     label: "Tests",
     shortLabel: "Tests",
     icon: FlaskConical,
-    detail: "Reusable journeys and saved Plans",
-    keywords: "record test suite plan",
+    detail: "Your tests and test plans, and what needs you",
+    keywords: "home today record test suite plan",
   },
   {
     to: "/review",
@@ -45,36 +35,45 @@ export const everydayDestinations = [
     label: "Results",
     shortLabel: "Results",
     icon: History,
-    detail: "Current and completed runs",
-    keywords: "reports evidence review",
+    detail: "Every run, live and finished",
+    keywords: "reports evidence runs history",
   },
 ] as const;
 
+/** Setup that people visit now and then; shown under the everyday links. */
 export const utilityDestinations = [
   {
     to: "/devices",
-    label: "Devices & browsers",
+    label: "Devices",
     shortLabel: "Devices",
     icon: MonitorSmartphone,
-    detail: "Connected browsers and devices",
-    keywords: "targets environments browsers",
+    detail: "Browsers, phones, and tablets Relay can use",
+    keywords: "targets environments browsers devices",
   },
+] as const;
+
+/** Reachable from search (⌘K) and links, not the sidebar. */
+export const moreDestinations = [
   {
     to: "/sessions",
     label: "Activity",
     shortLabel: "Activity",
     icon: Activity,
-    detail: "Live sessions and recent work",
-    keywords: "sessions activity live",
+    detail: "Recordings and live sessions",
+    keywords: "sessions activity live recordings",
   },
   {
     to: "/changes",
     label: "Changes",
     shortLabel: "Changes",
     icon: GitCompare,
-    detail: "Repository verification work",
-    keywords: "changes proof verification",
+    detail: "Verify a code change against your tests",
+    keywords: "changes proof verification pull request",
   },
 ] as const;
 
-export const primaryDestinations = [...everydayDestinations, ...utilityDestinations];
+export const primaryDestinations = [
+  ...everydayDestinations,
+  ...utilityDestinations,
+  ...moreDestinations,
+];

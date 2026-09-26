@@ -144,6 +144,9 @@ export const executionOperationSchemas = {
       limit: z.coerce.number().int().positive().optional(),
       appMapId: z.string().optional(),
       cursor: z.string().min(1).max(512).optional(),
+      latestPerTest: z
+        .union([z.boolean(), z.enum(["true", "false"]).transform((value) => value === "true")])
+        .optional(),
     })
     .strict(),
   "run.get": runRef,

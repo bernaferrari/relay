@@ -220,6 +220,31 @@ export function ReviewPage() {
     return () => window.removeEventListener("keydown", handler);
   }, [selected, editingIgnore, move, decide]);
 
+  // First screenshots have nothing to compare against. Accepting them all at
+  // once makes them the references, so later runs only surface real changes.
+  const [baseline, setBaseline] = useState<{ saved: number; total: number; failed: number }>();
+  const acceptAllNew = useMutation({
+    mutationFn: async () => {
+      const fresh = cardsOf(inbox.data, "new").filter((card) => !done.has(card.key));
+      setBaseline({ saved: 0, total: fresh.length, failed: 0 });
+      let next = 0;
+      const worker = async () => {
+        while (next < fresh.length) {
+          const card = fresh[next++]!;
+          try {
+            await service.review(card.entry.runId, card.item, "accept");
+            setDone((current) => new Set([...current, card.key]));
+            setBaseline((value) => value && { ...value, saved: value.saved + 1 });
+          } catch {
+            setBaseline((value) => value && { ...value, failed: value.failed + 1 });
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: 4 }, worker));
+    },
+    onSettled: refresh,
+  });
+
   const reviewedCount = done.size;
   const changedCount = cardsOf(inbox.data, "changed").length;
   const newCount = cardsOf(inbox.data, "new").length;
@@ -241,39 +266,71 @@ export function ReviewPage() {
               {cards.length} left{reviewedCount ? ` · ${reviewedCount} done` : ""}
             </span>
           ) : null}
-          <div
-            role="radiogroup"
-            aria-label="Show"
-            className="flex gap-1 rounded-lg bg-muted/40 p-0.5"
-          >
-            {(
-              [
-                ["all", `All ${changedCount + newCount}`],
-                ["changed", `Changed ${changedCount}`],
-                ["new", `New ${newCount}`],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={filter === value}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-ring ${
-                  filter === value
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={() => {
-                  setFilter(value);
-                  setSelectedKey(undefined);
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          {changedCount && newCount ? (
+            <div
+              role="radiogroup"
+              aria-label="Show"
+              className="flex gap-1 rounded-lg bg-muted/40 p-0.5"
+            >
+              {(
+                [
+                  ["all", `All ${changedCount + newCount}`],
+                  ["changed", `Changed ${changedCount}`],
+                  ["new", `New ${newCount}`],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={filter === value}
+                  className={`rounded-md px-2.5 py-1 text-xs font-medium tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-ring ${
+                    filter === value
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  onClick={() => {
+                    setFilter(value);
+                    setSelectedKey(undefined);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </header>
+
+      {newCount && !acceptAllNew.isSuccess ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 bg-brand-soft px-6 py-3">
+          <p className="max-w-prose text-sm">
+            {acceptAllNew.isPending && baseline ? (
+              <>
+                Saving {baseline.saved} of {baseline.total}…
+              </>
+            ) : (
+              <>
+                <strong className="font-semibold">
+                  {newCount} {newCount === 1 ? "screenshot is" : "screenshots are"} new.
+                </strong>{" "}
+                There is nothing to compare {newCount === 1 ? "it" : "them"} against yet. Look
+                through them, or use them all as the starting point; after that you only see what
+                changes.
+              </>
+            )}
+          </p>
+          <Button size="sm" disabled={acceptAllNew.isPending} onClick={() => acceptAllNew.mutate()}>
+            <Check aria-hidden="true" />
+            {acceptAllNew.isPending ? "Saving…" : `Use all ${newCount} as the starting point`}
+          </Button>
+        </div>
+      ) : null}
+      {baseline && !acceptAllNew.isPending && baseline.failed ? (
+        <p className="border-b border-border/60 px-6 py-2 text-sm text-destructive" role="alert">
+          {baseline.failed} could not be saved. They are still in the list.
+        </p>
+      ) : null}
 
       {inbox.isPending ? (
         <p className="p-6 text-sm text-muted-foreground" role="status">

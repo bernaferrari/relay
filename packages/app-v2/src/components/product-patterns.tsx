@@ -221,8 +221,17 @@ export function OutcomeMark({ outcome }: { outcome: OutcomeValue }) {
   );
 }
 
-export function ReadinessMark({ status, name }: { status: ReadinessValue; name?: string }) {
-  const label = productTestStatusLabel(status, name);
+export function ReadinessMark({
+  status,
+  name,
+  issue,
+}: {
+  status: ReadinessValue;
+  name?: string;
+  /** The specific reason, when known ("A step needs fixing"). */
+  issue?: string;
+}) {
+  const label = issue ?? productTestStatusLabel(status, name);
   const presentation =
     label === "Ready"
       ? { label, icon: ListChecks, tone: "quiet" as const }

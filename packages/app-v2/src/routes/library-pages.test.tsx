@@ -258,12 +258,19 @@ describe("App overview", () => {
 });
 
 describe("Tests library", () => {
-  it("puts the library first and keeps failed results out of Resume work", async () => {
+  it("puts the library first and does not count an older failure as failing", async () => {
     await render("/tests");
+    const main = document.querySelector<HTMLElement>("#main-content")!;
+    expect(main.querySelector("h1")?.textContent).toBe("Tests");
+    expect(main.textContent).toContain("2 tests");
     expect(document.querySelector('[aria-label="Morning review"]')).toBeNull();
     expect(document.querySelector('[aria-label="Resume work"]')).toBeNull();
-    expect(document.querySelector('[aria-label="Filter Tests"]')).not.toBeNull();
-    expect(document.querySelector('[aria-label="Results that need attention"]')).not.toBeNull();
+    // One search replaces the old status/result filter selects.
+    expect(main.querySelector('input[aria-label="Search tests"]')).not.toBeNull();
+    expect(main.querySelectorAll('[data-slot="select-trigger"]')).toHaveLength(0);
+    // "Change language" failed before but passed last, so nothing is failing.
+    expect(main.textContent).not.toMatch(/tests? failing/u);
+    expect(main.querySelector("#loose-heading")?.textContent).toBe("All tests");
   });
   it("restores the collection scroll container and row focus after browser Back", async () => {
     const { history } = await render("/tests");
@@ -289,7 +296,7 @@ describe("Tests library", () => {
     const { history } = await render("/tests");
     expect(
       document.querySelector('a[href="/tests/test-checkout-internal/edit"]')?.textContent,
-    ).toContain("Review steps");
+    ).toContain("Fix");
     await clickText("Run");
     expect(history.location.pathname).toBe("/tests/test-language-internal");
     expect(history.location.search).toBe("?setup=run");
@@ -333,7 +340,7 @@ async function click(label: string) {
 }
 
 describe("Tests workspace", () => {
-  it("lists human Test summaries, recent outcomes, and a dominant creation action", async () => {
+  it("lists human Test summaries, plans as groups, and a dominant creation action", async () => {
     const { history } = await render(
       "/tests",
       catalog(),
@@ -343,12 +350,12 @@ describe("Tests workspace", () => {
         listSuites: async () => [
           {
             id: "suite-1",
-            appMapId: "app-1",
+            appMapId: "app-shop-internal",
             appMapRevision: 7,
-            appName: "Checkout",
+            appName: "Shopping",
             name: "Release smoke",
-            testIds: ["test-1"],
-            tests: [{ id: "test-1", name: "Complete checkout", status: "ready" }],
+            testIds: ["test-language-internal"],
+            tests: [{ id: "test-language-internal", name: "Change language", status: "ready" }],
             variableIds: [],
             strategy: "cartesian",
             source: { kind: "app-map-combine", id: "suite-1" },
@@ -357,38 +364,50 @@ describe("Tests workspace", () => {
       } as unknown as SuiteProfileProductService,
     );
 
-    const devices = document.querySelector<HTMLAnchorElement>('a[href="/devices"]');
-    expect(document.body.textContent).not.toContain("Release smoke");
-    expect(document.querySelector('a[href="/apps/app-1/suites/suite-1"]')).toBeNull();
-    expect(devices?.textContent?.trim()).toBe("Devices & browsers");
-    expect(devices?.hasAttribute("aria-disabled")).toBe(false);
-    expect(document.querySelector('a[href="/tests/new"]')?.textContent).toBe("New Test");
-    const managePlans = document.querySelector<HTMLAnchorElement>('a[href="/suites"]');
-    expect(managePlans?.textContent).toBe("Test plans");
-    expect(document.querySelector('a[href="/changes"]')?.textContent).toBe("Changes");
-    expect(document.querySelector('a[href="/sessions"]')?.textContent).toBe("Activity");
-    expect(document.body.textContent).toContain("Change language");
-    expect(document.body.textContent).toContain("Complete checkout");
-    expect(document.body.textContent).toContain("Passed");
-    expect(document.body.textContent).toContain("Needs setup");
-    expect(document.body.textContent).not.toContain("app-shop-internal");
-    expect(document.body.textContent).not.toContain("test-language-internal");
+    const main = document.querySelector<HTMLElement>("#main-content")!;
+    expect(main.textContent).toContain("2 tests · 1 plans");
+    expect(main.querySelector('a[href="/tests/new"]')?.textContent?.trim()).toBe("New test");
+    expect(
+      [...main.querySelectorAll("button")].some(
+        (button) => button.textContent?.trim() === "New plan",
+      ),
+    ).toBe(true);
+    expect(main.querySelector("#plans-heading")?.textContent).toBe("Test plans");
+    expect(main.textContent).toContain("Release smoke");
+    expect(
+      main.querySelector('a[href="/apps/app-shop-internal/suites/suite-1"]')?.textContent?.trim(),
+    ).toBe("Run all");
+    // The collection links that used to sit on this page now live in the
+    // sidebar (Devices) or the command palette (Activity, Changes).
+    expect(main.querySelector('a[href="/suites"]')).toBeNull();
+    expect(main.querySelector('a[href="/changes"]')).toBeNull();
+    expect(main.querySelector('a[href="/sessions"]')).toBeNull();
+    expect(document.querySelector('a[href="/devices"]')?.textContent?.trim()).toBe("Devices");
+    // Collapsed plan: its test is not listed until opened; the rest are "Other tests".
+    expect(main.querySelector("#loose-heading")?.textContent).toBe("Other tests");
+    expect(main.textContent).not.toContain("Change language");
+    expect(main.textContent).toContain("Complete checkout");
+    expect(main.textContent).toContain("Needs setup");
+    expect(main.textContent).not.toContain("app-shop-internal");
+    expect(main.textContent).not.toContain("test-language-internal");
     expect(document.querySelectorAll("select")).toHaveLength(0);
-    expect(document.querySelectorAll('[data-slot="select-trigger"]')).toHaveLength(2);
-    expect(document.querySelector('[data-slot="library-search-control"] svg')).not.toBeNull();
 
-    const search = document.querySelector<HTMLInputElement>("#test-search")!;
+    const search = main.querySelector<HTMLInputElement>('input[aria-label="Search tests"]')!;
     search.focus();
     expect(document.activeElement).toBe(search);
-    await fill(search, "checkout");
-    expect(document.body.textContent).not.toContain("Change language");
-    expect(document.body.textContent).toContain("Complete checkout");
+    await fill(search, "language");
+    // Searching flattens plans away and finds the planned test too.
+    expect(main.querySelector("#plans-heading")).toBeNull();
+    expect(main.textContent).toContain("Change language");
+    expect(main.textContent).toContain("Passed");
+    expect(main.textContent).not.toContain("Complete checkout");
+    expect(history.location.search).toBe("?q=language");
 
     await act(async () =>
-      document.querySelector<HTMLElement>('a[href="/tests/test-checkout-internal"]')?.click(),
+      main.querySelector<HTMLElement>('a[href="/tests/test-language-internal"]')?.click(),
     );
     await settle();
-    expect(history.location.pathname).toBe("/tests/test-checkout-internal");
+    expect(history.location.pathname).toBe("/tests/test-language-internal");
   });
 
   it("uses the centered shared recovery state when saved Tests cannot load", async () => {
@@ -411,24 +430,43 @@ describe("Tests workspace", () => {
     expect(recovery?.textContent).toContain("Try again");
   });
 
-  it("keeps status filters in the route and explains an empty result", async () => {
-    const { history } = await render("/tests?status=needs-review");
-    expect(document.body.textContent).toContain("Complete checkout");
-    expect(document.body.textContent).not.toContain("Change language");
+  it("keeps the failing filter in the route and clears back to the grouped list", async () => {
+    const { history } = await render(
+      "/tests?result=failed",
+      catalog({
+        listTests: async () => [
+          {
+            ...tests[0]!,
+            recentRun: { ...passedRun, phase: "failed", outcome: "product-failure" },
+          },
+          tests[1]!,
+        ],
+      }),
+    );
+    const matches = document.querySelector('section[aria-label="Matching tests"]')!;
+    expect(matches.textContent).toContain("1 test failing");
+    expect(matches.textContent).toContain("Change language");
+    expect(matches.textContent).not.toContain("Complete checkout");
 
-    await fill(document.querySelector<HTMLInputElement>("#test-search")!, "missing");
-    expect(document.body.textContent).toContain("No Tests match these filters");
-    await click("Clear filters");
+    await fill(
+      document.querySelector<HTMLInputElement>('input[aria-label="Search tests"]')!,
+      "missing",
+    );
+    expect(matches.textContent).toContain("0 tests failing");
+    expect(matches.querySelectorAll("li")).toHaveLength(0);
+    await click("Clear");
     expect(history.location.search).toBe("");
+    expect(document.querySelector('section[aria-label="Matching tests"]')).toBeNull();
     expect(document.body.textContent).toContain("Change language");
+    expect(document.body.textContent).toContain("Complete checkout");
   });
 
   it("does not invent Suites from Test checkboxes", async () => {
     await render("/tests");
-    expect(document.body.textContent).toContain(
-      "A test is a saved journey through your app. Run it on its own, or include it in a test plan.",
-    );
+    expect(document.querySelector("#loose-heading")?.textContent).toBe("All tests");
+    expect(document.querySelector("#plans-heading")).toBeNull();
     expect(document.querySelectorAll('[data-slot="library-row-select"]')).toHaveLength(0);
+    expect(document.querySelectorAll('#main-content [role="checkbox"]')).toHaveLength(0);
     expect(document.body.textContent).not.toContain("Create Suite");
     expect(document.body.textContent).not.toContain("Save Suite");
     expect(document.body.textContent).not.toContain("Your selection spans Apps");
@@ -442,11 +480,11 @@ describe("Tests workspace", () => {
     });
 
     expect(productService.inspect).toHaveBeenCalledWith("workflow-shop");
-    expect(document.body.textContent).toContain("Continue your test");
-    expect(document.body.textContent).toContain("Continue recording");
-    expect(
-      document.querySelector<HTMLAnchorElement>('a[href="/recordings/workflow-shop"]'),
-    ).not.toBeNull();
+    const chip = document.querySelector<HTMLAnchorElement>(
+      '[aria-label="Needs you"] a[href="/recordings/workflow-shop"]',
+    );
+    expect(chip?.textContent).toContain("Untitled recording");
+    expect(chip?.textContent).toContain("Continue recording");
   });
 
   it("does not hide a recording whose App ownership is still unknown", async () => {
@@ -455,10 +493,10 @@ describe("Tests workspace", () => {
       productService: recordingInspect(),
     });
 
-    expect(document.body.textContent).toContain("Continue your test");
-    expect(
-      document.querySelector<HTMLAnchorElement>('a[href="/recordings/workflow-unknown"]'),
-    ).not.toBeNull();
+    const chip = document.querySelector<HTMLAnchorElement>(
+      '[aria-label="Needs you"] a[href="/recordings/workflow-unknown"]',
+    );
+    expect(chip?.textContent).toContain("Continue recording");
   });
 
   it("hides a recording resume that belongs to a different App", async () => {
@@ -467,8 +505,10 @@ describe("Tests workspace", () => {
       productService: recordingInspect("app-shop-internal"),
     });
 
-    expect(document.body.textContent).not.toContain("Finish the Test you started");
-    expect(document.querySelector('a[href="/recordings/workflow-shop"]')).toBeNull();
+    expect(document.querySelector("#main-content")?.textContent).not.toContain(
+      "Continue recording",
+    );
+    expect(document.querySelector('#main-content a[href="/recordings/workflow-shop"]')).toBeNull();
   });
 });
 
@@ -539,7 +579,7 @@ describe("Runs workspace", () => {
 
     expect(listRunsComplete).toHaveBeenCalledOnce();
     expect(listRuns).not.toHaveBeenCalledWith({ view: "all" });
-    expect(document.body.textContent).toContain("Complete history");
+    expect(document.body.textContent).toContain("That is everything Relay has kept.");
     expect(document.body.textContent).toContain("Open account");
   });
 
@@ -620,7 +660,7 @@ describe("Runs workspace", () => {
     expect(document.body.textContent).not.toContain("Complete checkout");
 
     await fill(document.querySelector<HTMLInputElement>("#run-search")!, "missing");
-    expect(document.body.textContent).toContain("No problem Runs match");
+    expect(document.body.textContent).toContain("Nothing failed");
     await click("Show all Runs");
     expect(history.location.search).toBe("");
     expect(document.body.textContent).toContain("Complete checkout");

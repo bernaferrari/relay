@@ -43,5 +43,11 @@ export const runListInputParser = objectParser<OperationInput<"run.list">>(
     }
     if (input.appMapId !== undefined) string(input.appMapId, "run list App Map id");
     if (input.cursor !== undefined) string(input.cursor, "run list cursor");
+    if (input.latestPerTest !== undefined) {
+      if (input.latestPerTest === "true") input.latestPerTest = true;
+      if (input.latestPerTest === "false") input.latestPerTest = false;
+      if (typeof input.latestPerTest !== "boolean")
+        fail("run list latestPerTest", "must be true or false");
+    }
   },
 );

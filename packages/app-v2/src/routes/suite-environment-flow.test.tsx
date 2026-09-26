@@ -4,7 +4,9 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RelayV2App } from "../app";
+import type { ProductTestSummary } from "@relay/product/catalog";
 import type { AppResourcesProductService } from "../data/app-resources-product-service";
+import type { CatalogProductService } from "../data/catalog-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type {
   ProductEnvironmentProfile,
@@ -101,6 +103,36 @@ const fixture: ProductBrowserAuthFixture = {
   createdAt: 1,
 };
 
+const catalogTests: readonly ProductTestSummary[] = [
+  {
+    id: "test-1",
+    name: "Complete checkout",
+    appMapId: "app-1",
+    appName: "Checkout",
+    stepCount: 4,
+    status: "ready",
+    updatedAt: 1,
+    href: "/tests/test-1",
+  },
+  {
+    id: "test-2",
+    name: "Pay invoice",
+    appMapId: "app-2",
+    appName: "Billing",
+    stepCount: 2,
+    status: "ready",
+    updatedAt: 2,
+    href: "/tests/test-2",
+  },
+];
+
+const catalogService: CatalogProductService = {
+  listTests: async () => catalogTests,
+  getTest: async () => undefined,
+  listRuns: async () => [],
+  getRun: async () => undefined,
+};
+
 function suitePreview(blockers: ProductSuitePreview["blockers"] = []): ProductSuitePreview {
   return {
     suite,
@@ -189,6 +221,7 @@ async function render(
         platform={{ ...platform, openExternal: options.openExternal }}
         history={history}
         productService={productService}
+        catalogService={catalogService}
         suiteProfileService={options.suiteService ?? suiteService()}
         browserSpacesService={options.browserService ?? browserService()}
         appResourcesService={
@@ -237,12 +270,10 @@ afterEach(async () => {
 });
 
 describe("Suite and Environment routes", () => {
-  it("passes the displayed App scope to the Suite collection", async () => {
-    const scopedSuite = { ...suite, appMapId: "app-2", appName: "Billing" };
-    const listSuites = vi.fn(async (appMapId?: string) =>
-      appMapId === "app-2" ? [scopedSuite] : [],
-    );
-    await render("/suites?app=app-2", {
+  it("shows only the displayed App's plans as groups on Tests", async () => {
+    const scopedSuite = { ...suite, appMapId: "app-2", appName: "Billing", name: "Billing smoke" };
+    const listSuites = vi.fn(async () => [suite, scopedSuite]);
+    await render("/tests?app=app-2", {
       apps: [
         { id: "app-1", name: "Checkout" },
         { id: "app-2", name: "Billing" },
@@ -250,38 +281,94 @@ describe("Suite and Environment routes", () => {
       suiteService: suiteService({ listSuites }),
     });
 
-    expect(listSuites).toHaveBeenCalledWith("app-2");
-    expect(document.body.textContent).toContain("Billing");
+    expect(listSuites).toHaveBeenCalled();
+    const plans = document.querySelector('section[aria-labelledby="plans-heading"]');
+    expect(plans?.textContent).toContain("Billing smoke");
+    expect(plans?.textContent).not.toContain("Release smoke");
     expect(document.querySelector('a[href="/apps/app-2/suites/suite-1"]')).not.toBeNull();
     expect(document.querySelector('a[href="/apps/app-1/suites/suite-1"]')).toBeNull();
   });
 
-  it("renders Suites and navigates to the canonical Suite detail route", async () => {
+  it("redirects the old Plans list to Tests and opens a plan's canonical detail route", async () => {
     const { history } = await render("/suites");
+    expect(history.location.pathname).toBe("/tests");
     expect(document.querySelector("h1")?.textContent).toBe("Tests");
-    expect(document.body.textContent).toContain("Release smoke");
-    expect(document.body.textContent).toContain("1 Test");
-    const link = document.querySelector<HTMLAnchorElement>('a[href="/apps/app-1/suites/suite-1"]');
-    expect(link?.getAttribute("aria-label")).toBeNull();
+    const plans = document.querySelector('section[aria-labelledby="plans-heading"]')!;
+    expect(plans.querySelector("h2")?.textContent).toBe("Test plans");
+    expect(plans.textContent).toContain("Release smoke");
+    expect(plans.textContent).toContain("Checkout · 1 test");
+    const link = plans.querySelector<HTMLAnchorElement>('a[href="/apps/app-1/suites/suite-1"]');
+    expect(link?.textContent?.trim()).toBe("Run all");
     await act(async () => link?.click());
     await settle();
     expect(history.location.pathname).toBe("/apps/app-1/suites/suite-1");
   });
 
-  it("keeps Plan search in the URL and restores the list when cleared", async () => {
-    const { history } = await render("/suites");
-    await fill("plan-search", "does not match");
+  it("keeps Tests search in the URL, hides plan groups while searching, and restores them on Clear", async () => {
+    const { history } = await render("/tests");
+    const search = document.querySelector<HTMLInputElement>('input[aria-label="Search tests"]');
+    if (!search) throw new Error("Search tests input missing");
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(search, "does not match");
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
     await settle();
-    expect(history.location.search).toContain("q=");
-    expect(document.body.textContent).toContain("No Plans match");
+    expect(history.location.search).toContain("q=does");
+    expect(document.querySelector('section[aria-labelledby="plans-heading"]')).toBeNull();
     expect(document.querySelector('a[href="/apps/app-1/suites/suite-1"]')).toBeNull();
-    const clear = [...document.querySelectorAll("button")].find(
-      (button) => button.textContent === "Clear search",
-    )!;
-    await act(async () => clear.click());
-    await settle();
+    await clickButton("Clear");
     expect(history.location.search).not.toContain("q=");
+    expect(search.value).toBe("");
     expect(document.querySelector('a[href="/apps/app-1/suites/suite-1"]')).not.toBeNull();
+  });
+
+  it("creates a plan from the New plan dialog on Tests and opens it", async () => {
+    const saveSuite = vi.fn(
+      async (_input: Parameters<SuiteProfileProductService["saveSuite"]>[0]) => suite,
+    );
+    const getSuiteEditor = vi.fn(async () => editor);
+    const { history } = await render("/tests?app=app-1", {
+      suiteService: suiteService({ saveSuite, getSuiteEditor }),
+    });
+    await clickButton("New plan");
+    const dialog = document.querySelector('[role="dialog"]');
+    expect(dialog?.textContent).toContain("New test plan");
+    expect(getSuiteEditor).toHaveBeenCalledWith("app-1");
+    const save = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Save Plan",
+    )!;
+    expect(save.disabled).toBe(true);
+
+    await fill("suite-name", "Nightly checkout");
+    // A name alone is not a plan; it needs at least one test.
+    expect(save.disabled).toBe(true);
+    const testChoice = [...document.querySelectorAll<HTMLElement>('[role="checkbox"]')].find(
+      (box) => box.closest("label")?.textContent?.includes("Complete checkout"),
+    );
+    if (!testChoice) throw new Error("Test checkbox missing");
+    expect(testChoice.getAttribute("aria-checked")).toBe("false");
+    // Choosing the whole row (its label) selects the test.
+    await act(async () => testChoice.closest("label")!.click());
+    await settle();
+    expect(testChoice.getAttribute("aria-checked")).toBe("true");
+    expect(document.body.textContent).toContain("Tests · 1 selected");
+    expect(save.disabled).toBe(false);
+
+    await act(async () => save.click());
+    await settle();
+    expect(saveSuite).toHaveBeenCalledTimes(1);
+    expect(saveSuite.mock.calls[0]?.[0]).toMatchObject({
+      appMapId: "app-1",
+      expectedRevision: 7,
+      name: "Nightly checkout",
+      testIds: ["test-1"],
+      variableIds: [],
+      strategy: "cartesian",
+    });
+    expect(saveSuite.mock.calls[0]?.[0].suiteId).toMatch(/^suite-nightly-checkout-/u);
+    expect(history.location.pathname).toBe("/apps/app-1/suites/suite-1");
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it("keeps a blocked Suite pilot disabled and sends reviewed edits/removal through services", async () => {
@@ -325,7 +412,8 @@ describe("Suite and Environment routes", () => {
     await clickButton("Remove Plan");
     expect(calls.remove).toEqual([{ appMapId: "app-1", suiteId: "suite-1", expectedRevision: 7 }]);
     expect(calls.start).toBe(0);
-    expect(history.location.pathname).toBe("/suites");
+    // Removing a plan returns to Tests, where plans are listed as groups.
+    expect(history.location.pathname).toBe("/tests");
   });
 
   it("labels an unavailable multi-environment result as previewed, not ready", async () => {

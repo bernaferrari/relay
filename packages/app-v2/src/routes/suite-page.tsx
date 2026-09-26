@@ -58,9 +58,10 @@ export function planRunCountLabel(input: {
 }
 
 export function SuitePage() {
-  const { suiteProfileService, catalogService, queryClient, platform } = useRouteContext({
-    from: "__root__",
-  });
+  const { suiteProfileService, catalogService, queryClient, platform, runAcrossService } =
+    useRouteContext({
+      from: "__root__",
+    });
   const { appId, suiteId } = routeApi.useParams();
   const navigate = useNavigate();
   const scope = useRunConfigurationKey(platform, `suite:${suiteId}`, appId);
@@ -158,6 +159,15 @@ export function SuitePage() {
       });
     },
     onSuccess: ({ batchId }) => navigate({ to: "/batches/$batchId", params: { batchId } }),
+  });
+  // A plan runs once at a time. A run lost to a restart keeps the slot until
+  // someone stops it, so offer that right where Run was refused.
+  const restart = useMutation({
+    mutationFn: async (batchId: string) => {
+      await runAcrossService.cancel(batchId);
+      start.reset();
+      await start.mutateAsync();
+    },
   });
   const schedule = useMutation({
     mutationFn: (input: { hour: number; timezone: string }) => {
@@ -556,7 +566,49 @@ export function SuitePage() {
                     : "Relay could not check this Plan."}
                 </FieldError>
               ) : null}
-              {start.error ? (
+              {start.error && unfinishedRunOf(start.error) ? (
+                <div
+                  className="grid gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm"
+                  role="alert"
+                >
+                  <p>
+                    <strong className="font-semibold">
+                      This plan has a run that never finished.
+                    </strong>{" "}
+                    Open it to see where it stopped, or stop it and run the plan again.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      disabled={restart.isPending}
+                      onClick={() => restart.mutate(unfinishedRunOf(start.error)!)}
+                    >
+                      <Play aria-hidden="true" />
+                      {restart.isPending ? "Stopping…" : "Stop it and run again"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      nativeButton={false}
+                      render={
+                        <Link
+                          to="/batches/$batchId"
+                          params={{ batchId: unfinishedRunOf(start.error)! }}
+                        />
+                      }
+                    >
+                      Open it
+                    </Button>
+                  </div>
+                  {restart.error ? (
+                    <p className="text-destructive">
+                      {restart.error instanceof Error
+                        ? restart.error.message
+                        : "Relay could not stop that run."}
+                    </p>
+                  ) : null}
+                </div>
+              ) : start.error ? (
                 <FieldError>
                   {start.error instanceof Error
                     ? start.error.message
@@ -604,4 +656,12 @@ export function SuitePage() {
       ) : null}
     </LibraryPage>
   );
+}
+
+/** The unfinished plan run that blocked a start, if that is why it failed. */
+function unfinishedRunOf(error: unknown): string | undefined {
+  const body = (error as { body?: { code?: unknown; repeatId?: unknown } } | null)?.body;
+  return body?.code === "ACTIVE_REPEAT_EXISTS" && typeof body.repeatId === "string"
+    ? body.repeatId
+    : undefined;
 }

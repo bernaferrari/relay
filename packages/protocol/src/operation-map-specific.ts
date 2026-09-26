@@ -381,7 +381,13 @@ export type SpecificOperationMap = {
   "job.pause": { input: { jobId: string }; output: { job: OperationRecord } };
   "job.resume": { input: { jobId: string }; output: { job: OperationRecord } };
   "run.list": {
-    input: { limit?: number; appMapId?: string; cursor?: string };
+    input: {
+      limit?: number;
+      appMapId?: string;
+      cursor?: string;
+      /** Only each saved Test's newest run, from the whole history. */
+      latestPerTest?: boolean;
+    };
     output: { runs: RunSummaryDto[]; totalCount?: number; nextCursor?: string };
   };
   "run.get": { input: { runId: string }; output: { run: OperationRecord } };

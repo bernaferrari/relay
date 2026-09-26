@@ -52,6 +52,8 @@ export type ProductTestSummary = {
   status: ProductTestStatus;
   updatedAt: number;
   href: string;
+  /** Why the Test cannot run yet ("A step needs fixing"), when it cannot. */
+  setupIssue?: string;
   recentRun?: ProductRunSummary;
 };
 
@@ -211,18 +213,21 @@ function stepHasReview(step: AppMapScenarioTestStep): boolean {
   return false;
 }
 
+/**
+ * Why a Test cannot run yet, in plain words, or undefined when it can.
+ * A Test that has not been confirmed by a run is still runnable: running it
+ * is how it gets confirmed.
+ */
+export function testSetupIssue(map: AppMap, test: AppMapScenarioTest): string | undefined {
+  if (unrecordedProductName(test.name)) return "Not recorded yet";
+  if (test.steps.length === 0) return "No steps yet";
+  if (test.steps.some(stepHasReview)) return "A step needs fixing";
+  if (scenarioTestOriginMissingEvidence(map, test)) return "Missing its first screen";
+  return undefined;
+}
+
 function testStatus(map: AppMap, test: AppMapScenarioTest): ProductTestStatus {
-  if (unrecordedProductName(test.name)) return "needs-review";
-  if (test.steps.length === 0 || test.steps.some(stepHasReview)) return "needs-review";
-  if (scenarioTestOriginMissingEvidence(map, test)) return "needs-review";
-  const validation = test.validation;
-  if (
-    validation &&
-    (validation.status !== "passed" || validation.testUpdatedAt !== test.updatedAt)
-  ) {
-    return "needs-review";
-  }
-  return "ready";
+  return testSetupIssue(map, test) ? "needs-review" : "ready";
 }
 
 function flattenCount(steps: readonly AppMapScenarioTestStep[]): number {
@@ -489,6 +494,7 @@ function projectTestSummary(
     appName: map.name,
     stepCount: flattenCount(test.steps),
     status: testStatus(map, test),
+    ...(testSetupIssue(map, test) ? { setupIssue: testSetupIssue(map, test)! } : {}),
     updatedAt: test.updatedAt,
     href: routeUrls.test(test.id),
     ...(recentRun ? { recentRun } : {}),
@@ -595,8 +601,12 @@ export function createProductCatalog(client: RelayInvokeClient): ProductCatalog 
   return {
     async listTests(filter = {}) {
       const appMaps = await maps(filter.appMapId);
+      // Each Test's newest run from the whole history, not just a recent page.
       const runs = await operations
-        .invoke("run.list", filter.appMapId ? { appMapId: filter.appMapId } : {})
+        .invoke("run.list", {
+          latestPerTest: true,
+          ...(filter.appMapId ? { appMapId: filter.appMapId } : {}),
+        })
         .then((result) => result.runs);
       return projectProductTests(appMaps, runs).filter((test) => matchesTest(test, filter));
     },

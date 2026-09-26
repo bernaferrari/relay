@@ -22,7 +22,6 @@ const deepLinks = [
   "/tests/test-1/edit",
   "/tests/test-1/record",
   "/tests/test-1/run-across",
-  "/suites",
   "/apps/app-1/suites/suite-1",
   "/environments",
   "/environments/chrome-staging",
@@ -62,10 +61,20 @@ describe("React router", () => {
     expect(router.state.matches).toHaveLength(2);
   });
 
-  it("opens Today from the root", async () => {
-    const router = testRouter(["/"]);
+  it.each(["/", "/home"])("opens Tests as home from %s", async (path) => {
+    const router = testRouter([path]);
     await router.load();
-    expect(router.state.location.pathname).toBe("/home");
+    expect(router.state.location.pathname).toBe("/tests");
+    expect(router.state.status).toBe("idle");
+  });
+
+  it("redirects the retired Plans list to Tests, where plans are groups", async () => {
+    const router = testRouter(["/suites"]);
+    await router.load();
+    expect(router.state.location.pathname).toBe("/tests");
+    router.history.back();
+    await router.load();
+    expect(router.state.location.pathname).not.toBe("/suites");
   });
 
   it("redirects the retired Evidence tab to Results", async () => {

@@ -56,6 +56,7 @@ import {
   VISUAL_REVIEW_ACTIONS,
   type PersistedRun,
   visualTargetKey,
+  catalogLatestRunPerTest,
 } from "@relay/core";
 import type {
   CampaignRepairTarget,
@@ -204,6 +205,14 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
     const limit = parseLimit(url.searchParams.get("limit"), 40);
     const appMapId = url.searchParams.get("appMapId")?.trim() || undefined;
     const cursor = url.searchParams.get("cursor")?.trim() || undefined;
+    if (scope.localTrusted && url.searchParams.get("latestPerTest") === "true") {
+      const runs = await catalogLatestRunPerTest(runsRoot(), appMapId);
+      json(response, 200, {
+        ...(await attachDurableWorkflowIds({ runs, totalCount: runs.length }, scope)),
+        root: runsRoot(),
+      });
+      return true;
+    }
     if (scope.localTrusted) {
       try {
         const page = await listRunSummariesPage({

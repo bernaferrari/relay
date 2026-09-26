@@ -1,79 +1,311 @@
-import { TestLibraryNavigation } from "../components/test-library-navigation";
-import { RunThumb } from "../components/run-thumb";
-import { Play } from "lucide-react";
-import { StatusPill, runStateOf } from "../components/run-status";
-import { libraryRowSurface } from "../components/library-row-styles";
 /** @jsxImportSource react */
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useQueries, useQuery } from "@tanstack/react-query";
+import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import type { ProductTestSummary } from "@relay/product/catalog";
 import { Button } from "@relay/ui-react/components/button";
-import { useQuery } from "@tanstack/react-query";
-import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { FilterSelect } from "../components/filter-select";
-import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
-import { EmptyState, OutcomeMark, ReadinessMark } from "../components/product-patterns";
-import { LibraryPage, PageHeader } from "../components/page-layout";
+import {
+  ChevronRight,
+  CircleDot,
+  CircleX,
+  Clock,
+  Eye,
+  Layers3,
+  Play,
+  Plus,
+  Search,
+  X,
+} from "lucide-react";
+import { Input } from "@relay/ui-react/components/input";
+import { EmptyState, ReadinessMark } from "../components/product-patterns";
+import { LibraryPage } from "../components/page-layout";
+import { ResultsBar } from "../components/results-bar";
+import { RunThumb } from "../components/run-thumb";
+import { StatusPill, runStateOf, type RunState } from "../components/run-status";
+import { libraryRowSurface } from "../components/library-row-styles";
 import { catalogQueryKeys } from "../data/catalog-queries";
-import { attentionLinkLabel, homeAttentionRuns } from "../data/home-run-attention";
+import { createReviewProductService, reviewQueryKeys } from "../data/review-product-service";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { runQueryKeys } from "../data/run-queries";
 import { readRunPointer } from "../data/run-pointer";
 import { readWorkflowPointer } from "../data/workflow-pointer";
+import type { ProductPlanSchedule, ProductSuite } from "../data/suite-profile-product-service";
 import { PageLoading, RecordingProblem } from "./recording-shared";
+import { NewPlanDialog } from "./new-plan-dialog";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
-import { productLinkClassName } from "../lib/class-names";
+
 const routeApi = getRouteApi("/tests");
 
-type TestFilter = "all" | "ready" | "needs-review";
 type ResultFilter = "all" | "passed" | "failed" | "running" | "never";
 
+/**
+ * Tests is where a person starts: what needs them, their test plans (each a
+ * group with one Run button), and every other Test. Search flattens it all.
+ */
 export function TestsPage() {
-  const { catalogService, platform, productService } = useRouteContext({
+  const { catalogService, platform, productService, suiteProfileService } = useRouteContext({
     from: "__root__",
   });
-  const search = routeApi.useSearch() as {
-    app?: unknown;
-    status?: unknown;
-    result?: unknown;
-    q?: unknown;
-  };
+  const search = routeApi.useSearch() as { app?: unknown; result?: unknown; q?: unknown };
   const navigate = useNavigate({ from: "/tests" });
   const [query, setQuery] = useState(() => (typeof search.q === "string" ? search.q : ""));
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
-  const status = testFilter(search.status);
   const result = resultFilter(search.result);
   const app = typeof search.app === "string" ? search.app : "";
   useEffect(() => {
     setQuery(typeof search.q === "string" ? search.q : "");
   }, [search.q]);
+
   const tests = useQuery({
     queryKey: catalogQueryKeys.tests,
     queryFn: () => catalogService.listTests(),
     staleTime: 15_000,
   });
-  const sharedTestIds = useMemo(() => {
-    const seen = new Set<string>();
-    const shared = new Set<string>();
-    for (const test of tests.data ?? []) {
-      if (seen.has(test.id)) shared.add(test.id);
-      seen.add(test.id);
-    }
-    return shared;
-  }, [tests.data]);
-  const runs = useQuery({
-    queryKey: catalogQueryKeys.runs,
-    queryFn: () => catalogService.listRuns(),
+  const suites = useQuery({
+    queryKey: ["suites", "all"],
+    queryFn: () => suiteProfileService.listSuites(undefined),
     staleTime: 15_000,
-    retry: false,
   });
+  const schedules = useQueries({
+    queries: (suites.data ?? []).map((suite) => ({
+      queryKey: ["suites", suite.appMapId, suite.id, "schedules"],
+      queryFn: () => suiteProfileService.listPlanSchedules?.({ combineId: suite.id }) ?? [],
+      staleTime: 60_000,
+      enabled: typeof suiteProfileService.listPlanSchedules === "function",
+    })),
+  });
+  const review = useMemo(() => createReviewProductService(platform), [platform]);
+  const inbox = useQuery({
+    queryKey: reviewQueryKeys.inbox(),
+    queryFn: () => review.inbox(),
+    staleTime: 30_000,
+  });
+  const inProgress = useInProgress(app);
+
+  const all = tests.data ?? [];
+  // A Test id can exist in two Apps; its App disambiguates links.
+  const shared = useMemo(() => {
+    const seen = new Set<string>();
+    const repeated = new Set<string>();
+    for (const test of all) (seen.has(test.id) ? repeated : seen).add(test.id);
+    return repeated;
+  }, [all]);
+  const byKey = useMemo(
+    () => new Map(all.map((test) => [`${test.appMapId}:${test.id}`, test])),
+    [all],
+  );
+  const inApp = (test: ProductTestSummary) => !app || test.appMapId === app;
+  const toReview = inbox.data?.entries
+    .filter((entry) => !app || entry.appMapId === app)
+    .reduce((total, entry) => total + entry.items.length, 0);
+  const failing = all.filter((test) => inApp(test) && runStateOf(test.recentRun) === "failed");
+
+  const plans = useMemo(
+    () =>
+      (suites.data ?? [])
+        .filter((suite) => !app || suite.appMapId === app)
+        .map((suite, index) => {
+          const members = suite.tests.flatMap((member) => {
+            const test = byKey.get(`${suite.appMapId}:${member.id}`);
+            return test ? [test] : [];
+          });
+          const last = Math.max(0, ...members.map((test) => runTime(test.recentRun)));
+          const schedule = schedules[(suites.data ?? []).indexOf(suite)]?.data?.find(
+            (item) => item.enabled,
+          );
+          return { suite, members, last, schedule, index };
+        })
+        .sort((left, right) => right.last - left.last || left.index - right.index),
+    [app, byKey, schedules, suites.data],
+  );
+  const planned = new Set(
+    plans.flatMap(({ suite }) => suite.tests.map((test) => `${suite.appMapId}:${test.id}`)),
+  );
+  const loose = all
+    .filter((test) => inApp(test) && !planned.has(`${test.appMapId}:${test.id}`))
+    .sort((left, right) => runTime(right.recentRun) - runTime(left.recentRun));
+
+  const flat = Boolean(deferredQuery) || result !== "all";
+  const matches = all
+    .filter(
+      (test) =>
+        inApp(test) &&
+        matchesResult(test, result) &&
+        (!deferredQuery ||
+          `${test.name} ${test.appName}`.toLocaleLowerCase().includes(deferredQuery)),
+    )
+    .sort((left, right) => runTime(right.recentRun) - runTime(left.recentRun));
+
+  const returnFocus = useCollectionReturnFocus(
+    "relay:focus:/tests",
+    tests.data ? `${flat}:${matches.length}:${plans.length}:${loose.length}` : undefined,
+    "/tests/",
+  );
+
+  function updateSearch(next: { q?: string; result?: ResultFilter }) {
+    void navigate({
+      replace: true,
+      search: (previous) => ({
+        ...previous,
+        ...(next.q === undefined ? {} : { q: next.q || undefined }),
+        ...(next.result === undefined
+          ? {}
+          : { result: next.result === "all" ? undefined : next.result }),
+      }),
+    });
+  }
+
+  return (
+    <LibraryPage className="max-w-5xl" onClickCapture={returnFocus.onClickCapture}>
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="grid gap-1">
+          <h1 className="text-3xl leading-9 font-semibold tracking-tight">Tests</h1>
+          <p className="text-sm text-muted-foreground">
+            {tests.data
+              ? `${all.filter(inApp).length} tests${plans.length ? ` · ${plans.length} plans` : ""}`
+              : " "}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <NewPlanDialog {...(app ? { appId: app } : {})} />
+          <Button nativeButton={false} render={<Link to="/tests/new" />}>
+            <Plus aria-hidden="true" /> New test
+          </Button>
+        </div>
+      </header>
+
+      <AttentionStrip
+        toReview={toReview}
+        failing={failing.length}
+        inProgress={inProgress}
+        onShowFailing={() => updateSearch({ result: "failed" })}
+      />
+
+      <div className="relative mt-6">
+        <Search
+          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <Input
+          aria-label="Search tests"
+          className="h-10 pl-9"
+          placeholder="Search tests"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.currentTarget.value);
+            updateSearch({ q: event.currentTarget.value });
+          }}
+        />
+      </div>
+
+      {tests.isPending ? <PageLoading label="Loading tests…" /> : null}
+      <RecordingProblem
+        error={tests.data === undefined ? tests.error : null}
+        onRetry={() => void tests.refetch()}
+        retrying={tests.isFetching}
+        layout="centered"
+      />
+
+      {tests.data && !all.length ? (
+        <EmptyState
+          title="No tests yet"
+          detail="Enter a website, click through it, and Relay saves the steps as a test."
+          action={
+            <Button nativeButton={false} render={<Link to="/tests/new" />}>
+              <Plus aria-hidden="true" /> New test
+            </Button>
+          }
+        />
+      ) : null}
+
+      {tests.data && all.length && flat ? (
+        <section className="mt-4" aria-label="Matching tests">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              {matches.length} {matches.length === 1 ? "test" : "tests"}
+              {result === "failed" ? " failing" : ""}
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setQuery("");
+                updateSearch({ q: "", result: "all" });
+              }}
+            >
+              <X aria-hidden="true" /> Clear
+            </Button>
+          </div>
+          <TestList tests={matches} shared={shared} />
+        </section>
+      ) : null}
+
+      {tests.data && all.length && !flat ? (
+        <div className="mt-6 grid gap-8">
+          {plans.length ? (
+            <section aria-labelledby="plans-heading" className="grid gap-3">
+              <SectionHeading id="plans-heading" title="Test plans">
+                Run a group of tests together, by hand or every day.
+              </SectionHeading>
+              <ul className="m-0 grid list-none gap-3 p-0">
+                {plans.map(({ suite, members, last, schedule }) => (
+                  <PlanGroup
+                    key={`${suite.appMapId}:${suite.id}`}
+                    suite={suite}
+                    members={members}
+                    last={last}
+                    shared={shared}
+                    {...(schedule ? { schedule } : {})}
+                  />
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          {loose.length ? (
+            <section aria-labelledby="loose-heading" className="grid gap-3">
+              <SectionHeading id="loose-heading" title={plans.length ? "Other tests" : "All tests"}>
+                {plans.length ? "Tests that are not in a plan yet." : null}
+              </SectionHeading>
+              <TestList tests={loose} shared={shared} />
+            </section>
+          ) : null}
+        </div>
+      ) : null}
+    </LibraryPage>
+  );
+}
+
+function SectionHeading({
+  id,
+  title,
+  children,
+}: {
+  id: string;
+  title: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="grid gap-0.5">
+      <h2 id={id} className="text-base font-semibold">
+        {title}
+      </h2>
+      {children ? <p className="text-sm text-muted-foreground">{children}</p> : null}
+    </div>
+  );
+}
+
+type InProgress = { label: string; action: string; to: "recording" | "run"; id: string };
+
+/**
+ * Work this person started that is still going: a recording or a run. With an
+ * App chosen, work that belongs to another App stays out; a recording whose App
+ * is not known yet is kept so it cannot be lost.
+ */
+function useInProgress(app: string): InProgress[] {
+  const { platform, productService, catalogService } = useRouteContext({ from: "__root__" });
   const recording = useQuery({
     queryKey: recordingQueryKeys.pointer,
     queryFn: async () => (await readWorkflowPointer(platform)) ?? null,
-    staleTime: Infinity,
-  });
-  const runPointer = useQuery({
-    queryKey: runQueryKeys.pointer,
-    queryFn: async () => (await readRunPointer(platform)) ?? null,
     staleTime: Infinity,
   });
   const recordingState = useQuery({
@@ -82,262 +314,203 @@ export function TestsPage() {
     enabled: Boolean(recording.data),
     staleTime: 15_000,
   });
-  const scopedRuns = (runs.data ?? []).filter((item) => !app || item.appMapId === app);
-  const recordingAppId = recordingState.data?.snapshot?.frozen?.appMapId;
-  const recordingStage = recordingState.data?.snapshot?.stage;
-  const recordingFinished = recordingStage === "committed" || recordingStage === "cancelled";
-  const reviewing = recordingStage === "reviewing";
-  const resumeLabel = reviewing ? "Review recording" : "Continue recording";
-  const resumeRecordingId =
-    !recording.data || recordingFinished
-      ? undefined
-      : !app || !recordingAppId || recordingAppId === app
-        ? recording.data
-        : undefined;
-  const resumeRunId = scopedRuns.find(
+  const runPointer = useQuery({
+    queryKey: runQueryKeys.pointer,
+    queryFn: async () => (await readRunPointer(platform)) ?? null,
+    staleTime: Infinity,
+  });
+  const runs = useQuery({
+    queryKey: catalogQueryKeys.runs,
+    queryFn: () => catalogService.listRuns(),
+    staleTime: 15_000,
+    retry: false,
+  });
+  const items: InProgress[] = [];
+  const stage = recordingState.data?.snapshot?.stage;
+  const recordingApp = recordingState.data?.snapshot?.frozen?.appMapId;
+  if (
+    recording.data &&
+    stage &&
+    stage !== "committed" &&
+    stage !== "cancelled" &&
+    (!app || !recordingApp || recordingApp === app)
+  ) {
+    items.push({
+      label: recordingState.data?.snapshot?.frozen?.title ?? "Recording",
+      action: stage === "reviewing" ? "Review steps" : "Continue recording",
+      to: "recording",
+      id: recording.data,
+    });
+  }
+  const run = runs.data?.find(
     (item) =>
-      item.id === runPointer.data?.runId && (item.phase === "running" || item.phase === "queued"),
-  )?.id;
-  const apps = useMemo(
-    () =>
-      [...new Map((tests.data ?? []).map((test) => [test.appMapId, test.appName])).entries()].sort(
-        ([, left], [, right]) => left.localeCompare(right),
-      ),
-    [tests.data],
+      item.id === runPointer.data?.runId &&
+      (item.phase === "running" || item.phase === "queued") &&
+      (!app || item.appMapId === app),
   );
-  const visibleTests = useMemo(
-    () =>
-      (tests.data ?? [])
-        .filter(
-          (test) =>
-            (status === "all" || test.status === status) &&
-            matchesResult(test, result) &&
-            (!app || test.appMapId === app) &&
-            (!deferredQuery ||
-              `${test.name} ${test.appName}`.toLocaleLowerCase().includes(deferredQuery)),
-        )
-        .sort(
-          (left, right) =>
-            right.updatedAt - left.updatedAt ||
-            left.name.localeCompare(right.name) ||
-            left.appName.localeCompare(right.appName),
-        ),
-    [app, deferredQuery, result, status, tests.data],
-  );
-  const visibleTestIds = new Set(visibleTests.map((test) => test.id));
-  const attentionRuns = homeAttentionRuns(scopedRuns).filter(
-    (item) => !item.testId || visibleTestIds.has(item.testId),
-  );
-  const returnFocus = useCollectionReturnFocus("relay:focus:/tests", visibleTests, "/tests/");
-  const resultLabel = resultContext(status, app, apps);
-  const statusOptions = [
-    { value: "all", label: "All statuses" },
-    { value: "ready", label: "Ready" },
-    { value: "needs-review", label: "Needs setup" },
-  ] as const;
-  const resultOptions = [
-    { value: "all", label: "All results" },
-    { value: "passed", label: "Passed" },
-    { value: "failed", label: "Failed" },
-    { value: "running", label: "Running" },
-    { value: "never", label: "Never run" },
-  ] as const;
-  function updateFilter(next: { app?: string; status?: TestFilter; result?: ResultFilter }) {
-    void navigate({
-      replace: true,
-      search: (previous) => ({
-        ...previous,
-        ...(next.app === undefined ? {} : { app: next.app || undefined }),
-        ...(next.status === undefined
-          ? {}
-          : { status: next.status === "all" ? undefined : next.status }),
-        ...(next.result === undefined
-          ? {}
-          : { result: next.result === "all" ? undefined : next.result }),
-      }),
-    });
-  }
+  if (run) items.push({ label: run.testName ?? run.title, action: "Watch", to: "run", id: run.id });
+  return items;
+}
 
-  function clearFilters() {
-    setQuery("");
-    void navigate({
-      replace: true,
-      search: (previous) => ({
-        ...previous,
-        app: undefined,
-        status: undefined,
-        result: undefined,
-        q: undefined,
-      }),
-    });
-  }
-
+function AttentionStrip({
+  toReview,
+  failing,
+  inProgress,
+  onShowFailing,
+}: {
+  toReview: number | undefined;
+  failing: number;
+  inProgress: readonly InProgress[];
+  onShowFailing(): void;
+}) {
+  if (!toReview && !failing && !inProgress.length) return null;
+  const chip =
+    "flex min-h-11 items-center gap-2.5 rounded-xl border px-3.5 py-2 text-sm font-medium outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-ring";
   return (
-    <LibraryPage
-      className="mx-auto flex min-h-full w-full max-w-5xl flex-col"
-      onClickCapture={returnFocus.onClickCapture}
-    >
-      <PageHeader
-        title="Tests"
-        description="A test is a saved journey through your app. Run it on its own, or include it in a test plan."
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              nativeButton={false}
-              variant="default"
-              render={<Link to="/tests/new" search={app ? { app } : {}} />}
-            >
-              New Test
-            </Button>
-          </div>
-        }
-      />
-
-      <TestLibraryNavigation active="tests" app={app} />
-
-      {resumeRecordingId || resumeRunId ? (
-        <div
-          className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3"
-          aria-label="Resume work"
+    <div className="mt-5 flex flex-wrap gap-2" aria-label="Needs you">
+      {inProgress.map((item) => (
+        <Link
+          key={item.id}
+          className={`${chip} border-brand/30 bg-brand-soft text-foreground hover:border-brand/60`}
+          {...(item.to === "recording"
+            ? { to: "/recordings/$recordingId", params: { recordingId: item.id } }
+            : { to: "/runs/$runId", params: { runId: item.id } })}
         >
-          <div className="min-w-0">
-            <strong id="tests-resume-title" className="block text-sm font-semibold">
-              {resumeRecordingId
-                ? reviewing
-                  ? "Your recording is ready to review"
-                  : "Continue your test"
-                : "A Run is in progress"}
-            </strong>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {resumeRecordingId
-                ? reviewing
-                  ? "Review the captured steps, then save your test."
-                  : "Your captured steps are saved."
-                : "See how the current Run is going."}
-            </p>
+          <CircleDot
+            className="size-4 animate-pulse text-brand motion-reduce:animate-none"
+            aria-hidden="true"
+          />
+          <span className="max-w-64 truncate">{item.label}</span>
+          <span className="text-brand">{item.action}</span>
+        </Link>
+      ))}
+      {toReview ? (
+        <Link
+          to="/review"
+          className={`${chip} border-border bg-card hover:border-warning/60 hover:bg-warning/5`}
+        >
+          <Eye className="size-4 text-warning-foreground" aria-hidden="true" />
+          {toReview} {toReview === 1 ? "screenshot" : "screenshots"} to review
+          <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
+        </Link>
+      ) : null}
+      {failing ? (
+        <button
+          type="button"
+          onClick={onShowFailing}
+          className={`${chip} border-border bg-card hover:border-destructive/50 hover:bg-destructive/5`}
+        >
+          <CircleX className="size-4 text-destructive" aria-hidden="true" />
+          {failing} {failing === 1 ? "test" : "tests"} failing
+          <ChevronRight className="size-4 text-muted-foreground" aria-hidden="true" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function PlanGroup({
+  suite,
+  members,
+  last,
+  schedule,
+  shared,
+}: {
+  suite: ProductSuite;
+  members: readonly ProductTestSummary[];
+  last: number;
+  schedule?: ProductPlanSchedule;
+  shared: ReadonlySet<string>;
+}) {
+  const [open, setOpen] = useState(false);
+  const states: RunState[] = suite.tests.map((member) =>
+    runStateOf(members.find((test) => test.id === member.id)?.recentRun),
+  );
+  const panelId = `plan-${suite.appMapId}-${suite.id}`;
+  return (
+    <li className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex items-center gap-3 p-3 pr-4">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={panelId}
+          onClick={() => setOpen((value) => !value)}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <ChevronRight
+            className={`size-4 shrink-0 text-muted-foreground transition-transform duration-150 ease-out ${open ? "rotate-90" : ""}`}
+            aria-hidden="true"
+          />
+          <span
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand"
+            aria-hidden="true"
+          >
+            <Layers3 className="size-4.5" />
+          </span>
+          <span className="grid min-w-0 flex-1 gap-0.5">
+            <strong className="truncate text-sm font-semibold">{suite.name}</strong>
+            <span className="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">
+              {suite.appName} · {suite.tests.length} {suite.tests.length === 1 ? "test" : "tests"}
+              {schedule ? (
+                <>
+                  {" · "}
+                  <Clock className="size-3 shrink-0" aria-hidden="true" />
+                  {scheduleLabel(schedule)}
+                </>
+              ) : null}
+              {last ? ` · ${relativeTime(last)}` : ""}
+            </span>
+          </span>
+          <span className="hidden w-48 shrink-0 md:block">
+            <ResultsBar states={states} />
+          </span>
+        </button>
+        <Button
+          nativeButton={false}
+          variant="soft"
+          size="sm"
+          render={
+            <Link
+              to="/apps/$appId/suites/$suiteId"
+              params={{ appId: suite.appMapId, suiteId: suite.id }}
+            />
+          }
+        >
+          <Play aria-hidden="true" /> Run all
+        </Button>
+      </div>
+      {open ? (
+        <div id={panelId} className="border-t border-border">
+          <div className="px-4 pt-3 md:hidden">
+            <ResultsBar states={states} />
           </div>
-          {resumeRecordingId ? (
-            <Link
-              className="text-sm font-semibold text-foreground"
-              to="/recordings/$recordingId"
-              params={{ recordingId: resumeRecordingId }}
-            >
-              {resumeLabel}
-            </Link>
-          ) : resumeRunId ? (
-            <Link
-              className="text-sm font-semibold text-foreground"
-              to="/runs/$runId"
-              params={{ runId: resumeRunId }}
-            >
-              Open Run
-            </Link>
-          ) : null}
+          <TestList tests={members} shared={shared} bare />
         </div>
       ) : null}
+    </li>
+  );
+}
 
-      <LibraryToolbar
-        label="Filter Tests"
-        search={
-          <LibrarySearch
-            id="test-search"
-            label="Search Tests"
-            value={query}
-            placeholder="Search by Test or app"
-            onChange={(next) => {
-              setQuery(next);
-              void navigate({
-                replace: true,
-                search: (previous) => ({ ...previous, q: next || undefined }),
-              });
-            }}
-          />
-        }
-        filters={
-          <>
-            <FilterSelect
-              compact
-              label="Readiness"
-              value={status}
-              options={statusOptions}
-              onValueChange={(value) => updateFilter({ status: testFilter(value) })}
-            />
-            <FilterSelect
-              compact
-              label="Last result"
-              value={result}
-              options={resultOptions}
-              onValueChange={(value) => updateFilter({ result: resultFilter(value) })}
-            />
-          </>
-        }
-      />
-
-      {tests.isPending ? <PageLoading label="Loading saved Tests…" /> : null}
-      <RecordingProblem
-        error={tests.error}
-        onRetry={() => void tests.refetch()}
-        retrying={tests.isFetching}
-        layout="centered"
-      />
-
-      {!tests.isPending && !tests.isError && visibleTests.length ? (
-        <section className="mt-3" aria-labelledby="saved-tests-title">
-          <div className="flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
-            <h2 id="saved-tests-title" className="text-sm font-semibold tabular-nums">
-              {visibleTests.length === 1 ? "1 Test" : `${visibleTests.length} Tests`}
-            </h2>
-            {attentionRuns.length ? (
-              <Link
-                to="/runs"
-                className="text-xs text-muted-foreground hover:text-foreground hover:underline"
-                aria-label="Results that need attention"
-              >
-                {attentionLinkLabel(attentionRuns)} →
-              </Link>
-            ) : resultLabel ? (
-              <span className="text-xs text-muted-foreground" aria-live="polite">
-                {resultLabel}
-              </span>
-            ) : null}
-          </div>
-          <ul className="m-0 list-none overflow-hidden rounded-xl border border-border/60 p-0 [&>li]:border-b [&>li]:border-border/60 [&>li:last-child]:border-b-0">
-            {visibleTests.map((test) => (
-              <TestRow
-                key={`${test.appMapId}:${test.id}`}
-                test={sharedTestIds.has(test.id) ? { ...test, sharedId: true } : test}
-              />
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      {!tests.isPending && !tests.isError && !visibleTests.length ? (
-        tests.data?.length ? (
-          <EmptyState
-            title="No Tests match these filters"
-            detail="Try another name, app, or status. Your saved Tests have not changed."
-            action={
-              <Button variant="ghost" size="sm" onClick={clearFilters}>
-                Clear filters
-              </Button>
-            }
-          />
-        ) : (
-          <div className="flex flex-1 items-center justify-center">
-            <EmptyState
-              title="Create your first test"
-              detail="Open your app and record the steps you want to repeat, or ask Relay to explore one."
-              action={
-                <Link className={productLinkClassName} to="/tests/new">
-                  Open your app
-                </Link>
-              }
-            />
-          </div>
-        )
-      ) : null}
-    </LibraryPage>
+function TestList({
+  tests,
+  shared,
+  bare = false,
+}: {
+  tests: readonly ProductTestSummary[];
+  shared: ReadonlySet<string>;
+  bare?: boolean;
+}) {
+  return (
+    <ul
+      className={`m-0 grid list-none divide-y divide-border p-0 ${bare ? "" : "overflow-hidden rounded-xl border border-border bg-card"}`}
+    >
+      {tests.map((test) => (
+        <TestRow
+          key={`${test.appMapId}:${test.id}`}
+          test={shared.has(test.id) ? { ...test, sharedId: true } : test}
+        />
+      ))}
+    </ul>
   );
 }
 
@@ -364,7 +537,11 @@ function TestRow({ test }: { test: ProductTestSummary & { sharedId?: boolean } }
           </span>
           <span className="col-start-2 flex min-w-0 items-center gap-2 text-xs text-muted-foreground lg:col-start-auto">
             {test.status !== "ready" ? (
-              <ReadinessMark status={test.status} name={test.name} />
+              <ReadinessMark
+                status={test.status}
+                name={test.name}
+                {...(test.setupIssue ? { issue: test.setupIssue } : {})}
+              />
             ) : state ? (
               <StatusPill state={state} />
             ) : null}
@@ -389,7 +566,7 @@ function TestRow({ test }: { test: ProductTestSummary & { sharedId?: boolean } }
           }
         >
           {test.status === "needs-review" ? (
-            "Review steps"
+            "Fix"
           ) : (
             <>
               <Play aria-hidden="true" /> Run
@@ -401,8 +578,12 @@ function TestRow({ test }: { test: ProductTestSummary & { sharedId?: boolean } }
   );
 }
 
-function testFilter(value: unknown): TestFilter {
-  return value === "ready" || value === "needs-review" ? value : "all";
+function scheduleLabel(schedule: ProductPlanSchedule): string {
+  if (schedule.hour === undefined) return "Scheduled";
+  const time = new Date(2000, 0, 1, schedule.hour).toLocaleTimeString(undefined, {
+    hour: "numeric",
+  });
+  return `Daily ${time}`;
 }
 
 function resultFilter(value: unknown): ResultFilter {
@@ -413,24 +594,14 @@ function resultFilter(value: unknown): ResultFilter {
 
 function matchesResult(test: ProductTestSummary, result: ResultFilter): boolean {
   if (result === "all") return true;
-  if (!test.recentRun) return result === "never";
-  if (result === "running")
-    return test.recentRun.phase === "queued" || test.recentRun.phase === "running";
-  if (result === "passed") return test.recentRun.outcome === "passed";
-  if (result === "failed")
-    return test.recentRun.phase === "failed" || test.recentRun.outcome === "product-failure";
-  return false;
+  const state = runStateOf(test.recentRun);
+  if (result === "never") return !test.recentRun;
+  if (result === "running") return state === "running";
+  return state === result;
 }
 
-function resultContext(status: TestFilter, app: string, apps: readonly [string, string][]) {
-  if (app) return apps.find(([id]) => id === app)?.[1] ?? "Selected app";
-  if (status === "ready") return "Ready to run";
-  if (status === "needs-review") return "Needs setup";
-  return undefined;
-}
-
-function runTime(run: NonNullable<ProductTestSummary["recentRun"]>): number {
-  return run.finishedAt ?? run.startedAt ?? run.queuedAt;
+function runTime(run: ProductTestSummary["recentRun"]): number {
+  return run ? (run.finishedAt ?? run.startedAt ?? run.queuedAt) : 0;
 }
 
 function relativeTime(value: number): string {
@@ -438,6 +609,5 @@ function relativeTime(value: number): string {
   if (elapsed < 60_000) return "Just now";
   if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m ago`;
   if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h ago`;
-  if (elapsed < 604_800_000) return `${Math.floor(elapsed / 86_400_000)}d ago`;
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(value);
+  return `${Math.floor(elapsed / 86_400_000)}d ago`;
 }
