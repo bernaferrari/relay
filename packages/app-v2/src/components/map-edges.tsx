@@ -508,6 +508,7 @@ export function MapEdges({
                 strokeWidth="1.5"
               />
             ) : null}
+            <g data-slot="map-edge-label">
             <rect
               x={geometry.label.x - geometry.label.width / 2}
               y={geometry.label.y - 14}
@@ -528,6 +529,7 @@ export function MapEdges({
                 Destination not recorded
               </text>
             ) : null}
+            </g>
           </g>
         );
       })}

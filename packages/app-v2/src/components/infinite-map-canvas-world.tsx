@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
-import { RotateCcw } from "lucide-react";
+import { Compass, RotateCcw } from "lucide-react";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 import { MapAccessibilityOverlay } from "./map-accessibility-overlay";
 import { MapEdges, isRoutineReturn } from "./map-edges";
@@ -131,7 +131,13 @@ export function MapCanvasWorld({
       <MapEdges
         horizontal={layoutMode === "horizontal"}
         selectedPathId={selectedPathId}
-        paths={originPaths.filter((path) => path.id === selectedPathId || !isRoutineReturn(path))}
+        paths={originPaths.filter(
+          (path) =>
+            path.id === selectedPathId ||
+            // Unexplored controls stay folded into one chip until their screen is selected.
+            (!isRoutineReturn(path) &&
+              (Boolean(path.toScreenId) || path.fromScreenId === selectedScreenId)),
+        )}
         positions={positions}
         markerId={markerId}
         selectedScreenId={selectedScreenId}
@@ -249,7 +255,8 @@ export function MapCanvasWorld({
             }
           >
             <span
-              className={`flex h-5 w-full shrink-0 items-end justify-center text-center text-sm font-medium leading-tight ${selectedNode ? "text-info" : "text-muted-foreground"}`}
+              data-slot="map-screen-title"
+              className={`flex h-5 w-full shrink-0 items-end justify-center text-center text-sm font-medium leading-tight ${selectedNode ? "text-brand" : "text-foreground/80"}`}
             >
               <MapFrameTitle title={screen.title} />
             </span>
@@ -258,6 +265,7 @@ export function MapCanvasWorld({
                 dimensions={imageDimensions.get(screen.id)}
                 selected={selectedNode}
                 align="top"
+                framed
                 uri={screen.screenshotUri}
                 load={loadScreenshot}
                 title={screen.title}
@@ -289,8 +297,13 @@ export function MapCanvasWorld({
         const returns = visiblePaths.filter(
           (path) => path.fromScreenId === screen.id && isRoutineReturn(path),
         );
+        const unexplored =
+          selectedScreenId === screen.id
+            ? 0
+            : visiblePaths.filter((path) => path.fromScreenId === screen.id && !path.toScreenId)
+                .length;
         const position = positions.get(screen.id);
-        if (!position || !returns.length) return null;
+        if (!position || (!returns.length && !unexplored)) return null;
         const image = containedImageRect(
           {
             x: position.x,
@@ -308,6 +321,7 @@ export function MapCanvasWorld({
         return (
           <div
             key={`returns-${screen.id}`}
+            data-slot="map-screen-chips"
             className="absolute left-(--box-left) top-(--box-top) z-20 flex w-(--box-width) flex-col items-center gap-1"
             style={
               {
@@ -339,6 +353,16 @@ export function MapCanvasWorld({
                 </span>
               </button>
             ))}
+            {unexplored ? (
+              <button
+                type="button"
+                className="flex max-w-full items-center gap-1 rounded-full border border-dashed border-border bg-card px-2.5 py-1 text-xs text-muted-foreground hover:border-brand/50 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+                onClick={() => onSelectScreen(screen.id)}
+              >
+                <Compass className="size-3 shrink-0" aria-hidden="true" />
+                <span className="truncate">{unexplored} not explored yet</span>
+              </button>
+            ) : null}
           </div>
         );
       })}

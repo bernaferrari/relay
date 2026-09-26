@@ -53,17 +53,23 @@ export function zoomMapAtPoint(
   };
 }
 
+/** Centered fit. `readableScale` keeps a large map legible on open: the view
+ * stays centered and the edges may overflow instead of shrinking further. */
 export function fitMapToBounds(
   bounds: MapBounds,
   viewport: { width: number; height: number },
+  readableScale = MAP_MIN_SCALE,
 ): MapTransform {
   const contentWidth = Math.max(1, bounds.maxX - bounds.minX);
   const contentHeight = Math.max(1, bounds.maxY - bounds.minY);
   const scale = clampMapScale(
-    Math.min(
-      1.15,
-      Math.max(1, viewport.width - MAP_PADDING * 2) / contentWidth,
-      Math.max(1, viewport.height - MAP_PADDING * 2) / contentHeight,
+    Math.max(
+      readableScale,
+      Math.min(
+        1.15,
+        Math.max(1, viewport.width - MAP_PADDING * 2) / contentWidth,
+        Math.max(1, viewport.height - MAP_PADDING * 2) / contentHeight,
+      ),
     ),
   );
   return {
