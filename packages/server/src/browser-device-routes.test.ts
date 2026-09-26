@@ -45,9 +45,11 @@ test(
       if (request.url === "/slow") await slowNavigation;
       response.setHeader("content-type", "text/html");
       response.end(
-        request.url === "/mutating"
-          ? "<!doctype html><title>Browser Device test</title><button>Continue</button><script>setTimeout(() => { document.body.style.background = 'rgb(255, 0, 0)'; document.querySelector('button').textContent = 'Changed'; }, 600)</script>"
-          : "<!doctype html><title>Browser Device test</title><button>Continue</button>",
+        request.url === "/animated"
+          ? `<!doctype html><form action="/submitted"><input name="q" aria-label="Prompt" /><button>Send</button></form><div id="ticker"></div><script>setInterval(() => document.getElementById("ticker").textContent = Date.now(), 40)</script>`
+          : request.url === "/mutating"
+            ? "<!doctype html><title>Browser Device test</title><button>Continue</button><script>setTimeout(() => { document.body.style.background = 'rgb(255, 0, 0)'; document.querySelector('button').textContent = 'Changed'; }, 600)</script>"
+            : "<!doctype html><title>Browser Device test</title><button>Continue</button>",
       );
     });
     await new Promise<void>((resolve) => product.listen(0, "127.0.0.1", resolve));
@@ -309,6 +311,56 @@ test(
       assert.equal(metadata.frame.pageId, controlFrame.frame.pageId);
       assert.equal(metadata.frame.sequence, controlFrame.frame.sequence + 1);
       assert.equal(typeof metadata.frame.visualFingerprint, "string");
+      // Direct browser interaction tolerates animation, but never an intervening mutation.
+      await client.invoke("target.browser-device.control", {
+        targetId: target.id,
+        input: {
+          sessionId: metadata.frame.sessionId,
+          pageId: metadata.frame.pageId,
+          expectedSequence: metadata.frame.sequence,
+          kind: "navigate",
+          url: `${startUrl}/animated`,
+          interaction: "direct",
+        },
+      });
+      const painted = (await client.invoke("target.browser-device.frame", { targetId: target.id }))
+        .frame;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await client.invoke("target.browser-device.frame", { targetId: target.id });
+      const pointer = {
+        sessionId: painted.sessionId,
+        pageId: painted.pageId,
+        expectedSequence: painted.sequence,
+        interaction: "direct" as const,
+      };
+      const clicked = await client.invoke("target.browser-device.control", {
+        targetId: target.id,
+        input: { ...pointer, kind: "click", x: 50, y: 15 },
+      });
+      assert.equal(clicked.resolution?.outcome, "coordinate-fallback");
+      await assert.rejects(
+        client.invoke("target.browser-device.control", {
+          targetId: target.id,
+          input: { ...pointer, kind: "text", text: "stale" },
+        }),
+        (error) => error instanceof ApiError && error.status === 409,
+      );
+      const focused = (await client.invoke("target.browser-device.frame", { targetId: target.id }))
+        .frame;
+      await client.invoke("target.browser-device.control", {
+        targetId: target.id,
+        input: { ...pointer, expectedSequence: focused.sequence, kind: "text", text: "hello" },
+      });
+      const typed = (await client.invoke("target.browser-device.frame", { targetId: target.id }))
+        .frame;
+      await client.invoke("target.browser-device.control", {
+        targetId: target.id,
+        input: { ...pointer, expectedSequence: typed.sequence, kind: "key", key: "Enter" },
+      });
+      const submitted = (
+        await client.invoke("target.browser-device.frame", { targetId: target.id })
+      ).frame;
+      assert.match(submitted.pageUrl, /submitted\?q=hello/);
       const revokedAuthentication = await client.invoke("target.browser-auth.revoke", {
         targetId: target.id,
         reference: savedAuthentication.fixture.reference,

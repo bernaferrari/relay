@@ -183,6 +183,8 @@ const frameBound = {
   sessionId: id,
   pageId: id,
   expectedSequence: natural,
+  /** Direct live-browser input, distinct from authored test targeting. */
+  interaction: z.literal("direct").optional(),
 } as const;
 
 export const browserDeviceInputSchema = z.discriminatedUnion("kind", [

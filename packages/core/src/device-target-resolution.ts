@@ -443,7 +443,6 @@ function resolveSnapshotTarget(
     );
   }
   if (candidates.length === 0) return undefined;
-  if (candidates.length === 0) return undefined;
   const activeLocations = candidates
     .filter((candidate) => candidate.independentlyActivatable)
     .filter(
@@ -468,7 +467,6 @@ function resolveSnapshotTarget(
     return undefined;
   }
 
-  const bestRank = Math.max(...candidates.map((candidate) => candidate.rank));
   // iPadOS repeats a row's title on the row container, its navigation bar, and
   // the text inside it, each hittable at a different point. Those are one
   // control: drop any copy whose bounds sit inside another same-label
@@ -481,6 +479,9 @@ function resolveSnapshotTarget(
           enclosesMatchingLabel(other.node, [candidate.node], normalized.label),
       ),
   );
+  // Rank only surviving controls. A nested text node can rank above its
+  // owning link through the activation-ancestor bonus, then be collapsed.
+  const bestRank = Math.max(...collapsed.map((candidate) => candidate.rank));
   const best = collapsed.filter((candidate) => candidate.rank === bestRank);
   const distinct = best.filter(
     (candidate, index) =>

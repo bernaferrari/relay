@@ -487,7 +487,12 @@ it("does not reopen an Android stream after close during retry backoff", async (
 
 describe("browser preview gestures", () => {
   const frame = { sessionId: "session", pageId: "page", sequence: 42 };
-  const binding = { sessionId: "session", pageId: "page", expectedSequence: 42 };
+  const binding = {
+    sessionId: "session",
+    pageId: "page",
+    expectedSequence: 42,
+    interaction: "direct" as const,
+  };
   it("binds canvas clicks, typing and scrolling to the painted frame", () => {
     expect(browserPreviewInput({ kind: "navigate", url: "https://example.com/" }, frame)).toEqual({
       ...binding,
@@ -502,6 +507,7 @@ describe("browser preview gestures", () => {
     expect(browserPreviewInput({ kind: "touch", action: "up", x: 20, y: 30 }, frame)).toEqual({
       ...binding,
       coordinateFallback: "reviewed",
+      interaction: "direct" as const,
       kind: "click",
       x: 20,
       y: 30,
