@@ -290,6 +290,11 @@ async function renderJourney(
     );
   });
   await settle();
+  // These journeys cover the detailed setup; a new Test first asks for a website.
+  const detailed = [...document.querySelectorAll("button")].find(
+    (candidate) => candidate.textContent?.trim() === "Test a phone or tablet instead",
+  );
+  if (detailed) await click(detailed);
   return { history, host };
 }
 
