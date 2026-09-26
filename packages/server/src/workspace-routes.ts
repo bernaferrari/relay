@@ -23,8 +23,23 @@ type WorkspaceRouteInput = {
   scope: RequestContext;
 };
 
+const sessionHistoryInFlight = new Map<string, ReturnType<typeof authoringSessions.list>>();
+
+/** One session-history read shared by requests that arrive together; never cached after. */
+function sessionHistory(projectId: string): ReturnType<typeof authoringSessions.list> {
+  let pending = sessionHistoryInFlight.get(projectId);
+  if (!pending) {
+    pending = authoringSessions
+      .list(projectId, { includeHistory: true })
+      .finally(() => sessionHistoryInFlight.delete(projectId));
+    sessionHistoryInFlight.set(projectId, pending);
+  }
+  return pending;
+}
+
 /** Routes for project-owned schedules and immutable authoring evidence.
  * Compiled execution plans intentionally have no public storage route. */
+
 export async function handleWorkspaceRoute(input: WorkspaceRouteInput): Promise<boolean> {
   const { method, pathname, url, request, response, scope } = input;
   if (method === "GET" && pathname === "/lanes") {
@@ -92,23 +107,23 @@ export async function handleWorkspaceRoute(input: WorkspaceRouteInput): Promise<
   if (method === "GET" && authoringEvidenceMatch) {
     const sha256 = authoringEvidenceMatch.sha256!;
     const uri = `relay-evidence://${sha256}`;
-    const sessions = await authoringSessions.list(scope.projectId, { includeHistory: true });
+    // App Map screens are the common case and cheap to check; session history
+    // can be tens of megabytes, so concurrent image requests share one load.
     const permitted =
-      sessions.some((session) =>
-        session.take?.revisions.some((revision) =>
-          revision.evidence.some((evidence) => evidence.uri === uri),
-        ),
-      ) ||
-      sessions.some((session) =>
-        session.take?.replayAttempts.some((attempt) =>
-          attempt.evidence.some((evidence) => evidence.uri === uri),
-        ),
-      ) ||
       (await listAppMaps(scope.projectId)).some((appMap) =>
         Object.values(appMap.screenVariants).some(
           (variant) =>
             variant.screenshotUri === uri || variant.evidenceUris?.includes(uri) === true,
         ),
+      ) ||
+      (await sessionHistory(scope.projectId)).some(
+        (session) =>
+          session.take?.revisions.some((revision) =>
+            revision.evidence.some((evidence) => evidence.uri === uri),
+          ) ||
+          session.take?.replayAttempts.some((attempt) =>
+            attempt.evidence.some((evidence) => evidence.uri === uri),
+          ),
       );
     if (!permitted) throw new HttpError(404, "Authoring evidence not found");
     const artifact = await readAuthoringEvidence(sha256);
