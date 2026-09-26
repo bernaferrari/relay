@@ -49,16 +49,10 @@ function StateBadge({ item }: { item: CaptureReviewItem }) {
       ? "size"
       : `${Math.max(0.1, (item.reference?.changeRatio ?? 0) * 100).toFixed(1)}%`;
     return (
-      <span className="rounded-sm bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning-foreground">
-        Changed {ratio}
-      </span>
+      <span className="shrink-0 text-xs font-medium text-warning-foreground">Changed {ratio}</span>
     );
   }
-  return (
-    <span className="rounded-sm bg-info/15 px-1.5 py-0.5 text-xs font-medium text-info-foreground">
-      New
-    </span>
-  );
+  return <span className="shrink-0 text-xs text-muted-foreground">New</span>;
 }
 
 function timeAgo(value: number): string {
@@ -250,17 +244,19 @@ export function ReviewPage() {
   const newCount = cardsOf(inbox.data, "new").length;
 
   return (
-    <section className="flex h-full min-h-0 flex-col" aria-label="Review screenshots">
+    <section
+      className="@container flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-x-hidden"
+      aria-label="Review screenshots"
+    >
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border/60 px-6 pt-6 pb-4">
-        <div className="grid gap-1">
+        <div className="grid min-w-0 gap-1">
           <h1 className="text-3xl leading-8 font-semibold tracking-tight">Review</h1>
           <p className="max-w-prose text-sm text-muted-foreground">
-            Only screenshots that changed or have no reference yet. Unchanged ones were approved
-            automatically.
+            Compare changes and choose the screenshots to keep as references.
           </p>
           {inbox.data ? <Totals result={inbox.data} /> : null}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
           {cards.length ? (
             <span className="text-sm text-muted-foreground tabular-nums">
               {cards.length} left{reviewedCount ? ` · ${reviewedCount} done` : ""}
@@ -270,7 +266,7 @@ export function ReviewPage() {
             <div
               role="radiogroup"
               aria-label="Show"
-              className="flex gap-1 rounded-lg bg-muted/40 p-0.5"
+              className="flex flex-wrap gap-1 rounded-lg bg-muted/40 p-0.5"
             >
               {(
                 [
@@ -303,7 +299,7 @@ export function ReviewPage() {
       </header>
 
       {newCount && !acceptAllNew.isSuccess ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 bg-brand-soft px-6 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 bg-muted/20 px-6 py-3">
           <p className="max-w-prose text-sm">
             {acceptAllNew.isPending && baseline ? (
               <>
@@ -314,15 +310,19 @@ export function ReviewPage() {
                 <strong className="font-semibold">
                   {newCount} {newCount === 1 ? "screenshot is" : "screenshots are"} new.
                 </strong>{" "}
-                There is nothing to compare {newCount === 1 ? "it" : "them"} against yet. Look
-                through them, or use them all as the starting point; after that you only see what
-                changes.
+                Review each screenshot to establish its reference.
               </>
             )}
           </p>
-          <Button size="sm" disabled={acceptAllNew.isPending} onClick={() => acceptAllNew.mutate()}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="max-w-full whitespace-normal"
+            disabled={acceptAllNew.isPending}
+            onClick={() => acceptAllNew.mutate()}
+          >
             <Check aria-hidden="true" />
-            {acceptAllNew.isPending ? "Saving…" : `Use all ${newCount} as the starting point`}
+            {acceptAllNew.isPending ? "Saving…" : `Use all ${newCount} as references`}
           </Button>
         </div>
       ) : null}
@@ -367,25 +367,25 @@ export function ReviewPage() {
           </div>
         </div>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] @3xl:grid-cols-[16rem_minmax(0,1fr)]">
           <nav
             aria-label="Screenshots to review"
-            className="max-h-64 overflow-y-auto border-b border-border/60 p-2 lg:max-h-none lg:border-r lg:border-b-0"
+            className="min-h-0 min-w-0 max-h-48 overflow-x-hidden overflow-y-auto border-b border-border/60 p-3 @3xl:max-h-none @3xl:border-r @3xl:border-b-0"
           >
             {(inbox.data?.entries ?? []).map((entry) => {
               const entryCards = cards.filter((card) => card.entry.runId === entry.runId);
               if (!entryCards.length) return null;
               return (
-                <div key={entry.runId} className="mb-3">
+                <div key={entry.runId} className="mb-4 min-w-0">
                   <div className="px-2 pt-1 pb-1.5">
                     <p className="truncate text-xs font-semibold text-foreground">{entry.title}</p>
                     <p className="truncate text-xs text-muted-foreground">
                       {[entry.targetName, timeAgo(entry.finishedAt)].filter(Boolean).join(" · ")}
                     </p>
                   </div>
-                  <ul className="grid gap-0.5">
+                  <ul className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5">
                     {entryCards.map((card) => (
-                      <li key={card.key}>
+                      <li key={card.key} className="min-w-0">
                         <button
                           type="button"
                           aria-current={card.key === selected?.key ? "true" : undefined}
@@ -400,7 +400,9 @@ export function ReviewPage() {
                             setReporting(false);
                           }}
                         >
-                          <span className="truncate">{screenshotName(card.item)}</span>
+                          <span className="min-w-0 truncate" title={screenshotName(card.item)}>
+                            {screenshotName(card.item)}
+                          </span>
                           <StateBadge item={card.item} />
                         </button>
                       </li>
@@ -413,14 +415,14 @@ export function ReviewPage() {
 
           {selected ? (
             <div className="flex min-h-0 min-w-0 flex-col">
-              <div className="min-h-0 flex-1 overflow-y-auto p-6">
+              <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 @3xl:p-6">
                 <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-                  <div className="grid min-w-0 gap-1">
+                  <div className="grid min-w-0 flex-1 gap-1">
                     <h2 className="flex items-center gap-2 text-lg font-semibold">
                       <span className="truncate">{screenshotName(selected.item)}</span>
                       <StateBadge item={selected.item} />
                     </h2>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm wrap-anywhere text-muted-foreground">
                       {[
                         selected.entry.title,
                         selected.entry.targetName,
@@ -483,7 +485,7 @@ export function ReviewPage() {
                       onChange={(event) => setNote(event.target.value)}
                       placeholder="What’s wrong? (optional)"
                       aria-label="Describe the issue"
-                      className="h-8 min-w-64 flex-1 rounded-md border border-border bg-background px-2.5 text-sm focus-visible:outline-2 focus-visible:outline-ring"
+                      className="h-8 min-w-0 basis-48 flex-1 rounded-md border border-border bg-background px-2.5 text-sm focus-visible:outline-2 focus-visible:outline-ring"
                     />
                     <Button size="sm" variant="destructive" type="submit">
                       Report issue
@@ -533,7 +535,7 @@ export function ReviewPage() {
                         <kbd className="ml-1 text-xs opacity-60">I</kbd>
                       </Button>
                     ) : null}
-                    <span className="ml-auto hidden text-xs text-muted-foreground lg:inline">
+                    <span className="w-full text-xs text-muted-foreground">
                       {selected.item.reference?.state === "changed"
                         ? "Looks correct replaces the reference with this screenshot."
                         : "Looks correct makes this the reference for future runs."}
