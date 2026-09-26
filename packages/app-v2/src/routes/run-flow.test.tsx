@@ -705,9 +705,10 @@ describe("Run and Report", () => {
   it("returns run setup focus to the header control that opened it", async () => {
     const fake = fakeRunService();
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
-    const trigger = document.querySelector<HTMLButtonElement>(
-      'button[aria-label="Run configuration — opens run setup"]',
-    )!;
+    const trigger = button("Set up run");
+    expect(
+      document.querySelector('button[aria-label="Run configuration — opens run setup"]'),
+    ).toBeNull();
     await click(trigger);
     const popup = document.querySelector<HTMLElement>(
       '[role="dialog"][aria-label="Run settings"]',
@@ -1455,6 +1456,29 @@ describe("Run and Report", () => {
       action: "retry",
       note: "Reviewed in Relay",
     });
+  });
+
+  it("loads the original last screenshot in the Test preview", async () => {
+    const fake = fakeRunService();
+    fake.service.listTestRuns = async () =>
+      [
+        {
+          id: "run-1",
+          queuedAt: 1,
+          finishedAt: 2,
+          phase: "completed",
+          identity: { runId: "run-1", appMapId: "settings-language-proof" },
+          links: { self: "/runs/run-1" },
+        },
+      ] as never;
+    const original = "data:image/png;base64,original-full-resolution";
+    const evidence = report();
+    evidence.evidence[0]!.items[1]!.media!.src = original;
+    fake.service.getReport = async () => evidence;
+    await renderRun("/tests/test-1?view=definition", fake.service, platformWithStorage().platform);
+    expect(
+      document.querySelector<HTMLImageElement>('img[alt="Last screen of the latest run"]')?.src,
+    ).toBe(original);
   });
 
   it("labels Test reliability as partial while loaded Run history is incomplete", async () => {

@@ -239,16 +239,34 @@ describe("Tests home", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     const panel = document.getElementById(toggle.getAttribute("aria-controls")!)!;
     expect(panel).not.toBeNull();
-    expect(
-      [...panel.querySelectorAll<HTMLAnchorElement>("li a[href^='/tests/test-']")]
-        .map((link) => link.getAttribute("href"))
-        .filter((href) => !href?.includes("?")),
-    ).toEqual(["/tests/test-login", "/tests/test-cart"]);
+    const memberLinks = [
+      ...panel.querySelectorAll<HTMLAnchorElement>("li a[href^='/tests/test-']"),
+    ].filter((link) => !link.href.includes("setup="));
+    expect(memberLinks.map((link) => new URL(link.href).pathname)).toEqual([
+      "/tests/test-login",
+      "/tests/test-cart",
+    ]);
+    for (const link of memberLinks) {
+      const url = new URL(link.href);
+      expect(url.searchParams.get("plan")).toBe("suite-smoke");
+      expect(url.searchParams.get("planApp")).toBe("app-shop");
+      expect(link.textContent).toContain("3 steps");
+    }
     expect(panel.textContent).toContain("Passed");
 
     await press(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(plans.querySelector('a[href="/tests/test-login"]')).toBeNull();
+  });
+
+  it("restores the expanded plan from the return URL", async () => {
+    await render("/tests?plan=suite-smoke&planApp=app-shop");
+    const plans = main().querySelector<HTMLElement>('section[aria-labelledby="plans-heading"]')!;
+    expect(plans.querySelector('button[aria-expanded="true"]')?.textContent).toContain(
+      "Release smoke",
+    );
+    expect(plans.querySelector('a[href^="/tests/test-login?"]')).not.toBeNull();
+    expect(plans.querySelector('a[href^="/tests/test-cart?"]')).not.toBeNull();
   });
 
   it("titles the list All tests when there are no plans", async () => {

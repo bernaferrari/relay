@@ -166,6 +166,8 @@ export const ROUTE_DEFINITIONS = [
     "view",
     "q",
     "result",
+    "plan",
+    "planApp",
   ]),
   d("/tests/new", "/tests", "New Test", "Test", "tests", "record-test", [
     "app",
