@@ -5,6 +5,7 @@ import { Button } from "@relay/ui-react/components/button";
 import type { ProductRunSummary } from "@relay/product/catalog";
 import { CircleAlert, CircleCheck, CircleDashed, Eye, LoaderCircle } from "lucide-react";
 import { catalogQueryKeys } from "../data/catalog-queries";
+import { ResultsBar } from "../components/results-bar";
 
 type PlanTest = { id: string; name: string; status: string };
 
@@ -119,19 +120,15 @@ export function PlanChecklist({
           <h2 id="plan-checklist-title" className="text-sm font-semibold text-foreground">
             Latest results
           </h2>
-          <p className="text-sm text-muted-foreground tabular-nums">
+          <span className="w-64 max-w-full">
+            <ResultsBar states={states} />
+          </span>
+          <p className="text-xs text-muted-foreground tabular-nums">
             {runs.isPending
               ? "Loading results…"
-              : [
-                  count("passed") ? `${count("passed")} passed` : undefined,
-                  count("review") ? `${count("review")} to review` : undefined,
-                  count("failed") ? `${count("failed")} failed` : undefined,
-                  count("running") ? `${count("running")} running` : undefined,
-                  count("not-run") ? `${count("not-run")} not run yet` : undefined,
-                ]
-                  .filter(Boolean)
-                  .join(" · ") || "No results yet"}
-            {lastActivity ? ` · last activity ${ago(lastActivity)}` : ""}
+              : lastActivity
+                ? `Last activity ${ago(lastActivity)}`
+                : "Not run yet"}
           </p>
         </div>
         {toReview ? (
