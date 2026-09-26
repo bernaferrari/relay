@@ -39,7 +39,9 @@ export function semanticTargetForRecording(
       )
         continue;
       const value = node[key]?.trim();
-      if (!value) continue;
+      // A card or section reads its whole text as a label; that names a
+      // region, not the control the person clicked.
+      if (!value || value.length > 60) continue;
       const selector = { [key]: value };
       const result = resolveNamedControlOutcome(nodes, selector);
       if (result.status !== "resolved") continue;

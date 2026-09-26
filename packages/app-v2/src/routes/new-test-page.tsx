@@ -27,6 +27,7 @@ import { ReviewRecordingPage } from "./review-recording-page";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { RecordingDeviceChoice } from "../components/recording-device-choice";
 import { InstalledAppChoice } from "../components/installed-app-choice";
+import { NewTestQuickStart, recentWebsites, websiteHost } from "./new-test-quick-start";
 
 const NEW_TEST_DRAFT_KEY = "newTestDraft";
 
@@ -39,6 +40,7 @@ export function NewTestPage() {
     browserSpacesService,
     deviceService,
     queryClient,
+    catalogService,
   } = useRouteContext({
     from: "__root__",
   });
@@ -68,6 +70,13 @@ export function NewTestPage() {
   const [newBrowserOpen, setNewBrowserOpen] = useState(false);
   const [creatingApp, setCreatingApp] = useState(false);
   const previousTargetId = useRef<string | undefined>(undefined);
+  // Most Tests start from a website: ask for that first. A link that already
+  // names an app, device, or map path opens the detailed setup instead.
+  const [setupMode, setSetupMode] = useState<"website" | "detailed">(
+    requestedAppId || requestedTargetId || startsFromPath ? "detailed" : "website",
+  );
+  const [quickProgress, setQuickProgress] = useState<string>();
+  const [quickError, setQuickError] = useState<string>();
 
   const apps = useQuery({
     queryKey: recordingQueryKeys.apps,
@@ -258,7 +267,7 @@ export function NewTestPage() {
       if (previewSession.current === session) previewSession.current = undefined;
       session?.close();
     };
-  }, [previewAttempt, productService, search.view, selectedTarget?.targetId]);
+  }, [previewAttempt, productService, search.view, selectedTarget?.targetId, setupMode]);
 
   async function sendPreview(input: Parameters<LiveTargetSession["input"]>[0]) {
     const session = previewSession.current;
@@ -282,14 +291,16 @@ export function NewTestPage() {
   }
 
   const begin = useMutation({
-    mutationFn: async () => {
-      const suggestedName = pathContext.data
-        ? `${pathContext.data.fromTitle} to ${pathContext.data.toTitle ?? "Finish"}`
-        : `${apps.data?.find((app) => app.id === appId)?.name ?? "New Test"} recording`;
+    mutationFn: async (chosen?: { appId: string; targetId: string; title: string }) => {
+      const suggestedName =
+        chosen?.title ??
+        (pathContext.data
+          ? `${pathContext.data.fromTitle} to ${pathContext.data.toTitle ?? "Finish"}`
+          : `${apps.data?.find((app) => app.id === appId)?.name ?? "New Test"} recording`);
       const state = await productService.begin({
         title: suggestedName,
-        appMapId: appId,
-        targetId,
+        appMapId: chosen?.appId ?? appId,
+        targetId: chosen?.targetId ?? targetId,
         ...(originApplication.trim() ? { originApplication: originApplication.trim() } : {}),
         ...(pathContext.data
           ? {
@@ -316,6 +327,62 @@ export function NewTestPage() {
       await navigate({ to: "/recordings/$recordingId", params: { recordingId: workflowId } });
     },
   });
+
+  /** The app a website's Tests belong to: remembered, else where this browser's
+   * runs were filed, else an app named after the site, else a new one. */
+  async function appForWebsite(host: string, browserTargetId: string): Promise<string> {
+    const key = `relay:website-app:${host}`;
+    const known = new Set((apps.data ?? []).map((app) => app.id));
+    const remembered = await Promise.resolve(platform.storage.get(key));
+    if (remembered && known.has(remembered)) return remembered;
+    const runs = await catalogService.listRuns().catch(() => []);
+    const fromRuns = runs.find(
+      (run) =>
+        run.executionIdentity?.deviceId === browserTargetId &&
+        run.executionIdentity.appMapId &&
+        known.has(run.executionIdentity.appMapId),
+    )?.executionIdentity?.appMapId;
+    const bare = host.replace(/^www\./, "").toLowerCase();
+    const named = apps.data?.find((app) => app.name.toLowerCase().includes(bare))?.id;
+    const appId = fromRuns ?? named ?? (await appResourcesService.createApp(bare)).id;
+    await Promise.resolve(platform.storage.set(key, appId));
+    return appId;
+  }
+
+  async function startWebsiteTest(url: string) {
+    const host = websiteHost(url);
+    setQuickError(undefined);
+    try {
+      setQuickProgress(`Opening ${host}…`);
+      const typedPath = new URL(url).pathname;
+      const saved = savedBrowsers.data?.find(
+        (space) =>
+          websiteHost(space.startUrl) === host &&
+          (typedPath === "/" || new URL(space.startUrl).pathname === typedPath),
+      );
+      const browserTargetId = await startManagedBrowser(browserSpacesService, saved?.id, url);
+      setQuickProgress("Finding where to save it…");
+      const chosenApp = await appForWebsite(host, browserTargetId);
+      await queryClient.invalidateQueries({ queryKey: ["browser-spaces"] });
+      await queryClient.invalidateQueries({ queryKey: recordingQueryKeys.apps });
+      setAppId(chosenApp);
+      setTargetId(browserTargetId);
+      setQuickProgress("Starting the recording…");
+      await begin.mutateAsync({
+        appId: chosenApp,
+        targetId: browserTargetId,
+        title: `Test on ${host}`,
+      });
+    } catch (error) {
+      setQuickError(
+        error instanceof Error && error.message
+          ? `Relay could not start ${host}: ${error.message}`
+          : `Relay could not start ${host}. Try again.`,
+      );
+    } finally {
+      setQuickProgress(undefined);
+    }
+  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -469,7 +536,17 @@ export function NewTestPage() {
           }
         />
 
-        {!loading &&
+        {setupMode === "website" && !loading && !blocksNewRecording ? (
+          <NewTestQuickStart
+            recent={recentWebsites(savedBrowsers.data ?? [])}
+            {...(quickProgress ? { progress: quickProgress } : {})}
+            {...(quickError ? { error: quickError } : {})}
+            onStart={(url) => void startWebsiteTest(url)}
+            onUseDevice={() => setSetupMode("detailed")}
+          />
+        ) : null}
+        {setupMode === "detailed" &&
+        !loading &&
         !apps.isError &&
         !targets.isError &&
         !targets.data?.recovery &&

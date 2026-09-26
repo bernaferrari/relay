@@ -138,12 +138,9 @@ export async function recordAuthoringInteraction<Captured>(
   let entranceEvidence: AuthoringEvidence[] = [];
   let executable = interaction;
   let targetName: string | undefined;
-  if (
-    session.target.kind === "device" &&
-    interaction.kind === "tap" &&
-    interaction.target.point &&
-    !interaction.applied
-  ) {
+  // Name what was clicked (devices and browsers alike) so the step reads
+  // "Tap “Business”" and replays by that control, not by a pixel.
+  if (interaction.kind === "tap" && interaction.target.point && !interaction.applied) {
     // The last endpoint can predate a transition or a user's external input.
     // Never derive a semantic selector from that potentially stale tree.
     const fresh = await persistObservation(await runtime.observe(session));
