@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { TodayPage } from "../routes/today-page";
 import { ReviewPage } from "../routes/review-page";
 import { QueryClient } from "@tanstack/react-query";
 import {
@@ -201,21 +202,14 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   beforeLoad: () => {
-    throw redirect({ to: "/tests", replace: true });
+    throw redirect({ to: "/home", replace: true });
   },
 });
 
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/home",
-  beforeLoad: ({ search }) => {
-    const app =
-      typeof (search as { app?: unknown }).app === "string"
-        ? (search as { app: string }).app
-        : undefined;
-    throw redirect({ to: "/tests", search: app ? { app } : {}, replace: true });
-  },
-  component: TestsPage,
+  component: TodayPage,
 });
 const appsRoute = createRoute({
   getParentRoute: () => rootRoute,

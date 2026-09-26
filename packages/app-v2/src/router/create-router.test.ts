@@ -62,16 +62,10 @@ describe("React router", () => {
     expect(router.state.matches).toHaveLength(2);
   });
 
-  it("redirects the root to Tests", async () => {
+  it("opens Today from the root", async () => {
     const router = testRouter(["/"]);
     await router.load();
-    expect(router.state.location.pathname).toBe("/tests");
-  });
-
-  it("redirects Home to Tests", async () => {
-    const router = testRouter(["/home"]);
-    await router.load();
-    expect(router.state.location.pathname).toBe("/tests");
+    expect(router.state.location.pathname).toBe("/home");
   });
 
   it("redirects the retired Evidence tab to Results", async () => {
