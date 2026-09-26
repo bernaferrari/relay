@@ -246,7 +246,7 @@ describe("Test editor", () => {
       "Keep this changed expectation",
     );
     expect(document.querySelector('[data-state="conflicted"]')?.textContent).toContain(
-      "draft is preserved",
+      "your changes are preserved",
     );
     harness.editor.edit = save;
     await click("Save step");

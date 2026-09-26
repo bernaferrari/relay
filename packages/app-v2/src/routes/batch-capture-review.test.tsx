@@ -138,7 +138,7 @@ describe("Plan screenshot review filters", () => {
     }));
     const host = await render(reviewCaptures);
     expect(host.textContent).toContain("3 planned · 3 captured");
-    expect(host.textContent).toContain("3 pending");
+    expect(host.textContent).toContain("3 to review");
     expect(host.textContent).toContain(
       "Looks correct makes that screenshot the reference for later runs.",
     );
@@ -300,6 +300,8 @@ describe("Plan screenshot review filters", () => {
                     blocked: 1,
                   },
                 }),
+                // Selection is offered only when decisions can be saved.
+                reviewCaptures: vi.fn(),
               } as unknown as RunAcrossProductService
             }
           />

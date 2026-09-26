@@ -402,7 +402,7 @@ export function SuitesPage() {
               return (
                 <li key={`${suite.appMapId}:${suite.id}`}>
                   <Link
-                    className={`${libraryRowSurface} ${libraryRowContent} grid-cols-[auto_minmax(0,1fr)_minmax(10rem,16rem)] gap-4`}
+                    className={`${libraryRowSurface} ${libraryRowContent} grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 sm:grid-cols-[auto_minmax(0,1fr)_minmax(10rem,16rem)] sm:gap-4`}
                     to="/apps/$appId/suites/$suiteId"
                     params={{ appId: suite.appMapId, suiteId: suite.id }}
                   >
@@ -429,7 +429,9 @@ export function SuitesPage() {
                         </span>
                       ) : null}
                     </span>
-                    <ResultsBar states={states} />
+                    <span className="col-start-2 sm:col-start-auto">
+                      <ResultsBar states={states} />
+                    </span>
                   </Link>
                 </li>
               );

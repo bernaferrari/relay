@@ -145,7 +145,11 @@ export function RunsPage() {
       <LibraryToolbar
         label="Filter Runs"
         tabs={
-          <Tabs value={view} onValueChange={(next) => setView(next as RunView)}>
+          <Tabs
+            className="min-w-0 max-w-full overflow-x-auto"
+            value={view}
+            onValueChange={(next) => setView(next as RunView)}
+          >
             <TabsList variant="line" className="h-9 justify-start" aria-label="Run view">
               {runViews.map((item) => (
                 <TabsTrigger key={item.id} value={item.id}>
