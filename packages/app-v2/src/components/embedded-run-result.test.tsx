@@ -299,14 +299,20 @@ it("labels the captured result separately and shows the selected step image duri
     );
     expect(host.querySelector("img")?.getAttribute("src")).toBe("/dest.png");
     expect(host.textContent).toContain("Captured result");
-    expect(host.textContent).not.toContain("Reach Start");
+    expect(host.querySelector('[aria-label="Run steps"]')?.textContent).toContain("Reach Start");
     await act(async () =>
       [...host.querySelectorAll("button")]
-        .find((button) => button.textContent === "View steps")!
+        .find((button) => button.textContent?.includes("Reach Start"))!
         .click(),
     );
     expect(host.querySelector("img")?.getAttribute("src")).toBe("/start.png");
     expect(host.textContent).toContain("Reach Start");
+    await act(async () =>
+      [...host.querySelectorAll("button")]
+        .find((button) => button.textContent === "Back to captured result")!
+        .click(),
+    );
+    expect(host.querySelector("img")?.getAttribute("src")).toBe("/dest.png");
   } finally {
     await act(async () => root.unmount());
     client.clear();

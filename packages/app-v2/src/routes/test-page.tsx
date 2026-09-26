@@ -1,3 +1,4 @@
+import { TestWorkspaceHeader } from "../components/test-workspace";
 import { TestPlanNavigation } from "./test-plan-navigation";
 import { TestRunHistory } from "./test-run-history";
 import { TestStepsOutline } from "./test-steps-outline";
@@ -365,92 +366,89 @@ export function TestPage() {
       {typeof search.plan === "string" && typeof search.planApp === "string" ? (
         <TestPlanNavigation testId={testId} planId={search.plan} appId={search.planApp} />
       ) : null}
-      <header className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-3 px-5 py-4">
-        <div className="min-w-0 flex-1 basis-64">
-          {typeof search.plan !== "string" ? (
-            <Link
-              to="/tests"
-              className="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-            >
+      <TestWorkspaceHeader
+        title={test.data?.name ?? "Test"}
+        context={
+          typeof search.plan !== "string" ? (
+            <Link to="/tests" className="inline-flex items-center gap-1 hover:text-foreground">
               <ChevronLeft className="size-4" aria-hidden="true" /> Tests
             </Link>
-          ) : null}
-          <h1 className="text-xl leading-snug font-semibold tracking-tight break-words">
-            {test.data?.name ?? "Test"}
-          </h1>
-        </div>
-        <div className="flex max-w-full flex-wrap items-center gap-2">
-          {!activeRun && (selectedTarget || usePairs) ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={focusRunSetup}
-              ref={configurationTriggerRef}
-              aria-label="Run configuration — opens run setup"
-              className="order-3 h-auto min-h-9 w-full max-w-full justify-start text-left whitespace-normal sm:order-none sm:w-auto sm:max-w-sm"
-            >
-              <SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />
-              <span>{configurationLabel}</span>
-            </Button>
-          ) : null}
-          {activeRun && attachedRunId ? (
+          ) : undefined
+        }
+        actions={
+          <>
+            {!activeRun && (selectedTarget || usePairs) ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={focusRunSetup}
+                ref={configurationTriggerRef}
+                aria-label="Run configuration — opens run setup"
+                className="order-3 h-auto min-h-9 w-full max-w-full justify-start text-left whitespace-normal sm:order-none sm:w-auto sm:max-w-sm"
+              >
+                <SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />
+                <span>{configurationLabel}</span>
+              </Button>
+            ) : null}
+            {activeRun && attachedRunId ? (
+              <Button
+                nativeButton={false}
+                render={<Link to="/runs/$runId" params={{ runId: attachedRunId }} />}
+                size="sm"
+              >
+                View live run
+              </Button>
+            ) : (
+              <Button size="sm" onClick={runOrFocusSetup} disabled={start.isPending}>
+                {start.isPending
+                  ? "Starting…"
+                  : canStart
+                    ? "Run now"
+                    : profileBlocker
+                      ? "Fix setup"
+                      : "Set up run"}
+              </Button>
+            )}
             <Button
               nativeButton={false}
-              render={<Link to="/runs/$runId" params={{ runId: attachedRunId }} />}
+              variant="outline"
               size="sm"
+              render={<Link to="/tests/$testId/edit" params={{ testId }} />}
             >
-              View live run
+              Edit Test
             </Button>
-          ) : (
-            <Button size="sm" onClick={runOrFocusSetup} disabled={start.isPending}>
-              {start.isPending
-                ? "Starting…"
-                : canStart
-                  ? "Run now"
-                  : profileBlocker
-                    ? "Fix setup"
-                    : "Set up run"}
-            </Button>
-          )}
-          <Button
-            nativeButton={false}
-            variant="outline"
-            size="sm"
-            render={<Link to="/tests/$testId/edit" params={{ testId }} />}
-          >
-            Edit Test
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button variant="ghost" size="sm" />}
-              aria-label="More Test actions"
-            >
-              <MoreHorizontal aria-hidden="true" /> More
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              {!activeRun && test.data ? (
-                <DropdownMenuItem
-                  render={<Link to="/tests/$testId/run-across" params={{ testId }} />}
-                >
-                  Run across…
-                </DropdownMenuItem>
-              ) : null}
-              {attachedRunId ? (
-                <DropdownMenuItem
-                  render={<Link to="/runs/$runId" params={{ runId: attachedRunId }} />}
-                >
-                  Review result
-                </DropdownMenuItem>
-              ) : null}
-              {recentRuns.data?.length ? (
-                <DropdownMenuItem onClick={() => setHistoryOpen(true)}>
-                  Run history
-                </DropdownMenuItem>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </header>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button variant="ghost" size="sm" />}
+                aria-label="More Test actions"
+              >
+                <MoreHorizontal aria-hidden="true" /> More
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                {!activeRun && test.data ? (
+                  <DropdownMenuItem
+                    render={<Link to="/tests/$testId/run-across" params={{ testId }} />}
+                  >
+                    Run across…
+                  </DropdownMenuItem>
+                ) : null}
+                {attachedRunId ? (
+                  <DropdownMenuItem
+                    render={<Link to="/runs/$runId" params={{ runId: attachedRunId }} />}
+                  >
+                    Review result
+                  </DropdownMenuItem>
+                ) : null}
+                {recentRuns.data?.length ? (
+                  <DropdownMenuItem onClick={() => setHistoryOpen(true)}>
+                    Run history
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        }
+      />
 
       {loading ? <PageLoading label="Loading the Test and available devices…" /> : null}
       {test.error instanceof AmbiguousTestError ? (
@@ -532,7 +530,7 @@ export function TestPage() {
             </div>
           </div>
           {!showRecording && attachedRunId ? (
-            <TabsContent value="run" className="min-h-0 overflow-auto p-3">
+            <TabsContent value="run" className="min-h-0 overflow-auto">
               <RunInspection key={attachedRunId} runId={attachedRunId} testId={testId} embedded />
             </TabsContent>
           ) : (

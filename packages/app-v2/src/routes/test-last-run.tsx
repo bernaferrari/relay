@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useRouteContext } from "@tanstack/react-router";
 import { Camera } from "lucide-react";
 import type { ProductRunSummary } from "@relay/product/catalog";
-import { DeviceFrame } from "../components/device-frame";
+import { WorkspaceScreenshot } from "../components/test-workspace";
 import { StatusPill, runStateOf } from "../components/run-status";
 import { storyFromReport } from "../data/run-story";
 
@@ -95,10 +95,9 @@ export function TestLastRunStage({ run }: { run?: ProductRunSummary }) {
   if (run && url) {
     return (
       <div className="flex h-full min-h-0 flex-col items-center justify-start gap-3 overflow-auto bg-stage px-6 py-6">
-        <DeviceFrame src={url} alt="Last screen of the latest run" />
-        <p className="text-sm text-muted-foreground">
-          Last screen · {ago(run.finishedAt ?? run.queuedAt)}
-        </p>
+        <WorkspaceScreenshot caption={<>Last screen · {ago(run.finishedAt ?? run.queuedAt)}</>}>
+          <img src={url} alt="Last screen of the latest run" draggable={false} />
+        </WorkspaceScreenshot>
       </div>
     );
   }
