@@ -1,4 +1,5 @@
 #!/usr/bin/env tsx
+import { isInteractiveReview, runReviewCommand, type ReviewClient } from "./review-command.js";
 import { createBrowserCaptureWorkflow, type BrowserCapturePlan } from "@relay/workflows";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
@@ -15,7 +16,11 @@ import {
 } from "@relay/protocol";
 import type { OutputMode } from "./config.js";
 import { parseCli } from "./config.js";
-import { assertRecoverHasTarget, recoverInputFromLane, startedPlanBatchId } from "./cli-run-flags.js";
+import {
+  assertRecoverHasTarget,
+  recoverInputFromLane,
+  startedPlanBatchId,
+} from "./cli-run-flags.js";
 import { classifyError, CliError, ExitCode, UsageError } from "./errors.js";
 import { planFindingsReportFromError } from "./plan-findings-cli.js";
 import { renderHelp } from "./help.js";
@@ -29,6 +34,9 @@ import {
 } from "./invoke.js";
 import { protocolOperationInput } from "./protocol-input.js";
 import { CliOutput, type OutputStreams } from "./output.js";
+import { liveTitleFromInput, watchJobsLive } from "./live-run-view.js";
+import { abortError, assertOutcomeSucceeded, waitForOutcome, waitForPoll } from "./outcome-wait.js";
+export { assertOutcomeSucceeded, waitForOutcome } from "./outcome-wait.js";
 import { teeWritable, writeEvidenceReviewDir, writeRunOutDir } from "./cli-out.js";
 import { exportWatchedCombinePack, finalizeCombineExportResult } from "./evidence-pack-cli.js";
 import { emitScreenshot, emitSnapshotFile } from "./screenshot.js";
@@ -51,6 +59,7 @@ export type CliDependencies = {
   createClient?: ClientFactory;
   registerSignalHandlers?: boolean;
   pollIntervalMs?: number;
+  stdin?: NodeJS.ReadStream;
   ensureOutcomeServer?: (serverUrl: string) => Promise<LocalServerResult>;
   verifyChange?: {
     readConfig?: VerifyChangeConfigReader;
@@ -66,28 +75,6 @@ export type CliDependencies = {
 const processStreams: OutputStreams = { stdout: process.stdout, stderr: process.stderr };
 const jobStatuses = new Set(["queued", "running", "paused", "ok", "error", "healed", "cancelled"]);
 const terminalJobStatuses = new Set(["ok", "error", "healed", "cancelled"]);
-
-function abortError(): DOMException {
-  return new DOMException("cancelled", "AbortError");
-}
-
-function waitForPoll(intervalMs: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.reject(abortError());
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(finish, intervalMs);
-    signal.addEventListener("abort", cancel, { once: true });
-
-    function finish(): void {
-      signal.removeEventListener("abort", cancel);
-      resolve();
-    }
-
-    function cancel(): void {
-      clearTimeout(timer);
-      reject(abortError());
-    }
-  });
-}
 
 function jobStatus(response: unknown): string {
   if (
@@ -289,72 +276,6 @@ function outcomeOperationId(kind: string): string {
   return kind === "proof-analyze" ? "outcome.proof-analyze" : `outcome.${kind}`;
 }
 
-export function assertOutcomeSucceeded(snapshot: WorkflowSnapshot): void {
-  if (snapshot.phase === "cancelled") {
-    throw new CliError(snapshot.progress.label, ExitCode.cancellation, snapshot);
-  }
-  if (
-    snapshot.phase === "blocked" ||
-    snapshot.phase === "failed" ||
-    snapshot.phase === "needs-attention"
-  ) {
-    throw new CliError(
-      snapshot.problems[0]?.title ?? snapshot.progress.label,
-      ExitCode.operationFailure,
-      snapshot,
-    );
-  }
-  // Collection success is not acceptance: a terminal run with undecided
-  // captures exits 10 so no caller reads a generic zero as verification
-  // complete (delivery plan §10.1).
-  if (snapshot.kind === "run-test" && snapshot.review && snapshot.review.pending > 0) {
-    const pending = snapshot.review.pending;
-    throw new CliError(
-      `${pending} screenshot${pending === 1 ? "" : "s"} awaiting review`,
-      ExitCode.verificationIncomplete,
-      snapshot,
-    );
-  }
-}
-
-export async function waitForOutcome(
-  jobs: RelayOutcomeJobs,
-  snapshot: WorkflowSnapshot,
-  signal: AbortSignal,
-  output: CliOutput,
-  operationId: string,
-  pollIntervalMs: number,
-): Promise<WorkflowSnapshot> {
-  let current = snapshot;
-  if (
-    current.workflow &&
-    current.kind !== "author-test" &&
-    (current.phase === "queued" || current.phase === "running") &&
-    typeof jobs.watchWorkflow === "function"
-  ) {
-    output.snapshot(operationId, current);
-    return jobs.watchWorkflow({
-      workflowId: current.workflow.workflowId,
-      initial: current,
-      signal,
-      disconnectedRefreshMs: Math.max(15_000, pollIntervalMs * 60),
-      onSnapshot: (next) => output.snapshot(operationId, next),
-    });
-  }
-  while (
-    (current.ref || current.workflow) &&
-    (current.phase === "queued" || current.phase === "running") &&
-    current.kind !== "author-test"
-  ) {
-    output.snapshot(operationId, current);
-    await waitForPoll(pollIntervalMs, signal);
-    current = await jobs.inspect(
-      current.workflow ? { workflowId: current.workflow.workflowId } : { legacyRef: current.ref! },
-    );
-  }
-  return current;
-}
-
 async function runOutcomeCommand(input: {
   parsed: Extract<ReturnType<typeof parseCli>, { command: "outcome" }>;
   client: OperationInvoker;
@@ -516,8 +437,12 @@ async function resolveCurrentTestRunInput(
     const response = object(await invoke(client, "lane.list", {}, signal), "lane.list");
     const lanes = Array.isArray(response.lanes)
       ? response.lanes.filter(
-          (value): value is { id?: string; target?: { kind?: string; serial?: string; browserTargetId?: string } } =>
-            Boolean(value) && typeof value === "object",
+          (
+            value,
+          ): value is {
+            id?: string;
+            target?: { kind?: string; serial?: string; browserTargetId?: string };
+          } => Boolean(value) && typeof value === "object",
         )
       : [];
     return recoverInputFromLane(parsed.input, lanes);
@@ -629,6 +554,17 @@ export async function runCli(
     if (firstPositional(argv) === "report") {
       return await runReportCommand(argv, streams, dependencies.env ?? process.env);
     }
+    if (isInteractiveReview(argv)) {
+      return await runReviewCommand(argv, {
+        streams,
+        env: dependencies.env ?? process.env,
+        stdin: dependencies.stdin ?? process.stdin,
+        client: (args) =>
+          (dependencies.createClient ?? createClient)(
+            parseCli(args, dependencies.env ?? process.env).config,
+          ) as unknown as ReviewClient,
+      });
+    }
     const parsed = parseCli(argv, dependencies.env ?? process.env);
     if (parsed.command === "invoke" && parsed.outDir) {
       outDir = parsed.outDir;
@@ -721,11 +657,7 @@ export async function runCli(
           output,
           pollIntervalMs: dependencies.pollIntervalMs ?? 250,
         });
-        output.result(
-          operationId,
-          result,
-          doctorExitCode(result) !== ExitCode.operationFailure,
-        );
+        output.result(operationId, result, doctorExitCode(result) !== ExitCode.operationFailure);
         const doctorCode = doctorExitCode(result);
         if (doctorCode !== undefined) exitCode = doctorCode;
       } else if (parsed.command === "resource") {
@@ -755,18 +687,31 @@ export async function runCli(
         const started = await invoke(client, operationId, input, abort.signal);
         output.snapshot(operationId, summarizeResult(operationId, started, input, commandPath));
         const jobIds = startedJobIds(started);
-        const results: unknown[] = [];
-        for (const jobId of jobIds) {
-          results.push(
-            await watchJob(
-              client,
-              "job.get",
-              { jobId },
-              abort.signal,
-              output,
-              dependencies.pollIntervalMs ?? 250,
-            ),
-          );
+        const view = output.liveView({ title: liveTitleFromInput(input, operationId) });
+        const results: unknown[] = view
+          ? await watchJobsLive({
+              jobIds,
+              view,
+              fetch: (jobId) => invoke(client, "job.get", { jobId }, abort.signal),
+              isTerminal: (result) =>
+                result !== undefined && terminalJobStatuses.has(jobStatus(result)),
+              wait: (ms) => waitForPoll(ms, abort.signal),
+              pollIntervalMs: dependencies.pollIntervalMs ?? 250,
+            })
+          : [];
+        if (!view) {
+          for (const jobId of jobIds) {
+            results.push(
+              await watchJob(
+                client,
+                "job.get",
+                { jobId },
+                abort.signal,
+                output,
+                dependencies.pollIntervalMs ?? 250,
+              ),
+            );
+          }
         }
         let watchFailure: unknown;
         try {
@@ -881,7 +826,12 @@ export async function runCli(
 }
 
 function doctorExitCode(result: unknown): ExitCode | undefined {
-  if (!result || typeof result !== "object" || !("kind" in result) || result.kind !== "relay-doctor") {
+  if (
+    !result ||
+    typeof result !== "object" ||
+    !("kind" in result) ||
+    result.kind !== "relay-doctor"
+  ) {
     return undefined;
   }
   const report = result as {
@@ -889,7 +839,11 @@ function doctorExitCode(result: unknown): ExitCode | undefined {
     versionMatch?: unknown;
     doctor?: { ok?: unknown };
   };
-  if (report.server !== "reachable" || report.versionMatch === false || report.doctor?.ok === false) {
+  if (
+    report.server !== "reachable" ||
+    report.versionMatch === false ||
+    report.doctor?.ok === false
+  ) {
     return ExitCode.operationFailure;
   }
   return ExitCode.success;
