@@ -55,7 +55,16 @@ function semanticIntent(
     }
     return "Tap the captured target";
   }
-  if (step.kind === "type") return "Type text";
+  if (step.kind === "type") {
+    const text = typeof step.text === "string" ? step.text.trim() : "";
+    const target = step.target as Record<string, unknown> | undefined;
+    const field = [target?.label, target?.identifier, target?.text]
+      .filter((value): value is string => typeof value === "string")
+      .join(" ");
+    // Never echo what was typed into a secret field.
+    if (!text || /pass|secret|token|otp|code|pin/i.test(field)) return "Type text";
+    return `Type “${shortName(text)}”`;
+  }
   if (step.kind === "sleep") return `Wait ${String(step.ms ?? "")} ms`.trim();
   if (step.kind === "screenshot") return "Checkpoint";
   if (step.kind === "launch") return "Open app";

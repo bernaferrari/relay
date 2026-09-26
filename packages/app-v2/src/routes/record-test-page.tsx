@@ -387,7 +387,11 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
           mutationId: unresolved.mutationId,
           observed,
           authority: {
-            serial: selectedTarget.targetId,
+            // A signed-in browser tracks its inputs under that login's key.
+            serial:
+              selectedTarget.kind === "browser" && selectedTarget.authenticationFixtureId
+                ? `${selectedTarget.targetId}#${selectedTarget.authenticationFixtureId}`
+                : selectedTarget.targetId,
             ...(connection?.actorId ? { actor: connection.actorId } : {}),
             reconcile: (input) => productService.reconcileInput!(input),
             ...(productService.fetchReconcileReceipt

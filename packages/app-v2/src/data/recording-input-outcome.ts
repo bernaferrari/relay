@@ -55,6 +55,8 @@ export type RecordingReconcileAuthority = {
     mutationId: string;
     resolutionId?: string;
     outcome: RecordingReconcileServerOutcome;
+    /** The person reviewed the screen: resolve whatever input is pending. */
+    reconcilePending?: boolean;
   }) => Promise<RecordingReconcileAuthorityReceipt>;
   fetchReceipt?: (input: {
     serial: string;
@@ -442,8 +444,19 @@ export async function reconcileRecordingMutationAuthoritatively(input: {
       serial: input.authority.serial,
       mutationId: input.mutationId,
       outcome: recordingReconcileServerOutcome(input.observed),
+      reconcilePending: true,
     })
     .catch(async (error) => {
+      // The server holds no pending input (for example it restarted and its
+      // input fence is gone). Nothing can be repeated, so the person's answer
+      // resolves the pause instead of leaving the recording stuck.
+      if (reconcileIsStale(error)) {
+        return {
+          mutationId: input.mutationId,
+          resolutionId,
+          outcome: recordingReconcileServerOutcome(input.observed),
+        } satisfies RecordingReconcileAuthorityReceipt;
+      }
       if (!input.authority.fetchReceipt) throw error;
       try {
         return await fetchRecordingReconcileReceipt({
@@ -455,11 +468,10 @@ export async function reconcileRecordingMutationAuthoritatively(input: {
         throw error;
       }
     });
-  if (receipt.mutationId !== input.mutationId) {
-    throw new TypeError("Relay reconciled a different mutation.");
-  }
+  // The server may have resolved the input it actually held (the person's
+  // decision covers what they saw), so its id can differ from ours.
   const pending = receipt.health?.pendingMutationId;
-  if (pending && pending !== input.mutationId) {
+  if (pending && pending !== input.mutationId && pending !== receipt.mutationId) {
     throw new TypeError("Relay still holds a different pending mutation.");
   }
   return reconcileRecordingMutation(
@@ -512,4 +524,9 @@ export async function dispatchRecordingInput(input: {
   } catch (error) {
     return { kind: "refresh-failed", mutationId, message: errorText(error) };
   }
+}
+
+function reconcileIsStale(error: unknown): boolean {
+  const body = (error as { body?: { code?: unknown } } | null)?.body;
+  return body?.code === "TARGET_INPUT_RECONCILIATION_STALE";
 }
