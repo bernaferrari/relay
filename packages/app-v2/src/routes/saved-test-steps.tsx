@@ -1,3 +1,4 @@
+import { TestStepButton } from "../components/test-workspace";
 import type { ProductTestStep } from "@relay/product/catalog";
 export function ReadableStep({
   step,
@@ -11,17 +12,10 @@ export function ReadableStep({
   onSelect(stepId: string): void;
 }) {
   return (
-    <li
-      className="grid grid-cols-[28px_minmax(0,1fr)] rounded-md px-2 data-[selected=true]:bg-accent/60"
-      data-selected={selectedId === step.id}
-    >
-      <span className="grid place-items-center text-xs tabular-nums text-muted-foreground">
-        {number}
-      </span>
-      <button
-        className="min-w-0 rounded-md px-1 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        type="button"
-        aria-pressed={selectedId === step.id}
+    <li data-selected={selectedId === step.id}>
+      <TestStepButton
+        number={number}
+        selected={selectedId === step.id}
         data-step-id={step.id}
         onClick={() => onSelect(step.id)}
       >
@@ -29,7 +23,7 @@ export function ReadableStep({
         {step.status === "needs-review" ? (
           <small className="mt-0.5 block text-xs text-muted-foreground">Needs setup</small>
         ) : null}
-      </button>
+      </TestStepButton>
       {step.children?.length ? (
         <ol className="col-span-2 ml-5 grid list-none gap-0 p-0">
           {step.children.map((child, index) => (

@@ -1,3 +1,4 @@
+import { TestWorkspaceHeader } from "../components/test-workspace";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { LiveRunStory, SavedRunStory } from "./run-story-pages";
 import { initialRunStep } from "../data/run-timeline-selection";
@@ -24,7 +25,7 @@ import {
 import { ChevronRight, CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { EmptyState } from "../components/product-patterns";
+import { Breadcrumbs, EmptyState } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
 import {
   firstSentence,
@@ -339,7 +340,7 @@ export function RunInspection({
   const liveJobId = state?.run?.jobId;
   if (liveJobId && typeof runService.liveJob === "function") {
     return (
-      <WorkbenchPage className="flex h-full min-h-0 flex-col !pt-3 !pb-3 max-[1024px]:h-auto">
+      <WorkbenchPage className="flex h-full min-h-0 flex-col !p-0 overflow-auto">
         <LiveRunStory
           jobId={liveJobId}
           title={snapshot?.title ?? "Run"}
@@ -633,19 +634,18 @@ function RunReport({
     search.view !== "evidence"
   ) {
     return (
-      <WorkbenchPage className="flex h-full min-h-0 flex-col !pt-3 !pb-3 max-[1024px]:h-auto">
+      <WorkbenchPage className="flex h-full min-h-0 flex-col !p-0 overflow-auto">
         <SavedRunStory
           report={report}
           {...(testId ? { testId } : {})}
           runService={runService}
           onShowDetails={() => showDetails("steps")}
           extraActions={actions}
-          summary={
-            // Say why it failed right away; the full text stays under details.
-            failure
-              ? `${outcomeSentence(report.outcome, target, Boolean(report.captureReview?.items.length))} ${firstSentence(failure)}`
-              : outcomeSentence(report.outcome, target, Boolean(report.captureReview?.items.length))
-          }
+          summary={outcomeSentence(
+            report.outcome,
+            target,
+            Boolean(report.captureReview?.items.length),
+          )}
           notice={
             <>
               <RunReplayStatus runService={runService} />
@@ -663,17 +663,21 @@ function RunReport({
     );
   }
   return (
-    <WorkbenchPage className="flex h-full min-h-0 flex-col !pt-3 !pb-3 max-[720px]:h-auto [&>header]:shrink-0">
-      <PageHeader
-        crumbs={[
-          { label: "Results", to: "/runs" },
-          ...(testId
-            ? [{ label: "View Test", to: "/tests/$testId" as const, params: { testId } }]
-            : []),
-          { label: report.title },
-        ]}
+    <WorkbenchPage className="flex h-full min-h-0 flex-col !p-0 overflow-auto [&>header]:shrink-0">
+      <TestWorkspaceHeader
+        context={
+          <Breadcrumbs
+            items={[
+              { label: "Results", to: "/runs" },
+              ...(testId
+                ? [{ label: "View Test", to: "/tests/$testId" as const, params: { testId } }]
+                : []),
+              { label: report.title },
+            ]}
+          />
+        }
         title={report.title}
-        description={
+        children={
           <>
             {outcomeSentence(report.outcome, target, Boolean(report.captureReview?.items.length))}
             {report.durationMs !== undefined ? (

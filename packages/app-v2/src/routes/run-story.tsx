@@ -1,3 +1,8 @@
+import {
+  TestWorkspace,
+  TestWorkspaceHeader,
+  WorkspaceScreenshot,
+} from "../components/test-workspace";
 /** @jsxImportSource react */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -32,7 +37,6 @@ import {
   type StoryStep,
 } from "../data/run-story";
 import { ReferenceCompareLine } from "./reference-compare-dialog";
-import { DeviceFrame } from "../components/device-frame";
 import { StatusPill, type RunState } from "../components/run-status";
 
 export type RunStoryStatus = "running" | "passed" | "review" | "failed" | "cancelled";
@@ -148,89 +152,99 @@ export function RunStoryView({
   }, [allActions.length, status, pinned]);
 
   return (
-    <section
-      className="grid h-full min-h-0 grid-cols-1 overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-[minmax(22rem,32rem)_minmax(0,1fr)]"
-      aria-label="Run"
-    >
-      <div className="flex min-h-0 flex-col border-b border-border lg:border-r lg:border-b-0">
-        <header className="grid gap-2 border-b border-border px-5 py-4">
-          {crumbs ? (
-            <nav aria-label="Breadcrumb" className="flex gap-2 text-xs text-muted-foreground">
+    <section className="flex h-full min-h-0 min-w-0 flex-col overflow-auto" aria-label="Run">
+      <TestWorkspaceHeader
+        title={title}
+        context={
+          crumbs ? (
+            <nav aria-label="Breadcrumb" className="flex flex-wrap gap-2">
               {crumbs}
             </nav>
-          ) : null}
-          <div className="flex items-center gap-2">
-            <span role="status">
-              <StatusPill state={PILL[status]} size="md" />
-            </span>
-            <span className="truncate text-xs text-muted-foreground">
-              {meta.filter(Boolean).join(" · ")}
-            </span>
-          </div>
-          <h1 className="text-xl leading-7 font-semibold tracking-tight wrap-anywhere">{title}</h1>
-          {summary ? <p className="text-sm text-muted-foreground">{summary}</p> : null}
-          {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
-        </header>
-        {notice ? (
-          <div className="grid gap-2 border-b border-border px-5 py-3 empty:hidden">{notice}</div>
-        ) : null}
-        <ol className="min-h-0 flex-1 overflow-y-auto px-3 py-3" aria-label="Steps">
-          {steps.length === 0 ? (
-            <li className="px-2 py-6 text-sm text-muted-foreground">
-              {status === "running" ? "Waiting for the first step…" : "No steps were recorded."}
-            </li>
-          ) : null}
-          {steps.map((step, index) => (
-            <li key={step.id} className="mb-3">
-              <div className="flex items-start gap-2 px-2 py-1.5">
-                <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium tabular-nums">
-                  {index + 1}
-                </span>
-                <span className="min-w-0 flex-1 text-sm font-semibold leading-6">{step.title}</span>
-                {step.durationMs ? (
-                  <span className="mt-0.5 text-xs text-muted-foreground tabular-nums">
-                    {formatDuration(step.durationMs)}
-                  </span>
-                ) : null}
+          ) : undefined
+        }
+        actions={actions}
+      >
+        <span role="status">
+          <StatusPill state={PILL[status]} size="md" />
+        </span>
+        <span>{meta.filter(Boolean).join(" · ")}</span>
+        {summary ? <span>{summary}</span> : null}
+      </TestWorkspaceHeader>
+      <TestWorkspace
+        outline={
+          <>
+            {notice ? (
+              <div className="grid gap-2 border-b border-border px-5 py-3 empty:hidden">
+                {notice}
               </div>
-              <ul className="grid gap-0.5">
-                {step.actions.map((action) => (
-                  <ActionRow
-                    key={action.id}
-                    action={action}
-                    selected={selected?.id === action.id && Boolean(pinned)}
-                    capture={captures?.find(
-                      (item) => item.framePath && item.framePath === action.framePath,
-                    )}
-                    onSelect={() => setPinned(action.id === pinned ? undefined : action.id)}
-                  />
-                ))}
-              </ul>
-            </li>
-          ))}
-          <li ref={listEnd} aria-hidden="true" />
-        </ol>
-        {footer ? <footer className="border-t border-border px-5 py-3">{footer}</footer> : null}
-      </div>
-      <div className="flex min-h-112 min-w-0 flex-col items-center justify-center gap-4 bg-stage p-6">
-        <DeviceFrame
-          alt="Screen at this step"
-          {...(url ? { src: url } : {})}
-          placeholder={status === "running" ? "Starting…" : "No screen yet"}
-        />
-        {capture ? (
-          <CaptureBar
-            item={capture}
-            {...(runId ? { runId } : {})}
-            {...(finishedAt ? { finishedAt } : {})}
-            {...(onReview ? { onReview } : {})}
-          />
-        ) : selected ? (
-          <p className="text-sm text-muted-foreground">
-            {pinned ? selected.label : status === "running" ? "Live" : "Last screen"}
-          </p>
-        ) : null}
-      </div>
+            ) : null}
+            <ol className="min-h-0 flex-1 overflow-y-auto px-3 py-3" aria-label="Steps">
+              {steps.length === 0 ? (
+                <li className="px-2 py-6 text-sm text-muted-foreground">
+                  {status === "running" ? "Waiting for the first step…" : "No steps were recorded."}
+                </li>
+              ) : null}
+              {steps.map((step, index) => (
+                <li key={step.id} className="mb-3">
+                  <div className="flex items-start gap-2 px-2 py-1.5">
+                    <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium tabular-nums">
+                      {index + 1}
+                    </span>
+                    <span className="min-w-0 flex-1 text-sm font-semibold leading-6">
+                      {step.title}
+                    </span>
+                    {step.durationMs ? (
+                      <span className="mt-0.5 text-xs text-muted-foreground tabular-nums">
+                        {formatDuration(step.durationMs)}
+                      </span>
+                    ) : null}
+                  </div>
+                  <ul className="grid gap-0.5">
+                    {step.actions.map((action) => (
+                      <ActionRow
+                        key={action.id}
+                        action={action}
+                        selected={selected?.id === action.id && Boolean(pinned)}
+                        capture={captures?.find(
+                          (item) => item.framePath && item.framePath === action.framePath,
+                        )}
+                        onSelect={() => setPinned(action.id === pinned ? undefined : action.id)}
+                      />
+                    ))}
+                  </ul>
+                </li>
+              ))}
+              <li ref={listEnd} aria-hidden="true" />
+            </ol>
+            {footer ? <footer className="border-t border-border px-5 py-3">{footer}</footer> : null}
+          </>
+        }
+        preview={
+          <div className="flex min-h-80 min-w-0 flex-col items-center justify-start gap-4 bg-stage p-6">
+            <WorkspaceScreenshot>
+              {url ? (
+                <img src={url} alt="Screen at this step" draggable={false} />
+              ) : (
+                <p className="px-6 py-16 text-center text-sm text-muted-foreground">
+                  {status === "running" ? "Starting…" : "No screen yet"}
+                </p>
+              )}
+            </WorkspaceScreenshot>
+            {capture ? (
+              <CaptureBar
+                item={capture}
+                {...(runId ? { runId } : {})}
+                {...(finishedAt ? { finishedAt } : {})}
+                {...(onReview ? { onReview } : {})}
+              />
+            ) : selected ? (
+              <p className="text-sm text-muted-foreground">
+                {pinned ? selected.label : status === "running" ? "Live" : "Last screen"}
+              </p>
+            ) : null}
+          </div>
+        }
+      />
     </section>
   );
 }

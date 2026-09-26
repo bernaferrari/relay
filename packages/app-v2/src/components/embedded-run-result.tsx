@@ -1,3 +1,4 @@
+import { TestStepButton, TestWorkspace, WorkspaceScreenshot } from "./test-workspace";
 import {
   destIdentityReviewItems,
   isCaptureReviewDestPhase,
@@ -80,8 +81,8 @@ export function EmbeddedRunResult({
       : destWaitForEvidenceThumb(frames);
   const Icon = passed ? CheckCircle2 : CircleAlert;
   return (
-    <section className="flex h-full min-h-0 flex-col gap-4 p-4" aria-label="Run result">
-      <header className="flex shrink-0 items-start gap-2.5">
+    <section className="flex h-full min-h-0 flex-col" aria-label="Run result">
+      <header className="flex shrink-0 items-start gap-2.5 border-b border-border px-5 py-3">
         <Icon
           className={`mt-0.5 size-4 shrink-0 ${passed ? "text-muted-foreground" : "text-foreground"}`}
         />
@@ -97,93 +98,130 @@ export function EmbeddedRunResult({
           </span>
         ) : null}
       </header>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 border-b border-border pb-3 text-xs text-muted-foreground">
-        <span>{report.targetName ?? "Device not recorded"}</span>
-        {report.executionContext?.sourceRevision ? (
-          <span>Source revision {report.executionContext.sourceRevision}</span>
-        ) : null}
-        {report.executionContext?.account ? <span>{report.executionContext.account}</span> : null}
-        {report.executionContext?.locale ? <span>{report.executionContext.locale}</span> : null}
-      </div>
-      {report.captureReview?.items.length && onReviewCaptures ? (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-muted-foreground">
-            {report.captureReview.summary?.pending
-              ? `${report.captureReview.summary.pending} to review`
-              : "Screenshot review"}
-            {report.captureReview.summary?.missing
-              ? ` · ${report.captureReview.summary.missing} missing`
-              : ""}
-          </p>
-          <Button size="sm" variant="outline" onClick={onReviewCaptures}>
-            Review screenshots
-          </Button>
-        </div>
-      ) : null}
-      {destPath ? (
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-medium">
-            {showingCapturedResult ? "Captured result" : "Run steps"}
-          </p>
-          <Button size="sm" variant="ghost" onClick={() => setInspectingSteps((value) => !value)}>
-            {showingCapturedResult ? "View steps" : "Back to captured result"}
-          </Button>
-        </div>
-      ) : null}
-      {step && !showingCapturedResult ? (
-        <div className="grid gap-2">
-          <div className="flex items-center gap-3">
-            <Button
-              size="sm"
-              variant="outline"
-              aria-label="Previous run step"
-              disabled={stepIndex === 0}
-              onClick={() => setStepIndex((index) => index - 1)}
-            >
-              Previous
-            </Button>
-            <p className="min-w-0 flex-1 text-sm font-medium" aria-live="polite">
-              {stepIndex + 1} / {report.timeline.length} · {step.title}
-            </p>
-            <Button
-              size="sm"
-              variant="outline"
-              aria-label="Next run step"
-              disabled={stepIndex >= report.timeline.length - 1}
-              onClick={() => setStepIndex((index) => index + 1)}
-            >
-              Next
-            </Button>
+      <TestWorkspace
+        outline={
+          <div className="grid content-start gap-4 p-4">
+            <div className="flex flex-wrap gap-x-4 gap-y-1 border-b border-border pb-3 text-xs text-muted-foreground">
+              <span>{report.targetName ?? "Device not recorded"}</span>
+              {report.executionContext?.sourceRevision ? (
+                <span>Source revision {report.executionContext.sourceRevision}</span>
+              ) : null}
+              {report.executionContext?.account ? (
+                <span>{report.executionContext.account}</span>
+              ) : null}
+              {report.executionContext?.locale ? (
+                <span>{report.executionContext.locale}</span>
+              ) : null}
+            </div>
+            {report.captureReview?.items.length && onReviewCaptures ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-muted-foreground">
+                  {report.captureReview.summary?.pending
+                    ? `${report.captureReview.summary.pending} to review`
+                    : "Screenshot review"}
+                  {report.captureReview.summary?.missing
+                    ? ` · ${report.captureReview.summary.missing} missing`
+                    : ""}
+                </p>
+                <Button size="sm" variant="outline" onClick={onReviewCaptures}>
+                  Review screenshots
+                </Button>
+              </div>
+            ) : null}
+            {destPath ? (
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium">
+                  {showingCapturedResult ? "Captured result" : "Run steps"}
+                </p>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setInspectingSteps((value) => !value)}
+                >
+                  {showingCapturedResult ? "View steps" : "Back to captured result"}
+                </Button>
+              </div>
+            ) : null}
+            {report.timeline.length ? (
+              <ol className="grid list-none gap-1 p-0" aria-label="Run steps">
+                {report.timeline.map((item, index) => (
+                  <li key={item.id}>
+                    <TestStepButton
+                      number={String(index + 1)}
+                      selected={!showingCapturedResult && index === stepIndex}
+                      onClick={() => {
+                        setInspectingSteps(true);
+                        setStepIndex(index);
+                      }}
+                    >
+                      <span className="block font-medium">{item.title}</span>
+                      <span className="text-xs text-muted-foreground">{item.state}</span>
+                    </TestStepButton>
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+            {step && !showingCapturedResult ? (
+              <div className="grid gap-2">
+                <div className="flex items-center gap-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    aria-label="Previous run step"
+                    disabled={stepIndex === 0}
+                    onClick={() => setStepIndex((index) => index - 1)}
+                  >
+                    Previous
+                  </Button>
+                  <p className="min-w-0 flex-1 text-sm font-medium" aria-live="polite">
+                    {stepIndex + 1} / {report.timeline.length} · {step.title}
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    aria-label="Next run step"
+                    disabled={stepIndex >= report.timeline.length - 1}
+                    onClick={() => setStepIndex((index) => index + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">Saved run step · {step.state}</p>
+                {step.expected ? (
+                  <p className="text-sm">
+                    <span className="text-muted-foreground">Expected: </span>
+                    {step.expected}
+                  </p>
+                ) : null}
+                {step.observed ? (
+                  <p className="text-sm">
+                    <span className="text-muted-foreground">Observed: </span>
+                    {step.observed}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
-          <p className="text-xs text-muted-foreground">Saved run step · {step.state}</p>
-          {step.expected ? (
-            <p className="text-sm">
-              <span className="text-muted-foreground">Expected: </span>
-              {step.expected}
-            </p>
-          ) : null}
-          {step.observed ? (
-            <p className="text-sm">
-              <span className="text-muted-foreground">Observed: </span>
-              {step.observed}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-      {frame?.media ? (
-        <figure className="flex min-h-0 flex-1 flex-col gap-2">
-          <ReportImage
-            media={frame.media}
-            alt="Screen captured during this run"
-            className="min-h-0 flex-1 rounded-md object-contain object-top"
-          />
-        </figure>
-      ) : (
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
-          <ImageOff className="size-5" aria-hidden="true" />
-          <p className="text-sm">No screenshot was saved for this selection.</p>
-        </div>
-      )}
+        }
+        preview={
+          <div className="flex min-h-80 flex-1 flex-col p-6">
+            {frame?.media ? (
+              <WorkspaceScreenshot>
+                <ReportImage
+                  media={frame.media}
+                  alt="Screen captured during this run"
+                  className="object-contain object-top"
+                />
+              </WorkspaceScreenshot>
+            ) : (
+              <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
+                <ImageOff className="size-5" aria-hidden="true" />
+                <p className="text-sm">No screenshot was saved for this selection.</p>
+              </div>
+            )}
+          </div>
+        }
+      />
     </section>
   );
 }
