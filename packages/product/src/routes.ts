@@ -243,6 +243,9 @@ export const ROUTE_DEFINITIONS = [
   d("/review", "/home", "Review", "Run", "review", "review-run", ["app", "view"]),
   d("/runs", "/home", "Results", "Run", "runs", "review-run", ["status", "app", "view", "q"]),
   d("/runs/:runId", "/runs", "Run", "Run", "runs", "inspect-run", [
+    "plan",
+    "planApp",
+    "app",
     "view",
     "step",
     "at",

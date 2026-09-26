@@ -88,7 +88,7 @@ export function WorkspaceScreenshot({
   caption?: ReactNode;
 }) {
   return (
-    <figure data-slot="evidence-image-frame" className="mx-auto grid w-full max-w-4xl gap-3">
+    <figure data-slot="evidence-image-frame" className="mx-auto grid w-full gap-3">
       <div className="overflow-hidden rounded-lg border border-border bg-card [&_img]:block [&_img]:h-auto [&_img]:w-full">
         {children}
       </div>

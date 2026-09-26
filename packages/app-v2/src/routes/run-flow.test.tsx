@@ -1604,6 +1604,24 @@ describe("Run and Report", () => {
     expect(document.querySelector('[role="tab"]')).toBeNull();
   });
 
+  it("returns from the run to the Test with its plan context", async () => {
+    const fake = fakeRunService();
+    fake.service.getReport = async () => ({ ...report(), testId: "test-1" });
+    const { history } = await renderRun(
+      "/runs/run-1?plan=suite-1&planApp=app-1&app=app-1",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    const back = [...document.querySelectorAll<HTMLAnchorElement>("a")].find((link) =>
+      link.textContent?.includes("Back to Test"),
+    )!;
+    await click(back);
+    expect(history.location.pathname).toBe("/tests/test-1");
+    expect(String(history.location.search)).toContain("plan=suite-1");
+    expect(String(history.location.search)).toContain("planApp=app-1");
+    expect(String(history.location.search)).toContain("view=definition");
+  });
+
   it("opens configuration directly when setting up another run", async () => {
     const fake = fakeRunService();
     fake.service.getReport = async () => ({ ...report(), testId: "test-1" });
@@ -1612,6 +1630,7 @@ describe("Run and Report", () => {
       fake.service,
       platformWithStorage().platform,
     );
+    await click(button("More run actions"));
     const setup = [...document.querySelectorAll<HTMLElement>("a,button")].find(
       (item) => item.textContent?.trim() === "Set up another run",
     );
