@@ -422,8 +422,11 @@ export function ReviewPage() {
               const entryCards = cards.filter((card) => card.entry.runId === entry.runId);
               if (!entryCards.length) return null;
               return (
-                <div key={entry.runId} className="min-w-0 py-1">
-                  <div className="mx-2 mt-4 mb-2 rounded-md border border-border/60 bg-muted/20 px-2.5 py-2">
+                <div
+                  key={entry.runId}
+                  className="my-3 min-w-0 overflow-hidden rounded-lg border border-border/60"
+                >
+                  <div className="border-b border-border/60 bg-muted/20 px-3 py-2.5">
                     <p
                       className="truncate text-xs leading-5 font-medium text-muted-foreground"
                       title={entry.title}
@@ -434,14 +437,14 @@ export function ReviewPage() {
                       {[entry.targetName, timeAgo(entry.finishedAt)].filter(Boolean).join(" · ")}
                     </p>
                   </div>
-                  <ul className="ml-3 grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5 border-l border-border/60 pl-1.5">
+                  <ul className="grid min-w-0 grid-cols-[minmax(0,1fr)] divide-y divide-border/50">
                     {entryCards.map((card) => (
                       <li key={card.key} className="min-w-0">
                         <button
                           type="button"
                           ref={card.key === selected?.key ? selectedRow : undefined}
                           aria-current={card.key === selected?.key ? "true" : undefined}
-                          className={`flex w-full min-w-0 scroll-mt-12 items-start gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${
+                          className={`flex w-full min-w-0 scroll-mt-12 items-start gap-3 px-3 py-2.5 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring ${
                             card.key === selected?.key
                               ? "bg-primary/10 text-foreground"
                               : "text-foreground hover:bg-accent/40"
