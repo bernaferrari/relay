@@ -29,6 +29,7 @@ import { TestStepEvidencePreview } from "../components/test-step-evidence-previe
 import { runQueryKeys } from "../data/run-queries";
 import { AmbiguousTestError } from "../data/run-product-service";
 import { ChooseTestApp } from "./choose-test-app";
+import { TestLastRunLine, TestLastRunStage, latestRunOf } from "./test-last-run";
 import { readRunPointer, writeRunPointer } from "../data/run-pointer";
 import {
   stabilitySamplesFromRuns,
@@ -456,6 +457,7 @@ export function TestPage() {
           {test.data?.appName ? (
             <p className="text-sm text-muted-foreground">{test.data.appName}</p>
           ) : null}
+          <TestLastRunLine run={latestRunOf(recentRuns.data)} />
         </div>
       </header>
 
@@ -559,7 +561,7 @@ export function TestPage() {
                 stage={
                   <div className="flex h-full min-h-0 flex-col">
                     <p className="border-b border-border px-4 py-3 text-xs text-muted-foreground">
-                      Recording preview
+                      Screen
                     </p>
                     <div className="min-h-0 flex-1">
                       {selectedEvidenceStep?.recordingFrames?.length ? (
@@ -571,19 +573,7 @@ export function TestPage() {
                           loading={false}
                         />
                       ) : (
-                        <div className="grid h-full min-h-0 place-items-center overflow-auto px-6 py-5">
-                          <div className="grid max-w-sm justify-items-center gap-3 text-center">
-                            <div className="grid size-12 place-items-center rounded-2xl bg-muted">
-                              <Camera className="size-5 text-muted-foreground" aria-hidden="true" />
-                            </div>
-                            <div className="grid gap-1.5">
-                              <h2 className="text-base font-semibold">No screenshot yet</h2>
-                              <p className="text-sm leading-relaxed text-muted-foreground">
-                                Run the Test and its screenshots show up here.
-                              </p>
-                            </div>
-                          </div>
-                        </div>
+                        <TestLastRunStage run={latestRunOf(recentRuns.data)} />
                       )}
                     </div>
                   </div>
