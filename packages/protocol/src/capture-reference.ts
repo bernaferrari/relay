@@ -70,3 +70,25 @@ export function isCaptureReferenceRegion(value: unknown): value is CaptureRefere
 export function decidedByReference(decidedBy?: { id: string }): boolean {
   return decidedBy?.id === CAPTURE_REFERENCE_ACTOR.id;
 }
+
+/** One run in the review inbox, with only the screenshots that need a person. */
+export type ReviewInboxEntry = {
+  runId: string;
+  title: string;
+  appMapId?: string;
+  testId?: string;
+  targetName?: string;
+  platform?: string;
+  /** Data set values for Run Across cases. */
+  data?: Record<string, string>;
+  finishedAt: number;
+  outcome?: string;
+  items: import("./capture-review.js").CaptureReviewItem[];
+};
+
+export type ReviewInboxResult = {
+  entries: ReviewInboxEntry[];
+  /** Screenshot counts across the latest run of every Test and device. */
+  totals: import("./capture-review.js").CaptureReviewSummary;
+  runsConsidered: number;
+};

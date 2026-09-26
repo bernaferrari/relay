@@ -12,13 +12,11 @@ import {
   captureHumanInterventionReproof,
   captureScreenshot,
   captureSnapshot,
-
   cancelJob,
   currentOperationContext,
   cleanupScreenshot,
   enqueueJob,
   freezeRecipeExecution,
-
   getActiveJobs,
   getJob,
   HumanInterventionReproofUnavailableError,
@@ -585,7 +583,7 @@ export async function handleJobRoute(context: JobRouteContext): Promise<boolean>
     if (!CAPTURE_REVIEW_ACTIONS.includes(body.action as CaptureReviewAction)) {
       throw new HttpError(400, "Unknown capture review action", {
         code: "CAPTURE_REVIEW_ACTION_INVALID",
-        recovery: `Choose one of: ${CAPTURE_REVIEW_ACTIONS.join(", ")}. Looks correct does not approve a visual baseline.`,
+        recovery: `Choose one of: ${CAPTURE_REVIEW_ACTIONS.join(", ")}. Looks correct makes that screenshot the reference for later runs.`,
       });
     }
     if (!Array.isArray(body.items) || body.items.length === 0) {

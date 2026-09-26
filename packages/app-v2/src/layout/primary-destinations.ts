@@ -1,4 +1,11 @@
-import { Activity, FlaskConical, GitCompare, History, MonitorSmartphone } from "lucide-react";
+import {
+  Activity,
+  FlaskConical,
+  GitCompare,
+  History,
+  MonitorSmartphone,
+  ScanEye,
+} from "lucide-react";
 
 /**
  * One destination vocabulary for the sidebar and command palette, per the
@@ -15,6 +22,14 @@ export const everydayDestinations = [
     icon: FlaskConical,
     detail: "Reusable journeys and saved Plans",
     keywords: "record test suite plan",
+  },
+  {
+    to: "/review",
+    label: "Review",
+    shortLabel: "Review",
+    icon: ScanEye,
+    detail: "Screenshots that changed since they were approved",
+    keywords: "review screenshots approve changed diff reference",
   },
   {
     to: "/runs",

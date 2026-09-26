@@ -28,7 +28,8 @@ import { startServer } from "./index.js";
 const organizationId = "local";
 const projectId = "default";
 const freezeBatchId = "rc23-screenshot-first-persist";
-const freezeCoverage = "30 planned · 29 captured · 1 blocked · 0 missing · 29 screenshots awaiting review · 0 accepted";
+const freezeCoverage =
+  "30 planned · 29 captured · 1 blocked · 0 missing · 29 screenshots awaiting review · 0 accepted";
 
 function client(port: number, actorId: string, actorKind: "human" | "agent"): RelayClient {
   return new RelayClient({
@@ -267,7 +268,7 @@ test(
       assert.match(html, new RegExp(escapeRegExp(freezeCoverage), "u"));
       assert.doesNotMatch(html, /runs passed/u);
       assert.doesNotMatch(html, /\d+ tests passed/u);
-      assert.match(html, /Looks correct does not approve a visual baseline/u);
+      assert.match(html, /Looks correct makes that screenshot the reference for later runs/u);
       assert.equal(checklist.filter((row) => row.status === "pending review").length, 29);
       assert.equal(checklist.filter((row) => row.status === "could not run").length, 1);
       assert.equal(checklist.filter((row) => row.status === "passed").length, 0);

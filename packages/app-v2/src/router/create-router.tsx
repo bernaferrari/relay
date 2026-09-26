@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { ReviewPage } from "../routes/review-page";
 import { QueryClient } from "@tanstack/react-query";
 import {
   createHashHistory,
@@ -323,6 +324,11 @@ const recordingReviewRoute = createRoute({
   component: ReviewRecordingPage,
   remountDeps: ({ params }) => params.recordingId,
 });
+const reviewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/review",
+  component: ReviewPage,
+});
 const sessionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sessions",
@@ -459,6 +465,7 @@ const routeTree = rootRoute.addChildren([
   recordingReviewRoute,
   sessionsRoute,
   sessionRoute,
+  reviewRoute,
   runsRoute,
   runRoute,
   runWalkthroughRoute,

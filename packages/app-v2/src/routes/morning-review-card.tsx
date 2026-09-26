@@ -44,8 +44,8 @@ export function MorningReviewCard() {
         </summary>
         <div className="space-y-4 px-4 pb-4 text-sm">
           <p className="max-w-prose text-muted-foreground">
-            Confirm marks a finding as a product issue; Reject dismisses it. Neither accepts a
-            screenshot baseline.
+            Confirm marks a finding as a product issue; Reject dismisses it. Looks correct on a
+            screenshot makes it the reference for later runs.
           </p>
           <h3 className="text-xs font-medium text-foreground">Needs attention on this Mac</h3>
           <ul className="grid gap-4 sm:grid-cols-2">

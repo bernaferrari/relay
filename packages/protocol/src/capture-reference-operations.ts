@@ -1,9 +1,13 @@
-import type { CaptureReferenceRegion } from "./capture-reference.js";
+import type { CaptureReferenceRegion, ReviewInboxResult } from "./capture-reference.js";
 import type { CaptureReviewQueue } from "./capture-review.js";
 import { createOperationBuilders } from "./operation-builders.js";
 import type { RuntimeParser } from "./operation-contract.js";
 
 export type CaptureReferenceOperationMap = {
+  "review.inbox.list": {
+    input: { sinceDays?: number; appMapId?: string };
+    output: ReviewInboxResult;
+  };
   "run.capture.reference.compare": {
     input: { runId: string };
     output: { queue: CaptureReviewQueue };
@@ -25,9 +29,24 @@ const queueOutput: RuntimeParser<{ queue: CaptureReviewQueue }> = Object.freeze(
   },
 });
 
-const { command } = createOperationBuilders<CaptureReferenceOperationMap>();
+const inboxOutput: RuntimeParser<ReviewInboxResult> = Object.freeze({
+  description: "review inbox response",
+  parse(value: unknown) {
+    const record = value as Partial<ReviewInboxResult> | null;
+    if (!record || !Array.isArray(record.entries) || !record.totals) {
+      throw new Error("review inbox response must include entries and totals");
+    }
+    return record as ReviewInboxResult;
+  },
+});
+
+const { command, query } = createOperationBuilders<CaptureReferenceOperationMap>();
 
 export const captureReferenceOperationDefinitions = [
+  query("review.inbox.list", "List screenshots waiting for review", "/review/inbox", {
+    category: "evidence",
+    output: inboxOutput,
+  }),
   command(
     "run.capture.reference.compare",
     "Compare a Run's screenshots with their references",

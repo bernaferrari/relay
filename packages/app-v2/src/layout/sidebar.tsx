@@ -16,6 +16,7 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { CircleHelp, Settings } from "lucide-react";
 import { AppSwitcher } from "./app-switcher";
 import { ActiveWork } from "./active-work";
+import { ReviewCount } from "./review-count";
 import { everydayDestinations, utilityDestinations } from "./primary-destinations";
 
 type DestinationItem = (typeof everydayDestinations)[number] | (typeof utilityDestinations)[number];
@@ -67,6 +68,7 @@ function SidebarDestinationLink({
         <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
           {item.label}
         </span>
+        {item.to === "/review" ? <ReviewCount /> : null}
       </SidebarMenuButton>
     </SidebarMenuItem>
   );

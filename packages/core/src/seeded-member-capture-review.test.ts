@@ -658,7 +658,7 @@ test(
       assert.match(html, new RegExp(coverage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"));
       assert.doesNotMatch(html, /runs passed/u);
       assert.doesNotMatch(html, /\d+ tests passed/u);
-      assert.match(html, /Looks correct does not approve a visual baseline/u);
+      assert.match(html, /Looks correct makes that screenshot the reference for later runs/u);
       assert.match(html, /pending review/u);
       assert.match(readme, /screenshots awaiting review/u);
       assert.doesNotMatch(readme, /runs passed/u);

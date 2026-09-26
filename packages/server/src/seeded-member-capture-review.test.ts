@@ -422,7 +422,7 @@ test(
       assert.match(html, new RegExp(coverage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"));
       assert.doesNotMatch(html, /runs passed/u);
       assert.doesNotMatch(html, /\d+ tests passed/u);
-      assert.match(html, /Looks correct does not approve a visual baseline/u);
+      assert.match(html, /Looks correct makes that screenshot the reference for later runs/u);
     } finally {
       await server?.close().catch(() => undefined);
       resetControlDatabaseCache();
@@ -793,7 +793,10 @@ test(
       const coverage = formatCaptureReviewCoverageSummary(afterAccept.queue.summary);
       assert.match(exportedHtml, new RegExp(coverage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"));
       assert.doesNotMatch(exportedHtml, /runs passed/u);
-      assert.match(exportedHtml, /Looks correct does not approve a visual baseline/u);
+      assert.match(
+        exportedHtml,
+        /Looks correct makes that screenshot the reference for later runs/u,
+      );
       assert.equal(runIds.length, 8);
     } finally {
       await server?.close().catch(() => undefined);

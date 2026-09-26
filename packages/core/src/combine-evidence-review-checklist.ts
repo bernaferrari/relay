@@ -318,7 +318,7 @@ export function reviewChecklistSection(
 <h2>Review checklist</h2>
 <p class="guidance">${
     options?.captureReview
-      ? `${escapeHtml(options.captureReview)}. Looks correct does not approve a visual baseline.`
+      ? `${escapeHtml(options.captureReview)}. Looks correct makes that screenshot the reference for later runs.`
       : "Confirm and Reject never accept a visual baseline. Approve or reject pixels only with <code>relay run visual review &lt;job&gt;</code>."
   }</p>
 <table><thead><tr><th>Test</th><th>Status</th><th>Before</th><th>After</th><th>visual-comparison</th><th>Review</th></tr></thead><tbody>${body}</tbody></table>

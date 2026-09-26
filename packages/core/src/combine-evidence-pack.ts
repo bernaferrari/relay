@@ -168,7 +168,7 @@ function portablePackHtml(
     })
     .join("\n");
   const summary = captureReviewHeadline
-    ? `${escapeHtml(captureReviewHeadline)} · Looks correct does not approve a visual baseline.`
+    ? `${escapeHtml(captureReviewHeadline)} · Looks correct makes that screenshot the reference for later runs.`
     : `${passed.length} of ${manifest.cases.length} runs passed · ${captured}${expected ? ` of ${expected}` : ""} screenshots · ${analysis.findings.length} finding${analysis.findings.length === 1 ? "" : "s"} (${analysis.critical} critical) against ${escapeHtml(analysis.baselineLocale)}${blind ? ` · ${blind} frame${blind === 1 ? "" : "s"} without a UI tree, checked for presence only` : ""}`;
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(manifest.title)}</title>
@@ -862,12 +862,12 @@ export async function exportCombineEvidencePack(input: {
       ...(captureReviewHeadline
         ? [
             `Capture review: ${captureReviewHeadline}`,
-            "Looks correct does not approve a visual baseline.",
+            "Looks correct makes that screenshot the reference for later runs.",
           ]
         : []),
       "",
       captureReviewHeadline
-        ? "Open index.html for planned, captured, blocked, and screenshots awaiting review. Execution ok is not visual acceptance. Looks correct does not approve a visual baseline."
+        ? "Open index.html for planned, captured, blocked, and screenshots awaiting review. Execution ok is not visual acceptance. Looks correct makes that screenshot the reference for later runs."
         : "Open index.html for the Test checklist (passed | check failed | could not run | todo) and the frame report. Confirm and Reject never accept a visual baseline; use `relay run visual review <job>`. Each folder is one matrix case: screenshots/ are the rasters (full.png is the stitched long page when a destination survey or stitch was captured), accessibility/ holds the raw tree beside each PNG when one was captured.",
       "manifest.json carries the same findings under `analysis`, and `byCanonicalKey` maps each one to the frame it came from.",
       "",

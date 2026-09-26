@@ -26,6 +26,7 @@ const expectedPaths = {
   "/sessions/:sessionId": "/sessions/$sessionId",
   "/recordings/:recordingId": "/recordings/$recordingId",
   "/recordings/:recordingId/review": "/recordings/$recordingId/review",
+  "/review": "/review",
   "/runs": "/runs",
   "/runs/:runId": "/runs/$runId",
   "/runs/:runId/walkthrough": "/runs/$runId/walkthrough",

@@ -21,6 +21,7 @@ export type RoutePattern =
   | "/sessions/:sessionId"
   | "/recordings/:recordingId"
   | "/recordings/:recordingId/review"
+  | "/review"
   | "/runs"
   | "/runs/:runId"
   | "/runs/:runId/walkthrough"
@@ -70,6 +71,7 @@ export type Sidebar =
   | "tests"
   | "sessions"
   | "runs"
+  | "review"
   | "changes"
   | "devices"
   | "settings";
@@ -229,6 +231,7 @@ export const ROUTE_DEFINITIONS = [
     "review-recording",
     ["view", "step", "screen"],
   ),
+  d("/review", "/home", "Review", "Run", "review", "review-run", ["app", "view"]),
   d("/runs", "/home", "Results", "Run", "runs", "review-run", ["status", "app", "view", "q"]),
   d("/runs/:runId", "/runs", "Run", "Run", "runs", "inspect-run", [
     "view",

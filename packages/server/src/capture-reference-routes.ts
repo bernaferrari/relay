@@ -5,6 +5,7 @@ import {
   captureDiffImageForItem,
   captureReferenceImageForItem,
   captureReviewQueueForRun,
+  listReviewInbox,
   runsRoot,
   updateCaptureReferenceIgnoreRegions,
   type PersistedRun,
@@ -51,6 +52,23 @@ export async function handleCaptureReferenceRoute(
   context: CaptureReferenceRouteContext,
 ): Promise<boolean> {
   const { method, pathname, url, request, response, scope } = context;
+
+  if (method === "GET" && pathname === "/review/inbox") {
+    const sinceDays = Number(url.searchParams.get("sinceDays") ?? "14");
+    const appMapId = url.searchParams.get("appMapId")?.trim();
+    json(
+      response,
+      200,
+      await listReviewInbox(runsRoot(), {
+        sinceDays: Number.isFinite(sinceDays) && sinceDays > 0 ? Math.min(sinceDays, 365) : 14,
+        ...(appMapId ? { appMapId } : {}),
+        visible: (run) =>
+          scope.localTrusted ||
+          (run.projectId === scope.projectId && run.ownerId === scope.subject),
+      }),
+    );
+    return true;
+  }
 
   const compare = matchPath(pathname, "/runs/:id/capture-reference/compare");
   if (method === "POST" && compare) {

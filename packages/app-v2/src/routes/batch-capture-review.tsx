@@ -213,20 +213,22 @@ export function PlanCaptureReviewSection({
       </section>
     );
   const reviewItem = (action: CaptureReviewAction, items: PlanCaptureReviewItem[], note?: string) =>
-    review.mutateAsync({
-      action,
-      items: items
-        .filter((item): item is PlanCaptureReviewItem & { runId: string } => Boolean(item.runId))
-        .map((item) => ({
-          runId: item.runId,
-          captureId: item.captureId,
-          ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
-          ...(item.reviewVersion !== undefined
-            ? { expectedReviewVersion: item.reviewVersion }
-            : {}),
-          ...(note ? { note } : {}),
-        })),
-    }).then((result) => result.results.every((entry) => entry.status === "applied"));
+    review
+      .mutateAsync({
+        action,
+        items: items
+          .filter((item): item is PlanCaptureReviewItem & { runId: string } => Boolean(item.runId))
+          .map((item) => ({
+            runId: item.runId,
+            captureId: item.captureId,
+            ...(item.imageSha256 ? { imageSha256: item.imageSha256 } : {}),
+            ...(item.reviewVersion !== undefined
+              ? { expectedReviewVersion: item.reviewVersion }
+              : {}),
+            ...(note ? { note } : {}),
+          })),
+      })
+      .then((result) => result.results.every((entry) => entry.status === "applied"));
   return (
     <section className="mt-4 grid gap-4">
       <h2 className="sr-only">Screenshot review</h2>
@@ -421,7 +423,7 @@ export function PlanCaptureReviewSection({
       <details className="pt-2 text-xs text-muted-foreground">
         <summary className="w-fit cursor-pointer">Coverage and review details</summary>
         <p className="mt-2">{formatCaptureReviewCoverageSummary(queue.summary)}</p>
-        <p className="mt-1">Looks correct does not approve a visual baseline.</p>
+        <p className="mt-1">Looks correct makes that screenshot the reference for later runs.</p>
       </details>
     </section>
   );

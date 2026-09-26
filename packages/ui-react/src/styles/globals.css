@@ -28,6 +28,7 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
+  --color-diff: var(--diff);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -76,6 +77,8 @@
   --warning-foreground: oklch(0.45 0.12 70);
   --info: oklch(0.55 0.1 230);
   --info-foreground: oklch(0.4 0.08 230);
+  /* Changed pixels in screenshot comparisons; matches the server diff image. */
+  --diff: oklch(0.63 0.27 345);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
@@ -116,6 +119,7 @@ html[data-color-scheme="dark"] {
   --warning: oklch(0.78 0.13 75);
   --warning-foreground: oklch(0.86 0.08 80);
   --info: oklch(0.72 0.08 230);
+  --diff: oklch(0.7 0.25 345);
   --info-foreground: oklch(0.84 0.05 230);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);

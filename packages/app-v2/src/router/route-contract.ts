@@ -119,6 +119,11 @@ const routePresentations = {
     eyebrow: "Recording",
     description: "Review captured steps and checkpoints before saving a test.",
   },
+  "/review": {
+    path: "/review",
+    eyebrow: "Review",
+    description: "Screenshots that changed or are new since they were last approved.",
+  },
   "/runs": {
     path: "/runs",
     eyebrow: "Activity",

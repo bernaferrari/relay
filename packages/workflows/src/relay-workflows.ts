@@ -345,11 +345,19 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
             error instanceof BrowserTargetProfileSelectionError
               ? {
                   code: "compile-blocked",
-                  title: "This Test wasn’t recorded on this browser",
+                  title: error.setupChanged
+                    ? "This browser’s setup changed since recording"
+                    : error.ambiguous
+                      ? "Relay can’t tell which saved setup to use"
+                      : "This Test wasn’t recorded on this browser",
                   detail: error.message,
-                  recovery: error.recordedOn.length
-                    ? `Run it on ${error.recordedOn[0]}, or record it once on this browser.`
-                    : "Record it once on this browser, then run it again.",
+                  recovery: error.setupChanged
+                    ? "Record the Test again on this browser, or restore the browser’s previous setup in Devices."
+                    : error.ambiguous
+                      ? "Record the Test again on this browser so it has one saved setup."
+                      : error.recordedOn.length
+                        ? `Run it on ${error.recordedOn[0]}, or record it once on this browser.`
+                        : "Record it once on this browser, then run it again.",
                   retryable: false,
                   sourceCode: error.sourceCode,
                 }

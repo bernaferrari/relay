@@ -6,6 +6,7 @@ import { Check } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
 import {
   captureReviewAdvanceIndex,
+  decidedByReference,
   captureReviewQueueFrameKey,
   captureReviewQueueItemKey,
   destIdentityReviewItems,
@@ -370,12 +371,18 @@ export function CaptureReviewPanel({
                           : item.status === "missing"
                             ? "Not captured"
                             : item.status === "accepted"
-                              ? "Looks correct"
+                              ? decidedByReference(item.decidedBy)
+                                ? "Matches reference"
+                                : "Looks correct"
                               : item.status === "issue"
                                 ? "Issue reported"
                                 : item.status === "need-more-evidence"
                                   ? "More evidence needed"
-                                  : "Pending review"}
+                                  : item.reference?.state === "changed"
+                                    ? `Changed ${((item.reference.changeRatio ?? 0) * 100).toFixed(1)}%`
+                                    : item.reference?.state === "new"
+                                      ? "New · no reference yet"
+                                      : "Pending review"}
                       </span>
                       {item.note ? <span className="min-w-0 basis-full">{item.note}</span> : null}
                     </span>
@@ -440,7 +447,9 @@ export function CaptureReviewPanel({
                     ? "This screenshot was not captured. Open Runs and problems to see what stopped it, then rerun the affected case."
                     : "This screenshot was not captured. Check the run’s steps, then set up another run to collect it."
                   : selected.status === "accepted"
-                    ? "Looks correct — this does not approve a visual baseline."
+                    ? decidedByReference(selected.decidedBy)
+                      ? "Matches the approved reference — approved automatically."
+                      : "Looks correct — this screenshot is now the reference for later runs."
                     : selected.status === "issue"
                       ? "Reported as an issue. Execution and automated checks are unchanged."
                       : selected.status === "need-more-evidence"
