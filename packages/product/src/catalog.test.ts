@@ -108,7 +108,7 @@ test("projects production App Maps into app-scoped Tests with recent Run links",
   assert.equal(summaries[1]?.href, "/tests/attention");
 });
 
-test("validation receipts are exact revision markers while legacy tests stay compatible", () => {
+test("a Test not yet confirmed by a run stays runnable; running it confirms it", () => {
   const valid = scenario("validated", "Validated");
   valid.validation = {
     status: "passed",
@@ -129,8 +129,9 @@ test("validation receipts are exact revision markers while legacy tests stay com
   });
   const tests = projectProductTests([map]);
   assert.equal(tests.find((test) => test.id === "validated")?.status, "ready");
-  assert.equal(tests.find((test) => test.id === "failed-validation")?.status, "needs-review");
-  assert.equal(tests.find((test) => test.id === "edited")?.status, "needs-review");
+  assert.equal(tests.find((test) => test.id === "failed-validation")?.status, "ready");
+  assert.equal(tests.find((test) => test.id === "edited")?.status, "ready");
+  assert.equal(tests.find((test) => test.id === "edited")?.setupIssue, undefined);
   assert.equal(tests.find((test) => test.id === "legacy")?.status, "ready");
   assert.equal(
     projectProductTests([{ ...map, revision: 5 }]).find((test) => test.id === "validated")?.status,

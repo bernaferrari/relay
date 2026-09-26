@@ -98,6 +98,23 @@ const activeCampaignStatuses: ReadonlySet<CombineCampaign["status"]> = new Set([
   "running",
 ]);
 
+/** How long a run can sit with nothing started before it stops holding the
+ * Plan's slot. Its cases never reached a device, so nothing is lost. */
+export const ABANDONED_CAMPAIGN_AFTER_MS = 30 * 60_000;
+
+/** A run whose work never started and has no live job (typically lost to a
+ * restart) should not block the next run of the same Plan. */
+export function isAbandonedCampaign(
+  campaign: Pick<StoredCombineCampaign, "status" | "updatedAt" | "cases">,
+  now = Date.now(),
+): boolean {
+  if (!activeCampaignStatuses.has(campaign.status)) return false;
+  if (now - campaign.updatedAt < ABANDONED_CAMPAIGN_AFTER_MS) return false;
+  return campaign.cases.every(
+    (item) => item.status === "queued" && (!item.jobId || !getJob(item.jobId)),
+  );
+}
+
 type RepeatResumeMode = "untouched" | "failed" | "all";
 
 function repeatResumeMode(campaign: StoredCombineCampaign): RepeatResumeMode {
@@ -289,7 +306,8 @@ export async function findActiveCombineCampaignForCombine(
       projected?.appMapId === appMapId &&
       projected.combineId === combineId &&
       combineCampaignUnsignedLaneId(projected) === lane &&
-      (activeCampaignStatuses.has(projected.status) || hasReviewableRepeatResume(projected))
+      (activeCampaignStatuses.has(projected.status) || hasReviewableRepeatResume(projected)) &&
+      !isAbandonedCampaign(projected)
     ) {
       return projected;
     }

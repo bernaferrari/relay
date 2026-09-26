@@ -93,9 +93,8 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
           <RelayWordmark />
         </Link>
       </div>
-      <AppSwitcher />
-      <SidebarGroup className="flex-none pt-1.5">
-        <nav className="flex flex-col gap-0.5" aria-label={label}>
+      <AppSwitcher>
+        <nav className="flex flex-col gap-0.5 pt-2" aria-label={label}>
           <SidebarMenu className="m-0 grid list-none gap-0.5 p-0">
             {everydayDestinations.map((item) => (
               <SidebarDestinationLink
@@ -107,20 +106,20 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
               />
             ))}
           </SidebarMenu>
-          <div className="my-1.5 border-t border-border/70" role="separator" />
-          <SidebarMenu className="m-0 grid list-none gap-0.5 p-0">
-            {utilityDestinations.map((item) => (
-              <SidebarDestinationLink
-                key={item.to}
-                item={item}
-                pathname={pathname}
-                app={selectedApp}
-                onNavigate={closeMobileNavigation}
-              />
-            ))}
-          </SidebarMenu>
         </nav>
-      </SidebarGroup>
+      </AppSwitcher>
+      <div className="my-1.5 border-t border-border/70" role="separator" />
+      <SidebarMenu className="m-0 grid list-none gap-0.5 p-0" aria-label="Setup">
+        {utilityDestinations.map((item) => (
+          <SidebarDestinationLink
+            key={item.to}
+            item={item}
+            pathname={pathname}
+            app={selectedApp}
+            onNavigate={closeMobileNavigation}
+          />
+        ))}
+      </SidebarMenu>
       <SidebarFooter className="mt-auto pt-2.5">
         <ActiveWork />
         <nav

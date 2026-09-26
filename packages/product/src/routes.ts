@@ -118,6 +118,7 @@ export type RouteDefinition = {
     | "variant"
     | "type"
     | "q"
+    | "result"
     | "returnTo"
     | "run"
     | "setup"
@@ -159,7 +160,13 @@ export const ROUTE_DEFINITIONS = [
     "screen",
     "path",
   ]),
-  d("/tests", "/home", "Tests", "Test", "tests", "record-test", ["status", "app", "view", "q"]),
+  d("/tests", "/home", "Tests", "Test", "tests", "record-test", [
+    "status",
+    "app",
+    "view",
+    "q",
+    "result",
+  ]),
   d("/tests/new", "/tests", "New Test", "Test", "tests", "record-test", [
     "app",
     "view",

@@ -189,15 +189,22 @@ describe("shell overlays", () => {
     const history = await renderShell({ initialEntries: ["/tests?app=checkout"] });
     const navigation = document.querySelector('nav[aria-label="Main navigation"]')!;
     expect([...navigation.querySelectorAll("a")].map((link) => link.textContent)).toEqual([
-      "Today",
       "Tests",
       "Review",
       "Results",
     ]);
     expect(navigation.querySelector('[aria-current="page"]')?.textContent).toBe("Tests");
     expect(navigation.querySelector('button[aria-label="More navigation"]')).not.toBeNull();
-    const plans = document.querySelector('nav[aria-label="Test library"] a[href*="suites"]');
-    expect(plans?.getAttribute("href")).toContain("app=checkout");
+    // Plans are groups on Tests now, so there is no separate Plans collection
+    // link; the sidebar carries the App into Tests/Results and its Map.
+    expect(document.querySelector('a[href*="/suites"]')).toBeNull();
+    const primary = document.querySelector('nav[aria-label="Primary"]')!;
+    expect(primary.querySelector('a[aria-current="page"]')?.getAttribute("href")).toBe(
+      "/tests?app=checkout",
+    );
+    expect(document.querySelector('nav[aria-label="App navigation"] a')?.getAttribute("href")).toBe(
+      "/apps/checkout/map",
+    );
     const results = [...navigation.querySelectorAll("a")].find(
       (link) => link.textContent === "Results",
     )!;
@@ -206,6 +213,41 @@ describe("shell overlays", () => {
     expect(history.location.pathname).toBe("/runs");
     expect(history.location.search).toContain("app=checkout");
     expect(navigation.querySelector('[aria-current="page"]')?.textContent).toBe("Results");
+  });
+
+  it("orders the sidebar as everyday links, then Map, then Devices, and moves Activity and Changes to search", async () => {
+    const history = await renderShell({ initialEntries: ["/tests"] });
+    const sidebar = document.querySelector('[aria-label="Relay navigation"]')!;
+    const labels = [...sidebar.querySelectorAll("a, button")]
+      .map((item) => item.textContent?.trim())
+      .filter((text) => ["Tests", "Review", "Results", "Map", "Devices"].includes(text ?? ""));
+    expect(labels).toEqual(["Tests", "Review", "Results", "Map", "Devices"]);
+    expect(sidebar.querySelector('a[href="/sessions"]')).toBeNull();
+    expect(sidebar.querySelector('a[href="/changes"]')).toBeNull();
+    expect(sidebar.textContent).not.toContain("Changes");
+
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true }),
+      );
+    });
+    await settle();
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Search commands"]')!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, "Changes");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await settle();
+    const changesCommand = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[role="listbox"][aria-label="Commands"] [role="option"]',
+      ),
+    ].find((option) => option.textContent?.includes("Changes"));
+    expect(changesCommand).toBeTruthy();
+    await act(async () => changesCommand!.click());
+    await settle();
+    expect(history.location.pathname).toBe("/changes");
   });
 
   it("shows running work and links to full Activity", async () => {
@@ -250,7 +292,6 @@ describe("shell overlays", () => {
     await act(async () => trigger?.click());
     await settle();
 
-    expect(document.body.textContent).toContain("Activity");
     expect(document.body.textContent).toContain("Checkout");
     expect(document.body.textContent).toContain("Verify checkout change");
     expect(document.body.textContent).toContain("Verifying");
@@ -512,7 +553,9 @@ describe("shell overlays", () => {
       ],
     });
 
-    expect(document.querySelector('nav[aria-label="Primary"] a[href="/devices"]')).not.toBeNull();
+    // Devices is setup: under the everyday links, outside the Primary nav.
+    expect(document.querySelector('nav[aria-label="Primary"] a[href="/devices"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Setup"] a[href="/devices"]')).not.toBeNull();
     const trigger = document.querySelector<HTMLButtonElement>('[aria-label^="Device or browser"]');
     expect(trigger?.textContent).toContain("2 ready");
     await act(async () => trigger?.click());

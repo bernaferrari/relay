@@ -1,5 +1,4 @@
 /** @jsxImportSource react */
-import { TodayPage } from "../routes/today-page";
 import { ReviewPage } from "../routes/review-page";
 import { QueryClient } from "@tanstack/react-query";
 import {
@@ -104,7 +103,6 @@ const EditTestPage = lazyNamedRoute(() => import("../routes/edit-test-page"), "E
 const RecordTestPage = lazyNamedRoute(() => import("../routes/record-test-page"), "RecordTestPage");
 const RecordingPage = lazyNamedRoute(() => import("../routes/record-test-page"), "RecordingPage");
 const RunAcrossPage = lazyNamedRoute(() => import("../routes/run-across-page"), "RunAcrossPage");
-const SuitesPage = lazyNamedRoute(() => import("../routes/suites-page"), "SuitesPage");
 const SuitePage = lazyNamedRoute(() => import("../routes/suite-page"), "SuitePage");
 const EnvironmentsPage = lazyNamedRoute(
   () => import("../routes/environments-page"),
@@ -202,14 +200,17 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   beforeLoad: () => {
-    throw redirect({ to: "/home", replace: true });
+    throw redirect({ to: "/tests", replace: true });
   },
 });
 
+// Tests is home: what needs you, your plans, and your tests.
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/home",
-  component: TodayPage,
+  beforeLoad: () => {
+    throw redirect({ to: "/tests", replace: true });
+  },
 });
 const appsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -295,7 +296,10 @@ const runAcrossRoute = createRoute({
 const suitesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/suites",
-  component: SuitesPage,
+  // Plans are groups on the Tests page.
+  beforeLoad: () => {
+    throw redirect({ to: "/tests", replace: true });
+  },
 });
 const suiteRoute = createRoute({
   getParentRoute: () => rootRoute,

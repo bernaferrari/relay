@@ -10,6 +10,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
 } from "@relay/ui-react/components/dropdown-menu";
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRouter, useRouteContext } from "@tanstack/react-router";
 import { Map, ChevronDown } from "lucide-react";
@@ -24,7 +25,8 @@ import {
   safeDecodeURIComponent,
 } from "./app-scope";
 
-export function AppSwitcher() {
+/** The App choice, then the everyday links (children), then that App's map. */
+export function AppSwitcher({ children }: { children?: ReactNode } = {}) {
   const router = useRouter();
   const location = useLocation();
   const {
@@ -237,7 +239,8 @@ export function AppSwitcher() {
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
-      <nav aria-label="App navigation" className="pt-1.5">
+      {children}
+      <nav aria-label="App navigation" className="pt-0.5">
         {selectedAppId ? (
           <SidebarMenuButton
             render={<Link to="/apps/$appId/map" params={{ appId: selectedAppId }} />}
@@ -246,7 +249,7 @@ export function AppSwitcher() {
             className="min-h-9 gap-2.5 px-2.5 text-sm font-medium"
           >
             <Map className="size-4 text-muted-foreground" aria-hidden="true" />
-            App map
+            Map
           </SidebarMenuButton>
         ) : (
           <DropdownMenu>
@@ -255,7 +258,7 @@ export function AppSwitcher() {
               aria-label="App map"
             >
               <Map className="size-4 text-muted-foreground" aria-hidden="true" />
-              <span className="flex-1 text-left">App map</span>
+              <span className="flex-1 text-left">Map</span>
               <ChevronDown className="size-3 text-muted-foreground" aria-hidden="true" />
             </DropdownMenuTrigger>
             <DropdownMenuContent

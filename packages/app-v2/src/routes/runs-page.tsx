@@ -26,14 +26,14 @@ import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/runs");
 
-type RunView = "latest" | "all" | "failed" | "needs-review" | "active";
+type RunView = "all" | "failed" | "needs-review";
 
+// Running work is always pinned on top, and each Test's latest result lives
+// on the Tests page, so three views are enough here.
 const runViews: readonly { id: RunView; label: string }[] = [
-  { id: "all", label: "All Runs" },
+  { id: "all", label: "All" },
   { id: "failed", label: "Failed" },
   { id: "needs-review", label: "Needs review" },
-  { id: "active", label: "Active" },
-  { id: "latest", label: "Latest per Test" },
 ];
 
 export function RunsPage() {
@@ -81,20 +81,16 @@ export function RunsPage() {
     );
     // Filters select Results, but never discard the sibling Runs needed to
     // describe a Plan accurately (including other devices and pending reviews).
-    const matching =
-      view === "latest"
-        ? latestRuns(searched)
-        : searched.filter((run) => {
-            if (view === "failed") return run.phase === "failed";
-            if (view === "needs-review")
-              return (
-                hasScreenshotReviewAttention(run) ||
-                run.review?.status === "pending" ||
-                run.outcome === "uncertain"
-              );
-            if (view === "active") return run.phase === "queued" || run.phase === "running";
-            return true;
-          });
+    const matching = searched.filter((run) => {
+      if (view === "failed") return run.phase === "failed";
+      if (view === "needs-review")
+        return (
+          hasScreenshotReviewAttention(run) ||
+          run.review?.status === "pending" ||
+          run.outcome === "uncertain"
+        );
+      return true;
+    });
     const selected = new Set(
       matching.map((run) => (run.batchId ? `plan:${run.batchId}` : `run:${run.id}`)),
     );
@@ -137,10 +133,7 @@ export function RunsPage() {
       className="mx-auto flex min-h-full w-full max-w-5xl flex-col"
       onClickCapture={returnFocus.onClickCapture}
     >
-      <PageHeader
-        title="Results"
-        description="Review screenshots, investigate problems, and follow runs in progress."
-      />
+      <PageHeader title="Results" description="Everything that ran, newest first." />
 
       <LibraryToolbar
         label="Filter Runs"
@@ -202,19 +195,30 @@ export function RunsPage() {
       ) : null}
 
       {runs.data !== undefined && visibleRuns.length ? (
-        <section id="run-history-results" className="mt-3" aria-labelledby="run-history-title">
-          <div className="flex min-h-8 items-center justify-between gap-5 px-0.5 pb-2.5">
-            <h2 id="run-history-title" className="text-sm font-semibold">
-              {visibleRuns.length === 1 ? "1 Result" : `${visibleRuns.length} Results`}
-            </h2>
-            <span className="text-xs text-muted-foreground" aria-live="polite">
-              {runs.isError ? "Last loaded results" : runViewDescription(view, historyComplete)}
-            </span>
-          </div>
-          <RunHistoryList runs={visibleRuns}>
-            {(run, _index, interaction) => <RunRow run={run} interaction={interaction} />}
-          </RunHistoryList>
-        </section>
+        <div className="mt-3 grid gap-6" aria-live="polite">
+          {runsByDay(visibleRuns).map(({ label, runs: dayRuns, live }) => (
+            <section key={label} aria-label={label} className="grid gap-2">
+              <h2
+                className={`flex items-center gap-2 px-0.5 text-sm font-semibold ${live ? "text-brand" : ""}`}
+              >
+                {live ? (
+                  <span
+                    className="size-2 animate-pulse rounded-full bg-brand motion-reduce:animate-none"
+                    aria-hidden="true"
+                  />
+                ) : null}
+                {label}
+                <span className="font-normal text-muted-foreground">{dayRuns.length}</span>
+              </h2>
+              <RunHistoryList runs={dayRuns}>
+                {(run, _index, interaction) => <RunRow run={run} interaction={interaction} />}
+              </RunHistoryList>
+            </section>
+          ))}
+          <p className="px-0.5 text-xs text-muted-foreground">
+            {runs.isError ? "Last loaded results" : runViewDescription(view, historyComplete)}
+          </p>
+        </div>
       ) : null}
 
       {runs.data !== undefined && !visibleRuns.length ? (
@@ -342,37 +346,53 @@ function RunRow({
   );
 }
 
-function latestRuns(runs: readonly ProductRunSummary[]) {
-  const seen = new Set<string>();
-  return [...runs]
-    .sort((left, right) => runTime(right) - runTime(left) || right.id.localeCompare(left.id))
-    .filter((run) => {
-      const identity = run.testId ? `${run.appMapId ?? "app"}:${run.testId}` : run.id;
-      if (seen.has(identity)) return false;
-      seen.add(identity);
-      return true;
-    });
+/** Running work first, then one group per day, newest first. */
+function runsByDay(runs: readonly ProductRunSummary[]) {
+  const live = runs.filter((run) => run.phase === "queued" || run.phase === "running");
+  const done = runs
+    .filter((run) => !live.includes(run))
+    .sort((left, right) => runTime(right) - runTime(left));
+  const groups: { label: string; runs: ProductRunSummary[]; live?: boolean }[] = [];
+  if (live.length) groups.push({ label: "Running now", runs: live, live: true });
+  for (const run of done) {
+    const label = dayLabel(runTime(run));
+    const group = groups.at(-1);
+    if (group && !group.live && group.label === label) group.runs.push(run);
+    else groups.push({ label, runs: [run] });
+  }
+  return groups;
+}
+
+function dayLabel(value: number): string {
+  const day = new Date(value);
+  const today = new Date();
+  const start = (date: Date) =>
+    new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const days = Math.round((start(today) - start(day)) / 86_400_000);
+  if (days === 0) return "Today";
+  if (days === 1) return "Yesterday";
+  return day.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    ...(day.getFullYear() === today.getFullYear() ? {} : { year: "numeric" }),
+  });
 }
 
 function runView(value: unknown): RunView {
-  return value === "latest" || value === "failed" || value === "needs-review" || value === "active"
-    ? value
-    : "all";
+  return value === "failed" || value === "needs-review" ? value : "all";
 }
 
 function runViewDescription(view: RunView, historyComplete: boolean) {
-  if (view === "latest") return "Most recent result for each Test";
-  if (view === "failed") return "App failures and Runs that could not start";
-  if (view === "needs-review") return "Waiting for review";
-  if (view === "active") return "Queued and in progress";
-  return historyComplete ? "Complete history" : "Loaded history";
+  if (view === "failed") return "Failures and runs that could not start";
+  if (view === "needs-review") return "Runs with screenshots waiting for you";
+  return historyComplete ? "That is everything Relay has kept." : "Showing recent history.";
 }
 
 function emptyRunTitle(view: RunView) {
-  if (view === "failed") return "No problem Runs match";
-  if (view === "needs-review") return "No Runs need review";
-  if (view === "active") return "No Runs are active";
-  return "No Runs match these filters";
+  if (view === "failed") return "Nothing failed";
+  if (view === "needs-review") return "Nothing to review";
+  return "No runs match";
 }
 
 function phaseOutcome(run: ProductRunSummary): ProductRunPhase | "uncertain" {
