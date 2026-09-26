@@ -4,24 +4,11 @@ import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import type { ProductTestSummary } from "@relay/product/catalog";
 import { Button } from "@relay/ui-react/components/button";
-import {
-  ChevronRight,
-  CircleDot,
-  CircleX,
-  Clock,
-  Eye,
-  Layers3,
-  Play,
-  Plus,
-  Search,
-  X,
-} from "lucide-react";
+import { ChevronRight, CircleDot, CircleX, Clock, Eye, Play, Plus, Search, X } from "lucide-react";
 import { Input } from "@relay/ui-react/components/input";
 import { EmptyState, ReadinessMark } from "../components/product-patterns";
 import { LibraryPage } from "../components/page-layout";
-import { ResultsBar } from "../components/results-bar";
-import { RunThumb } from "../components/run-thumb";
-import { StatusPill, runStateOf, type RunState } from "../components/run-status";
+import { StatusPill, runStateLabel, runStateOf, type RunState } from "../components/run-status";
 import { libraryRowSurface } from "../components/library-row-styles";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { createReviewProductService, reviewQueryKeys } from "../data/review-product-service";
@@ -244,10 +231,8 @@ export function TestsPage() {
         <div className="mt-6 grid gap-8">
           {plans.length ? (
             <section aria-labelledby="plans-heading" className="grid gap-3">
-              <SectionHeading id="plans-heading" title="Test plans">
-                Run a group of tests together, by hand or every day.
-              </SectionHeading>
-              <ul className="m-0 grid list-none gap-3 p-0">
+              <SectionHeading id="plans-heading" title="Test plans" />
+              <ul className="m-0 grid list-none divide-y divide-border p-0">
                 {plans.map(({ suite, members, last, schedule }) => (
                   <PlanGroup
                     key={`${suite.appMapId}:${suite.id}`}
@@ -428,8 +413,8 @@ function PlanGroup({
   );
   const panelId = `plan-${suite.appMapId}-${suite.id}`;
   return (
-    <li className="overflow-hidden rounded-xl border border-border bg-card">
-      <div className="flex items-center gap-3 p-3 pr-4">
+    <li className="overflow-hidden">
+      <div className="flex items-center gap-3 py-4 pr-2">
         <button
           type="button"
           aria-expanded={open}
@@ -441,14 +426,8 @@ function PlanGroup({
             className={`size-4 shrink-0 text-muted-foreground transition-transform duration-150 ease-out ${open ? "rotate-90" : ""}`}
             aria-hidden="true"
           />
-          <span
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand"
-            aria-hidden="true"
-          >
-            <Layers3 className="size-4.5" />
-          </span>
           <span className="grid min-w-0 flex-1 gap-0.5">
-            <strong className="truncate text-sm font-semibold">{suite.name}</strong>
+            <strong className="text-sm font-medium text-pretty">{suite.name}</strong>
             <span className="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">
               {suite.appName} · {suite.tests.length} {suite.tests.length === 1 ? "test" : "tests"}
               {schedule ? (
@@ -462,12 +441,12 @@ function PlanGroup({
             </span>
           </span>
           <span className="hidden w-48 shrink-0 md:block">
-            <ResultsBar states={states} />
+            <PlanResultSummary states={states} />
           </span>
         </button>
         <Button
           nativeButton={false}
-          variant="soft"
+          variant="ghost"
           size="sm"
           render={
             <Link
@@ -480,9 +459,9 @@ function PlanGroup({
         </Button>
       </div>
       {open ? (
-        <div id={panelId} className="border-t border-border">
+        <div id={panelId} className="pb-3 pl-5">
           <div className="px-4 pt-3 md:hidden">
-            <ResultsBar states={states} />
+            <PlanResultSummary states={states} />
           </div>
           <TestList tests={members} shared={shared} bare />
         </div>
@@ -502,19 +481,26 @@ function TestList({
 }) {
   return (
     <ul
-      className={`m-0 grid list-none divide-y divide-border p-0 ${bare ? "" : "overflow-hidden rounded-xl border border-border bg-card"}`}
+      className={`m-0 grid list-none divide-y divide-border p-0 ${bare ? "" : "overflow-hidden"}`}
     >
       {tests.map((test) => (
         <TestRow
           key={`${test.appMapId}:${test.id}`}
           test={shared.has(test.id) ? { ...test, sharedId: true } : test}
+          grouped={bare}
         />
       ))}
     </ul>
   );
 }
 
-function TestRow({ test }: { test: ProductTestSummary & { sharedId?: boolean } }) {
+function TestRow({
+  test,
+  grouped,
+}: {
+  test: ProductTestSummary & { sharedId?: boolean };
+  grouped: boolean;
+}) {
   const recent = test.recentRun;
   const state = test.status === "needs-review" ? undefined : runStateOf(recent);
   return (
@@ -526,16 +512,16 @@ function TestRow({ test }: { test: ProductTestSummary & { sharedId?: boolean } }
           to="/tests/$testId"
           params={{ testId: test.id }}
           search={test.sharedId ? { app: test.appMapId } : {}}
-          className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3.5 py-2.5 pl-3 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:gap-5"
+          className="flex min-h-12 min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 pl-3 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring"
+          title={`${test.stepCount} steps${recent ? ` · ${relativeTime(runTime(recent))}` : ""}`}
         >
-          <RunThumb runId={recent?.id} label={test.name} />
-          <span className="grid min-w-0 gap-0.5">
-            <strong className="truncate text-sm font-semibold text-foreground">{test.name}</strong>
-            <span className="truncate text-xs text-muted-foreground">
-              {test.appName} · {test.stepCount === 1 ? "1 step" : `${test.stepCount} steps`}
-            </span>
+          <span className="grid min-w-0 flex-1 basis-48 gap-0.5">
+            <strong className="text-sm font-normal text-foreground text-pretty">{test.name}</strong>
+            {!grouped ? (
+              <span className="truncate text-xs text-muted-foreground">{test.appName}</span>
+            ) : null}
           </span>
-          <span className="col-start-2 flex min-w-0 items-center gap-2 text-xs text-muted-foreground lg:col-start-auto">
+          <span className="flex min-w-0 items-center text-xs text-muted-foreground [&_[data-slot=status-pill]]:bg-transparent [&_[data-slot=status-pill]]:p-0 [&_[data-slot=badge]]:border-0 [&_[data-slot=badge]]:bg-transparent [&_[data-slot=badge]]:p-0">
             {test.status !== "ready" ? (
               <ReadinessMark
                 status={test.status}
@@ -545,12 +531,11 @@ function TestRow({ test }: { test: ProductTestSummary & { sharedId?: boolean } }
             ) : state ? (
               <StatusPill state={state} />
             ) : null}
-            {recent ? <span className="tabular-nums">{relativeTime(runTime(recent))}</span> : null}
           </span>
         </Link>
         <Button
           nativeButton={false}
-          variant={test.status === "needs-review" ? "outline" : "soft"}
+          variant="ghost"
           size="sm"
           className="min-h-9 justify-self-end"
           render={
@@ -575,6 +560,18 @@ function TestRow({ test }: { test: ProductTestSummary & { sharedId?: boolean } }
         </Button>
       </div>
     </li>
+  );
+}
+
+function PlanResultSummary({ states }: { states: readonly RunState[] }) {
+  const counts = new Map<RunState, number>();
+  for (const state of states) counts.set(state, (counts.get(state) ?? 0) + 1);
+  return (
+    <span className="text-xs text-muted-foreground">
+      {[...counts]
+        .map(([state, count]) => `${count} ${runStateLabel(state).toLowerCase()}`)
+        .join(" · ")}
+    </span>
   );
 }
 

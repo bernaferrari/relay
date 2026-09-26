@@ -46,28 +46,28 @@ function ValidationKindGroups({
 }) {
   const groups = validationKindGroupsForEditor({ hasRememberableReply, selected });
   return (
-    <div className="grid gap-3">
-      {groups.map((group) => (
-        <fieldset key={group.id} className="grid gap-1">
-          <legend className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {group.label}
-          </legend>
-          <div className="flex flex-wrap gap-1.5">
+    <label className="grid gap-1.5 text-xs font-medium">
+      Checkpoint type
+      <select
+        aria-label="Checkpoint type"
+        className="h-9 w-full min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-normal"
+        value={selected ?? ""}
+        onChange={(event) => onSelect(event.target.value as ValidationDraft["kind"])}
+      >
+        <option value="" disabled>
+          Choose what to check
+        </option>
+        {groups.map((group) => (
+          <optgroup key={group.id} label={group.label}>
             {group.kinds.map((kind) => (
-              <Button
-                key={kind.value}
-                type="button"
-                size="sm"
-                variant={selected === kind.value ? "default" : "outline"}
-                onClick={() => onSelect(kind.value)}
-              >
+              <option key={kind.value} value={kind.value}>
                 {kind.label}
-              </Button>
+              </option>
             ))}
-          </div>
-        </fieldset>
-      ))}
-    </div>
+          </optgroup>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -93,7 +93,7 @@ export function ValidationExpectationEditor({
       <div className="grid gap-3">
         <p className="text-xs font-normal leading-normal text-muted-foreground">
           {canAdd
-            ? "Add a result after this step. Capture a screenshot for a person to review later, attach a workspace file, or add a check. Visual judges live here — not in YAML — and never auto-accept a baseline."
+            ? "Choose what Relay should check or wait for."
             : (bindingSummary ??
               "This checkpoint uses a reviewed structured assertion. Its readable binding remains available under Advanced.")}
         </p>
@@ -116,11 +116,7 @@ export function ValidationExpectationEditor({
   }
   return (
     <fieldset className="grid gap-1.5 text-xs font-semibold" disabled={busy}>
-      <legend>Expected result</legend>
-      <p className="text-xs font-normal leading-normal text-muted-foreground">
-        This is the value Relay validates after the action. It is separate from the human step
-        wording above.
-      </p>
+      <legend className="sr-only">Expected result</legend>
       <ValidationKindGroups
         selected={value.kind}
         hasRememberableReply={hasRememberableReply}

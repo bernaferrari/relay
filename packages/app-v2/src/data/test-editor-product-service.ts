@@ -2,6 +2,7 @@ import type {
   ActivityEvent,
   AppMap,
   AppMapScenarioTest,
+  AppMapTestBindingCandidate,
   AppMapScenarioTestEdit,
   Proposal,
 } from "@relay/protocol";
@@ -41,6 +42,8 @@ export type ProductTestEditorDocument = {
   appName: string;
   revision: number;
   test: AppMapScenarioTest;
+  savedPaths?: readonly AppMapTestBindingCandidate[];
+  browserTargetIds?: readonly string[];
   recordedPlatforms?: readonly PlanPlatform[];
   routePlatformBlockers?: Partial<Record<PlanPlatform, string>>;
   stepPlatformBlockers?: Readonly<Record<string, string>>;
@@ -256,8 +259,23 @@ export function documentFromMap(
   return {
     appMapId: appMap.id,
     appName: appMap.name,
+    browserTargetIds: [
+      ...new Set(
+        Object.values(appMap.screenVariants)
+          .filter((variant) => variant.targetProfile.platform === "browser")
+          .map((variant) => variant.targetProfile.targetId),
+      ),
+    ],
     revision: appMap.revision,
     test: structuredClone(test),
+    savedPaths: Object.values(appMap.connections ?? {})
+      .filter((connection) => connection.state === "ready" && connection.actions.length > 0)
+      .map((connection) => ({
+        kind: "connection" as const,
+        id: connection.id,
+        label: `${connection.label || "Saved action"} · ${appMap.screens?.[connection.fromScreenId]?.title || "Unknown start"} → ${connection.destination.kind === "screen" ? appMap.screens?.[connection.destination.screenId]?.title || "Unknown destination" : "End of path"}`,
+      }))
+      .sort((left, right) => left.label.localeCompare(right.label)),
     recordedPlatforms,
     ...(Object.keys(routePlatformBlockers).length ? { routePlatformBlockers } : {}),
     ...(Object.keys(stepPlatformBlockers).length ? { stepPlatformBlockers } : {}),

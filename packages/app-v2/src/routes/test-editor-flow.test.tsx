@@ -229,6 +229,16 @@ async function click(label: string) {
   await settle();
 }
 
+async function chooseCheckpoint(label: string) {
+  const select = document.querySelector<HTMLSelectElement>('[aria-label="Checkpoint type"]')!;
+  const option = [...select.options].find((item) => item.textContent === label)!;
+  await act(async () => {
+    select.value = option.value;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await settle();
+}
+
 describe("Test editor", () => {
   it("preserves a draft through a revision conflict and saves it on retry", async () => {
     const harness = service();
@@ -368,7 +378,7 @@ describe("Test editor", () => {
     };
     const first = service();
     await render(first.editor, undefined, persist);
-    await click("Visual judge");
+    await chooseCheckpoint("Visual judge");
     await fill(
       document.querySelector<HTMLTextAreaElement>("#selected-step-expected-visual")!,
       "Composer is visible",
@@ -394,7 +404,7 @@ describe("Test editor", () => {
     expect(document.querySelector<HTMLInputElement>("#selected-step-intent")?.value).toBe(
       "Confirm the total",
     );
-    expect(document.body.textContent).toContain("Step needs review");
+    expect(document.querySelector('[aria-label="Selected step editor"]')).not.toBeNull();
     expect(document.body.textContent).toContain("Edited Complete checkout");
 
     await fill(
@@ -428,7 +438,7 @@ describe("Test editor", () => {
 
     await click("Undo last saved change");
     expect(harness.historyCalls).toEqual(["undo"]);
-    expect(document.body.textContent).toContain("Last saved change");
+    expect(document.querySelector('[aria-label="Editing history"]')).not.toBeNull();
     await click("Redo last undone change");
     expect(harness.historyCalls).toEqual(["undo", "redo"]);
   });
@@ -483,13 +493,13 @@ describe("Test editor", () => {
     expect(document.body.textContent).not.toContain("Semantic judge");
     expect(document.body.textContent).not.toContain("Remember reply");
     expect(document.body.textContent).toContain("Ignore for identity");
-    expect(document.body.textContent).toContain("not in YAML");
-    await click("Visual judge");
+    expect(document.querySelector('[aria-label="Checkpoint type"]')).not.toBeNull();
+    await chooseCheckpoint("Visual judge");
     expect(document.body.textContent).toContain("Fails closed without OPENROUTER_API_KEY");
     expect(document.body.textContent).toContain("Do not auto-accept a visual baseline");
     expect(document.body.textContent).toContain("Do not parse LaTeX or H1–H6 size");
     expect(document.body.textContent).toContain("Two independent judges must agree");
-    await click("Ignore for identity");
+    await chooseCheckpoint("Ignore for identity");
     expect(document.body.textContent).toContain("Identity and visual compare skip");
     expect(document.body.textContent).toContain("User bubble");
     expect(document.body.textContent).toContain("Reply body");
@@ -533,7 +543,7 @@ describe("Test editor", () => {
     const harness = service();
     await render(harness.editor, "/tests/test-checkout/edit?step=step-cart");
 
-    expect(document.body.textContent).toContain(
+    expect(document.body.textContent).not.toContain(
       "Visual judges, reply checks, and ignore regions live on a Checkpoint",
     );
     expect(document.body.textContent).toContain("Uses one saved path.");
@@ -543,7 +553,7 @@ describe("Test editor", () => {
     expect(document.body.textContent).toContain("Not saved on this Test");
     expect(document.body.textContent).toContain("does not accept a visual baseline");
     expect(document.body.textContent).toContain("Visual judge");
-    await click("Visual judge");
+    await chooseCheckpoint("Visual judge");
     expect(document.body.textContent).toContain("Two independent judges must agree");
     await click("Remove step");
     await click("Remove step");
@@ -555,9 +565,13 @@ describe("Test editor", () => {
     const harness = service();
     const history = await render(harness.editor, "/tests/test-checkout/edit?step=step-cart");
     await click("Add checkpoint");
-    await click("Wait for a control");
+    await act(async () => {
+      const select = document.querySelector<HTMLSelectElement>('[aria-label="Checkpoint type"]')!;
+      select.value = "wait-for";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
     await fill(document.querySelector<HTMLInputElement>("#wait-control")!, "Download");
-    await click("120 seconds");
+    await click("120s");
     await click("Save step");
     expect(harness.edits.at(-1)).toEqual([
       expect.objectContaining({
@@ -585,7 +599,7 @@ describe("Test editor", () => {
     const harness = service();
     await render(harness.editor, "/tests/test-checkout/edit?step=step-cart");
     await click("Add checkpoint");
-    await click("Upload a file");
+    await chooseCheckpoint("Upload a file");
     expect(document.body.textContent).toContain("not a Grok Files pass");
     expect(document.body.textContent).toContain("do not accept a visual baseline");
     expect(
@@ -696,8 +710,8 @@ describe("Test editor", () => {
     action.binding = {
       status: "unresolved",
       reason: "The saved action needs a new target.",
-      candidates: [{ kind: "connection", id: "cart", label: "Open the cart" }],
     };
+    source.savedPaths = [{ kind: "connection", id: "cart", label: "Open the cart" }];
     const harness = service(source);
     await render(harness.editor, "/tests/test-checkout/edit?step=step-cart");
 
@@ -710,7 +724,7 @@ describe("Test editor", () => {
         binding: { status: "resolved", kind: "connections", connectionIds: ["cart"] },
       },
     ]);
-    expect(document.body.textContent).toContain("Ready");
+    expect(document.body.textContent).toContain("Uses one saved path.");
   });
 
   it("keeps an inspector draft while moving between steps", async () => {

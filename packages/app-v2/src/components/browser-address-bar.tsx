@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { ArrowLeft, ArrowRight, RotateCw } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
@@ -21,8 +21,10 @@ export function BrowserAddressBar({
   url = "",
   disabled,
   send,
+  trailing,
 }: {
   url?: string;
+  trailing?: ReactNode;
   disabled: boolean;
   send: (input: LiveTargetInput) => Promise<boolean>;
 }) {
@@ -43,7 +45,7 @@ export function BrowserAddressBar({
   }
   return (
     <form
-      className="shrink-0 px-3 pb-2"
+      className="shrink-0 px-3 py-2"
       aria-label="Browser navigation"
       onSubmit={(event) => {
         event.preventDefault();
@@ -102,6 +104,7 @@ export function BrowserAddressBar({
             }
           }}
         />
+        {trailing}
       </div>
       {error ? (
         <p id={errorId} role="alert" className="mt-1 pl-28 text-xs text-destructive">
