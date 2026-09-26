@@ -119,6 +119,7 @@ export class LiveRunView {
   private drawn = 0;
   private timer: ReturnType<typeof setInterval> | undefined;
   private readonly printed = new Map<string, string>();
+  private readonly titles = new Map<string, string>();
   private readonly tty: boolean;
 
   constructor(
@@ -131,7 +132,14 @@ export class LiveRunView {
   }
 
   update(rows: readonly LiveRow[], header?: Partial<LiveHeader>): void {
-    this.rows = [...rows];
+    // Later snapshots can carry a generic title ("Run <id>"); keep the name
+    // the row was first shown with.
+    this.rows = rows.map((row) => {
+      const known = this.titles.get(row.id);
+      if (known && /^Run /u.test(row.title)) return { ...row, title: known };
+      if (!known || /^Run /u.test(known)) this.titles.set(row.id, row.title);
+      return row;
+    });
     if (header) this.header = { ...this.header, ...header };
     if (this.tty) {
       this.timer ??= setInterval(() => this.draw(), 80);
@@ -255,8 +263,9 @@ export function liveRowFromWorkflow(value: unknown): LiveRow | undefined {
     title?: unknown;
     phase?: unknown;
     progress?: { label?: unknown; completed?: unknown; total?: unknown };
-    review?: { pending?: unknown };
+    review?: { pending?: unknown; decided?: unknown };
     workflow?: { workflowId?: unknown };
+    compiled?: { plan?: { test?: { name?: unknown } } };
   };
   const phase = text(snapshot.phase) ?? "queued";
   const pending = number(snapshot.review?.pending) ?? 0;
@@ -275,15 +284,20 @@ export function liveRowFromWorkflow(value: unknown): LiveRow | undefined {
   const completed = number(snapshot.progress?.completed);
   const total = number(snapshot.progress?.total);
   const label = text(snapshot.progress?.label);
+  const decided = number(snapshot.review?.decided) ?? 0;
   const detail =
     state === "review"
       ? `${pending} screenshot${pending === 1 ? "" : "s"} to review`
-      : [completed !== undefined && total ? `step ${completed}/${total}` : undefined, label]
-          .filter(Boolean)
-          .join(" · ");
+      : state === "passed" && decided
+        ? decided === 1
+          ? "screenshot matches its reference"
+          : `${decided} screenshots match their references`
+        : [completed !== undefined && total ? `step ${completed}/${total}` : undefined, label]
+            .filter(Boolean)
+            .join(" · ");
   return {
     id: text(snapshot.workflow?.workflowId) ?? "run",
-    title: text(snapshot.title) ?? "Test",
+    title: text(snapshot.compiled?.plan?.test?.name) ?? text(snapshot.title) ?? "Test",
     state,
     ...(detail ? { detail } : {}),
   };

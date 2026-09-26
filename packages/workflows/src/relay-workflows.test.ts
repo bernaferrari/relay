@@ -309,6 +309,61 @@ test("automatically binds the unique browser profile matching the registered env
   );
 });
 
+test("runs as the account a Test was recorded with when that sign-in still exists", async () => {
+  const recorded = {
+    ...browserProfile("browser-profile-member"),
+    browserCaseProfile: {
+      ...browserCaseProfile,
+      authenticationFixtureId: "authfx:7f3c2a10-5b6d-4e8f-9a1b-2c3d4e5f6a7b:1",
+    },
+  };
+  const fixtures = (status: string) => ({
+    id: "target.browser-auth.list",
+    output: {
+      fixtures: [
+        {
+          schemaVersion: 1,
+          id: "7f3c2a10-5b6d-4e8f-9a1b-2c3d4e5f6a7b",
+          reference: "authfx:7f3c2a10-5b6d-4e8f-9a1b-2c3d4e5f6a7b:1",
+          revision: 1,
+          projectId: "default",
+          targetId: browserTarget.targetId,
+          name: "Member",
+          origins: [],
+          cookieCount: 1,
+          createdAt: 1,
+          createdBy: "human:qa",
+          health: { status, checkedAt: 1, detail: status },
+        },
+      ],
+    },
+  });
+  const ready = createScriptedRelayClient([
+    browserCompileStep([recorded]),
+    { id: "target.list", output: { targets: [registeredBrowserTarget] } },
+    fixtures("ready"),
+    browserCompileStep([recorded]),
+    runStep(7),
+  ]);
+  const snapshot = await createRelayWorkflows(ready.client).start(
+    intent({ target: browserTarget, revision: { exact: 7 } }),
+  );
+  assert.equal(snapshot.phase, "queued", JSON.stringify(snapshot.problems));
+  assert.equal(snapshot.frozen?.targetProfileId, "browser-profile-member");
+
+  // An expired sign-in is not silently reused: the run explains what changed.
+  const expired = createScriptedRelayClient([
+    browserCompileStep([recorded]),
+    { id: "target.list", output: { targets: [registeredBrowserTarget] } },
+    fixtures("expired"),
+  ]);
+  const blocked = await createRelayWorkflows(expired.client).start(
+    intent({ target: browserTarget, revision: { exact: 7 } }),
+  );
+  assert.equal(blocked.phase, "blocked");
+  assert.match(blocked.problems[0]?.detail ?? "", /signed-in account changed/u);
+});
+
 for (const [label, profiles] of [
   ["no matching", []],
   ["ambiguous", [browserProfile("browser-profile-1"), browserProfile("browser-profile-2")]],

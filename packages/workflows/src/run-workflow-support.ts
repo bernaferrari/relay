@@ -143,6 +143,16 @@ export async function selectBrowserTargetProfile(
       profile.platform === "browser" && profile.targetId === targetId && profile.browserCaseProfile,
   );
   if (candidates.length === 0 && sameBrowser.length) {
+    // The Test was recorded signed in, and that sign-in still exists: run as
+    // that account instead of refusing. Size, engine, locale, etc. still must match.
+    const recordedAccount = await recordedAccountProfile(
+      operations,
+      compiled,
+      sameBrowser,
+      current as unknown as Record<string, unknown>,
+      targetId,
+    );
+    if (recordedAccount) return recordedAccount;
     const changed = changedBrowserSetup(
       sameBrowser[sameBrowser.length - 1]!.browserCaseProfile as unknown as Record<string, unknown>,
       current as unknown as Record<string, unknown>,
@@ -522,4 +532,39 @@ function referencedTargetProfileIds(
     }
   }
   return referencedProfileIds;
+}
+
+async function recordedAccountProfile(
+  operations: RelayOperationPort,
+  compiled: ValidCompile,
+  profiles: NonNullable<ValidCompile["plan"]["rawAccessibilityTargetProfiles"]>,
+  current: Record<string, unknown>,
+  targetId: string,
+): Promise<string | undefined> {
+  const onlyAccountDiffers = profiles.filter((profile) => {
+    const saved = profile.browserCaseProfile as unknown as Record<string, unknown> | undefined;
+    if (!saved?.authenticationFixtureId) return false;
+    const changed = changedBrowserSetup(saved, current);
+    return changed.length === 1 && changed[0] === "signed-in account";
+  });
+  if (!onlyAccountDiffers.length) return undefined;
+  let fixtures: readonly { reference: string; health?: { status?: string } }[];
+  try {
+    fixtures = (await operations.invoke("target.browser-auth.list", { targetId })).fixtures;
+  } catch {
+    return undefined;
+  }
+  const ready = onlyAccountDiffers.filter((profile) =>
+    fixtures.some(
+      (fixture) =>
+        fixture.reference === profile.browserCaseProfile?.authenticationFixtureId &&
+        (fixture.health?.status ?? "ready") === "ready",
+    ),
+  );
+  if (!ready.length) return undefined;
+  const referenced = referencedTargetProfileIds(compiled, "browser", targetId);
+  const preferred = ready.filter((profile) => referenced.has(profile.id));
+  const choices = preferred.length ? preferred : ready;
+  // Several saved setups for one account are equivalent; take the newest.
+  return choices[choices.length - 1]!.id;
 }
