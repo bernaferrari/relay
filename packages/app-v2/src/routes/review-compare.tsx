@@ -314,8 +314,8 @@ export function ReviewCompare({
       <div className="grid gap-3">
         <Shot
           url={capture.url}
-          label="New screenshot"
-          detail={`${thisRun} · no reference yet`}
+          label="Captured"
+          detail={formatDate(finishedAt)}
           loading={capture.query.isPending}
           failed={capture.query.isError}
         />

@@ -4,7 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useRouteContext } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
-import { Check, CircleCheck, Flag, Image, ScanSearch, SquareDashed } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTitle,
+  PopoverTrigger,
+} from "@relay/ui-react/components/popover";
+import { Check, CircleCheck, Flag, Keyboard, SquareDashed } from "lucide-react";
 import type {
   CaptureReviewAction,
   CaptureReviewItem,
@@ -418,10 +424,6 @@ export function ReviewPage() {
                             setReporting(false);
                           }}
                         >
-                          <Image
-                            className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                            aria-hidden="true"
-                          />
                           <span
                             className="min-w-0 flex-1 line-clamp-2 leading-5 wrap-anywhere"
                             title={screenshotName(card.item)}
@@ -529,6 +531,11 @@ export function ReviewPage() {
                     <Button
                       size="sm"
                       disabled={editingIgnore}
+                      title={
+                        selected.item.reference?.state === "changed"
+                          ? "Replace the reference with this screenshot"
+                          : "Use this screenshot as the reference for future runs"
+                      }
                       onClick={() => decide.mutate({ card: selected, action: "accept" })}
                     >
                       <Check aria-hidden="true" />
@@ -560,24 +567,7 @@ export function ReviewPage() {
                         <kbd className="ml-1 text-xs opacity-60">I</kbd>
                       </Button>
                     ) : null}
-                    <span className="w-full text-xs text-muted-foreground">
-                      {selected.item.reference?.state === "changed"
-                        ? "Looks correct replaces the reference with this screenshot."
-                        : "Looks correct makes this the reference for future runs."}
-                    </span>
-                    <details className="relative">
-                      <summary className="cursor-pointer list-none rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground">
-                        <ScanSearch className="inline size-3.5" aria-hidden="true" /> Shortcuts
-                      </summary>
-                      <dl className="absolute right-0 bottom-8 z-10 grid w-72 grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-lg border border-border bg-popover p-3 text-xs shadow-lg">
-                        {SHORTCUTS.map(([key, label]) => (
-                          <div key={key} className="contents">
-                            <dt className="font-mono text-foreground">{key}</dt>
-                            <dd className="text-muted-foreground">{label}</dd>
-                          </div>
-                        ))}
-                      </dl>
-                    </details>
+                    <ReviewShortcuts />
                   </div>
                 )}
               </footer>
@@ -586,5 +576,40 @@ export function ReviewPage() {
         </div>
       )}
     </section>
+  );
+}
+
+function ReviewShortcuts() {
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="ml-auto shrink-0"
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts"
+          />
+        }
+      >
+        <Keyboard aria-hidden="true" />
+      </PopoverTrigger>
+      <PopoverContent side="top" align="end" className="w-72 p-4">
+        <PopoverTitle>Keyboard shortcuts</PopoverTitle>
+        <dl className="grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 text-xs">
+          {SHORTCUTS.map(([key, label]) => (
+            <div key={key} className="contents">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd>
+                <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-foreground">
+                  {key}
+                </kbd>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </PopoverContent>
+    </Popover>
   );
 }
