@@ -1,5 +1,7 @@
 import { libraryRowSurface, libraryRowContent } from "../components/library-row-styles";
 /** @jsxImportSource react */
+import { RunThumb } from "../components/run-thumb";
+import { StatusPill, runStateOf } from "../components/run-status";
 import type { ProductRunPhase, ProductRunSummary } from "@relay/product/catalog";
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { Button } from "@relay/ui-react/components/button";
@@ -253,18 +255,17 @@ function RunRow({
   const screenshotReview = screenshotReviewLabel(run.captureSummary);
   const genericBrowser = device === "Browser";
   const chromeBrowser = run.platform === "browser" && /\bchrome\b/i.test(run.targetName ?? "");
-  const className = `${libraryRowSurface} ${libraryRowContent} h-22 grid-cols-[minmax(0,1fr)_auto] gap-3 sm:gap-5`;
+  const className = `${libraryRowSurface} ${libraryRowContent} h-20 grid-cols-[auto_minmax(0,1fr)_auto] gap-3.5 sm:gap-5`;
+  const state = runStateOf(run);
   const body = (
     <>
-      <span className="grid min-w-0 gap-2">
+      <RunThumb runId={plan ? undefined : run.id} label={title} />
+      <span className="grid min-w-0 gap-1.5">
         <strong className="truncate text-sm font-semibold text-foreground">{title}</strong>
         <span className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">
-          <OutcomeMark
-            outcome={
-              screenshotReview && run.phase === "completed" && run.outcome === "passed"
-                ? "completed"
-                : (run.outcome ?? phaseOutcome(run))
-            }
+          <StatusPill
+            state={state}
+            {...(run.outcome === "harness-failure" ? { label: "Could not complete" } : {})}
           />
           {genericBrowser || chromeBrowser ? (
             <span className="inline-flex shrink-0 items-center" title={device}>
@@ -306,7 +307,7 @@ function RunRow({
           </small>
           {screenshotReview ? (
             <span
-              className="flex max-w-40 items-center gap-1.5 rounded-md bg-accent px-2 py-1 text-xs font-medium text-foreground"
+              className="flex max-w-44 items-center gap-1.5 text-xs text-muted-foreground"
               aria-label={`Screenshots: ${screenshotReview}`}
             >
               <Camera className="size-3.5 shrink-0" aria-hidden="true" />
