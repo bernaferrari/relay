@@ -11,7 +11,9 @@ export function useRunThumbnail(runId: string | undefined, enabled = true): stri
     queryKey: ["run-thumb", runId],
     queryFn: async () => {
       const { client } = await productClientForPlatform(platform);
-      const response = await client.download(`/runs/${encodeURIComponent(runId!)}/thumbnail`);
+      const response = await client.download(
+        `/runs/${encodeURIComponent(runId!)}/thumbnail?v=content`,
+      );
       if (!response.ok) return null;
       return response.blob();
     },
