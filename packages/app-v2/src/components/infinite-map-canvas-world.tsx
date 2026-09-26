@@ -4,17 +4,14 @@ import { Compass, RotateCcw } from "lucide-react";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 import { MapAccessibilityOverlay } from "./map-accessibility-overlay";
 import { MapEdges, isRoutineReturn } from "./map-edges";
+import { mapClusters } from "./map-clusters";
 import { MapFrameTitle } from "./map-frame-title";
 import { MapScreenPreview } from "./map-screen-preview";
 import {
   containedImageRect,
-  MAP_NODE_GAP,
-  MAP_NODE_HEIGHT,
-  MAP_NODE_IMAGE_HEIGHT,
-  MAP_NODE_TITLE_HEIGHT,
-  MAP_NODE_WIDTH,
   type ImageDimensions,
   type MapPoint,
+  type MapNodeSize,
   type MapTransform,
 } from "./map-canvas-geometry";
 import type { AlignmentGuide } from "./map-alignment";
@@ -48,6 +45,7 @@ export function MapCanvasWorld({
   showControlOrigins,
   showInteractionTargets,
   imageDimensions,
+  node,
   layoutMode,
   loadScreenshot,
   loadAccessibilityTree,
@@ -83,6 +81,7 @@ export function MapCanvasWorld({
   showControlOrigins: boolean;
   showInteractionTargets: boolean;
   imageDimensions: Map<string, ImageDimensions>;
+  node: MapNodeSize;
   layoutMode: "saved" | "aligned" | "staggered" | "horizontal";
   loadScreenshot?: (uri: string) => Promise<Blob>;
   loadAccessibilityTree?: (uri: string) => Promise<unknown>;
@@ -113,6 +112,30 @@ export function MapCanvasWorld({
       className="absolute inset-0 origin-top-left"
       style={{ transform: "translate3d(48px, 64px, 0) scale(1)" }}
     >
+      {mapClusters(visibleScreens, visiblePaths, positions, node).map((cluster) => (
+        <div
+          key={cluster.id}
+          aria-hidden="true"
+          data-slot="map-cluster"
+          className="pointer-events-none absolute left-(--box-left) top-(--box-top) h-(--box-height) w-(--box-width) rounded-(--cluster-radius) border border-brand/20 bg-brand/6"
+          style={
+            {
+              "--box-left": `${cluster.bounds.minX}px`,
+              "--box-top": `${cluster.bounds.minY}px`,
+              "--box-width": `${cluster.bounds.maxX - cluster.bounds.minX}px`,
+              "--box-height": `${cluster.bounds.maxY - cluster.bounds.minY}px`,
+              "--cluster-radius": "48px",
+            } as CSSProperties
+          }
+        >
+          <span
+            data-slot="map-cluster-label"
+            className="absolute bottom-full left-6 mb-2 text-sm font-semibold whitespace-nowrap text-brand"
+          >
+            From {cluster.entryTitle} · {cluster.screenIds.length} screens
+          </span>
+        </div>
+      ))}
       {alignmentGuides.map((guide, index) => (
         <div
           key={index}
@@ -144,6 +167,7 @@ export function MapCanvasWorld({
         showInteractionTargets={showControlOrigins}
         screens={visibleScreens}
         imageDimensions={imageDimensions}
+        node={node}
       />
       {visibleScreens.map((screen) => {
         const position = positions.get(screen.id) ?? { x: 0, y: 0 };
@@ -249,8 +273,9 @@ export function MapCanvasWorld({
               {
                 "--box-left": `${position.x}px`,
                 "--box-top": `${position.y}px`,
-                "--box-width": `${MAP_NODE_WIDTH}px`,
-                "--box-height": `${MAP_NODE_HEIGHT}px`,
+                "--box-width": `${node.width}px`,
+                "--box-height": `${node.height}px`,
+                "--image-height": `${node.imageHeight}px`,
               } as CSSProperties
             }
           >
@@ -260,7 +285,7 @@ export function MapCanvasWorld({
             >
               <MapFrameTitle title={screen.title} />
             </span>
-            <div className="relative h-72 w-full shrink-0">
+            <div className="relative h-(--image-height) w-full shrink-0">
               <MapScreenPreview
                 dimensions={imageDimensions.get(screen.id)}
                 selected={selectedNode}
@@ -287,6 +312,7 @@ export function MapCanvasWorld({
                   uri={screen.accessibilityTreeUri}
                   load={loadAccessibilityTree}
                   image={imageDimensions.get(screen.id)}
+                  node={node}
                 />
               ) : null}
             </div>
@@ -307,13 +333,13 @@ export function MapCanvasWorld({
         const image = containedImageRect(
           {
             x: position.x,
-            y: position.y + MAP_NODE_TITLE_HEIGHT + MAP_NODE_GAP,
-            width: MAP_NODE_WIDTH,
-            height: MAP_NODE_IMAGE_HEIGHT,
+            y: position.y + node.titleHeight + node.gap,
+            width: node.width,
+            height: node.imageHeight,
           },
           imageDimensions.get(screen.id) ?? {
-            width: MAP_NODE_WIDTH,
-            height: MAP_NODE_IMAGE_HEIGHT,
+            width: node.width,
+            height: node.imageHeight,
           },
           "top",
         );
@@ -327,7 +353,7 @@ export function MapCanvasWorld({
               {
                 "--box-left": `${position.x}px`,
                 "--box-top": `${image.y + image.height + 12}px`,
-                "--box-width": `${MAP_NODE_WIDTH}px`,
+                "--box-width": `${node.width}px`,
               } as CSSProperties
             }
           >

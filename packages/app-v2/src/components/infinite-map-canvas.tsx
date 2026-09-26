@@ -6,15 +6,14 @@ import { snapMapPreview, type AlignmentGuide } from "./map-alignment";
 import { accessibilityControls } from "./map-accessibility-overlay";
 import {
   containedImageRect,
-  MAP_NODE_TITLE_HEIGHT,
-  MAP_NODE_GAP,
-  MAP_NODE_IMAGE_HEIGHT,
   INITIAL_TRANSFORM,
-  MAP_NODE_WIDTH,
-  MAP_NODE_HEIGHT,
   fitMapToBounds,
   zoomMapAtPoint,
   layoutMapScreens,
+  LANDSCAPE_NODE,
+  mapNodeSizeFor,
+  PORTRAIT_NODE,
+  type MapNodeSize,
   mapContentBounds,
   type MapPoint,
   type MapTransform,
@@ -37,6 +36,34 @@ import {
   type PointerEvent,
   type WheelEvent,
 } from "react";
+
+/** Wide screenshots (tablets, browsers) get wide nodes. Remember the shape per
+ * App so the layout does not jump while screenshots load on the next visit. */
+function useMapNodeSize(appId: string, images: ReadonlyMap<string, ImageDimensions>) {
+  const key = `relay:map-node-shape:${appId}`;
+  const [remembered] = useState<MapNodeSize | undefined>(() => {
+    try {
+      const value = localStorage.getItem(key);
+      return value === "landscape"
+        ? LANDSCAPE_NODE
+        : value === "portrait"
+          ? PORTRAIT_NODE
+          : undefined;
+    } catch {
+      return undefined;
+    }
+  });
+  const measured = images.size ? mapNodeSizeFor(images.values()) : undefined;
+  useEffect(() => {
+    if (!measured) return;
+    try {
+      localStorage.setItem(key, measured === LANDSCAPE_NODE ? "landscape" : "portrait");
+    } catch {
+      // Storage is a convenience; the measured shape still applies.
+    }
+  }, [key, measured]);
+  return measured ?? remembered ?? PORTRAIT_NODE;
+}
 
 /** Screens open no smaller than this; Fit still shows the whole map. */
 const MAP_OPEN_SCALE = 0.4;
@@ -102,6 +129,10 @@ export function InfiniteMapCanvas({
       })),
     [visiblePaths, layoutAnchors],
   );
+  const [imageDimensions, setImageDimensions] = useState<Map<string, ImageDimensions>>(
+    () => new Map(),
+  );
+  const node = useMapNodeSize(appId, imageDimensions);
   const positions = useMemo(() => {
     let result = new Map(
       layoutMapScreens(
@@ -110,16 +141,12 @@ export function InfiniteMapCanvas({
           : visibleScreens,
         arrangementPaths,
         layoutMode === "saved" ? "aligned" : layoutMode,
+        node,
       ),
     );
     for (const [id, point] of arrangedEdits) result.set(id, point);
     if (arrangedEdits.size)
-      result = separateMapScreens(
-        result,
-        new Set(arrangedEdits.keys()),
-        MAP_NODE_WIDTH,
-        MAP_NODE_HEIGHT,
-      );
+      result = separateMapScreens(result, new Set(arrangedEdits.keys()), node.width, node.height);
     if (dragged) {
       const drag = nodeDrag.current;
       if (drag)
@@ -131,10 +158,10 @@ export function InfiniteMapCanvas({
       else result.set(dragged.id, dragged.position);
     }
     return result;
-  }, [visibleScreens, arrangementPaths, dragged, autoArrange, arrangedEdits, layoutMode]);
+  }, [visibleScreens, arrangementPaths, dragged, autoArrange, arrangedEdits, layoutMode, node]);
   const bounds = useMemo(
-    () => mapContentBounds(visibleScreens, positions),
-    [positions, visibleScreens],
+    () => mapContentBounds(visibleScreens, positions, node),
+    [positions, visibleScreens, node],
   );
   const [screenSearch, setScreenSearch] = useState("");
   const isMobile = useIsMobile();
@@ -143,9 +170,6 @@ export function InfiniteMapCanvas({
   const [handTool, setHandTool] = useState(false);
   const [showInteractionTargets, setShowInteractionTargets] = useState(false);
   const [showControlOrigins, setShowControlOrigins] = useState(false);
-  const [imageDimensions, setImageDimensions] = useState<Map<string, ImageDimensions>>(
-    () => new Map(),
-  );
   const [spacePan, setSpacePan] = useState(false);
   const panningTool = handTool || spacePan;
   const [selectedPathId, setSelectedPathId] = useMapSelection(initialPathId, onPathChange);
@@ -252,8 +276,8 @@ export function InfiniteMapCanvas({
     transformRef.current = next;
     if (worldRef.current) {
       worldRef.current.style.transform = `translate3d(${next.x}px, ${next.y}px, 0) scale(${next.scale})`;
-        // Screen titles counter-scale so they stay readable when zoomed out.
-        worldRef.current.style.setProperty("--map-zoom", String(next.scale));
+      // Screen titles counter-scale so they stay readable when zoomed out.
+      worldRef.current.style.setProperty("--map-zoom", String(next.scale));
     }
     if (zoomLabelRef.current) zoomLabelRef.current.textContent = `${Math.round(next.scale * 100)}%`;
   }
@@ -309,6 +333,7 @@ export function InfiniteMapCanvas({
         : visibleScreens,
       originPaths,
       layoutMode === "saved" ? "aligned" : layoutMode,
+      node,
     );
     animateTransform(
       fitMapToBounds(mapContentBounds(visibleScreens, resetPositions), viewportSize()),
@@ -345,8 +370,8 @@ export function InfiniteMapCanvas({
               {
                 minX: position.x,
                 minY: position.y,
-                maxX: position.x + MAP_NODE_WIDTH,
-                maxY: position.y + MAP_NODE_HEIGHT,
+                maxX: position.x + node.width,
+                maxY: position.y + node.height,
               },
               navigationViewportSize(),
             ),
@@ -381,8 +406,8 @@ export function InfiniteMapCanvas({
     const screen = {
       left: current.x + position.x * current.scale,
       top: current.y + position.y * current.scale,
-      right: current.x + (position.x + MAP_NODE_WIDTH) * current.scale,
-      bottom: current.y + (position.y + MAP_NODE_HEIGHT) * current.scale,
+      right: current.x + (position.x + node.width) * current.scale,
+      bottom: current.y + (position.y + node.height) * current.scale,
     };
     const horizontalInset = 28;
     const topInset = 76;
@@ -422,7 +447,7 @@ export function InfiniteMapCanvas({
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [appId, visibleScreens.length]);
+  }, [appId, visibleScreens.length, node]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -448,11 +473,11 @@ export function InfiniteMapCanvas({
       containedImageRect(
         {
           x: point.x,
-          y: point.y + MAP_NODE_TITLE_HEIGHT + MAP_NODE_GAP,
-          width: MAP_NODE_WIDTH,
-          height: MAP_NODE_IMAGE_HEIGHT,
+          y: point.y + node.titleHeight + node.gap,
+          width: node.width,
+          height: node.imageHeight,
         },
-        imageDimensions.get(id) ?? { width: MAP_NODE_WIDTH, height: MAP_NODE_IMAGE_HEIGHT },
+        imageDimensions.get(id) ?? { width: node.width, height: node.imageHeight },
         "top",
       )!;
     const neighbors = [...positions]
@@ -499,9 +524,9 @@ export function InfiniteMapCanvas({
         const top = point.y * drag.transform.scale + drag.transform.y;
         if (
           left < box.x + box.width &&
-          left + MAP_NODE_WIDTH * drag.transform.scale > box.x &&
+          left + node.width * drag.transform.scale > box.x &&
           top < box.y + box.height &&
-          top + MAP_NODE_HEIGHT * drag.transform.scale > box.y
+          top + node.height * drag.transform.scale > box.y
         )
           ids.add(id);
       }
@@ -674,6 +699,7 @@ export function InfiniteMapCanvas({
             showControlOrigins,
             showInteractionTargets,
             imageDimensions,
+            node,
             layoutMode,
             loadScreenshot,
             loadAccessibilityTree,
