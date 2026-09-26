@@ -5,6 +5,7 @@ import { Textarea } from "@relay/ui-react/components/textarea";
 import { Button } from "@relay/ui-react/components/button";
 import { SelectField } from "./filter-select";
 import { validationKindGroupsForEditor } from "./test-editor-checkpoint-kinds";
+import { ConditionWaitEditor } from "./test-editor-wait";
 import { JudgeAgreementControls } from "./test-editor-judge-agreement";
 import type { CSSProperties } from "react";
 import {
@@ -125,6 +126,7 @@ export function ValidationExpectationEditor({
         hasRememberableReply={hasRememberableReply}
         onSelect={(kind) => onChange(emptyValidationDraft(kind))}
       />
+      {value.kind === "wait-for" ? <ConditionWaitEditor value={value} onChange={onChange} /> : null}
       {value.kind === "capture" ? (
         <>
           <label htmlFor="selected-step-capture-name">

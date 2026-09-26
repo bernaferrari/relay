@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import type { Platform } from "../platform/types";
 
+import { sameValidationDraft } from "../components/test-editor-assertion-model";
 import type { StepDraft } from "../components/test-editor-step";
 export type { StepDraft } from "../components/test-editor-step";
 
 function validExpected(value: StepDraft["expected"]): boolean {
   if (value === undefined) return true;
   if (!value || typeof value !== "object") return false;
+  if (value.kind === "wait-for")
+    return (
+      typeof value.label === "string" &&
+      typeof value.seconds === "string" &&
+      (value.condition === "visible" || value.condition === "gone")
+    );
   if (value.kind === "screen") return typeof value.screenId === "string";
   if (value.kind === "visual") {
     return (
@@ -171,7 +178,7 @@ export function useTestStepDrafts(
         draft.intent !== expected.intent ||
         draft.note !== expected.note ||
         draft.capture !== expected.capture ||
-        JSON.stringify(draft.expected) !== JSON.stringify(expected.expected)
+        !sameValidationDraft(draft.expected, expected.expected)
       ) {
         return current;
       }

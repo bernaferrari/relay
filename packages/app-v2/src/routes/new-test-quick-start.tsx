@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useState, type FormEvent } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { ArrowRight, Globe, LoaderCircle, Smartphone } from "lucide-react";
@@ -52,6 +52,7 @@ export function NewTestQuickStart({
   error,
   onStart,
   onUseDevice,
+  manualAction,
 }: {
   recent: readonly string[];
   /** What Relay is doing right now ("Opening grok.com…"), while starting. */
@@ -59,6 +60,7 @@ export function NewTestQuickStart({
   error?: string;
   onStart(url: string): void;
   onUseDevice(): void;
+  manualAction?: ReactNode;
 }) {
   const [value, setValue] = useState("");
   const address = websiteAddress(value);
@@ -143,7 +145,8 @@ export function NewTestQuickStart({
             </div>
           </div>
         ) : null}
-        <div className="border-t border-border pt-4 text-center">
+        <div className="flex flex-wrap justify-center gap-2 border-t border-border pt-4 text-center">
+          {manualAction}
           <Button type="button" variant="ghost" size="sm" onClick={onUseDevice} disabled={busy}>
             <Smartphone aria-hidden="true" /> Test a phone or tablet instead
           </Button>

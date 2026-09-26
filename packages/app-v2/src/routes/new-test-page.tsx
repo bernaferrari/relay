@@ -1,3 +1,4 @@
+import { NewTestDraftDialog } from "./new-test-draft-dialog";
 import { BrowserSetup, startManagedBrowser } from "./new-test-browser-setup";
 import { AuthoringWorkspace } from "./authoring-workspace";
 import { AuthoringHeader } from "./authoring-header";
@@ -451,7 +452,7 @@ export function NewTestPage() {
 
   return (
     <WorkbenchPage className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-card !p-0">
-      <form id="new-test-form" className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
+      <div className="flex min-h-0 flex-1 flex-col">
         <AuthoringHeader
           phase="setup"
           title="New test"
@@ -539,6 +540,7 @@ export function NewTestPage() {
         {setupMode === "website" && !loading && !blocksNewRecording ? (
           <NewTestQuickStart
             recent={recentWebsites(savedBrowsers.data ?? [])}
+            manualAction={<NewTestDraftDialog />}
             {...(quickProgress ? { progress: quickProgress } : {})}
             {...(quickError ? { error: quickError } : {})}
             onStart={(url) => void startWebsiteTest(url)}
@@ -554,7 +556,9 @@ export function NewTestPage() {
           <AuthoringWorkspace
             mobileOrder="setup-first"
             tools={
-              <aside
+              <form
+                id="new-test-form"
+                onSubmit={submit}
                 className="grid min-w-0 content-start gap-5 rounded-lg border border-border p-4"
                 aria-label="Record setup"
               >
@@ -645,7 +649,7 @@ export function NewTestPage() {
                   <Play aria-hidden="true" />
                   {begin.isPending ? "Starting…" : "Start recording"}
                 </Button>
-              </aside>
+              </form>
             }
             stage={
               <div
@@ -759,7 +763,7 @@ export function NewTestPage() {
             }
           />
         ) : null}
-      </form>
+      </div>
     </WorkbenchPage>
   );
 }

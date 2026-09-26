@@ -268,3 +268,37 @@ describe("Test editor product history transport", () => {
     });
   });
 });
+
+describe("manual test drafts", () => {
+  it("saves written actions unresolved through the canonical operation", async () => {
+    clientRef.current.invoke.mockReset();
+    const current = map(8);
+    clientRef.current.invoke
+      .mockResolvedValueOnce({ appMap: current })
+      .mockImplementationOnce(async (_id, input) => ({
+        appMap: {
+          ...current,
+          revision: 9,
+          tests: { ...current.tests, [input.testId]: { ...test, ...input.test, id: input.testId } },
+        },
+      }));
+    const created = await createTestEditorProductService(platform).createDraft!({
+      appMapId: "store",
+      testId: "manual",
+      name: " Video generation ",
+      instructions: [" Open Imagine ", "Choose 720p"],
+    });
+    expect(created.test.name).toBe("Video generation");
+    expect(created.test.steps.map((step) => step.intent)).toEqual(["Open Imagine", "Choose 720p"]);
+    expect(created.test.steps.every((step) => step.binding.status === "unresolved")).toBe(true);
+    expect(clientRef.current.invoke).toHaveBeenLastCalledWith(
+      "app-map.test.save",
+      expect.objectContaining({
+        appMapId: "store",
+        testId: "manual",
+        expectedRevision: 8,
+        eventId: "create-manual",
+      }),
+    );
+  });
+});

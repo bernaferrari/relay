@@ -9,7 +9,7 @@ describe("test editor platform routes", () => {
     });
     expect(statuses.find((item) => item.platform === "android")?.status).toBe("unrecorded");
     expect(statuses.find((item) => item.platform === "ios")?.reason).toMatch(
-      /Do not invent Grok Settings navigation/u,
+      /Record this Test on iOS before running it there/u,
     );
   });
 
