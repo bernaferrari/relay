@@ -29,7 +29,7 @@ describe("test editing history", () => {
         />,
       );
     });
-    expect(host.textContent).toContain(
+    expect(host.querySelector('[aria-label="Undo last saved change"]')?.getAttribute("title")).toBe(
       "Undo changes the Test. It does not reverse a payment, message, or deletion.",
     );
     expect(host.querySelector('[aria-label="Undo last saved change"]')).not.toBeNull();

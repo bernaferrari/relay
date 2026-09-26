@@ -83,28 +83,24 @@ export function TestEditorHistoryBar({
     <div className="flex flex-wrap items-center gap-2" aria-label="Editing history">
       <Button
         variant="ghost"
-        size="sm"
+        size="icon-sm"
         onClick={onUndo}
         disabled={!canUndo || busy}
         aria-label="Undo last saved change"
+        title="Undo changes the Test. It does not reverse a payment, message, or deletion."
       >
-        <Undo2 aria-hidden="true" /> Undo
+        <Undo2 aria-hidden="true" />
       </Button>
       <Button
         variant="ghost"
-        size="sm"
+        size="icon-sm"
         onClick={onRedo}
         disabled={!canRedo || busy}
         aria-label="Redo last undone change"
       >
-        <Redo2 aria-hidden="true" /> Redo
+        <Redo2 aria-hidden="true" />
       </Button>
-      {latestSummary ? (
-        <span className="text-xs text-muted-foreground">Last saved change: {latestSummary}</span>
-      ) : null}
-      <span className="text-xs text-muted-foreground">
-        Undo changes the Test. It does not reverse a payment, message, or deletion.
-      </span>
+      <span className="sr-only">{latestSummary}</span>
     </div>
   );
 }

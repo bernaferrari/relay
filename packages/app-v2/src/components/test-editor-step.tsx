@@ -5,10 +5,10 @@ import type {
   AppMapTestBindingCandidate,
   AppMapTestStepPlacement,
 } from "@relay/protocol";
+import { BindingRepair } from "./test-editor-binding";
 import { unrecordedProductName } from "@relay/protocol";
 import { Alert, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
-import { Input } from "@relay/ui-react/components/input";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { FieldLabel } from "@relay/ui-react/components/field";
 import { Textarea } from "@relay/ui-react/components/textarea";
@@ -61,6 +61,8 @@ export function SelectedStepEditor({
   onAddChild,
   platformBlocker,
   hasRememberableReply = false,
+  savedPaths = [],
+  appMapId,
 }: {
   entry: StepEntry;
   draft?: StepDraft;
@@ -73,6 +75,8 @@ export function SelectedStepEditor({
   onAddChild(branch: "then" | "else" | "steps"): void;
   platformBlocker?: string;
   hasRememberableReply?: boolean;
+  savedPaths?: readonly AppMapTestBindingCandidate[];
+  appMapId?: string;
 }) {
   const [intent, setIntent] = useState(draft?.intent ?? entry.step.intent);
   const [note, setNote] = useState(draft?.note ?? entry.step.note ?? "");
@@ -109,7 +113,7 @@ export function SelectedStepEditor({
 
   return (
     <form
-      className="grid min-w-0 grid-cols-1 gap-5 p-5"
+      className="grid min-w-0 grid-cols-1 gap-3 px-3 pt-2 pb-5"
       onSubmit={(event) => {
         event.preventDefault();
         if (busy || !changed || !cleanIntent || !expectedReady) return;
@@ -146,17 +150,6 @@ export function SelectedStepEditor({
         });
       }}
     >
-      <div className="flex items-center gap-2.5">
-        <span className="grid size-7 shrink-0 place-items-center rounded-full border border-border bg-background text-xs tabular-nums text-muted-foreground">
-          {entry.number}
-        </span>
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Selected step
-          </p>
-          <h2>{stepKindLabel(entry.step)}</h2>
-        </div>
-      </div>
       {entry.step.kind === "decision" || entry.step.kind === "loop" ? (
         <div className="grid gap-2 pb-1">
           <strong className="text-xs font-semibold text-muted-foreground">Add to branch</strong>
@@ -196,14 +189,11 @@ export function SelectedStepEditor({
           </div>
         </div>
       ) : null}
-      {entry.step.kind === "instruction" ? (
-        <p className="text-xs font-normal leading-normal text-muted-foreground">
-          Visual judges, reply checks, and ignore regions live on a Checkpoint, not on this action.
-        </p>
-      ) : null}
       <label className="grid gap-1.5 text-xs font-semibold" htmlFor="selected-step-intent">
         <span>What should happen</span>
-        <Input
+        <Textarea
+          rows={2}
+          className="min-h-16 resize-y text-sm"
           id="selected-step-intent"
           value={intent}
           onChange={(event) => {
@@ -228,39 +218,6 @@ export function SelectedStepEditor({
           }}
         />
       ) : null}
-      <label className="grid gap-1.5 text-xs font-semibold" htmlFor="selected-step-note">
-        <span>
-          Note <small>Optional</small>
-        </span>
-        <Textarea
-          id="selected-step-note"
-          value={note}
-          onChange={(event) => {
-            const value = event.currentTarget.value;
-            setNote(value);
-            updateDraft({ note: value });
-          }}
-          maxLength={4_000}
-          rows={4}
-        />
-      </label>
-      <FieldLabel className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50">
-        <span className="grid min-w-0 flex-1 gap-0.5">
-          <span className="text-sm font-medium text-foreground">
-            Save screenshot after this step
-          </span>
-          <span className="text-xs leading-snug text-muted-foreground">
-            Include this moment in Results, for each language or data value.
-          </span>
-        </span>
-        <Checkbox
-          checked={capture}
-          onCheckedChange={(value) => {
-            setCapture(value === true);
-            updateDraft({ capture: value === true });
-          }}
-        />
-      </FieldLabel>
       {entry.step.execution?.status === "disabled" ? (
         <Alert variant="default" className="grid grid-cols-[18px_minmax(0,1fr)] gap-2 p-2.5">
           <AlertTriangle aria-hidden="true" />
@@ -289,25 +246,73 @@ export function SelectedStepEditor({
             </AlertDescription>
           </div>
         </Alert>
-      ) : entry.step.binding.status === "unresolved" ? (
-        <Alert variant="default" className="grid grid-cols-[18px_minmax(0,1fr)] gap-2 p-2.5">
-          <AlertTriangle aria-hidden="true" />
-          <div>
-            <AlertTitle>Step needs review</AlertTitle>
-            <AlertDescription>{entry.step.binding.reason}</AlertDescription>
-          </div>
-        </Alert>
       ) : null}
-      {entry.step.binding.status === "unresolved" && !unsavedCheckpoint ? (
+      {!unsavedCheckpoint &&
+      ((entry.step.kind === "instruction" &&
+        (savedPaths.length > 0 || entry.step.binding.status === "unresolved")) ||
+        (entry.step.kind === "module" && entry.step.binding.status === "unresolved")) ? (
         <BindingRepair
           step={entry.step}
-          candidates={entry.step.binding.candidates ?? []}
+          candidates={
+            entry.step.kind === "instruction"
+              ? [
+                  ...(entry.step.binding.status === "unresolved"
+                    ? (entry.step.binding.candidates ?? [])
+                    : []),
+                  ...savedPaths,
+                ]
+              : entry.step.binding.status === "unresolved"
+                ? (entry.step.binding.candidates ?? [])
+                : []
+          }
+          appMapId={appMapId}
           busy={busy}
           onBind={onBind}
         />
       ) : null}
+      <details className="text-sm text-muted-foreground">
+        <summary className="cursor-pointer py-1">Step options</summary>
+        <div className="grid gap-4 pt-3">
+          <label className="grid gap-1.5 text-xs font-semibold" htmlFor="selected-step-note">
+            <span>
+              Note <small>Optional</small>
+            </span>
+            <Textarea
+              id="selected-step-note"
+              value={note}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                setNote(value);
+                updateDraft({ note: value });
+              }}
+              maxLength={4_000}
+              rows={4}
+            />
+          </label>
+          <FieldLabel className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50">
+            <span className="grid min-w-0 flex-1 gap-0.5">
+              <span className="text-sm font-medium text-foreground">
+                Save screenshot after this step
+              </span>
+              <span className="text-xs leading-snug text-muted-foreground">
+                Include this moment in Results, for each language or data value.
+              </span>
+            </span>
+            <Checkbox
+              checked={capture}
+              onCheckedChange={(value) => {
+                setCapture(value === true);
+                updateDraft({ capture: value === true });
+              }}
+            />
+          </FieldLabel>
+        </div>
+      </details>
       {stepBindingCopy(entry.step) ? (
-        <p className="text-xs leading-snug text-muted-foreground">{stepBindingCopy(entry.step)}</p>
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer py-1">Connected action details</summary>
+          <p className="pt-2">{stepBindingCopy(entry.step)}</p>
+        </details>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -342,100 +347,19 @@ export function SelectedStepEditor({
         ) : (
           <Button
             type="button"
-            variant="destructive"
+            variant="ghost"
             disabled={busy}
             onClick={() => setRemoveArmed(true)}
           >
             Remove step
           </Button>
         )}
-        {!changed ? (
-          <span className="text-xs text-muted-foreground">No unsaved changes</span>
-        ) : null}
       </div>
     </form>
   );
 }
 
 export { validationDraft } from "./test-editor-assertion";
-
-function BindingRepair({
-  step,
-  candidates,
-  busy,
-  onBind,
-}: {
-  step: AppMapScenarioTestStep;
-  candidates: readonly AppMapTestBindingCandidate[];
-  busy: boolean;
-  onBind(transaction: EditTransaction): void;
-}) {
-  const bindable = candidates.flatMap((candidate) => {
-    const binding = bindingForCandidate(step, candidate);
-    return binding ? [{ candidate, binding }] : [];
-  });
-  if (!bindable.length) {
-    return (
-      <p className="text-xs leading-normal text-muted-foreground">
-        No compatible saved target is available yet. Review the recording or ask Relay to suggest a
-        repair.
-      </p>
-    );
-  }
-  return (
-    <div className="grid gap-2.5 rounded-md border border-border bg-muted/40 p-3">
-      <div>
-        <strong>Choose a saved target</strong>
-        <p className="mt-0.5 text-xs leading-normal text-muted-foreground">
-          These reviewed targets can repair this step without changing its wording.
-        </p>
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {bindable.map(({ candidate, binding }) => (
-          <Button
-            key={`${candidate.kind}:${candidate.id}`}
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={busy}
-            onClick={() =>
-              onBind({
-                label: `Bound ${step.intent} to ${candidate.label}`,
-                forward: [{ kind: "step.bind", stepId: step.id, binding }],
-                reverse: [
-                  {
-                    kind: "step.unbind",
-                    stepId: step.id,
-                    reason:
-                      step.binding.status === "unresolved" ? step.binding.reason : "Needs setup",
-                    ...(step.binding.status === "unresolved" && step.binding.candidates
-                      ? { candidates: structuredClone(step.binding.candidates) }
-                      : {}),
-                  },
-                ],
-              })
-            }
-          >
-            Use {candidate.label}
-          </Button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function bindingForCandidate(
-  step: AppMapScenarioTestStep,
-  candidate: AppMapTestBindingCandidate,
-): AppMapScenarioTestStep["binding"] | undefined {
-  if (step.kind === "instruction" && candidate.kind === "connection") {
-    return { status: "resolved", kind: "connections", connectionIds: [candidate.id] };
-  }
-  if (step.kind === "module" && candidate.kind === "routine") {
-    return { status: "resolved", kind: "routine", routineId: candidate.id };
-  }
-  return undefined;
-}
 
 export function stepReadinessLabel(
   step: AppMapScenarioTestStep,

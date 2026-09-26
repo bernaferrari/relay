@@ -47,6 +47,7 @@ export function LiveTargetCanvas({
   targetPlatform,
   recoveryAction,
   issueAction,
+  directBrowser = false,
 }: {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   status: LiveTargetStatus;
@@ -65,6 +66,7 @@ export function LiveTargetCanvas({
   targetPlatform?: string;
   recoveryAction?: ReactNode;
   issueAction?: ReactNode;
+  directBrowser?: boolean;
 }) {
   const [text, setText] = useState("");
   const helpId = `${useId()}-help`;
@@ -178,7 +180,7 @@ export function LiveTargetCanvas({
   }
 
   function pasteTarget(event: ClipboardEvent<HTMLCanvasElement>) {
-    if (!streaming || busy) return;
+    if (!streaming || (busy && !directBrowser)) return;
     const value = event.clipboardData.getData("text");
     if (!value) return;
     event.preventDefault();
@@ -212,15 +214,21 @@ export function LiveTargetCanvas({
     >
       <div
         className={
-          rail
-            ? "relative flex min-h-80 flex-1 items-center justify-center overflow-hidden bg-muted/40"
-            : "relative flex min-h-0 items-center justify-center overflow-visible p-3"
+          directBrowser
+            ? "relative flex min-h-0 items-start justify-center overflow-auto"
+            : rail
+              ? "relative flex min-h-80 flex-1 items-center justify-center overflow-hidden bg-muted/40"
+              : "relative flex min-h-0 items-center justify-center overflow-visible p-3"
         }
       >
         <canvas
           ref={canvasRef}
           data-slot="capture-live-target"
-          className="h-full max-h-full max-w-full min-h-0 min-w-0 object-contain"
+          className={
+            directBrowser
+              ? "block h-auto w-full shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              : "h-full max-h-full max-w-full min-h-0 min-w-0 object-contain"
+          }
           aria-label={`Interactive Device: ${targetTitle}`}
           aria-describedby={help ? helpId : undefined}
           tabIndex={streaming ? 0 : -1}
@@ -283,94 +291,96 @@ export function LiveTargetCanvas({
         ) : null}
       </div>
 
-      <div
-        className={
-          rail
-            ? "grid min-w-0 grid-cols-1 gap-2 border-t border-border p-2"
-            : "grid min-w-0 grid-cols-1 gap-2 border-t border-border p-2"
-        }
-      >
-        {showTargetDetails ? (
-          <div className="grid min-w-0 gap-0.5">
-            <strong className="text-sm font-semibold">{targetTitle}</strong>
-            <span className="text-xs text-muted-foreground">{targetDetail}</span>
-            {browserContext ? (
-              <span
-                aria-label="Current browser configuration"
-                className="break-words text-xs text-muted-foreground"
-              >
-                {browserContext.engine[0]?.toUpperCase()}
-                {browserContext.engine.slice(1)} · {browserContext.viewport.width}×
-                {browserContext.viewport.height} · {browserContext.locale}
-                {browserContext.authenticationFixtureId
-                  ? ` · Account reference ${browserContext.authenticationFixtureId}`
-                  : ""}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-        <div className="flex w-full items-center gap-2">
-          {targetPlatform === "android" ? (
-            <div
-              role="group"
-              aria-label="Android navigation"
-              className="flex shrink-0 items-center gap-0.5 rounded-lg bg-muted/50 p-0.5"
-            >
-              {(
-                [
-                  { key: "back", label: "Back", icon: ChevronLeft, help: "Go back in Android" },
-                  { key: "home", label: "Home", icon: Circle, help: "Go to the home screen" },
-                  { key: "recents", label: "Recents", icon: Square, help: "Show recent apps" },
-                ] as const
-              ).map(({ key, label, icon: Icon, help }) => (
-                <Button
-                  key={key}
-                  type="button"
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label={`Android ${label}`}
-                  title={`${label} — ${help}`}
-                  disabled={busy || !streaming}
-                  onClick={() => void send({ kind: "key", key })}
+      {!directBrowser ? (
+        <div
+          className={
+            rail
+              ? "grid min-w-0 grid-cols-1 gap-2 border-t border-border p-2"
+              : "grid min-w-0 grid-cols-1 gap-2 border-t border-border p-2"
+          }
+        >
+          {showTargetDetails ? (
+            <div className="grid min-w-0 gap-0.5">
+              <strong className="text-sm font-semibold">{targetTitle}</strong>
+              <span className="text-xs text-muted-foreground">{targetDetail}</span>
+              {browserContext ? (
+                <span
+                  aria-label="Current browser configuration"
+                  className="break-words text-xs text-muted-foreground"
                 >
-                  <Icon aria-hidden="true" className="size-4" />
-                </Button>
-              ))}
+                  {browserContext.engine[0]?.toUpperCase()}
+                  {browserContext.engine.slice(1)} · {browserContext.viewport.width}×
+                  {browserContext.viewport.height} · {browserContext.locale}
+                  {browserContext.authenticationFixtureId
+                    ? ` · Account reference ${browserContext.authenticationFixtureId}`
+                    : ""}
+                </span>
+              ) : null}
             </div>
           ) : null}
-          {toolbar}
-          <label className="sr-only" htmlFor={textInputId}>
-            Text to type into the focused field
-          </label>
-          <Input
-            className="min-w-0 flex-1"
-            id={textInputId}
-            value={text}
-            onChange={(event) => setText(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                typeText();
-              }
-            }}
-            placeholder="Type into the app"
-            disabled={!streaming || busy}
-            autoComplete="off"
-            maxLength={16_384}
-          />
-          <Button
-            type="button"
-            size="icon"
-            variant="secondary"
-            aria-label="Type text into app"
-            title="Type text into the focused field"
-            disabled={!text || !streaming || busy}
-            onClick={typeText}
-          >
-            <ArrowUp className="size-4" aria-hidden="true" />
-          </Button>
+          <div className="flex w-full items-center gap-2">
+            {targetPlatform === "android" ? (
+              <div
+                role="group"
+                aria-label="Android navigation"
+                className="flex shrink-0 items-center gap-0.5 rounded-lg bg-muted/50 p-0.5"
+              >
+                {(
+                  [
+                    { key: "back", label: "Back", icon: ChevronLeft, help: "Go back in Android" },
+                    { key: "home", label: "Home", icon: Circle, help: "Go to the home screen" },
+                    { key: "recents", label: "Recents", icon: Square, help: "Show recent apps" },
+                  ] as const
+                ).map(({ key, label, icon: Icon, help }) => (
+                  <Button
+                    key={key}
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={`Android ${label}`}
+                    title={`${label} — ${help}`}
+                    disabled={busy || !streaming}
+                    onClick={() => void send({ kind: "key", key })}
+                  >
+                    <Icon aria-hidden="true" className="size-4" />
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+            {toolbar}
+            <label className="sr-only" htmlFor={textInputId}>
+              Text to type into the focused field
+            </label>
+            <Input
+              className="min-w-0 flex-1"
+              id={textInputId}
+              value={text}
+              onChange={(event) => setText(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  typeText();
+                }
+              }}
+              placeholder="Type into the app"
+              disabled={!streaming || busy}
+              autoComplete="off"
+              maxLength={16_384}
+            />
+            <Button
+              type="button"
+              size="icon"
+              variant="secondary"
+              aria-label="Type text into app"
+              title="Type text into the focused field"
+              disabled={!text || !streaming || busy}
+              onClick={typeText}
+            >
+              <ArrowUp className="size-4" aria-hidden="true" />
+            </Button>
+          </div>
         </div>
-      </div>
+      ) : null}
       {help ? (
         <p id={helpId} className="px-3 pb-3 text-xs text-muted-foreground">
           {help}

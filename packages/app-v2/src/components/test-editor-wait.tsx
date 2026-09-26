@@ -62,7 +62,7 @@ export function ConditionWaitEditor({
             aria-pressed={Number(value.seconds) === seconds}
             onClick={() => onChange({ ...value, seconds: String(seconds) })}
           >
-            {seconds} seconds
+            {seconds}s
           </Button>
         ))}
       </div>
@@ -71,12 +71,8 @@ export function ConditionWaitEditor({
         className="text-xs font-normal leading-normal text-muted-foreground"
       >
         {valid
-          ? "Continues as soon as the condition is met. Fails if it takes longer. Maximum 15 minutes."
+          ? "Continues when ready; fails after the time limit."
           : "Enter a duration greater than 0 and no more than 900 seconds."}
-      </p>
-      <p className="text-xs font-normal leading-normal text-muted-foreground">
-        For generation, wait for a result control such as Download. Add a separate checkpoint to
-        check the image or video itself.
       </p>
     </div>
   );

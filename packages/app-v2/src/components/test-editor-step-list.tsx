@@ -2,11 +2,11 @@
 import type { AppMapScenarioTest } from "@relay/protocol";
 import type { PlanPlatform } from "@relay/product/test-route-platforms";
 import { Button } from "@relay/ui-react/components/button";
-import { ArrowDown, ArrowUp, ChevronRight, GripVertical } from "lucide-react";
-import type { CSSProperties, RefObject } from "react";
+import { ArrowDown, ArrowUp, ChevronRight } from "lucide-react";
+import type { CSSProperties, ReactNode, RefObject } from "react";
 import { EmptyState } from "./product-patterns";
 import { TestEditorRoutes } from "./test-editor-routes";
-import { stepKindLabel, stepReadinessLabel, type StepEntry } from "./test-editor-step";
+import { stepReadinessLabel, type StepEntry } from "./test-editor-step";
 
 function branchLabel(placement: StepEntry["placement"]): string {
   if (placement?.branch === "then") return "Then branch";
@@ -38,6 +38,8 @@ export function TestEditorStepOutline({
   onSelect,
   onMove,
   onDrop,
+  selectedEditor,
+  showDetails = false,
 }: {
   test: AppMapScenarioTest;
   recordedPlatforms?: readonly PlanPlatform[];
@@ -53,33 +55,32 @@ export function TestEditorStepOutline({
   onSelect(stepId: string): void;
   onMove(entry: StepEntry, delta: -1 | 1): void;
   onDrop(entry: StepEntry, after: boolean): void;
+  selectedEditor?: ReactNode;
+  showDetails?: boolean;
 }) {
   const compileBlockNotice = uniquePlatformBlockNotice(stepPlatformBlockers);
   return (
     <section className="min-w-0" aria-labelledby="test-steps-title">
-      <div className="flex items-end justify-between gap-5 max-[620px]:items-start max-[620px]:gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 id="test-steps-title">Steps</h2>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2.5">
-          <span className="text-xs tabular-nums text-muted-foreground">
-            {entries.length === 1 ? "1 step" : `${entries.length} steps`}
-          </span>
-          <Button size="sm" variant="outline" onClick={onAdd} disabled={busy}>
+        <div className="flex flex-wrap items-center gap-1">
+          <Button size="sm" variant="ghost" onClick={onAdd} disabled={busy}>
             Add step
           </Button>
-          <Button size="sm" variant="outline" onClick={onAddCheckpoint} disabled={busy}>
+          <Button size="sm" variant="ghost" onClick={onAddCheckpoint} disabled={busy}>
             Add checkpoint
           </Button>
         </div>
       </div>
       {entries.length ? (
-        <ol className="mt-4 grid list-none gap-1.5 p-0">
+        <ol className="mt-3 grid list-none divide-y divide-border p-0">
           {entries.map((entry) => (
             <li key={entry.step.id} style={{ "--step-depth": entry.depth } as CSSProperties}>
               <div
                 id={`test-step-${entry.step.id}`}
-                className="grid min-h-14 min-w-0 grid-cols-[minmax(0,1fr)_36px] items-stretch rounded-lg border border-border bg-card transition-colors hover:border-input hover:bg-muted/40 data-[selected=true]:border-primary/40 data-[selected=true]:bg-primary/5"
+                className="grid min-h-14 min-w-0 grid-cols-[minmax(0,1fr)_36px] items-stretch group bg-transparent transition-colors hover:bg-muted/40 data-[selected=true]:bg-muted/40"
                 data-selected={selectedStepId === entry.step.id}
                 draggable={!busy}
                 tabIndex={0}
@@ -107,40 +108,35 @@ export function TestEditorStepOutline({
                 }}
               >
                 <button
-                  className="grid min-h-14 min-w-0 grid-cols-[14px_24px_minmax(0,1fr)_12px] items-center gap-1.5 border-0 bg-transparent p-2 text-left text-inherit"
+                  className="grid min-h-14 min-w-0 grid-cols-[20px_minmax(0,1fr)_12px] items-center gap-2.5 border-0 bg-transparent px-3 py-3 text-left text-inherit"
                   type="button"
                   onClick={() => onSelect(entry.step.id)}
                   aria-pressed={selectedStepId === entry.step.id}
                 >
-                  <GripVertical
-                    className="size-4 cursor-grab text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <span className="grid size-7 place-items-center rounded-full border border-border bg-background text-xs tabular-nums text-muted-foreground">
+                  <span className="text-center text-xs tabular-nums text-muted-foreground">
                     {entry.number}
                   </span>
                   <span className="min-w-0">
-                    <strong className="block overflow-hidden text-xs font-semibold break-words">
+                    <strong className="block overflow-hidden text-sm font-medium break-words">
                       {entry.step.intent}
                     </strong>
-                    <small className="mt-0.5 block overflow-hidden text-xs text-foreground break-words">
+                    <small className="mt-0.5 block overflow-hidden text-xs text-muted-foreground break-words">
                       {entry.placement ? `${branchLabel(entry.placement)} · ` : ""}
-                      {stepKindLabel(entry.step)} ·{" "}
                       {stepReadinessLabel(entry.step, {
                         productName: test.name,
                         originEvidenceMissing,
-                        unrecordedNative: Boolean(
-                          recordedPlatforms?.length &&
-                          !recordedPlatforms.includes("android") &&
-                          !recordedPlatforms.includes("ios"),
-                        ),
                         platformBlocker: stepPlatformBlockers?.[entry.step.id],
-                      })}
+                      })
+                        .split(" · ")[0]
+                        .replace(/^Ready$/, "")}
                     </small>
                   </span>
-                  <ChevronRight className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                  <ChevronRight
+                    className={`size-3.5 text-muted-foreground ${selectedStepId === entry.step.id ? "rotate-90" : ""}`}
+                    aria-hidden="true"
+                  />
                 </button>
-                <span className="grid grid-cols-1 border-l border-border">
+                <span className="grid grid-cols-1 opacity-0 focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
                   <Button
                     size="icon-sm"
                     variant="ghost"
@@ -161,6 +157,7 @@ export function TestEditorStepOutline({
                   </Button>
                 </span>
               </div>
+              {selectedStepId === entry.step.id ? selectedEditor : null}
             </li>
           ))}
         </ol>
@@ -170,16 +167,23 @@ export function TestEditorStepOutline({
           detail="Record this Test again to give Relay steps to repeat."
         />
       )}
-      <div className="mt-5">
-        <TestEditorRoutes
-          test={test}
-          recordedPlatforms={recordedPlatforms}
-          routePlatformBlockers={routePlatformBlockers}
-        />
-        {compileBlockNotice ? (
-          <p className="mt-2 text-xs leading-snug text-muted-foreground">{compileBlockNotice}</p>
-        ) : null}
-      </div>
+      {showDetails ? (
+        <details className="mt-5 text-sm text-muted-foreground">
+          <summary className="cursor-pointer py-2">Platform availability</summary>
+          <div className="pt-3">
+            <TestEditorRoutes
+              test={test}
+              recordedPlatforms={recordedPlatforms}
+              routePlatformBlockers={routePlatformBlockers}
+            />
+            {compileBlockNotice ? (
+              <p className="mt-2 text-xs leading-snug text-muted-foreground">
+                {compileBlockNotice}
+              </p>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
     </section>
   );
 }
