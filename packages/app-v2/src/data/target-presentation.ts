@@ -26,7 +26,9 @@ export async function presentReadyTargets(
     .invoke("target.devices.list", {})
     .then((result) => result.devices)
     .catch(() => [] as DeviceSummary[]);
-  const drafts = targets.map((target) => {
+  // Goal sessions create throwaway browsers; they are not places to run saved Tests.
+  const runnable = targets.filter((target) => !isGoalScratchTarget(target.targetId));
+  const drafts = runnable.map((target) => {
     const device = devices.find(
       (candidate) => candidate.serial === target.targetId || candidate.id === target.targetId,
     );
@@ -45,6 +47,9 @@ export async function presentReadyTargets(
     totals.set(key, (totals.get(key) ?? 0) + 1);
   }
   const seen = new Map<string, number>();
+  const order = (item: AuthoringTarget) =>
+    item.kind === "browser" ? 0 : item.platform === "android" ? 1 : 2;
+  drafts.sort((left, right) => order(left) - order(right) || left.name.localeCompare(right.name));
   return drafts.map((item) => {
     const key = item.name.toLocaleLowerCase();
     const ordinal = (seen.get(key) ?? 0) + 1;
@@ -95,4 +100,9 @@ function targetDetail(target: AuthoringTarget, device?: DeviceSummary): string {
   ]
     .filter(Boolean)
     .join(" · ");
+}
+
+/** Browsers created for one goal exploration (`goal-<session>`), removed with it. */
+export function isGoalScratchTarget(targetId: string): boolean {
+  return /^goal-[0-9a-z-]+$/iu.test(targetId);
 }

@@ -369,3 +369,14 @@ export async function preflightTarget(target: TargetDefinition): Promise<TargetP
     checks,
   };
 }
+
+/**
+ * Check saved browsers once in the background so the first device picker a
+ * person opens is already warm. One at a time, so startup stays quiet.
+ */
+export async function warmBrowserPreflights(): Promise<void> {
+  for (const target of await listTargets()) {
+    if (target.kind !== "browser" || !target.browser || /^goal-/u.test(target.id)) continue;
+    await preflightTargetCached(target).catch(() => undefined);
+  }
+}

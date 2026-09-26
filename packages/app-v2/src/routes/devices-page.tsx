@@ -1,5 +1,6 @@
 import { libraryRowSurface, libraryRowContent } from "../components/library-row-styles";
 /** @jsxImportSource react */
+import { isGoalScratchTarget } from "../data/target-presentation";
 import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
 import {
@@ -41,6 +42,7 @@ function statusLabel(device: ProductDevice): string {
 }
 
 function deviceGroup(device: ProductDevice): string {
+  if (isBrowser(device) && isGoalScratchTarget(device.id)) return "Goal browsers";
   if (isBrowser(device)) return "Browsers";
   if (/simulator/i.test(device.kind ?? "")) return "iOS simulators";
   if (/emulator/i.test(device.kind ?? "")) return "Android emulators";
@@ -351,26 +353,32 @@ export function DevicesPage() {
 
       {devices.data !== undefined && visibleCount > 0 ? (
         <div className="mt-3 grid gap-4" aria-live="polite">
-          {(["Physical devices", "Android emulators", "iOS simulators", "Browsers"] as const).map(
-            (title) => {
-              const devicesInSection = visibleDevices.filter(
-                (device) =>
-                  deviceGroup(device) === title &&
-                  !device.id.startsWith("avd:") &&
-                  !(title === "iOS simulators" && device.device.booted === false),
-              );
-              if (!devicesInSection.length) return null;
-              return (
-                <DeviceSection
-                  key={title}
-                  title={title}
-                  devices={devicesInSection}
-                  stale={devices.isError}
-                  returnTo={continuation ? search.returnTo : undefined}
-                />
-              );
-            },
-          )}
+          {(
+            [
+              "Physical devices",
+              "Android emulators",
+              "iOS simulators",
+              "Browsers",
+              "Goal browsers",
+            ] as const
+          ).map((title) => {
+            const devicesInSection = visibleDevices.filter(
+              (device) =>
+                deviceGroup(device) === title &&
+                !device.id.startsWith("avd:") &&
+                !(title === "iOS simulators" && device.device.booted === false),
+            );
+            if (!devicesInSection.length) return null;
+            return (
+              <DeviceSection
+                key={title}
+                title={title}
+                devices={devicesInSection}
+                stale={devices.isError}
+                returnTo={continuation ? search.returnTo : undefined}
+              />
+            );
+          })}
           {(() => {
             const available = visibleDevices.filter(
               (device) =>
