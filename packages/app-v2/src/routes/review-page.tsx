@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useRouteContext } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
-import { Check, CircleCheck, Flag, ScanSearch, SquareDashed } from "lucide-react";
+import { Check, CircleCheck, Flag, Image, ScanSearch, SquareDashed } from "lucide-react";
 import type {
   CaptureReviewAction,
   CaptureReviewItem,
@@ -49,10 +49,16 @@ function StateBadge({ item }: { item: CaptureReviewItem }) {
       ? "size"
       : `${Math.max(0.1, (item.reference?.changeRatio ?? 0) * 100).toFixed(1)}%`;
     return (
-      <span className="shrink-0 text-xs font-medium text-warning-foreground">Changed {ratio}</span>
+      <span className="shrink-0 rounded-md bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning-foreground">
+        Changed {ratio}
+      </span>
     );
   }
-  return <span className="shrink-0 text-xs text-muted-foreground">New</span>;
+  return (
+    <span className="shrink-0 rounded-md bg-info/10 px-1.5 py-0.5 text-xs font-medium text-info">
+      New
+    </span>
+  );
 }
 
 function timeAgo(value: number): string {
@@ -367,7 +373,7 @@ export function ReviewPage() {
           </div>
         </div>
       ) : (
-        <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] @3xl:grid-cols-[16rem_minmax(0,1fr)]">
+        <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] @3xl:grid-cols-[19rem_minmax(0,1fr)]">
           <nav
             aria-label="Screenshots to review"
             className="min-h-0 min-w-0 max-h-48 overflow-x-hidden overflow-y-auto border-b border-border/60 p-3 @3xl:max-h-none @3xl:border-r @3xl:border-b-0"
@@ -376,9 +382,17 @@ export function ReviewPage() {
               const entryCards = cards.filter((card) => card.entry.runId === entry.runId);
               if (!entryCards.length) return null;
               return (
-                <div key={entry.runId} className="mb-4 min-w-0">
-                  <div className="px-2 pt-1 pb-1.5">
-                    <p className="truncate text-xs font-semibold text-foreground">{entry.title}</p>
+                <div
+                  key={entry.runId}
+                  className="min-w-0 border-b border-border/50 py-4 first:pt-0 last:border-b-0"
+                >
+                  <div className="px-2 pt-1 pb-2.5">
+                    <p
+                      className="line-clamp-2 text-xs leading-5 font-semibold text-foreground"
+                      title={entry.title}
+                    >
+                      {entry.title}
+                    </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {[entry.targetName, timeAgo(entry.finishedAt)].filter(Boolean).join(" · ")}
                     </p>
@@ -389,10 +403,10 @@ export function ReviewPage() {
                         <button
                           type="button"
                           aria-current={card.key === selected?.key ? "true" : undefined}
-                          className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${
+                          className={`flex w-full min-w-0 items-start gap-2.5 rounded-lg px-2.5 py-2.5 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${
                             card.key === selected?.key
-                              ? "bg-accent font-medium text-foreground"
-                              : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
+                              ? "bg-accent font-medium text-foreground ring-1 ring-inset ring-border"
+                              : "text-foreground hover:bg-accent/40"
                           }`}
                           onClick={() => {
                             setSelectedKey(card.key);
@@ -400,7 +414,14 @@ export function ReviewPage() {
                             setReporting(false);
                           }}
                         >
-                          <span className="min-w-0 truncate" title={screenshotName(card.item)}>
+                          <Image
+                            className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                            aria-hidden="true"
+                          />
+                          <span
+                            className="min-w-0 flex-1 line-clamp-2 leading-5 wrap-anywhere"
+                            title={screenshotName(card.item)}
+                          >
                             {screenshotName(card.item)}
                           </span>
                           <StateBadge item={card.item} />
