@@ -238,7 +238,13 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
     let unsubscribe: (() => void) | undefined;
     let mountedSession: LiveTargetSession | undefined;
     setBrowserContext(undefined);
-    void createLiveTarget(selectedTarget)
+    // Show the same signed-in browser the recording drives.
+    const account =
+      selectedTarget.kind === "browser" ? selectedTarget.authenticationFixtureId : undefined;
+    void createLiveTarget(
+      selectedTarget,
+      account ? { authenticationFixtureId: account } : undefined,
+    )
       .then((session) => {
         if (disposed || !liveCanvas.current) {
           session.close();

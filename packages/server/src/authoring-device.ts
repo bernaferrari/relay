@@ -82,9 +82,12 @@ export async function deviceFor(
     if (session.target.kind !== "browser") {
       return createDeviceForTarget(context);
     }
-    const fixtureId = options.authenticationFixtureId?.trim();
+    // A capture can override the login; otherwise use the recording's own.
+    const captureFixtureId = options.authenticationFixtureId?.trim();
+    const recordingFixtureId = session.target.authenticationFixtureId?.trim();
+    const fixtureId = captureFixtureId || recordingFixtureId;
     if (!fixtureId) return getBrowserDevice(session.target.targetId);
-    const projectId = options.projectId?.trim();
+    const projectId = options.projectId?.trim() || session.projectId;
     if (!projectId) {
       throw new Error("A browser account fixture capture needs a project id");
     }
@@ -97,16 +100,23 @@ export async function deviceFor(
       headless: options.headless ?? true,
       recordVideo: false,
       projectId,
+      // Recording as a saved login drives the same signed-in browser the live
+      // view shows, so what the person clicks is what gets recorded.
+      ...(captureFixtureId ? {} : { reuseMatchingIdentity: true }),
       profile: compileBrowserEnvironment({
         ...browserCaseProfileForTarget(target),
         authenticationFixtureId: fixtureId,
       }),
     });
-    await ensureFixtureCaptureHydrated(
-      session.id,
-      device,
-      `${session.target.targetId}#${fixtureId}`,
-    );
+    // Proof captures confirm the saved login hydrated before capturing; an
+    // ordinary recording shows the person the page and lets them see it.
+    if (captureFixtureId) {
+      await ensureFixtureCaptureHydrated(
+        session.id,
+        device,
+        `${session.target.targetId}#${fixtureId}`,
+      );
+    }
     return device;
   });
 }

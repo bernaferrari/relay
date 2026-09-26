@@ -1,4 +1,5 @@
 import { verifyChangeOffline } from "@relay/core/verify-change";
+import { recordingTarget } from "./recording-outcome-jobs.js";
 import {
   measureTracePackJson,
   TRACE_PACK_OFFLINE_TRANSPORT_LIMITS,
@@ -362,7 +363,10 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
         "Recording requires explicit confirmation before Relay acquires control.",
       );
     }
-    const target = await selectTarget(this.operations, intent.targetId);
+    const target = recordingTarget(
+      await selectTarget(this.operations, intent.targetId),
+      intent.authenticationFixtureId,
+    );
     const appMapId = await selectAppMap(this.operations, intent.appMapId, intent.title);
     const leaseId = await acquireOwnLease(this.operations, this.options.actorId, target.targetId);
     return this.workflows.start({

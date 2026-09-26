@@ -94,20 +94,20 @@ export function LiveTargetCanvas({
   function point(event: { clientX: number; clientY: number }): Point {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
-    const bounds = canvas.getBoundingClientRect();
+    const drawn = containedFrameRect(canvas.getBoundingClientRect(), canvas.width, canvas.height);
     return {
       x: Math.max(
         0,
         Math.min(
           canvas.width - 1,
-          Math.round(((event.clientX - bounds.left) / Math.max(bounds.width, 1)) * canvas.width),
+          Math.round(((event.clientX - drawn.left) / drawn.width) * canvas.width),
         ),
       ),
       y: Math.max(
         0,
         Math.min(
           canvas.height - 1,
-          Math.round(((event.clientY - bounds.top) / Math.max(bounds.height, 1)) * canvas.height),
+          Math.round(((event.clientY - drawn.top) / drawn.height) * canvas.height),
         ),
       ),
     };
@@ -388,4 +388,30 @@ export function LiveTargetCanvas({
       ) : null}
     </div>
   );
+}
+
+/**
+ * Where the frame is actually drawn inside the canvas element. The canvas uses
+ * object-fit: contain, so a frame with a different aspect is letterboxed;
+ * mapping a click against the whole element would land on the wrong control.
+ */
+export function containedFrameRect(
+  element: { left: number; top: number; width: number; height: number },
+  frameWidth: number,
+  frameHeight: number,
+): { left: number; top: number; width: number; height: number } {
+  const boxWidth = Math.max(element.width, 1);
+  const boxHeight = Math.max(element.height, 1);
+  if (!frameWidth || !frameHeight) {
+    return { left: element.left, top: element.top, width: boxWidth, height: boxHeight };
+  }
+  const scale = Math.min(boxWidth / frameWidth, boxHeight / frameHeight);
+  const width = frameWidth * scale;
+  const height = frameHeight * scale;
+  return {
+    left: element.left + (boxWidth - width) / 2,
+    top: element.top + (boxHeight - height) / 2,
+    width,
+    height,
+  };
 }

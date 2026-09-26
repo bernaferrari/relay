@@ -24,6 +24,10 @@ export const createAuthoringSessionParser = objectParser<CreateAuthoringSessionI
     ) {
       fail("authoring target", "kind and platform do not describe the same target");
     }
+    if (target.authenticationFixtureId !== undefined) {
+      if (target.kind !== "browser") fail("authoring target", "only a browser can sign in");
+      string(target.authenticationFixtureId, "authoring target authenticationFixtureId");
+    }
     if (number(input.expectedAppMapRevision, "expectedAppMapRevision") < 0) {
       fail("expectedAppMapRevision", "must be non-negative");
     }

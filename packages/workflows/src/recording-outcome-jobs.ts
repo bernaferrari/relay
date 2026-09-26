@@ -78,7 +78,10 @@ export function createRelayRecordingOutcomeJobs(
           "Recording requires explicit confirmation before Relay acquires control.",
         );
       }
-      const target = await selectTarget(operations, intent.targetId);
+      const target = recordingTarget(
+        await selectTarget(operations, intent.targetId),
+        intent.authenticationFixtureId,
+      );
       const appMapId = await selectAppMap(operations, intent.appMapId, intent.title);
       const leaseId = await acquireOwnLease(operations, options.actorId, target.targetId);
       return authoring.start({
@@ -100,4 +103,17 @@ export function createRelayRecordingOutcomeJobs(
     inspect: ({ workflowId }) => authoring.inspectDurable(workflowId),
     advanceRecording: (decision) => authoring.advanceDurable(decision),
   };
+}
+
+/** The target a recording controls, signed in with a saved login when chosen. */
+export function recordingTarget<T extends { kind: "device" | "browser" }>(
+  selected: T,
+  authenticationFixtureId?: string,
+): T & { authenticationFixtureId?: string } {
+  const account = authenticationFixtureId?.trim();
+  if (!account) return selected;
+  if (selected.kind !== "browser") {
+    throw new TypeError("Only a browser recording can sign in with a saved login.");
+  }
+  return { ...selected, authenticationFixtureId: account };
 }

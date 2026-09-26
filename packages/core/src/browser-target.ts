@@ -316,6 +316,9 @@ export type BrowserDeviceOptions = {
   projectId?: string;
   headless?: boolean;
   unsignedLaneId?: string;
+  /** Share the live browser already signed in as this profile's login (the
+   * one the person is watching) instead of opening a separate one. */
+  reuseMatchingIdentity?: boolean;
 };
 
 export async function getBrowserDevice(

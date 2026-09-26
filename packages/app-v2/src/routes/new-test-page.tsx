@@ -28,7 +28,13 @@ import { ReviewRecordingPage } from "./review-recording-page";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { RecordingDeviceChoice } from "../components/recording-device-choice";
 import { InstalledAppChoice } from "../components/installed-app-choice";
-import { NewTestQuickStart, recentWebsites, websiteHost } from "./new-test-quick-start";
+import {
+  NewTestQuickStart,
+  recentWebsites,
+  websiteHost,
+  type WebsiteAccount,
+} from "./new-test-quick-start";
+import type { ProductBrowserAccount } from "../data/app-resources-product-service";
 
 const NEW_TEST_DRAFT_KEY = "newTestDraft";
 
@@ -77,6 +83,37 @@ export function NewTestPage() {
     requestedAppId || requestedTargetId || startsFromPath ? "detailed" : "website",
   );
   const [quickProgress, setQuickProgress] = useState<string>();
+  const accounts = useQuery({
+    queryKey: ["new-test", "browser-accounts"],
+    queryFn: () => appResourcesService.listBrowserAccounts().catch(() => []),
+    staleTime: 30_000,
+  });
+  // The login last used per website, so the daily case is one click.
+  const rememberedAccounts = useQuery({
+    queryKey: ["new-test", "remembered-accounts", accounts.data?.length ?? 0],
+    queryFn: async () => {
+      const hosts = [
+        ...new Set(
+          (accounts.data ?? []).flatMap((item) =>
+            (item.fixture.origins ?? []).map((origin) => websiteHost(origin)),
+          ),
+        ),
+      ];
+      const entries = await Promise.all(
+        hosts.map(
+          async (host) =>
+            [
+              host,
+              await Promise.resolve(platform.storage.get(`relay:website-account:${host}`)),
+            ] as const,
+        ),
+      );
+      return Object.fromEntries(
+        entries.filter((entry): entry is readonly [string, string] => typeof entry[1] === "string"),
+      );
+    },
+    enabled: Boolean(accounts.data?.length),
+  });
   const [quickError, setQuickError] = useState<string>();
 
   const apps = useQuery({
@@ -292,7 +329,12 @@ export function NewTestPage() {
   }
 
   const begin = useMutation({
-    mutationFn: async (chosen?: { appId: string; targetId: string; title: string }) => {
+    mutationFn: async (chosen?: {
+      appId: string;
+      targetId: string;
+      title: string;
+      authenticationFixtureId?: string;
+    }) => {
       const suggestedName =
         chosen?.title ??
         (pathContext.data
@@ -302,6 +344,9 @@ export function NewTestPage() {
         title: suggestedName,
         appMapId: chosen?.appId ?? appId,
         targetId: chosen?.targetId ?? targetId,
+        ...(chosen?.authenticationFixtureId
+          ? { authenticationFixtureId: chosen.authenticationFixtureId }
+          : {}),
         ...(originApplication.trim() ? { originApplication: originApplication.trim() } : {}),
         ...(pathContext.data
           ? {
@@ -350,18 +395,26 @@ export function NewTestPage() {
     return appId;
   }
 
-  async function startWebsiteTest(url: string) {
+  async function startWebsiteTest(url: string, account?: WebsiteAccount) {
     const host = websiteHost(url);
     setQuickError(undefined);
     try {
-      setQuickProgress(`Opening ${host}…`);
+      setQuickProgress(account ? `Opening ${host} as ${account.name}…` : `Opening ${host}…`);
       const typedPath = new URL(url).pathname;
       const saved = savedBrowsers.data?.find(
         (space) =>
           websiteHost(space.startUrl) === host &&
           (typedPath === "/" || new URL(space.startUrl).pathname === typedPath),
       );
-      const browserTargetId = await startManagedBrowser(browserSpacesService, saved?.id, url);
+      // A saved login belongs to one browser; record in that browser, signed in.
+      const browserTargetId = await startManagedBrowser(
+        browserSpacesService,
+        account?.targetId ?? saved?.id,
+        url,
+      );
+      await Promise.resolve(
+        platform.storage.set(`relay:website-account:${host}`, account?.reference ?? ""),
+      );
       setQuickProgress("Finding where to save it…");
       const chosenApp = await appForWebsite(host, browserTargetId);
       await queryClient.invalidateQueries({ queryKey: ["browser-spaces"] });
@@ -373,6 +426,7 @@ export function NewTestPage() {
         appId: chosenApp,
         targetId: browserTargetId,
         title: `Test on ${host}`,
+        ...(account ? { authenticationFixtureId: account.reference } : {}),
       });
     } catch (error) {
       setQuickError(
@@ -543,7 +597,9 @@ export function NewTestPage() {
             manualAction={<NewTestDraftDialog />}
             {...(quickProgress ? { progress: quickProgress } : {})}
             {...(quickError ? { error: quickError } : {})}
-            onStart={(url) => void startWebsiteTest(url)}
+            accountsFor={(url) => websiteAccounts(accounts.data ?? [], url)}
+            rememberedAccount={(url) => rememberedAccounts.data?.[websiteHost(url)]}
+            onStart={(url, account) => void startWebsiteTest(url, account)}
             onUseDevice={() => setSetupMode("detailed")}
           />
         ) : null}
@@ -798,4 +854,25 @@ async function readNewTestDraft(platform: {
   } catch {
     return {};
   }
+}
+
+/** Saved logins, not revoked, whose cookies cover this website. */
+function websiteAccounts(
+  accounts: readonly ProductBrowserAccount[],
+  url: string,
+): WebsiteAccount[] {
+  const bare = (value: string) => websiteHost(value).replace(/^www\./, "");
+  const host = bare(url);
+  return accounts
+    .filter(
+      (item) =>
+        !item.fixture.revokedAt &&
+        Boolean(item.fixture.reference) &&
+        (item.fixture.origins ?? []).some((origin) => bare(origin) === host),
+    )
+    .map((item) => ({
+      reference: item.fixture.reference,
+      name: item.fixture.name || item.target.name,
+      targetId: item.fixture.targetId,
+    }));
 }

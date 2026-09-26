@@ -58,6 +58,8 @@ export type ProductRecordingBeginInput = RecordingPathContext & {
   appMapId?: string;
   targetId?: string;
   originApplication?: string;
+  /** Saved browser login to record as. */
+  authenticationFixtureId?: string;
 };
 
 export type ProductRecordingJourney = {
@@ -273,6 +275,9 @@ export function createProductRecordingJourney(input: {
           : {}),
         ...(input.originApplication?.trim()
           ? { originApplication: input.originApplication.trim() }
+          : {}),
+        ...(input.authenticationFixtureId?.trim()
+          ? { authenticationFixtureId: input.authenticationFixtureId.trim() }
           : {}),
         ...(input.sourceScreenId ? { sourceScreenId: input.sourceScreenId } : {}),
         ...(input.pendingConnectionId ? { pendingConnectionId: input.pendingConnectionId } : {}),
