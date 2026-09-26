@@ -72,7 +72,7 @@ function Shot({
         <span className="font-medium text-foreground">{label}</span>
         {detail ? <span className="truncate text-muted-foreground">{detail}</span> : null}
       </figcaption>
-      <div className="flex min-h-48 items-start justify-center rounded-xl bg-stage p-4">
+      <div className="flex min-h-48 items-start justify-center">
         {url ? (
           <WorkspaceScreenshot>
             <div className="relative">
