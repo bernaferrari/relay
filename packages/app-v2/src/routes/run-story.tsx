@@ -32,6 +32,8 @@ import {
   type StoryStep,
 } from "../data/run-story";
 import { ReferenceCompareLine } from "./reference-compare-dialog";
+import { DeviceFrame } from "../components/device-frame";
+import { StatusPill, type RunState } from "../components/run-status";
 
 export type RunStoryStatus = "running" | "passed" | "review" | "failed" | "cancelled";
 
@@ -47,12 +49,12 @@ const ACTION_ICON: Record<StoryActionKind, typeof Dot> = {
   other: Dot,
 };
 
-const STATUS: Record<RunStoryStatus, { label: string; className: string }> = {
-  running: { label: "Running", className: "bg-info/15 text-info-foreground" },
-  passed: { label: "Passed", className: "bg-success/15 text-success-foreground" },
-  review: { label: "Needs review", className: "bg-warning/15 text-warning-foreground" },
-  failed: { label: "Failed", className: "bg-destructive/15 text-destructive" },
-  cancelled: { label: "Cancelled", className: "bg-muted text-muted-foreground" },
+const PILL: Record<RunStoryStatus, RunState> = {
+  running: "running",
+  passed: "passed",
+  review: "review",
+  failed: "failed",
+  cancelled: "cancelled",
 };
 
 function StateMark({ state }: { state: StoryState }) {
@@ -79,56 +81,6 @@ function useBlobUrl(blob?: Blob): string | undefined {
     return () => URL.revokeObjectURL(next);
   }, [blob]);
   return url;
-}
-
-/** A phone bezel for portrait screenshots, a window for landscape ones. */
-function DeviceFrame({ url, loading }: { url?: string; loading?: boolean }) {
-  const [shape, setShape] = useState<"phone" | "window">("phone");
-  if (!url) {
-    return (
-      <div className="flex aspect-9/19 w-64 items-center justify-center rounded-3xl border-8 border-foreground/90 bg-background text-sm text-muted-foreground">
-        {loading ? "Starting…" : "No screen yet"}
-      </div>
-    );
-  }
-  const image = (
-    <img
-      src={url}
-      alt="Screen at this step"
-      className="block h-full max-h-full w-full max-w-full object-contain"
-      onLoad={(event) =>
-        setShape(
-          event.currentTarget.naturalWidth > event.currentTarget.naturalHeight ? "window" : "phone",
-        )
-      }
-    />
-  );
-  if (shape === "window") {
-    return (
-      <div
-        data-slot="evidence-image-frame"
-        className="w-full max-w-3xl overflow-hidden rounded-xl border border-border bg-background shadow-lg"
-      >
-        <div
-          className="flex h-7 items-center gap-1.5 border-b border-border px-3"
-          aria-hidden="true"
-        >
-          <span className="size-2.5 rounded-full bg-muted-foreground/30" />
-          <span className="size-2.5 rounded-full bg-muted-foreground/30" />
-          <span className="size-2.5 rounded-full bg-muted-foreground/30" />
-        </div>
-        {image}
-      </div>
-    );
-  }
-  return (
-    <div
-      data-slot="evidence-image-frame"
-      className="h-full max-h-[min(78vh,52rem)] overflow-hidden rounded-3xl border-8 border-foreground/90 bg-background shadow-xl"
-    >
-      {image}
-    </div>
-  );
 }
 
 export function RunStoryView({
@@ -194,11 +146,10 @@ export function RunStoryView({
   useEffect(() => {
     if (status === "running" && !pinned) listEnd.current?.scrollIntoView({ block: "nearest" });
   }, [allActions.length, status, pinned]);
-  const presentation = STATUS[status];
 
   return (
     <section
-      className="grid h-full min-h-0 grid-cols-1 overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-[minmax(22rem,30rem)_minmax(0,1fr)]"
+      className="grid h-full min-h-0 grid-cols-1 overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-[minmax(22rem,32rem)_minmax(0,1fr)]"
       aria-label="Run"
     >
       <div className="flex min-h-0 flex-col border-b border-border lg:border-r lg:border-b-0">
@@ -209,17 +160,8 @@ export function RunStoryView({
             </nav>
           ) : null}
           <div className="flex items-center gap-2">
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${presentation.className}`}
-              role="status"
-            >
-              {status === "running" ? (
-                <LoaderCircle
-                  className="size-3 animate-spin motion-reduce:animate-none"
-                  aria-hidden="true"
-                />
-              ) : null}
-              {presentation.label}
+            <span role="status">
+              <StatusPill state={PILL[status]} size="md" />
             </span>
             <span className="truncate text-xs text-muted-foreground">
               {meta.filter(Boolean).join(" · ")}
@@ -230,7 +172,7 @@ export function RunStoryView({
           {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
         </header>
         {notice ? (
-          <div className="grid gap-2 border-b border-border px-5 py-3">{notice}</div>
+          <div className="grid gap-2 border-b border-border px-5 py-3 empty:hidden">{notice}</div>
         ) : null}
         <ol className="min-h-0 flex-1 overflow-y-auto px-3 py-3" aria-label="Steps">
           {steps.length === 0 ? (
@@ -270,8 +212,12 @@ export function RunStoryView({
         </ol>
         {footer ? <footer className="border-t border-border px-5 py-3">{footer}</footer> : null}
       </div>
-      <div className="flex min-h-112 min-w-0 flex-col items-center justify-center gap-4 bg-muted/30 p-6">
-        <DeviceFrame url={url} loading={status === "running"} />
+      <div className="flex min-h-112 min-w-0 flex-col items-center justify-center gap-4 bg-stage p-6">
+        <DeviceFrame
+          alt="Screen at this step"
+          {...(url ? { src: url } : {})}
+          placeholder={status === "running" ? "Starting…" : "No screen yet"}
+        />
         {capture ? (
           <CaptureBar
             item={capture}
