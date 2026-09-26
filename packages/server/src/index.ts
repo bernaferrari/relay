@@ -73,6 +73,7 @@ import {
   beginDurableWorkerServerLifecycle,
   type AuthoringRuntime,
   type RelayStateServerLease,
+  warmBrowserPreflights,
 } from "@relay/core";
 import { cleanupAbandonedAndroidPacketCaptures } from "./startup-cleanup.js";
 import { collectVisibleReports } from "./report-access.js";
@@ -864,6 +865,9 @@ async function startServerWithStateLease(
   const port = typeof addr === "object" && addr !== null ? addr.port : preferredPort;
   goalRouteRuntimeBinding.setPort(port);
   publish({ type: "server.ready", at: now(), host, port });
+  if (process.env.RELAY_SKIP_BROWSER_WARMUP !== "1") {
+    setTimeout(() => void warmBrowserPreflights().catch(() => undefined), 2_000).unref();
+  }
   const proofRecovery = proofCoordinator.recover?.(recoverProofCell);
   void proofRecovery?.catch((error: unknown) =>
     console.warn(

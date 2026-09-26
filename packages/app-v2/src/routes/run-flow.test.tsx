@@ -834,7 +834,7 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Pixel 9 Pro");
     expect(document.body.textContent).not.toContain("browser-golden");
     expect(document.body.textContent).not.toContain("emulator-5554");
-    expect(document.body.textContent).toContain("No recording reference was saved for this step.");
+    expect(document.body.textContent).toContain("Run the Test and its screenshots show up here.");
     const savedSteps = [
       ...document.querySelectorAll<HTMLButtonElement>('[data-slot="test-readable-steps"] button'),
     ];

@@ -139,12 +139,25 @@ export function TestPage() {
     })),
   });
   const recordingTargetId = typeof search.target === "string" ? search.target : undefined;
+  // A Test usually runs where it ran last time; start there instead of asking.
+  const lastRunTargetId = [...(recentRuns.data ?? [])]
+    .sort((left, right) => right.queuedAt - left.queuedAt)
+    .find((run) => run.executionIdentity?.deviceId)?.executionIdentity?.deviceId;
   useEffect(() => {
     if (!configuration.pristine) return;
+    const ready = (id?: string) =>
+      Boolean(id && targets.data?.some((target) => target.targetId === id));
     if (recordingTargetId) configuration.setSelection({ targetId: recordingTargetId });
+    else if (ready(lastRunTargetId)) configuration.setSelection({ targetId: lastRunTargetId! });
     else if (targets.data?.length === 1)
       configuration.setSelection({ targetId: targets.data[0]!.targetId });
-  }, [configuration.pristine, configuration.setSelection, recordingTargetId, targets.data]);
+  }, [
+    configuration.pristine,
+    configuration.setSelection,
+    lastRunTargetId,
+    recordingTargetId,
+    targets.data,
+  ]);
   const targetId = configuration.selection.targetId ?? "";
   const targetReady = Boolean(targets.data?.some((target) => target.targetId === targetId));
   const admission = startConfigurationAdmission({
@@ -564,19 +577,11 @@ export function TestPage() {
                               <Camera className="size-5 text-muted-foreground" aria-hidden="true" />
                             </div>
                             <div className="grid gap-1.5">
-                              <h2 className="text-base font-semibold">Preview this Test</h2>
+                              <h2 className="text-base font-semibold">No screenshot yet</h2>
                               <p className="text-sm leading-relaxed text-muted-foreground">
-                                No recording reference was saved for this step. Run the Test to
-                                capture the app and review what happened.
+                                Run the Test and its screenshots show up here.
                               </p>
                             </div>
-                            <Button
-                              variant="outline"
-                              onClick={runOrFocusSetup}
-                              disabled={start.isPending}
-                            >
-                              {canStart ? "Run and capture" : "Choose device or browser"}
-                            </Button>
                           </div>
                         </div>
                       )}
@@ -622,7 +627,13 @@ export function TestPage() {
                         }}
                         targetOptions={targets.data?.map((target) => ({
                           id: target.targetId,
-                          label: targetLabel(target).title,
+                          label: `${targetLabel(target).title} · ${
+                            target.kind === "browser"
+                              ? "Browser"
+                              : target.platform === "ios"
+                                ? "iOS"
+                                : "Android"
+                          }${target.targetId === lastRunTargetId ? " · last used" : ""}`,
                           detail: targetLabel(target).detail,
                         }))}
                         selection={{
@@ -744,7 +755,7 @@ export function TestPage() {
                             onClick={() => start.mutate()}
                             disabled={!canStart || start.isPending}
                           >
-                            {start.isPending ? "Starting…" : "Run Test"}
+                            {start.isPending ? "Starting…" : "Run now"}
                           </Button>
                         </div>
                       </RunConfigurationComposer>
