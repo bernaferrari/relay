@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   combineCampaignBelongsToObservedPack,
+  quoteObservedCombinePackDuration,
   quoteObservedPackDuration,
 } from "./combine-observed-duration.js";
+import { readPersistedRuns } from "./runs.js";
 
 test("one completed pack is an observed sample, not a p95", () => {
   const quote = quoteObservedPackDuration({
@@ -79,4 +84,80 @@ test("two-lane chrome jobs are not an eight-Test daily pack sample", () => {
     ),
     false,
   );
+});
+
+test("pruned Plan runs do not make the observed quote scan the run store per job (agent-device-ni65)", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "relay-observed-duration-"));
+  const previousState = process.env.RELAY_STATE_DIR;
+  const previousRuns = process.env.RELAY_RUNS_DIR;
+  process.env.RELAY_STATE_DIR = directory;
+  process.env.RELAY_RUNS_DIR = join(directory, "runs");
+  try {
+    // Unrelated, unindexed runs. Each missing job used to fully parse all of them.
+    const padding = Array.from({ length: 400 }, (_, index) => `log line ${index} `.repeat(8));
+    const writeRun = async (folder: string, run: Record<string, unknown>) => {
+      await mkdir(join(directory, "runs", folder), { recursive: true });
+      await writeFile(
+        join(directory, "runs", folder, "run.json"),
+        JSON.stringify({ steps: [], artifacts: [], logs: padding, ...run }, null, 2),
+      );
+    };
+    for (let index = 0; index < 150; index += 1) {
+      await writeRun(`2026-01-01T00-00-${String(index).padStart(3, "0")}_other`, {
+        id: `other-${index}`,
+        action: "other",
+        status: "ok",
+      });
+    }
+    // One complete pack whose run folders do not carry the job id.
+    await writeRun("kept-a", { id: "kept-a", status: "ok", startedAt: 1_000, finishedAt: 5_000 });
+    await writeRun("kept-b", { id: "kept-b", status: "ok", startedAt: 5_000, finishedAt: 9_000 });
+
+    const campaignsDirectory = join(directory, "combine-campaigns", "default");
+    await mkdir(campaignsDirectory, { recursive: true });
+    const campaign = (id: string, jobIds: string[]) =>
+      writeFile(
+        join(campaignsDirectory, `${id}.json`),
+        JSON.stringify({
+          schemaVersion: 1,
+          id,
+          projectId: "default",
+          appMapId: "grok-web",
+          combineId: "grok-web-daily",
+          cases: jobIds.map((jobId) => ({ jobId })),
+          execution: {},
+        }),
+      );
+    await campaign("complete", ["kept-a", "kept-b"]);
+    for (let index = 0; index < 80; index += 1) {
+      await campaign(`pruned-${index}`, [`gone-${index}-a`, `gone-${index}-b`]);
+    }
+
+    const resolved = await readPersistedRuns(["kept-a", "gone-0-a"]);
+    assert.equal(resolved.get("kept-a")?.id, "kept-a");
+    assert.equal(resolved.get("gone-0-a"), null);
+
+    const started = Date.now();
+    const quote = await quoteObservedCombinePackDuration({
+      projectId: "default",
+      appMapId: "grok-web",
+      combineId: "grok-web-daily",
+      workItemCount: 2,
+    });
+    const elapsedMs = Date.now() - started;
+    assert.deepEqual(quote, {
+      durationMs: 8_000,
+      provenance: "observed-sample",
+      sampleCount: 1,
+      workItemCount: 2,
+      campaignIds: ["complete"],
+    });
+    assert.ok(elapsedMs < 1_500, `observed quote took ${elapsedMs}ms`);
+  } finally {
+    if (previousState === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previousState;
+    if (previousRuns === undefined) delete process.env.RELAY_RUNS_DIR;
+    else process.env.RELAY_RUNS_DIR = previousRuns;
+    await rm(directory, { recursive: true, force: true });
+  }
 });

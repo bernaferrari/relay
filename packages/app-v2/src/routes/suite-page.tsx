@@ -38,6 +38,8 @@ import { friendlySuiteIssue, summarizeSuiteSetup } from "../data/suite-preflight
 import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/apps/$appId/suites/$suiteId");
+/** After this long without a setup answer, say so next to the Run button. */
+const PREVIEW_SLOW_MS = 5_000;
 
 /** One representative case. All cases is an explicit choice, not the default. */
 export const defaultPlanExecutionMode = "pilot" as const;
@@ -87,7 +89,12 @@ export function SuitePage() {
   });
   const lastProfileId = [...(appRuns.data ?? [])]
     .sort((left, right) => right.queuedAt - left.queuedAt)
-    .map((run) => run.executionIdentity?.targetProfileId)
+    .map(
+      (run) =>
+        run.executionIdentity?.targetProfileId ??
+        // Older runs only name the target they ran on.
+        environments.data?.find((item) => item.targetId === run.executionIdentity?.deviceId)?.id,
+    )
     .find((id) => id && environments.data?.some((item) => item.id === id));
   useEffect(() => {
     if (!configuration.pristine || !environments.data) return;
@@ -201,6 +208,32 @@ export function SuitePage() {
   const needsReview = value?.tests.some((test) => test.status === "needs-review") ?? false;
   const previewBlockers = [...missingAccountBlockers, ...(preview.data?.blockers ?? [])];
   const plannedCases = preview.data?.caseCount ?? 0;
+  const previewWaiting = Boolean(selectedProfileIds.length) && !preview.data && !preview.error;
+  const previewChecking = previewWaiting && preview.isFetching;
+  const [previewSlow, setPreviewSlow] = useState(false);
+  useEffect(() => {
+    if (!previewChecking) {
+      setPreviewSlow(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setPreviewSlow(true), PREVIEW_SLOW_MS);
+    return () => window.clearTimeout(timer);
+  }, [previewChecking]);
+  // The Run button is disabled until the setup check answers; say why instead of going dead.
+  const runHint: { tone: "muted" | "error"; message: string } | null = !selectedProfileIds.length
+    ? null
+    : configuration.targetUnavailable
+      ? { tone: "error", message: "The saved browser is unavailable. Choose another in Run setup." }
+      : preview.error
+        ? {
+            tone: "error",
+            message: `Relay could not check this Plan: ${
+              preview.error instanceof Error ? preview.error.message : "unknown error"
+            }`,
+          }
+        : previewChecking && previewSlow
+          ? { tone: "muted", message: "Still checking this Plan's setup…" }
+          : null;
   const runningCases = executionMode === "pilot" ? Math.min(1, plannedCases) : plannedCases;
 
   return (
@@ -242,26 +275,58 @@ export function SuitePage() {
               .join(" · ")}
             actions={
               <>
+                {runHint ? (
+                  <span
+                    className={`flex max-w-80 items-center gap-2 text-xs leading-5 ${
+                      runHint.tone === "error" ? "text-destructive" : "text-muted-foreground"
+                    }`}
+                    role={runHint.tone === "error" ? "alert" : "status"}
+                  >
+                    {runHint.message}
+                    {preview.error ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={preview.isFetching}
+                        onClick={() => void preview.refetch()}
+                      >
+                        {preview.isFetching ? "Checking…" : "Retry"}
+                      </Button>
+                    ) : null}
+                  </span>
+                ) : null}
                 <Button variant="ghost" onClick={() => setEditOpen(true)}>
                   Edit
                 </Button>
                 <Button
                   variant="default"
-                  onClick={() => start.mutate()}
+                  onClick={() => {
+                    if (!selectedProfileIds.length) {
+                      // Nothing chosen yet: take the person to the choice instead of a dead button.
+                      const setup = document.getElementById("suite-environment-title");
+                      setup?.scrollIntoView({ behavior: "smooth", block: "center" });
+                      setup?.closest("section")?.querySelector<HTMLElement>("button")?.focus();
+                      return;
+                    }
+                    start.mutate();
+                  }}
                   disabled={
-                    !selectedProfileIds.length ||
-                    !preview.data ||
+                    (Boolean(selectedProfileIds.length) && !preview.data) ||
                     Boolean(previewBlockers.length) ||
                     preview.data?.execution?.capacity === "unavailable" ||
                     start.isPending
                   }
                 >
                   <Play aria-hidden="true" />
-                  {start.isPending
-                    ? "Starting…"
-                    : executionMode === "all" && plannedCases > 1
-                      ? `Run all ${plannedCases} cases`
-                      : `Run ${value.tests.length === 1 ? "check" : `all ${value.tests.length} checks`}`}
+                  {!selectedProfileIds.length
+                    ? "Choose where to run"
+                    : previewChecking
+                      ? "Checking setup…"
+                      : start.isPending
+                        ? "Starting…"
+                        : executionMode === "all" && plannedCases > 1
+                          ? `Run all ${plannedCases} cases`
+                          : `Run ${value.tests.length === 1 ? "check" : `all ${value.tests.length} checks`}`}
                 </Button>
               </>
             }
