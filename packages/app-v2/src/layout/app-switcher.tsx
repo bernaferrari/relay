@@ -172,11 +172,17 @@ export function AppSwitcher() {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger
-          className="flex min-h-14 w-full items-center gap-3 rounded-lg border border-border/60 bg-sidebar-accent/40 px-3 py-2.5 text-left text-foreground transition-colors hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-ring motion-reduce:transition-none"
+          className="flex min-h-11 w-full items-center gap-2.5 rounded-lg border border-border bg-card px-2 py-1.5 text-left text-foreground shadow-xs transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring motion-reduce:transition-none"
           aria-label={`App: ${contextName}`}
         >
-          <span className="flex min-w-0 flex-1 flex-col gap-1">
-            <span className="text-sidebar-foreground text-xs font-normal leading-4">App</span>
+          <span
+            aria-hidden="true"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md bg-brand-soft text-xs font-semibold text-brand"
+          >
+            {contextName.trim().charAt(0).toUpperCase() || "A"}
+          </span>
+          <span className="flex min-w-0 flex-1 flex-col">
+            <span className="text-xs leading-4 text-muted-foreground">App</span>
             <span className="truncate text-sm font-medium leading-5">{contextName}</span>
           </span>
           <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />

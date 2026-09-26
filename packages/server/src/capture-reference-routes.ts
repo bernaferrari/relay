@@ -6,6 +6,7 @@ import {
   captureReferenceImageForItem,
   captureReviewQueueForRun,
   listReviewInbox,
+  readFrameFile,
   runsRoot,
   updateCaptureReferenceIgnoreRegions,
   type PersistedRun,
@@ -67,6 +68,23 @@ export async function handleCaptureReferenceRoute(
           (run.projectId === scope.projectId && run.ownerId === scope.subject),
       }),
     );
+    return true;
+  }
+
+  const thumbnail = matchPath(pathname, "/runs/:id/thumbnail");
+  if (method === "GET" && thumbnail) {
+    const run = await loadScopedRun(thumbnail.id!, scope);
+    const captures = captureReviewQueueForRun(run).items.filter((item) => item.framePath);
+    const path = captures.at(-1)?.framePath ?? run.frames?.at(-1)?.path;
+    const bytes = path ? await readFrameFile(run.dir, path) : null;
+    if (!bytes) throw new HttpError(404, "This run has no screenshot");
+    response.writeHead(200, {
+      "Content-Type": "image/png",
+      "Content-Length": bytes.byteLength,
+      "Cache-Control": "private, max-age=86400, immutable",
+      ...CORS_HEADERS,
+    });
+    response.end(bytes);
     return true;
   }
 
