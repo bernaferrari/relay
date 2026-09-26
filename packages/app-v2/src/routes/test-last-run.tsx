@@ -22,35 +22,35 @@ export function latestRunOf(runs: readonly ProductRunSummary[] | undefined) {
   return [...(runs ?? [])].sort((left, right) => right.queuedAt - left.queuedAt)[0];
 }
 
-/** How this Test did last time, in one line under its name. */
+/** One stable-height row for every run state, including no run. */
 export function TestLastRunLine({ run }: { run?: ProductRunSummary }) {
   const search = useLocation({ select: (location) => location.search }) as Record<string, unknown>;
-  if (!run) {
-    return (
-      <p className="flex min-h-8 min-w-0 items-center gap-2 text-sm text-muted-foreground">
-        <StatusPill state="not-run" />
-      </p>
-    );
-  }
   return (
-    <p className="flex min-h-8 min-w-0 items-center gap-2 text-sm text-muted-foreground">
+    <p className="flex h-8 w-full min-w-0 items-center justify-end gap-2 text-sm whitespace-nowrap text-muted-foreground">
       <StatusPill state={runStateOf(run)} />
-      <span className="min-w-0 truncate">
-        Last run {ago(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
-        {run.targetName ? ` on ${run.targetName}` : ""}
-      </span>
-      <Link
-        className="shrink-0 font-medium text-primary hover:underline"
-        to="/runs/$runId"
-        params={{ runId: run.id }}
-        search={{
-          ...(typeof search.plan === "string" ? { plan: search.plan } : {}),
-          ...(typeof search.planApp === "string" ? { planApp: search.planApp } : {}),
-          ...(typeof search.app === "string" ? { app: search.app } : {}),
-        }}
-      >
-        See what happened
-      </Link>
+      {run ? (
+        <>
+          <span
+            className="min-w-0 truncate"
+            title={`Last run ${ago(run.finishedAt ?? run.startedAt ?? run.queuedAt)}${run.targetName ? ` on ${run.targetName}` : ""}`}
+          >
+            Last run {ago(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
+            {run.targetName ? ` on ${run.targetName}` : ""}
+          </span>
+          <Link
+            className="inline-flex h-8 shrink-0 items-center rounded-sm font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+            to="/runs/$runId"
+            params={{ runId: run.id }}
+            search={{
+              ...(typeof search.plan === "string" ? { plan: search.plan } : {}),
+              ...(typeof search.planApp === "string" ? { planApp: search.planApp } : {}),
+              ...(typeof search.app === "string" ? { app: search.app } : {}),
+            }}
+          >
+            See what happened
+          </Link>
+        </>
+      ) : null}
     </p>
   );
 }

@@ -34,18 +34,18 @@ export function TestWorkspaceHeader({
   children?: ReactNode;
 }) {
   return (
-    <header data-slot="test-workspace-header" className="shrink-0 px-5 py-4">
+    <header data-slot="test-workspace-header" className="@container/header shrink-0 px-5 py-4">
       {context ? (
         <div className="mb-3 flex min-w-0 flex-wrap items-center gap-2 text-sm text-muted-foreground">
           {context}
         </div>
       ) : null}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-        <h1 className="min-w-0 flex-1 basis-64 text-xl leading-snug font-semibold tracking-tight break-words">
+      <div className="grid min-w-0 grid-cols-1 items-center gap-x-5 gap-y-3 @4xl/header:grid-cols-[minmax(0,1fr)_auto]">
+        <h1 className="min-w-0 text-xl leading-snug font-semibold tracking-tight break-words">
           {title}
         </h1>
         {actions ? (
-          <div className="flex max-w-full flex-wrap items-center gap-2">{actions}</div>
+          <div className="flex min-h-8 max-w-full flex-wrap items-center gap-2">{actions}</div>
         ) : null}
       </div>
       {children ? (
@@ -110,7 +110,7 @@ export function WorkspaceToolbar({
   return (
     <div className="@container/toolbar shrink-0 border-b border-border px-5">
       <div className="grid min-w-0 grid-cols-1 items-center gap-x-4 @3xl/toolbar:grid-cols-[auto_minmax(0,1fr)]">
-        <div className="flex min-h-12 min-w-0 items-center">{leading}</div>
+        <div className="flex min-h-12 min-w-0 items-center [&_[role=tablist]]:h-12">{leading}</div>
         <div className="flex min-h-12 min-w-0 items-center pb-2 @3xl/toolbar:justify-end @3xl/toolbar:pb-0">
           {trailing}
         </div>
