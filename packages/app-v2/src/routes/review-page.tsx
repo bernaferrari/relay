@@ -4,12 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useRouteContext } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@relay/ui-react/components/dropdown-menu";
+
 import {
   Popover,
   PopoverContent,
@@ -17,6 +12,7 @@ import {
   PopoverTrigger,
 } from "@relay/ui-react/components/popover";
 import {
+  ArrowUpRight,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -393,18 +389,22 @@ export function ReviewPage() {
         <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] @3xl:grid-cols-[19rem_minmax(0,1fr)]">
           <nav
             aria-label="Screenshots to review"
-            className="min-h-0 min-w-0 max-h-48 overflow-x-hidden overflow-y-auto border-t border-b border-border/60 bg-card p-3 @3xl:max-h-none @3xl:border-r @3xl:border-b-0"
+            className="min-h-0 min-w-0 max-h-48 overflow-x-hidden overflow-y-auto border-t border-b border-border/60 bg-card px-2 pb-2 @3xl:max-h-none @3xl:border-r @3xl:border-b-0"
           >
+            <div className="sticky top-0 z-10 mb-1 flex h-10 items-center justify-between border-b border-border/50 bg-card px-3 text-xs font-medium text-muted-foreground">
+              <span>Screenshots</span>
+              <span className="tabular-nums">{cards.length}</span>
+            </div>
             {(inbox.data?.entries ?? []).map((entry) => {
               const entryCards = cards.filter((card) => card.entry.runId === entry.runId);
               if (!entryCards.length) return null;
-              const grouped = entryCards.length > 1;
+              const grouped = entry.items.length > 1;
               return (
                 <div key={entry.runId} className="min-w-0 py-1">
                   {grouped ? (
-                    <div className="px-2.5 pt-4 pb-2">
+                    <div className="px-3 pt-5 pb-2">
                       <p
-                        className="line-clamp-2 text-xs leading-5 font-semibold text-foreground"
+                        className="truncate text-xs leading-5 font-medium text-muted-foreground"
                         title={entry.title}
                       >
                         {entry.title}
@@ -414,16 +414,18 @@ export function ReviewPage() {
                       </p>
                     </div>
                   ) : null}
-                  <ul className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5">
+                  <ul
+                    className={`grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5 ${grouped ? "ml-3 border-l border-border/60 pl-1.5" : ""}`}
+                  >
                     {entryCards.map((card) => (
                       <li key={card.key} className="min-w-0">
                         <button
                           type="button"
                           aria-current={card.key === selected?.key ? "true" : undefined}
-                          className={`flex w-full min-w-0 items-start gap-2.5 rounded-md border-l-2 px-2.5 py-2.5 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${
+                          className={`flex w-full min-w-0 items-start gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${
                             card.key === selected?.key
-                              ? "border-primary bg-accent/70 text-foreground"
-                              : "border-transparent text-foreground hover:bg-accent/40"
+                              ? "bg-primary/10 text-foreground"
+                              : "text-foreground hover:bg-accent/40"
                           }`}
                           onClick={() => {
                             setSelectedKey(card.key);
@@ -431,7 +433,7 @@ export function ReviewPage() {
                             setReporting(false);
                           }}
                         >
-                          <span className="grid min-w-0 flex-1 gap-1">
+                          <span className="grid min-w-0 flex-1 gap-0.5">
                             <span
                               className="line-clamp-2 leading-5 wrap-anywhere"
                               title={entry.title}
@@ -465,18 +467,28 @@ export function ReviewPage() {
                       <span className="truncate">{screenshotName(selected.item)}</span>
                       <StateBadge item={selected.item} />
                     </h2>
-                    <p className="text-sm wrap-anywhere text-muted-foreground">
-                      {[
-                        selected.entry.title !== screenshotName(selected.item)
-                          ? selected.entry.title
-                          : undefined,
-                        selected.entry.targetName,
-                        selected.entry.data
-                          ? Object.values(selected.entry.data).join(", ")
-                          : undefined,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
+                    <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      <span>
+                        {[
+                          selected.entry.title !== screenshotName(selected.item)
+                            ? selected.entry.title
+                            : undefined,
+                          selected.entry.targetName,
+                          selected.entry.data
+                            ? Object.values(selected.entry.data).join(", ")
+                            : undefined,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                      <Link
+                        to="/runs/$runId"
+                        params={{ runId: selected.entry.runId }}
+                        aria-label="Open run"
+                        className="inline-flex items-center gap-1 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        View run <ArrowUpRight className="size-3" aria-hidden="true" />
+                      </Link>
                     </p>
                     {selected.item.lookFor &&
                     selected.item.lookFor !== screenshotName(selected.item) ? (
@@ -578,24 +590,7 @@ export function ReviewPage() {
                       </Button>
                     ) : null}
                     <ReviewShortcuts />
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button size="icon-sm" variant="ghost" aria-label="Screenshot options" />
-                        }
-                      >
-                        <MoreHorizontal aria-hidden="true" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start">
-                        <DropdownMenuItem
-                          render={
-                            <Link to="/runs/$runId" params={{ runId: selected.entry.runId }} />
-                          }
-                        >
-                          Open run
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+
                     <Button
                       size="sm"
                       className="ml-auto h-8"
