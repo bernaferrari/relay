@@ -176,6 +176,7 @@ function summarizePlanCaptureReview(response: Record<string, unknown>): unknown 
   const review = summary ? formatCaptureReviewCoverageSummary(summary as never) : undefined;
   return {
     ...(review ? { review } : {}),
+    ...(destIdentity.length ? { destIdentity } : {}),
     ...(queue
       ? {
           queue: {

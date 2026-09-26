@@ -89,6 +89,7 @@ export type SessionListOptions = {
   targetId?: string;
   activeOnly?: boolean;
   includeHistory?: boolean;
+  latestRevisionOnly?: boolean;
 };
 
 export type SessionProductService = {
