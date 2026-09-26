@@ -12,6 +12,9 @@ vi.mock("../components/report-image", () => ({
   ),
 }));
 
+// Reference comparison reads the platform from router context; these fixtures carry no reference.
+vi.mock("./reference-compare-dialog", () => ({ ReferenceCompareLine: () => null }));
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const roots: Root[] = [];
@@ -475,6 +478,12 @@ describe("RunWorkbench", () => {
       if (captureId === "second") throw new Error("Connection interrupted");
     });
     const host = render(0, value, review);
+    // Bulk selection stays out of screenshot browsing until requested.
+    act(() =>
+      [...host.querySelectorAll("button")]
+        .find((item) => item.textContent === "Select screenshots")!
+        .click(),
+    );
     await act(async () => {
       for (const input of host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
         input.click();
@@ -526,7 +535,9 @@ describe("RunWorkbench", () => {
     const review = vi.fn(async () => undefined);
     const host = render(0, value, review);
     expect(host.querySelector('[role="tablist"][aria-label="Step views"]')).not.toBeNull();
-    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Screenshots");
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      "Screenshots",
+    );
     expect(host.querySelector('[role="tabpanel"]')).not.toBeNull();
     expect(host.textContent).toContain("2/2 captured");
     expect(host.textContent).toContain("2 screenshots awaiting review");
@@ -540,16 +551,20 @@ describe("RunWorkbench", () => {
     act(() => previous.click());
     expect(host.textContent).toContain("Screenshot 1 of 2");
     const sheet = host.querySelector<HTMLElement>('[aria-label="Screenshot review"]')!;
-    expect(host.querySelector("p.text-sm.font-semibold")?.textContent).toBe(
-      "Member · Desktop · English",
-    );
+    expect(
+      host.querySelector(
+        '[aria-label="Screenshots for review"] button[aria-pressed="true"] .font-medium',
+      )?.textContent,
+    ).toBe("Member · Desktop · English");
     act(() => {
       sheet.focus();
       sheet.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
     });
-    expect(host.querySelector("p.text-sm.font-semibold")?.textContent).toBe(
-      "Member · Compact · Arabic",
-    );
+    expect(
+      host.querySelector(
+        '[aria-label="Screenshots for review"] button[aria-pressed="true"] .font-medium',
+      )?.textContent,
+    ).toBe("Member · Compact · Arabic");
     const bar = host.querySelector(
       '[data-slot="evidence-image-frame"] [aria-label="Screenshot review decision"]',
     )!;
@@ -640,7 +655,9 @@ describe("RunWorkbench", () => {
       ],
     };
     const host = render(0, value);
-    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Screenshots");
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      "Screenshots",
+    );
     expect(host.querySelector('[data-slot="evidence-image-frame"] img')?.getAttribute("src")).toBe(
       "/dest-wait.png",
     );

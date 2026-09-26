@@ -234,9 +234,12 @@ describe("live Session to Test editor", () => {
     expect(document.body.textContent).toContain("Edit Test live");
     expect(document.body.textContent).toContain("End session");
     expect(document.body.textContent).not.toContain("Investigate");
+    // No Session overflow menu; the shell's mobile "More navigation" button is not part of the page.
     expect(
       [...document.querySelectorAll("button")].some(
-        (button) => button.textContent?.trim() === "More",
+        (button) =>
+          button.textContent?.trim() === "More" &&
+          !button.closest('nav[aria-label="Main navigation"]'),
       ),
     ).toBe(false);
     expect(document.querySelector('a[href^="/debug"]')).toBeNull();
