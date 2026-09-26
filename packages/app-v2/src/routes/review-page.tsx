@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { TestWorkspaceHeader, WorkspaceToolbar } from "../components/test-workspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useRouteContext } from "@tanstack/react-router";
@@ -254,83 +255,86 @@ export function ReviewPage() {
       className="@container flex h-full min-h-0 min-w-0 max-w-full flex-col overflow-x-hidden"
       aria-label="Review screenshots"
     >
-      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border/60 px-6 pt-6 pb-4">
-        <div className="grid min-w-0 gap-1">
-          <h1 className="text-3xl leading-8 font-semibold tracking-tight">Review</h1>
-          <p className="max-w-prose text-sm text-muted-foreground">
-            Compare changes and choose the screenshots to keep as references.
-          </p>
-          {inbox.data ? <Totals result={inbox.data} /> : null}
-        </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-3">
-          {cards.length ? (
-            <span className="text-sm text-muted-foreground tabular-nums">
-              {cards.length} left{reviewedCount ? ` · ${reviewedCount} done` : ""}
-            </span>
-          ) : null}
-          {changedCount && newCount ? (
-            <div
-              role="radiogroup"
-              aria-label="Show"
-              className="flex flex-wrap gap-1 rounded-lg bg-muted/40 p-0.5"
-            >
-              {(
-                [
-                  ["all", `All ${changedCount + newCount}`],
-                  ["changed", `Changed ${changedCount}`],
-                  ["new", `New ${newCount}`],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={filter === value}
-                  className={`rounded-md px-2.5 py-1 text-xs font-medium tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-ring ${
-                    filter === value
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                  onClick={() => {
-                    setFilter(value);
-                    setSelectedKey(undefined);
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </header>
+      <TestWorkspaceHeader
+        title="Review"
+        actions={
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            {cards.length ? (
+              <span className="text-sm text-muted-foreground tabular-nums">
+                {cards.length} left{reviewedCount ? ` · ${reviewedCount} done` : ""}
+              </span>
+            ) : null}
+            {changedCount && newCount ? (
+              <div
+                role="radiogroup"
+                aria-label="Show"
+                className="flex flex-wrap gap-1 rounded-lg bg-muted/40 p-0.5"
+              >
+                {(
+                  [
+                    ["all", `All ${changedCount + newCount}`],
+                    ["changed", `Changed ${changedCount}`],
+                    ["new", `New ${newCount}`],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={filter === value}
+                    className={`rounded-md px-2.5 py-1 text-xs font-medium tabular-nums transition-colors focus-visible:outline-2 focus-visible:outline-ring ${
+                      filter === value
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    onClick={() => {
+                      setFilter(value);
+                      setSelectedKey(undefined);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        }
+      >
+        <span>Compare changes and choose the screenshots to keep as references.</span>
+        {inbox.data ? <Totals result={inbox.data} /> : null}
+      </TestWorkspaceHeader>
 
       {newCount && !acceptAllNew.isSuccess ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 bg-muted/20 px-6 py-3">
-          <p className="max-w-prose text-sm">
-            {acceptAllNew.isPending && baseline ? (
-              <>
-                Saving {baseline.saved} of {baseline.total}…
-              </>
-            ) : (
-              <>
-                <strong className="font-semibold">
-                  {newCount} {newCount === 1 ? "screenshot is" : "screenshots are"} new.
-                </strong>{" "}
-                Review each screenshot to establish its reference.
-              </>
-            )}
-          </p>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="max-w-full whitespace-normal"
-            disabled={acceptAllNew.isPending}
-            onClick={() => acceptAllNew.mutate()}
-          >
-            <Check aria-hidden="true" />
-            {acceptAllNew.isPending ? "Saving…" : `Use all ${newCount} as references`}
-          </Button>
-        </div>
+        <WorkspaceToolbar
+          leading={
+            <p className="max-w-prose text-sm">
+              {acceptAllNew.isPending && baseline ? (
+                <>
+                  Saving {baseline.saved} of {baseline.total}…
+                </>
+              ) : (
+                <>
+                  <strong className="font-semibold">
+                    {newCount} {newCount === 1 ? "screenshot is" : "screenshots are"} new.
+                  </strong>{" "}
+                  Review each screenshot to establish its reference.
+                </>
+              )}
+            </p>
+          }
+          trailing={
+            <Button
+              size="sm"
+              variant="ghost"
+              className="max-w-full whitespace-normal"
+              disabled={acceptAllNew.isPending}
+              onClick={() => acceptAllNew.mutate()}
+            >
+              <Check aria-hidden="true" />
+              {acceptAllNew.isPending ? "Saving…" : `Use all ${newCount} as references`}
+            </Button>
+          }
+        />
       ) : null}
       {baseline && !acceptAllNew.isPending && baseline.failed ? (
         <p className="border-b border-border/60 px-6 py-2 text-sm text-destructive" role="alert">

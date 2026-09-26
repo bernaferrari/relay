@@ -27,20 +27,20 @@ export function TestLastRunLine({ run }: { run?: ProductRunSummary }) {
   const search = useLocation({ select: (location) => location.search }) as Record<string, unknown>;
   if (!run) {
     return (
-      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+      <p className="flex min-h-8 min-w-0 items-center gap-2 text-sm text-muted-foreground">
         <StatusPill state="not-run" />
       </p>
     );
   }
   return (
-    <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+    <p className="flex min-h-8 min-w-0 items-center gap-2 text-sm text-muted-foreground">
       <StatusPill state={runStateOf(run)} />
-      <span>
+      <span className="min-w-0 truncate">
         Last run {ago(run.finishedAt ?? run.startedAt ?? run.queuedAt)}
         {run.targetName ? ` on ${run.targetName}` : ""}
       </span>
       <Link
-        className="font-medium text-primary hover:underline"
+        className="shrink-0 font-medium text-primary hover:underline"
         to="/runs/$runId"
         params={{ runId: run.id }}
         search={{
