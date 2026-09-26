@@ -231,9 +231,21 @@ export async function handleTargetRuntimeRoute(context: {
   if (method === "POST" && pathname === "/device/input/reconcile") {
     const body = (await parseJsonBody(request)) as OperationInput<"target.input.reconcile">;
     const serial = typeof body.serial === "string" ? body.serial.trim() : "";
-    const mutationId = typeof body.mutationId === "string" ? body.mutationId.trim() : "";
+    let mutationId = typeof body.mutationId === "string" ? body.mutationId.trim() : "";
     if (!serial) throw new HttpError(400, "serial is required");
     if (!mutationId) throw new HttpError(400, "mutationId is required");
+    if (body.reconcilePending !== undefined && typeof body.reconcilePending !== "boolean") {
+      throw new HttpError(400, "reconcilePending must be a boolean");
+    }
+    if (body.reconcilePending === true) {
+      // The person reviewed the screen; bind their decision to the input that
+      // is actually pending on this target.
+      const target = await resolveSupervisedRuntimeTarget({ serial, runtime });
+      const pending = runtime.readTargetHealth(target.id, target.platform).input;
+      if (pending.state === "uncertain" && pending.pendingMutationId) {
+        mutationId = pending.pendingMutationId;
+      }
+    }
     if (!new Set(["applied", "not-applied", "ambiguous"]).has(body.outcome)) {
       throw new HttpError(400, "outcome must be applied, not-applied, or ambiguous");
     }

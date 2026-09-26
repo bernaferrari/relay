@@ -142,6 +142,10 @@ export type SpecificOperationMap = {
       mutationId: string;
       resolutionId?: string;
       outcome: "applied" | "not-applied" | "ambiguous";
+      /** A person looked at the screen: resolve the input pending on this
+       * target even if its id differs from mutationId (for example an input
+       * interrupted by a restart, whose id the client never learned). */
+      reconcilePending?: boolean;
     };
     output: {
       health: TargetSupervisorHealth;

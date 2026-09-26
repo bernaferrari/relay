@@ -106,6 +106,7 @@ export type RecordingProductService = {
     mutationId: string;
     resolutionId?: string;
     outcome: "applied" | "not-applied" | "ambiguous";
+    reconcilePending?: boolean;
   }): Promise<{
     mutationId: string;
     resolutionId?: string;
@@ -425,6 +426,7 @@ export function createRecordingProductService(
         mutationId: input.mutationId,
         ...(input.resolutionId ? { resolutionId: input.resolutionId } : {}),
         outcome: input.outcome,
+        ...(input.reconcilePending ? { reconcilePending: true } : {}),
       });
       const pending = result.health?.input?.pendingMutationId;
       const state = result.health?.input?.state;
