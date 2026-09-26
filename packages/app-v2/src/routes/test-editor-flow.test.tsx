@@ -551,6 +551,36 @@ describe("Test editor", () => {
     expect(document.body.textContent).not.toContain("Not saved on this Test");
   });
 
+  it("saves a condition wait and leaves no unsaved draft behind", async () => {
+    const harness = service();
+    const history = await render(harness.editor, "/tests/test-checkout/edit?step=step-cart");
+    await click("Add checkpoint");
+    await click("Wait for a control");
+    await fill(document.querySelector<HTMLInputElement>("#wait-control")!, "Download");
+    await click("120 seconds");
+    await click("Save step");
+    expect(harness.edits.at(-1)).toEqual([
+      expect.objectContaining({
+        kind: "step.add",
+        step: expect.objectContaining({
+          binding: {
+            status: "resolved",
+            kind: "recipe-step",
+            step: {
+              kind: "expect",
+              target: { label: "Download" },
+              condition: "visible",
+              timeoutMs: 120000,
+            },
+          },
+        }),
+      }),
+    ]);
+    await click("Done editing");
+    expect(document.body.textContent).not.toContain("Leave without saving");
+    expect(history.location.pathname).toBe("/tests/test-checkout");
+  });
+
   it("authors an upload checkpoint without YAML", async () => {
     const harness = service();
     await render(harness.editor, "/tests/test-checkout/edit?step=step-cart");

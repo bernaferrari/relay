@@ -2,6 +2,7 @@ import type {
   AppMapScenarioTestEdit,
   AppMapScenarioTestStep,
   AppMapTestResolvedBinding,
+  RecipeStep,
 } from "@relay/protocol";
 
 export type ValidationDraft =
@@ -16,6 +17,17 @@ export type ValidationDraft =
     }
   | { kind: "visual"; criteria: string; region: string; requireAgreement: boolean }
   | { kind: "semantic"; input: string; criteria: string; requireAgreement: boolean }
+  | {
+      kind: "wait-for";
+      label: string;
+      condition: "visible" | "gone";
+      seconds: string;
+      source?: Extract<RecipeStep, { kind: "expect" }>;
+      assertionSource?: Extract<
+        Extract<AppMapTestResolvedBinding, { kind: "assertion" }>["assertion"],
+        { kind: "target" }
+      >;
+    }
   | { kind: "wait-response"; label: string; maxMs: string }
   | { kind: "extract"; as: string; label: string; role: "assistant" | "user" | "" }
   | { kind: "identity-ignore"; name: string; region: string }
@@ -106,6 +118,20 @@ export function stepBindingCopy(step: AppMapScenarioTestStep): string | undefine
 
 export function validationDraft(step: AppMapScenarioTestStep): ValidationDraft | undefined {
   if (step.kind !== "validation" || step.binding.status !== "resolved") return undefined;
+  if (
+    step.binding.kind === "recipe-step" &&
+    step.binding.step.kind === "expect" &&
+    step.binding.step.target.label
+  ) {
+    const recipe = step.binding.step;
+    return {
+      kind: "wait-for",
+      label: recipe.target.label!,
+      condition: recipe.condition,
+      seconds: String((recipe.timeoutMs ?? 8000) / 1000),
+      source: structuredClone(recipe),
+    };
+  }
   if (step.binding.kind === "recipe-step" && step.binding.step.kind === "wait-response") {
     return {
       kind: "wait-response",
@@ -149,6 +175,14 @@ export function validationDraft(step: AppMapScenarioTestStep): ValidationDraft |
   }
   if (step.binding.kind !== "assertion") return undefined;
   const assertion = step.binding.assertion;
+  if (assertion.kind === "target" && assertion.target.label)
+    return {
+      kind: "wait-for",
+      label: assertion.target.label,
+      condition: assertion.condition,
+      seconds: String((assertion.timeoutMs ?? 8000) / 1000),
+      assertionSource: structuredClone(assertion),
+    };
   if (assertion.kind === "screen") return { kind: "screen", screenId: assertion.screenId };
   if (assertion.kind === "content") {
     return {
@@ -180,6 +214,8 @@ export function validationDraft(step: AppMapScenarioTestStep): ValidationDraft |
 }
 
 export function isValidationDraftReady(draft: ValidationDraft): boolean {
+  if (draft.kind === "wait-for")
+    return Boolean(draft.label.trim()) && validWaitSeconds(draft.seconds);
   if (draft.kind === "capture") return Boolean(draft.name.trim());
   if (draft.kind === "upload") return Boolean(draft.file.trim());
   if (draft.kind === "screen") return Boolean(draft.screenId.trim());
@@ -195,6 +231,17 @@ export function isValidationDraftReady(draft: ValidationDraft): boolean {
   if (draft.match === "field")
     return Boolean(draft.input.trim() && draft.expected.trim() && draft.field?.trim());
   return Boolean(draft.input.trim() && draft.expected.trim());
+}
+
+export function validWaitSeconds(value: string): boolean {
+  const seconds = Number(value);
+  return (
+    value.trim() !== "" &&
+    Number.isFinite(seconds) &&
+    seconds > 0 &&
+    seconds <= 900 &&
+    Number.isSafeInteger(seconds * 1000)
+  );
 }
 
 function lines(value: string): string[] {
@@ -217,6 +264,37 @@ export function parseRegion(
 export function validationBindingFromDraft(
   draft: ValidationDraft,
 ): Extract<AppMapTestResolvedBinding, { kind: "assertion" | "recipe-step" }> {
+  if (draft.kind === "wait-for") {
+    if (!isValidationDraftReady(draft))
+      throw new Error("Enter a control and a wait between 0.001 and 900 seconds.");
+    const originalTarget = draft.assertionSource?.target ?? draft.source?.target;
+    const target =
+      originalTarget?.label === draft.label.trim()
+        ? { ...originalTarget }
+        : { label: draft.label.trim() };
+    if (draft.assertionSource)
+      return {
+        status: "resolved",
+        kind: "assertion",
+        assertion: {
+          ...draft.assertionSource,
+          target,
+          condition: draft.condition,
+          timeoutMs: Number(draft.seconds) * 1000,
+        },
+      };
+    return {
+      status: "resolved",
+      kind: "recipe-step",
+      step: {
+        ...draft.source,
+        kind: "expect",
+        target,
+        condition: draft.condition,
+        timeoutMs: Number(draft.seconds) * 1000,
+      },
+    };
+  }
   if (draft.kind === "capture") {
     const lookFor = draft.lookFor.trim();
     return {
@@ -351,6 +429,8 @@ export const IDENTITY_IGNORE_PRESETS = [
 ] as const;
 
 export function emptyValidationDraft(kind: ValidationDraft["kind"]): ValidationDraft {
+  if (kind === "wait-for")
+    return { kind: "wait-for", label: "", condition: "visible", seconds: "60" };
   if (kind === "capture") return { kind: "capture", name: "", lookFor: "" };
   if (kind === "screen") return { kind: "screen", screenId: "" };
   if (kind === "visual")
@@ -370,4 +450,15 @@ export function validationPatch(
   draft: ValidationDraft,
 ): Extract<AppMapScenarioTestEdit, { kind: "step.patch" }> {
   return { kind: "step.patch", stepId, patch: { binding: validationBindingFromDraft(draft) } };
+}
+
+export function sameValidationDraft(left?: ValidationDraft, right?: ValidationDraft): boolean {
+  if (left?.kind === "wait-for" && right?.kind === "wait-for") {
+    return (
+      left.label === right.label &&
+      left.condition === right.condition &&
+      left.seconds === right.seconds
+    );
+  }
+  return JSON.stringify(left) === JSON.stringify(right);
 }

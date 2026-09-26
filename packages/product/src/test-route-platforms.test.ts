@@ -54,7 +54,7 @@ test("a grok.com Test without native variants shows Android and iOS as unrecorde
     ],
   );
   assert.match(statuses[1]?.reason ?? "", /Android/u);
-  assert.match(statuses[2]?.reason ?? "", /Grok Settings/u);
+  assert.match(statuses[2]?.reason ?? "", /Record this Test on iOS/u);
 });
 
 test("browser screen variants mark Web recorded when originApplication is missing", () => {
@@ -89,7 +89,7 @@ test("reviewed route variants stay reviewed per platform predicate", () => {
 test("editor notice names disabled native platforms", () => {
   const statuses = testRoutePlatformStatuses({ originApplication: "https://grok.com" });
   assert.match(unrecordedNativeEditorNotice(statuses) ?? "", /Android and iOS/u);
-  assert.match(unrecordedNativeEditorNotice(statuses) ?? "", /Grok Settings/u);
+  assert.match(unrecordedNativeEditorNotice(statuses) ?? "", /Record the missing platforms/u);
 });
 
 test("Android and iOS companions are Linked, not recorded routeVariants", () => {
@@ -132,8 +132,8 @@ test("an Android companion is Linked, not Recorded, and iOS stays unrecorded", (
   assert.equal(statuses[1]?.companion?.testId, "test-grok-android-home-chrome");
   assert.match(statuses[1]?.reason ?? "", /grok-android/u);
   assert.equal(statuses[2]?.status, "unrecorded");
-  assert.match(statuses[2]?.reason ?? "", /Grok Settings/u);
-  assert.match(unrecordedNativeEditorNotice(statuses) ?? "", /^iOS/u);
+  assert.match(statuses[2]?.reason ?? "", /Record this Test on iOS/u);
+  assert.match(unrecordedNativeEditorNotice(statuses) ?? "", /\(iOS\)/u);
 });
 
 test("a compile-blocked iOS route variant is Blocked, not Recorded", () => {

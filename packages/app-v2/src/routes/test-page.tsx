@@ -416,6 +416,14 @@ export function TestPage() {
                       : "Set up run"}
               </Button>
             )}
+            <Button
+              nativeButton={false}
+              variant="outline"
+              size="sm"
+              render={<Link to="/tests/$testId/edit" params={{ testId }} />}
+            >
+              Edit Test
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={<Button variant="ghost" size="sm" />}
@@ -424,9 +432,6 @@ export function TestPage() {
                 <MoreHorizontal aria-hidden="true" /> More
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuItem render={<Link to="/tests/$testId/edit" params={{ testId }} />}>
-                  Edit Test
-                </DropdownMenuItem>
                 {!activeRun && test.data ? (
                   <DropdownMenuItem
                     render={<Link to="/tests/$testId/run-across" params={{ testId }} />}

@@ -51,6 +51,12 @@ export type ProductTestEditorDocument = {
 };
 
 export type TestEditorProductService = {
+  createDraft?(input: {
+    appMapId: string;
+    testId: string;
+    name: string;
+    instructions: readonly string[];
+  }): Promise<ProductTestEditorDocument>;
   get(testId: string): Promise<ProductTestEditorDocument | undefined>;
   saveSettings?(input: {
     document: ProductTestEditorDocument;
@@ -76,6 +82,31 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
   }
 
   return {
+    async createDraft({ appMapId, testId, name, instructions }) {
+      const relay = await client();
+      const { appMap: current } = await relay.invoke("app-map.get", { appMapId });
+      const { appMap } = await relay.invoke("app-map.test.save", {
+        appMapId,
+        testId,
+        expectedRevision: current.revision,
+        eventId: `create-${testId}`,
+        test: {
+          name: name.trim(),
+          kind: "scenario",
+          intentSchemaVersion: 1,
+          steps: instructions.map((intent, index) => ({
+            id: `${testId}-step-${index + 1}`,
+            kind: "instruction",
+            intent: intent.trim(),
+            binding: {
+              status: "unresolved",
+              reason: "Record this action or choose a saved path before running.",
+            },
+          })),
+        } as unknown as AppMapScenarioTest,
+      });
+      return requireDocument(appMap, testId);
+    },
     async get(testId) {
       const { appMaps } = await (await client()).invoke("app-map.list", {});
       const owners = appMaps.filter((candidate) => Boolean(candidate.tests[testId]));

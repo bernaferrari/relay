@@ -271,6 +271,7 @@ async function renderJourney(
   mapService?: MapProductService,
   browserSpacesService?: BrowserSpacesProductService,
   appResourcesService?: AppResourcesProductService,
+  quickStart = false,
 ) {
   const history = createMemoryHistory({ initialEntries: [path] });
   const host = document.createElement("div");
@@ -294,7 +295,7 @@ async function renderJourney(
   const detailed = [...document.querySelectorAll("button")].find(
     (candidate) => candidate.textContent?.trim() === "Test a phone or tablet instead",
   );
-  if (detailed) await click(detailed);
+  if (detailed && !quickStart) await click(detailed);
   return { history, host };
 }
 
@@ -946,6 +947,20 @@ describe("record, review, replay, and save", () => {
     expect(document.querySelector('[aria-label="App"]')?.textContent).toContain("Acme");
     expect(button("Start recording").disabled).toBe(false);
     expect(fake.calls.some((call) => call.startsWith("begin:"))).toBe(false);
+  });
+
+  it("keeps website quick start outside the device setup form", async () => {
+    await renderJourney(
+      "/tests/new",
+      fakeService().service,
+      platformWithStorage().platform,
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    expect(document.querySelector('form[aria-label="Start a test"]')).not.toBeNull();
+    expect(document.querySelector("form form")).toBeNull();
   });
 
   it("follows the full server-owned progression with one dominant review action", async () => {

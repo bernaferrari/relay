@@ -37,7 +37,7 @@ function implicitRecordedPlatform(origin?: string): PlanPlatform | undefined {
 }
 
 function unrecordedReason(platform: PlanPlatform): string {
-  return `No recorded ${PLATFORM_LABEL[platform]} route. Do not invent Grok Settings navigation.`;
+  return `Record this Test on ${PLATFORM_LABEL[platform]} before running it there.`;
 }
 
 function connectionIdsFromSteps(steps: readonly AppMapScenarioTestStep[]): string[] {
@@ -158,5 +158,5 @@ export function unrecordedNativeEditorNotice(
   const missing = statuses.filter((item) => item.status === "unrecorded");
   if (!missing.length) return undefined;
   const names = missing.map((item) => item.label).join(" and ");
-  return `${names} steps stay disabled until a native route is recorded. Do not invent Grok Settings navigation.`;
+  return `Record the missing platforms (${names}) to run this Test on them.`;
 }

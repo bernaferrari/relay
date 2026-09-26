@@ -125,6 +125,15 @@ function TestEditorDocument() {
     onSuccess: (next, transaction) => {
       saveDocument(next);
       for (const edit of transaction.forward) {
+        if (edit.kind === "step.add") {
+          clearStepDraftIfUnchanged(edit.step.id, {
+            intent: edit.step.intent,
+            note: edit.step.note ?? "",
+            capture: edit.step.capture === true,
+            expected: validationDraft(edit.step),
+          });
+          continue;
+        }
         if (edit.kind !== "step.patch") continue;
         const savedIntent = edit.patch.intent;
         const savedNote = edit.patch.note;
@@ -573,8 +582,14 @@ function TestEditorDocument() {
               </Button>
             ) : null}
             <TestEditorDoneButton
-              saving={edit.isPending || historyAction.isPending || settings.isPending || repair.isPending}
-              hasUnsavedChanges={hasUnsavedDrafts || settingsName !== (editorDocument?.test.name ?? "") || settingsOrigin !== (editorDocument?.test.originApplication ?? "")}
+              saving={
+                edit.isPending || historyAction.isPending || settings.isPending || repair.isPending
+              }
+              hasUnsavedChanges={
+                hasUnsavedDrafts ||
+                settingsName !== (editorDocument?.test.name ?? "") ||
+                settingsOrigin !== (editorDocument?.test.originApplication ?? "")
+              }
               hasUnsavedCheckpoint={Boolean(pendingCheckpoint)}
               onLeave={() => void navigate({ to: "/tests/$testId", params: { testId } })}
             />

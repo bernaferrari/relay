@@ -14,6 +14,7 @@ import { FieldLabel } from "@relay/ui-react/components/field";
 import { Textarea } from "@relay/ui-react/components/textarea";
 import { AlertTriangle } from "lucide-react";
 import { useEffect, useState } from "react";
+import { sameValidationDraft } from "./test-editor-assertion-model";
 import {
   checkpointBindingCopy,
   isValidationDraftReady,
@@ -111,7 +112,7 @@ export function SelectedStepEditor({
       className="grid min-w-0 grid-cols-1 gap-5 p-5"
       onSubmit={(event) => {
         event.preventDefault();
-        if (!changed || !cleanIntent) return;
+        if (busy || !changed || !cleanIntent || !expectedReady) return;
         onSave({
           label: `Updated ${cleanIntent}`,
           forward: [
@@ -357,10 +358,6 @@ export function SelectedStepEditor({
 }
 
 export { validationDraft } from "./test-editor-assertion";
-
-function sameValidationDraft(left?: ValidationDraft, right?: ValidationDraft): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
 
 function BindingRepair({
   step,

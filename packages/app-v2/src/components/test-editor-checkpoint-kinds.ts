@@ -21,6 +21,7 @@ export const VALIDATION_KIND_GROUPS = [
     id: "wait",
     label: "Wait",
     kinds: [
+      { value: "wait-for", label: "Wait for a control" },
       { value: "wait-response", label: "Reply wait" },
       { value: "extract", label: "Remember reply" },
     ],
