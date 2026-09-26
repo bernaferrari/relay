@@ -640,11 +640,12 @@ function RunReport({
           runService={runService}
           onShowDetails={() => showDetails("steps")}
           extraActions={actions}
-          summary={outcomeSentence(
-            report.outcome,
-            target,
-            Boolean(report.captureReview?.items.length),
-          )}
+          summary={
+            // Say why it failed right away; the full text stays under details.
+            failure
+              ? `${outcomeSentence(report.outcome, target, Boolean(report.captureReview?.items.length))} ${firstSentence(failure)}`
+              : outcomeSentence(report.outcome, target, Boolean(report.captureReview?.items.length))
+          }
           notice={
             <>
               <RunReplayStatus runService={runService} />
