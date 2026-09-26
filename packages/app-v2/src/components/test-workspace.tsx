@@ -89,12 +89,32 @@ export function WorkspaceScreenshot({
 }) {
   return (
     <figure data-slot="evidence-image-frame" className="mx-auto grid w-full gap-3">
-      <div className="overflow-hidden rounded-lg border border-border bg-card [&_img]:block [&_img]:h-auto [&_img]:w-full">
+      <div className="overflow-hidden rounded-lg border border-border bg-card [&>img]:block [&>img]:h-auto [&>img]:w-full [&>div>img]:block [&>div>img]:h-auto [&>div>img]:w-full">
         {children}
       </div>
       {caption ? (
         <figcaption className="text-center text-sm text-muted-foreground">{caption}</figcaption>
       ) : null}
     </figure>
+  );
+}
+
+/** Reserve the same rows before and after data arrives; respond to pane width. */
+export function WorkspaceToolbar({
+  leading,
+  trailing,
+}: {
+  leading: ReactNode;
+  trailing: ReactNode;
+}) {
+  return (
+    <div className="@container/toolbar shrink-0 border-b border-border px-5">
+      <div className="grid min-w-0 grid-cols-1 items-center gap-x-4 @3xl/toolbar:grid-cols-[auto_minmax(0,1fr)]">
+        <div className="flex min-h-12 min-w-0 items-center">{leading}</div>
+        <div className="flex min-h-12 min-w-0 items-center pb-2 @3xl/toolbar:justify-end @3xl/toolbar:pb-0">
+          {trailing}
+        </div>
+      </div>
+    </div>
   );
 }

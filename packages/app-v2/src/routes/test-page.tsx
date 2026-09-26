@@ -1,4 +1,4 @@
-import { TestWorkspaceHeader } from "../components/test-workspace";
+import { TestWorkspaceHeader, WorkspaceToolbar } from "../components/test-workspace";
 import { TestPlanNavigation } from "./test-plan-navigation";
 import { TestRunHistory } from "./test-run-history";
 import { TestStepsOutline } from "./test-steps-outline";
@@ -384,10 +384,12 @@ export function TestPage() {
                 onClick={focusRunSetup}
                 ref={configurationTriggerRef}
                 aria-label="Run configuration — opens run setup"
-                className="order-3 h-auto min-h-9 w-full max-w-full justify-start text-left whitespace-normal sm:order-none sm:w-auto sm:max-w-sm"
+                className="h-8 min-w-0 max-w-64 justify-start text-left"
               >
                 <SlidersHorizontal className="size-4 shrink-0" aria-hidden="true" />
-                <span>{configurationLabel}</span>
+                <span className="truncate" title={configurationLabel}>
+                  {configurationLabel}
+                </span>
               </Button>
             ) : null}
             {activeRun && attachedRunId ? (
@@ -516,19 +518,19 @@ export function TestPage() {
           onValueChange={(value) => selectSource(value === "run" ? "run" : "definition")}
           className="min-h-0 flex-1 gap-0"
         >
-          <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-4 border-b border-border px-5">
-            <TabsList variant="line" aria-label="Test views" className="h-11">
-              <TabsTrigger value="definition" className="px-4">
-                Test
-              </TabsTrigger>
-              <TabsTrigger value="run" disabled={!attachedRunId} className="px-4">
-                Result
-              </TabsTrigger>
-            </TabsList>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
-              <TestLastRunLine run={latestRunOf(recentRuns.data)} />
-            </div>
-          </div>
+          <WorkspaceToolbar
+            leading={
+              <TabsList variant="line" aria-label="Test views" className="h-11">
+                <TabsTrigger value="definition" className="px-4">
+                  Test
+                </TabsTrigger>
+                <TabsTrigger value="run" disabled={!attachedRunId} className="px-4">
+                  Result
+                </TabsTrigger>
+              </TabsList>
+            }
+            trailing={<TestLastRunLine run={latestRunOf(recentRuns.data)} />}
+          />
           {!showRecording && attachedRunId ? (
             <TabsContent value="run" className="min-h-0 overflow-auto">
               <RunInspection key={attachedRunId} runId={attachedRunId} testId={testId} embedded />
