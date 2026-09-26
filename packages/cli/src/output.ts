@@ -4,6 +4,7 @@ import type { CliError } from "./errors.js";
 import type { EventEnvelope } from "@relay/protocol";
 import { formatVerifyChangeResult } from "./verify-change-output.js";
 import { formatWalkthroughPackResult } from "./walkthrough-output.js";
+import { LiveRunView } from "./live-run-view.js";
 
 export type OutputStreams = {
   stdout: Writable;
@@ -102,6 +103,12 @@ export class CliOutput {
         `${JSON.stringify({ type: "progress", operationId, phase, message })}\n`,
       );
     }
+  }
+
+  /** A live Test/Plan view for people at a terminal; undefined for machines. */
+  liveView(header: { title: string; target?: string }): LiveRunView | undefined {
+    if (this.mode !== "human" || this.quiet) return undefined;
+    return new LiveRunView(this.streams.stderr as Writable & { isTTY?: boolean }, header);
   }
 
   heartbeat(message: string): void {
@@ -273,8 +280,7 @@ function formatRunTestSnapshot(value: unknown): string | undefined {
     snapshot.phase === "failed" ||
     snapshot.phase === "cancelled" ||
     snapshot.phase === "needs-attention";
-  const blocked =
-    stopped && typeof problem?.title === "string" && problem.title.length > 0;
+  const blocked = stopped && typeof problem?.title === "string" && problem.title.length > 0;
   if (blocked && problem) {
     lines.push(`Could not continue: ${problem.title}`);
     if (typeof problem.detail === "string" && problem.detail) lines.push(problem.detail);
@@ -301,10 +307,14 @@ function formatRunTestSnapshot(value: unknown): string | undefined {
   return lines.join("\n");
 }
 
-function runConfigurationLine(frozen: {
-  engine?: unknown;
-  account?: { kind?: unknown; accountId?: unknown };
-} | undefined): string | undefined {
+function runConfigurationLine(
+  frozen:
+    | {
+        engine?: unknown;
+        account?: { kind?: unknown; accountId?: unknown };
+      }
+    | undefined,
+): string | undefined {
   if (!frozen) return undefined;
   const parts: string[] = [];
   if (typeof frozen.engine === "string" && frozen.engine) parts.push(frozen.engine);

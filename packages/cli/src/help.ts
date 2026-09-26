@@ -149,11 +149,13 @@ Everyday tasks:
   Ask Relay to explore    relay explore --url <url> --goal <goal> --confirm
   Ask Relay to exercise   relay goal run --url http://127.0.0.1:3000 --goal "Open settings" --confirm
   Inspect a Run           relay inspect <runOrWorkflowId>
-  Review captured shots   relay plan capture review <batchId>
+  Review what changed     relay review [--app <appId>]   (a looks correct · r report · o open)
   Export the evidence     relay export <runId> --out ./review
   Check the local server  relay doctor
 
 Full command reference:
+  relay review [--app <appId>]
+  relay review list [--input '{"appMapId":"<appId>"}']
   relay connect [device]
   relay observe [device]
   relay explore --url <url> --goal <goal> --confirm [--agents <1-4>] [--max-steps <n>] [--max-ms <n>]

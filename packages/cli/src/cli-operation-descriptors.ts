@@ -731,6 +731,17 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
     }),
   ),
   mapped(
+    "review.inbox.list",
+    path("review list", [], undefined, {
+      summary: "Screenshots that changed or are new, from the latest run of every Test",
+      inputHelp: [
+        { name: "sinceDays", type: "number", description: "Look back this many days (14)" },
+        { name: "appMapId", type: "string", description: "Only this App" },
+      ],
+      examples: ["relay review list", 'relay review list --input \'{"appMapId":"grok-ios"}\''],
+    }),
+  ),
+  mapped(
     "run.capture.reference.compare",
     path("run capture compare", ["runId"], undefined, {
       summary: "Compare a Run's screenshots with their references again",
