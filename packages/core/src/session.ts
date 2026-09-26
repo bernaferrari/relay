@@ -39,6 +39,7 @@ import { requireOperationContext, runWithOperationContext } from "./operation-co
 import { redactText, visualEvidenceAllowed } from "./redaction.js";
 import { projectPersistedAppMapRun } from "./app-map-run-history.js";
 import { applyCaptureReferences } from "./capture-references.js";
+import { captureReviewQueueForRun } from "./capture-review-queue.js";
 import { JobRegistry } from "./job-registry.js";
 import { releaseTargetControl, reserveTargetControl } from "./target-control.js";
 import {
@@ -321,22 +322,31 @@ export function retryJob(id: string, options?: RetryEnqueueOptions): TestJob {
   });
 }
 
-const commitTerminalRun = (job: TestJob, log: (line: string) => void) =>
-  commitTerminalSessionRun(job, log, {
-    persistRun,
-    projectPersistedRun: async (run) => {
-      await projectPersistedAppMapRun(run);
-      // Unchanged screenshots are approved from their references; a failure
-      // here only leaves them for a person to review.
-      await applyCaptureReferences(runsRoot(), run).catch((error) =>
-        log(
-          `warn: reference comparison skipped: ${error instanceof Error ? error.message : error}`,
-        ),
-      );
-    },
-    now,
-    setOutcome,
-  });
+const commitTerminalRun = async (job: TestJob, log: (line: string) => void) => {
+  job.finalizing = true;
+  try {
+    return await commitTerminalSessionRun(job, log, {
+      persistRun,
+      projectPersistedRun: async (run) => {
+        await projectPersistedAppMapRun(run);
+        // Unchanged screenshots are approved from their references; a failure
+        // here only leaves them for a person to review.
+        try {
+          const compared = await applyCaptureReferences(runsRoot(), run);
+          job.captureSummary = captureReviewQueueForRun(compared).summary;
+        } catch (error) {
+          log(
+            `warn: reference comparison skipped: ${error instanceof Error ? error.message : error}`,
+          );
+        }
+      },
+      now,
+      setOutcome,
+    });
+  } finally {
+    job.finalizing = false;
+  }
+};
 
 /** Finish a job before creating a device client. Queue admission is
  * synchronous; this protects a long-waiting job from stale frozen evidence or

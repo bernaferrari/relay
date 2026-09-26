@@ -1,4 +1,5 @@
 import type {
+  CaptureReviewSummary,
   BrowserAuthenticationHealth,
   BrowserCaseProfile,
   EvidenceCollectionPolicy,
@@ -105,6 +106,10 @@ export type TestJob = {
   title: string;
   runDir?: string;
   persisted?: boolean;
+  /** True while the terminal run is being committed and compared with references. */
+  finalizing?: boolean;
+  /** Screenshot review counts once references were applied. */
+  captureSummary?: CaptureReviewSummary;
   /** Frozen authoring input and evidence payloads written once with the run. */
   recipeSnapshot?: Recipe;
   /** Complete immutable graph used by module, branch, and repeat steps. */

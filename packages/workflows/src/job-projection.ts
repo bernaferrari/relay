@@ -24,6 +24,10 @@ export type CanonicalJob = {
     }[];
   };
   artifacts?: readonly { kind: string; data?: unknown }[];
+  /** Terminal status is set, but evidence and reference comparison are still being saved. */
+  finalizing?: boolean;
+  /** Review counts after reference comparison (unchanged screenshots already approved). */
+  captureSummary?: { captured: number; pending: number };
 };
 
 export function parseCanonicalJob(value: unknown): CanonicalJob | undefined {
@@ -101,12 +105,15 @@ export function workflowVersionForJob(job: CanonicalJob): string {
       job.frameCount,
       job.runId,
       job.error,
+      job.finalizing,
+      job.captureSummary?.pending,
       authoredProgress(job),
     ]),
   )}`;
 }
 
 function jobPhase(job: CanonicalJob): RunTestSnapshot["phase"] {
+  if (job.finalizing === true) return "running";
   if (job.status === "queued") return "queued";
   if (job.status === "running") return "running";
   if (job.status === "paused") return "paused";
@@ -120,6 +127,15 @@ function jobPhase(job: CanonicalJob): RunTestSnapshot["phase"] {
  * A decided capture carries one of the review verbs; only "pending" (or a
  * missing status on a fully-formed review entry) still requires a person. */
 function reviewObligations(job: CanonicalJob): { pending: number; decided: number } | undefined {
+  const summary = job.captureSummary;
+  if (
+    summary &&
+    Number.isInteger(summary.pending) &&
+    Number.isInteger(summary.captured) &&
+    summary.captured > 0
+  ) {
+    return { pending: summary.pending, decided: Math.max(0, summary.captured - summary.pending) };
+  }
   const reviews = (job.artifacts ?? []).filter((artifact) => artifact.kind === "capture-review");
   if (reviews.length === 0) return undefined;
   let pending = 0;
