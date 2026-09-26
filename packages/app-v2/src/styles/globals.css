@@ -85,3 +85,8 @@
   transform-box: fill-box;
   transform-origin: center;
 }
+
+[data-slot="map-cluster-label"] {
+  transform: scale(clamp(1, calc(0.9 / var(--map-zoom, 1)), 2));
+  transform-origin: bottom left;
+}

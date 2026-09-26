@@ -2,9 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   containedImageRect,
+  PORTRAIT_NODE,
   type ImageDimensions,
-  MAP_NODE_WIDTH,
-  MAP_NODE_IMAGE_HEIGHT,
+  type MapNodeSize,
 } from "./map-canvas-geometry";
 
 type Control = {
@@ -78,10 +78,12 @@ export function MapAccessibilityOverlay({
   uri,
   load,
   image,
+  node = PORTRAIT_NODE,
 }: {
   uri?: string;
   load?: (uri: string) => Promise<unknown>;
   image?: ImageDimensions;
+  node?: MapNodeSize;
 }) {
   const [hovered, setHovered] = useState<number>();
   const tree = useQuery({
@@ -93,11 +95,7 @@ export function MapAccessibilityOverlay({
   });
   const controls = image ? accessibilityControls(tree.data, image) : [];
   const rect = image
-    ? containedImageRect(
-        { x: 0, y: 0, width: MAP_NODE_WIDTH, height: MAP_NODE_IMAGE_HEIGHT },
-        image,
-        "top",
-      )
+    ? containedImageRect({ x: 0, y: 0, width: node.width, height: node.imageHeight }, image, "top")
     : undefined;
   if (!rect) return null;
   if (!controls.length)
@@ -115,7 +113,7 @@ export function MapAccessibilityOverlay({
   return (
     <svg
       className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
-      viewBox={`0 0 ${MAP_NODE_WIDTH} ${MAP_NODE_IMAGE_HEIGHT}`}
+      viewBox={`0 0 ${node.width} ${node.imageHeight}`}
       aria-label="Saved accessibility controls"
     >
       {controls.map((control, index) => (

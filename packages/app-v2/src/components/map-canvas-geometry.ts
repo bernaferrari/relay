@@ -3,11 +3,50 @@ import { layoutMapGraph, separateMapScreens, reserveStraightConnections } from "
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 export const MAP_MIN_SCALE = 0.08;
 export const MAP_MAX_SCALE = 2.2;
-export const MAP_NODE_WIDTH = 208;
-export const MAP_NODE_HEIGHT = 368;
-export const MAP_NODE_TITLE_HEIGHT = 20;
-export const MAP_NODE_GAP = 8;
-export const MAP_NODE_IMAGE_HEIGHT = 300;
+
+/** A screen on the canvas: title, gap, screenshot box, and room for chips below. */
+export type MapNodeSize = {
+  width: number;
+  height: number;
+  titleHeight: number;
+  gap: number;
+  imageHeight: number;
+};
+
+/** Phones: tall, narrow screenshots. */
+export const PORTRAIT_NODE: MapNodeSize = {
+  width: 208,
+  height: 368,
+  titleHeight: 20,
+  gap: 8,
+  imageHeight: 300,
+};
+
+/** Tablets in landscape and browsers: wide screenshots get a wide box. */
+export const LANDSCAPE_NODE: MapNodeSize = {
+  width: 360,
+  height: 308,
+  titleHeight: 20,
+  gap: 8,
+  imageHeight: 240,
+};
+
+export const MAP_NODE_WIDTH = PORTRAIT_NODE.width;
+export const MAP_NODE_HEIGHT = PORTRAIT_NODE.height;
+export const MAP_NODE_TITLE_HEIGHT = PORTRAIT_NODE.titleHeight;
+export const MAP_NODE_GAP = PORTRAIT_NODE.gap;
+export const MAP_NODE_IMAGE_HEIGHT = PORTRAIT_NODE.imageHeight;
+
+/** One shape per map, from the screenshots seen so far: most wide → landscape. */
+export function mapNodeSizeFor(dimensions: Iterable<ImageDimensions>): MapNodeSize {
+  let wide = 0,
+    total = 0;
+  for (const image of dimensions) {
+    total += 1;
+    if (image.width > image.height * 1.15) wide += 1;
+  }
+  return total && wide * 2 > total ? LANDSCAPE_NODE : PORTRAIT_NODE;
+}
 
 export type MapTransform = { x: number; y: number; scale: number };
 export type MapPoint = { x: number; y: number };
@@ -83,6 +122,7 @@ export function layoutMapScreens(
   screens: readonly ProductMapScreen[],
   paths: readonly ProductMapPath[] = [],
   mode: "aligned" | "staggered" | "horizontal" = "aligned",
+  node: MapNodeSize = PORTRAIT_NODE,
 ): ReadonlyMap<string, MapPoint> {
   const positions = layoutMapGraph(
     screens.map((screen) => screen.id),
@@ -98,8 +138,8 @@ export function layoutMapScreens(
           path.toScreenId && !/^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),
       )
       .map((path) => ({ from: path.fromScreenId, to: path.toScreenId! })),
-    mode === "horizontal" ? 600 : mode === "staggered" ? 560 : MAP_NODE_WIDTH + 160,
-    mode === "horizontal" ? MAP_NODE_WIDTH + 112 : MAP_NODE_HEIGHT + 40,
+    mode === "horizontal" ? 600 : mode === "staggered" ? 560 : node.width + 160,
+    mode === "horizontal" ? node.width + 112 : node.height + 40,
     mode === "staggered",
   );
   if (mode === "horizontal") {
@@ -109,8 +149,8 @@ export function layoutMapScreens(
     return separateMapScreens(
       positions,
       new Set(screens.filter((s) => s.position).map((s) => s.id)),
-      MAP_NODE_WIDTH,
-      MAP_NODE_HEIGHT,
+      node.width,
+      node.height,
     );
   }
   // Dense branches need a wider routing corridor than a simple continuation.
@@ -126,13 +166,13 @@ export function layoutMapScreens(
         path.toScreenId &&
         !/^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),
     ).length;
-    widths.set(x, Math.max(widths.get(x) ?? 0, MAP_NODE_WIDTH + 160 + Math.max(0, count - 1) * 12));
+    widths.set(x, Math.max(widths.get(x) ?? 0, node.width + 160 + Math.max(0, count - 1) * 12));
   }
   const columnPositions = new Map<number, number>();
   let nextX = 0;
   for (const column of columns) {
     columnPositions.set(column, nextX);
-    nextX += widths.get(column) ?? MAP_NODE_WIDTH + 160;
+    nextX += widths.get(column) ?? node.width + 160;
   }
   if (mode === "aligned")
     for (const point of positions.values()) point.x = columnPositions.get(point.x)!;
@@ -141,8 +181,8 @@ export function layoutMapScreens(
   const separated = separateMapScreens(
     positions,
     new Set(screens.filter((screen) => screen.position).map((screen) => screen.id)),
-    MAP_NODE_WIDTH,
-    MAP_NODE_HEIGHT,
+    node.width,
+    node.height,
   );
   return reserveStraightConnections(
     separated,
@@ -152,14 +192,15 @@ export function layoutMapScreens(
           path.toScreenId && !/^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),
       )
       .map((path) => ({ from: path.fromScreenId, to: path.toScreenId! })),
-    MAP_NODE_WIDTH,
-    MAP_NODE_HEIGHT,
+    node.width,
+    node.height,
   );
 }
 
 export function mapContentBounds(
   screens: readonly ProductMapScreen[],
   positions: ReadonlyMap<string, MapPoint>,
+  node: MapNodeSize = PORTRAIT_NODE,
 ): MapBounds {
   if (!screens.length) return { minX: 0, minY: 0, maxX: 1, maxY: 1 };
   return screens.reduce<MapBounds>(
@@ -168,8 +209,8 @@ export function mapContentBounds(
       return {
         minX: Math.min(bounds.minX, point.x),
         minY: Math.min(bounds.minY, point.y),
-        maxX: Math.max(bounds.maxX, point.x + MAP_NODE_WIDTH),
-        maxY: Math.max(bounds.maxY, point.y + MAP_NODE_HEIGHT),
+        maxX: Math.max(bounds.maxX, point.x + node.width),
+        maxY: Math.max(bounds.maxY, point.y + node.height),
       };
     },
     {

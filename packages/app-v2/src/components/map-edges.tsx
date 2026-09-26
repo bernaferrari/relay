@@ -2,15 +2,12 @@ import type { CSSProperties } from "react";
 import { forwardRoute, avoidPreviewObstacles, routeCrossesBox } from "./map-forward-route";
 import type { ProductMapPath } from "@relay/product/map-exploration";
 import {
-  MAP_NODE_WIDTH,
-  MAP_NODE_HEIGHT,
   type MapPoint,
   type MapBounds,
   containedImageRect,
   type ImageDimensions,
-  MAP_NODE_GAP,
-  MAP_NODE_IMAGE_HEIGHT,
-  MAP_NODE_TITLE_HEIGHT,
+  PORTRAIT_NODE,
+  type MapNodeSize,
 } from "./map-canvas-geometry";
 export function MapEdges({
   paths,
@@ -22,6 +19,7 @@ export function MapEdges({
   showInteractionTargets = false,
   screens,
   imageDimensions,
+  node = PORTRAIT_NODE,
 }: {
   horizontal?: boolean;
   paths: readonly ProductMapPath[];
@@ -32,6 +30,7 @@ export function MapEdges({
   showInteractionTargets?: boolean;
   screens: readonly { id: string; screenshotUri?: string }[];
   imageDimensions: ReadonlyMap<string, ImageDimensions>;
+  node?: MapNodeSize;
 }) {
   const geometries = paths.flatMap((path, index) => {
     const from = positions.get(path.fromScreenId);
@@ -45,9 +44,9 @@ export function MapEdges({
       ? containedImageRect(
           {
             x: from.x,
-            y: from.y + MAP_NODE_TITLE_HEIGHT + MAP_NODE_GAP,
-            width: MAP_NODE_WIDTH,
-            height: MAP_NODE_IMAGE_HEIGHT,
+            y: from.y + node.titleHeight + node.gap,
+            width: node.width,
+            height: node.imageHeight,
           },
           imageDimensions.get(path.fromScreenId) ?? { width: 0, height: 0 },
           "top",
@@ -58,9 +57,9 @@ export function MapEdges({
       ? containedImageRect(
           {
             x: to!.x,
-            y: to!.y + MAP_NODE_TITLE_HEIGHT + MAP_NODE_GAP,
-            width: MAP_NODE_WIDTH,
-            height: MAP_NODE_IMAGE_HEIGHT,
+            y: to!.y + node.titleHeight + node.gap,
+            width: node.width,
+            height: node.imageHeight,
           },
           imageDimensions.get(path.toScreenId!) ?? { width: 0, height: 0 },
           "top",
@@ -90,10 +89,8 @@ export function MapEdges({
           ? backwards
             ? imageRect.x
             : imageRect.x + imageRect.width
-          : from.x + (backwards ? 0 : MAP_NODE_WIDTH)),
-      y:
-        anchor?.y ??
-        (imageRect ? imageRect.y + imageRect.height / 2 : from.y + MAP_NODE_HEIGHT / 2),
+          : from.x + (backwards ? 0 : node.width)),
+      y: anchor?.y ?? (imageRect ? imageRect.y + imageRect.height / 2 : from.y + node.height / 2),
     };
     const end = to
       ? {
@@ -101,10 +98,10 @@ export function MapEdges({
             ? backwards
               ? targetImageRect.x + targetImageRect.width
               : targetImageRect.x
-            : to.x + (backwards ? MAP_NODE_WIDTH : 0),
+            : to.x + (backwards ? node.width : 0),
           y: targetImageRect
             ? targetImageRect.y + targetImageRect.height / 2
-            : to.y + MAP_NODE_HEIGHT / 2,
+            : to.y + node.height / 2,
         }
       : { x: start.x + 116, y: start.y };
     // Leave an intentional gap around previews. Recorded click origins retain
@@ -137,14 +134,14 @@ export function MapEdges({
     if (selfLoop) {
       const loopTop = from.y - 74;
       const loopStart = anchor ?? {
-        x: from.x + MAP_NODE_WIDTH * 0.72,
+        x: from.x + node.width * 0.72,
         y: from.y - clearance,
       };
       const loopEnd = anchor
-        ? { x: from.x + MAP_NODE_WIDTH * 0.28, y: from.y + 4 }
+        ? { x: from.x + node.width * 0.28, y: from.y + 4 }
         : imageRect
           ? { x: imageRect.x - clearance, y: imageRect.y + imageRect.height / 2 }
-          : { x: from.x + MAP_NODE_WIDTH * 0.28, y: from.y };
+          : { x: from.x + node.width * 0.28, y: from.y };
       return [
         {
           path,
@@ -152,11 +149,11 @@ export function MapEdges({
           anchor,
           anchorRect,
           d: `M ${loopStart.x} ${loopStart.y} C ${loopStart.x} ${loopTop}, ${loopEnd.x} ${loopTop}, ${loopEnd.x} ${loopEnd.y}`,
-          label: { x: from.x + MAP_NODE_WIDTH / 2, y: loopTop - 8, width: labelWidth },
+          label: { x: from.x + node.width / 2, y: loopTop - 8, width: labelWidth },
           bounds: {
-            minX: from.x + MAP_NODE_WIDTH * 0.28 - 24,
+            minX: from.x + node.width * 0.28 - 24,
             minY: loopTop - 40,
-            maxX: from.x + MAP_NODE_WIDTH * 0.72 + 24,
+            maxX: from.x + node.width * 0.72 + 24,
             maxY: from.y + 24,
           },
         },
@@ -165,15 +162,15 @@ export function MapEdges({
     const isReturn = backwards || /^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label);
     const sourceBox = imageRect ?? {
       x: from.x,
-      y: from.y + MAP_NODE_TITLE_HEIGHT + MAP_NODE_GAP,
-      width: MAP_NODE_WIDTH,
-      height: MAP_NODE_IMAGE_HEIGHT,
+      y: from.y + node.titleHeight + node.gap,
+      width: node.width,
+      height: node.imageHeight,
     };
     const targetBox = targetImageRect ?? {
       x: to.x,
-      y: to.y + MAP_NODE_TITLE_HEIGHT + MAP_NODE_GAP,
-      width: MAP_NODE_WIDTH,
-      height: MAP_NODE_IMAGE_HEIGHT,
+      y: to.y + node.titleHeight + node.gap,
+      width: node.width,
+      height: node.imageHeight,
     };
     if (horizontal) {
       const upward = to.y < from.y;
@@ -202,7 +199,7 @@ export function MapEdges({
           return target && target.y < from.y === upward ? [target.y] : [];
         });
       const lane = upward
-        ? Math.max(destination.y, ...siblingRows.map((y) => y + MAP_NODE_HEIGHT + clearance)) + 80
+        ? Math.max(destination.y, ...siblingRows.map((y) => y + node.height + clearance)) + 80
         : Math.min(destination.y, ...siblingRows.map((y) => y - clearance)) - 80;
       const exitX = leavesRight ? sourceBox.x + sourceBox.width + 24 : sourceBox.x - 24;
       const direct = [origin, { x: destination.x, y: origin.y }, destination];
@@ -218,8 +215,8 @@ export function MapEdges({
                 !routeCrossesBox(direct[index]!, end, {
                   x: point.x - 14,
                   y: point.y - 14,
-                  width: MAP_NODE_WIDTH + 28,
-                  height: MAP_NODE_HEIGHT + 28,
+                  width: node.width + 28,
+                  height: node.height + 28,
                 }),
             ),
         );
@@ -285,9 +282,9 @@ export function MapEdges({
       const point = positions.get(screenId);
       const dimensions = imageDimensions.get(screenId);
       const height = dimensions
-        ? Math.min(MAP_NODE_IMAGE_HEIGHT, (MAP_NODE_WIDTH * dimensions.height) / dimensions.width)
-        : MAP_NODE_IMAGE_HEIGHT;
-      return (point?.y ?? 0) + MAP_NODE_TITLE_HEIGHT + MAP_NODE_GAP + height * fraction;
+        ? Math.min(node.imageHeight, (node.width * dimensions.height) / dimensions.width)
+        : node.imageHeight;
+      return (point?.y ?? 0) + node.titleHeight + node.gap + height * fraction;
     };
     // Order the whole corridor, not each source independently. Otherwise two
     // branching screens reuse the same lanes and their exits interleave.
@@ -340,7 +337,7 @@ export function MapEdges({
       forwardRoute(
         start,
         end,
-        from.x + MAP_NODE_WIDTH,
+        from.x + node.width,
         sharedJunction ? 0 : forwardSlot,
         sharedJunction ? 1 : directionSiblings.length,
         branchEnd,
@@ -354,11 +351,11 @@ export function MapEdges({
             const image = containedImageRect(
               {
                 x: point.x,
-                y: point.y + MAP_NODE_TITLE_HEIGHT + MAP_NODE_GAP,
-                width: MAP_NODE_WIDTH,
-                height: MAP_NODE_IMAGE_HEIGHT,
+                y: point.y + node.titleHeight + node.gap,
+                width: node.width,
+                height: node.imageHeight,
               },
-              imageDimensions.get(id) ?? { width: MAP_NODE_WIDTH, height: MAP_NODE_IMAGE_HEIGHT },
+              imageDimensions.get(id) ?? { width: node.width, height: node.imageHeight },
               "top",
             )!;
             return [
@@ -371,8 +368,8 @@ export function MapEdges({
               {
                 x: point.x - 8,
                 y: point.y - 8,
-                width: MAP_NODE_WIDTH + 16,
-                height: MAP_NODE_TITLE_HEIGHT + 16,
+                width: node.width + 16,
+                height: node.titleHeight + 16,
               },
             ];
           }),
@@ -383,7 +380,12 @@ export function MapEdges({
         id: `-${index}`,
         anchor,
         anchorRect,
-        d: returning ? quadraticReturn(points) : roundedConnector(points),
+        // A same-row return reads best as one shallow curve. Between rows the
+        // curve would cut through the target screen; follow the corridor.
+        d:
+          returning && Math.abs(points[0]!.y - points.at(-1)!.y) < 40
+            ? quadraticReturn(points)
+            : roundedConnector(points),
         label: {
           x:
             returning?.label.x ??
@@ -470,7 +472,7 @@ export function MapEdges({
           <g
             key={geometry.path.id}
             data-slot="map-edge"
-            className={`[&>path]:fill-transparent [&>path]:stroke-current [&>path]:stroke-[1.5] [&>rect]:fill-popover [&>rect]:stroke-border [&>rect]:stroke-0 [&_text]:fill-current [&_text]:font-sans [&_text]:text-xs [&_text]:font-normal ${
+            className={`[&>path]:fill-transparent [&>path]:stroke-current [&>path]:stroke-[1.5] [&>g>rect]:fill-popover [&>g>rect]:stroke-border [&>g>rect]:stroke-0 [&_text]:fill-current [&_text]:font-sans [&_text]:text-xs [&_text]:font-normal ${
               state === "selected"
                 ? "text-info"
                 : state === "muted"
@@ -509,26 +511,26 @@ export function MapEdges({
               />
             ) : null}
             <g data-slot="map-edge-label">
-            <rect
-              x={geometry.label.x - geometry.label.width / 2}
-              y={geometry.label.y - 14}
-              width={geometry.label.width}
-              height={geometry.path.toScreenId ? 22 : 44}
-              rx="4"
-            />
-            <text x={geometry.label.x} y={geometry.label.y} textAnchor="middle">
-              {geometry.path.label}
-            </text>
-            {!geometry.path.toScreenId ? (
-              <text
-                x={geometry.label.x}
-                y={geometry.label.y + 17}
-                textAnchor="middle"
-                className="font-normal"
-              >
-                Destination not recorded
+              <rect
+                x={geometry.label.x - geometry.label.width / 2}
+                y={geometry.label.y - 14}
+                width={geometry.label.width}
+                height={geometry.path.toScreenId ? 22 : 44}
+                rx="4"
+              />
+              <text x={geometry.label.x} y={geometry.label.y} textAnchor="middle">
+                {geometry.path.label}
               </text>
-            ) : null}
+              {!geometry.path.toScreenId ? (
+                <text
+                  x={geometry.label.x}
+                  y={geometry.label.y + 17}
+                  textAnchor="middle"
+                  className="font-normal"
+                >
+                  Destination not recorded
+                </text>
+              ) : null}
             </g>
           </g>
         );
