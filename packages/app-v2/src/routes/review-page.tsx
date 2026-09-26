@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useRouteContext } from "@tanstack/react-router";
+import { Link, useLocation, useRouteContext } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
 import { Check, CircleCheck, Flag, ScanSearch, SquareDashed } from "lucide-react";
 import type {
@@ -99,9 +99,11 @@ export function ReviewPage() {
   );
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<Filter>("all");
+  const search = useLocation().search as { app?: unknown };
+  const appMapId = typeof search.app === "string" && search.app ? search.app : undefined;
   const inbox = useQuery({
-    queryKey: reviewQueryKeys.inbox(),
-    queryFn: () => service.inbox(),
+    queryKey: reviewQueryKeys.inbox(14, appMapId),
+    queryFn: () => service.inbox(appMapId ? { appMapId } : {}),
     staleTime: 10_000,
   });
   const [done, setDone] = useState<ReadonlySet<string>>(() => new Set());

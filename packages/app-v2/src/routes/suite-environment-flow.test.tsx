@@ -302,12 +302,12 @@ describe("Suite and Environment routes", () => {
       },
     });
     const { history } = await render("/apps/app-1/suites/suite-1", { suiteService: service });
-    const run = [...document.querySelectorAll("button")].find((candidate) =>
-      candidate.textContent?.includes("Run"),
+    const run = [...document.querySelectorAll('[data-slot="page-actions"] button')].find(
+      (candidate) => /^Run (check|all)/u.test(candidate.textContent ?? ""),
     );
     expect(run).toBeInstanceOf(HTMLButtonElement);
     expect((run as HTMLButtonElement).disabled).toBe(true);
-    expect(document.body.textContent).toContain("Needs attention");
+    expect(document.body.textContent).toContain("Setup needed before running");
 
     await clickButton("Edit");
     expect(document.querySelector("#edit-suite-name")).not.toBeNull();
@@ -345,7 +345,7 @@ describe("Suite and Environment routes", () => {
       }),
     });
 
-    expect(document.body.textContent).toContain("2 cases previewed");
+    expect(document.body.textContent).toContain("This run: 1 of 2 cases");
     expect(document.body.textContent).not.toContain("2 cases ready");
     expect(document.body.textContent).toContain("Multi-environment execution is unavailable.");
   });

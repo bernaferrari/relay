@@ -1,5 +1,6 @@
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 /** @jsxImportSource react */
+import { catalogQueryKeys } from "../data/catalog-queries";
 import {
   Dialog,
   DialogTrigger,
@@ -30,6 +31,8 @@ import {
 } from "../data/paired-configuration";
 import { usePairedConfigurationWorkspace } from "../data/use-paired-configuration-workspace";
 import { PlanDailySchedule } from "./plan-daily-schedule";
+import { PlanChecklist } from "./plan-checklist";
+import { PlanEditDialog, PlanRemoveSection } from "./plan-edit-dialog";
 import { PageLoading } from "./recording-shared";
 import { friendlySuiteIssue, summarizeSuiteSetup } from "../data/suite-preflight-copy";
 import { productLinkClassName } from "../lib/class-names";
@@ -52,34 +55,18 @@ export function planRunCountLabel(input: {
   return `This run: ${input.plannedCases} ${input.plannedCases === 1 ? "case" : "cases"}`;
 }
 
-export function planRunDescription(
-  appName: string | undefined,
-  executionMode: "pilot" | "all",
-): string {
-  const action = executionMode === "all" ? "run every case" : "run one case";
-  const instruction = `Choose where to run, then ${action}.`;
-  return appName ? `${appName}. ${instruction}` : instruction;
-}
-
 export function SuitePage() {
-  const { suiteProfileService, queryClient, platform } = useRouteContext({ from: "__root__" });
+  const { suiteProfileService, catalogService, queryClient, platform } = useRouteContext({
+    from: "__root__",
+  });
   const { appId, suiteId } = routeApi.useParams();
   const navigate = useNavigate();
   const scope = useRunConfigurationKey(platform, `suite:${suiteId}`, appId);
   const [editOpen, setEditOpen] = useState(false);
   const [executionMode, setExecutionMode] = useState<"pilot" | "all">(defaultPlanExecutionMode);
-  const [removeOpen, setRemoveOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [testIds, setTestIds] = useState<Set<string>>(() => new Set());
-  const [variableIds, setVariableIds] = useState<Set<string>>(() => new Set());
   const suite = useQuery({
     queryKey: ["suites", appId, suiteId],
     queryFn: () => suiteProfileService.getSuite(appId, suiteId),
-    staleTime: 10_000,
-  });
-  const editor = useQuery({
-    queryKey: ["suites", "editor", appId],
-    queryFn: () => suiteProfileService.getSuiteEditor(appId),
     staleTime: 10_000,
   });
   const environments = useQuery({
@@ -92,13 +79,22 @@ export function SuitePage() {
     key: scope.key,
     targetOptions: environments.data?.map((item) => ({ id: item.id, label: item.name })),
   });
+  // Start from where this App's checks ran last time, or the only setup there is.
+  const appRuns = useQuery({
+    queryKey: [...catalogQueryKeys.runs, "app", appId],
+    queryFn: () => catalogService.listRuns({ appMapId: appId }),
+    staleTime: 5_000,
+  });
+  const lastProfileId = [...(appRuns.data ?? [])]
+    .sort((left, right) => right.queuedAt - left.queuedAt)
+    .map((run) => run.executionIdentity?.targetProfileId)
+    .find((id) => id && environments.data?.some((item) => item.id === id));
   useEffect(() => {
-    if (configuration.pristine && environments.data?.length === 1)
-      configuration.setSelection({
-        targetProfileIds: [environments.data[0]!.id],
-        targetProfileId: environments.data[0]!.id,
-      });
-  }, [configuration.pristine, configuration.setSelection, environments.data]);
+    if (!configuration.pristine || !environments.data) return;
+    const id =
+      lastProfileId ?? (environments.data.length === 1 ? environments.data[0]!.id : undefined);
+    if (id) configuration.setSelection({ targetProfileIds: [id], targetProfileId: id });
+  }, [configuration.pristine, configuration.setSelection, environments.data, lastProfileId]);
   const paired = usePairedConfigurationWorkspace(platform);
   const compiledSuite = compileSuiteTargets(paired.workspace, environments.data ?? []);
   const accountColumns = compilePlanAccountColumns(paired.workspace, environments.data ?? []);
@@ -138,40 +134,6 @@ export function SuitePage() {
       }),
     enabled: Boolean(suite.data && selectedProfileIds.length && !configuration.targetUnavailable),
     retry: false,
-  });
-  const save = useMutation({
-    mutationFn: () => {
-      if (!suite.data) throw new TypeError("This Plan is unavailable.");
-      return suiteProfileService.saveSuite({
-        appMapId: appId,
-        suiteId,
-        expectedRevision: suite.data.appMapRevision,
-        name,
-        testIds: [...testIds],
-        variableIds: [...variableIds],
-        strategy: suite.data.strategy ?? "cartesian",
-        selected: suite.data.selected,
-      });
-    },
-    onSuccess: async (value) => {
-      queryClient.setQueryData(["suites", appId, suiteId], value);
-      await queryClient.invalidateQueries({ queryKey: ["suites"] });
-      setEditOpen(false);
-    },
-  });
-  const remove = useMutation({
-    mutationFn: () => {
-      if (!suite.data) throw new TypeError("This Plan is unavailable.");
-      return suiteProfileService.removeSuite({
-        appMapId: appId,
-        suiteId,
-        expectedRevision: suite.data.appMapRevision,
-      });
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["suites"] });
-      await navigate({ to: "/suites" });
-    },
   });
   const start = useMutation({
     mutationFn: () => {
@@ -241,45 +203,16 @@ export function SuitePage() {
   const plannedCases = preview.data?.caseCount ?? 0;
   const runningCases = executionMode === "pilot" ? Math.min(1, plannedCases) : plannedCases;
 
-  function beginEdit() {
-    if (!value) return;
-    setName(value.name);
-    setTestIds(new Set(value.testIds));
-    setVariableIds(new Set(value.variableIds));
-    save.reset();
-    setEditOpen(true);
-  }
-
-  function toggle(setter: typeof setTestIds, id: string, checked: boolean) {
-    setter((current) => {
-      const next = new Set(current);
-      if (checked) next.add(id);
-      else next.delete(id);
-      return next;
-    });
-  }
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    save.mutate();
-  }
-
   return (
     <LibraryPage className="max-w-5xl">
-      {suite.isPending || editor.isPending ? <PageLoading label="Loading Plan…" /> : null}
-      {suite.error || editor.error ? (
+      {suite.isPending ? <PageLoading label="Loading Plan…" /> : null}
+      {suite.error ? (
         <RecoveryState
           layout="centered"
           title="This Plan is unavailable"
           detail="Reload the saved coverage plan before making changes or starting work."
           action={
-            <Button
-              variant="outline"
-              onClick={() => {
-                void suite.refetch();
-                void editor.refetch();
-              }}
-            >
+            <Button variant="outline" onClick={() => void suite.refetch()}>
               <RotateCcw aria-hidden="true" /> Try again
             </Button>
           }
@@ -301,10 +234,15 @@ export function SuitePage() {
           <PageHeader
             crumbs={[{ label: "Plans", to: "/suites" }, { label: value.name }]}
             title={value.name}
-            description={planRunDescription(value.appName, executionMode)}
+            description={[
+              `${value.tests.length} ${value.tests.length === 1 ? "check" : "checks"}`,
+              value.appName,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
             actions={
               <>
-                <Button variant="ghost" onClick={beginEdit}>
+                <Button variant="ghost" onClick={() => setEditOpen(true)}>
                   Edit
                 </Button>
                 <Button
@@ -321,102 +259,16 @@ export function SuitePage() {
                   <Play aria-hidden="true" />
                   {start.isPending
                     ? "Starting…"
-                    : executionMode === "all"
-                      ? "Run all cases"
-                      : "Run"}
+                    : executionMode === "all" && plannedCases > 1
+                      ? `Run all ${plannedCases} cases`
+                      : `Run ${value.tests.length === 1 ? "check" : `all ${value.tests.length} checks`}`}
                 </Button>
               </>
             }
           />
 
-          <dl
-            className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3 border-y border-border py-3"
-            aria-label={`${value.name} scope`}
-          >
-            <div className="flex items-center gap-2">
-              <dt className="text-xs text-muted-foreground">Tests</dt>
-              <dd className="text-sm font-semibold text-foreground">{value.tests.length}</dd>
-            </div>
-            <div className="flex items-center gap-2">
-              <dt className="text-xs text-muted-foreground">Data sets</dt>
-              <dd className="text-sm font-semibold text-foreground">{value.variableIds.length}</dd>
-            </div>
-            <div className="flex items-center gap-2">
-              <dt className="text-xs text-muted-foreground">Status</dt>
-              <dd>
-                <ReadinessMark status={needsReview ? "needs-review" : "ready"} />
-              </dd>
-            </div>
-          </dl>
-
-          <div className="mt-6 grid min-w-0 items-start gap-4 min-[1200px]:grid-cols-2">
-            <section
-              className="min-w-0 rounded-xl border border-border bg-card p-4"
-              aria-labelledby="suite-tests-title"
-            >
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Coverage
-              </p>
-              <h2 id="suite-tests-title" className="mt-1 text-base font-semibold text-foreground">
-                Saved Tests
-              </h2>
-              <ul className="mt-4 grid min-w-0 list-none gap-2 p-0">
-                {value.tests.map((test) => (
-                  <li key={test.id} className="min-w-0">
-                    <Link
-                      className="flex min-h-11 min-w-0 items-center justify-between gap-3 rounded-md bg-muted px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      to="/tests/$testId"
-                      params={{ testId: test.id }}
-                      search={{ plan: suiteId, planApp: appId }}
-                    >
-                      <span className="min-w-0 flex-1 wrap-anywhere text-sm font-medium text-foreground">
-                        {test.name}
-                      </span>
-                      <ReadinessMark
-                        status={test.status === "ready" ? "ready" : "needs-review"}
-                        name={test.name}
-                      />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-4 grid gap-2 border-t border-border pt-3">
-                {value.variableIds.length ? (
-                  <>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-medium">Test inputs</p>
-                      <Button variant="ghost" size="sm" onClick={beginEdit}>
-                        Change inputs
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Saved values to use when these tests run:
-                    </p>
-                    <ul className="grid gap-1 text-sm">
-                      {value.variableIds.map((id) => {
-                        const dataSet = editor.data?.dataSets.find((item) => item.id === id);
-                        return (
-                          <li key={id}>
-                            {dataSet?.name ?? id}
-                            {dataSet ? (
-                              <span className="text-muted-foreground">
-                                {" "}
-                                · {dataSet.optionCount}{" "}
-                                {dataSet.optionCount === 1 ? "value" : "values"}
-                              </span>
-                            ) : null}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    Uses each test’s saved input values.
-                  </p>
-                )}
-              </div>
-            </section>
+          <div className="mt-6 grid min-w-0 items-start gap-6 min-[1100px]:grid-cols-[minmax(0,1fr)_22rem]">
+            <PlanChecklist appId={appId} suiteId={suiteId} tests={value.tests} />
 
             <section
               className="min-w-0 rounded-xl border border-border bg-card p-4"
@@ -452,7 +304,7 @@ export function SuitePage() {
                           detail: blocker.message,
                         })),
                       ]
-                    : [{ id: "target", label: "Choose where to run before starting" }],
+                    : [],
                   validated: Boolean(
                     preview.data &&
                     !previewBlockers.length &&
@@ -509,24 +361,28 @@ export function SuitePage() {
                   </table>
                 </div>
               ) : null}
-              <p className="mt-5 border-t border-border pt-4 text-sm font-medium">
-                How much should run?
-              </p>
-              <p className="mt-1 mb-3 text-xs leading-relaxed text-muted-foreground">
-                Run every selected case, or one representative case.
-              </p>
-              <Tabs
-                value={executionMode}
-                onValueChange={(value) => setExecutionMode(value as "pilot" | "all")}
-              >
-                <TabsList
-                  aria-label="Execution scope"
-                  className="w-full group-data-horizontal/tabs:h-11"
-                >
-                  <TabsTrigger value="pilot">One case</TabsTrigger>
-                  <TabsTrigger value="all">All cases</TabsTrigger>
-                </TabsList>
-              </Tabs>
+              {plannedCases > 1 ? (
+                <>
+                  <p className="mt-5 border-t border-border pt-4 text-sm font-medium">
+                    {plannedCases} data combinations
+                  </p>
+                  <p className="mt-1 mb-3 text-xs leading-relaxed text-muted-foreground">
+                    Try one first, or run every combination.
+                  </p>
+                  <Tabs
+                    value={executionMode}
+                    onValueChange={(value) => setExecutionMode(value as "pilot" | "all")}
+                  >
+                    <TabsList
+                      aria-label="Execution scope"
+                      className="w-full group-data-horizontal/tabs:h-11"
+                    >
+                      <TabsTrigger value="pilot">One first</TabsTrigger>
+                      <TabsTrigger value="all">All {plannedCases}</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                </>
+              ) : null}
               {preview.data || missingAccountBlockers.length ? (
                 <div
                   className={`mt-4 grid gap-1 rounded-lg border p-3 text-xs ${
@@ -668,140 +524,17 @@ export function SuitePage() {
             />
           ) : null}
 
-          <section
-            className="mt-8 flex items-center justify-between gap-5 border-t border-border pt-5 max-sm:items-start"
-            aria-labelledby="remove-suite-title"
-          >
-            <div>
-              <h2 id="remove-suite-title" className="text-sm font-semibold text-foreground">
-                Remove Plan
-              </h2>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                Tests and Reports stay in the App.
-              </p>
-            </div>
-            <Dialog open={removeOpen} onOpenChange={setRemoveOpen}>
-              <DialogTrigger render={<Button variant="outline" />}>
-                <Trash2 aria-hidden="true" /> Remove
-              </DialogTrigger>
+          <PlanRemoveSection appId={appId} suiteId={suiteId} value={value} />
 
-              <DialogContent showCloseButton={false}>
-                <DialogTitle>Remove {value.name}?</DialogTitle>
-                <DialogDescription>
-                  This removes the Plan grouping. Its Tests and Reports remain available.
-                </DialogDescription>
-                {remove.error ? (
-                  <FieldError>
-                    {remove.error instanceof Error
-                      ? remove.error.message
-                      : "Relay could not remove this Plan."}
-                  </FieldError>
-                ) : null}
-                <div className="flex flex-wrap items-center justify-end gap-2.5">
-                  <DialogClose render={<Button variant="ghost">Cancel</Button>} />
-                  <Button
-                    variant="destructive"
-                    onClick={() => remove.mutate()}
-                    disabled={remove.isPending}
-                  >
-                    {remove.isPending ? "Removing…" : "Remove Plan"}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </section>
-
-          <Dialog open={editOpen} onOpenChange={setEditOpen}>
-            <DialogContent
-              showCloseButton={false}
-              className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto"
-            >
-              <DialogTitle>Edit Plan</DialogTitle>
-              <DialogDescription>
-                Removing a Test from this Plan does not delete it.
-              </DialogDescription>
-              <form onSubmit={submit}>
-                <Field>
-                  <FieldLabel htmlFor="edit-suite-name">Plan name</FieldLabel>
-                  <Input
-                    id="edit-suite-name"
-                    value={name}
-                    onChange={(event) => setName(event.currentTarget.value)}
-                  />
-                </Field>
-                <div className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto p-1">
-                  <fieldset>
-                    <legend>Tests</legend>
-                    {editor.data?.tests.map((test) => (
-                      <ChoiceLabel
-                        key={test.id}
-                        className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
-                      >
-                        <span className="grid min-w-0 flex-1 gap-0.5">
-                          <span className="min-w-0 flex-1 wrap-anywhere text-sm font-medium text-foreground">
-                            {test.name}
-                          </span>
-                          <span className="truncate text-xs leading-snug text-muted-foreground">
-                            {productTestStatusLabel(test.status, test.name)}
-                          </span>
-                        </span>
-                        <Checkbox
-                          checked={testIds.has(test.id)}
-                          onCheckedChange={(checked) =>
-                            toggle(setTestIds, test.id, checked === true)
-                          }
-                        />
-                      </ChoiceLabel>
-                    ))}
-                  </fieldset>
-                  {editor.data?.dataSets.length ? (
-                    <fieldset>
-                      <legend>Data sets</legend>
-                      {editor.data.dataSets.map((dataSet) => (
-                        <ChoiceLabel
-                          key={dataSet.id}
-                          className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
-                        >
-                          <span className="grid min-w-0 flex-1 gap-0.5">
-                            <span className="min-w-0 flex-1 wrap-anywhere text-sm font-medium text-foreground">
-                              {dataSet.name}
-                            </span>
-                            <span className="truncate text-xs leading-snug text-muted-foreground">
-                              {dataSet.optionCount} saved{" "}
-                              {dataSet.optionCount === 1 ? "value" : "values"}
-                            </span>
-                          </span>
-                          <Checkbox
-                            checked={variableIds.has(dataSet.id)}
-                            onCheckedChange={(checked) =>
-                              toggle(setVariableIds, dataSet.id, checked === true)
-                            }
-                          />
-                        </ChoiceLabel>
-                      ))}
-                    </fieldset>
-                  ) : null}
-                </div>
-                {save.error ? (
-                  <FieldError>
-                    {save.error instanceof Error
-                      ? save.error.message
-                      : "Relay could not save this Plan."}
-                  </FieldError>
-                ) : null}
-                <div className="flex flex-wrap items-center justify-end gap-2.5">
-                  <DialogClose render={<Button variant="ghost">Cancel</Button>} />
-                  <Button
-                    type="submit"
-                    variant="default"
-                    disabled={!name.trim() || !testIds.size || save.isPending}
-                  >
-                    {save.isPending ? "Saving…" : "Save changes"}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
+          {editOpen ? (
+            <PlanEditDialog
+              appId={appId}
+              suiteId={suiteId}
+              value={value}
+              open={editOpen}
+              onOpenChange={setEditOpen}
+            />
+          ) : null}
         </>
       ) : null}
     </LibraryPage>
