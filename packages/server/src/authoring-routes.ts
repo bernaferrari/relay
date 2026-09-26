@@ -119,7 +119,6 @@ function pixelFingerprint(bytes: Uint8Array): string {
   return observeVisualScreenFingerprint(bytes) ?? createHash("sha256").update(bytes).digest("hex");
 }
 
-
 /** A session with only its current Take revision and that revision's latest replay. */
 function latestRevisionOf(session: AuthoringSession): AuthoringSession {
   const take = session.take;

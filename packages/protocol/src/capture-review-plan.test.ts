@@ -32,11 +32,14 @@ test("a slot-prefixed review id still names the same frame and digest", () => {
     true,
   );
   assert.equal(
-    captureReviewIdMatchesFrame(captureReviewId({ caption: "Settings", ...shared }), shared.framePath, "bbb"),
+    captureReviewIdMatchesFrame(
+      captureReviewId({ caption: "Settings", ...shared }),
+      shared.framePath,
+      "bbb",
+    ),
     false,
   );
 });
-
 
 test("identical screenshot bytes do not merge two planned review slots", () => {
   const shared = {
@@ -71,7 +74,6 @@ test("identical screenshot bytes do not merge two planned review slots", () => {
   assert.equal(queue.summary.pending, 1);
   assert.notEqual(queue.items[0]?.captureId, queue.items[1]?.captureId);
 });
-
 
 const settingsStep = {
   id: "settings",
@@ -561,7 +563,10 @@ test("Plan item keys stay unique when two Runs share identical PNG bytes", () =>
     formatPlanCaptureReviewQueue(queue),
     /2 planned · 2 captured · 0 blocked · 0 missing/u,
   );
-  assert.match(formatPlanCaptureReviewQueue(queue), /Looks correct makes that screenshot the reference/u);
+  assert.match(
+    formatPlanCaptureReviewQueue(queue),
+    /Looks correct makes that screenshot the reference/u,
+  );
 });
 
 test("Screens filters keep the planned denominator and group by checkpoint or configuration", () => {

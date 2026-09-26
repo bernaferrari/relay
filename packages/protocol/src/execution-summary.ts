@@ -843,7 +843,8 @@ function summarizeWalkthroughPack(response: Record<string, unknown>): unknown {
     kind: pack.kind,
     pinnedRunIds: Array.isArray(pinned?.runIds) ? pinned.runIds : [],
     frames,
-    notice: "A downloaded copy cannot be recalled. The image bytes stay on the HTTP and CLI export.",
+    notice:
+      "A downloaded copy cannot be recalled. The image bytes stay on the HTTP and CLI export.",
   };
 }
 
