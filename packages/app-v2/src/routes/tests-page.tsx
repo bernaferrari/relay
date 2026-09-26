@@ -407,7 +407,9 @@ function PlanGroup({
   schedule?: ProductPlanSchedule;
   shared: ReadonlySet<string>;
 }) {
-  const [open, setOpen] = useState(false);
+  const search = routeApi.useSearch() as { plan?: unknown; planApp?: unknown };
+  const navigate = useNavigate({ from: "/tests" });
+  const open = search.plan === suite.id && search.planApp === suite.appMapId;
   const states: RunState[] = suite.tests.map((member) =>
     runStateOf(members.find((test) => test.id === member.id)?.recentRun),
   );
@@ -419,7 +421,16 @@ function PlanGroup({
           type="button"
           aria-expanded={open}
           aria-controls={panelId}
-          onClick={() => setOpen((value) => !value)}
+          onClick={() =>
+            void navigate({
+              search: (previous) => ({
+                ...previous,
+                plan: open ? undefined : suite.id,
+                planApp: open ? undefined : suite.appMapId,
+              }),
+              replace: true,
+            })
+          }
           className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronRight
@@ -463,7 +474,10 @@ function PlanGroup({
           <div className="px-4 pt-3 md:hidden">
             <PlanResultSummary states={states} />
           </div>
-          <TestList tests={members} shared={shared} bare />
+          <p className="px-3 pb-2 text-xs text-muted-foreground">
+            Choose a test to view its steps.
+          </p>
+          <TestList tests={members} shared={shared} bare plan={suite} />
         </div>
       ) : null}
     </li>
@@ -474,10 +488,12 @@ function TestList({
   tests,
   shared,
   bare = false,
+  plan,
 }: {
   tests: readonly ProductTestSummary[];
   shared: ReadonlySet<string>;
   bare?: boolean;
+  plan?: ProductSuite;
 }) {
   return (
     <ul
@@ -488,6 +504,7 @@ function TestList({
           key={`${test.appMapId}:${test.id}`}
           test={shared.has(test.id) ? { ...test, sharedId: true } : test}
           grouped={bare}
+          plan={plan}
         />
       ))}
     </ul>
@@ -497,9 +514,11 @@ function TestList({
 function TestRow({
   test,
   grouped,
+  plan,
 }: {
   test: ProductTestSummary & { sharedId?: boolean };
   grouped: boolean;
+  plan?: ProductSuite;
 }) {
   const recent = test.recentRun;
   const state = test.status === "needs-review" ? undefined : runStateOf(recent);
@@ -511,15 +530,19 @@ function TestRow({
         <Link
           to="/tests/$testId"
           params={{ testId: test.id }}
-          search={test.sharedId ? { app: test.appMapId } : {}}
+          search={{
+            ...(test.sharedId ? { app: test.appMapId } : {}),
+            ...(plan ? { plan: plan.id, planApp: plan.appMapId } : {}),
+          }}
           className="flex min-h-12 min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 py-3 pl-3 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring"
           title={`${test.stepCount} steps${recent ? ` · ${relativeTime(runTime(recent))}` : ""}`}
         >
           <span className="grid min-w-0 flex-1 basis-48 gap-0.5">
             <strong className="text-sm font-normal text-foreground text-pretty">{test.name}</strong>
-            {!grouped ? (
-              <span className="truncate text-xs text-muted-foreground">{test.appName}</span>
-            ) : null}
+            <span className="text-xs text-muted-foreground">
+              {!grouped ? `${test.appName} · ` : ""}
+              {test.stepCount} {test.stepCount === 1 ? "step" : "steps"}
+            </span>
           </span>
           <span className="flex min-w-0 items-center text-xs text-muted-foreground [&_[data-slot=status-pill]]:bg-transparent [&_[data-slot=status-pill]]:p-0 [&_[data-slot=badge]]:border-0 [&_[data-slot=badge]]:bg-transparent [&_[data-slot=badge]]:p-0">
             {test.status !== "ready" ? (
@@ -545,7 +568,11 @@ function TestRow({
               <Link
                 to="/tests/$testId"
                 params={{ testId: test.id }}
-                search={test.sharedId ? { setup: "run", app: test.appMapId } : { setup: "run" }}
+                search={{
+                  setup: "run",
+                  ...(test.sharedId ? { app: test.appMapId } : {}),
+                  ...(plan ? { plan: plan.id, planApp: plan.appMapId } : {}),
+                }}
               />
             )
           }

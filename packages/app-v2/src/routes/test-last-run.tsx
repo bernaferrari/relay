@@ -1,10 +1,12 @@
 /** @jsxImportSource react */
-import { Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Link, useRouteContext } from "@tanstack/react-router";
 import { Camera } from "lucide-react";
 import type { ProductRunSummary } from "@relay/product/catalog";
 import { DeviceFrame } from "../components/device-frame";
 import { StatusPill, runStateOf } from "../components/run-status";
-import { useRunThumbnail } from "../components/run-thumb";
+import { storyFromReport } from "../data/run-story";
 
 function ago(value?: number): string {
   if (!value) return "";
@@ -49,10 +51,50 @@ export function TestLastRunLine({ run }: { run?: ProductRunSummary }) {
 
 /** The stage shows the last run's screen until a recording frame is selected. */
 export function TestLastRunStage({ run }: { run?: ProductRunSummary }) {
-  const url = useRunThumbnail(run?.id);
+  const { runService } = useRouteContext({ from: "__root__" });
+  const report = useQuery({
+    queryKey: ["catalog", "run-report", run?.id ?? "none"],
+    queryFn: () => runService.getReport(run!.id),
+    enabled: Boolean(run),
+    staleTime: 30_000,
+    retry: false,
+  });
+  const data = report.data;
+  const path = data
+    ? storyFromReport({
+        timeline: data.traceSteps?.length ? data.traceSteps : data.timeline,
+        ...(data.stepEvidence ? { stepEvidence: data.stepEvidence } : {}),
+      })
+        .flatMap((step) => step.actions)
+        .filter((action) => action.framePath)
+        .at(-1)?.framePath
+    : undefined;
+  const screenshots = data?.evidence
+    .filter((section) => section.id === "screenshot")
+    .flatMap((section) => section.items)
+    .filter((item) => item.media);
+  const media = (path ? screenshots?.find((item) => item.id === path) : screenshots?.at(-1))?.media;
+  const direct = media?.load ? undefined : media?.src;
+  const frame = useQuery({
+    queryKey: ["test-preview", "frame", run?.id, path ?? media?.src],
+    queryFn: () => (media?.load ? media.load() : runService.loadFrame!(run!.id, path!)),
+    enabled: Boolean(run && !direct && (media?.load || (path && runService.loadFrame))),
+    staleTime: Infinity,
+    retry: 1,
+  });
+  const [blobUrl, setBlobUrl] = useState<string>();
+  useEffect(() => {
+    if (!frame.data) return setBlobUrl(undefined);
+    const next = URL.createObjectURL(frame.data);
+    setBlobUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [frame.data]);
+  const url = direct ?? blobUrl;
+  const loading = Boolean(run) && (report.isLoading || frame.isLoading);
+  const failed = report.isError || frame.isError;
   if (run && url) {
     return (
-      <div className="flex h-full min-h-0 flex-col items-center justify-center gap-3 overflow-auto bg-stage px-6 py-6">
+      <div className="flex h-full min-h-0 flex-col items-center justify-start gap-3 overflow-auto bg-stage px-6 py-6">
         <DeviceFrame src={url} alt="Last screen of the latest run" />
         <p className="text-sm text-muted-foreground">
           Last screen · {ago(run.finishedAt ?? run.queuedAt)}
@@ -67,9 +109,19 @@ export function TestLastRunStage({ run }: { run?: ProductRunSummary }) {
           <Camera className="size-5 text-muted-foreground" aria-hidden="true" />
         </div>
         <div className="grid gap-1.5">
-          <h2 className="text-base font-semibold">No screenshot yet</h2>
+          <h2 className="text-base font-semibold">
+            {loading
+              ? "Loading screenshot…"
+              : failed
+                ? "Screenshot unavailable"
+                : "No screenshot yet"}
+          </h2>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Run the Test and its screenshots show up here.
+            {loading
+              ? "Opening the original capture."
+              : failed
+                ? "Open Result to inspect the run’s evidence."
+                : "Run the Test and its screenshots show up here."}
           </p>
         </div>
       </div>
