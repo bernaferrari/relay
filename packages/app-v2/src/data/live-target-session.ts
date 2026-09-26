@@ -630,6 +630,12 @@ export function createLiveTargetSession(input: {
         targetId: target.targetId,
         input: browserPreviewInput(value, browserFrame!),
       });
+      const sentSequence = browserFrame!.sequence;
+      // Sequential keystrokes must use a frame captured after the previous mutation.
+      const deadline = Date.now() + 3_000;
+      while (!closed && browserFrame?.sequence === sentSequence && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
       return;
     }
     if (value.kind === "touch") {
@@ -820,14 +826,20 @@ export function browserPreviewInput(
     sessionId: frame.sessionId,
     pageId: frame.pageId,
     expectedSequence: frame.sequence,
+    interaction: "direct" as const,
   };
   if (value.kind === "navigate" || value.kind === "history") return { ...binding, ...value };
   if (value.kind === "touch" && value.action === "up") {
-    // A direct pointer gesture already selects a position on the painted
-    // page. Prefer a stable control when available, but allow that position
-    // for custom controls. Recording and authored commands take separate
-    // paths and must not inherit this manual-click fallback.
-    return { ...binding, kind: "click", x: value.x, y: value.y, coordinateFallback: "reviewed" };
+    // Direct input behaves like a mouse on the live page. Recording and
+    // authored commands take separate semantic paths and never opt into it.
+    return {
+      ...binding,
+      kind: "click",
+      x: value.x,
+      y: value.y,
+      coordinateFallback: "reviewed",
+      interaction: "direct",
+    };
   }
   if (value.kind === "scroll") {
     return {

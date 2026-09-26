@@ -70,6 +70,9 @@ type SessionState = {
   attached: WeakSet<Page>;
   frame?: BrowserDeviceFrame;
   equivalentFrames: Map<number, number>;
+  /** Recent painted frames for direct input: animations do not invalidate a mouse gesture.
+   * Navigation and controlled mutations still invalidate every previous frame. */
+  directFrames: Map<number, number>;
   observedMutationVersion: number;
   needsFreshFrame: boolean;
   capture?: Promise<BrowserDeviceFrame>;
@@ -284,6 +287,7 @@ export async function openBrowserDeviceSession(
     observedMutationVersion: runtime.mutationVersion(),
     frameCaptureMs: [],
     equivalentFrames: new Map(),
+    directFrames: new Map(),
     interactionMs: [],
     frameTimesMs: [],
   };
@@ -359,12 +363,17 @@ async function capture(state: SessionState): Promise<BrowserDeviceFrame> {
       state.needsFreshFrame ||
       state.observedMutationVersion !== state.runtime.mutationVersion() ||
       state.frame?.pageId !== state.activePageId ||
-      state.frame?.pageUrl !== page.url().slice(0, 4_096) ||
-      state.frame?.visualFingerprint !== digest
-    )
+      state.frame?.pageUrl !== page.url().slice(0, 4_096)
+    ) {
       state.equivalentFrames.clear();
+      state.directFrames.clear();
+    }
+    if (state.frame?.visualFingerprint !== digest) state.equivalentFrames.clear();
     state.sequence += 1;
     state.equivalentFrames.set(state.sequence, capturedAt);
+    state.directFrames.set(state.sequence, capturedAt);
+    if (state.directFrames.size > 8)
+      state.directFrames.delete(state.directFrames.keys().next().value!);
     if (state.equivalentFrames.size > 8) {
       state.equivalentFrames.delete(state.equivalentFrames.keys().next().value!);
     }
@@ -608,7 +617,11 @@ function assertInput(state: SessionState, input: BrowserDeviceInput): Page {
     );
   }
   if (
-    !state.equivalentFrames.has(input.expectedSequence) ||
+    !(
+      "interaction" in input && input.interaction === "direct"
+        ? state.directFrames
+        : state.equivalentFrames
+    ).has(input.expectedSequence) ||
     state.needsFreshFrame ||
     state.observedMutationVersion !== state.runtime.mutationVersion()
   ) {
@@ -661,7 +674,7 @@ async function applyInput(
       throw new Error("Browser Device navigation requires an http or https URL");
     }
     await page.goto(destination.href, { waitUntil: "domcontentloaded" });
-    await waitForBrowserContent(page);
+    if (input.interaction !== "direct") await waitForBrowserContent(page);
   } else if (input.kind === "history") {
     if (input.direction === "back") await page.goBack();
     else if (input.direction === "forward") await page.goForward();
@@ -725,8 +738,19 @@ async function resolveBrowserClick(
   state: SessionState,
   input: Extract<BrowserDeviceInput, { kind: "click" }>,
 ): Promise<ResolvedBrowserClick> {
+  const page = assertInput(state, input);
+  if (input.interaction === "direct") {
+    return {
+      resolution: {
+        outcome: "coordinate-fallback",
+        strategy: "coordinate",
+        reviewedCoordinateFallback: true,
+        reasoning: "Direct pointer input on the current live browser frame.",
+      },
+      dispatch: () => page.mouse.click(input.x, input.y),
+    };
+  }
   const frame = assertInspectableFrame(state, input);
-  const page = state.pages.get(input.pageId)!;
   const beforeFingerprint = await browserPageVisualFingerprint(page);
   if (beforeFingerprint !== frame.visualFingerprint) {
     state.needsFreshFrame = true;
