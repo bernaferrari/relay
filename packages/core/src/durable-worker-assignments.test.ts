@@ -302,3 +302,16 @@ test("a phone serial stays exclusive even when worker ids diverge", async () => 
     );
   });
 });
+
+test("an interrupted browser job keeps its recovery verdict but does not block the next run", async () => {
+  await withStore((store) => {
+    const browserLane = { workerId: "local:browser:target:grok-com", capacity: 1 };
+    store.queue({ ...input("interrupted-browser"), executionTarget: localBrowserTarget(), lane: browserLane });
+    store.claimRunning("interrupted-browser", "server-before-restart", 8_000);
+    store.reconcileAfterRestart({ workerInstanceId: "server-after-restart", at: 8_100 });
+    store.queue({ ...input("next-browser"), executionTarget: localBrowserTarget(), lane: browserLane });
+
+    assert.equal(store.get("interrupted-browser")?.status, "recovery-required");
+    assert.equal(store.claimRunning("next-browser", "server-after-restart", 8_200).status, "running");
+  });
+});

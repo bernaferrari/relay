@@ -4,7 +4,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@relay/ui-react/compon
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { getRouteApi, useRouteContext } from "@tanstack/react-router";
-import { RotateCcw } from "lucide-react";
+import { ChevronRight, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState } from "../components/product-patterns";
@@ -32,6 +32,7 @@ import {
   BatchStabilityPanel,
 } from "./batch-plan-review";
 import { PageLoading, RecordingProblem } from "./recording-shared";
+import { PlanRunChecklist } from "./plan-run-checklist";
 import { resolvePlanFindings } from "./batch-finding-review";
 import { PlanCaptureReviewSection } from "./batch-capture-review";
 import { productLinkClassName } from "../lib/class-names";
@@ -308,24 +309,13 @@ function BatchDocument({ batchId }: { batchId: string }) {
 
       {report ? (
         <>
-          <BatchResultSummary report={report} />
-          {active ? (
-            <div
-              className="mt-5 flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground"
-              role="status"
-            >
-              <span className="size-2 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-              <p>Relay is running this Plan. Results update automatically.</p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => cancel.mutate()}
-                disabled={cancel.isPending}
-              >
-                {cancel.isPending ? "Stopping…" : "Stop"}
-              </Button>
-            </div>
-          ) : null}
+          <PlanRunChecklist
+            report={report}
+            testNames={testNames}
+            active={active}
+            onStop={() => cancel.mutate()}
+            stopping={cancel.isPending}
+          />
 
           {canContinue ? (
             <section className="mt-5 rounded-xl border border-border border-l-4 border-l-primary bg-card p-5">
@@ -354,154 +344,169 @@ function BatchDocument({ batchId }: { batchId: string }) {
             </section>
           ) : null}
 
-          <Tabs value={resultView} onValueChange={setResultView} className="mt-6">
-            <TabsList variant="line" aria-label="Plan result view">
-              {runAcrossService.getCaptureReview ? (
-                <TabsTrigger value="screenshots">Screenshots</TabsTrigger>
-              ) : null}
-              <TabsTrigger value="cases">Runs and problems</TabsTrigger>
-            </TabsList>
-            <TabsContent value="screenshots" keepMounted>
-              <PlanCaptureReviewSection
-                key={batchId}
-                batchId={batchId}
-                runAcrossService={runAcrossService}
-                platform={platform}
-                streaming={active}
+          <details className="group/details mt-8" open={!active}>
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-base font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+              <ChevronRight
+                className="size-4 text-muted-foreground transition-transform duration-150 group-open/details:rotate-90"
+                aria-hidden="true"
               />
-            </TabsContent>
-            <TabsContent value="cases">
-              {findingsReport ? (
-                <BatchFindingsLead report={findingsReport} gridHasProblems={hasProblems} />
-              ) : null}
-              <BatchReviewWorkspace
-                key={batchId}
-                report={report}
-                selected={selectedCases}
-                onToggle={(id, checked) => toggleCase(id, checked)}
-                onResolve={(id) => triage.mutateAsync({ caseIds: [id], triageStatus: "resolved" })}
-                pending={triage.isPending}
-                groups={(inspect) => (
-                  <>
-                    {hasProblems && clusters.isPending && !clusterValues.length ? (
-                      <p className="mt-8 text-sm text-muted-foreground" role="status">
-                        Grouping…
-                      </p>
-                    ) : null}
-
-                    {hasProblems ? (
-                      <BatchFailureClusters
-                        clusters={clusterValues}
-                        cases={report.cases}
-                        selected={selectedClusters}
-                        onToggle={(cluster, checked) => toggleCluster(cluster.id, checked)}
-                        onInspect={(runId) => {
-                          const item = report.cases.find((item) => item.runId === runId);
-                          if (item) inspect(item.id);
-                        }}
-                      />
-                    ) : null}
-
-                    {clusters.isError ? (
-                      <p className="my-4 text-sm text-muted-foreground" role="status">
-                        Failure grouping is unavailable. Cases are still listed below.
-                      </p>
-                    ) : null}
-                  </>
-                )}
-                matrix={(inspect) => (
-                  <>
-                    {report.cases.length ? (
-                      <BatchResultMatrix
-                        report={report}
-                        selected={selectedCases}
-                        testNames={testNames}
-                        onToggleCase={(item, checked) => toggleCase(item.id, checked)}
-                        onRerun={(item) => rerun.mutate([item.id])}
-                        rerunning={rerun.isPending}
-                        onInspect={(item) => inspect(item.id)}
-                      />
-                    ) : null}
-                  </>
-                )}
-              />
-
-              <div
-                className={`mt-4 grid gap-3 rounded-xl border border-border bg-background p-4 ${totalSelected ? "sticky bottom-0 z-10 shadow-md" : ""}`}
-                role="region"
-                aria-label="Selected cases"
-              >
-                <BatchTriageControls
-                  selectedCount={totalSelected}
-                  actorId={actorId}
-                  pending={triage.isPending}
-                  noteOpen={noteOpen}
-                  onNoteOpenChange={setNoteOpen}
-                  onStatus={(triageStatus) =>
-                    triage.mutate({ caseIds: selectedCaseIds, triageStatus })
-                  }
-                  onAssignToMe={() => {
-                    const assignee = resolveTriageActor(actorId);
-                    if (assignee) triage.mutate({ caseIds: selectedCaseIds, assignee });
-                  }}
-                  onAddNote={async (text) => {
-                    const actor = resolveTriageActor(actorId);
-                    if (!actor || !selectedCaseIds[0]) return false;
-                    const next = selectedCaseIds.reduce(
-                      (notes, caseId) =>
-                        appendBatchReviewNote(notes, {
-                          caseId,
-                          text,
-                          at: Date.now(),
-                          actorId: actor,
-                        }),
-                      notes,
-                    );
-                    try {
-                      await platform.storage.set(
-                        batchReviewNotesKey(batchId),
-                        JSON.stringify(next),
-                      );
-                    } catch {
-                      return false;
-                    }
-                    setNotes(next);
-                    return true;
-                  }}
-                />
-                {totalSelected ? (
-                  <Button
-                    variant="default"
-                    onClick={() => rerun.mutate()}
-                    disabled={rerun.isPending}
-                  >
-                    <RotateCcw aria-hidden="true" />
-                    {rerun.isPending ? "Starting rerun…" : `Rerun ${totalSelected}`}
-                  </Button>
+              Screenshots and details
+            </summary>
+            <BatchResultSummary report={report} />
+            <Tabs value={resultView} onValueChange={setResultView} className="mt-6">
+              <TabsList variant="line" aria-label="Plan result view">
+                {runAcrossService.getCaptureReview ? (
+                  <TabsTrigger value="screenshots">Screenshots</TabsTrigger>
                 ) : null}
-              </div>
-
-              <details className="mt-6 rounded-xl border border-border p-4">
-                <summary className="cursor-pointer text-sm font-medium">
-                  Findings and review notes
-                </summary>
+                <TabsTrigger value="cases">Runs and problems</TabsTrigger>
+              </TabsList>
+              <TabsContent value="screenshots" keepMounted>
+                <PlanCaptureReviewSection
+                  key={batchId}
+                  batchId={batchId}
+                  runAcrossService={runAcrossService}
+                  platform={platform}
+                  streaming={active}
+                />
+              </TabsContent>
+              <TabsContent value="cases">
                 {findingsReport ? (
-                  <BatchFindingsPanel
-                    report={findingsReport}
+                  <BatchFindingsLead report={findingsReport} gridHasProblems={hasProblems} />
+                ) : null}
+                <BatchReviewWorkspace
+                  key={batchId}
+                  report={report}
+                  selected={selectedCases}
+                  onToggle={(id, checked) => toggleCase(id, checked)}
+                  onResolve={(id) =>
+                    triage.mutateAsync({ caseIds: [id], triageStatus: "resolved" })
+                  }
+                  pending={triage.isPending}
+                  groups={(inspect) => (
+                    <>
+                      {hasProblems && clusters.isPending && !clusterValues.length ? (
+                        <p className="mt-8 text-sm text-muted-foreground" role="status">
+                          Grouping…
+                        </p>
+                      ) : null}
+
+                      {hasProblems ? (
+                        <BatchFailureClusters
+                          clusters={clusterValues}
+                          cases={report.cases}
+                          selected={selectedClusters}
+                          onToggle={(cluster, checked) => toggleCluster(cluster.id, checked)}
+                          onInspect={(runId) => {
+                            const item = report.cases.find((item) => item.runId === runId);
+                            if (item) inspect(item.id);
+                          }}
+                        />
+                      ) : null}
+
+                      {clusters.isError ? (
+                        <p className="my-4 text-sm text-muted-foreground" role="status">
+                          Failure grouping is unavailable. Cases are still listed below.
+                        </p>
+                      ) : null}
+                    </>
+                  )}
+                  matrix={(inspect) => (
+                    <>
+                      {report.cases.length ? (
+                        <BatchResultMatrix
+                          report={report}
+                          selected={selectedCases}
+                          testNames={testNames}
+                          onToggleCase={(item, checked) => toggleCase(item.id, checked)}
+                          onRerun={(item) => rerun.mutate([item.id])}
+                          rerunning={rerun.isPending}
+                          onInspect={(item) => inspect(item.id)}
+                        />
+                      ) : null}
+                    </>
+                  )}
+                />
+
+                <div
+                  className={`mt-4 grid gap-3 rounded-xl border border-border bg-background p-4 ${totalSelected ? "sticky bottom-0 z-10 shadow-md" : ""}`}
+                  role="region"
+                  aria-label="Selected cases"
+                >
+                  <BatchTriageControls
+                    selectedCount={totalSelected}
                     actorId={actorId}
-                    notes={notes}
-                    flakyTestIds={flakyTestIds}
-                    onNotes={(next) => {
+                    pending={triage.isPending}
+                    noteOpen={noteOpen}
+                    onNoteOpenChange={setNoteOpen}
+                    onStatus={(triageStatus) =>
+                      triage.mutate({ caseIds: selectedCaseIds, triageStatus })
+                    }
+                    onAssignToMe={() => {
+                      const assignee = resolveTriageActor(actorId);
+                      if (assignee) triage.mutate({ caseIds: selectedCaseIds, assignee });
+                    }}
+                    onAddNote={async (text) => {
+                      const actor = resolveTriageActor(actorId);
+                      if (!actor || !selectedCaseIds[0]) return false;
+                      const next = selectedCaseIds.reduce(
+                        (notes, caseId) =>
+                          appendBatchReviewNote(notes, {
+                            caseId,
+                            text,
+                            at: Date.now(),
+                            actorId: actor,
+                          }),
+                        notes,
+                      );
+                      try {
+                        await platform.storage.set(
+                          batchReviewNotesKey(batchId),
+                          JSON.stringify(next),
+                        );
+                      } catch {
+                        return false;
+                      }
                       setNotes(next);
-                      void platform.storage.set(batchReviewNotesKey(batchId), JSON.stringify(next));
+                      return true;
                     }}
                   />
-                ) : null}
-              </details>
+                  {totalSelected ? (
+                    <Button
+                      variant="default"
+                      onClick={() => rerun.mutate()}
+                      disabled={rerun.isPending}
+                    >
+                      <RotateCcw aria-hidden="true" />
+                      {rerun.isPending ? "Starting rerun…" : `Rerun ${totalSelected}`}
+                    </Button>
+                  ) : null}
+                </div>
 
-              <BatchStabilityPanel report={report} stability={stability} />
-            </TabsContent>
-          </Tabs>
+                <details className="mt-6 rounded-xl border border-border p-4">
+                  <summary className="cursor-pointer text-sm font-medium">
+                    Findings and review notes
+                  </summary>
+                  {findingsReport ? (
+                    <BatchFindingsPanel
+                      report={findingsReport}
+                      actorId={actorId}
+                      notes={notes}
+                      flakyTestIds={flakyTestIds}
+                      onNotes={(next) => {
+                        setNotes(next);
+                        void platform.storage.set(
+                          batchReviewNotesKey(batchId),
+                          JSON.stringify(next),
+                        );
+                      }}
+                    />
+                  ) : null}
+                </details>
+
+                <BatchStabilityPanel report={report} stability={stability} />
+              </TabsContent>
+            </Tabs>
+          </details>
 
           {report.export ? (
             <div

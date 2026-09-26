@@ -509,8 +509,10 @@ function checkProblem(job: ObservableJob): "failed" | "blocked" | undefined {
 
 function caseStatus(job: ObservableJob | null): CombineCampaignCaseStatus {
   if (!job) return "queued";
-  if (job.status === "queued" || job.status === "paused") return "queued";
-  if (job.status === "running") return "running";
+  if (job.status === "queued") return "queued";
+  // A paused job already reached the device (it is waiting for a person), so
+  // it is in progress, not waiting to start.
+  if (job.status === "running" || job.status === "paused") return "running";
   if (job.status === "cancelled") return "cancelled";
   if (job.status === "error") return "failed";
   return checkProblem(job) ?? "passed";

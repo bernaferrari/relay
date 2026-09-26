@@ -21,6 +21,10 @@ import {
 import { observeScreenIdentity } from "./screen-identity.js";
 import { captureScreenshot } from "./workspace.js";
 
+
+/** How long a stuck plan test waits for a person before it fails and the plan continues. */
+export const STUCK_WAIT_FOR_PERSON_MS = 60_000;
+
 export async function captureCampaignFailureEvidence(
   device: Device,
   check: NonNullable<RecipeStep["check"]>,
@@ -172,7 +176,13 @@ export async function captureCampaignRecoveryIntervention(
     requestPause(job.id);
     publish({ type: "job.paused", at: started, jobId: job.id, action: job.action });
     try {
-      await cooperativeCheckpointWithTimeout(job.id);
+      // Someone watching can fix the screen and resume. Nobody watching must
+      // not stall the rest of the plan: fail this test and move on.
+      await cooperativeCheckpointWithTimeout(job.id, STUCK_WAIT_FOR_PERSON_MS).catch(() => {
+        throw new Error(
+          `Stuck at “${check.title}” and nobody resumed it within ${Math.round(STUCK_WAIT_FOR_PERSON_MS / 1000)}s`,
+        );
+      });
     } finally {
       requestResume(job.id);
       job.waitingFor = undefined;

@@ -41,8 +41,9 @@ const routeApi = getRouteApi("/apps/$appId/suites/$suiteId");
 /** After this long without a setup answer, say so next to the Run button. */
 const PREVIEW_SLOW_MS = 5_000;
 
-/** One representative case. All cases is an explicit choice, not the default. */
-export const defaultPlanExecutionMode = "pilot" as const;
+// "Run all" runs everything. Running one setup first is an option for large
+// plans (several devices, accounts, or data sets).
+export const defaultPlanExecutionMode = "all" as const;
 
 export function planRunCountLabel(input: {
   blockers: number;
@@ -50,11 +51,9 @@ export function planRunCountLabel(input: {
   executionMode: "pilot" | "all";
 }): string {
   if (input.blockers > 0) return "Setup needed before running";
-  if (input.executionMode === "all") {
-    return `This run: ${input.plannedCases} ${input.plannedCases === 1 ? "case" : "cases"}`;
-  }
-  if (input.plannedCases > 1) return `This run: 1 of ${input.plannedCases} cases`;
-  return `This run: ${input.plannedCases} ${input.plannedCases === 1 ? "case" : "cases"}`;
+  if (input.plannedCases <= 1) return "Every test runs once";
+  if (input.executionMode === "all") return `Every test runs on ${input.plannedCases} setups`;
+  return `One setup first, then ${input.plannedCases - 1} more when you continue`;
 }
 
 export function SuitePage() {
@@ -253,7 +252,7 @@ export function SuitePage() {
         <RecoveryState
           layout="centered"
           title="This Plan is unavailable"
-          detail="Reload the saved coverage plan before making changes or starting work."
+          detail="Relay could not load this plan. Try again."
           action={
             <Button variant="outline" onClick={() => void suite.refetch()}>
               <RotateCcw aria-hidden="true" /> Try again
@@ -275,10 +274,10 @@ export function SuitePage() {
       {value ? (
         <>
           <PageHeader
-            crumbs={[{ label: "Plans", to: "/suites" }, { label: value.name }]}
+            crumbs={[{ label: "Tests", to: "/tests" }, { label: value.name }]}
             title={value.name}
             description={[
-              `${value.tests.length} ${value.tests.length === 1 ? "check" : "checks"}`,
+              `${value.tests.length} ${value.tests.length === 1 ? "test" : "tests"}`,
               value.appName,
             ]
               .filter(Boolean)
@@ -335,8 +334,8 @@ export function SuitePage() {
                       : start.isPending
                         ? "Starting…"
                         : executionMode === "all" && plannedCases > 1
-                          ? `Run all ${plannedCases} cases`
-                          : `Run ${value.tests.length === 1 ? "check" : `all ${value.tests.length} checks`}`}
+                          ? `Run on all ${plannedCases} setups`
+                          : `Run ${value.tests.length === 1 ? "test" : `all ${value.tests.length} tests`}`}
                 </Button>
               </>
             }
@@ -476,25 +475,15 @@ export function SuitePage() {
                   </strong>
                   {preview.data && !previewBlockers.length ? (
                     <span className="text-muted-foreground">
-                      {preview.data.checkCount} {preview.data.checkCount === 1 ? "check" : "checks"}
+                      {preview.data.checkCount} {preview.data.checkCount === 1 ? "test" : "tests"}
                       {preview.data.expectedScreenshots === undefined
                         ? ""
                         : ` · about ${preview.data.expectedScreenshots} screenshots`}
                     </span>
                   ) : null}
-                  {!previewBlockers.length && executionMode === "pilot" && plannedCases > 1 ? (
-                    <span className="mt-1 font-medium text-foreground">
-                      This run uses one representative case. All cases would run {plannedCases}.
-                    </span>
-                  ) : null}
-                  {!previewBlockers.length && executionMode === "all" && plannedCases > 1 ? (
-                    <span className="mt-1 font-medium text-foreground">
-                      Every selected case. This is not one paired row.
-                    </span>
-                  ) : null}
                   {!previewBlockers.length && preview.data?.execution?.detail ? (
                     <details className="mt-2 text-muted-foreground">
-                      <summary className="cursor-pointer py-1">Execution details</summary>
+                      <summary className="cursor-pointer py-1">How Relay will run it</summary>
                       <p className="mt-1 leading-5">{preview.data.execution.detail}</p>
                     </details>
                   ) : null}
