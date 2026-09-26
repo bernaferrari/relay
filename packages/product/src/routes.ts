@@ -98,6 +98,8 @@ export type RouteDefinition = {
   allowedSearchKeys: readonly (
     | "plan"
     | "planApp"
+    | "item"
+    | "filter"
     | "status"
     | "app"
     | "view"
@@ -240,9 +242,10 @@ export const ROUTE_DEFINITIONS = [
     "review-recording",
     ["view", "step", "screen"],
   ),
-  d("/review", "/home", "Review", "Run", "review", "review-run", ["app", "view"]),
+  d("/review", "/home", "Review", "Run", "review", "review-run", ["app", "view", "item", "filter"]),
   d("/runs", "/home", "Results", "Run", "runs", "review-run", ["status", "app", "view", "q"]),
   d("/runs/:runId", "/runs", "Run", "Run", "runs", "inspect-run", [
+    "returnTo",
     "plan",
     "planApp",
     "app",

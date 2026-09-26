@@ -1604,6 +1604,25 @@ describe("Run and Report", () => {
     expect(document.querySelector('[role="tab"]')).toBeNull();
   });
 
+  it("returns to the selected Review screenshot even when the run has no Test", async () => {
+    const fake = fakeRunService();
+    const { history } = await renderRun(
+      "/runs/run-1?returnTo=" +
+        encodeURIComponent("/review?item=run-1%3A%3Acapture-2&filter=new&app=app-1"),
+      fake.service,
+      platformWithStorage().platform,
+    );
+    const back = [...document.querySelectorAll<HTMLAnchorElement>("a")].find((link) =>
+      link.textContent?.includes("Back to Review"),
+    )!;
+    expect(back).toBeDefined();
+    await click(back);
+    expect(history.location.pathname).toBe("/review");
+    expect(history.location.search).toContain("capture-2");
+    expect(history.location.search).toContain("filter=new");
+    expect(history.location.search).toContain("app=app-1");
+  });
+
   it("returns from the run to the Test with its plan context", async () => {
     const fake = fakeRunService();
     fake.service.getReport = async () => ({ ...report(), testId: "test-1" });
