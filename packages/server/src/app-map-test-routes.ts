@@ -35,6 +35,23 @@ import {
   applyRebasableAppMapMutation,
 } from "./app-map-route-mutations.js";
 
+const OBSERVED_DURATION_BUDGET_MS = 3_000;
+
+/** Resolve to undefined when an advisory lookup overruns its budget. */
+async function withinBudget<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise.catch(() => undefined),
+      new Promise<undefined>((resolve) => {
+        timer = setTimeout(() => resolve(undefined), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 type AppMapTestRouteInput = {
   method: string;
   pathname: string;
@@ -353,12 +370,16 @@ export async function handleAppMapTestRoute(input: AppMapTestRouteInput): Promis
       { reviewedDocumentOrigins },
     );
     if (preflight.checks > 0) {
-      const observed = await quoteObservedCombinePackDuration({
-        projectId: scope.projectId,
-        appMapId: appMap.id,
-        combineId: combine.id,
-        workItemCount: preflight.checks,
-      });
+      // The observed duration is advisory; it must never hold the Run button.
+      const observed = await withinBudget(
+        quoteObservedCombinePackDuration({
+          projectId: scope.projectId,
+          appMapId: appMap.id,
+          combineId: combine.id,
+          workItemCount: preflight.checks,
+        }),
+        OBSERVED_DURATION_BUDGET_MS,
+      );
       if (observed) preflight.observedDuration = observed;
     }
     const liveFixtureReferences = await collectLiveFixtureReferences({

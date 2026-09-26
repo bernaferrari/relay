@@ -1,6 +1,6 @@
 import type { AppMapCombineObservedDuration } from "@relay/protocol";
 import { listStoredCombineCampaigns, type StoredCombineCampaign } from "./combine-campaign.js";
-import { readPersistedRun } from "./runs.js";
+import { readPersistedRuns, type PersistedRun } from "./runs.js";
 
 const PACK_P95_MIN_SAMPLES = 3;
 
@@ -43,14 +43,13 @@ export function quoteObservedPackDuration(input: {
   };
 }
 
-async function campaignPackWallClockMs(
+function campaignPackWallClockMs(
   campaign: StoredCombineCampaign,
-): Promise<number | undefined> {
+  persisted: ReadonlyMap<string, PersistedRun | null>,
+): number | undefined {
   if (!campaign.cases.length) return undefined;
-  const runs = await Promise.all(
-    campaign.cases.map((item) =>
-      item.jobId ? readPersistedRun(item.jobId) : Promise.resolve(null),
-    ),
+  const runs = campaign.cases.map((item) =>
+    item.jobId ? (persisted.get(item.jobId.trim()) ?? null) : null,
   );
   if (runs.some((run) => !run || (run.status !== "ok" && !run.healed))) return undefined;
   const started = runs.map((run) => run!.startedAt ?? run!.queuedAt);
@@ -81,11 +80,19 @@ export async function quoteObservedCombinePackDuration(input: {
   combineId: string;
   workItemCount: number;
 }): Promise<AppMapCombineObservedDuration | undefined> {
-  const campaigns = await listStoredCombineCampaigns(input.projectId);
+  const campaigns = (await listStoredCombineCampaigns(input.projectId)).filter((campaign) =>
+    combineCampaignBelongsToObservedPack(campaign, input),
+  );
+  // Only campaigns whose every case has a job can yield a sample. Resolve all
+  // of their runs in one pass: pruned runs used to cost a full run-store scan
+  // each, which hung Plan preflight (agent-device-ni65).
+  const candidates = campaigns.filter((campaign) => campaign.cases.every((item) => item.jobId));
+  const persisted = await readPersistedRuns(
+    candidates.flatMap((campaign) => campaign.cases.map((item) => item.jobId!)),
+  );
   const samples: { campaignId: string; durationMs: number }[] = [];
-  for (const campaign of campaigns) {
-    if (!combineCampaignBelongsToObservedPack(campaign, input)) continue;
-    const durationMs = await campaignPackWallClockMs(campaign);
+  for (const campaign of candidates) {
+    const durationMs = campaignPackWallClockMs(campaign, persisted);
     if (durationMs === undefined) continue;
     samples.push({ campaignId: campaign.id, durationMs });
   }

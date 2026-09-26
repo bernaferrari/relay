@@ -643,15 +643,13 @@ export async function readPersistedRun(idOrDir: string): Promise<PersistedRun | 
       entries.find((e) => e === needle || e.endsWith(`_${needle}`) || e.startsWith(`${needle}_`)) ??
       null;
     if (!match) {
+      // Unindexed fallback: probe only each manifest's id. A full
+      // readCompletedRun per directory re-derives evidence for every run and
+      // turned one missing id into seconds of CPU (agent-device-ni65).
       for (const entry of entries) {
-        try {
-          const parsed = await readCompletedRun(join(root, entry));
-          if (parsed?.id === needle) {
-            match = entry;
-            break;
-          }
-        } catch {
-          /* skip incomplete or non-run directories */
+        if ((await persistedRunIdAt(join(root, entry))) === needle) {
+          match = entry;
+          break;
         }
       }
     }
@@ -664,6 +662,83 @@ export async function readPersistedRun(idOrDir: string): Promise<PersistedRun | 
   } catch {
     return null;
   }
+}
+
+const RUN_ID_PROBE_BYTES = 4096;
+const PRETTY_TOP_LEVEL_ID = /\n {2}"id": "([^"\\]+)"/u;
+
+/** The manifest's top-level id, read from its head when it is pretty-printed. */
+async function persistedRunIdAt(dir: string): Promise<string | null> {
+  const path = join(dir, "run.json");
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(path, "r");
+    const buffer = Buffer.alloc(RUN_ID_PROBE_BYTES);
+    const { bytesRead } = await handle.read(buffer, 0, RUN_ID_PROBE_BYTES, 0);
+    const head = buffer.subarray(0, bytesRead).toString("utf8");
+    const pretty = PRETTY_TOP_LEVEL_ID.exec(head)?.[1];
+    if (pretty) return pretty;
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+  try {
+    const parsed = JSON.parse(await readFile(path, "utf8")) as { id?: unknown };
+    return typeof parsed.id === "string" ? parsed.id : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve many run ids (keyed by trimmed id) with at most one directory scan.
+ * Ids whose run was pruned or never persisted map to null instead of each
+ * triggering its own scan.
+ */
+export async function readPersistedRuns(
+  ids: readonly string[],
+): Promise<Map<string, PersistedRun | null>> {
+  const results = new Map<string, PersistedRun | null>();
+  const wanted = [...new Set(ids.map((id) => id.trim()))].filter(
+    (id) => id && !id.includes("/") && !id.includes("\\") && !id.includes(".."),
+  );
+  for (const id of wanted) results.set(id, null);
+  if (!wanted.length) return results;
+  const root = runsRoot();
+  const directories = new Map<string, string>();
+  let entries: string[] = [];
+  try {
+    entries = await readdir(root);
+  } catch {
+    return results;
+  }
+  const unresolved = new Set<string>();
+  for (const id of wanted) {
+    const indexed = await catalogRunDirectory(root, id).catch(() => null);
+    const named = indexed
+      ? null
+      : entries.find((e) => e === id || e.endsWith(`_${id}`) || e.startsWith(`${id}_`));
+    if (indexed) directories.set(id, indexed);
+    else if (named) directories.set(id, join(root, named));
+    else unresolved.add(id);
+  }
+  if (unresolved.size) {
+    for (const entry of entries) {
+      const id = await persistedRunIdAt(join(root, entry));
+      if (!id || !unresolved.has(id)) continue;
+      directories.set(id, join(root, entry));
+      unresolved.delete(id);
+      if (!unresolved.size) break;
+    }
+  }
+  for (const [id, dir] of directories) {
+    const parsed = await readCompletedRun(dir);
+    if (!parsed) continue;
+    parsed.dir = dir;
+    results.set(id, parsed);
+  }
+  return results;
 }
 
 export async function indexedReusableSurfaceComparisons(cacheKey: string) {
