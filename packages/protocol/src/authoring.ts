@@ -25,7 +25,13 @@ export type AuthoringSessionState = (typeof AUTHORING_SESSION_STATES)[number];
 
 export type AuthoringTarget =
   | { kind: "device"; platform: "android" | "ios"; targetId: string }
-  | { kind: "browser"; platform: "browser"; targetId: string };
+  | {
+      kind: "browser";
+      platform: "browser";
+      targetId: string;
+      /** Saved login this recording runs as. Absent: the browser's own state. */
+      authenticationFixtureId?: string;
+    };
 
 export type AuthoringEvidence = {
   id: string;

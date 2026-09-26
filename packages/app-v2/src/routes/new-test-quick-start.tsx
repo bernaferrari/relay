@@ -46,6 +46,9 @@ export function recentWebsites(spaces: readonly ProductBrowserSpace[], limit = 6
  * Relay opens a browser there, files the Test under that site, and starts
  * recording. Devices stay one click away.
  */
+/** A saved login people can record and run as. */
+export type WebsiteAccount = { reference: string; name: string; targetId: string };
+
 export function NewTestQuickStart({
   recent,
   progress,
@@ -53,21 +56,32 @@ export function NewTestQuickStart({
   onStart,
   onUseDevice,
   manualAction,
+  accountsFor,
+  rememberedAccount,
 }: {
   recent: readonly string[];
+  /** Saved logins that work on this website address. */
+  accountsFor?(url: string): readonly WebsiteAccount[];
+  /** The login last used for this website, if any. */
+  rememberedAccount?(url: string): string | undefined;
   /** What Relay is doing right now ("Opening grok.com…"), while starting. */
   progress?: string;
   error?: string;
-  onStart(url: string): void;
+  onStart(url: string, account?: WebsiteAccount): void;
   onUseDevice(): void;
   manualAction?: ReactNode;
 }) {
   const [value, setValue] = useState("");
   const address = websiteAddress(value);
   const busy = Boolean(progress);
+  const accounts = address ? (accountsFor?.(address) ?? []) : [];
+  // undefined: not chosen yet (use the remembered one); "": explicitly Guest.
+  const [chosen, setChosen] = useState<string>();
+  const selectedReference = chosen ?? (address ? rememberedAccount?.(address) : undefined) ?? "";
+  const account = accounts.find((item) => item.reference === selectedReference);
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (address && !busy) onStart(address);
+    if (address && !busy) onStart(address, account);
   }
   return (
     <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto px-6 py-12">
@@ -115,6 +129,32 @@ export function NewTestQuickStart({
               {busy ? "Starting" : "Start"}
             </Button>
           </div>
+          {accounts.length ? (
+            <div
+              className="flex flex-wrap items-center gap-2"
+              role="radiogroup"
+              aria-label="Sign in as"
+            >
+              <span className="text-sm text-muted-foreground">Sign in as</span>
+              {[{ reference: "", name: "Guest", targetId: "" }, ...accounts].map((item) => (
+                <button
+                  key={item.reference || "guest"}
+                  type="button"
+                  role="radio"
+                  aria-checked={selectedReference === item.reference}
+                  disabled={busy}
+                  onClick={() => setChosen(item.reference)}
+                  className={`rounded-full border px-3 py-1 text-sm transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    selectedReference === item.reference
+                      ? "border-brand bg-brand-soft text-foreground"
+                      : "border-border text-muted-foreground hover:border-brand/40 hover:text-foreground"
+                  }`}
+                >
+                  {item.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <p className="min-h-5 text-sm text-muted-foreground" role="status">
             {progress ?? (value && !address ? "Enter a website address, like grok.com." : "")}
           </p>
@@ -137,7 +177,10 @@ export function NewTestQuickStart({
                   variant="outline"
                   size="sm"
                   disabled={busy}
-                  onClick={() => onStart(url)}
+                  onClick={() =>
+                    // A site with saved logins asks who to sign in as first.
+                    accountsFor?.(url).length ? setValue(url) : onStart(url)
+                  }
                 >
                   <Globe aria-hidden="true" /> {websiteHost(url)}
                 </Button>

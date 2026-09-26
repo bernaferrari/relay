@@ -54,7 +54,10 @@ export function semanticTargetForRecording(
         rect.width * rect.height > (observation.bounds.width * observation.bounds.height) / 3
       )
         continue;
-      return { target: selector, name: node.label?.trim() || value };
+      const label = node.label?.trim();
+      // A container's label can be its whole text; name the step by the
+      // selector then, so it reads like the control the person clicked.
+      return { target: selector, name: label && label.length <= 60 ? label : value };
     }
   }
   return undefined;

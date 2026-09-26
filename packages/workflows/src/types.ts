@@ -463,6 +463,8 @@ export type RecordTestOutcomeIntent = OutcomeTargetSelection &
     title: string;
     /** Exact package/bundle selected during recording setup. */
     originApplication?: string;
+    /** Saved browser login to record as; the recording's browser is signed in. */
+    authenticationFixtureId?: string;
     /** Recording controls a target. This explicit consent permits Relay to
      * acquire a new lease, but never to take over somebody else's lease. */
     confirmControl: true;

@@ -22,10 +22,19 @@ function fingerprint(value: string): string {
   return (hash >>> 0).toString(36);
 }
 
+/** Step names stay one line: long page text is cut at a word boundary. */
+function shortName(value: string, max = 48): string {
+  const text = value.trim().replace(/\s+/g, " ");
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
 function semanticIntent(
   action: NonNullable<AuthoringSession["take"]>["revisions"][number]["actions"][number],
 ): string {
-  if (action.label?.trim()) return action.label.trim();
+  if (action.label?.trim()) return shortName(action.label);
   const step = action.steps[0] as unknown as Record<string, unknown> | undefined;
   if (action.steps.length !== 1 || !step) return `${action.steps.length} recorded steps`;
   if (step.kind === "tap") {
@@ -33,7 +42,7 @@ function semanticIntent(
     const name = [target?.label, target?.identifier, target?.text].find(
       (value): value is string => typeof value === "string" && Boolean(value.trim()),
     );
-    if (name) return `Tap “${name.trim()}”`;
+    if (name) return `Tap “${shortName(name)}”`;
     const point = target?.point as Record<string, unknown> | undefined;
     if (
       point &&

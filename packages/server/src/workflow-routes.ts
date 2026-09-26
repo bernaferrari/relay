@@ -447,6 +447,12 @@ export async function handleWorkflowRoute(input: {
                   kind: target.kind,
                   platform: target.platform as "android" | "ios" | "browser",
                   targetId: target.targetId,
+                  // A browser recording keeps the saved login it was started with.
+                  ...(target.kind === "browser" &&
+                  typeof target.authenticationFixtureId === "string" &&
+                  target.authenticationFixtureId.trim()
+                    ? { authenticationFixtureId: target.authenticationFixtureId.trim() }
+                    : {}),
                 } as CreateAuthoringSessionInput["target"],
                 leaseId: body.leaseId,
                 expectedAppMapRevision: frozen.appMapRevision,
