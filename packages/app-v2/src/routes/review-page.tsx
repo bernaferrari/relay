@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { TestWorkspaceHeader, WorkspaceToolbar } from "../components/test-workspace";
+import { TestWorkspaceHeader } from "../components/test-workspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useRouteContext } from "@tanstack/react-router";
@@ -10,7 +10,16 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@relay/ui-react/components/popover";
-import { Check, CircleCheck, Flag, Keyboard, SquareDashed } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  CircleCheck,
+  Flag,
+  Keyboard,
+  MoreHorizontal,
+  SquareDashed,
+} from "lucide-react";
 import type {
   CaptureReviewAction,
   CaptureReviewItem,
@@ -303,45 +312,37 @@ export function ReviewPage() {
                 ))}
               </div>
             ) : null}
+            {newCount && !acceptAllNew.isSuccess ? (
+              <Popover>
+                <PopoverTrigger
+                  render={<Button size="icon-sm" variant="ghost" aria-label="Review options" />}
+                >
+                  <MoreHorizontal aria-hidden="true" />
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-80 p-4">
+                  <PopoverTitle>Set initial references</PopoverTitle>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    Use all new screenshots as references without reviewing them individually.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={acceptAllNew.isPending}
+                    onClick={() => acceptAllNew.mutate()}
+                  >
+                    {acceptAllNew.isPending && baseline
+                      ? `Saving ${baseline.saved} of ${baseline.total}…`
+                      : `Use all ${newCount} as references`}
+                  </Button>
+                </PopoverContent>
+              </Popover>
+            ) : null}
           </div>
         }
       >
-        <span>Compare changes and choose the screenshots to keep as references.</span>
         {inbox.data ? <Totals result={inbox.data} /> : null}
       </TestWorkspaceHeader>
 
-      {newCount && !acceptAllNew.isSuccess ? (
-        <WorkspaceToolbar
-          leading={
-            <p className="max-w-prose text-sm">
-              {acceptAllNew.isPending && baseline ? (
-                <>
-                  Saving {baseline.saved} of {baseline.total}…
-                </>
-              ) : (
-                <>
-                  <strong className="font-semibold">
-                    {newCount} {newCount === 1 ? "screenshot is" : "screenshots are"} new.
-                  </strong>{" "}
-                  Review each screenshot to establish its reference.
-                </>
-              )}
-            </p>
-          }
-          trailing={
-            <Button
-              size="sm"
-              variant="ghost"
-              className="max-w-full whitespace-normal"
-              disabled={acceptAllNew.isPending}
-              onClick={() => acceptAllNew.mutate()}
-            >
-              <Check aria-hidden="true" />
-              {acceptAllNew.isPending ? "Saving…" : `Use all ${newCount} as references`}
-            </Button>
-          }
-        />
-      ) : null}
       {baseline && !acceptAllNew.isPending && baseline.failed ? (
         <p className="border-b border-border/60 px-6 py-2 text-sm text-destructive" role="alert">
           {baseline.failed} could not be saved. They are still in the list.
@@ -386,7 +387,7 @@ export function ReviewPage() {
         <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] @3xl:grid-cols-[19rem_minmax(0,1fr)]">
           <nav
             aria-label="Screenshots to review"
-            className="min-h-0 min-w-0 max-h-48 overflow-x-hidden overflow-y-auto border-b border-border/60 p-3 @3xl:max-h-none @3xl:border-r @3xl:border-b-0"
+            className="min-h-0 min-w-0 max-h-48 overflow-x-hidden overflow-y-auto border-t border-b border-border/60 bg-card p-3 @3xl:max-h-none @3xl:border-r @3xl:border-b-0"
           >
             {(inbox.data?.entries ?? []).map((entry) => {
               const entryCards = cards.filter((card) => card.entry.runId === entry.runId);
@@ -441,9 +442,9 @@ export function ReviewPage() {
           </nav>
 
           {selected ? (
-            <div className="flex min-h-0 min-w-0 flex-col">
-              <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 @3xl:p-6">
-                <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-h-0 min-w-0 flex-col border-t border-border/60">
+              <div className="shrink-0 px-5 pt-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="grid min-w-0 flex-1 gap-1">
                     <h2 className="flex items-center gap-2 text-lg font-semibold">
                       <span className="truncate">{screenshotName(selected.item)}</span>
@@ -451,7 +452,9 @@ export function ReviewPage() {
                     </h2>
                     <p className="text-sm wrap-anywhere text-muted-foreground">
                       {[
-                        selected.entry.title,
+                        selected.entry.title !== screenshotName(selected.item)
+                          ? selected.entry.title
+                          : undefined,
                         selected.entry.targetName,
                         selected.entry.data
                           ? Object.values(selected.entry.data).join(", ")
@@ -477,22 +480,12 @@ export function ReviewPage() {
                     Open run
                   </Button>
                 </div>
-                <ReviewCompare
-                  key={selected.key}
-                  service={service}
-                  runId={selected.entry.runId}
-                  item={selected.item}
-                  finishedAt={selected.entry.finishedAt}
-                  mode={mode}
-                  onModeChange={setMode}
-                  editingIgnore={editingIgnore}
-                  savingIgnore={ignore.isPending}
-                  onCancelIgnore={() => setEditingIgnore(false)}
-                  onSaveIgnore={(regions) => ignore.mutate({ card: selected, regions })}
-                />
               </div>
-
-              <footer className="border-t border-border/60 bg-background/95 px-6 py-3 backdrop-blur">
+              <div
+                role="group"
+                aria-label="Review actions"
+                className="shrink-0 border-b border-border bg-card px-5 py-3"
+              >
                 {message ? (
                   <p className="mb-2 text-sm text-muted-foreground" role="status">
                     {message}
@@ -528,23 +521,33 @@ export function ReviewPage() {
                   </form>
                 ) : (
                   <div className="flex flex-wrap items-center gap-2">
+                    <div className="mr-2 flex items-center gap-1">
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Previous screenshot"
+                        disabled={index === 0}
+                        onClick={() => move(-1)}
+                      >
+                        <ChevronLeft aria-hidden="true" />
+                      </Button>
+                      <span className="min-w-12 text-center text-xs tabular-nums text-muted-foreground">
+                        {index + 1} / {cards.length}
+                      </span>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label="Next screenshot"
+                        disabled={index === cards.length - 1}
+                        onClick={() => move(1)}
+                      >
+                        <ChevronRight aria-hidden="true" />
+                      </Button>
+                    </div>
+
                     <Button
                       size="sm"
-                      disabled={editingIgnore}
-                      title={
-                        selected.item.reference?.state === "changed"
-                          ? "Replace the reference with this screenshot"
-                          : "Use this screenshot as the reference for future runs"
-                      }
-                      onClick={() => decide.mutate({ card: selected, action: "accept" })}
-                    >
-                      <Check aria-hidden="true" />
-                      Looks correct
-                      <kbd className="ml-1 text-xs opacity-60">A</kbd>
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
+                      variant="ghost"
                       disabled={editingIgnore}
                       onClick={() => {
                         setReporting(true);
@@ -568,9 +571,39 @@ export function ReviewPage() {
                       </Button>
                     ) : null}
                     <ReviewShortcuts />
+                    <Button
+                      size="sm"
+                      className="ml-auto h-8"
+                      disabled={editingIgnore}
+                      title={
+                        selected.item.reference?.state === "changed"
+                          ? "Replace the reference with this screenshot"
+                          : "Use this screenshot as the reference for future runs"
+                      }
+                      onClick={() => decide.mutate({ card: selected, action: "accept" })}
+                    >
+                      <Check aria-hidden="true" />
+                      Looks correct
+                      <kbd className="ml-1 text-xs opacity-60">A</kbd>
+                    </Button>
                   </div>
                 )}
-              </footer>
+              </div>
+              <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-stage p-4 @3xl:p-5">
+                <ReviewCompare
+                  key={selected.key}
+                  service={service}
+                  runId={selected.entry.runId}
+                  item={selected.item}
+                  finishedAt={selected.entry.finishedAt}
+                  mode={mode}
+                  onModeChange={setMode}
+                  editingIgnore={editingIgnore}
+                  savingIgnore={ignore.isPending}
+                  onCancelIgnore={() => setEditingIgnore(false)}
+                  onSaveIgnore={(regions) => ignore.mutate({ card: selected, regions })}
+                />
+              </div>
             </div>
           ) : null}
         </div>
@@ -587,7 +620,7 @@ function ReviewShortcuts() {
           <Button
             size="icon-sm"
             variant="ghost"
-            className="ml-auto shrink-0"
+            className="shrink-0"
             aria-label="Keyboard shortcuts"
             title="Keyboard shortcuts"
           />
