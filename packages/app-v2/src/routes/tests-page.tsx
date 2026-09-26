@@ -373,9 +373,9 @@ function TestRow({ test }: { test: ProductTestSummary & { sharedId?: boolean } }
         </Link>
         <Button
           nativeButton={false}
-          variant={test.status === "needs-review" ? "outline" : "ghost"}
+          variant={test.status === "needs-review" ? "outline" : "soft"}
           size="sm"
-          className="min-h-9 justify-self-end text-brand hover:text-brand"
+          className="min-h-9 justify-self-end"
           render={
             test.status === "needs-review" ? (
               <Link to="/tests/$testId/edit" params={{ testId: test.id }} />

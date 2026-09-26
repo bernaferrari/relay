@@ -17,6 +17,8 @@ const buttonVariants = cva(
         destructive:
           "bg-destructive text-white hover:bg-destructive/90 focus-visible:border-destructive focus-visible:ring-destructive/40 dark:bg-destructive dark:text-black dark:hover:bg-destructive/90 dark:focus-visible:ring-destructive/50",
         link: "text-foreground underline-offset-4 hover:underline",
+        /** Brand-colored secondary action: blue text, tinted on hover. */
+        soft: "text-primary hover:bg-primary/10 aria-expanded:bg-primary/10",
       },
       size: {
         default:
