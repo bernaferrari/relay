@@ -151,6 +151,10 @@ export type RunProductService = {
   ): Promise<PlayerManifestProjection>;
   /** One captured frame as a Blob for display (authenticated transport). */
   loadFrame?(runId: string, framePath: string): Promise<Blob>;
+  /** The running job as it is now: title, status, steps, and frames so far. */
+  liveJob?(jobId: string): Promise<Record<string, unknown> | undefined>;
+  /** A frame of a job that is still running (its report is not saved yet). */
+  loadLiveFrame?(jobId: string, framePath: string): Promise<Blob>;
   getRawEvidence(runId: string): Promise<unknown>;
   exportEvidence?(runId: string): Promise<RunEvidenceExportDocument>;
   exportWalkthrough?(
@@ -403,6 +407,23 @@ export function createRunProductService(platform: Platform): RunProductService {
     async exportEvidence(runId) {
       const result = await (await runtime()).client.invoke("run.trace-pack.get", { runId });
       return runEvidenceExportDocument(runId, result);
+    },
+    async liveJob(jobId) {
+      try {
+        const { job } = await (await relayClient()).invoke("job.get", { jobId });
+        return job as unknown as Record<string, unknown>;
+      } catch {
+        return undefined;
+      }
+    },
+    async loadLiveFrame(jobId, framePath) {
+      const file = framePath.split("/").pop() ?? "";
+      if (!/^[\w.-]+\.(?:png|jpe?g|webp)$/iu.test(file)) throw new TypeError("Unknown frame");
+      const response = await (
+        await relayClient()
+      ).download(`/jobs/${encodeURIComponent(jobId)}/frames/${encodeURIComponent(file)}`);
+      if (!response.ok) throw new Error(`Frame unavailable (${response.status})`);
+      return response.blob();
     },
     async loadFrame(runId, framePath) {
       if (!/^frames\/[a-zA-Z0-9_-]+\.(?:png|jpe?g|webp)$/u.test(framePath)) {

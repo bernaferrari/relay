@@ -1,4 +1,5 @@
 import { catalogQueryKeys } from "../data/catalog-queries";
+import { LiveRunStory, SavedRunStory } from "./run-story-pages";
 import { initialRunStep } from "../data/run-timeline-selection";
 import { PageHeader, WorkbenchPage } from "../components/page-layout";
 /** @jsxImportSource react */
@@ -335,6 +336,24 @@ export function RunInspection({
     );
   }
 
+  const liveJobId = state?.run?.jobId;
+  if (liveJobId && typeof runService.liveJob === "function") {
+    return (
+      <WorkbenchPage className="flex h-full min-h-0 flex-col !pt-3 !pb-3 max-[1024px]:h-auto">
+        <LiveRunStory
+          jobId={liveJobId}
+          title={snapshot?.title ?? "Run"}
+          {...(snapshot?.target
+            ? { targetName: targetLabel(targetPresentation.data?.[0] ?? snapshot.target).title }
+            : {})}
+          runService={runService}
+          {...(canCancel ? { onCancel: () => cancel.mutate() } : {})}
+          cancelling={cancel.isPending}
+        />
+      </WorkbenchPage>
+    );
+  }
+
   return (
     <WorkbenchPage className="max-w-5xl">
       <PageHeader
@@ -601,6 +620,47 @@ function RunReport({
       />
     );
 
+  const showDetails = (reportView: string | undefined) =>
+    void navigate({
+      to: "/runs/$runId",
+      params: { runId: report.runId },
+      replace: true,
+      resetScroll: false,
+      search: (previous) => ({ ...previous, reportView }),
+    });
+  if (
+    (typeof search.reportView !== "string" || search.reportView === "story") &&
+    search.view !== "evidence"
+  ) {
+    return (
+      <WorkbenchPage className="flex h-full min-h-0 flex-col !pt-3 !pb-3 max-[1024px]:h-auto">
+        <SavedRunStory
+          report={report}
+          {...(testId ? { testId } : {})}
+          runService={runService}
+          onShowDetails={() => showDetails("steps")}
+          extraActions={actions}
+          summary={outcomeSentence(
+            report.outcome,
+            target,
+            Boolean(report.captureReview?.items.length),
+          )}
+          notice={
+            <>
+              <RunReplayStatus runService={runService} />
+              {failureNotice}
+              {report.evidenceUnavailable ? (
+                <p className="text-sm text-muted-foreground" role="status">
+                  Evidence details are temporarily unavailable. The saved outcome above is
+                  unchanged.
+                </p>
+              ) : null}
+            </>
+          }
+        />
+      </WorkbenchPage>
+    );
+  }
   return (
     <WorkbenchPage className="flex h-full min-h-0 flex-col !pt-3 !pb-3 max-[720px]:h-auto [&>header]:shrink-0">
       <PageHeader
@@ -626,7 +686,14 @@ function RunReport({
             ) : null}
           </>
         }
-        actions={actions}
+        actions={
+          <>
+            <Button variant="ghost" size="sm" onClick={() => showDetails("story")}>
+              Story
+            </Button>
+            {actions}
+          </>
+        }
       />
       <RunReplayStatus runService={runService} />
       {body}

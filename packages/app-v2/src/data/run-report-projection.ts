@@ -1,4 +1,5 @@
 import type { ProductRunReport } from "@relay/product/run-journey";
+import { reportTraceSteps } from "./run-story";
 import type {
   CaptureReviewDecision,
   CaptureReviewPlannedSlot,
@@ -865,6 +866,7 @@ export function projectRunReport(
         ? { firstEvidence: { label: cause } }
         : {}),
     timeline: reportTimeline(rawRun, stepEvidence),
+    traceSteps: reportTraceSteps(rawRun),
     evidence: sections,
     ...(video ? { video } : {}),
     diagnostics,

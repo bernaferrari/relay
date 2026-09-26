@@ -86,6 +86,7 @@ import { createTargetRuntimeScope } from "./target-runtime-scope.js";
 import { shutdownServerSessions } from "./server-session-shutdown.js";
 import { handleRunRoute, type RunRouteRuntime } from "./run-routes.js";
 import { handleCaptureReferenceRoute } from "./capture-reference-routes.js";
+import { handleLiveRunRoute } from "./live-run-routes.js";
 import { createPreAuthenticatedRoute } from "./pre-authenticated-routes.js";
 import { handleJobRoute, scopedActiveJob, type JobRouteRuntime } from "./job-routes.js";
 import { assertTargetControl } from "./access-control.js";
@@ -606,6 +607,8 @@ async function handleRequest(
       })
     )
       return;
+
+    if (await handleLiveRunRoute({ method, pathname, response: res, scope })) return;
 
     if (
       await handleCaptureReferenceRoute({

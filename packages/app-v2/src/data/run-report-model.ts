@@ -104,6 +104,8 @@ export type ProductRunReportOverview = {
     locale?: string;
   };
   captureReview?: CaptureReviewQueue;
+  /** Every engine step in order, unfiltered; the story view groups these. */
+  traceSteps?: readonly ReportTimelineItem[];
 };
 
 /** Join authored-step evidence by its persisted trace identity. The numeric
