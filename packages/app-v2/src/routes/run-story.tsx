@@ -178,14 +178,17 @@ export function RunStoryView({
                 {notice}
               </div>
             ) : null}
-            <ol className="min-h-0 flex-1 overflow-y-auto px-3 py-3" aria-label="Steps">
+            <ol
+              className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-3 py-3"
+              aria-label="Steps"
+            >
               {steps.length === 0 ? (
                 <li className="px-2 py-6 text-sm text-muted-foreground">
                   {status === "running" ? "Waiting for the first step…" : "No steps were recorded."}
                 </li>
               ) : null}
               {steps.map((step, index) => (
-                <li key={step.id} className="mb-3">
+                <li key={step.id} className="mb-3 min-w-0">
                   <div className="flex items-start gap-2 px-2 py-1.5">
                     <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium tabular-nums">
                       {index + 1}
@@ -199,7 +202,7 @@ export function RunStoryView({
                       </span>
                     ) : null}
                   </div>
-                  <ul className="grid gap-0.5">
+                  <ul className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5">
                     {step.actions.map((action) => (
                       <ActionRow
                         key={action.id}

@@ -120,21 +120,6 @@ export function RunReportActions({
           Review result
         </Button>
       ) : null}
-      {!embedded ? (
-        <Button
-          nativeButton={false}
-          render={
-            <Link
-              to="/runs/$runId/walkthrough"
-              params={{ runId: report.runId }}
-              search={{ state: undefined, variant: undefined, capture: undefined }}
-            />
-          }
-          variant="outline"
-        >
-          Explore screens
-        </Button>
-      ) : null}
       {canInvestigate ? (
         <Button
           nativeButton={false}
@@ -151,15 +136,7 @@ export function RunReportActions({
           variant={canInvestigate ? "ghost" : "default"}
           label="Run again"
         />
-      ) : testId && !embedded ? (
-        <Button
-          nativeButton={false}
-          render={<Link to="/tests/$testId" params={{ testId }} search={{ setup: "run" }} />}
-          variant="outline"
-        >
-          Set up another run
-        </Button>
-      ) : embedded ? null : (
+      ) : testId || embedded ? null : (
         <RunReplayAction report={report} runService={runService} />
       )}
       {!embedded &&
@@ -177,6 +154,20 @@ export function RunReportActions({
           <MoreHorizontal className="size-4" aria-hidden="true" /> More
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
+          {!embedded ? (
+            <DropdownMenuItem
+              render={<Link to="/runs/$runId/walkthrough" params={{ runId: report.runId }} />}
+            >
+              Explore screens
+            </DropdownMenuItem>
+          ) : null}
+          {!embedded && testId ? (
+            <DropdownMenuItem
+              render={<Link to="/tests/$testId" params={{ testId }} search={{ setup: "run" }} />}
+            >
+              Set up another run
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem onClick={() => setRawEvidenceOpen(true)}>Audit</DropdownMenuItem>
           {runService.review || runService.compareVisual ? (
             <DropdownMenuItem onClick={() => setRunDialog("review")}>Review run</DropdownMenuItem>

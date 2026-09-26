@@ -1,3 +1,4 @@
+import { RunTestLink } from "./run-test-link";
 /** @jsxImportSource react */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -128,9 +129,7 @@ export function SavedRunStory({
           {testId ? (
             <>
               <span aria-hidden="true">·</span>
-              <Link className="hover:text-foreground" to="/tests/$testId" params={{ testId }}>
-                View Test
-              </Link>
+              <RunTestLink testId={testId} />
             </>
           ) : null}
         </>

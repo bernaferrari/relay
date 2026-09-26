@@ -1,3 +1,4 @@
+import { RunTestLink } from "./run-test-link";
 import { TestWorkspaceHeader } from "../components/test-workspace";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { LiveRunStory, SavedRunStory } from "./run-story-pages";
@@ -25,7 +26,7 @@ import {
 import { ChevronRight, CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { Breadcrumbs, EmptyState } from "../components/product-patterns";
+import { EmptyState } from "../components/product-patterns";
 import { IssueDraftButton } from "../components/issue-draft-button";
 import {
   firstSentence,
@@ -666,15 +667,12 @@ function RunReport({
     <WorkbenchPage className="flex h-full min-h-0 flex-col !p-0 overflow-auto [&>header]:shrink-0">
       <TestWorkspaceHeader
         context={
-          <Breadcrumbs
-            items={[
-              { label: "Results", to: "/runs" },
-              ...(testId
-                ? [{ label: "View Test", to: "/tests/$testId" as const, params: { testId } }]
-                : []),
-              { label: report.title },
-            ]}
-          />
+          <nav aria-label="Breadcrumb" className="flex items-center gap-3">
+            {testId ? <RunTestLink testId={testId} /> : null}
+            <Link to="/runs" className="hover:text-foreground">
+              Results
+            </Link>
+          </nav>
         }
         title={report.title}
         children={

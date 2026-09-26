@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useRouteContext } from "@tanstack/react-router";
+import { Link, useLocation, useRouteContext } from "@tanstack/react-router";
 import { Camera } from "lucide-react";
 import type { ProductRunSummary } from "@relay/product/catalog";
 import { WorkspaceScreenshot } from "../components/test-workspace";
@@ -24,6 +24,7 @@ export function latestRunOf(runs: readonly ProductRunSummary[] | undefined) {
 
 /** How this Test did last time, in one line under its name. */
 export function TestLastRunLine({ run }: { run?: ProductRunSummary }) {
+  const search = useLocation({ select: (location) => location.search }) as Record<string, unknown>;
   if (!run) {
     return (
       <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -42,6 +43,11 @@ export function TestLastRunLine({ run }: { run?: ProductRunSummary }) {
         className="font-medium text-primary hover:underline"
         to="/runs/$runId"
         params={{ runId: run.id }}
+        search={{
+          ...(typeof search.plan === "string" ? { plan: search.plan } : {}),
+          ...(typeof search.planApp === "string" ? { planApp: search.planApp } : {}),
+          ...(typeof search.app === "string" ? { app: search.app } : {}),
+        }}
       >
         See what happened
       </Link>
