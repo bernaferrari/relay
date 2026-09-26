@@ -668,7 +668,7 @@ function RunReport({
       <TestWorkspaceHeader
         context={
           <nav aria-label="Breadcrumb" className="flex items-center gap-3">
-            {testId ? <RunTestLink testId={testId} /> : null}
+            <RunTestLink testId={testId} />
             <Link to="/runs" className="hover:text-foreground">
               Results
             </Link>

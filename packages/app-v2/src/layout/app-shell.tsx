@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from "re
 import { classNames } from "../lib/class-names";
 import type { Platform } from "../platform/types";
 import { parentPathForPath, routeContractForPath } from "../router/route-contract";
+import { returnDestination } from "../router/return-destination";
 import { ActivityCenterButton } from "./active-work";
 import { DeviceDestinationButton } from "./device-destination";
 import { RouteAnnouncer } from "./route-announcer";
@@ -44,11 +45,15 @@ export function AppShell({ platform }: { platform: Platform }) {
     routeContract && "chrome" in routeContract && routeContract.chrome === "immersive";
   const runWorkspace = /^\/runs\/[^/]+$/.test(location.pathname);
   const parentPath = parentPathForPath(location.pathname);
-  const canGoBack = historyAvailability.canGoBack || Boolean(parentPath);
+  const source = returnDestination((location.search as Record<string, unknown>).returnTo);
+  const canGoBack = historyAvailability.canGoBack || Boolean(source || parentPath);
 
   function goBack() {
     if (router.history.canGoBack()) {
       router.history.back();
+    } else if (source) {
+      const { label: _label, ...destination } = source;
+      void navigate({ ...destination, replace: true });
     } else if (parentPath) {
       void navigate({ to: parentPath as "/" });
     }

@@ -126,12 +126,7 @@ export function SavedRunStory({
           <Link className="hover:text-foreground" to="/runs">
             Results
           </Link>
-          {testId ? (
-            <>
-              <span aria-hidden="true">·</span>
-              <RunTestLink testId={testId} />
-            </>
-          ) : null}
+          <RunTestLink testId={testId} />
         </>
       }
       {...(summary ? { summary } : {})}

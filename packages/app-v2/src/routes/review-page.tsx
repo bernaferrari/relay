@@ -2,7 +2,7 @@
 import { TestWorkspaceHeader } from "../components/test-workspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useLocation, useRouteContext } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
 
 import {
@@ -116,8 +116,11 @@ export function ReviewPage() {
     [platform],
   );
   const queryClient = useQueryClient();
-  const [filter, setFilter] = useState<Filter>("all");
-  const search = useLocation().search as { app?: unknown };
+  const location = useLocation();
+  const search = location.search as { app?: unknown; item?: unknown; filter?: unknown };
+  const navigate = useNavigate();
+  const filter: Filter =
+    search.filter === "new" || search.filter === "changed" ? search.filter : "all";
   const appMapId = typeof search.app === "string" && search.app ? search.app : undefined;
   const inbox = useQuery({
     queryKey: reviewQueryKeys.inbox(14, appMapId),
@@ -129,12 +132,33 @@ export function ReviewPage() {
     () => cardsOf(inbox.data, filter).filter((card) => !done.has(card.key)),
     [inbox.data, filter, done],
   );
-  const [selectedKey, setSelectedKey] = useState<string>();
+  const selectedKey = typeof search.item === "string" ? search.item : undefined;
+  const setSelectedKey = useCallback(
+    (item?: string) => {
+      void navigate({
+        to: "/review",
+        replace: true,
+        search: { ...(appMapId ? { app: appMapId } : {}), filter, ...(item ? { item } : {}) },
+      });
+    },
+    [navigate, appMapId, filter],
+  );
+  const setFilter = (next: Filter) => {
+    void navigate({
+      to: "/review",
+      replace: true,
+      search: { ...(appMapId ? { app: appMapId } : {}), filter: next },
+    });
+  };
   const index = Math.max(
     0,
     cards.findIndex((card) => card.key === selectedKey),
   );
   const selected = cards[index];
+  const selectedRow = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    selectedRow.current?.scrollIntoView({ block: "nearest" });
+  }, [selected?.key]);
   const [mode, setMode] = useState<CompareMode>("side");
   const [editingIgnore, setEditingIgnore] = useState(false);
   const [reporting, setReporting] = useState(false);
@@ -150,7 +174,7 @@ export function ReviewPage() {
       setEditingIgnore(false);
       setReporting(false);
     },
-    [cards, index],
+    [cards, index, setSelectedKey],
   );
 
   const refresh = useCallback(() => {
@@ -306,7 +330,6 @@ export function ReviewPage() {
                     }`}
                     onClick={() => {
                       setFilter(value);
-                      setSelectedKey(undefined);
                     }}
                   >
                     {label}
@@ -398,31 +421,27 @@ export function ReviewPage() {
             {(inbox.data?.entries ?? []).map((entry) => {
               const entryCards = cards.filter((card) => card.entry.runId === entry.runId);
               if (!entryCards.length) return null;
-              const grouped = entry.items.length > 1;
               return (
                 <div key={entry.runId} className="min-w-0 py-1">
-                  {grouped ? (
-                    <div className="px-3 pt-5 pb-2">
-                      <p
-                        className="truncate text-xs leading-5 font-medium text-muted-foreground"
-                        title={entry.title}
-                      >
-                        {entry.title}
-                      </p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {[entry.targetName, timeAgo(entry.finishedAt)].filter(Boolean).join(" · ")}
-                      </p>
-                    </div>
-                  ) : null}
-                  <ul
-                    className={`grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5 ${grouped ? "ml-3 border-l border-border/60 pl-1.5" : ""}`}
-                  >
+                  <div className="mx-2 mt-4 mb-2 rounded-md border border-border/60 bg-muted/20 px-2.5 py-2">
+                    <p
+                      className="truncate text-xs leading-5 font-medium text-muted-foreground"
+                      title={entry.title}
+                    >
+                      {entry.title}
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {[entry.targetName, timeAgo(entry.finishedAt)].filter(Boolean).join(" · ")}
+                    </p>
+                  </div>
+                  <ul className="ml-3 grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5 border-l border-border/60 pl-1.5">
                     {entryCards.map((card) => (
                       <li key={card.key} className="min-w-0">
                         <button
                           type="button"
+                          ref={card.key === selected?.key ? selectedRow : undefined}
                           aria-current={card.key === selected?.key ? "true" : undefined}
-                          className={`flex w-full min-w-0 items-start gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${
+                          className={`flex w-full min-w-0 scroll-mt-12 items-start gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${
                             card.key === selected?.key
                               ? "bg-primary/10 text-foreground"
                               : "text-foreground hover:bg-accent/40"
@@ -440,13 +459,6 @@ export function ReviewPage() {
                             >
                               {screenshotName(card.item)}
                             </span>
-                            {!grouped ? (
-                              <span className="truncate text-xs text-muted-foreground">
-                                {[entry.targetName, timeAgo(entry.finishedAt)]
-                                  .filter(Boolean)
-                                  .join(" · ")}
-                              </span>
-                            ) : null}
                           </span>
                           <StateBadge item={card.item} />
                         </button>
@@ -484,6 +496,7 @@ export function ReviewPage() {
                       <Link
                         to="/runs/$runId"
                         params={{ runId: selected.entry.runId }}
+                        search={{ returnTo: location.href }}
                         aria-label="Open run"
                         className="inline-flex items-center gap-1 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                       >
