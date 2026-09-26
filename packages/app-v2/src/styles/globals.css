@@ -66,3 +66,22 @@
     transform: none;
   }
 }
+
+/* App map: screen titles stay legible when the canvas is zoomed out. The
+   world sets --map-zoom; titles grow up to 1.75x, short of a neighbouring column. */
+[data-slot="map-screen-title"] {
+  transform: scale(clamp(1, calc(0.9 / var(--map-zoom, 1)), 1.75));
+  transform-origin: bottom center;
+}
+
+[data-slot="map-screen-chips"] {
+  transform: scale(clamp(1, calc(0.9 / var(--map-zoom, 1)), 1.75));
+  transform-origin: top center;
+}
+
+/* Edge labels sit between screens, so they grow less. */
+[data-slot="map-edge-label"] {
+  transform: scale(clamp(1, calc(0.9 / var(--map-zoom, 1)), 1.5));
+  transform-box: fill-box;
+  transform-origin: center;
+}

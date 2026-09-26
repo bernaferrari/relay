@@ -38,6 +38,9 @@ import {
   type WheelEvent,
 } from "react";
 
+/** Screens open no smaller than this; Fit still shows the whole map. */
+const MAP_OPEN_SCALE = 0.4;
+
 export function InfiniteMapCanvas({
   appId,
   screens,
@@ -249,6 +252,8 @@ export function InfiniteMapCanvas({
     transformRef.current = next;
     if (worldRef.current) {
       worldRef.current.style.transform = `translate3d(${next.x}px, ${next.y}px, 0) scale(${next.scale})`;
+        // Screen titles counter-scale so they stay readable when zoomed out.
+        worldRef.current.style.setProperty("--map-zoom", String(next.scale));
     }
     if (zoomLabelRef.current) zoomLabelRef.current.textContent = `${Math.round(next.scale * 100)}%`;
   }
@@ -398,13 +403,19 @@ export function InfiniteMapCanvas({
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       const viewport = viewportRef.current;
-      const next = fitMapToBounds(bounds, {
-        width: viewport?.clientWidth || 900,
-        height: viewport?.clientHeight || 560,
-      });
+      const next = fitMapToBounds(
+        bounds,
+        {
+          width: viewport?.clientWidth || 900,
+          height: viewport?.clientHeight || 560,
+        },
+        MAP_OPEN_SCALE,
+      );
       transformRef.current = next;
       if (worldRef.current) {
         worldRef.current.style.transform = `translate3d(${next.x}px, ${next.y}px, 0) scale(${next.scale})`;
+        // Screen titles counter-scale so they stay readable when zoomed out.
+        worldRef.current.style.setProperty("--map-zoom", String(next.scale));
       }
       if (zoomLabelRef.current) {
         zoomLabelRef.current.textContent = `${Math.round(next.scale * 100)}%`;

@@ -267,9 +267,11 @@ export function MapPage() {
             />
           ) : null}
           {map.data.pendingProposalCount > 0 ? (
-            <Collapsible className="absolute bottom-16 left-4 z-20 max-h-[60vh] w-80 overflow-auto rounded-lg border bg-card p-3 shadow-md">
-              <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
-                Review map changes
+            <Collapsible className="absolute right-4 bottom-4 z-20 max-h-[60vh] w-80 overflow-auto rounded-xl border bg-card px-3 py-1 shadow-lg">
+              <CollapsibleTrigger className="flex w-full items-center gap-2 py-2 text-left text-sm font-medium transition-colors hover:text-brand">
+                <span className="size-2 shrink-0 rounded-full bg-brand" aria-hidden="true" />
+                {map.data.pendingProposalCount} map{" "}
+                {map.data.pendingProposalCount === 1 ? "change" : "changes"} to review
               </CollapsibleTrigger>
               <CollapsibleContent className="space-y-3 border-t pt-3 text-sm">
                 <p>

@@ -408,8 +408,8 @@ describe("Map exploration", () => {
     expect(document.body.textContent).toContain("No saved test includes this screen.");
     expect(document.body.textContent).toContain("Recent failures");
     expect(document.querySelector('a[href="/runs/run-1"]')).not.toBeNull();
-    expect(document.body.textContent).toContain("Review map changes");
-    const developerMode = button("Review map changes");
+    expect(document.body.textContent).toContain("map change to review");
+    const developerMode = button("1 map change to review");
     expect(developerMode.getAttribute("aria-expanded")).toBe("false");
     await act(async () => developerMode.click());
     expect(developerMode.getAttribute("aria-expanded")).toBe("true");
@@ -441,7 +441,7 @@ describe("Map exploration", () => {
         return { ...overview, revision: 5, pendingProposalCount: 0 };
       },
     });
-    await act(async () => button("Review map changes").click());
+    await act(async () => button("1 map change to review").click());
     expect(document.body.textContent).toContain("Add checkout path");
     await act(async () => button("Approve").click());
     expect(decisions).toEqual([

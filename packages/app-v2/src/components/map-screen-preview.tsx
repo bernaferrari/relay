@@ -12,12 +12,15 @@ export function MapScreenPreview({
   selected = false,
   thumbnail = false,
   interactive = false,
+  framed = false,
 }: {
   dimensions?: { width: number; height: number };
   align?: "center" | "top";
   selected?: boolean;
   thumbnail?: boolean;
   interactive?: boolean;
+  /** Draw the screenshot inside a device bezel (the App map canvas). */
+  framed?: boolean;
   uri?: string;
   load?: (uri: string) => Promise<Blob>;
   title: string;
@@ -63,7 +66,7 @@ export function MapScreenPreview({
           draggable={false}
           src={url}
           alt={title}
-          className={`${loadedUrl === url ? "" : "invisible"} max-h-full w-auto max-w-full rounded object-contain ${thumbnail && !interactive ? "" : "outline outline-1 outline-offset-2"} ${thumbnail && !interactive ? "" : selected ? "outline-info" : "outline-transparent hover:outline-info/50 group-hover/map-screen:outline-info/50 group-focus-visible/map-screen:outline-info"}`}
+          className={`${loadedUrl === url ? "" : "invisible"} max-h-full w-auto max-w-full object-contain ${framed ? "rounded-xl shadow-xl ring-5 ring-bezel" : "rounded"} ${thumbnail && !interactive ? "" : framed ? "outline-2 outline-offset-8" : "outline outline-1 outline-offset-2"} ${thumbnail && !interactive ? "" : selected ? "outline-brand" : "outline-transparent hover:outline-brand/50 group-hover/map-screen:outline-brand/50 group-focus-visible/map-screen:outline-brand"}`}
           loading="lazy"
           onLoad={(event) => {
             setLoadedUrl(url);
