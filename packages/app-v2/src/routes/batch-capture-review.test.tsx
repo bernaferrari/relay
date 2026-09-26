@@ -139,7 +139,9 @@ describe("Plan screenshot review filters", () => {
     const host = await render(reviewCaptures);
     expect(host.textContent).toContain("3 planned · 3 captured");
     expect(host.textContent).toContain("3 pending");
-    expect(host.textContent).toContain("Looks correct does not approve a visual baseline.");
+    expect(host.textContent).toContain(
+      "Looks correct makes that screenshot the reference for later runs.",
+    );
     expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Gallery");
     expect(host.querySelector('[aria-label="Selected screenshot"]')).toBeNull();
 

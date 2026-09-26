@@ -212,6 +212,12 @@ export const executionOperationSchemas = {
     .strict(),
   "run.visual-policy.get": runRef,
   "run.capture.reference.compare": runRef,
+  "review.inbox.list": z
+    .object({
+      sinceDays: z.coerce.number().int().min(1).max(365).optional(),
+      appMapId: identifier("App identifier").optional(),
+    })
+    .strict(),
   "run.capture.reference.ignore-regions.update": z
     .object({
       runId: identifier("Persisted Run identifier"),

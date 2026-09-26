@@ -190,6 +190,7 @@ describe("shell overlays", () => {
     const navigation = document.querySelector('nav[aria-label="Main navigation"]')!;
     expect([...navigation.querySelectorAll("a")].map((link) => link.textContent)).toEqual([
       "Tests",
+      "Review",
       "Results",
     ]);
     expect(navigation.querySelector('[aria-current="page"]')?.textContent).toBe("Tests");

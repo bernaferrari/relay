@@ -148,7 +148,8 @@ export function ValidationExpectationEditor({
           </label>
           <p className="text-xs font-normal leading-normal text-muted-foreground">
             Current viewport. A person will review later. Capture succeeded is not the same as
-            review accepted. Looks correct does not approve a visual baseline. No AI key required.
+            review accepted. Looks correct makes that screenshot the reference for later runs. No AI
+            key required.
           </p>
         </>
       ) : null}

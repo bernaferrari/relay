@@ -475,7 +475,7 @@ describe("Batch review controls", () => {
     expect(document.body.textContent).toContain("0 missing");
     expect(document.body.textContent).toContain("blocked");
     expect(document.body.textContent).toContain(
-      "Looks correct does not approve a visual baseline.",
+      "Looks correct makes that screenshot the reference for later runs.",
     );
     const inspect = [...document.querySelectorAll('[role="tab"]')].find(
       (tab) => tab.textContent === "Inspect",

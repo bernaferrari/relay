@@ -377,7 +377,7 @@ export function formatPlanCaptureReviewQueue(queue: PlanCaptureReviewQueue): str
   return [
     formatCaptureReviewCoverageSummary(dest.summary),
     ...shown,
-    "Looks correct does not approve a visual baseline.",
+    "Looks correct makes that screenshot the reference for later runs.",
     ...rows,
   ].join("\n");
 }

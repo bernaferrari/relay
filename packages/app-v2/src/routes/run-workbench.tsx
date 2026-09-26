@@ -1,4 +1,5 @@
 import { ReportImage } from "../components/report-image";
+import { ReferenceCompareLine } from "./reference-compare-dialog";
 import { workspaceToolsSurface } from "../components/workspace-surfaces";
 import { RunLogPanel } from "../components/run-log-panel";
 /** @jsxImportSource react */
@@ -428,6 +429,7 @@ export function RunWorkbench({
                     {reviewError}
                   </p>
                 ) : null}
+                <ReferenceCompareLine runId={report.runId} item={item} />
                 <CaptureReviewDecisions
                   status={
                     item.status === "accepted"

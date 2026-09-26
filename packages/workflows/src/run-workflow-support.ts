@@ -31,6 +31,10 @@ export class BrowserTargetProfileSelectionError extends Error {
     message: string,
     /** Names of the browsers this Test has saved screens for. */
     readonly recordedOn: readonly string[] = [],
+    /** Same browser, but its account, size, or locale differs from the recording. */
+    readonly setupChanged = false,
+    /** Several saved setups match this browser equally. */
+    readonly ambiguous = false,
   ) {
     super(message);
   }
@@ -134,6 +138,23 @@ export async function selectBrowserTargetProfile(
         },
       ),
   );
+  const sameBrowser = (compiled.plan.rawAccessibilityTargetProfiles ?? []).filter(
+    (profile) =>
+      profile.platform === "browser" && profile.targetId === targetId && profile.browserCaseProfile,
+  );
+  if (candidates.length === 0 && sameBrowser.length) {
+    const changed = changedBrowserSetup(
+      sameBrowser[sameBrowser.length - 1]!.browserCaseProfile as unknown as Record<string, unknown>,
+      current as unknown as Record<string, unknown>,
+    );
+    throw new BrowserTargetProfileSelectionError(
+      changed.length
+        ? `This browser’s ${listNames(changed)} changed since the Test was recorded.`
+        : "This browser’s setup changed since the Test was recorded.",
+      [],
+      true,
+    );
+  }
   if (candidates.length !== 1)
     throw new BrowserTargetProfileSelectionError(
       candidates.length === 0
@@ -141,7 +162,9 @@ export async function selectBrowserTargetProfile(
           ? `This Test was recorded on ${listNames(recordedOn)}. It has no saved screens for this browser yet.`
           : "This Test has no saved screens for this browser yet."
         : "This browser matches more than one saved setup for this Test.",
-      recordedOn,
+      candidates.length === 0 ? recordedOn : [],
+      false,
+      candidates.length > 1,
     );
   return candidates[0]!.id;
 }
@@ -159,19 +182,11 @@ export function selectDeviceTargetProfile(
   );
   if (candidates.length === 0) return undefined;
 
-  const expectedScreenIds = new Set<string>();
-  for (const recipe of Object.values(compiled.plan.recipes ?? {})) {
-    for (const step of recipe.steps) {
-      if (step.kind === "expect-screen" && step.screenId) expectedScreenIds.add(step.screenId);
-    }
-  }
-  const referencedProfileIds = new Set<string>();
-  for (const screenId of expectedScreenIds) {
-    for (const variant of compiled.plan.rawAccessibilityVariantsByScreenId?.[screenId] ?? []) {
-      if (variant.platform !== target.platform || variant.targetId !== target.targetId) continue;
-      referencedProfileIds.add(variant.targetProfileId);
-    }
-  }
+  const referencedProfileIds = referencedTargetProfileIds(
+    compiled,
+    target.platform,
+    target.targetId,
+  );
   const referenced = candidates.filter((profile) => referencedProfileIds.has(profile.id));
   const eligible = referenced.length ? referenced : candidates;
   if (eligible.length !== 1) {
@@ -460,4 +475,51 @@ function listNames(names: readonly string[]): string {
   if (names.length <= 1) return names[0] ?? "";
   if (names.length === 2) return `${names[0]} and ${names[1]}`;
   return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
+}
+
+const BROWSER_SETUP_LABELS: Record<string, string> = {
+  authenticationFixtureId: "signed-in account",
+  viewport: "window size",
+  locale: "language",
+  timezoneId: "time zone",
+  colorScheme: "color scheme",
+  engine: "browser engine",
+  deviceScaleFactor: "pixel density",
+  mobile: "mobile mode",
+  touch: "touch mode",
+  permissions: "permissions",
+  offline: "offline mode",
+  reducedMotion: "motion setting",
+};
+
+/** Human names of the browser settings that differ from the recording. */
+export function changedBrowserSetup(
+  saved: Record<string, unknown>,
+  current: Record<string, unknown>,
+): string[] {
+  return Object.entries(BROWSER_SETUP_LABELS).flatMap(([key, label]) =>
+    JSON.stringify(saved[key] ?? null) === JSON.stringify(current[key] ?? null) ? [] : [label],
+  );
+}
+
+/** Target profiles whose saved screens this compiled Test actually expects. */
+function referencedTargetProfileIds(
+  compiled: ValidCompile,
+  platform: string,
+  targetId: string,
+): Set<string> {
+  const expectedScreenIds = new Set<string>();
+  for (const recipe of Object.values(compiled.plan.recipes ?? {})) {
+    for (const step of recipe.steps) {
+      if (step.kind === "expect-screen" && step.screenId) expectedScreenIds.add(step.screenId);
+    }
+  }
+  const referencedProfileIds = new Set<string>();
+  for (const screenId of expectedScreenIds) {
+    for (const variant of compiled.plan.rawAccessibilityVariantsByScreenId?.[screenId] ?? []) {
+      if (variant.platform !== platform || variant.targetId !== targetId) continue;
+      referencedProfileIds.add(variant.targetProfileId);
+    }
+  }
+  return referencedProfileIds;
 }
