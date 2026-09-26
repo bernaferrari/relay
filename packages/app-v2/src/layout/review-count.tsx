@@ -19,7 +19,7 @@ export function ReviewCount() {
   if (!count) return null;
   return (
     <span
-      className="ml-auto rounded-full bg-muted px-1.5 text-xs font-medium text-foreground tabular-nums"
+      className="ml-auto rounded-full bg-brand px-1.5 text-xs font-semibold text-brand-foreground tabular-nums"
       aria-label={`${count} to review`}
     >
       {count > 99 ? "99+" : count}

@@ -16,6 +16,7 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { CircleHelp, Settings } from "lucide-react";
 import { AppSwitcher } from "./app-switcher";
 import { ActiveWork } from "./active-work";
+import { RelayWordmark } from "../components/relay-mark";
 import { ReviewCount } from "./review-count";
 import { everydayDestinations, utilityDestinations } from "./primary-destinations";
 
@@ -57,12 +58,12 @@ function SidebarDestinationLink({
         className={classNames(
           " focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm font-medium",
           active
-            ? " bg-accent font-semibold text-foreground shadow-none"
-            : " text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+            ? " bg-brand-soft font-semibold text-foreground shadow-none"
+            : " text-muted-foreground hover:bg-accent/60 hover:text-foreground",
         )}
       >
         <item.icon
-          className={`size-4 shrink-0 text-muted-foreground${active ? " text-foreground" : ""}`}
+          className={`size-4 shrink-0 ${active ? "text-brand" : "text-muted-foreground"}`}
           aria-hidden="true"
         />
         <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
@@ -87,6 +88,11 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
 
   return (
     <SharedSidebarContent className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain px-3 pb-3 [scrollbar-gutter:auto]">
+      <div className="flex h-10 items-center px-2.5 pb-1">
+        <Link to="/tests" aria-label="Relay home" onClick={closeMobileNavigation}>
+          <RelayWordmark />
+        </Link>
+      </div>
       <AppSwitcher />
       <SidebarGroup className="flex-none pt-1.5">
         <nav className="flex flex-col gap-0.5" aria-label={label}>
@@ -125,8 +131,10 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
             render={<Link to="/settings/general" onClick={closeMobileNavigation} />}
             isActive={settingsActive}
             className={classNames(
-              " focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-foreground",
-              settingsActive && " bg-accent font-semibold text-foreground shadow-none",
+              " focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm font-medium",
+              settingsActive
+                ? " bg-brand-soft font-semibold text-foreground shadow-none"
+                : " text-muted-foreground hover:bg-accent/60 hover:text-foreground",
             )}
           >
             <Settings
@@ -140,7 +148,7 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
           <SidebarMenuButton
             render={<Link to="/settings/about" onClick={closeMobileNavigation} />}
             isActive={helpActive}
-            className=" focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-foreground"
+            className=" focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2 flex min-h-9 cursor-pointer items-center gap-2.5 rounded-md px-2.5 text-sm font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground"
           >
             <CircleHelp className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">Help</span>
