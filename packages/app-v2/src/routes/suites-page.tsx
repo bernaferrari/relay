@@ -1,5 +1,9 @@
 import { TestLibraryNavigation } from "../components/test-library-navigation";
 /** @jsxImportSource react */
+import { ResultsBar } from "../components/results-bar";
+import { runStateOf } from "../components/run-status";
+import { latestRunPerTest } from "./plan-checklist";
+import { catalogQueryKeys } from "../data/catalog-queries";
 import {
   Dialog,
   DialogTrigger,
@@ -14,7 +18,7 @@ import { Input } from "@relay/ui-react/components/input";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { FieldLabel as ChoiceLabel } from "@relay/ui-react/components/field";
 import { productTestStatusLabel } from "@relay/product/catalog";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Layers3, Plus, RotateCcw } from "lucide-react";
 import { useDeferredValue, useState, type FormEvent } from "react";
@@ -42,7 +46,7 @@ function suiteIdFor(name: string): string {
 }
 
 export function SuitesPage() {
-  const { suiteProfileService, productService, queryClient } = useRouteContext({
+  const { suiteProfileService, productService, queryClient, catalogService } = useRouteContext({
     from: "__root__",
   });
   const navigate = useNavigate({ from: "/suites" });
@@ -59,6 +63,16 @@ export function SuitesPage() {
     queryFn: () => suiteProfileService.listSuites(requestedApp || undefined),
     staleTime: 15_000,
   });
+  const planApps = [...new Set((suites.data ?? []).map((suite) => suite.appMapId))];
+  const appRuns = useQueries({
+    queries: planApps.map((appMapId) => ({
+      // Same key as the Plan page checklist, so both share one cache entry.
+      queryKey: [...catalogQueryKeys.runs, "app", appMapId],
+      queryFn: () => catalogService.listRuns({ appMapId }),
+      staleTime: 15_000,
+    })),
+  });
+  const runsByApp = new Map(planApps.map((appMapId, index) => [appMapId, appRuns[index]?.data]));
   const apps = useQuery({
     queryKey: recordingQueryKeys.apps,
     queryFn: () => productService.listApps(),
@@ -380,18 +394,23 @@ export function SuitesPage() {
           >
             {visibleSuites.map((suite) => {
               const needsReview = suite.tests.some((test) => test.status === "needs-review");
+              const latest = latestRunPerTest(
+                runsByApp.get(suite.appMapId) ?? [],
+                suite.tests.map((test) => test.id),
+              );
+              const states = suite.tests.map((test) => runStateOf(latest.get(test.id)));
               return (
                 <li key={`${suite.appMapId}:${suite.id}`}>
                   <Link
-                    className={`${libraryRowSurface} ${libraryRowContent} grid-cols-[auto_minmax(0,1fr)] gap-3`}
+                    className={`${libraryRowSurface} ${libraryRowContent} grid-cols-[auto_minmax(0,1fr)_minmax(10rem,16rem)] gap-4`}
                     to="/apps/$appId/suites/$suiteId"
                     params={{ appId: suite.appMapId, suiteId: suite.id }}
                   >
                     <span
-                      className="grid size-9 shrink-0 place-items-center text-muted-foreground"
+                      className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand"
                       aria-hidden="true"
                     >
-                      <Layers3 />
+                      <Layers3 className="size-4.5" />
                     </span>
                     <span className="grid min-w-0 flex-1 gap-0.5">
                       <strong className="truncate text-sm font-semibold text-foreground">
@@ -404,10 +423,13 @@ export function SuitesPage() {
                           ? ` · ${suite.variableIds.length} Data ${suite.variableIds.length === 1 ? "set" : "sets"}`
                           : ""}
                       </small>
-                      <span className="mt-1 flex items-center">
-                        <ReadinessMark status={needsReview ? "needs-review" : "ready"} />
-                      </span>
+                      {needsReview ? (
+                        <span className="mt-1 flex items-center">
+                          <ReadinessMark status="needs-review" />
+                        </span>
+                      ) : null}
                     </span>
+                    <ResultsBar states={states} />
                   </Link>
                 </li>
               );
