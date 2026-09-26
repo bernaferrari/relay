@@ -290,7 +290,7 @@ describe("Tests library", () => {
     expect(
       document.querySelector('a[href="/tests/test-checkout-internal/edit"]')?.textContent,
     ).toContain("Review steps");
-    await clickText("Set up run");
+    await clickText("Run");
     expect(history.location.pathname).toBe("/tests/test-language-internal");
     expect(history.location.search).toBe("?setup=run");
     expect(history.location.hash).toBe("");
@@ -370,7 +370,7 @@ describe("Tests workspace", () => {
     expect(document.body.textContent).toContain("Change language");
     expect(document.body.textContent).toContain("Complete checkout");
     expect(document.body.textContent).toContain("Passed");
-    expect(document.body.textContent).toContain("Not run yet");
+    expect(document.body.textContent).toContain("Needs setup");
     expect(document.body.textContent).not.toContain("app-shop-internal");
     expect(document.body.textContent).not.toContain("test-language-internal");
     expect(document.querySelectorAll("select")).toHaveLength(0);
@@ -493,7 +493,7 @@ describe("Runs workspace", () => {
       }),
     );
     const row = document.querySelector('a[href="/runs/run-passed-internal"]');
-    expect(row?.textContent).toContain("Completed");
+    expect(row?.textContent).toContain("Needs review");
     expect(row?.textContent).toContain("8 to review");
     expect(row?.textContent).not.toContain("Passed");
   });

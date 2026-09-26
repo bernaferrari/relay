@@ -1,4 +1,7 @@
 import { TestLibraryNavigation } from "../components/test-library-navigation";
+import { RunThumb } from "../components/run-thumb";
+import { Play } from "lucide-react";
+import { StatusPill, runStateOf } from "../components/run-status";
 import { libraryRowSurface } from "../components/library-row-styles";
 /** @jsxImportSource react */
 import type { ProductTestSummary } from "@relay/product/catalog";
@@ -340,6 +343,7 @@ export function TestsPage() {
 
 function TestRow({ test }: { test: ProductTestSummary & { sharedId?: boolean } }) {
   const recent = test.recentRun;
+  const state = test.status === "needs-review" ? undefined : runStateOf(recent);
   return (
     <li>
       <div
@@ -349,35 +353,29 @@ function TestRow({ test }: { test: ProductTestSummary & { sharedId?: boolean } }
           to="/tests/$testId"
           params={{ testId: test.id }}
           search={test.sharedId ? { app: test.appMapId } : {}}
-          className="grid min-w-0 gap-2 px-4 py-3.5 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-6"
+          className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3.5 py-2.5 pl-3 focus-visible:relative focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-ring lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:gap-5"
         >
-          <span className="grid min-w-0 gap-1">
-            <strong className="line-clamp-2 text-sm font-semibold text-foreground sm:block sm:overflow-hidden sm:text-ellipsis sm:whitespace-nowrap">
-              {test.name}
-            </strong>
-            <span className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
+          <RunThumb runId={recent?.id} label={test.name} />
+          <span className="grid min-w-0 gap-0.5">
+            <strong className="truncate text-sm font-semibold text-foreground">{test.name}</strong>
+            <span className="truncate text-xs text-muted-foreground">
               {test.appName} · {test.stepCount === 1 ? "1 step" : `${test.stepCount} steps`}
             </span>
           </span>
-          <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span className="col-start-2 flex min-w-0 items-center gap-2 text-xs text-muted-foreground lg:col-start-auto">
             {test.status !== "ready" ? (
               <ReadinessMark status={test.status} name={test.name} />
+            ) : state ? (
+              <StatusPill state={state} />
             ) : null}
-            {recent ? (
-              <span className="inline-flex items-center gap-2">
-                <OutcomeMark outcome={recent.outcome ?? recent.phase} />
-                <span className="tabular-nums">{relativeTime(runTime(recent))}</span>
-              </span>
-            ) : (
-              <span>Not run yet</span>
-            )}
+            {recent ? <span className="tabular-nums">{relativeTime(runTime(recent))}</span> : null}
           </span>
         </Link>
         <Button
           nativeButton={false}
-          variant="ghost"
+          variant={test.status === "needs-review" ? "outline" : "ghost"}
           size="sm"
-          className="min-h-10 justify-self-end"
+          className="min-h-9 justify-self-end text-brand hover:text-brand"
           render={
             test.status === "needs-review" ? (
               <Link to="/tests/$testId/edit" params={{ testId: test.id }} />
@@ -390,7 +388,13 @@ function TestRow({ test }: { test: ProductTestSummary & { sharedId?: boolean } }
             )
           }
         >
-          {test.status === "needs-review" ? "Review steps" : "Set up run"}
+          {test.status === "needs-review" ? (
+            "Review steps"
+          ) : (
+            <>
+              <Play aria-hidden="true" /> Run
+            </>
+          )}
         </Button>
       </div>
     </li>
