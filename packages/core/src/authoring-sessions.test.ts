@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -2089,5 +2089,30 @@ test("insert-before creates an immutable unproved action without changing the Ap
       }),
       /replayable step/u,
     );
+  });
+});
+
+test("stores each observation once on disk and reads the Take back unchanged", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(session.id, { kind: "wait", ms: 0 }, runtime);
+    session = await store.interact(session.id, { kind: "wait", ms: 0 }, runtime);
+    session = await store.stop(session.id, runtime);
+    const file = JSON.parse(
+      await readFile(
+        join(process.env.RELAY_STATE_DIR!, "authoring-sessions", `${session.id}.json`),
+        "utf8",
+      ),
+    ) as {
+      observationPool?: Record<string, unknown>;
+      take: { revisions: { observations?: unknown; observationRefs?: string[] }[] };
+    };
+    const refs = file.take.revisions.flatMap((revision) => revision.observationRefs ?? []);
+    assert.ok(file.observationPool, "observations are pooled");
+    assert.ok(file.take.revisions.every((revision) => revision.observations === undefined));
+    // Revisions repeat earlier observations; the pool holds each one once.
+    assert.ok(Object.keys(file.observationPool).length < refs.length);
+    assert.deepEqual(await store.get(session.id), session);
   });
 });

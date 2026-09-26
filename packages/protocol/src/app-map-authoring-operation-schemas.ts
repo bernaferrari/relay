@@ -233,6 +233,7 @@ export const appMapAuthoringOperationSchemas = {
       targetId: z.string().optional(),
       activeOnly: queryBoolean.optional(),
       includeHistory: queryBoolean.optional(),
+      latestRevisionOnly: queryBoolean.optional(),
     })
     .strict(),
   "authoring.session.begin": z

@@ -464,6 +464,9 @@ export type SpecificOperationMap = {
       /** Archived sessions contain immutable audit evidence and are returned
        * only when a caller explicitly asks for history. */
       includeHistory?: boolean;
+      /** Lists only need where each Take stands now: keep the current
+       * revision and its latest replay, drop the earlier snapshots. */
+      latestRevisionOnly?: boolean;
     };
     output: AuthoringSessionListResponse;
   };

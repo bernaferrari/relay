@@ -221,4 +221,9 @@ export const authoringSessionListInputParser = objectParser<
     if (input.activeOnly === "false") input.activeOnly = false;
     boolean(input.activeOnly, "authoring activeOnly");
   }
+  if (input.latestRevisionOnly !== undefined) {
+    if (input.latestRevisionOnly === "true") input.latestRevisionOnly = true;
+    if (input.latestRevisionOnly === "false") input.latestRevisionOnly = false;
+    boolean(input.latestRevisionOnly, "authoring latestRevisionOnly");
+  }
 });

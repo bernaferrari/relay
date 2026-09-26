@@ -119,6 +119,24 @@ function pixelFingerprint(bytes: Uint8Array): string {
   return observeVisualScreenFingerprint(bytes) ?? createHash("sha256").update(bytes).digest("hex");
 }
 
+
+/** A session with only its current Take revision and that revision's latest replay. */
+function latestRevisionOf(session: AuthoringSession): AuthoringSession {
+  const take = session.take;
+  if (!take) return session;
+  const replay = take.replayAttempts
+    .filter((attempt) => attempt.takeRevision === take.currentRevision)
+    .at(-1);
+  return {
+    ...session,
+    take: {
+      ...take,
+      revisions: take.revisions.filter((revision) => revision.revision === take.currentRevision),
+      replayAttempts: replay ? [replay] : [],
+    },
+  };
+}
+
 export async function captureAuthoringObservation(
   session: AuthoringSession,
   dependencies: AuthoringObservationDependencies = authoringObservationDependencies,
@@ -659,7 +677,10 @@ export async function handleAuthoringRoute(input: {
         const key = `${session.actorId}\0${session.appMapId}\0${session.target.targetId}`;
         return newestReviewByScope.get(key) === session.id;
       });
-      json(response, 200, { sessions });
+      const latestRevisionOnly = query.get("latestRevisionOnly") === "true";
+      json(response, 200, {
+        sessions: latestRevisionOnly ? sessions.map(latestRevisionOf) : sessions,
+      });
       return true;
     }
     if (method === "POST" && pathname === "/authoring-sessions") {

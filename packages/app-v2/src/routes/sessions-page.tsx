@@ -48,8 +48,8 @@ export function SessionsPage() {
     staleTime: 5_000,
   });
   const sessions = useQuery({
-    queryKey: sessionQueryKeys.sessionList({ includeHistory: true }),
-    queryFn: () => sessionService.list({ includeHistory: true }),
+    queryKey: sessionQueryKeys.sessionList({ includeHistory: true, latestRevisionOnly: true }),
+    queryFn: () => sessionService.list({ includeHistory: true, latestRevisionOnly: true }),
     staleTime: 2_000,
     refetchInterval: 3_000,
     refetchOnReconnect: true,
