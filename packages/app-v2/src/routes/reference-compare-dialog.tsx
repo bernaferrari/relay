@@ -36,7 +36,7 @@ export function ReferenceCompareLine({
         : `Changed ${Math.max(0.1, (reference.changeRatio ?? 0) * 100).toFixed(1)}% from the reference`
       : reference.state === "match"
         ? "Matches the reference"
-        : "No reference yet — Looks correct makes this the reference";
+        : "No reference saved";
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
       <span>{label}</span>
