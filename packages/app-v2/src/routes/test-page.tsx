@@ -635,13 +635,15 @@ export function TestPage() {
                       >
                         {profiles.data?.length ? (
                           <SelectField
-                            label="Saved setup"
+                            label="Sign in as"
                             value={configuration.selection.savedProfileId ?? "automatic"}
                             options={[
-                              { value: "automatic", label: "Use device defaults" },
+                              { value: "automatic", label: "No saved login (browser as it is)" },
                               ...profiles.data.map((profile) => ({
                                 value: profile.id,
-                                label: `${profile.name}${profile.account ? ` · ${profile.account.name}` : ""}${profile.targetId && profile.targetId !== targetId ? " · other device" : ""}`,
+                                // Name the login people recognize; the setup name only
+                                // when there is no login to show.
+                                label: `${profile.account?.name ?? profile.name}${profile.targetId && profile.targetId !== targetId ? " · other device" : ""}`,
                               })),
                             ]}
                             onValueChange={(value) =>
@@ -651,12 +653,6 @@ export function TestPage() {
                               })
                             }
                           />
-                        ) : null}
-                        {profiles.data?.length ? (
-                          <p className="text-xs leading-relaxed text-muted-foreground">
-                            A saved setup applies its account and run settings. Device defaults use
-                            the device’s current state.
-                          </p>
                         ) : null}
                         {selectedProfile?.account ? (
                           <p className="grid gap-1 text-xs leading-4 text-muted-foreground">

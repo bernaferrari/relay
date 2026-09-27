@@ -99,6 +99,9 @@ function humanActionTitle(intent: string): string {
   const direct = /^(?:tap|click)\s+(?:label|text)\s+(.+)$/iu.exec(value)?.[1]?.trim();
   if (direct) return `Tap ${direct.replace(/^['"]|['"]$/gu, "")}`;
   if (/^(?:scroll|swipe)\b/iu.test(value)) return "Scroll";
+  // Keep what was typed when the recorder already chose to show it; secret
+  // fields are named "Type text" upstream and stay that way.
+  if (/^type\s+“.+”$/iu.test(value)) return value;
   if (/^(?:type|enter text)\b/iu.test(value)) return "Type text";
   if (/^(?:press|key)\s+enter$/iu.test(value)) return "Press Enter";
   if (/identifier|selector|xpath|coordinates?|app:id|\{.+\}/iu.test(value)) {
@@ -149,12 +152,10 @@ export function replayDetail(
   outcome: "passed" | "failed" | "cancelled" | undefined,
   canApprove: boolean,
 ) {
-  if (outcome === "passed" && canApprove) {
-    return "Relay verified this exact reviewed version. It can now be saved.";
-  }
-  if (outcome === "passed") return "Steps changed. Replay this version before saving.";
+  if (outcome === "passed" && canApprove) return "Replay passed. Ready to save.";
+  if (outcome === "passed") return "Steps changed since the last replay. Replay again before saving.";
   if (outcome === "failed") {
-    return "Relay could not verify the recorded steps. Check the Device, then replay it again.";
+    return "Replay failed. Open the step marked failed to see what happened, then replay again.";
   }
   if (outcome === "cancelled") return "Run the replay again when the Device is ready.";
   return "Replay the reviewed steps on the selected Device.";

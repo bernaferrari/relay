@@ -2,6 +2,8 @@ import { ScanLine } from "lucide-react";
 import { AuthoringWorkspace } from "./authoring-workspace";
 import { AuthoringHeader } from "./authoring-header";
 import { RecordingScreenCapture } from "./recording-screen-capture";
+import { RecordingCondition as RecordingConditionDialog } from "./recording-condition";
+import type { RecordingCondition } from "../data/recording-product-service";
 import { RecordingTimelineSidebar } from "./recording-timeline-sidebar";
 /** @jsxImportSource react */
 import {
@@ -52,6 +54,7 @@ type CaptureAction =
   | { action: "full-page" }
   | { action: "recover" }
   | { action: "checkpoint"; label?: string }
+  | { action: "condition"; condition: RecordingCondition }
   | { action: "stop" }
   | { action: "cancel" };
 
@@ -72,6 +75,7 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
   const { productService, platform, queryClient } = useRouteContext({ from: "__root__" });
   const navigate = useNavigate();
   const [checkpointOpen, setCheckpointOpen] = useState(false);
+  const [conditionOpen, setConditionOpen] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
   const [checkpointLabel, setCheckpointLabel] = useState("");
   const liveCanvas = useRef<HTMLCanvasElement>(null);
@@ -116,6 +120,10 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
         return productService.captureFullPage();
       }
       if (intent.action === "checkpoint") return productService.checkpoint(intent.label);
+      if (intent.action === "condition") {
+        if (!productService.recordCondition) throw new Error("Waits are unavailable here.");
+        return productService.recordCondition(intent.condition);
+      }
       if (intent.action === "cancel") {
         if (!productService.cancel) throw new Error("Cancel recording is unavailable.");
         await liveInputQueue.current;
@@ -138,6 +146,7 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
         setCheckpointLabel("");
         setCheckpointOpen(false);
       }
+      if (intent.action === "condition") setConditionOpen(false);
       if (intent.action === "stop" && canonical.snapshot?.stage === "reviewing") {
         // Review is a mode of this recording document, not a different
         // application: keep the recording-owned URL through record → stop →
@@ -657,6 +666,27 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
                                 ? "Capturing…"
                                 : "Full page"}
                             </Button>
+                          ) : null}
+                          {productService.recordCondition ? (
+                            <RecordingConditionDialog
+                              open={conditionOpen}
+                              onOpenChange={setConditionOpen}
+                              disabled={
+                                !allowed.has("checkpoint") ||
+                                action.isPending ||
+                                liveInputBusy ||
+                                recoveryKind === "unknown"
+                              }
+                              pending={action.isPending && action.variables?.action === "condition"}
+                              error={
+                                action.isError && action.variables?.action === "condition"
+                                  ? errorMessage(action.error)
+                                  : undefined
+                              }
+                              onSubmit={(condition) =>
+                                action.mutate({ action: "condition", condition })
+                              }
+                            />
                           ) : null}
                           <RecordingScreenCapture
                             open={checkpointOpen}

@@ -1008,7 +1008,7 @@ describe("record, review, replay, and save", () => {
     expect(button("Save Test").disabled).toBe(false);
 
     await fill(document.querySelector<HTMLInputElement>("#review-test-name")!, "Language tour");
-    expect(document.body.textContent).toContain("Recording captured. Ready to save.");
+    expect(document.body.textContent).toContain("Replay passed. Ready to save.");
     await click(button("Save Test"));
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(document.body.textContent).not.toContain("Open Test");
@@ -1405,8 +1405,8 @@ describe("record, review, replay, and save", () => {
       platformWithStorage().platform,
     );
 
-    expect(document.body.textContent).toContain("Relay could not verify the recorded steps.");
-    expect(document.body.textContent).toContain("Check the Device, then replay it again");
+    expect(document.body.textContent).toContain("Replay failed.");
+    expect(document.body.textContent).toContain("then replay again");
     expect(document.body.textContent).not.toContain("app:id/language");
     expect(document.body.textContent).not.toContain("accessibility geometry");
   });
