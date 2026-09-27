@@ -280,9 +280,30 @@ export function RunWorkbench({
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
         <RunViewTabs report={report} />
-        {panel === "network" || panel === "logs" ? (
+        {panel === "network" || panel === "logs" || panel === "performance" ? (
           <TabsContent value={panel} className="flex min-h-0 flex-1 flex-col">
-            {panel === "network" ? (
+            {panel === "performance" ? (
+              <div className="min-h-0 flex-1 overflow-auto">
+                {" "}
+                {panel === "performance" && report.performance?.length ? (
+                  <RunPerformancePanel
+                    series={report.performance}
+                    timeline={report.timeline}
+                    step={step}
+                    onSeek={(at) => {
+                      const matched = performanceStepAt(report.timeline, at);
+                      const index = matched ? report.timeline.indexOf(matched) : -1;
+                      if (index >= 0) onSelectStep(index);
+                    }}
+                  />
+                ) : null}
+                <div className="px-5 pb-5">
+                  <Button size="sm" variant="outline" onClick={() => setPanel("steps")}>
+                    View selected step
+                  </Button>
+                </div>
+              </div>
+            ) : panel === "network" ? (
               <RunNetworkPanel items={network?.items ?? []} summary={network?.summary} />
             ) : (
               <RunLogPanel logs={logs} />
@@ -291,7 +312,9 @@ export function RunWorkbench({
         ) : null}
         <div
           className={
-            panel === "network" || panel === "logs" ? "hidden" : "flex min-h-0 min-w-0 flex-1"
+            panel === "network" || panel === "logs" || panel === "performance"
+              ? "hidden"
+              : "flex min-h-0 min-w-0 flex-1"
           }
         >
           <TestWorkspace
@@ -682,18 +705,6 @@ export function RunWorkbench({
                           interval={traceVideoInterval(step, report.video.clock)}
                         />
                       </div>
-                    ) : null}
-                    {panel === "performance" && report.performance?.length ? (
-                      <RunPerformancePanel
-                        series={report.performance}
-                        timeline={report.timeline}
-                        step={step}
-                        onSeek={(at) => {
-                          const matched = performanceStepAt(report.timeline, at);
-                          const index = matched ? report.timeline.indexOf(matched) : -1;
-                          if (index >= 0) onSelectStep(index);
-                        }}
-                      />
                     ) : null}
                     {panel === "details" ? (
                       <dl className="grid gap-5 px-5 py-4">

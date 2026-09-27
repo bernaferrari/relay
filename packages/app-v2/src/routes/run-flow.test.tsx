@@ -1369,6 +1369,23 @@ describe("Run and Report", () => {
     expect(document.body.textContent).not.toContain("Draft issue");
   });
 
+  it("keeps the same header and Passed verdict across run views", async () => {
+    const fake = fakeRunService();
+    await renderRun("/runs/run-1?reportView=story", fake.service, platformWithStorage().platform);
+    const header = () => document.querySelector('[data-slot="test-workspace-header"]')!;
+    const markup = () => header().innerHTML.replace(/id="base-ui-[^"]+"/g, 'id="generated"');
+    const original = markup();
+    expect(header().querySelector('[data-state="passed"]')).not.toBeNull();
+    for (const label of ["Steps", "Overview"]) {
+      const tab = [...document.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find(
+        (item) => item.textContent === label,
+      )!;
+      await click(tab);
+      expect(markup()).toBe(original);
+      expect(header().querySelector('[data-state="passed"]')).not.toBeNull();
+    }
+  });
+
   it("restores an available Report destination from the URL", async () => {
     const fake = fakeRunService();
     await renderRun("/runs/run-1?view=evidence", fake.service, platformWithStorage().platform);

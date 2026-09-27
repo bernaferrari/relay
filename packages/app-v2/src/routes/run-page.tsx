@@ -1,3 +1,4 @@
+import { StatusPill, runStateOf } from "../components/run-status";
 import { RunTestLink } from "./run-test-link";
 import { TestWorkspaceHeader } from "../components/test-workspace";
 import { catalogQueryKeys } from "../data/catalog-queries";
@@ -630,6 +631,40 @@ function RunReport({
       resetScroll: false,
       search: (previous) => ({ ...previous, reportView }),
     });
+  const header = (
+    <TestWorkspaceHeader
+      title={report.title}
+      children={
+        <>
+          <RunTestLink testId={testId} />
+          <span role="status">
+            <StatusPill
+              size="md"
+              state={runStateOf({
+                outcome: report.outcome,
+                captureSummary: {
+                  issue:
+                    report.captureReview?.items.filter((item) => item.status === "issue").length ??
+                    0,
+                },
+              })}
+            />
+          </span>
+          {outcomeSentence(report.outcome, target, Boolean(report.captureReview?.items.length))}
+          {report.durationMs !== undefined ? (
+            <span className="whitespace-nowrap tabular-nums">
+              <span aria-hidden="true" className="mx-2">
+                ·
+              </span>
+              <span className="sr-only">Duration: </span>
+              {formatDuration(report.durationMs)}
+            </span>
+          ) : null}
+        </>
+      }
+      actions={actions}
+    />
+  );
   if (
     (typeof search.reportView !== "string" || search.reportView === "story") &&
     search.view !== "evidence"
@@ -637,6 +672,7 @@ function RunReport({
     return (
       <WorkbenchPage className="flex h-full min-h-0 flex-col !p-0 overflow-auto">
         <SavedRunStory
+          header={header}
           report={report}
           {...(testId ? { testId } : {})}
           runService={runService}
@@ -665,26 +701,7 @@ function RunReport({
   }
   return (
     <WorkbenchPage className="flex h-full min-h-0 flex-col !p-0 overflow-auto [&>header]:shrink-0">
-      <TestWorkspaceHeader
-        title={report.title}
-        children={
-          <>
-            <RunTestLink testId={testId} />
-            <span aria-hidden="true">·</span>
-            {outcomeSentence(report.outcome, target, Boolean(report.captureReview?.items.length))}
-            {report.durationMs !== undefined ? (
-              <span className="whitespace-nowrap tabular-nums">
-                <span aria-hidden="true" className="mx-2">
-                  ·
-                </span>
-                <span className="sr-only">Duration: </span>
-                {formatDuration(report.durationMs)}
-              </span>
-            ) : null}
-          </>
-        }
-        actions={actions}
-      />
+      {header}
       <RunReplayStatus runService={runService} />
       {body}
     </WorkbenchPage>
