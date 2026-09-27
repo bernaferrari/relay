@@ -403,7 +403,7 @@ it("returns from an upper screen to a visible side port above the destination fo
   expect(route.points.at(-1)?.y).toBeLessThan(target.y + target.height);
 });
 
-it("keeps connector and arrow size fixed when highlighted, with solid recorded returns", async () => {
+it("keeps connector and arrow size fixed when highlighted, with dotted return routes", async () => {
   const container = document.createElement("div");
   const root = createRoot(container);
   await act(async () =>
@@ -435,7 +435,7 @@ it("keeps connector and arrow size fixed when highlighted, with solid recorded r
   const line = container.querySelector('[data-slot="map-edge-line"]')!;
   const width = line.getAttribute("stroke-width");
   const geometry = line.getAttribute("d");
-  expect(line.hasAttribute("stroke-dasharray")).toBe(false);
+  expect(line.getAttribute("stroke-dasharray")).toBe("5 5");
   const edge = container.querySelector('[data-slot="map-edge"]')!;
   await act(async () => edge.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
   expect(edge.getAttribute("data-state")).toBe("selected");
