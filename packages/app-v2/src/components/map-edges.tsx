@@ -474,6 +474,10 @@ export function MapEdges({
           (geometry.path.fromScreenId === selectedScreenId ||
             geometry.path.toScreenId === selectedScreenId),
         );
+        const source = positions.get(geometry.path.fromScreenId);
+        const target = positions.get(geometry.path.toScreenId ?? "");
+        const returning =
+          isRoutineReturn(geometry.path) || Boolean(source && target && target.x < source.x);
         const state = dimmed ? "muted" : activePathId || connected ? "selected" : "neutral";
         return (
           <g
@@ -546,7 +550,7 @@ export function MapEdges({
               id={geometry.id}
               d={geometry.d}
               markerEnd={geometry.path.toScreenId ? `url(#${markerId}-${state})` : undefined}
-              strokeDasharray={!geometry.path.toScreenId ? "5 5" : undefined}
+              strokeDasharray={!geometry.path.toScreenId || returning ? "5 5" : undefined}
             />
             {geometry.anchor ? (
               <path
