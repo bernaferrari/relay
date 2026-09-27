@@ -84,18 +84,6 @@ function timeAgo(value: number): string {
   return `${Math.round(hours / 24)}d ago`;
 }
 
-function Totals({ result }: { result: ReviewInboxResult }) {
-  const totals = result.totals;
-  const parts = [
-    totals.unchanged ? `${totals.unchanged} matched their reference` : undefined,
-    totals.issue ? `${totals.issue} with issues` : undefined,
-    totals.missing ? `${totals.missing} not captured` : undefined,
-  ].filter(Boolean);
-  return parts.length ? (
-    <p className="text-sm text-muted-foreground tabular-nums">{parts.join(" · ")}</p>
-  ) : null;
-}
-
 const SHORTCUTS: readonly [string, string][] = [
   ["A", "Looks correct — becomes the reference"],
   ["R", "Report issue"],
@@ -360,9 +348,7 @@ export function ReviewPage() {
             ) : null}
           </div>
         }
-      >
-        {inbox.data ? <Totals result={inbox.data} /> : null}
-      </TestWorkspaceHeader>
+      />
 
       {baseline && !acceptAllNew.isPending && baseline.failed ? (
         <p className="border-b border-border/60 px-6 py-2 text-sm text-destructive" role="alert">
