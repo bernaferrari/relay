@@ -39,6 +39,7 @@ export type { BrowserNetworkEntry } from "./browser-target-evidence.js";
 
 export type BrowserSession = {
   sessionId: string;
+  projectId?: string;
   context: BrowserContext;
   close: () => Promise<void>;
   page: Page;
@@ -146,6 +147,7 @@ async function createSession(
     const page = context.pages()[0] ?? (await context.newPage());
     const session: BrowserSession = {
       sessionId: crypto.randomUUID(),
+      ...(options.projectId ? { projectId: options.projectId } : {}),
       context,
       close: contextHandle.close,
       page,
@@ -205,8 +207,26 @@ export async function sessionFor(
     reuseMatchingIdentity?: boolean;
     requirePresentationMatch?: boolean;
     unsignedLaneId?: string;
+    attachSessionId?: string;
   } = {},
 ): Promise<BrowserSession> {
+  if (options.attachSessionId) {
+    for (const [key, pending] of sessions) {
+      if (!browserSessionBelongsToTarget(key, targetId)) continue;
+      const attached = await pending.catch(() => undefined);
+      if (!attached) continue;
+      if (attached.targetId !== targetId || attached.sessionId !== options.attachSessionId)
+        continue;
+      if (!options.projectId || attached.projectId !== options.projectId) {
+        throw new Error("The live browser session belongs to a different project.");
+      }
+      if (attached.profile.authenticationFixtureId !== options.profile?.authenticationFixtureId) {
+        throw new Error("The live browser account changed before recording began.");
+      }
+      return attached;
+    }
+    throw new Error("The prepared live browser is no longer available. Open it again.");
+  }
   const mode = options.mode ?? "authoring";
   const key = browserSessionStoreKey({
     targetId,
@@ -319,6 +339,7 @@ export type BrowserDeviceOptions = {
   /** Share the live browser already signed in as this profile's login (the
    * one the person is watching) instead of opening a separate one. */
   reuseMatchingIdentity?: boolean;
+  attachSessionId?: string;
 };
 
 export async function getBrowserDevice(

@@ -31,6 +31,8 @@ export type AuthoringTarget =
       targetId: string;
       /** Saved login this recording runs as. Absent: the browser's own state. */
       authenticationFixtureId?: string;
+      /** Attach to the exact live browser the author prepared. Missing sessions fail closed. */
+      liveSessionId?: string;
     };
 
 export type AuthoringEvidence = {

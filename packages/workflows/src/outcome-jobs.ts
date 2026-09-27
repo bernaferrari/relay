@@ -366,6 +366,7 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
     const target = recordingTarget(
       await selectTarget(this.operations, intent.targetId),
       intent.authenticationFixtureId,
+      intent.liveSessionId,
     );
     const appMapId = await selectAppMap(this.operations, intent.appMapId, intent.title);
     const leaseId = await acquireOwnLease(this.operations, this.options.actorId, target.targetId);

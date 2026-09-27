@@ -50,6 +50,7 @@ export type LiveTargetSnapshot = {
 };
 
 export type LiveTargetBrowserContext = {
+  readonly sessionId: string;
   readonly pageUrl?: string;
   readonly engine: string;
   readonly viewport: { readonly width: number; readonly height: number };
@@ -312,6 +313,7 @@ export function createLiveTargetSession(input: {
     const previous = current.browserContext;
     const profile = session.profile;
     if (
+      previous?.sessionId === session.sessionId &&
       previous?.engine === profile.engine &&
       previous.pageUrl === pageUrl &&
       previous.locale === profile.locale &&
@@ -321,6 +323,7 @@ export function createLiveTargetSession(input: {
     )
       return previous;
     return {
+      sessionId: session.sessionId,
       engine: profile.engine,
       ...(pageUrl ? { pageUrl } : {}),
       viewport: { ...profile.viewport },
@@ -344,6 +347,7 @@ export function createLiveTargetSession(input: {
       previous.frameSequence === current.frameSequence &&
       previous.lastFrameAt === current.lastFrameAt &&
       previousContext?.engine === nextContext?.engine &&
+      previousContext?.sessionId === nextContext?.sessionId &&
       previousContext?.locale === nextContext?.locale &&
       previousContext?.authenticationFixtureId === nextContext?.authenticationFixtureId &&
       previousContext?.viewport.width === nextContext?.viewport.width &&

@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TestEditorBrowserPane } from "./test-editor-browser-pane";
+import { TestEditorBrowserPane, type PreparedBrowserRecording } from "./test-editor-browser-pane";
 
 const context = vi.hoisted(() => ({ current: {} as Record<string, unknown> }));
 vi.mock("@tanstack/react-router", () => ({
@@ -65,20 +65,37 @@ function account(id: string, targetId: string, name: string, extra: object = {})
 
 async function setup(
   startUrl?: string,
-  options: { recentAccountIds?: string[]; remembered?: string } = {},
+  options: {
+    recentAccountIds?: string[];
+    remembered?: string;
+    onPreparedBrowserChange?: (browser: PreparedBrowserRecording | undefined) => void;
+  } = {},
 ) {
   const unmount = vi.fn();
+  let requestedFixture: string | undefined;
   const live = {
     snapshot: () => ({
       status: "streaming",
       target: { kind: "browser", platform: "browser", targetId: "grok" },
+      browserContext: {
+        sessionId: "live-session",
+        engine: "chromium",
+        viewport: { width: 900, height: 600 },
+        locale: "en-US",
+        ...(requestedFixture ? { authenticationFixtureId: requestedFixture } : {}),
+      },
     }),
     mount: vi.fn(() => unmount),
     subscribe: vi.fn(() => vi.fn()),
     close: vi.fn(),
     input: vi.fn(async () => {}),
   };
-  const previewTarget = vi.fn(async () => live);
+  const previewTarget = vi.fn(
+    async (_target: unknown, identity?: { authenticationFixtureId?: string }) => {
+      requestedFixture = identity?.authenticationFixtureId;
+      return live;
+    },
+  );
   const openSpace = vi.fn();
   context.current = {
     browserSpacesService: {
@@ -118,6 +135,7 @@ async function setup(
           appMapId="grok-map"
           startUrl={startUrl}
           {...(options.recentAccountIds ? { recentAccountIds: options.recentAccountIds } : {})}
+          onPreparedBrowserChange={options.onPreparedBrowserChange}
         />
       </QueryClientProvider>,
     );
@@ -178,6 +196,19 @@ describe("saved Test browser", () => {
       { kind: "browser", platform: "browser", targetId: "grok" },
       { signedOut: true },
     );
+  });
+  it("reports the exact prepared browser and clears it when disconnected", async () => {
+    const changed = vi.fn<(browser: PreparedBrowserRecording | undefined) => void>();
+    await setup("https://grok.com/", { onPreparedBrowserChange: changed });
+    await choose("Account", "authfx:lab:1");
+    await click("Open browser");
+    expect(changed).toHaveBeenLastCalledWith({
+      targetId: "grok",
+      sessionId: "live-session",
+      authenticationFixtureId: "authfx:lab:1",
+    });
+    await click("Change");
+    expect(changed).toHaveBeenLastCalledWith(undefined);
   });
   it("names accounts people recognise and never shows internal ids", async () => {
     await setup("https://grok.com/");

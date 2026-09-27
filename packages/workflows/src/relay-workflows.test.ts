@@ -847,6 +847,7 @@ function authoringSession(input: {
   pendingConnectionId?: string;
   group?: string;
   testName?: string;
+  target?: AuthorTestIntent["target"];
 }) {
   const revision = input.revision ?? 1;
   const actions = (input.actions ?? []).map((action, index) => ({
@@ -890,7 +891,7 @@ function authoringSession(input: {
     ...(input.pendingConnectionId ? { pendingConnectionId: input.pendingConnectionId } : {}),
     ...(input.group ? { group: input.group } : {}),
     state: input.state,
-    target,
+    target: input.target ?? target,
     leaseId: "lease-1",
     expectedAppMapRevision: 7,
     createdAt: 90,
@@ -1023,6 +1024,35 @@ test("a lost begin response never adopts another actor or authoring path", async
   assert.equal(snapshot.ref, undefined);
   assert.equal(snapshot.problems[0]?.code, "mutation-outcome-unknown");
   assert.equal(scripted.remaining(), 0);
+});
+
+test("a lost begin response never adopts another live browser session", async () => {
+  const browser = {
+    kind: "browser" as const,
+    platform: "browser" as const,
+    targetId: "checkout-browser",
+    authenticationFixtureId: "authfx:member:1",
+  };
+  const previous = authoringSession({
+    state: "recording",
+    updatedAt: 100,
+    target: { ...browser, liveSessionId: "old-session" },
+  });
+  const scripted = createScriptedRelayClient([
+    { id: "authoring.session.begin", error: new Error("response lost after dispatch") },
+    { id: "authoring.session.list", output: { sessions: [previous] } },
+  ]);
+
+  const snapshot = await createRelayWorkflows(scripted.client).start(
+    authorIntent({
+      revision: { exact: 7 },
+      target: { ...browser, liveSessionId: "current-session" },
+    }),
+  );
+
+  assert.equal(snapshot.phase, "needs-attention");
+  assert.equal(snapshot.ref, undefined);
+  assert.equal(scripted.remaining(), 0, JSON.stringify(scripted.invocations));
 });
 
 test("authoring recovery reconstructs an opaque reference from canonical state", async () => {

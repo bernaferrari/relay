@@ -60,6 +60,8 @@ export type ProductRecordingBeginInput = RecordingPathContext & {
   originApplication?: string;
   /** Saved browser login to record as. */
   authenticationFixtureId?: string;
+  /** Exact already-open browser session to continue recording in. */
+  liveSessionId?: string;
 };
 
 export type ProductRecordingJourney = {
@@ -279,6 +281,7 @@ export function createProductRecordingJourney(input: {
         ...(input.authenticationFixtureId?.trim()
           ? { authenticationFixtureId: input.authenticationFixtureId.trim() }
           : {}),
+        ...(input.liveSessionId?.trim() ? { liveSessionId: input.liveSessionId.trim() } : {}),
         ...(input.sourceScreenId ? { sourceScreenId: input.sourceScreenId } : {}),
         ...(input.pendingConnectionId ? { pendingConnectionId: input.pendingConnectionId } : {}),
         ...(input.group ? { group: input.group } : {}),

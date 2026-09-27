@@ -16,18 +16,27 @@ import {
 } from "./account-presentation";
 import { websiteHost } from "./new-test-quick-start";
 
+export type PreparedBrowserRecording = {
+  targetId: string;
+  sessionId?: string;
+  authenticationFixtureId?: string;
+  busy?: boolean;
+};
+
 /** A saved Test can inspect its real browser without inventing a recording session. */
 export function TestEditorBrowserPane({
   appMapId,
   startUrl,
   browserTargetIds = [],
   recentAccountIds = [],
+  onPreparedBrowserChange,
 }: {
   appMapId: string;
   startUrl?: string;
   browserTargetIds?: readonly string[];
   /** Accounts this Test ran as, newest first; the first one saved here is the default. */
   recentAccountIds?: readonly string[];
+  onPreparedBrowserChange?: (browser: PreparedBrowserRecording | undefined) => void;
 }) {
   const { browserSpacesService, appResourcesService, productService, platform } = useRouteContext({
     from: "__root__",
@@ -110,8 +119,22 @@ export function TestEditorBrowserPane({
     return () => {
       mounted.current = false;
       sessionRef.current?.close();
+      onPreparedBrowserChange?.(undefined);
     };
-  }, []);
+  }, [onPreparedBrowserChange]);
+  useEffect(() => {
+    if (!session || !spaceId) return;
+    onPreparedBrowserChange?.({
+      targetId: spaceId,
+      ...(busy ? { busy: true } : {}),
+      ...(snapshot?.status === "streaming" && snapshot.browserContext?.sessionId
+        ? { sessionId: snapshot.browserContext.sessionId }
+        : {}),
+      ...(snapshot?.browserContext?.authenticationFixtureId
+        ? { authenticationFixtureId: snapshot.browserContext.authenticationFixtureId }
+        : {}),
+    });
+  }, [session, spaceId, busy, snapshot?.status, snapshot?.browserContext, onPreparedBrowserChange]);
   useEffect(() => {
     if (!session || !canvas.current) return;
     const unsubscribe = session.subscribe((next) =>
@@ -136,6 +159,7 @@ export function TestEditorBrowserPane({
     setSnapshot(undefined);
     setIssue(undefined);
     open.reset();
+    onPreparedBrowserChange?.(undefined);
   }
   async function send(input: Parameters<LiveTargetSession["input"]>[0]) {
     if (!session) return false;

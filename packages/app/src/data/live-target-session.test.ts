@@ -117,6 +117,7 @@ describe("live target session", () => {
     expect(sessionController.snapshot()).not.toHaveProperty("frame");
     expect(snapshots.some((snapshot) => snapshot.status === "streaming")).toBe(true);
     expect(snapshots.find((snapshot) => snapshot.status === "streaming")?.browserContext).toEqual({
+      sessionId: "session-1",
       pageUrl: "https://relay.test",
       engine: "chromium",
       viewport: { width: 320, height: 240 },
