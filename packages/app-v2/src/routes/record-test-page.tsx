@@ -330,6 +330,33 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
     return outcome;
   }
 
+  // Offer text already on screen so a wait or check is picked, not typed.
+  const [screenText, setScreenText] = useState<readonly string[]>([]);
+  useEffect(() => {
+    if (!conditionOpen) return;
+    const session = liveSession.current;
+    if (!session) return;
+    session.setAccessibilityInspection?.(true);
+    const read = () => {
+      const items = session.snapshot().accessibility?.review.items ?? [];
+      const seen = new Set<string>();
+      const texts: string[] = [];
+      for (const item of items) {
+        const value = (item.text ?? item.name ?? "").trim();
+        if (value.length < 2 || value.length > 40 || seen.has(value)) continue;
+        seen.add(value);
+        texts.push(value);
+      }
+      setScreenText(texts.slice(0, 16));
+    };
+    read();
+    const timer = setInterval(read, 1_000);
+    return () => {
+      clearInterval(timer);
+      session.setAccessibilityInspection?.(false);
+    };
+  }, [conditionOpen]);
+
   function sendLiveInput(input: Parameters<LiveTargetSession["input"]>[0]): Promise<boolean> {
     const queued = liveInputOutcome.current
       .catch(() => ({ kind: "confirmed" as const }))
@@ -683,6 +710,7 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
                                   ? errorMessage(action.error)
                                   : undefined
                               }
+                              suggestions={screenText}
                               onSubmit={(condition) =>
                                 action.mutate({ action: "condition", condition })
                               }

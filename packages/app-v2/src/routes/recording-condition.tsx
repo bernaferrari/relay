@@ -14,7 +14,8 @@ import { Input } from "@relay/ui-react/components/input";
 import { Hourglass } from "lucide-react";
 import type { RecordingCondition as Condition } from "../data/recording-product-service";
 
-const WAIT_CHOICES = [30, 60, 120] as const;
+const WAIT_CHOICES = [30, 60, 120, 300] as const;
+const PAUSE_CHOICES = [5, 10, 30, 60] as const;
 
 /**
  * Slow results (an image, a video, a model's answer) need "wait until this
@@ -28,6 +29,7 @@ export function RecordingCondition({
   pending,
   error,
   onSubmit,
+  suggestions = [],
 }: {
   open: boolean;
   onOpenChange(open: boolean): void;
@@ -35,14 +37,23 @@ export function RecordingCondition({
   pending: boolean;
   error?: string;
   onSubmit(condition: Condition): void;
+  /** Text visible on the page right now. */
+  suggestions?: readonly string[];
 }) {
   const [kind, setKind] = useState<Condition["kind"]>("wait");
   const [text, setText] = useState("");
   const [seconds, setSeconds] = useState<number>(60);
+  const [pause, setPause] = useState<number>(10);
+  const label = (value: number) =>
+    value < 60 ? `${value} seconds` : `${value / 60} minute${value > 60 ? "s" : ""}`;
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (!text.trim() || pending) return;
-    onSubmit({ kind, text: text.trim(), timeoutMs: (kind === "wait" ? seconds : 10) * 1000 });
+    if ((kind !== "pause" && !text.trim()) || pending) return;
+    onSubmit({
+      kind,
+      text: text.trim(),
+      timeoutMs: (kind === "check" ? 10 : kind === "pause" ? pause : seconds) * 1000,
+    });
   }
   const choice = (active: boolean) =>
     `rounded-full border px-3 py-1 text-sm transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring ${
@@ -54,7 +65,12 @@ export function RecordingCondition({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger
         render={
-          <Button variant="ghost" size="sm" disabled={disabled} title="Wait for something or check it">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={disabled}
+            title="Wait for something or check it"
+          >
             <Hourglass aria-hidden="true" /> Wait or check
           </Button>
         }
@@ -62,15 +78,17 @@ export function RecordingCondition({
       <DialogContent showCloseButton={false}>
         <DialogTitle>Wait or check</DialogTitle>
         <DialogDescription>
-          Relay tries it on the page now and adds it as a step. A wait stops as soon as the text
-          shows up.
+          Relay tries it on the page now and adds it as a step. A wait stops as soon as the
+          condition holds.
         </DialogDescription>
         <form className="grid gap-4" onSubmit={submit}>
           <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Kind">
             {(
               [
                 ["wait", "Wait until it appears"],
+                ["gone", "Wait until it’s gone"],
                 ["check", "Check it is on screen"],
+                ["pause", "Just wait"],
               ] as const
             ).map(([value, label]) => (
               <button
@@ -85,19 +103,58 @@ export function RecordingCondition({
               </button>
             ))}
           </div>
-          <Field>
-            <FieldLabel htmlFor="condition-text">Text on screen</FieldLabel>
-            <Input
-              id="condition-text"
-              value={text}
-              onChange={(event) => setText(event.currentTarget.value)}
-              placeholder="For example, 144 or Download"
-              maxLength={200}
-              autoComplete="off"
-              autoFocus
-            />
-          </Field>
-          {kind === "wait" ? (
+          {kind === "pause" ? (
+            <div className="grid gap-2">
+              <span className="text-sm font-medium">Wait for</span>
+              <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Wait for">
+                {PAUSE_CHOICES.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={pause === value}
+                    className={choice(pause === value)}
+                    onClick={() => setPause(value)}
+                  >
+                    {label(value)}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Prefer waiting for text: it finishes as soon as the result is ready.
+              </p>
+            </div>
+          ) : (
+            <Field>
+              <FieldLabel htmlFor="condition-text">Text on screen</FieldLabel>
+              <Input
+                id="condition-text"
+                value={text}
+                onChange={(event) => setText(event.currentTarget.value)}
+                placeholder={
+                  kind === "gone" ? "For example, Generating" : "For example, 144 or Download"
+                }
+                maxLength={200}
+                autoComplete="off"
+                autoFocus
+              />
+              {suggestions.length ? (
+                <div className="mt-1 flex flex-wrap gap-1.5" aria-label="On screen now">
+                  {suggestions.map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={choice(text === value)}
+                      onClick={() => setText(value)}
+                    >
+                      {value}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </Field>
+          )}
+          {kind === "wait" || kind === "gone" ? (
             <div className="grid gap-2">
               <span className="text-sm font-medium">Give up after</span>
               <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Give up after">
@@ -110,7 +167,7 @@ export function RecordingCondition({
                     className={choice(seconds === value)}
                     onClick={() => setSeconds(value)}
                   >
-                    {value < 60 ? `${value} seconds` : `${value / 60} minute${value > 60 ? "s" : ""}`}
+                    {label(value)}
                   </button>
                 ))}
               </div>
@@ -123,8 +180,8 @@ export function RecordingCondition({
           ) : null}
           <div className="flex flex-wrap items-center justify-end gap-2.5">
             <DialogClose render={<Button variant="ghost">Cancel</Button>} />
-            <Button type="submit" disabled={!text.trim() || pending}>
-              {pending ? (kind === "wait" ? "Waiting…" : "Checking…") : "Add step"}
+            <Button type="submit" disabled={(kind !== "pause" && !text.trim()) || pending}>
+              {pending ? (kind === "check" ? "Checking…" : "Waiting…") : "Add step"}
             </Button>
           </div>
         </form>

@@ -66,8 +66,10 @@ export type RecordingEditProductService = RecordingEditAdapter;
  * product intents rather than transports or workflow mutations. */
 /** A wait or check added while recording. */
 export type RecordingCondition = {
-  kind: "wait" | "check";
-  /** Text that must be on screen. */
+  /** wait: until text appears · gone: until text disappears · check: text is
+   * on screen now · pause: a fixed wait, no text. */
+  kind: "wait" | "gone" | "check" | "pause";
+  /** Text to look for; ignored for a pause. */
   text: string;
   timeoutMs: number;
 };
@@ -352,22 +354,48 @@ export function createRecordingProductService(
     },
     async recordCondition(input) {
       const text = input.text.trim();
-      if (!text) throw new TypeError("Enter the text to look for.");
       const seconds = Math.round(input.timeoutMs / 1000);
+      const duration = seconds % 60 === 0 && seconds >= 60 ? `${seconds / 60} min` : `${seconds}s`;
+      if (input.kind === "pause") {
+        return (await product()).journey.record({
+          kind: "steps",
+          label: `Wait ${duration}`,
+          steps: [{ kind: "sleep", ms: input.timeoutMs }],
+        });
+      }
+      if (!text) throw new TypeError("Enter the text to look for.");
       return (await product()).journey.record(
         input.kind === "wait"
           ? {
               kind: "steps",
-              label: `Wait until “${text}” appears (up to ${seconds}s)`,
+              label: `Wait until “${text}” appears (up to ${duration})`,
               steps: [{ kind: "wait-for", target: { text }, timeoutMs: input.timeoutMs }],
             }
-          : {
-              kind: "steps",
-              label: `Check “${text}” is on screen`,
-              steps: [
-                { kind: "expect", target: { text }, condition: "visible", timeoutMs: input.timeoutMs },
-              ],
-            },
+          : input.kind === "gone"
+            ? {
+                kind: "steps",
+                label: `Wait until “${text}” is gone (up to ${duration})`,
+                steps: [
+                  {
+                    kind: "expect",
+                    target: { text },
+                    condition: "gone",
+                    timeoutMs: input.timeoutMs,
+                  },
+                ],
+              }
+            : {
+                kind: "steps",
+                label: `Check “${text}” is on screen`,
+                steps: [
+                  {
+                    kind: "expect",
+                    target: { text },
+                    condition: "visible",
+                    timeoutMs: input.timeoutMs,
+                  },
+                ],
+              },
       );
     },
     async stop() {
