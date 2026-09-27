@@ -393,3 +393,53 @@ it("renders a self-loop without crossing the screen", () => {
   expect(markup).toContain('data-slot="map-edge-line"');
   expect(markup).not.toContain('data-slot="map-edge-label"');
 });
+
+it("returns from an upper screen to a visible side port above the destination footer", () => {
+  const source = { x: 600, y: 0, width: 320, height: 200 };
+  const target = { x: 0, y: 400, width: 320, height: 200 };
+  const route = returnConnector(source, target);
+  expect(route.points.at(-1)?.x).toBe(target.x + target.width + 14);
+  expect(route.points.at(-1)?.y).toBeGreaterThan(target.y + target.height / 2);
+  expect(route.points.at(-1)?.y).toBeLessThan(target.y + target.height);
+});
+
+it("keeps connector and arrow size fixed when highlighted, with solid recorded returns", async () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      <MapEdges
+        paths={[
+          {
+            id: "return",
+            label: "Chat",
+            fromScreenId: "imagine",
+            toScreenId: "home",
+            fromTitle: "Imagine",
+            coveringTests: [],
+          },
+        ]}
+        positions={
+          new Map([
+            ["imagine", { x: 600, y: 0 }],
+            ["home", { x: 0, y: 400 }],
+          ])
+        }
+        screens={[{ id: "imagine" }, { id: "home" }]}
+        imageDimensions={new Map()}
+        markerId="stable"
+        onSelectPath={() => {}}
+      />,
+    ),
+  );
+  const line = container.querySelector('[data-slot="map-edge-line"]')!;
+  const width = line.getAttribute("stroke-width");
+  const geometry = line.getAttribute("d");
+  expect(line.hasAttribute("stroke-dasharray")).toBe(false);
+  const edge = container.querySelector('[data-slot="map-edge"]')!;
+  await act(async () => edge.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
+  expect(edge.getAttribute("data-state")).toBe("selected");
+  expect(line.getAttribute("stroke-width")).toBe(width);
+  expect(line.getAttribute("d")).toBe(geometry);
+  await act(async () => root.unmount());
+});
