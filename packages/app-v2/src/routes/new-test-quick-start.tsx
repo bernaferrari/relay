@@ -58,7 +58,13 @@ export function NewTestQuickStart({
   manualAction,
   accountsFor,
   rememberedAccount,
+  initialAddress,
+  initialAccount,
 }: {
+  /** Prefilled website, e.g. from "New test as this account". */
+  initialAddress?: string;
+  /** Preselected saved login for the prefilled website. */
+  initialAccount?: string;
   recent: readonly string[];
   /** Saved logins that work on this website address. */
   accountsFor?(url: string): readonly WebsiteAccount[];
@@ -71,13 +77,19 @@ export function NewTestQuickStart({
   onUseDevice(): void;
   manualAction?: ReactNode;
 }) {
-  const [value, setValue] = useState("");
+  const [value, setValue] = useState(initialAddress ?? "");
   const address = websiteAddress(value);
   const busy = Boolean(progress);
   const accounts = address ? (accountsFor?.(address) ?? []) : [];
   // undefined: not chosen yet (use the remembered one); "": explicitly Guest.
   const [chosen, setChosen] = useState<string>();
-  const selectedReference = chosen ?? (address ? rememberedAccount?.(address) : undefined) ?? "";
+  const selectedReference =
+    chosen ??
+    (initialAccount && accounts.some((item) => item.reference === initialAccount)
+      ? initialAccount
+      : undefined) ??
+    (address ? rememberedAccount?.(address) : undefined) ??
+    "";
   const account = accounts.find((item) => item.reference === selectedReference);
   function submit(event: FormEvent) {
     event.preventDefault();

@@ -16,7 +16,6 @@ import {
   FlaskConical,
   History,
   Plus,
-  KeyRound,
   Search,
   type LucideIcon,
 } from "lucide-react";
@@ -65,13 +64,6 @@ const workspaceCommands: readonly Command[] = [
     detail: "Builds you can run against",
     href: "/versions",
     icon: Box,
-  },
-  {
-    id: "accounts",
-    label: "Manage sign-ins",
-    detail: "Saved browser sign-ins",
-    href: "/accounts",
-    icon: KeyRound,
   },
   {
     id: "record-test",

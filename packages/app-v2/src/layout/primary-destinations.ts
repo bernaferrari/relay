@@ -3,6 +3,7 @@ import {
   FlaskConical,
   GitCompare,
   History,
+  KeyRound,
   MonitorSmartphone,
   ScanEye,
 } from "lucide-react";
@@ -49,6 +50,14 @@ export const utilityDestinations = [
     icon: MonitorSmartphone,
     detail: "Browsers, phones, and tablets Relay can use",
     keywords: "targets environments browsers devices",
+  },
+  {
+    to: "/accounts",
+    label: "Accounts",
+    shortLabel: "Accounts",
+    icon: KeyRound,
+    detail: "Saved logins your tests can run as",
+    keywords: "accounts logins sign-ins sign in users credentials",
   },
 ] as const;
 
