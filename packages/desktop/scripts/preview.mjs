@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { prepareMacOSDevApp } from "./macos-dev-app.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-for (const entry of ["out/main/index.js", "out/preload/index.js", "out/renderer-v2/index.html"]) {
+for (const entry of ["out/main/index.js", "out/preload/index.js", "out/renderer/index.html"]) {
   if (!existsSync(resolve(root, entry))) {
     throw new Error(
       `Build Relay before previewing: missing ${entry}. Run pnpm --filter @relay/desktop preview.`,

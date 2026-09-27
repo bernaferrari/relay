@@ -517,7 +517,7 @@ test("verify-change prompt renders the proof loop with commit and file scope", a
         arguments: {
           projectId,
           commitSha: "9a1c2e4b7d8f0a3b5c6d7e8f9a0b1c2d3e4f5a6b",
-          changedFiles: "packages/app-v2/src/checkout.ts\npackages/core/src/cart.ts",
+          changedFiles: "packages/app/src/checkout.ts\npackages/core/src/cart.ts",
           appMapId: "map-1",
         },
       }),

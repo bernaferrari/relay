@@ -300,7 +300,7 @@ function reportFromSnapshot(snapshot: RunTestSnapshot): ProductRunReport | undef
   };
 }
 
-/** Create the framework-neutral Product V2 Run boundary over canonical
+/** Create the framework-neutral Product Run boundary over canonical
  * outcome jobs. This controller never invokes HTTP or decides an outcome. */
 export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJourney {
   const jobs = input.jobs;

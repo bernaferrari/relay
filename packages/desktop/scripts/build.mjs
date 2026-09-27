@@ -16,5 +16,5 @@ await Promise.all([bundleElectron({ watch: false }), bundleServer(), bundleIosPr
 // A checkout may still contain output from the retired Solid renderer. It is
 // never a supported build artifact and must not survive a production build.
 rmSync(resolve(root, "out/renderer"), { recursive: true, force: true });
-await build({ configFile: resolve(root, "vite.v2.config.ts") });
+await build({ configFile: resolve(root, "vite.config.ts") });
 console.log("[desktop] build complete → out/");

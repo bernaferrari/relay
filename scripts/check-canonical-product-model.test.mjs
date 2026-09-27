@@ -26,7 +26,7 @@ test("rejects retired models in names and source", () => {
   const violations = evaluateCanonicalProductModel([
     ...canonicalEntries,
     { path: "packages/server/src/retired-profile-routes.ts", source: "language-profile" },
-    { path: "packages/app-v2/src/legacy.ts", source: "locale matrix" },
+    { path: "packages/app/src/legacy.ts", source: "locale matrix" },
   ]);
   assert.ok(violations.some((item) => item.includes("retired product-model vocabulary")));
 });

@@ -191,7 +191,7 @@ function decisionFor(
 }
 
 /**
- * Create the framework-neutral recording boundary used by Product V2.
+ * Create the framework-neutral recording boundary used by Product.
  * `jobs` is deliberately the existing outcome-job seam: this controller never
  * constructs HTTP requests or decides server-side workflow transitions.
  */

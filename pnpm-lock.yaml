@@ -251,7 +251,7 @@ importers:
         specifier: ^5.0.2
         version: 5.0.2(@types/node@26.6.3)(@vitest/browser-preview@5.0.1)(@voidzero-dev/vite-plus-core@1.0.0-rc.0(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(typescript@7.0.2)(yaml@2.9.1))(happy-dom@20.14.5)
 
-  packages/app-v2:
+  packages/app:
     dependencies:
       '@relay/client':
         specifier: workspace:*
@@ -401,9 +401,9 @@ importers:
 
   packages/desktop:
     dependencies:
-      '@relay/app-v2':
+      '@relay/app':
         specifier: workspace:*
-        version: link:../app-v2
+        version: link:../app
       '@relay/ui-react':
         specifier: workspace:*
         version: link:../ui-react

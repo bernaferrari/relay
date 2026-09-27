@@ -592,7 +592,7 @@ export function productRunDetail(run: RunSummary, maps: readonly AppMap[] = []):
   };
 }
 
-/** Operation-backed Product V2 catalog. It never writes or invents runtime state. */
+/** Operation-backed Product catalog. It never writes or invents runtime state. */
 export function createProductCatalog(client: RelayInvokeClient): ProductCatalog {
   const operations = createRelayOperationPort(client);
   async function runPage(appMapId?: string, cursor?: string, complete = false) {

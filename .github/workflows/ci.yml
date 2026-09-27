@@ -78,20 +78,20 @@ jobs:
       - name: Test Vite+ workspace
         run: pnpm exec vp test
 
-      - name: Build React Product V2 app
-        run: pnpm --filter @relay/app-v2 build
+      - name: Build React Product app
+        run: pnpm --filter @relay/app build
 
       - name: Build desktop
         run: pnpm --filter @relay/desktop build
 
-      - name: Check Product V2 visual baselines and accessibility
-        run: pnpm run test:visual:v2
+      - name: Check Product visual baselines and accessibility
+        run: pnpm run test:visual
 
-      - name: Run Product V2 browser acceptance
-        run: pnpm run test:browser:v2
+      - name: Run Product browser acceptance
+        run: pnpm run test:browser
 
-      - name: Run Product V2 desktop acceptance
-        run: xvfb-run --auto-servernum pnpm run test:electron:v2
+      - name: Run Product desktop acceptance
+        run: xvfb-run --auto-servernum pnpm run test:electron
 
       - name: Verify installed iOS preview sidecar
         run: pnpm run ios-preview:verify

@@ -1,10 +1,10 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { findProductV2AdvancedVocabulary } from "./product-v2-contract.mjs";
+import { findProductAdvancedVocabulary } from "./product-contract.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const sourceRoot = join(root, "packages/app-v2/src");
+const sourceRoot = join(root, "packages/app/src");
 const advancedFiles = new Set([
   "components/change-publication-details.tsx",
   "components/test-editor-step.tsx",
@@ -30,7 +30,7 @@ export function findForbiddenPrimaryCopy(source, file = "") {
     .map((match) => match[1].replace(/\s+/gu, " ").trim())
     .filter((text) => text && !/[{}();=]/u.test(text))
     .join("\n");
-  return findProductV2AdvancedVocabulary(jsxText).filter((term) =>
+  return findProductAdvancedVocabulary(jsxText).filter((term) =>
     new RegExp(`\\b${term.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}\\b`, "u").test(jsxText),
   );
 }
