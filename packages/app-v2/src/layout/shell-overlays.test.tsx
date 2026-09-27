@@ -190,13 +190,12 @@ describe("shell overlays", () => {
     const navigation = document.querySelector('nav[aria-label="Main navigation"]')!;
     expect([...navigation.querySelectorAll("a")].map((link) => link.textContent)).toEqual([
       "Tests",
-      "Review",
-      "Results",
+      "Runs",
     ]);
     expect(navigation.querySelector('[aria-current="page"]')?.textContent).toBe("Tests");
     expect(navigation.querySelector('button[aria-label="More navigation"]')).not.toBeNull();
     // Plans are groups on Tests now, so there is no separate Plans collection
-    // link; the sidebar carries the App into Tests/Results and its Map.
+    // link; the sidebar carries the App into Tests/Runs and its Map.
     expect(document.querySelector('a[href*="/suites"]')).toBeNull();
     const primary = document.querySelector('nav[aria-label="Primary"]')!;
     expect(primary.querySelector('a[aria-current="page"]')?.getAttribute("href")).toBe(
@@ -205,23 +204,25 @@ describe("shell overlays", () => {
     expect(document.querySelector('nav[aria-label="App navigation"] a')?.getAttribute("href")).toBe(
       "/apps/checkout/map",
     );
-    const results = [...navigation.querySelectorAll("a")].find(
-      (link) => link.textContent === "Results",
-    )!;
-    await act(async () => results.click());
+    const runs = [...navigation.querySelectorAll("a")].find((link) => link.textContent === "Runs")!;
+    await act(async () => runs.click());
     await settle();
     expect(history.location.pathname).toBe("/runs");
     expect(history.location.search).toContain("app=checkout");
-    expect(navigation.querySelector('[aria-current="page"]')?.textContent).toBe("Results");
+    expect(navigation.querySelector('[aria-current="page"]')?.textContent).toBe("Runs");
   });
 
-  it("orders the sidebar as everyday links, then Map, then Devices, and moves Activity and Changes to search", async () => {
+  it("orders the sidebar as Tests, Runs, Map, then Accounts and Devices, and moves Review, Activity, and Changes out", async () => {
     const history = await renderShell({ initialEntries: ["/tests"] });
     const sidebar = document.querySelector('[aria-label="Relay navigation"]')!;
     const labels = [...sidebar.querySelectorAll("a, button")]
       .map((item) => item.textContent?.trim())
-      .filter((text) => ["Tests", "Review", "Results", "Map", "Devices"].includes(text ?? ""));
-    expect(labels).toEqual(["Tests", "Review", "Results", "Map", "Devices"]);
+      .filter((text) =>
+        ["Tests", "Review", "Results", "Runs", "Map", "Accounts", "Devices"].includes(text ?? ""),
+      );
+    expect(labels).toEqual(["Tests", "Runs", "Map", "Accounts", "Devices"]);
+    expect(sidebar.querySelector('[aria-label="Setup"] a[href="/accounts"]')).not.toBeNull();
+    expect(sidebar.querySelector('a[href="/review"]')).toBeNull();
     expect(sidebar.querySelector('a[href="/sessions"]')).toBeNull();
     expect(sidebar.querySelector('a[href="/changes"]')).toBeNull();
     expect(sidebar.textContent).not.toContain("Changes");
@@ -289,6 +290,7 @@ describe("shell overlays", () => {
     // The global badge is live before opening the center, so closed Activity
     // still communicates work that needs attention.
     expect(trigger?.getAttribute("aria-label")).toMatch(/2 active/);
+    expect(trigger?.textContent).toBe("2 running");
     await act(async () => trigger?.click());
     await settle();
 
@@ -304,6 +306,12 @@ describe("shell overlays", () => {
     await settle();
     expect(history.location.pathname).toBe("/sessions");
     expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("keeps the top bar quiet while nothing is running", async () => {
+    await renderShell({});
+    expect(document.querySelector('button[aria-label^="Open running work"]')).toBeNull();
+    expect(document.body.textContent).not.toContain("Running now");
   });
 
   it("marks closed Activity unavailable and offers an in-place retry", async () => {
@@ -557,7 +565,7 @@ describe("shell overlays", () => {
     expect(document.querySelector('nav[aria-label="Primary"] a[href="/devices"]')).toBeNull();
     expect(document.querySelector('[aria-label="Setup"] a[href="/devices"]')).not.toBeNull();
     const trigger = document.querySelector<HTMLButtonElement>('[aria-label^="Device or browser"]');
-    expect(trigger?.textContent).toContain("2 ready");
+    expect(trigger?.textContent).toContain("2 devices");
     await act(async () => trigger?.click());
     await settle();
 

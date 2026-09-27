@@ -88,6 +88,13 @@ export function DeviceDestinationButton({
       <DropdownMenuTrigger
         className="[-webkit-app-region:no-drag] inline-flex h-7 max-w-50 items-center gap-1 rounded-md px-2.5 text-sm text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
         aria-label={triggerLabel ?? `Device or browser: ${label}`}
+        title={
+          current
+            ? `New runs use ${current.name}`
+            : available.length
+              ? `Choose a device for new runs. Ready: ${available.map((item) => item.name).join(", ")}`
+              : summary.detail
+        }
       >
         <MonitorSmartphone className="size-3.5 shrink-0" aria-hidden="true" />
         <span className="min-w-0 truncate">{triggerLabel ?? label}</span>

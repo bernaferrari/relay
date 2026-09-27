@@ -15,7 +15,6 @@ import {
 import { Link, useLocation } from "@tanstack/react-router";
 import { CircleHelp, Settings } from "lucide-react";
 import { AppSwitcher } from "./app-switcher";
-import { ActiveWork } from "./active-work";
 import { RelayWordmark } from "../components/relay-mark";
 import { ReviewCount } from "./review-count";
 import { everydayDestinations, utilityDestinations } from "./primary-destinations";
@@ -69,7 +68,7 @@ function SidebarDestinationLink({
         <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
           {item.label}
         </span>
-        {item.to === "/review" ? <ReviewCount /> : null}
+        {item.to === "/runs" ? <ReviewCount /> : null}
       </SidebarMenuButton>
     </SidebarMenuItem>
   );
@@ -121,7 +120,6 @@ export function SidebarContent({ label = "Primary" }: { label?: string }) {
         ))}
       </SidebarMenu>
       <SidebarFooter className="mt-auto pt-2.5">
-        <ActiveWork />
         <nav
           className="flex flex-col gap-0.5 border-t border-border pt-2.5"
           aria-label={`${label} settings`}

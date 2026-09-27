@@ -305,7 +305,7 @@ describe("App routes", () => {
       }),
     );
 
-    expect(document.querySelector("h1")?.textContent).toBe("Sign-ins");
+    expect(document.querySelector("h1")?.textContent).toBe("Accounts");
     expect(document.body.textContent).toContain("Check health before the daily Plan");
     expect(document.body.textContent).toContain("1 ready");
     expect(document.body.textContent).toContain("Staging buyer");

@@ -3,15 +3,16 @@ import {
   FlaskConical,
   GitCompare,
   History,
+  KeyRound,
   MonitorSmartphone,
-  ScanEye,
 } from "lucide-react";
 
 /**
  * One destination vocabulary for the sidebar and command palette, per the
- * product hierarchy: Tests (home, with plans as groups), Review, and Results
- * are everyday; Map follows the chosen App; Devices is setup. Everything
- * else is reachable from search.
+ * product hierarchy: Tests (home, with plans as groups) and Runs are
+ * everyday, and Map follows the chosen App. Screenshot review lives inside
+ * Runs. Accounts and Devices are setup. Everything else is reachable from
+ * search.
  */
 export const everydayDestinations = [
   {
@@ -23,25 +24,25 @@ export const everydayDestinations = [
     keywords: "home today record test suite plan",
   },
   {
-    to: "/review",
-    label: "Review",
-    shortLabel: "Review",
-    icon: ScanEye,
-    detail: "Screenshots that changed since they were approved",
-    keywords: "review screenshots approve changed diff reference",
-  },
-  {
     to: "/runs",
-    label: "Results",
-    shortLabel: "Results",
+    label: "Runs",
+    shortLabel: "Runs",
     icon: History,
-    detail: "Every run, live and finished",
-    keywords: "reports evidence runs history",
+    detail: "Every run, live and finished, and screenshots to review",
+    keywords: "results reports evidence history review screenshots approve",
   },
 ] as const;
 
 /** Setup that people visit now and then; shown under the everyday links. */
 export const utilityDestinations = [
+  {
+    to: "/accounts",
+    label: "Accounts",
+    shortLabel: "Accounts",
+    icon: KeyRound,
+    detail: "Saved sign-ins Relay uses while testing",
+    keywords: "sign-ins logins credentials browser sessions",
+  },
   {
     to: "/devices",
     label: "Devices",
