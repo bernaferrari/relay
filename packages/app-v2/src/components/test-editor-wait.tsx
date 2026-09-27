@@ -15,12 +15,12 @@ export function ConditionWaitEditor({
 }) {
   const valid = validWaitSeconds(value.seconds);
   return (
-    <div className="grid gap-3">
-      <label className="grid gap-1.5" htmlFor="wait-control">
+    <div className="grid gap-3 text-sm font-normal">
+      <label className="grid gap-1.5 text-xs text-muted-foreground" htmlFor="wait-control">
         Control label
         <Input
           id="wait-control"
-          className="text-base"
+          className="text-sm text-foreground"
           value={value.label}
           placeholder="Download or Generating"
           onChange={(event) => onChange({ ...value, label: event.currentTarget.value })}
@@ -30,48 +30,56 @@ export function ConditionWaitEditor({
         label="Wait until"
         value={value.condition}
         options={[
-          { value: "visible", label: "The control appears" },
-          { value: "gone", label: "The control disappears" },
+          { value: "visible", label: "Appears" },
+          { value: "gone", label: "Disappears" },
         ]}
         onValueChange={(condition) =>
           onChange({ ...value, condition: condition === "gone" ? "gone" : "visible" })
         }
       />
-      <label className="grid gap-1.5" htmlFor="wait-seconds">
-        Wait up to (seconds)
-        <Input
-          id="wait-seconds"
-          className="text-base"
-          type="number"
-          min="0.001"
-          max="900"
-          step="any"
-          value={value.seconds}
-          aria-invalid={!valid}
-          aria-describedby="wait-seconds-help"
-          onChange={(event) => onChange({ ...value, seconds: event.currentTarget.value })}
-        />
-      </label>
-      <div className="flex flex-wrap gap-2" aria-label="Wait duration presets">
-        {[30, 60, 120].map((seconds) => (
-          <Button
-            key={seconds}
-            type="button"
-            size="sm"
-            variant="outline"
-            aria-pressed={Number(value.seconds) === seconds}
-            onClick={() => onChange({ ...value, seconds: String(seconds) })}
-          >
-            {seconds}s
-          </Button>
-        ))}
+      <div className="flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
+        <label htmlFor="wait-seconds" className="mr-auto text-xs text-muted-foreground">
+          Timeout
+        </label>
+        <div className="relative w-20">
+          <Input
+            id="wait-seconds"
+            aria-label="Wait up to (seconds)"
+            className="h-8 pr-6 text-sm"
+            type="number"
+            min="0.001"
+            max="900"
+            step="any"
+            value={value.seconds}
+            aria-invalid={!valid}
+            aria-describedby="wait-seconds-help"
+            onChange={(event) => onChange({ ...value, seconds: event.currentTarget.value })}
+          />
+          <span className="pointer-events-none absolute right-2 top-2 text-xs text-muted-foreground">
+            s
+          </span>
+        </div>
+        <div className="flex gap-0.5" aria-label="Wait duration presets">
+          {[30, 60, 120].map((seconds) => (
+            <Button
+              key={seconds}
+              type="button"
+              size="xs"
+              variant="ghost"
+              aria-pressed={Number(value.seconds) === seconds}
+              onClick={() => onChange({ ...value, seconds: String(seconds) })}
+            >
+              {seconds}s
+            </Button>
+          ))}
+        </div>
       </div>
       <p
         id="wait-seconds-help"
         className="text-xs font-normal leading-normal text-muted-foreground"
       >
         {valid
-          ? "Continues when ready; fails after the time limit."
+          ? "Stops waiting as soon as the condition is met."
           : "Enter a duration greater than 0 and no more than 900 seconds."}
       </p>
     </div>
