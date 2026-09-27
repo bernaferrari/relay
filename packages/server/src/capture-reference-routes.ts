@@ -88,7 +88,8 @@ export async function handleCaptureReferenceRoute(
     response.writeHead(200, {
       "Content-Type": "image/png",
       "Content-Length": thumb.byteLength,
-      "Cache-Control": "private, max-age=86400, immutable",
+      // Revalidate for the requesting origin; old immutable responses can lack CORS headers.
+      "Cache-Control": "private, no-cache",
       ...CORS_HEADERS,
     });
     response.end(thumb);

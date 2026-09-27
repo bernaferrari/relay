@@ -578,7 +578,7 @@ describe("Runs workspace", () => {
       }),
     );
     // The run outcome stays Passed; waiting screenshots are counted beside it.
-    const row = document.querySelector('a[href="/runs/run-passed-internal"]');
+    const row = document.querySelector('a[href^="/runs/run-passed-internal?"]');
     expect(row?.textContent).toContain("Passed");
     expect(row?.textContent).toContain("8 to review");
     expect(row?.textContent).not.toContain("Needs review");
@@ -606,7 +606,7 @@ describe("Runs workspace", () => {
       }),
     ];
     await render("/runs?q=Open%20home", catalog({ listRuns: async () => planRuns }));
-    const row = document.querySelector('a[href="/batches/mixed"]');
+    const row = document.querySelector('a[href^="/batches/mixed?"]');
     expect(row?.textContent).toContain("Could not complete");
     expect(row?.textContent).toContain("2 Tests");
     expect(row?.textContent).not.toContain("Passed");
@@ -636,18 +636,18 @@ describe("Runs workspace", () => {
       return runs;
     });
     await render("/runs", catalog({ listRuns }));
-    const row = document.querySelector('a[href="/runs/run-passed-internal"]');
+    const row = document.querySelector('a[href^="/runs/run-passed-internal?"]');
     expect(row).not.toBeNull();
     unavailable = true;
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 4_300))));
     await settle();
     expect(listRuns.mock.calls.length).toBeGreaterThan(1);
-    expect(document.querySelector('a[href="/runs/run-passed-internal"]')).toBe(row);
+    expect(document.querySelector('a[href^="/runs/run-passed-internal?"]')).toBe(row);
     expect(document.body.textContent).toContain("Couldn’t refresh runs");
     unavailable = false;
     await click("Refresh");
     await settle();
-    expect(document.querySelector('a[href="/runs/run-passed-internal"]')).toBe(row);
+    expect(document.querySelector('a[href^="/runs/run-passed-internal?"]')).toBe(row);
     expect(document.body.textContent).not.toContain("Couldn’t refresh runs");
   }, 10_000);
 
@@ -672,7 +672,7 @@ describe("Runs workspace", () => {
     expect(document.querySelector('[aria-label="Morning review"]')).toBeNull();
     expect(document.body.textContent?.match(/2\.5 s/g)).toHaveLength(1);
     expect(document.body.textContent).not.toContain("run-passed-internal");
-    expect(document.querySelector('a[href="/runs/run-passed-internal"]')).not.toBeNull();
+    expect(document.querySelector('a[href^="/runs/run-passed-internal?"]')).not.toBeNull();
     expect(document.querySelectorAll("select")).toHaveLength(0);
     expect(document.querySelectorAll('[data-slot="select-trigger"]')).toHaveLength(0);
   });
@@ -750,8 +750,8 @@ describe("Runs workspace", () => {
       }),
     );
 
-    expect(document.querySelector('a[href="/batches/batch-daily"]')).not.toBeNull();
-    expect(document.querySelector('a[href="/runs/run-plan-upload"]')).toBeNull();
+    expect(document.querySelector('a[href^="/batches/batch-daily?"]')).not.toBeNull();
+    expect(document.querySelector('a[href^="/runs/run-plan-upload?"]')).toBeNull();
     expect(document.body.textContent).toContain("Grok.com daily Result");
     expect(document.body.textContent).toContain("Plan Result");
     expect(document.body.textContent).toContain("8 Tests");
@@ -784,7 +784,7 @@ describe("Runs workspace", () => {
     expect(document.querySelector('[data-slot="windowed-run-scroll"]')).not.toBeNull();
     expect(links.length).toBeGreaterThan(0);
     expect(links.length).toBeLessThan(40);
-    expect(links[0]?.getAttribute("href")).toBe("/runs/run-0");
+    expect(links[0]?.getAttribute("href")).toContain("/runs/run-0?returnTo=");
     expect(links[0]?.tabIndex).toBe(0);
     expect(links[0]?.closest("li")?.getAttribute("aria-setsize")).toBe("500");
 
@@ -796,7 +796,7 @@ describe("Runs workspace", () => {
     await settle();
 
     const last = document.querySelector<HTMLAnchorElement>('[data-run-index="499"]');
-    expect(last?.getAttribute("href")).toBe("/runs/run-499");
+    expect(last?.getAttribute("href")).toContain("/runs/run-499?returnTo=");
     expect(document.activeElement).toBe(last);
     expect(document.querySelectorAll("[data-run-index]").length).toBeLessThan(40);
   });

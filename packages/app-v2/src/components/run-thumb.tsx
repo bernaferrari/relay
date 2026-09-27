@@ -9,11 +9,12 @@ import { productClientForPlatform } from "../data/product-client";
 function useRunThumbnail(runId: string | undefined, enabled = true) {
   const { platform } = useRouteContext({ from: "__root__" });
   const image = useQuery({
-    queryKey: ["run-thumb", runId],
+    // Retire immutable thumbnails cached before origin-aware CORS responses.
+    queryKey: ["run-thumb", runId, "cors-v2"],
     queryFn: async () => {
       const { client } = await productClientForPlatform(platform);
       const response = await client.download(
-        `/runs/${encodeURIComponent(runId!)}/thumbnail?v=content`,
+        `/runs/${encodeURIComponent(runId!)}/thumbnail?v=content-cors-v2`,
       );
       if (!response.ok) return null;
       return response.blob();

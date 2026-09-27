@@ -7,7 +7,13 @@ import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
 import { Button } from "@relay/ui-react/components/button";
 
 import { useQuery } from "@tanstack/react-query";
-import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
+import {
+  Link,
+  getRouteApi,
+  useNavigate,
+  useRouteContext,
+  useLocation,
+} from "@tanstack/react-router";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { LibrarySearch, LibraryToolbar } from "../components/library-toolbar";
 import { EmptyState, OutcomeMark } from "../components/product-patterns";
@@ -282,6 +288,7 @@ function RunRow({
   run: ProductRunSummary;
   interaction?: RunHistoryRowInteraction;
 }) {
+  const location = useLocation();
   const plan = Boolean(run.batchId);
   const title = plan ? run.title : (run.testName ?? run.title);
   const device = run.targetName ?? platformName(run.platform);
@@ -292,7 +299,7 @@ function RunRow({
   const state = runStateOf(run);
   const body = (
     <>
-      <RunThumb runId={plan ? undefined : run.id} label={title} />
+      <RunThumb runId={run.id} label={title} />
       <span className="grid min-w-0 gap-1.5">
         <strong className="truncate text-sm font-semibold text-foreground">{title}</strong>
         <span className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">
@@ -357,6 +364,7 @@ function RunRow({
       <Link
         to="/batches/$batchId"
         params={{ batchId: run.batchId }}
+        search={{ returnTo: location.href }}
         className={className}
         {...interaction}
       >
@@ -365,7 +373,13 @@ function RunRow({
     );
   }
   return (
-    <Link to="/runs/$runId" params={{ runId: run.id }} className={className} {...interaction}>
+    <Link
+      to="/runs/$runId"
+      params={{ runId: run.id }}
+      search={{ returnTo: location.href }}
+      className={className}
+      {...interaction}
+    >
       {body}
     </Link>
   );
