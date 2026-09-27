@@ -193,7 +193,7 @@ export function SelectedStepEditor({
         <span className="sr-only">Step name</span>
         <Textarea
           rows={1}
-          className="min-h-9 resize-none border-transparent bg-transparent px-2 text-sm font-medium focus-visible:border-input"
+          className="min-h-9 resize-none text-sm font-medium"
           id="selected-step-intent"
           value={intent}
           onChange={(event) => {
