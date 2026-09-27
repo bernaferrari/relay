@@ -16,7 +16,7 @@ export function MobileNavigation() {
   return (
     <nav
       aria-label="Main navigation"
-      className="grid shrink-0 grid-cols-4 border-t border-border/60 bg-sidebar px-2 pt-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] min-[861px]:hidden"
+      className="grid shrink-0 grid-cols-3 border-t border-border/60 bg-sidebar px-2 pt-1 pb-[max(0.25rem,env(safe-area-inset-bottom))] min-[861px]:hidden"
     >
       {everydayDestinations.map((item) => {
         const active = isSidebarItemActive(pathname, item.to);

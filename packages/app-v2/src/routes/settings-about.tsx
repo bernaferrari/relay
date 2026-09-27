@@ -111,8 +111,8 @@ export function AboutSettings() {
             <div className="grid gap-1">
               <h3 className="text-sm font-medium">Review the result</h3>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Open Results to see what happened. A completed run means the steps finished; review
-                its screenshots to decide whether the app looks correct.
+                Open Runs to see what happened. A completed run means the steps finished; review its
+                screenshots to decide whether the app looks correct.
               </p>
             </div>
           </li>
@@ -126,7 +126,7 @@ export function AboutSettings() {
       </section>
       <details className="border-t border-border pt-4">
         <summary className="cursor-pointer py-2 text-sm font-medium">
-          Tests, Plans, and Results
+          Tests, Plans, and Runs
         </summary>
         <dl className="grid gap-3 pt-2 text-sm leading-relaxed">
           <div>
