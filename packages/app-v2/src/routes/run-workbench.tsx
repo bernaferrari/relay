@@ -1,7 +1,6 @@
 import { TestWorkspace } from "../components/test-workspace";
 import { ReportImage } from "../components/report-image";
 import { ReferenceCompareLine } from "./reference-compare-dialog";
-import { workspaceToolsSurface } from "../components/workspace-surfaces";
 import { RunLogPanel } from "../components/run-log-panel";
 /** @jsxImportSource react */
 import { RunPerformancePanel, performanceStepAt } from "../components/run-performance-panel";
@@ -271,227 +270,225 @@ export function RunWorkbench({
     );
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Run workbench">
-      <TestWorkspace
-        preview={
-          <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl bg-background/20">
-            <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 px-4 text-xs text-muted-foreground">
-              <span>
-                {showingCapture
-                  ? `Screenshot ${selectedCapture + 1} of ${reviewMode ? reviewItems.length : listedFrames.length}`
-                  : step.phase === "test"
-                    ? `Test step ${report.timeline.slice(0, selectedStepIndex + 1).filter((item) => item.phase === "test").length} of ${report.timeline.filter((item) => item.phase === "test").length}`
-                    : `Step ${selectedStepIndex + 1} of ${report.timeline.length}`}
-              </span>
-              <div
-                className="flex shrink-0 items-center gap-1"
-                aria-label={showingCapture ? "Capture navigation" : "Step playback"}
-              >
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label={showingCapture ? "Previous screenshot" : "Previous step"}
-                  disabled={(showingCapture ? selectedCapture : selectedStepIndex) === 0}
-                  onClick={() => {
-                    setPlaying(false);
-                    if (showingCapture) setSelectedCapture(selectedCapture - 1);
-                    else onSelectStep(selectedStepIndex - 1);
-                  }}
+      <Tabs
+        value={panel}
+        onValueChange={(value) => setPanel(value as typeof panel)}
+        className="flex min-h-0 flex-1 flex-col gap-0"
+      >
+        <TabsList
+          variant="line"
+          className="h-12 w-full shrink-0 justify-start gap-3 overflow-x-auto border-b border-border px-5"
+          aria-label="Step views"
+        >
+          {(
+            [
+              ["steps", "Steps"],
+              ...(listedFrames.length || reviewMode ? [["captures", "Screenshots"]] : []),
+              ...(report.performance?.length ? [["performance", "Performance"]] : []),
+              ...(hasChecks ? [["details", "Checks"]] : []),
+              ["logs", "Logs"],
+              ...(network?.items.length ? [["network", "Network"] as const] : []),
+            ] as const
+          ).map(([value, label]) => (
+            <TabsTrigger key={value} value={value} className="h-10 flex-none px-2 after:bottom-0">
+              {label}
+              {value === "steps" ? (
+                <span className="ml-1 text-xs tabular-nums text-muted-foreground">
+                  {report.timeline.length - setupCount || report.timeline.length}
+                </span>
+              ) : null}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+        <TestWorkspace
+          preview={
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-stage">
+              <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 px-4 text-xs text-muted-foreground">
+                <span>
+                  {showingCapture
+                    ? `Screenshot ${selectedCapture + 1} of ${reviewMode ? reviewItems.length : listedFrames.length}`
+                    : step.phase === "test"
+                      ? `Test step ${report.timeline.slice(0, selectedStepIndex + 1).filter((item) => item.phase === "test").length} of ${report.timeline.filter((item) => item.phase === "test").length}`
+                      : `Step ${selectedStepIndex + 1} of ${report.timeline.length}`}
+                </span>
+                <div
+                  className="flex shrink-0 items-center gap-1"
+                  aria-label={showingCapture ? "Capture navigation" : "Step playback"}
                 >
-                  <ChevronLeft />
-                </Button>
-                {!showingCapture ? (
                   <Button
                     size="icon-sm"
                     variant="ghost"
-                    onClick={() => {
-                      if (!playing && selectedStepIndex === report.timeline.length - 1)
-                        onSelectStep(0);
-                      setPlaying(!playing);
-                    }}
-                    aria-label={playing ? "Pause step playback" : "Play steps"}
-                  >
-                    {playing ? <Pause /> : <Play />}
-                  </Button>
-                ) : null}
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label={showingCapture ? "Next screenshot" : "Next step"}
-                  disabled={
-                    showingCapture
-                      ? selectedCapture ===
-                        (reviewMode ? reviewItems.length : listedFrames.length) - 1
-                      : selectedStepIndex === report.timeline.length - 1
-                  }
-                  onClick={() => {
-                    setPlaying(false);
-                    if (showingCapture) setSelectedCapture(selectedCapture + 1);
-                    else onSelectStep(selectedStepIndex + 1);
-                  }}
-                >
-                  <ChevronRight />
-                </Button>
-              </div>
-              {!showingCapture && failureIndexes.length > 1 ? (
-                <div className="flex items-center gap-1" aria-label="Failure navigation">
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="Previous failure"
-                    disabled={!failureIndexes.some((index) => index < selectedStepIndex)}
+                    aria-label={showingCapture ? "Previous screenshot" : "Previous step"}
+                    disabled={(showingCapture ? selectedCapture : selectedStepIndex) === 0}
                     onClick={() => {
                       setPlaying(false);
-                      onSelectStep(
-                        failureIndexes.filter((index) => index < selectedStepIndex).at(-1)!,
-                      );
+                      if (showingCapture) setSelectedCapture(selectedCapture - 1);
+                      else onSelectStep(selectedStepIndex - 1);
                     }}
                   >
                     <ChevronLeft />
                   </Button>
-                  <span className="text-xs">Failures</span>
+                  {!showingCapture ? (
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      onClick={() => {
+                        if (!playing && selectedStepIndex === report.timeline.length - 1)
+                          onSelectStep(0);
+                        setPlaying(!playing);
+                      }}
+                      aria-label={playing ? "Pause step playback" : "Play steps"}
+                    >
+                      {playing ? <Pause /> : <Play />}
+                    </Button>
+                  ) : null}
                   <Button
                     size="icon-sm"
                     variant="ghost"
-                    aria-label="Next failure"
-                    disabled={!failureIndexes.some((index) => index > selectedStepIndex)}
+                    aria-label={showingCapture ? "Next screenshot" : "Next step"}
+                    disabled={
+                      showingCapture
+                        ? selectedCapture ===
+                          (reviewMode ? reviewItems.length : listedFrames.length) - 1
+                        : selectedStepIndex === report.timeline.length - 1
+                    }
                     onClick={() => {
                       setPlaying(false);
-                      onSelectStep(failureIndexes.find((index) => index > selectedStepIndex)!);
+                      if (showingCapture) setSelectedCapture(selectedCapture + 1);
+                      else onSelectStep(selectedStepIndex + 1);
                     }}
                   >
                     <ChevronRight />
                   </Button>
                 </div>
-              ) : null}
-            </div>
-            <StepMedia
-              key={`${report.runId}:${showingCapture ? capture?.id : step.id}`}
-              frames={showingCapture ? (capture ? [capture] : []) : actionFrames}
-              masks={
-                showingCapture && showMasks && selectedReview?.masks?.length
-                  ? selectedReview.masks
-                  : undefined
-              }
-              controls={
-                !showingCapture && !actionFrames.length && listedFrames.length ? (
-                  <Button size="sm" variant="ghost" onClick={() => setPanel("captures")}>
-                    View all captures ({listedFrames.length})
-                  </Button>
-                ) : undefined
-              }
-              unlinked={showingCapture}
-              actionBounds={showingCapture ? undefined : step.actionBounds}
-              beforeFramePath={showingCapture ? undefined : step.beforeFramePath}
-              fill
-              reviewControlsForFrame={(frame) => {
-                const matches = frame
-                  ? reviewItems.filter(
-                      (item) => item.framePath === frame.id && item.status !== "missing",
-                    )
-                  : [];
-                const item =
-                  showingCapture && selectedReview && matches.includes(selectedReview)
-                    ? selectedReview
-                    : matches.length === 1
-                      ? matches[0]
-                      : undefined;
-                if (!item || !onReviewCapture)
-                  return (
-                    <div className="flex min-h-10 flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-medium">
-                          {showingCapture
-                            ? frame
-                              ? "Saved screenshot"
-                              : "Capture unavailable"
-                            : "Step result"}
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {showingCapture
-                            ? frame
-                              ? "Saved with this run"
-                              : "This screenshot is unavailable."
-                            : `${timelineStateLabel(step.state)}${step.durationMs === undefined ? "" : ` · ${(step.durationMs / 1000).toFixed(1)}s`}`}
-                        </p>
+                {!showingCapture && failureIndexes.length > 1 ? (
+                  <div className="flex items-center gap-1" aria-label="Failure navigation">
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label="Previous failure"
+                      disabled={!failureIndexes.some((index) => index < selectedStepIndex)}
+                      onClick={() => {
+                        setPlaying(false);
+                        onSelectStep(
+                          failureIndexes.filter((index) => index < selectedStepIndex).at(-1)!,
+                        );
+                      }}
+                    >
+                      <ChevronLeft />
+                    </Button>
+                    <span className="text-xs">Failures</span>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label="Next failure"
+                      disabled={!failureIndexes.some((index) => index > selectedStepIndex)}
+                      onClick={() => {
+                        setPlaying(false);
+                        onSelectStep(failureIndexes.find((index) => index > selectedStepIndex)!);
+                      }}
+                    >
+                      <ChevronRight />
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+              <StepMedia
+                key={`${report.runId}:${showingCapture ? capture?.id : step.id}`}
+                frames={showingCapture ? (capture ? [capture] : []) : actionFrames}
+                masks={
+                  showingCapture && showMasks && selectedReview?.masks?.length
+                    ? selectedReview.masks
+                    : undefined
+                }
+                controls={
+                  !showingCapture && !actionFrames.length && listedFrames.length ? (
+                    <Button size="sm" variant="ghost" onClick={() => setPanel("captures")}>
+                      View all captures ({listedFrames.length})
+                    </Button>
+                  ) : undefined
+                }
+                unlinked={showingCapture}
+                actionBounds={showingCapture ? undefined : step.actionBounds}
+                beforeFramePath={showingCapture ? undefined : step.beforeFramePath}
+                fill
+                reviewControlsForFrame={(frame) => {
+                  const matches = frame
+                    ? reviewItems.filter(
+                        (item) => item.framePath === frame.id && item.status !== "missing",
+                      )
+                    : [];
+                  const item =
+                    showingCapture && selectedReview && matches.includes(selectedReview)
+                      ? selectedReview
+                      : matches.length === 1
+                        ? matches[0]
+                        : undefined;
+                  if (!item || !onReviewCapture)
+                    return (
+                      <div className="flex min-h-10 flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium">
+                            {showingCapture
+                              ? frame
+                                ? "Saved screenshot"
+                                : "Capture unavailable"
+                              : "Step result"}
+                          </p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {showingCapture
+                              ? frame
+                                ? "Saved with this run"
+                                : "This screenshot is unavailable."
+                              : `${timelineStateLabel(step.state)}${step.durationMs === undefined ? "" : ` · ${(step.durationMs / 1000).toFixed(1)}s`}`}
+                          </p>
+                        </div>
+                        {!showingCapture && reviewMode ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="min-h-10"
+                            onClick={() => setPanel("captures")}
+                          >
+                            Review screenshots
+                          </Button>
+                        ) : null}
                       </div>
-                      {!showingCapture && reviewMode ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="min-h-10"
-                          onClick={() => setPanel("captures")}
+                    );
+                  return (
+                    <div className="grid w-full gap-2">
+                      {reviewError ? (
+                        <p
+                          role="alert"
+                          className="rounded-lg bg-card px-3 py-2 text-sm text-destructive"
                         >
-                          Review screenshots
-                        </Button>
+                          {reviewError}
+                        </p>
                       ) : null}
+                      <ReferenceCompareLine runId={report.runId} item={item} />
+                      <CaptureReviewDecisions
+                        status={
+                          item.status === "accepted"
+                            ? "Marked as correct"
+                            : item.status === "issue"
+                              ? "Issue reported"
+                              : item.status === "need-more-evidence"
+                                ? "More evidence requested"
+                                : "Awaiting your decision"
+                        }
+                        busy={reviewBusy}
+                        onReview={(action, reviewNote) =>
+                          reviewCaptures(action, [item], reviewNote)
+                        }
+                      />
                     </div>
                   );
-                return (
-                  <div className="grid w-full gap-2">
-                    {reviewError ? (
-                      <p
-                        role="alert"
-                        className="rounded-lg bg-card px-3 py-2 text-sm text-destructive"
-                      >
-                        {reviewError}
-                      </p>
-                    ) : null}
-                    <ReferenceCompareLine runId={report.runId} item={item} />
-                    <CaptureReviewDecisions
-                      status={
-                        item.status === "accepted"
-                          ? "Marked as correct"
-                          : item.status === "issue"
-                            ? "Issue reported"
-                            : item.status === "need-more-evidence"
-                              ? "More evidence requested"
-                              : "Awaiting your decision"
-                      }
-                      busy={reviewBusy}
-                      onReview={(action, reviewNote) => reviewCaptures(action, [item], reviewNote)}
-                    />
-                  </div>
-                );
-              }}
-            />
-          </div>
-        }
-        outline={
-          <div className={workspaceToolsSurface}>
-            <Tabs
-              value={panel}
-              onValueChange={(value) => setPanel(value as typeof panel)}
-              className="gap-0"
-            >
-              <TabsList
-                variant="line"
-                className="w-full shrink-0 flex-wrap justify-start gap-x-2 gap-y-1 border-b border-border px-3 py-2 group-data-horizontal/tabs:h-auto"
-                aria-label="Step views"
-              >
-                {(
-                  [
-                    ["steps", "Steps"],
-                    ...(listedFrames.length || reviewMode ? [["captures", "Screenshots"]] : []),
-                    ...(report.performance?.length ? [["performance", "Performance"]] : []),
-                    ...(hasChecks ? [["details", "Checks"]] : []),
-                    ["logs", "Logs"],
-                    ...(network?.items.length ? [["network", "Network"] as const] : []),
-                  ] as const
-                ).map(([value, label]) => (
-                  <TabsTrigger
-                    key={value}
-                    value={value}
-                    className="h-10 flex-none px-2 after:bottom-0"
-                  >
-                    {label}
-                    {value === "steps" ? (
-                      <span className="ml-1 text-xs tabular-nums text-muted-foreground">
-                        {report.timeline.length - setupCount || report.timeline.length}
-                      </span>
-                    ) : null}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
+                }}
+              />
+            </div>
+          }
+          outline={
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-card">
               <TabsContent value={panel} className="flex min-h-0 flex-1 flex-col">
                 {panel === "steps" ? (
                   <aside className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -749,10 +746,10 @@ export function RunWorkbench({
                   {footer}
                 </div>
               ) : null}
-            </Tabs>
-          </div>
-        }
-      />
+            </div>
+          }
+        />
+      </Tabs>
     </section>
   );
 }

@@ -101,7 +101,9 @@ export function TestLastRunStage({ run }: { run?: ProductRunSummary }) {
   if (run && url) {
     return (
       <div className="flex h-full min-h-0 flex-col items-center justify-start gap-3 overflow-auto bg-stage px-6 py-6">
-        <WorkspaceScreenshot caption={<>Last screen · {ago(run.finishedAt ?? run.queuedAt)}</>}>
+        <WorkspaceScreenshot
+          caption={<>Screenshot from latest run · {ago(run.finishedAt ?? run.queuedAt)}</>}
+        >
           <img src={url} alt="Last screen of the latest run" draggable={false} />
         </WorkspaceScreenshot>
       </div>
