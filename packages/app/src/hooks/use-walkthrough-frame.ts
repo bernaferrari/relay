@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import type { RunProductService } from "../data/run-product-service";
 
-export function useFrameUrl(runService: RunProductService, runId: string, framePath: string | undefined) {
+export function useFrameUrl(
+  runService: RunProductService,
+  runId: string,
+  framePath: string | undefined,
+) {
   const key = `${runId}:${framePath ?? ""}`;
   const [attempt, setAttempt] = useState(0);
   const [frame, setFrame] = useState<{
@@ -38,4 +42,3 @@ export function useFrameUrl(runService: RunProductService, runId: string, frameP
     failed: () => setFrame({ key, status: "error" }),
   };
 }
-

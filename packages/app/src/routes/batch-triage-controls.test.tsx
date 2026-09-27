@@ -73,5 +73,4 @@ describe("review note form", () => {
     });
     expect(input.value).toBe("Save overlaps");
   });
-
 });

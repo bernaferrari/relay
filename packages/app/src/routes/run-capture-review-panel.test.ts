@@ -48,6 +48,8 @@ describe("captureReviewSummaryLine", () => {
           blocked: 1,
         },
       }),
-    ).toBe("2 planned · 1 captured · 1 blocked · 0 missing · 1 screenshot awaiting review · 0 accepted");
+    ).toBe(
+      "2 planned · 1 captured · 1 blocked · 0 missing · 1 screenshot awaiting review · 0 accepted",
+    );
   });
 });

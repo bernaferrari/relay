@@ -70,10 +70,7 @@ test("browser and Electron smoke commands cover Live with existing a11y/layout h
 test("the renderer imports error projection without traversing the Product server barrel", async () => {
   const [productPackage, recordingShared] = await Promise.all([
     readFile(new URL("../packages/product/package.json", import.meta.url), "utf8"),
-    readFile(
-      new URL("../packages/app/src/routes/recording-shared.tsx", import.meta.url),
-      "utf8",
-    ),
+    readFile(new URL("../packages/app/src/routes/recording-shared.tsx", import.meta.url), "utf8"),
   ]);
   assert.equal(JSON.parse(productPackage).exports["./errors"], "./src/errors.ts");
   assert.match(recordingShared, /from "@relay\/product\/errors"/u);

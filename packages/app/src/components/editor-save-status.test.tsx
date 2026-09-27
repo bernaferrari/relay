@@ -48,6 +48,4 @@ describe("editor save status", () => {
     expect(host.textContent).toContain("Saving");
     expect(host.querySelector("[data-state='saving']")).not.toBeNull();
   });
-
-
 });

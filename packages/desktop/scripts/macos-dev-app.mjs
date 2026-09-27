@@ -30,9 +30,7 @@ export function ensureElectronBinary(electronCliPath) {
   console.log("[desktop] Electron binary missing — downloading");
   const result = spawnSync(process.execPath, [installScript], { stdio: "inherit" });
   if (result.status !== 0 || !existsSync(executable)) {
-    throw new Error(
-      `Electron.app not found at ${electronApp}. Re-run: node ${installScript}`,
-    );
+    throw new Error(`Electron.app not found at ${electronApp}. Re-run: node ${installScript}`);
   }
   return electronApp;
 }

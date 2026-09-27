@@ -158,10 +158,9 @@ test("--lane is only valid on run and interact verbs", () => {
 
 test("device recover --lane becomes the Lane target serial", () => {
   assert.deepEqual(
-    recoverInputFromLane(
-      { laneId: "grok-daily" },
-      [{ id: "grok-daily", target: { kind: "browser", browserTargetId: "browser-1" } }],
-    ),
+    recoverInputFromLane({ laneId: "grok-daily" }, [
+      { id: "grok-daily", target: { kind: "browser", browserTargetId: "browser-1" } },
+    ]),
     { serial: "browser-1" },
   );
   assert.throws(

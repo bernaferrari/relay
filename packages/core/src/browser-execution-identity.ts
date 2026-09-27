@@ -200,7 +200,6 @@ export function browserAttachKeepsExistingSession(input: {
   return input.requirePresentationMatch !== true || presentationMatches;
 }
 
-
 /** Explicit request wins. Otherwise attach to an already-open live identity
  * before falling back to the saved profile (authoring). */
 export function resolveBrowserDeviceOpenIdentity(input: {

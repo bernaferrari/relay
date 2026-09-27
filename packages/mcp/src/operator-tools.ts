@@ -88,10 +88,7 @@ function requireControlTarget(
     context.addIssue({ code: "custom", message: "lane and laneId must match." });
 }
 
-function requireHttpStartUrl(
-  value: { startUrl: string },
-  context: z.RefinementCtx,
-): void {
+function requireHttpStartUrl(value: { startUrl: string }, context: z.RefinementCtx): void {
   let parsed: URL;
   try {
     parsed = new URL(value.startUrl);

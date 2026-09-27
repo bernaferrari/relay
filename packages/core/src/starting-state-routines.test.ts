@@ -410,8 +410,6 @@ test("a runtime fixture is the account when the account variable is empty", () =
   assert.equal(combineCellShareAccountId({ values: {} }), undefined);
 });
 
-
-
 function destEndTest(
   id: string,
   connectionId: string,

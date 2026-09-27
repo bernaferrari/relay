@@ -285,7 +285,6 @@ async function copyNamed(source: string, dest: string, copied: string[]): Promis
   copied.push(dest);
 }
 
-
 /** A teammate can open walkthrough.html. The trace pack stays the machine copy. */
 export async function writeEvidenceReviewDir(input: {
   dir: string;

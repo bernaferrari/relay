@@ -23,6 +23,4 @@ describe("replay completion", () => {
     expect(replayStopLabel("paused", false)).toBe("Stop replay");
     expect(replayStopLabel("running", true)).toBe("Stopping…");
   });
-
-
 });

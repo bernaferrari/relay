@@ -792,8 +792,6 @@ export function assertSecretFieldText(target: unknown, text: string, label: stri
   }
 }
 
-
-
 /**
  * Validate an unknown steps array field-by-field. Throws `Error` naming the
  * first invalid step index and why. Returns the narrowed `RecipeStep[]`.

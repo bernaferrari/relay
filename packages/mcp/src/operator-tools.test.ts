@@ -3,7 +3,11 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { CAPTURE_REVIEW_DEST_PHASE, RC23_SCREENSHOT_FIRST_TESTS } from "@relay/protocol";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { invokeRelayOperatorTool, planRunExecutionMode, recoverSerialFromLane } from "./operator-tool-dispatch.js";
+import {
+  invokeRelayOperatorTool,
+  planRunExecutionMode,
+  recoverSerialFromLane,
+} from "./operator-tool-dispatch.js";
 import {
   relayOperatorToolNames,
   relayOperatorTools,
@@ -55,7 +59,9 @@ test("recover uses the Lane target instead of asking for a separate serial", asy
         calls.push({ operationId, input });
         if (operationId === "lane.list") {
           return {
-            lanes: [{ id: "grok-daily", target: { kind: "browser", browserTargetId: "browser-1" } }],
+            lanes: [
+              { id: "grok-daily", target: { kind: "browser", browserTargetId: "browser-1" } },
+            ],
           };
         }
         return { ok: true, invoked: operationId };
@@ -254,7 +260,6 @@ test("plan run executionMode all stays every case", () => {
   assert.equal(planRunExecutionMode("everything"), "pilot");
 });
 
-
 test("operator profile registers at most 23 hand-named verbs and hides takeover", async () => {
   const server = createMcpServer({
     invoker: { async invoke() {} },
@@ -365,10 +370,10 @@ test("operator verbs invoke canonical operations including optional laneId", asy
     operationId: "run.walkthrough-pack.get",
     input: { runId: "run-1", with: ["run-2"] },
   });
-  assert.deepEqual(
-    await run("relay_save", example("relay_save"), "agent:cursor", true),
-    { ok: true, invoked: "app-map.test.save" },
-  );
+  assert.deepEqual(await run("relay_save", example("relay_save"), "agent:cursor", true), {
+    ok: true,
+    invoked: "app-map.test.save",
+  });
 
   assert.ok(
     calls.some(
