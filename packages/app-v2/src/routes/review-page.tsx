@@ -421,18 +421,22 @@ export function ReviewPage() {
             {(inbox.data?.entries ?? []).map((entry) => {
               const entryCards = cards.filter((card) => card.entry.runId === entry.runId);
               if (!entryCards.length) return null;
+              const allNew = entryCards.every(({ item }) => item.reference?.state !== "changed");
               return (
                 <div
                   key={entry.runId}
                   className="my-3 min-w-0 overflow-hidden rounded-lg border border-border/60"
                 >
                   <div className="border-b border-border/60 bg-muted/20 px-3 py-2.5">
-                    <p
-                      className="truncate text-xs leading-5 font-medium text-muted-foreground"
-                      title={entry.title}
-                    >
-                      {entry.title}
-                    </p>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p
+                        className="min-w-0 flex-1 truncate text-xs leading-5 font-medium text-muted-foreground"
+                        title={entry.title}
+                      >
+                        {entry.title}
+                      </p>
+                      {allNew ? <StateBadge item={entryCards[0]!.item} /> : null}
+                    </div>
                     <p className="truncate text-xs text-muted-foreground">
                       {[entry.targetName, timeAgo(entry.finishedAt)].filter(Boolean).join(" · ")}
                     </p>
@@ -463,7 +467,7 @@ export function ReviewPage() {
                               {screenshotName(card.item)}
                             </span>
                           </span>
-                          <StateBadge item={card.item} />
+                          {!allNew ? <StateBadge item={card.item} /> : null}
                         </button>
                       </li>
                     ))}
