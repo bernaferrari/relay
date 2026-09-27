@@ -463,9 +463,10 @@ export function RunWorkbench({
                         ) : null}
                         <ReferenceCompareLine runId={report.runId} item={item} />
                         <CaptureReviewDecisions
+                          reviewStatus={item.status}
                           status={
                             item.status === "accepted"
-                              ? "Marked as correct"
+                              ? undefined
                               : item.status === "issue"
                                 ? "Issue reported"
                                 : item.status === "need-more-evidence"
