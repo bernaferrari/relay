@@ -22,7 +22,9 @@ export function runStateOf(run: RunLike | undefined): RunState {
     (run.captureSummary?.issue ?? 0) > 0
   )
     return "failed";
-  if ((run.captureSummary?.pending ?? 0) > 0 || run.outcome === "uncertain") return "review";
+  // The verdict is behavior. Screenshots waiting for approval are shown beside
+  // it, never instead of it: a run whose steps and checks passed has passed.
+  if (run.outcome === "uncertain") return "review";
   return "passed";
 }
 

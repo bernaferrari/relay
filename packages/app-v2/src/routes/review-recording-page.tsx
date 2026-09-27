@@ -15,6 +15,11 @@ import { ArrowLeft, Redo2, RotateCcw, Save, Undo2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
+import {
+  foldRecordingIntoTest,
+  forgetRecordingInto,
+  readRecordingInto,
+} from "../data/record-into-test";
 import { clearWorkflowPointerIfCurrent } from "../data/workflow-pointer";
 import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
 import { RecordingActionsPanel, RecordingEvidencePanel } from "./recording-review-panels";
@@ -54,9 +59,37 @@ export function ReviewRecordingPage({
 }
 
 function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
-  const { productService, platform, queryClient } = useRouteContext({ from: "__root__" });
+  const { productService, platform, queryClient, testEditorService } = useRouteContext({
+    from: "__root__",
+  });
   const navigate = useNavigate();
   const workflowId = recordingId;
+  // Recorded from a saved Test: Save adds these steps to that Test.
+  const into = useQuery({
+    queryKey: ["recording-into", recordingId],
+    queryFn: async () => (await readRecordingInto(platform, recordingId)) ?? null,
+    staleTime: Infinity,
+  });
+  const fold = useMutation({
+    mutationFn: async (recordedTestId: string) => {
+      const target = into.data!;
+      const firstStepId = await foldRecordingIntoTest(testEditorService, {
+        recordedTestId,
+        into: target,
+      });
+      await forgetRecordingInto(platform, recordingId);
+      await queryClient.invalidateQueries({ queryKey: ["test-editor", target.testId] });
+      await queryClient.invalidateQueries({ queryKey: ["catalog", "tests"] });
+      return { testId: target.testId, firstStepId };
+    },
+    onSuccess: ({ testId, firstStepId }) =>
+      void navigate({
+        to: "/tests/$testId",
+        params: { testId },
+        search: firstStepId ? { step: firstStepId } : {},
+        replace: true,
+      }),
+  });
   const nameDraftKey = `recordingName:${workflowId}`;
   const [selectedActionIds, setSelectedActionIds] = useState<readonly string[]>([]);
   const [actionIntent, setActionIntent] = useState("");
@@ -302,7 +335,12 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
   }
 
   useEffect(() => {
-    if (saved && committedTestId) {
+    if (!saved || !committedTestId || into.isPending) return;
+    if (into.data) {
+      if (fold.isIdle) fold.mutate(committedTestId);
+      return;
+    }
+    {
       void navigate({
         to: "/tests/$testId",
         params: { testId: committedTestId },
@@ -310,10 +348,24 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
         replace: true,
       });
     }
-  }, [saved, committedTestId, replayTarget?.targetId, navigate]);
+  }, [saved, committedTestId, replayTarget?.targetId, navigate, into.data, into.isPending, fold]);
 
   if (saved) {
-    return <PageLoading label="Opening the saved Test…" />;
+    if (fold.error) {
+      return (
+        <RecordingProblem
+          className="m-6"
+          error={fold.error}
+          onRetry={() => committedTestId && fold.mutate(committedTestId)}
+          retrying={fold.isPending}
+        />
+      );
+    }
+    return (
+      <PageLoading
+        label={into.data ? `Adding steps to ${into.data.testName}…` : "Opening the saved Test…"}
+      />
+    );
   }
 
   return (
@@ -399,14 +451,19 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                 <Button
                   variant="default"
                   onClick={() =>
-                    transition.mutate({ action: "approve", testName: testName.trim() })
+                    transition.mutate({
+                      action: "approve",
+                      testName: into.data ? `${into.data.testName} · added steps` : testName.trim(),
+                    })
                   }
-                  disabled={transition.isPending || !testName.trim()}
+                  disabled={transition.isPending || (!into.data && !testName.trim())}
                 >
                   <Save aria-hidden="true" />
                   {transition.isPending && transition.variables?.action === "approve"
                     ? "Saving…"
-                    : "Save Test"}
+                    : into.data
+                      ? `Add to “${into.data.testName}”`
+                      : "Save Test"}
                 </Button>
               ) : null}
 
@@ -426,7 +483,12 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
           ) : undefined
         }
       >
-        {reviewReady ? (
+        {reviewReady && into.data ? (
+          <p className="text-sm text-muted-foreground">
+            These steps will be added to{" "}
+            <strong className="font-medium text-foreground">{into.data.testName}</strong>.
+          </p>
+        ) : reviewReady ? (
           <div className="flex items-end justify-between gap-4 [&>div]:w-full [&>div]:max-w-lg">
             <Field>
               <FieldLabel htmlFor="review-test-name">Test name</FieldLabel>

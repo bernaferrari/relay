@@ -10,7 +10,6 @@ import { unrecordedProductName } from "@relay/protocol";
 import { Alert, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
-import { FieldLabel } from "@relay/ui-react/components/field";
 import { Textarea } from "@relay/ui-react/components/textarea";
 import { AlertTriangle } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -85,6 +84,7 @@ export function SelectedStepEditor({
     draft?.expected ?? validationDraft(entry.step),
   );
   const [removeArmed, setRemoveArmed] = useState(false);
+  const [noteOpen, setNoteOpen] = useState(false);
   useEffect(() => {
     setIntent(draft?.intent ?? entry.step.intent);
     setNote(draft?.note ?? entry.step.note ?? "");
@@ -190,10 +190,10 @@ export function SelectedStepEditor({
         </div>
       ) : null}
       <label className="grid gap-1.5 text-xs font-semibold" htmlFor="selected-step-intent">
-        <span>What should happen</span>
+        <span>Step name</span>
         <Textarea
-          rows={2}
-          className="min-h-16 resize-y text-sm"
+          rows={1}
+          className="min-h-9 resize-y text-sm"
           id="selected-step-intent"
           value={intent}
           onChange={(event) => {
@@ -248,8 +248,7 @@ export function SelectedStepEditor({
         </Alert>
       ) : null}
       {!unsavedCheckpoint &&
-      ((entry.step.kind === "instruction" &&
-        (savedPaths.length > 0 || entry.step.binding.status === "unresolved")) ||
+      ((entry.step.kind === "instruction" && entry.step.binding.status === "unresolved") ||
         (entry.step.kind === "module" && entry.step.binding.status === "unresolved")) ? (
         <BindingRepair
           step={entry.step}
@@ -270,49 +269,31 @@ export function SelectedStepEditor({
           onBind={onBind}
         />
       ) : null}
-      <details className="text-sm text-muted-foreground">
-        <summary className="cursor-pointer py-1">Step options</summary>
-        <div className="grid gap-4 pt-3">
-          <label className="grid gap-1.5 text-xs font-semibold" htmlFor="selected-step-note">
-            <span>
-              Note <small>Optional</small>
-            </span>
-            <Textarea
-              id="selected-step-note"
-              value={note}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                setNote(value);
-                updateDraft({ note: value });
-              }}
-              maxLength={4_000}
-              rows={4}
-            />
-          </label>
-          <FieldLabel className="flex min-h-14 min-w-0 cursor-pointer items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2.5 text-card-foreground transition-colors outline-none hover:bg-muted/50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50">
-            <span className="grid min-w-0 flex-1 gap-0.5">
-              <span className="text-sm font-medium text-foreground">
-                Save screenshot after this step
-              </span>
-              <span className="text-xs leading-snug text-muted-foreground">
-                Include this moment in Results, for each language or data value.
-              </span>
-            </span>
-            <Checkbox
-              checked={capture}
-              onCheckedChange={(value) => {
-                setCapture(value === true);
-                updateDraft({ capture: value === true });
-              }}
-            />
-          </FieldLabel>
-        </div>
-      </details>
-      {stepBindingCopy(entry.step) ? (
-        <details className="text-xs text-muted-foreground">
-          <summary className="cursor-pointer py-1">Connected action details</summary>
-          <p className="pt-2">{stepBindingCopy(entry.step)}</p>
-        </details>
+      <label className="flex min-h-9 cursor-pointer items-center gap-2 text-sm">
+        <Checkbox
+          checked={capture}
+          onCheckedChange={(value) => {
+            setCapture(value === true);
+            updateDraft({ capture: value === true });
+          }}
+        />
+        Take a screenshot after this step
+      </label>
+      {noteOpen || note ? (
+        <label className="grid gap-1.5 text-xs font-semibold" htmlFor="selected-step-note">
+          <span>Note</span>
+          <Textarea
+            id="selected-step-note"
+            value={note}
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              setNote(value);
+              updateDraft({ note: value });
+            }}
+            maxLength={4_000}
+            rows={2}
+          />
+        </label>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -320,8 +301,13 @@ export function SelectedStepEditor({
           type="submit"
           disabled={!changed || !cleanIntent || !expectedReady || busy}
         >
-          {busy ? "Saving…" : "Save step"}
+          {busy ? "Saving…" : "Save"}
         </Button>
+        {!noteOpen && !note ? (
+          <Button type="button" variant="ghost" onClick={() => setNoteOpen(true)}>
+            Add note
+          </Button>
+        ) : null}
         {removeArmed ? (
           <Alert variant="default" className="grid gap-2.5 p-2.5">
             <div>

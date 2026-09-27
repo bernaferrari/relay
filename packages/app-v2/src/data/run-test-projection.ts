@@ -7,4 +7,6 @@ export type ProductTestSummary = {
   appName: string;
   stepCount: number;
   steps?: readonly ProductTestStep[];
+  /** Profile (browser + saved login) the Test was recorded on. */
+  recordedProfileId?: string;
 };
