@@ -30,7 +30,7 @@ function option(
   };
 }
 
-test("defaultExploreDepth matches  strategy names", () => {
+test("defaultExploreDepth matches explore strategy names", () => {
   assert.equal(defaultExploreDepth("surface"), 2);
   assert.equal(defaultExploreDepth("timeline"), 6);
   assert.equal(defaultExploreDepth("hard-edges"), 4);

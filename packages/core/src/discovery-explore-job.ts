@@ -118,7 +118,7 @@ async function persistFixtureState(
   await rememberExploreRun(sessionId, job.outcome);
 }
 
-/** Default max depth for a -named strategy. */
+/** Default max depth for an explore strategy. */
 export function defaultExploreDepth(strategy: DiscoveryExploreStrategy): number {
   if (strategy === "surface") return SURFACE_DEPTH;
   if (strategy === "hard-edges") return HARD_EDGES_DEPTH;
