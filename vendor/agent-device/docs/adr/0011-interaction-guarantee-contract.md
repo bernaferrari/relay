@@ -163,6 +163,10 @@ tree × command × forced path. The fixture trees are the real shapes that found
 this week's bugs, kept permanently:
 
 - closed drawer (all candidates off-screen) → `offscreen_selector`/`offscreen_ref`;
+- stale or unknown `@ref` (errorTaxonomy) → `ref_not_found` beside the stale-ref hint; a listed
+  `@ref` whose node has no usable centre (missing, non-finite, or negative bounds), or a selector
+  target without one → `target_bounds_invalid`; a listed `@ref` with no label to wait on or scope
+  by → `ref_unlabeled`;
 - drawer item + visible twin (ambiguous on/off-screen) → visible candidate wins;
 - edge-grazing container (0.07 px viewport overlap, center off-screen) → still refused;
 - covered node → occlusion refusal;
@@ -301,13 +305,14 @@ XCTest-coordinate fallback rules stay runner-local in
 `RunnerTests+SynthesizedGesturePolicy.swift`. That Swift policy is the source of
 truth because the current table has only three behaviors:
 
-- coordinate synthesized tap never probes keyboards and may use the coordinate
-  fallback;
+- coordinate synthesized tap, standalone, as a `sequence` step, or as the
+  in-app `back` top-leading tap, never probes keyboards and may use the
+  coordinate fallback;
 - default iOS scroll probes keyboards only after AX is known healthy and must
   not fall back to `XCUICoordinate`;
-- explicit synthesized drag, including synthesized sequence tap/drag steps, may
-  still use the coordinate fallback before AX health is known, but stops using
-  it once a snapshot stamps AX unavailable.
+- synthesized one-contact `gesture` plans may still use the coordinate fallback
+  before AX health is known, but stop using it once a snapshot stamps AX
+  unavailable.
 
 The non-obvious parts are covered by gated XCTest policy tests instead of a
 cross-language mirror. A future sibling registry should only be introduced once

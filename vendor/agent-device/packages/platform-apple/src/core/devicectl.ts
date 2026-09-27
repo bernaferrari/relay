@@ -60,7 +60,7 @@ export async function runIosDevicectl(
     tolerateOutput?: (stdout: string, stderr: string) => boolean;
   } = {},
 ): Promise<void> {
-  const fullArgs = ['devicectl', ...args];
+  const fullArgs: ['devicectl', ...string[]] = ['devicectl', ...args];
   const result = await runXcrun(fullArgs, {
     allowFailure: true,
     signal: options.signal,
@@ -184,7 +184,9 @@ export type IosDevicectlJsonOutcome =
       ok: false;
       reason: IosDevicectlJsonFailureReason;
       args: string[];
-      result?: ExecResult;
+      result: ExecResult;
+      /** The JSON a failed command still wrote, when it was readable. */
+      payload?: unknown;
       cause?: string;
     };
 
@@ -200,7 +202,7 @@ export type IosDevicectlJsonOutcome =
  */
 export async function runIosDevicectlJsonRequest(options: {
   jsonPrefix: string;
-  args: string[];
+  args: ['devicectl', ...string[]];
   timeoutMs?: number;
   signal?: AbortSignal;
   tolerateFailurePayload?: (payload: unknown) => boolean;
@@ -209,29 +211,36 @@ export async function runIosDevicectlJsonRequest(options: {
     hostTemporaryDirectory(),
     `${options.jsonPrefix}-${hostProcessId()}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
   );
-  const args = [...options.args, '--json-output', jsonPath];
-  const result = await runXcrun(args, {
-    allowFailure: true,
-    signal: options.signal,
-    timeoutMs: options.timeoutMs ?? IOS_DEVICECTL_TIMEOUT_MS,
-  });
-
+  const args: ['devicectl', ...string[]] = [...options.args, '--json-output', jsonPath];
   try {
+    const result = await runXcrun(args, {
+      allowFailure: true,
+      signal: options.signal,
+      timeoutMs: options.timeoutMs ?? IOS_DEVICECTL_TIMEOUT_MS,
+    });
     if (result.exitCode !== 0) {
-      if (options.tolerateFailurePayload) {
-        const failurePayload = await readJsonFile(jsonPath).catch(() => undefined);
-        if (failurePayload !== undefined && options.tolerateFailurePayload(failurePayload)) {
-          return { ok: true, payload: failurePayload };
-        }
+      const failurePayload = await readJsonFile(jsonPath).catch(() => undefined);
+      if (failurePayload !== undefined && options.tolerateFailurePayload?.(failurePayload)) {
+        return { ok: true, payload: failurePayload };
       }
-      return { ok: false, reason: 'command-failed', args, result };
+      return { ok: false, reason: 'command-failed', args, result, payload: failurePayload };
     }
+    return await readIosDevicectlJsonPayload(jsonPath, args, result);
+  } finally {
+    await unlinkHostFile(jsonPath).catch(() => {});
+  }
+}
+
+async function readIosDevicectlJsonPayload(
+  jsonPath: string,
+  args: string[],
+  result: ExecResult,
+): Promise<IosDevicectlJsonOutcome> {
+  try {
     return { ok: true, payload: await readJsonFile(jsonPath) };
   } catch (error) {
     if (error instanceof AppError) throw error;
     return { ok: false, reason: 'unreadable-json', args, result, cause: String(error) };
-  } finally {
-    await unlinkHostFile(jsonPath).catch(() => {});
   }
 }
 
@@ -239,7 +248,7 @@ async function runIosDevicectlJsonCommand(
   device: DeviceInfo,
   options: {
     jsonPrefix: string;
-    args: string[];
+    args: ['devicectl', ...string[]];
     failureMessage: string;
     parseFailureMessage: string;
     fallbackHint?: string;
@@ -251,7 +260,7 @@ async function runIosDevicectlJsonCommand(
   const outcome = await runIosDevicectlJsonRequest(options);
   if (outcome.ok) return outcome.payload;
 
-  if (outcome.reason === 'command-failed' && outcome.result) {
+  if (outcome.reason === 'command-failed') {
     const { stdout, stderr } = outcome.result;
     throw new AppError(
       'COMMAND_FAILED',
@@ -343,6 +352,25 @@ export const IOS_DEVICECTL_DEFAULT_HINT =
 const IOS_DEVICE_PROCESS_LIST_HINT =
   "This Xcode/CoreDevice toolchain must support 'devicectl device info processes' with JSON runningProcesses so agent-device can resolve app process IDs. Inspect diagnostics for the exact devicectl API failure.";
 
+/**
+ * What to tell a caller whose device reports its own Developer Mode toggle off (#2683). This is the
+ * one owner of that remedy: the device-readiness fact publishes these two strings as the `remedies`
+ * of the report it reads, so the runner preflight and this tool-output path cannot carry two
+ * wordings of one fix. `core/physical-device-coredevice.ts` imports them rather than restating them.
+ */
+export const IOS_DEVICE_DEVELOPER_MODE_OFF_HINT =
+  'Enable Developer Mode on the iOS device (Settings > Privacy & Security > Developer Mode), restart it when prompted, unlock it, then retry.';
+
+/**
+ * What to tell a caller whose developer disk image is the only thing down (#2683). Deliberately not a
+ * Developer Mode answer, and it never names that setting: this path only has tool text, which cannot
+ * say where the toggle is, and sending someone to a setting that is already correct loses the actual
+ * cause. The device-fact path is where both states are known, and it publishes them as fields rather
+ * than as prose. Owned by the same pair as {@link IOS_DEVICE_DEVELOPER_MODE_OFF_HINT}.
+ */
+export const IOS_DEVICE_DEVELOPER_DISK_IMAGE_HINT =
+  'Let Xcode finish preparing this device: keep it unlocked and connected by cable, open Xcode > Settings > Platforms (or Window > Devices and Simulators), wait for device support to install, then retry.';
+
 export function resolveIosDevicectlHint(stdout: string, stderr: string): string | null {
   const text = `${stdout}\n${stderr}`.toLowerCase();
   if (text.includes('device is busy') && text.includes('connecting')) {
@@ -356,8 +384,15 @@ export function resolveIosDevicectlHint(stdout: string, stderr: string): string 
   // usual state of a phone that has never been used for development. The
   // default hint sends people to check trust and Xcode, none of which is wrong
   // yet none of which is the cause.
-  if (text.includes('developer disk image') || text.includes('developer mode is disabled')) {
-    return 'Enable Developer Mode on the iOS device (Settings > Privacy & Security > Developer Mode), restart it when prompted, unlock it, then retry.';
+  //
+  // The two complaints are answered apart (#2683): an image line by itself is not evidence that the
+  // toggle is off, and the device reports both states directly, so the name of one is never used as
+  // the name of the other.
+  if (text.includes('developer mode is disabled')) {
+    return IOS_DEVICE_DEVELOPER_MODE_OFF_HINT;
+  }
+  if (text.includes('developer disk image')) {
+    return IOS_DEVICE_DEVELOPER_DISK_IMAGE_HINT;
   }
   if (text.includes('must be paired')) {
     return 'Pair the iOS device with this Mac: connect it by cable, unlock it, accept the Trust prompt, and enter the device passcode, then retry.';

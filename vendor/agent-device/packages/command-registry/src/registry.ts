@@ -15,6 +15,7 @@ import {
 import { resolveWaitBudgetMs } from './wait-positionals.ts';
 import {
   DEFAULT_TIMEOUT_POLICY,
+  FOLD_TIMEOUT_POLICY,
   INSTALL_REQUEST_TIMEOUT_MS,
   LEASE_ALLOCATE_REQUEST_TIMEOUT_MS,
   PREPARE_REQUEST_TIMEOUT_MS,
@@ -40,6 +41,7 @@ import { inventoryUse } from '@agent-device/contracts/platform-module';
 import {
   alertRuntimePlanUses,
   actionButtonRuntimeUse,
+  foldRuntimeUse,
   appEventRuntimeUse,
   appStateRuntimeUses,
   appSwitcherRuntimeUse,
@@ -62,12 +64,13 @@ import {
   perfRuntimePlanUses,
   pressRuntimeUses,
   resolveSelectorCaptureRuntimePlan,
+  resolveSettingsRuntimePlan,
   resolveSnapshotRuntimePlan,
   screenshotRuntimePlanUses,
   scrollRuntimePlanUses,
   selectorCaptureRuntimePlanUses,
   selectorTextCaptureRuntimePlanUses,
-  settingsRuntimeUse,
+  settingsRuntimePlanUses,
   shutdownTargetUse,
   snapshotRuntimePlanUses,
   swipeRuntimePlanUses,
@@ -243,6 +246,20 @@ const findRecordingEffect = (req: DispatchedCommand): RecordingEffect => {
 
 const clipboardRecordingEffect = (req: DispatchedCommand): RecordingEffect =>
   readOnlySubactionRecordingEffect(req, new Set(['read']), '');
+
+// A settings request reads only when it names a readable setting with nothing after it; every other
+// settings request changes device state — including `settings text-size <category>`, which names the
+// same word and performs a mutation. The leg comes from the same resolver the daemon admits with, so
+// the classification and the operation it selects are one declaration rather than two that a test
+// holds together.
+const settingsRequestReads = (req: DispatchedCommand): boolean =>
+  resolveSettingsRuntimePlan(req.positionals).kind === 'read';
+
+const settingsRecordingEffect = (req: DispatchedCommand): RecordingEffect =>
+  settingsRequestReads(req) ? 'observes-app' : 'mutates-app';
+
+const settingsRefFrameEffect = (req: DispatchedCommand): RefFrameEffect =>
+  settingsRequestReads(req) ? 'preserve' : 'may-invalidate';
 
 function readOnlySubactionRefFrameEffect(
   req: DispatchedCommand,
@@ -420,15 +437,21 @@ function postActionObservation(command: string): PostActionObservationSupport {
   return support;
 }
 
+/**
+ * Whether this build carries the descriptors' `ownerFiles` claims. Production defines
+ * `__OWNER_FILES__` as `false`, so every `ownerFilesEnabled ? { ownerFiles: [...] } : {}` spread
+ * in the root below folds to nothing and the navigation paths never reach a bundle — which
+ * `pnpm check:bundle-owner-files` proves over `dist/`.
+ */
+const ownerFilesEnabled = typeof __OWNER_FILES__ === 'undefined' || __OWNER_FILES__;
+
 // ---------------------------------------------------------------------------
-// The additive single source. Each entry carries the command identity facets
-// plus whichever daemon, capability, batch, MCP, timeout, observation, and
+// The command declaration root (ADR 0008). Each entry carries the command identity
+// facets plus whichever daemon, batch, MCP, timeout, observation, and
 // platform-dispatch traits that command owns. Public catalog identity and the
-// non-public dispatch aliases now live here too; leaf views derive from this
+// non-public dispatch aliases live here too; every view derives from this
 // array rather than recreating command-name sets.
 // ---------------------------------------------------------------------------
-
-const ownerFilesEnabled = typeof __OWNER_FILES__ === 'undefined' || __OWNER_FILES__;
 
 const DEPLOY_APP_COMMAND_DESCRIPTOR = {
   deviceClaimPolicy: 'transient-exclusive',
@@ -1153,15 +1176,17 @@ export const RAW_COMMAND_DESCRIPTORS = [
     catalog: { group: 'public' },
     frameworkTier: 'extended',
     // R58 retires this command's capability bucket, its `dispatch` leaf, and its HarmonyOS
-    // overlay membership together: admission is the owner's `setSetting` fact, and the only
-    // execution is that one bound operation. The macOS setting-name gate stays daemon-side —
-    // it keys on the requested setting, which is not a device fact.
+    // overlay membership together: a request admits one of the owner's two settings facts —
+    // `readSetting` for a bare readable setting, `setSetting` for everything else — and executes
+    // exactly that one bound operation, which is why the two effects above classify per request.
+    // The macOS setting-name gate stays daemon-side — it keys on the requested setting, which is
+    // not a device fact.
     recordsSessionAction: true,
-    recordingEffect: 'mutates-app',
-    daemon: { route: 'snapshot', refFrameEffect: 'may-invalidate' },
+    recordingEffect: settingsRecordingEffect,
+    daemon: { route: 'snapshot', refFrameEffect: settingsRefFrameEffect },
     timeoutPolicy: DEFAULT_TIMEOUT_POLICY,
     batchable: true,
-    platformExecution: { kind: 'device-runtime', uses: [settingsRuntimeUse] },
+    platformExecution: { kind: 'device-runtime', uses: settingsRuntimePlanUses },
   },
 
   // -- specialized routes --
@@ -1429,6 +1454,18 @@ export const RAW_COMMAND_DESCRIPTORS = [
     platformExecution: { kind: 'device-runtime', uses: [orientationRuntimeUse] },
   },
   {
+    name: 'fold',
+    ...(ownerFilesEnabled ? { ownerFiles: ['src/commands/system/index.ts'] as const } : {}),
+    catalog: { group: 'public' },
+    frameworkTier: 'extended',
+    // Admission is the owner's `setFoldPose` fact, the same ADR 0019 §9 shape as `orientation`.
+    // A pose change moves the app to a different panel with a different point size, so the
+    // generic mutating traits' ref-frame invalidation is load-bearing here (ADR 0025).
+    ...GENERIC_MUTATING_COMMAND_TRAITS,
+    timeoutPolicy: FOLD_TIMEOUT_POLICY,
+    platformExecution: { kind: 'device-runtime', uses: [foldRuntimeUse] },
+  },
+  {
     name: 'scroll',
     ...(ownerFilesEnabled ? { ownerFiles: ['src/daemon/scroll-runtime.ts'] as const } : {}),
     catalog: { group: 'public' },
@@ -1503,7 +1540,7 @@ export const RAW_COMMAND_DESCRIPTORS = [
     batchable: false,
     platformExecution: { kind: 'device-runtime', uses: [viewportRuntimeUse] },
   },
-  // -- capability/batch-only commands (no daemon route) --
+  // -- public extended-tier commands: the generic route, or no daemon facet declared --
   {
     name: 'app-switcher',
     deviceClaimPolicy: 'require-owner',
@@ -1750,12 +1787,40 @@ const CLI_COMMAND_NAMES = new Set<string>(
 );
 
 /**
- * The additive single source of truth (ADR-0008, Phase 1 step 1). Proven
- * byte-equal to the live hand tables by `__tests__/parity.test.ts`.
+ * {@link RAW_COMMAND_DESCRIPTORS} normalized: `mcpExposed` and `platformExecution`
+ * resolved, `ownerFiles` kept out of the runtime shape. The raw array is the root every
+ * projection folds over, directly or through this normalized copy — `CLI_COMMAND_NAMES`
+ * and the MCP exposure list here, `COMMAND_OWNER_FILES` in `owner-files.ts`, the catalog
+ * records, the daemon registry and batch allowlist in their own modules, and the
+ * {@link COMMAND_DESCRIPTOR_BY_NAME}, {@link TIMEOUT_POLICY_BY_COMMAND},
+ * {@link DEVICE_CLAIM_POLICY_BY_COMMAND} and {@link RESPONSE_DATA_TRANSFORM_BY_COMMAND}
+ * maps below. Those four are keyed by `name`, so a duplicated entry collapses into one
+ * rather than conflicting.
  *
- * The `as const` on {@link RAW_COMMAND_DESCRIPTORS} flows through this `.map`,
- * so each entry keeps its literal `name`. That is what makes the {@link Command}
- * union below a precise set of command-name literals rather than `string`.
+ * None of those has an independent table left to be byte-equal against: each consumer
+ * list became a projection of this array and its hand-authored source went away with it —
+ * `47abc8c416` (#907) daemon routes, `96bc7b190c` (#908) capability matrix (retired
+ * outright by `ea1d6b8c55` #2089), `607883d66c` (#909) batch allowlist, `8ef4e73408`
+ * (#1137) MCP exposure. The test that proved those equivalences is now an invariants-only
+ * guard at `src/__tests__/command-descriptor-parity.test.ts` (`2ec4e91b11` #2348).
+ *
+ * Two kinds of check replace that gate. Required traits are typed: `as const satisfies
+ * readonly RawCommandDescriptor[]` on the raw array, `satisfies readonly
+ * CommandDescriptor[]` here, and {@link CommandOwnerFileClaimsAreComplete} for owner
+ * claims. Classifications are pinned as literal command-name lists, so reclassifying or
+ * renaming a command they name means editing that list in the same diff: the device-claim
+ * deviating set in
+ * `packages/command-registry/src/__tests__/device-claim-policy.test.ts`; the timeout
+ * envelopes and budgets in `src/__tests__/command-descriptor-timeout-policy.test.ts` (a
+ * declared trait since `b25ef7b024` #1084); and the `targetIdentityVerification` and
+ * `'core'` tier sets, plus the tier-iff-public rule, in
+ * `src/__tests__/command-descriptor-parity.test.ts`. A duplicated entry is caught by the
+ * list comparisons in `packages/command-registry/src/__tests__/owner-files.test.ts` and
+ * that parity test.
+ *
+ * The `as const` on {@link RAW_COMMAND_DESCRIPTORS} flows through this `.map`, so each
+ * entry keeps its literal `name`. That is what makes the {@link Command} union below a
+ * precise set of command-name literals rather than `string`.
  */
 export const commandDescriptors = RAW_COMMAND_DESCRIPTORS.map((descriptor) => {
   const platformExecution = readDeclaredPlatformExecution(descriptor);
@@ -1779,8 +1844,32 @@ export const commandDescriptors = RAW_COMMAND_DESCRIPTORS.map((descriptor) => {
 /** The literal union of every registered command name. */
 export type Command = (typeof commandDescriptors)[number]['name'];
 
+type Equal<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
 /**
- * @internal Introspection helper used by parity tests.
+ * Compile-time literalness of {@link Command}. The `as const` on {@link RAW_COMMAND_DESCRIPTORS}
+ * keeps each descriptor's literal `name` through the composition and the `.map` above; an array
+ * that lost it would widen this union to `string`, and nothing downstream would say so:
+ * `COMMAND_DEFAULTS` below and `Record<DescriptorCliCommandName, …>` in
+ * `src/cli/injected-daemon-dispatch.ts` stop rejecting an unknown key, and the `command: Command`
+ * parameters in `src/cli/command-explain.ts` and `owner-files.ts` would stop excluding a name no
+ * descriptor declares. That silence is why this is a type guard and not a value comparison.
+ */
+export type CommandUnionStaysLiteral = AssertTrue<Equal<Equal<Command, string>, false>>;
+/** The CLI view is narrowed from the same literals, so it cannot hide a widened root union. */
+export type CliCommandUnionStaysLiteral = AssertTrue<
+  Equal<Equal<DescriptorCliCommandName, string>, false>
+>;
+
+/**
+ * @internal Command names for one catalog group, sorted.
+ *
+ * Consumed only by `src/__tests__/command-descriptor-parity.test.ts`, which compares
+ * these names against the `PUBLIC_COMMANDS` / `INTERNAL_COMMANDS` records `catalog.ts`
+ * builds from {@link listDescriptorCatalogEntries}: a duplicated descriptor or a
+ * colliding `catalog.key` drops a name from one side of that comparison. Production code
+ * reads those records; this flat list is the second side the test checks them against,
+ * which is why the helper stays exported.
  */
 export function listDescriptorCatalogCommandNames<Group extends CommandCatalogGroup>(
   group: Group,
@@ -1930,10 +2019,13 @@ export function resolveCommandRecordsSessionAction(command: string | undefined):
 
 /**
  * The declared {@link CommandFrameworkTier} for a public command, or
- * `undefined` for a command that never declares one (every non-public
- * command, by construction — see the parity test). Framework adapters
- * (`agent-device/ai-sdk`, `@agent-device/eve`) read this to build their
- * default tool set instead of hand-listing tool names.
+ * `undefined` for a command that never declares one. A tier is declared iff
+ * `catalog.group === 'public'`; that rule is a runtime pin, not a type rule —
+ * `src/__tests__/command-descriptor-parity.test.ts` asserts it and the exact
+ * `'core'` tool set, so a new public command cannot join a framework adapter's
+ * default set silently. Framework adapters (`agent-device/ai-sdk`,
+ * `@agent-device/eve`) read this to build their default tool set instead of
+ * hand-listing tool names.
  */
 export function resolveCommandFrameworkTier(
   command: string | undefined,
@@ -1963,7 +2055,12 @@ export function resolveCommandRecordingEffect(req: DispatchedCommand): Recording
 }
 
 /**
- * @internal Introspection helper used by parity tests.
+ * @internal The commands that declare a {@link CommandResponseDataTransform}, with it.
+ *
+ * Consumed only by `src/commands/__tests__/command-surface-metadata.test.ts`, which
+ * checks every transform field against that command's declared input schema. The
+ * production projection of the same map is
+ * {@link listCommandResponseDataTransformFieldNames}.
  */
 export function listCommandResponseDataTransforms(): Array<{
   command: string;

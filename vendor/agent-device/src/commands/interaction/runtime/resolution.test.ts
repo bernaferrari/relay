@@ -7,7 +7,7 @@ import {
   throwIfOffscreenInteractionTarget,
   tryResolveRefNode,
 } from './resolution.ts';
-import { resolveRecordedTarget } from '@agent-device/selectors';
+import { resolveRecordedTarget, STALE_REF_HINT } from '@agent-device/selectors';
 import { makeSnapshotState } from '@agent-device/selectors/snapshot-geometry-fixtures';
 import type { Point } from '@agent-device/kernel/snapshot';
 import { INTERACTION_ERROR_REASONS } from '@agent-device/selectors/interaction-error';
@@ -510,7 +510,41 @@ test('runtime ref interactions fail closed when the authorized ref has no usable
   await assert.rejects(
     () => device.interactions.click(ref('@e1'), { session: 'default' }),
     (error: unknown) => {
-      assert.match((error as Error).message, /Ref @e1 not found or has no bounds/);
+      assert.match((error as Error).message, /Ref @e1 has no usable bounds/);
+      assert.deepEqual(
+        (error as { details?: Record<string, unknown> }).details,
+        { reason: 'target_bounds_invalid', ref: 'e1', hint: STALE_REF_HINT },
+        'the frame lists @e1, so the refusal names the bounds, not a missing ref',
+      );
+      return true;
+    },
+  );
+  assert.equal(captures, 0);
+  assert.deepEqual(calls, []);
+});
+
+test('runtime ref interactions refuse a ref the authorized frame does not list with ref_not_found', async () => {
+  const calls: Point[] = [];
+  let captures = 0;
+  const device = createInteractionDevice(selectorSnapshot(), {
+    captureSnapshot: async () => {
+      captures += 1;
+      return { snapshot: selectorSnapshot() };
+    },
+    tap: async (_context, point) => {
+      calls.push(point);
+    },
+  });
+
+  await assert.rejects(
+    () => device.interactions.click(ref('@e9'), { session: 'default' }),
+    (error: unknown) => {
+      assert.match((error as Error).message, /Ref @e9 not found/);
+      assert.deepEqual((error as { details?: Record<string, unknown> }).details, {
+        reason: 'ref_not_found',
+        ref: 'e9',
+        hint: STALE_REF_HINT,
+      });
       return true;
     },
   );
@@ -522,18 +556,48 @@ test('tryResolveRefNode discloses exact for a resolved ref and label-fallback fo
   const nodes = selectorSnapshot().nodes;
 
   const exact = tryResolveRefNode(nodes, '@e1', { fallbackLabel: '' });
-  assert.equal(exact?.node.label, 'Continue');
-  assert.deepEqual(exact?.resolution, { source: 'ref', phase: 'pre-action', kind: 'exact' });
+  assert.equal(exact.kind, 'resolved');
+  if (exact.kind !== 'resolved') throw new Error('unreachable');
+  assert.equal(exact.resolved.node.label, 'Continue');
+  assert.deepEqual(exact.resolved.resolution, {
+    source: 'ref',
+    phase: 'pre-action',
+    kind: 'exact',
+  });
 
   const recovered = tryResolveRefNode(nodes, '@e9', { fallbackLabel: 'Continue' });
-  assert.equal(recovered?.node.label, 'Continue');
-  assert.deepEqual(recovered?.resolution, {
+  assert.equal(recovered.kind, 'resolved');
+  if (recovered.kind !== 'resolved') throw new Error('unreachable');
+  assert.equal(recovered.resolved.node.label, 'Continue');
+  assert.deepEqual(recovered.resolved.resolution, {
     source: 'ref',
     phase: 'pre-action',
     kind: 'label-fallback',
   });
 
-  assert.equal(tryResolveRefNode(nodes, '@e9', { fallbackLabel: '' }), null);
+  assert.deepEqual(tryResolveRefNode(nodes, '@e9', { fallbackLabel: '' }), { kind: 'missing' });
+});
+
+test('tryResolveRefNode tells a listed node without a usable centre from a missing one', () => {
+  const unusable = makeSnapshotState([
+    { index: 0, depth: 0, type: 'Button', label: 'Continue', hittable: true },
+  ]).nodes;
+
+  const byRef = tryResolveRefNode(unusable, '@e1', { fallbackLabel: '' });
+  assert.equal(byRef.kind, 'unusable');
+  if (byRef.kind !== 'unusable') throw new Error('unreachable');
+  assert.equal(byRef.node.label, 'Continue');
+
+  const byLabel = tryResolveRefNode(unusable, '@e9', { fallbackLabel: 'Continue' });
+  assert.equal(
+    byLabel.kind,
+    'unusable',
+    'the trailing-label recovery found the node, so it is not missing',
+  );
+
+  assert.deepEqual(tryResolveRefNode(unusable, '@e9', { fallbackLabel: 'Elsewhere' }), {
+    kind: 'missing',
+  });
 });
 
 test('buildRefResolution is the shared exact and label-fallback disclosure constructor', () => {

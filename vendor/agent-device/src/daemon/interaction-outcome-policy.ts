@@ -1,7 +1,8 @@
 import type { CommandFlags } from '@agent-device/contracts/command';
 import { isMobilePlatform } from '@agent-device/kernel/device';
-import type { SnapshotNode, SnapshotState } from '@agent-device/kernel/snapshot';
+import type { Rect, SnapshotNode, SnapshotState } from '@agent-device/kernel/snapshot';
 import { collectKeyboardChromeRefs } from '@agent-device/capture-kit/snapshot-chrome';
+import { stateMarkers } from '@agent-device/capture-kit/snapshot-lines';
 import { emitDiagnostic } from '@agent-device/host-kit/diagnostics';
 import { isViewportRootNode } from '@agent-device/contracts/snapshot';
 import { contextFromFlags, type DaemonCommandContext } from './context.ts';
@@ -256,6 +257,17 @@ export function buildInteractionSurfaceSignature(
   return entries;
 }
 
+/**
+ * What makes two captures comparable at all: the iOS comparison key when the capture carries one,
+ * and the capturing backend otherwise. Two trees from different producers are not two views of one
+ * screen — the XCTest-channel fallback swapping mid-request (#1569) is the case this exists for.
+ */
+export function snapshotSurfaceComparisonKey(
+  snapshot: SnapshotState | undefined,
+): string | undefined {
+  return snapshot?.comparisonKey ?? snapshot?.snapshotQuality?.backend;
+}
+
 export function classifyInteractionSurfaceChange(
   before: InteractionSurfaceSignature,
   after: InteractionSurfaceSignature,
@@ -453,6 +465,62 @@ export function summarizeDiscriminatingSurfaceDivergence(
   return { onlyInBaseline, onlyInCurrent: currentByKey.size, rectMismatched, shared };
 }
 
+/**
+ * Whether the DISCRIMINATING entries inside `rect` moved across a gesture: one left or entered the
+ * region, or its rect moved beyond tolerance. Entries match on `content`: the flip-tolerant
+ * `identity` where they have one, the type and role of an anonymous node otherwise, told apart by
+ * document order when repeated. A scroll moves content, while a state flip inside the container (a
+ * switch the swipe brushed, a row it selected) changes the key at the same rect and is not movement.
+ *
+ * A whole-surface difference is not automatically the gesture's doing. A captured tree carries system
+ * chrome with it, and on Android the status bar clocks and icons change on their own while the app's
+ * list sits frozen underneath. A difference that lives entirely outside the region a command acted on
+ * therefore proves nothing in either direction: it cannot credit the gesture, and it cannot convict it.
+ */
+export function discriminatingSurfaceChangedWithinRect(
+  before: InteractionSurfaceSignature,
+  after: InteractionSurfaceSignature,
+  rect: Rect,
+): boolean {
+  const beforeInRect = contentKeyed(discriminatingEntriesWithinRect(before, rect));
+  const afterInRect = contentKeyed(discriminatingEntriesWithinRect(after, rect));
+  for (const [content, entry] of beforeInRect) {
+    const other = afterInRect.get(content);
+    if (!other) return true;
+    if (!rectsWithinTolerance(entry, other)) return true;
+    afterInRect.delete(content);
+  }
+  return afterInRect.size > 0;
+}
+
+/** Entries by what they are rather than the state they are in; repeated content is told apart by document order. */
+function contentKeyed(
+  entries: InteractionSurfaceSignature,
+): Map<string, InteractionSurfaceSignature[number]> {
+  const occurrences = new Map<string, number>();
+  const keyed = new Map<string, InteractionSurfaceSignature[number]>();
+  for (const entry of entries) {
+    const occurrence = occurrences.get(entry.content) ?? 0;
+    occurrences.set(entry.content, occurrence + 1);
+    keyed.set(`${entry.content}|#${occurrence}`, entry);
+  }
+  return keyed;
+}
+
+function discriminatingEntriesWithinRect(
+  signature: InteractionSurfaceSignature,
+  rect: Rect,
+): InteractionSurfaceSignature {
+  return signature.filter(
+    (entry) =>
+      entry.discriminating &&
+      entry.x < rect.x + rect.width &&
+      rect.x < entry.x + entry.width &&
+      entry.y < rect.y + rect.height &&
+      rect.y < entry.y + entry.height,
+  );
+}
+
 function supportsInteractionOutcomePolicy(session: SessionState): boolean {
   return isMobilePlatform(session.device);
 }
@@ -489,6 +557,7 @@ function buildInteractionSurfaceEntry(
   return {
     key: `${semanticKey}|#${occurrence}`,
     ...(identity ? { identity } : {}),
+    content: interactionSurfaceContent(node, identity),
     x: Math.round(node.rect.x),
     y: Math.round(node.rect.y),
     width: Math.round(node.rect.width),
@@ -497,10 +566,15 @@ function buildInteractionSurfaceEntry(
   };
 }
 
+/** What the element is without the state it is in: its identity, else the type and role of an anonymous node. */
+function interactionSurfaceContent(node: SnapshotNode, identity: string | undefined): string {
+  return identity ?? `${node.type ?? ''}|${node.role ?? ''}`;
+}
+
 /**
  * What the element IS — never where it sits, and never volatile state a gesture
  * is expected to change. `interactionSurfaceSemanticKey` deliberately folds in
- * `hittable`/`enabled`/`selected` and an occurrence index, which is right for
+ * the states `stateMarkers` prints, `hittable`, and an occurrence index, which is right for
  * "did these two back-to-back captures agree" and wrong for "is this the same
  * element as before the gesture": scrolling flips `hittable` the moment a
  * node's centre leaves the viewport, so keying on it evicts precisely the
@@ -532,6 +606,11 @@ function isNonDiscriminatingSurfaceNode(
   return isViewportRootNode(node) || (node.ref !== undefined && keyboardChromeRefs.has(node.ref));
 }
 
+/**
+ * What the element is and the state it is in. The states are the ones `stateMarkers` prints, so the
+ * outcome lane, the unchanged-snapshot comparison, and the diff weigh one list: a tap whose only
+ * effect is a toggle is a change here, not a no-op to retry.
+ */
 function interactionSurfaceSemanticKey(node: SnapshotNode): string | undefined {
   const semanticKey = [
     node.identifier,
@@ -539,8 +618,7 @@ function interactionSurfaceSemanticKey(node: SnapshotNode): string | undefined {
     node.value,
     node.type,
     node.role,
-    node.enabled === false ? 'disabled' : 'enabled',
-    node.selected === true ? 'selected' : 'unselected',
+    ...stateMarkers(node),
     node.hittable === true ? 'hittable' : 'not-hittable',
   ]
     .map((value) => (typeof value === 'string' ? value.trim() : ''))

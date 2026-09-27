@@ -3,12 +3,14 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 
 import path from 'node:path';
 import { test } from 'vitest';
+import { isCommandTimeoutError } from '@agent-device/host-kit/command';
 import { createSnapshotSourceHost } from './host.ts';
-import { ensureSnapshotBridgeBinary } from './cache.ts';
+import { buildSnapshotBridgeCompileArgv, ensureSnapshotBridgeBinary } from './cache.ts';
 import { SnapshotSourceError } from './errors.ts';
 import { createSnapshotSourceDeadline } from './deadline.ts';
 import { DEFAULT_SNAPSHOT_SOURCE_LIMITS } from './limits.ts';
 import type { SnapshotSourceHost } from './types.ts';
+import { execKillTimeoutError } from './__tests__/exec-timeout-fixture.ts';
 import { mkdtempForTest } from '../__tests__/tmp-dir.ts';
 
 test('snapshot bridge preparation is cold-once, atomic, and invalidates corrupt or stale entries', async () => {
@@ -121,6 +123,15 @@ test('snapshot bridge preparation is cold-once, atomic, and invalidates corrupt 
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test('the runtime clang build never uses -Werror', () => {
+  const argv = buildSnapshotBridgeCompileArgv({
+    architecture: 'arm64',
+    sourceRoot: '',
+    outputPath: '',
+  });
+  assert.ok(!argv.includes('-Werror'));
 });
 
 test('concurrent snapshot bridge preparation publishes one cache entry', async () => {
@@ -260,6 +271,54 @@ test('a bridge build that failed is reported over a cache lock that could not be
     );
     // The release really could not verify itself: the lock is still standing.
     assert.ok((await readdir(cacheRoot)).some((entry) => entry.endsWith('.lock')));
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('a compile exec killed at its budget reports the bridge build, not the exec layer', async () => {
+  const root = await mkdtempForTest('agent-device-snapshot-source-build-stall-');
+  const sourceRoot = path.join(root, 'source');
+  const cacheRoot = path.join(root, 'cache');
+  await (await import('@agent-device/host-kit/host-file')).ensureHostDirectory(sourceRoot);
+  await writeFile(path.join(sourceRoot, 'SnapshotBridge.m'), 'native source');
+  await writeFile(path.join(sourceRoot, 'SnapshotBridgeRuntime.m'), 'native runtime');
+  await writeFile(path.join(sourceRoot, 'SnapshotBridgeRuntime.h'), 'native header');
+  await writeFile(path.join(sourceRoot, 'SnapshotBridgeCapture.h'), 'native header');
+  await writeFile(path.join(sourceRoot, 'SnapshotBridgeCapture.m'), 'native header');
+  const buildHost = createFakeBuildHost('binary');
+  let compileTimeoutMs = 0;
+  const host: SnapshotSourceHost = {
+    ...buildHost,
+    run: async (command, args, options) => {
+      if (command !== 'xcrun' || !args.includes('clang')) {
+        return await buildHost.run(command, args, options);
+      }
+      compileTimeoutMs = options?.timeoutMs ?? 0;
+      throw await execKillTimeoutError();
+    },
+  };
+
+  try {
+    await assert.rejects(
+      ensureSnapshotBridgeBinary({
+        host,
+        runtime: 'iOS 26.2',
+        limits: DEFAULT_SNAPSHOT_SOURCE_LIMITS,
+        deadline: testDeadline(120_000),
+        sourceRoot,
+        cacheRoot,
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof SnapshotSourceError);
+        assert.equal(error.failureKind, 'timeout');
+        assert.equal(error.failureCode, 'native-build-stalled');
+        assert.ok(compileTimeoutMs > 0, 'the compile exec ran and was killed at its budget');
+        assert.equal(error.details?.timeoutMs, compileTimeoutMs, 'says the budget the compile hit');
+        assert.ok(isCommandTimeoutError(error.cause), 'keeps the exec layer kill as the cause');
+        return true;
+      },
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

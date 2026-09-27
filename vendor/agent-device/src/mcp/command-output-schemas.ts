@@ -1,11 +1,22 @@
 import type { JsonSchema } from '../commands/command-contract.ts';
 import type { CommandResultMap } from '@agent-device/command-registry/command-result';
 import { commandSupportsSettleObservation } from '@agent-device/command-registry/registry';
-import { booleanSchema, looseObjectSchema, stringSchema } from '../commands/command-input.ts';
+import {
+  booleanSchema,
+  enumSchema,
+  looseObjectSchema,
+  numberSchema,
+  objectSchema,
+  stringArraySchema,
+  stringSchema,
+} from '../commands/command-input.ts';
+import { REPLAY_COMMAND_OUTPUT_SCHEMAS } from '../commands/replay/index.ts';
 import { BACK_MODES } from '@agent-device/contracts/back-mode';
+import { APPLE_APPLICATION_STATES } from '@agent-device/kernel/snapshot';
 import { NATIVE_PATH_DISPOSITION_VALUES } from '@agent-device/contracts/recording-native-path';
 import { RECORDER_OBSERVATION_VALUES } from '@agent-device/contracts/recording-stop-observation';
-import { DEVICE_ROTATIONS } from '@agent-device/contracts/device';
+import { DEVICE_ROTATIONS, FOLD_POSES } from '@agent-device/contracts/device';
+import { FOLD_SCREEN_COORDINATE_SPACE } from '@agent-device/contracts/fold-runtime';
 import { SESSION_SURFACES } from '@agent-device/contracts/session';
 import { TV_REMOTE_BUTTONS } from '@agent-device/contracts/tv-remote';
 import { DEVICE_TARGETS, PUBLIC_PLATFORMS } from '@agent-device/kernel/device';
@@ -22,9 +33,11 @@ import { DEVICE_TARGETS, PUBLIC_PLATFORMS } from '@agent-device/kernel/device';
  * `outputSchema` key), exactly as `CommandResultMap` omits them rather than
  * inventing a shape.
  *
- * There is no type→JSON-Schema generator in this repo. Schemas remain
- * hand-authored from matching contract types; selected executable contracts can
- * project their colocated schema into this map. Two invariants:
+ * There is no type→JSON-Schema generator in this repo. Schemas are hand-authored from
+ * matching contract types, using the shared JSON-Schema primitives in
+ * `src/commands/command-input.ts`. Where a command family is owned by one module (the
+ * descriptors' `ownerFiles`), that module authors its entries and projects them into this
+ * map instead of being hand-listed here. Two invariants:
  *  - NEVER strict: no `additionalProperties: false` anywhere, so the additive
  *    `cost` object (opted in via `--cost` / `includeCost`) and any other additive
  *    fields ride into `structuredContent` and still validate.
@@ -39,14 +52,6 @@ import { DEVICE_TARGETS, PUBLIC_PLATFORMS } from '@agent-device/kernel/device';
 
 export const DEVICE_KINDS = ['simulator', 'emulator', 'device'] as const;
 
-function numberSchema(description?: string): JsonSchema {
-  return { type: 'number', ...(description ? { description } : {}) };
-}
-
-function enumSchema(values: readonly string[], description?: string): JsonSchema {
-  return { type: 'string', enum: values, ...(description ? { description } : {}) };
-}
-
 function constSchema(value: string): JsonSchema {
   return { type: 'string', const: value };
 }
@@ -54,23 +59,6 @@ function constSchema(value: string): JsonSchema {
 function nullableStringSchema(description?: string): JsonSchema {
   return { type: ['string', 'null'], ...(description ? { description } : {}) };
 }
-
-function objectSchema(
-  properties: Record<string, JsonSchema>,
-  required: readonly string[] = [],
-  description?: string,
-): JsonSchema {
-  // Intentionally non-strict (no additionalProperties: false) so additive
-  // fields such as `cost` validate.
-  return {
-    type: 'object',
-    ...(description ? { description } : {}),
-    properties,
-    ...(required.length > 0 ? { required } : {}),
-  };
-}
-
-const stringArraySchema: JsonSchema = { type: 'array', items: { type: 'string' } };
 
 const responseCostSchema: JsonSchema = objectSchema(
   {
@@ -121,7 +109,7 @@ function interactionResponseDataSchema(extra: InteractionExtra = {}): JsonSchema
       ),
       ref: stringSchema('Snapshot ref without the @ prefix when the target was an @ref.'),
       selector: stringSchema('Selector expression when the target was a selector.'),
-      selectorChain: stringArraySchema,
+      selectorChain: stringArraySchema(),
       refLabel: stringSchema(),
       targetHittable: booleanSchema(),
       hint: stringSchema(),
@@ -517,6 +505,28 @@ const BASE_COMMAND_OUTPUT_SCHEMAS = {
     'action',
     'message',
   ]),
+  fold: objectSchema(
+    {
+      action: constSchema('fold'),
+      pose: enumSchema(FOLD_POSES),
+      hingeAngleDegrees: numberSchema('Hinge angle CoreDevice read back after the pose settled.'),
+      screen: objectSchema(
+        {
+          display: stringSchema('CoreDevice name of the panel the device now lights.'),
+          coordinateSpace: constSchema(FOLD_SCREEN_COORDINATE_SPACE),
+          widthPt: numberSchema(
+            'Panel width in native panel points (pixels divided by point scale), NOT snapshot coordinates; take a fresh snapshot to place a tap.',
+          ),
+          heightPt: numberSchema(
+            'Panel height in native panel points (pixels divided by point scale), NOT snapshot coordinates; take a fresh snapshot to place a tap.',
+          ),
+        },
+        ['display', 'coordinateSpace', 'widthPt', 'heightPt'],
+      ),
+      message: stringSchema(),
+    },
+    ['action', 'pose', 'hingeAngleDegrees', 'message'],
+  ),
   'action-button': objectSchema({ action: constSchema('action-button'), message: stringSchema() }, [
     'action',
     'message',
@@ -565,6 +575,10 @@ const BASE_COMMAND_OUTPUT_SCHEMAS = {
       ),
       keyboardMinY: numberSchema(
         'Where the keyboard began, in the same unit as the gesture coordinates. Clipped scrolls only.',
+      ),
+      movement: enumSchema(
+        ['moved', 'at-edge', 'unchanged', 'unobserved'],
+        'Directional scrolls only: what the owner observed after its gesture. `moved` means the content inside the scroller the swipe ran in differs from the tree the session stored immediately before the gesture; `at-edge` and `unchanged` mean it did not change, with no hidden content left to reveal and with no end-of-content signal to read, respectively; `unobserved` means the pair could not back a claim in either direction — nothing comparable was available (no stored tree, a capture from another lineage, a surface that never came to rest), or every difference sits outside the scroller that was swiped, which a changing status bar does on Android — so the reported distance rests on the gesture plan alone. The field is absent — which is never a claim that nothing moved — on the tiers that verify per pass (`scroll top`/`bottom`, `--until`), on a runtime bound without a capture, on a platform whose scroll dispatches no swipe (the Linux wheel), and where the caller already owns that observation (`--settle`, or a replay with `postGestureStabilization: false`).',
       ),
     },
     ['direction'],
@@ -691,7 +705,14 @@ const BASE_COMMAND_OUTPUT_SCHEMAS = {
           platform: enumSchema(['ios', 'macos']),
           appName: stringSchema(),
           appBundleId: stringSchema(),
-          source: constSchema('session'),
+          source: enumSchema(
+            ['session', 'runner'],
+            'runner when a live runner read the session app state; session when the record alone answered.',
+          ),
+          state: enumSchema(
+            APPLE_APPLICATION_STATES,
+            'The session app XCUIApplication state as a live runner reads it; absent with source session.',
+          ),
           surface: enumSchema(SESSION_SURFACES),
           device_udid: stringSchema('iOS only — the session device UDID.'),
           ios_simulator_device_set: {
@@ -784,50 +805,9 @@ const BASE_COMMAND_OUTPUT_SCHEMAS = {
           ['kind', 'text'],
         ),
       },
-      warnings: stringArraySchema,
+      warnings: stringArraySchema(),
     },
     ['mode', 'baselineInitialized', 'summary', 'lines'],
-  ),
-
-  // packages/contracts/src/replay.ts
-  replay: objectSchema(
-    {
-      replayed: numberSchema(),
-      healed: numberSchema(),
-      session: stringSchema(),
-      sessionActive: booleanSchema(
-        'True iff the session is still active — the script had no terminal close.',
-      ),
-      artifactPaths: stringArraySchema,
-      snapshotDiagnostics: looseObjectSchema(),
-      message: stringSchema(),
-    },
-    ['replayed', 'healed', 'session', 'sessionActive', 'artifactPaths', 'message'],
-  ),
-  test: objectSchema(
-    {
-      total: numberSchema(),
-      executed: numberSchema(),
-      passed: numberSchema(),
-      failed: numberSchema(),
-      skipped: numberSchema(),
-      notRun: numberSchema(),
-      durationMs: numberSchema(),
-      failures: { type: 'array', items: looseObjectSchema() },
-      tests: { type: 'array', items: looseObjectSchema() },
-      snapshotDiagnostics: looseObjectSchema(),
-    },
-    [
-      'total',
-      'executed',
-      'passed',
-      'failed',
-      'skipped',
-      'notRun',
-      'durationMs',
-      'failures',
-      'tests',
-    ],
   ),
 
   // packages/contracts/src/recording.ts
@@ -893,6 +873,12 @@ const BASE_COMMAND_OUTPUT_SCHEMAS = {
       ),
     ],
   },
+
+  // A family that owns its commands authors their advertised response shape beside the
+  // command surface and projects it here. This spread stays last: a hand-written entry for
+  // a projected command then fails as TS2783 instead of quietly overriding the family's,
+  // and this map's `satisfies` still refuses a missing `CommandResultMap` key.
+  ...REPLAY_COMMAND_OUTPUT_SCHEMAS,
 } satisfies Record<keyof CommandResultMap, JsonSchema>;
 
 export const COMMAND_OUTPUT_SCHEMAS = deriveSettleObservationSchemas(BASE_COMMAND_OUTPUT_SCHEMAS);

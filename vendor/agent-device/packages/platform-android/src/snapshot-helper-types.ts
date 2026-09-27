@@ -45,7 +45,12 @@ export type {
   AndroidSnapshotHelperManifest,
 } from './helper-artifacts.ts';
 
-export type AndroidSnapshotHelperInstallPolicy = 'missing-or-outdated' | 'always' | 'never';
+/** `current-only` uses an installed helper at the artifact's version and refuses to install one. */
+export type AndroidSnapshotHelperInstallPolicy =
+  | 'missing-or-outdated'
+  | 'always'
+  | 'never'
+  | 'current-only';
 
 export type AndroidSnapshotHelperInstallResult = {
   packageName: string;
@@ -90,6 +95,8 @@ export type AndroidSnapshotHelperMetadata = {
   nodeCount?: number;
   truncated?: boolean;
   elapsedMs?: number;
+  /** Physical pixels per dp of the captured display, as the helper's own `DisplayMetrics` say. */
+  pixelDensity?: number;
   transport?: AndroidSnapshotHelperTransport;
   sessionReused?: boolean;
 };

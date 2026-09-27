@@ -52,6 +52,7 @@ test('the bridge tree becomes one depth-first raw snapshot with viewport evidenc
       role: 'Application',
       rect: { x: 0, y: 0, width: 390, height: 844 },
       depth: 0,
+      hittable: false,
     },
     {
       index: 1,
@@ -61,6 +62,7 @@ test('the bridge tree becomes one depth-first raw snapshot with viewport evidenc
       subrole: 'UIWindow',
       rect: { x: 0, y: 0, width: 390, height: 844 },
       depth: 1,
+      hittable: true,
     },
     {
       index: 2,
@@ -69,6 +71,7 @@ test('the bridge tree becomes one depth-first raw snapshot with viewport evidenc
       label: 'Continue',
       rect: { x: 20, y: 700, width: 120, height: 48 },
       depth: 2,
+      hittable: true,
     },
   ]);
   assert.deepEqual(result.viewport, {
@@ -77,6 +80,93 @@ test('the bridge tree becomes one depth-first raw snapshot with viewport evidenc
   });
   assert.equal(result.maxTraversalDepth, 2);
   assert.equal(result.opaqueRemoteElements, 0);
+});
+
+test('the bridge reader stamps geometric hittable onto every raw node, matching the runner', () => {
+  const traitsWord = (bits: bigint) => bits.toString();
+  const button = (text: string, rect: Record<string, number>, traitBits = 1n) => ({
+    [automationType]: 9,
+    [label]: text,
+    [frame]: rect,
+    [traits]: traitsWord(traitBits),
+    [children]: [],
+  });
+  const decode = (kids: unknown[]) =>
+    decodeSnapshotBridgeTree(
+      {
+        [application]: 'Application',
+        [frame]: { X: 0, Y: 0, Width: 390, Height: 844 },
+        [children]: kids,
+      },
+      { truncated: false },
+      limits,
+    ).nodes;
+  const hittableOf = (kids: unknown[]) => decode(kids).map((node) => node.hittable);
+  const notEnabled = 1n << 8n;
+
+  // A root has no parent to hit through, so it is published not-hittable exactly as the runner does.
+  assert.deepEqual(hittableOf([]), [false], 'root is not hittable');
+  // On-screen enabled is hittable; the same frame disabled is not; a frame centred below the
+  // fold is not, even while enabled. These are the Swift `normalized()` cases pinned in
+  // CoordinateSpaceTests.swift, replayed against the bridge reader.
+  assert.deepEqual(
+    hittableOf([
+      button('Continue', { X: 20, Y: 700, Width: 120, Height: 48 }),
+      button('Place order', { X: 20, Y: 600, Width: 120, Height: 48 }, 1n | notEnabled),
+      button('Offscreen', { X: 20, Y: 2000, Width: 120, Height: 48 }),
+    ]),
+    [false, true, false, false],
+  );
+
+  // Without a reported viewport the reader has no rule input, so it publishes no hittable claim at
+  // all rather than guessing — the fold keeps hittability withheld until the runner serves the frame.
+  const noViewport = decodeSnapshotBridgeTree(
+    {
+      [application]: 'Application',
+      [children]: [button('Continue', { X: 20, Y: 700, Width: 120, Height: 48 })],
+    },
+    { truncated: false },
+    limits,
+  ).nodes;
+  assert.deepEqual(
+    noViewport.map((node) => node.hittable),
+    [undefined, undefined],
+    'a missing viewport publishes no hittable claim',
+  );
+});
+
+test('a root whose frame is the Apple no-box sentinel declares an invalid viewport, not a whole-screen one (#2891)', () => {
+  // Every component and extent of this box is finite, so only the shared box guard refuses it. If
+  // it were taken as a reported viewport, every node center on the screen would land inside it.
+  const sentinel = {
+    X: -Number.MAX_VALUE / 2,
+    Y: -Number.MAX_VALUE / 2,
+    Width: Number.MAX_VALUE,
+    Height: Number.MAX_VALUE,
+  };
+  const result = decodeSnapshotBridgeTree(
+    {
+      [application]: 'Application',
+      [frame]: sentinel,
+      [children]: [
+        {
+          [automationType]: 9,
+          [label]: 'Continue',
+          [frame]: { X: 20, Y: 700, Width: 120, Height: 48 },
+          [children]: [],
+        },
+      ],
+    },
+    { truncated: false },
+    limits,
+  );
+
+  assert.deepEqual(result.viewport, { kind: 'missing', reason: 'invalid' });
+  assert.deepEqual(
+    result.nodes.map((node) => node.hittable),
+    [undefined, undefined],
+    'a refused viewport publishes no hittable claim at all',
+  );
 });
 
 test('the bridge tree counts web-hosted remote leaves that reach the viewport', () => {
@@ -188,6 +278,51 @@ test('the bridge tree reads enabled from the NotEnabled trait', () => {
   assert.throws(() => decode('1.5'), traitsInvalid);
   assert.throws(() => decode('-1'), traitsInvalid);
   assert.throws(() => decode(''), traitsInvalid);
+});
+
+test('the bridge tree reads selected from the selected trait, matching the XCTest tree', () => {
+  const tab = (word?: unknown) => ({
+    [automationType]: 9,
+    [label]: 'Albums',
+    [frame]: { X: 20, Y: 700, Width: 120, Height: 48 },
+    ...(word === undefined ? {} : { [traits]: word }),
+    [children]: [],
+  });
+  const decode = (word?: unknown) =>
+    decodeSnapshotBridgeTree(
+      { [application]: 'Application', [children]: [tab(word)] },
+      { truncated: false },
+      limits,
+    ).nodes[1];
+  const selected = (word?: unknown) => decode(word)?.selected;
+  const enabled = (word?: unknown) => decode(word)?.enabled;
+
+  const buttonTrait = 1n;
+  const selectedTrait = 1n << 3n;
+  const privateHighTrait = 1n << 60n;
+  const word = (traits: bigint) => traits.toString();
+  // Real guest captures from a React Navigation bottom tab bar: the active tab differs from the
+  // inactive tabs by exactly bit 3, and the active tab also carries the label. This pins the bit so
+  // a producer change cannot silently drop `selected:` matching the way the 0.21.0 bridge did.
+  const selectedTabTraits = 8858370057n;
+  const inactiveTabTraits = 8858370049n;
+
+  assert.equal(selected(word(buttonTrait | selectedTrait)), true);
+  assert.equal(selected(word(selectedTabTraits)), true, 'active tab reports selected');
+  assert.equal(selected(word(inactiveTabTraits)), undefined, 'inactive tab omits selected');
+  assert.equal(selected(word(buttonTrait)), undefined, 'unselected omits selected');
+  assert.equal(selected(word(0n)), undefined, 'no selected bit omits selected');
+  assert.equal(
+    selected(word(privateHighTrait | selectedTrait)),
+    true,
+    'a word past double precision keeps bit 3',
+  );
+  assert.equal(selected(word(privateHighTrait | 7n)), undefined, 'no carry into bit 3');
+  assert.equal(selected(), undefined, 'no traits word leaves selected unknown');
+  // The two facts are read from one word without interfering: bit 3 is selection, bit 8 is disabled.
+  const disabledSelected = word(selectedTabTraits | (1n << 8n));
+  assert.equal(selected(disabledSelected), true);
+  assert.equal(enabled(disabledSelected), false);
 });
 
 test('the bridge tree rejects unknown fields, invalid frames, and bounded overflows', () => {
@@ -326,5 +461,56 @@ test('a window reporting the app box quarter-turned is counted as an unresolved 
       limits,
     ).unresolvedCoordinateSpaceWindows,
     0,
+  );
+});
+
+test('the bridge tree carries a text field placeholder and omits an empty one', () => {
+  const field = (placeholder?: unknown) => ({
+    [application]: 'UITextField',
+    [frame]: { X: 16, Y: 200, Width: 370, Height: 44 },
+    XC_kAXXCAttributeValue: 'Ada Lovelace',
+    ...(placeholder === undefined ? {} : { XC_kAXXCAttributePlaceholderValue: placeholder }),
+    [children]: [],
+  });
+  const decode = (placeholder?: unknown) =>
+    decodeSnapshotBridgeTree(
+      { [application]: 'Application', [children]: [field(placeholder)] },
+      { truncated: false },
+      limits,
+    ).nodes[1];
+
+  const filled = decode('Type your name');
+  assert.equal(filled?.placeholder, 'Type your name');
+  assert.equal(filled?.value, 'Ada Lovelace', 'the value and the placeholder are separate facts');
+  assert.equal(decode('')?.placeholder, undefined, 'no placeholder reads as none, not as ""');
+  assert.equal(
+    decode('  ')?.placeholder,
+    undefined,
+    'a whitespace placeholder is none, as on the runner',
+  );
+  assert.equal(decode()?.placeholder, undefined, 'an unread fact stays unknown');
+});
+
+test('the bridge tree publishes whether a dimming view takes touches', () => {
+  const dimming = (enabled?: unknown) => ({
+    [application]: 'UIDimmingView',
+    [frame]: { X: -390, Y: -844, Width: 1170, Height: 2532 },
+    ...(enabled === undefined ? {} : { XC_kAXXCAttributeIsUserInteractionEnabled: enabled }),
+    [children]: [],
+  });
+  const decode = (enabled?: unknown) =>
+    decodeSnapshotBridgeTree(
+      { [application]: 'Application', [children]: [dimming(enabled)] },
+      { truncated: false },
+      limits,
+    ).nodes[1];
+
+  assert.equal(decode(true)?.userInteractionEnabled, true);
+  assert.equal(decode(false)?.userInteractionEnabled, false, 'a sheet at an undimmed detent');
+  assert.equal(decode()?.userInteractionEnabled, undefined, 'an unread fact stays unknown');
+  assert.throws(
+    () => decode(1),
+    (error: unknown) =>
+      error instanceof SnapshotSourceError && error.failureCode === 'user-interaction-invalid',
   );
 });

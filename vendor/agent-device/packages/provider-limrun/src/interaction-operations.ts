@@ -16,11 +16,10 @@ import {
   bindProviderScrollInteractor,
   scrollRuntimeOperationFacts,
 } from '@agent-device/contracts/scroll-runtime';
-import { homeRuntimeOperationFacts } from '@agent-device/contracts/home-runtime';
 import { appEventRuntimeOperationFacts } from '@agent-device/contracts/app-event-runtime';
 import { settingsRuntimeOperationFacts } from '@agent-device/contracts/settings-runtime';
 import { alertRuntimeOperationFacts } from '@agent-device/contracts/alert-runtime';
-import { appSwitcherRuntimeOperationFacts } from '@agent-device/contracts/app-switcher-runtime';
+import { systemButtonRuntimeOperationFacts } from '@agent-device/contracts/system-button-runtime';
 import { clipboardRuntimeOperationFacts } from '@agent-device/contracts/clipboard-runtime';
 import { keyboardRuntimeOperationFacts } from '@agent-device/contracts/keyboard-runtime';
 import { orientationRuntimeOperationFacts } from '@agent-device/contracts/orientation-runtime';
@@ -45,9 +44,9 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 const available = Object.freeze({ available: true } as const);
 /**
- * Limrun's iOS direct session drives text and touch but exposes no portable gesture execution —
- * its interactor's own `performGesture` refuses with this wording. Stating it as a fact refuses at
- * admission instead of mid-execution (ADR 0019 §6), keeping the agent-facing hint identical.
+ * Limrun's iOS direct session drives text and touch but exposes no portable gesture execution.
+ * Stating it as a fact refuses at admission instead of mid-execution (ADR 0019 §6), and it is
+ * the only refusal the caller sees: the leg's interactor carries no gesture member at all.
  */
 const iosGestureUnavailable = Object.freeze({
   available: false,
@@ -142,16 +141,11 @@ const appSwitcherUnavailableIos = Object.freeze({
   reason: 'unsupported-provider-mode',
   hint: 'Limrun iOS direct sessions do not expose app switcher yet.',
 } as const);
-/**
- * Refused on both legs, so — unlike `limrunAppSwitcherOperationFacts`, whose Android leg rides the
- * local Android interactor — this needs no device-parameterized helper: the iOS session has no
- * Action Button transport, and the Android leg's own interactor refuses for the same reason the
- * local Android fact does.
- */
-export const LIMRUN_ACTION_BUTTON_UNAVAILABLE = Object.freeze({
+/** No Limrun session exposes a hardware button; only the springboard buttons split by leg. */
+const systemButtonUnavailable = Object.freeze({
   available: false,
   reason: 'unsupported-provider-mode',
-  hint: 'action-button presses iPhone Action Button hardware, which no Limrun session exposes.',
+  hint: 'No Limrun session exposes this system button.',
 } as const);
 
 /**
@@ -231,11 +225,12 @@ export function bindLimrunInteractionOperations(
 }
 
 /**
- * `back`/`home`/`orientation`/`tvRemote` differ by direct-session platform, unlike focus/type:
+ * `back`/`orientation`/`tvRemote` differ by direct-session platform, unlike focus/type:
  * the Android leg rides `session.dependencies.android.createInteractor` (`android.ts`) — the
  * SAME factory the local Android family binds, so it carries the identical cell table (parity
- * with the local owner, including the `device.target === 'tv'` gate for `tvRemote`). The iOS leg
- * (`ios.ts`) implements `back`/`setOrientation` but explicitly refuses `home`/`tvRemote`.
+ * with the local owner, including the `device.target === 'tv'` gate for `tvRemote`). The iOS
+ * direct session is a phone/tablet surface with no remote receiver, so its fact refuses
+ * `tvRemote` and its interactor carries no such member.
  */
 export function limrunNavigationOperationFacts(
   device: DeviceInfo,
@@ -244,7 +239,6 @@ export function limrunNavigationOperationFacts(
   if (liveSessionUnavailable) {
     return Object.freeze({
       ...backRuntimeOperationFacts({ back: liveSessionUnavailable }),
-      ...homeRuntimeOperationFacts({ home: liveSessionUnavailable }),
       ...orientationRuntimeOperationFacts({ orientation: liveSessionUnavailable }),
       ...tvRemoteRuntimeOperationFacts({ tvRemote: liveSessionUnavailable }),
     });
@@ -252,7 +246,6 @@ export function limrunNavigationOperationFacts(
   if (device.platform === 'android') {
     return Object.freeze({
       ...backRuntimeOperationFacts({ back: available }),
-      ...homeRuntimeOperationFacts({ home: available }),
       ...orientationRuntimeOperationFacts({ orientation: available }),
       ...tvRemoteRuntimeOperationFacts({
         tvRemote: device.target === 'tv' ? available : tvRemoteUnavailableAndroid,
@@ -261,7 +254,6 @@ export function limrunNavigationOperationFacts(
   }
   return Object.freeze({
     ...backRuntimeOperationFacts({ back: available }),
-    ...homeRuntimeOperationFacts({ home: homeUnavailableIos }),
     ...orientationRuntimeOperationFacts({ orientation: available }),
     ...tvRemoteRuntimeOperationFacts({ tvRemote: tvRemoteUnavailableIos }),
   });
@@ -276,8 +268,7 @@ export function limrunNavigationOperationFacts(
  * `clipboard` shares the split its siblings have: the Android leg rides
  * `session.dependencies.android.createInteractor` — the SAME factory the local Android family
  * binds, so `cmd clipboard get/set text` reaches the device exactly as it does locally — while
- * the iOS leg's own `readClipboard`/`writeClipboard` throw, so both cells stay unavailable there
- * and carry the interactor's wording.
+ * the iOS direct session has no pasteboard transport, so both cells stay unavailable there.
  */
 export function limrunClipboardOperationFacts(
   device: DeviceInfo,
@@ -325,25 +316,44 @@ export function limrunAlertOperationFacts(
 }
 
 /**
- * `app-switcher` splits the same way its siblings do: the Android leg rides
- * `session.dependencies.android.createInteractor` -- the SAME factory the local Android family
- * binds -- while the iOS leg's own `appSwitcher` throws.
+ * The system buttons split the way the navigation leaves do: the Android leg rides the local
+ * family's own interactor factory for `home` and `appSwitcher`, the iOS direct session refuses
+ * both, and no Limrun session exposes a hardware button on either leg.
  */
-export function limrunAppSwitcherOperationFacts(
+export function limrunSystemButtonOperationFacts(
   device: DeviceInfo,
   liveSessionUnavailable?: RuntimeOperationUnavailability,
 ) {
-  const cell =
-    liveSessionUnavailable ??
-    (device.platform === 'android' ? available : appSwitcherUnavailableIos);
-  return Object.freeze({ ...appSwitcherRuntimeOperationFacts({ appSwitcher: cell }) });
+  if (liveSessionUnavailable) {
+    return systemButtonRuntimeOperationFacts({ unsupported: liveSessionUnavailable });
+  }
+  if (device.platform === 'android') {
+    return systemButtonRuntimeOperationFacts({
+      unsupported: systemButtonUnavailable,
+      home: available,
+      appSwitcher: available,
+    });
+  }
+  return systemButtonRuntimeOperationFacts({
+    unsupported: systemButtonUnavailable,
+    home: homeUnavailableIos,
+    appSwitcher: appSwitcherUnavailableIos,
+  });
 }
 
-/** The Action Button refusal both Limrun legs share. */
-export function limrunActionButtonOperationFacts() {
-  return Object.freeze({
-    actionButton: LIMRUN_ACTION_BUTTON_UNAVAILABLE,
-  });
+/**
+ * `fold` sends a HID hinge event through a helper the daemon host spawns inside one of its own iOS
+ * simulators with `simctl spawn`; a Limrun session's device is not a host simulator.
+ */
+export const LIMRUN_FOLD_UNAVAILABLE = Object.freeze({
+  available: false,
+  reason: 'unsupported-provider-mode',
+  hint: 'fold runs a HID helper through simctl spawn inside a foldable iPhone simulator on the daemon host; a Limrun session has no such simulator.',
+} as const);
+
+/** The fold refusal both Limrun legs share. */
+export function limrunFoldOperationFacts() {
+  return Object.freeze({ setFoldPose: LIMRUN_FOLD_UNAVAILABLE });
 }
 
 /**
@@ -371,7 +381,9 @@ export function limrunSettingsOperationFacts(
 ) {
   const cell =
     liveSessionUnavailable ?? (device.platform === 'android' ? available : settingsUnavailableIos);
-  return Object.freeze({ ...settingsRuntimeOperationFacts({ setSetting: cell }) });
+  return Object.freeze({
+    ...settingsRuntimeOperationFacts({ setSetting: cell, readSetting: cell }),
+  });
 }
 
 export function limrunKeyboardOperationFacts(

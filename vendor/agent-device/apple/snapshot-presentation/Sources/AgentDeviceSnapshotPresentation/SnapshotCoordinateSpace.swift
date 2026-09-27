@@ -14,6 +14,11 @@ public enum RunnerInterfaceOrientation {
 }
 
 public enum CoordinateSpaceRotation {
+  // Dispatch rotates a point about the reference frame's top-left. The origin is localized away
+  // and never added back: an XCUIApplication session observes only its own scene surface, so its
+  // windows report (0,0)-anchored frames (measured on iPhone landscape both ways and on every
+  // system window in window-coordinate-space.json), and displacement between panels or panes is
+  // carried by the record's displayID, not by an origin.
   public static func native(
     point: CGPoint,
     in frame: CGRect,
@@ -100,7 +105,7 @@ public enum CoordinateSpaceRotation {
 
 public enum SnapshotGeometrySpace: Equatable {
   case appOrientation
-  case deviceNative(appFrame: CGRect, interfaceOrientation: Int)
+  case deviceNative(appFrame: SnapshotViewport.Box, interfaceOrientation: Int)
 
   public static let quarterTurnTolerance: Double = 1
 
@@ -111,22 +116,26 @@ public enum SnapshotGeometrySpace: Equatable {
     case .deviceNative(let appFrame, let interfaceOrientation):
       return CoordinateSpaceRotation.oriented(
         rect: reportedFrame,
-        in: appFrame,
+        in: appFrame.rect,
         interfaceOrientation: interfaceOrientation
       )
     }
   }
 
+  /// Only a `.reported` viewport carries an orientation, so only it can anchor a rotation.
   public static func space(
     reportedBySurfaceHost isSurfaceHost: Bool,
     reportedFrame: CGRect,
     inheritedFrom inherited: SnapshotGeometrySpace,
-    appFrame: CGRect,
-    interfaceOrientation: Int
+    viewport: SnapshotViewport
   ) -> SnapshotGeometrySpace {
     guard isSurfaceHost else { return inherited }
-    guard namesQuarterTurn(interfaceOrientation) else { return .appOrientation }
-    guard isQuarterTurned(reportedFrame, relativeTo: appFrame) else { return .appOrientation }
+    guard case .reported(let appFrame, let interfaceOrientation) = viewport,
+      namesQuarterTurn(interfaceOrientation),
+      isQuarterTurned(reportedFrame, relativeTo: appFrame.rect)
+    else {
+      return .appOrientation
+    }
     return .deviceNative(appFrame: appFrame, interfaceOrientation: interfaceOrientation)
   }
 
@@ -140,7 +149,7 @@ public enum SnapshotGeometrySpace: Equatable {
   }
 
   private static func isQuarterTurned(_ frame: CGRect, relativeTo appFrame: CGRect) -> Bool {
-    guard isPlottable(frame), isPlottable(appFrame),
+    guard SnapshotGeometry.isPositiveFinite(frame),
       abs(appFrame.width - appFrame.height) > quarterTurnTolerance
     else {
       return false
@@ -148,19 +157,12 @@ public enum SnapshotGeometrySpace: Equatable {
     return abs(frame.width - appFrame.height) <= quarterTurnTolerance
       && abs(frame.height - appFrame.width) <= quarterTurnTolerance
   }
-
-  private static func isPlottable(_ frame: CGRect) -> Bool {
-    frame.origin.x.isFinite && frame.origin.y.isFinite
-      && frame.width.isFinite && frame.height.isFinite
-      && frame.width > 0 && frame.height > 0
-  }
 }
 
 extension SnapshotGeometrySpace {
   public static func normalized(
     nodes: [RawAXNode],
-    viewport: CGRect,
-    interfaceOrientation: Int
+    viewport: SnapshotViewport
   ) -> [RawAXNode] {
     let carriers = SnapshotVisibilityFold.visibilityExemptCarrierTypes
     var spaces = [SnapshotGeometrySpace](repeating: .appOrientation, count: nodes.count)
@@ -175,16 +177,16 @@ extension SnapshotGeometrySpace {
         ),
         reportedFrame: node.rect.cgRect,
         inheritedFrom: parentIndex.map { spaces[$0] } ?? .appOrientation,
-        appFrame: viewport,
-        interfaceOrientation: interfaceOrientation
+        viewport: viewport
       )
       spaces[position] = nodeSpace
       let frame = nodeSpace.orientedFrame(of: node.rect.cgRect)
       result.append(
         node.replacing(
           rect: SnapshotRect(frame),
-          hittable: node.parentIndex != nil
-            && SnapshotGeometry.isGeometricallyActionable(
+          hittable: node.parentIndex == nil
+            ? false
+            : SnapshotGeometry.isGeometricallyActionable(
               enabled: node.enabled,
               frame: frame,
               viewport: viewport

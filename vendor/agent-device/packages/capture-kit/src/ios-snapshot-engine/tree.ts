@@ -12,7 +12,9 @@ export type SnapshotTreeRuleContext = {
   suppressNode: (source: RawSnapshotNode, representatives: readonly RawSnapshotNode[]) => void;
 };
 
-export function collectChildrenByParent(nodes: RawSnapshotNode[]): Map<number, RawSnapshotNode[]> {
+export function collectChildrenByParent(
+  nodes: readonly RawSnapshotNode[],
+): Map<number, RawSnapshotNode[]> {
   const childrenByParent = new Map<number, RawSnapshotNode[]>();
   for (const node of nodes) {
     if (typeof node.parentIndex !== 'number') continue;
@@ -21,6 +23,25 @@ export function collectChildrenByParent(nodes: RawSnapshotNode[]): Map<number, R
     childrenByParent.set(node.parentIndex, children);
   }
   return childrenByParent;
+}
+
+/** A node's descendants, walked through parent links only so reported depths are not needed. */
+export function collectSubtreeByParentLinks(
+  root: RawSnapshotNode,
+  childrenByParent: ReadonlyMap<number, RawSnapshotNode[]>,
+): RawSnapshotNode[] {
+  const descendants: RawSnapshotNode[] = [];
+  const visited = new Set<number>([root.index]);
+  const pending = [...(childrenByParent.get(root.index) ?? [])];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (!current || visited.has(current.index)) continue;
+    visited.add(current.index);
+    descendants.push(current);
+    const children = childrenByParent.get(current.index);
+    if (children) pending.push(...children);
+  }
+  return descendants;
 }
 
 const descendantEndPositionCache = new WeakMap<RawSnapshotNode[], number[]>();

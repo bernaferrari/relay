@@ -28,13 +28,16 @@ const simulatorActual = await vi.importActual<typeof import('../simulator.ts')>(
 import { setIosSetting } from '../app-settings.ts';
 import { withMockedMacOsHelper } from './macos-helper-test-utils.ts';
 import { ensureBootedSimulator } from '../simulator.ts';
-import type { DeviceInfo } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
 import { runCmd } from '@agent-device/host-kit/command';
 import { retryWithPolicy } from '@agent-device/host-kit/retry';
 import { assertRejectsAppError } from '../../__tests__/app-error.ts';
 import { withFakeAppleTool, type FakeAppleToolResponse } from '../../__tests__/fake-apple-tool.ts';
-import { IOS_TEST_SIMULATOR, MACOS_TEST_DEVICE } from './apple-core-stub-helpers.ts';
+import {
+  IOS_TEST_SIMULATOR,
+  MACOS_TEST_DEVICE,
+  TVOS_TEST_SIMULATOR,
+} from './apple-core-stub-helpers.ts';
 
 const mockRunCmd = vi.mocked(runCmd);
 const mockRetryWithPolicy = vi.mocked(retryWithPolicy);
@@ -64,98 +67,146 @@ function unexpectedArgs(args: string[]): FakeAppleToolResponse {
   return { stderr: `unexpected xcrun args: ${args.join(' ')}`, exitCode: 1 };
 }
 
-test('setIosSetting faceid match uses simctl biometric match', async () => {
-  await withFakeAppleTool(
-    (args) => {
-      if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
-      if (args.join(' ') === 'simctl biometric sim-1 match face') return '';
-      return unexpectedArgs(args);
-    },
-    async ({ calls }) => {
-      await setIosSetting(IOS_TEST_SIMULATOR, 'faceid', 'match');
-      const flat = calls.map((args) => args.join(' '));
-      assert.equal(flat.includes('simctl biometric sim-1 match face'), true, flat.join('; '));
-    },
-  );
-});
+const FACEID_MATCH_ARGS = 'simctl spawn sim-1 notifyutil -p com.apple.BiometricKit_Sim.pearl.match';
+const FACEID_NONMATCH_ARGS =
+  'simctl spawn sim-1 notifyutil -p com.apple.BiometricKit_Sim.pearl.nomatch';
+const TOUCHID_MATCH_ARGS =
+  'simctl spawn sim-1 notifyutil -p com.apple.BiometricKit_Sim.fingerTouch.match';
+const ENROLL_ARGS =
+  'simctl spawn sim-1 notifyutil -s com.apple.BiometricKit.enrollmentChanged 1 -p com.apple.BiometricKit.enrollmentChanged';
+const UNENROLL_ARGS =
+  'simctl spawn sim-1 notifyutil -s com.apple.BiometricKit.enrollmentChanged 0 -p com.apple.BiometricKit.enrollmentChanged';
 
-test('setIosSetting faceid retries alternate biometric argument order', async () => {
+async function collectBiometricCalls(
+  setting: 'faceid' | 'touchid',
+  state: string,
+): Promise<string[]> {
+  const calls: string[] = [];
   await withFakeAppleTool(
     (args) => {
       if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
-      if (args.join(' ') === 'simctl biometric sim-1 match face') return { exitCode: 2 };
-      if (args.join(' ') === 'simctl biometric match sim-1 face') return '';
+      if (args[0] === 'simctl' && args[1] === 'spawn') {
+        calls.push(args.join(' '));
+        if (args.includes('-g')) {
+          return `com.apple.BiometricKit.enrollmentChanged ${state === 'enroll' ? '1' : '0'}\n`;
+        }
+        return '';
+      }
       return unexpectedArgs(args);
-    },
-    async ({ calls }) => {
-      await setIosSetting(IOS_TEST_SIMULATOR, 'faceid', 'match');
-      const flat = calls.map((args) => args.join(' '));
-      assert.equal(flat.includes('simctl biometric sim-1 match face'), true, flat.join('; '));
-      assert.equal(flat.includes('simctl biometric match sim-1 face'), true, flat.join('; '));
-    },
-  );
-});
-
-test('setIosSetting touchid match uses simctl biometric match finger', async () => {
-  await withFakeAppleTool(
-    (args) => {
-      if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
-      if (args.join(' ') === 'simctl biometric sim-1 match finger') return '';
-      return unexpectedArgs(args);
-    },
-    async ({ calls }) => {
-      await setIosSetting(IOS_TEST_SIMULATOR, 'touchid', 'match');
-      const flat = calls.map((args) => args.join(' '));
-      assert.equal(flat.includes('simctl biometric sim-1 match finger'), true, flat.join('; '));
-    },
-  );
-});
-
-test('setIosSetting touchid retries touch modality when finger fails', async () => {
-  await withFakeAppleTool(
-    (args) => {
-      if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
-      if (args.join(' ') === 'simctl biometric sim-1 match finger') return { exitCode: 2 };
-      if (args.join(' ') === 'simctl biometric match sim-1 finger') return { exitCode: 2 };
-      if (args.join(' ') === 'simctl biometric sim-1 match touch') return '';
-      return unexpectedArgs(args);
-    },
-    async ({ calls }) => {
-      await setIosSetting(IOS_TEST_SIMULATOR, 'touchid', 'match');
-      const flat = calls.map((args) => args.join(' '));
-      assert.equal(flat.includes('simctl biometric sim-1 match finger'), true, flat.join('; '));
-      assert.equal(flat.includes('simctl biometric match sim-1 finger'), true, flat.join('; '));
-      assert.equal(flat.includes('simctl biometric sim-1 match touch'), true, flat.join('; '));
-    },
-  );
-});
-
-test('setIosSetting touchid reports unsupported when simctl biometric is unavailable', async () => {
-  await withFakeAppleTool(
-    (args) => {
-      if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
-      return { stderr: 'unknown subcommand biometric', exitCode: 1 };
     },
     async () => {
-      await assertRejectsAppError(() => setIosSetting(IOS_TEST_SIMULATOR, 'touchid', 'match'), {
+      await setIosSetting(IOS_TEST_SIMULATOR, setting, state);
+    },
+  );
+  return calls;
+}
+
+test('setIosSetting faceid match posts the BiometricKit_Sim pearl match notification', async () => {
+  assert.deepEqual(await collectBiometricCalls('faceid', 'match'), [FACEID_MATCH_ARGS]);
+});
+
+test('setIosSetting faceid nonmatch posts the BiometricKit_Sim pearl nomatch notification', async () => {
+  assert.deepEqual(await collectBiometricCalls('faceid', 'nonmatch'), [FACEID_NONMATCH_ARGS]);
+});
+
+test('setIosSetting touchid match posts the BiometricKit_Sim fingerTouch match notification', async () => {
+  assert.deepEqual(await collectBiometricCalls('touchid', 'match'), [TOUCHID_MATCH_ARGS]);
+});
+
+const READ_ENROLLMENT_ARGS =
+  'simctl spawn sim-1 notifyutil -g com.apple.BiometricKit.enrollmentChanged';
+
+test('setIosSetting biometric enroll sets enrollmentChanged, posts it, then reads it back', async () => {
+  assert.deepEqual(await collectBiometricCalls('faceid', 'enroll'), [
+    ENROLL_ARGS,
+    READ_ENROLLMENT_ARGS,
+  ]);
+  assert.deepEqual(await collectBiometricCalls('touchid', 'unenroll'), [
+    UNENROLL_ARGS,
+    READ_ENROLLMENT_ARGS,
+  ]);
+});
+
+test('setIosSetting biometric enroll fails when the read-back state did not change', async () => {
+  await withFakeAppleTool(
+    (args) => {
+      if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
+      if (args.includes('-g')) return 'com.apple.BiometricKit.enrollmentChanged 0\n';
+      if (args[0] === 'simctl' && args[1] === 'spawn') return '';
+      return unexpectedArgs(args);
+    },
+    async () => {
+      await assert.rejects(
+        () => setIosSetting(IOS_TEST_SIMULATOR, 'faceid', 'enroll'),
+        (error: unknown) => {
+          assert.ok(error instanceof AppError);
+          assert.equal(error.code, 'COMMAND_FAILED');
+          const attempts = (error.details as { attempts: Array<{ args: string }> }).attempts;
+          assert.equal(attempts[0]?.args, READ_ENROLLMENT_ARGS);
+          return true;
+        },
+      );
+    },
+  );
+});
+
+test('setIosSetting biometric refuses an Apple TV simulator before posting anything', async () => {
+  await withFakeAppleTool(
+    (args) => {
+      if (isSimctlListDevices(args)) {
+        return JSON.stringify({
+          devices: {
+            'com.apple.CoreSimulator.SimRuntime.tvOS-18-0': [
+              { udid: 'tvos-sim-1', state: 'Booted' },
+            ],
+          },
+        });
+      }
+      return unexpectedArgs(args);
+    },
+    async () => {
+      await assertRejectsAppError(() => setIosSetting(TVOS_TEST_SIMULATOR, 'faceid', 'match'), {
         code: 'UNSUPPORTED_OPERATION',
-        message: /Touch ID simulation is not supported/,
+        message: /supported on iOS and iPadOS simulators/,
       });
     },
   );
 });
 
-test('setIosSetting touchid keeps COMMAND_FAILED for operational failures', async () => {
+test('setIosSetting biometric rejects an unknown state before spawning anything', async () => {
+  await withFakeAppleTool(
+    (args) => {
+      if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
+      return unexpectedArgs(args);
+    },
+    async () => {
+      await assertRejectsAppError(() => setIosSetting(IOS_TEST_SIMULATOR, 'faceid', 'toggle'), {
+        code: 'INVALID_ARGS',
+        message: /Use match\|nonmatch\|enroll\|unenroll/,
+      });
+    },
+  );
+});
+
+test('setIosSetting touchid reports COMMAND_FAILED with the notifyutil attempt when the post fails', async () => {
   await withFakeAppleTool(
     (args) => {
       if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
       return { stderr: 'Failed to boot simulator service', exitCode: 1 };
     },
     async () => {
-      await assertRejectsAppError(() => setIosSetting(IOS_TEST_SIMULATOR, 'touchid', 'match'), {
-        code: 'COMMAND_FAILED',
-        message: /Failed to simulate touchid/,
-      });
+      await assert.rejects(
+        () => setIosSetting(IOS_TEST_SIMULATOR, 'touchid', 'match'),
+        (error: unknown) => {
+          assert.ok(error instanceof AppError);
+          assert.equal(error.code, 'COMMAND_FAILED');
+          assert.match(error.message, /Failed to simulate touchid/);
+          const attempts = (error.details as { attempts: Array<{ args: string }> }).attempts;
+          assert.equal(attempts.length, 1);
+          assert.equal(attempts[0]?.args, TOUCHID_MATCH_ARGS);
+          return true;
+        },
+      );
     },
   );
 });
@@ -242,7 +293,7 @@ test('setIosSetting rejects unsupported macOS wifi setting with explicit subset 
       assert.match((error as AppError).message, /Unsupported macOS setting: wifi/i);
       assert.match(
         (error as AppError).message,
-        /wifi\|airplane\|location\|animations remain unsupported on macOS/i,
+        /wifi\|airplane\|location\|animations\|text-size remain unsupported on macOS/i,
       );
       return true;
     },
@@ -301,8 +352,6 @@ test('setIosSetting permission grant calendar uses simctl privacy calendar targe
   await withFakeAppleTool(
     (args) => {
       if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
-      // simctl privacy help falls through to the fake's canned service listing.
-      if (args[0] === 'simctl' && args[1] === 'privacy' && args[2] === 'help') return undefined;
       if (args.join(' ') === 'simctl privacy sim-1 grant calendar com.example.app') return '';
       return unexpectedArgs(args);
     },
@@ -315,6 +364,26 @@ test('setIosSetting permission grant calendar uses simctl privacy calendar targe
         flat.includes('simctl privacy sim-1 grant calendar com.example.app'),
         true,
         flat.join('; '),
+      );
+    },
+  );
+});
+
+test('setIosSetting permission grant all passes all through as one simctl call', async () => {
+  await withFakeAppleTool(
+    (args) => {
+      if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
+      if (args.join(' ') === 'simctl privacy sim-1 grant all com.example.app') return '';
+      return unexpectedArgs(args);
+    },
+    async ({ calls }) => {
+      await setIosSetting(IOS_TEST_SIMULATOR, 'permission', 'grant', 'com.example.app', {
+        permissionTarget: 'all',
+      });
+      const flat = calls.map((args) => args.join(' '));
+      assert.deepEqual(
+        flat.filter((line) => line.includes('privacy sim-1')),
+        ['simctl privacy sim-1 grant all com.example.app'],
       );
     },
   );
@@ -397,7 +466,6 @@ test('setIosSetting permission grant photos limited maps to photos-add', async (
   await withFakeAppleTool(
     (args) => {
       if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
-      if (args[0] === 'simctl' && args[1] === 'privacy' && args[2] === 'help') return undefined;
       if (args.join(' ') === 'simctl privacy sim-1 grant photos-add com.example.app') return '';
       return unexpectedArgs(args);
     },
@@ -435,21 +503,33 @@ test('setIosSetting permission rejects mode for non-photos target', async () => 
   );
 });
 
-test('setIosSetting permission reset notifications falls back to reset all when direct reset is blocked', async () => {
+test('setIosSetting permission reset notifications fails targeted when direct reset is blocked', async () => {
+  // A blocked notifications reset must not fall back to `reset all`: a
+  // notifications-only reset would clear microphone, location, and other
+  // grants. The targeted reset fails instead, leaving the earlier grant in place.
   await withFakeAppleTool(
     (args) => {
       if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
-      if (args[0] === 'simctl' && args[1] === 'privacy' && args[2] === 'help') return undefined;
+      if (args.join(' ') === 'simctl privacy sim-1 grant microphone com.example.app') return '';
       if (args.join(' ') === 'simctl privacy sim-1 reset notifications com.example.app') {
         return { stderr: 'Failed to reset access\nOperation not permitted', exitCode: 1 };
       }
-      if (args.join(' ') === 'simctl privacy sim-1 reset all com.example.app') return '';
       return unexpectedArgs(args);
     },
     async ({ calls }) => {
-      await setIosSetting(IOS_TEST_SIMULATOR, 'permission', 'reset', 'com.example.app', {
-        permissionTarget: 'notifications',
+      await setIosSetting(IOS_TEST_SIMULATOR, 'permission', 'grant', 'com.example.app', {
+        permissionTarget: 'microphone',
       });
+      await assertRejectsAppError(
+        () =>
+          setIosSetting(IOS_TEST_SIMULATOR, 'permission', 'reset', 'com.example.app', {
+            permissionTarget: 'notifications',
+          }),
+        {
+          code: 'UNSUPPORTED_OPERATION',
+          message: /does not support resetting notifications permission/i,
+        },
+      );
       const flat = calls.map((args) => args.join(' '));
       assert.equal(
         flat.includes('simctl privacy sim-1 reset notifications com.example.app'),
@@ -457,8 +537,42 @@ test('setIosSetting permission reset notifications falls back to reset all when 
         flat.join('; '),
       );
       assert.equal(
-        flat.includes('simctl privacy sim-1 reset all com.example.app'),
+        flat.some((line) => line.includes('reset all com.example.app')),
+        false,
+        flat.join('; '),
+      );
+      assert.equal(
+        flat.includes('simctl privacy sim-1 grant microphone com.example.app'),
         true,
+        flat.join('; '),
+      );
+    },
+  );
+});
+
+test('setIosSetting permission grant camera needs no capability probe', async () => {
+  // Xcode 26 omits `camera` from `simctl privacy help` while still changing it, so a
+  // help-derived gate refused a service every runtime here serves. The privacy call is
+  // itself the probe, so nothing else may be issued for a grant.
+  await withFakeAppleTool(
+    (args) => {
+      if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
+      if (args.join(' ') === 'simctl privacy sim-1 grant camera com.example.app') return '';
+      return unexpectedArgs(args);
+    },
+    async ({ calls }) => {
+      await setIosSetting(IOS_TEST_SIMULATOR, 'permission', 'grant', 'com.example.app', {
+        permissionTarget: 'camera',
+      });
+      const flat = calls.map((args) => args.join(' '));
+      assert.equal(
+        flat.includes('simctl privacy sim-1 grant camera com.example.app'),
+        true,
+        flat.join('; '),
+      );
+      assert.equal(
+        flat.some((line) => line.includes('privacy help')),
+        false,
         flat.join('; '),
       );
     },
@@ -469,7 +583,6 @@ test('setIosSetting permission deny notifications returns unsupported on runtime
   await withFakeAppleTool(
     (args) => {
       if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
-      if (args[0] === 'simctl' && args[1] === 'privacy' && args[2] === 'help') return undefined;
       if (args.join(' ') === 'simctl privacy sim-1 revoke notifications com.example.app') {
         return { stderr: 'Failed to revoke access\nOperation not permitted', exitCode: 1 };
       }
@@ -496,42 +609,32 @@ test('setIosSetting permission deny notifications returns unsupported on runtime
   );
 });
 
-test('setIosSetting permission rejects service missing from simctl privacy help', async () => {
-  // A distinct simulator set path busts the module-level privacy-services
-  // cache, whose key is `PATH + set path` — the PATH half no longer varies
-  // now that no PATH stubbing happens, so the set path must.
-  const device: DeviceInfo = { ...IOS_TEST_SIMULATOR, simulatorSetPath: '/fake/privacy-help-set' };
-  const CUSTOM_PRIVACY_HELP = `Usage: simctl privacy <device> <action> <service> [<bundle identifier>]
-
-        service
-             The service:
-                 camera - Allow access to camera.
-                 microphone - Allow access to audio input.`;
-
+test('setIosSetting permission reports a runtime-refused service as unsupported', async () => {
+  // A service the runtime cannot change answers EPERM, and Xcode 26 words grant/revoke
+  // failures as "Failed to set access" — not "failed to grant access" — for both a real
+  // service it withheld and a name it does not know at all.
   await withFakeAppleTool(
     (args) => {
       if (isSimctlListDevices(args)) return BOOTED_SIM_LIST_JSON;
-      if (args[0] === 'simctl' && args.includes('privacy') && args.includes('help')) {
-        return CUSTOM_PRIVACY_HELP;
+      if (args.join(' ') === 'simctl privacy sim-1 grant calendar com.example.app') {
+        return { stderr: 'Failed to set access\nOperation not permitted', exitCode: 1 };
       }
       return unexpectedArgs(args);
     },
     async ({ calls }) => {
       await assertRejectsAppError(
         () =>
-          setIosSetting(device, 'permission', 'grant', 'com.example.app', {
+          setIosSetting(IOS_TEST_SIMULATOR, 'permission', 'grant', 'com.example.app', {
             permissionTarget: 'calendar',
           }),
-        { code: 'UNSUPPORTED_OPERATION', message: /does not support service "calendar"/i },
+        {
+          code: 'UNSUPPORTED_OPERATION',
+          message: /does not support setting calendar permission/i,
+        },
       );
       const flat = calls.map((args) => args.join(' '));
       assert.equal(
         flat.some((line) => line.includes('privacy help')),
-        true,
-        flat.join('; '),
-      );
-      assert.equal(
-        flat.some((line) => line.includes('grant calendar')),
         false,
         flat.join('; '),
       );

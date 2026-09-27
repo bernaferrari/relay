@@ -16,6 +16,14 @@ async function stopAndroidSnapshotHelperRuntimeForDevice(device: DeviceInfo): Pr
   await stopAndroidSnapshotHelperSessionForDevice(device);
 }
 
+/** Only a macOS host has an `XCTestDevices` an older agent-device could have redirected. */
+export async function restoreLegacyXctestDeviceSetRedirectRuntime(): Promise<void> {
+  if (process.platform !== 'darwin') return;
+  const { restoreLegacyXctestDeviceSetRedirect } =
+    await import('@agent-device/platform-apple/runner/operations');
+  restoreLegacyXctestDeviceSetRedirect();
+}
+
 export async function cleanupManagedWebRuntimeOrphans(params: {
   stateDir: string;
   openWebSessionNames: readonly string[];
@@ -85,8 +93,7 @@ export const platformResourceCleanup: PlatformResourceCleanup = Object.freeze({
       params.device.kind === 'simulator' &&
       !params.shutdownRequested &&
       !params.hasScreenRecording &&
-      !params.hasLease &&
-      !params.device.simulatorSetPath
+      !params.hasLease
     );
   },
 });

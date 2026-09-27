@@ -34,6 +34,7 @@ import {
   createPersistentSnapshotHelperProvider,
   isAndroidHelperRuntimeForceStop as isHelperRuntimeReset,
   ANDROID_HELPER_INSTALLED_VERSION_PROBE as installedHelperProbe,
+  androidSystemWindowOnlyXml,
   type FakeAndroidProcess,
 } from './snapshot-helper-session.fixtures.ts';
 import { withAndroidAdbProvider, type AndroidAdbProvider } from '../adb-executor.ts';
@@ -187,18 +188,6 @@ test('screenshotAndroid throws when PNG payload is truncated', async () => {
     });
   });
 });
-
-function androidSystemWindowOnlyXml(): string {
-  return [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<hierarchy rotation="0">',
-    '  <node window-index="0" window-type="3" window-layer="30" window-active="true" window-focused="true" class="android.widget.FrameLayout" package="com.android.systemui" bounds="[0,0][390,844]" enabled="true" visible-to-user="true">',
-    '    <node content-desc="Back" class="android.widget.ImageButton" package="com.android.systemui" bounds="[0,792][96,844]" clickable="true" enabled="true" focusable="true" visible-to-user="true" />',
-    '    <node content-desc="Home" class="android.widget.ImageButton" package="com.android.systemui" bounds="[147,792][243,844]" clickable="true" enabled="true" focusable="true" visible-to-user="true" />',
-    '  </node>',
-    '</hierarchy>',
-  ].join('\n');
-}
 
 function androidContentPoorFabricAppWindowXml(): string {
   return [

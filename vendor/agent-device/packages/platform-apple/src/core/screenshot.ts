@@ -1,15 +1,17 @@
 import path from 'node:path';
 import { isMacOs, type DeviceInfo } from '@agent-device/kernel/device';
-import { type ExecOptions } from '@agent-device/host-kit/command';
 import { emitDiagnostic } from '@agent-device/host-kit/diagnostics';
 import { copyHostFile } from '@agent-device/host-kit/host-file';
 import { Deadline, retryWithPolicy } from '@agent-device/host-kit/retry';
 import { AppError } from '@agent-device/kernel/errors';
+import {
+  readRunnerScreenCaptureMetadata,
+  type RunnerScreenCaptureMetadata,
+} from '@agent-device/contracts/screen-capture-contract';
 
 import { resizePngFile } from '@agent-device/capture-kit/png-resize';
 import { readPngSize } from '@agent-device/capture-kit/png-size';
 import { computeDensityScaledScreenshotSize } from '@agent-device/capture-kit/screenshot-density';
-
 import {
   IOS_RUNNER_SCREENSHOT_COPY_TIMEOUT_MS,
   IOS_SIMULATOR_SCREENSHOT_RETRY_BASE_DELAY_MS,
@@ -34,10 +36,6 @@ import { runSimctlForDevice } from './simctl.ts';
 import { appleToolFailureText, extractAppleToolErrorMeta } from './tool-diagnostics.ts';
 import { resolveIosPhysicalDeviceControl } from './physical-device-control.ts';
 
-function runSimctl(device: DeviceInfo, args: string[], options?: ExecOptions) {
-  return runSimctlForDevice(device, args, options);
-}
-
 type SimulatorScreenshotFlowDeps = {
   ensureBooted: (device: DeviceInfo) => Promise<void>;
   prepareStatusBarForScreenshot: (device: DeviceInfo) => Promise<() => Promise<void>>;
@@ -47,11 +45,18 @@ type SimulatorScreenshotFlowDeps = {
     outPath: string,
     display: AppleDeviceDisplay | undefined,
   ) => Promise<void>;
+  /**
+   * Rescales the captured file to the requested density using the scale of the image that was
+   * actually taken. `sourcePixelDensity` is that image's own measured scale — the panel the host
+   * named for a `simctl` capture, or what the runner reported for a runner capture. Undefined means
+   * nobody measured the source: a single-panel `simctl` capture, or a multi-panel device whose
+   * display inventory never resolved, and the scale probe is the answer either way.
+   */
   normalizeDensity: (
     device: DeviceInfo,
     outPath: string,
     pixelDensity: number | undefined,
-    display: AppleDeviceDisplay | undefined,
+    sourcePixelDensity: number | undefined,
   ) => Promise<void>;
   captureWithRunner: (
     device: DeviceInfo,
@@ -59,7 +64,7 @@ type SimulatorScreenshotFlowDeps = {
     appBundleId?: string,
     fullscreen?: boolean,
     runnerOptions?: AppleRunnerCommandOptions,
-  ) => Promise<void>;
+  ) => Promise<RunnerScreenCaptureMetadata | undefined>;
   shouldFallbackToRunner: (error: unknown) => boolean;
 };
 
@@ -136,7 +141,7 @@ export async function captureSimulatorScreenshotWithFallback(
   const display = await deps.resolveCaptureDisplay(device);
   const captureAndNormalize = async () => {
     await deps.captureWithRetry(device, outPath, display);
-    await deps.normalizeDensity(device, outPath, options.pixelDensity, display);
+    await deps.normalizeDensity(device, outPath, options.pixelDensity, display?.pointScale);
   };
   let restoreStatusBar = async () => {};
   if (options.normalizeStatusBar === true) {
@@ -169,17 +174,18 @@ export async function captureSimulatorScreenshotWithFallback(
       }
       emitScreenshotFallbackDiagnostic(device, 'simctl_screenshot', screenshotError);
     }
-    await deps.captureWithRunner(
+    const captured = await deps.captureWithRunner(
       device,
       outPath,
       options.appBundleId,
       options.fullscreen,
       options.runnerOptions,
     );
-    // The runner captures `XCUIScreen.main`, which is not necessarily the panel just
-    // resolved, so its scale stays unknown here. Applying the resolved panel's
-    // pointScale would rescale an image against a panel nobody measured.
-    await deps.normalizeDensity(device, outPath, options.pixelDensity, undefined);
+    // The runner captures the display that actually hosts the app and reports the scale it encoded
+    // that image at, so normalization reads the source instead of applying a panel the host guessed.
+    // A runner that reports nothing measured nothing: the probe stays the pre-panel answer rather
+    // than borrowing a scale from a panel nobody captured (#2728).
+    await deps.normalizeDensity(device, outPath, options.pixelDensity, captured?.pixelsPerPoint);
   } finally {
     await restoreStatusBar().catch((error) =>
       emitStatusBarDiagnostic(device, 'restore_failed', error),
@@ -202,7 +208,7 @@ export async function captureSimulatorScreenshotWithRetry(
   ];
   await retryWithPolicy(
     async ({ deadline: attemptDeadline }) => {
-      await runSimctl(device, argv, {
+      await runSimctlForDevice(device, argv, {
         timeoutMs: Math.max(
           1_000,
           attemptDeadline?.remainingMs() ?? IOS_SIMULATOR_SCREENSHOT_TIMEOUT_MS,
@@ -226,7 +232,7 @@ export async function captureScreenshotViaRunner(
   appBundleId?: string,
   fullscreen?: boolean,
   runnerOptions?: AppleRunnerCommandOptions,
-): Promise<void> {
+): Promise<RunnerScreenCaptureMetadata | undefined> {
   if (device.kind === 'device' && !isMacOs(device)) {
     await resolveIosPhysicalDeviceControl(device).captureScreenshot(device, outPath, {
       appBundleId,
@@ -235,7 +241,7 @@ export async function captureScreenshotViaRunner(
       preferRunner: true,
       runRunnerCommand: runAppleRunnerCommand,
     });
-    return;
+    return undefined;
   }
 
   const result = await runAppleRunnerCommand(
@@ -256,14 +262,15 @@ export async function captureScreenshotViaRunner(
     );
   }
 
+  const metadata = readRunnerScreenCaptureMetadata(result);
   if (isMacOs(device)) {
     await copyHostFile(remoteFileName, outPath);
-    return;
+    return metadata;
   }
 
   if (device.kind === 'simulator') {
     await copyRunnerScreenshotFromSimulator(device, remoteFileName, outPath);
-    return;
+    return metadata;
   }
   throw new AppError('COMMAND_FAILED', 'Unsupported Apple screenshot target');
 }
@@ -287,7 +294,7 @@ async function copyRunnerScreenshotFromSimulator(
     iosSimulatorRunnerContainerCache.delete(device.id);
   }
   for (const bundleId of IOS_RUNNER_CONTAINER_BUNDLE_IDS) {
-    const containerResult = await runSimctl(
+    const containerResult = await runSimctlForDevice(
       device,
       ['get_app_container', device.id, bundleId, 'data'],
       {
@@ -463,16 +470,17 @@ async function normalizeIosSimulatorScreenshotDensity(
   device: DeviceInfo,
   outPath: string,
   pixelDensity: number | undefined,
-  display?: AppleDeviceDisplay,
+  sourcePixelDensity?: number,
 ): Promise<void> {
-  // `SIMULATOR_MAINSCREEN_SCALE` describes one fixed panel, so on a foldable it can
-  // disagree with the panel just captured. The captured panel reports its own scale.
-  const sourcePixelDensity = display
-    ? display.pointScale
-    : await readIosSimulatorMainScreenScale(device);
+  // Both the captured panel's `pointScale` and the runner's reported scale describe the image that
+  // was actually taken. `SIMULATOR_MAINSCREEN_SCALE` describes one fixed panel, so on a foldable it
+  // can disagree with the panel that was captured, and it is only ever consulted when nothing
+  // measured the source — which a multi-panel capture and every runner capture do.
+  const measuredSourcePixelDensity =
+    sourcePixelDensity ?? (await readIosSimulatorMainScreenScale(device));
   const targetSize = computeDensityScaledScreenshotSize(
     await readPngSize(outPath),
-    sourcePixelDensity,
+    measuredSourcePixelDensity,
     pixelDensity,
   );
   if (targetSize) await resizePngFile(outPath, targetSize.width, targetSize.height);
@@ -483,9 +491,13 @@ async function readIosSimulatorMainScreenScale(device: DeviceInfo): Promise<numb
   if (cachedScale !== undefined) {
     return cachedScale;
   }
-  const scaleResult = await runSimctl(device, ['getenv', device.id, 'SIMULATOR_MAINSCREEN_SCALE'], {
-    timeoutMs: IOS_SIMULATOR_SCREENSHOT_SCALE_TIMEOUT_MS,
-  });
+  const scaleResult = await runSimctlForDevice(
+    device,
+    ['getenv', device.id, 'SIMULATOR_MAINSCREEN_SCALE'],
+    {
+      timeoutMs: IOS_SIMULATOR_SCREENSHOT_SCALE_TIMEOUT_MS,
+    },
+  );
   const scale = Number(scaleResult.stdout.trim());
   if (!Number.isFinite(scale) || scale <= 0) {
     throw new AppError(

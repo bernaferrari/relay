@@ -3,22 +3,21 @@ import {
   deriveIosCaptureHint,
 } from '@agent-device/capture-kit/ios-snapshot-planning';
 import { emitDiagnostic } from '@agent-device/host-kit/diagnostics';
+import type { PostOpenObservation } from '@agent-device/contracts/application-lifecycle-runtime';
 import type { PlatformRuntimeHost } from '@agent-device/contracts/platform-runtime-operations';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import type { SimulatorSnapshotSource } from './snapshot-source-facade.ts';
-import type {
-  SimulatorSnapshotTarget,
-  SimulatorSnapshotTargetResolver,
+import {
+  isSimulatorTargetDiscoveryPending,
+  type SimulatorSnapshotTarget,
+  type SimulatorSnapshotTargetResolver,
 } from './snapshot-target.ts';
 
-/**
- * What an `open` learned about the app it just launched on a local Simulator: `observable` means
- * the host AX bridge published its tree, so the first observation will not pay a launch
- * transition; `unobservable` means the bridge reported a state that will not clear within its
- * grace (a system dialog, a lost AX server) or the grace ran out; `not-eligible` means the device
- * has no bridge to ask.
- */
-export type LaunchObservation = 'observable' | 'unobservable' | 'not-eligible';
+/** The observations a local Simulator's host AX bridge can report for a launched app. */
+export type LaunchObservation = Extract<
+  PostOpenObservation,
+  'observable' | 'unobservable' | 'not-eligible'
+>;
 
 export type LaunchObservationPort = Readonly<{
   awaitObservable(
@@ -64,8 +63,7 @@ export function createLaunchObservationProbe(
       if (!hasSimulatorBridge(device)) return 'not-eligible';
       let deadline: number | undefined;
       for (;;) {
-        const target = await deps.resolveTarget(device, appBundleId, signal).catch(() => undefined);
-        signal.throwIfAborted();
+        const target = await resolveLaunchedTarget(deps.resolveTarget, device, appBundleId, signal);
         if (!target) return 'unobservable';
         // A generation whose bridge already failed a capture fails this probe the same way, and
         // the codes it fails with are the ones this loop re-reads for seconds. Ask the circuit
@@ -96,4 +94,27 @@ export function createLaunchObservationProbe(
       }
     },
   });
+}
+
+/**
+ * The launched app's bridge target, or `undefined` when it cannot be resolved. A discovery that is
+ * still running has not answered yet, so the probe keeps joining it one wait slice at a time until
+ * the discovery's own deadline settles it. Returning early would hand the discovery, the bridge
+ * preparation and the first bridge connection to the first observation after the open, which pays
+ * them inside its own budget.
+ */
+async function resolveLaunchedTarget(
+  resolveTarget: SimulatorSnapshotTargetResolver,
+  device: DeviceInfo,
+  appBundleId: string,
+  signal: AbortSignal,
+): Promise<SimulatorSnapshotTarget | undefined> {
+  for (;;) {
+    try {
+      return await resolveTarget(device, appBundleId, signal);
+    } catch (error) {
+      signal.throwIfAborted();
+      if (!isSimulatorTargetDiscoveryPending(error)) return undefined;
+    }
+  }
 }

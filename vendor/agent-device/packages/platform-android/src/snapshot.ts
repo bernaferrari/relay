@@ -6,6 +6,7 @@ import {
 } from '@agent-device/kernel/errors';
 import path from 'node:path';
 import { emitDiagnostic, withDiagnosticTimer } from '@agent-device/host-kit/diagnostics';
+import type { SnapshotOptions as InteractorSnapshotOptions } from '@agent-device/contracts/interactor-types';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import {
   attachRefs,
@@ -43,6 +44,8 @@ import {
   type AndroidSnapshotHelperInstallResult,
   type AndroidSnapshotHelperOutput,
 } from './snapshot-helper.ts';
+import { getLiveAndroidSnapshotHelperSession } from './snapshot-helper-session-lifecycle.ts';
+import { isAndroidSnapshotHelperNotCurrentError } from './snapshot-helper-install.ts';
 import {
   getAndroidSnapshotHelperSessionDeviceKey,
   isAndroidSnapshotHelperRuntimeOccupiedError,
@@ -87,6 +90,8 @@ export type AndroidSnapshotOptions = SnapshotOptions & {
   helperArtifact?: AndroidSnapshotHelperArtifact;
   helperInstallPolicy?: AndroidSnapshotHelperInstallPolicy;
   helperSessionScope?: AndroidHelperSessionScope;
+  /** The interactor contract's one-off read: no install, no kept session, no re-capture after `settleBy`. */
+  transient?: InteractorSnapshotOptions['transient'];
   helperAdb?: AndroidAdbExecutor | AndroidAdbProvider;
   includeHiddenContentHints?: boolean;
   androidPresentation?: AndroidSnapshotPresentationOptions;
@@ -277,7 +282,7 @@ async function captureAndroidUiHierarchyWithHelper(
 ): Promise<{ xml: string; metadata: AndroidSnapshotBackendMetadata }> {
   const helperDeviceKey = getAndroidSnapshotHelperSessionDeviceKey(device);
   const adbProvider = resolveAndroidAdbProvider(device, options.helperAdb);
-  const commandScopedHelperSession = options.helperSessionScope !== 'daemon-session';
+  const releaseHelperSession = releasesHelperSessionAfterCapture(options, helperDeviceKey);
   try {
     let previousContentReason: AndroidContentRecoveryReason | undefined;
     for (let attempt = 0; ; attempt += 1) {
@@ -292,7 +297,10 @@ async function captureAndroidUiHierarchyWithHelper(
         previousContentReason,
       });
       if (settled.outcome === 'captured') return settled.capture;
-      if (attempt + 1 >= HELPER_CONTENT_CAPTURE_ATTEMPTS) {
+      if (
+        attempt + 1 >= HELPER_CONTENT_CAPTURE_ATTEMPTS ||
+        (options.transient !== undefined && Date.now() >= options.transient.settleBy)
+      ) {
         return await rejectAndroidHelperContentUnavailable({
           contentRecovery: settled.decision,
           attempts: attempt + 1,
@@ -300,15 +308,34 @@ async function captureAndroidUiHierarchyWithHelper(
           artifact,
           adb,
           signal: options.signal,
+          retireHelper: options.transient === undefined,
         });
       }
       previousContentReason = settled.decision.reason;
     }
   } finally {
-    if (commandScopedHelperSession) {
+    if (releaseHelperSession) {
       await stopAndroidSnapshotHelperSession(helperDeviceKey);
     }
   }
+}
+
+/** A transient read keeps a session it found running and releases one it had to start. */
+function releasesHelperSessionAfterCapture(
+  options: AndroidSnapshotOptions,
+  helperDeviceKey: string,
+): boolean {
+  if (options.transient) return getLiveAndroidSnapshotHelperSession(helperDeviceKey) === undefined;
+  return options.helperSessionScope !== 'daemon-session';
+}
+
+/** A transient read never installs the helper; it uses one that is already current. */
+function resolveHelperInstallPolicy(
+  options: AndroidSnapshotOptions,
+): AndroidSnapshotHelperInstallPolicy {
+  return options.transient
+    ? 'current-only'
+    : (options.helperInstallPolicy ?? 'missing-or-outdated');
 }
 
 async function installAndroidSnapshotHelper(
@@ -326,14 +353,14 @@ async function installAndroidSnapshotHelper(
         adbProvider,
         artifact,
         deviceKey,
-        installPolicy: options.helperInstallPolicy,
+        installPolicy: resolveHelperInstallPolicy(options),
         timeoutMs: HELPER_INSTALL_TIMEOUT_MS,
         signal: options.signal,
       }),
     {
       packageName: artifact.manifest.packageName,
       versionCode: artifact.manifest.versionCode,
-      installPolicy: options.helperInstallPolicy ?? 'missing-or-outdated',
+      installPolicy: resolveHelperInstallPolicy(options),
     },
   );
   emitDiagnostic({
@@ -410,6 +437,7 @@ function formatAndroidHelperCaptureResult(
     xml: capture.xml,
     metadata: {
       backend: 'android-helper',
+      pixelDensity: capture.metadata.pixelDensity,
       helperVersion: artifact.manifest.version,
       helperApiVersion: capture.metadata.helperApiVersion,
       helperTransport: capture.metadata.transport,
@@ -466,6 +494,7 @@ async function captureAndroidHelperContentAttempt(params: {
     helperCapture = formatAndroidHelperCaptureResult(capture, artifact, install.reason);
   } catch (error) {
     options.signal?.throwIfAborted();
+    if (isAndroidSnapshotHelperNotCurrentError(error)) throw error;
     return {
       outcome: 'captured',
       capture: await rejectAndroidHelperCaptureFailure({
@@ -517,6 +546,8 @@ async function rejectAndroidHelperContentUnavailable(params: {
   artifact: AndroidSnapshotHelperArtifact;
   adb: AndroidAdbExecutor;
   signal?: AbortSignal;
+  /** A transient capture does not own the helper, so its content verdict leaves the helper alone. */
+  retireHelper: boolean;
 }): Promise<{ xml: string; metadata: AndroidSnapshotBackendMetadata }> {
   emitDiagnostic({
     level: 'error',
@@ -528,17 +559,27 @@ async function rejectAndroidHelperContentUnavailable(params: {
       ...params.contentRecovery.diagnostics,
     },
   });
-  await retireAndroidSnapshotHelperAfterContentFailure({
-    adb: params.adb,
-    deviceKey: params.helperDeviceKey,
-    packageName: params.artifact.manifest.packageName,
-    signal: params.signal,
-    cause: params.contentRecovery.failureReason,
-  });
-  throw new AppError('COMMAND_FAILED', params.contentRecovery.failureReason, {
-    ...params.contentRecovery.diagnostics,
-    androidSnapshotHelperFailureReason: params.contentRecovery.reason,
-    attempts: params.attempts,
+  if (params.retireHelper) {
+    await retireAndroidSnapshotHelperAfterContentFailure({
+      adb: params.adb,
+      deviceKey: params.helperDeviceKey,
+      packageName: params.artifact.manifest.packageName,
+      signal: params.signal,
+      cause: params.contentRecovery.failureReason,
+    });
+  }
+  throw androidHelperContentUnavailableError(params.contentRecovery, params.attempts);
+}
+
+/** The retriable content verdict a capture reports once its re-captures still see no content. */
+export function androidHelperContentUnavailableError(
+  contentRecovery: AndroidHelperContentRecoveryDecision,
+  attempts: number,
+): AppError {
+  return new AppError('COMMAND_FAILED', contentRecovery.failureReason, {
+    ...contentRecovery.diagnostics,
+    androidSnapshotHelperFailureReason: contentRecovery.reason,
+    attempts,
     retriable: true,
     hint: 'Retry after the app UI stabilizes. If this persists, capture a screenshot and report the helper diagnostics; agent-device does not substitute a second snapshot engine.',
   });

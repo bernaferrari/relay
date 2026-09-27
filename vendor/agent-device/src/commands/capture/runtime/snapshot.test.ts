@@ -13,6 +13,8 @@ import {
   type CommandSessionStore,
 } from '../../../runtime.ts';
 import { makeSnapshotState } from '@agent-device/selectors/snapshot-geometry-fixtures';
+import type { PostGestureOutcome } from '@agent-device/kernel/snapshot';
+import { formatPostGestureOutcomeWarning } from '@agent-device/capture-kit/post-gesture-stability';
 
 test('runtime snapshot captures nodes and updates the session baseline', async () => {
   let stored: Parameters<CommandSessionStore['set']>[0] | undefined;
@@ -362,6 +364,32 @@ test('runtime snapshot renders the structured quality verdict and skips legacy d
   // The fixture is a cut capture; the shared disclosure follows the verdict's own warnings.
   assert.match(String(result.warnings?.[2]), /cut at a backend limit/);
   assert.deepEqual(result.snapshotQuality?.state, 'recovered');
+});
+
+test('runtime snapshot renders healthy-capture disclosures from the verdict alone', async () => {
+  const tabBarLabel = Array.from({ length: 12 }, (_, i) => `Tab ${i}`).join(', ');
+  const device = createSnapshotOnlyDevice({
+    nodes: [
+      { ref: 'e1', index: 0, depth: 0, type: 'Application', label: 'App' },
+      { ref: 'e2', index: 1, depth: 1, parentIndex: 0, type: 'Other', label: tabBarLabel },
+      { ref: 'e3', index: 2, depth: 1, parentIndex: 0, type: 'Button', label: 'Ok' },
+    ],
+    truncated: false,
+    backend: 'xctest',
+    quality: {
+      state: 'healthy',
+      backend: 'tree',
+      customActions: { read: 12, candidates: 19, truncated: 0, blocked: false },
+      collapsedLeafIndexes: [1],
+    },
+  });
+
+  const result = await device.capture.snapshot({ session: 'default' });
+
+  assert.deepEqual(result.warnings, [
+    'Custom actions were read for 12 of 19 merged elements, on-screen ones first; the remaining 7 were not read, so an absent actions list on those is not evidence that they have none. Scroll them into view and re-run to read them.',
+    "@e2 [Other] merges many labels into a single accessibility element. The app likely marks a container as accessible, which hides every descendant from assistive tech and automation — the children cannot be addressed individually. Fix the app's accessibility (mark the rows, not the container); until then use screenshot as visual truth and coordinate taps.",
+  ]);
 });
 
 test('runtime snapshot does not warn for a normal iOS interactive output', async () => {
@@ -759,4 +787,23 @@ test('runtime snapshot leaves the keyboard band off when the backend measured no
   const result = await device.capture.snapshot({ session: 'default' });
 
   assert.equal('keyboard' in result, false);
+});
+
+test('runtime snapshot warns when its tree was read on a surface still moving after a gesture', async () => {
+  const outcome: PostGestureOutcome = {
+    kind: 'unsettled',
+    gesture: { action: 'scroll', positionals: ['down'] },
+  };
+  const device = createSnapshotOnlyDevice({
+    snapshot: {
+      ...makeSnapshotState([{ index: 0, depth: 0, type: 'Window', label: 'Home' }], {
+        backend: 'xctest',
+      }),
+      postGestureOutcome: outcome,
+    },
+  });
+
+  const result = await device.capture.snapshot({ session: 'default' });
+
+  assert.deepEqual(result.warnings, [formatPostGestureOutcomeWarning(outcome)]);
 });

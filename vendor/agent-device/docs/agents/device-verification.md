@@ -10,9 +10,12 @@ physical devices. Live verification steps apply when exercising a device-facing 
 - Before any Android verification from source: `pnpm build`, `pnpm build:android`, `pnpm clean:daemon`.
   `build:android` refreshes and verifies both bundled Android helper artifacts for the current
   package version.
-- `shutdown` hands off a healthy simulator runner; a new daemon may adopt the old binary. After
+- Graceful `shutdown` hands off a healthy runner that already answered a command, on the simulator
+  and physical iOS lanes alike; a new daemon may adopt the old binary. After
   Swift runner changes, run `pnpm build:xcuitest` before verification. Use the session cleanup
-  procedure below if ownership is stuck.
+  procedure below if ownership is stuck. The physical handoff's device steps are
+  `docs/evidence/ios-physical-runner-handoff-2026-09-19.md`; nothing in it is proven until someone
+  with a cabled device checks a box.
 
 ## Prove the path under test was actually active
 
@@ -42,7 +45,8 @@ verification looks exactly like that to the next `open` — until the owner reop
 boot it is now running on and makes the claim live again.
 
 The OS-neutral Apple runner lives under `packages/platform-apple/src/runner/`. For connection errors,
-retry policy, or command typing, start at `runner-contract.ts`; transport stays below session/client
+start at `runner-startup-transport.ts`; for retry policy, at `runner-error-classification.ts`; for
+command typing, at `runner-contract.ts`. Transport stays below session/client
 behavior, and xctestrun build/cache logic stays outside request execution.
 
 ## Session hygiene
@@ -68,16 +72,27 @@ toolchain per command:
 
 - Panels: that command lists each integrated panel with `backlightState`. Only the lit panel is
   capturable — a capture of the dark panel exits 0 and writes an all-black PNG.
-- Pose is not scriptable. Ask the operator to fold or open the device in Device Hub, then
-  re-snapshot; refs and coordinates do not survive the pose change.
-- When a recording must show touches, assume it cannot. The touch-overlay exporter loses the track
-  geometry whenever it has touch events to draw — `220x480` on a plain iPhone 17 as well as on the
-  inner panel — and returns all-black frames on long clips, always with exit 0. Record with
-  `record start --hide-touches` and make the interaction legible through its on-screen effect
-  (typed text, navigation, a counter) instead of a cursor. The raw `simctl` capture behind it is
-  correct. See ADR 0025 and #2707.
-- An app must adopt the UIScene lifecycle to launch on iOS 27.1 at all: a legacy
-  `UIApplicationDelegate` app traps at launch inside
+- Input routing: verify a fresh control after each pose change. A successful synthesis acknowledgement
+  does not prove a hit. Inspect the runner and simulator `testmanagerd`/BackBoard logs for display
+  identity and delivery; the resolved app window owns gesture coordinates and its target screen.
+- Pose: `agent-device fold closed|half-open|open` sends private HID inside the simulator and reads
+  the hinge back through `devicectl device motion hinge-angle`. Device Hub and host Accessibility
+  permission are not required. Re-snapshot afterwards: refs and coordinates do not survive folds.
+  Verify locally with Device Hub stopped and the simulator booted through `simctl boot`; test all
+  three poses, active panel capture, and an app interaction. Duo coverage remains local until GHA
+  supports the runtime. To inspect the angle independently:
+  `xcrun devicectl device motion hinge-angle --device <udid> --session-timeout 1 --timeout 5`.
+- Touch overlays export at the captured track size again (#2707). The burn-in used to re-encode
+  through a fixed 480px preset, so a recording with touches collapsed to `220x480` (landscape
+  `480x220`) on any panel — not just the `rot90` inner one — and went all-black on long clips,
+  always with exit 0. That preset is gone: both quality tiers export through the one
+  geometry-preserving preset, and the compositor now checks its own output (size and non-black)
+  against the raw before publishing it — on failure it drops the overlay, keeps the raw capture, and
+  reports it as `overlayWarning` on `record stop` rather than returning a broken file. Only reach
+  for `record start --hide-touches` when you want the fastest raw capture, not to dodge the defect.
+  See ADR 0025 and #2707.
+- An app built with the iOS 27 SDK must adopt the UIScene lifecycle to launch on an iOS 27.0 or
+  27.1 simulator at all: a legacy `UIApplicationDelegate` app traps at launch inside
   `___UIApplicationEvaluateRuntimeIssueForNoSceneLifecycleAdoption`, which reads like a broken
   device but is not one.
 - The 27.1 runtime in this beta accepts only the `iPhone Duo` device type, so a second non-foldable

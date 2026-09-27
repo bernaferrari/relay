@@ -11,9 +11,11 @@ import {
   alertRuntimeOperationFacts,
 } from '@agent-device/contracts/alert-runtime';
 import {
+  type ReadSettingInput,
   type SetSettingInput,
   settingsRuntimeOperationFacts,
 } from '@agent-device/contracts/settings-runtime';
+import type { ReadSettingResult } from '@agent-device/contracts/settings';
 import {
   type CaptureScreenshotInput,
   screenshotRuntimeOperationFacts,
@@ -26,11 +28,13 @@ import {
 import {
   deviceShape,
   isApplePlatform,
+  isHandheldAppleSimulator,
   isIosFamily,
   isMacOs,
   type DeviceInfo,
 } from '@agent-device/kernel/device';
 import { applePlugin } from '@agent-device/platform-apple';
+import { textSizeSettingPayload } from '@agent-device/contracts/settings';
 import { type DispatchContext } from '../../core/dispatch-context.ts';
 import { getRequestSignal } from '@agent-device/host-kit/request';
 import { isActiveProviderDevice } from '../provider-device-admission.ts';
@@ -52,10 +56,24 @@ export const fixtureScreenshotCaptures: CaptureScreenshotInput[] = [];
  */
 export const fixtureSettingsMutations: SetSettingInput[] = [];
 
+/**
+ * Every read the fixture's bound settings operation received, newest last. The read half of the
+ * surface is what the `settings <setting>` leg witnesses: that the request reached the owner and
+ * named the setting it asked about, with no state attached.
+ */
+export const fixtureSettingsReads: ReadSettingInput[] = [];
+
+/** The value the fixture's owner holds, built the way an owner builds it. */
+const FIXTURE_SETTINGS_READ_RESULT: ReadSettingResult = textSizeSettingPayload(
+  'extra-extra-large',
+  'extra-extra-large',
+);
+
 /** Clears both recorders so a suite can assert "the owner was never reached" from a known zero. */
 export function resetSnapshotRuntimeFixture(): void {
   fixtureScreenshotCaptures.length = 0;
   fixtureSettingsMutations.length = 0;
+  fixtureSettingsReads.length = 0;
 }
 
 /** Request-scoped snapshot seam for handler tests that mock the legacy leaf dispatch. */
@@ -78,6 +96,10 @@ export function snapshotRuntimeFixture(requestId?: string): Readonly<{
     const setSetting = async (input: SetSettingInput) => {
       fixtureSettingsMutations.push(input);
       return {};
+    };
+    const readSetting = async (input: ReadSettingInput) => {
+      fixtureSettingsReads.push(input);
+      return FIXTURE_SETTINGS_READ_RESULT;
     };
     // R59: the alert legs delegate to the Apple owner's own module, so the poll and retry windows
     // these suites exercise are the shipped ones rather than a fixture's imitation of them. The
@@ -104,16 +126,17 @@ export function snapshotRuntimeFixture(requestId?: string): Readonly<{
           captureSnapshotWithoutActiveApp: captureSnapshot,
           captureScreenshot,
           setSetting,
+          readSetting,
           ...(appleInteractor
             ? {
                 readAlert: async (input: AlertRuntimeInput) =>
-                  await appleInteractor.readAlert(alertOptions(input)),
+                  await appleInteractor.readAlert!(alertOptions(input)),
                 awaitAlert: async (input: AlertRuntimeInput) =>
-                  await appleInteractor.awaitAlert(alertOptions(input)),
+                  await appleInteractor.awaitAlert!(alertOptions(input)),
                 acceptAlert: async (input: AlertRuntimeInput) =>
-                  await appleInteractor.acceptAlert(alertOptions(input)),
+                  await appleInteractor.acceptAlert!(alertOptions(input)),
                 dismissAlert: async (input: AlertRuntimeInput) =>
-                  await appleInteractor.dismissAlert(alertOptions(input)),
+                  await appleInteractor.dismissAlert!(alertOptions(input)),
               }
             : {}),
         },
@@ -131,10 +154,25 @@ function appleHostOrSimulatorOnly(device: DeviceInfo): boolean {
   return device.platform === 'apple' && device.kind === 'device' && !isMacOs(device);
 }
 
+/**
+ * The narrower read refusal, stated through the same predicate the Apple owner and the Apple runtime
+ * fact use: only an iPhone/iPad simulator has a content size `simctl ui` reports.
+ */
+function appleSettingsReadRefused(device: DeviceInfo): boolean {
+  if (!isApplePlatform(device.platform)) return true;
+  return !isHandheldAppleSimulator(device);
+}
+
 const settingsUnavailable = {
   available: false,
   reason: 'unsupported-platform-leaf',
   hint: 'settings is supported on Apple simulators and the macOS host, not on physical devices of this OS.',
+} as const;
+
+const settingsReadUnavailable = {
+  available: false,
+  reason: 'unsupported-platform-leaf',
+  hint: 'Reading a setting back is supported on iPhone and iPad simulators, where `simctl ui` reports the value the device holds.',
 } as const;
 
 const alertUnavailable = {
@@ -181,6 +219,7 @@ async function snapshotFacts(device: DeviceInfo): Promise<RuntimeFacts<PlatformR
       // `platform-apple/src/system/runtime.test.ts`.
       ...settingsRuntimeOperationFacts({
         setSetting: appleHostOrSimulatorOnly(device) ? settingsUnavailable : available,
+        readSetting: appleSettingsReadRefused(device) ? settingsReadUnavailable : available,
       }),
       // R59: `alert` runs on the snapshot route too. Only the Apple legs are modeled — every
       // alert suite that reaches this fixture drives an Apple session — and the full per-owner

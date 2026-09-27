@@ -31,11 +31,24 @@ export type {
 export {
   DEVICE_ROTATIONS,
   DEVICE_ROTATION_SURFACE_INDEX,
+  MAX_FOLD_DURATION_MS,
+  MAX_FOLD_KEYFRAMES,
+  parseFoldInput,
+  parseFoldKeyframesJson,
+  FOLD_POSES,
+  FOLD_POSE_USAGE,
   deviceRotationOrientation,
   deviceRotationSurfaceDegrees,
+  foldPoseForHingeAngle,
   parseDeviceRotation,
+  parseFoldPose,
 } from '../device-rotation.ts';
-export type { DeviceRotation } from '../device-rotation.ts';
+export type {
+  DeviceRotation,
+  FoldPose,
+  FoldKeyframe,
+  SetFoldPoseInput,
+} from '../device-rotation.ts';
 export type { BootCommandResult, ShutdownCommandResult } from '../device.ts';
 export type {
   ProviderDeviceInstallOptions,

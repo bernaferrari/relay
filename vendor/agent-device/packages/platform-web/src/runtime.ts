@@ -45,13 +45,12 @@ import {
 } from '@agent-device/contracts/touch-runtime';
 import { viewportRuntimeOperationFacts } from '@agent-device/contracts/viewport-runtime';
 import { backRuntimeOperationFacts } from '@agent-device/contracts/back-runtime';
-import { homeRuntimeOperationFacts } from '@agent-device/contracts/home-runtime';
 import { orientationRuntimeOperationFacts } from '@agent-device/contracts/orientation-runtime';
 import { tvRemoteRuntimeOperationFacts } from '@agent-device/contracts/tv-remote-runtime';
 import { alertRuntimeOperationFacts } from '@agent-device/contracts/alert-runtime';
 import { appEventRuntimeOperationFacts } from '@agent-device/contracts/app-event-runtime';
 import { settingsRuntimeOperationFacts } from '@agent-device/contracts/settings-runtime';
-import { appSwitcherRuntimeOperationFacts } from '@agent-device/contracts/app-switcher-runtime';
+import { systemButtonRuntimeOperationFacts } from '@agent-device/contracts/system-button-runtime';
 import { clipboardRuntimeOperationFacts } from '@agent-device/contracts/clipboard-runtime';
 import { keyboardRuntimeOperationFacts } from '@agent-device/contracts/keyboard-runtime';
 import {
@@ -114,6 +113,18 @@ const prepareUnavailable = Object.freeze({
 const nativeRefUnavailable = Object.freeze({
   available: false,
   reason: 'owner-capability-missing',
+} as const);
+/**
+ * The web click affordance is one immediate pointer press, which is everything `press` needs for a
+ * repeated `--count` series. Timed actions are a policy this owner declines rather than a missing
+ * primitive: the browser could compose a raw pointer down/up pair around a wait and does not, so the
+ * cell denies the hold rather than borrowing the tap cell that admits the series. The fused
+ * double-click is declined one level down, by the interactor member the browser never supplies.
+ */
+const holdUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-platform-leaf',
+  hint: 'A web click is one immediate pointer press; the browser backend has no timed hold.',
 } as const);
 const audioCaptureUnavailable = Object.freeze({
   available: false,
@@ -387,7 +398,7 @@ function webRuntimeFacts(
         unsupported: readinessUnavailable,
         tap: browserDevice,
         tapRef: webOptionalOperationFact(interactor?.tapRef, browserDevice),
-        longPress: readinessUnavailable,
+        longPress: holdUnavailable,
         hover: webOptionalOperationFact(interactor?.hover, browserDevice),
         hoverRef: webOptionalOperationFact(interactor?.hoverRef, browserDevice),
         fill: browserDevice,
@@ -407,7 +418,6 @@ function webRuntimeFacts(
       // which is what the legacy dispatch already did once its Apple-runner attempt failed.
       ...elementTextRuntimeOperationFacts({ readTextAtPoint: elementTextUnavailable }),
       ...backRuntimeOperationFacts({ back: navigationUnavailable }),
-      ...homeRuntimeOperationFacts({ home: navigationUnavailable }),
       ...orientationRuntimeOperationFacts({ orientation: navigationUnavailable }),
       ...tvRemoteRuntimeOperationFacts({ tvRemote: navigationUnavailable }),
       ...keyboardRuntimeOperationFacts({ unsupported: navigationUnavailable }),
@@ -424,10 +434,13 @@ function webRuntimeFacts(
         nativeCapture: navigationUnavailable,
         profileReport: navigationUnavailable,
       }),
-      ...appSwitcherRuntimeOperationFacts({ appSwitcher: navigationUnavailable }),
-      actionButton: navigationUnavailable,
+      ...systemButtonRuntimeOperationFacts({ unsupported: navigationUnavailable }),
+      setFoldPose: navigationUnavailable,
       ...appEventRuntimeOperationFacts({ triggerAppEvent: navigationUnavailable }),
-      ...settingsRuntimeOperationFacts({ setSetting: navigationUnavailable }),
+      ...settingsRuntimeOperationFacts({
+        setSetting: navigationUnavailable,
+        readSetting: navigationUnavailable,
+      }),
       ...alertRuntimeOperationFacts({
         read: navigationUnavailable,
         wait: navigationUnavailable,

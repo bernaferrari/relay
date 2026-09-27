@@ -1,11 +1,7 @@
 import type { FindLocator } from '@agent-device/selectors';
 import type { BoundSelectorCapture } from '../../selector-capture-binding.ts';
-import type {
-  SnapshotKeyboardBandFact,
-  SnapshotQualityVerdict,
-  SnapshotState,
-} from '@agent-device/kernel/snapshot';
-import type { RequestActivationProof } from '../../capture-disclosure.ts';
+import type { SnapshotQualityVerdict, SnapshotState } from '@agent-device/kernel/snapshot';
+import type { CaptureProvenance, RequestCaptureProof } from '../../capture-disclosure.ts';
 import { createSelectorCaptureRuntime } from '../../selector-capture-runtime.ts';
 import { SessionStore } from '../../session-store.ts';
 import type { DaemonRequest, DaemonResponse } from '../../daemon-request.ts';
@@ -13,14 +9,8 @@ import type { SessionState } from '../../session-state.ts';
 import { errorResponse } from '@agent-device/kernel/contracts';
 
 /** The tree a mutating find resolves its target against, plus what the capture disclosed. */
-export type FindTargetTree = {
-  nodes: SnapshotState['nodes'];
-  snapshotQuality?: SnapshotQualityVerdict;
-  systemSurfaceOnly?: boolean;
-  iosSystemSurfaceBundleId?: string;
-  /** The keyboard band this capture's producer measured, when it measured one (#2660). */
-  keyboard?: SnapshotKeyboardBandFact;
-};
+export type FindTargetTree = CaptureProvenance &
+  Pick<SnapshotState, 'nodes' | 'snapshotQuality' | 'keyboard'>;
 
 /**
  * Find's target capture. A mutating find (click/fill/focus/type) resolves its target from its
@@ -42,7 +32,7 @@ export function createFindTargetCapture(
      * Filled by whichever capture this find actually took, including a re-capture that replaced a
      * sparse first tree — find's response is owed the repair its own first capture paid for.
      */
-    activationProof: RequestActivationProof;
+    captureProof: RequestCaptureProof;
   }>,
 ): () => Promise<FindTargetTree> {
   const { device, session, req, logPath, locator, query, sessionStore, sessionName } = params;
@@ -54,7 +44,7 @@ export function createFindTargetCapture(
     req,
     logPath,
     capture: params.capture,
-    activationProof: params.activationProof,
+    captureProof: params.captureProof,
   });
   return async () => {
     // Interaction targets need the full interactive tree so duplicate labels can
@@ -75,13 +65,7 @@ export function createFindTargetCapture(
         },
       },
     });
-    return {
-      nodes: snapshot.nodes,
-      snapshotQuality: snapshot.snapshotQuality,
-      systemSurfaceOnly: snapshot.systemSurfaceOnly,
-      iosSystemSurfaceBundleId: snapshot.iosSystemSurfaceBundleId,
-      ...(snapshot.keyboard ? { keyboard: snapshot.keyboard } : {}),
-    };
+    return snapshot;
   };
 }
 

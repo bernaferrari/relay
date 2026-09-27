@@ -15,6 +15,7 @@ import {
   androidSnapshotHelperOutput,
 } from '../../../src/__tests__/test-utils/android-snapshot-helper.ts';
 import { runCmd, runCmdBackground } from '@agent-device/host-kit/command';
+import { resetAndroidSnapshotHelperInstallCache } from '@agent-device/platform-android/mechanics';
 import { validPng } from './assertions.ts';
 import { PROVIDER_SCENARIO_ANDROID } from './fixtures.ts';
 import {
@@ -65,6 +66,9 @@ export async function createAndroidSettingsWorld(options?: {
   dumpsysWindow?: () => string;
   onAdbExec?: (args: readonly string[]) => void;
 }): Promise<AndroidSettingsWorld> {
+  // The world's helper version probe always reports no helper, so no install may be remembered
+  // from an earlier world on the same serial.
+  resetAndroidSnapshotHelperInstallCache();
   const hostAdbGuard = installFakeHostAdbGuard();
   const adbCalls: string[][] = [];
   const textInjectionCalls: AndroidSettingsWorld['textInjectionCalls'] = [];
@@ -602,10 +606,36 @@ function androidPackageAdbResult(
 ): AndroidAdbResult | undefined {
   return (
     androidSnapshotHelperProbeAdbResult(key) ??
+    androidPackageDumpsysAdbResult(args) ??
     androidLaunchablePackagesAdbResult(args) ??
     androidInstalledPackagesAdbResult(key) ??
     androidForegroundReadAdbResult(key, dumpsysWindow)
   );
+}
+
+/**
+ * Named permission targets intersect the package's declared permissions (like `all` does),
+ * so even a single-id grant reads `dumpsys package` first. The scripted dump declares
+ * CAMERA, which is the only permission this harness grants.
+ */
+function androidPackageDumpsysAdbResult(args: string[]): AndroidAdbResult | undefined {
+  if (args[0] !== 'shell' || args[1] !== 'dumpsys' || args[2] !== 'package' || !args[3]) {
+    return undefined;
+  }
+  return {
+    stdout: [
+      'Packages:',
+      `  Package [${args[3]}] (abc):`,
+      '    requested permissions:',
+      '      android.permission.CAMERA',
+      '    User 0: ceDataInode=0 installed=true',
+      '      runtime permissions:',
+      '        android.permission.CAMERA: granted=false',
+      'Queries:',
+    ].join('\n'),
+    stderr: '',
+    exitCode: 0,
+  };
 }
 
 function androidSnapshotHelperProbeAdbResult(key: string): AndroidAdbResult | undefined {

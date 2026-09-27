@@ -1,11 +1,13 @@
+import type { AppStateRuntimeResult } from './app-state-runtime.ts';
 import type { BackMode } from './back-mode.ts';
 import type { IosSystemSurfaceProvenance } from './ios-system-surface.ts';
 import type { DeviceRotation } from './device-rotation.ts';
+import type { FillUnconfirmedVerification } from './fill-evidence.ts';
 import type { ScrollDirection } from './scroll-gesture.ts';
 import type { ScrollExecutionOptions } from './scroll-command.ts';
 import type { TvRemoteButton } from './tv-remote.ts';
 import type { GesturePlan } from './gesture-plan-types.ts';
-import type { SettingOptions } from './settings.ts';
+import type { ReadableSetting, ReadSettingResult, SettingOptions } from './settings.ts';
 import type { SessionSurface } from './session-surface.ts';
 import type { BackendSnapshotResult } from './snapshot-types.ts';
 import type { RunnerLogicalLeaseContext } from './runner-lease-context.ts';
@@ -151,21 +153,6 @@ export const CLOUD_TEXT_ENTRY_READINESS = ['focused-element', 'keyboard-shown'] 
 
 export type CloudTextEntryReadiness = (typeof CLOUD_TEXT_ENTRY_READINESS)[number];
 
-export type FillVerificationTarget = {
-  resourceId: string | null;
-  className: string | null;
-  packageName: string | null;
-  rect: Rect;
-};
-
-export type FillUnconfirmedVerification = {
-  verification: 'unconfirmed';
-  requested: string;
-  before: string | null;
-  after: string | null;
-  target: FillVerificationTarget;
-};
-
 /**
  * What `Interactor.fill` reports back about the entry it performed. The cloud
  * interactors (WebDriver and the Limrun iOS session) populate
@@ -189,6 +176,12 @@ export type SnapshotOptions = BaseSnapshotOptions & {
   surface?: SessionSurface;
   /** Internal capture purpose; action outcomes always require the full tree. */
   acquisitionIntent?: 'full' | 'surface-observation';
+  /**
+   * A one-off read, such as an open's launch observation. It may use a capture host the session
+   * already keeps warm, but it never installs one or leaves running one that it started. It starts
+   * no re-capture after `settleBy` (epoch ms); only `signal` cancels work already started.
+   */
+  transient?: Readonly<{ settleBy: number }>;
 };
 
 /**
@@ -309,8 +302,19 @@ export type Interactor = {
   /** Owner-native ref routes; currently the managed web runtime is their only local owner. */
   tapRef?(ref: string): Promise<Record<string, unknown> | void>;
   tapElementSelector?(selector: ElementSelectorTapOptions): Promise<Record<string, unknown> | void>;
-  doubleTap(x: number, y: number): Promise<Record<string, unknown> | void>;
+  /**
+   * Fused double-click for owners that have one. The shared `--count` series cannot stand in for it —
+   * it spaces and jitters independent presses rather than firing one pair the target reads as a
+   * double — so an owner with no such mechanic leaves this undefined and `press --double` reports the
+   * gap instead of resolving a denial.
+   */
+  doubleTap?(x: number, y: number): Promise<Record<string, unknown> | void>;
   longPress(x: number, y: number, durationMs?: number): Promise<Record<string, unknown> | void>;
+  /**
+   * How the app the runner context names is running, as the platform reports it. The Apple runner
+   * reads `XCUIApplication.state`; owners that read the foreground elsewhere leave it undefined.
+   */
+  appState?(): Promise<AppStateRuntimeResult>;
   /**
    * Move the pointer to a point without pressing. Only pointer-driven
    * platforms (web today) implement it; touch platforms have no hover state
@@ -364,25 +368,53 @@ export type Interactor = {
   }>;
   gestureViewport?(): Promise<Rect>;
   back(mode?: BackMode): Promise<void>;
-  home(): Promise<void>;
+  /**
+   * Optional (parity with `actionButton`): opens the springboard, a control not every owner
+   * carries. An owner without it leaves it undefined; its fact refuses the press before binding,
+   * and the system-button binder fails closed rather than resolving an absent member as a
+   * successful no-op.
+   */
+  home?(): Promise<void>;
   setOrientation(orientation: DeviceRotation): Promise<{ orientation?: DeviceRotation } | void>;
   performGesture?(plan: GesturePlan): Promise<Record<string, unknown> | void>;
-  appSwitcher(): Promise<void>;
-  tvRemote(button: TvRemoteButton, durationMs?: number): Promise<void>;
   /**
-   * Presses the iPhone Action Button. Required rather than optional for the same reason `tvRemote`
-   * is: an absent member would let an advertised press resolve as a no-op that reports success.
-   * Owners without the button throw `UNSUPPORTED_OPERATION`.
+   * Optional (parity with `home`): opens the recents surface, a control not every owner carries.
+   * An owner without it leaves it undefined; its fact refuses the press before binding, and the
+   * system-button binder fails closed rather than resolving an absent member as a successful
+   * no-op.
    */
-  actionButton(): Promise<void>;
+  appSwitcher?(): Promise<void>;
+  /**
+   * Optional (parity with `home`): presses one TV remote key, a control only TV-capable owners
+   * carry. An owner without it leaves it undefined; its fact refuses the press before binding,
+   * and the TV remote binder fails closed rather than resolving an absent member as a silent
+   * no-op.
+   */
+  tvRemote?(button: TvRemoteButton, durationMs?: number): Promise<void>;
+  /**
+   * Optional (parity with `keyboardDismiss`): presses the iPhone/iPad Action Button, hardware only
+   * the Apple owner carries. An owner without the button leaves it undefined; its fact refuses the
+   * press before binding, and the system-button binder fails closed rather than resolving an
+   * absent member as a successful no-op.
+   */
+  actionButton?(): Promise<void>;
   /** Optional: only Android implements a live status read (see {@link KeyboardStatusResult}). */
   keyboardStatus?(): Promise<KeyboardStatusResult>;
   /** Optional: platforms with no keyboard-dismiss concept leave it undefined. */
   keyboardDismiss?(): Promise<KeyboardDismissResult>;
   /** Optional: platforms with no keyboard-return concept leave it undefined. */
   keyboardEnter?(): Promise<KeyboardEnterResult>;
-  readClipboard(): Promise<string>;
-  writeClipboard(text: string): Promise<void>;
+  /**
+   * Optional (parity with `readSetting`): the owner's pasteboard read. An owner with no clipboard
+   * surface leaves both halves undefined; its fact refuses the half before binding, and the
+   * clipboard binder fails closed rather than resolving an absent member as an empty answer.
+   */
+  readClipboard?(): Promise<string>;
+  /**
+   * Optional (parity with `readClipboard`): the owner's pasteboard write, with the same
+   * fact-then-guard contract as the read.
+   */
+  writeClipboard?(text: string): Promise<void>;
   pasteClipboard?(
     text: string,
     selector: Pick<ElementSelectorTapOptions, 'key' | 'value'>,
@@ -398,15 +430,27 @@ export type Interactor = {
     options?: SettingOptions,
   ): Promise<Record<string, unknown> | void>;
   /**
+   * Optional: reads back the value a device holds for one readable setting. The name is narrowed to
+   * `READABLE_SETTINGS`, which is not every setting the write switch serves, and an owner's dispatch
+   * is exhaustive over it — a setting joins the list only with an owner that answers it. An owner with
+   * no read path leaves the member undefined; its fact refuses the read before binding, so an absent
+   * method can never resolve into an empty answer.
+   */
+  readSetting?(setting: ReadableSetting): Promise<ReadSettingResult>;
+  /**
    * The four alert legs. Each owner runs its own observation and, where it needs one, its own
    * poll: an alert is a transient device surface, and how long to look for it — and how to press
    * its buttons — is family mechanics, not something a caller can supply. `timeoutMs` is the
    * whole window the caller allows; the owner spends it however its backend requires.
+   *
+   * Optional: an owner with no alert surface leaves all four undefined. Its facts refuse every leg
+   * before binding, so the absent members are never resolved, and a fact that admitted a leg the
+   * interactor cannot serve fails closed instead of answering empty.
    */
-  readAlert(options?: AlertInteractorOptions): Promise<Record<string, unknown>>;
-  awaitAlert(options?: AlertInteractorOptions): Promise<Record<string, unknown>>;
-  acceptAlert(options?: AlertInteractorOptions): Promise<Record<string, unknown>>;
-  dismissAlert(options?: AlertInteractorOptions): Promise<Record<string, unknown>>;
+  readAlert?(options?: AlertInteractorOptions): Promise<Record<string, unknown>>;
+  awaitAlert?(options?: AlertInteractorOptions): Promise<Record<string, unknown>>;
+  acceptAlert?(options?: AlertInteractorOptions): Promise<Record<string, unknown>>;
+  dismissAlert?(options?: AlertInteractorOptions): Promise<Record<string, unknown>>;
 };
 
 /**

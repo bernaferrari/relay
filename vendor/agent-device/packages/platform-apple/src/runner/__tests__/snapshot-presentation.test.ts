@@ -207,24 +207,50 @@ test('a healthy payload with valid viewport roots still presents', () => {
   );
 });
 
-// The keyboard band the runner measured for a capture (#2660). The reader is the only place a wire
-// fact becomes a daemon fact, so it owns the whole strictness budget: what cannot be placed is
-// restated as `unmeasurable` with a reason, never as a band and never as silence.
-
-test('a measured keyboard band is read as the band the guard will measure against', () => {
-  // The landscape band #2653 confirmed on iPhone 17 Pro: the runner answers `app.keyboards` in the
-  // app's own orientation space, so the daemon reads these numbers beside node rects unchanged.
-  const result = readAppleSnapshotResult({
-    keyboard: { kind: 'visible', frame: { x: 0, y: 198, width: 874, height: 204 } },
-  });
-
-  assert.deepEqual(result.keyboard, {
-    kind: 'visible',
-    frame: { x: 0, y: 198, width: 874, height: 204 },
-  });
+// A runner capture with no viewport box omits `hittable` on the nodes it could not decide (#2891);
+// the host presents them undecided rather than minting a value.
+test('a runner payload with the hittable bit absent presents without declaring it', () => {
+  const nodes: RawSnapshotNode[] = [
+    {
+      index: 0,
+      type: 'Application',
+      rect: { x: 0, y: 0, width: 390, height: 844 },
+      hittable: false,
+    },
+    { index: 1, parentIndex: 0, type: 'Other', rect: { x: 0, y: 0, width: 390, height: 844 } },
+    {
+      index: 2,
+      parentIndex: 1,
+      type: 'Button',
+      label: 'Not Now',
+      rect: { x: 16, y: 400, width: 80, height: 32 },
+    },
+  ];
+  for (const interactiveOnly of [false, true]) {
+    const presented = presentAppleRunnerSnapshot('device-1', { interactiveOnly }, { nodes });
+    const button = presented.find((node) => node.label === 'Not Now');
+    assert.ok(button, `interactiveOnly=${interactiveOnly}: the undecided button is presented`);
+    assert.equal('hittable' in button, false);
+  }
 });
 
-test('a proven absence and a stated failure both survive the wire as themselves', () => {
+// The keyboard band the runner measured for a capture (#2660). The strictness budget that decides
+// what cannot be placed belongs to `readSnapshotKeyboardBandFact` in @agent-device/kernel, which owns
+// that table; this seam owns forwarding AND the proof that it forwards through that reader. The
+// same-process capture path feeds `result.keyboard` straight into the tap/click occlusion guard in
+// src/commands/interaction/runtime/keyboard-occlusion.ts before any serialization, so a seam that
+// passed the raw wire value through would hand the guard an unvalidated shape with nothing red.
+// The malformed cases below are what prove the routing; kernel/src/record.test.ts owns the table.
+
+test('the reader forwards each published keyboard band shape unchanged', () => {
+  // The landscape band #2653 confirmed on iPhone 17 Pro: the runner answers `app.keyboards` in the
+  // app's own orientation space, so the daemon reads these numbers beside node rects unchanged.
+  assert.deepEqual(
+    readAppleSnapshotResult({
+      keyboard: { kind: 'visible', frame: { x: 0, y: 198, width: 874, height: 204 } },
+    }).keyboard,
+    { kind: 'visible', frame: { x: 0, y: 198, width: 874, height: 204 } },
+  );
   assert.deepEqual(readAppleSnapshotResult({ keyboard: { kind: 'absent' } }).keyboard, {
     kind: 'absent',
   });
@@ -242,14 +268,15 @@ test('a capture from a tier that never reads the keyboard publishes no fact at a
   assert.equal(readAppleSnapshotResult({ nodes: [] }).keyboard, undefined);
 });
 
-test('a band that cannot be placed is restated as unmeasurable rather than dropped or trusted', () => {
+// Routing proof: every reason below is emitted only by the kernel reader, never by a wire producer.
+// One case per reason code — enough that a seam forwarding the raw payload fails on each branch,
+// without re-owning the shape table kernel/src/record.test.ts already pins exhaustively.
+test('a malformed keyboard payload is restated by the kernel reader, never forwarded raw', () => {
   const cases: ReadonlyArray<readonly [unknown, string]> = [
-    [{ kind: 'visible' }, 'invalid-visible-frame'],
-    [{ kind: 'visible', frame: { x: 0, y: 198, width: 0, height: 204 } }, 'invalid-visible-frame'],
-    [{ kind: 'visible', frame: { x: 0, y: 198 } }, 'invalid-visible-frame'],
-    [{ kind: 'unmeasurable' }, 'unreported-reason'],
-    [{ kind: 'measured' }, 'unrecognized-kind'],
     ['visible', 'malformed-fact'],
+    [{ kind: 'measured' }, 'unrecognized-kind'],
+    [{ kind: 'unmeasurable' }, 'unreported-reason'],
+    [{ kind: 'visible', frame: { x: 0, y: 198, width: 0, height: 204 } }, 'invalid-visible-frame'],
   ];
 
   for (const [payload, reason] of cases) {
