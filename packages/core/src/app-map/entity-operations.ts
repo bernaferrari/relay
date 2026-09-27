@@ -304,6 +304,13 @@ export function saveAppMapCombine(
   context: AppMapMutationContext,
 ): AppMap {
   assertEntityScope(map, combine);
+  if (
+    combine.referenceReviewMode !== undefined &&
+    combine.referenceReviewMode !== "human" &&
+    combine.referenceReviewMode !== "approved-reference"
+  ) {
+    appMapFail("invalid-map", "Choose human review or approved-reference comparison for this Plan");
+  }
   for (const id of combine.variableIds) {
     if (!map.variables?.[id]) appMapFail("missing-reference", `Variable ${id} does not exist`);
   }

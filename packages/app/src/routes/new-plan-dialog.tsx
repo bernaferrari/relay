@@ -46,6 +46,9 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
   const [testQuery, setTestQuery] = useState("");
   const [testIds, setTestIds] = useState<Set<string>>(() => new Set());
   const [variableIds, setVariableIds] = useState<Set<string>>(() => new Set());
+  const [referenceReviewMode, setReferenceReviewMode] = useState<"human" | "approved-reference">(
+    "human",
+  );
   const apps = useQuery({
     queryKey: recordingQueryKeys.apps,
     queryFn: () => productService.listApps(),
@@ -68,6 +71,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
         testIds: [...testIds],
         variableIds: [...variableIds],
         strategy: "cartesian",
+        referenceReviewMode,
       });
     },
     onSuccess: async (suite) => {
@@ -88,6 +92,7 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
     setTestQuery("");
     setTestIds(new Set());
     setVariableIds(new Set());
+    setReferenceReviewMode("human");
     createSuite.reset();
   }
 
@@ -154,6 +159,24 @@ export function NewPlanDialog({ appId: requestedApp = "" }: { appId?: string }) 
               placeholder="For example, Release smoke"
               autoComplete="off"
             />
+          </Field>
+          <Field>
+            <SelectField
+              label="Screenshot review"
+              value={referenceReviewMode}
+              options={[
+                { value: "human", label: "Capture for human review" },
+                { value: "approved-reference", label: "Compare approved references" },
+              ]}
+              onValueChange={(value) =>
+                setReferenceReviewMode(value === "approved-reference" ? value : "human")
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              {referenceReviewMode === "approved-reference"
+                ? "Matching approved reference images are marked automatically. Accept as reference explicitly chooses the image for later Runs."
+                : "Every captured image waits for a person. Looks correct does not create a future reference."}
+            </p>
           </Field>
           {editor.isPending && appId ? <PageLoading label="Loading App Tests…" /> : null}
           {editor.error ? (

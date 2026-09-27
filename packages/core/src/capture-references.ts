@@ -490,6 +490,7 @@ export async function applyCaptureReferences(
   return withRunWriteLock(run.dir, async () => {
     const latest = (await readCompletedPersistedRun(run.dir)) ?? run;
     latest.dir = run.dir;
+    if (latest.referenceReviewMode !== "approved-reference") return latest;
     const queue = captureReviewQueueForRun(latest);
     if (!queue.items.length) return latest;
     const references = await readReferences(root);

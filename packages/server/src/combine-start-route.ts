@@ -644,6 +644,7 @@ async function executeCombineStartUnlocked(
       stagePreparedAppMapCombineCells({
         cells: selectedToQueue,
         playerMapSnapshot: snapshotPlayerMap(map),
+        referenceReviewMode: scopedCombine.referenceReviewMode ?? "human",
         combineId: scopedCombine.id,
         title: body.title ?? scopedCombine.name,
         ...(targetId
@@ -821,6 +822,7 @@ async function executeCombineStartUnlocked(
           },
         ],
         execution: {
+          referenceReviewMode: scopedCombine.referenceReviewMode ?? "human",
           selected: body.selected ?? scopedCombine.selected,
           selectedCellIds: isPilotRun
             ? prepared.selectedCellIds

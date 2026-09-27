@@ -40,13 +40,20 @@ function png(mark?: { x: number; y: number }): Buffer {
   return PNG.sync.write(image);
 }
 
-async function captureRun(root: string, id: string, bytes: Buffer, lookFor?: string) {
+async function captureRun(
+  root: string,
+  id: string,
+  bytes: Buffer,
+  lookFor?: string,
+  referenceReviewMode: "human" | "approved-reference" = "approved-reference",
+) {
   const sha = createHash("sha256").update(bytes).digest("hex");
   const run = await persistRun({
     runDir: join(root, id),
     id,
     projectId: "default",
     action: "app-map:shop:test:checkout:root:r3",
+    referenceReviewMode,
     platform: "browser",
     serial: "chrome-admin",
     status: "ok",
@@ -81,6 +88,29 @@ async function captureRun(root: string, id: string, bytes: Buffer, lookFor?: str
   await writeFile(join(run.dir, "frames", "001.png"), bytes);
   return run;
 }
+
+test("a human-review Run stays pending even when an approved reference matches", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-reference-human-mode-"));
+  try {
+    const first = await captureRun(root, "run-reference", png());
+    const item = captureReviewQueueForRun(first).items[0]!;
+    await reviewPersistedCapture(root, first, {
+      captureId: item.captureId,
+      action: "accept-as-reference",
+      actor: human,
+    });
+    const manual = await applyCaptureReferences(
+      root,
+      await captureRun(root, "run-human", png(), undefined, "human"),
+    );
+    assert.equal(manual.referenceReviewMode, "human");
+    assert.equal(captureReviewQueueForRun(manual).items[0]?.status, "pending");
+    assert.equal(manual.captureComparisons, undefined);
+    assert.equal(manual.captureReviews, undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("only explicit reference approval governs unchanged future runs", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-reference-"));

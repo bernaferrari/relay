@@ -54,6 +54,7 @@ const suite: ProductSuite = {
   tests: [{ id: "test-1", name: "Complete checkout", status: "ready" }],
   variableIds: [],
   strategy: "cartesian",
+  referenceReviewMode: "human",
   source: { kind: "app-map-combine", id: "suite-1" },
 };
 
@@ -365,6 +366,7 @@ describe("Suite and Environment routes", () => {
       testIds: ["test-1"],
       variableIds: [],
       strategy: "cartesian",
+      referenceReviewMode: "human",
     });
     expect(saveSuite.mock.calls[0]?.[0].suiteId).toMatch(/^suite-nightly-checkout-/u);
     expect(history.location.pathname).toBe("/apps/app-1/suites/suite-1");
@@ -406,6 +408,7 @@ describe("Suite and Environment routes", () => {
       suiteId: "suite-1",
       expectedRevision: 7,
       name: "Release smoke updated",
+      referenceReviewMode: "human",
     });
 
     await clickButton("Remove");

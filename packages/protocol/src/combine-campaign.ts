@@ -180,6 +180,7 @@ export type CombineCampaign = {
     affectedCellIds?: string[];
   }>;
   execution?: {
+    referenceReviewMode?: import("./capture-reference.js").CaptureReferenceReviewMode;
     selected?: Record<string, string[]>;
     selectedCellIds: string[];
     /** Execution identities for expanded profile cases. Kept optional for

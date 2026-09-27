@@ -296,6 +296,7 @@ async function saveLocaleCombine(
     it: { targetId: "pixel-1", platform: "android" },
     fr: { targetId: "pixel-1", platform: "android" },
   },
+  referenceReviewMode?: "human" | "approved-reference",
 ): Promise<void> {
   await client.invoke("app-map.create", { appMapId: "store", name: "Store" });
   await client.invoke("app-map.screen.add", {
@@ -383,6 +384,7 @@ async function saveLocaleCombine(
       testIds: ["script-only"],
       selected: { language: ["en", "it", "fr"] },
       strategy: "zip",
+      ...(referenceReviewMode ? { referenceReviewMode } : {}),
       cellRuntimeProfiles: [
         { testId: "script-only", values: { language: "en" }, targetProfileId: "pixel-en" },
         { testId: "script-only", values: { language: "it" }, targetProfileId: "pixel-it" },
@@ -776,11 +778,15 @@ test("a pilot persists full cohort evidence, then resumes with only its pending 
       actorId: "human:designer",
       actorKind: "human",
     });
-    await saveLocaleCombine(client, {
-      en: { targetId: pilotTargetId, platform: "android" },
-      it: { targetId: coverageTargetId, platform: "ios" },
-      fr: { targetId: coverageTargetId, platform: "ios" },
-    });
+    await saveLocaleCombine(
+      client,
+      {
+        en: { targetId: pilotTargetId, platform: "android" },
+        it: { targetId: coverageTargetId, platform: "ios" },
+        fr: { targetId: coverageTargetId, platform: "ios" },
+      },
+      "approved-reference",
+    );
     const observedAt = Date.now();
     const pilotTarget = localExecutionTargetRef({ targetId: pilotTargetId, platform: "android" });
     const coverageTarget = localExecutionTargetRef({
@@ -807,9 +813,11 @@ test("a pilot persists full cohort evidence, then resumes with only its pending 
       localAdmission: admission,
     });
     const created = pilot.campaign as CombineCampaign;
+    assert.equal(created.execution?.referenceReviewMode, "approved-reference");
     assert.equal(created.execution?.localAdmission?.request.durationEvidence.length, 2);
     const pilotJobId = created.cases.find((item) => item.phase === "pilot")?.jobId;
     if (!pilotJobId) throw new Error("pilot did not create a job");
+    assert.equal(getJob(pilotJobId)?.referenceReviewMode, "approved-reference");
     cancelJob(pilotJobId);
     await waitForJobCompletion(pilotJobId);
     // The route projection reads the immutable pilot job as well as the
@@ -825,13 +833,13 @@ test("a pilot persists full cohort evidence, then resumes with only its pending 
         item.phase === "pilot" ? { ...item, status: "passed" as const } : item,
       ),
     }));
-
     const resumed = await client.invoke("job.combine.campaign.resume", {
       batchId: created.id,
       reviewed: true,
     });
     const resumedJobs = (resumed.jobs as Array<{ id?: string }>) ?? [];
     assert.equal(resumedJobs.length, 1);
+    assert.equal(getJob(resumedJobs[0]!.id!)?.referenceReviewMode, "approved-reference");
     assert.deepEqual(calls.controls, [pilotTargetId, coverageTargetId]);
     assert.equal(calls.releases, 0);
     assert.deepEqual(calls.verifiedCohorts, [[pilotTargetId], [coverageTargetId]]);

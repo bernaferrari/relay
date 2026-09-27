@@ -321,6 +321,7 @@ test("the frozen inputs artifact records an inherited profile id for audit", asy
       stagePreparedAppMapCombineCells({
         cells: prepared.cells,
         playerMapSnapshot: snapshotPlayerMap(map),
+        referenceReviewMode: "approved-reference",
         title: "Language × Prepare",
         targetForCell: (cell) => cell.executionTarget,
         queuedTargetProfile: (cell) => ({
@@ -339,6 +340,7 @@ test("the frozen inputs artifact records an inherited profile id for audit", asy
     (artifact) => artifact.kind === "app-map-player-snapshot",
   );
   assert.equal((player?.data as { id?: string })?.id, map.id);
+  assert.equal(staged.jobs[0]!.referenceReviewMode, "approved-reference");
   assert.ok(frozen, "staged combine cell job carries a frozen-inputs artifact");
   const data = frozen.data as Record<string, unknown>;
   assert.equal(data.kind, "combine-cell");

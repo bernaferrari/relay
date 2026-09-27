@@ -100,6 +100,7 @@ describe("suite and environment product projections", () => {
       name: "Critical paths",
       testIds: ["login"],
       variableIds: ["locale"],
+      referenceReviewMode: "human",
       source: { kind: "app-map-combine", id: "combine-1" },
     });
     expect(JSON.stringify(suite)).not.toMatch(/cell|targetProfile|recipeGraph/iu);

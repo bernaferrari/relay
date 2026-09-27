@@ -528,6 +528,7 @@ export const combineCampaignSchema = z
     ),
     execution: z
       .object({
+        referenceReviewMode: z.enum(["human", "approved-reference"]).optional(),
         selected: z.record(z.string(), z.array(z.string())).optional(),
         selectedCellIds: z.array(z.string()),
         selectedExecutionCaseIds: z.array(z.string()).optional(),

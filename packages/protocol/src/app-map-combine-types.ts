@@ -7,6 +7,7 @@ import type {
 import type { ExecutionQueueDurationQuote } from "./execution-queue.js";
 import type { RouteVariantConfigurationQuote } from "./route-variant-configuration.js";
 import type { ExecutionTargetRef } from "./execution-target.js";
+import type { CaptureReferenceReviewMode } from "./capture-reference.js";
 
 /** Explicit runtime evidence profile for one Test × world cell.
  * Absent a binding, start/preflight inherit a default target profile when the
@@ -41,6 +42,8 @@ export type AppMapCombine = AppMapEntity & {
   /** Evidence policy belongs to this run plan, so the same test can be reused
    * by a visual sweep and a fast no-screenshot smoke matrix. */
   captures?: Record<string, AppMapCapturePolicy>;
+  /** Explicit screenshot review policy for every Test in this Plan. */
+  referenceReviewMode?: CaptureReferenceReviewMode;
   strategy?: CaseExpansionStrategy;
   repeatPolicy?: import("./repeat-spec.js").RepeatPolicySpec;
   /** Persisted per-cell target-profile overrides. Missing cells inherit a default. */

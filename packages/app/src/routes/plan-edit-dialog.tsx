@@ -18,6 +18,7 @@ import { useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type { ProductSuite } from "../data/suite-profile-product-service";
+import { SelectField } from "../components/filter-select";
 
 /** Rename a Plan and choose its Tests and data sets. */
 export function PlanEditDialog({
@@ -37,6 +38,9 @@ export function PlanEditDialog({
   const [name, setName] = useState(value.name);
   const [testIds, setTestIds] = useState<Set<string>>(() => new Set(value.testIds));
   const [variableIds, setVariableIds] = useState<Set<string>>(() => new Set(value.variableIds));
+  const [referenceReviewMode, setReferenceReviewMode] = useState<"human" | "approved-reference">(
+    value.referenceReviewMode ?? "human",
+  );
   const editor = useQuery({
     queryKey: ["suites", "editor", appId],
     queryFn: () => suiteProfileService.getSuiteEditor(appId),
@@ -54,6 +58,7 @@ export function PlanEditDialog({
         variableIds: [...variableIds],
         strategy: value.strategy ?? "cartesian",
         selected: value.selected,
+        referenceReviewMode,
       }),
     onSuccess: async (saved) => {
       queryClient.setQueryData(["suites", appId, suiteId], saved);
@@ -92,6 +97,24 @@ export function PlanEditDialog({
               value={name}
               onChange={(event) => setName(event.currentTarget.value)}
             />
+          </Field>
+          <Field>
+            <SelectField
+              label="Screenshot review"
+              value={referenceReviewMode}
+              options={[
+                { value: "human", label: "Capture for human review" },
+                { value: "approved-reference", label: "Compare approved references" },
+              ]}
+              onValueChange={(value) =>
+                setReferenceReviewMode(value === "approved-reference" ? value : "human")
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              {referenceReviewMode === "approved-reference"
+                ? "Matching approved reference images are marked automatically. Accept as reference explicitly chooses the image for later Runs."
+                : "Every captured image waits for a person. Looks correct does not create a future reference."}
+            </p>
           </Field>
           <div className="max-h-[min(760px,calc(100vh-32px))] w-[min(720px,calc(100vw-32px))] overflow-auto p-1">
             <fieldset>

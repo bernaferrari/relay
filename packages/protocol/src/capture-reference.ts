@@ -20,6 +20,9 @@ export type CaptureReferenceRegion = {
 export const CAPTURE_REFERENCE_STATES = ["match", "changed", "new", "incomparable"] as const;
 export type CaptureReferenceState = (typeof CAPTURE_REFERENCE_STATES)[number];
 
+/** Saved Plan choice. Older Plans and Runs use human review. */
+export type CaptureReferenceReviewMode = "human" | "approved-reference";
+
 /** Result of comparing one capture with its reference. */
 export type CaptureReferenceComparison = {
   state: CaptureReferenceState;

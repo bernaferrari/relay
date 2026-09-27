@@ -336,6 +336,7 @@ export function retryInputFromJob(job: TestJob): EnqueueJobInput {
   if (!job.recipeId) throw new Error(`Job ${job.id} has no frozen recipe to retry`);
   return {
     recipe: job.recipeId,
+    ...(job.referenceReviewMode ? { referenceReviewMode: job.referenceReviewMode } : {}),
     ...retryTargetInputFromJob(job),
     prodAccountMatch: job.options?.prodAccountMatch,
     retryOf: job.id,
@@ -474,6 +475,7 @@ export function createSessionJob(
     browserTargetId: targetContext.kind === "browser" ? targetContext.targetId : undefined,
     browserCaseProfile,
     targetProfile: selectedTargetProfile,
+    referenceReviewMode: input.referenceReviewMode ?? parent?.referenceReviewMode,
     ...(laneId ? { laneId } : {}),
     ...(unsignedLaneId ? { unsignedLaneId } : {}),
     ...(authenticationHealth
