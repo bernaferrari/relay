@@ -2,7 +2,7 @@
 import type { AppMapScenarioTest } from "@relay/protocol";
 import type { PlanPlatform } from "@relay/product/test-route-platforms";
 import { Button } from "@relay/ui-react/components/button";
-import { ArrowDown, ArrowUp, ChevronRight } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, Plus } from "lucide-react";
 import type { CSSProperties, ReactNode, RefObject } from "react";
 import { EmptyState } from "./product-patterns";
 import { TestEditorRoutes } from "./test-editor-routes";
@@ -40,6 +40,7 @@ export function TestEditorStepOutline({
   onDrop,
   selectedEditor,
   showDetails = false,
+  headerAside,
 }: {
   test: AppMapScenarioTest;
   recordedPlatforms?: readonly PlanPlatform[];
@@ -57,22 +58,16 @@ export function TestEditorStepOutline({
   onDrop(entry: StepEntry, after: boolean): void;
   selectedEditor?: ReactNode;
   showDetails?: boolean;
+  headerAside?: ReactNode;
 }) {
   const compileBlockNotice = uniquePlatformBlockNotice(stepPlatformBlockers);
   return (
     <section className="min-w-0" aria-labelledby="test-steps-title">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 id="test-steps-title">Steps</h2>
-        </div>
-        <div className="flex flex-wrap items-center gap-1">
-          <Button size="sm" variant="ghost" onClick={onAdd} disabled={busy}>
-            Add step
-          </Button>
-          <Button size="sm" variant="ghost" onClick={onAddCheckpoint} disabled={busy}>
-            Add checkpoint
-          </Button>
-        </div>
+      <div className="flex min-h-8 items-center justify-between gap-2 pl-3">
+        <h2 id="test-steps-title" className="text-sm font-semibold">
+          {entries.length} {entries.length === 1 ? "step" : "steps"}
+        </h2>
+        {headerAside ? <div className="flex items-center gap-1">{headerAside}</div> : null}
       </div>
       {entries.length ? (
         <ol className="mt-3 grid list-none divide-y divide-border p-0">
@@ -167,6 +162,14 @@ export function TestEditorStepOutline({
           detail="Record this Test again to give Relay steps to repeat."
         />
       )}
+      <div className="mt-2 flex flex-wrap items-center gap-1 px-1">
+        <Button size="sm" variant="ghost" onClick={onAdd} disabled={busy}>
+          <Plus aria-hidden="true" /> Write a step
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onAddCheckpoint} disabled={busy}>
+          <Plus aria-hidden="true" /> Add a check
+        </Button>
+      </div>
       {showDetails ? (
         <details className="mt-5 text-sm text-muted-foreground">
           <summary className="cursor-pointer py-2">Platform availability</summary>

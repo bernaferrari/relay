@@ -670,7 +670,16 @@ function recordedConnectionLabel(input: AppMapRecordingInput, actions: ActionSpe
   }
   const app = reversed.find((step) => step.kind === "app");
   if (app?.kind === "app" && app.action === "open") return `Open ${app.app ?? "app"}`;
-  if (steps.some((step) => step.kind === "type")) return "Enter text";
+  const typed = reversed.find((step) => step.kind === "type");
+  if (typed?.kind === "type") {
+    const text = typeof typed.text === "string" ? typed.text.trim() : "";
+    const field = [typed.target?.label, typed.target?.identifier, typed.target?.text]
+      .filter((value): value is string => typeof value === "string")
+      .join(" ");
+    // Never echo what was typed into a secret field.
+    if (!text || /pass|secret|token|otp|code|pin/i.test(field)) return "Type text";
+    return `Type “${text.length > 48 ? `${text.slice(0, 47)}…` : text}”`;
+  }
   if (steps.some((step) => step.kind === "swipe" || step.kind === "scroll")) return "Scroll";
   return "Continue";
 }

@@ -77,6 +77,9 @@ export type TestEditorProductService = {
     proposalId: string;
     decision: "approve" | "reject" | "revert";
   }): Promise<ProductTestEditorDocument>;
+  /** Delete a Test from its App Map. Used to fold a helper recording into
+   * the Test it was recorded for. */
+  remove?(input: { appMapId: string; testId: string }): Promise<void>;
 };
 
 export function createTestEditorProductService(platform: Platform): TestEditorProductService {
@@ -181,6 +184,15 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
         expectedRevision: document.revision,
       });
       return requireDocument(appMap, document.test.id);
+    },
+    async remove({ appMapId, testId }) {
+      const relay = await client();
+      const { appMap } = await relay.invoke("app-map.get", { appMapId });
+      await relay.invoke("app-map.test.remove", {
+        appMapId,
+        testId,
+        expectedRevision: appMap.revision,
+      });
     },
     async decideRepair({ document, proposalId, decision }) {
       const operation = `app-map.proposal.${decision}` as const;

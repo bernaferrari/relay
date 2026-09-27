@@ -61,6 +61,9 @@ export type ProductTestDetail = ProductTestSummary & {
   description?: string;
   appMapRevision: number;
   steps: readonly ProductTestStep[];
+  /** The screen Variant profile this Test was recorded on (browser size and
+   * saved login). Runs default to it. */
+  recordedProfileId?: string;
   links: { self: string; app: string; edit: string; record: string; run: string };
 };
 
@@ -508,14 +511,39 @@ export function projectProductRuns(
   return runs.map((run) => projectRun(run, maps));
 }
 
+/** The profile of the Variant whose evidence came from this Test's recording. */
+function recordedTestProfileId(app: AppMap, test: AppMapScenarioTest): string | undefined {
+  const evidence = new Set<string>();
+  const visit = (steps: readonly AppMapScenarioTestStep[]) => {
+    for (const step of steps) {
+      if (step.binding?.status === "resolved" && step.binding.kind === "connections") {
+        for (const id of step.binding.connectionIds) {
+          for (const evidenceId of app.connections[id]?.recordingSource?.evidenceIds ?? []) {
+            evidence.add(evidenceId);
+          }
+        }
+      }
+      if (step.kind === "decision") visit([...step.thenSteps, ...(step.elseSteps ?? [])]);
+      if (step.kind === "loop") visit(step.steps);
+    }
+  };
+  visit(test.steps);
+  if (!evidence.size) return undefined;
+  return Object.values(app.screenVariants).find((variant) =>
+    variant.evidenceIds.some((id) => evidence.has(id)),
+  )?.targetProfile?.id;
+}
+
 export function productTestDetail(
   owner: ProductTestOwner,
   runs: readonly RunSummary[] = [],
 ): ProductTestDetail {
   const { app, test } = owner;
   const summary = projectTestSummary(app, test, projectProductRuns(runs, [app]));
+  const recordedProfileId = recordedTestProfileId(app, test);
   return {
     ...summary,
+    ...(recordedProfileId ? { recordedProfileId } : {}),
     appMapRevision: app.revision,
     steps: test.steps.map((step) => projectStep(step, app)),
     links: {

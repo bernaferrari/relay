@@ -9,7 +9,7 @@ import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { Settings2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { TestEditorEvidencePanel } from "../components/test-editor-evidence-panel";
 import {
@@ -39,21 +39,70 @@ import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/tests/$testId/edit");
 
+/** Editing lives on the Test page. This route only hosts live device sessions. */
 export function EditTestPage() {
   const { testId } = routeApi.useParams();
-  return <TestEditorDocument key={testId} />;
+  const search = routeApi.useSearch() as { step?: unknown; session?: unknown };
+  const navigate = useNavigate({ from: "/tests/$testId/edit" });
+  const sessionId = typeof search.session === "string" ? search.session : undefined;
+  const stepId = typeof search.step === "string" ? search.step : undefined;
+  useEffect(() => {
+    if (sessionId) return;
+    void navigate({
+      to: "/tests/$testId",
+      params: { testId },
+      search: stepId ? { step: stepId } : {},
+      replace: true,
+    });
+  }, [navigate, sessionId, stepId, testId]);
+  if (!sessionId) return <PageLoading label="Opening the Test…" />;
+  return (
+    <TestEditor
+      key={testId}
+      testId={testId}
+      sessionId={sessionId}
+      stepId={stepId}
+      onStepChange={(step) =>
+        void navigate({ search: (previous) => ({ ...previous, step }), replace: true })
+      }
+    />
+  );
 }
 
-function TestEditorDocument() {
+export function TestEditor(props: {
+  testId: string;
+  stepId?: string;
+  sessionId?: string;
+  onStepChange(stepId: string | undefined): void;
+  /** Embedded in the Test page: no page header; `stage` fills the right side. */
+  stage?: ReactNode;
+  onSelectedStepChange?(stepId: string | undefined): void;
+}) {
+  return <TestEditorDocument {...props} />;
+}
+
+function TestEditorDocument({
+  testId,
+  stepId: requestedStepIdProp,
+  sessionId,
+  onStepChange,
+  stage,
+  onSelectedStepChange,
+}: {
+  testId: string;
+  stepId?: string;
+  sessionId?: string;
+  onStepChange(stepId: string | undefined): void;
+  stage?: ReactNode;
+  onSelectedStepChange?(stepId: string | undefined): void;
+}) {
   const { testEditorService, liveTestEditorService, runService, queryClient, platform } =
     useRouteContext({
       from: "__root__",
     });
-  const { testId } = routeApi.useParams();
-  const search = routeApi.useSearch() as { step?: unknown; session?: unknown };
-  const [editorExpanded, setEditorExpanded] = useState(Boolean(search.step || search.session));
-  const sessionId = typeof search.session === "string" ? search.session : undefined;
-  const navigate = useNavigate({ from: "/tests/$testId/edit" });
+  const embedded = stage !== undefined;
+  const [editorExpanded, setEditorExpanded] = useState(Boolean(requestedStepIdProp || sessionId));
+  const navigate = useNavigate();
   const queryKey = useMemo(() => ["test-editor", testId] as const, [testId]);
   const liveQueryKey = useMemo(
     () => ["live-test-editor", testId, sessionId] as const,
@@ -79,9 +128,13 @@ function TestEditorDocument() {
       pendingCheckpoint ? insertPendingCheckpoint(saved, pendingCheckpoint) : saved,
     );
   }, [editorDocument, pendingCheckpoint]);
-  const requestedStepId = typeof search.step === "string" ? search.step : undefined;
+  const requestedStepId = requestedStepIdProp;
   const selected =
     entries.find((entry) => entry.step.id === requestedStepId) ?? entries.at(0) ?? undefined;
+  const selectedStepId = selected?.step.id;
+  useEffect(() => {
+    onSelectedStepChange?.(selectedStepId);
+  }, [onSelectedStepChange, selectedStepId]);
   const {
     recentRuns,
     latestReport,
@@ -173,7 +226,7 @@ function TestEditorDocument() {
       const nextSelection = selectAfterSave.current;
       selectAfterSave.current = undefined;
       if (nextSelection === null) {
-        void navigate({ search: (previous) => ({ ...previous, step: undefined }), replace: true });
+        onStepChange(undefined);
       } else if (nextSelection) {
         selectStep(nextSelection);
       }
@@ -263,7 +316,7 @@ function TestEditorDocument() {
 
   function selectStep(stepId: string) {
     setEditorExpanded(true);
-    void navigate({ search: (previous) => ({ ...previous, step: stepId }), replace: true });
+    onStepChange(stepId);
   }
 
   function apply(transaction: EditTransaction, nextSelection?: string | null) {
@@ -515,11 +568,7 @@ function TestEditorDocument() {
                 selected.siblingIds[selected.index - 1] ?? selected.placement?.parentStepId ?? null;
               setPendingCheckpoint(null);
               if (previous) selectStep(previous);
-              else
-                void navigate({
-                  search: (current) => ({ ...current, step: undefined }),
-                  replace: true,
-                });
+              else onStepChange(undefined);
               return;
             }
             removeStep(selected);
@@ -537,9 +586,32 @@ function TestEditorDocument() {
     </aside>
   ) : null;
 
+  const saveState = (
+    <EditorSaveStatus
+      state={
+        edit.isPending || historyAction.isPending
+          ? "saving"
+          : saveNotice.startsWith("Conflict")
+            ? "conflicted"
+            : saveNotice.startsWith("Could not") ||
+                saveNotice.toLowerCase().includes("failed") ||
+                saveNotice.includes("unavailable")
+              ? "failed"
+              : hasUnsavedDrafts
+                ? "dirty"
+                : "saved"
+      }
+      detail={hasUnsavedDrafts && saveNotice === "Saved" ? "Unsaved draft" : saveNotice}
+    />
+  );
+  const Frame = embedded ? EmbeddedFrame : WorkbenchPage;
   return (
-    <WorkbenchPage
-      className="flex h-full min-h-0 max-w-none flex-col px-0! pt-0! pb-0!"
+    <Frame
+      className={
+        embedded
+          ? "flex min-h-0 flex-1 flex-col"
+          : "flex h-full min-h-0 max-w-none flex-col px-0! pt-0! pb-0!"
+      }
       onKeyDown={(event) => {
         const target = event.target as HTMLElement;
         const typing =
@@ -555,55 +627,44 @@ function TestEditorDocument() {
         }
       }}
     >
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <div className="min-w-0">
-          <h1 className="truncate text-sm font-semibold" title={editorDocument?.test.name}>
-            {editorDocument?.test.name ?? "Edit Test"}
-          </h1>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">{editorDocument?.appName}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <EditorSaveStatus
-            state={
-              edit.isPending || historyAction.isPending
-                ? "saving"
-                : saveNotice.startsWith("Conflict")
-                  ? "conflicted"
-                  : saveNotice.startsWith("Could not") ||
-                      saveNotice.toLowerCase().includes("failed") ||
-                      saveNotice.includes("unavailable")
-                    ? "failed"
-                    : hasUnsavedDrafts
-                      ? "dirty"
-                      : "saved"
-            }
-            detail={hasUnsavedDrafts && saveNotice === "Saved" ? "Unsaved draft" : saveNotice}
-          />
-          {!sessionId ? (
-            <Button
-              size="icon-sm"
-              aria-label="Test settings"
-              title="Test settings"
-              variant="ghost"
-              onClick={() => setSettingsOpen((open) => !open)}
-            >
-              <Settings2 aria-hidden="true" />
-            </Button>
-          ) : null}
-          <TestEditorDoneButton
-            saving={
-              edit.isPending || historyAction.isPending || settings.isPending || repair.isPending
-            }
-            hasUnsavedChanges={
-              hasUnsavedDrafts ||
-              settingsName !== (editorDocument?.test.name ?? "") ||
-              settingsOrigin !== (editorDocument?.test.originApplication ?? "")
-            }
-            hasUnsavedCheckpoint={Boolean(pendingCheckpoint)}
-            onLeave={() => void navigate({ to: "/tests/$testId", params: { testId } })}
-          />
-        </div>
-      </header>
+      {embedded ? null : (
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-semibold" title={editorDocument?.test.name}>
+              {editorDocument?.test.name ?? "Edit Test"}
+            </h1>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {editorDocument?.appName}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {saveState}
+            {!sessionId ? (
+              <Button
+                size="icon-sm"
+                aria-label="Test settings"
+                title="Test settings"
+                variant="ghost"
+                onClick={() => setSettingsOpen((open) => !open)}
+              >
+                <Settings2 aria-hidden="true" />
+              </Button>
+            ) : null}
+            <TestEditorDoneButton
+              saving={
+                edit.isPending || historyAction.isPending || settings.isPending || repair.isPending
+              }
+              hasUnsavedChanges={
+                hasUnsavedDrafts ||
+                settingsName !== (editorDocument?.test.name ?? "") ||
+                settingsOrigin !== (editorDocument?.test.originApplication ?? "")
+              }
+              hasUnsavedCheckpoint={Boolean(pendingCheckpoint)}
+              onLeave={() => void navigate({ to: "/tests/$testId", params: { testId } })}
+            />
+          </div>
+        </header>
+      )}
       {!sessionId ? (
         <TestEditorSettingsPanel
           name={settingsName}
@@ -662,12 +723,30 @@ function TestEditorDocument() {
               </Button>
             ))}
           </div>
-          <div className="grid min-h-0 flex-1 min-[1100px]:grid-cols-[280px_minmax(0,1fr)]">
+          <div
+            className={`grid min-h-0 flex-1 ${embedded ? "min-[1100px]:grid-cols-[340px_minmax(0,1fr)]" : "min-[1100px]:grid-cols-[280px_minmax(0,1fr)]"}`}
+          >
             <div
               className={`${workspaceView === "steps" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col min-[1100px]:flex min-[1100px]:border-r min-[1100px]:border-border`}
             >
               <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
                 <TestEditorStepOutline
+                  headerAside={
+                    embedded ? (
+                      <>
+                        {saveState}
+                        <Button
+                          size="icon-sm"
+                          aria-label="Test settings"
+                          title="Name and details"
+                          variant="ghost"
+                          onClick={() => setSettingsOpen((open) => !open)}
+                        >
+                          <Settings2 aria-hidden="true" />
+                        </Button>
+                      </>
+                    ) : undefined
+                  }
                   showDetails={settingsOpen}
                   selectedEditor={editorExpanded || pendingCheckpoint ? stepEditor : null}
                   test={editorDocument.test}
@@ -723,20 +802,24 @@ function TestEditorDocument() {
                   onUndo={undo}
                   onRedo={redo}
                 />
-                <Link
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  to="/tests/$testId"
-                  params={{ testId }}
-                >
-                  Run setup →
-                </Link>
+                {embedded ? null : (
+                  <Link
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                    to="/tests/$testId"
+                    params={{ testId }}
+                  >
+                    Run setup →
+                  </Link>
+                )}
               </div>
             </div>
             <div
               className={`${workspaceView === "browser" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col overflow-y-auto min-[1100px]:flex`}
               data-inspector-kind={liveEditor.data ? "device" : "browser"}
             >
-              {sessionId ? (
+              {embedded ? (
+                stage
+              ) : sessionId ? (
                 <LiveTestEditorPane
                   session={liveEditor.data}
                   loading={liveEditor.isPending}
@@ -749,7 +832,7 @@ function TestEditorDocument() {
                   browserTargetIds={editorDocument.browserTargetIds}
                 />
               )}
-              {!sessionId && recentRuns.data?.length ? (
+              {!embedded && !sessionId && recentRuns.data?.length ? (
                 <details className="mt-4 text-sm text-muted-foreground">
                   <summary className="cursor-pointer py-2">Latest result</summary>
                   <TestEditorEvidencePanel
@@ -764,6 +847,10 @@ function TestEditorDocument() {
           </div>
         </>
       ) : null}
-    </WorkbenchPage>
+    </Frame>
   );
+}
+
+function EmbeddedFrame(props: import("react").ComponentProps<"div">) {
+  return <div {...props} />;
 }
