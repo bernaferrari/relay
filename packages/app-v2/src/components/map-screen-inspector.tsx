@@ -178,13 +178,20 @@ export function ScreenInspector({
             />
             <Connections
               title="Continue to"
-              paths={outgoing.filter((path) => !isRoutineReturn(path))}
+              paths={outgoing.filter((path) => path.toScreenId && !isRoutineReturn(path))}
               outgoing
               onSelect={onSelectScreen}
             />
             <Connections
               title="Return to"
               paths={outgoing.filter(isRoutineReturn)}
+              outgoing
+              onSelect={onSelectScreen}
+            />
+            <Connections
+              title="Other actions"
+              description="Destination not recorded"
+              paths={outgoing.filter((path) => !path.toScreenId)}
               outgoing
               onSelect={onSelectScreen}
             />
@@ -243,11 +250,13 @@ export function ScreenInspector({
 
 function Connections({
   title,
+  description,
   paths,
   outgoing,
   onSelect,
 }: {
   title: string;
+  description?: string;
   paths: readonly ProductMapPath[];
   outgoing: boolean;
   onSelect(id: string): void;
@@ -255,42 +264,45 @@ function Connections({
   if (!paths.length) return null;
   const Icon = outgoing ? ArrowUpRight : ArrowDownLeft;
   return (
-    <div className="space-y-1">
+    <div className="space-y-2">
       <h3 className="flex items-center gap-2 pb-1 text-xs font-medium text-muted-foreground">
         <Icon className="size-3.5 text-muted-foreground" />
         {title}
       </h3>
-      {paths.map((path) => {
-        const id = outgoing ? path.toScreenId : path.fromScreenId;
-        const name = outgoing ? (path.toTitle ?? "Finish") : path.fromTitle;
-        const content = (
-          <>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-medium">{name}</span>
-              {!isRoutineReturn(path) && path.label !== name ? (
-                <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                  {path.label}
-                </span>
-              ) : null}
-            </span>
-            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-          </>
-        );
-        return id ? (
-          <button
-            key={path.id}
-            type="button"
-            className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
-            onClick={() => onSelect(id)}
-          >
-            {content}
-          </button>
-        ) : (
-          <div key={path.id} className="px-2 py-2 text-xs">
-            {content}
-          </div>
-        );
-      })}
+      {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
+      <div className="overflow-hidden rounded-lg border border-border/60 divide-y divide-border/60">
+        {paths.map((path) => {
+          const id = outgoing ? path.toScreenId : path.fromScreenId;
+          const name = outgoing ? (path.toTitle ?? path.label) : path.fromTitle;
+          const content = (
+            <>
+              <span className="min-w-0 flex-1">
+                <span className="block break-words leading-5 font-medium">{name}</span>
+                {!isRoutineReturn(path) && path.label !== name ? (
+                  <span className="mt-0.5 block break-words text-xs leading-4 text-muted-foreground">
+                    {path.label}
+                  </span>
+                ) : null}
+              </span>
+              {id ? <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" /> : null}
+            </>
+          );
+          return id ? (
+            <button
+              key={path.id}
+              type="button"
+              className="flex w-full items-center gap-3 px-3 py-2.5 text-left text-xs hover:bg-accent focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+              onClick={() => onSelect(id)}
+            >
+              {content}
+            </button>
+          ) : (
+            <div key={path.id} className="flex items-center gap-3 px-3 py-2.5 text-xs">
+              {content}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
