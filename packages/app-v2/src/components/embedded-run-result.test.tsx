@@ -309,7 +309,7 @@ it("labels the captured result separately and shows the selected step image duri
     expect(host.textContent).toContain("Reach Start");
     await act(async () =>
       [...host.querySelectorAll("button")]
-        .find((button) => button.textContent === "Back to captured result")!
+        .find((button) => button.textContent?.trim() === "Captured result")!
         .click(),
     );
     expect(host.querySelector("img")?.getAttribute("src")).toBe("/dest.png");
