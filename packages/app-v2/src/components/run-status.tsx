@@ -68,6 +68,10 @@ const PRESENTATION: Record<
   },
 };
 
+export function runStateDot(state: RunState): string {
+  return PRESENTATION[state].dot;
+}
+
 export function runStateLabel(state: RunState): string {
   return PRESENTATION[state].label;
 }

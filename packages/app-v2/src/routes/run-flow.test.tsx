@@ -695,7 +695,7 @@ describe("Run and Report", () => {
     await openRunSettings();
 
     await selectOption("Device or browser", "Pixel 9 Pro");
-    await selectOption("Saved setup", "Pixel 9 reviewed");
+    await selectOption("Sign in as", "Pixel 9 reviewed");
     await selectOption("Device or browser", "Checkout browser");
     expect(document.body.textContent).toContain("saved for another destination");
     await click(button("Fix setup"));
@@ -772,8 +772,8 @@ describe("Run and Report", () => {
         ?.textContent,
     ).toContain("Checkout browser");
     expect(
-      document.querySelector<HTMLButtonElement>('button[aria-label="Saved setup"]')?.textContent,
-    ).toContain("Member · Member");
+      document.querySelector<HTMLButtonElement>('button[aria-label="Sign in as"]')?.textContent,
+    ).toContain("Member");
   });
 
   it("applies a toolbar destination serial once and keeps a later in-page target", async () => {

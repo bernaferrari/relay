@@ -11,7 +11,17 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { AppWindow, ChevronRight, CircleHelp, Smartphone, Tablet } from "lucide-react";
-import { useDeferredValue, useEffect, useId, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useDeferredValue,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+} from "react";
+import { SiteIcon, siteHost } from "../components/site-icon";
+import type { ProductBrowserSpace } from "../data/browser-spaces-product-service";
 import { LibrarySearch } from "../components/library-toolbar";
 import { LibraryPage, PageHeader } from "../components/page-layout";
 import { EmptyState } from "../components/product-patterns";
@@ -42,7 +52,7 @@ function statusLabel(device: ProductDevice): string {
 }
 
 function deviceGroup(device: ProductDevice): string {
-  if (isBrowser(device) && isGoalScratchTarget(device.id)) return "Goal browsers";
+  if (isBrowser(device) && isGoalScratchTarget(device.id)) return "Agent scratch browsers";
   if (isBrowser(device)) return "Browsers";
   if (/simulator/i.test(device.kind ?? "")) return "iOS simulators";
   if (/emulator/i.test(device.kind ?? "")) return "Android emulators";
@@ -67,6 +77,9 @@ function DeviceSilhouette({ kind }: { kind: "phone" | "tablet" | "window" }) {
   );
 }
 
+type BrowserSites = ReadonlyMap<string, ProductBrowserSpace>;
+const BrowserSitesContext = createContext<BrowserSites>(new Map());
+
 function DeviceRow({
   device,
   returnTo,
@@ -82,6 +95,8 @@ function DeviceRow({
       ? Tablet
       : Smartphone;
   const stopped = device.device.booted === false;
+  const site = useContext(BrowserSitesContext).get(device.id);
+  const host = siteHost(site?.startUrl);
   return (
     <li>
       <Link
@@ -95,14 +110,24 @@ function DeviceRow({
           className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-stage"
           aria-hidden="true"
         >
-          <DeviceSilhouette
-            kind={DeviceIcon === AppWindow ? "window" : DeviceIcon === Tablet ? "tablet" : "phone"}
-          />
+          {isBrowser(device) && site ? (
+            <SiteIcon url={site.startUrl} className="size-7" />
+          ) : (
+            <DeviceSilhouette
+              kind={
+                DeviceIcon === AppWindow ? "window" : DeviceIcon === Tablet ? "tablet" : "phone"
+              }
+            />
+          )}
         </span>
         <span className="grid min-w-0 flex-1 gap-0.5">
           <strong className="truncate text-sm font-semibold text-foreground">{device.name}</strong>
           <span className="truncate text-xs text-muted-foreground">
-            {deviceSummaryLine(device)}
+            {isBrowser(device) && host
+              ? [host, site?.viewport ? `${site.viewport.width} × ${site.viewport.height}` : ""]
+                  .filter(Boolean)
+                  .join(" · ")
+              : deviceSummaryLine(device)}
           </span>
           <span
             data-slot="library-row-status"
@@ -221,7 +246,16 @@ function AvailableSection({
 }
 
 export function DevicesPage() {
-  const { deviceService } = useRouteContext({ from: "__root__" });
+  const { deviceService, browserSpacesService } = useRouteContext({ from: "__root__" });
+  const spaces = useQuery({
+    queryKey: ["devices", "browser-spaces"],
+    queryFn: () => browserSpacesService.listSpaces(),
+    staleTime: 30_000,
+  });
+  const sites = useMemo<BrowserSites>(
+    () => new Map((spaces.data ?? []).map((space) => [space.id, space])),
+    [spaces.data],
+  );
   const navigate = useNavigate();
   const rawSearch = useLocation({ select: (state) => state.search });
   const search = searchState(rawSearch);
@@ -261,74 +295,16 @@ export function DevicesPage() {
   }, [navigate, query, search.q, search.returnTo]);
 
   return (
-    <LibraryPage
-      className="mx-auto flex min-h-full w-full max-w-5xl flex-col"
-      onClickCapture={returnFocus.onClickCapture}
-    >
-      <PageHeader
-        title="Devices"
-        description="Choose a device or browser to inspect or record a test."
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              nativeButton={false}
-              render={
-                <Link
-                  to="/environments"
-                  search={{ view: "new", ...(continuation ? { returnTo: search.returnTo } : {}) }}
-                />
-              }
-            >
-              New browser
-            </Button>
-            {!devices.isError ? (
-              <Button
-                variant="ghost"
-                onClick={() => void devices.refetch()}
-                disabled={devices.isFetching}
-              >
-                {devices.isFetching ? "Checking…" : "Check again"}
-              </Button>
-            ) : null}
-          </div>
-        }
-      />
-
-      <div
-        className="flex flex-wrap items-center gap-3 border-b border-border pb-4"
-        aria-label="Search devices"
+    <BrowserSitesContext.Provider value={sites}>
+      <LibraryPage
+        className="mx-auto flex min-h-full w-full max-w-5xl flex-col"
+        onClickCapture={returnFocus.onClickCapture}
       >
-        <LibrarySearch
-          id="device-search"
-          label="Search Devices and Browsers"
-          value={query}
-          placeholder="Search by name or platform"
-          onChange={setQuery}
-        />
-      </div>
-
-      {devices.isPending ? <PageLoading label="Checking Devices and Browsers…" /> : null}
-
-      <RecordingProblem
-        error={devices.data === undefined ? devices.error : null}
-        onRetry={() => void devices.refetch()}
-        retrying={devices.isFetching}
-        layout="centered"
-      />
-      {devices.isError && devices.data !== undefined ? (
-        <RefreshProblem
-          subject="devices"
-          onRetry={() => void devices.refetch()}
-          retrying={devices.isFetching}
-        />
-      ) : null}
-
-      {devices.data !== undefined && devices.data?.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center">
-          <EmptyState
-            title="No Devices yet"
-            detail="Connect a phone or tablet, or start a Browser."
-            action={
+        <PageHeader
+          title="Devices"
+          description="Choose a device or browser to inspect or record a test."
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 nativeButton={false}
                 render={
@@ -340,95 +316,164 @@ export function DevicesPage() {
               >
                 New browser
               </Button>
-            }
-          />
-        </div>
-      ) : null}
-
-      {devices.data !== undefined && devices.data?.length && visibleCount === 0 ? (
-        <EmptyState
-          title="No devices match your search"
-          detail="Try another device name or platform."
-          action={
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setQuery("");
-                void navigate({
-                  to: "/devices",
-                  search: search.returnTo ? { returnTo: search.returnTo } : {},
-                });
-              }}
-            >
-              Show all devices
-            </Button>
+              {!devices.isError ? (
+                <Button
+                  variant="ghost"
+                  onClick={() => void devices.refetch()}
+                  disabled={devices.isFetching}
+                >
+                  {devices.isFetching ? "Checking…" : "Check again"}
+                </Button>
+              ) : null}
+            </div>
           }
         />
-      ) : null}
 
-      {devices.data !== undefined && visibleCount > 0 ? (
-        <div className="mt-3 grid gap-4" aria-live="polite">
-          {(
-            [
-              "Physical devices",
-              "Android emulators",
-              "iOS simulators",
-              "Browsers",
-              "Goal browsers",
-            ] as const
-          ).map((title) => {
-            const devicesInSection = visibleDevices.filter(
-              (device) =>
-                deviceGroup(device) === title &&
-                !device.id.startsWith("avd:") &&
-                !(title === "iOS simulators" && device.device.booted === false),
-            );
-            if (!devicesInSection.length) return null;
-            return (
-              <DeviceSection
-                key={title}
-                title={title}
-                devices={devicesInSection}
-                stale={devices.isError}
-                returnTo={continuation ? search.returnTo : undefined}
-              />
-            );
-          })}
-          {(() => {
-            const available = visibleDevices.filter(
-              (device) =>
-                device.id.startsWith("avd:") ||
-                (deviceGroup(device) === "iOS simulators" && device.device.booted === false),
-            );
-            if (!available.length) return null;
-            const android = available.filter((device) => device.id.startsWith("avd:"));
-            const simulators = available.filter((device) => !device.id.startsWith("avd:"));
-            return (
-              <div className="grid gap-4">
-                {simulators.length ? (
-                  <AvailableSection
-                    title="Available iOS simulators"
-                    devices={simulators}
-                    returnTo={continuation ? search.returnTo : undefined}
-                    searchActive={Boolean(deferredQuery)}
-                    stale={devices.isError}
-                  />
-                ) : null}
-                {android.length ? (
-                  <AvailableSection
-                    title="Available Android emulators"
-                    devices={android}
-                    returnTo={continuation ? search.returnTo : undefined}
-                    searchActive={Boolean(deferredQuery)}
-                    stale={devices.isError}
-                  />
-                ) : null}
-              </div>
-            );
-          })()}
+        <div
+          className="flex flex-wrap items-center gap-3 border-b border-border pb-4"
+          aria-label="Search devices"
+        >
+          <LibrarySearch
+            id="device-search"
+            label="Search Devices and Browsers"
+            value={query}
+            placeholder="Search by name or platform"
+            onChange={setQuery}
+          />
         </div>
-      ) : null}
-    </LibraryPage>
+
+        {devices.isPending ? <PageLoading label="Checking Devices and Browsers…" /> : null}
+
+        <RecordingProblem
+          error={devices.data === undefined ? devices.error : null}
+          onRetry={() => void devices.refetch()}
+          retrying={devices.isFetching}
+          layout="centered"
+        />
+        {devices.isError && devices.data !== undefined ? (
+          <RefreshProblem
+            subject="devices"
+            onRetry={() => void devices.refetch()}
+            retrying={devices.isFetching}
+          />
+        ) : null}
+
+        {devices.data !== undefined && devices.data?.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center">
+            <EmptyState
+              title="No Devices yet"
+              detail="Connect a phone or tablet, or start a Browser."
+              action={
+                <Button
+                  nativeButton={false}
+                  render={
+                    <Link
+                      to="/environments"
+                      search={{
+                        view: "new",
+                        ...(continuation ? { returnTo: search.returnTo } : {}),
+                      }}
+                    />
+                  }
+                >
+                  New browser
+                </Button>
+              }
+            />
+          </div>
+        ) : null}
+
+        {devices.data !== undefined && devices.data?.length && visibleCount === 0 ? (
+          <EmptyState
+            title="No devices match your search"
+            detail="Try another device name or platform."
+            action={
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setQuery("");
+                  void navigate({
+                    to: "/devices",
+                    search: search.returnTo ? { returnTo: search.returnTo } : {},
+                  });
+                }}
+              >
+                Show all devices
+              </Button>
+            }
+          />
+        ) : null}
+
+        {devices.data !== undefined && visibleCount > 0 ? (
+          <div className="mt-3 grid gap-4" aria-live="polite">
+            {(["Physical devices", "Android emulators", "iOS simulators", "Browsers"] as const).map(
+              (title) => {
+                const devicesInSection = visibleDevices.filter(
+                  (device) =>
+                    deviceGroup(device) === title &&
+                    !device.id.startsWith("avd:") &&
+                    !(title === "iOS simulators" && device.device.booted === false),
+                );
+                if (!devicesInSection.length) return null;
+                return (
+                  <DeviceSection
+                    key={title}
+                    title={title}
+                    devices={devicesInSection}
+                    stale={devices.isError}
+                    returnTo={continuation ? search.returnTo : undefined}
+                  />
+                );
+              },
+            )}
+            {(() => {
+              const available = visibleDevices.filter(
+                (device) =>
+                  device.id.startsWith("avd:") ||
+                  (deviceGroup(device) === "iOS simulators" && device.device.booted === false),
+              );
+              const scratch = visibleDevices.filter(
+                (device) => deviceGroup(device) === "Agent scratch browsers",
+              );
+              if (!available.length && !scratch.length) return null;
+              const android = available.filter((device) => device.id.startsWith("avd:"));
+              const simulators = available.filter((device) => !device.id.startsWith("avd:"));
+              return (
+                <div className="grid gap-4">
+                  {simulators.length ? (
+                    <AvailableSection
+                      title="Available iOS simulators"
+                      devices={simulators}
+                      returnTo={continuation ? search.returnTo : undefined}
+                      searchActive={Boolean(deferredQuery)}
+                      stale={devices.isError}
+                    />
+                  ) : null}
+                  {android.length ? (
+                    <AvailableSection
+                      title="Available Android emulators"
+                      devices={android}
+                      returnTo={continuation ? search.returnTo : undefined}
+                      searchActive={Boolean(deferredQuery)}
+                      stale={devices.isError}
+                    />
+                  ) : null}
+                  {scratch.length ? (
+                    <AvailableSection
+                      title="Agent scratch browsers"
+                      devices={scratch}
+                      returnTo={continuation ? search.returnTo : undefined}
+                      searchActive={Boolean(deferredQuery)}
+                      stale={devices.isError}
+                    />
+                  ) : null}
+                </div>
+              );
+            })()}
+          </div>
+        ) : null}
+      </LibraryPage>
+    </BrowserSitesContext.Provider>
   );
 }
