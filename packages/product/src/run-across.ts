@@ -25,6 +25,7 @@ import {
   summarizeProductResultGrid,
 } from "./plan-result-cells.js";
 import { assertPairedCampaignScope, validatePairedTargets } from "./run-across-paired.js";
+import { cartesianCount, normalizedSelection, representativeCase } from "./run-across-selection.js";
 
 /** The public name for the saved values applied while running a Test. */
 export type ProductDataSetDimension = {
@@ -347,48 +348,6 @@ function mapForTest(map: AppMap, testId: string): ProductRunAcrossSetup {
   };
 }
 
-function normalizedSelection(
-  setup: ProductRunAcrossSetup,
-  selected: Readonly<Record<string, readonly string[]>>,
-): Record<string, string[]> {
-  const result: Record<string, string[]> = {};
-  const known = new Set(setup.dataSet.dimensions.map((dimension) => dimension.id));
-  const unknown = Object.keys(selected).find((id) => !known.has(id));
-  if (unknown) throw new TypeError(`The selected data dimension ${unknown} is not available.`);
-  for (const dimension of setup.dataSet.dimensions) {
-    const allowed = new Set(dimension.values.map((value) => value.id));
-    const requested = selected[dimension.id];
-    if (requested === undefined) continue;
-    const values = [...new Set(requested)].filter((value) => allowed.has(value));
-    if (!values.length) throw new TypeError(`Choose at least one value for ${dimension.name}.`);
-    result[dimension.id] = values;
-  }
-  if (!Object.keys(result).length) throw new TypeError("Choose at least one data value.");
-  return result;
-}
-
-function cartesianCount(selected: Readonly<Record<string, readonly string[]>>): number {
-  return Object.values(selected).reduce((total, values) => total * values.length, 1);
-}
-
-function representativeCase(
-  setup: ProductRunAcrossSetup,
-  selected: Readonly<Record<string, readonly string[]>>,
-  explicit?: Readonly<Record<string, string>>,
-): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const dimension of setup.dataSet.dimensions) {
-    const values = selected[dimension.id];
-    if (!values?.length) continue;
-    const value = explicit?.[dimension.id] ?? values[0];
-    if (!value || !values.includes(value)) {
-      throw new TypeError(`${dimension.name} is not included in the selected data scope.`);
-    }
-    result[dimension.id] = value;
-  }
-  return result;
-}
-
 function mapStatus(status: string): ProductBatchStatus {
   if (status === "pilot-running") return "pilot-running";
   if (status === "ready-to-resume") return "ready-to-continue";
@@ -646,6 +605,11 @@ export function previewProductRunAcross(input: {
   profileTargets?: NonNullable<OperationInput<"job.combine.start">["profileTargets"]>;
 }): ProductRunAcrossPreview {
   const selected = normalizedSelection(input.setup, input.selected);
+  if (!input.setup.dataSet.dimensions.length && !input.profileTargets?.length) {
+    throw new TypeError(
+      "Choose saved Browser and Account pairs, or run this Test once from its Test page.",
+    );
+  }
   const pilot = representativeCase(input.setup, selected, input.pilot);
   if (input.profileTargets) validatePairedTargets(input.profileTargets);
   const pairCount = input.profileTargets?.length;
@@ -761,6 +725,11 @@ export function createProductRunAcrossService(
     preview: previewProductRunAcross,
     async startPilot(input) {
       const selected = normalizedSelection(input.setup, input.selected);
+      if (!input.setup.dataSet.dimensions.length && !input.profileTargets?.length) {
+        throw new TypeError(
+          "Choose saved Browser and Account pairs, or run this Test once from its Test page.",
+        );
+      }
       const pilot = representativeCase(input.setup, selected, input.pilot);
       const target = input.target;
       if (input.profileTargets) {
