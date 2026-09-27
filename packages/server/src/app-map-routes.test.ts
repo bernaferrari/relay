@@ -852,6 +852,9 @@ test("offline Test compilation previews a verified checkpoint without a device o
     assert.equal(queuedTargetProfile?.platform, "ios");
     const frozenArtifacts = queuedJob.job.artifacts as Array<{ kind: string; data?: unknown }>;
     const frozenPlan = frozenArtifacts.find((artifact) => artifact.kind === "app-map-test-plan");
+    const frozenPlayer = frozenArtifacts.find(
+      (artifact) => artifact.kind === "app-map-player-snapshot",
+    );
     const frozenPreflight = frozenArtifacts.find(
       (artifact) => artifact.kind === "app-map-test-preflight",
     );
@@ -859,6 +862,8 @@ test("offline Test compilation previews a verified checkpoint without a device o
       (artifact) => artifact.kind === "app-map-test-execution-intent",
     );
     assert.ok(frozenPlan);
+    assert.equal((frozenPlayer?.data as { id?: string; revision?: number })?.id, "store");
+    assert.equal((frozenPlayer?.data as { revision?: number })?.revision, runRevision);
     assert.ok(frozenPreflight);
     assert.ok(executionIntent);
     const frozenPlanData = frozenPlan.data as { runtimeTargetProfile?: unknown };

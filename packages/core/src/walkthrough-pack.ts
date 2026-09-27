@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AppMap } from "@relay/protocol";
+import type { PlayerMapSnapshot } from "./player-manifest.js";
 import { canonicalSha256, type CanonicalSha256 } from "./canonical-json.js";
 import { buildPlayerManifest, type PlayerManifest } from "./player-manifest.js";
 import { readFrameFile } from "./run-artifact-files.js";
@@ -46,7 +47,7 @@ async function captureReviewFrameFailures(run: PersistedRun): Promise<string[]> 
 /** Freeze the captured-app player for one or more runs. Every reviewable
  * frame must still match the digest recorded when it was captured. */
 export async function exportWalkthroughPack(input: {
-  map: AppMap;
+  map: AppMap | PlayerMapSnapshot;
   runs: readonly PersistedRun[];
   now?: number;
 }): Promise<WalkthroughPack> {

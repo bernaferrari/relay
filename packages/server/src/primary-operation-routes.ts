@@ -1,6 +1,6 @@
 import type http from "node:http";
 import type { AuthoringRuntime } from "@relay/core";
-import type { AppMapTestRunRouteRuntime } from "./app-map-run-routes.js";
+import type { AppMapTestRunRouteRuntime } from "./app-map-test-run-runtime.js";
 import { handleAppMapRunRoute } from "./app-map-run-routes.js";
 import { handleAppMapRoute } from "./app-map-routes.js";
 import type { CampaignDurationRouteRuntime } from "./campaign-duration-routes.js";

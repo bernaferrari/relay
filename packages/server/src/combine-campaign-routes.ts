@@ -20,6 +20,7 @@ import {
   projectCombineCampaign,
   reconcileCausalCombineRerun,
   readAppMap,
+  snapshotPlayerMap,
   readCombineCampaign,
   readPersistedRun,
   accountReloginFindingsReport,
@@ -441,6 +442,7 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
         const stageCells = (acceptedAdmission?: LocalCombineCampaignAdmission) =>
           stagePreparedAppMapCombineCells({
             cells: toQueue,
+            playerMapSnapshot: snapshotPlayerMap(map),
             combineId: projected.combineId,
             batchId: projected.id,
             title: projected.execution.title,

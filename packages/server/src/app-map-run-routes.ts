@@ -23,6 +23,7 @@ import {
   prepareRegisteredBuildForProof,
   readBuild,
   readAppMap,
+  playerMapSnapshotArtifact,
   readProjectVariables,
   referencedRuntimeInputs,
   redactCasePlan,
@@ -58,10 +59,6 @@ export {
   frozenTestRunTargetProfile,
   queuedAppMapTestTargetProfile,
 } from "./app-map-test-target-profile.js";
-export type {
-  AppMapRunRouteContext,
-  AppMapTestRunRouteRuntime,
-} from "./app-map-test-run-runtime.js";
 export {
   explicitTargetAvailability,
   frozenEvidenceTargetProfileForTarget,
@@ -622,6 +619,7 @@ export async function handleAppMapRunRoute(input: AppMapRunRouteContext): Promis
           capturedAt: queuedAt,
           data: plan,
         },
+        playerMapSnapshotArtifact(map, queuedAt),
         {
           kind: "app-map-test-preflight",
           capturedAt: queuedAt,

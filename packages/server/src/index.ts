@@ -129,7 +129,7 @@ import {
 } from "./goal-routes.js";
 import { handleStepRunRoute, type StepRunRouteRuntime } from "./step-run-route.js";
 import { handleAndroidAvdRoute } from "./android-avd-routes.js";
-import type { AppMapTestRunRouteRuntime } from "./app-map-run-routes.js";
+import type { AppMapTestRunRouteRuntime } from "./app-map-test-run-runtime.js";
 import type { CampaignDurationRouteRuntime } from "./campaign-duration-routes.js";
 import type { TargetRuntimeRouteRuntime } from "./target-runtime-routes.js";
 import type { StartServerOptions, StartedServer } from "./server-types.js";
