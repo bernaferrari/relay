@@ -1,3 +1,4 @@
+import type { PresentedMapPath } from "./map-presentation";
 /** @jsxImportSource react */
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { Link } from "@tanstack/react-router";
@@ -42,6 +43,8 @@ export function MapCanvasPanels({
   screens,
   paths,
   visibleScreens,
+  showIntermediateScreens,
+  setShowIntermediateScreens,
   showScreens,
   setShowScreens,
   screenSearch,
@@ -76,6 +79,8 @@ export function MapCanvasPanels({
   screens: readonly ProductMapScreen[];
   paths: readonly ProductMapPath[];
   visibleScreens: readonly ProductMapScreen[];
+  showIntermediateScreens: boolean;
+  setShowIntermediateScreens: (value: boolean) => void;
   showScreens: boolean;
   setShowScreens: (value: boolean) => void;
   screenSearch: string;
@@ -102,7 +107,7 @@ export function MapCanvasPanels({
   animateTransform: (next: MapTransform) => void;
   viewportSize: () => { width: number; height: number };
   resetView: () => void;
-  selectedPath: ProductMapPath | undefined;
+  selectedPath: PresentedMapPath | undefined;
   setSelectedPathId: (value: string | undefined) => void;
   children: ReactNode;
 }) {
@@ -115,7 +120,7 @@ export function MapCanvasPanels({
         >
           <div className="flex h-12 items-center justify-between px-3">
             <h2 className="text-xs font-medium">
-              Screens <span className="ml-1 text-muted-foreground">{screens.length}</span>
+              Screens <span className="ml-1 text-muted-foreground">{visibleScreens.length}</span>
             </h2>
             <MapControl
               label="Hide screens"
@@ -192,6 +197,15 @@ export function MapCanvasPanels({
               ))}
           </div>
           <div className="border-t border-border p-3 text-xs text-muted-foreground">
+            {!showIntermediateScreens && Math.min(screens.length, 500) > visibleScreens.length ? (
+              <button
+                type="button"
+                className="mb-2 block text-foreground underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+                onClick={() => setShowIntermediateScreens(true)}
+              >
+                Show {Math.min(screens.length, 500) - visibleScreens.length} intermediate screens
+              </button>
+            ) : null}
             {paths.length} paths ·{" "}
             {screens.filter((screen) => screen.coveringTests.length > 0).length} screens in tests
           </div>
@@ -253,6 +267,12 @@ export function MapCanvasPanels({
             <DropdownMenuContent side="top" align="end" className="w-56">
               <DropdownMenuCheckboxItem checked={showScreens} onCheckedChange={setShowScreens}>
                 Screen list
+              </DropdownMenuCheckboxItem>
+              <DropdownMenuCheckboxItem
+                checked={showIntermediateScreens}
+                onCheckedChange={setShowIntermediateScreens}
+              >
+                Intermediate screens
               </DropdownMenuCheckboxItem>
               <DropdownMenuCheckboxItem
                 checked={showInteractionTargets}
@@ -331,19 +351,25 @@ export function MapCanvasPanels({
             ) : (
               <span className="text-xs">Finish</span>
             )}
-            <Button
-              size="sm"
-              variant="outline"
-              nativeButton={false}
-              render={
-                <Link
-                  to="/tests/new"
-                  search={{ app: appId, view: "path", path: selectedPath.id }}
-                />
-              }
-            >
-              Create test
-            </Button>
+            {selectedPath.intermediateScreens?.length ? (
+              <Button size="sm" variant="outline" onClick={() => setShowIntermediateScreens(true)}>
+                Show intermediate screens
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                nativeButton={false}
+                render={
+                  <Link
+                    to="/tests/new"
+                    search={{ app: appId, view: "path", path: selectedPath.id }}
+                  />
+                }
+              >
+                Create test
+              </Button>
+            )}
             <Button
               size="icon-sm"
               variant="ghost"

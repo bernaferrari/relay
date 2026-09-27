@@ -1,6 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { expect, it } from "vitest";
-import { MapEdges, roundedConnector, returnConnector, quadraticReturn } from "./map-edges";
+import { expect, it, vi } from "vitest";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import {
+  MapEdges,
+  roundedConnector,
+  returnConnector,
+  quadraticReturn,
+  selfLoopConnector,
+} from "./map-edges";
 
 it("labels an unrecorded destination instead of drawing a dangling arrow", () => {
   const markup = renderToStaticMarkup(
@@ -310,4 +318,78 @@ it.each([-420, 420])("exits the control sideways toward a horizontal destination
   const d = markup.match(/id="-0" d="([^"]+)"/)![1]!;
   expect(d.match(/Q/g)).toHaveLength(1);
   expect(markup).toContain(`translate(${originX} 178) rotate(${x < 0 ? 180 : 0})`);
+});
+
+it("keeps labels out of the map and opens connections by click or keyboard", async () => {
+  const select = vi.fn();
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      <MapEdges
+        paths={[
+          {
+            id: "route",
+            label: "Enter text → Submit",
+            fromScreenId: "home",
+            toScreenId: "chat",
+            fromTitle: "Home",
+            toTitle: "Chat",
+            coveringTests: [],
+          },
+        ]}
+        positions={
+          new Map([
+            ["home", { x: 0, y: 0 }],
+            ["chat", { x: 600, y: 0 }],
+          ])
+        }
+        screens={[{ id: "home" }, { id: "chat" }]}
+        imageDimensions={new Map()}
+        markerId="interactive"
+        onSelectPath={select}
+      />,
+    ),
+  );
+  expect(container.querySelector('[data-slot="map-edge-label"]')).toBeNull();
+  const route = container.querySelector('[role="button"]')!;
+  expect(route.getAttribute("aria-label")).toBe("Home: Enter text → Submit → Chat");
+  await act(async () => {
+    route.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    route.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  });
+  expect(select.mock.calls).toEqual([["route"], ["route"]]);
+  await act(async () => root.unmount());
+});
+
+it("keeps self-loops outside the preview and clear of the center exit", () => {
+  const box = { x: 100, y: 50, width: 320, height: 200 };
+  const points = selfLoopConnector(box);
+  expect(points.every((point) => point.x > box.x + box.width)).toBe(true);
+  expect(points.every((point) => point.y < box.y + box.height / 2)).toBe(true);
+  expect(points[0]?.x).toBe(points.at(-1)?.x);
+  expect(selfLoopConnector(box, 1)[1]?.x).toBeGreaterThan(points[1]!.x);
+});
+
+it("renders a self-loop without crossing the screen", () => {
+  const markup = renderToStaticMarkup(
+    <MapEdges
+      paths={[
+        {
+          id: "self",
+          fromScreenId: "home",
+          toScreenId: "home",
+          fromTitle: "Home",
+          label: "Check content",
+          coveringTests: [],
+        },
+      ]}
+      positions={new Map([["home", { x: 0, y: 0 }]])}
+      screens={[{ id: "home" }]}
+      imageDimensions={new Map()}
+      markerId="self"
+    />,
+  );
+  expect(markup).toContain('data-slot="map-edge-line"');
+  expect(markup).not.toContain('data-slot="map-edge-label"');
 });

@@ -48,6 +48,8 @@ export type ProductMapScreenVariant = {
 };
 
 export type ProductMapPath = {
+  /** Action kinds only, without typed values, for compact map presentation. */
+  readonly actionKinds?: readonly string[];
   readonly id: string;
   readonly label: string;
   readonly fromScreenId: string;
@@ -271,6 +273,10 @@ function projectMap(map: AppMap): ProductMapOverview {
         : undefined;
     return {
       id: connection.id,
+      actionKinds:
+        connection.actions?.flatMap((action) =>
+          action.kind === "recorded" ? action.steps.map((step) => step.kind) : [action.kind],
+        ) ?? [],
       label: text(
         connection.label,
         destination ? `Open ${text(destination.title, "screen")}` : "Finish journey",
