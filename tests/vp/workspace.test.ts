@@ -27,22 +27,24 @@ describe("Relay workspace verification", () => {
   });
 
   it("discovers package tests recursively instead of listing files", async () => {
-    const productV2 = await packageJson("packages/app-v2/package.json");
-    expect(productV2.scripts?.test).toBe("vitest run");
-    expect(productV2.scripts?.build).toBe("vp build");
+    const product = await packageJson("packages/app/package.json");
+    expect(product.scripts?.test).toBe("vitest run");
+    expect(product.scripts?.build).toBe("vp build");
   });
 
-  it("builds the React Product V2 package from the root verification gate", async () => {
+  it("builds the React product package from the root verification gate", async () => {
     const root = await packageJson();
     const desktop = await packageJson("packages/desktop/package.json");
-    expect(root.scripts?.verify).toContain("pnpm --filter @relay/app-v2 build");
-    expect(root.scripts?.verify).not.toContain("pnpm --filter @relay/app build");
+    const product = JSON.parse(await readFile("packages/app/package.json", "utf8")) as {
+      name?: string;
+    };
+    expect(product.name).toBe("@relay/app");
+    expect(root.scripts?.verify).toContain("pnpm --filter @relay/app build");
     expect(root.scripts?.["dev:app:legacy"]).toBeUndefined();
     expect(root.scripts?.["dev:desktop:legacy"]).toBeUndefined();
     expect(desktop.scripts?.["build:legacy"]).toBeUndefined();
-    expect(desktop.devDependencies?.["@relay/app"]).toBeUndefined();
+    expect(desktop.dependencies?.["@relay/app"]).toBe("workspace:*");
     expect(desktop.devDependencies?.["solid-js"]).toBeUndefined();
-    await expect(readFile("packages/app/package.json", "utf8")).rejects.toThrow();
   });
 
   it("keeps package tests separate from Vite+ workspace tests", async () => {

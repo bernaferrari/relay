@@ -59,7 +59,7 @@ async function main() {
 
   const watchers = await bundleElectron({ watch: true });
   const server = await createServer({
-    configFile: resolve(root, "vite.v2.config.ts"),
+    configFile: resolve(root, "vite.config.ts"),
     server: {
       strictPort: false,
     },

@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repositoryRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const appV2SourceRoot = resolve(repositoryRoot, "packages/app-v2/src");
+const appSourceRoot = resolve(repositoryRoot, "packages/app/src");
 
 /**
  * These are deliberately narrow escape hatches for resources that are not
@@ -268,7 +268,7 @@ async function sourceFiles(directory) {
   return files;
 }
 
-export async function scanRendererOperationTransport(definitions, root = appV2SourceRoot) {
+export async function scanRendererOperationTransport(definitions, root = appSourceRoot) {
   const files = await sourceFiles(root);
   const violations = [];
   for (const file of files) {
@@ -286,9 +286,9 @@ export function formatViolations(violations) {
 }
 
 // Resolve the canonical protocol through the shipped React product.
-const requireFromProductV2 = createRequire(resolve(repositoryRoot, "packages/app-v2/package.json"));
+const requireFromProduct = createRequire(resolve(repositoryRoot, "packages/app/package.json"));
 export async function loadOperationDefinitions() {
-  const protocolEntry = requireFromProductV2.resolve("@relay/protocol");
+  const protocolEntry = requireFromProduct.resolve("@relay/protocol");
   return (await import(pathToFileURL(protocolEntry).href)).operationDefinitions;
 }
 

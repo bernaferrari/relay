@@ -6,7 +6,7 @@ import { crawlFilingSlot, type AppMap } from "@relay/protocol";
  * A screen's footprint is not only its card. The frame's name sits in a band
  * above the card and grows upward as the camera zooms out, the way a Figma
  * frame name does, so a slot has to reserve both. These numbers mirror the
- * canvas card in `packages/app-v2/src/components/infinite-map-canvas.tsx`; the pitch is
+ * canvas card in `packages/app/src/components/infinite-map-canvas.tsx`; the pitch is
  * deliberately looser than the card so an accepted crawl reads as a grid before
  * anyone tidies it.
  */

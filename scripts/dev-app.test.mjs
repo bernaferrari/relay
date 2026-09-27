@@ -42,8 +42,7 @@ test("a fallback development port preserves the preferred browser origin", () =>
 });
 
 test("browser development always uses the React product", () => {
-  assert.equal(relayAppPackage([]), "@relay/app-v2");
-  assert.equal(relayAppPackage(["--v2"]), "@relay/app-v2");
+  assert.equal(relayAppPackage([]), "@relay/app");
   assert.throws(() => relayAppPackage(["--legacy"]), /Unknown Relay app option/u);
   assert.throws(() => relayAppPackage(["--unknown"]), /Unknown Relay app option/u);
 });

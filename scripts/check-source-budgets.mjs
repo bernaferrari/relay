@@ -19,9 +19,9 @@ export const grandfatheredSourceLimits = Object.freeze({
 });
 
 const componentSourceRoots = [
-  "packages/app-v2/src/components/",
-  "packages/app-v2/src/layout/",
-  "packages/app-v2/src/routes/",
+  "packages/app/src/components/",
+  "packages/app/src/layout/",
+  "packages/app/src/routes/",
   "packages/ui-react/src/",
 ];
 
@@ -94,7 +94,7 @@ export function evaluateSourceBudgets(entries, exceptions = grandfatheredSourceL
 export function evaluateProductDocumentBoundaries(entries) {
   const violations = [];
   for (const { path, source = "" } of entries) {
-    if (!path.startsWith("packages/app-v2/src/") || !source) continue;
+    if (!path.startsWith("packages/app/src/") || !source) continue;
     const readsObservationDocument = /\bDiscoverySession\b/u.test(source);
     const authorsMapDocument = /\bCanvasGraph\b/u.test(source);
     if (readsObservationDocument && authorsMapDocument) {

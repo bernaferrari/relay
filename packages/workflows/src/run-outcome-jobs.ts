@@ -30,7 +30,7 @@ export type RelayRunOutcomeJobs = {
 export type RelayRunOutcomeJobOptions = { actorId: string };
 
 /**
- * Browser-safe Run seam for Product V2.
+ * Browser-safe Run seam for Product.
  *
  * This is deliberately separate from the complete outcome collection. The
  * renderer needs only the durable Run lifecycle, target readiness, and the

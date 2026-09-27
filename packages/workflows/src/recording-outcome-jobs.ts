@@ -40,7 +40,7 @@ export async function startDebugBugRecording(
   };
 }
 
-/** Browser-safe outcome boundary for the Product V2 recording journey.
+/** Browser-safe outcome boundary for the Product recording journey.
  *
  * Keeping this module separate is deliberate: importing the complete outcome
  * job collection also brings offline proof and replay analysis into a web

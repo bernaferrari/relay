@@ -50,7 +50,7 @@ export default defineConfig({
         // local `@/components/ui` path. Keep this scoped to that prefix so
         // each app still discovers its own theme via components.json.
         ui: "@relay/ui-react/components",
-        note: "See DESIGN_SYSTEM.md and packages/app-v2/DESIGN.md.",
+        note: "See DESIGN_SYSTEM.md and packages/app/DESIGN.md.",
       },
     },
     rules: {
