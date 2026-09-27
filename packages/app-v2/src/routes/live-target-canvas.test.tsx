@@ -65,6 +65,23 @@ function mountCanvas(
 }
 
 describe("LiveTargetCanvas", () => {
+  it("uses direct keyboard input for browsers and retains mobile text entry", () => {
+    const send = vi.fn().mockResolvedValue(true);
+    const host = mountCanvas([
+      { title: "Browser", detail: "", targetPlatform: "browser", send },
+      { title: "Android", detail: "", targetPlatform: "android", send },
+      { title: "iOS", detail: "", targetPlatform: "ios", send },
+    ]);
+    expect(host.querySelectorAll('input[placeholder="Type into the app"]')).toHaveLength(2);
+    const canvas = host.querySelector("canvas")!;
+    act(() => {
+      canvas.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+      canvas.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    });
+    expect(send).toHaveBeenCalledWith({ kind: "key", key: "enter", text: "a" });
+    expect(send).toHaveBeenCalledWith({ kind: "key", key: "enter" });
+  });
+
   it("replaces stale-frame overlays with actionable connection recovery", async () => {
     const reconnect = vi.fn();
     const host = mountCanvas([

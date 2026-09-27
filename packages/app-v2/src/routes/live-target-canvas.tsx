@@ -47,7 +47,7 @@ export function LiveTargetCanvas({
   targetPlatform,
   recoveryAction,
   issueAction,
-  directBrowser = false,
+  directBrowser = targetPlatform === "browser" || Boolean(browserContext),
 }: {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   status: LiveTargetStatus;
@@ -291,7 +291,7 @@ export function LiveTargetCanvas({
         ) : null}
       </div>
 
-      {!directBrowser ? (
+      {!directBrowser || showTargetDetails || toolbar ? (
         <div
           className={
             rail
@@ -348,36 +348,40 @@ export function LiveTargetCanvas({
               </div>
             ) : null}
             {toolbar}
-            <label className="sr-only" htmlFor={textInputId}>
-              Text to type into the focused field
-            </label>
-            <Input
-              className="min-w-0 flex-1"
-              id={textInputId}
-              value={text}
-              onChange={(event) => setText(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  typeText();
-                }
-              }}
-              placeholder="Type into the app"
-              disabled={!streaming || busy}
-              autoComplete="off"
-              maxLength={16_384}
-            />
-            <Button
-              type="button"
-              size="icon"
-              variant="secondary"
-              aria-label="Type text into app"
-              title="Type text into the focused field"
-              disabled={!text || !streaming || busy}
-              onClick={typeText}
-            >
-              <ArrowUp className="size-4" aria-hidden="true" />
-            </Button>
+            {!directBrowser ? (
+              <>
+                <label className="sr-only" htmlFor={textInputId}>
+                  Text to type into the focused field
+                </label>
+                <Input
+                  className="min-w-0 flex-1"
+                  id={textInputId}
+                  value={text}
+                  onChange={(event) => setText(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      typeText();
+                    }
+                  }}
+                  placeholder="Type into the app"
+                  disabled={!streaming || busy}
+                  autoComplete="off"
+                  maxLength={16_384}
+                />
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="secondary"
+                  aria-label="Type text into app"
+                  title="Type text into the focused field"
+                  disabled={!text || !streaming || busy}
+                  onClick={typeText}
+                >
+                  <ArrowUp className="size-4" aria-hidden="true" />
+                </Button>
+              </>
+            ) : null}
           </div>
         </div>
       ) : null}

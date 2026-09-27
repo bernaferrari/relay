@@ -776,6 +776,7 @@ export function NewTestPage() {
                       targetTitle={targetLabel(selectedTarget).title}
                       targetDetail={targetLabel(selectedTarget).detail}
                       browserContext={browserContext}
+                      directBrowser={selectedTarget.kind === "browser"}
                       send={sendPreview}
                       recording={false}
                       showTargetDetails={false}

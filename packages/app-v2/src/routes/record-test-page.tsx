@@ -659,6 +659,7 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
                         targetLabel(targetPresentation.data?.[0] ?? selectedTarget).detail
                       }
                       browserContext={browserContext}
+                      directBrowser={selectedTarget.kind === "browser"}
                       showTargetDetails={false}
                       targetPlatform={selectedTarget?.platform}
                       helpText=""
