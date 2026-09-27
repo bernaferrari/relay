@@ -15,10 +15,10 @@
  * - A variant is the exact capture configuration. Missing stays missing:
  *   state×variant pairs without an exact capture are emitted as `missing`
  *   and can never be substituted by another variant's image.
- * - A connection is `recorded` when an included run produced the destination
- *   capture for it; otherwise it is an authored link that enables navigation
- *   without proving the transition occurred. Suggested links never enter a
- *   manifest until approved as map data.
+ * - A connection is `recorded` only when an included run has an exact verified
+ *   transition proof for it. A destination capture alone does not prove the
+ *   action occurred. Authored links still enable navigation without claiming
+ *   execution.
  * - Findings are review decisions bound to exact captures (frame path plus
  *   image digest), scoped per run. */
 
@@ -79,10 +79,10 @@ export type PlayerConnection = {
   id: string;
   fromStateId: string;
   toStateId: string;
-  /** `recorded` was observed. `authored` is a human link. `suggested` was proposed, not executed. */
+  /** `recorded` has a verified proof; `authored` is unproved; `suggested` is discovery. */
   kind: "recorded" | "authored" | "suggested";
   label: string;
-  /** Present only for recorded connections. */
+  /** Present only for recorded connections; captureId requires matching image evidence. */
   provenance?: { runId: string; captureId?: string };
   hotspot?: PlayerHotspot;
 };
@@ -355,12 +355,36 @@ export function buildPlayerManifest(input: {
   // 1) Collect exact captures from run evidence, keeping the identity chain.
   const captures: PlayerCapture[] = [];
   const observedConnection = new Map<string, Map<string, PlayerCapture>>();
+  const verifiedConnectionRuns = new Map<string, Set<string>>();
   const captureByStateVariant = new Map<string, PlayerCapture>();
   const variantKeys = new Map<PlayerVariantKey, PlayerVariant>();
   const statesById = new Map<string, PlayerState>();
   const testIdsSeen = new Set<string>();
 
   for (const run of runs) {
+    for (const artifact of run.artifacts ?? []) {
+      if (artifact.kind !== "campaign-transition-proof") continue;
+      const proof = artifact.data;
+      if (proof === null || typeof proof !== "object" || Array.isArray(proof)) continue;
+      const data = proof as {
+        connectionId?: unknown;
+        status?: unknown;
+        originScreenId?: unknown;
+        destination?: { kind?: unknown; screenId?: unknown };
+      };
+      if (data.status !== "verified" || typeof data.connectionId !== "string") continue;
+      const connection = connections.find((candidate) => candidate.id === data.connectionId);
+      if (
+        !connection ||
+        data.originScreenId !== connection.fromScreenId ||
+        data.destination?.kind !== "screen" ||
+        data.destination.screenId !== connection.destination?.screenId
+      )
+        continue;
+      const provenRuns = verifiedConnectionRuns.get(connection.id) ?? new Set<string>();
+      provenRuns.add(run.id);
+      verifiedConnectionRuns.set(connection.id, provenRuns);
+    }
     // Preferred identity chain: the run's compiled plan carries each
     // checkpoint step's destination screen (module step → transition
     // dependency → screen), independent of map test step naming.
@@ -425,8 +449,8 @@ export function buildPlayerManifest(input: {
     }
   }
 
-  // 2) Connections between player states. A connection is recorded when an
-  // included run produced the destination capture for its state+variant.
+  // 2) Connections between player states. A capture is linked only after a
+  // verified proof for the same connection and Run establishes the action.
   const playerConnections: PlayerConnection[] = [];
   for (const connection of connections) {
     const destination = connection.destination;
@@ -440,26 +464,35 @@ export function buildPlayerManifest(input: {
     if (!statesById.has(toScreenId)) {
       statesById.set(toScreenId, { id: toScreenId, title: screenTitleOf(map, toScreenId) });
     }
-    const observed = [...(observedConnection.get(connection.id)?.values() ?? [])];
+    const provenRuns = verifiedConnectionRuns.get(connection.id) ?? new Set<string>();
+    const observed = [...(observedConnection.get(connection.id)?.values() ?? [])].filter(
+      (capture) => provenRuns.has(capture.runId),
+    );
     const source = connection.provenance?.source;
-    const kind =
-      source === "discovery"
-        ? "suggested"
-        : source === "manual"
-          ? "authored"
-          : source === "recording" || observed.length > 0
-            ? "recorded"
-            : "authored";
-    const recordedCaptures = kind === "recorded" && observed.length > 0 ? observed : [undefined];
-    for (const destinationCapture of recordedCaptures) {
+    const kind = source === "discovery" ? "suggested" : provenRuns.size ? "recorded" : "authored";
+    const provenEvidence: { runId?: string; capture?: PlayerCapture }[] =
+      kind === "recorded"
+        ? [...provenRuns].flatMap((runId): { runId: string; capture?: PlayerCapture }[] => {
+            const capturesForRun = observed.filter((capture) => capture.runId === runId);
+            return capturesForRun.length
+              ? capturesForRun.map((capture) => ({ runId, capture }))
+              : [{ runId }];
+          })
+        : [{}];
+    for (const evidence of provenEvidence) {
       playerConnections.push({
         id: connection.id,
         fromStateId: fromScreenId,
         toStateId: toScreenId,
         kind,
         label: typeof connection.label === "string" ? connection.label : "Open",
-        ...(destinationCapture
-          ? { provenance: { runId: destinationCapture.runId, captureId: destinationCapture.id } }
+        ...(evidence.runId
+          ? {
+              provenance: {
+                runId: evidence.runId,
+                ...(evidence.capture ? { captureId: evidence.capture.id } : {}),
+              },
+            }
           : {}),
         ...(connectionHotspot(connection) ? { hotspot: connectionHotspot(connection)! } : {}),
       });
