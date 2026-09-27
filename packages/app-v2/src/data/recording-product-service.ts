@@ -28,6 +28,10 @@ import {
 export type ProductAppOption = {
   id: string;
   name: string;
+  /** Web, iOS, or Android; maps of one product share a family. */
+  platform?: import("./app-families").AppPlatform;
+  familyId?: string;
+  familyName?: string;
 };
 
 export type RecordingEvidencePreview = {
@@ -222,7 +226,9 @@ export function createRecordingProductService(
   return {
     async listApps() {
       const { appMaps } = await (await product()).client.invoke("app-map.list", {});
-      return appMaps.map((app) => ({ id: app.id, name: app.name }));
+      const { appFamilies } = await import("./app-families");
+      const families = appFamilies(appMaps);
+      return appMaps.map((app) => ({ id: app.id, name: app.name, ...families.get(app.id) }));
     },
     async connect() {
       return (await product()).journey.connect();
