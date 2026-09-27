@@ -6,49 +6,23 @@
 
 **Record tests. Replay them. See what happened.**
 
-Test your website or mobile app, and see every step along the way.
-
 </div>
+
+Relay is a desktop app for testing websites, Android apps, and iOS apps. You use your app while Relay records your actions, then save those steps as a test you can run again. It keeps screenshots and results together so you can understand what happened without repeating the whole test yourself.
 
 ![Relay’s App map showing captured screens and the paths between them.](./docs/images/relay-app-map.png)
 
-## Turn a walkthrough into a test
+A test can be as simple as opening a menu or as involved as going through checkout. Along the way, you can check that something appears, wait for a response, or capture a screenshot. When you run the test again, Relay shows the result of each step. You can compare screenshots with earlier versions and decide whether a change looks right.
 
-Open your website or connect your phone, then use your app as you normally would. Sign in, change a setting, send a message. Relay records the steps so you can repeat them whenever your app changes.
+The App map brings the screens you’ve visited into one view, connected by the actions that lead between them. It helps you understand how a flow fits into the rest of your app. As your tests grow, you can organize them into plans and repeat them with different languages, data, or devices.
 
-Add a check for something that should happen, or capture a screen you want to look at later. Save the test and run it again without doing the same work by hand.
+Relay also works with coding agents. An agent can run a saved test and inspect the same results you see in the desktop app. Optional AI exploration lets you describe something to investigate, review the findings, and save a useful path as a test.
 
-## See what happened
+Your tests and results are stored locally in your project. Recording, replay, and screenshot review work without a model key; AI exploration uses a configured model provider. Relay is still in active development, and browser and device support varies by platform.
 
-When something goes wrong, open the result and follow the steps. See the screens Relay captured, find where the flow stopped, and inspect the details when you need them.
+## Getting started
 
-Review screenshots side by side with the ones you previously approved. Decide whether a change is expected or needs attention. You stay in control of what looks correct.
-
-## Find your way around your app
-
-The App map puts your screens and the connections between them in one place. Follow a path, inspect a screen, and see which parts of your app your tests cover.
-
-It gives you a visual way to explore the product you’re testing, beyond a list of test names.
-
-## Repeat the work that matters
-
-Check your important flows together before a release. Try the same test in another language, with different data, or on another device. Keep the steps you already recorded and choose what changes between runs.
-
-Relay works with websites, Android, and iOS. Support varies by platform, and Relay is still in active development.
-
-## Work with your coding agent
-
-Your agent can use Relay to run tests and inspect what happened while you review the results in the desktop app. You share the same tests, screenshots, and history.
-
-You can also give Relay a goal to explore, such as checking whether an empty cart can reach checkout. Review what it finds and turn a useful path into a repeatable test. AI exploration is optional; recording, replay, and screenshot review work without an AI subscription or model key.
-
-## Keep your work local
-
-Relay runs on your computer and saves test results in your project. Connect your own browsers and devices, and choose what to share. Optional AI exploration uses a model provider to interpret observations from the app you’re testing.
-
-## Try Relay
-
-You’ll need **Node.js 24+**, **pnpm**, and the **Vite+ CLI** (`vp`).
+To run Relay from source, install **Node.js 24+**, **pnpm**, and the **Vite+ CLI** (`vp`), then:
 
 ```bash
 git clone https://github.com/bernaferrari/relay.git
@@ -57,12 +31,13 @@ vp install
 pnpm dev:desktop
 ```
 
-Choose **New Test**, open your website or select a device, and start recording. If you need help with setup, run `pnpm doctor` to see what’s missing. Android needs `adb`; physical iOS devices need Apple developer tooling.
+In the app, choose **New Test** and enter a website or select a connected device. Record a short flow, review the steps, and save it. You can then run it again and open the result to see the captured screens.
 
-<details>
-<summary>For developers and coding agents</summary>
+Run `pnpm doctor` if you have trouble with setup. Android requires `adb`, and physical iOS devices require Apple developer tooling. To use Relay in a browser, run `pnpm dev:web` instead.
 
-Use the [MCP adapter](./packages/mcp/README.md) to connect your coding agent. The CLI can run a test you have already saved:
+## CLI and development
+
+The [MCP adapter](./packages/mcp/README.md) connects Relay to coding agents. You can also use the CLI to run a saved test:
 
 ```bash
 pnpm relay connect
@@ -70,15 +45,6 @@ pnpm relay run settings-localization
 pnpm relay export-evidence <run-id>
 ```
 
-Replace `settings-localization` with your saved test’s name. Run `pnpm relay --help` to see the available commands. AI exploration requires `OPENROUTER_API_KEY`.
+Replace `settings-localization` with the name of your test. `pnpm relay --help` lists the available commands. Optional AI exploration requires `OPENROUTER_API_KEY`.
 
-To work on Relay itself:
-
-```bash
-pnpm dev:web        # Open the app in a browser
-vp check           # Check formatting and lint
-pnpm typecheck     # Check types
-pnpm test          # Run tests
-```
-
-</details>
+If you’re making changes to Relay, use `vp check` for formatting and lint, `pnpm typecheck` for type checks, and `pnpm test` to run the tests.
