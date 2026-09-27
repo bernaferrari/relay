@@ -26,14 +26,6 @@ export type VersionDraft = {
   sourceSha?: string;
 };
 
-export type AccountDraft = {
-  targetId: string;
-  name: string;
-  expiresAt?: number;
-};
-
-export type AccountRefreshInput = AccountDraft & { fixtureId: string };
-
 export function VersionRow({
   version,
   canEdit,
@@ -227,105 +219,6 @@ export function VersionEditorDialog({
   );
 }
 
-export function BrowserAccountDialog({
-  account,
-  targets,
-  pending,
-  error,
-  onClose,
-  onSave,
-  onRefresh,
-}: {
-  account?: ProductBrowserAccount;
-  targets: readonly { id: string; name: string }[];
-  pending: boolean;
-  error: Error | null;
-  onClose(): void;
-  onSave(input: AccountDraft): void;
-  onRefresh(input: AccountRefreshInput): void;
-}) {
-  const editing = account !== undefined;
-  const [name, setName] = useState(account?.fixture.name ?? "");
-  const [targetId, setTargetId] = useState(account?.target.id ?? targets[0]?.id ?? "");
-  const [expiresAt, setExpiresAt] = useState(formatDateInput(account?.fixture.expiresAt));
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!name.trim() || !targetId) return;
-    const expiry = parseDateInput(expiresAt);
-    const input = {
-      targetId,
-      name: name.trim(),
-      ...(expiry === undefined ? {} : { expiresAt: expiry }),
-    };
-    if (editing) onRefresh({ ...input, fixtureId: account.fixture.id });
-    else onSave(input);
-  }
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent
-        showCloseButton={false}
-        className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto"
-      >
-        <DialogTitle>{editing ? "Refresh browser sign-in" : "Save browser sign-in"}</DialogTitle>
-        <DialogDescription>
-          {editing
-            ? "Capture the current reviewed state from this exact managed browser into the same fixture."
-            : "Save the current reviewed state from an exact managed browser. Secrets stay on Relay and are never shown here."}
-        </DialogDescription>
-        <form onSubmit={submit}>
-          <Field>
-            <FieldLabel htmlFor="account-name">Sign-in name</FieldLabel>
-            <Input
-              id="account-name"
-              value={name}
-              onChange={(event) => setName(event.currentTarget.value)}
-              placeholder="Staging buyer"
-              autoComplete="off"
-            />
-          </Field>
-          <Field>
-            <SelectField
-              id="account-target"
-              label="Managed browser"
-              value={targetId}
-              disabled={editing}
-              options={targets.map((target) => ({
-                value: target.id,
-                label: target.name,
-              }))}
-              onValueChange={setTargetId}
-            />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="account-expiry">Expires on (optional)</FieldLabel>
-            <Input
-              id="account-expiry"
-              type="date"
-              value={expiresAt}
-              onChange={(event) => setExpiresAt(event.currentTarget.value)}
-            />
-          </Field>
-          {error ? (
-            <FieldError>
-              {error instanceof Error ? error.message : "Relay could not update this sign-in."}
-            </FieldError>
-          ) : null}
-          <div className="flex items-center justify-end gap-2">
-            <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="default" disabled={!name.trim() || !targetId || pending}>
-              {pending ? "Saving…" : editing ? "Refresh sign-in" : "Save sign-in"}
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export function RevokeAccountDialog({
   account,
   pending,
@@ -345,11 +238,10 @@ export function RevokeAccountDialog({
         showCloseButton={false}
         className="max-h-[min(720px,calc(100dvh-32px))] overflow-auto"
       >
-        <DialogTitle>Revoke browser sign-in?</DialogTitle>
+        <DialogTitle>Revoke {account.fixture.name}?</DialogTitle>
         <DialogDescription>
-          This revokes “{account.fixture.name}” on {account.target.name}. Relay will keep the audit
-          record and existing Runs keep their saved evidence. This sign-in will no longer be valid
-          for future authenticated Tests.
+          Tests can no longer run as this account. Past results keep their evidence, and you can add
+          the account again any time.
         </DialogDescription>
         {error ? <FieldError>{error.message}</FieldError> : null}
         <div className="flex items-center justify-end gap-2">
@@ -357,7 +249,7 @@ export function RevokeAccountDialog({
             Cancel
           </Button>
           <Button type="button" variant="default" disabled={pending} onClick={onConfirm}>
-            {pending ? "Revoking…" : "Revoke sign-in"}
+            {pending ? "Revoking…" : "Revoke account"}
           </Button>
         </div>
       </DialogContent>
@@ -375,16 +267,6 @@ function versionDraft(version?: ProductAppVersion): VersionDraft {
     configuration: version?.configuration,
     sourceSha: version?.sourceSha,
   };
-}
-
-function formatDateInput(timestamp?: number): string {
-  return timestamp === undefined ? "" : new Date(timestamp).toISOString().slice(0, 10);
-}
-
-function parseDateInput(value: string): number | undefined {
-  if (!value) return undefined;
-  const timestamp = Date.parse(`${value}T23:59:59.999Z`);
-  return Number.isFinite(timestamp) ? timestamp : undefined;
 }
 
 function platformLabel(platform: ProductAppVersion["platform"]): string {

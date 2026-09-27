@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { RelayV2App } from "../app";
 import type { AppResourcesProductService } from "../data/app-resources-product-service";
+import type { BrowserSpacesProductService } from "../data/browser-spaces-product-service";
 import type { CatalogProductService } from "../data/catalog-product-service";
 import type { MapProductService } from "../data/map-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
@@ -87,6 +88,7 @@ async function render(
   path: string,
   appResourcesService: AppResourcesProductService,
   recordingService: RecordingProductService = productService,
+  browserSpacesService: BrowserSpacesProductService = browserSpaces(),
 ) {
   const history = createMemoryHistory({ initialEntries: [path] });
   const host = document.createElement("div");
@@ -103,11 +105,21 @@ async function render(
         mapService={mapService}
         appResourcesService={appResourcesService}
         runService={{} as RunProductService}
+        browserSpacesService={browserSpacesService}
       />,
     );
   });
   await settle();
   return history;
+}
+
+function browserSpaces(
+  overrides: Partial<BrowserSpacesProductService> = {},
+): BrowserSpacesProductService {
+  return {
+    listSpaces: async () => [],
+    ...overrides,
+  } as BrowserSpacesProductService;
 }
 
 function resources(
@@ -258,98 +270,145 @@ describe("App routes", () => {
     expect(document.querySelector('[role="alert"]')?.textContent).toContain("revision conflict");
   });
 
-  it("offers an existing browser when saving the first account", async () => {
+  it("explains accounts in one sentence and adds one through a live sign-in", async () => {
     const opened: unknown[] = [];
+    const saved: unknown[] = [];
     await render(
       "/apps/checkout-app/accounts",
       resources({
-        listBrowserTargets: async () => [{ id: "first-browser", name: "First browser" }],
-        saveBrowserAccount: async () => {
-          throw new Error("capture failed");
+        listBrowserTargets: async () => [
+          { id: "first-browser", name: "Checkout browser", startUrl: "https://checkout.example/" },
+        ],
+        saveBrowserAccount: async (input) => {
+          saved.push(input);
+          return {} as never;
         },
         openBrowserAccountForSignIn: async (input) => {
           opened.push(input);
         },
       }),
     );
-    expect(button("Save sign-in").disabled).toBe(false);
-    await click(button("Open headed browser"));
+
+    expect(document.querySelector("h1")?.textContent).toBe("Accounts");
+    expect(document.body.textContent).toContain("Save a login once; tests can run as it.");
+    await click(button("Add account"));
+    const dialog = () => document.querySelector('[role="dialog"]')!;
+    expect(dialog().textContent).toContain("checkout.example");
+    expect(dialog().textContent).toContain("Another website");
+    await click(button("Open to sign in", dialog()));
     expect(opened).toEqual([{ targetId: "first-browser" }]);
-    expect(document.body.textContent).toContain("Complete OAuth in the browser, then Save sign-in");
-    await click(button("Save sign-in"));
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("First browser");
+    expect(dialog().textContent).toContain("Sign in to checkout.example");
+    await fill(document.querySelector<HTMLInputElement>("#account-name")!, "Staging buyer");
+    await click(button("Save account", dialog()));
+    expect(saved).toEqual([{ targetId: "first-browser", name: "Staging buyer" }]);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it("shows reviewed browser sign-ins with their true target ownership", async () => {
-    const history = await render(
+  it("adds an account for a website that has no browser yet", async () => {
+    const created: unknown[] = [];
+    const opened: unknown[] = [];
+    await render(
+      "/accounts",
+      resources({
+        saveBrowserAccount: async () => ({}) as never,
+        openBrowserAccountForSignIn: async (input) => {
+          opened.push(input);
+        },
+      }),
+      productService,
+      browserSpaces({
+        createSpace: async (input) => {
+          created.push(input);
+          return { id: "new-browser" } as never;
+        },
+      }),
+    );
+
+    await click(button("Add account"));
+    await fill(document.querySelector<HTMLInputElement>("#account-website")!, "app.example.com");
+    await click(button("Open to sign in", document.querySelector('[role="dialog"]')!));
+    expect(created).toEqual([
+      { name: "app.example.com", startUrl: "https://app.example.com/", profileRetention: "retain" },
+    ]);
+    expect(opened).toEqual([{ targetId: "new-browser" }]);
+  });
+
+  it("shows each account by name, website, sign-in method, status, and last use", async () => {
+    await render(
       "/apps/checkout-app/accounts",
       resources({
         listBrowserAccounts: async () => [
           {
-            target: { id: "browser-private", name: "Checkout browser" },
+            target: {
+              id: "browser-private",
+              name: "Checkout browser",
+              startUrl: "https://checkout.example/login",
+            },
             fixture: {
-              schemaVersion: 1,
-              id: "1da46c45-cf4d-43fb-bb5f-1bd2fe761154",
-              reference: "authfx:1da46c45-cf4d-43fb-bb5f-1bd2fe761154:1",
+              id: "fixture-1",
+              reference: "authfx:fixture-1:1",
               revision: 1,
-              projectId: "default",
               targetId: "browser-private",
               name: "Staging buyer",
-              origins: ["https://checkout.example"],
+              origins: ["https://checkout.example", "https://accounts.google.com"],
               cookieCount: 3,
               createdAt: now,
-              createdBy: "human:test",
             },
           },
         ],
       }),
     );
 
-    expect(document.querySelector("h1")?.textContent).toBe("Sign-ins");
-    expect(document.body.textContent).toContain("Check health before the daily Plan");
-    expect(document.body.textContent).toContain("1 ready");
-    expect(document.body.textContent).toContain("Staging buyer");
-    expect(document.body.textContent).toContain("Checkout browser · https://checkout.example");
-    expect(document.body.textContent).not.toContain("authfx:");
-    expect(document.body.textContent).not.toContain("browser-private");
-    const browserLink = document.querySelector<HTMLAnchorElement>(
-      'a[href="/devices/browser-private"]',
+    const card = document.querySelector('li[aria-label="Staging buyer on checkout.example"]');
+    expect(card).not.toBeNull();
+    expect(card?.textContent).toContain("Signed in");
+    expect(card?.textContent).toContain("Signs in with Google");
+    expect(card?.textContent).toContain("Saved today");
+    for (const hidden of ["authfx:", "browser-private", "fixture", "Lane", "lane"]) {
+      expect(document.body.textContent).not.toContain(hidden);
+    }
+    const newTest = [...card!.querySelectorAll("a")].find(
+      (link) => link.textContent === "New test as this account",
     );
-    expect(browserLink).not.toBeNull();
-    await click(browserLink!);
-    expect(history.location.pathname).toBe("/devices/browser-private");
+    expect(newTest?.getAttribute("href")).toContain("/tests/new?");
+    expect(newTest?.getAttribute("href")).toContain("account=fixture-1");
+    expect(newTest?.getAttribute("href")).toContain("checkout.example");
   });
 
-  it("saves, refreshes, and revokes accounts with exact target identity without rendering secrets", async () => {
-    const saved: unknown[] = [];
+  it("opens an account signed in, signs in again, checks, and revokes it", async () => {
+    const openedSpaces: unknown[] = [];
+    const signIns: unknown[] = [];
     const refreshed: unknown[] = [];
+    const probed: unknown[] = [];
     const revoked: unknown[] = [];
-    await render(
-      "/apps/checkout-app/accounts",
+    const history = await render(
+      "/accounts",
       resources({
         listBrowserAccounts: async () => [
           {
             target: { id: "browser-private", name: "Checkout browser" },
             fixture: {
-              schemaVersion: 1,
               id: "fixture-1",
               reference: "authfx:fixture-1:1",
               revision: 1,
-              projectId: "default",
               targetId: "browser-private",
               name: "Staging buyer",
               origins: ["https://checkout.example"],
               cookieCount: 3,
               createdAt: now,
+              health: { status: "needs-relogin", checkedAt: now, signedIn: false },
             },
           },
         ],
-        saveBrowserAccount: async (input) => {
-          saved.push(input);
-          return {} as never;
+        openBrowserAccountForSignIn: async (input) => {
+          signIns.push(input);
         },
         refreshBrowserAccount: async (input) => {
           refreshed.push(input);
+          return {} as never;
+        },
+        probeBrowserAccount: async (input) => {
+          probed.push(input);
           return {} as never;
         },
         revokeBrowserAccount: async (input) => {
@@ -357,84 +416,55 @@ describe("App routes", () => {
           return {} as never;
         },
       }),
-    );
-
-    await click(button("Save sign-in"));
-    await fill(document.querySelector<HTMLInputElement>("#account-name")!, "Reviewed buyer");
-    await click(button("Save sign-in", document.querySelector('[role="dialog"]')!));
-    expect(saved).toEqual([{ targetId: "browser-private", name: "Reviewed buyer" }]);
-
-    await click(button("Refresh"));
-    await click(button("Refresh sign-in", document.querySelector('[role="dialog"]')!));
-    expect(refreshed).toEqual([
-      { targetId: "browser-private", name: "Staging buyer", fixtureId: "fixture-1" },
-    ]);
-
-    await click(button("Revoke"));
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-      "existing Runs keep their saved evidence",
-    );
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-      "future authenticated Tests",
-    );
-    await click(button("Revoke sign-in", document.querySelector('[role="dialog"]')!));
-    expect(revoked).toEqual([{ targetId: "browser-private", reference: "authfx:fixture-1:1" }]);
-    expect(document.body.textContent).not.toContain("authfx:fixture-1:1");
-  });
-
-  it("checks sign-in health and opens a headed browser for OAuth", async () => {
-    const probed: unknown[] = [];
-    const opened: unknown[] = [];
-    await render(
-      "/apps/checkout-app/accounts",
-      resources({
-        listBrowserAccounts: async () => [
-          {
-            target: { id: "browser-private", name: "Checkout browser" },
-            fixture: {
-              id: "fixture-1",
-              reference: "authfx:fixture-1:1",
-              revision: 1,
-              targetId: "browser-private",
-              name: "Staging buyer",
-              origins: ["https://checkout.example"],
-              cookieCount: 3,
-              createdAt: now,
-              health: {
-                status: "needs-relogin",
-                checkedAt: now,
-                signedIn: false,
-              },
-            },
-          },
-        ],
-        probeBrowserAccount: async (input) => {
-          probed.push(input);
-          return {} as never;
-        },
-        openBrowserAccountForSignIn: async (input) => {
-          opened.push(input);
+      productService,
+      browserSpaces({
+        openSpace: async (input) => {
+          openedSpaces.push(input);
+          return { targetId: "browser-private", name: "Checkout browser", url: "" };
         },
       }),
     );
 
-    expect(document.body.textContent).toContain("need sign-in");
-    expect(document.body.textContent).toContain("Needs relogin");
-    await click(button("Check health"));
+    expect(document.body.textContent).toContain("Needs sign-in");
+    expect(document.body.textContent).toContain("1 account needs sign-in");
+
+    await click(button("Sign in again"));
+    expect(signIns).toEqual([{ targetId: "browser-private", reference: "authfx:fixture-1:1" }]);
+    expect(document.body.textContent).toContain("Finish signing in to checkout.example");
+    await click(button("Save sign-in"));
+    expect(refreshed).toEqual([
+      { targetId: "browser-private", name: "Staging buyer", fixtureId: "fixture-1" },
+    ]);
+
+    await click(button("Check"));
     expect(probed).toEqual([{ targetId: "browser-private", reference: "authfx:fixture-1:1" }]);
-    await click(button("Sign in now"));
-    expect(opened).toEqual([{ targetId: "browser-private", reference: "authfx:fixture-1:1" }]);
-    expect(document.body.textContent).toContain("Complete OAuth in the browser, then Refresh");
+
+    await click(button("Revoke"));
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+      "Tests can no longer run as this account",
+    );
+    await click(button("Revoke account", document.querySelector('[role="dialog"]')!));
+    expect(revoked).toEqual([{ targetId: "browser-private", reference: "authfx:fixture-1:1" }]);
+
+    await click(button("Open signed in"));
+    expect(openedSpaces).toEqual([
+      {
+        spaceId: "browser-private",
+        presentation: "embedded",
+        account: { kind: "fixture", reference: "authfx:fixture-1:1" },
+      },
+    ]);
+    expect(history.location.pathname).toBe("/devices/browser-private");
   });
 
-  it("hides revoked lab accounts and checks live health without inventing a second account", async () => {
+  it("hides revoked accounts and uses the probed identity as the name", async () => {
     const probed: unknown[] = [];
     await render(
       "/apps/checkout-app/accounts",
       resources({
         listBrowserAccounts: async () => [
           {
-            target: { id: "grok-com", name: "Grok.com" },
+            target: { id: "grok-com", name: "Grok.com", startUrl: "https://grok.com/" },
             fixture: {
               id: "7189423f-193e-45ed-b674-154505cc5107",
               reference: "authfx:7189423f-193e-45ed-b674-154505cc5107:1",
@@ -444,11 +474,11 @@ describe("App routes", () => {
               origins: ["https://grok.com"],
               cookieCount: 33,
               createdAt: now,
-              health: { status: "ready", checkedAt: now, signedIn: true },
+              health: { status: "ready", checkedAt: now, signedIn: true, identity: "lab@x.ai" },
             },
           },
           {
-            target: { id: "grok-com", name: "Grok.com" },
+            target: { id: "grok-com", name: "Grok.com", startUrl: "https://grok.com/" },
             fixture: {
               id: "addeb648-90e6-43fe-9a6a-6e2c11d8bd09",
               reference: "authfx:addeb648-90e6-43fe-9a6a-6e2c11d8bd09:1",
@@ -463,15 +493,6 @@ describe("App routes", () => {
             },
           },
         ],
-        listAccountLanes: async () => [
-          { id: "grok-daily", targetId: "grok-com", kind: "signed-out" },
-          {
-            id: "grok-lab",
-            targetId: "grok-com",
-            kind: "fixture",
-            reference: "authfx:7189423f-193e-45ed-b674-154505cc5107:1",
-          },
-        ],
         probeBrowserAccountHealth: async (input) => {
           probed.push(input);
           return {
@@ -480,22 +501,22 @@ describe("App routes", () => {
               liveCount: 1,
               revokedCount: 1,
               concurrentAccountsPossible: false,
-              concurrentReason: "One live account.",
+              concurrentReason: "",
               lanes: [],
             },
           };
         },
-        probeBrowserAccount: async () => ({}) as never,
       }),
     );
 
-    expect(document.body.textContent).toContain("SuperGrok lab signed-in");
-    expect(document.body.textContent).toContain("Lane grok-lab");
-    expect(document.body.textContent).toContain("One live account");
+    expect(document.body.textContent).toContain("lab@x.ai");
+    expect(document.body.textContent).toContain("Saved as SuperGrok lab signed-in");
+    expect(document.body.textContent).toContain("Checked today");
     expect(document.body.textContent).not.toContain("P2.1 lab A");
     await click(button("Show 1 revoked"));
     expect(document.body.textContent).toContain("P2.1 lab A");
-    await click(button("Check live health"));
+    expect(document.body.textContent).toContain("Revoked");
+    await click(button("Check all"));
     expect(probed).toEqual([{ targetId: "grok-com" }]);
   });
 
@@ -507,11 +528,9 @@ describe("App routes", () => {
           {
             target: { id: "browser-private", name: "Checkout browser" },
             fixture: {
-              schemaVersion: 1,
               id: "fixture-1",
               reference: "authfx:fixture-1:1",
               revision: 1,
-              projectId: "default",
               targetId: "browser-private",
               name: "Staging buyer",
               origins: [],
@@ -523,16 +542,19 @@ describe("App routes", () => {
       }),
     );
 
-    expect(button("Save sign-in").disabled).toBe(true);
-    expect(document.querySelector('button[aria-label="Refresh Staging buyer"]')).toBeNull();
-    expect(document.querySelector('button[aria-label="Revoke Staging buyer"]')).toBeNull();
-    expect(document.querySelector('button[aria-label="Check health of Staging buyer"]')).toBeNull();
-    expect(document.querySelector('button[aria-label="Sign in now for Staging buyer"]')).toBeNull();
+    expect(button("Add account").disabled).toBe(true);
+    for (const label of [
+      "Refresh sign-in for Staging buyer",
+      "Revoke Staging buyer",
+      "Check Staging buyer",
+    ]) {
+      expect(document.querySelector(`button[aria-label="${label}"]`)).toBeNull();
+    }
   });
 
   it.each([
     ["/apps/checkout-app/versions", "registered versions", "listVersions"],
-    ["/apps/checkout-app/accounts", "saved browser sign-ins", "listBrowserAccounts"],
+    ["/apps/checkout-app/accounts", "saved accounts", "listBrowserAccounts"],
   ] as const)("uses the centered recovery pattern on %s", async (path, subject, method) => {
     await render(path, resources({ [method]: async () => Promise.reject(new Error("offline")) }));
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 1_100))));

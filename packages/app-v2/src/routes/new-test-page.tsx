@@ -35,6 +35,7 @@ import {
   type WebsiteAccount,
 } from "./new-test-quick-start";
 import type { ProductBrowserAccount } from "../data/app-resources-product-service";
+import { accountDisplayName } from "./account-presentation";
 
 const NEW_TEST_DRAFT_KEY = "newTestDraft";
 
@@ -56,6 +57,9 @@ export function NewTestPage() {
   const requestedAppId = typeof search.app === "string" ? search.app : undefined;
   const requestedPathId = typeof search.path === "string" ? search.path : undefined;
   const requestedTargetId = typeof search.target === "string" ? search.target : undefined;
+  // "New test as this account" from Accounts: the website and the login to use.
+  const requestedSite = typeof search.site === "string" ? search.site : undefined;
+  const requestedAccount = typeof search.account === "string" ? search.account : undefined;
   const requestedOriginApplication =
     typeof search.originApplication === "string" ? search.originApplication : undefined;
   const startsFromPath = search.view === "path" && Boolean(requestedAppId && requestedPathId);
@@ -599,6 +603,16 @@ export function NewTestPage() {
             {...(quickError ? { error: quickError } : {})}
             accountsFor={(url) => websiteAccounts(accounts.data ?? [], url)}
             rememberedAccount={(url) => rememberedAccounts.data?.[websiteHost(url)]}
+            {...(requestedSite ? { initialAddress: requestedSite } : {})}
+            {...(requestedAccount
+              ? {
+                  initialAccount: (accounts.data ?? []).find(
+                    (item) =>
+                      item.fixture.id === requestedAccount ||
+                      item.fixture.reference === requestedAccount,
+                  )?.fixture.reference,
+                }
+              : {})}
             onStart={(url, account) => void startWebsiteTest(url, account)}
             onUseDevice={() => setSetupMode("detailed")}
           />
@@ -868,11 +882,14 @@ function websiteAccounts(
       (item) =>
         !item.fixture.revokedAt &&
         Boolean(item.fixture.reference) &&
-        (item.fixture.origins ?? []).some((origin) => bare(origin) === host),
+        [
+          ...(item.fixture.origins ?? []),
+          ...(item.target.startUrl ? [item.target.startUrl] : []),
+        ].some((origin) => bare(origin) === host),
     )
     .map((item) => ({
       reference: item.fixture.reference,
-      name: item.fixture.name || item.target.name,
+      name: accountDisplayName(item),
       targetId: item.fixture.targetId,
     }));
 }

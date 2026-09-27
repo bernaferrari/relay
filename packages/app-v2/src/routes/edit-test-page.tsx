@@ -747,6 +747,7 @@ function TestEditorDocument() {
                   appMapId={editorDocument.appMapId}
                   startUrl={editorDocument.test.originApplication}
                   browserTargetIds={editorDocument.browserTargetIds}
+                  recentAccountIds={recentAccountIds(recentRuns.data)}
                 />
               )}
               {!sessionId && recentRuns.data?.length ? (
@@ -766,4 +767,13 @@ function TestEditorDocument() {
       ) : null}
     </WorkbenchPage>
   );
+}
+
+/** Accounts this Test ran as, newest run first. */
+function recentAccountIds(
+  runs: readonly { queuedAt: number; executionIdentity?: { accountId?: string } }[] = [],
+): string[] {
+  return [...runs]
+    .sort((left, right) => right.queuedAt - left.queuedAt)
+    .flatMap((run) => (run.executionIdentity?.accountId ? [run.executionIdentity.accountId] : []));
 }

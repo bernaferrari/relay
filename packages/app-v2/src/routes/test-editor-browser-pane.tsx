@@ -8,27 +8,38 @@ import { BrowserAddressBar } from "../components/browser-address-bar";
 import type { LiveTargetSession, LiveTargetSnapshot } from "../data/live-target-session";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { errorMessage } from "./recording-shared";
+import {
+  accountDisplayName,
+  accountStatus,
+  accountsForBrowser,
+  runUsesAccount,
+} from "./account-presentation";
+import { websiteHost } from "./new-test-quick-start";
 
 /** A saved Test can inspect its real browser without inventing a recording session. */
 export function TestEditorBrowserPane({
   appMapId,
   startUrl,
   browserTargetIds = [],
+  recentAccountIds = [],
 }: {
   appMapId: string;
   startUrl?: string;
   browserTargetIds?: readonly string[];
+  /** Accounts this Test ran as, newest first; the first one saved here is the default. */
+  recentAccountIds?: readonly string[];
 }) {
-  const { browserSpacesService, appResourcesService, productService } = useRouteContext({
+  const { browserSpacesService, appResourcesService, productService, platform } = useRouteContext({
     from: "__root__",
   });
   const spaces = useQuery({
     queryKey: ["test-editor", "browser-spaces"],
     queryFn: () => browserSpacesService.listSpaces(),
   });
-  const lanes = useQuery({
-    queryKey: ["test-editor", "browser-lanes"],
-    queryFn: () => appResourcesService.listAccountLanes?.() ?? Promise.resolve([]),
+  const accounts = useQuery({
+    queryKey: ["app-resources", "browser-accounts"],
+    queryFn: () => appResourcesService.listBrowserAccounts(),
+    staleTime: 10_000,
   });
   const [chosenSpaceId, setSpaceId] = useState("");
   const [choosingWebsite, setChoosingWebsite] = useState(false);
@@ -43,7 +54,8 @@ export function TestEditorBrowserPane({
       : associated.length === 1
         ? associated[0]!.id
         : "");
-  const [laneId, setLaneId] = useState("");
+  /** undefined: use the account the Test was recorded with; "": Guest. */
+  const [chosenAccount, setChosenAccount] = useState<string>();
   const [session, setSession] = useState<LiveTargetSession>();
   const sessionRef = useRef<LiveTargetSession | undefined>(undefined);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -53,20 +65,35 @@ export function TestEditorBrowserPane({
   const inputQueue = useRef<Promise<unknown>>(Promise.resolve());
   const mounted = useRef(true);
   const space = spaces.data?.find((item) => item.id === spaceId);
-  const matchingLanes =
-    lanes.data?.filter(
-      (lane) => lane.targetId === spaceId && lane.kind === "fixture" && Boolean(lane.reference),
-    ) ?? [];
+  const spaceAccounts = accountsForBrowser(accounts.data ?? [], spaceId);
+  const siteHost = space ? websiteHost(space.startUrl) : "";
+  // The login last chosen for this website when a Test was recorded here.
+  const rememberedAccount = useQuery({
+    queryKey: ["test-editor", "remembered-account", siteHost],
+    queryFn: async () =>
+      (await Promise.resolve(platform.storage.get(`relay:website-account:${siteHost}`))) ?? "",
+    enabled: Boolean(siteHost),
+  });
+  const recordedAccount =
+    recentAccountIds
+      .map((id) =>
+        spaceAccounts.find((account) =>
+          runUsesAccount({ executionIdentity: { accountId: id } }, account.fixture),
+        ),
+      )
+      .find(Boolean) ??
+    spaceAccounts.find((account) => account.fixture.reference === rememberedAccount.data);
+  const accountReference = chosenAccount ?? recordedAccount?.fixture.reference ?? "";
   const open = useMutation({
     mutationFn: async () => {
       if (!space || !productService.previewTarget)
         throw new Error("Choose an available browser first.");
-      const lane = matchingLanes.find((item) => item.id === laneId);
-      if (laneId && !lane?.reference)
-        throw new Error("This saved session is unavailable. Choose another session.");
+      const account = spaceAccounts.find((item) => item.fixture.reference === accountReference);
+      if (accountReference && !account)
+        throw new Error("This account is unavailable. Choose another account.");
       return productService.previewTarget(
         { kind: "browser", platform: "browser", targetId: space.id },
-        lane?.reference ? { authenticationFixtureId: lane.reference } : { signedOut: true },
+        account ? { authenticationFixtureId: account.fixture.reference } : { signedOut: true },
       );
     },
     onSuccess: (next) => {
@@ -167,7 +194,7 @@ export function TestEditorBrowserPane({
                     onClick={() => {
                       setSpaceId(item.id);
                       setChoosingWebsite(false);
-                      setLaneId("");
+                      setChosenAccount(undefined);
                       open.reset();
                     }}
                     className="group min-w-0 rounded-xl border border-border p-4 text-left transition-colors hover:bg-muted/50 aria-pressed:border-primary aria-pressed:bg-primary/5 focus-visible:outline-2 focus-visible:outline-ring"
@@ -201,15 +228,17 @@ export function TestEditorBrowserPane({
                 Account
                 <select
                   aria-label="Account"
-                  value={laneId}
-                  disabled={open.isPending || lanes.isPending}
+                  value={accountReference}
+                  disabled={open.isPending || accounts.isPending}
                   className="h-9 min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-ring"
-                  onChange={(event) => setLaneId(event.target.value)}
+                  onChange={(event) => setChosenAccount(event.target.value)}
                 >
-                  <option value="">Guest · no saved login</option>
-                  {matchingLanes.map((lane) => (
-                    <option key={lane.id} value={lane.id}>
-                      {lane.id}
+                  <option value="">Guest · not signed in</option>
+                  {spaceAccounts.map((account) => (
+                    <option key={account.fixture.reference} value={account.fixture.reference}>
+                      {accountDisplayName(account)}
+                      {account === recordedAccount ? " · recorded with" : ""}
+                      {accountStatus(account) === "signed-in" ? "" : " · needs sign-in"}
                     </option>
                   ))}
                 </select>
@@ -222,9 +251,9 @@ export function TestEditorBrowserPane({
             >
               {open.isPending ? "Opening…" : "Open browser"}
             </Button>
-            {spaces.error || lanes.error || open.error ? (
+            {spaces.error || accounts.error || open.error ? (
               <p role="alert" className="text-sm text-destructive">
-                {errorMessage(spaces.error ?? lanes.error ?? open.error)}
+                {errorMessage(spaces.error ?? accounts.error ?? open.error)}
               </p>
             ) : null}
           </div>

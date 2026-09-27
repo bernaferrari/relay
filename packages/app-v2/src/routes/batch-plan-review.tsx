@@ -90,7 +90,7 @@ export function BatchFindingsLead({
         detail={empty[1]}
         action={
           <Link className={findingsLinkClass} to="/accounts">
-            Check Sign-ins
+            Check accounts
           </Link>
         }
       />
