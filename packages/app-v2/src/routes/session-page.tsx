@@ -304,6 +304,7 @@ export function SessionPage() {
                   targetTitle={targetLabel(value)}
                   targetDetail={`${value.target.kind === "browser" ? "Browser" : "Device"} · ${value.actorKind === "agent" ? "Agent" : "Manual"}`}
                   browserContext={browserContext}
+                  directBrowser={value.target.kind === "browser"}
                   send={send}
                   recording={false}
                   layout="rail"

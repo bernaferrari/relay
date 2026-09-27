@@ -106,6 +106,7 @@ export function LiveTestEditorPane({
             targetTitle={session.authoring.title}
             targetDetail={session.authoring.target.kind === "browser" ? "Browser" : "Device"}
             browserContext={browserContext}
+            directBrowser={session.authoring.target.kind === "browser"}
             send={send}
             recording={session.capabilities.record}
             layout="rail"
