@@ -10,7 +10,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundleElectron } from "./bundle-electron.mjs";
 import { ensureDevService } from "./ensure-dev-service.mjs";
-import { prepareMacOSDevApp } from "./macos-dev-app.mjs";
+import { ensureElectronBinary, prepareMacOSDevApp } from "./macos-dev-app.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const inspectionManifest = resolve(root, "out/desktop-inspection.json");
@@ -53,6 +53,9 @@ async function reserveLoopbackPort() {
 
 async function main() {
   process.chdir(root);
+  // Download before the renderer and Relay service start. A missing binary
+  // used to fail only after both were already up.
+  if (process.platform === "darwin") ensureElectronBinary(resolveElectronCli());
 
   const watchers = await bundleElectron({ watch: true });
   const server = await createServer({

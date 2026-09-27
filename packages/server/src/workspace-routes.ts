@@ -137,7 +137,8 @@ export async function handleWorkspaceRoute(input: WorkspaceRouteInput): Promise<
     response.writeHead(200, {
       "Content-Type": contentType,
       "Content-Length": artifact.byteLength,
-      "Cache-Control": "private, max-age=31536000, immutable",
+      // Origin-specific CORS headers must be revalidated, even for immutable bytes.
+      "Cache-Control": "private, no-cache",
       ...CORS_HEADERS,
     });
     response.end(artifact);

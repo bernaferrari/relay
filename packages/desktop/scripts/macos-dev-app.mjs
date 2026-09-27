@@ -13,19 +13,41 @@ function run(command, args) {
 }
 
 /**
+ * Electron 44 ships no postinstall script. `require("electron")` downloads the
+ * binary on first use, but dev launches the app bundle directly and never
+ * loads that entry. Fetch it when the bundle is absent.
+ */
+export function ensureElectronBinary(electronCliPath) {
+  const electronRoot = dirname(electronCliPath);
+  const electronApp = resolve(electronRoot, "dist/Electron.app");
+  const executable = resolve(electronApp, "Contents/MacOS/Electron");
+  if (existsSync(executable)) return electronApp;
+
+  const installScript = resolve(electronRoot, "install.js");
+  if (!existsSync(installScript)) {
+    throw new Error(`Electron.app not found at ${electronApp}`);
+  }
+  console.log("[desktop] Electron binary missing — downloading");
+  const result = spawnSync(process.execPath, [installScript], { stdio: "inherit" });
+  if (result.status !== 0 || !existsSync(executable)) {
+    throw new Error(
+      `Electron.app not found at ${electronApp}. Re-run: node ${installScript}`,
+    );
+  }
+  return electronApp;
+}
+
+/**
  * Build a project-local macOS app bundle for development. APFS clone-copying
  * preserves Electron's complete, working bundle without physically duplicating
  * its frameworks, then Relay supplies its own identity and icon.
  */
 export async function prepareMacOSDevApp(electronCliPath, desktopRoot, environment = {}) {
-  const electronRoot = dirname(electronCliPath);
-  const electronApp = resolve(electronRoot, "dist/Electron.app");
+  const electronApp = ensureElectronBinary(electronCliPath);
   const relayApp = resolve(desktopRoot, "out/Relay.app");
   const plist = resolve(relayApp, "Contents/Info.plist");
   const electronExecutable = resolve(relayApp, "Contents/MacOS/Electron");
   const relayExecutable = resolve(relayApp, "Contents/MacOS/Relay");
-
-  if (!existsSync(electronApp)) throw new Error(`Electron.app not found at ${electronApp}`);
 
   rmSync(relayApp, { force: true, recursive: true });
   run("/bin/cp", ["-cR", electronApp, relayApp]);

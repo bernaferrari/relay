@@ -117,7 +117,7 @@ export function MapPage() {
   return (
     <section className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
       <header
-        className={`[-webkit-app-region:drag] flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-3 ${platform.platform === "desktop" ? "sm:pl-20" : ""}`}
+        className={`[-webkit-app-region:drag] grid shrink-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] border-b border-border px-4 py-3 ${platform.platform === "desktop" ? "sm:pl-20" : ""}`}
       >
         <div className="[-webkit-app-region:no-drag] flex min-w-0 flex-1 items-center gap-2">
           <Button
@@ -134,28 +134,8 @@ export function MapPage() {
             <p className="truncate text-xs text-muted-foreground">{map.data?.appName ?? "App"}</p>
           </div>
         </div>
-        <div className="[-webkit-app-region:no-drag] flex shrink-0 items-center gap-1">
-          <Button
-            size="sm"
-            nativeButton={false}
-            render={<Link to="/tests/new" search={{ app: appId }} />}
-          >
-            <Plus />
-            Record test
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button size="icon-sm" variant="ghost" aria-label="More map actions" />}
-            >
-              <MoreHorizontal aria-hidden="true" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem render={<Link to="/sessions" />}>Activity</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
         <div
-          className="[-webkit-app-region:no-drag] flex w-full items-center gap-1"
+          className="[-webkit-app-region:no-drag] flex items-center gap-0.5 rounded-lg border border-border bg-muted/30 p-0.5"
           role="group"
           aria-label="Map view"
         >
@@ -176,6 +156,26 @@ export function MapPage() {
               {label}
             </Button>
           ))}
+        </div>
+        <div className="[-webkit-app-region:no-drag] flex shrink-0 items-center justify-end gap-1">
+          <Button
+            size="sm"
+            nativeButton={false}
+            render={<Link to="/tests/new" search={{ app: appId }} />}
+          >
+            <Plus />
+            Record test
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={<Button size="icon-sm" variant="ghost" aria-label="More map actions" />}
+            >
+              <MoreHorizontal aria-hidden="true" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem render={<Link to="/sessions" />}>Activity</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
       {map.isPending ? <PageLoading label="Loading known screens…" /> : null}
