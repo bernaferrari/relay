@@ -1,5 +1,9 @@
 import { replayRunInputParser, runIdInputParser } from "./run-replay-operation-parser.js";
 import { createAuthoringSessionParser } from "./authoring-session-operation-parser.js";
+import {
+  captureReviewInputParser,
+  captureReviewOutputParser,
+} from "./capture-review-operation-parser.js";
 import { assertTargetRuntimeReadiness } from "./target-runtime-readiness-parser.js";
 import {
   authoringInteractionParser,
@@ -71,7 +75,6 @@ import {
   string,
 } from "./operation-parser-primitives.js";
 import { VISUAL_REVIEW_ACTIONS } from "./visual-verification.js";
-import { CAPTURE_REVIEW_ACTIONS } from "./capture-review.js";
 import { assertIosMutationAttemptDiagnostic } from "./ios-mutation-attempt-parser.js";
 export {
   projectRoleAllows,
@@ -533,38 +536,6 @@ const visualReviewOutputParser = objectParser<OperationOutput<"run.visual.review
   (input) => {
     record(input.decision, "visual review decision");
     if (input.baseline !== null) record(input.baseline, "visual review baseline");
-  },
-);
-
-const captureReviewInputParser = objectParser<OperationInput<"run.capture.review">>(
-  "capture review input",
-  (input) => {
-    string(input.runId, "capture review runId");
-    string(input.captureId, "capture review captureId");
-    const action = string(input.action, "capture review action");
-    if (!(CAPTURE_REVIEW_ACTIONS as readonly string[]).includes(action)) {
-      fail("capture review action", "is unsupported");
-    }
-    if (input.imageSha256 !== undefined) string(input.imageSha256, "capture review imageSha256");
-    if (input.note !== undefined) string(input.note, "capture review note");
-    if (input.expectedReviewVersion !== undefined) {
-      if (
-        typeof input.expectedReviewVersion !== "number" ||
-        !Number.isInteger(input.expectedReviewVersion) ||
-        input.expectedReviewVersion < 0
-      ) {
-        fail("capture review expectedReviewVersion", "must be a non-negative integer");
-      }
-    }
-  },
-);
-
-const captureReviewOutputParser = objectParser<OperationOutput<"run.capture.review">>(
-  "capture review response",
-  (input) => {
-    record(input.run, "capture review run");
-    record(input.queue, "capture review queue");
-    record(input.decision, "capture review decision");
   },
 );
 

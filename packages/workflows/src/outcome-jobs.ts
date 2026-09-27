@@ -391,7 +391,7 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
         appMapId,
         testId: intent.testId,
         laneId: intent.laneId,
-        revision: "current",
+        revision: intent.revision ?? "current",
         ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
         ...(intent.sourceRevision
           ? { sourceRevision: structuredClone(intent.sourceRevision) }
@@ -410,7 +410,7 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
       appMapId,
       testId: intent.testId,
       target,
-      revision: "current",
+      revision: intent.revision ?? "current",
       ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
       ...(intent.sourceRevision ? { sourceRevision: structuredClone(intent.sourceRevision) } : {}),
       ...(intent.startup ? { startup: structuredClone(intent.startup) } : {}),

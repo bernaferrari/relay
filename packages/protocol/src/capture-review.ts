@@ -76,7 +76,12 @@ export {
 } from "./capture-review-slots.js";
 export type { CaptureReviewRuntimeCursor } from "./capture-review-slots.js";
 
-export const CAPTURE_REVIEW_ACTIONS = ["accept", "report-issue", "need-more-evidence"] as const;
+export const CAPTURE_REVIEW_ACTIONS = [
+  "accept",
+  "accept-as-reference",
+  "report-issue",
+  "need-more-evidence",
+] as const;
 export type CaptureReviewAction = (typeof CAPTURE_REVIEW_ACTIONS)[number];
 
 export const CAPTURE_REVIEW_STATUSES = [
@@ -328,7 +333,7 @@ export function summarizeCaptureReview(items: readonly CaptureReviewItem[]): Cap
 export function captureReviewStatusForAction(
   action: CaptureReviewAction,
 ): Exclude<CaptureReviewStatus, "pending" | "missing"> {
-  if (action === "accept") return "accepted";
+  if (action === "accept" || action === "accept-as-reference") return "accepted";
   if (action === "report-issue") return "issue";
   return "need-more-evidence";
 }

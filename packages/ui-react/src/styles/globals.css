@@ -76,7 +76,7 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.21 0.015 262);
   /* Relay Blue: the single accent — primary actions, selection, focus, live. */
-  --primary: oklch(0.58 0.2 256);
+  --primary: oklch(0.48 0.2 256);
   --primary-foreground: oklch(0.99 0 0);
   --secondary: oklch(0.965 0.004 256);
   --secondary-foreground: oklch(0.25 0.015 262);
@@ -84,7 +84,7 @@
   --muted-foreground: oklch(0.52 0.015 262);
   --accent: oklch(0.955 0.006 256);
   --accent-foreground: oklch(0.21 0.015 262);
-  --destructive: oklch(0.58 0.22 25);
+  --destructive: oklch(0.5 0.22 25);
   --success: oklch(0.6 0.15 155);
   --success-foreground: oklch(0.42 0.11 155);
   --warning: oklch(0.75 0.15 70);

@@ -129,6 +129,33 @@ test("forwards selected target profile, build provenance, and cold startup as on
   assert.equal(state.snapshot?.phase, "queued");
 });
 
+test("starts the exact saved Test revision acknowledged by the editor", async () => {
+  let received: unknown;
+  const journey = createProductRunJourney({
+    jobs: {
+      ...jobsFor({}),
+      async run(input) {
+        received = input;
+        return snapshot("queued");
+      },
+    },
+  });
+
+  await journey.start({
+    testId: "test-1",
+    appMapId: "app-1",
+    targetId: "pixel-9",
+    documentRevision: 7,
+  });
+  assert.deepEqual(received, {
+    kind: "run-test",
+    testId: "test-1",
+    appMapId: "app-1",
+    targetId: "pixel-9",
+    revision: { exact: 7 },
+  });
+});
+
 test("reconstructed UI and CLI journeys inspect one server workflow and resume it without duplication", async () => {
   let starts = 0;
   let cancels = 0;

@@ -503,7 +503,7 @@ describe("shell overlays", () => {
     expect(history.location.search).toBe(search);
   });
 
-  it("the Test link on a Run opens the Test without substituting browser Back", async () => {
+  it("the Back link on a Run opens the Test definition without substituting browser Back", async () => {
     const history = await renderShell({
       initialEntries: ["/tests", "/runs/run-1"],
       test: {
@@ -514,10 +514,10 @@ describe("shell overlays", () => {
         stepCount: 0,
       },
     });
-    const link = [...document.querySelectorAll<HTMLAnchorElement>("main a")].find((item) =>
-      item.textContent?.includes("Checkout"),
+    const link = [...document.querySelectorAll<HTMLAnchorElement>("main a")].find(
+      (item) => item.textContent?.trim() === "Back",
     );
-    expect(link?.getAttribute("href")).toBe("/tests/test-1");
+    expect(link?.getAttribute("href")).toBe("/tests/test-1?view=definition");
     await act(async () => link!.click());
     await settle();
     expect(history.location.pathname).toBe("/tests/test-1");

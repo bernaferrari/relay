@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from "react";
-import { Check, Flag, ImagePlus, MoreHorizontal } from "lucide-react";
+import { Check, Flag, ImagePlus, MoreHorizontal, BookmarkPlus } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
 import { Textarea } from "@relay/ui-react/components/textarea";
 import {
@@ -127,6 +127,13 @@ export function CaptureReviewDecisions({
               <MoreHorizontal aria-hidden="true" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                disabled={disabled}
+                onClick={() => void submit("accept-as-reference")}
+              >
+                <BookmarkPlus aria-hidden="true" /> Accept as reference for future Runs
+                <span className="sr-only">{suffix}</span>
+              </DropdownMenuItem>
               <DropdownMenuItem
                 disabled={disabled}
                 onClick={() => void submit("need-more-evidence")}

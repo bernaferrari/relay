@@ -1,11 +1,11 @@
 /**
- * Reference screenshots: "Looks correct" makes a capture the reference for its
+ * Reference screenshots: "Accept as reference" makes a capture the reference for its
  * checkpoint, and later runs are compared with it. Unchanged captures are
  * approved automatically so people only review what actually changed.
  *
  * Scope of one reference: project + Test (without revision) + target profile
  * (device/browser and viewport) + capture slot family (checkpoint, data
- * configuration, iteration and phase — never the retry attempt).
+ * configuration, iteration, phase, and authored criterion — never the retry attempt).
  */
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -97,23 +97,31 @@ function targetKey(run: Pick<PersistedRun, "targetProfile" | "serial" | "platfor
 
 /** Checkpoint identity without the retry attempt; falls back to step, then caption. */
 export function captureReferenceSlotKey(item: CaptureReviewItem): string {
+  const criterion = createHash("sha256")
+    .update(JSON.stringify({ lookFor: item.lookFor?.trim() ?? "", policy: item.policy ?? null }))
+    .digest("hex")
+    .slice(0, 16);
   if (item.checkpointId) {
-    return captureReviewSlotFamilyId({
+    return `${captureReviewSlotFamilyId({
       checkpointId: item.checkpointId,
       ...(item.requirementId ? { requirementId: item.requirementId } : {}),
       ...(item.configuration ? { configuration: item.configuration } : {}),
       ...(item.invocation ? { invocation: item.invocation } : {}),
       ...(item.iteration !== undefined ? { iteration: item.iteration } : {}),
       ...(item.phase ? { phase: item.phase } : {}),
-    });
+    })}:criterion:${criterion}`;
   }
-  if (item.stepId) return `step:${item.stepId}`;
-  return `caption:${item.caption.trim().toLowerCase()}`;
+  if (item.stepId) return `step:${item.stepId}:criterion:${criterion}`;
+  return `caption:${item.caption.trim().toLowerCase()}:criterion:${criterion}`;
 }
 
 function referenceKey(run: ReferenceRun, slotKey: string): string {
   return createHash("sha256")
-    .update([projectKey(run), testKey(run), targetKey(run), slotKey].join("\n"))
+    .update(
+      ["capture-reference-policy:v2", projectKey(run), testKey(run), targetKey(run), slotKey].join(
+        "\n",
+      ),
+    )
     .digest("hex")
     .slice(0, 32);
 }
@@ -301,15 +309,31 @@ export function compareCaptureImages(
   options: { pixelThreshold?: number; changeThreshold?: number } = {},
 ): {
   changed: boolean;
+  comparable: boolean;
   sizeChanged: boolean;
   changeRatio: number;
+  consideredPixels: number;
+  ignoredPixels: number;
+  changedPixels: number;
+  pixelThreshold: number;
+  changeThreshold: number;
   changedBounds?: CaptureReferenceRegion;
   mask?: Uint8Array;
 } {
   const pixelThreshold = options.pixelThreshold ?? CAPTURE_REFERENCE_DEFAULTS.pixelThreshold;
   const changeThreshold = options.changeThreshold ?? CAPTURE_REFERENCE_DEFAULTS.changeThreshold;
   if (reference.width !== latest.width || reference.height !== latest.height) {
-    return { changed: true, sizeChanged: true, changeRatio: 1 };
+    return {
+      changed: true,
+      comparable: true,
+      sizeChanged: true,
+      changeRatio: 1,
+      consideredPixels: 0,
+      ignoredPixels: 0,
+      changedPixels: 0,
+      pixelThreshold,
+      changeThreshold,
+    };
   }
   const { width, height } = latest;
   const mask = new Uint8Array(width * height);
@@ -350,8 +374,14 @@ export function compareCaptureImages(
   const changeRatio = considered === 0 ? 0 : changedPixels / considered;
   return {
     changed: changeRatio > changeThreshold,
+    comparable: considered > 0,
     sizeChanged: false,
     changeRatio,
+    consideredPixels: considered,
+    ignoredPixels: width * height - considered,
+    changedPixels,
+    pixelThreshold,
+    changeThreshold,
     mask,
     ...(changedPixels
       ? {
@@ -427,8 +457,6 @@ async function compareItem(
   };
   const latestBytes = await readFrameFile(run.dir, item.framePath);
   if (!latestBytes) return undefined;
-  const latestSha = createHash("sha256").update(latestBytes).digest("hex");
-  if (latestSha === reference.sha256) return { state: "match", changeRatio: 0, ...described };
   const referenceBytes = await readCaptureReferenceImage(root, reference);
   if (!referenceBytes) return { state: "new", comparedAt };
   const diff = compareCaptureImages(
@@ -437,8 +465,13 @@ async function compareItem(
     reference.ignoreRegions,
   );
   return {
-    state: diff.changed ? "changed" : "match",
-    changeRatio: diff.changeRatio,
+    state: !diff.comparable ? "incomparable" : diff.changed ? "changed" : "match",
+    ...(diff.comparable ? { changeRatio: diff.changeRatio } : {}),
+    consideredPixels: diff.consideredPixels,
+    ignoredPixels: diff.ignoredPixels,
+    changedPixels: diff.changedPixels,
+    pixelThreshold: diff.pixelThreshold,
+    changeThreshold: diff.changeThreshold,
     ...(diff.sizeChanged ? { sizeChanged: true } : {}),
     ...(diff.changedBounds ? { changedBounds: diff.changedBounds } : {}),
     ...described,

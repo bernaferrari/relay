@@ -14,7 +14,17 @@ test("run.capture.review accepts Looks correct without a baseline action", () =>
   };
   assert.deepEqual(operationDefinition("run.capture.review").input.parse(input), input);
   assert.deepEqual(operationInputSchemas["run.capture.review"].parse(input), input);
-  assert.deepEqual([...CAPTURE_REVIEW_ACTIONS], ["accept", "report-issue", "need-more-evidence"]);
+  assert.deepEqual(
+    [...CAPTURE_REVIEW_ACTIONS],
+    ["accept", "accept-as-reference", "report-issue", "need-more-evidence"],
+  );
+  assert.equal(
+    operationDefinition("run.capture.review").input.parse({
+      ...input,
+      action: "accept-as-reference",
+    }).action,
+    "accept-as-reference",
+  );
   for (const action of ["approve-new-baseline", "approve", "reject"] as const) {
     assert.throws(
       () =>

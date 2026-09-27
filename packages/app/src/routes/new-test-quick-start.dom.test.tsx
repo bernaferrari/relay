@@ -46,4 +46,49 @@ describe("New test as this account", () => {
     });
     expect(onStart).toHaveBeenCalledWith("https://shop.example/", accounts[1]);
   });
+
+  it("keeps an unavailable account selected and blocks an implicit Guest start", async () => {
+    const onStart = vi.fn();
+    const onRetrySetup = vi.fn();
+    const host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    const render = async (setupStatus: "unavailable" | "ready") => {
+      await act(async () => {
+        root!.render(
+          <NewTestQuickStart
+            recent={[]}
+            initialAddress="https://shop.example/"
+            initialAccount="authfx:member:1"
+            setupStatus={setupStatus}
+            onRetrySetup={onRetrySetup}
+            accountsFor={() => []}
+            onStart={onStart}
+            onUseDevice={() => undefined}
+          />,
+        );
+      });
+    };
+    await render("unavailable");
+    expect(document.body.textContent).toContain("could not be loaded");
+    expect(document.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>("button")?.click();
+    });
+    expect(onStart).not.toHaveBeenCalled();
+
+    await render("ready");
+    expect(document.body.textContent).toContain("selected account is unavailable");
+    expect(document.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[role="radio"]')?.click();
+    });
+    expect(document.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(
+      false,
+    );
+    await act(async () => {
+      document.querySelector<HTMLFormElement>('form[aria-label="Start a test"]')!.requestSubmit();
+    });
+    expect(onStart).toHaveBeenCalledWith("https://shop.example/", undefined);
+  });
 });

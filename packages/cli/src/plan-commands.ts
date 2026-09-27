@@ -70,7 +70,7 @@ export const planCaptureReviewCommandPath = path("plan capture review", ["batchI
     "relay plan capture review <batch-id>",
     'relay plan capture review <batch-id> --input \'{"pending":true,"screen":"Settings","account":"Member"}\'',
   ],
-  note: "Planned, captured, blocked, missing, pending, accepted, and issue counts. Filters change the working set, not the denominator. Blocked is not missing. Looks correct makes that screenshot the reference for later runs.",
+  note: "Planned, captured, blocked, missing, pending, accepted, and issue counts. Filters change the working set, not the denominator. Blocked is not missing. Accept as reference explicitly governs later Runs.",
 });
 
 export const planCaptureReviewApplyCommandPath = path(
@@ -83,10 +83,10 @@ export const planCaptureReviewApplyCommandPath = path(
     inputHelp: [
       {
         name: "action",
-        type: '"accept" | "report-issue" | "need-more-evidence"',
+        type: '"accept" | "accept-as-reference" | "report-issue" | "need-more-evidence"',
         required: true,
         description:
-          "Looks correct, report an issue, or ask for more evidence. It becomes the reference for later runs.",
+          "Looks correct reviews this capture; accept-as-reference also governs later Runs. Or report an issue or ask for more evidence.",
       },
       {
         name: "items",
@@ -118,6 +118,6 @@ export const planCaptureReviewApplyCommandPath = path(
     examples: [
       'relay plan capture review apply <batch-id> --input \'{"action":"accept","items":[{"runId":"run-1","captureId":"frames/001.png::abc","imageSha256":"abc"}]}\' --actor human:local-cli --confirm',
     ],
-    note: "Looks correct makes that screenshot the reference for later runs. Bulk accept binds only the listed items that match any pending/screen/device/account filter.",
+    note: "Accept as reference explicitly governs later Runs. Bulk review binds only the listed items that match any pending/screen/device/account filter.",
   },
 );

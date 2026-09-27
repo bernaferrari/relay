@@ -1,7 +1,7 @@
 /**
  * Reference screenshots.
  *
- * When a person marks a captured screenshot "Looks correct", that image becomes
+ * When a person marks a captured screenshot "Accept as reference", that image becomes
  * the reference for the same checkpoint of the same Test on the same device
  * setup. Later runs are compared with it pixel by pixel: unchanged screenshots
  * are approved automatically, and only changed or new ones wait for a person.
@@ -17,7 +17,7 @@ export type CaptureReferenceRegion = {
   name?: string;
 };
 
-export const CAPTURE_REFERENCE_STATES = ["match", "changed", "new"] as const;
+export const CAPTURE_REFERENCE_STATES = ["match", "changed", "new", "incomparable"] as const;
 export type CaptureReferenceState = (typeof CAPTURE_REFERENCE_STATES)[number];
 
 /** Result of comparing one capture with its reference. */
@@ -30,6 +30,12 @@ export type CaptureReferenceComparison = {
   referenceApprovedBy?: { id: string; kind: ActorKind };
   /** Share of compared pixels that differ beyond the per-pixel threshold. */
   changeRatio?: number;
+  /** Pixel counts and tolerance used to reach this result. */
+  consideredPixels?: number;
+  ignoredPixels?: number;
+  changedPixels?: number;
+  pixelThreshold?: number;
+  changeThreshold?: number;
   /** Bounding box of every changed pixel, normalized. */
   changedBounds?: CaptureReferenceRegion;
   /** The reference and the new image have different dimensions. */

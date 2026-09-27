@@ -434,6 +434,10 @@ export type SpecificOperationMap = {
       run: OperationRecord;
       queue: CaptureReviewQueue;
       decision: CaptureReviewDecision;
+      referenceUpdate?: {
+        status: "updated" | "revoked" | "unchanged" | "failed";
+        message?: string;
+      };
     };
   };
   "run.visual-policy.get": {

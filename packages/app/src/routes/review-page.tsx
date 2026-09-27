@@ -13,13 +13,13 @@ import {
 } from "@relay/ui-react/components/popover";
 import {
   ArrowUpRight,
+  BookmarkPlus,
   Check,
   ChevronLeft,
   ChevronRight,
   CircleCheck,
   Flag,
   Keyboard,
-  MoreHorizontal,
   SquareDashed,
 } from "lucide-react";
 import type {
@@ -72,6 +72,13 @@ function StateBadge({ item }: { item: CaptureReviewItem }) {
       </span>
     );
   }
+  if (state === "incomparable") {
+    return (
+      <span className="shrink-0 rounded-md bg-warning/15 px-1.5 py-0.5 text-xs font-medium text-warning-foreground">
+        Needs comparison review
+      </span>
+    );
+  }
   return null;
 }
 
@@ -85,7 +92,8 @@ function timeAgo(value: number): string {
 }
 
 const SHORTCUTS: readonly [string, string][] = [
-  ["A", "Looks correct — becomes the reference"],
+  ["A", "Looks correct for this Run"],
+  ["Shift+A", "Accept as reference for future Runs"],
   ["R", "Report issue"],
   ["I", "Ignore areas on this screen"],
   ["J / ↓", "Next screenshot"],
@@ -187,6 +195,19 @@ export function ReviewPage() {
       setSelectedKey(card.key);
       setMessage(error instanceof Error ? error.message : "The decision was not saved.");
     },
+    onSuccess: (result, { card }) => {
+      if (result.referenceUpdate?.status !== "failed") return;
+      setDone((current) => {
+        const next = new Set(current);
+        next.delete(card.key);
+        return next;
+      });
+      setSelectedKey(card.key);
+      setMessage(
+        result.referenceUpdate.message ??
+          "The review was saved, but the reference could not be updated. Retry the review.",
+      );
+    },
     onSettled: refresh,
   });
 
@@ -230,7 +251,11 @@ export function ReviewPage() {
       const key = event.key.toLowerCase();
       if (key === "j" || event.key === "ArrowDown") move(1);
       else if (key === "k" || event.key === "ArrowUp") move(-1);
-      else if (key === "a") decide.mutate({ card: selected, action: "accept" });
+      else if (key === "a")
+        decide.mutate({
+          card: selected,
+          action: event.shiftKey ? "accept-as-reference" : "accept",
+        });
       else if (key === "r") {
         setReporting(true);
         requestAnimationFrame(() => noteRef.current?.focus());
@@ -245,31 +270,6 @@ export function ReviewPage() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [selected, editingIgnore, move, decide]);
-
-  // First screenshots have nothing to compare against. Accepting them all at
-  // once makes them the references, so later runs only surface real changes.
-  const [baseline, setBaseline] = useState<{ saved: number; total: number; failed: number }>();
-  const acceptAllNew = useMutation({
-    mutationFn: async () => {
-      const fresh = cardsOf(inbox.data, "new").filter((card) => !done.has(card.key));
-      setBaseline({ saved: 0, total: fresh.length, failed: 0 });
-      let next = 0;
-      const worker = async () => {
-        while (next < fresh.length) {
-          const card = fresh[next++]!;
-          try {
-            await service.review(card.entry.runId, card.item, "accept");
-            setDone((current) => new Set([...current, card.key]));
-            setBaseline((value) => value && { ...value, saved: value.saved + 1 });
-          } catch {
-            setBaseline((value) => value && { ...value, failed: value.failed + 1 });
-          }
-        }
-      };
-      await Promise.all(Array.from({ length: 4 }, worker));
-    },
-    onSettled: refresh,
-  });
 
   const reviewedCount = done.size;
   const changedCount = cardsOf(inbox.data, "changed").length;
@@ -321,40 +321,9 @@ export function ReviewPage() {
                 ))}
               </div>
             ) : null}
-            {newCount && !acceptAllNew.isSuccess ? (
-              <Popover>
-                <PopoverTrigger
-                  render={<Button size="icon-sm" variant="ghost" aria-label="Review options" />}
-                >
-                  <MoreHorizontal aria-hidden="true" />
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-80 p-4">
-                  <PopoverTitle>Set initial references</PopoverTitle>
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    Use all new screenshots as references without reviewing them individually.
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={acceptAllNew.isPending}
-                    onClick={() => acceptAllNew.mutate()}
-                  >
-                    {acceptAllNew.isPending && baseline
-                      ? `Saving ${baseline.saved} of ${baseline.total}…`
-                      : `Use all ${newCount} as references`}
-                  </Button>
-                </PopoverContent>
-              </Popover>
-            ) : null}
           </div>
         }
       />
-
-      {baseline && !acceptAllNew.isPending && baseline.failed ? (
-        <p className="border-b border-border/60 px-6 py-2 text-sm text-destructive" role="alert">
-          {baseline.failed} could not be saved. They are still in the list.
-        </p>
-      ) : null}
 
       {inbox.isPending ? (
         <p className="p-6 text-sm text-muted-foreground" role="status">
@@ -593,13 +562,21 @@ export function ReviewPage() {
 
                     <Button
                       size="sm"
+                      variant="outline"
+                      disabled={editingIgnore}
+                      onClick={() =>
+                        decide.mutate({ card: selected, action: "accept-as-reference" })
+                      }
+                    >
+                      <BookmarkPlus aria-hidden="true" />
+                      Accept as reference
+                      <kbd className="ml-1 text-xs opacity-60">⇧A</kbd>
+                    </Button>
+                    <Button
+                      size="sm"
                       className="ml-auto h-8"
                       disabled={editingIgnore}
-                      title={
-                        selected.item.reference?.state === "changed"
-                          ? "Replace the reference with this screenshot"
-                          : "Use this screenshot as the reference for future runs"
-                      }
+                      title="Accept this screenshot for this Run"
                       onClick={() => decide.mutate({ card: selected, action: "accept" })}
                     >
                       <Check aria-hidden="true" />

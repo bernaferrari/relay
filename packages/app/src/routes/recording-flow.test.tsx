@@ -4,7 +4,7 @@ import type { AuthoringRecordingEdit } from "@relay/protocol";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RelayApp } from "../app";
 import type {
   ProductRecordingState,
@@ -19,12 +19,28 @@ import type { BrowserSpacesProductService } from "../data/browser-spaces-product
 
 const target = { kind: "device", platform: "android", targetId: "emulator-5554" } as const;
 const roots: Root[] = [];
+const emptyBrowserSpaces = {
+  listSpaces: async () => [],
+} as unknown as BrowserSpacesProductService;
+const emptyAppResources = {
+  createApp: async (name: string) => ({ id: name, name }),
+  listVersions: async () => [],
+  listBrowserAccounts: async () => [],
+  listBrowserTargets: async () => [],
+} satisfies AppResourcesProductService;
+
+beforeEach(() => {
+  // The journey services are in-memory fakes. Shell queries must not contact a
+  // live Relay server whose response can outlive happy-dom's test window.
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Offline test fixture")));
+});
 
 afterEach(async () => {
   await act(async () => {
     for (const root of roots.splice(0)) root.unmount();
   });
   document.body.replaceChildren();
+  vi.unstubAllGlobals();
 });
 
 function state(
@@ -285,8 +301,8 @@ async function renderJourney(
         history={history}
         productService={productService}
         mapService={mapService}
-        browserSpacesService={browserSpacesService}
-        appResourcesService={appResourcesService}
+        browserSpacesService={browserSpacesService ?? emptyBrowserSpaces}
+        appResourcesService={appResourcesService ?? emptyAppResources}
       />,
     );
   });

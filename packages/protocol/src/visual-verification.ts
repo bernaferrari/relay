@@ -3,6 +3,7 @@ export const VISUAL_COMPARISON_CODES = [
   "VISUAL_CHANGED",
   "VISUAL_BASELINE_MISSING",
   "VISUAL_EXPECTED_VARIATION",
+  "VISUAL_NOT_COMPARABLE",
 ] as const;
 
 export type VisualComparisonCode = (typeof VISUAL_COMPARISON_CODES)[number];
@@ -108,7 +109,7 @@ export type VisualBaseline = {
 
 export type VisualFrameDiff = {
   index: number;
-  code: "FRAME_MATCH" | "FRAME_CHANGED" | "FRAME_ADDED" | "FRAME_REMOVED";
+  code: "FRAME_MATCH" | "FRAME_CHANGED" | "FRAME_ADDED" | "FRAME_REMOVED" | "FRAME_NOT_COMPARABLE";
   approved?: VisualFrameMetadata;
   latest?: VisualFrameMetadata;
   consideredPixels?: number;

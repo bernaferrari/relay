@@ -42,24 +42,26 @@ const routeApi = getRouteApi("/tests/$testId/edit");
 /** Editing lives on the Test page. This route only hosts live device sessions. */
 export function EditTestPage() {
   const { testId } = routeApi.useParams();
-  const search = routeApi.useSearch() as { step?: unknown; session?: unknown };
+  const search = routeApi.useSearch() as { step?: unknown; session?: unknown; app?: unknown };
   const navigate = useNavigate({ from: "/tests/$testId/edit" });
   const sessionId = typeof search.session === "string" ? search.session : undefined;
   const stepId = typeof search.step === "string" ? search.step : undefined;
+  const appMapId = typeof search.app === "string" ? search.app : undefined;
   useEffect(() => {
     if (sessionId) return;
     void navigate({
       to: "/tests/$testId",
       params: { testId },
-      search: stepId ? { step: stepId } : {},
+      search: { ...(stepId ? { step: stepId } : {}), ...(appMapId ? { app: appMapId } : {}) },
       replace: true,
     });
-  }, [navigate, sessionId, stepId, testId]);
+  }, [appMapId, navigate, sessionId, stepId, testId]);
   if (!sessionId) return <PageLoading label="Opening the Test…" />;
   return (
     <TestEditor
-      key={testId}
+      key={`${appMapId ?? "unscoped"}:${testId}`}
       testId={testId}
+      appMapId={appMapId}
       sessionId={sessionId}
       stepId={stepId}
       onStepChange={(step) =>
@@ -71,30 +73,36 @@ export function EditTestPage() {
 
 export function TestEditor(props: {
   testId: string;
+  appMapId?: string;
   stepId?: string;
   sessionId?: string;
   onStepChange(stepId: string | undefined): void;
   /** Embedded in the Test page: no page header; `stage` fills the right side. */
   stage?: ReactNode;
   onSelectedStepChange?(stepId: string | undefined): void;
+  onEditingStateChange?(state: "loading" | "dirty" | "saving" | "saved" | "failed"): void;
 }) {
   return <TestEditorDocument {...props} />;
 }
 
 function TestEditorDocument({
   testId,
+  appMapId,
   stepId: requestedStepIdProp,
   sessionId,
   onStepChange,
   stage,
   onSelectedStepChange,
+  onEditingStateChange,
 }: {
   testId: string;
+  appMapId?: string;
   stepId?: string;
   sessionId?: string;
   onStepChange(stepId: string | undefined): void;
   stage?: ReactNode;
   onSelectedStepChange?(stepId: string | undefined): void;
+  onEditingStateChange?(state: "loading" | "dirty" | "saving" | "saved" | "failed"): void;
 }) {
   const { testEditorService, liveTestEditorService, runService, queryClient, platform } =
     useRouteContext({
@@ -103,14 +111,14 @@ function TestEditorDocument({
   const embedded = stage !== undefined;
   const [editorExpanded, setEditorExpanded] = useState(Boolean(requestedStepIdProp || sessionId));
   const navigate = useNavigate();
-  const queryKey = useMemo(() => ["test-editor", testId] as const, [testId]);
+  const queryKey = useMemo(() => ["test-editor", testId, appMapId] as const, [testId, appMapId]);
   const liveQueryKey = useMemo(
     () => ["live-test-editor", testId, sessionId] as const,
     [sessionId, testId],
   );
   const document = useQuery({
     queryKey,
-    queryFn: () => testEditorService.get(testId),
+    queryFn: () => testEditorService.get(testId, appMapId),
     staleTime: 5_000,
     enabled: !sessionId,
   });
@@ -139,7 +147,7 @@ function TestEditorDocument({
     recentRuns,
     latestReport,
     loading: reportLoading,
-  } = useLatestTestReport(runService, testId);
+  } = useLatestTestReport(runService, testId, appMapId);
   const [saveNotice, setSaveNotice] = useState("Saved");
   const [workspaceView, setWorkspaceView] = useState<"steps" | "browser">("browser");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -153,6 +161,7 @@ function TestEditorDocument({
     platform,
     testId,
     setSaveNotice,
+    appMapId,
   );
   const draggedStepId = useRef<string | undefined>(undefined);
   const selectAfterSave = useRef<string | null | undefined>(undefined);
@@ -178,7 +187,10 @@ function TestEditorDocument({
       if (!current) throw new TypeError("Reload this Test before saving more changes.");
       return testEditorService.edit({ document: current, edits: transaction.forward });
     },
-    onMutate: () => setSaveNotice("Saving…"),
+    onMutate: () => {
+      onEditingStateChange?.("saving");
+      setSaveNotice("Saving…");
+    },
     onSuccess: (next, transaction) => {
       saveDocument(next);
       for (const edit of transaction.forward) {
@@ -503,6 +515,36 @@ function TestEditorDocument({
 
   const latestHistory = editorDocument?.history[0];
   const hasUnsavedDrafts = Object.keys(stepDrafts).length > 0 || Boolean(pendingCheckpoint);
+  useEffect(() => {
+    onEditingStateChange?.(
+      edit.isPending || historyAction.isPending || settings.isPending || repair.isPending
+        ? "saving"
+        : document.isError ||
+            liveEditor.isError ||
+            /Conflict|Could not|failed|unavailable/iu.test(saveNotice)
+          ? "failed"
+          : hasUnsavedDrafts ||
+              settingsName !== (editorDocument?.test.name ?? "") ||
+              settingsOrigin !== (editorDocument?.test.originApplication ?? "")
+            ? "dirty"
+            : editorDocument
+              ? "saved"
+              : "loading",
+    );
+  }, [
+    document.isError,
+    edit.isPending,
+    editorDocument,
+    hasUnsavedDrafts,
+    historyAction.isPending,
+    liveEditor.isError,
+    onEditingStateChange,
+    repair.isPending,
+    saveNotice,
+    settings.isPending,
+    settingsName,
+    settingsOrigin,
+  ]);
   const canRedo = latestHistory?.eventType === "test.undone" && Boolean(testEditorService.redo);
   const canUndo =
     Boolean(testEditorService.undo) &&
@@ -516,7 +558,10 @@ function TestEditorDocument({
           savedPaths={editorDocument.savedPaths}
           appMapId={editorDocument.appMapId}
           draft={stepDrafts[selected.step.id]}
-          onDraftChange={(draft) => updateStepDraft(selected.step.id, draft)}
+          onDraftChange={(draft) => {
+            onEditingStateChange?.("dirty");
+            updateStepDraft(selected.step.id, draft);
+          }}
           busy={edit.isPending}
           unsavedCheckpoint={pendingCheckpoint?.step.id === selected.step.id}
           onSave={(transaction) => {
@@ -627,6 +672,21 @@ function TestEditorDocument({
         }
       }}
     >
+      {embedded ? (
+        <TestEditorDoneButton
+          saving={
+            edit.isPending || historyAction.isPending || settings.isPending || repair.isPending
+          }
+          hasUnsavedChanges={
+            hasUnsavedDrafts ||
+            settingsName !== (editorDocument?.test.name ?? "") ||
+            settingsOrigin !== (editorDocument?.test.originApplication ?? "")
+          }
+          hasUnsavedCheckpoint={Boolean(pendingCheckpoint)}
+          onLeave={() => void navigate({ to: "/tests/$testId", params: { testId } })}
+          showDoneButton={false}
+        />
+      ) : null}
       {embedded ? null : (
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
           <div className="min-w-0">
@@ -672,8 +732,14 @@ function TestEditorDocument({
           open={settingsOpen}
           saving={settings.isPending}
           error={settings.error}
-          onNameChange={setSettingsName}
-          onOriginChange={setSettingsOrigin}
+          onNameChange={(name) => {
+            onEditingStateChange?.("dirty");
+            setSettingsName(name);
+          }}
+          onOriginChange={(origin) => {
+            onEditingStateChange?.("dirty");
+            setSettingsOrigin(origin);
+          }}
           onOpenChange={setSettingsOpen}
           onRetry={() => settings.mutate()}
           onSave={() => settings.mutate()}

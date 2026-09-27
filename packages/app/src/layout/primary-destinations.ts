@@ -36,20 +36,20 @@ export const everydayDestinations = [
 /** Setup that people visit now and then; shown under the everyday links. */
 export const utilityDestinations = [
   {
-    to: "/devices",
-    label: "Devices",
-    shortLabel: "Devices",
-    icon: MonitorSmartphone,
-    detail: "Browsers, phones, and tablets Relay can use",
-    keywords: "targets environments browsers devices",
-  },
-  {
     to: "/accounts",
     label: "Accounts",
     shortLabel: "Accounts",
     icon: KeyRound,
     detail: "Saved logins your tests can run as",
     keywords: "accounts logins sign-ins sign in users credentials",
+  },
+  {
+    to: "/devices",
+    label: "Devices",
+    shortLabel: "Devices",
+    icon: MonitorSmartphone,
+    detail: "Browsers, phones, and tablets Relay can use",
+    keywords: "targets environments browsers devices",
   },
 ] as const;
 

@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  ClipboardItem,
   clipboard,
   nativeImage,
   Notification,
@@ -133,7 +134,11 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       }
       const image = nativeImage.createFromDataURL(`data:${mime};base64,${base64}`);
       if (image.isEmpty()) throw new Error("Relay could not decode the captured image");
-      clipboard.writeImage(image);
+      return clipboard.write([
+        new ClipboardItem({
+          "image/png": new Blob([new Uint8Array(image.toPNG())], { type: "image/png" }),
+        }),
+      ]);
     },
   );
 

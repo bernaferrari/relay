@@ -563,10 +563,7 @@ test("Plan item keys stay unique when two Runs share identical PNG bytes", () =>
     formatPlanCaptureReviewQueue(queue),
     /2 planned · 2 captured · 0 blocked · 0 missing/u,
   );
-  assert.match(
-    formatPlanCaptureReviewQueue(queue),
-    /Looks correct makes that screenshot the reference/u,
-  );
+  assert.match(formatPlanCaptureReviewQueue(queue), /Accept as reference also governs later Runs/u);
 });
 
 test("Screens filters keep the planned denominator and group by checkpoint or configuration", () => {

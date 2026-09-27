@@ -58,7 +58,9 @@ test("browser and Electron smoke commands cover Live with existing a11y/layout h
   assert.match(browser, /opening \$\{appUrl\}\/tests/u);
   assert.match(electron, /waitForRoute\(page, "\/tests"\)/u);
   assert.match(browser, /clickNav\(page, "Devices", "\/devices"\)/u);
-  assert.match(electron, /\["Devices", "\/devices"\]/u);
+  assert.match(electron, /clickNav\(page, "Devices", "\/devices"\)/u);
+  assert.match(electron, /openRoute\(page, "\/changes"\)/u);
+  assert.match(electron, /clickNav\(page, "Runs", "\/runs"\)/u);
   for (const source of [browser, electron]) {
     assert.match(source, /AxeBuilder/u);
     assert.match(source, /assertAccessible/u);

@@ -474,6 +474,8 @@ export type RunTestOutcomeIntent = OutcomeTargetSelection & {
   kind: "run-test";
   appMapId?: string;
   testId: string;
+  /** Freeze the acknowledged Test document revision when supplied by an editor. */
+  revision?: "current" | { exact: number };
   /** Saved who-and-where; replaces targetId when present. */
   laneId?: string;
   targetProfileId?: string;

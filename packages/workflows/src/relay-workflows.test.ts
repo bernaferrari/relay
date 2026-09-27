@@ -317,7 +317,7 @@ test("runs as the account a Test was recorded with when that sign-in still exist
       authenticationFixtureId: "authfx:7f3c2a10-5b6d-4e8f-9a1b-2c3d4e5f6a7b:1",
     },
   };
-  const fixtures = (status: string) => ({
+  const fixtures = (status: "ready" | "expired"): ScriptedRelayStep => ({
     id: "target.browser-auth.list",
     output: {
       fixtures: [

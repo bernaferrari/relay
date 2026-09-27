@@ -44,8 +44,8 @@ const fixtures = [
   { id: "apps-error", heading: "Apps" },
   { id: "app-versions", heading: "Versions" },
   { id: "app-versions-error", heading: "Versions" },
-  { id: "app-accounts", heading: "Sign-ins" },
-  { id: "app-accounts-error", heading: "Sign-ins" },
+  { id: "app-accounts", heading: "Accounts" },
+  { id: "app-accounts-error", heading: "Accounts" },
   { id: "prerecord-ready", heading: "New test" },
   { id: "prerecord-connecting", heading: "New test" },
   { id: "prerecord-failure", heading: "New test" },
@@ -56,16 +56,15 @@ const fixtures = [
   },
   { id: "recording-active", heading: "Record test" },
   { id: "test-detail", heading: "Complete checkout and confirm the order" },
-  { id: "runs-large", heading: "Results" },
+  { id: "runs-large", heading: "Runs" },
   { id: "report-replay", heading: "Complete checkout" },
   { id: "report-failed", heading: "Complete checkout" },
   { id: "report-video", heading: "Complete checkout", video: true },
   { id: "report-evidence", heading: "Complete checkout", evidenceMedia: true },
   { id: "batch-completed", heading: "Checkout across saved accounts", batch: true },
-  { id: "sessions-list", heading: "Live" },
+  { id: "sessions-list", heading: "Activity" },
   { id: "session-detail", heading: "Complete checkout and confirm the order" },
   { id: "live-test-editor", heading: "Complete checkout and confirm the order" },
-  { id: "suites-list", heading: "Plans" },
   { id: "suite-detail", heading: "Release smoke" },
   { id: "environments-list", heading: "Browsers" },
   { id: "environment-detail", heading: "Checkout staging" },
@@ -349,7 +348,11 @@ async function assertLayout(page, fixture, viewport) {
       () => document.activeElement?.getAttribute("data-run-index") === "239",
     );
     const lastHref = await page.locator('[data-run-index="239"]').getAttribute("href");
-    if (lastHref !== "/runs/run-240") {
+    const lastUrl = new URL(lastHref ?? "", page.url());
+    if (
+      lastUrl.pathname !== "/runs/run-240" ||
+      !lastUrl.searchParams.get("returnTo")?.startsWith("/runs")
+    ) {
       throw new Error(`Windowed Run history lost the final Report URL (${lastHref ?? "missing"})`);
     }
     await page.keyboard.press("Home");
@@ -364,6 +367,29 @@ async function assertLayout(page, fixture, viewport) {
       if (viewport) viewport.scrollTop = 0;
       const main = document.querySelector("#main-content");
       if (main) main.scrollTop = 0;
+    });
+    await page
+      .waitForFunction(
+        () =>
+          [...document.querySelectorAll("[data-run-index]")]
+            .filter((row) => Number(row.getAttribute("data-run-index")) < 6)
+            .every((row) => !row.querySelector('[title="Loading screenshot"]')),
+        null,
+        { timeout: 5_000 },
+      )
+      .catch(async () => {
+        const pending = await page
+          .locator('[data-run-index] [title="Loading screenshot"]')
+          .evaluateAll((items) =>
+            items.map((item) => item.closest("[data-run-index]")?.getAttribute("data-run-index")),
+          );
+        throw new Error(`Run thumbnail previews did not settle: ${pending.join(", ")}`);
+      });
+  }
+  if (fixture.id === "batch-completed") {
+    await page.locator('[title="Loading screenshot"]').first().waitFor({
+      state: "detached",
+      timeout: 5_000,
     });
   }
   if (fixture.video) {
@@ -398,7 +424,7 @@ async function assertLayout(page, fixture, viewport) {
     }
   }
   if (fixture.id === "test-detail") {
-    await page.getByRole("button", { name: "Set up run", exact: true }).click();
+    await page.getByRole("button", { name: "Run settings", exact: true }).click();
     const targetSelect = page.getByRole("combobox", { name: "Device or browser" });
     if ((await targetSelect.count()) !== 1)
       throw new Error("Test detail did not render target setup");
@@ -408,8 +434,8 @@ async function assertLayout(page, fixture, viewport) {
       throw new Error(`Test detail did not render both targets (items ${targetItemCount})`);
     }
     await page.locator('[data-slot="select-item"]').first().click();
-    if (await page.getByRole("button", { name: "Run Test" }).isDisabled()) {
-      throw new Error("Test detail did not enable Run Test after target selection");
+    if (await page.getByRole("button", { name: "Run now" }).isDisabled()) {
+      throw new Error("Test detail did not enable Run now after target selection");
     }
     await page.getByRole("button", { name: "Run settings" }).click();
   }
@@ -485,7 +511,31 @@ async function run(options) {
         colorScheme: viewport.colorScheme ?? "light",
         reducedMotion: "reduce",
       });
+      await context.route("**/runs/*/thumbnail*", (route) =>
+        route.fulfill({ status: 404, body: "" }),
+      );
       const page = await context.newPage();
+      await page.addInitScript(() => {
+        if (
+          !["runs-large", "batch-completed"].includes(
+            new URLSearchParams(location.search).get("fixture"),
+          )
+        )
+          return;
+        window.IntersectionObserver = class {
+          constructor(callback) {
+            this.callback = callback;
+          }
+          observe(target) {
+            this.callback([{ isIntersecting: true, target }], this);
+          }
+          disconnect() {}
+          unobserve() {}
+          takeRecords() {
+            return [];
+          }
+        };
+      });
       await page.addInitScript(() => {
         // Every fixture owns its starting state, including when run alone.
         // Navigation keeps the context, but previous recordings must not leak.
@@ -510,7 +560,9 @@ async function run(options) {
           waitUntil: "domcontentloaded",
           timeout: START_TIMEOUT_MS,
         });
-        await page.getByRole("heading", { level: 1, name: fixture.heading }).waitFor();
+        await page.getByRole("heading", { level: 1, name: fixture.heading }).waitFor({
+          timeout: 5_000,
+        });
         if (fixture.id === "apps-error") {
           await page.getByRole("alert").waitFor({ timeout: START_TIMEOUT_MS });
         }

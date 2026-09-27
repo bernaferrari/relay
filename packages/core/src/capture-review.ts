@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { PNG } from "pngjs";
 import {
   actorKindFromId,
   type ActorKind,
@@ -41,6 +42,10 @@ export type CaptureReviewResult = {
   run: PersistedRun;
   queue: CaptureReviewQueue;
   decision: CaptureReviewDecision;
+  referenceUpdate: {
+    status: "updated" | "revoked" | "unchanged" | "failed";
+    message?: string;
+  };
 };
 
 export function assertHumanCaptureReviewActor(
@@ -86,7 +91,10 @@ export function applyCaptureReviewDecision(
       "Refresh the Run and review the exact image shown in the captures panel.",
     );
   }
-  if (item.status === "missing" && input.action === "accept") {
+  if (
+    item.status === "missing" &&
+    (input.action === "accept" || input.action === "accept-as-reference")
+  ) {
     throw new CaptureReviewError(
       "CAPTURE_REVIEW_MISSING",
       "A missing screenshot cannot be marked Looks correct",
@@ -218,7 +226,7 @@ export function applyCaptureReviewDecision(
   };
 }
 
-export function reviewPersistedCapture(
+export async function reviewPersistedCapture(
   root: string,
   run: PersistedRun,
   input: {
@@ -231,6 +239,11 @@ export function reviewPersistedCapture(
     expectedReviewVersion?: number;
   },
 ): Promise<CaptureReviewResult> {
+  assertHumanCaptureReviewActor(
+    input.actor,
+    "A human must decide this screenshot",
+    "Open the Run captures panel and ask a person to mark Looks correct, Report issue, or Need more evidence.",
+  );
   return withRunWriteLock(run.dir, async () => {
     const latest = (await readCompletedPersistedRun(run.dir)) ?? run;
     latest.dir = run.dir;
@@ -246,12 +259,30 @@ export function reviewPersistedCapture(
     );
     if (queued?.framePath && queued.imageSha256) {
       const bytes = await readFrameFile(latest.dir, queued.framePath);
+      if (!bytes && (input.action === "accept" || input.action === "accept-as-reference")) {
+        throw new CaptureReviewError(
+          "CAPTURE_REVIEW_MISSING",
+          "The captured image is no longer available",
+          "Recapture the screenshot before accepting it.",
+        );
+      }
       if (bytes && createHash("sha256").update(bytes).digest("hex") !== queued.imageSha256) {
         throw new CaptureReviewError(
           "CAPTURE_REVIEW_CONFLICT",
           `Tampered frame ${queued.framePath} no longer matches the recorded image`,
           "Restore the original screenshot or recapture it, then review that image.",
         );
+      }
+      if (bytes && (input.action === "accept" || input.action === "accept-as-reference")) {
+        try {
+          PNG.sync.read(bytes);
+        } catch {
+          throw new CaptureReviewError(
+            "CAPTURE_REVIEW_CONFLICT",
+            "The captured image cannot be decoded",
+            "Recapture the screenshot before accepting it.",
+          );
+        }
       }
     }
     const applied = applyCaptureReviewDecision(latest, input);
@@ -261,20 +292,36 @@ export function reviewPersistedCapture(
     const persisted = applied.changed
       ? await persistPersistedRun(root, latest, next, "capture-review")
       : latest;
-    if (applied.changed && queued) {
-      // "Looks correct" makes this exact image the reference for later runs;
-      // withdrawing it restores the previous reference.
-      // The person's decision is already saved; a reference failure must not undo it.
-      await (
-        input.action === "accept"
-          ? setCaptureReference(root, latest, queued, input.actor)
-          : revokeCaptureReference(root, latest, queued)
-      ).catch(() => undefined);
+    let referenceUpdate: CaptureReviewResult["referenceUpdate"] = { status: "unchanged" };
+    if (queued) {
+      // A repeat accept can repair a reference write that failed after the review was saved.
+      try {
+        if (input.action === "accept-as-reference") {
+          const reference = await setCaptureReference(root, latest, queued, input.actor);
+          referenceUpdate = reference
+            ? { status: "updated" }
+            : {
+                status: "failed",
+                message:
+                  "The screenshot review was saved, but the reference image could not be stored. Retry the review after recapturing the image.",
+              };
+        } else if (applied.changed) {
+          referenceUpdate = (await revokeCaptureReference(root, latest, queued))
+            ? { status: "revoked" }
+            : { status: "unchanged" };
+        }
+      } catch (error) {
+        referenceUpdate = {
+          status: "failed",
+          message: `The screenshot review was saved, but the reference update failed: ${error instanceof Error ? error.message : String(error)}. Retry this review.`,
+        };
+      }
     }
     return {
       run: persisted,
       queue: applied.queue,
       decision: applied.decision,
+      referenceUpdate,
     };
   });
 }

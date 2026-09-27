@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import { ApiError, RelayClient } from "@relay/client";
 import {
@@ -39,7 +39,11 @@ const projectId = "default";
 const batchId = "seeded-member-stranger-review";
 const runId = "pkg3-settings";
 const imagineRunId = "pkg3-imagine-unbound";
-const capturedSha = "aaa";
+const capturedPng = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4AWMAgv8AAQQBAP8H9UQAAAAASUVORK5CYII=",
+  "base64",
+);
+const capturedSha = createHash("sha256").update(capturedPng).digest("hex");
 const capturedCaption = "Member account settings";
 const capturedFrame = "frames/001.png";
 
@@ -155,6 +159,11 @@ test(
         batchId,
         caseIndex: 0,
       } as unknown as TestJob);
+      const savedSettingsRun = await readPersistedRun(runId);
+      assert.ok(savedSettingsRun);
+      const savedFrame = join(savedSettingsRun.dir, capturedFrame);
+      await mkdir(dirname(savedFrame), { recursive: true });
+      await writeFile(savedFrame, capturedPng);
       const imagineSlot = {
         checkpointId: "imagine",
         stepId: "imagine",
@@ -422,7 +431,7 @@ test(
       assert.match(html, new RegExp(coverage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"));
       assert.doesNotMatch(html, /runs passed/u);
       assert.doesNotMatch(html, /\d+ tests passed/u);
-      assert.match(html, /Looks correct makes that screenshot the reference for later runs/u);
+      assert.match(html, /Accept as reference also governs later Runs/u);
     } finally {
       await server?.close().catch(() => undefined);
       resetControlDatabaseCache();
@@ -793,10 +802,7 @@ test(
       const coverage = formatCaptureReviewCoverageSummary(afterAccept.queue.summary);
       assert.match(exportedHtml, new RegExp(coverage.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "u"));
       assert.doesNotMatch(exportedHtml, /runs passed/u);
-      assert.match(
-        exportedHtml,
-        /Looks correct makes that screenshot the reference for later runs/u,
-      );
+      assert.match(exportedHtml, /Accept as reference also governs later Runs/u);
       assert.equal(runIds.length, 8);
     } finally {
       await server?.close().catch(() => undefined);

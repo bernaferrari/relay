@@ -23,6 +23,7 @@ export const combineStartOperationInputSchemas = {
       capture: testCapturePolicy.optional(),
       executionMode: z.enum(["pilot", "all"]).optional(),
       sourceRevision: sourceRevisionSchema.optional(),
+      expectedRevision: z.number().int().nonnegative().optional(),
       pilotCaseIndex: z.number().int().nonnegative().optional(),
       selectedCellIds: z.array(identifier("Combine cell identifier")).optional(),
       cell: identifier("World or Combine cell selector").optional(),

@@ -372,7 +372,9 @@ export function CaptureReviewPanel({
                             ? "Not captured"
                             : item.status === "accepted"
                               ? decidedByReference(item.decidedBy)
-                                ? "Matches reference"
+                                ? (item.reference?.changeRatio ?? 0) > 0
+                                  ? "Matches reference within tolerance"
+                                  : "Matches reference"
                                 : "Looks correct"
                               : item.status === "issue"
                                 ? "Issue reported"
@@ -380,9 +382,11 @@ export function CaptureReviewPanel({
                                   ? "More evidence needed"
                                   : item.reference?.state === "changed"
                                     ? `Changed ${((item.reference.changeRatio ?? 0) * 100).toFixed(1)}%`
-                                    : item.reference?.state === "new"
-                                      ? "New · no reference yet"
-                                      : "Pending review"}
+                                    : item.reference?.state === "incomparable"
+                                      ? "Cannot compare · review needed"
+                                      : item.reference?.state === "new"
+                                        ? "New · no reference yet"
+                                        : "Pending review"}
                       </span>
                       {item.note ? <span className="min-w-0 basis-full">{item.note}</span> : null}
                     </span>
@@ -448,8 +452,10 @@ export function CaptureReviewPanel({
                     : "This screenshot was not captured. Check the run’s steps, then set up another run to collect it."
                   : selected.status === "accepted"
                     ? decidedByReference(selected.decidedBy)
-                      ? "Matches the approved reference — approved automatically."
-                      : "Looks correct — this screenshot is now the reference for later runs."
+                      ? (selected.reference?.changeRatio ?? 0) > 0
+                        ? "Within the approved reference tolerance — approved automatically."
+                        : "Matches the approved reference — approved automatically."
+                      : "Looks correct — a person reviewed this screenshot."
                     : selected.status === "issue"
                       ? "Reported as an issue. Execution and automated checks are unchanged."
                       : selected.status === "need-more-evidence"

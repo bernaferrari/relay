@@ -419,6 +419,15 @@ function editorSteps(): HTMLButtonElement[] {
   return [...(list?.querySelectorAll<HTMLButtonElement>("button[aria-pressed]") ?? [])];
 }
 
+function editorIsHidden(): boolean {
+  return (
+    document
+      .querySelector("#test-steps-title")
+      ?.closest('[role="tabpanel"]')
+      ?.hasAttribute("hidden") ?? false
+  );
+}
+
 async function click(element: HTMLElement) {
   await act(async () => element.click());
   await settle();
@@ -447,7 +456,8 @@ describe("Run and Report", () => {
       fake.service,
       platformWithStorage().platform,
     );
-    expect(editorSteps()).toHaveLength(0);
+    expect(editorSteps()).toHaveLength(3);
+    expect(editorIsHidden()).toBe(true);
     expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
       "Result",
     );
@@ -459,7 +469,8 @@ describe("Run and Report", () => {
     expect(history.location.search).toContain("view=definition");
     expect(history.location.search).toContain("step=step-check");
     await click(button("Result"));
-    expect(editorSteps()).toHaveLength(0);
+    expect(editorSteps()).toHaveLength(3);
+    expect(editorIsHidden()).toBe(true);
     await click(button("Test"));
     expect(history.location.search).toContain("step=step-check");
     expect(
@@ -598,35 +609,38 @@ describe("Run and Report", () => {
   it.each([
     { dimensions: [] },
     { dimensions: [{ id: "language", name: "Language", kind: "language", values: [] }] },
-  ])("offers a normal run when no complete data set exists (%j)", async ({ dimensions }) => {
-    const fake = fakeRunService();
-    const preview = vi.fn();
-    const runAcross = {
-      getSetup: vi.fn(async () => ({
-        appMapId: "settings-language-proof",
-        appMapRevision: 1,
-        testId: "test-1",
-        testName: "Change the app language",
-        appName: "Settings Language Proof",
-        dataSet: { name: "Default data", dimensions },
-      })),
-      preview,
-    } as unknown as RunAcrossProductService;
-    await renderRun(
-      "/tests/test-1/run-across",
-      fake.service,
-      platformWithStorage().platform,
-      runAcross,
-    );
-    expect(document.body.textContent).toContain("No data values to run across");
-    expect(document.querySelector('[aria-label="Search values"]')).toBeNull();
-    expect(document.querySelector('[aria-label="Run configuration"]')).toBeNull();
-    const link = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
-      (item) => item.textContent === "Set up a run",
-    );
-    expect(link?.getAttribute("href")).toContain("/tests/test-1?setup=run");
-    expect(preview).not.toHaveBeenCalled();
-  });
+  ])(
+    "opens the canonical Run setup when no complete data set exists (%j)",
+    async ({ dimensions }) => {
+      const fake = fakeRunService();
+      const preview = vi.fn();
+      const runAcross = {
+        getSetup: vi.fn(async () => ({
+          appMapId: "settings-language-proof",
+          appMapRevision: 1,
+          testId: "test-1",
+          testName: "Change the app language",
+          appName: "Settings Language Proof",
+          dataSet: { name: "Default data", dimensions },
+        })),
+        preview,
+      } as unknown as RunAcrossProductService;
+      await renderRun(
+        "/tests/test-1/run-across",
+        fake.service,
+        platformWithStorage().platform,
+        runAcross,
+      );
+      expect(document.body.textContent).toContain("Run this Test across configurations");
+      expect(document.querySelector('[aria-label="Search values"]')).toBeNull();
+      expect(document.querySelector('[aria-label="Run configuration"]')).toBeNull();
+      const link = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
+        (item) => item.textContent === "Choose configurations",
+      );
+      expect(link?.getAttribute("href")).toContain("/tests/test-1?setup=run");
+      expect(preview).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([false, true])(
     "waits for every data dimension and uses the selected target (stored workspace: %s)",
@@ -682,7 +696,7 @@ describe("Run and Report", () => {
       expect(preview).not.toHaveBeenCalled();
       expect(document.body.textContent).toContain("Choose a value for Language, Region.");
       expect(document.querySelector('[role="alert"]')).toBeNull();
-      expect(button("Run first case").disabled).toBe(true);
+      expect(button("Run selected cases").disabled).toBe(true);
 
       const values = [...document.querySelectorAll<HTMLElement>('[role="checkbox"]')];
       expect(values).toHaveLength(2);
@@ -695,9 +709,12 @@ describe("Run and Report", () => {
       expect(preview).toHaveBeenCalledTimes(1);
       expect(preview.mock.calls[0]?.[0].target.label).toBe("Checkout browser");
       expect(document.body.textContent).toContain("1 case on Checkout browser");
-      await click(button("Run first case"));
+      await click(button("Run selected case"));
       expect(startPilot).toHaveBeenCalledWith(
-        expect.objectContaining({ target: expect.objectContaining({ label: "Checkout browser" }) }),
+        expect.objectContaining({
+          target: expect.objectContaining({ label: "Checkout browser" }),
+          executionMode: "all",
+        }),
       );
     },
   );
@@ -905,10 +922,11 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Review result");
     expect(document.body.textContent).not.toContain("Investigate this failure");
     expect(document.body.textContent).toMatch(/\d+(?:\.\d+)?\s?s/);
-    expect([...document.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
-      "Test",
-      "Result",
-    ]);
+    expect(
+      [...document.querySelectorAll('[role="tablist"][aria-label="Test views"] [role="tab"]')].map(
+        (tab) => tab.textContent,
+      ),
+    ).toEqual(["Test", "Result"]);
     expect(storage.values.has("activeRunWorkflow")).toBe(false);
 
     const fullReport = [...document.querySelectorAll("a")].find((item) =>

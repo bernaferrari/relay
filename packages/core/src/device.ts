@@ -1022,16 +1022,6 @@ export async function scrollUp(device: Device, amount = 0.5): Promise<void> {
   );
 }
 
-function isPhysicalIosTarget(): boolean {
-  if (selectedPlatform() !== "ios") return false;
-  try {
-    const context = currentTargetContext();
-    return context.kind === "device" && isPhysicalRunnerRoute(resolveAppleControlRoute(context));
-  } catch {
-    return false;
-  }
-}
-
 export async function screenshot(device: Device, path: string): Promise<void> {
   await controlled(() => device.capture.screenshot({ path }));
 }
@@ -1071,13 +1061,6 @@ export async function pressResolvedControl(
     return resolution;
   }
   if (resolution.method === "label" && target.label?.trim()) {
-    // On a physical device the runner re-resolves the label itself and picks
-    // the first same-label element, which is the title text rather than the
-    // row. Relay already ranked the right point; press that instead.
-    if (selectedPlatform() === "ios" && isPhysicalIosTarget()) {
-      await pressPoint(device, resolution.point.x, resolution.point.y, repeated);
-      return resolution;
-    }
     try {
       await pressLabel(device, target.label, repeated);
     } catch (error) {

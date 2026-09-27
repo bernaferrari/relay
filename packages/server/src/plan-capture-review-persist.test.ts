@@ -268,7 +268,7 @@ test(
       assert.match(html, new RegExp(escapeRegExp(freezeCoverage), "u"));
       assert.doesNotMatch(html, /runs passed/u);
       assert.doesNotMatch(html, /\d+ tests passed/u);
-      assert.match(html, /Looks correct makes that screenshot the reference for later runs/u);
+      assert.match(html, /Accept as reference also governs later Runs/u);
       assert.equal(checklist.filter((row) => row.status === "pending review").length, 29);
       assert.equal(checklist.filter((row) => row.status === "could not run").length, 1);
       assert.equal(checklist.filter((row) => row.status === "passed").length, 0);

@@ -719,7 +719,10 @@ test("identity-ignore kind on a capture-review mask is dropped", () => {
 });
 
 test("Use as baseline remains a separate explicit action from Looks correct", () => {
-  assert.deepEqual([...CAPTURE_REVIEW_ACTIONS], ["accept", "report-issue", "need-more-evidence"]);
+  assert.deepEqual(
+    [...CAPTURE_REVIEW_ACTIONS],
+    ["accept", "accept-as-reference", "report-issue", "need-more-evidence"],
+  );
   assert.equal(
     (CAPTURE_REVIEW_ACTIONS as readonly string[]).includes("approve-new-baseline"),
     false,

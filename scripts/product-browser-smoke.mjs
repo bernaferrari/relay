@@ -249,7 +249,7 @@ async function assertAccessible(page, route) {
   const detail = result.violations
     .map((violation) => {
       const targets = violation.nodes
-        .flatMap((node) => node.target)
+        .map((node) => `${node.target.join(", ")} (${node.failureSummary ?? "no detail"})`)
         .slice(0, 3)
         .join(", ");
       return `${violation.id} (${violation.impact ?? "unknown"}): ${targets}`;
@@ -329,7 +329,7 @@ async function runSmoke(options) {
     await assertKeyboardFocus(page);
     await checkAccessibility();
 
-    trace("checking Tests, Live, Agent Debug, Devices, Changes, Results and Settings routes");
+    trace("checking Tests, Live, Agent Debug, Devices, Changes, Runs and Settings routes");
     await clickNav(page, "Tests", "/tests");
     await checkAccessibility();
     if (await page.getByRole("link", { name: "Live", exact: true }).count()) {
@@ -352,9 +352,10 @@ async function runSmoke(options) {
     await checkAccessibility();
     await clickNav(page, "Devices", "/devices");
     await checkAccessibility();
-    await clickNav(page, "Changes", "/changes");
+    trace("Changes is reached through search; opening its route directly");
+    await openRoute(page, "/changes");
     await checkAccessibility();
-    await clickNav(page, "Results", "/runs");
+    await clickNav(page, "Runs", "/runs");
     await checkAccessibility();
     const reportLink = page.locator('a[href*="#/runs/"]').first();
     await reportLink.waitFor({ state: "attached", timeout: 3_000 }).catch(() => {});
@@ -365,6 +366,14 @@ async function runSmoke(options) {
         timeout: CHECK_TIMEOUT_MS,
       });
       await page.locator("#main-content").waitFor({ state: "attached" });
+      await page.waitForFunction(
+        () => {
+          const title = document.querySelector("#main-content h1")?.textContent?.trim();
+          return Boolean(title && title !== "Runs");
+        },
+        null,
+        { timeout: CHECK_TIMEOUT_MS },
+      );
       reportChecked = true;
       await checkAccessibility();
     }

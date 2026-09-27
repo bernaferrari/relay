@@ -13,11 +13,13 @@ export function TestEditorDoneButton({
   hasUnsavedChanges,
   hasUnsavedCheckpoint,
   onLeave,
+  showDoneButton = true,
 }: {
   saving: boolean;
   hasUnsavedChanges: boolean;
   hasUnsavedCheckpoint: boolean;
   onLeave(): void;
+  showDoneButton?: boolean;
 }) {
   const blocker = useBlocker({
     shouldBlockFn: ({ current, next }) =>
@@ -30,15 +32,17 @@ export function TestEditorDoneButton({
   });
   return (
     <>
-      <Button
-        disabled={saving}
-        onClick={() => {
-          if (saving) return;
-          onLeave();
-        }}
-      >
-        {saving ? "Saving…" : "Done editing"}
-      </Button>
+      {showDoneButton ? (
+        <Button
+          disabled={saving}
+          onClick={() => {
+            if (saving) return;
+            onLeave();
+          }}
+        >
+          {saving ? "Saving…" : "Done editing"}
+        </Button>
+      ) : null}
       <Dialog
         open={blocker.status === "blocked"}
         onOpenChange={(open) => {

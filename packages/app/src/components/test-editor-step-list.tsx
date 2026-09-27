@@ -122,7 +122,7 @@ export function TestEditorStepOutline({
                         originEvidenceMissing,
                         platformBlocker: stepPlatformBlockers?.[entry.step.id],
                       })
-                        .split(" · ")[0]
+                        .split(" · ")[0]!
                         .replace(/^Ready$/, "")}
                     </small>
                   </span>

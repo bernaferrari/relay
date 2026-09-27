@@ -89,7 +89,7 @@ export function NewTestPage() {
   const [quickProgress, setQuickProgress] = useState<string>();
   const accounts = useQuery({
     queryKey: ["new-test", "browser-accounts"],
-    queryFn: () => appResourcesService.listBrowserAccounts().catch(() => []),
+    queryFn: () => appResourcesService.listBrowserAccounts(),
     staleTime: 30_000,
   });
   // The login last used per website, so the daily case is one click.
@@ -143,13 +143,7 @@ export function NewTestPage() {
   });
   const savedBrowsers = useQuery({
     queryKey: ["browser-spaces"],
-    queryFn: async () => {
-      try {
-        return await browserSpacesService.listSpaces();
-      } catch {
-        return [];
-      }
-    },
+    queryFn: () => browserSpacesService.listSpaces(),
     staleTime: 10_000,
     retry: false,
   });
@@ -403,6 +397,11 @@ export function NewTestPage() {
     const host = websiteHost(url);
     setQuickError(undefined);
     try {
+      if (!accounts.isSuccess || !savedBrowsers.isSuccess) {
+        throw new Error(
+          "Saved accounts or browsers are unavailable. Check the connection and retry.",
+        );
+      }
       setQuickProgress(account ? `Opening ${host} as ${account.name}…` : `Opening ${host}…`);
       const typedPath = new URL(url).pathname;
       const saved = savedBrowsers.data?.find(
@@ -598,6 +597,17 @@ export function NewTestPage() {
         {setupMode === "website" && !loading && !blocksNewRecording ? (
           <NewTestQuickStart
             recent={recentWebsites(savedBrowsers.data ?? [])}
+            setupStatus={
+              accounts.isError || savedBrowsers.isError
+                ? "unavailable"
+                : accounts.isSuccess && savedBrowsers.isSuccess
+                  ? "ready"
+                  : "loading"
+            }
+            onRetrySetup={() => {
+              void accounts.refetch();
+              void savedBrowsers.refetch();
+            }}
             manualAction={<NewTestDraftDialog />}
             {...(quickProgress ? { progress: quickProgress } : {})}
             {...(quickError ? { error: quickError } : {})}
@@ -606,11 +616,12 @@ export function NewTestPage() {
             {...(requestedSite ? { initialAddress: requestedSite } : {})}
             {...(requestedAccount
               ? {
-                  initialAccount: (accounts.data ?? []).find(
-                    (item) =>
-                      item.fixture.id === requestedAccount ||
-                      item.fixture.reference === requestedAccount,
-                  )?.fixture.reference,
+                  initialAccount:
+                    (accounts.data ?? []).find(
+                      (item) =>
+                        item.fixture.id === requestedAccount ||
+                        item.fixture.reference === requestedAccount,
+                    )?.fixture.reference ?? requestedAccount,
                 }
               : {})}
             onStart={(url, account) => void startWebsiteTest(url, account)}
@@ -806,6 +817,22 @@ export function NewTestPage() {
                         onClick={() => void targets.refetch()}
                       >
                         Check again
+                      </Button>
+                    </div>
+                  </div>
+                ) : savedBrowsers.isError ? (
+                  <div className="grid min-h-0 w-full place-items-center p-6">
+                    <div className="grid max-w-sm gap-3 text-center">
+                      <p role="alert" className="text-sm text-destructive">
+                        Saved browsers could not be loaded. Your existing browser choices are
+                        unavailable.
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void savedBrowsers.refetch()}
+                      >
+                        Retry browser lookup
                       </Button>
                     </div>
                   </div>

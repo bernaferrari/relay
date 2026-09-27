@@ -70,6 +70,7 @@ import { compensateCombineStartFailure } from "./combine-start-compensation.js";
 
 type CombineStartRequest = {
   appMapId?: string;
+  expectedRevision?: number;
   testId?: string;
   combineId?: string;
   variableIds?: string[];
@@ -236,6 +237,12 @@ async function executeCombineStartUnlocked(
   }
   const loaded = await readAppMap(scope.projectId, body.appMapId.trim());
   if (!loaded) throw new HttpError(404, `App Map ${body.appMapId} not found`);
+  if (body.expectedRevision !== undefined && loaded.revision !== body.expectedRevision) {
+    throw new HttpError(409, "The Test changed since this Run was prepared", {
+      code: "TEST_REVISION_CONFLICT",
+      recovery: "Reload the Test, review the saved changes, then start this Run again.",
+    });
+  }
   const combine = body.combineId?.trim() ? loaded.combines?.[body.combineId.trim()] : undefined;
   if (body.combineId?.trim() && !combine) {
     throw new HttpError(404, `Combination ${body.combineId} not found`);

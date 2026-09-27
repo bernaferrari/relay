@@ -62,7 +62,7 @@ export function createRelayRunOutcomeJobs(
         appMapId,
         testId: intent.testId,
         target,
-        revision: "current",
+        revision: intent.revision ?? "current",
         ...(intent.targetProfileId ? { targetProfileId: intent.targetProfileId } : {}),
         ...(intent.startup ? { startup: intent.startup } : {}),
         ...(intent.sourceRevision ? { sourceRevision: intent.sourceRevision } : {}),

@@ -712,7 +712,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
         },
         {
           name: "action",
-          type: '"accept" | "report-issue" | "need-more-evidence"',
+          type: '"accept" | "accept-as-reference" | "report-issue" | "need-more-evidence"',
           required: true,
           description:
             "Looks correct (also makes this image the reference for later runs), report an issue, or ask for more evidence.",
@@ -727,7 +727,7 @@ export const cliOperationDescriptors: readonly CliOperationDescriptor[] = [
       examples: [
         'relay run capture review <run-id> --input \'{"captureId":"frames/001.png::abc","action":"accept","imageSha256":"abc"}\' --actor human:local-cli',
       ],
-      note: "Looks correct makes this exact image the reference; later unchanged screenshots are approved automatically. Review does not require an AI key.",
+      note: "Looks correct reviews this exact image. Accept as reference makes it the reference for later matching Runs. Review does not require an AI key.",
     }),
   ),
   mapped(

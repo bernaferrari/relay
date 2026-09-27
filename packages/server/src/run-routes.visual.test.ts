@@ -209,8 +209,8 @@ test("run routes compare durable visual evidence and require explicit review dec
     assert.equal((policyUpdate.value.policy as { revision: number }).revision, 1);
     assert.equal(
       (policyUpdate.value.comparison as { code: string }).code,
-      "VISUAL_MATCH",
-      "a reviewed ignore region changes comparison semantics without replacing the baseline",
+      "VISUAL_NOT_COMPARABLE",
+      "a full-frame ignore region leaves no pixels available for comparison",
     );
 
     const kept = await requestRoute("POST", "/runs/latest-run/visual-review", {
