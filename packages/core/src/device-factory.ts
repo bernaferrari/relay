@@ -3,7 +3,7 @@ import { createDeviceObservationFacade } from "./device-observation-membrane.js"
 import type { TargetContext } from "./target-context.js";
 
 /**
- * Device provider seam (Phase 4 /  cloud-ready).
+ * Device provider seam (Phase 4 / cloud-ready).
  *
  * Routing today:
  * - `device`  → LocalAgentDevice via {@link createDevice} (default, unchanged)

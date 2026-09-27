@@ -80,4 +80,8 @@ evidence/
 # Managed worktrees are independent checkouts, not root workspace source.
 # git worktrees (e.g. .worktrees/next-feature)
 .worktrees/
+
+# Local plans and product docs. Kept on disk only.
+/docs/
+/plans/
 packages/ios-preview-producer/ios-preview-producer

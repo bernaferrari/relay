@@ -2,7 +2,7 @@ import type { TargetProfile } from "./target-contract.js";
 import type { NavigationProofCursorArtifact } from "./navigation-proof.js";
 import type { StateFixture } from "./exploration-policy.js";
 
-/** -shaped explore crawl strategies (local-first here/do/ground loop). */
+/** Explore crawl strategies (local-first here/do/ground loop). */
 export type DiscoveryExploreStrategy = "surface" | "timeline" | "hard-edges";
 
 export type DiscoveryExploreStopCode = "complete" | "cancelled" | "budget" | "left_app" | "error";
@@ -261,7 +261,7 @@ export type DiscoveryCoverageReport = {
   explorationTimeline?: DiscoveryExplorationTimeline;
   /** Why explore stopped short when evidence exists on the anchor session. */
   blockedReasons?: DiscoveryBlockedReason[];
-  /** -shaped explore completion for the anchor session. */
+  /** Explore completion for the anchor session. */
   exploreOutcome?: DiscoveryExploreOutcome;
 };
 
