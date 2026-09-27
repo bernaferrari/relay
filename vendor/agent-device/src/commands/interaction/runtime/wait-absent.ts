@@ -3,6 +3,7 @@ import { isUnreadableCaptureContentError } from '@agent-device/contracts/android
 import { AppError } from '@agent-device/kernel/errors';
 import {
   absenceCaptureOptionRefusal,
+  isUnprovableAbsence,
   type AbsenceObservation,
 } from '@agent-device/selectors/absence-observation';
 import {
@@ -21,6 +22,7 @@ import type {
 } from './selector-wait.ts';
 import {
   createWaitPolling,
+  isSelfReportedWaitDeadline,
   type WaitFailureEvidence,
   waitTimeoutError,
   type WaitPollDeadline,
@@ -63,7 +65,7 @@ export async function waitForAbsent<Runtime extends SelectorWaitRuntime>(
           selectorExpression,
           runtime.backend.platform,
         );
-        if (observation.kind === 'sparse' || observation.kind === 'truncated') {
+        if (isUnprovableAbsence(observation.kind)) {
           throw absenceObservationError(selectorExpression, observation, 'wait');
         }
         return observation;
@@ -87,10 +89,10 @@ export async function waitForAbsent<Runtime extends SelectorWaitRuntime>(
     await polling.sleepUntilNextPoll();
   }
 
-  // A runner restart is the authoritative deadline cause even when an earlier
-  // readable poll saw the target. Returning stale target-present evidence would
-  // hide the retriable restart and make callers stop retrying the wrong reason.
-  if (deadline === 'runner-restart-exhausted') {
+  // A self-reported deadline cause is authoritative even when an earlier readable
+  // poll saw the target. Returning stale target-present evidence would hide the
+  // retriable cause and make callers stop retrying for the wrong reason.
+  if (isSelfReportedWaitDeadline(deadline)) {
     throw waitTimeoutError(
       `wait absent timed out for selector: ${selectorExpression}`,
       polling,
@@ -130,8 +132,6 @@ function isWaitAbsentUnreadableError(error: unknown): boolean {
   return (
     details?.command === 'wait' &&
     details.predicate === 'absent' &&
-    (details.observation === 'sparse' ||
-      details.observation === 'truncated' ||
-      details.observation === 'unreadable')
+    (isUnprovableAbsence(details.observation) || details.observation === 'unreadable')
   );
 }

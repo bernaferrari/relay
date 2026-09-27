@@ -205,13 +205,34 @@ test('Android refuses the action-button fact on every kind', async () => {
       runtimeDevice,
     );
     // No `input keyevent` reaches a Shortcut the way an iPhone Action Button press does, so this
-    // is a platform-leaf refusal on every kind rather than the shared touch gate `home` rides.
+    // is the system-button family refusal on every kind rather than the touch gate `home` rides.
     expect(binding.facts.operations.actionButton).toEqual({
       available: false,
       reason: 'unsupported-platform-leaf',
-      hint: 'action-button presses iPhone Action Button hardware; Android has no equivalent key event.',
+      hint: 'Android has no key event for this system button.',
     });
     expect(binding.operations.actionButton).toBeUndefined();
+  }
+});
+
+test('Android refuses the fold fact on every kind', async () => {
+  for (const runtimeDevice of [
+    ANDROID_EMULATOR,
+    { ...ANDROID_EMULATOR, kind: 'device' as const },
+    UNKNOWN_KIND_DEVICE,
+  ]) {
+    const binding = await bindOrdinary(
+      createAndroidPlatformRuntime(androidNavigationHost()),
+      runtimeDevice,
+    );
+    // fold drives only foldable iPhone simulators; the Android emulator posture control is not
+    // driven yet.
+    expect(binding.facts.operations.setFoldPose).toEqual({
+      available: false,
+      reason: 'unsupported-platform-leaf',
+      hint: 'fold drives the hinge of a foldable iPhone simulator; the Android emulator posture control is not driven by agent-device yet.',
+    });
+    expect(binding.operations.setFoldPose).toBeUndefined();
   }
 });
 
@@ -236,9 +257,12 @@ test('admits both clipboard halves and the app switcher on every real Android ki
     // R57: the deep link opens through `am start` on the same cell.
     expect(binding.facts.operations.triggerAppEvent).toEqual({ available: true });
     expect(binding.operations.triggerAppEvent).toBeTypeOf('function');
-    // R58: settings run over adb (`appops`, `settings put`, `pm clear`, …) on that cell too.
+    // R58: settings run over adb (`appops`, `settings put`, `pm clear`, …) on that cell too, and
+    // so does the read leg (`settings get system font_scale`), which every Android kind can answer.
     expect(binding.facts.operations.setSetting).toEqual({ available: true });
     expect(binding.operations.setSetting).toBeTypeOf('function');
+    expect(binding.facts.operations.readSetting).toEqual({ available: true });
+    expect(binding.operations.readSetting).toBeTypeOf('function');
     // R59: all four alert legs read the same dump and tap with the same `input tap`.
     for (const operation of ['readAlert', 'awaitAlert', 'acceptAlert', 'dismissAlert'] as const) {
       expect(binding.facts.operations[operation]).toEqual({ available: true });

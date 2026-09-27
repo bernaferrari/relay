@@ -1,11 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import { AppError } from '@agent-device/kernel/errors';
-import {
-  buildSimctlListArgs,
-  listAppleSimulators,
-  parseSimctlAppleDevices,
-} from './simulator-inventory.ts';
+import { listAppleSimulators, parseSimctlAppleDevices } from './simulator-inventory.ts';
 import { commandResult, createInventoryHost, inventoryScope } from './inventory.fixtures.ts';
 
 const simulatorPayload = {
@@ -68,6 +64,27 @@ test('simctl parser keeps available supported runtimes and their target semantic
   ]);
 });
 
+test('simctl parser classifies visionOS from the runtime when the name is not descriptive', () => {
+  const [device] = parseSimctlAppleDevices(
+    {
+      devices: {
+        'com.apple.CoreSimulator.SimRuntime.xrOS-26-2': [
+          {
+            name: 'test-1',
+            udid: 'vision-1',
+            state: 'Shutdown',
+            isAvailable: true,
+            deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.Apple-Vision-Pro-4K',
+          },
+        ],
+      },
+    },
+    undefined,
+  );
+  assert.equal(device?.target, 'mobile');
+  assert.equal(device?.appleOs, 'visionos');
+});
+
 test('simulator inventory scopes bounded simctl and reports fresh booted observations', async () => {
   const calls: Array<{ tool: string; args: readonly string[]; timeoutMs?: number }> = [];
   const observed: string[] = [];
@@ -97,7 +114,6 @@ test('simulator inventory scopes bounded simctl and reports fresh booted observa
     ['iphone-1', 'tv-1'],
   );
   assert.deepEqual(observed, ['iphone-1']);
-  assert.deepEqual(buildSimctlListArgs(undefined), ['list', 'devices', '-j']);
 });
 
 test('simulator inventory classifies malformed native output as a command failure', async () => {

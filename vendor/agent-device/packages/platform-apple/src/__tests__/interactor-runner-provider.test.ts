@@ -1,4 +1,3 @@
-import type { GesturePlan } from '@agent-device/contracts/gesture-plan-types';
 import type {
   Interactor,
   RunnerContext,
@@ -9,14 +8,14 @@ import { AppError } from '@agent-device/kernel/errors';
 import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import { IOS_DEVICE, IOS_SIMULATOR, MACOS_DEVICE } from './device-fixtures.ts';
-import type {
-  AppleRunnerCommandOptions,
-  AppleRunnerProvider,
-  RunnerCommand,
-} from '../runner/index.ts';
+import type { AppleRunnerProvider } from '../runner/index.ts';
 import { createAppleInteractor } from '../interactor.ts';
-
-type RecordedRunnerCall = { command: RunnerCommand; options: AppleRunnerCommandOptions };
+import {
+  recordingRunnerProvider,
+  runnerResultFor,
+  singlePointerPanPlan,
+  type RecordedRunnerCall,
+} from './recording-runner-provider.ts';
 
 function presentedSnapshot(result: SnapshotRuntimeResult): SnapshotResult {
   if ('stage' in result) throw new Error('Apple runner snapshot must be presented');
@@ -51,8 +50,9 @@ const RUNNER_TRANSPORT_METHODS: Record<
     invoke: (i) => i.tapElementSelector!({ key: 'label', value: 'Go' }),
     runnerCommand: 'tap',
   },
-  doubleTap: { invoke: (i) => i.doubleTap(10, 20), runnerCommand: 'sequence' },
+  doubleTap: { invoke: (i) => i.doubleTap!(10, 20), runnerCommand: 'sequence' },
   longPress: { invoke: (i) => i.longPress(10, 20, 600), runnerCommand: 'longPress' },
+  appState: { invoke: (i) => i.appState!(), runnerCommand: 'appState' },
   focus: { invoke: (i) => i.focus(10, 20), runnerCommand: 'tap' },
   type: { invoke: (i) => i.type('hi'), runnerCommand: 'type' },
   fill: { invoke: (i) => i.fill(10, 20, 'hi'), runnerCommand: 'type' },
@@ -71,11 +71,11 @@ const RUNNER_TRANSPORT_METHODS: Record<
   },
   findText: { invoke: (i) => i.findText!('Ready'), runnerCommand: 'findText' },
   back: { invoke: (i) => i.back(), runnerCommand: 'backInApp' },
-  home: { invoke: (i) => i.home(), runnerCommand: 'home' },
+  home: { invoke: (i) => i.home!(), runnerCommand: 'home' },
   setOrientation: { invoke: (i) => i.setOrientation('portrait'), runnerCommand: 'rotate' },
-  appSwitcher: { invoke: (i) => i.appSwitcher(), runnerCommand: 'appSwitcher' },
-  actionButton: { invoke: (i) => i.actionButton(), runnerCommand: 'actionButton' },
-  tvRemote: { invoke: (i) => i.tvRemote('select'), runnerCommand: 'remotePress' },
+  appSwitcher: { invoke: (i) => i.appSwitcher!(), runnerCommand: 'appSwitcher' },
+  actionButton: { invoke: (i) => i.actionButton!(), runnerCommand: 'actionButton' },
+  tvRemote: { invoke: (i) => i.tvRemote!('select'), runnerCommand: 'remotePress' },
   // Relay fork: the atomic field transactions ride one runner command each. They exist only on
   // a physical iOS device, so the routing test below builds them on IOS_DEVICE.
   pasteClipboard: {
@@ -91,10 +91,10 @@ const RUNNER_TRANSPORT_METHODS: Record<
   // R59: same reading as `readTextAtPoint` — the macOS-helper branch is reachable only for a
   // local desktop surface, which a provider-owned mobile device never carries, so every
   // provider-backed alert leg rides the runner. Each spends one runner call when it succeeds.
-  readAlert: { invoke: (i) => i.readAlert(), runnerCommand: 'alert' },
-  awaitAlert: { invoke: (i) => i.awaitAlert(), runnerCommand: 'alert' },
-  acceptAlert: { invoke: (i) => i.acceptAlert(), runnerCommand: 'alert' },
-  dismissAlert: { invoke: (i) => i.dismissAlert(), runnerCommand: 'alert' },
+  readAlert: { invoke: (i) => i.readAlert!(), runnerCommand: 'alert' },
+  awaitAlert: { invoke: (i) => i.awaitAlert!(), runnerCommand: 'alert' },
+  acceptAlert: { invoke: (i) => i.acceptAlert!(), runnerCommand: 'alert' },
+  dismissAlert: { invoke: (i) => i.dismissAlert!(), runnerCommand: 'alert' },
 };
 
 const LOCAL_TOOL_METHODS: Record<string, (interactor: Interactor) => Promise<unknown>> = {
@@ -102,9 +102,12 @@ const LOCAL_TOOL_METHODS: Record<string, (interactor: Interactor) => Promise<unk
   openDevice: (i) => i.openDevice(),
   close: (i) => i.close('com.example.app'),
   screenshot: (i) => i.screenshot('/dev/null'),
-  readClipboard: (i) => i.readClipboard(),
-  writeClipboard: (i) => i.writeClipboard('hi'),
+  readClipboard: (i) => i.readClipboard!(),
+  writeClipboard: (i) => i.writeClipboard!('hi'),
   setSetting: (i) => i.setSetting('wifi', 'on'),
+  // `simctl ui ... content_size` is local Apple tooling like the write leg beside it, so a provider-owned
+  // device has no way to answer a text-size read.
+  readSetting: (i) => i.readSetting!('text-size'),
 };
 
 test('the runner/local partition covers the full provider-backed interactor surface', () => {
@@ -282,6 +285,32 @@ test('snapshot publishes runner presentation through the engine and drops its qu
   assert.equal('qualityPayload' in result, false);
 });
 
+test('a message-less runner capture leaves its disclosures to the verdict', async () => {
+  const coverage = { read: 12, candidates: 19, truncated: 0, blocked: false };
+  const interactor = createAppleInteractor(
+    IOS_SIMULATOR,
+    {},
+    {
+      hasLiveSession: () => true,
+      runCommand: async () => ({
+        ...runnerResultFor({ command: 'snapshot' }),
+        snapshotQuality: {
+          state: 'healthy',
+          backend: 'tree',
+          customActions: coverage,
+          collapsedLeafIndexes: [1],
+        },
+      }),
+    },
+  );
+
+  const result = presentedSnapshot(await interactor.snapshot());
+
+  assert.equal('warnings' in result, false);
+  assert.deepEqual(result.quality?.customActions, coverage);
+  assert.deepEqual(result.quality?.collapsedLeafIndexes, [1]);
+});
+
 test('macOS app snapshots preserve runner nodes outside the iOS presentation engine', async () => {
   const nodes = [{ index: 0, type: 'Application', label: 'System Settings' }];
   const interactor = createAppleInteractor(
@@ -436,57 +465,3 @@ test('snapshot forwards either forceable preferredBackend into the emitted runne
   assert.equal(snapshots[0]?.command.preferredBackend, 'tree');
   assert.equal(snapshots[1]?.command.preferredBackend, undefined);
 });
-
-function recordingRunnerProvider(calls: RecordedRunnerCall[]): AppleRunnerProvider {
-  return {
-    hasLiveSession: () => true,
-    runCommand: async (_device, command, options) => {
-      calls.push({ command, options });
-      return runnerResultFor(command);
-    },
-  };
-}
-
-function runnerResultFor(command: RunnerCommand): Record<string, unknown> {
-  switch (command.command) {
-    case 'snapshot':
-      return {
-        nodes: [
-          { index: 0, type: 'Application', rect: { x: 0, y: 0, width: 390, height: 844 } },
-          {
-            index: 1,
-            parentIndex: 0,
-            type: 'Button',
-            label: 'Go',
-            hittable: true,
-            rect: { x: 10, y: 10, width: 80, height: 40 },
-          },
-        ],
-      };
-    case 'gestureViewport':
-      return { x: 0, y: 0, x2: 390, y2: 844 };
-    case 'rotate':
-      return { orientation: command.orientation };
-    default:
-      return {};
-  }
-}
-
-function singlePointerPanPlan(): GesturePlan {
-  return {
-    topology: 'single',
-    intent: 'pan',
-    executionProfile: 'timed-pan',
-    durationMs: 120,
-    viewport: { x: 0, y: 0, width: 390, height: 844 },
-    pointers: [
-      {
-        pointerId: 0,
-        samples: [
-          { offsetMs: 0, point: { x: 100, y: 400 } },
-          { offsetMs: 120, point: { x: 100, y: 200 } },
-        ],
-      },
-    ],
-  };
-}

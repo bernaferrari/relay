@@ -5,7 +5,7 @@ import { afterEach, test, vi } from 'vitest';
 import { mkdtempForTestSync } from './tmp-dir.fixtures.ts';
 import { resetAllProcessMemosForTests } from '@agent-device/kernel/ttl-memo';
 import { resolveAgentDeviceProjectRoot } from './project-root.ts';
-import { findProjectRoot, readVersion } from './version.ts';
+import { compareVersions, findProjectRoot, isNewerVersion, readVersion } from './version.ts';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -127,4 +127,33 @@ test('from this source tree, the project root is the agent-device manifest, not 
   };
   assert.equal(manifest.name, 'agent-device');
   assert.equal(readVersion(), manifest.version);
+});
+
+test('isNewerVersion orders releases numerically per segment', () => {
+  assert.equal(isNewerVersion('0.21.6', '0.20.8'), true);
+  assert.equal(isNewerVersion('0.21.12', '0.21.6'), true);
+  assert.equal(isNewerVersion('1.0.0', '0.21.12'), true);
+  assert.equal(isNewerVersion('0.20.8', '0.21.6'), false);
+  assert.equal(isNewerVersion('0.21.6', '0.21.6'), false);
+});
+
+test('isNewerVersion ranks a release above the prerelease of the same base', () => {
+  // main carries `-dev` between releases (scripts/release-mark-dev.mjs): a released client meeting
+  // a `-dev` daemon of the same base is the upgrade, and the reverse is the downgrade.
+  assert.equal(isNewerVersion('0.21.13', '0.21.13-dev'), true);
+  assert.equal(isNewerVersion('0.21.13-dev', '0.21.13'), false);
+  assert.equal(isNewerVersion('0.21.13-dev', '0.21.12'), true);
+  assert.equal(isNewerVersion('0.21.12', '0.21.13-dev'), false);
+  assert.equal(isNewerVersion('0.21.13-dev', '0.21.13-dev'), false);
+  assert.equal(isNewerVersion('0.21.13-rc.2', '0.21.13-rc.1'), true);
+  assert.equal(isNewerVersion('0.21.13-rc.10', '0.21.13-rc.9'), true);
+  assert.equal(isNewerVersion('0.21.13-beta', '0.21.13-alpha.1'), true);
+  assert.equal(isNewerVersion('0.21.13+build.2', '0.21.13+build.1'), false);
+});
+
+test('compareVersions reads malformed or prefixed versions conservatively', () => {
+  assert.equal(compareVersions('v0.21.13', '0.21.13'), 0);
+  assert.equal(compareVersions('garbage', '0.0.1'), -1);
+  assert.equal(compareVersions('garbage', '0.0.0'), 0);
+  assert.equal(compareVersions('1.2.3.4', '1.2.3'), -1, 'four segments is not a version');
 });

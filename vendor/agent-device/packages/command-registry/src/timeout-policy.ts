@@ -5,7 +5,6 @@ import type { CommandTimeoutBudget, CommandTimeoutPolicy } from './types.ts';
 // declared per command on the descriptors, so their values live beside them.
 
 const DAEMON_REQUEST_TIMEOUT_MS = 90_000;
-export const PREPARE_REQUEST_TIMEOUT_MS = 240_000;
 
 // Keep this above the longest platform install subprocess timeout so the client
 // envelope does not abort a still-progressing device install first.
@@ -15,6 +14,12 @@ export const INSTALL_REQUEST_TIMEOUT_MS = 180_000;
 // diagnostics) wins the race against the client envelope. Never shrinks the
 // envelope below the command's declared base.
 const REQUEST_TIMEOUT_BUDGET_MARGIN_MS = 30_000;
+
+/** Daemon-side runner budget for `prepare` without `--timeout` (`readPrepareIosRunnerTimeoutMs`). */
+export const PREPARE_STARTUP_BUDGET_MS = 240_000;
+
+export const PREPARE_REQUEST_TIMEOUT_MS =
+  PREPARE_STARTUP_BUDGET_MS + REQUEST_TIMEOUT_BUDGET_MARGIN_MS;
 
 /**
  * How long a lease lifecycle provider may spend allocating one lease (cloud
@@ -39,6 +44,19 @@ export const LEASE_ALLOCATE_REQUEST_TIMEOUT_MS =
 export const DEFAULT_TIMEOUT_POLICY: CommandTimeoutPolicy = {
   budget: { source: 'none' },
   envelopeMs: DAEMON_REQUEST_TIMEOUT_MS,
+  onTimeout: 'reset-daemon',
+};
+
+/**
+ * Covers the fold route's worst-case ledger (display inventory, fold-helper preparation, HID
+ * dispatch, hinge settle reads, final display inventory) plus the daemon-result margin. Proven by
+ * the ledger test: `test/integration/provider-scenarios/ios-fold.test.ts`.
+ */
+const FOLD_REQUEST_TIMEOUT_MS = 255_000;
+
+export const FOLD_TIMEOUT_POLICY: CommandTimeoutPolicy = {
+  budget: { source: 'none' },
+  envelopeMs: FOLD_REQUEST_TIMEOUT_MS,
   onTimeout: 'reset-daemon',
 };
 

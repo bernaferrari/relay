@@ -97,7 +97,7 @@ extension RunnerTests {
       nodes: nodes,
       truncated: false,
       effectiveDepth: nil,
-      viewport: viewport
+      viewport: .reported(box: viewport)
     )
   }
 
@@ -147,7 +147,7 @@ extension RunnerTests {
       ],
       truncated: false,
       effectiveDepth: nil,
-      viewport: CGRect(x: 0, y: 0, width: 320, height: 240)
+      viewport: .reported(box: CGRect(x: 0, y: 0, width: 320, height: 240))
     )
 
     let options = PresentationOptions(
@@ -203,7 +203,7 @@ extension RunnerTests {
       ],
       truncated: false,
       effectiveDepth: nil,
-      viewport: CGRect(x: 0, y: 0, width: 320, height: 240)
+      viewport: .reported(box: CGRect(x: 0, y: 0, width: 320, height: 240))
     )
 
     let options = PresentationOptions(
@@ -254,7 +254,7 @@ extension RunnerTests {
           nodes: nodes,
           truncated: false,
           effectiveDepth: nil,
-          viewport: .infinite
+          viewport: .reported(box: CGRect(x: 0, y: 0, width: 100, height: 100))
         ),
         options: options
       ).nodes)
@@ -309,7 +309,7 @@ extension RunnerTests {
     XCTAssertThrowsError(
       try SnapshotPresentationInvariant.validateRegular(
         folded,
-        viewport: viewport,
+        viewport: .reported(box: viewport),
         policy: .cursorProjected
       )
     ) { error in
@@ -338,20 +338,6 @@ extension RunnerTests {
     XCTAssertEqual(Self.snapshotQualityReasonCode(for: captureFailure), "presentation-failed")
     XCTAssertNotEqual(Self.snapshotQualityReasonCode(for: captureFailure), "capture-failed")
     XCTAssertTrue(captureFailure.message.contains("cumulative clip"))
-
-    let warning = Self.legacyQualityMessage(
-      SnapshotQuality(
-        state: "recovered",
-        backend: "queries",
-        reason: captureFailure.message,
-        reasonCode: captureFailure.qualityReasonCode,
-        effectiveDepth: nil,
-        collapsedLeafIndexes: nil,
-        customActions: nil
-      )
-    )
-    XCTAssertTrue(warning?.contains("runner bug") == true)
-    XCTAssertFalse(warning?.contains("fixing the app's accessibility") == true)
   }
 }
 #endif

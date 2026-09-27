@@ -25,6 +25,7 @@ import { SnapshotSourceError, snapshotSourceError } from './errors.ts';
 import { remainingSnapshotSourceMs } from './deadline.ts';
 import type { SnapshotSourceHost, SnapshotSourceProcess, SnapshotSourceSocket } from './types.ts';
 import { readSnapshotTargetProcessStartTime } from '../snapshot-process.ts';
+import { buildSimctlArgsForAddress, type SimulatorAddress } from '../core/simctl.ts';
 
 const BRIDGE_IDLE_TIMEOUT_SECONDS = 60;
 const MAX_PROCESS_LOG_BYTES = 64 * 1024;
@@ -54,7 +55,7 @@ export function createSnapshotSourceHost(): SnapshotSourceHost {
 }
 
 function startSnapshotBridge(
-  udid: string,
+  simulator: SimulatorAddress,
   bridgePath: string,
   socketPath: string,
   options: { signal?: AbortSignal } = {},
@@ -64,10 +65,9 @@ function startSnapshotBridge(
   }
   const started = runCmdBackground(
     'xcrun',
-    [
-      'simctl',
+    buildSimctlArgsForAddress(simulator, [
       'spawn',
-      udid,
+      simulator.udid,
       bridgePath,
       'serve',
       socketPath,
@@ -75,7 +75,7 @@ function startSnapshotBridge(
       String(BRIDGE_IDLE_TIMEOUT_SECONDS),
       '--exit-on-disconnect',
       'false',
-    ],
+    ]),
     {
       allowFailure: true,
       captureOutput: false,
@@ -177,7 +177,7 @@ async function acquireSnapshotSourceLock(
     timeoutMs: remainingSnapshotSourceMs(deadline, 'cache-lock-deadline'),
     pollMs: 100,
     ownerGraceMs: 5_000,
-    description: 'iOS Simulator snapshot bridge cache',
+    description: options.description,
   });
   const signal = deadline.signal;
   if (!signal) return await pending;

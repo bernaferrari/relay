@@ -322,10 +322,6 @@ class LimrunIosInteractor implements Interactor {
     await this.session.client.pressKey('escape');
   }
 
-  async home(): Promise<never> {
-    throw unsupported('home', 'Limrun iOS direct sessions do not expose home yet.');
-  }
-
   async setOrientation(orientation: DeviceRotation): Promise<void> {
     if (orientation === 'portrait-upside-down') {
       throw unsupported(
@@ -334,52 +330,6 @@ class LimrunIosInteractor implements Interactor {
       );
     }
     await this.session.client.setOrientation(orientation === 'portrait' ? 'Portrait' : 'Landscape');
-  }
-
-  async performGesture(): Promise<never> {
-    throw unsupported(
-      'gesture',
-      'Limrun iOS direct sessions do not expose portable gesture execution yet.',
-    );
-  }
-
-  async appSwitcher(): Promise<never> {
-    throw unsupported('app-switcher', 'Limrun iOS direct sessions do not expose app switcher yet.');
-  }
-
-  async actionButton(): Promise<never> {
-    throw unsupported(
-      'action-button',
-      'Limrun iOS direct sessions do not expose the Action Button.',
-    );
-  }
-
-  async tvRemote(): Promise<never> {
-    throw unsupported('tv-remote', 'Limrun iOS direct sessions do not expose tv remote control.');
-  }
-
-  async readAlert(): Promise<never> {
-    throw unsupported('alert', LIMRUN_IOS_ALERT_UNSUPPORTED);
-  }
-
-  async awaitAlert(): Promise<never> {
-    throw unsupported('alert', LIMRUN_IOS_ALERT_UNSUPPORTED);
-  }
-
-  async acceptAlert(): Promise<never> {
-    throw unsupported('alert', LIMRUN_IOS_ALERT_UNSUPPORTED);
-  }
-
-  async dismissAlert(): Promise<never> {
-    throw unsupported('alert', LIMRUN_IOS_ALERT_UNSUPPORTED);
-  }
-
-  async readClipboard(): Promise<never> {
-    throw unsupported('clipboard', 'Limrun iOS direct sessions do not expose clipboard read yet.');
-  }
-
-  async writeClipboard(): Promise<never> {
-    throw unsupported('clipboard', 'Limrun iOS direct sessions do not expose clipboard write yet.');
   }
 
   async setSetting(): Promise<never> {
@@ -477,10 +427,6 @@ export function isUserInstalledIosApp(app: LimrunIosApp): boolean {
     !app.bundleId.startsWith('com.apple.') && !app.installType.toLowerCase().includes('system')
   );
 }
-
-/** One sentence for all four alert legs: this session has no XCUITest runner to read a sheet. */
-const LIMRUN_IOS_ALERT_UNSUPPORTED =
-  'Limrun iOS direct sessions do not expose alert inspection yet.';
 
 function unsupported(command: string, message: string): never {
   throw new AppError('UNSUPPORTED_OPERATION', message, { command });

@@ -2,11 +2,9 @@ import { expect, test } from 'vitest';
 import { typeTextRuntimeUse } from '@agent-device/contracts/platform-runtime-operations';
 import { commandDescriptors } from '../registry.ts';
 
-test('type descriptor declares its complete runtime use with no legacy projection', () => {
+test('type descriptor declares its complete runtime use', () => {
   const type = commandDescriptors.find(({ name }) => name === 'type');
 
-  expect(type).not.toHaveProperty('capability');
-  expect(type).not.toHaveProperty('dispatch');
   expect(type?.platformExecution).toEqual({
     kind: 'device-runtime',
     uses: [typeTextRuntimeUse],

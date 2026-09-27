@@ -361,24 +361,6 @@ class WebDriverInteractor implements Interactor {
     this.unsupported('tvRemote');
   }
 
-  /**
-   * No WebDriver `mobile:` script presses an iPhone Action Button, so this refuses unconditionally
-   * and directly: it goes through no `requireSupport`/`unsupported` capability helper because a
-   * capability key here would advertise a button no WebDriver backend can ever report supporting.
-   */
-  async actionButton(): Promise<never> {
-    throw new AppError(
-      'UNSUPPORTED_OPERATION',
-      'action-button presses iPhone Action Button hardware, which no WebDriver backend exposes',
-      {
-        provider: this.capabilities.provider,
-        platform: this.capabilities.platform,
-        operation: 'actionButton',
-        reason: 'unsupported-provider-mode',
-      },
-    );
-  }
-
   async readClipboard(): Promise<string> {
     this.requireSupport('clipboard.read');
     const value = await this.client.executeScript('mobile: getClipboard', [{}]);
@@ -397,24 +379,6 @@ class WebDriverInteractor implements Interactor {
     _options?: SettingOptions,
   ): Promise<Record<string, unknown> | void> {
     this.unsupported('settings');
-  }
-
-  // The four alert legs share one declared capability: a driver that cannot read a native alert
-  // cannot press its buttons either, and no provider in this family declares either half.
-  async readAlert(): Promise<Record<string, unknown>> {
-    this.unsupported('alert');
-  }
-
-  async awaitAlert(): Promise<Record<string, unknown>> {
-    this.unsupported('alert');
-  }
-
-  async acceptAlert(): Promise<Record<string, unknown>> {
-    this.unsupported('alert');
-  }
-
-  async dismissAlert(): Promise<Record<string, unknown>> {
-    this.unsupported('alert');
   }
 
   /**

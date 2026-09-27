@@ -91,7 +91,7 @@ const DISPLAYS_UNSUPPORTED_HINT =
  * every caller has a correct pre-inventory path, and a missing host feature must
  * not fail the user's capture.
  */
-async function queryAppleDisplayInventory(
+export async function queryAppleDisplayInventory(
   device: DeviceInfo,
   options: { timeoutMs?: number; signal?: AbortSignal },
 ): Promise<AppleDisplayInventory> {
@@ -103,11 +103,7 @@ async function queryAppleDisplayInventory(
       signal: options.signal,
     });
     if (!outcome.ok) {
-      emitUnresolvedDiagnostic(
-        device,
-        outcome.reason,
-        outcome.result ? outcome.result.stderr.trim() : (outcome.cause ?? ''),
-      );
+      emitUnresolvedDiagnostic(device, outcome.reason, outcome.result.stderr.trim());
       return unresolvedInventory();
     }
     const displays = parseCoreDeviceDisplays(outcome.payload);

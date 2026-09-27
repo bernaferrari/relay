@@ -1,5 +1,11 @@
-import { AppError, asAppError, isRequestCanceledError } from '@agent-device/kernel/errors';
+import {
+  AppError,
+  asAppError,
+  createRequestCanceledError,
+  isRequestCanceledError,
+} from '@agent-device/kernel/errors';
 import type { DeviceInfo } from '@agent-device/kernel/device';
+import type { ReadinessPhase } from '@agent-device/contracts/wait';
 import { emitDiagnostic } from './host.ts';
 import { RUNNER_STARTUP_TIMEOUT_MS } from './runner-startup-transport.ts';
 import { RUNNER_COMMAND_TIMEOUT_MS } from './runner-transport.ts';
@@ -15,15 +21,18 @@ import {
 } from './runner-session.ts';
 import {
   assertRunnerRequestActive,
-  isRetryableRunnerError,
   resolveRunnerRequestSignal,
+  withRunnerCommandId,
+  type RunnerCommand,
+} from './runner-contract.ts';
+import {
+  isRetryableRunnerError,
+  isStructuredRunnerFailure,
   shouldRebuildCachedRunnerArtifact,
   shouldRestartRunnerAfterReadinessPreflight,
   shouldRestartRunnerBeforeCommandSend,
   shouldRetryRunnerConnectError,
-  withRunnerCommandId,
-  type RunnerCommand,
-} from './runner-contract.ts';
+} from './runner-error-classification.ts';
 import type {
   AppleRunnerCommandOptions,
   AppleRunnerPrepareOptions,
@@ -262,15 +271,15 @@ export async function executeRunnerCommand(
   const recycleKey = runnerRecycleLedgerKey(options, command);
   let session: RunnerSession | undefined;
   let recycleBootBegun = false;
+  const livenessAtEntry = readRunnerSessionLiveness(device.id)?.liveness ?? 'gone';
   try {
     // A request that already used a runner session and finds no runner process is about to pay
     // for a recycle boot (~25s): bound that to the per-request recycle budget so a hostile screen
     // fails fast with a preserved session instead of stacking runner boots (#1105).
     // `gone` and `stopped` are the two liveness answers that mean no runner is answering now, so
     // this command is the one that would start a process (#2662).
-    const liveness = readRunnerSessionLiveness(device.id)?.liveness ?? 'gone';
     if (
-      (liveness === 'gone' || liveness === 'stopped') &&
+      (livenessAtEntry === 'gone' || livenessAtEntry === 'stopped') &&
       hasRunnerRequestTouchedSession(recycleKey)
     ) {
       if (!tryBeginRunnerRecycle(recycleKey)) {
@@ -298,9 +307,17 @@ export async function executeRunnerCommand(
   } catch (error) {
     if (options.expectedRunnerSessionId !== undefined) throw error;
     const appErr = asAppError(error, 'COMMAND_FAILED');
-    if (session && session.state === 'starting' && isRequestCanceledError(appErr)) {
-      await invalidateRunnerSessionBestEffort(session, 'runner_startup_request_canceled');
-      throw error;
+    const runnerNeverAnswered = session
+      ? session.state === 'starting'
+      : livenessAtEntry !== 'ready';
+    if (runnerNeverAnswered && isRequestCanceledError(appErr)) {
+      if (session) {
+        await invalidateRunnerSessionBestEffort(session, 'runner_startup_request_canceled');
+      }
+      throw createRequestCanceledError(
+        { ...appErr.details, readinessPhase: 'runner-start' satisfies ReadinessPhase },
+        appErr,
+      );
     }
     if (shouldRestartRunnerBeforeCommandSend(appErr) && session) {
       assertRunnerRequestActive(options.requestId);
@@ -325,7 +342,10 @@ export async function executeRunnerCommand(
         recoveredDiagnosticPhase: 'ios_runner_readiness_preflight_recovered',
       });
     }
-    if (session && isRetryableRunnerError(appErr)) {
+    // Status recovery answers "did the command I lost the response to run?". A structured reply
+    // (a RUNNER_BUSY refusal, for one) already answered, so it is rethrown for the caller's own
+    // resend policy instead of paying a status round trip per attempt.
+    if (session && isRetryableRunnerError(appErr) && !isStructuredRunnerFailure(appErr)) {
       return await handleRunnerTransportErrorAfterCommandSend({
         device,
         session,
@@ -392,7 +412,7 @@ async function restartSessionAndRunCommand(params: {
     return recovered;
   } catch (error) {
     const retryAppErr = asAppError(error, 'COMMAND_FAILED');
-    if (isRetryableRunnerError(retryAppErr)) {
+    if (isRetryableRunnerError(retryAppErr) && !isStructuredRunnerFailure(retryAppErr)) {
       try {
         return await handleRunnerTransportErrorAfterCommandSend({
           device,

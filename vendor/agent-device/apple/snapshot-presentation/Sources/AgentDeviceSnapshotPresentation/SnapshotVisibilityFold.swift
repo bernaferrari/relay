@@ -100,7 +100,7 @@ public enum SnapshotVisibilityFold {
   public static func traversalDecision(
     for node: RawAXNode,
     parent: TraversalState,
-    viewport: CGRect,
+    viewport: SnapshotViewport,
     interactiveOnly: Bool,
     hasChildren: Bool,
     policy: Policy
@@ -153,7 +153,7 @@ public enum SnapshotVisibilityFold {
 
   public static func fold(
     _ nodes: [RawAXNode],
-    viewport: CGRect,
+    viewport: SnapshotViewport,
     interactiveOnly: Bool,
     policy: Policy
   ) -> [SnapshotPresentationNode] {
@@ -199,14 +199,17 @@ public enum SnapshotVisibilityFold {
               label: node.label,
               identifier: node.identifier,
               value: node.value,
+              placeholder: node.placeholder,
               rect: node.rect,
               enabled: node.enabled,
               focused: node.focused,
               selected: node.selected,
-              hittable: node.parentIndex != nil && node.hittable
-                && SnapshotGeometry.isGeometricallyActionable(
+              hittable: node.parentIndex == nil
+                ? false
+                : clippedHittability(
+                  source: node.hittable,
                   enabled: node.enabled,
-                  frame: decision.effectiveFrame,
+                  clippedFrame: decision.effectiveFrame,
                   viewport: viewport
                 ),
               depth: outDepth,
@@ -237,6 +240,25 @@ public enum SnapshotVisibilityFold {
       )
     }
     return applyHiddenContentHints(hints, to: kept)
+  }
+
+  /// The fold's share of the `hittable` policy (#2891). A declared `false` is kept; anything the
+  /// source left undecided is re-decided on the clipped frame: a disabled or degenerate frame —
+  /// including a `visibilityExempt` carrier a scroll anchor clipped to nothing — answers `false`,
+  /// and `nil` stays reserved for the one question the clipped frame cannot answer, containment
+  /// while the capture has no viewport box.
+  private static func clippedHittability(
+    source: Bool?,
+    enabled: Bool,
+    clippedFrame: CGRect,
+    viewport: SnapshotViewport
+  ) -> Bool? {
+    if source == false { return false }
+    return SnapshotGeometry.isGeometricallyActionable(
+      enabled: enabled,
+      frame: clippedFrame,
+      viewport: viewport
+    )
   }
 
 }

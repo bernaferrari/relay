@@ -275,10 +275,13 @@ specialized route. The completeness gate covers every command projected to the d
 generic fallbacks, so a missing facet cannot hide an unclassified mutation. Mutations performed by
 unrelated external tools remain outside this session guarantee.
 
-This policy is not derived from Apple runner `readOnly`. Runner traits govern retry, liveness,
-readiness probes, and preflight skipping at a lower wire-command seam. `refFrameEffect` governs
-daemon session authorization and includes commands that never reach the Apple runner. Narrow
-consistency tests may cover direct mappings, but blanket parity would couple different concepts.
+This policy is not derived from the runner-side classification. Apple runner command traits govern
+retry eligibility, launch policy, and the recorded-failure conversion at a lower wire-command seam,
+while the TypeScript `readOnly` trait is itself consumed as several daemon decisions: read-only
+resend, session-invalidation skip, transport error classification, and readiness preflight.
+`refFrameEffect` governs daemon session authorization and includes commands that never reach the
+Apple runner. Narrow consistency tests may cover direct mappings, but blanket parity would couple
+different concepts.
 
 Frame admission and transitions are serialized by the existing per-session request lock. The frame
 is shared session state, not per-client or per-lease history. Generation pins make the rejected epoch
@@ -466,8 +469,9 @@ registry claims are necessary but do not substitute for this live evidence.
   single-current-frame contract.
 - **Add a per-ref historical ledger immediately:** rejected until evidence requires concurrent
   generation support; one bounded current frame plus issuance scope is sufficient.
-- **Derive the policy from runner read-only traits:** rejected because runner liveness and daemon ref
-  authorization classify different commands for different reasons.
+- **Derive the policy from the runner's command traits:** rejected because those traits classify a
+  wire command for what the runner may still do about its app, while daemon ref authorization
+  classifies a command for what it did to the frame.
 - **Add batch interpolation or an unsafe ref-stability override:** rejected as a new orchestration
   interface that bypasses the same safety rule.
 - **Force lifetime into ADR 0011's element path matrix:** rejected because ref lifetime spans commands,

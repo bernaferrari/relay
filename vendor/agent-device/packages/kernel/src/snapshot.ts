@@ -3,8 +3,9 @@
  * The daemon renders it; it never re-derives degradation from node shapes.
  *
  * Defined here (the foundational snapshot type module) rather than in
- * snapshot-quality/verdict.ts so SnapshotNode can reference it without a cyclic import;
- * snapshot-quality/verdict.ts owns the validation logic.
+ * capture-kit's snapshot-quality-verdict.ts so SnapshotNode can reference it without a cyclic
+ * import. Ownership splits three ways: this module owns the vocabularies below, capture-kit parses
+ * an untrusted runner payload into them, and contracts re-hydrates a verdict this repo published.
  */
 /**
  * Which capture STRATEGY produced a snapshot, within one platform's plan —
@@ -23,8 +24,21 @@ export type SnapshotQualityTiming = {
   presentationMs: number;
 };
 
+/**
+ * The verdict states a capture plan may stamp. This tuple is the ONE declaration of that
+ * vocabulary, and `SnapshotQualityVerdict['state']` is its projection; readers hold exhaustive maps
+ * over the union instead of importing this module, because the eager-closure gate freezes their
+ * loading shape (#2872). This tuple and the Apple runner's `SnapshotQualityState.allCases` are each
+ * pinned as a set to `contracts/fixtures/ios-snapshot-quality-states.json`, so a state one side
+ * renames, adds, or deletes without the other goes red there instead of arriving as a verdict the
+ * host cannot name — which reads as verdict-absent and drops the disclosure with it.
+ */
+export const SNAPSHOT_QUALITY_STATES = ['healthy', 'recovered', 'sparse'] as const;
+
+export type SnapshotQualityState = (typeof SNAPSHOT_QUALITY_STATES)[number];
+
 export type SnapshotQualityVerdict = {
-  state: 'healthy' | 'recovered' | 'sparse';
+  state: SnapshotQualityState;
   backend: SnapshotCaptureBackend;
   reason?: string;
   // 'deferred' = the penalty circuit breaker pre-selected a non-XCTest backend; nothing new
@@ -226,19 +240,39 @@ export type RawSnapshotNode = {
   subrole?: string;
   label?: string;
   value?: string;
+  /**
+   * Android content description when it is not already the `label`. An Android node is
+   * labelled by its text and falls back to the content description only when it has none,
+   * so an accessibility label the app set beside visible text (a labelled text view, a
+   * filled or hinted field) is carried here for consumers that want the accessible name.
+   */
+  contentDescription?: string;
   identifier?: string;
   rect?: Rect;
   enabled?: boolean;
   selected?: boolean;
+  /** Checked state of a checkable control (switch, checkbox, radio); absent means not checkable or unavailable. */
+  checked?: boolean;
   focused?: boolean;
+  /** Accessibility heading flag an app set on the node; absent means not a heading or unavailable. */
+  heading?: boolean;
+  /** Localized role description an app set beside the native class, verbatim (`Tab`, `Tab List`, `Link`). */
+  roleDescription?: string;
   /** Native accessibility facts; absent means unavailable, not false. */
   editable?: boolean;
   password?: boolean;
   hintShowing?: boolean;
+  /**
+   * Placeholder text of a text field (the Android hint), whether or not the field is showing it.
+   * Absent when the field has none or the producer did not read it.
+   */
+  placeholder?: string;
   /** Accessibility selection offsets, never a character count or proof of value equality. */
   selectionStart?: number;
   selectionEnd?: number;
   visibleToUser?: boolean;
+  /** UIKit `isUserInteractionEnabled`; absent means the producer did not read it, not false. */
+  userInteractionEnabled?: boolean;
   hittable?: boolean;
   depth?: number;
   parentIndex?: number;
@@ -437,18 +471,43 @@ export function isIosTargetActivationReason(value: unknown): value is IosTargetA
 }
 
 /**
- * States an activation could have been needed for, in `XCApplicationState` raw order.
- * `runningForeground` is excluded because the runner skips `activate()` when the app is already
- * foreground and never stamps a fact there.
+ * How XCTest reports an app running (`XCUIApplication.State`), in the SDK's raw order: unknown 0,
+ * notRunning 1, suspended 2, plain background 3, foreground 4 — the SDK declares suspended on
+ * non-macOS platforms only. This is the one declaration of those names; the `appState` runner
+ * command answers the session app's state with them, and `RunnerTests+ApplicationStateRawValueTests`
+ * ties them to the SDK enum. The `appState` path names states, so nothing here assigns a raw value;
+ * only the activation decoder's raw table does.
  */
-export const IOS_TARGET_ACTIVATION_PRIOR_STATES = [
+export const APPLE_APPLICATION_STATES = [
   'unknown',
   'notRunning',
-  'runningBackground',
   'runningBackgroundSuspended',
+  'runningBackground',
+  'runningForeground',
 ] as const;
 
+export type AppleApplicationState = (typeof APPLE_APPLICATION_STATES)[number];
+
+/**
+ * States an activation could have been needed for: every Apple state except the foreground one,
+ * which the runner skips `activate()` in and therefore stamps no fact about. Derived from the full
+ * list so the two cannot drift, and in the SDK's raw order — a state added to the full list lands
+ * here and must then be pinned natively before the decoder tie accepts it.
+ */
+export const IOS_TARGET_ACTIVATION_PRIOR_STATES = Object.freeze(
+  APPLE_APPLICATION_STATES.filter(
+    (state): state is Exclude<AppleApplicationState, 'runningForeground'> =>
+      state !== 'runningForeground',
+  ),
+);
+
 export type IosTargetActivationPriorState = (typeof IOS_TARGET_ACTIVATION_PRIOR_STATES)[number];
+
+export function isAppleApplicationState(value: unknown): value is AppleApplicationState {
+  return (
+    typeof value === 'string' && (APPLE_APPLICATION_STATES as readonly string[]).includes(value)
+  );
+}
 
 /**
  * Foreground repair the Apple runner performed while serving one command (#2682). `priorState` is
@@ -498,7 +557,33 @@ export type SnapshotState = {
    * the foreground instead (#2682). Consumers that surface this tree disclose the repair.
    */
   targetActivation?: IosTargetActivation;
+  /** What post-gesture stabilization proved about the gesture before this capture. */
+  postGestureOutcome?: PostGestureOutcome;
 } & SnapshotStateProvenance;
+
+/** The gesture a post-gesture outcome fact names: the command and its positionals. */
+export type PostGestureAction = { action: string; positionals: string[] };
+
+/**
+ * `unsettled`: the surface was still changing when the stabilization deadline expired.
+ * `no-effect`: the settled surface still matches the pre-gesture tree (#1600).
+ */
+export type PostGestureOutcome = {
+  kind: 'unsettled' | 'no-effect';
+  gesture: PostGestureAction;
+};
+
+/**
+ * A capture taken at once to recover or widen `previous` reads the same moment after the same
+ * gesture, so it carries that capture's outcome.
+ */
+export function inheritPostGestureOutcome<T extends SnapshotState>(
+  previous: SnapshotState,
+  recapture: T,
+): T {
+  recapture.postGestureOutcome ??= previous.postGestureOutcome;
+  return recapture;
+}
 
 export type SnapshotUnchanged = {
   ageMs: number;

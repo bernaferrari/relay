@@ -5,6 +5,7 @@ import {
   buildInteractionSurfaceSignature,
   classifyBaselineSurfaceEvidence,
   classifyInteractionSurfaceChange,
+  discriminatingSurfaceChangedWithinRect,
   markPendingInteractionOutcome,
   stripInternalInteractionFlags,
 } from '../interaction-outcome-policy.ts';
@@ -407,6 +408,113 @@ function makeSnapshotWithExtraText(label: string, y = 100): SnapshotState {
         type: 'Text',
         label: 'Loading',
         rect: { x: 20, y: 20, width: 200, height: 20 },
+      },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// discriminatingSurfaceChangedWithinRect (#2714 review): a whole-surface
+// difference that lives outside the region a command acted on is not that
+// command's doing. Measured on the Android tester, the status bar changed on
+// its own over a list that never moved. The strict key-matched view stays
+// owned here; this only narrows the region it is asked about.
+// ---------------------------------------------------------------------------
+
+const LIST_RECT = { x: 0, y: 150, width: 390, height: 600 };
+
+function rowAt(index: number, y: number) {
+  return {
+    type: 'StaticText',
+    identifier: `row-${index}`,
+    label: `Row ${index}`,
+    rect: { x: 12, y, width: 300, height: 24 },
+  } as SnapshotState['nodes'][number];
+}
+
+function surfaceWithClock(clock: string, secondRowY: number) {
+  return [
+    {
+      type: 'Image',
+      identifier: 'status-clock',
+      label: clock,
+      rect: { x: 12, y: 12, width: 40, height: 18 },
+    } as SnapshotState['nodes'][number],
+    rowAt(1, 200),
+    rowAt(2, secondRowY),
+  ];
+}
+
+test('discriminatingSurfaceChangedWithinRect reads a movement inside the region', () => {
+  const before = buildInteractionSurfaceSignature(surfaceWithClock('2:40', 300));
+  const after = buildInteractionSurfaceSignature(surfaceWithClock('2:40', 420));
+
+  assert.equal(discriminatingSurfaceChangedWithinRect(before, after, LIST_RECT), true);
+});
+
+test('discriminatingSurfaceChangedWithinRect does not read a movement outside the region', () => {
+  const before = buildInteractionSurfaceSignature(surfaceWithClock('2:40', 300));
+  const after = buildInteractionSurfaceSignature(surfaceWithClock('2:41', 300));
+
+  // The whole surface did change — that is the trap this reader exists to refuse.
+  assert.equal(classifyBaselineSurfaceEvidence(before, after), 'changed');
+  assert.equal(discriminatingSurfaceChangedWithinRect(before, after, LIST_RECT), false);
+});
+
+test('discriminatingSurfaceChangedWithinRect counts content appearing inside the region', () => {
+  const before = buildInteractionSurfaceSignature(surfaceWithClock('2:40', 300));
+  const after = buildInteractionSurfaceSignature([...surfaceWithClock('2:40', 300), rowAt(3, 640)]);
+
+  assert.equal(discriminatingSurfaceChangedWithinRect(before, after, LIST_RECT), true);
+});
+
+// Android is the only producer of `checked`, and a tap whose only effect is a toggle changes nothing
+// else on a screen without a mirrored label. The outcome lane has to read the flip as a change, or a
+// no-change retry taps the switch straight back.
+test('classifyInteractionSurfaceChange reads a checked-only flip as a change', () => {
+  const before = buildInteractionSurfaceSignature(makeToggleSnapshot(false).nodes);
+  const after = buildInteractionSurfaceSignature(makeToggleSnapshot(true).nodes);
+
+  assert.equal(classifyInteractionSurfaceChange(before, after), 'changed');
+});
+
+test.each([
+  { anonymous: false, label: 'a labelled switch' },
+  { anonymous: true, label: 'an anonymous switch' },
+])(
+  'discriminatingSurfaceChangedWithinRect reads a flip of $label at the same rect as no movement, and a moved one as movement',
+  ({ anonymous }) => {
+    const rect = { x: 0, y: 0, width: 390, height: 844 };
+    const signature = (checked: boolean, y?: number) =>
+      buildInteractionSurfaceSignature(makeToggleSnapshot(checked, y, anonymous).nodes);
+
+    assert.equal(
+      discriminatingSurfaceChangedWithinRect(signature(false), signature(true), rect),
+      false,
+    );
+    assert.equal(
+      discriminatingSurfaceChangedWithinRect(signature(false, 300), signature(false, 200), rect),
+      true,
+    );
+  },
+);
+
+// An anonymous switch has no identity, so its content is its type: the flip still changes only the
+// key, and a swipe that brushed it must not read as the list moving.
+function makeToggleSnapshot(checked: boolean, y = 300, anonymous = false): SnapshotState {
+  const base = makeSnapshot('Inbox');
+  return {
+    ...base,
+    nodes: [
+      ...base.nodes,
+      {
+        ref: 'e3',
+        index: 2,
+        parentIndex: 0,
+        type: 'android.widget.Switch',
+        ...(anonymous ? {} : { identifier: 'wifi-switch', label: 'Wi-Fi switch' }),
+        checked,
+        rect: { x: 300, y, width: 60, height: 40 },
       },
     ],
   };

@@ -3,16 +3,13 @@ export {
   buildAppleMemorySamplingMetadata,
   buildAppleMemorySnapshotSupport,
   captureAppleMemorySnapshot,
-  isRetryableIosDeviceTraceRecordFailure,
-  readAppleProcessSamples,
-  resolveAppleExecutable,
-  resolveIosDevicePerfTarget,
-  resolveIosDevicePerfHint,
   sampleAppleFramePerf,
   sampleAppleMemoryPerf,
 } from './core/perf.ts';
 export {
   cleanupAppleXctracePerfCapture,
+  isRetryableIosDeviceTraceRecordFailure,
+  resolveIosDevicePerfHint,
   startAppleXctracePerfCapture,
   stopAppleXctracePerfCapture,
   writeAppleXctracePerfReport,

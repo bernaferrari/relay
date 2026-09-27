@@ -53,7 +53,6 @@ export function createHarmonyInteractor(device: DeviceInfo, _runner?: RunnerCont
     home: () => homeHarmony(device),
     setOrientation: (orientation) => setHarmonyOrientation(device, orientation),
     appSwitcher: () => appSwitcherHarmony(device),
-    actionButton: unsupported('action-button'),
     tvRemote: unsupported('tv-remote'),
     keyboardDismiss: async () => {
       await pressHarmonyKeyboardKey(device, 'Back');
@@ -66,11 +65,5 @@ export function createHarmonyInteractor(device: DeviceInfo, _runner?: RunnerCont
     readClipboard: unsupported('clipboard'),
     writeClipboard: unsupported('clipboard'),
     setSetting: (setting, state, appId) => setHarmonySetting(device, setting, state, appId),
-    // R59: the retired `alert` descriptor declared no HarmonyOS leaf, and hdc exposes no dialog
-    // surface to read one from.
-    readAlert: unsupported('alert'),
-    awaitAlert: unsupported('alert'),
-    acceptAlert: unsupported('alert'),
-    dismissAlert: unsupported('alert'),
   };
 }

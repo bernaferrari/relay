@@ -6,7 +6,7 @@ vi.mock('node:timers/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:timers/promises')>();
   return { ...actual, setTimeout: vi.fn(async () => undefined) };
 });
-vi.mock('../../../device-ready.ts', () => ({ ensureDeviceReady: vi.fn(async () => {}) }));
+vi.mock('../../../device/device-ready.ts', () => ({ ensureDeviceReady: vi.fn(async () => {}) }));
 vi.mock('@agent-device/platform-apple/runner/operations', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('@agent-device/platform-apple/runner/operations')>();
@@ -134,7 +134,7 @@ function sessionRequest(
   };
 }
 
-test('open URL on existing iOS session clears stale app bundle id', async () => {
+test('open web URL on existing iOS simulator session binds Safari and drops stale app bundle id', async () => {
   const sessionStore = makeSessionStore('agent-device-session-open-url-prewarm-');
   const sessionName = 'ios-session';
   sessionStore.set(
@@ -171,9 +171,9 @@ test('open URL on existing iOS session clears stale app bundle id', async () => 
 
   expect(response.ok).toBe(true);
   const updated = sessionStore.get(sessionName);
-  expect(updated?.appBundleId).toBe(undefined);
+  expect(updated?.appBundleId).toBe('com.apple.mobilesafari');
   expect(updated?.appName).toBe('https://example.com/path');
-  expect(dispatchedContext?.appBundleId).toBe(undefined);
+  expect(dispatchedContext?.appBundleId).toBe('com.apple.mobilesafari');
 });
 
 test('open URL on existing macOS session clears stale app bundle id', async () => {

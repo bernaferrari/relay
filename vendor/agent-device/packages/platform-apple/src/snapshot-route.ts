@@ -16,7 +16,7 @@ import {
   deriveIosCaptureHint,
 } from '@agent-device/capture-kit/ios-snapshot-planning';
 import { emitDiagnostic, withDiagnosticTimer } from '@agent-device/host-kit/diagnostics';
-import { AppError } from '@agent-device/kernel/errors';
+import { AppError, isRequestCanceledError } from '@agent-device/kernel/errors';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import {
   createSimulatorSnapshotSource,
@@ -29,6 +29,7 @@ import {
 } from './snapshot-observability.ts';
 import {
   createSimulatorSnapshotTargetResolver,
+  isSimulatorTargetDiscoveryPending,
   type SimulatorSnapshotTarget,
   type SimulatorSnapshotTargetResolver,
 } from './snapshot-target.ts';
@@ -139,7 +140,7 @@ export function createAppleSnapshotRoute(
       try {
         target = await resolveTargetForObservation(host, resolveTarget, device, input, signal);
       } catch (error) {
-        signal.throwIfAborted();
+        rethrowIfResolutionCancelled(signal, error);
         emitRouteDiagnostic('target-resolution-failed', device, undefined, error);
         return await runFallback(
           device.id,
@@ -152,6 +153,7 @@ export function createAppleSnapshotRoute(
         );
       }
       if (isBridgeDisabled(target)) {
+        emitRouteDiagnostic('circuit-disabled', device, target.generation);
         return await runFallback(
           device.id,
           input,
@@ -239,17 +241,19 @@ async function resolveTargetForObservation(
     try {
       return await resolveTarget(device, appBundleId, signal);
     } catch (error) {
-      if (!isDiscoveryPending(error)) throw error;
+      if (!isSimulatorTargetDiscoveryPending(error)) throw error;
       const execution = { requestId: input.execution?.requestId };
       if (await host.appleApplications.hasLiveRunnerSession(device, execution)) throw error;
     }
   }
 }
 
-function isDiscoveryPending(error: unknown): boolean {
-  return (
-    error instanceof AppError && error.details?.reason === 'simulator-target-discovery-pending'
-  );
+/**
+ * A cancelled target resolution rethrows the resolver's own cancellation, which names the readiness
+ * phase only when the resolver was waiting on a running discovery.
+ */
+function rethrowIfResolutionCancelled(signal: AbortSignal, error: unknown): void {
+  if (signal.aborted) throw isRequestCanceledError(error) ? error : signal.reason;
 }
 
 function isEligible(device: DeviceInfo, input: CaptureSnapshotInput): boolean {
@@ -282,13 +286,13 @@ async function fallbackAfterFailure(
   if (opensGenerationCircuit(failure)) disabledGenerations.add(generationKey(failedTarget));
   emitRouteDiagnostic(
     failure.code,
-    { id: failedTarget.udid },
+    { id: failedTarget.simulator.udid },
     failedTarget.generation,
     cause,
     failure.details,
   );
   return await runFallback(
-    failedTarget.udid,
+    failedTarget.simulator.udid,
     input,
     fallback,
     identity.lineage,

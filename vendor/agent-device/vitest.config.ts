@@ -125,9 +125,11 @@ export default defineConfig({
             'scripts/__tests__/agent-setup-startup-contract.test.ts',
             'scripts/__tests__/npm-skills-exclusion.test.ts',
             'scripts/__tests__/simulator-skills-contract.test.ts',
-            // Parses ios.yml and the runner's Swift sources: no Xcode, no simulator, and
-            // the check it guards is what keeps the PR lane's `-only-testing:` list honest.
+            // Parse Swift guards and declarations before deriving the simulator selection.
+            'scripts/__tests__/swift-conditional-compilation.test.ts',
+            'scripts/__tests__/xctest-declarations.test.ts',
             'scripts/__tests__/xctest-selection.test.ts',
+            'scripts/__tests__/apple-ci-impact.test.ts',
             // The nightly XCTest lane's reporter/liveness check, which otherwise only ever
             // executes on a macOS runner at 04:30.
             'scripts/__tests__/xctest-run-summary.test.ts',
@@ -154,6 +156,9 @@ export default defineConfig({
             // The line-parity comparison behind `pnpm check:packaged-runner-swift`. Pure text
             // over two strings; the gate itself is what runs the packager and the Swift parse.
             'scripts/__tests__/packaged-runner-swift.test.ts',
+            // The runner build's actor-isolation log scan, over synthetic logs and a fake
+            // `xcodebuild` on PATH.
+            'scripts/__tests__/runner-isolation-diagnostics.test.ts',
             // Parse-only guard on the checked-in registry entry: the npm package must declare
             // the fixed mcp subcommand, or registry-format launchers run the bare CLI.
             'scripts/__tests__/mcp-metadata.test.ts',
@@ -163,7 +168,6 @@ export default defineConfig({
             // Parses CI configuration only, so this action guard needs no device or subprocess lane.
             'test/ci/upload-agent-device-artifacts.test.ts',
             'test/ci/upload-artifact-hidden-paths.test.ts',
-            'scripts/__tests__/diagnose-1874-iteration.test.ts',
             // The size reporter is preserved across a base checkout; its entrypoint and imported
             // modules must move as one directory or the Bundle Size lane fails before measuring.
             'test/ci/size-workflow.test.ts',

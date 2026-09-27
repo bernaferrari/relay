@@ -64,10 +64,6 @@
       "types": "./src/app-state-runtime.ts",
       "default": "./src/app-state-runtime.ts"
     },
-    "./app-switcher-runtime": {
-      "types": "./src/app-switcher-runtime.ts",
-      "default": "./src/app-switcher-runtime.ts"
-    },
     "./apple-runner-request": {
       "types": "./src/apple-runner-request.ts",
       "default": "./src/apple-runner-request.ts"
@@ -192,6 +188,14 @@
       "types": "./src/element-text-runtime.ts",
       "default": "./src/element-text-runtime.ts"
     },
+    "./fill-evidence": {
+      "types": "./src/fill-evidence.ts",
+      "default": "./src/fill-evidence.ts"
+    },
+    "./fold-runtime": {
+      "types": "./src/fold-runtime.ts",
+      "default": "./src/fold-runtime.ts"
+    },
     "./focus-runtime": {
       "types": "./src/focus-runtime.ts",
       "default": "./src/focus-runtime.ts"
@@ -219,10 +223,6 @@
     "./gesture-runtime": {
       "types": "./src/gesture-runtime.ts",
       "default": "./src/gesture-runtime.ts"
-    },
-    "./home-runtime": {
-      "types": "./src/home-runtime.ts",
-      "default": "./src/home-runtime.ts"
     },
     "./host-diagnostics": {
       "types": "./src/host-diagnostics.ts",
@@ -352,6 +352,10 @@
       "types": "./src/platform-runtime-unavailable.ts",
       "default": "./src/platform-runtime-unavailable.ts"
     },
+    "./runtime-contract-error": {
+      "types": "./src/runtime-contract-error.ts",
+      "default": "./src/runtime-contract-error.ts"
+    },
     "./runtime-operation-names": {
       "types": "./src/runtime-operation-names.ts",
       "default": "./src/runtime-operation-names.ts"
@@ -395,6 +399,10 @@
     "./runner-lease-context": {
       "types": "./src/runner-lease-context.ts",
       "default": "./src/runner-lease-context.ts"
+    },
+    "./screen-capture-contract": {
+      "types": "./src/screen-capture-contract.ts",
+      "default": "./src/screen-capture-contract.ts"
     },
     "./screen-recording-runtime": {
       "types": "./src/screen-recording-runtime.ts",
@@ -456,6 +464,10 @@
       "types": "./src/startup-recovery-fence.ts",
       "default": "./src/startup-recovery-fence.ts"
     },
+    "./system-button-runtime": {
+      "types": "./src/system-button-runtime.ts",
+      "default": "./src/system-button-runtime.ts"
+    },
     "./tap-keyboard-occlusion": {
       "types": "./src/tap-keyboard-occlusion.ts",
       "default": "./src/tap-keyboard-occlusion.ts"
@@ -488,5 +500,8 @@
       "types": "./src/wait-runtime-plan.ts",
       "default": "./src/wait-runtime-plan.ts"
     }
+  },
+  "devDependencies": {
+    "fast-check": "^4.9.0"
   }
 }

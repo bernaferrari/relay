@@ -423,6 +423,8 @@ test('the real tree parses, declares, and passes R11', () => {
     '@agent-device/capture-kit/quality-warnings',
     '@agent-device/capture-kit/react-native-overlay',
     '@agent-device/capture-kit/recording-artifact-fixtures',
+    '@agent-device/capture-kit/recording-contact-sheet',
+    '@agent-device/capture-kit/recording-facts',
     '@agent-device/capture-kit/recording-mp4-duration',
     '@agent-device/capture-kit/recording-mp4-fixtures',
     '@agent-device/capture-kit/recording-output-path',
@@ -539,6 +541,8 @@ test('the real tree parses, declares, and passes R11', () => {
     '@agent-device/platform-apple/runner',
     '@agent-device/platform-apple/runner-owner',
     '@agent-device/platform-apple/runner/operations',
+    // Test-only entry: the runner-requests.json check package and root tests share.
+    '@agent-device/platform-apple/runner/requests-fixtures',
     '@agent-device/platform-apple/runner/test-host',
     '@agent-device/platform-apple/session-observation',
     '@agent-device/platform-apple/simctl',

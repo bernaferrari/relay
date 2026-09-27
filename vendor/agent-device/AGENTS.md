@@ -12,6 +12,7 @@ Load only the procedures relevant to the task:
 | Domain vocabulary | `CONTEXT.md`, `docs/agents/domain.md` |
 | Architecture decisions | `docs/adr/README.md` |
 | Tests or gate selection | `docs/agents/testing.md` |
+| Writing, auditing, or sweeping tests; dispatching test-audit subagents | `docs/agents/test-audit.md` |
 | Selector capture, polling, or interaction fast paths | `docs/agents/selector-capture.md` |
 | Adding or changing a CLI flag | `docs/agents/cli-flags.md` |
 | Opening or reviewing a PR | `docs/agents/pull-requests.md` |
@@ -93,6 +94,9 @@ under `contracts/fixtures/`.
   repository-wide, not path-scoped.
 - A fresh worktree requires `pnpm install --frozen-lockfile && pnpm build`. Until then package and
   optional-peer resolution may point at another checkout and produce false failures.
+- Worktrees never receive `.env`; no repo code reads it. When a command needs a host credential,
+  source the main checkout's copy by absolute path (`set -a && . /path/to/main/checkout/.env && set +a`)
+  instead of copying it in or writing it into the worktree.
 - Parallel work needs disjoint edit ownership and distinct devices. Run one full gate per host;
   concurrent subprocess-backed suites can produce contention timeouts.
 - The layering scan reads tracked files only. Stage a new module before trusting its result.

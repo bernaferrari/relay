@@ -43,6 +43,9 @@ final class AccessibilityTreeXml {
     // (#2063 empty-fill verification).
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       appendAttribute(xml, "hint-showing", Boolean.toString(node.isShowingHintText()));
+      // The hint itself, whether or not the field is showing it: `text` holds the hint only while
+      // the field is empty, so a filled field's placeholder is readable nowhere else.
+      appendNonEmptyAttribute(xml, "hint", node.getHintText());
     }
     appendAttribute(xml, "editable", Boolean.toString(node.isEditable()));
     // Accessibility selection offsets, not a measurement of the value's length. Read-only
@@ -53,6 +56,8 @@ final class AccessibilityTreeXml {
     appendAttribute(xml, "class", node.getClassName());
     appendNonEmptyAttribute(xml, "package", node.getPackageName());
     appendNonEmptyAttribute(xml, "content-desc", node.getContentDescription());
+    appendNonEmptyAttribute(xml, "role-description", roleDescription(node));
+    appendTrueAttribute(xml, "heading", isHeading(node));
     appendAttribute(xml, "visible-to-user", Boolean.toString(node.isVisibleToUser()));
     appendDrawingOrderAttribute(xml, node);
     appendTrueAttribute(xml, "clickable", node.isClickable());
@@ -64,6 +69,12 @@ final class AccessibilityTreeXml {
     // unselected control reports selected=false and a helper older than this attribute reports
     // nothing at all.
     appendAttribute(xml, "selected", Boolean.toString(node.isSelected()));
+    // Present only on a checkable control, with both answers: an unchecked switch reports
+    // checked=false, while a node that cannot be checked reports nothing, like a helper older than
+    // this attribute.
+    if (node.isCheckable()) {
+      appendAttribute(xml, "checked", Boolean.toString(node.isChecked()));
+    }
     boolean scrollable = node.isScrollable();
     if (scrollable) {
       appendAttribute(xml, "scrollable", "true");
@@ -146,9 +157,21 @@ final class AccessibilityTreeXml {
     }
   }
 
-  // Declared residue (agent-device #1832): checked / checkable / long-clickable are not serialized,
-  // so toggle state is invisible to agents. Adding them is a helper protocol change (new attributes
-  // + host parser + fields on the wire node), tracked there.
+  // The platform node has no role description getter: androidx writes the value an app set
+  // (AccessibilityNodeInfoCompat.setRoleDescription) into the node extras under this key, and
+  // TalkBack reads it from there.
+  private static CharSequence roleDescription(AccessibilityNodeInfo node) {
+    return node.getExtras().getCharSequence("AccessibilityNodeInfo.roleDescription");
+  }
+
+  // isHeading() arrived in API 28. Older releases keep the compat flag in an extras bit this
+  // helper does not read, so a heading on API 23-27 reports nothing.
+  private static boolean isHeading(AccessibilityNodeInfo node) {
+    return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && node.isHeading();
+  }
+
+  // Declared residue (agent-device #1832): long-clickable is not serialized. Adding it is a helper
+  // protocol change (new attribute + host parser + field on the wire node).
   private static void appendDrawingOrderAttribute(StringBuilder xml, AccessibilityNodeInfo node) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
       appendAttribute(xml, "drawing-order", Integer.toString(node.getDrawingOrder()));

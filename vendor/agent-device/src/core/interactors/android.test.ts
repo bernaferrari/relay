@@ -94,3 +94,20 @@ test('a device-only session releases the helper after fill and scroll', async ()
     helperSessionScope: 'command',
   });
 });
+
+test('a transient snapshot reaches the Android capture with its settle deadline', async () => {
+  snapshotAndroidMock.mockResolvedValue(makeAndroidSnapshotCapture([]));
+
+  await createAndroidInteractor(device).snapshot({
+    appBundleId: 'com.example.app',
+    transient: { settleBy: 1_000 },
+  });
+
+  expect(snapshotAndroidMock).toHaveBeenCalledWith(
+    device,
+    expect.objectContaining({
+      appBundleId: 'com.example.app',
+      transient: { settleBy: 1_000 },
+    }),
+  );
+});

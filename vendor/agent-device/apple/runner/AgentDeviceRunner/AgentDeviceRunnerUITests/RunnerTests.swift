@@ -31,8 +31,10 @@ final class RunnerTests: XCTestCase {
   /// String codes the daemon keys behavior on. `RUNNER_BUSY` and `RUNNER_WEDGED` come from the busy
   /// gate; `MAIN_THREAD_TIMEOUT` is emitted by the transport when a command trips the execution
   /// watchdog, so the daemon can tell "the main thread is now occupied" from a generic failure.
+  /// `APP_NOT_RUNNING` refuses a read whose session app is not running.
   enum RunnerWireErrorCode {
     static let mainThreadTimeout = "MAIN_THREAD_TIMEOUT"
+    static let appNotRunning = "APP_NOT_RUNNING"
   }
 
   static let springboardBundleId = "com.apple.springboard"
@@ -52,9 +54,7 @@ final class RunnerTests: XCTestCase {
   let commandExecutionQueue = DispatchQueue(label: "agent-device.runner.commands")
   let app = XCUIApplication()
   lazy var springboard = XCUIApplication(bundleIdentifier: Self.springboardBundleId)
-  var currentApp: XCUIApplication?
-  var currentBundleId: String?
-  var currentAppProcessIdentifier: Int?
+  let mainOwned = RunnerMainOwnedState()
   // Set while serving a command that had to re-activate the bound app, and stamped onto that
   // command's response before it leaves the execution queue (#2682).
   var pendingTargetActivation: TargetActivationFactPayload?
@@ -64,7 +64,7 @@ final class RunnerTests: XCTestCase {
   // interactions clear it before it can become stale.
   var textEntryTapWitness: TextEntryTapWitness?
   let maxRequestBytes = 2 * 1024 * 1024
-  let mainThreadExecutionTimeout: TimeInterval = 30
+  static let mainThreadExecutionTimeout: TimeInterval = 30
   let appExistenceTimeout: TimeInterval = 30
   let retryCooldown: TimeInterval = 0.2
   let postSnapshotInteractionDelay: TimeInterval = 0.2
@@ -75,26 +75,38 @@ final class RunnerTests: XCTestCase {
   let xctestIdleKeepaliveInterval: TimeInterval = 60.0
   let minRecordingFps = 1
   let maxRecordingFps = 120
-  var needsPostSnapshotInteractionDelay = false
+  // A recorder frame still capturing on main after this long is abandoned and dropped. It bounds a
+  // screenshot round trip, not the frame interval: a capture slower than the interval lowers the
+  // frame rate, and only a capture this slow counts as main-thread occupancy.
+  let recordingFrameCaptureTimeout: TimeInterval = 1
+  // Per-command markers that restate a fact of the bound target (the fast app guard, the
+  // synthesized gesture policy per gesture kind) write only when that fact changes; otherwise a
+  // long session fills runner.log with one identical line per command. Cleared with the rest of the
+  // target-bound state so a rebind states the fact once more.
+  var lastLoggedFastAppGuardLine: String?
+  var lastLoggedGesturePolicyLines: [SynthesizedGesturePolicyKind: String] = [:]
+  var runnerMarkerWriter: @MainActor (String) -> Void = { NSLog("%@", $0) }
   /// When the first interaction after an activation may run, on the monotonic uptime clock.
   /// The guarantee is a minimum gap *since the activation*, not a pause at the interaction:
   /// a caller that already spent that gap elsewhere (an agent's round trip is 190-260 ms)
   /// has satisfied it and waits for nothing. `nil` = no activation is pending stabilization.
   var firstInteractionReadyUptime: TimeInterval?
-  var runnerAccessibilityHealth: RunnerAccessibilityHealth = .unknown
   var activeRecording: ScreenRecorder?
   let commandJournal = RunnerCommandJournal()
   // Coalesces duplicate transport sends of the same commandId onto the single in-flight
   // execution instead of enqueueing them again behind it (#1105 capture pileup).
   let inFlightCommandLock = NSLock()
   var inFlightCommandIds: Set<String> = []
-  var inFlightCommandWaiters: [String: [((data: Data, shouldFinish: Bool)) -> Void]] = [:]
+  var inFlightCommandWaiters: [String: [@Sendable ((data: Data, shouldFinish: Bool)) -> Void]] = [:]
   // Tracks main-queue work abandoned by the execution watchdog (runMainThreadWork). While any is
   // outstanding the main thread is occupied: new main-thread commands fail fast as busy instead
   // of queueing behind work that cannot be cancelled, capture plans skip XCTest-backed tiers,
   // and post-capture bookkeeping stays off main (#1105/#1244).
   let mainThreadWorkLock = NSLock()
   var abandonedMainThreadWorkCount = 0
+  // Dispatched main-queue work that has not finished yet, abandoned or not. Only optional work
+  // reads it, to stay off a main thread that commands are using; occupancy readers do not.
+  var mainThreadWorkInFlightCount = 0
   var abandonedMainThreadWorkSince: Date?
   // Past this age the runner stops claiming "busy, retry soon" and reports itself wedged so
   // the daemon recycles it — the only cure once the main thread is stuck for good.
@@ -107,7 +119,7 @@ final class RunnerTests: XCTestCase {
   var snapshotXCTestChannelPenaltyBundleId: String?
   var snapshotXCTestChannelPenaltyUntil = Date.distantPast
   let snapshotXCTestChannelPenaltyDuration: TimeInterval = 120
-  var snapshotXCTestPenaltyWarmupExemptionPending = false
+  let snapshotXCTestPenaltyWarmupExemption = SnapshotXCTestPenaltyWarmupExemption()
   // Sticky per-bundle hint for the private AX depth ladder: deep RN screens reject the default
   // depth with kAXErrorIllegalArgument on EVERY capture, so once a shallower rung is accepted
   // later captures start there instead of re-paying the rejected deep request (~300ms per
@@ -186,10 +198,20 @@ final class RunnerTests: XCTestCase {
   // body runs in place of `blockingSystemAlertSnapshot` so it can force a real timeout without a
   // live SpringBoard alert. Production never compiles this property. Stored here (rather than in
   // the extension that reads it) because Swift extensions cannot hold stored properties.
-  var systemModalProbeOverrideForTesting: ((Date) -> DataPayload?)?
+  var systemModalProbeOverrideForTesting: (@MainActor (Date) -> DataPayload?)?
   var blockingSystemModalPresenceOverrideForTesting: Bool?
-  var alertResolutionOverrideForTesting: ((Date) -> RunnerAlert?)?
-  var alertButtonHittabilityProbeOverrideForTesting: ((Date) -> Bool)?
+  var alertResolutionOverrideForTesting: (@MainActor (Date) -> RunnerAlert?)?
+  var alertButtonHittabilityProbeOverrideForTesting: (@MainActor (Date) -> Bool)?
+  // Unit-test-only seam for the in-place surface probe (`presentedSystemSurfaceHost`): a registered
+  // host is an out-of-process XPC service that only comes up because some app presented it, and
+  // `open` refuses to launch one, so the foreground answer for every registered host is supplied
+  // here when set — members are foreground, non-members are not — which lets a test pin the whole
+  // registry walk. The probe's registry order and its `.runningForeground` condition stay the
+  // production ones. Production never compiles this property.
+  var presentedSystemSurfaceForegroundOverrideForTesting: Set<String>?
+  // Runs on the waiting thread after `runMainThreadWork`'s wait timed out and before it takes the
+  // lock that decides between finished and abandoned, so a test can finish the work in that window.
+  var mainThreadWorkTimedOutForTesting: (@Sendable () -> Void)?
   #endif
   // Observability for the record(_:) suppression below: how many AX-broken-screen snapshot
   // issues this session muted, so wedge investigations see the volume without grepping logs.
@@ -263,11 +285,6 @@ final class RunnerTests: XCTestCase {
 
   @MainActor
   func testCommand() throws {
-    if RunnerEnv.isTruthy("AGENT_DEVICE_RUNNER_NOOP_STARTUP") {
-      NSLog("AGENT_DEVICE_RUNNER_NOOP_STARTUP=1")
-      return
-    }
-
     doneExpectation = expectation(description: "agent-device command handled")
     NSLog("AGENT_DEVICE_RUNNER_HEADLESS_STARTUP=1")
     let desiredPort = RunnerEnv.resolvePort()
@@ -300,7 +317,7 @@ final class RunnerTests: XCTestCase {
       deadline: .now() + xctestIdleKeepaliveInterval,
       repeating: xctestIdleKeepaliveInterval
     )
-    idleKeepaliveTimer.setEventHandler {
+    idleKeepaliveTimer.setEventHandler { @Sendable in
       NSLog("AGENT_DEVICE_RUNNER_IDLE_KEEPALIVE")
     }
     idleKeepaliveTimer.resume()

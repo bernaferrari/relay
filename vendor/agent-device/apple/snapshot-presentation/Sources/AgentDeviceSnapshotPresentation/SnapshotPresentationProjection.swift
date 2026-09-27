@@ -1,6 +1,8 @@
 import Foundation
 
 extension SnapshotPresentation {
+  // Kept in step with `REGULAR_ELIGIBLE_TYPES` in ios-snapshot-engine/projection.ts by
+  // eligibility-parity.test.ts. Excludes `scrollarea` (ADR 0026): the iOS runner never emits it.
   static let eligibleInteractiveTypes: Set<String> = [
     "Button",
     "Cell",
@@ -138,6 +140,7 @@ extension SnapshotPresentation {
           label: raw.label,
           identifier: raw.identifier,
           value: raw.value,
+          placeholder: raw.placeholder,
           rect: raw.rect,
           enabled: raw.enabled,
           focused: raw.focused,

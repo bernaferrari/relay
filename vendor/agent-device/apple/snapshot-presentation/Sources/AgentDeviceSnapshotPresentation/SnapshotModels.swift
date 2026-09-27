@@ -34,11 +34,14 @@ public struct RawAXNode: Equatable {
   public let label: String?
   public let identifier: String?
   public let value: String?
+  /// The text a text field shows while empty (`placeholderValue`); `nil` for every other node.
+  public let placeholder: String?
   public var rect: SnapshotRect
   public let enabled: Bool
   public let focused: Bool?
   public let selected: Bool?
-  public var hittable: Bool
+  /// Geometric actionability; `nil` when the capture has no viewport box to decide it against.
+  public var hittable: Bool?
   public let depth: Int
   public let parentIndex: Int?
   public let hiddenContentAbove: Bool?
@@ -51,11 +54,12 @@ public struct RawAXNode: Equatable {
     label: String?,
     identifier: String?,
     value: String?,
+    placeholder: String? = nil,
     rect: SnapshotRect,
     enabled: Bool,
     focused: Bool?,
     selected: Bool?,
-    hittable: Bool,
+    hittable: Bool?,
     depth: Int,
     parentIndex: Int?,
     hiddenContentAbove: Bool?,
@@ -67,6 +71,7 @@ public struct RawAXNode: Equatable {
     self.label = label
     self.identifier = identifier
     self.value = value
+    self.placeholder = placeholder
     self.rect = rect
     self.enabled = enabled
     self.focused = focused
@@ -79,7 +84,7 @@ public struct RawAXNode: Equatable {
     self.actions = actions
   }
 
-  func replacing(rect: SnapshotRect, hittable: Bool) -> RawAXNode {
+  func replacing(rect: SnapshotRect, hittable: Bool?) -> RawAXNode {
     var updated = self
     updated.rect = rect
     updated.hittable = hittable
@@ -153,15 +158,66 @@ public struct PresentationOptions: Equatable {
   }
 }
 
+/// What a capture knows about the viewport hosting its tree: the three cases of the host's
+/// `IosViewportEvidence` (#2891). No rectangle stands for "unknown".
+public enum SnapshotViewport: Equatable {
+  /// A box that was checked on the way in. The initializer is the only gate: no caller, inside this
+  /// package or outside it, holds a `Box` whose rectangle `SnapshotGeometry.isPositiveFinite`
+  /// refuses, so a `.reported` case never needs re-checking what it was handed.
+  public struct Box: Equatable {
+    public let rect: CGRect
+
+    init?(checked rect: CGRect) {
+      guard SnapshotGeometry.isPositiveFinite(rect) else { return nil }
+      self.rect = rect
+    }
+  }
+
+  /// The platform's box for the app's surface, with the interface orientation read in the same hop.
+  /// Only this case can anchor a rotation (#2612).
+  case reported(Box, interfaceOrientation: Int)
+  /// A box the capture inferred from its own root element. It clips and contains, and carries no
+  /// orientation, so it cannot anchor a rotation.
+  case derived(Box)
+  case missing(reason: MissingReason)
+
+  public enum MissingReason: Equatable {
+    /// The read was skipped or raised.
+    case notProvided
+    /// The box read is one `SnapshotGeometry.isPositiveFinite` refuses.
+    case invalid
+  }
+
+  public var rect: CGRect? {
+    switch self {
+    case .reported(let box, _), .derived(let box):
+      return box.rect
+    case .missing:
+      return nil
+    }
+  }
+
+  public static func reported(
+    box: CGRect,
+    interfaceOrientation: Int = RunnerInterfaceOrientation.unknown
+  ) -> SnapshotViewport {
+    guard let checked = Box(checked: box) else { return .missing(reason: .invalid) }
+    return .reported(checked, interfaceOrientation: interfaceOrientation)
+  }
+
+  public static func derived(box: CGRect) -> SnapshotViewport {
+    guard let checked = Box(checked: box) else { return .missing(reason: .invalid) }
+    return .derived(checked)
+  }
+}
+
 public struct SnapshotAcquisition {
   public let hint: CaptureHint
   public var nodes: [RawAXNode]
   public let truncated: Bool
   public let effectiveDepth: Int?
   public var customActions: SnapshotCustomActionCoverage?
-  public let viewport: CGRect
-  /// The app's interface orientation, consumed by the one `normalized` pass; `unknown` turns nothing.
-  public let interfaceOrientation: Int
+  public let viewport: SnapshotViewport
 
   public init(
     hint: CaptureHint,
@@ -169,8 +225,7 @@ public struct SnapshotAcquisition {
     truncated: Bool,
     effectiveDepth: Int?,
     customActions: SnapshotCustomActionCoverage? = nil,
-    viewport: CGRect,
-    interfaceOrientation: Int = 0
+    viewport: SnapshotViewport
   ) {
     self.hint = hint
     self.nodes = nodes
@@ -178,7 +233,6 @@ public struct SnapshotAcquisition {
     self.effectiveDepth = effectiveDepth
     self.customActions = customActions
     self.viewport = viewport
-    self.interfaceOrientation = interfaceOrientation
   }
 
   public func replacingNodes(_ nodes: [RawAXNode]) -> SnapshotAcquisition {
@@ -222,11 +276,12 @@ public struct PresentedNode: Codable, Equatable {
   public let label: String?
   public let identifier: String?
   public let value: String?
+  public let placeholder: String?
   public let rect: SnapshotRect
   public let enabled: Bool
   public let focused: Bool?
   public let selected: Bool?
-  public let hittable: Bool
+  public let hittable: Bool?
   public let depth: Int
   public let parentIndex: Int?
   public let hiddenContentAbove: Bool?
@@ -245,6 +300,7 @@ public struct PresentedNode: Codable, Equatable {
     self.label = raw.label
     self.identifier = raw.identifier
     self.value = raw.value
+    self.placeholder = raw.placeholder
     self.rect = rect ?? raw.rect
     self.enabled = raw.enabled
     self.focused = raw.focused

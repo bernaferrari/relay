@@ -27,10 +27,10 @@ import {
   launchFailureHint,
 } from './launch-diagnostics.ts';
 import { ensureBootedSimulator } from './simulator.ts';
-import { runXcrun } from './tool-provider.ts';
+import { runXcrun, type ScopedSimctlCommand } from './tool-provider.ts';
 import { closeMacOsApp, openMacOsApp } from '../os/macos/apps.ts';
 import { resolveIosApp } from './app-resolution.ts';
-import { runSimctl, simctlArgs } from './apps-simctl.ts';
+import { buildSimctlArgsForDevice, runSimctlForDevice } from './simctl.ts';
 
 const IOS_SIMULATOR_CONSOLE_CAPTURE_MS = 25_000;
 const IOS_SIMULATOR_LAUNCH_ARGS_WITH_URL_MESSAGE =
@@ -153,7 +153,7 @@ async function openIosSimulatorUrl(
     throw new AppError('INVALID_ARGS', IOS_SIMULATOR_LAUNCH_ARGS_WITH_URL_MESSAGE);
   }
   await ensureBootedSimulator(device);
-  await runSimctl(device, ['openurl', device.id, url]);
+  await runSimctlForDevice(device, ['openurl', device.id, url]);
 }
 
 export async function openIosDevice(device: DeviceInfo): Promise<void> {
@@ -208,7 +208,7 @@ async function assertNotSystemSurfaceHost(bundleId: string): Promise<void> {
 async function terminateIosSimulatorApp(device: DeviceInfo, bundleId: string): Promise<void> {
   await assertNotSystemSurfaceHost(bundleId);
   await ensureBootedSimulator(device);
-  const terminateArgs = simctlArgs(device, ['terminate', device.id, bundleId]);
+  const terminateArgs = buildSimctlArgsForDevice(device, ['terminate', device.id, bundleId]);
   const result = await runXcrun(terminateArgs, {
     allowFailure: true,
     timeoutMs: IOS_SIMULATOR_TERMINATE_TIMEOUT_MS,
@@ -244,7 +244,7 @@ async function launchIosSimulatorApp(
           });
         }
 
-        const launchArgs = simctlArgs(
+        const launchArgs = buildSimctlArgsForDevice(
           device,
           buildIosSimulatorLaunchArgs(device.id, bundleId, options),
         );
@@ -291,6 +291,10 @@ function buildIosSimulatorLaunchArgs(
   options?: { launchConsole?: string; launchArgs?: string[]; terminateRunningApp?: boolean },
 ): string[] {
   const args = ['launch'];
+  // `--console-pty` is the console mode this path needs: simctl writes the app's bytes to its own
+  // stdout through a PTY, which is what the caller redirects. `--stdout=<path>`/`--stderr=<path>`
+  // cannot substitute, because they resolve the given path inside the device's data container
+  // rather than on the host. Verified on Xcode 27.1.
   if (options?.launchConsole) args.push('--console-pty');
   if (options?.terminateRunningApp) args.push('--terminate-running-process');
   args.push(deviceId, bundleId);
@@ -301,7 +305,7 @@ function buildIosSimulatorLaunchArgs(
 }
 
 async function runIosSimulatorConsoleLaunch(
-  launchArgs: string[],
+  launchArgs: ScopedSimctlCommand,
   logPath: string,
 ): Promise<Awaited<ReturnType<typeof runXcrun>>> {
   await ensureHostDirectory(path.dirname(logPath));

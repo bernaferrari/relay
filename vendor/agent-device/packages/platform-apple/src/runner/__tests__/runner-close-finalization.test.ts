@@ -14,7 +14,6 @@ import {
   makeRunnerLease,
   runnerError,
   runnerResponse,
-  redirectHandle,
 } from './runner-session-fixtures.ts';
 import { mkdtempForTestSync } from './tmp-dir.ts';
 import { bindAppleApplicationLifecycle } from '../../lifecycle.ts';
@@ -39,7 +38,6 @@ import {
 // capabilities behind the package's runner host port (`scripts/vitest-apple-runner-host-setup.ts`).
 
 const {
-  mockAcquireXcodebuildSimulatorSetRedirect,
   mockCleanupTempFile,
   mockEnsureXctestrunArtifact,
   mockGetFreePort,
@@ -58,7 +56,6 @@ const {
   mockSignalProcessGroupBestEffort,
   mockWaitForRunner,
 } = vi.hoisted(() => ({
-  mockAcquireXcodebuildSimulatorSetRedirect: vi.fn(),
   mockCleanupTempFile: vi.fn(),
   mockEnsureXctestrunArtifact: vi.fn(),
   mockGetFreePort: vi.fn(),
@@ -113,7 +110,6 @@ vi.mock('../runner-xctestrun.ts', async () => {
     await vi.importActual<typeof import('../runner-xctestrun.ts')>('../runner-xctestrun.ts');
   return {
     ...actual,
-    acquireXcodebuildSimulatorSetRedirect: mockAcquireXcodebuildSimulatorSetRedirect,
     ensureXctestrunArtifact: mockEnsureXctestrunArtifact,
     prepareXctestrunWithEnv: mockPrepareXctestrunWithEnv,
     resolveExpectedRunnerCacheMetadata: mockResolveExpectedRunnerCacheMetadata,
@@ -168,7 +164,6 @@ beforeEach(async () => {
   });
   mockResolveExpectedRunnerCacheMetadata.mockReturnValue({ schemaVersion: 1 });
   mockResolveRunnerDerivedPath.mockReturnValue('/tmp/derived');
-  mockAcquireXcodebuildSimulatorSetRedirect.mockResolvedValue(redirectHandle);
   mockRunCmdBackground.mockReturnValue(makeBackgroundRunner(4242));
   mockRunAppleToolCommand.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' });
   mockIsProcessAlive.mockReturnValue(true);

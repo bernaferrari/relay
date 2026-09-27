@@ -25,7 +25,7 @@ import {
   runCmdBackground,
   type ExecBackgroundResult,
 } from '@agent-device/host-kit/command';
-import type { SessionSurface } from '@agent-device/contracts/session';
+import type { MacOsHelperSurface, SessionSurface } from '@agent-device/contracts/session';
 import {
   hasScopedAppleToolProvider,
   resolveAppleToolProvider,
@@ -267,14 +267,25 @@ export async function startMacOsAudioProbeProcess(options: {
   );
 }
 
+const MACOS_HELPER_TIMEOUT_MS = 30_000;
+/**
+ * Every stop the host applies to the helper — a deadline, a cancelled request, a client that
+ * dropped mid-command — reaches it as SIGTERM first. A helper posting a press may be holding
+ * the mouse button down at that moment, and its SIGTERM handler releases the button before it
+ * exits; SIGKILL would end it between the down and the up and leave the button stuck for
+ * whatever the user touches next. A helper that has not exited a second later is killed.
+ */
+const MACOS_HELPER_KILL_GRACE_MS = 1_000;
+
 async function runMacOsHelper<T extends Record<string, unknown>>(
   args: string[],
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<T> {
   const helperOptions = {
     allowFailure: true,
-    timeoutMs: 30_000,
+    timeoutMs: options.timeoutMs ?? MACOS_HELPER_TIMEOUT_MS,
     signal: options.signal,
+    kill: { signal: 'SIGTERM' as const, graceMs: MACOS_HELPER_KILL_GRACE_MS },
   };
   const helperProvider = resolveAppleToolProvider().macosHelper;
   const helperPath = helperProvider
@@ -361,10 +372,10 @@ export async function runMacOsAlertAction(
 }
 
 export async function runMacOsSnapshotAction(
-  surface: Exclude<SessionSurface, 'app'>,
+  surface: MacOsHelperSurface,
   options: { bundleId?: string; signal?: AbortSignal } = {},
 ): Promise<{
-  surface: Exclude<SessionSurface, 'app'>;
+  surface: SessionSurface;
   nodes: MacOsSnapshotNode[];
   truncated: boolean;
   backend: 'macos-helper';
@@ -377,7 +388,7 @@ export async function runMacOsSnapshotAction(
 export async function runMacOsReadTextAction(
   x: number,
   y: number,
-  options: { bundleId?: string; surface?: SessionSurface } = {},
+  options: { surface: MacOsHelperSurface; bundleId?: string },
 ): Promise<{
   text: string;
 }> {
@@ -386,33 +397,88 @@ export async function runMacOsReadTextAction(
   return await runMacOsHelper(args);
 }
 
+// Mirrors the helper's own floors (`MouseClickSchedule.swift`): the schedule the helper runs
+// is derived from the same numbers, so the timeout that must outlast it is derived here too.
+const MACOS_CLICK_MINIMUM_HOLD_MS = 40;
+const MACOS_CLICK_DEFAULT_HOLD_MS = 60;
+const MACOS_CLICK_PAIR_GAP_MS = 80;
+const MACOS_CLICK_DEFAULT_INTERVAL_MS = 120;
+
+/**
+ * How long the helper stays busy posting one press request: every hold plus every gap,
+ * exactly as `mouseClickScheduleMs` in the helper sums them. Every path that runs a click
+ * schedule sets its process timeout from this, because a helper killed mid-hold would leave
+ * the system's mouse button down.
+ */
+export function macOsClickScheduleMs(options: {
+  holdMs?: number;
+  clicks?: number;
+  doubleClick?: boolean;
+  intervalMs?: number;
+}): number {
+  const hold =
+    options.holdMs && options.holdMs > 0
+      ? Math.max(options.holdMs, MACOS_CLICK_MINIMUM_HOLD_MS)
+      : MACOS_CLICK_DEFAULT_HOLD_MS;
+  const clicks = Math.max(options.clicks ?? 1, 1);
+  const interval = Math.max(options.intervalMs ?? MACOS_CLICK_DEFAULT_INTERVAL_MS, 0);
+  const perPress = options.doubleClick ? 2 * hold + MACOS_CLICK_PAIR_GAP_MS : hold;
+  return clicks * perPress + (clicks - 1) * interval;
+}
+
 export async function runMacOsPressAction(
   x: number,
   y: number,
-  options: { bundleId?: string; surface?: SessionSurface } = {},
+  options: {
+    surface: MacOsHelperSurface;
+    bundleId?: string;
+    holdMs?: number;
+    /** Independent presses, each a single click; `--count` on every platform. */
+    clicks?: number;
+    /** Post each press as a double-click pair; `--double-tap`. */
+    doubleClick?: boolean;
+    intervalMs?: number;
+    signal?: AbortSignal;
+  },
 ): Promise<{
   x: number;
   y: number;
+  holdMs?: number;
+  clicks?: number;
+  doubleClick?: boolean;
   bundleId?: string;
   surface?: SessionSurface;
 }> {
   const args = ['press', '--x', String(x), '--y', String(y)];
+  if (options.holdMs && options.holdMs > 0) {
+    args.push('--hold-ms', String(options.holdMs));
+  }
+  const clicks = options.clicks ?? 1;
+  if (clicks > 1) {
+    args.push('--clicks', String(clicks));
+    // An explicit zero is a request for back-to-back presses, not an unset interval.
+    if (options.intervalMs !== undefined) {
+      args.push('--interval-ms', String(Math.max(options.intervalMs, 0)));
+    }
+  }
+  if (options.doubleClick) {
+    args.push('--double-click');
+  }
   appendMacOsHelperContextArgs(args, options);
-  return await runMacOsHelper(args);
+  return await runMacOsHelper(args, {
+    signal: options.signal,
+    timeoutMs: macOsClickScheduleMs(options) + MACOS_HELPER_TIMEOUT_MS,
+  });
 }
 
 export async function runMacOsScreenshotAction(
   outPath: string,
-  options: { surface?: SessionSurface; fullscreen?: boolean } = {},
+  options: { surface: MacOsHelperSurface },
 ): Promise<{
   path: string;
   surface?: SessionSurface;
-  fullscreen: boolean;
 }> {
   const args = ['screenshot', '--out', outPath];
   appendMacOsHelperContextArgs(args, options);
-  if (options.fullscreen) {
-    args.push('--fullscreen');
-  }
   return await runMacOsHelper(args);
 }

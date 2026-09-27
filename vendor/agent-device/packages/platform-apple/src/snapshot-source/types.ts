@@ -5,6 +5,7 @@ import type {
   IosViewportEvidence,
 } from '@agent-device/contracts/ios-snapshot';
 import type { RawSnapshotNode } from '@agent-device/kernel/snapshot';
+import type { SimulatorAddress } from '../core/simctl.ts';
 import type { SnapshotSourceDeadline } from './deadline.ts';
 
 export type SnapshotSourceLimits = Readonly<{
@@ -16,7 +17,7 @@ export type SnapshotSourceLimits = Readonly<{
 }>;
 
 export type SnapshotSourceTarget = Readonly<{
-  udid: string;
+  simulator: SimulatorAddress;
   runtime: string;
   pid: number;
   generation: string;
@@ -82,7 +83,7 @@ export type SnapshotSourceHost = Readonly<{
   homeDirectory(): string;
   run(command: string, args: string[], options?: ExecOptions): Promise<ExecResult>;
   start(
-    udid: string,
+    simulator: SimulatorAddress,
     bridgePath: string,
     socketPath: string,
     options?: { signal?: AbortSignal },
@@ -101,7 +102,10 @@ export type SnapshotSourceHost = Readonly<{
   remove(path: string): Promise<void>;
   acquireLock(
     path: string,
-    options: { deadline: SnapshotSourceDeadline },
+    /** `description` names the contended resource in a stall's diagnostic, e.g. "iOS Simulator
+     * snapshot bridge cache"; every lock holder states its own, since this host is shared by every
+     * runtime clang build in the package. */
+    options: { deadline: SnapshotSourceDeadline; description: string },
   ): Promise<() => Promise<void>>;
   emitDiagnostic(event: {
     level?: 'debug' | 'info' | 'warn' | 'error';

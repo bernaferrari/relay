@@ -12,6 +12,7 @@ import { createDaemonRuntimeSessionStore } from './runtime-session.ts';
 import { contextFromFlags, type BoundContextFromFlags } from './context.ts';
 import { readTextForNode } from './selector-text-runtime.ts';
 import { setSessionSnapshot } from './session-snapshot.ts';
+import { markSessionSnapshotOutdated } from './ref-frame.ts';
 import { SessionStore } from './session-store.ts';
 import type { DaemonRequest, DaemonResponse } from './daemon-request.ts';
 import type { SessionState } from './session-state.ts';
@@ -27,7 +28,7 @@ import type { AndroidObservationAdapter } from '@agent-device/contracts/android-
 import type { PlatformResourceCleanup } from './platform-resource-cleanup.ts';
 import { getRequestSignal } from '@agent-device/host-kit/request';
 import { snapshotOptionsToFlags } from '../backend-snapshot-options.ts';
-import type { RequestActivationProof } from './capture-disclosure.ts';
+import type { RequestCaptureProof } from './capture-disclosure.ts';
 import { checkIsArgs } from '@agent-device/selectors';
 import { noActiveSessionError } from '@agent-device/kernel/contracts';
 
@@ -41,7 +42,7 @@ export type SelectorRuntimeParams = {
   // sessionless routes disclose from here because no session record stores the capture.
   consumedSnapshot?: { state?: SnapshotState };
   /** The repair this request's own capture reported, when it captured at all (#2682). */
-  activationProof?: RequestActivationProof;
+  captureProof?: RequestCaptureProof;
   signal?: AbortSignal;
   inspectFacts?: InspectDeviceRuntimeFacts;
   bindDevice?: BindDeviceRuntime;
@@ -93,7 +94,7 @@ async function resolveSelectorRuntimeDevice(
   requireSession: boolean,
 ): Promise<ResolvedSelectorDevice> {
   params.consumedSnapshot ??= {};
-  params.activationProof ??= {};
+  params.captureProof ??= {};
   const session = params.sessionStore.get(params.sessionName);
   if (!session && requireSession) return { ok: false, response: noActiveSessionError() };
   const device = session?.device ?? (await resolveTargetDevice(params.req.flags ?? {}));
@@ -171,7 +172,7 @@ function createSelectorBackend(params: SelectorRuntimeDeviceParams): AgentDevice
           sessionName,
           req,
           consumedSnapshot: params.consumedSnapshot,
-          activationProof: params.activationProof,
+          captureProof: params.captureProof,
           logPath,
           capture: boundOperations.capture,
         });
@@ -220,16 +221,16 @@ function createSelectorBackend(params: SelectorRuntimeDeviceParams): AgentDevice
     // reports `found: false` and the poll consults the canonical tree.
     ...(boundFindText
       ? {
-          findText: async (context: BackendCommandContext, text: string) => ({
-            found: (
-              await boundFindText({
-                text,
-                options: { appBundleId: session?.appBundleId, surface: session?.surface },
-                execution: runnerExecution,
-                ...(context.signal ? { signal: context.signal } : {}),
-              })
-            ).found,
-          }),
+          findText: async (context: BackendCommandContext, text: string) => {
+            const { found } = await boundFindText({
+              text,
+              options: { appBundleId: session?.appBundleId, surface: session?.surface },
+              execution: runnerExecution,
+              ...(context.signal ? { signal: context.signal } : {}),
+            });
+            if (session) markSessionSnapshotOutdated(session);
+            return { found };
+          },
         }
       : {}),
   };

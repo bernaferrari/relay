@@ -1,37 +1,38 @@
 import {
+  APPLE_BIOMETRIC_LEAF_REFUSAL,
   getUnsupportedMacOsSettingMessage,
+  type MobilePermissionTarget,
+  parseAppearanceAction,
   parsePermissionAction,
   parsePermissionTarget,
+  parseSettingState,
+  type ReadableSetting,
+  type ReadSettingResult,
   type SettingOptions,
 } from '@agent-device/contracts/settings';
 import { isIosFamily, isMacOs, type DeviceInfo } from '@agent-device/kernel/device';
-import { AppError } from '@agent-device/kernel/errors';
-import { readHostDirectory, removeHostPath } from '@agent-device/host-kit/host-file';
-import { readHostEnvironmentVariable } from '@agent-device/host-kit/process';
-import path from 'node:path';
-import { resolveIosSimulatorDeviceSetPath } from '@agent-device/kernel/device-isolation';
-import { requireExecSuccess } from '@agent-device/host-kit/command';
-import { requireLocationCoordinates } from '@agent-device/kernel/location-coordinates';
 import {
-  parseAppearanceAction,
-  parseSettingState,
+  AppError,
   summarizeCommandAttemptFailures,
   type CommandAttemptFailure,
-} from './settings-parsing.ts';
+} from '@agent-device/kernel/errors';
+import { readHostDirectory, removeHostPath } from '@agent-device/host-kit/host-file';
+import path from 'node:path';
+import { requireExecSuccess } from '@agent-device/host-kit/command';
+import { requireLocationCoordinates } from '@agent-device/kernel/location-coordinates';
 import { setMacOsAppearance } from '../os/macos/apps.ts';
 import { runMacOsPermissionAction, type MacOsPermissionTarget } from '../os/macos/helper.ts';
 import { closeIosApp } from './app-launch.ts';
+import { readIosTextSize, setIosTextSize } from './settings-text-size.ts';
+import { requireHandheldAppleSimulatorLeaf } from './settings-leaf.ts';
 import { resolveIosApp } from './app-resolution.ts';
-import { runSimctl, simctlArgs } from './apps-simctl.ts';
+import { buildSimctlArgsForDevice, runSimctlForDevice } from './simctl.ts';
 import {
   invalidateSimulatorStatusBarOverrideCache,
   rememberClearedStatusBarOverrides,
 } from './screenshot-status-bar.ts';
 import { ensureBootedSimulator, requireSimulatorDevice } from './simulator.ts';
 import { runXcrun } from './tool-provider.ts';
-
-let cachedSimctlPrivacyServices: Set<string> | null = null;
-let cachedSimctlPrivacyServicesCacheKey: string | undefined;
 
 // fallow-ignore-next-line complexity
 export async function setIosSetting(
@@ -79,7 +80,7 @@ export async function setIosSetting(
       if (state.toLowerCase() !== 'clear') {
         throw new AppError('INVALID_ARGS', 'settings reset-keychain only supports clear.');
       }
-      await runSimctl(device, ['keychain', device.id, 'reset']);
+      await runSimctlForDevice(device, ['keychain', device.id, 'reset']);
       return {
         scope: 'simulator',
         cleared: true,
@@ -90,14 +91,14 @@ export async function setIosSetting(
     case 'wifi': {
       const enabled = parseSettingState(state);
       const mode = enabled ? 'active' : 'failed';
-      await runSimctl(device, ['status_bar', device.id, 'override', '--wifiMode', mode]);
+      await runSimctlForDevice(device, ['status_bar', device.id, 'override', '--wifiMode', mode]);
       invalidateSimulatorStatusBarOverrideCache(device);
       return;
     }
     case 'airplane': {
       const enabled = parseSettingState(state);
       if (enabled) {
-        await runSimctl(device, [
+        await runSimctlForDevice(device, [
           'status_bar',
           device.id,
           'override',
@@ -116,7 +117,7 @@ export async function setIosSetting(
         ]);
         invalidateSimulatorStatusBarOverrideCache(device);
       } else {
-        await runSimctl(device, ['status_bar', device.id, 'clear']);
+        await runSimctlForDevice(device, ['status_bar', device.id, 'clear']);
         rememberClearedStatusBarOverrides(device);
       }
       return;
@@ -124,7 +125,12 @@ export async function setIosSetting(
     case 'location': {
       if (state.toLowerCase() === 'set') {
         const { latitude, longitude } = requireLocationCoordinates(options);
-        await runSimctl(device, ['location', device.id, 'set', `${latitude},${longitude}`]);
+        await runSimctlForDevice(device, [
+          'location',
+          device.id,
+          'set',
+          `${latitude},${longitude}`,
+        ]);
         return { latitude, longitude };
       }
       const enabled = parseSettingState(state);
@@ -132,25 +138,28 @@ export async function setIosSetting(
         throw new AppError('INVALID_ARGS', 'location setting requires an active app in session');
       }
       const action = enabled ? 'grant' : 'revoke';
-      await runSimctl(device, ['privacy', device.id, action, 'location', appBundleId]);
+      await runSimctlForDevice(device, ['privacy', device.id, action, 'location', appBundleId]);
       return;
     }
     case 'faceid':
     case 'touchid': {
+      requireHandheldAppleSimulatorLeaf(device, APPLE_BIOMETRIC_LEAF_REFUSAL);
       const biometricSetting = normalized as IosBiometricSetting;
       const biometric = IOS_BIOMETRIC_SETTINGS[biometricSetting];
       const action = parseBiometricAction(state, biometricSetting);
       await runIosBiometricSimctlCommand(device, action, {
         settingName: biometricSetting,
-        label: biometric.label,
-        modalityAliases: biometric.modalityAliases,
+        notificationModality: biometric.notificationModality,
       });
       return;
     }
     case 'appearance': {
       const target = await resolveIosAppearanceTarget(device, state);
-      await runSimctl(device, ['ui', device.id, 'appearance', target]);
+      await runSimctlForDevice(device, ['ui', device.id, 'appearance', target]);
       return;
+    }
+    case 'text-size': {
+      return await setIosTextSize(device, state);
     }
     case 'permission': {
       if (!appBundleId) {
@@ -164,6 +173,23 @@ export async function setIosSetting(
     default:
       throw new AppError('INVALID_ARGS', `Unsupported setting: ${setting}`);
   }
+}
+
+/**
+ * The Apple read leg, exhaustive over the readable list: a setting joins `READABLE_SETTINGS` only
+ * with an answer here, so a new readable name is a compile error on this map rather than a runtime
+ * refusal hidden in a default case. The leaf that holds the value still refuses on its own fact.
+ */
+const IOS_READABLE_SETTINGS = {
+  'text-size': readIosTextSize,
+} as const satisfies Record<ReadableSetting, (device: DeviceInfo) => Promise<ReadSettingResult>>;
+
+/** Answers `settings <setting>` with the value the Apple leaf holds. */
+export async function readIosSetting(
+  device: DeviceInfo,
+  setting: ReadableSetting,
+): Promise<ReadSettingResult> {
+  return await IOS_READABLE_SETTINGS[setting](device);
 }
 
 async function clearIosSimulatorAppState(
@@ -182,7 +208,7 @@ async function clearIosSimulatorAppState(
   await closeIosApp(device, bundleId);
 
   const result = requireExecSuccess(
-    await runSimctl(device, ['get_app_container', device.id, bundleId, 'data'], {
+    await runSimctlForDevice(device, ['get_app_container', device.id, bundleId, 'data'], {
       allowFailure: true,
     }),
     `simctl get_app_container failed for ${bundleId}`,
@@ -225,7 +251,7 @@ async function resolveIosAppearanceTarget(
   if (action !== 'toggle') return action;
 
   const currentResult = requireExecSuccess(
-    await runSimctl(device, ['ui', device.id, 'appearance'], {
+    await runSimctlForDevice(device, ['ui', device.id, 'appearance'], {
       allowFailure: true,
     }),
     'Failed to read current iOS appearance',
@@ -252,12 +278,15 @@ function parseIosAppearance(stdout: string, stderr: string): 'light' | 'dark' | 
 type IosBiometricAction = 'match' | 'nonmatch' | 'enroll' | 'unenroll';
 type IosBiometricSetting = 'faceid' | 'touchid';
 
+/** The BiometricKit_Sim notification family a setting posts to: `pearl` is Face ID, `fingerTouch` is Touch ID. */
+type IosBiometricNotificationModality = 'pearl' | 'fingerTouch';
+
 const IOS_BIOMETRIC_SETTINGS: Record<
   IosBiometricSetting,
-  { label: 'Face ID' | 'Touch ID'; modalityAliases: string[] }
+  { notificationModality: IosBiometricNotificationModality }
 > = {
-  faceid: { label: 'Face ID', modalityAliases: ['face'] },
-  touchid: { label: 'Touch ID', modalityAliases: ['finger', 'touch'] },
+  faceid: { notificationModality: 'pearl' },
+  touchid: { notificationModality: 'fingerTouch' },
 };
 
 function mapIosPermissionAction(action: 'grant' | 'deny' | 'reset'): 'grant' | 'revoke' | 'reset' {
@@ -271,156 +300,95 @@ async function runIosPrivacyCommand(
   target: string,
   appBundleId: string,
 ): Promise<void> {
-  const supportedServices = await getSimctlPrivacyServices(device);
-  if (!supportedServices.has(target)) {
-    throw new AppError(
-      'UNSUPPORTED_OPERATION',
-      `iOS simctl privacy does not support service "${target}" on this runtime.`,
-      {
-        deviceId: device.id,
-        appBundleId,
-        hint: `Supported services: ${Array.from(supportedServices).sort().join(', ')}`,
-      },
-    );
-  }
-
-  const args = ['privacy', device.id, action, target, appBundleId];
-  const isNotificationsTarget = target === 'notifications';
-  if (!(action === 'reset' && isNotificationsTarget)) {
-    try {
-      await runSimctl(device, args);
-      return;
-    } catch (error) {
-      if (!(isNotificationsTarget && isNotificationsOperationNotPermitted(error))) {
-        throw error;
-      }
-      throw new AppError(
-        'UNSUPPORTED_OPERATION',
-        'iOS simulator does not support setting notifications permission via simctl privacy on this runtime.',
-        {
-          deviceId: device.id,
-          appBundleId,
-          hint: 'Use reset notifications for reprompt behavior, or toggle notifications manually in Settings.',
-        },
-      );
-    }
-  }
-
   try {
-    await runSimctl(device, args);
-    return;
+    await runSimctlForDevice(device, ['privacy', device.id, action, target, appBundleId]);
   } catch (error) {
-    if (!isNotificationsOperationNotPermitted(error)) {
-      throw error;
-    }
-  }
-
-  try {
-    await runSimctl(device, ['privacy', device.id, 'reset', 'all', appBundleId]);
-  } catch (error) {
-    throw new AppError(
-      'COMMAND_FAILED',
-      'iOS simulator blocked direct notifications reset. Fallback reset-all also failed.',
-      {
-        deviceId: device.id,
-        appBundleId,
-        hint: 'Use reinstall to force a fresh notifications prompt, or reset simulator content and settings.',
-      },
-      error instanceof Error ? error : undefined,
-    );
+    if (!isPrivacyServiceRefusedError(error)) throw error;
+    throw privacyServiceRefusedError(device, action, target, appBundleId, error);
   }
 }
 
-function isNotificationsOperationNotPermitted(error: unknown): boolean {
+/**
+ * `simctl privacy` is its own capability check: a service the runtime cannot change answers
+ * EPERM, whether or not it is spelled in the help text. The help text is not a capability
+ * list — Xcode 26 omits `camera`, which it does change — so the verdict is read from the
+ * command that would have made the change rather than from a probe that can only guess.
+ */
+function isPrivacyServiceRefusedError(error: unknown): boolean {
   if (!(error instanceof AppError) || error.code !== 'COMMAND_FAILED') return false;
   const stderr = String(error.details?.stderr ?? '').toLowerCase();
   return (
-    (stderr.includes('failed to grant access') ||
-      stderr.includes('failed to revoke access') ||
-      stderr.includes('failed to reset access')) &&
+    /failed to (set|grant|revoke|reset) access/.test(stderr) &&
     stderr.includes('operation not permitted')
   );
 }
 
-async function getSimctlPrivacyServices(device: DeviceInfo): Promise<Set<string>> {
-  const simulatorSetPath = resolveIosSimulatorDeviceSetPath(device.simulatorSetPath);
-  const currentCacheKey = `${readHostEnvironmentVariable('PATH') ?? ''}::${simulatorSetPath ?? ''}`;
-  if (cachedSimctlPrivacyServices && cachedSimctlPrivacyServicesCacheKey === currentCacheKey) {
-    return cachedSimctlPrivacyServices;
+function privacyServiceRefusedError(
+  device: DeviceInfo,
+  action: 'grant' | 'revoke' | 'reset',
+  target: string,
+  appBundleId: string,
+  cause: unknown,
+): AppError {
+  if (action === 'reset') {
+    return new AppError(
+      'UNSUPPORTED_OPERATION',
+      `iOS simulator does not support resetting ${target} permission via simctl privacy on this runtime.`,
+      {
+        deviceId: device.id,
+        appBundleId,
+        hint: 'Use reinstall to force a fresh prompt, or reset simulator content and settings.',
+      },
+      cause,
+    );
   }
-  const result = await runSimctl(device, ['privacy', 'help'], { allowFailure: true });
-  const services = parseSimctlPrivacyServices(`${result.stdout}\n${result.stderr}`);
-  if (services.size === 0) {
-    // exec-guard-allow: `simctl privacy help` prints usage to stderr and can
-    // exit non-zero while still listing services — the guard is on parse
-    // output, not the exit code.
-    throw new AppError('COMMAND_FAILED', 'Unable to determine supported simctl privacy services', {
-      stdout: result.stdout,
-      stderr: result.stderr,
-      exitCode: result.exitCode,
-      hint: 'Run `xcrun simctl privacy help` manually to verify available services for this runtime.',
-    });
-  }
-  cachedSimctlPrivacyServices = services;
-  cachedSimctlPrivacyServicesCacheKey = currentCacheKey;
-  return services;
+  return new AppError(
+    'UNSUPPORTED_OPERATION',
+    `iOS simulator does not support setting ${target} permission via simctl privacy on this runtime.`,
+    {
+      deviceId: device.id,
+      appBundleId,
+      hint: 'Privacy support varies by Xcode runtime: run `xcrun simctl privacy help` for its documented services, or use the `all` target, which applies the action to every service this runtime can change.',
+    },
+    cause,
+  );
 }
 
-function parseSimctlPrivacyServices(helpText: string): Set<string> {
-  const services = new Set<string>();
-  let inServiceSection = false;
-  for (const line of helpText.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    if (trimmed === 'service') {
-      inServiceSection = true;
-      continue;
-    }
-    if (!inServiceSection) continue;
-    if (trimmed.startsWith('bundle identifier')) break;
-    const match = /^([a-z-]+)\s+-\s+/.exec(trimmed);
-    const service = match?.[1];
-    if (service !== undefined) {
-      services.add(service);
-    }
-  }
-  return services;
-}
+/** The `simctl privacy` service for every target except `photos`, whose service depends on its mode. */
+const IOS_PRIVACY_SERVICES: Record<Exclude<MobilePermissionTarget, 'photos'>, string> = {
+  all: 'all',
+  camera: 'camera',
+  microphone: 'microphone',
+  contacts: 'contacts',
+  'contacts-limited': 'contacts-limited',
+  notifications: 'notifications',
+  calendar: 'calendar',
+  location: 'location',
+  'location-always': 'location-always',
+  'media-library': 'media-library',
+  motion: 'motion',
+  reminders: 'reminders',
+  siri: 'siri',
+};
 
-// fallow-ignore-next-line complexity
 function parseIosPermissionTarget(
   permissionTarget: string | undefined,
   permissionMode: string | undefined,
 ): string {
   const normalized = parsePermissionTarget(permissionTarget);
-  if (normalized !== 'photos' && permissionMode?.trim()) {
-    throw new AppError(
-      'INVALID_ARGS',
-      `Permission mode is only supported for photos. Received: ${permissionMode}.`,
-    );
-  }
-  if (normalized === 'camera') return 'camera';
-  if (normalized === 'microphone') return 'microphone';
-  if (normalized === 'contacts') return 'contacts';
-  if (normalized === 'contacts-limited') return 'contacts-limited';
-  if (normalized === 'notifications') return 'notifications';
-  if (normalized === 'calendar') return 'calendar';
-  if (normalized === 'location') return 'location';
-  if (normalized === 'location-always') return 'location-always';
-  if (normalized === 'media-library') return 'media-library';
-  if (normalized === 'motion') return 'motion';
-  if (normalized === 'reminders') return 'reminders';
-  if (normalized === 'siri') return 'siri';
   if (normalized === 'photos') {
     const mode = permissionMode?.trim().toLowerCase();
     if (!mode || mode === 'full') return 'photos';
     if (mode === 'limited') return 'photos-add';
     throw new AppError('INVALID_ARGS', `Invalid photos mode: ${permissionMode}. Use full|limited.`);
   }
-  throw new AppError(
-    'INVALID_ARGS',
-    `Unsupported permission target: ${permissionTarget}. Use camera|microphone|photos|contacts|contacts-limited|notifications|calendar|location|location-always|media-library|motion|reminders|siri.`,
-  );
+  if (permissionMode?.trim()) {
+    throw new AppError(
+      'INVALID_ARGS',
+      `Permission mode is only supported for photos. Received: ${permissionMode}.`,
+    );
+  }
+  return IOS_PRIVACY_SERVICES[normalized];
 }
 
 function parseBiometricAction(state: string, settingName: IosBiometricSetting): IosBiometricAction {
@@ -435,97 +403,124 @@ function parseBiometricAction(state: string, settingName: IosBiometricSetting): 
   );
 }
 
+/**
+ * Simulator biometrics are driven the way the Simulator.app menu drives them: `notifyutil` inside
+ * the simulator posts to `com.apple.BiometricKit_Sim` for a match or non-match and flips the
+ * `enrollmentChanged` state for enrollment. No shipped Xcode has a `simctl biometric` subcommand.
+ */
 async function runIosBiometricSimctlCommand(
   device: DeviceInfo,
   action: IosBiometricAction,
   options: {
     settingName: IosBiometricSetting;
-    label: 'Face ID' | 'Touch ID';
-    modalityAliases: string[];
+    notificationModality: IosBiometricNotificationModality;
   },
 ): Promise<void> {
-  const attempts = biometricCommandAttempts(device.id, action, options.modalityAliases);
+  const args = buildSimctlArgsForDevice(
+    device,
+    biometricNotifyutilArgs(device.id, action, options.notificationModality),
+  );
+  const result = await runXcrun(args, { allowFailure: true });
   const failures: CommandAttemptFailure[] = [];
-
-  for (const args of attempts) {
-    const commandArgs = simctlArgs(device, args);
-    const result = await runXcrun(commandArgs, { allowFailure: true });
-    if (result.exitCode === 0) return;
+  if (result.exitCode !== 0) {
     failures.push({
-      args: commandArgs,
+      args,
       stderr: result.stderr,
       stdout: result.stdout,
       exitCode: result.exitCode,
     });
-  }
-
-  const attemptsPayload = summarizeCommandAttemptFailures(failures);
-  const capabilityMissing =
-    failures.length > 0 &&
-    failures.every((failure) => isIosBiometricCapabilityMissing(failure.stdout, failure.stderr));
-  if (capabilityMissing) {
-    throw new AppError(
-      'UNSUPPORTED_OPERATION',
-      `${options.label} simulation is not supported on this simulator runtime.`,
-      {
-        deviceId: device.id,
-        action,
-        setting: options.settingName,
-        attempts: attemptsPayload,
-      },
-    );
+  } else {
+    const expected = enrollmentStateFor(action);
+    if (expected !== undefined) {
+      const readBack = await readBiometricEnrollmentState(device);
+      if (readBack.state === expected) return;
+      failures.push({
+        args: readBack.args,
+        stderr: readBack.stderr,
+        stdout: readBack.stdout,
+        exitCode: readBack.exitCode,
+      });
+    } else {
+      return;
+    }
   }
   throw new AppError('COMMAND_FAILED', `Failed to simulate ${options.settingName}.`, {
     deviceId: device.id,
     action,
     setting: options.settingName,
-    attempts: attemptsPayload,
+    attempts: summarizeCommandAttemptFailures(failures),
   });
 }
 
-function biometricCommandAttempts(
+const BIOMETRIC_ENROLLMENT_NOTIFICATION = 'com.apple.BiometricKit.enrollmentChanged';
+
+function enrollmentStateFor(action: IosBiometricAction): '1' | '0' | undefined {
+  if (action === 'enroll') return '1';
+  if (action === 'unenroll') return '0';
+  return undefined;
+}
+
+/**
+ * Reads the enrollment state BiometricKit holds after an enroll or unenroll post, so a post that
+ * exited 0 without landing is a failure rather than an "Updated setting". `notifyutil -g` answers
+ * `<name> <state>` on one line.
+ */
+async function readBiometricEnrollmentState(
+  device: DeviceInfo,
+): Promise<CommandAttemptFailure & { state: string | undefined }> {
+  const args = buildSimctlArgsForDevice(device, [
+    'spawn',
+    device.id,
+    'notifyutil',
+    '-g',
+    BIOMETRIC_ENROLLMENT_NOTIFICATION,
+  ]);
+  const result = await runXcrun(args, { allowFailure: true });
+  const state = result.stdout
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/))
+    .find((parts) => parts[0] === BIOMETRIC_ENROLLMENT_NOTIFICATION)?.[1];
+  return {
+    args,
+    stderr: result.stderr,
+    stdout: result.stdout,
+    exitCode: result.exitCode,
+    state: result.exitCode === 0 ? state : undefined,
+  };
+}
+
+/**
+ * The `simctl spawn <udid> notifyutil` argv for one biometric action; enrollment sets the state
+ * before posting so BiometricKit reads the new value when the notification lands.
+ */
+function biometricNotifyutilArgs(
   deviceId: string,
   action: IosBiometricAction,
-  modalityAliases: string[],
-): string[][] {
-  const modalities = modalityAliases.length > 0 ? modalityAliases : ['face'];
+  modality: IosBiometricNotificationModality,
+): string[] {
+  const spawn = ['spawn', deviceId, 'notifyutil'];
   switch (action) {
     case 'match':
-      return modalities.flatMap((modality) => [
-        ['biometric', deviceId, 'match', modality],
-        ['biometric', 'match', deviceId, modality],
-      ]);
+      return [...spawn, '-p', `com.apple.BiometricKit_Sim.${modality}.match`];
     case 'nonmatch':
-      return modalities.flatMap((modality) => [
-        ['biometric', deviceId, 'nonmatch', modality],
-        ['biometric', deviceId, 'nomatch', modality],
-        ['biometric', 'nonmatch', deviceId, modality],
-        ['biometric', 'nomatch', deviceId, modality],
-      ]);
+      return [...spawn, '-p', `com.apple.BiometricKit_Sim.${modality}.nomatch`];
     case 'enroll':
       return [
-        ['biometric', deviceId, 'enroll', 'yes'],
-        ['biometric', deviceId, 'enroll', '1'],
-        ['biometric', 'enroll', deviceId, 'yes'],
-        ['biometric', 'enroll', deviceId, '1'],
+        ...spawn,
+        '-s',
+        BIOMETRIC_ENROLLMENT_NOTIFICATION,
+        '1',
+        '-p',
+        BIOMETRIC_ENROLLMENT_NOTIFICATION,
       ];
     case 'unenroll':
       return [
-        ['biometric', deviceId, 'enroll', 'no'],
-        ['biometric', deviceId, 'enroll', '0'],
-        ['biometric', 'enroll', deviceId, 'no'],
-        ['biometric', 'enroll', deviceId, '0'],
+        ...spawn,
+        '-s',
+        BIOMETRIC_ENROLLMENT_NOTIFICATION,
+        '0',
+        '-p',
+        BIOMETRIC_ENROLLMENT_NOTIFICATION,
       ];
   }
-}
-
-function isIosBiometricCapabilityMissing(stdout: string, stderr: string): boolean {
-  const text = `${stdout}\n${stderr}`.toLowerCase();
-  return (
-    text.includes('unrecognized subcommand') ||
-    text.includes('unknown subcommand') ||
-    text.includes('not supported') ||
-    text.includes('unavailable') ||
-    (text.includes('biometric') && text.includes('invalid'))
-  );
 }

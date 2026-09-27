@@ -6,7 +6,7 @@ import {
   type LiveSnapshotNode as SnapshotNode,
   snapshotNodes,
 } from './live-assertions.ts';
-import { acceptDeepLinkConfirmationIfPresent } from './live-automation-scenario.ts';
+import { acceptDeepLinkConfirmationIfPresent } from './live-deep-link-confirmation.ts';
 import { type LiveContext, runStep, verifyBehavior } from './live-harness.ts';
 
 const VISIBLE_DEPTH_DEEP_LINK = 'agent-device-test-app:///snapshot-depth';
@@ -21,15 +21,17 @@ export async function assertRegularVisibleDepthFrontier(context: LiveContext): P
     '--relaunch',
     '--launch-url',
     VISIBLE_DEPTH_DEEP_LINK,
+    '--debug',
   ]);
-  await acceptDeepLinkConfirmationIfPresent(context, [`id="${CHILD_ID}"`]);
+  await acceptDeepLinkConfirmationIfPresent(context, [`id="${CHILD_ID}"`], { debug: true });
   // Wait for the target itself so the depth assertion is about the frontier, not route readiness.
-  await assertWaitSelector(context, `id="${CHILD_ID}"`);
+  await assertWaitSelector(context, `id="${CHILD_ID}"`, { debug: true });
 
   const regular = await runStep(context, 'capture regular visible-depth frontier', [
     'snapshot',
     '--depth',
     '1',
+    '--debug',
   ]);
   assertSimulatorBridgeSnapshot(regular, 'regular depth-1 snapshot');
   const regularNodes = snapshotNodes(regular);
@@ -44,6 +46,11 @@ export async function assertRegularVisibleDepthFrontier(context: LiveContext): P
     projectedChild.parentIndex,
     regularRoot.index,
     `projected child should be reparented to the presented root: ${JSON.stringify(regular)}`,
+  );
+  assert.equal(
+    projectedChild.hittable,
+    true,
+    `on-screen projected child should carry geometric hittability: ${JSON.stringify(regular)}`,
   );
   assert.ok(
     regularNodes.every((node) => numericDepth(node) <= 1),
@@ -123,8 +130,9 @@ function assertSimulatorBridgeSnapshot(result: { json?: any }, description: stri
     undefined,
     `${description} must not carry XCTest tree quality metadata: ${JSON.stringify(result)}`,
   );
-  assert.ok(
-    result.json?.data?.warnings?.includes(MISSING_HITTABILITY_WARNING),
-    `${description} must disclose the Simulator AX bridge evidence gap: ${JSON.stringify(result)}`,
+  assert.equal(
+    result.json?.data?.warnings?.includes(MISSING_HITTABILITY_WARNING) ?? false,
+    false,
+    `${description} reported a viewport, so the AX bridge must derive hittability instead of disclosing it as missing: ${JSON.stringify(result)}`,
   );
 }

@@ -102,16 +102,16 @@ those runtimes; it does not imply that Swift and TypeScript share an implementat
 The macOS XCTest runner is the desktop-surface exception: its already-presented nodes bypass the iOS
 presentation engine and continue through neutral snapshot assembly.
 
-The same split now holds for the three remaining Wave 4 policies tracked by #1983, so
-`src/snapshot/` is the host-side owner of snapshot policy generally rather than of presentation
-alone:
+The same split now holds for the three remaining Wave 4 policies tracked by #1983, so the host-side
+facet in `@agent-device/capture-kit` owns snapshot policy generally rather than presentation alone:
 
 - **Freshness recovery.** The freshness window, the Android staleness classification and its
-  thresholds, and the retry loop live in `src/snapshot/snapshot-freshness/`. The loop is
-  parameterized by a classifier and a retry schedule, so "how long may a backend lag behind a real
-  transition" is a policy input rather than a constant the loop owns. The schedule is stated as a
-  duration budget; the loop derives the deadline from the window's `markedAt` itself, so the
-  budget is always spent from the action and a caller has no absolute instant it could get wrong.
+  thresholds, and the retry loop live in `packages/capture-kit/src/snapshot/snapshot-freshness/`.
+  The loop is parameterized by a classifier and a retry schedule, so "how long may a backend lag
+  behind a real transition" is a policy input rather than a constant the loop owns. The schedule is
+  stated as a duration budget; the loop derives the deadline from the window's `markedAt` itself, so
+  the budget is always spent from the action and a caller has no absolute instant it could get
+  wrong.
   `src/daemon/session-snapshot-freshness.ts` keeps only what needs a session: reading and retiring
   the window on store-owned `SessionState`, and choosing the comparison baseline from snapshot
   lineage. It remains the declared R7 owner of `androidSnapshotFreshness`.
@@ -125,8 +125,8 @@ alone:
   reclassifying. No message shape is consulted anywhere on that path, so rewording helper or
   wrapper prose cannot move the reason, and prose that merely reads like a timeout does not become
   one — both directions are asserted end to end against the real producer.
-  `src/snapshot/snapshot-timeout-policy.ts` reads the reason; the human-facing hint is derived
-  from it rather than decided alongside it.
+  `packages/capture-kit/src/snapshot/snapshot-timeout-policy.ts` reads the reason; the
+  human-facing hint is derived from it rather than decided alongside it.
 
   The published `details.androidSnapshotTimeoutScreenshot` payload is vocabulary in
   `@agent-device/contracts/snapshot-timeout-evidence`, a union whose arms encode which claims can
@@ -136,13 +136,15 @@ alone:
   The daemon keeps the ordering that genuinely needs it: resolving a bound screenshot runtime,
   writing the artifact, annotating it from the stored observation, and emitting the diagnostics.
 - **Screenshot-overlay policy.** Which Android nodes earn an overlay ref, and what rectangle an
-  overlay for one of them covers, live in `src/snapshot/screenshot-overlay/`. The daemon keeps
-  approved artifact and ref assembly only: ranking, projection to screenshot pixels, drawing, and
-  PNG IO.
+  overlay for one of them covers, live in `packages/capture-kit/src/screenshot-overlay*.ts`. The
+  daemon keeps approved artifact and ref assembly only: ranking, projection to screenshot pixels,
+  drawing, and PNG IO.
 
-`scripts/layering/snapshot-presentation-boundary.test.ts` enforces the direction for the whole
-facet: nothing under `src/snapshot/` may import `src/daemon/`. It carries a positive control,
-because a filter that stopped matching would look identical to a boundary being obeyed.
+`scripts/layering/snapshot-presentation-boundary.test.ts` enforces the direction, but only across
+the roots `snapshot-policy` declares in `scripts/layering/architecture-ownership.ts`: nothing in
+that snapshot tree may import `src/daemon/`, while the overlay modules beside the tree sit outside
+those roots and are outside that gate. It carries a positive control, because a filter that stopped
+matching would look identical to a boundary being obeyed.
 
 The residual call sites #1983 also named are audited and deliberately left in place.
 `src/daemon/direct-ios-selector.ts` carries no presentation policy: `isLocalIosRunnerSession` and
@@ -301,6 +303,22 @@ eligible but are never actionable, while raw projection remains exempt by contra
 a typed `IOS_SNAPSHOT_PRESENTATION_FAILED` capture failure with the named `presentation-failed`
 snapshot-quality reason, preserved through recovery and the existing TypeScript verdict/warning
 contract.
+
+Inside the runner the viewport is a declared fact, not a rectangle: `SnapshotViewport` is
+`reported(box, interfaceOrientation)`, `derived(box)`, or `missing(reason)`, the cases of the host's
+`IosViewportEvidence` (#2891). Only `reported` carries an orientation, so only it can anchor a
+rotation in `SnapshotGeometrySpace`. With no box the clip skips, the cumulative-clip invariant has no
+root clip to violate, and a node whose actionability depends on containment has no `hittable` on the
+wire, as on the host bridge; disabled or degenerate nodes stay declared `false`. A rectangle becomes a
+`Box` only through the initializer that checks it, and the shared guard refuses `CGRect.infinite` by
+identity — its components and its extents are all finite, so no comparison would have caught the
+value a failed read leaves behind. The two twins were not twins before #2908 landed: the Swift guard
+already refused that value by identity, while the TypeScript one accepted it and both accepted finite
+components whose right or bottom edge overflowed. Both now refuse both shapes, and every box either
+guard accepted and is neither of those two shapes is still classified the same way. The runner route's
+host evidence comes from the payload's root nodes (`resolveIosViewportEvidenceFromRoots` in
+`packages/capture-kit/src/ios-snapshot-acquisition.ts`). `contracts/fixtures/snapshot-actionability-policy.json`
+pins the predicate for shapes the 320x240 fold fixture cannot reach.
 
 A regular `--depth` request is a presentation cut, not an acquisition bound. `CaptureHint` keeps raw
 traversal depth (`--raw --depth`) separate from regular presented depth, but the recursive tree walk
@@ -475,3 +493,56 @@ last reader that can still refuse geometry it cannot place is the tap-path keybo
 width rule therefore remains. The rule detects un-normalized
 arrival, not a standing fact about iOS: the producers above do normalize, and a band taller than it
 is wide is what one that did not looks like.
+
+## Amendment: modal containment in the presentation cut
+
+The bridge reads one window and reports every container hanging off it, while XCTest's own queries
+answer only the presentation the user can reach. React Navigation's card-plus-modal example is the
+measured case: three routes presented as sheets left three transition-view containers in one window
+and one capture published 567 nodes across three screens, where the same app state under the runner
+published 76 across the top screen alone. Maestro's visibility test is geometric, so a `tapOn`
+resolved the covered screen's button and the flow failed on an assertion about the screen that never
+arrived, and a `presentation: "formSheet"` route's fields matched intermittently (#2638).
+
+Decision. The fold applies modal containment: when the last transition view under a container carries
+UIKit's dimming view as its direct child and the producer reports that dimming view takes touches
+(`userInteractionEnabled: true`), the earlier transition views whose frame that dimmed area spans are
+cut, with their subtrees, from the regular and interactive projections. Every part of the claim is a
+producer fact rather than an ordering guess — the dimming view is UIKit's own declaration that it dims
+what sits behind, its interaction state says whether a touch there reaches what sits behind, and its
+frame is the producer's rectangle, which is what a covered container must be inside. A presentation
+with no dimming view, a dimming view the producer did not read or reports passing touches through,
+and any container whose earlier sibling is not a transition view keep today's behavior: containment
+is asserted only where the producer states it, so the rule fails closed rather than guessing which
+siblings are shadows.
+
+A sheet resting at an undimmed detent (`largestUndimmedDetentIdentifier`, react-native-screens
+`sheetLargestUndimmedDetentIndex`) is why the interaction state is part of the claim. UIKit keeps the
+dimming view in the tree at the same window-sized frame, and the presenting screen stays reachable: on
+react-navigation's form-sheet example a press on the presenting screen's `Height Steps` button
+navigates while the `Custom Dimming` sheet rests at its smallest detent. The bridge reports that
+dimming view `userInteractionEnabled: false`, and `true` for the dimmed form sheet and the card modal.
+No attribute the bridge already read told them apart, and `XC_kAXXCAttributeIsVisible` cannot either:
+it reads false for the undimmed sheet's dimming view and for the card modal's. The bridge reads the
+attribute for dimming views alone, in one follow-up read per view: requesting it on every node cost
+about half again the capture time on a 492-node tree, while the targeted read did not move it.
+Every source the cut removes is counted in the presentation's
+`stats.modalContainedNodeCount` — internal evidence, per ADR 0026, never wire vocabulary — because
+the same screen either side of an animation otherwise moves hundreds of comparable lines with nothing
+to attribute them to.
+
+Why this seam and not the neighbouring ones. The semantic presentation rules
+(`IOS_PRESENTATION_RULES`) run only for the interactive projection, so a suppression rule there could
+not deliver the same claim to a regular `snapshot`; the regular eligibility table is pinned against
+its Swift twin, so widening it would move a cross-language contract that this rule does not touch; the
+occlusion pass *marks* a node covered and keeps it published, and a published-but-marked node is
+exactly the 567-versus-76 divergence being fixed, since visibility filtering reads geometry and not
+the mark; and cutting at acquisition would leak the decision into `--raw`, which owes the reader the
+tree the platform reported. Raw therefore still carries the covered screens.
+
+Producers that report no UIKit class names or no dimming-view interaction state never trigger the
+cut, and that is a fact about their output rather than a backend exception in the fold: the runner already omits modal-contained content
+from its own queries, `appium-source` and `limrun-ios-tree` report element types and no classes, and
+the macOS desktop surface arrives already presented. A scope naming a modal-contained screen now
+publishes an empty projection, which is the same healthy empty answer any other unmatched scope gives
+— the screen is not what is presented.

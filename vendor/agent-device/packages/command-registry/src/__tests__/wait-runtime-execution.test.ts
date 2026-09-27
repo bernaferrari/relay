@@ -3,11 +3,9 @@ import { waitSelectorCaptureRuntimePlanUses } from '@agent-device/contracts/plat
 import { waitObservesDevice } from '@agent-device/contracts/wait-runtime-plan';
 import { commandDescriptors } from '../registry.ts';
 
-test('wait descriptor declares its complete runtime use with no capability bucket', () => {
+test('wait descriptor declares its complete runtime use', () => {
   const wait = commandDescriptors.find(({ name }) => name === 'wait');
 
-  expect(wait).not.toHaveProperty('capability');
-  expect(wait).not.toHaveProperty('dispatch');
   expect(wait?.platformExecution).toEqual({
     kind: 'device-runtime',
     uses: waitSelectorCaptureRuntimePlanUses,

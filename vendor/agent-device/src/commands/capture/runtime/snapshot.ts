@@ -26,6 +26,7 @@ import {
   renderSnapshotQualityWarnings,
   truncatedCaptureWarning,
 } from '@agent-device/capture-kit/quality-warnings';
+import { formatPostGestureOutcomeWarning } from '@agent-device/capture-kit/post-gesture-stability';
 import { buildSnapshotVisibility } from '@agent-device/capture-kit/snapshot-visibility';
 import { ANDROID_SYSTEM_SURFACE_DISCLOSURE } from '@agent-device/contracts/android-system-surface-disclosure';
 import { formatReactNativeOverlayWarning } from '../../react-native/overlay.ts';
@@ -260,6 +261,9 @@ function buildSnapshotWarnings(params: {
     );
   }
   warnings.push(...truncatedCaptureWarning(snapshotTruncationForResult(params.snapshot)));
+  if (params.snapshot.postGestureOutcome) {
+    warnings.push(formatPostGestureOutcomeWarning(params.snapshot.postGestureOutcome));
+  }
   warnings.push(...buildEmptyAndroidInteractiveWarnings(params));
   if (!params.annotations.quality) {
     // Legacy runners without a structured verdict keep the old daemon-side heuristics.

@@ -138,11 +138,15 @@ test('settle timeout policy default matches the runtime settle loop default', ()
 
 test('request envelopes deviating from the default are bounded, reviewed sets', () => {
   const EXPECTED_ENVELOPES: Record<string, number | 'unbounded'> = {
-    prepare: 240_000,
+    // prepare: daemon-side runner budget (PREPARE_STARTUP_BUDGET_MS) plus the daemon-result margin.
+    prepare: 270_000,
     install: 180_000,
     reinstall: 180_000,
     install_source: 180_000,
     longpress: 210_000,
+    // fold: proven by the worst-case ledger test in
+    // test/integration/provider-scenarios/ios-fold.test.ts.
+    fold: 255_000,
     // #1774: base allocation budget (300s) + client/daemon race margin (30s).
     lease_allocate: 330_000,
     test: 'unbounded',
@@ -314,7 +318,7 @@ test('snapshot uses the standard daemon request timeout with an explicit overrid
       ...base,
       positionals: ['ios-runner'],
     }),
-    240_000,
+    270_000,
   );
   assert.equal(
     resolveCommandRequestTimeoutMs(resolveCommandTimeoutPolicy('test'), { ...base }),

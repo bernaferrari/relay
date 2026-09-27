@@ -430,6 +430,20 @@ test('verifyAndroidFilledTextInHierarchy treats hint-only text as an empty value
   );
   assert.equal(verification.ok, false);
   assert.equal(verification.actual, 'Search settings');
+  // The failure names the placeholder the dump text was, so "actual" is not read as a typed value.
+  assert.equal(verification.actualInput?.hintShowing, true);
+});
+
+test('verifyAndroidFilledTextInHierarchy carries the helper hint onto the observed node', () => {
+  const verification = verifyAndroidFilledTextInHierarchy(
+    '<?xml version="1.0" encoding="UTF-8"?><hierarchy><node package="com.example" class="android.widget.EditText" text="Acme" hint="e.g. Merchant" hint-showing="false" focused="true" bounds="[0,0][200,100]"/></hierarchy>',
+    10,
+    10,
+    'Acme Ltd',
+  );
+  assert.equal(verification.ok, false);
+  assert.equal(verification.actualInput?.placeholder, 'e.g. Merchant');
+  assert.equal(verification.actualInput?.hintShowing, false);
 });
 
 test('verifyAndroidFilledTextInHierarchy still refuses a non-empty field for an empty expectation', () => {
@@ -628,8 +642,8 @@ test('fillAndroid runs the whole attempt on one warm daemon-session helper', asy
     },
   );
 
-  // One pre-action target read plus the three settling samples.
-  assert.equal(captureCount, 4);
+  // One pre-action target read plus the two settling samples the text held for.
+  assert.equal(captureCount, 3);
   assert.equal(spawnArgs.length, 1);
   assert.equal(calls.filter(isAndroidHelperForwardRemoval).length, 0);
   assert.equal(processes[0]?.exitCode, null);

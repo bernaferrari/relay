@@ -5,6 +5,7 @@ import type {
 } from '@agent-device/contracts/platform-runtime-host';
 import { sortAppleDevicesForSelection, type DeviceInfo } from '@agent-device/kernel/device';
 import { AppError } from '@agent-device/kernel/errors';
+import { simctlListDevicesArgs } from './core/simctl.ts';
 import {
   isSupportedAppleRuntime,
   resolveAppleOs,
@@ -25,11 +26,6 @@ type SimctlListDevicesPayload = {
 
 const BOOTED_SIMULATOR_PROBE_TIMEOUT_MS = 3_000;
 
-export function buildSimctlListArgs(simulatorSetPath: string | undefined): string[] {
-  const path = simulatorSetPath?.trim();
-  return path ? ['--set', path, 'list', 'devices', '-j'] : ['list', 'devices', '-j'];
-}
-
 export function parseSimctlAppleDevices(
   payload: SimctlListDevicesPayload,
   simulatorSetPath: string | undefined,
@@ -46,7 +42,7 @@ export function parseSimctlAppleDevices(
         name: device.name,
         kind: 'simulator',
         target,
-        appleOs: resolveAppleOs(target, [device.deviceTypeIdentifier ?? '', device.name]),
+        appleOs: resolveAppleOs(target, [runtime, device.deviceTypeIdentifier ?? '', device.name]),
         booted: device.state === 'Booted',
         ...(simulatorSetPath ? { simulatorSetPath } : {}),
       });
@@ -64,7 +60,7 @@ export async function listAppleSimulators(
   const result = await host.appleTools.run(
     {
       tool: 'simctl',
-      args: buildSimctlListArgs(simulatorSetPath),
+      args: simctlListDevicesArgs(simulatorSetPath),
       ...(request.booted === true ? { timeoutMs: BOOTED_SIMULATOR_PROBE_TIMEOUT_MS } : {}),
     },
     scope.signal,

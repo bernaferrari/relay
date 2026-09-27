@@ -1,3 +1,4 @@
+import type { AppStateRuntimeResult } from '@agent-device/contracts/app-state-runtime';
 import type { BackMode } from '@agent-device/contracts/back-mode';
 import { singlePointerPlanEndpoints } from '@agent-device/contracts/gesture-plan';
 import type { GesturePlan } from '@agent-device/contracts/gesture-plan-types';
@@ -10,6 +11,7 @@ import {
   type TextEntryRoute,
   type TypeTextBackendResult,
 } from '@agent-device/contracts/interactor-types';
+import { macOsHelperSurface, type MacOsHelperSurface } from '@agent-device/contracts/session';
 import {
   SCROLL_DURATION_MAX_MS,
   normalizeScrollDurationMs,
@@ -19,7 +21,13 @@ import {
   assertScrollGestureInput,
 } from '@agent-device/contracts/scroll-gesture';
 import { assertAppleMultiTouchSupported } from './multitouch-support.ts';
-import { isIosFamily, isMacOs, isTvOsDevice, type DeviceInfo } from '@agent-device/kernel/device';
+import {
+  isMacOs,
+  isTvOsDevice,
+  runnerSynthesizesTap,
+  type DeviceInfo,
+} from '@agent-device/kernel/device';
+import { isAppleApplicationState } from '@agent-device/kernel/snapshot';
 import { AppError } from '@agent-device/kernel/errors';
 import { runAppleRunnerCommand, runApplePressSeries } from './core/runner-client.ts';
 import {
@@ -49,6 +57,7 @@ type IosRunnerOverrides = Pick<
   | 'tapElementSelector'
   | 'doubleTap'
   | 'longPress'
+  | 'appState'
   | 'focus'
   | 'type'
   | 'fill'
@@ -99,7 +108,7 @@ export function iosRunnerOverrides(
             ...(selector.expectedPoint
               ? { x: selector.expectedPoint.x, y: selector.expectedPoint.y }
               : {}),
-            ...(shouldUseSynthesizedIosGesture(device) ? { synthesized: true } : {}),
+            ...(runnerSynthesizesTap(device) ? { synthesized: true } : {}),
             appBundleId: ctx.appBundleId,
           },
           runnerOpts,
@@ -116,6 +125,14 @@ export function iosRunnerOverrides(
         parseRunnerSequenceResult(runnerResult);
         return runnerResult;
       },
+      appState: async () =>
+        readAppStateResult(
+          await runAppleRunnerCommand(
+            device,
+            { command: 'appState', appBundleId: ctx.appBundleId },
+            runnerOpts,
+          ),
+        ),
       longPress: async (x, y, durationMs) => {
         return await runAppleRunnerCommand(
           device,
@@ -189,8 +206,9 @@ async function runApplePressPoint(
   point: { x: number; y: number },
   options: PressPointOptions,
 ): Promise<Record<string, unknown>> {
-  if (isMacOs(device) && options.surface && options.surface !== 'app') {
-    return await runMacOsSurfacePress(context, point, options);
+  const helper = isMacOs(device) ? macOsHelperSurface(options.surface) : undefined;
+  if (helper) {
+    return await runMacOsSurfacePress(context, point, options, helper);
   }
   if (options.button !== 'primary') {
     return await runAppleAlternateClick(device, context, runnerOpts, point, options.button);
@@ -211,19 +229,29 @@ async function runMacOsSurfacePress(
   context: RunnerContext,
   point: { x: number; y: number },
   options: PressPointOptions,
+  surface: MacOsHelperSurface,
 ): Promise<Record<string, unknown>> {
   if (options.button !== 'primary') {
     throw new AppError(
       'UNSUPPORTED_OPERATION',
-      `${options.button} click is not supported on macOS ${options.surface} sessions.`,
+      `${options.button} click is not supported on macOS ${surface} sessions.`,
     );
   }
   const { runMacOsPressAction } = await import('./os/macos/helper.ts');
-  await runMacOsPressAction(point.x, point.y, {
+  // `count` is independent presses and `doubleTap` raises the click state inside each one,
+  // the same reading every other platform gives the two flags.
+  const posted = await runMacOsPressAction(point.x, point.y, {
     bundleId: context.appBundleId,
-    surface: options.surface,
+    surface,
+    holdMs: options.holdMs,
+    clicks: options.count,
+    doubleClick: options.doubleTap,
+    intervalMs: options.intervalMs,
+    signal: context.signal,
   });
-  return {};
+  // A hold shorter than what macOS delivers is raised before it is posted, so the
+  // response carries the hold the helper actually used rather than the request.
+  return posted.holdMs === undefined ? {} : { holdMs: posted.holdMs };
 }
 
 async function runAppleAlternateClick(
@@ -293,6 +321,12 @@ async function runSingleApplePress(
 function readTypeTextBackendResult(result: Record<string, unknown>): TypeTextBackendResult {
   const route = result.textEntryRoute;
   return isTextEntryRoute(route) ? { textEntryRoute: route } : {};
+}
+
+/** The runner's `appState` payload is untrusted JSON; only a declared state name passes. */
+function readAppStateResult(result: Record<string, unknown>): AppStateRuntimeResult {
+  const state = result.applicationState;
+  return isAppleApplicationState(state) ? { applicationState: state } : {};
 }
 
 function isTextEntryRoute(value: unknown): value is TextEntryRoute {
@@ -377,14 +411,9 @@ function iosTapCommand(
     command: 'tap',
     x,
     y,
-    ...(shouldUseSynthesizedIosGesture(device) ? { synthesized: true } : {}),
+    ...(runnerSynthesizesTap(device) ? { synthesized: true } : {}),
     appBundleId: ctx.appBundleId,
   };
-}
-
-function shouldUseSynthesizedIosGesture(device: DeviceInfo): boolean {
-  // Two-finger HID synthesis is for touch-input iOS only; the tvOS leaf has no touch.
-  return isIosFamily(device) && !isTvOsDevice(device);
 }
 
 async function runAppleScroll(

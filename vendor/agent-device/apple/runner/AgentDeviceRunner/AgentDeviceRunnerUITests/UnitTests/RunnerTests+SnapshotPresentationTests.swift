@@ -12,6 +12,7 @@ extension RunnerTests {
       label: "Continue",
       identifier: "continue-button",
       value: "Ready",
+      placeholder: "Type here",
       rect: SnapshotRect(x: 10, y: 20, width: 100, height: 44),
       enabled: true,
       focused: true,
@@ -40,7 +41,7 @@ extension RunnerTests {
           truncated: 0,
           blocked: false
         ),
-        viewport: .infinite
+        viewport: .reported(box: CGRect(x: 0, y: 0, width: 100, height: 100))
       ),
       options: PresentationOptions(
         interactiveOnly: true,
@@ -54,12 +55,50 @@ extension RunnerTests {
 
     XCTAssertEqual(
       String(decoding: encoded, as: UTF8.self),
-      #"[{"actions":["Open menu"],"depth":2,"enabled":true,"focused":true,"hiddenContentAbove":true,"hiddenContentBelow":true,"hittable":true,"identifier":"continue-button","index":3,"label":"Continue","parentIndex":1,"rect":{"height":44,"width":100,"x":10,"y":20},"selected":true,"type":"Button","value":"Ready"}]"#
+      #"[{"actions":["Open menu"],"depth":2,"enabled":true,"focused":true,"hiddenContentAbove":true,"hiddenContentBelow":true,"hittable":true,"identifier":"continue-button","index":3,"label":"Continue","parentIndex":1,"placeholder":"Type here","rect":{"height":44,"width":100,"x":10,"y":20},"selected":true,"type":"Button","value":"Ready"}]"#
     )
     XCTAssertEqual(capture.truncated, true)
     XCTAssertEqual(capture.effectiveDepth, 4)
     XCTAssertEqual(capture.customActions?.read, 1)
     XCTAssertEqual(capture.customActions?.candidates, 2)
+  }
+
+  /// A node without a placeholder omits the key: the wire contract is "absent when empty", which
+  /// the synthesized `encodeIfPresent` provides today and a hand-written encoder must keep.
+  func testPresentedNodeOmitsAnAbsentPlaceholder() throws {
+    let raw = RawAXNode(
+      index: 0,
+      type: "Button",
+      label: "Save",
+      identifier: nil,
+      value: nil,
+      rect: SnapshotRect(x: 0, y: 0, width: 100, height: 44),
+      enabled: true,
+      focused: nil,
+      selected: nil,
+      hittable: true,
+      depth: 0,
+      parentIndex: nil,
+      hiddenContentAbove: nil,
+      hiddenContentBelow: nil
+    )
+    let capture = try XCTUnwrap(try SnapshotPresentation.present(
+      SnapshotAcquisition(
+        hint: CaptureHint(
+          projection: .raw, depth: nil, regularPresentedDepth: nil,
+          interactiveOnly: false, customActions: false),
+        nodes: [raw],
+        truncated: false,
+        effectiveDepth: nil,
+        customActions: nil,
+        viewport: .reported(box: CGRect(x: 0, y: 0, width: 100, height: 100))
+      ),
+      options: PresentationOptions(interactiveOnly: false, depth: nil, scope: nil, raw: true)
+    ))
+    let encoded = String(decoding: try JSONEncoder().encode(capture.nodes), as: UTF8.self)
+
+    XCTAssertNil(capture.nodes.first?.placeholder)
+    XCTAssertFalse(encoded.contains("placeholder"), encoded)
   }
 
   func testSnapshotPresentationOwnsBackendNeutralEligibility() throws {
@@ -113,7 +152,7 @@ extension RunnerTests {
             projection: .regular, depth: nil, regularPresentedDepth: nil,
             interactiveOnly: false, customActions: false),
           nodes: acquired, truncated: false, effectiveDepth: nil,
-          viewport: CGRect(x: 0, y: 0, width: 1_000, height: 1_000)),
+          viewport: .reported(box: CGRect(x: 0, y: 0, width: 1_000, height: 1_000))),
         options: PresentationOptions(interactiveOnly: false, depth: nil, scope: nil, raw: false)
       ).nodes
     )
@@ -124,7 +163,7 @@ extension RunnerTests {
             projection: .regular, depth: nil, regularPresentedDepth: nil,
             interactiveOnly: true, customActions: false),
           nodes: acquired, truncated: false, effectiveDepth: nil,
-          viewport: CGRect(x: 0, y: 0, width: 1_000, height: 1_000)),
+          viewport: .reported(box: CGRect(x: 0, y: 0, width: 1_000, height: 1_000))),
         options: PresentationOptions(interactiveOnly: true, depth: nil, scope: nil, raw: false)
       ).nodes
     )
@@ -147,7 +186,8 @@ extension RunnerTests {
           hint: CaptureHint(
             projection: .raw, depth: nil, regularPresentedDepth: nil,
             interactiveOnly: false, customActions: false),
-          nodes: acquired, truncated: false, effectiveDepth: nil, viewport: .infinite),
+          nodes: acquired, truncated: false, effectiveDepth: nil,
+          viewport: .reported(box: CGRect(x: 0, y: 0, width: 1_000, height: 1_000)) ),
         options: PresentationOptions(interactiveOnly: true, depth: nil, scope: nil, raw: true)
       ).nodes
     )
@@ -176,7 +216,7 @@ extension RunnerTests {
       nodes: nodes,
       truncated: false,
       effectiveDepth: nil,
-      viewport: CGRect(x: 0, y: 0, width: 100, height: 100)
+      viewport: .reported(box: CGRect(x: 0, y: 0, width: 100, height: 100))
     )
 
     let presented = try SnapshotPresentation.presentRegular(
@@ -211,7 +251,7 @@ extension RunnerTests {
           nodes: acquired,
           truncated: false,
           effectiveDepth: nil,
-          viewport: viewport
+          viewport: .reported(box: viewport)
         ),
         options: regularOptions
       ).nodes
@@ -231,7 +271,7 @@ extension RunnerTests {
           nodes: acquired,
           truncated: false,
           effectiveDepth: nil,
-          viewport: .infinite
+          viewport: .reported(box: CGRect(x: 0, y: 0, width: 100, height: 100))
         ),
         options: rawOptions
       ).nodes
@@ -286,7 +326,7 @@ extension RunnerTests {
       ],
       truncated: false,
       effectiveDepth: nil,
-      viewport: CGRect(x: 0, y: 0, width: 1_000, height: 1_000)
+      viewport: .reported(box: CGRect(x: 0, y: 0, width: 1_000, height: 1_000))
     )
     let options = PresentationOptions(
       interactiveOnly: true,
@@ -313,7 +353,7 @@ extension RunnerTests {
           nodes: acquisition.nodes,
           truncated: false,
           effectiveDepth: nil,
-          viewport: .infinite
+          viewport: .reported(box: CGRect(x: 0, y: 0, width: 100, height: 100))
         ),
         options: PresentationOptions(
           interactiveOnly: true,
@@ -374,10 +414,11 @@ extension RunnerTests {
     let regularAcquisition = SnapshotAcquisition(
       hint: SnapshotPresentation.captureHint(for: regularRequest),
       nodes: nodes, truncated: false, effectiveDepth: nil,
-      viewport: CGRect(x: 0, y: 0, width: 100, height: 100))
+      viewport: .reported(box: CGRect(x: 0, y: 0, width: 100, height: 100)))
     let rawAcquisition = SnapshotAcquisition(
       hint: SnapshotPresentation.captureHint(for: rawRequest),
-      nodes: nodes, truncated: false, effectiveDepth: nil, viewport: .infinite)
+      nodes: nodes, truncated: false, effectiveDepth: nil,
+      viewport: .reported(box: CGRect(x: 0, y: 0, width: 100, height: 100)))
 
     let regularCaptureForRawRequest = try SnapshotPresentation.present(
       regularAcquisition, options: rawRequest)
@@ -470,7 +511,7 @@ extension RunnerTests {
           ],
           truncated: false,
           effectiveDepth: nil,
-          viewport: CGRect(x: 0, y: 0, width: 100, height: 100)
+          viewport: .reported(box: CGRect(x: 0, y: 0, width: 100, height: 100))
         ),
         options: options
       )
@@ -552,7 +593,7 @@ extension RunnerTests {
       nodes: nodes,
       truncated: false,
       effectiveDepth: nil,
-      viewport: viewport
+      viewport: .reported(box: viewport)
     )
     let presented = try XCTUnwrap(
       SnapshotPresentation.present(acquisition, options: options)?.nodes)
@@ -596,8 +637,10 @@ extension RunnerTests {
     ]
     let normalized = SnapshotGeometrySpace.normalized(
       nodes: acquired,
-      viewport: viewport,
-      interfaceOrientation: RunnerInterfaceOrientation.landscapeRight
+      viewport: .reported(
+        box: viewport,
+        interfaceOrientation: RunnerInterfaceOrientation.landscapeRight
+      )
     )
     let options = PresentationOptions(interactiveOnly: false, depth: 3, scope: nil, raw: false)
     let hint = SnapshotPresentation.captureHint(for: options)
@@ -608,7 +651,7 @@ extension RunnerTests {
           nodes: normalized,
           truncated: false,
           effectiveDepth: nil,
-          viewport: viewport
+          viewport: .reported(box: viewport)
         ),
         options: options
       )?.nodes
@@ -617,6 +660,58 @@ extension RunnerTests {
     let keyQ = presented.first { $0.rect == SnapshotRect(x: 77, y: 203, width: 72, height: 45) }
     XCTAssertNotNil(band, "keyboard plane must be presented under --depth \(options.depth ?? -1)")
     XCTAssertNotNil(keyQ, "`q` key must be presented under --depth \(options.depth ?? -1)")
+  }
+
+  /// #2891: a capture whose viewport read failed publishes no `hittable` for a node whose answer is
+  /// containment, while a root and a disabled node stay a declared `false`. Pinned on the
+  /// encoded objects rather than on `capture.nodes`, because the promise is about the wire: a test
+  /// over the Swift values would still pass if a custom encoder started writing `"hittable":null`
+  /// for `nil`, which is a shape no host decoder is specified for. The #2638 wrapper verdict reads a
+  /// declared `false` as evidence that the wrapper is inert.
+  func testAMissingViewportOmitsTheHittableBitFromTheWire() throws {
+    func node(
+      _ index: Int, _ type: String, _ label: String,
+      enabled: Bool, parent: Int?, depth: Int
+    ) -> RawAXNode {
+      RawAXNode(
+        index: index, type: type, label: label, identifier: nil, value: nil,
+        rect: SnapshotRect(x: 10, y: Double(20 + index * 60), width: 100, height: 44),
+        enabled: enabled, focused: nil, selected: nil, hittable: false,
+        depth: depth, parentIndex: parent, hiddenContentAbove: nil, hiddenContentBelow: nil
+      )
+    }
+    let acquired = [
+      node(0, "Application", "App", enabled: true, parent: nil, depth: 0),
+      node(1, "Button", "Continue", enabled: true, parent: 0, depth: 1),
+      node(2, "Button", "Sold out", enabled: false, parent: 0, depth: 1),
+    ]
+    let viewport = SnapshotViewport.missing(reason: .notProvided)
+    let options = PresentationOptions(interactiveOnly: false, depth: nil, scope: nil, raw: false)
+    let capture = try XCTUnwrap(try SnapshotPresentation.present(
+      SnapshotAcquisition(
+        hint: SnapshotPresentation.captureHint(for: options),
+        nodes: SnapshotGeometrySpace.normalized(nodes: acquired, viewport: viewport),
+        truncated: false,
+        effectiveDepth: nil,
+        viewport: viewport
+      ),
+      options: options
+    ))
+    let objects = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(capture.nodes)) as? [[String: Any]]
+    )
+
+    // Containment is the one thing a capture with no box cannot decide, so the key is not there.
+    let undecided = try XCTUnwrap(objects.first { $0["label"] as? String == "Continue" })
+    XCTAssertFalse(
+      undecided.keys.contains("hittable"),
+      "an unknown viewport publishes no bit: \(undecided.keys.sorted())"
+    )
+    // Enablement and the root rule need no box, so those stay declared answers rather than gaps.
+    let disabled = try XCTUnwrap(objects.first { $0["label"] as? String == "Sold out" })
+    XCTAssertEqual(disabled["hittable"] as? Bool, false, "a disabled node is decided without a box")
+    let root = try XCTUnwrap(objects.first { $0["label"] as? String == "App" })
+    XCTAssertEqual(root["hittable"] as? Bool, false, "a root has nothing to hit through")
   }
 }
 #endif

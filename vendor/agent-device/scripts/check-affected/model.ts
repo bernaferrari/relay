@@ -440,6 +440,12 @@ const daemonWireCompatOwnership: OwnershipRule = ({ file }) => {
   ];
 };
 
+const ownsAppleRunnerBuildSource = (file: string): boolean =>
+  file.startsWith('apple/runner/') ||
+  file.startsWith('apple/snapshot-presentation/') ||
+  (file.startsWith('packages/platform-apple/src/runner/') && !file.includes('/__tests__/')) ||
+  file.endsWith('.swift');
+
 const BUILD_OWNERSHIP: ReadonlyArray<{
   check: CheckId;
   rule: string;
@@ -453,21 +459,23 @@ const BUILD_OWNERSHIP: ReadonlyArray<{
     owns: (file) =>
       file.startsWith('packages/capture-kit/src/ios-snapshot-engine/') ||
       file.startsWith('apple/snapshot-presentation/') ||
-      file === 'contracts/fixtures/ios-snapshot-engine-conformance.json',
+      file === 'packages/kernel/src/rect.ts' ||
+      file === 'contracts/fixtures/ios-snapshot-engine-conformance.json' ||
+      file === 'contracts/fixtures/snapshot-actionability-policy.json',
   },
-  // Both platform builds compile the same runner sources, and each is a separate
-  // gate in a separate lane, so a Swift change owns both.
+  // The native runner cache hashes these source trees for both Apple targets.
+  // Keep the build owner broader than the current file extensions.
   {
     check: 'swift-runner-ios',
     rule: 'own:swift',
     detail: 'Swift runner sources require the iOS XCUITest build',
-    owns: (file) => file.startsWith('apple/runner/') || file.endsWith('.swift'),
+    owns: ownsAppleRunnerBuildSource,
   },
   {
     check: 'swift-runner-macos',
     rule: 'own:swift',
     detail: 'Swift runner sources require the macOS XCUITest build',
-    owns: (file) => file.startsWith('apple/runner/') || file.endsWith('.swift'),
+    owns: ownsAppleRunnerBuildSource,
   },
   // The PR lane names each runner XCTest method it runs, so renaming or deleting one
   // silently shrinks that lane. Selected here so the drift shows up on the change that
@@ -528,6 +536,19 @@ const BUILD_OWNERSHIP: ReadonlyArray<{
       file.startsWith('examples/test-app/patches/') ||
       file.startsWith('examples/test-app/security/') ||
       file === 'examples/test-app/pnpm-workspace.yaml',
+  },
+  // In-package payload captures: a recorded tool response checked in under a package's fixture
+  // directory (`packages/*/**/__tests__/fixtures/*.json`, or a `fixtures/` dir beside the module that
+  // reads it). Nothing builds them and no `.ts` sibling names them, so without this a capture edit
+  // fails the gate open even though exactly one suite asserts against it.
+  {
+    check: 'unit',
+    rule: 'own:package-capture',
+    detail: 'the vitest unit suite reads the captured payload',
+    owns: (file) =>
+      file.startsWith('packages/') &&
+      file.endsWith('.json') &&
+      (file.includes('/__tests__/fixtures/') || file.includes('/fixtures/')),
   },
   // TS/Swift golden tables (`contracts/fixtures/*.json`): the vitest parity test and the
   // runner XCTest twin both read them, so a table edit owns the unit lane and both runner

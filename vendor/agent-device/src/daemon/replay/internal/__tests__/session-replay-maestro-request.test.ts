@@ -89,6 +89,19 @@ test('marks projected hierarchy captures as observation-only for the daemon', ()
   expect(request.dispatch).toEqual({ observationOnly: true });
 });
 
+test('folds Maestro settings app targeting into dispatch', () => {
+  const request = maestroOperationDispatchRequest(
+    { token: 'token', session: 'session', command: 'replay', positionals: [] },
+    {
+      command: 'settings',
+      positionals: ['permission', 'grant', 'camera'],
+      dispatch: { settingsAppBundleId: 'com.example.app' },
+    },
+  );
+
+  expect(request.dispatch).toEqual({ settingsAppBundleId: 'com.example.app' });
+});
+
 test('leaves dispatch options the operation does not set untouched', () => {
   const viewport = { x: 0, y: 0, width: 402, height: 874 };
   const request = maestroOperationDispatchRequest(

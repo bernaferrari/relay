@@ -93,7 +93,7 @@
       "comment": "Runner operations reach the daemon only through the memoized loader in src/platform-runtime-apple-application-tools.ts (one dynamic import per specifier, #2314). Fallow cannot connect a member read off that loader's promise to these re-exports; keep the list to the facade members no static import consumes.",
       "file": "packages/platform-apple/src/runner-operations-facade.ts",
       "exports": [
-        "detachIosSimulatorRunnerSessionsForShutdown",
+        "detachIosRunnerSessionsForShutdown",
         "hasLiveIosRunnerSession",
         "releaseIosRunnerOnClose",
         "releaseSpeculativeIosRunnerSessionFor",
@@ -115,9 +115,6 @@
         "isRetryableIosDeviceTraceRecordFailure",
         "resolveIosDevicePerfHint",
         "captureAppleMemorySnapshot",
-        "readAppleProcessSamples",
-        "resolveAppleExecutable",
-        "resolveIosDevicePerfTarget",
         "sampleAppleFramePerf",
         "sampleAppleMemoryPerf",
         "cleanupAppleXctracePerfCapture",
@@ -159,8 +156,7 @@
         "prewarmIosRunnerSession",
         "prepareIosRunner",
         "resolveRunnerAppBundleId",
-        "detachIosSimulatorRunnerSessionsForShutdown",
-        "getRunnerSessionSnapshot",
+        "detachIosRunnerSessionsForShutdown",
         "stopIosRunnerSession",
         "stopAllIosRunnerSessions",
         "readStaleRunnerLease",
@@ -217,7 +213,7 @@
     },
     {
       "comment": "Dedicated CLI command handlers are reached only through the dynamic `import()` table `dedicatedCliCommandHandlerLoaders` in src/cli/commands/router.ts, which --production analysis cannot follow to a consumer. Same shape as the daemon route-handler entry above; that table is what enumerates this list, so add/remove here whenever a loader is added/removed.",
-      "file": "src/cli/commands/{auth,connection,daemon,device,proxy,replay,screenshot,takeover}.ts",
+      "file": "src/cli/commands/{auth,connection,daemon,device,proxy,recording,replay,screenshot,takeover}.ts",
       "exports": [
         "authCommand",
         "connectCommand",
@@ -226,6 +222,7 @@
         "daemonCommand",
         "deviceCommand",
         "proxyCommand",
+        "recordingCommand",
         "replayCommand",
         "screenshotCommand",
         "diffCommand",
@@ -243,7 +240,7 @@
       "exports": ["*"]
     },
     {
-      "comment": "#1642: its three consumers (src/__tests__/cli-device-status.test.ts, src/daemon/__tests__/device-claims.test.ts, src/daemon/__tests__/device-claim-prune.test.ts) all reach it the only way a Vitest module mock can — `vi.mock(path, async (importOriginal) => (await import('...host-process-mock.ts')).pinOwnProcessStartTime(importOriginal))`. Dependency analysis cannot follow that dynamic import to a consumer, the same limitation the daemon route-handler entry above records.",
+      "comment": "#1642: its three consumers (src/__tests__/cli-device-status.test.ts, src/daemon/device/__tests__/device-claims.test.ts, src/daemon/device/__tests__/device-claim-prune.test.ts) all reach it the only way a Vitest module mock can — `vi.mock(path, async (importOriginal) => (await import('...host-process-mock.ts')).pinOwnProcessStartTime(importOriginal))`. Dependency analysis cannot follow that dynamic import to a consumer, the same limitation the daemon route-handler entry above records.",
       "file": "src/__tests__/test-utils/host-process-mock.ts",
       "exports": ["pinOwnProcessStartTime"]
     },
@@ -257,6 +254,8 @@
       "file": "{packages/command-registry/src/registry.ts,src/core/interactors/register-builtins.ts,src/core/platform-descriptor/registry.ts,src/daemon/request-platform-providers.ts}",
       "exports": [
         "CommandOwnerFileClaimsAreComplete",
+        "CommandUnionStaysLiteral",
+        "CliCommandUnionStaysLiteral",
         "BuiltinPluginsCoverAllPlatforms",
         "PlatformDescriptorsAreTotal",
         "GatedKeysAreResolverKeys"

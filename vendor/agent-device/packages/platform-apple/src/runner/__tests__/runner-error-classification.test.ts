@@ -2,14 +2,20 @@ import assert from 'node:assert/strict';
 import { test } from 'vitest';
 import { AppError, createRequestCanceledError } from '@agent-device/kernel/errors';
 import {
+  RUNNER_SCREEN_CAPTURE_REFUSAL_RUNNER_CODES,
+  classifyRunnerReportedError,
+} from '../runner-contract.ts';
+import {
   RUNNER_ERROR_RULES,
   isRetryableRunnerError,
+  isRunnerBusyError,
   resolveRunnerFatalErrorReason,
   shouldRebuildCachedRunnerArtifact,
   shouldRestartRunnerAfterReadinessPreflight,
   shouldRestartRunnerBeforeCommandSend,
   shouldRetryRunnerConnectError,
-} from '../runner-contract.ts';
+} from '../runner-error-classification.ts';
+import { runnerConnectFailure } from './runner-session-fixtures.ts';
 
 function commandFailed(message: string, details?: Record<string, unknown>): AppError {
   return new AppError('COMMAND_FAILED', message, details);
@@ -23,12 +29,16 @@ test('every rule carries a unique reason', () => {
 // --- retryable axis (isRetryableRunnerError) ---
 
 test('transport-shaped failures are retryable', () => {
-  for (const message of [
-    'Runner did not accept connection on port 8100',
-    'fetch failed',
-    'connect ECONNREFUSED 127.0.0.1:8100',
-    'socket hang up',
-  ]) {
+  assert.equal(
+    isRetryableRunnerError(
+      runnerConnectFailure(
+        'runner_connect_refused',
+        'Runner did not accept connection on port 8100',
+      ),
+    ),
+    true,
+  );
+  for (const message of ['fetch failed', 'connect ECONNREFUSED 127.0.0.1:8100', 'socket hang up']) {
     assert.equal(isRetryableRunnerError(commandFailed(message)), true, message);
   }
 });
@@ -36,7 +46,10 @@ test('transport-shaped failures are retryable', () => {
 test('boot-shaped failures are not retryable', () => {
   assert.equal(
     isRetryableRunnerError(
-      commandFailed('Runner did not accept connection (xcodebuild exited early)'),
+      runnerConnectFailure(
+        'xcodebuild_exited_early',
+        'Runner did not accept connection (xcodebuild exited early)',
+      ),
     ),
     false,
   );
@@ -46,9 +59,16 @@ test('boot-shaped failures are not retryable', () => {
   );
 });
 
-test('an explicitly retriable flag wins over any message denial', () => {
-  const flagged = commandFailed('xcodebuild exited early', { retriable: true });
-  assert.equal(isRetryableRunnerError(flagged), true);
+test('only the runner busy refusal earns a resend; a retriable flag alone does not', () => {
+  const busy = classifyRunnerReportedError('RUNNER_BUSY');
+  assert.equal(isRetryableRunnerError(new AppError(busy.code, 'busy', busy.details)), true);
+  const notRunning = classifyRunnerReportedError('APP_NOT_RUNNING');
+  assert.equal(notRunning.details.retriable, true);
+  assert.equal(
+    isRetryableRunnerError(new AppError(notRunning.code, 'not running', notRunning.details)),
+    false,
+  );
+  assert.equal(isRetryableRunnerError(commandFailed('boom', { retriable: true })), false);
 });
 
 test('retryable requires an AppError with COMMAND_FAILED', () => {
@@ -60,7 +80,9 @@ test('retryable requires an AppError with COMMAND_FAILED', () => {
 
 test('connect loop keeps waiting by default, including for unknown errors', () => {
   assert.equal(
-    shouldRetryRunnerConnectError(commandFailed('Runner did not accept connection')),
+    shouldRetryRunnerConnectError(
+      runnerConnectFailure('runner_connect_refused', 'Runner did not accept connection'),
+    ),
     true,
   );
   assert.equal(shouldRetryRunnerConnectError(new Error('anything')), true);
@@ -68,7 +90,12 @@ test('connect loop keeps waiting by default, including for unknown errors', () =
 });
 
 test('connect loop stops for terminal verdicts', () => {
-  assert.equal(shouldRetryRunnerConnectError(commandFailed('xcodebuild exited early')), false);
+  assert.equal(
+    shouldRetryRunnerConnectError(
+      runnerConnectFailure('xcodebuild_exited_early', 'xcodebuild exited early'),
+    ),
+    false,
+  );
   const unattached = new AppError('DEVICE_NOT_FOUND', 'device not attached', {
     usbmuxDeviceAttached: false,
   });
@@ -136,27 +163,37 @@ test('a deadline on its own earns no recovery verdict', () => {
 
 test('only a runner that never accepted a connection indicts the cached artifact', () => {
   assert.equal(
-    shouldRebuildCachedRunnerArtifact(commandFailed('Runner endpoint probe failed')),
-    true,
-  );
-  assert.equal(
-    shouldRebuildCachedRunnerArtifact(commandFailed('Runner did not accept connection')),
-    true,
-  );
-  assert.equal(
     shouldRebuildCachedRunnerArtifact(
-      commandFailed('Runner did not accept connection (simctl spawn)', { port: 8100 }),
+      runnerConnectFailure('runner_endpoint_probe_exhausted', 'Runner endpoint probe failed'),
     ),
     true,
   );
-  // Wiping derived data cannot fix a boot that refuses to compile, and its message
-  // otherwise reads as a refused connection.
   assert.equal(
     shouldRebuildCachedRunnerArtifact(
-      commandFailed('Runner did not accept connection (xcodebuild exited early)', {
-        port: 8100,
-        logPath: '/tmp/runner.log',
-      }),
+      runnerConnectFailure('runner_connect_refused', 'Runner did not accept connection'),
+    ),
+    true,
+  );
+  assert.equal(
+    shouldRebuildCachedRunnerArtifact(
+      runnerConnectFailure(
+        'runner_connect_refused',
+        'Runner did not accept connection (simctl spawn)',
+        {
+          port: 8100,
+        },
+      ),
+    ),
+    true,
+  );
+  // Wiping derived data cannot fix a boot that refuses to compile.
+  assert.equal(
+    shouldRebuildCachedRunnerArtifact(
+      runnerConnectFailure(
+        'xcodebuild_exited_early',
+        'Runner did not accept connection (xcodebuild exited early)',
+        { port: 8100, logPath: '/tmp/runner.log' },
+      ),
     ),
     false,
   );
@@ -194,19 +231,103 @@ test('ordinary errors are never session-fatal', () => {
 
 // --- restart-before-send axis (shouldRestartRunnerBeforeCommandSend) ---
 
-test('a refused connection before send restarts the session, case-insensitively', () => {
+test('a refused connection before send restarts the session', () => {
   assert.equal(
-    shouldRestartRunnerBeforeCommandSend(commandFailed('Runner did not accept connection')),
-    true,
-  );
-  assert.equal(
-    shouldRestartRunnerBeforeCommandSend(commandFailed('runner did not accept connection')),
+    shouldRestartRunnerBeforeCommandSend(
+      runnerConnectFailure('runner_connect_refused', 'Runner did not accept connection'),
+    ),
     true,
   );
 });
 
-test('a terminal connect verdict refuses the restart even when the message matches', () => {
-  const both = commandFailed('xcodebuild exited early: runner did not accept connection');
-  assert.equal(shouldRestartRunnerBeforeCommandSend(both), false);
+test('an early exit or a foreign transport failure earns no restart before send', () => {
+  const earlyExit = runnerConnectFailure(
+    'xcodebuild_exited_early',
+    'xcodebuild exited early: runner did not accept connection',
+  );
+  assert.equal(shouldRestartRunnerBeforeCommandSend(earlyExit), false);
   assert.equal(shouldRestartRunnerBeforeCommandSend(commandFailed('socket hang up')), false);
+});
+
+// --- typed connect-failure reasons (agent-device's own connect path) ---
+
+test('xcodebuild_exited_early is decided by the typed reason, not the message', () => {
+  for (const message of ['Runner did not accept connection (xcodebuild exited early)', 'boom']) {
+    const error = runnerConnectFailure('xcodebuild_exited_early', message);
+    assert.equal(isRetryableRunnerError(error), false, message);
+    assert.equal(shouldRetryRunnerConnectError(error), false, message);
+    assert.equal(shouldRebuildCachedRunnerArtifact(error), false, message);
+    assert.equal(shouldRestartRunnerBeforeCommandSend(error), false, message);
+  }
+  // The same words without the reason earn no terminal verdict.
+  const untyped = commandFailed('Runner did not accept connection (xcodebuild exited early)');
+  assert.equal(shouldRetryRunnerConnectError(untyped), true);
+});
+
+test('runner_connect_refused is decided by the typed reason, not the message', () => {
+  for (const message of ['Runner did not accept connection', 'boom']) {
+    const error = runnerConnectFailure('runner_connect_refused', message);
+    assert.equal(isRetryableRunnerError(error), true, message);
+    assert.equal(shouldRetryRunnerConnectError(error), true, message);
+    assert.equal(shouldRebuildCachedRunnerArtifact(error), true, message);
+    assert.equal(shouldRestartRunnerBeforeCommandSend(error), true, message);
+  }
+  const untyped = commandFailed('Runner did not accept connection');
+  assert.equal(isRetryableRunnerError(untyped), false);
+  assert.equal(shouldRebuildCachedRunnerArtifact(untyped), false);
+  assert.equal(shouldRestartRunnerBeforeCommandSend(untyped), false);
+});
+
+test('runner_endpoint_probe_exhausted is decided by the typed reason, not the message', () => {
+  for (const message of ['Runner endpoint probe failed', 'boom']) {
+    const error = runnerConnectFailure('runner_endpoint_probe_exhausted', message);
+    assert.equal(shouldRebuildCachedRunnerArtifact(error), true, message);
+    assert.equal(isRetryableRunnerError(error), false, message);
+    assert.equal(shouldRestartRunnerBeforeCommandSend(error), false, message);
+    assert.equal(shouldRetryRunnerConnectError(error), true, message);
+  }
+  assert.equal(
+    shouldRebuildCachedRunnerArtifact(commandFailed('Runner endpoint probe failed')),
+    false,
+  );
+});
+
+// The literals are what the Swift runner encodes, so they are the contract and not the constant
+// names: a rename on one side has to fail here rather than silently split the pair (#2728).
+test('a refused screen capture keeps the runner reason and stays off the wire code', () => {
+  assert.deepEqual([...RUNNER_SCREEN_CAPTURE_REFUSAL_RUNNER_CODES].sort(), [
+    'APP_SCREEN_CAPTURE_UNRENDERABLE',
+    'APP_SCREEN_UNRESOLVED',
+    'APP_SCREEN_WINDOW_UNRESOLVED',
+  ]);
+  for (const runnerCode of RUNNER_SCREEN_CAPTURE_REFUSAL_RUNNER_CODES) {
+    const classified = classifyRunnerReportedError(runnerCode);
+    assert.equal(classified.code, 'COMMAND_FAILED');
+    assert.equal(classified.details.runnerErrorCode, runnerCode);
+    assert.equal(classified.details.retriable, undefined);
+  }
+});
+
+// --- busy refusal (isRunnerBusyError) ---
+
+test('only the typed RUNNER_BUSY refusal reads as busy', () => {
+  assert.equal(
+    isRunnerBusyError(commandFailed('runner is busy', { runnerErrorCode: 'RUNNER_BUSY' })),
+    true,
+  );
+  // The stalling command's own timeout already spent its wait: not a refusal to resend.
+  assert.equal(
+    isRunnerBusyError(
+      commandFailed('main thread execution timed out', { runnerErrorCode: 'MAIN_THREAD_TIMEOUT' }),
+    ),
+    false,
+  );
+  assert.equal(
+    isRunnerBusyError(
+      commandFailed('The iOS runner is still finishing a previous command', { retriable: true }),
+    ),
+    false,
+  );
+  assert.equal(isRunnerBusyError(commandFailed('RUNNER_BUSY')), false);
+  assert.equal(isRunnerBusyError(new Error('RUNNER_BUSY')), false);
 });

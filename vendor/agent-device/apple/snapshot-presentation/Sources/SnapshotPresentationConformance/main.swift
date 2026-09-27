@@ -75,7 +75,8 @@ private func acquisition(for input: ConformanceInput) -> SnapshotAcquisition {
     },
     truncated: false,
     effectiveDepth: nil,
-    viewport: input.viewport.cgRect
+    // The host engine refuses to fold without a viewport, so the differential always reports one.
+    viewport: .reported(box: input.viewport.cgRect)
   )
 }
 

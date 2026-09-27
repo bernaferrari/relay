@@ -286,4 +286,10 @@ export type ReplayDispatchOptions = Readonly<{
   gestureViewport?: Rect;
   /** Maestro-compat execution profile for timed coordinate swipes projected to `gesture pan`. */
   gestureExecutionProfile?: GestureExecutionProfile;
+  /**
+   * Maestro `setPermissions` app targeting. The `settings permission`
+   * positionals carry no app slot, so the Maestro adapter threads an explicit
+   * appId here; the settings handler prefers it over the session app.
+   */
+  settingsAppBundleId?: string;
 }>;

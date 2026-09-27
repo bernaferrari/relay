@@ -8,6 +8,8 @@ export type AndroidUiHierarchy = {
   type: string | null;
   label: string | null;
   value: string | null;
+  /** The content description when the label is the text rather than it; see `RawSnapshotNode`. */
+  contentDescription?: string;
   identifier: string | null;
   packageName: string | null;
   rect?: Rect;
@@ -15,9 +17,13 @@ export type AndroidUiHierarchy = {
   visibleToUser?: boolean;
   focused?: boolean;
   selected?: boolean;
+  heading?: boolean;
+  roleDescription?: string;
+  checked?: boolean;
   editable?: boolean;
   password?: boolean;
   hintShowing?: boolean;
+  placeholder?: string;
   selectionStart?: number;
   selectionEnd?: number;
   // Two independent facts, never collapsed, and never undefined: the helper omits false attributes

@@ -42,9 +42,9 @@ beforeEach(() => {
 test('tvRemote, back, and home share the Vega remote primitive', async () => {
   const interactor = createVegaInteractor(VEGA_VVD, {});
 
-  await interactor.tvRemote('left', 250);
+  await interactor.tvRemote!('left', 250);
   await interactor.back('system');
-  await interactor.home();
+  await interactor.home!();
 
   assert.deepEqual(mockPressVegaTvRemote.mock.calls, [
     [VEGA_VVD, 'left', 250],
@@ -121,7 +121,6 @@ test('required unproven Vega operations share typed unsupported behavior', async
   const interactor = createVegaInteractor(VEGA_VVD, {});
   const unsupportedCalls: ReadonlyArray<readonly [string, () => Promise<unknown>]> = [
     ['tap', () => interactor.tap(10, 20)],
-    ['doubleTap', () => interactor.doubleTap(10, 20)],
     ['longPress', () => interactor.longPress(10, 20, 500)],
     ['focus', () => interactor.focus(10, 20)],
     ['type', () => interactor.type('text')],
@@ -130,9 +129,6 @@ test('required unproven Vega operations share typed unsupported behavior', async
     ['screenshot', () => interactor.screenshot('/tmp/vega.png')],
     ['snapshot', () => interactor.snapshot()],
     ['setOrientation', () => interactor.setOrientation('portrait')],
-    ['appSwitcher', () => interactor.appSwitcher()],
-    ['readClipboard', () => interactor.readClipboard()],
-    ['writeClipboard', () => interactor.writeClipboard('text')],
     ['setSetting', () => interactor.setSetting('wifi', 'on')],
   ];
 
@@ -156,6 +152,11 @@ test('optional Vega operations stay absent so shared dispatch keeps its fallback
     'setViewport',
     'gestureViewport',
     'performGesture',
+    // The factory no longer fakes a recents button or a pasteboard Vega OS never carried;
+    // the runtime facts refuse those operations before an absent member could be resolved.
+    'appSwitcher',
+    'readClipboard',
+    'writeClipboard',
   ];
 
   for (const operation of optionalOperations) {

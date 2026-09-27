@@ -1,4 +1,8 @@
-import { isPositiveFiniteRect, isRectVisibleInViewport } from '@agent-device/kernel/rect';
+import {
+  isGeometricallyActionable,
+  isPositiveFiniteRect,
+  isRectVisibleInViewport,
+} from '@agent-device/kernel/rect';
 import type { RawSnapshotNode, Rect } from '@agent-device/kernel/snapshot';
 import type { IosViewportEvidence } from '@agent-device/contracts/ios-snapshot';
 import { snapshotSourceError } from './errors.ts';
@@ -12,10 +16,12 @@ const ATTRIBUTE = Object.freeze({
   elementBaseType: 'XC_kAXXCAttributeElementBaseType',
   label: 'XC_kAXXCAttributeLabel',
   value: 'XC_kAXXCAttributeValue',
+  placeholder: 'XC_kAXXCAttributePlaceholderValue',
   identifier: 'XC_kAXXCAttributeIdentifier',
   frame: 'XC_kAXXCAttributeFrame',
   automationType: 'XC_kAXXCAttributeAutomationType',
   traits: 'XC_kAXXCAttributeTraits',
+  userInteractionEnabled: 'XC_kAXXCAttributeIsUserInteractionEnabled',
   children: 'XC_kAXXCAttributeChildren',
 });
 
@@ -119,6 +125,14 @@ const NODE_KEYS = new Set<string>(Object.values(ATTRIBUTE));
 const NOT_ENABLED_TRAIT = 1n << 8n;
 
 /**
+ * The selected-state trait the guest reader reports for a control the app marked selected — the
+ * active tab in a tab bar, a chosen segment, a checked row. The runner path answers
+ * `selected: true` for the same node, so the bridge derives the fact from this bit. A node that is
+ * not selected omits the field, matching the runner, which publishes `selected` only when true.
+ */
+const SELECTED_TRAIT = 1n << 3n;
+
+/**
  * A WebKit page — Safari's, or a `WKWebView`'s — lives in a WebContent process and reaches UIKit's
  * tree as an `AXRemoteElement` under the web view, with its children in that other process. The
  * guest reader snapshots one process, so it delivers that element as a leaf (#2484). Such a leaf
@@ -165,6 +179,14 @@ export function decodeSnapshotBridgeTree(
   }
   const windowRoots = nodes.filter(isWindowRoot);
   const viewport = viewportFromRoot(windowRoots[0]);
+  // The runner publishes `hittable` for every node as geometric actionability; the guest hands over no
+  // hit-test result, so derive the same fact here from enabled + the node's own frame + the reported
+  // viewport. Publishing it on the raw nodes (rather than in the fold) is what lets `snapshot --raw`
+  // match the runner too, and it is only claimed once every input the rule needs is established — the
+  // reported viewport, with unresolved coordinate-space windows already refused above.
+  if (viewport.kind === 'reported') {
+    publishDerivedHittability(nodes, viewport.rect);
+  }
   return {
     nodes,
     maxTraversalDepth,
@@ -220,7 +242,14 @@ function nodeFacts(
   const baseClass = optionalString(value[ATTRIBUTE.elementBaseType]);
   const automationType = optionalInteger(value[ATTRIBUTE.automationType]);
   const frame = frameFromGuest(value[ATTRIBUTE.frame]);
-  const enabled = enabledFromTraits(value[ATTRIBUTE.traits]);
+  const traits = traitsFromGuest(value[ATTRIBUTE.traits]);
+  const enabled = traits === undefined ? undefined : (traits & NOT_ENABLED_TRAIT) === 0n;
+  // Publishes `selected: true` only when the selected bit is set and omits it otherwise — the same
+  // shape the XCTest tree produces, so a `selected:` selector cannot tell the producers apart.
+  const selected = traits === undefined || (traits & SELECTED_TRAIT) === 0n ? undefined : true;
+  const userInteractionEnabled = optionalBoolean(value[ATTRIBUTE.userInteractionEnabled]);
+  // Trimmed like the runner's `placeholderText`: a whitespace placeholder is no placeholder.
+  const placeholder = optionalString(value[ATTRIBUTE.placeholder])?.trim();
   return {
     index,
     ...(parentIndex === undefined ? {} : { parentIndex }),
@@ -235,11 +264,14 @@ function nodeFacts(
     ...(optionalScalar(value[ATTRIBUTE.value])
       ? { value: optionalScalar(value[ATTRIBUTE.value]) }
       : {}),
+    ...(placeholder ? { placeholder } : {}),
     ...(optionalString(value[ATTRIBUTE.identifier])
       ? { identifier: optionalString(value[ATTRIBUTE.identifier]) }
       : {}),
     ...(frame ? { rect: frame } : {}),
     ...(enabled === undefined ? {} : { enabled }),
+    ...(selected === undefined ? {} : { selected }),
+    ...(userInteractionEnabled === undefined ? {} : { userInteractionEnabled }),
     depth,
   };
 }
@@ -297,6 +329,21 @@ function isWindowRoot(node: RawSnapshotNode): boolean {
 }
 
 /**
+ * Stamp geometric actionability onto every decoded node, mirroring the XCTest runner's Swift rule
+ * (`parentIndex != nil && isGeometricallyActionable(enabled, frame, viewport)`). A root, a disabled
+ * node, or one whose frame center falls outside the viewport is published `hittable: false`; the
+ * fold's `available` branch then intersects this with the clipped-frame test exactly as it does for
+ * the runner, so the two producers cannot be told apart.
+ */
+function publishDerivedHittability(nodes: RawSnapshotNode[], viewport: Rect): void {
+  for (const node of nodes) {
+    node.hittable =
+      node.parentIndex !== undefined &&
+      isGeometricallyActionable(node.enabled !== false, node.rect, viewport);
+  }
+}
+
+/**
  * Surface hosts reporting their subtree in a space this capture cannot name.
  *
  * The reader hands over the app's windows as siblings under the app root, and the first of them is
@@ -342,13 +389,25 @@ function optionalScalar(value: unknown): string | undefined {
   return undefined;
 }
 
-/** The guest sends the uint64 traits word as a decimal string so no bit is lost to a double. */
-function enabledFromTraits(value: unknown): boolean | undefined {
+/**
+ * The guest sends the uint64 traits word as a decimal string so no bit is lost to a double. One
+ * parse feeds every trait fact the tree publishes — `enabled` and `selected` — so a malformed word
+ * fails the same way no matter which fact is read.
+ */
+function traitsFromGuest(value: unknown): bigint | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== 'string' || !/^\d{1,20}$/.test(value)) {
     throw snapshotSourceError('malformed-tree', 'traits-invalid');
   }
-  return (BigInt(value) & NOT_ENABLED_TRAIT) === 0n;
+  return BigInt(value);
+}
+
+function optionalBoolean(value: unknown): boolean | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'boolean') {
+    throw snapshotSourceError('malformed-tree', 'user-interaction-invalid');
+  }
+  return value;
 }
 
 function optionalInteger(value: unknown): number | undefined {

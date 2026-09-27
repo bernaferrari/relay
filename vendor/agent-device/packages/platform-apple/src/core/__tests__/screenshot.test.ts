@@ -1,7 +1,8 @@
 import { beforeEach, test, vi } from 'vitest';
 import assert from 'node:assert/strict';
-import { promises as fs } from 'node:fs';
+import { promises as fs, readFileSync } from 'node:fs';
 import path from 'node:path';
+import type { RunnerScreenCaptureMetadata } from '@agent-device/contracts/screen-capture-contract';
 import { mkdtempForTest } from '../../__tests__/tmp-dir.ts';
 
 vi.mock('@agent-device/host-kit/command', async (importOriginal) => {
@@ -68,6 +69,17 @@ const mockRunAppleRunnerCommand = vi.mocked(runAppleRunnerCommand);
 const mockEnsureBootedSimulator = vi.mocked(ensureBootedSimulator);
 const mockOpenIosSimulatorApp = vi.mocked(openIosSimulatorApp);
 const mockPrepareStatusBarForScreenshot = vi.mocked(prepareSimulatorStatusBarForScreenshot);
+
+// The wire key and a real measured capture come from the cross-language golden table, so this
+// consumer suite cannot spell a shape the Swift encoder disagrees with (#2728).
+const SCREEN_CAPTURE_TABLE = JSON.parse(
+  readFileSync(
+    new URL('../../../../../contracts/fixtures/screen-capture-metadata.json', import.meta.url),
+    'utf8',
+  ),
+) as { key: string; captures: Array<{ metadata: RunnerScreenCaptureMetadata }> };
+const [MEASURED_CAPTURE] = SCREEN_CAPTURE_TABLE.captures;
+assert(MEASURED_CAPTURE, 'the golden table must record at least one measured capture');
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -257,7 +269,7 @@ test('captureSimulatorScreenshotWithFallback boots skipped-check simulator after
       });
     }
   });
-  const captureWithRunner = vi.fn(async () => {});
+  const captureWithRunner = vi.fn(async () => undefined);
 
   await captureSimulatorScreenshotWithFallback(IOS_TEST_SIMULATOR, '/tmp/out.png', {
     appBundleId: 'com.example.app',
@@ -295,7 +307,7 @@ test('captureSimulatorScreenshotWithFallback keeps runner fallback after skipped
       timeoutMs: 20_000,
     });
   });
-  const captureWithRunner = vi.fn(async () => {});
+  const captureWithRunner = vi.fn(async () => undefined);
 
   await captureSimulatorScreenshotWithFallback(IOS_TEST_SIMULATOR, '/tmp/out.png', {
     appBundleId: 'com.example.app',
@@ -490,6 +502,57 @@ test('captureScreenshotViaRunner reuses a verified simulator container path', as
       mockRunCmd.mock.calls.filter(([, args]) => args.includes('get_app_container')).length,
       1,
     );
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('captureScreenshotViaRunner reports the display facts a runner capture measured', async () => {
+  const tmpDir = await mkdtempForTest('agent-device-runner-metadata-');
+  const containerPath = path.join(tmpDir, 'container');
+  const runnerImage = path.join(containerPath, 'tmp', 'duo.png');
+  const device = { ...IOS_TEST_SIMULATOR, id: 'sim-runner-metadata' };
+  await fs.mkdir(path.dirname(runnerImage), { recursive: true });
+  await fs.writeFile(runnerImage, 'runner-image', 'utf8');
+  mockRunAppleRunnerCommand.mockResolvedValue({
+    message: 'tmp/duo.png',
+    [SCREEN_CAPTURE_TABLE.key]: MEASURED_CAPTURE.metadata,
+  });
+  mockRunCmd.mockImplementation(async (_cmd, args) => {
+    if (args.includes('get_app_container')) {
+      return { exitCode: 0, stdout: `${containerPath}\n`, stderr: '' };
+    }
+    throw new Error(`Unexpected xcrun args: ${args.join(' ')}`);
+  });
+
+  try {
+    const outPath = path.join(tmpDir, 'out.png');
+    const metadata = await captureScreenshotViaRunner(device, outPath);
+    assert.deepEqual(metadata, MEASURED_CAPTURE.metadata);
+    assert.equal(await fs.readFile(outPath, 'utf8'), 'runner-image');
+  } finally {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('captureScreenshotViaRunner reports no display facts for a pre-panel runner', async () => {
+  const tmpDir = await mkdtempForTest('agent-device-runner-no-metadata-');
+  const containerPath = path.join(tmpDir, 'container');
+  const runnerImage = path.join(containerPath, 'tmp', 'legacy.png');
+  const device = { ...IOS_TEST_SIMULATOR, id: 'sim-runner-no-metadata' };
+  await fs.mkdir(path.dirname(runnerImage), { recursive: true });
+  await fs.writeFile(runnerImage, 'runner-image', 'utf8');
+  mockRunAppleRunnerCommand.mockResolvedValue({ message: 'tmp/legacy.png' });
+  mockRunCmd.mockImplementation(async (_cmd, args) => {
+    if (args.includes('get_app_container')) {
+      return { exitCode: 0, stdout: `${containerPath}\n`, stderr: '' };
+    }
+    throw new Error(`Unexpected xcrun args: ${args.join(' ')}`);
+  });
+
+  try {
+    const outPath = path.join(tmpDir, 'out.png');
+    assert.equal(await captureScreenshotViaRunner(device, outPath), undefined);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }

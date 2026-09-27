@@ -33,11 +33,7 @@ extension RunnerTests {
       let combined = buffer + data
       if let body = self.parseRequest(data: combined) {
         self.handleRequestBody(body) { [weak self] result in
-          self?.sendResponse(result.data, over: connection) { [weak self] in
-            if result.shouldFinish {
-              self?.finish()
-            }
-          }
+          self?.sendResult(result, over: connection)
         }
       } else {
         self.receiveRequest(connection: connection, buffer: combined)
@@ -45,10 +41,21 @@ extension RunnerTests {
     }
   }
 
+  private func sendResult(
+    _ result: (data: Data, shouldFinish: Bool),
+    over connection: NWConnection
+  ) {
+    sendResponse(result.data, over: connection) { [weak self] in
+      if result.shouldFinish {
+        self?.finish()
+      }
+    }
+  }
+
   private func sendResponse(
     _ response: Data,
     over connection: NWConnection,
-    afterSend: @escaping () -> Void = {}
+    afterSend: @escaping @Sendable () -> Void = {}
   ) {
     connection.send(content: response, isComplete: true, completion: .contentProcessed { error in
       if let error {
@@ -89,7 +96,7 @@ extension RunnerTests {
 
   private func handleRequestBody(
     _ body: Data,
-    completion: @escaping ((data: Data, shouldFinish: Bool)) -> Void
+    completion: @escaping @Sendable ((data: Data, shouldFinish: Bool)) -> Void
   ) {
     guard String(data: body, encoding: .utf8) != nil else {
       completion((
@@ -108,12 +115,8 @@ extension RunnerTests {
 
     do {
       let command = try JSONDecoder().decode(Command.self, from: body)
-      if command.command == .status {
-        completion((jsonResponse(status: 200, response: executeStatus(command: command)), false))
-        return
-      }
-      if command.command == .uptime {
-        completion((jsonResponse(status: 200, response: executeUptime()), false))
+      if let response = inlineResponse(for: command) {
+        completion((jsonResponse(status: 200, response: response), false))
         return
       }
       // Re-sends of a still-executing commandId (the daemon's transport retry loop) attach to
@@ -127,10 +130,9 @@ extension RunnerTests {
         command.command.rawValue,
         command.commandId ?? ""
       )
-      commandJournal.accept(command: command)
-      commandExecutionQueue.async {
-        do {
-          let response = try self.executeAccepted(command: command)
+      enqueueAccepted(command: command) { result in
+        switch result {
+        case .success(let response):
           NSLog(
             "AGENT_DEVICE_RUNNER_COMMAND_COMPLETED command=%@ commandId=%@ ok=%d",
             command.command.rawValue,
@@ -142,7 +144,7 @@ extension RunnerTests {
             result: (self.jsonResponse(status: 200, response: response), command.command == .shutdown),
             completion: completion
           )
-        } catch {
+        case .failure(let error):
           NSLog(
             "AGENT_DEVICE_RUNNER_COMMAND_FAILED command=%@ commandId=%@ error=%@",
             command.command.rawValue,
@@ -174,14 +176,40 @@ extension RunnerTests {
     }
   }
 
+  // MARK: - Command Routing
+
+  /// Status and uptime read runner state without entering the journal or the command queue.
+  func inlineResponse(for command: Command) -> Response? {
+    switch command.command {
+    case .status:
+      return executeStatus(command: command)
+    case .uptime:
+      return executeUptime()
+    default:
+      return nil
+    }
+  }
+
+  /// Journal-accepts `command` and executes it on `commandExecutionQueue`; `completion` runs on that
+  /// queue.
+  func enqueueAccepted(
+    command: Command,
+    completion: @escaping @Sendable (Result<Response, Error>) -> Void
+  ) {
+    commandJournal.accept(command: command)
+    commandExecutionQueue.async {
+      completion(Result { try self.executeAccepted(command: command) })
+    }
+  }
+
   // MARK: - In-Flight Command Coalescing
 
   /// Returns true when this send duplicated a still-executing commandId and was attached as a
   /// waiter of the in-flight execution. Otherwise marks the commandId in flight and returns
   /// false so the caller enqueues the (single) execution.
-  private func attachToInFlightCommandIfNeeded(
+  func attachToInFlightCommandIfNeeded(
     command: Command,
-    completion: @escaping ((data: Data, shouldFinish: Bool)) -> Void
+    completion: @escaping @Sendable ((data: Data, shouldFinish: Bool)) -> Void
   ) -> Bool {
     guard let commandId = command.commandId?.trimmedNonEmpty else { return false }
     inFlightCommandLock.lock()
@@ -200,12 +228,12 @@ extension RunnerTests {
     return false
   }
 
-  private func deliverCommandResult(
+  func deliverCommandResult(
     command: Command,
     result: (data: Data, shouldFinish: Bool),
     completion: ((data: Data, shouldFinish: Bool)) -> Void
   ) {
-    var waiters: [((data: Data, shouldFinish: Bool)) -> Void] = []
+    var waiters: [@Sendable ((data: Data, shouldFinish: Bool)) -> Void] = []
     if let commandId = command.commandId?.trimmedNonEmpty {
       inFlightCommandLock.lock()
       inFlightCommandIds.remove(commandId)
@@ -217,45 +245,6 @@ extension RunnerTests {
       waiter(result)
     }
   }
-
-#if AGENT_DEVICE_RUNNER_UNIT_TESTS
-  func testDuplicateCommandIdCoalescesOntoInFlightExecution() throws {
-    let command = try JSONDecoder().decode(
-      Command.self,
-      from: Data(#"{"command":"snapshot","commandId":"snapshot-coalesce"}"#.utf8)
-    )
-    var primaryData: Data?
-    var waiterData: Data?
-    defer {
-      inFlightCommandIds.removeAll()
-      inFlightCommandWaiters.removeAll()
-    }
-
-    XCTAssertFalse(
-      attachToInFlightCommandIfNeeded(command: command) { result in
-        primaryData = result.data
-      }
-    )
-    XCTAssertTrue(
-      attachToInFlightCommandIfNeeded(command: command) { result in
-        waiterData = result.data
-      }
-    )
-
-    let delivered = Data("single-result".utf8)
-    deliverCommandResult(
-      command: command,
-      result: (delivered, false)
-    ) { result in
-      primaryData = result.data
-    }
-
-    XCTAssertEqual(primaryData, delivered)
-    XCTAssertEqual(waiterData, delivered)
-    XCTAssertFalse(inFlightCommandIds.contains("snapshot-coalesce"))
-    XCTAssertNil(inFlightCommandWaiters["snapshot-coalesce"])
-  }
-#endif
 
   // MARK: - Response Encoding
 

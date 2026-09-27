@@ -22,6 +22,7 @@ import {
   scrollAndroid,
   screenshotAndroid,
   setAndroidOrientation,
+  readAndroidSetting,
   setAndroidSetting,
   snapshotAndroid,
   typeAndroid,
@@ -32,7 +33,6 @@ import {
 } from '@agent-device/platform-android/mechanics';
 import { withDiagnosticTimer } from '@agent-device/host-kit/diagnostics';
 import { withMethodScope } from '@agent-device/kernel/scoped-provider';
-import { AppError } from '@agent-device/kernel/errors';
 import type { DeviceInfo } from '@agent-device/kernel/device';
 import type { Interactor, RunnerContext } from '@agent-device/contracts/interactor-types';
 import { buildSnapshotState } from '@agent-device/capture-kit/snapshot-state';
@@ -105,6 +105,7 @@ export function createAndroidInteractor(
             raw: snapshotOptions.raw,
             includeHiddenContentHints: snapshotOptions.includeHiddenContentHints,
             helperSessionScope: androidHelperSessionScope(snapshotOptions.appBundleId),
+            transient: snapshotOptions.transient,
           }),
         { backend: 'android' },
       );
@@ -114,12 +115,6 @@ export function createAndroidInteractor(
     home: () => homeAndroid(device),
     setOrientation: (orientation) => setAndroidOrientation(device, orientation),
     appSwitcher: () => appSwitcherAndroid(device),
-    actionButton: () => {
-      throw new AppError(
-        'UNSUPPORTED_OPERATION',
-        'action-button presses iPhone Action Button hardware, which Android has no equivalent for',
-      );
-    },
     tvRemote: (button, durationMs) => pressAndroidTvRemote(device, button, durationMs),
     keyboardStatus: async () => ({ kind: 'ime-probe', ...(await getAndroidKeyboardState(device)) }),
     keyboardDismiss: async () => ({ kind: 'ime-probe', ...(await dismissAndroidKeyboard(device)) }),
@@ -131,6 +126,7 @@ export function createAndroidInteractor(
     writeClipboard: (text) => writeAndroidClipboardText(device, text),
     setSetting: (setting, state, appId, options) =>
       setAndroidSetting(device, setting, state, appId, options),
+    readSetting: (setting) => readAndroidSetting(device, setting),
     // R59: Android's alert legs read the same presented accessibility tree `snapshot` publishes
     // and own their own polling, so the family supplies the node capture rather than the daemon.
     // The presentation pass matters: alert candidacy skips occlusion-blocked nodes, and only a

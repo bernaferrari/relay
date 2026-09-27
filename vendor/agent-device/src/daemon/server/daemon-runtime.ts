@@ -40,8 +40,8 @@ import {
   processOwnsActiveDeviceClaim,
   reconcileOrphanedDeviceClaims,
   type DeviceClaimReconciler,
-} from '../device-claims.ts';
-import { createOwnerScopedDeviceClaimReconciler } from '../device-claim-owner-recovery.ts';
+} from '../device/device-claims.ts';
+import { createOwnerScopedDeviceClaimReconciler } from '../device/device-claim-owner-recovery.ts';
 import { createDaemonShutdownClaimLedger } from './daemon-shutdown-claims.ts';
 import { createAudioProbeAdmissionLedger } from '@agent-device/capture-kit/audio-probe-admission-ledger';
 import { createPerfCaptureAdmissionLedger } from '@agent-device/capture-kit/perf-capture-admission-ledger';
@@ -559,6 +559,7 @@ export async function startDaemonRuntime(
       createOwnerScopedDeviceClaimReconciler(createDaemonRecoveryPlatformScope()),
       baseDir,
     );
+    await restoreLegacyXctestDeviceSetForDaemonStartup(logPath);
     // Arms the initial idle-reap timer: a daemon that starts and never
     // receives a request must still be able to reap itself.
     idleReap.noteActivity();
@@ -587,10 +588,21 @@ export async function startDaemonRuntime(
       await emitFatalDiagnostic(shutdownOptions.cause);
     }
     await closeDaemonServers(servers);
-    // Hand healthy simulator runners off before durable session teardown. The lifecycle gateway
-    // later terminates only still-owned generations once all resources have finalized.
+    // Hand healthy runners off before durable session teardown. The lifecycle gateway later
+    // terminates only still-owned generations once all resources have finalized.
+    //
+    // The scope is what makes this step observable: a SIGTERM shutdown has no request, and therefore
+    // no diagnostics scope, so `emitDiagnostic` would drop every detach reason. Daemon debug level is
+    // forced on here because the declines are the point of the record — a handoff that silently
+    // skipped is indistinguishable from a rebuild (#2681).
     try {
-      await applicationLifecycle.detachForDaemonShutdown();
+      await withDiagnosticsScope(
+        { command: 'daemon', session: 'daemon', logPath, debug: true },
+        async () => {
+          await applicationLifecycle.detachForDaemonShutdown();
+          flushDiagnosticsToSessionFile({ force: true });
+        },
+      );
     } catch {}
     expiredProviderLeaseReleaser.beginShutdown();
     await teardownDaemonSessions();
@@ -692,6 +704,28 @@ async function reconcileDeviceClaimsForDaemonStartup(
         });
         flushDiagnosticsToSessionFile({ force: true });
       }
+    },
+  );
+}
+
+/**
+ * Best effort: the runner never reads `XCTestDevices`, so a restore that fails here is recorded in
+ * daemon.log and fails neither this daemon nor a runner start.
+ */
+export async function restoreLegacyXctestDeviceSetForDaemonStartup(logPath: string): Promise<void> {
+  await withDiagnosticsScope(
+    { command: 'daemon', session: 'daemon', logPath, debug: false },
+    async () => {
+      try {
+        await platformDaemonLifecycleOwners.restoreLegacyXctestDeviceSetRedirect();
+      } catch (error) {
+        emitDiagnostic({
+          level: 'warn',
+          phase: 'ios_runner_legacy_xctest_device_set_restore_failed',
+          data: { error: error instanceof Error ? error.message : String(error) },
+        });
+      }
+      flushDiagnosticsToSessionFile({ force: true });
     },
   );
 }

@@ -1,13 +1,19 @@
 import type { CommandSchemaOverride } from '@agent-device/command-registry/command-schema';
+import type { CommandResultMap } from '@agent-device/command-registry/command-result';
 import { messageOutput } from '../output-common.ts';
 import { defineCommandFacet, defineCommandFamilyFromFacets } from '../family/types.ts';
+import type { JsonSchema } from '../command-contract.ts';
 import {
   booleanField,
   booleanSchema,
   integerField,
   jsonSchemaField,
+  looseObjectSchema,
+  numberSchema,
+  objectSchema,
   requiredField,
   stringArrayField,
+  stringArraySchema,
   stringField,
   stringSchema,
 } from '../command-input.ts';
@@ -94,6 +100,54 @@ export const testCommandMetadata = defineFieldCommandMetadata(
     shardSplit: integerField(),
   },
 );
+
+/**
+ * This family's advertised MCP `outputSchema`s — `ReplayCommandResult` and `ReplaySuiteResult`
+ * (`packages/contracts/src/replay.ts`) — keyed by daemon command name and projected into the
+ * command map by `src/mcp/command-output-schemas.ts`. Non-strict like every other entry: no
+ * `additionalProperties: false`, so additive response fields such as `cost` keep validating.
+ */
+export const REPLAY_COMMAND_OUTPUT_SCHEMAS = {
+  replay: objectSchema(
+    {
+      replayed: numberSchema(),
+      healed: numberSchema(),
+      session: stringSchema(),
+      sessionActive: booleanSchema(
+        'True iff the session is still active — the script had no terminal close.',
+      ),
+      artifactPaths: stringArraySchema(),
+      snapshotDiagnostics: looseObjectSchema(),
+      message: stringSchema(),
+    },
+    ['replayed', 'healed', 'session', 'sessionActive', 'artifactPaths', 'message'],
+  ),
+  test: objectSchema(
+    {
+      total: numberSchema(),
+      executed: numberSchema(),
+      passed: numberSchema(),
+      failed: numberSchema(),
+      skipped: numberSchema(),
+      notRun: numberSchema(),
+      durationMs: numberSchema(),
+      failures: { type: 'array', items: looseObjectSchema() },
+      tests: { type: 'array', items: looseObjectSchema() },
+      snapshotDiagnostics: looseObjectSchema(),
+    },
+    [
+      'total',
+      'executed',
+      'passed',
+      'failed',
+      'skipped',
+      'notRun',
+      'durationMs',
+      'failures',
+      'tests',
+    ],
+  ),
+} satisfies Pick<Record<keyof CommandResultMap, JsonSchema>, 'replay' | 'test'>;
 
 const replayCliSchema = {
   usageOverride: 'replay <path> | replay export <file.ad> [--out <path>]',

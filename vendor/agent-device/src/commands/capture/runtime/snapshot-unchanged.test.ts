@@ -70,9 +70,13 @@ test.each<Partial<SnapshotNode>>([
   { subrole: 'AXCloseButton' },
   { value: 'Draft' },
   { identifier: 'create' },
+  { contentDescription: 'Create a draft' },
   { enabled: false },
   { selected: true },
+  { checked: true },
+  { checked: false },
   { focused: true },
+  { placeholder: 'Key echo' },
   { hittable: false },
   { bundleId: 'com.example.app' },
   { appName: 'Example' },
@@ -104,6 +108,17 @@ test.each<Partial<SnapshotNode>>([
   expect(buildUnchangedSnapshotMetadata({ previous, current, options: {} })).toMatchObject({
     nodeCount: 1,
   });
+});
+
+test('unchanged metadata keeps a content description that did not change', () => {
+  const described = () =>
+    snapshot('Create', {
+      nodes: [{ ...snapshot('Create').nodes[0]!, contentDescription: 'Create a draft' }],
+    });
+
+  expect(
+    buildUnchangedSnapshotMetadata({ previous: described(), current: described(), options: {} }),
+  ).toMatchObject({ nodeCount: 1 });
 });
 
 test('unchanged metadata detects node count, order and truncation changes', () => {

@@ -20,7 +20,7 @@ vi.mock('node:timers/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:timers/promises')>();
   return { ...actual, setTimeout: vi.fn(async () => undefined) };
 });
-vi.mock('../../device-ready.ts', () => ({ ensureDeviceReady: vi.fn(async () => {}) }));
+vi.mock('../../device/device-ready.ts', () => ({ ensureDeviceReady: vi.fn(async () => {}) }));
 vi.mock('@agent-device/platform-apple/runner/operations', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('@agent-device/platform-apple/runner/operations')>();
@@ -67,7 +67,7 @@ import {
   awaitFixtureReadiness,
   discoverReadyAndroidEmulators,
 } from '../../__tests__/application-lifecycle-runtime-fixture.ts';
-import { ensureDeviceReady } from '../../device-ready.ts';
+import { ensureDeviceReady } from '../../device/device-ready.ts';
 import {
   prewarmIosRunnerSession,
   notifyIosRunnerAppRelaunched,
@@ -564,7 +564,7 @@ test('close on iOS simulator session retains runner and deletes the session', as
   expect(sessionStore.get(sessionName)).toBeUndefined();
 });
 
-test('close on iOS simulator with scoped simulator set stops runner before deleting session', async () => {
+test('close on iOS simulator with scoped simulator set retains runner and deletes the session', async () => {
   const sessionStore = makeSessionStore('agent-device-relaunch-close-');
   const sessionName = 'ios-scoped-simulator-session';
   sessionStore.set(
@@ -585,7 +585,7 @@ test('close on iOS simulator with scoped simulator set stops runner before delet
   const response = await createHandler(sessionStore)(sessionRequest(sessionName, 'close'));
 
   expect(response.ok).toBe(true);
-  expect(mockReleaseRunnerOnClose).toHaveBeenCalledWith('sim-1', { retain: false });
+  expect(mockReleaseRunnerOnClose).toHaveBeenCalledWith('sim-1', { retain: true });
   expect(sessionStore.get(sessionName)).toBeUndefined();
 });
 

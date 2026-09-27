@@ -156,6 +156,7 @@ function summarizeProviderScenarioFlagCoverage(files) {
     ['intervalMs', 'repeated press interval'],
     ['delayMs', 'typing/fill delay'],
     ['recordAs', 'parameterized fill publication for recorded scripts'],
+    ['keyframes', 'timed fold trajectory'],
     ['durationMs', 'scroll, gesture, and TV remote duration'],
     ['holdMs', 'press hold duration'],
     ['jitterPx', 'press jitter'],
@@ -299,7 +300,6 @@ function summarizeProviderScenarioFlagExclusions() {
       name: 'Apple launch and perf artifact options',
       owner: 'iOS platform, observability command, and parser tests',
       keys: [
-        'deviceHub',
         'kind',
         'launchArgs',
         'perfTemplate',
@@ -583,7 +583,9 @@ function readCommandContractBlocks(text) {
   const nameOf = (token) => token.match(/^['"]([^'"]+)['"]$/)?.[1] ?? constants.get(token);
 
   const starts = [
-    ...text.matchAll(/defineCommandFacet\(\s*\{[\s\S]*?\bname:\s*([A-Za-z0-9_]+|['"][^'"]+['"])/g),
+    ...text.matchAll(
+      /define(?:Parameterless)?CommandFacet\(\s*\{[\s\S]*?\bname:\s*([A-Za-z0-9_]+|['"][^'"]+['"])/g,
+    ),
     ...text.matchAll(/defineFieldCommand\(\s*(['"][^'"]+['"])/g),
     ...text.matchAll(/defineCommand\(\s*\{[\s\S]*?\bname:\s*(['"][^'"]+['"])/g),
   ]
