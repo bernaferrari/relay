@@ -156,7 +156,7 @@ describe("recording edit adapter", () => {
       mime: "image/png",
     });
     expect(client.binaryResource).toHaveBeenCalledWith(
-      `/authoring-evidence/${sha256}?mime=image%2Fpng`,
+      `/authoring-evidence/${sha256}?mime=image%2Fpng&v=cors-v2`,
     );
   });
 

@@ -276,7 +276,7 @@ export function createRecordingProductService(
         if (snapshotHash) {
           try {
             const raw = await client.binaryResource(
-              `/authoring-evidence/${encodeURIComponent(snapshotHash)}?mime=application%2Fjson`,
+              `/authoring-evidence/${encodeURIComponent(snapshotHash)}?mime=application%2Fjson&v=cors-v2`,
             );
             const parsed = JSON.parse(new TextDecoder().decode(raw.bytes)) as Record<
               string,
@@ -316,7 +316,7 @@ export function createRecordingProductService(
         }
       }
       const resource = await client.binaryResource(
-        `/authoring-evidence/${encodeURIComponent(match[1]!)}?mime=${encodeURIComponent(mime)}`,
+        `/authoring-evidence/${encodeURIComponent(match[1]!)}?mime=${encodeURIComponent(mime)}&v=cors-v2`,
       );
       let controls = controlsForAuthoringEvidence(revision, evidenceId);
       if (fullPage) {

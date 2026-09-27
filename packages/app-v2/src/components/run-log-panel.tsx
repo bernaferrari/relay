@@ -9,7 +9,11 @@ export function RunLogPanel({ logs }: { logs: readonly ReportEvidenceItem[] }) {
   const viewport = useRef<HTMLDivElement>(null);
   const rows = useMemo(
     () =>
-      logs.filter((item) => item.title.toLocaleLowerCase().includes(filter.toLocaleLowerCase())),
+      logs.filter((item) =>
+        `${item.title} ${item.detail ?? ""}`
+          .toLocaleLowerCase()
+          .includes(filter.toLocaleLowerCase()),
+      ),
     [logs, filter],
   );
   const virtual = useVirtualizer({
@@ -24,7 +28,8 @@ export function RunLogPanel({ logs }: { logs: readonly ReportEvidenceItem[] }) {
       {logs.length ? (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground">
-            {rows.length} of {logs.length} retained logs
+            {filter ? `${rows.length} of ${logs.length}` : logs.length}{" "}
+            {logs.length === 1 ? "log entry" : "log entries"}
           </span>
           {logs.length ? (
             <input
@@ -82,6 +87,11 @@ export function RunLogPanel({ logs }: { logs: readonly ReportEvidenceItem[] }) {
                 <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5">
                   {rows[row.index]!.title}
                 </pre>
+                {rows[row.index]!.detail ? (
+                  <p className="mt-2 break-words text-xs leading-5 text-muted-foreground">
+                    {rows[row.index]!.detail}
+                  </p>
+                ) : null}
               </div>
             ))}
           </div>

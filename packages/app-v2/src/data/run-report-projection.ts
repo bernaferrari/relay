@@ -208,10 +208,31 @@ function evidenceItems(
     const message = publicEvidenceText(entry?.message);
     if (!entry || !message) return [];
     const level = text(entry.level)?.toLocaleLowerCase();
+    const status = /server responded with a status of (\d{3})/u.exec(message)?.[1];
+    const at = finite(entry.at);
+    const nearbyRequests =
+      status && at !== undefined
+        ? array(evidence?.network)
+            .map(record)
+            .filter(
+              (request) =>
+                request &&
+                request.status === Number(status) &&
+                finite(request.at) !== undefined &&
+                Math.abs(at - Number(request.at)) <= 1000,
+            )
+        : [];
+    const nearbyRequest = nearbyRequests.length === 1 ? nearbyRequests[0] : undefined;
+    const detail = nearbyRequest
+      ? `Request recorded at the same time: ${text(nearbyRequest.method) ?? "GET"} ${publicEvidenceText(nearbyRequest.url) ?? ""}`
+      : status
+        ? "A resource returned an HTTP error during this run. Check Network for the request URL."
+        : undefined;
     return [
       {
         id: text(entry.id) ?? `log-${index}`,
         title: message,
+        ...(detail ? { detail } : {}),
         meta:
           [
             text(entry.source),

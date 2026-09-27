@@ -13,23 +13,23 @@
     "package": "node scripts/build.mjs && node scripts/sign-mac-dist.mjs --mac dir",
     "dist": "node scripts/build.mjs && node scripts/sign-mac-dist.mjs --mac dmg zip",
     "preview": "node scripts/build.mjs && node scripts/preview.mjs",
-    "test": "node --experimental-strip-types --test src/main/server-readiness.test.ts src/main/ios-preview-sidecar.test.ts src/main/window-state.test.ts src/main/windows-v2-launcher.test.ts src/main/lane-session.test.ts && node --test scripts/ensure-dev-service.test.mjs scripts/dev-app-entry.test.mjs scripts/macos-icon-packaging.test.mjs scripts/require-developer-id.test.mjs && node scripts/verify-server-bundle.mjs",
+    "test": "node --experimental-strip-types --test src/main/server-readiness.test.ts src/main/ios-preview-sidecar.test.ts src/main/window-state.test.ts src/main/windows-v2-launcher.test.ts src/main/lane-session.test.ts && node --test scripts/ensure-dev-service.test.mjs scripts/dev-app-entry.test.mjs scripts/ensure-electron-binary.test.mjs scripts/macos-icon-packaging.test.mjs scripts/require-developer-id.test.mjs && node scripts/verify-server-bundle.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@relay/app-v2": "workspace:*",
     "@relay/ui-react": "workspace:*",
     "playwright-core": "^1.63.0",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.3",
-    "@types/node": "^26.5.1",
-    "@types/react": "19.2.18",
-    "@types/react-dom": "19.2.7",
+    "@types/node": "^26.6.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
-    "electron": "^43.7.0",
+    "electron": "^44.4.5",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "tailwindcss": "4.3.3",

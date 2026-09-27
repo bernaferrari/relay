@@ -34,7 +34,7 @@ export function createCatalogProductService(platform: Platform): CatalogProductS
       if (!match) throw new Error("Invalid saved screenshot reference");
       const { client } = await productClientForPlatform(platform);
       const resource = await client.binaryResource(
-        `/authoring-evidence/${match[1]}?mime=image%2Fpng`,
+        `/authoring-evidence/${match[1]}?mime=image%2Fpng&v=cors-v2`,
       );
       return {
         bytes: resource.bytes,

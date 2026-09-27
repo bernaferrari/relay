@@ -63,13 +63,13 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
-    "@shadcn/lint": "0.1.0",
-    "@types/node": "^26.5.1",
-    "tsx": "^4.23.13",
+    "@shadcn/lint": "0.2.0",
+    "@types/node": "^26.6.3",
+    "tsx": "^4.23.15",
     "typescript": "catalog:",
     "vite": "catalog:",
     "vite-plus": "catalog:",
-    "vitest": "^4.1.10"
+    "vitest": "^5.0.2"
   },
   "devEngines": {
     "packageManager": {

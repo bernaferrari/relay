@@ -41,7 +41,7 @@ export function MapScreenPreview({
     return () => observer.disconnect();
   }, []);
   const preview = useQuery({
-    queryKey: ["map-screen-preview", uri],
+    queryKey: ["map-screen-preview", uri, "cors-v2"],
     queryFn: () => load!(uri!),
     enabled: Boolean(visible && uri && load),
     staleTime: Infinity,
@@ -84,14 +84,16 @@ export function MapScreenPreview({
           }}
         />
       ) : uri && load && !preview.isError ? null : (
-        <div className="grid justify-items-center gap-2 p-3 text-center text-xs text-muted-foreground">
+        <div
+          className={`flex h-full w-full flex-col items-center justify-center gap-2 rounded-lg border border-border bg-muted/40 p-3 text-center text-xs text-muted-foreground ${selected ? "ring-2 ring-brand" : ""}`}
+        >
           <ImageOff className={thumbnail ? "size-3.5" : "size-5"} aria-hidden="true" />
           {!thumbnail &&
             (preview.isFetching
               ? "Loading screen…"
               : preview.isError
-                ? "Screenshot unavailable"
-                : "No screenshot captured")}
+                ? "Preview couldn’t load"
+                : "No screenshot yet")}
         </div>
       )}
       {uri && load && !preview.isError && (!url || loadedUrl !== url) ? (

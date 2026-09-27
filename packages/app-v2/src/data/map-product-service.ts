@@ -48,16 +48,17 @@ export function createMapProductService(platform: Platform): MapProductService {
       if (!match) throw new Error("No retained accessibility tree.");
       const { client } = await productClientForPlatform(platform);
       const resource = await client.binaryResource(
-        `/authoring-evidence/${match[1]}?mime=application/json`,
+        `/authoring-evidence/${match[1]}?mime=application/json&v=cors-v2`,
       );
       return JSON.parse(new TextDecoder().decode(new Uint8Array(resource.bytes))) as unknown;
     },
+    // Version retires cached responses that predate origin-aware CORS headers.
     async loadScreenshot(uri) {
       const match = /^relay-evidence:\/\/([a-f\d]{64})$/iu.exec(uri);
       if (!match) throw new Error("This screen has no supported retained screenshot.");
       const { client } = await productClientForPlatform(platform);
       const resource = await client.binaryResource(
-        `/authoring-evidence/${match[1]}?mime=image/png`,
+        `/authoring-evidence/${match[1]}?mime=image/png&v=cors-v2`,
       );
       return new Blob([new Uint8Array(resource.bytes)], { type: "image/png" });
     },

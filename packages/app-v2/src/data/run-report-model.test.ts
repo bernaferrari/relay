@@ -1,3 +1,4 @@
+import { projectRunReport } from "./run-report-projection";
 import { describe, expect, it } from "vitest";
 import { traceVideoInterval } from "./run-report-media";
 import { mapDiagnosticEventsToVideo } from "./run-product-service";
@@ -35,5 +36,51 @@ describe("trace video intervals", () => {
     expect(
       traceVideoInterval({ startedAt: 3000 }, { startedAt: 1000, finishedAt: 2000 }),
     ).toBeUndefined();
+  });
+});
+
+describe("recorded HTTP errors", () => {
+  it("shows a nearby matching request without claiming it caused the log", () => {
+    const report = projectRunReport(
+      "run",
+      {},
+      {
+        channels: { logs: { channel: "logs", status: "captured", entries: 1 } },
+        logs: [
+          {
+            id: "log",
+            at: 2000,
+            level: "error",
+            message: "Failed to load resource: the server responded with a status of 404 ()",
+          },
+        ],
+        network: [{ at: 1800, status: 404, method: "GET", url: "https://example.com/missing.png" }],
+      },
+    );
+    expect(JSON.stringify(report)).toContain(
+      "Request recorded at the same time: GET https://example.com/missing.png",
+    );
+  });
+  it("does not attribute an ambiguous error to one of several requests", () => {
+    const report = projectRunReport(
+      "run",
+      {},
+      {
+        channels: { logs: { channel: "logs", status: "captured", entries: 1 } },
+        logs: [
+          {
+            at: 2000,
+            message: "Failed to load resource: the server responded with a status of 404 ()",
+          },
+        ],
+        network: ["a", "b"].map((name) => ({
+          at: 1800,
+          status: 404,
+          url: `https://example.com/${name}`,
+        })),
+      },
+    );
+    expect(JSON.stringify(report)).not.toContain("Request recorded at the same time:");
+    expect(JSON.stringify(report)).toContain("Check Network for the request URL.");
   });
 });
