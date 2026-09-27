@@ -68,10 +68,10 @@ export type ContextualAction =
 export type Sidebar =
   | "home"
   | "apps"
+  | "accounts"
   | "tests"
   | "sessions"
   | "runs"
-  | "review"
   | "changes"
   | "devices"
   | "settings";
@@ -154,9 +154,12 @@ export const ROUTE_DEFINITIONS = [
   d("/apps", "/home", "Apps", "App", "apps", "add-app"),
   d("/apps/:appId", "/apps", "App", "App", "apps", "explore-app", ["view"]),
   d("/apps/:appId/versions", "/apps/:appId", "Versions", "App", "apps", null, ["status", "view"]),
-  d("/apps/:appId/accounts", "/apps/:appId", "Accounts", "App", "apps", null, ["status", "view"]),
+  d("/apps/:appId/accounts", "/apps/:appId", "Accounts", "App", "accounts", null, [
+    "status",
+    "view",
+  ]),
   d("/versions", "/home", "Versions", null, "apps", null, ["status", "view"]),
-  d("/accounts", "/home", "Accounts", null, "apps", null, ["status", "view"]),
+  d("/accounts", "/home", "Accounts", null, "accounts", null, ["status", "view"]),
   d("/apps/:appId/map", "/apps/:appId", "Map", "Map", "apps", "explore-app", [
     "view",
     "screen",
@@ -242,8 +245,8 @@ export const ROUTE_DEFINITIONS = [
     "review-recording",
     ["view", "step", "screen"],
   ),
-  d("/review", "/home", "Review", "Run", "review", "review-run", ["app", "view", "item", "filter"]),
-  d("/runs", "/home", "Results", "Run", "runs", "review-run", ["status", "app", "view", "q"]),
+  d("/review", "/runs", "Review", "Run", "runs", "review-run", ["app", "view", "item", "filter"]),
+  d("/runs", "/home", "Runs", "Run", "runs", "review-run", ["status", "app", "view", "q"]),
   d("/runs/:runId", "/runs", "Run", "Run", "runs", "inspect-run", [
     "returnTo",
     "plan",

@@ -7,19 +7,10 @@ import {
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
-import { Badge } from "@relay/ui-react/components/badge";
 import { Button } from "@relay/ui-react/components/button";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useRouter, useRouteContext } from "@tanstack/react-router";
-import {
-  Activity,
-  CircleDot,
-  GitCompareArrows,
-  Layers3,
-  Play,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+import { CircleDot, GitCompareArrows, Layers3, Play, X, type LucideIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { collectActiveWork, type ActiveWorkItem, type ActiveWorkKind } from "../data/active-work";
 import { catalogQueryKeys } from "../data/catalog-queries";
@@ -35,7 +26,7 @@ const iconForKind: Record<ActiveWorkKind, LucideIcon> = {
   change: GitCompareArrows,
 };
 
-function useActiveWorkItems(_full: boolean): {
+function useActiveWorkItems(): {
   items: readonly ActiveWorkItem[];
   unavailable: boolean;
   retry(): Promise<void>;
@@ -52,14 +43,13 @@ function useActiveWorkItems(_full: boolean): {
   const recording = useQuery({
     queryKey: recordingQueryKeys.workflow(recordingPointer.data ?? "unselected"),
     queryFn: () => productService.inspect(recordingPointer.data!),
-    enabled: _full && Boolean(recordingPointer.data),
+    enabled: Boolean(recordingPointer.data),
     staleTime: 2_000,
     refetchInterval: 3_000,
   });
   const runs = useQuery({
     queryKey: [...catalogQueryKeys.runs, "active"],
     queryFn: () => catalogService.listRuns({ view: "active" }),
-    enabled: _full,
     retry: false,
     staleTime: 2_000,
     refetchInterval: 3_000,
@@ -72,7 +62,6 @@ function useActiveWorkItems(_full: boolean): {
   const changes = useQuery({
     queryKey: ["changes", "active-work"],
     queryFn: () => changeService.list(),
-    enabled: _full,
     staleTime: 2_000,
     refetchInterval: 3_000,
   });
@@ -102,31 +91,39 @@ function useActiveWorkItems(_full: boolean): {
   return { items, unavailable, retry };
 }
 
+/**
+ * The one live-activity signal in the top bar: absent while idle, a pulsing
+ * "N running" pill while recordings, runs, or changes are in progress.
+ */
 export function ActivityCenterButton() {
   const [open, setOpen] = useState(false);
-  // Keep the global activity badge current even while the center is closed.
-  const { items, unavailable, retry } = useActiveWorkItems(true);
+  // Keep the global indicator current even while the center is closed.
+  const { items, unavailable, retry } = useActiveWorkItems();
+  if (!unavailable && !items.length && !open) return null;
   return (
     <>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="[-webkit-app-region:no-drag]"
-        onClick={() => setOpen(true)}
-        aria-label={`Open running work${unavailable ? ", unavailable" : items.length ? `, ${items.length} active` : ""}`}
-      >
-        <Activity className="size-4" aria-hidden="true" />
-        <span>Running now</span>
-        {unavailable ? (
-          <Badge variant="destructive" className="min-w-5 px-1.5">
-            !
-          </Badge>
-        ) : items.length ? (
-          <Badge variant="secondary" className="min-w-5 px-1.5 tabular-nums">
-            {items.length}
-          </Badge>
-        ) : null}
-      </Button>
+      {unavailable || items.length ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="[-webkit-app-region:no-drag]"
+          onClick={() => setOpen(true)}
+          title={unavailable ? "Couldn’t check running work" : "See what is running"}
+          aria-label={`Open running work${unavailable ? ", unavailable" : `, ${items.length} active`}`}
+        >
+          {unavailable ? (
+            <span className="size-2 rounded-full bg-destructive" aria-hidden="true" />
+          ) : (
+            <span className="relative flex size-2" aria-hidden="true">
+              <span className="absolute inline-flex size-full animate-ping rounded-full bg-brand opacity-60 motion-reduce:hidden" />
+              <span className="relative inline-flex size-2 rounded-full bg-brand" />
+            </span>
+          )}
+          <span className="tabular-nums">
+            {unavailable ? "Activity unavailable" : `${items.length} running`}
+          </span>
+        </Button>
+      ) : null}
       <ActivityCenter
         open={open}
         onOpenChange={setOpen}
@@ -134,56 +131,6 @@ export function ActivityCenterButton() {
         unavailable={unavailable}
         onRetry={retry}
       />
-    </>
-  );
-}
-
-export function ActiveWork() {
-  const [open, setOpen] = useState(false);
-  const router = useRouter();
-  const { items, retry } = useActiveWorkItems(open);
-  const primary = items[0];
-  if (!primary) return null;
-  const Icon = iconForKind[primary.kind];
-
-  return (
-    <>
-      <section
-        className="mb-2 grid gap-1 rounded-lg border border-border bg-card p-2"
-        aria-label="Running now"
-      >
-        <div className="flex min-h-6 items-center justify-between gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          <span>Running now</span>
-          <Badge variant="secondary" className="min-h-5 px-1.5 text-xs">
-            {items.length}
-          </Badge>
-        </div>
-        <button
-          type="button"
-          className="grid min-h-11 w-full grid-cols-[16px_minmax(0,1fr)] items-center gap-2 rounded-md border-0 bg-transparent p-1.5 text-left text-foreground"
-          onClick={() => router.history.push(primary.href)}
-        >
-          <Icon className="size-3.5 size-3.5 text-foreground" aria-hidden="true" />
-          <span className="grid min-w-0 gap-px">
-            <strong className="overflow-hidden text-ellipsis whitespace-nowrap text-xs font-semibold">
-              {primary.title}
-            </strong>
-            <small className="overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
-              {primary.status} · {primary.detail}
-            </small>
-          </span>
-        </button>
-        {items.length > 1 ? (
-          <button
-            type="button"
-            className="inline-flex min-h-9 items-center rounded-sm border-0 bg-transparent px-1.5 text-xs font-semibold text-foreground"
-            onClick={() => setOpen(true)}
-          >
-            View {items.length} running tasks
-          </button>
-        ) : null}
-      </section>
-      <ActivityCenter open={open} onOpenChange={setOpen} items={items} onRetry={retry} />
     </>
   );
 }

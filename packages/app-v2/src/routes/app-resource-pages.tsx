@@ -251,7 +251,7 @@ export function AppAccountsPage() {
 
   return (
     <AppResourceFrame
-      title="Sign-ins"
+      title="Accounts"
       description="Saved browser sign-ins for daily Plans. Check health before a run; expired or signed-out accounts fail closed."
       action={
         <span className="inline-flex items-center justify-end gap-1.5 max-[780px]:flex-wrap max-[780px]:justify-start">

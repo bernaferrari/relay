@@ -12,6 +12,28 @@ import type { RunProductService } from "../data/run-product-service";
 import type { SuiteProfileProductService } from "../data/suite-profile-product-service";
 import type { Platform } from "../platform/types";
 
+// The review inbox is read over the network; Runs only needs its count.
+const inbox = vi.hoisted(() => ({ count: 0, appMapIds: [] as (string | undefined)[] }));
+vi.mock("../data/review-product-service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../data/review-product-service")>();
+  return {
+    ...actual,
+    createReviewProductService: (platform: Platform) => ({
+      ...actual.createReviewProductService(platform),
+      inbox: async (input: { appMapId?: string } = {}) => {
+        inbox.appMapIds.push(input.appMapId);
+        return {
+          entries: inbox.count
+            ? [{ runId: "r1", title: "Sign in", items: Array.from({ length: inbox.count }) }]
+            : [],
+          totals: {},
+          runsConsidered: 1,
+        };
+      },
+    }),
+  };
+});
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const roots: Root[] = [];
@@ -26,6 +48,8 @@ const platform: Platform = {
 };
 
 afterEach(async () => {
+  inbox.count = 0;
+  inbox.appMapIds = [];
   await act(async () => {
     for (const root of roots.splice(0)) root.unmount();
   });
@@ -513,6 +537,27 @@ describe("Tests workspace", () => {
 });
 
 describe("Runs workspace", () => {
+  it("folds screenshot review into Runs with a count and a focused review entry", async () => {
+    inbox.count = 3;
+    await render("/runs?app=app-shop-internal", catalog({ listRuns: async () => [passedRun] }));
+    const main = document.querySelector("main")!;
+    expect(main.querySelector("h1")?.textContent).toBe("Runs");
+    expect(main.textContent).toContain("Everything that ran, newest first.");
+    const tab = [...main.querySelectorAll('[role="tab"]')].find((item) =>
+      item.textContent?.startsWith("Needs review"),
+    );
+    expect(tab?.textContent).toBe("Needs review3");
+    const review = main.querySelector<HTMLAnchorElement>('a[href^="/review"]');
+    expect(review?.textContent).toBe("Review screenshots (3)");
+    expect(review?.getAttribute("href")).toBe("/review?app=app-shop-internal");
+    expect(inbox.appMapIds).toContain("app-shop-internal");
+  });
+
+  it("hides the review entry when no screenshots are waiting", async () => {
+    await render("/runs", catalog({ listRuns: async () => [passedRun] }));
+    expect(document.querySelector('main a[href^="/review"]')).toBeNull();
+  });
+
   it("shows completed collection separately from screenshots waiting for review", async () => {
     await render(
       "/runs?view=needs-review",
@@ -597,12 +642,12 @@ describe("Runs workspace", () => {
     await settle();
     expect(listRuns.mock.calls.length).toBeGreaterThan(1);
     expect(document.querySelector('a[href="/runs/run-passed-internal"]')).toBe(row);
-    expect(document.body.textContent).toContain("Couldn’t refresh results");
+    expect(document.body.textContent).toContain("Couldn’t refresh runs");
     unavailable = false;
     await click("Refresh");
     await settle();
     expect(document.querySelector('a[href="/runs/run-passed-internal"]')).toBe(row);
-    expect(document.body.textContent).not.toContain("Couldn’t refresh results");
+    expect(document.body.textContent).not.toContain("Couldn’t refresh runs");
   }, 10_000);
 
   it("keeps the Run view tabs on their own rail above the filters", async () => {
