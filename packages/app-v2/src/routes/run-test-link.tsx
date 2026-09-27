@@ -7,6 +7,7 @@ export function RunTestLink({ testId }: { testId?: string }) {
   const search = useLocation({ select: (location) => location.search }) as Record<string, unknown>;
   return (
     <ContextBackLink
+      label="Back"
       fallback={
         testId ? (
           <Link
@@ -20,11 +21,11 @@ export function RunTestLink({ testId }: { testId?: string }) {
             }}
             className="inline-flex items-center gap-1 hover:text-foreground"
           >
-            <ChevronLeft className="size-4" aria-hidden="true" /> Back to Test
+            <ChevronLeft className="size-4" aria-hidden="true" /> Back
           </Link>
         ) : (
           <Link to="/runs" className="inline-flex items-center gap-1 hover:text-foreground">
-            <ChevronLeft className="size-4" aria-hidden="true" /> Runs
+            <ChevronLeft className="size-4" aria-hidden="true" /> Back
           </Link>
         )
       }

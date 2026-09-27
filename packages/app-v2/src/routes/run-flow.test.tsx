@@ -1668,8 +1668,8 @@ describe("Run and Report", () => {
       fake.service,
       platformWithStorage().platform,
     );
-    const back = [...document.querySelectorAll<HTMLAnchorElement>("a")].find((link) =>
-      link.textContent?.includes("Back to Review"),
+    const back = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (link) => link.textContent?.trim() === "Back",
     )!;
     expect(back).toBeDefined();
     await click(back);
@@ -1677,6 +1677,24 @@ describe("Run and Report", () => {
     expect(history.location.search).toContain("capture-2");
     expect(history.location.search).toContain("filter=new");
     expect(history.location.search).toContain("app=app-1");
+  });
+
+  it("returns to Runs with its filters even when the run belongs to a Test", async () => {
+    const fake = fakeRunService();
+    fake.service.getReport = async () => ({ ...report(), testId: "test-1" });
+    const { history } = await renderRun(
+      "/runs/run-1?returnTo=" + encodeURIComponent("/runs?view=failed&q=checkout&app=app-1"),
+      fake.service,
+      platformWithStorage().platform,
+    );
+    const back = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (link) => link.textContent?.trim() === "Back",
+    )!;
+    await click(back);
+    expect(history.location.pathname).toBe("/runs");
+    expect(String(history.location.search)).toContain("view=failed");
+    expect(String(history.location.search)).toContain("checkout");
+    expect(String(history.location.search)).toContain("app=app-1");
   });
 
   it("returns from the run to the Test with its plan context", async () => {
@@ -1687,8 +1705,8 @@ describe("Run and Report", () => {
       fake.service,
       platformWithStorage().platform,
     );
-    const back = [...document.querySelectorAll<HTMLAnchorElement>("a")].find((link) =>
-      link.textContent?.includes("Back to Test"),
+    const back = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (link) => link.textContent?.trim() === "Back",
     )!;
     await click(back);
     expect(history.location.pathname).toBe("/tests/test-1");
