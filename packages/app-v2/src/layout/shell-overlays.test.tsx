@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import type { ProductChange } from "@relay/product/change-journey";
 import type { ProductRunSummary, ProductTestSummary } from "@relay/product/catalog";
+import type { ProductTestSummary as RunTestSummary } from "../data/run-product-service";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -135,6 +136,8 @@ async function renderShell(input: {
   devices?: readonly ProductDevice[];
   onRunsRead?: () => void;
   initialEntries?: string[];
+  /** The saved Test a Run page reads for its return link. */
+  test?: RunTestSummary;
 }) {
   const host = document.createElement("div");
   document.body.append(host);
@@ -149,7 +152,7 @@ async function renderShell(input: {
         productService={recording()}
         runService={
           {
-            getTest: async () => undefined,
+            getTest: async (testId: string) => (input.test?.id === testId ? input.test : undefined),
             listTargets: async () => [],
             restore: async () => undefined,
             inspectExecution: async () => null,
@@ -500,10 +503,19 @@ describe("shell overlays", () => {
     expect(history.location.search).toBe(search);
   });
 
-  it("View Test opens the Test without substituting browser Back", async () => {
-    const history = await renderShell({ initialEntries: ["/tests", "/runs/run-1"] });
-    const link = [...document.querySelectorAll<HTMLAnchorElement>("a")].find((item) =>
-      item.textContent?.includes("View Test"),
+  it("the Test link on a Run opens the Test without substituting browser Back", async () => {
+    const history = await renderShell({
+      initialEntries: ["/tests", "/runs/run-1"],
+      test: {
+        id: "test-1",
+        name: "Checkout",
+        appMapId: "checkout",
+        appName: "Checkout",
+        stepCount: 0,
+      },
+    });
+    const link = [...document.querySelectorAll<HTMLAnchorElement>("main a")].find((item) =>
+      item.textContent?.includes("Checkout"),
     );
     expect(link?.getAttribute("href")).toBe("/tests/test-1");
     await act(async () => link!.click());

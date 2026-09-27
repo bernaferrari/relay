@@ -228,8 +228,11 @@ describe("Map exploration", () => {
     const world = document.querySelector<HTMLElement>('[data-slot="map-world"]');
     expect(canvas?.tabIndex).toBe(0);
     expect(document.querySelectorAll('[data-slot="map-edge"]')).toHaveLength(1);
-    expect(document.querySelector('[data-slot="map-edge"] text')?.textContent).toBe("Open cart");
-    expect(document.querySelector('[data-slot="map-edge"] rect')).not.toBeNull();
+    // Recorded connections are named by their accessible label, not an on-canvas chip.
+    expect(document.querySelector('[data-slot="map-edge"]')?.getAttribute("aria-label")).toContain(
+      "Open cart",
+    );
+    expect(document.querySelector('[data-slot="map-edge-label"]')).toBeNull();
     expect(
       document.querySelector<HTMLElement>('[data-slot="map-screen"][style*="left: 560px"]'),
     ).not.toBeNull();

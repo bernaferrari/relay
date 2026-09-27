@@ -7,6 +7,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
 import { RelayV2App } from "../app";
 import type { RecordingProductService } from "../data/recording-product-service";
+import type { RunProductService } from "../data/run-product-service";
 import type {
   ProductTestEditorDocument,
   TestEditorProductService,
@@ -19,6 +20,10 @@ const roots: Root[] = [];
 const platform: Platform = {
   platform: "web",
   getServerUrl: () => "http://127.0.0.1:8787",
+  // Shell services (activity, counts) must never reach a real server.
+  fetch: async () => {
+    throw new TypeError("Network is not available in editor tests.");
+  },
   storage: { get: () => null, set: () => undefined, remove: () => undefined },
 };
 
@@ -178,9 +183,38 @@ function service(source: ProductTestEditorDocument = initialDocument) {
   return { editor, edits, decisions, historyCalls };
 }
 
+/** The Test page around the editor reads the Test, devices, and runs. */
+function runService(editor: TestEditorProductService): RunProductService {
+  const unavailable = async () => {
+    throw new Error("Runs are not part of editor tests.");
+  };
+  return {
+    async getTest(testId) {
+      const document = await editor.get(testId);
+      if (!document) return undefined;
+      return {
+        id: document.test.id,
+        name: document.test.name,
+        appMapId: document.appMapId,
+        appName: document.appName,
+        stepCount: document.test.steps.length,
+      };
+    },
+    listTestRuns: async () => [],
+    listTargets: async () => [],
+    presentTargets: async () => [],
+    start: unavailable,
+    inspect: unavailable,
+    watch: unavailable,
+    cancel: unavailable,
+    getReport: unavailable,
+    getRawEvidence: unavailable,
+  };
+}
+
 async function render(
   editor: TestEditorProductService,
-  path = "/tests/test-checkout/edit?step=step-pay",
+  path = "/tests/test-checkout?step=step-pay",
   renderPlatform: Platform = platform,
 ) {
   const history = createMemoryHistory({
@@ -197,6 +231,7 @@ async function render(
         history={history}
         productService={{ listApps: async () => [] } as unknown as RecordingProductService}
         testEditorService={editor}
+        runService={runService(editor)}
       />,
     );
   });
@@ -251,7 +286,7 @@ describe("Test editor", () => {
       document.querySelector<HTMLInputElement>("#selected-step-intent")!,
       "Keep this changed expectation",
     );
-    await click("Save step");
+    await click("Save");
     expect(document.querySelector<HTMLInputElement>("#selected-step-intent")?.value).toBe(
       "Keep this changed expectation",
     );
@@ -259,7 +294,7 @@ describe("Test editor", () => {
       "your changes are preserved",
     );
     harness.editor.edit = save;
-    await click("Save step");
+    await click("Save");
     expect(document.querySelector('[data-state="conflicted"]')).toBeNull();
     expect(document.querySelector('[data-slot="editor-save-status"]')?.textContent).toBe("Saved");
   });
@@ -411,7 +446,7 @@ describe("Test editor", () => {
       document.querySelector<HTMLInputElement>("#selected-step-intent")!,
       "Confirm the final total",
     );
-    await click("Save step");
+    await click("Save");
 
     expect(harness.edits.at(-1)).toEqual([
       {
@@ -425,6 +460,15 @@ describe("Test editor", () => {
       },
     ]);
     expect(document.body.textContent).toContain("Saved");
+  });
+
+  it("redirects the legacy editor URL to in-place editing on the Test page", async () => {
+    const history = await render(service().editor, "/tests/test-checkout/edit?step=step-pay");
+    expect(history.location.pathname).toBe("/tests/test-checkout");
+    expect(history.location.search).toContain("step=step-pay");
+    expect(document.querySelector<HTMLInputElement>("#selected-step-intent")?.value).toBe(
+      "Confirm the total",
+    );
   });
 
   it("reorders through keyboard-equivalent controls and undoes canonically", async () => {
@@ -465,7 +509,7 @@ describe("Test editor", () => {
       document.querySelector<HTMLInputElement>("#selected-step-expected-value")!,
       "$42.00",
     );
-    await click("Save step");
+    await click("Save");
 
     expect(harness.edits.at(-1)).toEqual([
       expect.objectContaining({
@@ -542,14 +586,13 @@ describe("Test editor", () => {
 
   it("adds a checkpoint so a visual judge can be authored without YAML", async () => {
     const harness = service();
-    await render(harness.editor, "/tests/test-checkout/edit?step=step-cart");
+    await render(harness.editor, "/tests/test-checkout?step=step-cart");
 
     expect(document.body.textContent).not.toContain(
       "Visual judges, reply checks, and ignore regions live on a Checkpoint",
     );
-    expect(document.body.textContent).toContain("Uses one saved path.");
     expect(document.body.textContent).not.toContain('"kind":"connections"');
-    await click("Add checkpoint");
+    await click("Add a check");
     expect(harness.edits).toEqual([]);
     expect(document.body.textContent).toContain("Not saved on this Test");
     expect(document.body.textContent).toContain("does not accept a visual baseline");
@@ -564,8 +607,8 @@ describe("Test editor", () => {
 
   it("saves a condition wait and leaves no unsaved draft behind", async () => {
     const harness = service();
-    const history = await render(harness.editor, "/tests/test-checkout/edit?step=step-cart");
-    await click("Add checkpoint");
+    const history = await render(harness.editor, "/tests/test-checkout?step=step-cart");
+    await click("Add a check");
     await act(async () => {
       const select = document.querySelector<HTMLSelectElement>('[aria-label="Checkpoint type"]')!;
       select.value = "wait-for";
@@ -573,7 +616,7 @@ describe("Test editor", () => {
     });
     await fill(document.querySelector<HTMLInputElement>("#wait-control")!, "Download");
     await click("120s");
-    await click("Save step");
+    await click("Save");
     expect(harness.edits.at(-1)).toEqual([
       expect.objectContaining({
         kind: "step.add",
@@ -591,22 +634,23 @@ describe("Test editor", () => {
         }),
       }),
     ]);
-    await click("Done editing");
-    expect(document.body.textContent).not.toContain("Leave without saving");
+    // Editing happens in place on the Test page: the saved check leaves no draft.
+    expect(document.querySelector('[data-slot="editor-save-status"]')?.textContent).toBe("Saved");
+    expect(document.body.textContent).not.toContain("Unsaved draft");
     expect(history.location.pathname).toBe("/tests/test-checkout");
   });
 
   it("authors an upload checkpoint without YAML", async () => {
     const harness = service();
-    await render(harness.editor, "/tests/test-checkout/edit?step=step-cart");
-    await click("Add checkpoint");
+    await render(harness.editor, "/tests/test-checkout?step=step-cart");
+    await click("Add a check");
     await chooseCheckpoint("Upload a file");
     expect(document.body.textContent).toContain("not a Grok Files pass");
     expect(document.body.textContent).toContain("do not accept a visual baseline");
     expect(
       document.querySelector<HTMLInputElement>("#selected-step-expected-upload-file")?.value,
     ).toBe("tests/fixtures/sample.pdf");
-    await click("Save step");
+    await click("Save");
     expect(harness.edits.at(-1)).toEqual([
       expect.objectContaining({
         kind: "step.add",
@@ -646,7 +690,7 @@ describe("Test editor", () => {
       document.querySelector<HTMLTextAreaElement>("#selected-step-expected-visual")!,
       "Composer is empty",
     );
-    await click("Save step");
+    await click("Save");
 
     expect(harness.edits.at(-1)).toEqual([
       expect.objectContaining({
@@ -682,7 +726,7 @@ describe("Test editor", () => {
     const harness = service();
     await render(harness.editor);
 
-    await click("Add step");
+    await click("Write a step");
     const added = harness.edits.at(-1)?.[0];
     expect(added?.kind).toBe("step.add");
     if (added?.kind !== "step.add") throw new Error("Expected step.add");
@@ -714,7 +758,7 @@ describe("Test editor", () => {
     };
     source.savedPaths = [{ kind: "connection", id: "cart", label: "Open the cart" }];
     const harness = service(source);
-    await render(harness.editor, "/tests/test-checkout/edit?step=step-cart");
+    await render(harness.editor, "/tests/test-checkout?step=step-cart");
 
     expect(document.body.textContent).toContain("Use Open the cart");
     await click("Use Open the cart");
@@ -725,7 +769,8 @@ describe("Test editor", () => {
         binding: { status: "resolved", kind: "connections", connectionIds: ["cart"] },
       },
     ]);
-    expect(document.body.textContent).toContain("Uses one saved path.");
+    // A connected action no longer offers repair controls.
+    expect(document.body.textContent).not.toContain("Use Open the cart");
   });
 
   it("keeps an inspector draft while moving between steps", async () => {
@@ -750,18 +795,18 @@ describe("Test editor", () => {
   });
 });
 
-it("keeps an unsaved checkpoint when leaving for Results until leaving is confirmed", async () => {
+it("keeps an unsaved checkpoint when leaving for Runs until leaving is confirmed", async () => {
   const harness = service();
   const history = await render(harness.editor);
-  await click("Add checkpoint");
+  await click("Add a check");
   const results = document.querySelector<HTMLAnchorElement>('a[href="/runs"]');
-  if (!results) throw new Error("Results destination missing");
+  if (!results) throw new Error("Runs destination missing");
   await act(async () => results.click());
   await settle();
-  expect(history.location.pathname).toBe("/tests/test-checkout/edit");
+  expect(history.location.pathname).toBe("/tests/test-checkout");
   expect(document.body.textContent).toContain("new screenshot checkpoint will be discarded");
   await click("Keep editing");
-  expect(history.location.pathname).toBe("/tests/test-checkout/edit");
+  expect(history.location.pathname).toBe("/tests/test-checkout");
   await act(async () => results.click());
   await settle();
   await click("Leave without saving");

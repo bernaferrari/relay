@@ -577,10 +577,11 @@ describe("Runs workspace", () => {
         ],
       }),
     );
+    // The run outcome stays Passed; waiting screenshots are counted beside it.
     const row = document.querySelector('a[href="/runs/run-passed-internal"]');
-    expect(row?.textContent).toContain("Needs review");
+    expect(row?.textContent).toContain("Passed");
     expect(row?.textContent).toContain("8 to review");
-    expect(row?.textContent).not.toContain("Passed");
+    expect(row?.textContent).not.toContain("Needs review");
   });
 
   it("keeps the whole Plan outcome when searching for one successful Test", async () => {
