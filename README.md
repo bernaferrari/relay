@@ -10,13 +10,13 @@
 
 Relay is a desktop app for testing websites, Android apps, and iOS apps. You use your app while Relay records your actions, then save those steps as a test you can run again. It keeps screenshots and results together so you can understand what happened without repeating the whole test yourself.
 
-![Relay’s App map showing captured screens and the paths between them.](./docs/images/relay-app-map.png)
+![Relay’s App Map showing captured screens and the paths between them.](./docs/images/relay-app-map.png)
 
 A test can be as simple as opening a menu or as involved as going through checkout. Along the way, you can check that something appears, wait for a response, or capture a screenshot. When you run the test again, Relay shows the result of each step. You can compare screenshots with earlier versions and decide whether a change looks right.
 
-The App map brings the screens you’ve visited into one view, connected by the actions that lead between them. It helps you understand how a flow fits into the rest of your app. As your tests grow, you can organize them into plans and repeat them with different languages, data, or devices.
+The App Map brings the screens you’ve visited into one view, connected by the actions that lead between them. It helps you understand how a flow fits into the rest of your app. As your tests grow, you can organize them into plans and repeat them with different languages, data, or devices.
 
-Relay also works with coding agents. An agent can run a saved test and inspect the same results you see in the desktop app. Optional AI exploration lets you describe something to investigate, review the findings, and save a useful path as a test.
+Relay includes a [plugin with an agent skill](./plugins/relay-proof/README.md), an [MCP server](./packages/mcp/README.md), and a CLI for coding agents and scripts. Agents can interact with your app, run saved tests, and inspect the same screenshots and results you see in the desktop app. Optional AI exploration lets you describe something to investigate, review the findings, and save a useful path as a test.
 
 Your tests and results are stored locally in your project. Recording, replay, and screenshot review work without a model key; AI exploration uses a configured model provider. Relay is still in active development, and browser and device support varies by platform.
 
@@ -35,9 +35,9 @@ In the app, choose **New Test** and enter a website or select a connected device
 
 Run `pnpm doctor` if you have trouble with setup. Android requires `adb`, and physical iOS devices require Apple developer tooling. To use Relay in a browser, run `pnpm dev:web` instead.
 
-## CLI and development
+## Agents and development
 
-The [MCP adapter](./packages/mcp/README.md) connects Relay to coding agents. You can also use the CLI to run a saved test:
+The plugin bundles MCP configuration and a skill for verifying code changes. Setup instructions cover Codex, Claude Code, and compatible MCP hosts. You can also use the CLI to run a saved test:
 
 ```bash
 pnpm relay connect
