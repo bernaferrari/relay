@@ -72,11 +72,7 @@ function StateBadge({ item }: { item: CaptureReviewItem }) {
       </span>
     );
   }
-  return (
-    <span className="shrink-0 rounded-md bg-info/10 px-1.5 py-0.5 text-xs font-medium text-info">
-      New
-    </span>
-  );
+  return null;
 }
 
 function timeAgo(value: number): string {
@@ -421,7 +417,6 @@ export function ReviewPage() {
             {(inbox.data?.entries ?? []).map((entry) => {
               const entryCards = cards.filter((card) => card.entry.runId === entry.runId);
               if (!entryCards.length) return null;
-              const allNew = entryCards.every(({ item }) => item.reference?.state !== "changed");
               return (
                 <div
                   key={entry.runId}
@@ -435,7 +430,6 @@ export function ReviewPage() {
                       >
                         {entry.title}
                       </p>
-                      {allNew ? <StateBadge item={entryCards[0]!.item} /> : null}
                     </div>
                     <p className="truncate text-xs text-muted-foreground">
                       {[entry.targetName, timeAgo(entry.finishedAt)].filter(Boolean).join(" · ")}
@@ -467,7 +461,7 @@ export function ReviewPage() {
                               {screenshotName(card.item)}
                             </span>
                           </span>
-                          {!allNew ? <StateBadge item={card.item} /> : null}
+                          <StateBadge item={card.item} />
                         </button>
                       </li>
                     ))}
