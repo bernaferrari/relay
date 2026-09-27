@@ -124,9 +124,10 @@ export function RunReportActions({
         <Button
           nativeButton={false}
           render={<Link to="/debug" search={{ runId: report.runId }} />}
-          variant="default"
+          variant="outline"
+          title="Let an agent look into what went wrong"
         >
-          Investigate this failure
+          Investigate
         </Button>
       ) : null}
       {!embedded && report.outcome === "harness-failure" ? (
