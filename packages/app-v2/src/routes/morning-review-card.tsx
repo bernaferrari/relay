@@ -29,7 +29,7 @@ export function MorningReviewCard() {
           </p>
         </div>
         <Button nativeButton={false} render={<Link to="/accounts" />} size="sm" variant="outline">
-          Check Sign-ins <ArrowUpRight aria-hidden="true" className="size-3.5" />
+          Check accounts <ArrowUpRight aria-hidden="true" className="size-3.5" />
         </Button>
       </div>
       <details className="group border-t border-border/60">

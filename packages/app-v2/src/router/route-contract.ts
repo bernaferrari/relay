@@ -31,7 +31,7 @@ const routePresentations = {
   "/apps/:appId/accounts": {
     path: "/apps/$appId/accounts",
     eyebrow: "App",
-    description: "Review saved browser sign-ins available while testing this app.",
+    description: "Saved logins your tests can run as.",
   },
   "/versions": {
     path: "/versions",
@@ -41,7 +41,7 @@ const routePresentations = {
   "/accounts": {
     path: "/accounts",
     eyebrow: "Workspace",
-    description: "Review browser sign-ins saved for managed browsers in this workspace.",
+    description: "Saved logins your tests can run as.",
   },
   "/apps/:appId/map": {
     path: "/apps/$appId/map",

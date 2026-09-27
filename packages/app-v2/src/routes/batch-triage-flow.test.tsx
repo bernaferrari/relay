@@ -218,7 +218,7 @@ describe("Batch review controls", () => {
     expect(document.body.textContent).toContain("QA bug, not a pass");
     expect(document.body.textContent).toContain("must appear here as a finding");
     expect(document.body.textContent).not.toContain("No findings. Passing cases");
-    expect(document.body.textContent).toContain("Check Sign-ins");
+    expect(document.body.textContent).toContain("Check accounts");
     expect(document.body.textContent).toContain("never accept a visual baseline");
     expect(document.body.textContent).toContain(
       "Review screenshots opens the Report and does not accept a baseline",
