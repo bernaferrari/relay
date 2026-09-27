@@ -16,6 +16,7 @@ import { Link, useLocation, useRouter, useRouteContext } from "@tanstack/react-r
 import { Map, ChevronDown } from "lucide-react";
 import { SidebarMenuButton } from "@relay/ui-react/components/sidebar";
 import { runQueryKeys } from "../data/run-queries";
+import { platformLabel, type AppPlatform } from "../data/app-families";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { recordingQueryKeys } from "../data/recording-queries";
 import {
@@ -163,6 +164,18 @@ export function AppSwitcher({ children }: { children?: ReactNode } = {}) {
       : undefined);
   const contextName =
     selectedApp?.name ?? appScopeDisplayName(scope, apps.data, apps.isSuccess || apps.isError);
+  // One product, several platforms: "Grok" with Web / iOS / Android under it.
+  const families = groupFamilies(apps.data ?? []);
+  const selectedOption = apps.data?.find((app) => app.id === selectedAppId);
+  const selectedFamily = families.find((family) =>
+    family.apps.some((app) => app.id === selectedAppId),
+  );
+  const triggerName =
+    selectedFamily && selectedFamily.apps.length > 1 ? selectedFamily.name : contextName;
+  const triggerDetail =
+    selectedFamily && selectedFamily.apps.length > 1
+      ? platformLabel(selectedOption?.platform)
+      : "App";
 
   function switchApp(appId?: string) {
     router.history.push(
@@ -181,11 +194,13 @@ export function AppSwitcher({ children }: { children?: ReactNode } = {}) {
             aria-hidden="true"
             className="flex size-7 shrink-0 items-center justify-center rounded-md bg-brand-soft text-xs font-semibold text-brand"
           >
-            {contextName.trim().charAt(0).toUpperCase() || "A"}
+            {triggerName.trim().charAt(0).toUpperCase() || "A"}
           </span>
           <span className="flex min-w-0 flex-1 flex-col">
-            <span className="text-xs leading-4 text-muted-foreground">App</span>
-            <span className="truncate text-sm font-medium leading-5">{contextName}</span>
+            <span className="truncate text-sm font-medium leading-5">{triggerName}</span>
+            <span className="truncate text-xs leading-4 text-muted-foreground">
+              {selectedAppId ? triggerDetail : "Everything"}
+            </span>
           </span>
           <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         </DropdownMenuTrigger>
@@ -211,15 +226,37 @@ export function AppSwitcher({ children }: { children?: ReactNode } = {}) {
                   <span className="text-xs text-muted-foreground">Tests and runs across apps</span>
                 </span>
               </DropdownMenuRadioItem>
-              {apps.data?.map((app) => (
-                <DropdownMenuRadioItem
-                  key={app.id}
-                  value={app.id}
-                  className="min-h-12 py-3 pl-3 pr-8"
-                >
-                  <span className="whitespace-normal text-sm leading-5">{app.name}</span>
-                </DropdownMenuRadioItem>
-              ))}
+              {families.map((family) =>
+                family.apps.length > 1 ? (
+                  <div key={family.id} role="group" aria-label={family.name}>
+                    <div className="px-3 pt-2.5 pb-1 text-xs font-semibold text-foreground">
+                      {family.name}
+                    </div>
+                    {family.apps.map((app) => (
+                      <DropdownMenuRadioItem
+                        key={app.id}
+                        value={app.id}
+                        className="min-h-10 py-2 pl-5 pr-8"
+                      >
+                        <span className="flex min-w-0 flex-col">
+                          <span className="text-sm leading-5">{platformLabel(app.platform)}</span>
+                          <span className="truncate text-xs text-muted-foreground">{app.name}</span>
+                        </span>
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </div>
+                ) : (
+                  <DropdownMenuRadioItem
+                    key={family.id}
+                    value={family.apps[0]!.id}
+                    className="min-h-12 py-3 pl-3 pr-8"
+                  >
+                    <span className="whitespace-normal text-sm leading-5">
+                      {family.apps[0]!.name}
+                    </span>
+                  </DropdownMenuRadioItem>
+                ),
+              )}
             </DropdownMenuRadioGroup>
             {apps.isError ? (
               <DropdownMenuItem
@@ -297,6 +334,37 @@ export function AppSwitcher({ children }: { children?: ReactNode } = {}) {
       </nav>
     </>
   );
+}
+
+type AppOption = {
+  id: string;
+  name: string;
+  platform?: AppPlatform;
+  familyId?: string;
+  familyName?: string;
+};
+
+const PLATFORM_ORDER: Record<string, number> = { web: 0, ios: 1, android: 2 };
+
+/** Families in first-seen order; platforms inside a family Web, iOS, Android. */
+function groupFamilies(apps: readonly AppOption[]) {
+  const families: { id: string; name: string; apps: AppOption[] }[] = [];
+  for (const app of apps) {
+    const id = app.familyId ?? app.id;
+    let family = families.find((item) => item.id === id);
+    if (!family) {
+      family = { id, name: app.familyName ?? app.name, apps: [] };
+      families.push(family);
+    }
+    family.apps.push(app);
+  }
+  for (const family of families) {
+    family.apps.sort(
+      (left, right) =>
+        (PLATFORM_ORDER[left.platform ?? ""] ?? 3) - (PLATFORM_ORDER[right.platform ?? ""] ?? 3),
+    );
+  }
+  return families;
 }
 
 function MapPickerItem({
