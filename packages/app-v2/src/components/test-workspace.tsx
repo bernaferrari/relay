@@ -1,10 +1,20 @@
 import type { ReactNode } from "react";
 
 /** The same spatial model for authored steps and their execution evidence. */
-export function TestWorkspace({ outline, preview }: { outline: ReactNode; preview: ReactNode }) {
+export function TestWorkspace({
+  outline,
+  preview,
+  layout = "sidebar",
+}: {
+  outline: ReactNode;
+  preview: ReactNode;
+  layout?: "sidebar" | "balanced";
+}) {
   return (
     <div className="@container/workspace flex min-h-0 min-w-0 flex-1" data-slot="test-workspace">
-      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(20rem,1fr)] @2xl/workspace:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)] @2xl/workspace:grid-rows-1">
+      <div
+        className={`grid min-h-0 min-w-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(20rem,1fr)] @2xl/workspace:grid-rows-1 ${layout === "balanced" ? "@2xl/workspace:grid-cols-2" : "@2xl/workspace:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]"}`}
+      >
         <div
           data-slot="workspace-outline"
           className="flex min-h-0 min-w-0 flex-col overflow-auto border-b border-border bg-card @2xl/workspace:border-r @2xl/workspace:border-b-0"

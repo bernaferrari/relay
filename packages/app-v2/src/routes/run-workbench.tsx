@@ -197,7 +197,8 @@ export function RunWorkbench({
     : requestedPanel;
   const panel = requestedView === "details" && !hasChecks ? "steps" : requestedView;
   const showingCapture =
-    panel === "captures" || (panel !== "steps" && previewSource === "captures");
+    panel === "captures" ||
+    (panel !== "steps" && panel !== "performance" && previewSource === "captures");
   const authoredFrames = framePathsForTraceStep(
     report.stepEvidence,
     step?.id ?? selectedStepIndex,
@@ -280,30 +281,9 @@ export function RunWorkbench({
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
         <RunViewTabs report={report} />
-        {panel === "network" || panel === "logs" || panel === "performance" ? (
+        {panel === "network" || panel === "logs" ? (
           <TabsContent value={panel} className="flex min-h-0 flex-1 flex-col">
-            {panel === "performance" ? (
-              <div className="min-h-0 flex-1 overflow-auto">
-                {" "}
-                {panel === "performance" && report.performance?.length ? (
-                  <RunPerformancePanel
-                    series={report.performance}
-                    timeline={report.timeline}
-                    step={step}
-                    onSeek={(at) => {
-                      const matched = performanceStepAt(report.timeline, at);
-                      const index = matched ? report.timeline.indexOf(matched) : -1;
-                      if (index >= 0) onSelectStep(index);
-                    }}
-                  />
-                ) : null}
-                <div className="px-5 pb-5">
-                  <Button size="sm" variant="outline" onClick={() => setPanel("steps")}>
-                    View selected step
-                  </Button>
-                </div>
-              </div>
-            ) : panel === "network" ? (
+            {panel === "network" ? (
               <RunNetworkPanel items={network?.items ?? []} summary={network?.summary} />
             ) : (
               <RunLogPanel logs={logs} />
@@ -312,12 +292,11 @@ export function RunWorkbench({
         ) : null}
         <div
           className={
-            panel === "network" || panel === "logs" || panel === "performance"
-              ? "hidden"
-              : "flex min-h-0 min-w-0 flex-1"
+            panel === "network" || panel === "logs" ? "hidden" : "flex min-h-0 min-w-0 flex-1"
           }
         >
           <TestWorkspace
+            layout={panel === "performance" ? "balanced" : "sidebar"}
             preview={
               <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-stage">
                 <div className="flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 px-4 text-xs text-muted-foreground">
@@ -506,7 +485,19 @@ export function RunWorkbench({
             }
             outline={
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-card">
-                <TabsContent value={panel} className="flex min-h-0 flex-1 flex-col">
+                <TabsContent value={panel} className="flex min-h-0 flex-1 flex-col overflow-auto">
+                  {panel === "performance" && report.performance?.length ? (
+                    <RunPerformancePanel
+                      series={report.performance}
+                      timeline={report.timeline}
+                      step={step}
+                      onSeek={(at) => {
+                        const matched = performanceStepAt(report.timeline, at);
+                        const index = matched ? report.timeline.indexOf(matched) : -1;
+                        if (index >= 0) onSelectStep(index);
+                      }}
+                    />
+                  ) : null}
                   {panel === "steps" ? (
                     <aside className="flex min-h-0 min-w-0 flex-1 flex-col">
                       <ScrollArea

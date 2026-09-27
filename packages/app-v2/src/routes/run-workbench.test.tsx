@@ -268,6 +268,11 @@ describe("RunWorkbench", () => {
   it("links the performance peak to its step and saved screenshot", () => {
     const host = render();
     act(() =>
+      [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+        .find((button) => button.textContent === "Screenshots")!
+        .click(),
+    );
+    act(() =>
       [...host.querySelectorAll("button")]
         .find((button) => button.textContent === "Performance")!
         .click(),
@@ -278,7 +283,9 @@ describe("RunWorkbench", () => {
         .dispatchEvent(new MouseEvent("click", { bubbles: true })),
     );
     expect(host.textContent).toContain("Check the order confirmation");
-    expect(host.querySelector('img[alt="Confirmation missing"]')).not.toBeNull();
+    const preview = host.querySelector('img[alt="Confirmation missing"]')!;
+    expect(preview).not.toBeNull();
+    expect(preview.closest(".hidden")).toBeNull();
     expect(host.textContent).toContain("not an exact frame at the sample time");
   });
 
@@ -364,7 +371,9 @@ describe("RunWorkbench", () => {
     );
     expect(stepButton).toBeDefined();
     act(() => stepButton!.click());
-    expect(host.querySelector('img[alt="Confirmation missing"]')).not.toBeNull();
+    const preview = host.querySelector('img[alt="Confirmation missing"]')!;
+    expect(preview).not.toBeNull();
+    expect(preview.closest(".hidden")).toBeNull();
     act(() =>
       [...host.querySelectorAll("button")]
         .find((button) => button.textContent === "Checks")!
