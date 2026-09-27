@@ -213,7 +213,7 @@ export function SavedRunStory({
             </Button>
           ) : null}
           <Button size="sm" variant="ghost" onClick={onShowDetails}>
-            <ListTree aria-hidden="true" /> Details
+            <ListTree aria-hidden="true" /> Run details
           </Button>
         </>
       }

@@ -23,7 +23,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
-import { ChevronRight, CircleAlert } from "lucide-react";
+import { ArrowLeft, ChevronRight, CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "../components/product-patterns";
@@ -692,7 +692,7 @@ function RunReport({
         actions={
           <>
             <Button variant="ghost" size="sm" onClick={() => showDetails("story")}>
-              Story
+              <ArrowLeft aria-hidden="true" /> Back to overview
             </Button>
             {actions}
           </>
