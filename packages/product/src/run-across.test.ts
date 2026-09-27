@@ -134,6 +134,95 @@ test("preview rejects values outside the saved data set", () => {
   );
 });
 
+test("Run Across starts one exact data × Browser and Account Batch", async () => {
+  const pairs = [
+    {
+      profileId: "profile-admin",
+      targetProfileId: "profile-admin",
+      engine: "chromium" as const,
+      account: { kind: "fixture" as const, accountId: "admin", accountRevision: "1" },
+      target: { targetKind: "browser" as const, browserTargetId: "chrome" },
+    },
+    {
+      profileId: "profile-member",
+      targetProfileId: "profile-member",
+      engine: "chromium" as const,
+      account: { kind: "fixture" as const, accountId: "member", accountRevision: "2" },
+      target: { targetKind: "browser" as const, browserTargetId: "chrome" },
+    },
+  ];
+  const selected = { language: ["en", "pt"] };
+  const preview = previewProductRunAcross({
+    setup,
+    selected,
+    target: { kind: "browser", platform: "browser", targetId: "chrome" },
+    profileTargets: pairs,
+  });
+  assert.equal(preview.caseCount, 4);
+  assert.match(preview.scopeLabel, /4 cases across 2 saved Browser and Account pairs/u);
+  const calls: Array<[string, unknown]> = [];
+  const persistedCases = pairs.flatMap((pair) =>
+    selected.language.map((language) => ({
+      executionCaseId: `${pair.profileId}-${language}`,
+      cellId: `cell-${language}`,
+      testId: setup.testId,
+      targetProfileId: pair.profileId,
+      target: { targetId: "chrome", platform: "browser" },
+      engine: pair.engine,
+      account: pair.account,
+      values: { language },
+      status: "queued",
+    })),
+  );
+  let cases = persistedCases;
+  const invoke = async (id: string, input: unknown) => {
+    calls.push([id, input]);
+    if (id === "job.combine.start") return { campaign: { id: "batch-pairs" } };
+    if (id === "job.combine.campaign.get")
+      return {
+        campaign: {
+          id: "batch-pairs",
+          title: "Language settings",
+          status: "running",
+          appMapId: setup.appMapId,
+          createdAt: 1,
+          updatedAt: 1,
+          cases,
+        },
+      };
+    throw new Error(`Unexpected operation ${id}`);
+  };
+  const service = createProductRunAcrossService({ invoke } as never, { invoke } as never);
+  const input = {
+    setup,
+    selected,
+    target: { kind: "browser" as const, platform: "browser" as const, targetId: "chrome" },
+    profileTargets: pairs,
+    executionMode: "all" as const,
+  };
+  const batch = await service.startPilot(input);
+  assert.equal(batch.totalCases, preview.caseCount);
+  assert.deepEqual(calls[0], [
+    "job.combine.start",
+    {
+      appMapId: setup.appMapId,
+      testId: setup.testId,
+      variableIds: ["language"],
+      selected,
+      strategy: "cartesian",
+      expectedRevision: setup.appMapRevision,
+      executionMode: "all",
+      profileTargets: pairs,
+    },
+  ]);
+  cases = persistedCases.map((item, index) =>
+    index === 3 ? { ...item, targetProfileId: "profile-admin" } : item,
+  );
+  await assert.rejects(service.startPilot(input), /did not preserve an exact selected data/u);
+  cases = persistedCases.slice(1);
+  await assert.rejects(service.startPilot(input), /case count differs/u);
+});
+
 test("start, continue, and export use the canonical durable campaign", async () => {
   const calls: Array<[string, Record<string, unknown>]> = [];
   const invoke = async (id: string, input: Record<string, unknown>) => {

@@ -563,6 +563,9 @@ async function run(options) {
         await page.getByRole("heading", { level: 1, name: fixture.heading }).waitFor({
           timeout: 5_000,
         });
+        if (fixture.id === "home-empty") {
+          await page.getByText("No tests yet").waitFor({ timeout: START_TIMEOUT_MS });
+        }
         if (fixture.id === "apps-error") {
           await page.getByRole("alert").waitFor({ timeout: START_TIMEOUT_MS });
         }
@@ -587,6 +590,11 @@ async function run(options) {
         const heading = page.getByRole("heading", { level: 1, name: fixture.heading });
         await heading.waitFor();
         await page.locator(".relay-route-pending").waitFor({ state: "hidden" });
+        if (fixture.id === "home-empty") {
+          await page
+            .getByText("No tests yet")
+            .waitFor({ state: "visible", timeout: START_TIMEOUT_MS });
+        }
         const actual = await page.screenshot({ animations: "disabled", type: "png" });
         if (!(await heading.isVisible())) {
           throw new Error(

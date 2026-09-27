@@ -2002,7 +2002,7 @@ test("profileTargets expand one authored cell into distinct execution cases", as
   }
 });
 
-test("testId plus profileTargets starts one campaign and keeps each account", async () => {
+test("testId plus profileTargets crosses selected data with each account in one campaign", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-combine-testid-profile-targets-"));
   const previous = process.env.RELAY_STATE_DIR;
   process.env.RELAY_STATE_DIR = root;
@@ -2032,6 +2032,8 @@ test("testId plus profileTargets starts one campaign and keeps each account", as
     const result = await client.invoke("job.combine.start", {
       appMapId: "store",
       testId: "script-only",
+      selected: { language: ["en", "it"] },
+      strategy: "cartesian",
       executionMode: "all",
       profileTargets: [
         {
@@ -2053,13 +2055,24 @@ test("testId plus profileTargets starts one campaign and keeps each account", as
     const campaign = result.campaign as CombineCampaign;
     assert.ok(campaign, "paired testId starts must persist a durable campaign");
     assert.equal(campaign.combineId, "ad-hoc");
-    assert.equal(campaign.cases.length, 2);
+    assert.equal(campaign.cases.length, 4);
+    assert.deepEqual(
+      campaign.cases.map((item) => [item.values.language, item.targetProfileId]).sort(),
+      [
+        ["en", "pixel-en"],
+        ["en", "pixel-it"],
+        ["it", "pixel-en"],
+        ["it", "pixel-it"],
+      ],
+    );
     assert.deepEqual(
       campaign.cases
         .map((item) => item.account)
         .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
       [
         { kind: "fixture", accountId: "acct-admin", accountRevision: "4" },
+        { kind: "fixture", accountId: "acct-admin", accountRevision: "4" },
+        { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
         { kind: "fixture", accountId: "acct-member", accountRevision: "7" },
       ],
     );

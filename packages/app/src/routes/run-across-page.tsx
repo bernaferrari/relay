@@ -9,6 +9,10 @@ import { FormPage, PageHeader } from "../components/page-layout";
 import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import { useRunConfigurationKey } from "../data/use-persisted-run-configuration";
 import { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
+import { usePairedConfigurationWorkspace } from "../data/use-paired-configuration-workspace";
+import { compileTestStarts } from "../data/paired-configuration";
+import { profileTargetsFromStarts } from "../data/start-owned-test-run";
+import { productLinkClassName } from "../lib/class-names";
 import { runQueryKeys } from "../data/run-queries";
 import { PageLoading, RecordingProblem, errorMessage } from "./recording-shared";
 
@@ -32,6 +36,13 @@ export function RunAcrossPage() {
     queryFn: () => runService.listTargets(),
     staleTime: 5_000,
   });
+  const profiles = useQuery({
+    queryKey: ["run-config", "profiles", setup.data?.appMapId],
+    queryFn: () => runService.listProfiles?.(setup.data!.appMapId) ?? Promise.resolve([]),
+    enabled: Boolean(setup.data?.appMapId && runService.listProfiles),
+    staleTime: 15_000,
+  });
+  const paired = usePairedConfigurationWorkspace(platform);
   const scope = useRunConfigurationKey(platform, `test:${testId}`, setup.data?.appMapId);
   const configuration = usePersistedRunConfiguration({
     storage: platform.storage,
@@ -39,6 +50,7 @@ export function RunAcrossPage() {
     targetOptions: targets.data?.map((item) => ({ id: item.targetId, label: item.name })),
   });
   const targetId = configuration.selection.targetProfileId ?? "";
+  const usePairs = configuration.selection.usePairedWorkspace === true;
   const availableValues = new Set(
     (setup.data?.dataSet.dimensions ?? []).flatMap((dimension) =>
       dimension.values.map((value) => JSON.stringify([dimension.id, value.id])),
@@ -74,13 +86,55 @@ export function RunAcrossPage() {
     setup.data && hasDataValues && !valuesUnavailable && missingDimensions.length === 0,
   );
   const [previewAttempt, setPreviewAttempt] = useState(0);
+  const pairResult = useMemo(() => {
+    if (!usePairs || !setup.data || paired.loading || (profiles.isEnabled && profiles.isPending)) {
+      return { profileTargets: undefined, error: undefined };
+    }
+    try {
+      if (!runService.listProfiles) {
+        throw new TypeError("Saved Browser profiles are unavailable. Retry when Relay reconnects.");
+      }
+      if (paired.error) throw new TypeError(paired.error);
+      const requests = compileTestStarts({
+        testId,
+        appMapId: setup.data.appMapId,
+        workspace: paired.workspace,
+        profiles: profiles.data,
+      });
+      if (!requests.length) throw new TypeError("Save at least one Browser and Account pair.");
+      return { profileTargets: profileTargetsFromStarts(requests), error: undefined };
+    } catch (error) {
+      return { profileTargets: undefined, error: errorMessage(error) };
+    }
+  }, [
+    usePairs,
+    setup.data,
+    paired.loading,
+    paired.error,
+    paired.workspace,
+    profiles.data,
+    profiles.isEnabled,
+    profiles.isPending,
+    runService.listProfiles,
+    testId,
+  ]);
   const target = useMemo(
     () => targets.data?.find((item) => item.targetId === targetId),
     [targetId, targets.data],
   );
   const runTarget = useMemo(
-    () => (target ? { ...target, label: target.name } : undefined),
-    [target],
+    () =>
+      usePairs && pairResult.profileTargets?.[0]
+        ? {
+            kind: "browser" as const,
+            platform: "browser" as const,
+            targetId: pairResult.profileTargets[0].target.browserTargetId,
+            label: "Saved Browser and Account pairs",
+          }
+        : target
+          ? { ...target, label: target.name }
+          : undefined,
+    [target, usePairs, pairResult.profileTargets],
   );
   const previewResult = useMemo(() => {
     if (!setup.data || !runTarget || !selectionReady)
@@ -90,16 +144,26 @@ export function RunAcrossPage() {
         setup: setup.data,
         selected,
         target: runTarget,
+        ...(usePairs ? { profileTargets: pairResult.profileTargets } : {}),
       });
       return { preview, error: undefined };
     } catch (error) {
       return { preview: undefined, error: errorMessage(error) };
     }
-  }, [previewAttempt, runAcrossService, selected, setup.data, runTarget, selectionReady]);
+  }, [
+    previewAttempt,
+    runAcrossService,
+    selected,
+    setup.data,
+    runTarget,
+    selectionReady,
+    usePairs,
+    pairResult.profileTargets,
+  ]);
   const preview = previewResult.preview;
   const start = useMutation({
     mutationFn: () => {
-      if (!setup.data || !runTarget || configuration.loading || !preview) {
+      if (!setup.data || !runTarget || configuration.loading || paired.loading || !preview) {
         throw new TypeError("Choose a ready device or browser and resolve the saved data choices.");
       }
       return runAcrossService.startPilot({
@@ -107,6 +171,9 @@ export function RunAcrossPage() {
         selected,
         target: runTarget,
         executionMode: "all",
+        ...(usePairs && pairResult.profileTargets
+          ? { profileTargets: pairResult.profileTargets }
+          : {}),
       });
     },
     onSuccess: async (batch) => {
@@ -114,7 +181,10 @@ export function RunAcrossPage() {
     },
   });
 
-  const loading = setup.isPending || targets.isPending;
+  const loading =
+    setup.isPending ||
+    paired.loading ||
+    (usePairs ? profiles.isEnabled && profiles.isPending : targets.isPending);
   return (
     <FormPage className="!pb-4">
       <PageHeader
@@ -124,17 +194,24 @@ export function RunAcrossPage() {
           { label: "Run across" },
         ]}
         title={setup.data ? `Run across · ${setup.data.testName}` : "Run across"}
-        description="Choose a device or browser and any saved data values. Run the selected cases together, then review their results."
+        description="Choose a device or browser, or saved Browser and Account pairs, with any saved data values. Run the selected cases together, then review their results."
       />
-      {loading ? <PageLoading label="Loading saved data and available devices…" /> : null}
+      {loading ? <PageLoading label="Loading saved data and available configurations…" /> : null}
       <RecordingProblem
-        error={setup.error ?? targets.error ?? start.error ?? previewResult.error}
+        error={
+          setup.error ??
+          (usePairs ? (profiles.error ?? paired.error) : targets.error) ??
+          start.error ??
+          previewResult.error
+        }
         onRetry={() => {
           void setup.refetch();
           void targets.refetch();
+          void profiles.refetch();
+          paired.retry();
           setPreviewAttempt((attempt) => attempt + 1);
         }}
-        retrying={setup.isFetching || targets.isFetching}
+        retrying={setup.isFetching || (usePairs ? profiles.isFetching : targets.isFetching)}
       />
       {!loading && setup.data && !setup.error && !hasDataValues ? (
         <EmptyState
@@ -156,8 +233,8 @@ export function RunAcrossPage() {
             title={null}
             configuration={{
               values: {
-                targetProfileId: target?.targetId,
-                targetName: target?.name,
+                targetProfileId: usePairs ? undefined : target?.targetId,
+                targetName: usePairs ? `${paired.workspace.rows.length} saved pairs` : target?.name,
                 dataSetName: setup.data.dataSet.name,
               },
               blockers: valuesUnavailable
@@ -168,30 +245,42 @@ export function RunAcrossPage() {
                       detail: "Remove unavailable choices, then select the values you want to run.",
                     },
                   ]
-                : previewResult.error
+                : pairResult.error
                   ? [
                       {
-                        id: "preview",
-                        label: "Configuration unavailable",
-                        detail: previewResult.error,
+                        id: "pairs",
+                        label: "Browser and Account pairs unavailable",
+                        detail: pairResult.error,
                       },
                     ]
-                  : configuration.targetUnavailable
+                  : previewResult.error
                     ? [
                         {
-                          id: "target",
-                          label: "Saved device is unavailable",
-                          detail: "Choose another device or browser to continue.",
+                          id: "preview",
+                          label: "Configuration unavailable",
+                          detail: previewResult.error,
                         },
                       ]
-                    : [],
+                    : !usePairs && configuration.targetUnavailable
+                      ? [
+                          {
+                            id: "target",
+                            label: "Saved device is unavailable",
+                            detail: "Choose another device or browser to continue.",
+                          },
+                        ]
+                      : [],
               validated: Boolean(preview),
             }}
-            targetOptions={targets.data?.map((item) => ({
-              id: item.targetId,
-              label: item.name,
-              detail: item.detail,
-            }))}
+            targetOptions={
+              usePairs
+                ? undefined
+                : targets.data?.map((item) => ({
+                    id: item.targetId,
+                    label: item.name,
+                    detail: item.detail,
+                  }))
+            }
             dataSetOptions={setup.data.dataSet.dimensions.flatMap((dimension) =>
               dimension.values.map((value) => ({
                 id: JSON.stringify([dimension.id, value.id]),
@@ -209,7 +298,18 @@ export function RunAcrossPage() {
             error={scope.error ?? configuration.error}
             onRetry={scope.error ? scope.retry : configuration.retry}
             targetGroupName="run-across-target"
+            pairedWorkspaceLabel={`Use saved Browser and Account workspace · ${paired.workspace.rows.length} ${paired.workspace.rows.length === 1 ? "pair" : "pairs"}`}
+            pairedWorkspaceAction={
+              <Link className={productLinkClassName} to="/environments">
+                Edit pairs
+              </Link>
+            }
           >
+            {usePairs ? (
+              <p className="text-sm text-muted-foreground">
+                {paired.workspace.rows.map((row) => row.name).join(" · ") || "No saved pairs."}
+              </p>
+            ) : null}
             {valuesUnavailable ? (
               <Button
                 variant="outline"
@@ -235,7 +335,7 @@ export function RunAcrossPage() {
                 </div>
               ) : (
                 <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                  {target && missingDimensions.length
+                  {(target || usePairs) && missingDimensions.length
                     ? `Choose a value for ${missingDimensions.map((dimension) => dimension.name).join(", ")}.`
                     : "Choose a device or browser to continue."}
                 </p>
@@ -243,7 +343,7 @@ export function RunAcrossPage() {
               <Button
                 variant="default"
                 onClick={() => start.mutate()}
-                disabled={!preview || start.isPending || configuration.loading}
+                disabled={!preview || start.isPending || configuration.loading || paired.loading}
               >
                 {start.isPending
                   ? "Starting selected cases…"

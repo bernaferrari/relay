@@ -114,7 +114,7 @@ export function boundExecutionIdentity(request: ProductRunStartInput): BoundExec
 export function profileTargetsFromStarts(
   requests: readonly ProductRunStartInput[],
 ): CombineProfileTarget[] {
-  return requests.map((request) => {
+  const targets: CombineProfileTarget[] = requests.map((request) => {
     const identity = boundExecutionIdentity(request);
     const profileId = identity.targetProfileId;
     if (!profileId) {
@@ -130,6 +130,11 @@ export function profileTargetsFromStarts(
       target: { targetKind: "browser", browserTargetId: identity.targetId },
     };
   });
+  const identities = targets.map((target) => canonicalJson(target));
+  if (new Set(identities).size !== identities.length) {
+    throw new TypeError("The saved workspace contains the same Browser and Account pair twice.");
+  }
+  return targets;
 }
 
 function childStatusFromCase(status: string | undefined): OwnedTestStartChild["status"] {

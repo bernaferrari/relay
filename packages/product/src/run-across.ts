@@ -7,6 +7,7 @@ import type {
   CombineEvidenceFindingCode,
   CaptureReviewAction,
   FailureCategory,
+  OperationInput,
   PlanCaptureReviewQueue,
   PlanCaptureReviewSelection,
   RepeatFailureKind,
@@ -23,6 +24,7 @@ import {
   planResultColumnIdentity,
   summarizeProductResultGrid,
 } from "./plan-result-cells.js";
+import { assertPairedCampaignScope, validatePairedTargets } from "./run-across-paired.js";
 
 /** The public name for the saved values applied while running a Test. */
 export type ProductDataSetDimension = {
@@ -190,6 +192,7 @@ export type ProductRunAcrossStartInput = {
   readonly target: ProductRunAcrossTarget;
   readonly pilot?: Readonly<Record<string, string>>;
   readonly executionMode?: "pilot" | "all";
+  readonly profileTargets?: NonNullable<OperationInput<"job.combine.start">["profileTargets"]>;
 };
 
 export type ProductRunAcrossService = {
@@ -199,6 +202,7 @@ export type ProductRunAcrossService = {
     selected: Readonly<Record<string, readonly string[]>>;
     target: ProductRunAcrossTarget;
     pilot?: Readonly<Record<string, string>>;
+    profileTargets?: NonNullable<OperationInput<"job.combine.start">["profileTargets"]>;
   }): ProductRunAcrossPreview;
   startPilot(input: ProductRunAcrossStartInput): Promise<ProductRunAcrossBatch>;
   continue(batchId: string): Promise<ProductRunAcrossBatch>;
@@ -639,16 +643,21 @@ export function previewProductRunAcross(input: {
   selected: Readonly<Record<string, readonly string[]>>;
   target: ProductRunAcrossTarget;
   pilot?: Readonly<Record<string, string>>;
+  profileTargets?: NonNullable<OperationInput<"job.combine.start">["profileTargets"]>;
 }): ProductRunAcrossPreview {
   const selected = normalizedSelection(input.setup, input.selected);
   const pilot = representativeCase(input.setup, selected, input.pilot);
-  const caseCount = cartesianCount(selected);
+  if (input.profileTargets) validatePairedTargets(input.profileTargets);
+  const pairCount = input.profileTargets?.length;
+  const caseCount = cartesianCount(selected) * (pairCount ?? 1);
   return {
     selected,
     target: input.target,
     caseCount,
     pilot,
-    scopeLabel: `${caseCount} ${caseCount === 1 ? "case" : "cases"} on ${input.target.label ?? input.target.targetId}`,
+    scopeLabel: pairCount
+      ? `${caseCount} ${caseCount === 1 ? "case" : "cases"} across ${pairCount} saved Browser and Account ${pairCount === 1 ? "pair" : "pairs"}`
+      : `${caseCount} ${caseCount === 1 ? "case" : "cases"} on ${input.target.label ?? input.target.targetId}`,
   };
 }
 
@@ -718,12 +727,16 @@ export function createProductRunAcrossService(
     return mapForTest(appMap, testId);
   }
 
-  async function campaign(batchId: string, setup?: ProductRunAcrossSetup) {
+  async function readCampaign(batchId: string): Promise<Campaign> {
     const response = (await operations.invoke("job.combine.campaign.get", {
       batchId,
     })) as CampaignResponse;
+    return response.campaign;
+  }
+
+  async function campaign(batchId: string, setup?: ProductRunAcrossSetup) {
     return batchFromCampaign(
-      await attachFixtureAccountLabels(operations, response.campaign),
+      await attachFixtureAccountLabels(operations, await readCampaign(batchId)),
       setup,
     );
   }
@@ -750,6 +763,38 @@ export function createProductRunAcrossService(
       const selected = normalizedSelection(input.setup, input.selected);
       const pilot = representativeCase(input.setup, selected, input.pilot);
       const target = input.target;
+      if (input.profileTargets) {
+        previewProductRunAcross({ ...input, selected });
+        const output = await operations.invoke("job.combine.start", {
+          appMapId: input.setup.appMapId,
+          testId: input.setup.testId,
+          variableIds: Object.keys(selected),
+          selected,
+          strategy: "cartesian",
+          expectedRevision: input.setup.appMapRevision,
+          executionMode: input.executionMode ?? "all",
+          profileTargets: input.profileTargets,
+        });
+        const batchId = output.campaign?.id;
+        if (!batchId) throw new TypeError("Relay did not create a durable Batch Report.");
+        const persisted = await readCampaign(batchId);
+        try {
+          assertPairedCampaignScope(
+            persisted.cases,
+            input.setup.testId,
+            selected,
+            input.profileTargets,
+          );
+        } catch (error) {
+          throw new TypeError(
+            `${error instanceof Error ? error.message : "The Batch scope could not be verified."} Batch ${batchId} was created; inspect it in Runs.`,
+          );
+        }
+        return batchFromCampaign(
+          await attachFixtureAccountLabels(operations, persisted),
+          input.setup,
+        );
+      }
       const output = await operations.invoke("app-map.test.run", {
         appMapId: input.setup.appMapId,
         testId: input.setup.testId,
