@@ -22,7 +22,11 @@
  * - Findings are review decisions bound to exact captures (frame path plus
  *   image digest), scoped per run. */
 
-import { captureReviewIdMatchesFrame, playerVariantIdForConfiguration, type AppMap } from "@relay/protocol";
+import {
+  captureReviewIdMatchesFrame,
+  playerVariantIdForConfiguration,
+  type AppMap,
+} from "@relay/protocol";
 import type { PersistedRun } from "./runs.js";
 
 export const PLAYER_MANIFEST_SCHEMA_VERSION = 1;
@@ -132,8 +136,6 @@ type CaptureReviewArtifactData = {
   observed?: { laneId?: unknown; profileId?: unknown } | null;
 };
 
-
-
 /** The variant identity combines the declared configuration with the
  * OBSERVED lane/profile. A compiled plan may carry a stale route label
  * (two different lanes once both declared browser=grok-com); observation
@@ -163,7 +165,9 @@ function configurationKey(configuration: unknown): PlayerVariantKey {
   if (!configuration || typeof configuration !== "object" || Array.isArray(configuration)) {
     return "unconfigured";
   }
-  return playerVariantIdForConfiguration(configuration as Record<string, unknown>) ?? "unconfigured";
+  return (
+    playerVariantIdForConfiguration(configuration as Record<string, unknown>) ?? "unconfigured"
+  );
 }
 
 function configurationLabel(configuration: unknown): string {

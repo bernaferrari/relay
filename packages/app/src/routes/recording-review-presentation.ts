@@ -153,7 +153,8 @@ export function replayDetail(
   canApprove: boolean,
 ) {
   if (outcome === "passed" && canApprove) return "Replay passed. Ready to save.";
-  if (outcome === "passed") return "Steps changed since the last replay. Replay again before saving.";
+  if (outcome === "passed")
+    return "Steps changed since the last replay. Replay again before saving.";
   if (outcome === "failed") {
     return "Replay failed. Open the step marked failed to see what happened, then replay again.";
   }

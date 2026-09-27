@@ -396,7 +396,6 @@ test("writeEvidenceReviewDir refuses a pack that also names another run", async 
   await rm(dir, { recursive: true, force: true });
 });
 
-
 test("writeRunOutDir writes result.json, stderr.log, and copies job PNGs", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-cli-out-"));
   const runDir = join(root, "job-run");

@@ -46,7 +46,13 @@ class CapturedResponse {
 async function writeRun(
   root: string,
   id: string,
-  input: { configuration: Record<string, string>; sha: string; checkpointId: string; appMapId?: string; omitPlan?: boolean },
+  input: {
+    configuration: Record<string, string>;
+    sha: string;
+    checkpointId: string;
+    appMapId?: string;
+    omitPlan?: boolean;
+  },
 ): Promise<void> {
   const dir = join(root, `run_${id}`);
   await mkdir(join(dir, "frames"), { recursive: true });
@@ -419,7 +425,10 @@ test("frame bytes that do not match the recorded digest are not served", async (
     checkpointId: "open-settings-step",
   });
   assert.equal(await frameStatus("/runs/member-run/frames/002.png"), 200);
-  await writeFile(join(root, "runs", "run_member-run", "frames", "002.png"), Buffer.from("tampered"));
+  await writeFile(
+    join(root, "runs", "run_member-run", "frames", "002.png"),
+    Buffer.from("tampered"),
+  );
   await assert.rejects(
     () => frameStatus("/runs/member-run/frames/002.png"),
     (error: unknown) => (error as { status?: number }).status === 409,
@@ -439,4 +448,3 @@ async function frameStatus(rawPath: string): Promise<number> {
   });
   return captured.status;
 }
-

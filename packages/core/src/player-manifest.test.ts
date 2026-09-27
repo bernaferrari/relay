@@ -376,4 +376,3 @@ test("discovery stays suggested and a manual link stays authored even when the d
   assert.equal(byId.get("home-shortcut")?.kind, "authored");
   assert.equal(byId.get("open-language")?.kind, "recorded");
 });
-

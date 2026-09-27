@@ -21,7 +21,6 @@ import {
 import { observeScreenIdentity } from "./screen-identity.js";
 import { captureScreenshot } from "./workspace.js";
 
-
 /** How long a stuck plan test waits for a person before it fails and the plan continues. */
 export const STUCK_WAIT_FOR_PERSON_MS = 60_000;
 

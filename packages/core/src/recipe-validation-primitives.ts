@@ -123,12 +123,7 @@ export function parseStepPoint(raw: unknown, index: number, field: string): Step
     if (!isObject(raw.referenceBounds)) {
       throw stepErr(index, `${field}.referenceBounds must be { width, height }`);
     }
-    assertKnownKeys(
-      raw.referenceBounds,
-      ["width", "height"],
-      index,
-      `${field}.referenceBounds`,
-    );
+    assertKnownKeys(raw.referenceBounds, ["width", "height"], index, `${field}.referenceBounds`);
     if (
       !isNumber(raw.referenceBounds.width) ||
       !isNumber(raw.referenceBounds.height) ||
@@ -149,12 +144,7 @@ export function parseStepPoint(raw: unknown, index: number, field: string): Step
         `${field}.relativeTo must contain a semantic target and xRatio/yRatio between 0 and 1`,
       );
     }
-    assertKnownKeys(
-      raw.relativeTo,
-      ["target", "xRatio", "yRatio"],
-      index,
-      `${field}.relativeTo`,
-    );
+    assertKnownKeys(raw.relativeTo, ["target", "xRatio", "yRatio"], index, `${field}.relativeTo`);
     if (
       !isObject(raw.relativeTo.target) ||
       !isNumber(raw.relativeTo.xRatio) ||

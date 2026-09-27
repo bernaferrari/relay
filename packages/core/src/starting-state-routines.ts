@@ -410,7 +410,6 @@ export function combineCellShareAccountId(input: {
   return fromVariable || input.authenticationFixtureId?.trim() || undefined;
 }
 
-
 /** Refuse a start that would run conflicting mutations against one account. */
 export function mutatingShareStartBlocker(
   map: AppMap,
@@ -418,7 +417,6 @@ export function mutatingShareStartBlocker(
 ): string | undefined {
   return assessMutatingRoutineSharing(map, placements)[0]?.message;
 }
-
 
 export function transitionOpenerMustRun(step: RecipeStep): boolean {
   return step.coverage === "transition" || leftoverSkipForbidden(step);

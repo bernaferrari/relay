@@ -1416,8 +1416,7 @@ describe("validateRecipeSteps", () => {
       /secret reference/u,
     );
     assert.throws(
-      () =>
-        validateRecipeSteps([{ kind: "type", text: "hunter2", target: { label: "Password" } }]),
+      () => validateRecipeSteps([{ kind: "type", text: "hunter2", target: { label: "Password" } }]),
       /secret reference/u,
     );
     assert.deepEqual(

@@ -2,8 +2,8 @@
   "name": "relay",
   "version": "0.1.0",
   "private": true,
-  "license": "MIT",
   "description": "Runtime proof for AI-authored changes across web, Android, and iOS",
+  "license": "MIT",
   "bin": {
     "relay": "bin/relay"
   },

@@ -212,7 +212,6 @@ test("attaching without a profile keeps the open session", () => {
   );
 });
 
-
 test("signed-out cannot bind a saved logged-in fixture", () => {
   const bound = bindRequestedBrowserIdentity({
     platform: "browser",
@@ -266,7 +265,6 @@ test("a newer listed sign-in does not satisfy an older requested revision", () =
     },
   );
 });
-
 
 test("Plan account columns freeze the requested fixture onto the queued browser profile", () => {
   const queued = overlayRequestedBrowserAccountOnTargetProfile(

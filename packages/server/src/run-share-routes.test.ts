@@ -369,4 +369,3 @@ test("a public share does not serve a frame whose bytes no longer match", async 
     await rm(root, { recursive: true, force: true });
   }
 });
-

@@ -254,14 +254,20 @@ test("walkthrough export keeps the requested Run and rejects a different pack", 
   assert.match(document.body, /href="#capture-1">admin · missing Settings &lt;script&gt;<\/a>/u);
   assert.match(document.body, /signed-out · missing Home/u);
   assert.match(document.body, /Not captured · signed-out · Settings &lt;script&gt;/u);
-  assert.match(document.body, /Missing · admin · Settings &lt;script&gt; · Arabic compact was not captured/u);
+  assert.match(
+    document.body,
+    /Missing · admin · Settings &lt;script&gt; · Arabic compact was not captured/u,
+  );
   assert.match(document.body, /id="capture-2"[\s\S]*href="#capture-0">Back/u);
   assert.match(
     document.body,
     /class="hotspot region" style="left:10%;top:20%;width:30%;height:40%;"/u,
   );
   assert.match(document.body, /Settings &lt;script&gt;/u);
-  assert.match(document.body, /Pinned · map · revision 1 · run-184, run-admin · 1970-01-01T00:00:00.001Z/u);
+  assert.match(
+    document.body,
+    /Pinned · map · revision 1 · run-184, run-admin · 1970-01-01T00:00:00.001Z/u,
+  );
   assert.match(document.body, /Recorded · Firefox · Member · 1970-01-01T00:00:00.002Z/u);
   assert.match(
     document.body,
@@ -272,4 +278,3 @@ test("walkthrough export keeps the requested Run and rejects a different pack", 
   assert.equal(document.body.includes("left:90%"), false);
   assert.equal(document.body.includes("<script"), false);
 });
-

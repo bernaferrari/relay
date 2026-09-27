@@ -115,7 +115,7 @@ const ORDINARY_STEP_FIELDS: Record<string, readonly string[]> = {
     "scrollSearch",
     ...STEP_METADATA_FIELDS,
   ],
-}
+};
 
 function assertKnownStepFields(raw: Record<string, unknown>, index: number, kind: string): void {
   const allowed = ORDINARY_STEP_FIELDS[kind];
@@ -125,7 +125,6 @@ function assertKnownStepFields(raw: Record<string, unknown>, index: number, kind
     if (!known.has(key)) throw stepErr(index, `unknown field: ${key}`);
   }
 }
-
 
 export function validateRecipeSteps(steps: unknown): RecipeStep[] {
   if (!Array.isArray(steps)) throw new Error("steps must be an array");

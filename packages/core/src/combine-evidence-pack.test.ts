@@ -807,7 +807,8 @@ test("capture-review export keeps 29 pending + 1 blocked Imagine distinct from p
     const checklist = JSON.parse(
       await readFile(join(pack.rootDir, "checklist.json"), "utf8"),
     ) as Array<{ status: string }>;
-    const coverage = "30 planned · 29 captured · 1 blocked · 0 missing · 29 screenshots awaiting review · 0 accepted";
+    const coverage =
+      "30 planned · 29 captured · 1 blocked · 0 missing · 29 screenshots awaiting review · 0 accepted";
     assert.equal(
       formatCaptureReviewCoverageSummary({
         planned: 30,

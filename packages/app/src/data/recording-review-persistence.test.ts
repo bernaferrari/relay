@@ -53,14 +53,12 @@ describe("recording review persistence", () => {
     ).toMatchObject({ kind: "saving", editorState: "saving" });
   });
 
-
   it("keeps verification separate from the save state", () => {
     expect(reviewVerificationLabel("verified")).toBe("Verified on the selected configuration");
     expect(reviewVerificationLabel("changed-since-verified")).toBe("Changed since last run");
     expect(reviewVerificationLabel("saving")).toBeUndefined();
     expect(reviewVerificationLabel("saved")).toBeUndefined();
   });
-
 
   it("does not treat a verified recording as unsaved just because the name is local", () => {
     expect(

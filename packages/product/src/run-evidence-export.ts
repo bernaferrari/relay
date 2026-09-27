@@ -38,4 +38,3 @@ export function walkthroughExportDocument(
     body: walkthroughHtml(result),
   };
 }
-

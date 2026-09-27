@@ -25,10 +25,8 @@ test("a job error is visible only to that job's owner", () => {
     true,
   );
   assert.equal(
-    liveEventVisible(
-      { ...event, payload: { ...event.payload, jobId: "theirs" } },
-      member,
-      (id) => jobs.get(id),
+    liveEventVisible({ ...event, payload: { ...event.payload, jobId: "theirs" } }, member, (id) =>
+      jobs.get(id),
     ),
     false,
   );

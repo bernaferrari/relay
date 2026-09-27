@@ -10,11 +10,11 @@ it("downloads each prepared export once without a second save action", async () 
   const root = createRoot(host);
   const run = vi.fn();
   const downloads: string[] = [];
-  const click = vi
-    .spyOn(HTMLAnchorElement.prototype, "click")
-    .mockImplementation(function (this: HTMLAnchorElement) {
-      downloads.push(this.download);
-    });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    downloads.push(this.download);
+  });
   const render = async (file?: { href: string; fileName: string }) =>
     act(async () =>
       root.render(
