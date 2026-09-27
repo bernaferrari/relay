@@ -1,17 +1,11 @@
+import { RunTestLink } from "./run-test-link";
+import { Tabs } from "@relay/ui-react/components/tabs";
+import { RunViewTabs } from "../components/run-view-tabs";
 /** @jsxImportSource react */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
-import {
-  ChevronLeft,
-  CircleX,
-  Eye,
-  ListTree,
-  LoaderCircle,
-  Play,
-  Square,
-  Wrench,
-} from "lucide-react";
+import { ChevronLeft, CircleX, Eye, LoaderCircle, Play, Square, Wrench } from "lucide-react";
 import type { CaptureReviewItem } from "@relay/protocol";
 import type { ProductRunReportOverview } from "../data/run-report-model";
 import type { RunProductService } from "../data/run-product-service";
@@ -33,7 +27,7 @@ export function SavedRunStory({
   report,
   testId,
   runService,
-  onShowDetails,
+  onViewChange,
   extraActions,
   summary,
   notice,
@@ -41,7 +35,7 @@ export function SavedRunStory({
   report: ProductRunReportOverview;
   testId?: string;
   runService: RunProductService;
-  onShowDetails(): void;
+  onViewChange(view: string): void;
   extraActions?: React.ReactNode;
   summary?: React.ReactNode;
   notice?: React.ReactNode;
@@ -158,6 +152,11 @@ export function SavedRunStory({
   };
   return (
     <RunStoryView
+      navigation={
+        <Tabs value="story" onValueChange={onViewChange} className="shrink-0 gap-0">
+          <RunViewTabs report={report} />
+        </Tabs>
+      }
       runId={report.runId}
       status={savedStatus(report)}
       title={report.title}
@@ -169,21 +168,7 @@ export function SavedRunStory({
         ? { loadFrame: (path: string) => runService.loadFrame!(report.runId, path) }
         : {})}
       {...(runService.reviewCapture ? { onReview: review } : {})}
-      crumbs={
-        testId && test.data ? (
-          <Link
-            className="inline-flex items-center gap-1 hover:text-foreground"
-            to="/tests/$testId"
-            params={{ testId }}
-          >
-            <ChevronLeft className="size-4" aria-hidden="true" /> {test.data.name}
-          </Link>
-        ) : (
-          <Link className="inline-flex items-center gap-1 hover:text-foreground" to="/runs">
-            <ChevronLeft className="size-4" aria-hidden="true" /> Runs
-          </Link>
-        )
-      }
+      crumbs={<RunTestLink testId={testId} />}
       {...(summary ? { summary } : {})}
       {...(notice || failureCard
         ? {
@@ -212,9 +197,6 @@ export function SavedRunStory({
               <Eye aria-hidden="true" /> Review {pending}
             </Button>
           ) : null}
-          <Button size="sm" variant="ghost" onClick={onShowDetails}>
-            <ListTree aria-hidden="true" /> Run details
-          </Button>
         </>
       }
     />

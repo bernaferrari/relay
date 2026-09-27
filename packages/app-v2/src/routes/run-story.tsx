@@ -104,6 +104,7 @@ export function RunStoryView({
   crumbs,
   summary,
   notice,
+  navigation,
 }: {
   status: RunStoryStatus;
   title: string;
@@ -113,6 +114,7 @@ export function RunStoryView({
   summary?: ReactNode;
   /** Replay progress, failure details and similar, above the steps. */
   notice?: ReactNode;
+  navigation?: ReactNode;
   meta: readonly (string | undefined)[];
   steps: readonly StoryStep[];
   loadFrame?(path: string): Promise<Blob>;
@@ -153,23 +155,19 @@ export function RunStoryView({
 
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col overflow-auto" aria-label="Run">
-      <TestWorkspaceHeader
-        title={title}
-        context={
-          crumbs ? (
-            <nav aria-label="Breadcrumb" className="flex flex-wrap gap-2">
-              {crumbs}
-            </nav>
-          ) : undefined
-        }
-        actions={actions}
-      >
+      <TestWorkspaceHeader title={title} actions={actions}>
+        {crumbs ? (
+          <nav aria-label="Breadcrumb" className="flex items-center gap-2">
+            {crumbs}
+          </nav>
+        ) : null}
         <span role="status">
           <StatusPill state={PILL[status]} size="md" />
         </span>
         <span>{meta.filter(Boolean).join(" · ")}</span>
         {summary ? <span>{summary}</span> : null}
       </TestWorkspaceHeader>
+      {navigation}
       <TestWorkspace
         outline={
           <>

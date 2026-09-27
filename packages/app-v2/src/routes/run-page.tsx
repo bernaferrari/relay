@@ -23,7 +23,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@relay/ui-react/components/dialog";
-import { ArrowLeft, ChevronRight, CircleAlert } from "lucide-react";
+import { ChevronRight, CircleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { EmptyState } from "../components/product-patterns";
@@ -511,10 +511,7 @@ function RunReport({
     <>
       {!hasFailedStep ? failureNotice : null}
 
-      <section
-        className="flex min-h-0 flex-1 flex-col border-t border-border"
-        aria-label="Run evidence"
-      >
+      <section className="flex min-h-0 flex-1 flex-col" aria-label="Run evidence">
         {report.timeline.length || report.evidence.length ? (
           <RunWorkbench
             key={report.runId}
@@ -625,7 +622,7 @@ function RunReport({
       />
     );
 
-  const showDetails = (reportView: string | undefined) =>
+  const selectRunView = (reportView: string | undefined) =>
     void navigate({
       to: "/runs/$runId",
       params: { runId: report.runId },
@@ -643,7 +640,7 @@ function RunReport({
           report={report}
           {...(testId ? { testId } : {})}
           runService={runService}
-          onShowDetails={() => showDetails("steps")}
+          onViewChange={selectRunView}
           extraActions={actions}
           summary={outcomeSentence(
             report.outcome,
@@ -669,17 +666,11 @@ function RunReport({
   return (
     <WorkbenchPage className="flex h-full min-h-0 flex-col !p-0 overflow-auto [&>header]:shrink-0">
       <TestWorkspaceHeader
-        context={
-          <nav aria-label="Breadcrumb" className="flex items-center gap-3">
-            <RunTestLink testId={testId} />
-            <Link to="/runs" className="hover:text-foreground">
-              Runs
-            </Link>
-          </nav>
-        }
         title={report.title}
         children={
           <>
+            <RunTestLink testId={testId} />
+            <span aria-hidden="true">·</span>
             {outcomeSentence(report.outcome, target, Boolean(report.captureReview?.items.length))}
             {report.durationMs !== undefined ? (
               <span className="whitespace-nowrap tabular-nums">
@@ -692,14 +683,7 @@ function RunReport({
             ) : null}
           </>
         }
-        actions={
-          <>
-            <Button variant="ghost" size="sm" onClick={() => showDetails("story")}>
-              <ArrowLeft aria-hidden="true" /> Back to overview
-            </Button>
-            {actions}
-          </>
-        }
+        actions={actions}
       />
       <RunReplayStatus runService={runService} />
       {body}

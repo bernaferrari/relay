@@ -1376,7 +1376,7 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Language settings");
     expect(document.body.textContent).toContain("Test passed");
     expect(document.querySelector('[aria-label="Run evidence"]')).not.toBeNull();
-    expect(document.querySelector('[role="tablist"][aria-label="Step views"]')).not.toBeNull();
+    expect(document.querySelector('[role="tablist"][aria-label="Run views"]')).not.toBeNull();
   });
 
   it("routes durable Run review decisions with the canonical Run identity", async () => {
@@ -1638,7 +1638,9 @@ describe("Run and Report", () => {
       "ERR_CONNECTION_REFUSED",
     );
     expect(document.body.textContent).not.toContain("Evidence at this point");
-    expect(document.querySelector('[role="tab"]')).toBeNull();
+    expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
+      "Overview",
+    );
   });
 
   it("returns to the selected Review screenshot even when the run has no Test", async () => {
