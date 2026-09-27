@@ -28,7 +28,7 @@ export function ReferenceCompareLine({
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<CompareMode>("diff");
   const reference = item.reference;
-  if (!reference) return null;
+  if (!reference || reference.state === "new") return null;
   const label =
     reference.state === "changed"
       ? reference.sizeChanged
@@ -36,15 +36,13 @@ export function ReferenceCompareLine({
         : `Changed ${Math.max(0.1, (reference.changeRatio ?? 0) * 100).toFixed(1)}% from the reference`
       : reference.state === "match"
         ? "Matches the reference"
-        : "No reference saved";
+        : "Reference unavailable";
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
       <span>{label}</span>
-      {reference.state !== "new" ? (
-        <Button size="xs" variant="outline" onClick={() => setOpen(true)}>
-          Compare
-        </Button>
-      ) : null}
+      <Button size="xs" variant="outline" onClick={() => setOpen(true)}>
+        Compare
+      </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[92vh] w-[min(96vw,80rem)] max-w-none overflow-y-auto sm:max-w-none">
           <DialogHeader>

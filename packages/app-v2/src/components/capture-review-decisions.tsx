@@ -8,18 +8,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@relay/ui-react/components/dropdown-menu";
-import type { CaptureReviewAction } from "@relay/protocol";
+import type { CaptureReviewAction, CaptureReviewItem } from "@relay/protocol";
 
 export function CaptureReviewDecisions({
   busy,
   unavailable = false,
   onReview,
   status,
+  reviewStatus,
   bulkCount,
 }: {
   busy?: boolean;
   unavailable?: boolean;
   status?: string;
+  reviewStatus?: CaptureReviewItem["status"];
   bulkCount?: number;
   onReview(action: CaptureReviewAction, note?: string): void | boolean | Promise<boolean | void>;
 }) {
@@ -65,28 +67,36 @@ export function CaptureReviewDecisions({
       aria-busy={busy || saving}
     >
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        {status || bulkCount || disabled ? (
-          <p className="text-xs text-muted-foreground" role="status">
-            {busy || saving
-              ? "Saving decision…"
-              : bulkCount
-                ? `${bulkCount} ${bulkCount === 1 ? "screenshot" : "screenshots"} selected`
-                : unavailable
-                  ? "Load the screenshot to review it"
-                  : status}
+        {reviewStatus === "accepted" || status || bulkCount || disabled ? (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground" role="status">
+            {busy || saving ? (
+              "Saving decision…"
+            ) : bulkCount ? (
+              `${bulkCount} ${bulkCount === 1 ? "screenshot" : "screenshots"} selected`
+            ) : unavailable ? (
+              "Load the screenshot to review it"
+            ) : reviewStatus === "accepted" ? (
+              <>
+                <Check className="size-3.5 text-success-foreground" aria-hidden="true" /> Reviewed
+              </>
+            ) : (
+              status
+            )}
           </p>
         ) : null}
         <div className="flex items-center gap-1">
-          <Button
-            size="sm"
-            className="min-h-10"
-            variant="secondary"
-            disabled={disabled}
-            onClick={() => void submit("accept")}
-          >
-            <Check className="size-4" aria-hidden="true" /> Looks correct
-            <span className="sr-only">{suffix}</span>
-          </Button>
+          {reviewStatus !== "accepted" ? (
+            <Button
+              size="sm"
+              className="min-h-10"
+              variant="secondary"
+              disabled={disabled}
+              onClick={() => void submit("accept")}
+            >
+              <Check className="size-4" aria-hidden="true" /> Looks correct
+              <span className="sr-only">{suffix}</span>
+            </Button>
+          ) : null}
           <Button
             size="sm"
             className="min-h-10"
