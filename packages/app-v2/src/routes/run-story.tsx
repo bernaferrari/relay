@@ -88,6 +88,7 @@ function useBlobUrl(blob?: Blob): string | undefined {
 }
 
 export function RunStoryView({
+  header,
   status,
   title,
   meta,
@@ -106,6 +107,7 @@ export function RunStoryView({
   notice,
   navigation,
 }: {
+  header?: ReactNode;
   status: RunStoryStatus;
   title: string;
   /** Small links above the title (Results · View Test). */
@@ -155,18 +157,20 @@ export function RunStoryView({
 
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col overflow-auto" aria-label="Run">
-      <TestWorkspaceHeader title={title} actions={actions}>
-        {crumbs ? (
-          <nav aria-label="Breadcrumb" className="flex items-center gap-2">
-            {crumbs}
-          </nav>
-        ) : null}
-        <span role="status">
-          <StatusPill state={PILL[status]} size="md" />
-        </span>
-        <span>{meta.filter(Boolean).join(" · ")}</span>
-        {summary ? <span>{summary}</span> : null}
-      </TestWorkspaceHeader>
+      {header ?? (
+        <TestWorkspaceHeader title={title} actions={actions}>
+          {crumbs ? (
+            <nav aria-label="Breadcrumb" className="flex items-center gap-2">
+              {crumbs}
+            </nav>
+          ) : null}
+          <span role="status">
+            <StatusPill state={PILL[status]} size="md" />
+          </span>
+          <span>{meta.filter(Boolean).join(" · ")}</span>
+          {summary ? <span>{summary}</span> : null}
+        </TestWorkspaceHeader>
+      )}
       {navigation}
       <TestWorkspace
         outline={

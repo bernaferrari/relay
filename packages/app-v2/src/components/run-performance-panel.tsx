@@ -56,16 +56,16 @@ export function RunPerformancePanel({
     44 + Math.max(0, Math.min(540, ((at - first) / Math.max(1, last - first)) * 540));
   const markerRows: number[][] = [];
   const markerY = timeline.map((item) => {
-    if (item.startedAt === undefined) return 114;
+    if (item.startedAt === undefined) return 254;
     const center = x(item.startedAt);
     // Reserve the top lane near the endpoint time labels only.
     let row = center < 86 || center > 542 ? 1 : 0;
     while (markerRows[row]?.some((other) => Math.abs(other - center) < 22)) row++;
     (markerRows[row] ??= []).push(center);
-    return 114 + row * 22;
+    return 254 + row * 22;
   });
-  const chartHeight = Math.max(152, ...markerY.map((top) => top + 24));
-  const y = (value: number) => 108 - ((value - low) / (ceiling - low)) * 92;
+  const chartHeight = Math.max(292, ...markerY.map((top) => top + 24));
+  const y = (value: number) => 248 - ((value - low) / (ceiling - low)) * 232;
   const inspect = (index: number) => {
     const point = metric.points[index]!;
     setSelectedAt(point.at);
@@ -132,10 +132,10 @@ export function RunPerformancePanel({
         <>
           <svg
             viewBox={`0 0 600 ${chartHeight}`}
-            className="block h-auto w-full overflow-visible"
+            className="block h-auto max-h-[60dvh] min-h-64 w-full overflow-visible"
             aria-label={`${metricLabel(metric.name)}, ${isStartup ? "Launch measurement" : `${metric.points.length} samples`}`}
           >
-            {[16, 62, 108].map((line, index) => (
+            {[16, 132, 248].map((line, index) => (
               <g key={line}>
                 <text
                   x="36"
@@ -164,13 +164,13 @@ export function RunPerformancePanel({
                 x={x(step.startedAt)}
                 y="8"
                 width={Math.max(0, x(step.finishedAt) - x(step.startedAt))}
-                height="108"
+                height="248"
                 fill="currentColor"
                 opacity=".06"
               />
             ) : null}
             <polygon
-              points={`44,108 ${metric.points.map((point) => `${x(point.at)},${y(point.value)}`).join(" ")} 584,108`}
+              points={`44,248 ${metric.points.map((point) => `${x(point.at)},${y(point.value)}`).join(" ")} 584,248`}
               fill="currentColor"
               opacity=".08"
               className="text-info-foreground"
@@ -188,7 +188,7 @@ export function RunPerformancePanel({
                 x1={x(selectedAt)}
                 x2={x(selectedAt)}
                 y1="8"
-                y2="116"
+                y2="256"
                 stroke="currentColor"
                 strokeDasharray="3 3"
                 opacity=".5"
@@ -204,7 +204,7 @@ export function RunPerformancePanel({
                 className="cursor-pointer outline-none [&:focus-visible>circle:last-child]:stroke-3 [&:focus-visible>circle:last-child]:stroke-ring"
                 onClick={() => inspect(index)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === "") {
+                  if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     inspect(index);
                   }
@@ -234,7 +234,7 @@ export function RunPerformancePanel({
                       onSeek(item.startedAt! + Math.max(0, item.finishedAt! - item.startedAt!) / 2);
                     }}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === "") {
+                      if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
                         setSelectedAt(undefined);
                         onSeek(
@@ -277,7 +277,7 @@ export function RunPerformancePanel({
             </g>
             <text
               x="44"
-              y="121"
+              y="261"
               textAnchor="start"
               fill="currentColor"
               className="text-xs text-muted-foreground"
@@ -286,7 +286,7 @@ export function RunPerformancePanel({
             </text>
             <text
               x="584"
-              y="121"
+              y="261"
               textAnchor="end"
               fill="currentColor"
               className="text-xs text-muted-foreground"
@@ -301,9 +301,9 @@ export function RunPerformancePanel({
         <p role="status" className="text-xs leading-5 text-muted-foreground">
           {selectedStep
             ? exactStep
-              ? "Showing the step’s saved screenshot, not an exact frame at the sample time."
-              : "Showing the nearest recorded step; no exact step interval was retained for this sample."
-            : "No timed step was retained for this sample. The preview has not changed."}
+              ? "Selected the step’s saved screenshot, not an exact frame at the sample time."
+              : "Selected the nearest recorded step; no exact step interval was retained for this sample."
+            : "No timed step was retained for this sample. The selected step has not changed."}
         </p>
       ) : null}
     </section>

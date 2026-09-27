@@ -24,6 +24,7 @@ function savedStatus(report: ProductRunReportOverview): RunStoryStatus {
 
 /** A finished Run: what happened, step by step, next to the screen. */
 export function SavedRunStory({
+  header,
   report,
   testId,
   runService,
@@ -32,6 +33,7 @@ export function SavedRunStory({
   summary,
   notice,
 }: {
+  header?: React.ReactNode;
   report: ProductRunReportOverview;
   testId?: string;
   runService: RunProductService;
@@ -152,6 +154,7 @@ export function SavedRunStory({
   };
   return (
     <RunStoryView
+      header={header}
       navigation={
         <Tabs value="story" onValueChange={onViewChange} className="shrink-0 gap-0">
           <RunViewTabs report={report} />
