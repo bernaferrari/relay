@@ -54,7 +54,7 @@ describe("destination summary", () => {
         ],
       }),
     ).toEqual({
-      label: "2 ready",
+      label: "2 devices",
       detail: "Design iPad, Checkout browser",
       tone: "ready",
     });

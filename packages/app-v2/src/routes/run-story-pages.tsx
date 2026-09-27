@@ -124,7 +124,7 @@ export function SavedRunStory({
       crumbs={
         <>
           <Link className="hover:text-foreground" to="/runs">
-            Results
+            Runs
           </Link>
           <RunTestLink testId={testId} />
         </>

@@ -60,7 +60,7 @@ export function summarizeDestinations(input: {
   }
   if (available.length > 1) {
     return {
-      label: `${available.length} ready`,
+      label: `${available.length} devices`,
       detail: available.map((device) => device.name).join(", "),
       tone: "ready",
     };

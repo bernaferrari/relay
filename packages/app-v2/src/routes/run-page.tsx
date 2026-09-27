@@ -273,7 +273,7 @@ export function RunInspection({
     return (
       <WorkbenchPage className="flex min-h-full max-w-5xl flex-col">
         <PageHeader
-          crumbs={[{ label: "Results", to: "/runs" }, { label: "Run" }]}
+          crumbs={[{ label: "Runs", to: "/runs" }, { label: "Run" }]}
           title={snapshot?.title ?? "Run unavailable"}
           titleHidden
         />
@@ -288,7 +288,7 @@ export function RunInspection({
     return (
       <WorkbenchPage className="max-w-5xl">
         <PageHeader
-          crumbs={[{ label: "Results", to: "/runs" }, { label: "Run" }]}
+          crumbs={[{ label: "Runs", to: "/runs" }, { label: "Run" }]}
           title={snapshot?.title ?? "Run details"}
         />
         {loadingView}
@@ -360,7 +360,7 @@ export function RunInspection({
     <WorkbenchPage className="max-w-5xl">
       <PageHeader
         crumbs={[
-          { label: "Results", to: "/runs" },
+          { label: "Runs", to: "/runs" },
           ...(activePointer ? [{ label: snapshot?.title ?? "Test" }] : []),
           { label: "Run" },
         ]}
@@ -670,7 +670,7 @@ function RunReport({
           <nav aria-label="Breadcrumb" className="flex items-center gap-3">
             <RunTestLink testId={testId} />
             <Link to="/runs" className="hover:text-foreground">
-              Results
+              Runs
             </Link>
           </nav>
         }

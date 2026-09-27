@@ -153,10 +153,11 @@ export function AppShell({ platform }: { platform: Platform }) {
             <ChevronLeft aria-hidden="true" />
           </Button>
 
-          <div className="ml-auto inline-flex items-center">
+          <div className="ml-auto inline-flex items-center gap-0.5">
             {!/^\/tests\/[^/]+$/.test(location.pathname) || location.pathname === "/tests/new" ? (
               <DeviceDestinationButton />
             ) : null}
+            <ActivityCenterButton />
           </div>
         </header>
         <main

@@ -272,7 +272,7 @@ function BatchDocument({ batchId }: { batchId: string }) {
   return (
     <LibraryPage>
       <PageHeader
-        crumbs={[{ label: "Results", to: "/runs" }, { label: report?.title ?? "Plan run" }]}
+        crumbs={[{ label: "Runs", to: "/runs" }, { label: report?.title ?? "Plan run" }]}
         title={report?.title ?? "Plan run"}
         actions={
           report ? (

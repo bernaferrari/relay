@@ -16,7 +16,8 @@ import { LibraryPage, PageHeader } from "../components/page-layout";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { PageLoading, RecordingProblem, RefreshProblem } from "./recording-shared";
 import { useCollectionReturnFocus } from "../hooks/use-collection-return-focus";
-import { Camera, ChevronRight, Globe } from "lucide-react";
+import { Camera, ChevronRight, Globe, ScanEye } from "lucide-react";
+import { formatReviewCount, useReviewCount } from "../layout/review-count";
 import {
   collapsePlanResultRows,
   screenshotReviewLabel,
@@ -50,6 +51,7 @@ export function RunsPage() {
   const view = runView(search.view);
   const app = typeof search.app === "string" ? search.app : "";
   const testId = typeof search.test === "string" ? search.test : "";
+  const reviewCount = useReviewCount(app || undefined);
   useEffect(() => {
     setQuery(typeof search.q === "string" ? search.q : "");
   }, [search.q]);
@@ -133,7 +135,22 @@ export function RunsPage() {
       className="mx-auto flex min-h-full w-full max-w-5xl flex-col"
       onClickCapture={returnFocus.onClickCapture}
     >
-      <PageHeader title="Results" description="Everything that ran, newest first." />
+      <PageHeader
+        title="Runs"
+        description="Everything that ran, newest first."
+        actions={
+          reviewCount ? (
+            <Button
+              nativeButton={false}
+              size="sm"
+              render={<Link to="/review" search={app ? { app } : {}} />}
+            >
+              <ScanEye aria-hidden="true" />
+              Review screenshots ({formatReviewCount(reviewCount)})
+            </Button>
+          ) : null
+        }
+      />
 
       <LibraryToolbar
         label="Filter Runs"
@@ -147,6 +164,14 @@ export function RunsPage() {
               {runViews.map((item) => (
                 <TabsTrigger key={item.id} value={item.id}>
                   {item.label}
+                  {item.id === "needs-review" && reviewCount ? (
+                    <span
+                      className="rounded-full bg-brand px-1.5 text-xs font-semibold text-brand-foreground tabular-nums"
+                      aria-label={`${reviewCount} screenshots to review`}
+                    >
+                      {formatReviewCount(reviewCount)}
+                    </span>
+                  ) : null}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -188,7 +213,7 @@ export function RunsPage() {
 
       {runs.isError && runs.data !== undefined ? (
         <RefreshProblem
-          subject="results"
+          subject="runs"
           onRetry={() => void runs.refetch()}
           retrying={runs.isFetching}
         />
@@ -216,7 +241,7 @@ export function RunsPage() {
             </section>
           ))}
           <p className="px-0.5 text-xs text-muted-foreground">
-            {runs.isError ? "Last loaded results" : runViewDescription(view, historyComplete)}
+            {runs.isError ? "Last loaded runs" : runViewDescription(view, historyComplete)}
           </p>
         </div>
       ) : null}
@@ -235,7 +260,7 @@ export function RunsPage() {
         ) : (
           <div className="flex flex-1 items-center justify-center">
             <EmptyState
-              title="No results yet"
+              title="No runs yet"
               detail="Open a saved Test and run it on a Device or Browser."
               action={
                 <Link className={productLinkClassName} to="/tests">
