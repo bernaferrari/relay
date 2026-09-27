@@ -79,8 +79,7 @@ export function RunAcrossPage() {
     [selected, setup.data],
   );
   const hasDataValues = Boolean(
-    setup.data?.dataSet.dimensions.length &&
-    setup.data.dataSet.dimensions.every((dimension) => dimension.values.length > 0),
+    setup.data && setup.data.dataSet.dimensions.every((dimension) => dimension.values.length > 0),
   );
   const selectionReady = Boolean(
     setup.data && hasDataValues && !valuesUnavailable && missingDimensions.length === 0,
@@ -139,6 +138,12 @@ export function RunAcrossPage() {
   const previewResult = useMemo(() => {
     if (!setup.data || !runTarget || !selectionReady)
       return { preview: undefined, error: undefined };
+    if (!setup.data.dataSet.dimensions.length && !usePairs) {
+      return {
+        preview: undefined,
+        error: "Choose saved Browser and Account pairs here, or run once from the Test page.",
+      };
+    }
     try {
       const preview = runAcrossService.preview({
         setup: setup.data,
@@ -215,8 +220,8 @@ export function RunAcrossPage() {
       />
       {!loading && setup.data && !setup.error && !hasDataValues ? (
         <EmptyState
-          title="Run this Test across configurations"
-          detail="Choose one or more devices, browsers, or accounts in the Test's Run setup. Saved data values are optional there."
+          title="Add values to this data set"
+          detail="A saved data set has no values. Add its values before running across configurations."
           action={
             <Button
               nativeButton={false}
@@ -335,11 +340,22 @@ export function RunAcrossPage() {
                 </div>
               ) : (
                 <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-                  {(target || usePairs) && missingDimensions.length
-                    ? `Choose a value for ${missingDimensions.map((dimension) => dimension.name).join(", ")}.`
-                    : "Choose a device or browser to continue."}
+                  {previewResult.error ??
+                    ((target || usePairs) && missingDimensions.length
+                      ? `Choose a value for ${missingDimensions.map((dimension) => dimension.name).join(", ")}.`
+                      : "Choose a device or browser to continue.")}
                 </p>
               )}
+              {!setup.data.dataSet.dimensions.length && !usePairs ? (
+                <Link
+                  className={productLinkClassName}
+                  to="/tests/$testId"
+                  params={{ testId }}
+                  search={{ setup: "run" }}
+                >
+                  Run once from Test
+                </Link>
+              ) : null}
               <Button
                 variant="default"
                 onClick={() => start.mutate()}

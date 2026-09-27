@@ -608,41 +608,76 @@ describe("Run and Report", () => {
     expect(document.body.textContent).toContain("Test passed");
   });
 
-  it.each([
-    { dimensions: [] },
-    { dimensions: [{ id: "language", name: "Language", kind: "language", values: [] }] },
-  ])(
-    "opens the canonical Run setup when no complete data set exists (%j)",
-    async ({ dimensions }) => {
-      const fake = fakeRunService();
-      const preview = vi.fn();
-      const runAcross = {
-        getSetup: vi.fn(async () => ({
-          appMapId: "settings-language-proof",
-          appMapRevision: 1,
-          testId: "test-1",
-          testName: "Change the app language",
-          appName: "Settings Language Proof",
-          dataSet: { name: "Default data", dimensions },
-        })),
-        preview,
-      } as unknown as RunAcrossProductService;
-      await renderRun(
-        "/tests/test-1/run-across",
-        fake.service,
-        platformWithStorage().platform,
-        runAcross,
-      );
-      expect(document.body.textContent).toContain("Run this Test across configurations");
-      expect(document.querySelector('[aria-label="Search values"]')).toBeNull();
-      expect(document.querySelector('[aria-label="Run configuration"]')).toBeNull();
-      const link = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
-        (item) => item.textContent === "Choose configurations",
-      );
-      expect(link?.getAttribute("href")).toContain("/tests/test-1?setup=run");
-      expect(preview).not.toHaveBeenCalled();
-    },
-  );
+  it("shows an actionable empty state when a saved data dimension has no values", async () => {
+    const dimensions = [{ id: "language", name: "Language", kind: "language", values: [] }];
+    const fake = fakeRunService();
+    const preview = vi.fn();
+    const runAcross = {
+      getSetup: vi.fn(async () => ({
+        appMapId: "settings-language-proof",
+        appMapRevision: 1,
+        testId: "test-1",
+        testName: "Change the app language",
+        appName: "Settings Language Proof",
+        dataSet: { name: "Default data", dimensions },
+      })),
+      preview,
+    } as unknown as RunAcrossProductService;
+    await renderRun(
+      "/tests/test-1/run-across",
+      fake.service,
+      platformWithStorage().platform,
+      runAcross,
+    );
+    expect(document.body.textContent).toContain("Add values to this data set");
+    expect(document.querySelector('[aria-label="Search values"]')).toBeNull();
+    expect(document.querySelector('[aria-label="Run configuration"]')).toBeNull();
+    const link = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (item) => item.textContent === "Choose configurations",
+    );
+    expect(link?.getAttribute("href")).toContain("/tests/test-1?setup=run");
+    expect(preview).not.toHaveBeenCalled();
+  });
+
+  it("asks for saved pairs when Run Across has no data and one browser is chosen", async () => {
+    const fake = fakeRunService();
+    const preview = vi.fn((input) => ({
+      selected: input.selected,
+      target: input.target,
+      caseCount: 1,
+      pilot: {},
+      scopeLabel: "1 case on Checkout browser",
+    }));
+    const startPilot = vi.fn(() => new Promise<never>(() => {}));
+    const runAcross = {
+      getSetup: async () => ({
+        appMapId: "settings-language-proof",
+        appMapRevision: 1,
+        testId: "test-1",
+        testName: "Change the app language",
+        appName: "Settings Language Proof",
+        dataSet: { name: "Default data", dimensions: [] },
+      }),
+      preview,
+      startPilot,
+    } as unknown as RunAcrossProductService;
+    await renderRun(
+      "/tests/test-1/run-across",
+      fake.service,
+      platformWithStorage().platform,
+      runAcross,
+    );
+    await selectOption("Device or browser", "Checkout browser");
+    expect(preview).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Choose saved Browser and Account pairs here");
+    expect(
+      [...document.querySelectorAll<HTMLAnchorElement>("a")]
+        .find((item) => item.textContent?.trim() === "Run once from Test")
+        ?.getAttribute("href"),
+    ).toContain("/tests/test-1?setup=run");
+    expect(button("Run selected cases").disabled).toBe(true);
+    expect(startPilot).not.toHaveBeenCalled();
+  });
 
   it("waits for every data dimension and uses the selected target", async () => {
     const fake = fakeRunService(runState("running", ["inspect"]));
@@ -722,7 +757,24 @@ describe("Run and Report", () => {
     );
   });
 
-  it("runs selected data across the exact saved Browser and Account pairs", async () => {
+  it.each([
+    {
+      name: "selected data",
+      dimensions: [
+        {
+          id: "language",
+          name: "Language",
+          values: [
+            { id: "en", label: "English" },
+            { id: "pt", label: "Português" },
+          ],
+        },
+      ],
+      caseCount: 4,
+      selected: { language: ["en", "pt"] },
+    },
+    { name: "no saved data", dimensions: [], caseCount: 2, selected: {} },
+  ])("runs $name across the exact saved Browser and Account pairs", async (scenario) => {
     const fake = fakeRunService(runState("running", ["inspect"]));
     fake.service.listProfiles = async () => [
       {
@@ -743,9 +795,9 @@ describe("Run and Report", () => {
     const preview = vi.fn((input) => ({
       selected: input.selected,
       target: input.target,
-      caseCount: 4,
-      pilot: { language: "en" },
-      scopeLabel: "4 cases across 2 saved Browser and Account pairs",
+      caseCount: scenario.caseCount,
+      pilot: scenario.dimensions.length ? { language: "en" } : {},
+      scopeLabel: `${scenario.caseCount} cases across 2 saved Browser and Account pairs`,
     }));
     const startPilot = vi.fn(() => new Promise<never>(() => {}));
     const runAcross = {
@@ -755,19 +807,7 @@ describe("Run and Report", () => {
         testId: "test-1",
         testName: "Change the app language",
         appName: "Settings Language Proof",
-        dataSet: {
-          name: "Languages",
-          dimensions: [
-            {
-              id: "language",
-              name: "Language",
-              values: [
-                { id: "en", label: "English" },
-                { id: "pt", label: "Português" },
-              ],
-            },
-          ],
-        },
+        dataSet: { name: "Languages", dimensions: scenario.dimensions },
       }),
       preview,
       startPilot,
@@ -814,15 +854,18 @@ describe("Run and Report", () => {
     const choices = [...document.querySelectorAll<HTMLElement>('[role="checkbox"]')].filter(
       (item) => item.closest("label")?.textContent?.match(/English|Português/u),
     );
-    expect(choices).toHaveLength(2);
-    await click(choices[0]!.closest("label")!);
-    await click(choices[1]!.closest("label")!);
+    expect(choices).toHaveLength(scenario.dimensions.length ? 2 : 0);
+    if (scenario.dimensions.length) {
+      await click(choices[0]!.closest("label")!);
+      await click(choices[1]!.closest("label")!);
+    }
+    expect(preview.mock.calls.at(-1)?.[0].selected).toEqual(scenario.selected);
     expect(
       preview.mock.calls
         .at(-1)?.[0]
         .profileTargets.map((item: { profileId: string }) => item.profileId),
     ).toEqual(["admin-profile", "member-profile"]);
-    await click(button("Run 4 selected cases"));
+    await click(button(`Run ${scenario.caseCount} selected cases`));
     expect(startPilot).toHaveBeenCalledWith(
       expect.objectContaining({
         executionMode: "all",

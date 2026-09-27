@@ -134,6 +134,90 @@ test("preview rejects values outside the saved data set", () => {
   );
 });
 
+test("Run Across without data creates one durable case per saved browser pair", async () => {
+  const noData = { ...setup, dataSet: { name: "Default data", dimensions: [] } };
+  const target = {
+    kind: "browser" as const,
+    platform: "browser" as const,
+    targetId: "chrome",
+    label: "Checkout browser",
+  };
+  const profileTargets = [
+    {
+      profileId: "profile-guest",
+      targetProfileId: "profile-guest",
+      engine: "chromium" as const,
+      account: { kind: "signed-out" as const, attested: true as const },
+      target: { targetKind: "browser" as const, browserTargetId: "chrome" },
+    },
+  ];
+  assert.throws(
+    () => previewProductRunAcross({ setup: noData, selected: {}, target }),
+    /Choose saved Browser and Account pairs/u,
+  );
+  const preview = previewProductRunAcross({
+    setup: noData,
+    selected: {},
+    target,
+    profileTargets,
+  });
+  assert.equal(preview.caseCount, 1);
+  assert.deepEqual(preview.pilot, {});
+  const calls: Array<[string, unknown]> = [];
+  const invoke = async (id: string, input: unknown) => {
+    calls.push([id, input]);
+    if (id === "job.combine.start") return { campaign: { id: "batch-no-data" } };
+    if (id === "job.combine.campaign.get")
+      return {
+        campaign: {
+          id: "batch-no-data",
+          title: "Language settings",
+          status: "running",
+          appMapId: setup.appMapId,
+          createdAt: 1,
+          updatedAt: 1,
+          cases: [
+            {
+              id: "case-1",
+              executionCaseId: "case-1",
+              cellId: "cell-1",
+              testId: setup.testId,
+              targetProfileId: "profile-guest",
+              target: { targetId: "chrome", platform: "browser" },
+              engine: "chromium",
+              account: profileTargets[0]!.account,
+              values: {},
+              status: "queued",
+            },
+          ],
+        },
+      };
+    throw new Error(`Unexpected operation ${id}`);
+  };
+  const service = createProductRunAcrossService({ invoke } as never, { invoke } as never);
+  const batch = await service.startPilot({
+    setup: noData,
+    selected: {},
+    target,
+    profileTargets,
+    executionMode: "all",
+  });
+  assert.equal(batch.totalCases, 1);
+  assert.deepEqual(calls[0], [
+    "job.combine.start",
+    {
+      appMapId: setup.appMapId,
+      testId: setup.testId,
+      variableIds: [],
+      selected: {},
+      strategy: "cartesian",
+      expectedRevision: setup.appMapRevision,
+      executionMode: "all",
+      profileTargets,
+    },
+  ]);
+});
+
 test("Run Across starts one exact data × Browser and Account Batch", async () => {
   const pairs = [
     {
