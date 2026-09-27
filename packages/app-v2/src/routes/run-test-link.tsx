@@ -22,7 +22,11 @@ export function RunTestLink({ testId }: { testId?: string }) {
           >
             <ChevronLeft className="size-4" aria-hidden="true" /> Back to Test
           </Link>
-        ) : null
+        ) : (
+          <Link to="/runs" className="inline-flex items-center gap-1 hover:text-foreground">
+            <ChevronLeft className="size-4" aria-hidden="true" /> Runs
+          </Link>
+        )
       }
     />
   );

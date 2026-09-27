@@ -1,3 +1,4 @@
+import { RunViewTabs } from "../components/run-view-tabs";
 import { TestWorkspace } from "../components/test-workspace";
 import { ReportImage } from "../components/report-image";
 import { ReferenceCompareLine } from "./reference-compare-dialog";
@@ -9,7 +10,7 @@ import { traceVideoInterval } from "../data/run-report-media";
 import { StepMedia } from "./run-step-media";
 import { ReportVideoInspector } from "../components/report-video-inspector";
 import { Button } from "@relay/ui-react/components/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@relay/ui-react/components/tabs";
+import { Tabs, TabsContent } from "@relay/ui-react/components/tabs";
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Check, Circle, CircleAlert, Play, Pause, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -273,34 +274,12 @@ export function RunWorkbench({
     <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="Run workbench">
       <Tabs
         value={panel}
-        onValueChange={(value) => setPanel(value as typeof panel)}
+        onValueChange={(value) =>
+          value === "story" ? onViewChange?.("story") : setPanel(value as typeof panel)
+        }
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
-        <TabsList
-          variant="line"
-          className="h-12 w-full shrink-0 justify-start gap-3 overflow-x-auto border-b border-border px-5"
-          aria-label="Step views"
-        >
-          {(
-            [
-              ["steps", "Steps"],
-              ...(listedFrames.length || reviewMode ? [["captures", "Screenshots"]] : []),
-              ...(report.performance?.length ? [["performance", "Performance"]] : []),
-              ...(hasChecks ? [["details", "Checks"]] : []),
-              ["logs", "Logs"],
-              ...(network?.items.length ? [["network", "Network"] as const] : []),
-            ] as const
-          ).map(([value, label]) => (
-            <TabsTrigger key={value} value={value} className="h-10 flex-none px-2 after:bottom-0">
-              {label}
-              {value === "steps" ? (
-                <span className="ml-1 text-xs tabular-nums text-muted-foreground">
-                  {report.timeline.length - setupCount || report.timeline.length}
-                </span>
-              ) : null}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        <RunViewTabs report={report} />
         {panel === "network" || panel === "logs" ? (
           <TabsContent value={panel} className="flex min-h-0 flex-1 flex-col">
             {panel === "network" ? (

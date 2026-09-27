@@ -534,7 +534,7 @@ describe("RunWorkbench", () => {
     };
     const review = vi.fn(async () => undefined);
     const host = render(0, value, review);
-    expect(host.querySelector('[role="tablist"][aria-label="Step views"]')).not.toBeNull();
+    expect(host.querySelector('[role="tablist"][aria-label="Run views"]')).not.toBeNull();
     expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
       "Screenshots",
     );
@@ -765,10 +765,17 @@ describe("RunWorkbench", () => {
         .find((button) => button.textContent === "Network")!
         .click(),
     );
-    expect(host.textContent).toContain(
+    expect(host.querySelector('[aria-label="GET example.com/account"]')).not.toBeNull();
+    act(() =>
+      (host.querySelector('[aria-label="GET example.com/account"]') as HTMLButtonElement).click(),
+    );
+    expect(host.textContent).toContain("example.com/account");
+    act(() =>
+      (host.querySelector('[aria-label="Capture information"]') as HTMLButtonElement).click(),
+    );
+    expect(document.body.textContent).toContain(
       "An encrypted connection does not establish an HTTP body that was not observed.",
     );
     expect(host.textContent).toContain("TLS · api.example.com");
-    expect(host.textContent).toContain("GET example.com/account");
   });
 });
