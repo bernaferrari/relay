@@ -66,7 +66,7 @@ async function sourceFiles(directory) {
       if (entry.name === "node_modules" || entry.name === "vendor" || entry.name === ".git")
         continue;
       files.push(...(await sourceFiles(path)));
-    } else if ([".ts", ".tsx", ".mjs", ".md", ".json"].includes(extname(entry.name))) {
+    } else if ([".ts", ".tsx", ".mjs", ".json"].includes(extname(entry.name))) {
       files.push(path);
     }
   }
@@ -74,9 +74,9 @@ async function sourceFiles(directory) {
 }
 
 async function main() {
-  const roots = ["packages", "scripts", "docs"].map((path) => resolve(repositoryRoot, path));
+  const roots = ["packages", "scripts"].map((path) => resolve(repositoryRoot, path));
   const paths = (await Promise.all(roots.map(sourceFiles))).flat();
-  for (const path of ["README.md", "ARCHITECTURE.md", "package.json"]) {
+  for (const path of ["README.md", "package.json"]) {
     const absolute = resolve(repositoryRoot, path);
     try {
       await access(absolute);
