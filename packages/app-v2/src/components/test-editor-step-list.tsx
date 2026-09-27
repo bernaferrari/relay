@@ -2,14 +2,8 @@
 import type { AppMapScenarioTest } from "@relay/protocol";
 import type { PlanPlatform } from "@relay/product/test-route-platforms";
 import { Button } from "@relay/ui-react/components/button";
-import { ArrowDown, ArrowUp, ChevronRight, MoreHorizontal, Plus } from "lucide-react";
+import { ChevronRight, Plus } from "lucide-react";
 import type { CSSProperties, ReactNode, RefObject } from "react";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@relay/ui-react/components/dropdown-menu";
 import { EmptyState } from "./product-patterns";
 import { TestEditorRoutes } from "./test-editor-routes";
 import { stepReadinessLabel, type StepEntry } from "./test-editor-step";
@@ -81,7 +75,7 @@ export function TestEditorStepOutline({
             <li key={entry.step.id} style={{ "--step-depth": entry.depth } as CSSProperties}>
               <div
                 id={`test-step-${entry.step.id}`}
-                className="grid min-h-14 min-w-0 grid-cols-[minmax(0,1fr)_36px] items-stretch group bg-transparent transition-colors hover:bg-muted/40 data-[selected=true]:bg-muted/40"
+                className="grid min-h-14 min-w-0 grid-cols-1 items-stretch group bg-transparent transition-colors hover:bg-muted/40 data-[selected=true]:bg-muted/40"
                 data-selected={selectedStepId === entry.step.id}
                 draggable={!busy}
                 tabIndex={0}
@@ -137,33 +131,6 @@ export function TestEditorStepOutline({
                     aria-hidden="true"
                   />
                 </button>
-                <div className="flex items-center justify-center opacity-0 focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={<Button size="icon-sm" variant="ghost" />}
-                      aria-label={`Options for step ${entry.number}`}
-                      disabled={busy}
-                    >
-                      <MoreHorizontal aria-hidden="true" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onClick={() => onMove(entry, -1)}
-                        disabled={entry.index === 0 || busy}
-                        aria-label={`Move ${entry.step.intent} up`}
-                      >
-                        <ArrowUp aria-hidden="true" /> Move up
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => onMove(entry, 1)}
-                        disabled={entry.index === entry.siblingIds.length - 1 || busy}
-                        aria-label={`Move ${entry.step.intent} down`}
-                      >
-                        <ArrowDown aria-hidden="true" /> Move down
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
               </div>
               {selectedStepId === entry.step.id ? selectedEditor : null}
             </li>

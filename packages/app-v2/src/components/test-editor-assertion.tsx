@@ -46,11 +46,11 @@ function ValidationKindGroups({
 }) {
   const groups = validationKindGroupsForEditor({ hasRememberableReply, selected });
   return (
-    <label className="grid gap-1.5 text-xs font-medium">
-      Checkpoint type
+    <label className="grid gap-1.5 text-xs font-normal text-muted-foreground">
+      Check
       <select
         aria-label="Checkpoint type"
-        className="h-9 w-full min-w-0 rounded-lg border border-border bg-background px-3 text-sm font-normal"
+        className="h-9 w-full min-w-0 rounded-lg border border-border bg-transparent px-3 text-sm font-normal text-foreground"
         value={selected ?? ""}
         onChange={(event) => onSelect(event.target.value as ValidationDraft["kind"])}
       >
@@ -98,7 +98,7 @@ export function ValidationExpectationEditor({
               "This checkpoint uses a reviewed structured assertion. Its readable binding remains available under Advanced.")}
         </p>
         {canAdd ? (
-          <fieldset className="grid gap-1.5 text-xs font-semibold" disabled={busy}>
+          <fieldset className="grid gap-3 text-xs font-normal" disabled={busy}>
             <legend>Expected result</legend>
             <ValidationKindGroups
               hasRememberableReply={hasRememberableReply}
@@ -115,7 +115,7 @@ export function ValidationExpectationEditor({
     );
   }
   return (
-    <fieldset className="grid gap-1.5 text-xs font-semibold" disabled={busy}>
+    <fieldset className="grid gap-3 text-xs font-normal" disabled={busy}>
       <legend className="sr-only">Expected result</legend>
       <ValidationKindGroups
         selected={value.kind}

@@ -475,8 +475,14 @@ describe("Test editor", () => {
     const harness = service();
     await render(harness.editor);
 
-    await click("Options for step 2");
-    await click("Move Confirm the total up");
+    const row = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Confirm the total"),
+    )!;
+    await act(async () =>
+      row.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "ArrowUp", altKey: true, bubbles: true }),
+      ),
+    );
     expect(harness.edits.at(-1)).toEqual([
       { kind: "step.reorder", orderedStepIds: ["step-pay", "step-cart"] },
     ]);

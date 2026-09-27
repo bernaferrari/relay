@@ -11,7 +11,7 @@ import { Alert, AlertDescription, AlertTitle } from "@relay/ui-react/components/
 import { Button } from "@relay/ui-react/components/button";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { Textarea } from "@relay/ui-react/components/textarea";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { sameValidationDraft } from "./test-editor-assertion-model";
 import {
@@ -190,10 +190,10 @@ export function SelectedStepEditor({
         </div>
       ) : null}
       <label className="grid gap-1.5 text-xs font-semibold" htmlFor="selected-step-intent">
-        <span>Step name</span>
+        <span className="sr-only">Step name</span>
         <Textarea
           rows={1}
-          className="min-h-9 resize-y text-sm"
+          className="min-h-9 resize-none border-transparent bg-transparent px-2 text-sm font-medium focus-visible:border-input"
           id="selected-step-intent"
           value={intent}
           onChange={(event) => {
@@ -277,7 +277,7 @@ export function SelectedStepEditor({
             updateDraft({ capture: value === true });
           }}
         />
-        Take a screenshot after this step
+        Save a screenshot
       </label>
       {noteOpen || note ? (
         <label className="grid gap-1.5 text-xs font-semibold" htmlFor="selected-step-note">
@@ -295,8 +295,9 @@ export function SelectedStepEditor({
           />
         </label>
       ) : null}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
         <Button
+          size="sm"
           variant="default"
           type="submit"
           disabled={!changed || !cleanIntent || !expectedReady || busy}
@@ -304,7 +305,7 @@ export function SelectedStepEditor({
           {busy ? "Saving…" : "Save"}
         </Button>
         {!noteOpen && !note ? (
-          <Button type="button" variant="ghost" onClick={() => setNoteOpen(true)}>
+          <Button size="sm" type="button" variant="ghost" onClick={() => setNoteOpen(true)}>
             Add note
           </Button>
         ) : null}
@@ -335,9 +336,14 @@ export function SelectedStepEditor({
             type="button"
             variant="ghost"
             disabled={busy}
+            size="icon-sm"
+            className="ml-auto"
+            aria-label="Remove step"
+            title="Remove step"
             onClick={() => setRemoveArmed(true)}
           >
-            Remove step
+            <Trash2 aria-hidden="true" />
+            <span className="sr-only">Remove step</span>
           </Button>
         )}
       </div>
