@@ -313,7 +313,7 @@ async function executeCombineStartUnlocked(
         organizationId: loaded.organizationId,
         projectId: loaded.projectId,
         testId: body.testId!.trim(),
-        variableIds: body.variableIds ?? [],
+        variableIds: body.variableIds ?? Object.keys(body.selected ?? {}),
         selected: body.selected,
         strategy: body.strategy,
         capture: body.capture,

@@ -14,6 +14,7 @@ import type { Platform } from "../platform/types";
 import type { TestEditorProductService } from "../data/test-editor-product-service";
 import { WORKSPACE_DESTINATION_KEY } from "../layout/destination-summary";
 import { runConfigurationStorageKey } from "../data/use-persisted-run-configuration";
+import { PAIRED_CONFIGURATION_STORAGE_KEY } from "../data/paired-configuration";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -642,82 +643,195 @@ describe("Run and Report", () => {
     },
   );
 
-  it.each([false, true])(
-    "waits for every data dimension and uses the selected target (stored workspace: %s)",
-    async (usePairedWorkspace) => {
-      const fake = fakeRunService(runState("running", ["inspect"]));
-      const preview = vi.fn((input) => ({
-        selected: input.selected,
-        target: input.target,
-        caseCount: 1,
-        pilot: {},
-        scopeLabel: `1 case on ${input.target.label}`,
-      }));
-      const startPilot = vi.fn(() => new Promise<never>(() => {}));
-      const runAcross = {
-        startPilot,
-        getSetup: vi.fn(async () => ({
-          appMapId: "settings-language-proof",
-          appMapRevision: 1,
-          testId: "test-1",
-          testName: "Change the app language",
-          appName: "Settings Language Proof",
-          dataSet: {
-            name: "Checkout cases",
-            dimensions: [
-              {
-                id: "language",
-                name: "Language",
-                values: [{ id: "en", label: "English" }],
-              },
-              {
-                id: "region",
-                name: "Region",
-                values: [{ id: "us", label: "United States" }],
-              },
-            ],
-          },
-        })),
-        preview,
-      } as unknown as RunAcrossProductService;
-      await renderRun(
-        "/tests/test-1/run-across",
-        fake.service,
-        platformWithStorage({
-          [runConfigurationStorageKey({
-            server: "http://127.0.0.1:8787",
-            appId: "settings-language-proof",
-            entity: "test:test-1",
-          })]: JSON.stringify({ usePairedWorkspace }),
-        }).platform,
-        runAcross,
-      );
-      await selectOption("Device or browser", "Checkout browser");
-      expect(preview).not.toHaveBeenCalled();
-      expect(document.body.textContent).toContain("Choose a value for Language, Region.");
-      expect(document.querySelector('[role="alert"]')).toBeNull();
-      expect(button("Run selected cases").disabled).toBe(true);
+  it("waits for every data dimension and uses the selected target", async () => {
+    const fake = fakeRunService(runState("running", ["inspect"]));
+    const preview = vi.fn((input) => ({
+      selected: input.selected,
+      target: input.target,
+      caseCount: 1,
+      pilot: {},
+      scopeLabel: `1 case on ${input.target.label}`,
+    }));
+    const startPilot = vi.fn(() => new Promise<never>(() => {}));
+    const runAcross = {
+      startPilot,
+      getSetup: vi.fn(async () => ({
+        appMapId: "settings-language-proof",
+        appMapRevision: 1,
+        testId: "test-1",
+        testName: "Change the app language",
+        appName: "Settings Language Proof",
+        dataSet: {
+          name: "Checkout cases",
+          dimensions: [
+            {
+              id: "language",
+              name: "Language",
+              values: [{ id: "en", label: "English" }],
+            },
+            {
+              id: "region",
+              name: "Region",
+              values: [{ id: "us", label: "United States" }],
+            },
+          ],
+        },
+      })),
+      preview,
+    } as unknown as RunAcrossProductService;
+    await renderRun(
+      "/tests/test-1/run-across",
+      fake.service,
+      platformWithStorage({
+        [runConfigurationStorageKey({
+          server: "http://127.0.0.1:8787",
+          appId: "settings-language-proof",
+          entity: "test:test-1",
+        })]: JSON.stringify({ usePairedWorkspace: false }),
+      }).platform,
+      runAcross,
+    );
+    await selectOption("Device or browser", "Checkout browser");
+    expect(preview).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Choose a value for Language, Region.");
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(button("Run selected cases").disabled).toBe(true);
 
-      const values = [...document.querySelectorAll<HTMLElement>('[role="checkbox"]')];
-      expect(values).toHaveLength(2);
-      await click(values[0]!.closest("label") ?? values[0]!);
-      expect(preview).not.toHaveBeenCalled();
-      expect(values[0]?.getAttribute("aria-checked")).toBe("true");
+    const values = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[aria-label="Available values"] [role="checkbox"]',
+      ),
+    ];
+    expect(values).toHaveLength(2);
+    await click(values[0]!.closest("label") ?? values[0]!);
+    expect(preview).not.toHaveBeenCalled();
+    expect(values[0]?.getAttribute("aria-checked")).toBe("true");
 
-      await click(values[1]!.closest("label") ?? values[1]!);
-      expect(values[1]?.getAttribute("aria-checked")).toBe("true");
-      expect(preview).toHaveBeenCalledTimes(1);
-      expect(preview.mock.calls[0]?.[0].target.label).toBe("Checkout browser");
-      expect(document.body.textContent).toContain("1 case on Checkout browser");
-      await click(button("Run selected case"));
-      expect(startPilot).toHaveBeenCalledWith(
-        expect.objectContaining({
-          target: expect.objectContaining({ label: "Checkout browser" }),
-          executionMode: "all",
+    await click(values[1]!.closest("label") ?? values[1]!);
+    expect(values[1]?.getAttribute("aria-checked")).toBe("true");
+    expect(preview).toHaveBeenCalledTimes(1);
+    expect(preview.mock.calls[0]?.[0].target.label).toBe("Checkout browser");
+    expect(document.body.textContent).toContain("1 case on Checkout browser");
+    await click(button("Run selected case"));
+    expect(startPilot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: expect.objectContaining({ label: "Checkout browser" }),
+        executionMode: "all",
+      }),
+    );
+  });
+
+  it("runs selected data across the exact saved Browser and Account pairs", async () => {
+    const fake = fakeRunService(runState("running", ["inspect"]));
+    fake.service.listProfiles = async () => [
+      {
+        id: "admin-profile",
+        targetId: "browser-golden",
+        platform: "browser",
+        name: "Admin",
+        account: { id: "admin", name: "Admin" },
+      },
+      {
+        id: "member-profile",
+        targetId: "browser-golden",
+        platform: "browser",
+        name: "Member",
+        account: { id: "member", name: "Member" },
+      },
+    ];
+    const preview = vi.fn((input) => ({
+      selected: input.selected,
+      target: input.target,
+      caseCount: 4,
+      pilot: { language: "en" },
+      scopeLabel: "4 cases across 2 saved Browser and Account pairs",
+    }));
+    const startPilot = vi.fn(() => new Promise<never>(() => {}));
+    const runAcross = {
+      getSetup: async () => ({
+        appMapId: "settings-language-proof",
+        appMapRevision: 3,
+        testId: "test-1",
+        testName: "Change the app language",
+        appName: "Settings Language Proof",
+        dataSet: {
+          name: "Languages",
+          dimensions: [
+            {
+              id: "language",
+              name: "Language",
+              values: [
+                { id: "en", label: "English" },
+                { id: "pt", label: "Português" },
+              ],
+            },
+          ],
+        },
+      }),
+      preview,
+      startPilot,
+    } as unknown as RunAcrossProductService;
+    const storageKey = runConfigurationStorageKey({
+      server: "http://127.0.0.1:8787",
+      appId: "settings-language-proof",
+      entity: "test:test-1",
+    });
+    await renderRun(
+      "/tests/test-1/run-across",
+      fake.service,
+      platformWithStorage({
+        [storageKey]: JSON.stringify({ usePairedWorkspace: true }),
+        [PAIRED_CONFIGURATION_STORAGE_KEY]: JSON.stringify({
+          schemaVersion: 1,
+          updatedAt: 1,
+          rows: [
+            {
+              id: "admin-row",
+              name: "Admin desktop",
+              browserId: "browser-golden",
+              browserName: "Checkout browser",
+              engine: "chromium",
+              accountId: "admin",
+              accountRevision: "1",
+            },
+            {
+              id: "member-row",
+              name: "Member desktop",
+              browserId: "browser-golden",
+              browserName: "Checkout browser",
+              engine: "chromium",
+              accountId: "member",
+              accountRevision: "2",
+            },
+          ],
         }),
-      );
-    },
-  );
+      }).platform,
+      runAcross,
+    );
+    expect(document.body.textContent).toContain("Admin desktop · Member desktop");
+    expect(document.querySelector('button[aria-label="Device or browser"]')).toBeNull();
+    const choices = [...document.querySelectorAll<HTMLElement>('[role="checkbox"]')].filter(
+      (item) => item.closest("label")?.textContent?.match(/English|Português/u),
+    );
+    expect(choices).toHaveLength(2);
+    await click(choices[0]!.closest("label")!);
+    await click(choices[1]!.closest("label")!);
+    expect(
+      preview.mock.calls
+        .at(-1)?.[0]
+        .profileTargets.map((item: { profileId: string }) => item.profileId),
+    ).toEqual(["admin-profile", "member-profile"]);
+    await click(button("Run 4 selected cases"));
+    expect(startPilot).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionMode: "all",
+        profileTargets: expect.arrayContaining([
+          expect.objectContaining({ profileId: "admin-profile" }),
+          expect.objectContaining({ profileId: "member-profile" }),
+        ]),
+      }),
+    );
+  });
 
   it("selects the only ready target so a Test can run immediately", async () => {
     const fake = fakeRunService();

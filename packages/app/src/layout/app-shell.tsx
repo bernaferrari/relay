@@ -167,7 +167,7 @@ export function AppShell({ platform }: { platform: Platform }) {
             runWorkspace && "min-[721px]:overflow-hidden [scrollbar-gutter:auto]",
             immersive
               ? "overflow-hidden"
-              : "overflow-auto overscroll-contain min-[861px]:mx-2 min-[861px]:mb-2 min-[861px]:rounded-xl [scrollbar-gutter:stable_both-edges]",
+              : "overflow-auto overscroll-contain min-[861px]:mx-2 min-[861px]:mb-2 min-[861px]:rounded-xl",
           )}
           data-run-workspace={runWorkspace || undefined}
           tabIndex={-1}

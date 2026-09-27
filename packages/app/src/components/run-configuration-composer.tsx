@@ -33,6 +33,7 @@ export function RunConfigurationComposer({
   variant = "panel",
   title,
   pairedWorkspaceLabel,
+  pairedWorkspaceAction,
 }: {
   configuration: RunConfigurationState;
   onResolveBlocker?: (blocker: RunConfigurationBlocker) => void;
@@ -49,6 +50,7 @@ export function RunConfigurationComposer({
   variant?: "panel" | "plain";
   title?: ReactNode;
   pairedWorkspaceLabel?: string;
+  pairedWorkspaceAction?: ReactNode;
 }) {
   const titleId = useId();
   const languageChoices = Boolean(
@@ -165,6 +167,24 @@ export function RunConfigurationComposer({
           )}
         </>
       ) : null}
+      {pairedWorkspaceLabel && onSelectionChange ? (
+        <div className="flex flex-wrap items-center justify-between gap-x-3 text-sm">
+          <label className="flex min-h-11 items-center gap-2">
+            <Checkbox
+              disabled={loading}
+              checked={selection?.usePairedWorkspace === true}
+              onCheckedChange={(checked) =>
+                onSelectionChange({
+                  ...selection,
+                  usePairedWorkspace: checked === true || undefined,
+                })
+              }
+            />
+            {pairedWorkspaceLabel}
+          </label>
+          {pairedWorkspaceAction}
+        </div>
+      ) : null}
       {dataSetOptions && onSelectionChange ? (
         <fieldset
           disabled={loading}
@@ -256,21 +276,6 @@ export function RunConfigurationComposer({
             ))}
           </ul>
         </div>
-      ) : null}
-      {pairedWorkspaceLabel && onSelectionChange ? (
-        <label className="flex min-h-11 items-center gap-2 text-sm">
-          <Checkbox
-            disabled={loading}
-            checked={selection?.usePairedWorkspace === true}
-            onCheckedChange={(checked) =>
-              onSelectionChange({
-                ...selection,
-                usePairedWorkspace: checked === true || undefined,
-              })
-            }
-          />
-          {pairedWorkspaceLabel}
-        </label>
       ) : null}
       {children}
     </section>

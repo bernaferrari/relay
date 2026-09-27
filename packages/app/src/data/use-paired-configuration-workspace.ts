@@ -11,6 +11,11 @@ export function usePairedConfigurationWorkspace(platform: Platform) {
   const [workspace, setWorkspace] = useState<PairedConfigurationWorkspace>(emptyPairedWorkspace);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => {
+    setLoading(true);
+    setAttempt((value) => value + 1);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -29,7 +34,7 @@ export function usePairedConfigurationWorkspace(platform: Platform) {
     return () => {
       active = false;
     };
-  }, [platform]);
+  }, [platform, attempt]);
 
   const save = useCallback(
     async (next: PairedConfigurationWorkspace) => {
@@ -40,5 +45,5 @@ export function usePairedConfigurationWorkspace(platform: Platform) {
     [platform],
   );
 
-  return { workspace, loading, error, save };
+  return { workspace, loading, error, retry, save };
 }
