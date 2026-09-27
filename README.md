@@ -1,78 +1,72 @@
 <div align="center">
 
+<img src="./packages/desktop/resources/relay-icon.png" alt="Relay logo" width="112" height="112" />
+
 # Relay
 
-### Record a journey. Collect screenshots. Review them together.
+**Record tests. Replay them. See what happened.**
 
-Local-first testing for web, Android, and iOS.
-Built for people and coding agents.
+A local-first testing workspace for web, Android, and iOS.<br />
+Use the desktop app, automate from the CLI, or connect a coding agent through MCP.
 
-[Get started](#get-started) · [How it works](#one-test-many-cases) · [Documentation](#go-deeper)
+[Get started](#get-started) · [How it works](#how-it-works) · [For coding agents](#for-coding-agents) · [Documentation](#documentation)
 
 </div>
 
-![Relay’s App map connecting captured Android screens and their navigation paths.](./docs/images/relay-app-map.png)
+Relay helps you test real user flows and understand their results. Record actions, add checks, and replay a saved test. Inspect screenshots alongside the steps that produced them, review visual changes, and use logs and network activity to investigate failures.
 
-<p align="center"><sub>Real screens, reusable Tests, and the evidence to understand every result.</sub></p>
+The **App map** connects captured screens and the paths between them, so you can see what you have explored and turn those paths into reusable tests.
 
-## From “it should work” to seeing it work
+![Relay’s App map showing captured Android screens and their navigation paths.](./docs/images/relay-app-map.png)
 
-Relay brings your app, its user journeys, and their results into one workspace. Choose a browser or device, record a Test, then replay it with the accounts, data sets, and targets you choose. Relay collects screenshots without waiting for a review between steps. Review them together afterward; steps and logs are available when you need to investigate.
+## How it works
 
-Your devices. Your local service. Your saved evidence.
+1. **Record a test.** Open a website in Relay’s browser or connect a phone or tablet. Perform the actions you want to repeat, then add checks and screenshot checkpoints.
+2. **Run it again.** Replay the saved test, group tests into a test plan, or use **Run across** with selected devices and data set values.
+3. **Inspect the result.** Open **Runs** to see what happened at each step. Review screenshots against saved references and investigate failures with the available diagnostics.
 
-| Explore                                                                 | Test                                                                                  | Understand                                                                        |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Choose a browser or connected device and open the app you want to test. | Record a journey once. Run it again, or run it across selected languages and devices. | Open **Results** to inspect captures, steps, failures, and available diagnostics. |
+A **test** describes what should happen. A **run** records what happened on one execution. A **reference** is an approved screenshot used for future comparisons.
 
-## One Test, many cases
+Execution and screenshot approval are separate: a passing run can still have screenshots waiting for review. Recording, replay, and human screenshot review do not require model credentials.
 
-A **Test** is the reusable journey. A **Run** is one execution of it. **Results** is where you review those executions.
+| Capability                | What you can do                                                                  |
+| ------------------------- | -------------------------------------------------------------------------------- |
+| Recording and replay      | Save actions and checks as repeatable tests.                                     |
+| Screenshot review         | Compare captures with references and approve intentional changes.                |
+| App map                   | Browse known screens and the paths that connect them.                            |
+| Test plans and Run across | Run groups of tests or selected combinations of devices and data.                |
+| Run evidence              | Inspect captures, steps, logs, network requests, and performance when available. |
+| CLI and MCP               | Use the same saved tests and evidence from scripts and coding agents.            |
 
-For example, checking a pricing page in ten languages can be one Test:
-
-```text
-Open the page → Capture Individual → Click Business → Capture Business
-```
-
-Choose the language values and devices in **Run across**. Run the selected cases, then review their screenshots together in **Results**. Keep the same journey while changing the data.
-
-**Completed** means execution finished. Screenshot review is separate: **to review**, **missing**, or **approved**. A completed Run does not mean someone approved its screenshots. Replay and human screenshot review need no model credentials.
-
-- **Screenshots and interface trees** give you visual and structural evidence to compare.
-- **Steps and logs** help you locate where a journey failed.
-- **Saved run context** preserves the Test and target used for that execution.
-- **Desktop, CLI, and MCP** share Relay’s workflows and evidence.
-
-Available evidence depends on the target and capture settings. The report makes missing or unavailable evidence visible.
+Relay is pre-release. Browser, Android, and iOS capabilities differ; evidence availability depends on the target and capture settings. See [product flows](./docs/PRODUCT_FLOWS.md) for the current behavior.
 
 ## Get started
 
-Use **Node.js 24+**, **Corepack**, and the **Vite+ CLI** (`vp`). Android targets also need `adb`; physical iOS devices need the Apple developer tooling described in the [device setup guide](https://oss.callstack.com/agent-device/docs/quick-start).
+Run Relay from this repository with **Node.js 24+**, **pnpm**, and the **Vite+ CLI** (`vp`). Use the pnpm version declared in `package.json`.
 
 ```bash
+git clone https://github.com/bernaferrari/relay.git
+cd relay
 vp install
 pnpm doctor --json
 pnpm dev:desktop
 ```
 
-The doctor is read-only and reports required workspace failures separately from
-optional browser, Android, and iOS target warnings. The desktop app starts the
-local Relay service for your project.
+The desktop launcher starts the local Relay service. The doctor checks your workspace and reports optional browser, Android, and iOS setup separately. Android requires `adb`; physical iOS devices require additional Apple tooling. See [local workflows](./docs/LOCAL_WORKFLOWS.md) and the [iOS authoring guide](./docs/IOS_AUTHORING_PLAYBOOK.md).
 
-1. Choose a browser or connected device.
-2. Open **Tests → New Test**, start recording, and walk through the journey.
-3. Capture each screen you want to review. Choose **Stop and review**, name the Test, and **Save Test**.
-4. Run it, then open **Results → Needs review**. Inspect a screenshot or select several and choose **Looks correct**, **Report issue**, or **Need more evidence**.
-5. Use **Run across** when you are ready to repeat it with more values or targets.
+In the app:
 
-For a walkthrough of capture, review, and sharing, see [your first screenshot review](./docs/FIRST_SCREENSHOT_REVIEW.md).
+1. Open **Tests → New Test** and enter a website, or choose a connected device.
+2. Record your actions and add the checks or screenshots you want to keep.
+3. Stop recording, review the steps, and save the test.
+4. Run the test. Open it from **Runs** to inspect its steps and captures.
+5. Choose **Review screenshots** when captures need approval.
 
-Prefer a browser window? Run `pnpm dev:web` and open the local URL printed in the terminal.
+See [your first screenshot review](./docs/FIRST_SCREENSHOT_REVIEW.md) for a longer walkthrough. To use Relay in a browser instead, run `pnpm dev:web` and open the URL printed in the terminal.
 
-## For coding agents, too
+## For coding agents
 
-Use Relay from the terminal or connect its [MCP adapter](./packages/mcp/README.md) to your agent. The same saved Tests and evidence are available outside the desktop UI.
+Relay’s [MCP adapter](./packages/mcp/README.md) and CLI expose the same workflows as the desktop app. An agent can run a saved test and inspect its evidence without driving Relay’s interface.
 
 ```bash
 pnpm relay connect
@@ -80,78 +74,56 @@ pnpm relay run settings-localization
 pnpm relay export-evidence <run-id>
 ```
 
-The example assumes you already saved a Test named `settings-localization`. See the [CLI and automation guide](./docs/LOCAL_WORKFLOWS.md) for recording, language runs, browser control, service setup, and recovery.
+This example assumes a saved test named `settings-localization`. See the [CLI and automation guide](./docs/LOCAL_WORKFLOWS.md) for recording, target selection, data sets, and recovery.
 
-For change verification, Relay also supports revision-bound Proof workflows and GitHub Checks. See [PR proof integration](./docs/PR_PROOF_CI.md) for the current setup and boundaries.
+### Optional AI exploration
 
-### Try a goal before authoring a Test
-
-For an explicit, bounded browser experiment, give Relay a URL and a goal. This path is opt-in and
-uses the single OpenRouter boundary when `OPENROUTER_API_KEY` is configured; it does not require a
-saved App Map or Test:
+Give Relay a browser URL and a bounded goal to investigate before creating a test. This opt-in workflow requires `OPENROUTER_API_KEY` for model-driven exploration.
 
 ```bash
 pnpm ensure:serve
-pnpm relay explore \
+pnpm relay goal run \
   --url http://localhost:3000 \
   --goal "Try to submit checkout with an empty cart; verify that no order is created" \
-  --agents 4 --confirm
+  --confirm
 ```
 
-Results retain redacted observations, acknowledged actions, evidence-linked findings, and precise
-blocked or uncertain states. A completed browser path can be replayed on a fresh target and opened
-in the existing review-only Authoring flow:
+Inspect the findings and evidence, reproduce a completed path, then explicitly promote it into a test for review:
 
 ```bash
 pnpm relay goal inspect <session-id>
-pnpm relay goal cancel <session-id> --confirm
 pnpm relay goal reproduce <session-id> --confirm
 pnpm relay goal promote <session-id> --confirm --title "Empty cart regression"
-
-Plain (non-secret) form values travel as `--value name=text`; credentials stay in account
-fixtures. Multi-worker exploration takes distinct missions — one `--mission` line per worker.
-Goal sessions are server-owned durable workflows: start from the CLI, watch or cancel the same
-job from the desktop app, inspect it read-only from MCP.
 ```
 
-In the desktop app, open **Explore** to use the same goal service. Review-required findings stay
-visible with the retained evidence; a completed browser path can be replayed on a fresh target and
-then explicitly promoted into the existing Authoring review flow.
-
-Existing Playwright suites can call the same small HTTP surface without adopting the desktop UI or
-rewriting their deterministic tests. See [goal-first discovery from Playwright](./docs/GOAL_FIRST_PLAYWRIGHT.md).
-
-Inspection is read-only and exposes the retained findings and evidence references without resuming
-or controlling the target.
-
-Promotion stops before human approval. Model-free recorded Test replay and screenshot review remain
-the dependable path.
+Exploration does not approve its own findings. See [goal-first discovery](./docs/GOAL_FIRST_PLAYWRIGHT.md) for the HTTP integration, including use from existing Playwright suites. For revision-bound verification and GitHub Checks, see [PR proof integration](./docs/PR_PROOF_CI.md).
 
 ## Local by default
 
-The normal desktop workflow uses a loopback service and stores evidence in your project. You operate the browsers and devices. Remote serving and evidence sharing are explicit, self-managed features.
-
-Relay is pre-release. Browser, Android, and iOS capabilities differ, and real-device setup still matters. See [product flows](./docs/PRODUCT_FLOWS.md) and [readiness](./docs/ENTERPRISE_READINESS.md) for the details.
+The normal desktop workflow runs a loopback service and stores evidence in your project. You control the browsers and devices. Remote serving and evidence sharing are explicit, self-managed features. Optional AI exploration sends observations to the configured model provider.
 
 ## Develop
 
 ```bash
-pnpm dev:web        # React app + local service
 pnpm dev:desktop    # Electron app + local service
+pnpm dev:web        # React app + local service
 vp check           # Formatting and lint
 pnpm typecheck     # Workspace type checks
 pnpm test          # Package and runtime tests
+pnpm check:docs    # Documentation links and commands
 ```
 
-Use `pnpm doctor` for setup issues and `pnpm server:doctor` to inspect a running service. The [architecture guide](./ARCHITECTURE.md) explains the package boundaries; the [development guide](./docs/LOCAL_WORKFLOWS.md#develop-and-verify) covers the full verification workflow.
+Use `pnpm doctor` for setup issues and `pnpm server:doctor` to inspect a running service. See [architecture](./ARCHITECTURE.md) for package boundaries and [development and verification](./docs/LOCAL_WORKFLOWS.md#develop-and-verify) for the full workflow.
 
-## Go deeper
+## Documentation
 
-| Guide                                           | What you’ll find                                   |
-| ----------------------------------------------- | -------------------------------------------------- |
-| [Product flows](./docs/PRODUCT_FLOWS.md)        | Recording, reviewing, and running Tests            |
-| [Browser capture](./docs/BROWSER_CAPTURE.md)    | Browser control, language captures, and comparison |
-| [Language runs](./docs/LANGUAGE_SWEEP_LOOP.md)  | Repeatable localization workflows                  |
-| [CLI and automation](./docs/LOCAL_WORKFLOWS.md) | Commands, evidence export, and service operation   |
-| [MCP adapter](./packages/mcp/README.md)         | Connect an agent to Relay                          |
-| [Architecture](./ARCHITECTURE.md)               | How the system fits together                       |
+| Guide                                                        | Contents                                                |
+| ------------------------------------------------------------ | ------------------------------------------------------- |
+| [Product flows](./docs/PRODUCT_FLOWS.md)                     | Recording, running, and reviewing tests                 |
+| [First screenshot review](./docs/FIRST_SCREENSHOT_REVIEW.md) | Capture, review, and share evidence                     |
+| [Browser capture](./docs/BROWSER_CAPTURE.md)                 | Browser control and screenshot comparison               |
+| [Language runs](./docs/LANGUAGE_SWEEP_LOOP.md)               | Localization workflows                                  |
+| [CLI and automation](./docs/LOCAL_WORKFLOWS.md)              | Commands, device setup, service operation, and recovery |
+| [MCP adapter](./packages/mcp/README.md)                      | Connect a coding agent                                  |
+| [Readiness](./docs/ENTERPRISE_READINESS.md)                  | Current capabilities and limitations                    |
+| [Architecture](./ARCHITECTURE.md)                            | How the system fits together                            |
