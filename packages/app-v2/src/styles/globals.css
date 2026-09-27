@@ -79,11 +79,20 @@
   transform-origin: top center;
 }
 
-/* Edge labels sit between screens, so they grow less. */
+/* Keep actions readable at overview zoom; anchor the destination-side edge
+   so magnifying a label does not push it over its target preview. */
 [data-slot="map-edge-label"] {
-  transform: scale(clamp(1, calc(0.9 / var(--map-zoom, 1)), 1.5));
+  transform: scale(clamp(1, calc(1 / var(--map-zoom, 1)), 2.5));
   transform-box: fill-box;
-  transform-origin: center;
+  transform-origin: right bottom;
+}
+
+[data-slot="map-edge"][data-state="muted"] [data-slot="map-edge-line"] {
+  opacity: 0.2;
+}
+
+[data-slot="map-edge"][data-state="muted"] [data-slot="map-edge-label"] {
+  visibility: hidden;
 }
 
 [data-slot="map-cluster-label"] {

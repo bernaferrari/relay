@@ -1,4 +1,5 @@
-import type { CSSProperties } from "react";
+import type { PresentedMapPath } from "./map-presentation";
+import { useState, type CSSProperties } from "react";
 import { forwardRoute, avoidPreviewObstacles, routeCrossesBox } from "./map-forward-route";
 import type { ProductMapPath } from "@relay/product/map-exploration";
 import {
@@ -16,22 +17,26 @@ export function MapEdges({
   markerId,
   selectedScreenId,
   selectedPathId,
+  onSelectPath,
   showInteractionTargets = false,
   screens,
   imageDimensions,
   node = PORTRAIT_NODE,
 }: {
   horizontal?: boolean;
-  paths: readonly ProductMapPath[];
+  paths: readonly PresentedMapPath[];
   positions: ReadonlyMap<string, MapPoint>;
   markerId: string;
   selectedScreenId?: string;
   selectedPathId?: string;
+  onSelectPath?: (id: string) => void;
   showInteractionTargets?: boolean;
   screens: readonly { id: string; screenshotUri?: string }[];
   imageDimensions: ReadonlyMap<string, ImageDimensions>;
   node?: MapNodeSize;
 }) {
+  const [hoveredPathId, setHoveredPathId] = useState<string>();
+  const activePathId = hoveredPathId ?? selectedPathId;
   const geometries = paths.flatMap((path, index) => {
     const from = positions.get(path.fromScreenId);
     if (!from) return [];
@@ -129,43 +134,41 @@ export function MapEdges({
         },
       ];
     }
-    const selfLoop = path.toScreenId === path.fromScreenId;
-    const labelWidth = Math.min(180, Math.max(44, path.label.length * 6.2 + 18));
-    if (selfLoop) {
-      const loopTop = from.y - 74;
-      const loopStart = anchor ?? {
-        x: from.x + node.width * 0.72,
-        y: from.y - clearance,
-      };
-      const loopEnd = anchor
-        ? { x: from.x + node.width * 0.28, y: from.y + 4 }
-        : imageRect
-          ? { x: imageRect.x - clearance, y: imageRect.y + imageRect.height / 2 }
-          : { x: from.x + node.width * 0.28, y: from.y };
-      return [
-        {
-          path,
-          id: `-${index}`,
-          anchor,
-          anchorRect,
-          d: `M ${loopStart.x} ${loopStart.y} C ${loopStart.x} ${loopTop}, ${loopEnd.x} ${loopTop}, ${loopEnd.x} ${loopEnd.y}`,
-          label: { x: from.x + node.width / 2, y: loopTop - 8, width: labelWidth },
-          bounds: {
-            minX: from.x + node.width * 0.28 - 24,
-            minY: loopTop - 40,
-            maxX: from.x + node.width * 0.72 + 24,
-            maxY: from.y + 24,
-          },
-        },
-      ];
-    }
-    const isReturn = backwards || /^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label);
     const sourceBox = imageRect ?? {
       x: from.x,
       y: from.y + node.titleHeight + node.gap,
       width: node.width,
       height: node.imageHeight,
     };
+    const selfLoop = path.toScreenId === path.fromScreenId;
+    const labelWidth = Math.min(180, Math.max(44, path.label.length * 6.2 + 18));
+    if (selfLoop) {
+      const slot = paths
+        .filter(
+          (candidate) =>
+            candidate.fromScreenId === path.fromScreenId &&
+            candidate.toScreenId === path.fromScreenId,
+        )
+        .findIndex((candidate) => candidate.id === path.id);
+      const points = selfLoopConnector(sourceBox, Math.max(0, slot), anchor);
+      return [
+        {
+          path,
+          id: `-${index}`,
+          anchor,
+          anchorRect,
+          d: roundedConnector(points, 20),
+          label: { x: points[1]!.x, y: points[1]!.y, width: labelWidth },
+          bounds: {
+            minX: Math.min(...points.map((point) => point.x)) - 24,
+            minY: Math.min(...points.map((point) => point.y)) - 24,
+            maxX: Math.max(...points.map((point) => point.x)) + 24,
+            maxY: Math.max(...points.map((point) => point.y)) + 24,
+          },
+        },
+      ];
+    }
+    const isReturn = backwards || /^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label);
     const targetBox = targetImageRect ?? {
       x: to.x,
       y: to.y + node.titleHeight + node.gap,
@@ -404,7 +407,7 @@ export function MapEdges({
   });
   // Paint selection last so crossing neutral routes cannot obscure it.
   geometries.sort(
-    (a, b) => Number(a.path.id === selectedPathId) - Number(b.path.id === selectedPathId),
+    (a, b) => Number(a.path.id === activePathId) - Number(b.path.id === activePathId),
   );
   const edgeBounds = geometries.reduce<MapBounds>(
     (result, geometry) => ({
@@ -418,7 +421,7 @@ export function MapEdges({
   return (
     <svg
       className="pointer-events-none absolute left-(--box-left) top-(--box-top) z-10 h-(--box-height) w-(--box-width) overflow-visible"
-      aria-hidden="true"
+      aria-label="Screen connections"
       viewBox={`${edgeBounds.minX} ${edgeBounds.minY} ${edgeBounds.maxX - edgeBounds.minX} ${edgeBounds.maxY - edgeBounds.minY}`}
       style={
         {
@@ -437,8 +440,8 @@ export function MapEdges({
             viewBox="0 0 10 10"
             refX="8"
             refY="5"
-            markerWidth="6"
-            markerHeight="6"
+            markerWidth="8"
+            markerHeight="8"
             orient="auto-start-reverse"
           >
             <path
@@ -459,26 +462,57 @@ export function MapEdges({
         ))}
       </defs>
       {geometries.map((geometry) => {
-        const dimmed = selectedPathId
-          ? geometry.path.id !== selectedPathId
+        const dimmed = activePathId
+          ? geometry.path.id !== activePathId
           : Boolean(
               selectedScreenId &&
               geometry.path.fromScreenId !== selectedScreenId &&
               geometry.path.toScreenId !== selectedScreenId,
             );
-        const state =
-          selectedPathId === geometry.path.id ? "selected" : dimmed ? "muted" : "neutral";
+        const connected = Boolean(
+          selectedScreenId &&
+          (geometry.path.fromScreenId === selectedScreenId ||
+            geometry.path.toScreenId === selectedScreenId),
+        );
+        const state = dimmed ? "muted" : activePathId || connected ? "selected" : "neutral";
+        const source = positions.get(geometry.path.fromScreenId);
+        const target = positions.get(geometry.path.toScreenId ?? "");
+        const returning =
+          isRoutineReturn(geometry.path) || Boolean(source && target && target.x < source.x);
         return (
           <g
             key={geometry.path.id}
             data-slot="map-edge"
-            className={`[&>path]:fill-transparent [&>path]:stroke-current [&>path]:stroke-[1.5] [&>g>rect]:fill-popover [&>g>rect]:stroke-border [&>g>rect]:stroke-0 [&_text]:fill-current [&_text]:font-sans [&_text]:text-xs [&_text]:font-normal ${
-              state === "selected"
-                ? "text-info"
-                : state === "muted"
-                  ? "text-muted-foreground/80"
-                  : "text-muted-foreground"
-            }`}
+            data-state={state}
+            role={onSelectPath ? "button" : undefined}
+            tabIndex={onSelectPath ? 0 : undefined}
+            aria-label={`${geometry.path.fromTitle}: ${geometry.path.label}${geometry.path.toTitle ? ` → ${geometry.path.toTitle}` : ""}`}
+            aria-pressed={onSelectPath ? selectedPathId === geometry.path.id : undefined}
+            onPointerEnter={() => setHoveredPathId(geometry.path.id)}
+            onPointerLeave={() => setHoveredPathId(undefined)}
+            onFocus={() => setHoveredPathId(geometry.path.id)}
+            onBlur={() => setHoveredPathId(undefined)}
+            onPointerDown={onSelectPath ? (event) => event.stopPropagation() : undefined}
+            onClick={
+              onSelectPath
+                ? (event) => {
+                    event.stopPropagation();
+                    onSelectPath(geometry.path.id);
+                  }
+                : undefined
+            }
+            onKeyDown={
+              onSelectPath
+                ? (event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onSelectPath(geometry.path.id);
+                    }
+                  }
+                : undefined
+            }
+            className={`outline-none ${state === "selected" ? "text-info" : "text-muted-foreground"}`}
           >
             {geometry.anchor ? (
               <>
@@ -495,11 +529,28 @@ export function MapEdges({
                 ) : null}
               </>
             ) : null}
+            {onSelectPath ? (
+              <path
+                data-slot="map-edge-hit"
+                d={geometry.d}
+                fill="none"
+                stroke="transparent"
+                strokeWidth="16"
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="stroke"
+                className="cursor-pointer"
+              />
+            ) : null}
             <path
+              data-slot="map-edge-line"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={state === "selected" ? 2 : 1.25}
+              vectorEffect="non-scaling-stroke"
               id={geometry.id}
               d={geometry.d}
               markerEnd={geometry.path.toScreenId ? `url(#${markerId}-${state})` : undefined}
-              strokeDasharray={geometry.path.toScreenId ? undefined : "3 4"}
+              strokeDasharray={!geometry.path.toScreenId || returning ? "5 5" : undefined}
             />
             {geometry.anchor ? (
               <path
@@ -510,28 +561,40 @@ export function MapEdges({
                 strokeWidth="1.5"
               />
             ) : null}
-            <g data-slot="map-edge-label">
-              <rect
-                x={geometry.label.x - geometry.label.width / 2}
-                y={geometry.label.y - 14}
-                width={geometry.label.width}
-                height={geometry.path.toScreenId ? 22 : 44}
-                rx="4"
-              />
-              <text x={geometry.label.x} y={geometry.label.y} textAnchor="middle">
-                {geometry.path.label}
-              </text>
-              {!geometry.path.toScreenId ? (
+            {!geometry.path.toScreenId ? (
+              <g
+                data-slot="map-edge-label"
+                className={onSelectPath ? "pointer-events-auto cursor-pointer" : undefined}
+              >
+                <rect
+                  x={geometry.label.x - geometry.label.width / 2}
+                  y={geometry.label.y - 14}
+                  width={geometry.label.width}
+                  height={geometry.path.toScreenId ? 22 : 44}
+                  rx="5"
+                  className="fill-popover stroke-border"
+                  strokeWidth="0.5"
+                />
                 <text
                   x={geometry.label.x}
-                  y={geometry.label.y + 17}
+                  y={geometry.label.y}
                   textAnchor="middle"
-                  className="font-normal"
+                  className="fill-current font-sans text-xs font-medium"
                 >
-                  Destination not recorded
+                  {geometry.path.label}
                 </text>
-              ) : null}
-            </g>
+                {!geometry.path.toScreenId ? (
+                  <text
+                    x={geometry.label.x}
+                    y={geometry.label.y + 17}
+                    textAnchor="middle"
+                    className="fill-current font-sans text-xs font-normal"
+                  >
+                    Destination not recorded
+                  </text>
+                ) : null}
+              </g>
+            ) : null}
           </g>
         );
       })}
@@ -631,4 +694,17 @@ export function quadraticReturn(points: readonly MapPoint[]): string {
     ? { x: (start.x + end.x) / 2, y: Math.max(start.y, end.y) + 72 }
     : { x: end.x, y: start.y };
   return `M ${start.x} ${start.y} Q ${control.x} ${control.y} ${end.x} ${end.y}`;
+}
+
+/** A compact loop outside the preview, above its normal center connection port. */
+export function selfLoopConnector(
+  box: { x: number; y: number; width: number; height: number },
+  slot = 0,
+  anchor?: MapPoint,
+): MapPoint[] {
+  const edge = box.x + box.width + 14;
+  const start = anchor ?? { x: edge, y: box.y + box.height * 0.36 };
+  const end = { x: edge, y: box.y + box.height * 0.08 };
+  const lane = edge + 48 + slot * 24;
+  return [start, { x: lane, y: start.y }, { x: lane, y: end.y }, end];
 }

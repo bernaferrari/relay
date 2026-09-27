@@ -154,6 +154,7 @@ export function MapCanvasWorld({
       <MapEdges
         horizontal={layoutMode === "horizontal"}
         selectedPathId={selectedPathId}
+        onSelectPath={panningTool ? undefined : onSelectPath}
         paths={originPaths.filter(
           (path) =>
             path.id === selectedPathId ||

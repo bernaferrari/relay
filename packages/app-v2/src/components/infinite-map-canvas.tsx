@@ -1,3 +1,4 @@
+import { compactMap, type PresentedMapPath } from "./map-presentation";
 import { useIsMobile } from "@relay/ui-react/hooks/use-mobile";
 import { useMapSelection } from "../hooks/use-map-selection";
 import { separateMapScreens } from "./map-layout";
@@ -98,8 +99,16 @@ export function InfiniteMapCanvas({
   screens: readonly ProductMapScreen[];
   paths: readonly ProductMapPath[];
 }) {
-  const visibleScreens = useMemo(() => screens.slice(0, 500), [screens]);
-  const visiblePaths = useMemo(() => paths.slice(0, 500), [paths]);
+  const [showIntermediateScreens, setShowIntermediateScreens] = useState(false);
+  const presentation = useMemo(() => {
+    const boundedScreens = screens.slice(0, 500);
+    const boundedPaths: PresentedMapPath[] = paths.slice(0, 500);
+    return showIntermediateScreens
+      ? { screens: boundedScreens, paths: boundedPaths }
+      : compactMap(boundedScreens, boundedPaths, initialScreenId, initialPathId);
+  }, [screens, paths, showIntermediateScreens, initialScreenId, initialPathId]);
+  const visibleScreens = presentation.screens;
+  const visiblePaths = presentation.paths;
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
   const [dragged, setDragged] = useState<{ id: string; position: MapPoint }>();
   const suppressNodeClick = useRef(false);
@@ -177,10 +186,7 @@ export function InfiniteMapCanvas({
   const [focusScreenId, setFocusScreenId] = useState<string | undefined>(
     initialScreenId ?? selectedPath?.fromScreenId,
   );
-  const [selectedScreenId, setSingleScreenId] = useMapSelection(
-    initialScreenId ?? selectedPath?.fromScreenId,
-    onScreenChange,
-  );
+  const [selectedScreenId, setSingleScreenId] = useMapSelection(initialScreenId, onScreenChange);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [marquee, setMarquee] = useState<{ x: number; y: number; width: number; height: number }>();
   function setSelectedScreenId(id: string | undefined) {
@@ -640,6 +646,13 @@ export function InfiniteMapCanvas({
         screens={screens}
         paths={paths}
         visibleScreens={visibleScreens}
+        showIntermediateScreens={showIntermediateScreens}
+        setShowIntermediateScreens={(value) => {
+          setSelectedPathId(undefined);
+          setSelectedScreenId(undefined);
+          setShowIntermediateScreens(value);
+          setArrangedEdits(new Map());
+        }}
         showScreens={showScreens}
         setShowScreens={setShowScreens}
         screenSearch={screenSearch}
