@@ -1,9 +1,17 @@
-import { RunTestLink } from "./run-test-link";
 /** @jsxImportSource react */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
-import { Eye, ListTree, LoaderCircle, Play, Square } from "lucide-react";
+import {
+  ChevronLeft,
+  CircleX,
+  Eye,
+  ListTree,
+  LoaderCircle,
+  Play,
+  Square,
+  Wrench,
+} from "lucide-react";
 import type { CaptureReviewItem } from "@relay/protocol";
 import type { ProductRunReportOverview } from "../data/run-report-model";
 import type { RunProductService } from "../data/run-product-service";
@@ -93,6 +101,46 @@ export function SavedRunStory({
   }
   const captures = report.captureReview?.items ?? [];
   const pending = captures.filter((item) => item.status === "pending").length;
+  // Say which step broke, in words, and go straight to fixing it.
+  const failedIndex = steps.findIndex((step) => step.state === "failed");
+  const failedStep = failedIndex >= 0 ? steps[failedIndex] : undefined;
+  const failedAction = failedStep?.actions.find((action) => action.state === "failed");
+  const fixable = Boolean(testId && failedStep && stepTitles[failedStep.id]);
+  const failureCard = failedStep ? (
+    <div className="grid gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+      <p className="flex items-start gap-2 text-sm">
+        <CircleX className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
+        <span className="min-w-0">
+          <strong className="font-semibold">
+            Step {failedIndex + 1} failed: {failedStep.title}
+          </strong>
+          {failedAction ? (
+            <span className="block text-muted-foreground">
+              {failedAction.label} didn’t work
+              {failedAction.detail ? ` — ${failedAction.detail}` : "."}
+            </span>
+          ) : null}
+        </span>
+      </p>
+      {fixable ? (
+        <div className="flex flex-wrap gap-2 pl-6">
+          <Button
+            nativeButton={false}
+            size="sm"
+            render={
+              <Link
+                to="/tests/$testId"
+                params={{ testId: testId! }}
+                search={{ step: failedStep.id }}
+              />
+            }
+          >
+            <Wrench aria-hidden="true" /> Fix this step
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  ) : null;
   const review = async (
     item: CaptureReviewItem,
     action: "accept" | "report-issue" | "need-more-evidence",
@@ -122,15 +170,31 @@ export function SavedRunStory({
         : {})}
       {...(runService.reviewCapture ? { onReview: review } : {})}
       crumbs={
-        <>
-          <Link className="hover:text-foreground" to="/runs">
-            Runs
+        testId && test.data ? (
+          <Link
+            className="inline-flex items-center gap-1 hover:text-foreground"
+            to="/tests/$testId"
+            params={{ testId }}
+          >
+            <ChevronLeft className="size-4" aria-hidden="true" /> {test.data.name}
           </Link>
-          <RunTestLink testId={testId} />
-        </>
+        ) : (
+          <Link className="inline-flex items-center gap-1 hover:text-foreground" to="/runs">
+            <ChevronLeft className="size-4" aria-hidden="true" /> Runs
+          </Link>
+        )
       }
       {...(summary ? { summary } : {})}
-      {...(notice ? { notice } : {})}
+      {...(notice || failureCard
+        ? {
+            notice: (
+              <>
+                {failureCard}
+                {notice}
+              </>
+            ),
+          }
+        : {})}
       actions={
         <>
           {extraActions ??

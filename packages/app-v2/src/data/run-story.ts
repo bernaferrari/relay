@@ -57,8 +57,35 @@ export function describeTraceTitle(
   const stepShot = /^Screenshot · step:[^:]+:(.+)$/iu.exec(text);
   if (stepShot) return { kind: "screenshot", label: `Screenshot · ${stepShot[1]}` };
   if (/^Screenshot/iu.test(text)) return { kind: "screenshot", label: text };
-  const reach = /^(?:Reach|Wait for|Expect)\s+(.+)$/iu.exec(text);
-  if (reach) return { kind: "verify", label: `On ${reach[1]}` };
+  if (/^Transition executed$/iu.test(text)) return undefined;
+  const sleep = /^(?:Sleep|Wait)\s+(\d+)\s*ms$/iu.exec(text);
+  if (sleep) return { kind: "wait", label: `Wait ${formatDuration(Number(sleep[1]))}` };
+  const checkId = /^check identifier (.+?) (visible|gone)$/iu.exec(text);
+  if (checkId)
+    return {
+      kind: "check",
+      label: `Check ${humanizeIdentifier(checkId[1]!)} is ${checkId[2] === "gone" ? "gone" : "on screen"}`,
+    };
+  const checkText = /^check\s+(?:label |text )?["“](.+?)["”]\s+(visible|gone)$/iu.exec(text);
+  if (checkText)
+    return {
+      kind: "check",
+      label: `Check “${checkText[1]}” is ${checkText[2] === "gone" ? "gone" : "on screen"}`,
+    };
+  const reach = /^(?:Reach|Wait for|Expect|On)\s+(.+)$/iu.exec(text);
+  if (reach) {
+    const target = reach[1]!;
+    const id = /^identifier\s+(.+)$/iu.exec(target);
+    const labelled = /^(?:label|text)\s+["“](.+?)["”]$/iu.exec(target);
+    return {
+      kind: "verify",
+      label: id
+        ? `See ${humanizeIdentifier(id[1]!)}`
+        : labelled
+          ? `See “${labelled[1]}”`
+          : `On ${target}`,
+    };
+  }
   if (/^(?:Tap|Click|Press|Long press)\b/iu.test(text)) {
     const target = quoted(text);
     const verb = /^Long press/iu.test(text) ? "Long press" : "Tap";
