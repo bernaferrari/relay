@@ -1,5 +1,16 @@
+import { FOLD_FLAGS } from '@agent-device/command-registry/flag-groups';
 import type { ClipboardCommandOptions } from '@agent-device/contracts/client';
-import { DEVICE_ROTATIONS, parseDeviceRotation } from '@agent-device/contracts/device';
+import {
+  type FoldKeyframe,
+  MAX_FOLD_DURATION_MS,
+  MAX_FOLD_KEYFRAMES,
+  parseFoldInput,
+  parseFoldKeyframesJson,
+  DEVICE_ROTATIONS,
+  FOLD_POSES,
+  FOLD_POSE_USAGE,
+  parseDeviceRotation,
+} from '@agent-device/contracts/device';
 import { type BackMode, BACK_MODES } from '@agent-device/contracts/back-mode';
 import {
   TV_REMOTE_BUTTONS,
@@ -17,9 +28,20 @@ import {
   requiredDaemonString,
 } from '../cli-grammar/common.ts';
 import type { CliReader, DaemonWriter } from '../cli-grammar/types.ts';
-import { enumField, integerField, requiredField, stringField } from '../command-input.ts';
+import {
+  enumField,
+  integerField,
+  requiredField,
+  stringField,
+  jsonSchemaField,
+  readFieldInput,
+} from '../command-input.ts';
 import { compactRecord } from '../input-readers.ts';
-import { defineCommandFacet, defineCommandFamilyFromFacets } from '../family/types.ts';
+import {
+  defineCommandFacet,
+  defineCommandFamilyFromFacets,
+  defineParameterlessCommandFacet,
+} from '../family/types.ts';
 import { defineFieldCommandMetadata } from '../field-command-contract.ts';
 import {
   postActionObservationCliFlags,
@@ -31,6 +53,7 @@ const APPSTATE_COMMAND_NAME = 'appstate';
 const BACK_COMMAND_NAME = 'back';
 const HOME_COMMAND_NAME = 'home';
 const ORIENTATION_COMMAND_NAME = 'orientation';
+const FOLD_COMMAND_NAME = 'fold';
 const APP_SWITCHER_COMMAND_NAME = 'app-switcher';
 const ACTION_BUTTON_COMMAND_NAME = 'action-button';
 const KEYBOARD_COMMAND_NAME = 'keyboard';
@@ -48,6 +71,8 @@ const backCommandDescription =
 const homeCommandDescription =
   'Send the selected device to its home screen. This leaves the app session open but moves the foreground away from the app.';
 const orientationCommandDescription = 'Set device orientation on iOS and Android';
+const foldCommandDescription =
+  'Fold or unfold a foldable iPhone simulator (iPhone Duo) into the closed, half-open, or open pose, or follow timestamped angle keyframes, by sending a simulator HID hinge event, then read the hinge angle back from CoreDevice to confirm it. A pose change moves the app to a different panel with a different point size, so every ref and coordinate from before it is stale: re-snapshot after this command. Taps, long presses, and scrolling target the app window on its current panel in closed, half-open, and open poses. Simulator-only; requires the iOS simulator SDK; Device Hub and host Accessibility permission are not required. A simulator scoped to a non-default simulator set is refused with UNSUPPORTED_OPERATION and reason unsupported-device-scope; run fold against a simulator in the default set.';
 const appSwitcherCommandDescription =
   'Open the device app switcher to inspect or change foreground apps. This changes the visible system UI and may move focus away from the current app.';
 const keyboardCommandDescription =
@@ -59,22 +84,10 @@ const actionButtonCommandDescription =
 const tvRemoteCommandDescription =
   'Press or long-press a TV remote or D-pad button on Android TV, tvOS, or Vega OS. Choose the button and optional hold duration through the input fields. The aliases ok, center, and enter all map to select.';
 
-const appStateCommandMetadata = defineFieldCommandMetadata(
-  APPSTATE_COMMAND_NAME,
-  appStateCommandDescription,
-  {},
-);
-
 const backCommandMetadata = defineFieldCommandMetadata(BACK_COMMAND_NAME, backCommandDescription, {
   mode: enumField(BACK_MODES),
   ...postActionObservationFields(BACK_COMMAND_NAME),
 });
-
-const homeCommandMetadata = defineFieldCommandMetadata(
-  HOME_COMMAND_NAME,
-  homeCommandDescription,
-  {},
-);
 
 const orientationCommandMetadata = defineFieldCommandMetadata(
   ORIENTATION_COMMAND_NAME,
@@ -84,17 +97,48 @@ const orientationCommandMetadata = defineFieldCommandMetadata(
   },
 );
 
-const appSwitcherCommandMetadata = defineFieldCommandMetadata(
-  APP_SWITCHER_COMMAND_NAME,
-  appSwitcherCommandDescription,
-  {},
+const foldFields = {
+  pose: enumField(FOLD_POSES, 'Instant preset; mutually exclusive with keyframes.'),
+  keyframes: jsonSchemaField<readonly FoldKeyframe[]>({
+    type: 'array',
+    minItems: 2,
+    maxItems: MAX_FOLD_KEYFRAMES,
+    description:
+      'Piecewise-linear hinge motion. Start at 0ms; strictly increasing timestamps, up to 60000ms. Repeated angles create holds. Mutually exclusive with pose.',
+    items: {
+      type: 'object',
+      required: ['atMs', 'angle'],
+      additionalProperties: false,
+      properties: {
+        atMs: { type: 'integer', minimum: 0, maximum: MAX_FOLD_DURATION_MS },
+        angle: { type: 'number', minimum: 0, maximum: 180 },
+      },
+    },
+  }),
+};
+const foldFieldMetadata = defineFieldCommandMetadata(
+  FOLD_COMMAND_NAME,
+  foldCommandDescription,
+  foldFields,
+  {
+    readInput: (input) => {
+      const fields = readFieldInput(input, foldFields);
+      const { pose, keyframes, ...common } = fields;
+      return { ...common, ...parseFoldInput({ pose, keyframes }) };
+    },
+  },
 );
 
-const actionButtonCommandMetadata = defineFieldCommandMetadata(
-  ACTION_BUTTON_COMMAND_NAME,
-  actionButtonCommandDescription,
-  {},
-);
+const foldCommandMetadata = {
+  ...foldFieldMetadata,
+  inputSchema: {
+    ...foldFieldMetadata.inputSchema,
+    oneOf: [
+      { required: ['pose'], not: { required: ['keyframes'] } },
+      { required: ['keyframes'], not: { required: ['pose'] } },
+    ],
+  },
+};
 
 const keyboardCommandMetadata = defineFieldCommandMetadata(
   KEYBOARD_COMMAND_NAME,
@@ -129,23 +173,21 @@ const tvRemoteCommandMetadata = defineFieldCommandMetadata(
   },
 );
 
-const appStateCliSchema = {} as const satisfies CommandSchemaOverride;
-
 const backCliSchema = {
   usageOverride: 'back [--in-app|--system] [--settle]',
   usageFlags: [],
   allowedFlags: ['backMode', ...postActionObservationCliFlags(BACK_COMMAND_NAME)],
 } as const satisfies CommandSchemaOverride;
 
-const homeCliSchema = {} as const satisfies CommandSchemaOverride;
-
-const appSwitcherCliSchema = {} as const satisfies CommandSchemaOverride;
-
-const actionButtonCliSchema = {} as const satisfies CommandSchemaOverride;
-
 const orientationCliSchema = {
   usageOverride: 'orientation <portrait|portrait-upside-down|landscape-left|landscape-right>',
   positionalArgs: ['orientation'],
+} as const satisfies CommandSchemaOverride;
+
+const foldCliSchema = {
+  usageOverride: `fold [${FOLD_POSE_USAGE}]`,
+  positionalArgs: ['pose?'],
+  allowedFlags: FOLD_FLAGS,
 } as const satisfies CommandSchemaOverride;
 
 const keyboardCliSchema = {
@@ -167,12 +209,6 @@ const tvRemoteCliSchema = {
   allowedFlags: ['durationMs'],
 } as const satisfies CommandSchemaOverride;
 
-export const appStateCliReader: CliReader = (_positionals, flags) => commonInputFromFlags(flags);
-export const homeCliReader: CliReader = (_positionals, flags) => commonInputFromFlags(flags);
-export const appSwitcherCliReader: CliReader = (_positionals, flags) => commonInputFromFlags(flags);
-export const actionButtonCliReader: CliReader = (_positionals, flags) =>
-  commonInputFromFlags(flags);
-
 export const backCliReader: CliReader = (_positionals, flags) => ({
   ...commonInputFromFlags(flags),
   mode: flags.backMode,
@@ -181,6 +217,14 @@ export const backCliReader: CliReader = (_positionals, flags) => ({
 export const orientationCliReader: CliReader = (positionals, flags) => ({
   ...commonInputFromFlags(flags),
   orientation: parseDeviceRotation(positionals[0]),
+});
+
+export const foldCliReader: CliReader = (positionals, flags) => ({
+  ...commonInputFromFlags(flags),
+  ...parseFoldInput({
+    pose: positionals[0],
+    keyframes: flags.keyframes === undefined ? undefined : parseFoldKeyframesJson(flags.keyframes),
+  }),
 });
 
 export const keyboardCliReader: CliReader = (positionals, flags) => ({
@@ -198,23 +242,23 @@ export const tvRemoteCliReader: CliReader = (positionals, flags) => ({
   ...readTvRemoteInput(positionals, flags.durationMs),
 });
 
-export const appStateDaemonWriter: DaemonWriter = direct(APPSTATE_COMMAND_NAME);
-
 export const backDaemonWriter: DaemonWriter = (input) =>
   request(BACK_COMMAND_NAME, [], {
     ...input,
     backMode: readBackMode(input.mode),
   });
 
-export const homeDaemonWriter: DaemonWriter = direct(HOME_COMMAND_NAME);
-
 export const orientationDaemonWriter: DaemonWriter = direct(ORIENTATION_COMMAND_NAME, (input) => [
   requiredDaemonString(input.orientation, 'orientation requires orientation'),
 ]);
 
-export const appSwitcherDaemonWriter: DaemonWriter = direct(APP_SWITCHER_COMMAND_NAME);
-
-export const actionButtonDaemonWriter: DaemonWriter = direct(ACTION_BUTTON_COMMAND_NAME);
+export const foldDaemonWriter: DaemonWriter = (input) => {
+  const fold = parseFoldInput(input);
+  return request(FOLD_COMMAND_NAME, fold.pose ? [fold.pose] : [], {
+    ...input,
+    keyframes: fold.keyframes ? JSON.stringify(fold.keyframes) : undefined,
+  });
+};
 
 export const keyboardDaemonWriter: DaemonWriter = direct(KEYBOARD_COMMAND_NAME, (input) =>
   optionalString(input.action),
@@ -228,16 +272,13 @@ export const tvRemoteDaemonWriter: DaemonWriter = direct(TV_REMOTE_COMMAND_NAME,
   requiredDaemonString(input.button, 'tv-remote requires button'),
 ]);
 
-const appStateCommandFacet = defineCommandFacet({
+const appStateCommandFacet = defineParameterlessCommandFacet({
   name: APPSTATE_COMMAND_NAME,
+  description: appStateCommandDescription,
   text: {
     summary: 'Show the foreground app and activity',
   },
-  metadata: appStateCommandMetadata,
   run: (client, input) => client.command.appState(input),
-  cliSchema: appStateCliSchema,
-  cliReader: appStateCliReader,
-  daemonWriter: appStateDaemonWriter,
   cliOutputFormatter: systemCliOutputFormatters.appstate,
 });
 
@@ -254,16 +295,13 @@ const backCommandFacet = defineCommandFacet({
   cliOutputFormatter: systemCliOutputFormatters.back,
 });
 
-const homeCommandFacet = defineCommandFacet({
+const homeCommandFacet = defineParameterlessCommandFacet({
   name: HOME_COMMAND_NAME,
+  description: homeCommandDescription,
   text: {
     summary: 'Go to the device home screen',
   },
-  metadata: homeCommandMetadata,
   run: (client, input) => client.command.home(input),
-  cliSchema: homeCliSchema,
-  cliReader: homeCliReader,
-  daemonWriter: homeDaemonWriter,
   cliOutputFormatter: systemCliOutputFormatters.home,
 });
 
@@ -280,16 +318,28 @@ const orientationCommandFacet = defineCommandFacet({
   cliOutputFormatter: systemCliOutputFormatters.orientation,
 });
 
-const appSwitcherCommandFacet = defineCommandFacet({
+const foldCommandFacet = defineCommandFacet({
+  name: FOLD_COMMAND_NAME,
+  text: {
+    summary: 'Fold or unfold a foldable iPhone simulator',
+    cliDetail:
+      'iPhone Duo simulators only. Sends a simulator HID hinge event and confirms the hinge angle through CoreDevice; refs and coordinates do not survive a pose change.',
+  },
+  metadata: foldCommandMetadata,
+  run: (client, input) => client.command.fold(input),
+  cliSchema: foldCliSchema,
+  cliReader: foldCliReader,
+  daemonWriter: foldDaemonWriter,
+  cliOutputFormatter: systemCliOutputFormatters.fold,
+});
+
+const appSwitcherCommandFacet = defineParameterlessCommandFacet({
   name: APP_SWITCHER_COMMAND_NAME,
+  description: appSwitcherCommandDescription,
   text: {
     summary: 'Open the device app switcher',
   },
-  metadata: appSwitcherCommandMetadata,
   run: (client, input) => client.command.appSwitcher(input),
-  cliSchema: appSwitcherCliSchema,
-  cliReader: appSwitcherCliReader,
-  daemonWriter: appSwitcherDaemonWriter,
   cliOutputFormatter: systemCliOutputFormatters['app-switcher'],
 });
 
@@ -319,18 +369,15 @@ const clipboardCommandFacet = defineCommandFacet({
   cliOutputFormatter: systemCliOutputFormatters.clipboard,
 });
 
-const actionButtonCommandFacet = defineCommandFacet({
+const actionButtonCommandFacet = defineParameterlessCommandFacet({
   name: ACTION_BUTTON_COMMAND_NAME,
+  description: actionButtonCommandDescription,
   text: {
     summary: 'Press the iPhone or iPad Action Button',
     cliDetail:
       'iPhone and iPad only. The runner asks the device for the button and reports unsupported when that model has none.',
   },
-  metadata: actionButtonCommandMetadata,
   run: (client, input) => client.command.actionButton(input),
-  cliSchema: actionButtonCliSchema,
-  cliReader: actionButtonCliReader,
-  daemonWriter: actionButtonDaemonWriter,
   cliOutputFormatter: systemCliOutputFormatters['action-button'],
 });
 
@@ -355,6 +402,7 @@ export const systemCommandFamily = defineCommandFamilyFromFacets({
     backCommandFacet,
     homeCommandFacet,
     orientationCommandFacet,
+    foldCommandFacet,
     appSwitcherCommandFacet,
     actionButtonCommandFacet,
     keyboardCommandFacet,

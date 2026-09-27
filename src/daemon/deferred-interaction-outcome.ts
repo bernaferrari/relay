@@ -13,7 +13,6 @@ import {
   isNavigationSensitiveAction,
   type SnapshotFreshnessMode,
 } from '@agent-device/capture-kit/snapshot-freshness';
-import { withGestureNoEffectWarning } from './gesture-no-effect.ts';
 import {
   areInteractionSurfaceSignaturesStable,
   buildInteractionSurfaceSignature,
@@ -27,9 +26,13 @@ import {
   summarizeDiscriminatingSurfaceDivergence,
   markPendingInteractionOutcome,
   retryPendingInteractionOutcome,
+  snapshotSurfaceComparisonKey,
   type InteractionRetryTap,
 } from './interaction-outcome-policy.ts';
-import { runPostGestureStabilityLoop } from '@agent-device/capture-kit/post-gesture-stability';
+import {
+  runPostGestureStabilityLoop,
+  type PostGestureStabilityOutcome,
+} from '@agent-device/capture-kit/post-gesture-stability';
 import type { SessionState } from './session-state.ts';
 
 /**
@@ -124,7 +127,7 @@ function markPostGestureStabilization(
           baselineSignature,
           // Recorded so the loop can tell a comparable quiet capture from one
           // served by a different backend, which is not comparable at all.
-          baselineBackend: snapshotComparisonKey(session.snapshot),
+          baselineBackend: snapshotSurfaceComparisonKey(session.snapshot),
         }
       : {}),
   };
@@ -261,10 +264,7 @@ async function captureInteractionOutcomeAwareSnapshot(
     });
   }
 
-  return {
-    snapshot: latest.snapshot,
-    ...withGestureNoEffectWarning(latest.annotations, stabilized.gestureNoEffect),
-  };
+  return resolvedPostGestureCapture(stabilized);
 }
 
 async function waitForDelayedInteractionSurfaceChange(
@@ -293,11 +293,7 @@ async function capturePostGestureAwareSnapshot(
     capture: async () => await capturePostActionSnapshotAttempt(params),
     readSnapshot: (attempt) => attempt.snapshot,
   });
-  const latest = stabilized.value;
-  return {
-    snapshot: latest.snapshot,
-    ...withGestureNoEffectWarning(latest.annotations, stabilized.gestureNoEffect),
-  };
+  return resolvedPostGestureCapture(stabilized);
 }
 
 async function capturePostActionSnapshotAttempt(
@@ -309,12 +305,6 @@ async function capturePostActionSnapshotAttempt(
   }
   return await params.capture();
 }
-
-export type PostGestureStabilizedResult<T> = {
-  value: T;
-  /** See `PostGestureStabilityOutcome` in post-gesture-stability.ts (#1600/#1601). */
-  gestureNoEffect?: { action: string; positionals: string[] };
-};
 
 /**
  * Session-aware adapter over the pure stability loop
@@ -328,7 +318,7 @@ export async function capturePostGestureStabilizedResult<T>(params: {
   capture: () => Promise<T>;
   readSnapshot: (result: T) => SnapshotState;
   initial?: T;
-}): Promise<PostGestureStabilizedResult<T>> {
+}): Promise<PostGestureStabilityOutcome<T>> {
   const { session, capture, readSnapshot } = params;
   const pending = session?.postGestureStabilization;
   if (!session || !supportsPostGestureStabilization(session.device) || !pending) {
@@ -350,7 +340,7 @@ export async function capturePostGestureStabilizedResult<T>(params: {
         const snapshot = readSnapshot(value);
         return {
           signature: buildInteractionSurfaceSignature(snapshot.nodes),
-          backend: snapshotComparisonKey(snapshot),
+          backend: snapshotSurfaceComparisonKey(snapshot),
         };
       },
       signaturesStable: areInteractionSurfaceSignaturesStable,
@@ -363,14 +353,13 @@ export async function capturePostGestureStabilizedResult<T>(params: {
   return outcome;
 }
 
-/**
- * What makes two captures comparable at all. The iOS comparison key already carries the whole
- * presentation identity, including the surface the capture described — an in-place system surface (a
- * web sign-in sheet) is captured under its own host lineage (#2438) — so a sheet appearing or
- * dismissing mid-poll reads as incomparable rather than as a stable surface.
- */
-function snapshotComparisonKey(snapshot: SnapshotState | undefined): string | undefined {
-  return snapshot?.comparisonKey ?? snapshot?.snapshotQuality?.backend;
+/** The stabilized attempt as a capture result: the tree carries the gesture's outcome as its own fact. */
+function resolvedPostGestureCapture(
+  stabilized: PostGestureStabilityOutcome<DeferredOutcomeSnapshotAttempt>,
+): DeferredOutcomeCaptureResult {
+  const { snapshot, annotations } = stabilized.value;
+  if (stabilized.postGestureOutcome) snapshot.postGestureOutcome = stabilized.postGestureOutcome;
+  return { snapshot, ...annotations };
 }
 
 function isPostGestureStabilizingAction(

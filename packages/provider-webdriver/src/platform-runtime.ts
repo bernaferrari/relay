@@ -22,12 +22,11 @@ import {
   bindProviderScrollInteractor,
   scrollRuntimeOperationFacts,
 } from '@agent-device/contracts/scroll-runtime';
-import { homeRuntimeOperationFacts } from '@agent-device/contracts/home-runtime';
 import { bindAdmittedProviderInteractorOperations } from '@agent-device/contracts/interactor-operation-catalog';
 import { appEventRuntimeOperationFacts } from '@agent-device/contracts/app-event-runtime';
 import { alertRuntimeOperationFacts } from '@agent-device/contracts/alert-runtime';
 import { settingsRuntimeOperationFacts } from '@agent-device/contracts/settings-runtime';
-import { appSwitcherRuntimeOperationFacts } from '@agent-device/contracts/app-switcher-runtime';
+import { systemButtonRuntimeOperationFacts } from '@agent-device/contracts/system-button-runtime';
 import { clipboardRuntimeOperationFacts } from '@agent-device/contracts/clipboard-runtime';
 import { orientationRuntimeOperationFacts } from '@agent-device/contracts/orientation-runtime';
 import { tvRemoteRuntimeOperationFacts } from '@agent-device/contracts/tv-remote-runtime';
@@ -231,26 +230,29 @@ const appSwitcherUnavailable = Object.freeze({
 } as const);
 
 /**
- * Unlike its `appSwitcher` neighbour this is never a per-session capability question: no WebDriver
- * `mobile:` script presses an iPhone Action Button, so the interactor refuses unconditionally and
- * the fact refuses unconditionally to match. There is deliberately no capability key declared for
- * it, which would advertise a button this provider can never press.
+ * Unlike `home` and `appSwitcher` this is never a per-session capability question: no WebDriver
+ * `mobile:` script presses hardware such as the iPhone Action Button, so the fact refuses
+ * unconditionally. There is deliberately no capability key for it, which would advertise a button
+ * this provider can never press.
  */
-const actionButtonUnavailable = Object.freeze({
+const systemButtonUnavailable = Object.freeze({
   available: false,
   reason: 'unsupported-provider-mode',
-  hint: 'action-button presses iPhone Action Button hardware, which no WebDriver backend exposes.',
+  hint: 'No WebDriver backend presses this system button.',
+} as const);
+
+/** No WebDriver `mobile:` script poses a foldable hinge; the refusal is unconditional like the Action Button's. */
+const foldUnavailable = Object.freeze({
+  available: false,
+  reason: 'unsupported-provider-mode',
+  hint: 'fold runs a HID helper through simctl spawn inside a foldable iPhone simulator on the daemon host; a WebDriver backend has no such simulator.',
 } as const);
 
 /**
- * The WebDriver interactor's own `setSetting` always throws unsupported (its capability map
- * declares `settings: unsupported`), so this cell is unavailable unconditionally rather than
- * gated by interactor reachability — the same shape `tvRemote` takes.
- */
-/**
- * Same shape as `settings`: the WebDriver interactor's own alert legs always throw unsupported
- * (its capability map declares `alert: unsupported`), so this cell is unavailable unconditionally
- * rather than gated by interactor reachability.
+ * The WebDriver interactor supplies no alert members at all: ADR 0019 keeps a stub that throws
+ * `unsupported` out of an interactor, and the provider's capability map declares
+ * `alert: unsupported`, so this cell is unavailable unconditionally rather than gated by
+ * interactor reachability.
  */
 const alertUnavailable = Object.freeze({
   available: false,
@@ -258,6 +260,11 @@ const alertUnavailable = Object.freeze({
   hint: 'WebDriver provider runtimes do not expose native alert handling.',
 } as const);
 
+/**
+ * The WebDriver interactor's own `setSetting` always throws unsupported (its capability map
+ * declares `settings: unsupported`), so this cell is unavailable unconditionally rather than
+ * gated by interactor reachability — the same shape `tvRemote` takes.
+ */
 const settingsUnavailable = Object.freeze({
   available: false,
   reason: 'unsupported-provider-mode',
@@ -527,15 +534,14 @@ function webDriverFacts(
       touch: inactiveSession,
       elementText: inactiveSession,
       back: inactiveSession,
-      home: inactiveSession,
       orientation: inactiveSession,
       tvRemote: inactiveSession,
       keyboard: inactiveSession,
       clipboard: inactiveSession,
-      appSwitcher: inactiveSession,
-      actionButton: actionButtonUnavailable,
+      systemButton: inactiveSession,
+      fold: foldUnavailable,
       triggerAppEvent: inactiveSession,
-      setSetting: inactiveSession,
+      settings: inactiveSession,
       readAlert: inactiveSession,
       awaitAlert: inactiveSession,
       acceptAlert: inactiveSession,
@@ -571,15 +577,14 @@ function webDriverFacts(
     touch: typeUnavailable,
     elementText: elementTextUnavailable,
     back: backUnavailable,
-    home: homeUnavailable,
     orientation: orientationUnavailable,
     tvRemote: tvRemoteUnavailable,
     keyboard: keyboardUnavailable,
     clipboard: clipboardUnavailable,
-    appSwitcher: appSwitcherUnavailable,
-    actionButton: actionButtonUnavailable,
+    systemButton: systemButtonUnavailable,
+    fold: foldUnavailable,
     triggerAppEvent: appEventUnavailable,
-    setSetting: settingsUnavailable,
+    settings: settingsUnavailable,
     readAlert: alertUnavailable,
     awaitAlert: alertUnavailable,
     acceptAlert: alertUnavailable,
@@ -651,7 +656,6 @@ function webDriverFacts(
       // `back`/`home`/`orientation` ride the same reachable interactor; `tvRemote` always throws
       // unsupported in this interactor regardless of reachability (no capability declares it).
       ...backRuntimeOperationFacts({ back: declared('back', backUnavailable) }),
-      ...homeRuntimeOperationFacts({ home: declared('home', homeUnavailable) }),
       ...orientationRuntimeOperationFacts({
         orientation: declared('orientation', orientationUnavailable),
       }),
@@ -669,16 +673,21 @@ function webDriverFacts(
         read: declared('clipboard.read', clipboardUnavailable),
         write: declared('clipboard.write', clipboardUnavailable),
       }),
-      ...appSwitcherRuntimeOperationFacts({
+      ...systemButtonRuntimeOperationFacts({
+        unsupported: systemButtonUnavailable,
+        home: declared('home', homeUnavailable),
         appSwitcher: declared('appSwitcher', appSwitcherUnavailable),
       }),
-      actionButton: actionButtonUnavailable,
+      setFoldPose: foldUnavailable,
       // The deep link opens through the same reachable interactor `open` every lifecycle command
       // drives on this provider.
       ...appEventRuntimeOperationFacts({
         triggerAppEvent: interactorCell(reachable, appEventUnavailable),
       }),
-      ...settingsRuntimeOperationFacts({ setSetting: settingsUnavailable }),
+      ...settingsRuntimeOperationFacts({
+        setSetting: settingsUnavailable,
+        readSetting: settingsUnavailable,
+      }),
       // R59 cell delta, deliberate: the retired `supportsAlertSurface` closure ADMITTED `alert` on
       // a provider-owned physical iOS device (it keyed on `appleOs === 'ios'` alone), and the
       // handler then drove the LOCAL XCTest runner against a device living in someone else's

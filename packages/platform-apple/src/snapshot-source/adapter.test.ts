@@ -10,6 +10,7 @@ import {
 } from '@agent-device/capture-kit/ios-snapshot-planning';
 import { createSnapshotSourceHost } from './host.ts';
 import { createSimulatorSnapshotSource } from './adapter.ts';
+import { simulatorAddressFor } from '../core/simctl.ts';
 import { DEPTH_HINT_PROBE_BACK_AFTER_USES } from './depth-hints.ts';
 import {
   encodeSnapshotBridgeFrame,
@@ -47,11 +48,20 @@ test('the Simulator AX source returns raw acquisition facts and discloses unsupp
 
   try {
     const result = await source.acquire({
-      target: { ...sourceTarget, targetId: 'target-1' },
+      target: {
+        ...targetForTest('/tmp/scoped-set'),
+        generation: 'generation-1',
+        targetId: 'target-1',
+      },
       hint,
     });
+    assert.deepEqual(
+      fixture.startedTargets.map((started) => started.simulatorSetPath),
+      ['/tmp/scoped-set'],
+    );
     assert.equal(fixture.builds, 1);
-    assert.equal(fixture.runs, 6);
+    // Four identity probes and one clang build: the identity read execs one Xcode-owned binary.
+    assert.equal(fixture.runs, 5);
     assert.equal(result.stage, 'acquired');
     assert.equal(result.acquisition.producer, 'simulator-ax-bridge');
     assert.equal(result.acquisition.intent, 'full');
@@ -65,9 +75,27 @@ test('the Simulator AX source returns raw acquisition facts and discloses unsupp
       targetId: 'target-1',
       generation: 'generation-1',
     });
+    // With the viewport reported the reader owns `hittable` and stamps it on every node, so hittability
+    // is not disclosed as unavailable; only the interactive-query facet it cannot honour is.
     assert.deepEqual(result.acquisition.residue, [
+      { kind: 'unavailable-fact', fact: 'interactive-query' },
+    ]);
+    assert.equal(result.acquisition.nodes[0]?.hittable, false, 'the stamped root is not hittable');
+
+    // The complement (#2199: the residue owner is the fact owner): strip the viewport and the reader
+    // publishes no `hittable` claim and discloses hittability as unavailable again.
+    fixture.omitViewport = true;
+    const viewportless = await source.acquire({
+      target: { ...sourceTarget, targetId: 'target-1' },
+      hint,
+    });
+    fixture.omitViewport = false;
+    assert.equal(viewportless.stage, 'acquired');
+    assert.equal(viewportless.acquisition.nodes[0]?.hittable, undefined);
+    assert.deepEqual(viewportless.acquisition.residue, [
       { kind: 'unavailable-fact', fact: 'hittability' },
       { kind: 'unavailable-fact', fact: 'interactive-query' },
+      { kind: 'missing-viewport', reason: 'not-provided' },
     ]);
 
     const regularDepthOne = await source.acquire({
@@ -92,7 +120,7 @@ test('the Simulator AX source returns raw acquisition facts and discloses unsupp
     });
     assert.equal(outcome.stage, 'failed');
     if (outcome.stage === 'failed') assert.equal(outcome.failure.kind, 'stale-target');
-    assert.equal(fixture.runs, 6);
+    assert.equal(fixture.runs, 5);
   } finally {
     await source.close();
     await rm(root, { recursive: true, force: true });
@@ -442,13 +470,23 @@ type AdapterFixture = {
   remoteContent: boolean;
   /** Whether the fake guest's tree holds a window reporting the app box quarter-turned (#2612). */
   turnedWindow: boolean;
+  /** Whether the fake guest's root omits its frame, leaving the capture without a viewport. */
+  omitViewport: boolean;
   omitRecovery: boolean;
   diagnostics: Record<string, unknown>[];
+  startedTargets: Array<Parameters<SnapshotSourceHost['start']>[0]>;
 };
 
-function targetForTest() {
+function targetForTest(simulatorSetPath?: string) {
   return {
-    udid: 'simulator-1',
+    simulator: simulatorAddressFor({
+      platform: 'apple',
+      id: 'simulator-1',
+      name: 'iPhone 17',
+      kind: 'simulator',
+      target: 'mobile',
+      ...(simulatorSetPath ? { simulatorSetPath } : {}),
+    }),
     runtime: 'iOS 26.2',
     pid: 321,
   };
@@ -468,8 +506,10 @@ function createAdapterHost(buildDelayMs = 0): AdapterFixture {
     malformedTree: false,
     remoteContent: false,
     turnedWindow: false,
+    omitViewport: false,
     omitRecovery: false,
     diagnostics: [],
+    startedTargets: [],
   };
   const host: SnapshotSourceHost = {
     ...realHost,
@@ -498,7 +538,10 @@ function createAdapterHost(buildDelayMs = 0): AdapterFixture {
         exitCode: 0,
       };
     },
-    start: () => new AdapterProcess(),
+    start: (target) => {
+      fixture.startedTargets.push(target);
+      return new AdapterProcess();
+    },
     connect: async () => new AdapterSocket(fixture),
     readTargetProcessStartTime: async () => 'target-start',
   };
@@ -539,6 +582,11 @@ class AdapterSocket extends EventEmitter implements SnapshotSourceSocket {
   constructor(fixture: AdapterFixture) {
     super();
     this.fixture = fixture;
+  }
+
+  /** The guest root's frame, or undefined when the fixture reports a viewportless tree. */
+  private rootFrame(): Record<string, number> | undefined {
+    return this.fixture.omitViewport ? undefined : { X: 0, Y: 0, Width: 390, Height: 844 };
   }
 
   write(frame: Buffer): boolean {
@@ -609,7 +657,7 @@ class AdapterSocket extends EventEmitter implements SnapshotSourceSocket {
               ? null
               : {
                   XC_kAXXCAttributeElementType: 'Application',
-                  XC_kAXXCAttributeFrame: { X: 0, Y: 0, Width: 390, Height: 844 },
+                  XC_kAXXCAttributeFrame: this.rootFrame(),
                   XC_kAXXCAttributeChildren:
                     request.maxDepth === 1
                       ? [{ XC_kAXXCAttributeElementType: 'Button', XC_kAXXCAttributeChildren: [] }]

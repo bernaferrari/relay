@@ -8,10 +8,9 @@ import type { DaemonRequest } from './daemon-request.ts';
 import type { SessionState } from './session-state.ts';
 import { resolveBoundViewportRuntime } from './viewport-runtime.ts';
 import { resolveBoundBackRuntime } from './back-runtime.ts';
-import { resolveBoundHomeRuntime } from './home-runtime.ts';
-import { resolveBoundActionButtonRuntime } from './action-button-runtime.ts';
-import { resolveBoundAppSwitcherRuntime } from './app-switcher-runtime.ts';
+import { isSystemButtonCommand, resolveBoundSystemButtonRuntime } from './system-button-runtime.ts';
 import { resolveBoundOrientationRuntime } from './orientation-runtime.ts';
+import { resolveBoundFoldRuntime } from './fold-runtime.ts';
 import { resolveBoundTvRemoteRuntime } from './tv-remote-runtime.ts';
 import { errorResponse } from '@agent-device/kernel/contracts';
 
@@ -34,6 +33,13 @@ export async function resolveGenericRuntimeExecution(
   }> &
     ScreenshotRuntimeBindings,
 ): Promise<ResolvedGenericExecution> {
+  if (isSystemButtonCommand(params.req.command)) {
+    return await resolveBoundSystemButtonRuntime(params.req.command, {
+      device: params.session.device,
+      inspectFacts: params.inspectFacts,
+      bindDevice: params.bindDevice,
+    });
+  }
   switch (params.req.command) {
     case 'screenshot':
       return await resolveScreenshotGenericExecution(params);
@@ -49,6 +55,11 @@ export async function resolveGenericRuntimeExecution(
         device: params.session.device,
         positionals: params.req.positionals ?? [],
         context: params.context,
+        // The scroll's own observation is decided here rather than in its execution closure: this is
+        // the last moment the session's stored tree is still the newest observation, before the
+        // dispatcher's ADR 0014 side-effect seam.
+        session: params.session,
+        flags: params.req.flags,
         inspectFacts: params.inspectFacts,
         bindDevice: params.bindDevice,
       });
@@ -65,26 +76,16 @@ export async function resolveGenericRuntimeExecution(
         inspectFacts: params.inspectFacts,
         bindDevice: params.bindDevice,
       });
-    case 'home':
-      return await resolveBoundHomeRuntime({
-        device: params.session.device,
-        inspectFacts: params.inspectFacts,
-        bindDevice: params.bindDevice,
-      });
-    case 'app-switcher':
-      return await resolveBoundAppSwitcherRuntime({
-        device: params.session.device,
-        inspectFacts: params.inspectFacts,
-        bindDevice: params.bindDevice,
-      });
-    case 'action-button':
-      return await resolveBoundActionButtonRuntime({
-        device: params.session.device,
-        inspectFacts: params.inspectFacts,
-        bindDevice: params.bindDevice,
-      });
     case 'orientation':
       return await resolveBoundOrientationRuntime({
+        device: params.session.device,
+        positionals: params.req.positionals ?? [],
+        inspectFacts: params.inspectFacts,
+        bindDevice: params.bindDevice,
+      });
+    case 'fold':
+      return await resolveBoundFoldRuntime({
+        keyframes: params.req.flags?.keyframes,
         device: params.session.device,
         positionals: params.req.positionals ?? [],
         inspectFacts: params.inspectFacts,

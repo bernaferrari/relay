@@ -4,16 +4,16 @@ import { execFailureDetails } from '@agent-device/host-kit/command';
 import type { AppsFilter } from '@agent-device/contracts/device';
 import type { IosAppInfo, IosDeviceAppProcesses } from './app-info.ts';
 import {
-  installCoreDeviceApp,
   listCoreDeviceApps,
   resolveCoreDeviceAppProcesses,
   terminateCoreDeviceApp,
-  uninstallCoreDeviceApp,
 } from './physical-device-apps.ts';
 import {
   ensureCoreDeviceReady,
   launchCoreDeviceApp,
+  readIosDeviceReadiness,
   resolveCoreDeviceTunnelIp,
+  type IosDeviceReadiness,
 } from './physical-device-coredevice.ts';
 import { copyCoreDeviceRunnerFile } from './physical-device-files.ts';
 import {
@@ -40,11 +40,8 @@ type IosPhysicalDeviceLaunchOptions = {
 };
 
 export type IosPhysicalDeviceControl = IosPhysicalDeviceRunnerControl & {
-  assertAppInstallationSupported(device: DeviceInfo): void;
   ensureReady(device: DeviceInfo, signal?: AbortSignal): Promise<void>;
   listApps(device: DeviceInfo, filter: AppsFilter): Promise<IosAppInfo[]>;
-  installApp(device: DeviceInfo, installablePath: string, signal?: AbortSignal): Promise<void>;
-  uninstallApp(device: DeviceInfo, bundleId: string, signal?: AbortSignal): Promise<void>;
   launchApp(
     device: DeviceInfo,
     bundleId: string,
@@ -75,11 +72,8 @@ export type IosPhysicalDeviceControl = IosPhysicalDeviceRunnerControl & {
 const CONTROLS: Record<IosPhysicalDeviceBackend, IosPhysicalDeviceControl> = {
   coredevice: {
     backend: 'coredevice',
-    assertAppInstallationSupported: () => {},
     ensureReady: ensureCoreDeviceReady,
     listApps: listCoreDeviceApps,
-    installApp: installCoreDeviceApp,
-    uninstallApp: uninstallCoreDeviceApp,
     launchApp: launchCoreDeviceApp,
     terminateApp: async (device, bundleId) => await terminateCoreDeviceApp(device, bundleId),
     resolveAppProcesses: resolveCoreDeviceAppProcesses,
@@ -88,41 +82,24 @@ const CONTROLS: Record<IosPhysicalDeviceBackend, IosPhysicalDeviceControl> = {
     resolveTunnel: async (device, timeoutBudgetMs) => ({
       tunnelIp: await resolveCoreDeviceTunnelIp(device, timeoutBudgetMs),
     }),
+    readDeviceReadiness: readIosDeviceReadiness,
   },
   xctest: {
     backend: 'xctest',
-    assertAppInstallationSupported: assertXctestAppInstallationUnsupported,
     ensureReady: ensureXctestDeviceReady,
     listApps: rejectXctestAppInventory,
-    installApp: rejectXctestAppInstallation,
-    uninstallApp: rejectXctestAppInstallation,
     launchApp: launchXctestDeviceApp,
     terminateApp: terminateXctestDeviceApp,
     resolveAppProcesses: rejectXctestProcessLookup,
     captureScreenshot: captureXctestDeviceScreenshot,
     copyRunnerFile: rejectXctestRunnerFileCopy,
     resolveTunnel: rejectXctestTunnelLookup,
+    readDeviceReadiness: readXctestDeviceReadiness,
   },
 };
 
 export function resolveIosPhysicalDeviceControl(device: DeviceInfo): IosPhysicalDeviceControl {
   return CONTROLS[device.iosPhysicalDeviceBackend === 'xctest' ? 'xctest' : 'coredevice'];
-}
-
-function assertXctestAppInstallationUnsupported(device: DeviceInfo): never {
-  throw new AppError(
-    'UNSUPPORTED_OPERATION',
-    'Installing apps is unavailable on this XCTest-backed physical iOS device.',
-    {
-      deviceId: device.id,
-      backend: 'xctest',
-      hint: 'Install the app with Xcode, then open it in agent-device by bundle ID.',
-    },
-  );
-}
-
-async function rejectXctestAppInstallation(device: DeviceInfo): Promise<never> {
-  return assertXctestAppInstallationUnsupported(device);
 }
 
 async function rejectXctestAppInventory(device: DeviceInfo): Promise<never> {
@@ -161,6 +138,14 @@ async function rejectXctestTunnelLookup(device: DeviceInfo): Promise<never> {
   );
 }
 
+async function readXctestDeviceReadiness(device: DeviceInfo): Promise<IosDeviceReadiness> {
+  return {
+    available: false,
+    reason: 'device_readiness_unreadable',
+    hint: `This device is driven through XCTest (device ${device.id}), which does not report Developer Mode or developer disk image state. Check the device's own Settings if development tooling fails to start on it.`,
+  };
+}
+
 async function rejectXctestRunnerFileCopy(device: DeviceInfo): Promise<never> {
   throw new AppError(
     'UNSUPPORTED_OPERATION',
@@ -174,7 +159,13 @@ async function rejectXctestRunnerFileCopy(device: DeviceInfo): Promise<never> {
 
 async function ensureXctestDeviceReady(device: DeviceInfo, signal?: AbortSignal): Promise<void> {
   const timeoutSeconds = Math.max(1, Math.ceil(IOS_DEVICE_READY_TIMEOUT_MS / 1000));
-  const args = ['xcdevice', 'wait', '--both', `--timeout=${timeoutSeconds}`, device.id];
+  const args: ['xcdevice', ...string[]] = [
+    'xcdevice',
+    'wait',
+    '--both',
+    `--timeout=${timeoutSeconds}`,
+    device.id,
+  ];
   const result = await runXcrun(args, {
     allowFailure: true,
     signal,

@@ -5,7 +5,6 @@ import {
   isSystemScrollIndicatorLabel,
 } from '@agent-device/kernel/scroll-indicator';
 import {
-  findNearestScrollableContainer,
   isScrollableSnapshotType,
   mergeReplacement,
   updateReplacement,
@@ -45,9 +44,7 @@ function collectIosScrollIndicatorNodePresentation(
 ): void {
   const suppressed = !isScrollableSnapshotType(node.type) || context.isSuppressed(node);
   const directions = inferVerticalScrollIndicatorDirections(node.label?.trim() ?? '', node.value);
-  const container = directions
-    ? findNearestScrollableContainer(node, byIndex, { includeSelf: true })
-    : undefined;
+  const container = directions ? findScrollIndicatorContainer(node, byIndex) : undefined;
   if (suppressed) context.suppressNode(node, container ? [container] : []);
   if (
     container &&
@@ -56,6 +53,48 @@ function collectIosScrollIndicatorNodePresentation(
   ) {
     derivedScrollContainerIndexes.add(container.index);
   }
+}
+
+/**
+ * The scroll container an indicator reports on. XCTest publishes a UIScrollView's indicators as
+ * children of that view, so the indicator's parent edge is the producer's own claim of ownership and
+ * a band derives only when that parent is itself a scroll type. Reading the parent rather than
+ * walking ancestors is what keeps a scroll-shaped host that publishes as a non-scroll type — a
+ * `UITextView` row (#2214, patched for that one type by #2740), a `WKWebView`, a map view, a paged
+ * cell — from misattributing its indicator to the enclosing list and clipping the list to one line of
+ * the host. An indicator whose parent is not a scroll type owns nothing (ADR 0026).
+ *
+ * A node that is itself a scroll type and carries an indicator label describes itself, not its
+ * parent, so it owns nothing too: banding its parent would clip a sibling list to the host's band —
+ * the same over-clip as #2214, mirrored upward.
+ */
+function scrollIndicatorParent(
+  node: RawSnapshotNode,
+  byIndex: ReadonlyMap<number, RawSnapshotNode>,
+): RawSnapshotNode | undefined {
+  return typeof node.parentIndex === 'number' ? byIndex.get(node.parentIndex) : undefined;
+}
+
+function occupiesSameFrame(node: RawSnapshotNode, ancestor: RawSnapshotNode): boolean {
+  return node.rect != null && ancestor.rect != null && rectsEqual(node.rect, ancestor.rect);
+}
+
+// Ownership follows the parent edge, but a scroll region can be wrapped by transparent ancestors that
+// fill it exactly — Safari nests `Other` → `WebView` → `WebView` above a `WKWebView`'s `ScrollView`, all
+// one frame. The walk climbs only through such same-frame ancestors and stops at the first frame change,
+// so a host smaller than its list (a `WebView` row) is a separate region and owns nothing (ADR 0026).
+function findScrollIndicatorContainer(
+  node: RawSnapshotNode,
+  byIndex: ReadonlyMap<number, RawSnapshotNode>,
+): RawSnapshotNode | null {
+  if (isScrollableSnapshotType(node.type)) return null;
+  let current = scrollIndicatorParent(node, byIndex);
+  while (current && !isScrollableSnapshotType(current.type)) {
+    const parent = scrollIndicatorParent(current, byIndex);
+    if (!parent || !occupiesSameFrame(current, parent)) return null;
+    current = parent;
+  }
+  return current ?? null;
 }
 
 function clipDescendantsToDerivedScrollViewports(

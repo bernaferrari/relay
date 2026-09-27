@@ -21,6 +21,7 @@ private final class RunnerTargetActivationStub: NSObject {
 
 extension RunnerTests {
 #if AGENT_DEVICE_RUNNER_UNIT_TESTS && os(iOS)
+  @MainActor
   func testActivateTargetSkipsForegroundAndActivatesNonForegroundApplication() {
     let stateSelector = #selector(getter: XCUIApplication.state)
     let activateSelector = #selector(XCUIApplication.activate)
@@ -101,10 +102,10 @@ extension RunnerTests {
   }
 
   func testSnapshotPenaltyWarmupExemptionIsConsumedOnce() {
-    snapshotXCTestPenaltyWarmupExemptionPending = true
+    snapshotXCTestPenaltyWarmupExemption.isPending = true
 
-    XCTAssertTrue(consumeSnapshotXCTestPenaltyWarmupExemption())
-    XCTAssertFalse(consumeSnapshotXCTestPenaltyWarmupExemption())
+    XCTAssertTrue(snapshotXCTestPenaltyWarmupExemption.consume())
+    XCTAssertFalse(snapshotXCTestPenaltyWarmupExemption.consume())
   }
 
   func testSnapshotPenaltyCanBeClearedAcrossTargetProcessReplacement() {
@@ -116,18 +117,19 @@ extension RunnerTests {
     XCTAssertFalse(isSnapshotXCTestChannelPenalized(bundleId: "com.example.app"))
   }
 
+  @MainActor
   func testCachedTargetInvalidationClearsProcessBoundState() {
-    currentApp = app
-    currentBundleId = "com.example.app"
-    currentAppProcessIdentifier = 42
-    snapshotXCTestPenaltyWarmupExemptionPending = true
+    mainOwned.app = app
+    mainOwned.bundleId = "com.example.app"
+    mainOwned.processIdentifier = 42
+    snapshotXCTestPenaltyWarmupExemption.isPending = true
 
     invalidateCachedTarget(reason: "unit_test")
 
-    XCTAssertNil(currentApp)
-    XCTAssertNil(currentBundleId)
-    XCTAssertNil(currentAppProcessIdentifier)
-    XCTAssertFalse(snapshotXCTestPenaltyWarmupExemptionPending)
+    XCTAssertNil(mainOwned.app)
+    XCTAssertNil(mainOwned.bundleId)
+    XCTAssertNil(mainOwned.processIdentifier)
+    XCTAssertFalse(snapshotXCTestPenaltyWarmupExemption.isPending)
   }
 
   func testTextEntryTapWitnessIsBoundToTargetIdentity() {
@@ -142,11 +144,12 @@ extension RunnerTests {
     XCTAssertFalse(witness.matches(bundleId: "com.example.app", processIdentifier: 43))
   }
 
+  @MainActor
   func testTargetResetInvalidatesProcessBoundStateWithoutRestartingRunner() {
-    currentApp = app
-    currentBundleId = "com.example.app"
-    currentAppProcessIdentifier = 42
-    snapshotXCTestPenaltyWarmupExemptionPending = true
+    mainOwned.app = app
+    mainOwned.bundleId = "com.example.app"
+    mainOwned.processIdentifier = 42
+    snapshotXCTestPenaltyWarmupExemption.isPending = true
     firstInteractionReadyUptime = nil
     penalizeSnapshotXCTestChannel(bundleId: "com.example.app", reason: "test")
     XCTAssertTrue(isSnapshotXCTestChannelPenalized(bundleId: "com.example.app"))
@@ -154,10 +157,10 @@ extension RunnerTests {
     let response = resetTargetAfterExternalRelaunch()
 
     XCTAssertTrue(response.ok)
-    XCTAssertNil(currentApp)
-    XCTAssertNil(currentBundleId)
-    XCTAssertNil(currentAppProcessIdentifier)
-    XCTAssertFalse(snapshotXCTestPenaltyWarmupExemptionPending)
+    XCTAssertNil(mainOwned.app)
+    XCTAssertNil(mainOwned.bundleId)
+    XCTAssertNil(mainOwned.processIdentifier)
+    XCTAssertFalse(snapshotXCTestPenaltyWarmupExemption.isPending)
     XCTAssertFalse(isSnapshotXCTestChannelPenalized(bundleId: "com.example.app"))
     XCTAssertNotNil(firstInteractionReadyUptime)
   }
@@ -165,8 +168,9 @@ extension RunnerTests {
   /// The settling window is a deadline measured from the activation, not a pause charged at the
   /// interaction. A caller that already spent the window elsewhere waits for nothing; one that
   /// arrives immediately still waits. Without the deadline both cases sleep the full delay.
+  @MainActor
   func testFirstInteractionStabilizationWaitsOnlyForTheRemainderOfTheWindow() {
-    needsPostSnapshotInteractionDelay = false
+    mainOwned.needsPostSnapshotInteractionDelay = false
 
     // An activation whose window has already elapsed: the caller spent it getting back to us.
     firstInteractionReadyUptime = ProcessInfo.processInfo.systemUptime - 1
@@ -184,6 +188,7 @@ extension RunnerTests {
     XCTAssertNil(firstInteractionReadyUptime)
   }
 
+  @MainActor
   private func measureStabilizationDuration() -> TimeInterval {
     let startedAt = ProcessInfo.processInfo.systemUptime
     applyInteractionStabilizationIfNeeded()

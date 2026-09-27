@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 
+/// With no viewport box the cumulative clip has no root, so containment has nothing to violate.
 public enum SnapshotPresentationInvariant {
   struct ValidationStats: Equatable {
     let parentClipLookups: Int
@@ -12,7 +13,7 @@ public enum SnapshotPresentationInvariant {
 
   public static func validateRegular(
     _ nodes: [SnapshotPresentationNode],
-    viewport: CGRect,
+    viewport: SnapshotViewport,
     policy: SnapshotVisibilityFold.Policy
   ) throws {
     _ = try validateRegularWithStats(nodes, viewport: viewport, policy: policy)
@@ -20,24 +21,25 @@ public enum SnapshotPresentationInvariant {
 
   static func validateRegularWithStats(
     _ nodes: [SnapshotPresentationNode],
-    viewport: CGRect,
+    viewport: SnapshotViewport,
     policy: SnapshotVisibilityFold.Policy
   ) throws -> ValidationStats {
     var parentClipLookups = 0
-    var clipIncludingNodeByIndex: [Int: CGRect] = [:]
+    var clipIncludingNodeByIndex: [Int: CGRect?] = [:]
     clipIncludingNodeByIndex.reserveCapacity(nodes.count)
+    let rootClip = viewport.rect
 
     for node in nodes {
-      let ancestorClip: CGRect
+      let ancestorClip: CGRect?
       if let parentIndex = node.raw.parentIndex {
         parentClipLookups += 1
-        ancestorClip = clipIncludingNodeByIndex[parentIndex] ?? viewport
+        ancestorClip = clipIncludingNodeByIndex[parentIndex] ?? rootClip
       } else {
-        ancestorClip = viewport
+        ancestorClip = rootClip
       }
 
       let frame = node.effectiveRect.cgRect
-      let clipIncludingNode: CGRect
+      let clipIncludingNode: CGRect?
       if policy == .cursorProjected,
         SnapshotVisibilityFold.scrollContainerTypeNames.contains(node.raw.type),
         !frame.isNull,
@@ -50,7 +52,7 @@ public enum SnapshotPresentationInvariant {
       clipIncludingNodeByIndex[node.raw.index] = clipIncludingNode
 
       guard !frame.isNull, !frame.isEmpty else {
-        if node.raw.hittable {
+        if node.raw.hittable == true {
           throw SnapshotPresentationFailure.regularDegenerateNodeIsActionable(
             index: node.raw.index,
             frame: node.effectiveRect
@@ -59,11 +61,11 @@ public enum SnapshotPresentationInvariant {
         continue
       }
 
-      guard contains(frame, in: ancestorClip) else {
+      if let clip = ancestorClip, !contains(frame, in: clip) {
         throw SnapshotPresentationFailure.regularNodeOutsideCumulativeClip(
           index: node.raw.index,
           frame: node.effectiveRect,
-          clip: SnapshotRect(ancestorClip)
+          clip: SnapshotRect(clip)
         )
       }
     }

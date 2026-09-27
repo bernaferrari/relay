@@ -35,6 +35,12 @@ export type AndroidUiNodeMetadata = {
   focusable?: boolean;
   focused?: boolean;
   selected?: boolean;
+  /** Helper-only: the accessibility heading flag an app set on the node (API 28 or later). */
+  heading?: boolean;
+  /** Helper-only: the localized role description an app set beside the class, verbatim. */
+  roleDescription?: string;
+  /** Helper-only, present on a checkable control: the checked state of a switch, checkbox, or radio. */
+  checked?: boolean;
   password?: boolean;
   editable?: boolean;
   selectionStart?: number;
@@ -44,6 +50,8 @@ export type AndroidUiNodeMetadata = {
    * `getText()` returns the hint on modern Android). Absent in raw uiautomator dumps.
    */
   hintShowing?: boolean;
+  /** Helper-only: the field's hint text (API 26 or later), whether or not it is showing. */
+  hint?: string;
   scrollable?: boolean;
   canScrollForward?: boolean;
   canScrollBackward?: boolean;
@@ -132,6 +140,15 @@ function readNodeAttributes(node: string): Omit<AndroidUiNodeMetadata, 'rect'> {
     const value = parseBounds(getAttr(name));
     return value === undefined ? {} : ({ [key]: value } as Pick<AndroidUiNodeMetadata, Key>);
   };
+  const optionalStringAttr = <Key extends keyof AndroidUiNodeMetadata>(
+    key: Key,
+    name: string,
+  ): Partial<Pick<AndroidUiNodeMetadata, Key>> => {
+    const value = getAttr(name);
+    return value === null || value === ''
+      ? {}
+      : ({ [key]: value } as Pick<AndroidUiNodeMetadata, Key>);
+  };
   const optionalBoolAttr = <Key extends keyof AndroidUiNodeMetadata>(
     key: Key,
     name: string,
@@ -155,8 +172,12 @@ function readNodeAttributes(node: string): Omit<AndroidUiNodeMetadata, 'rect'> {
     ...optionalNumberAttr('selectionStart', 'selection-start'),
     ...optionalNumberAttr('selectionEnd', 'selection-end'),
     ...optionalBoolAttr('hintShowing', 'hint-showing'),
+    ...optionalStringAttr('hint', 'hint'),
     ...optionalBoolAttr('visibleToUser', 'visible-to-user'),
     ...optionalBoolAttr('selected', 'selected'),
+    ...optionalBoolAttr('heading', 'heading'),
+    ...optionalStringAttr('roleDescription', 'role-description'),
+    ...optionalBoolAttr('checked', 'checked'),
     ...optionalNumberAttr('drawingOrder', 'drawing-order'),
     ...optionalBoolAttr('scrollable', 'scrollable'),
     ...optionalBoolAttr('canScrollForward', 'can-scroll-forward'),
@@ -298,20 +319,26 @@ function normalizeAndroidUiHierarchyNode(
   depth: number,
   parent: AndroidNode,
 ): AndroidUiHierarchy {
+  const label = attrs.text || attrs.desc;
   return attachAndroidSiblingOrder(
     {
       type: attrs.className,
-      label: attrs.text || attrs.desc,
+      label,
       value: attrs.text,
+      ...(attrs.desc && attrs.desc !== label ? { contentDescription: attrs.desc } : {}),
       identifier: attrs.resourceId,
       packageName: attrs.packageName,
       rect: attrs.rect,
       enabled: attrs.enabled,
       focused: attrs.focused,
       selected: attrs.selected,
+      heading: attrs.heading,
+      roleDescription: attrs.roleDescription,
+      checked: attrs.checked,
       editable: attrs.editable,
       password: attrs.password,
       hintShowing: attrs.hintShowing,
+      placeholder: attrs.hint,
       selectionStart: attrs.selectionStart,
       selectionEnd: attrs.selectionEnd,
       visibleToUser: attrs.visibleToUser,

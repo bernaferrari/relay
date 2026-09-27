@@ -8,7 +8,6 @@ const OPERATIONS = [
   'openDevice',
   'close',
   'tap',
-  'doubleTap',
   'longPress',
   'focus',
   'type',
@@ -17,18 +16,8 @@ const OPERATIONS = [
   'screenshot',
   'snapshot',
   'back',
-  'home',
   'setOrientation',
-  'appSwitcher',
-  'actionButton',
-  'tvRemote',
-  'readClipboard',
-  'writeClipboard',
   'setSetting',
-  'readAlert',
-  'awaitAlert',
-  'acceptAlert',
-  'dismissAlert',
 ] as const;
 
 test('every operation rejects as unsupported and names the platform', async () => {
@@ -41,14 +30,28 @@ test('every operation rejects as unsupported and names the platform', async () =
 });
 
 test('the label is per-instance, so two platforms reject with their own wording', async () => {
-  const web = createUnsupportedInteractor('web').home as () => Promise<unknown>;
-  const vega = createUnsupportedInteractor('Vega OS').home as () => Promise<unknown>;
+  const web = createUnsupportedInteractor('web').setSetting as () => Promise<unknown>;
+  const vega = createUnsupportedInteractor('Vega OS').setSetting as () => Promise<unknown>;
 
-  await expectUnsupported(web, 'home', 'web');
-  await expectUnsupported(vega, 'home', 'Vega OS');
+  await expectUnsupported(web, 'setSetting', 'web');
+  await expectUnsupported(vega, 'setSetting', 'Vega OS');
 });
 
-test('the factory covers the whole interactor surface', () => {
+// The system buttons, the clipboard, and the TV remote ride fact-gated binders: web's cell
+// refuses all five, Vega's refuses the app switcher and both clipboard halves (its real
+// remote mechanics arrive through the Vega interactor override, not this factory), and each
+// binder fails closed if a fact ever admits an operation its interactor lacks.
+test('operations with no shared fallback are left undefined, not denied', () => {
+  const interactor = createUnsupportedInteractor('Vega OS');
+
+  assert.equal(interactor.home, undefined);
+  assert.equal(interactor.appSwitcher, undefined);
+  assert.equal(interactor.readClipboard, undefined);
+  assert.equal(interactor.writeClipboard, undefined);
+  assert.equal(interactor.tvRemote, undefined);
+});
+
+test('the factory covers the whole required interactor surface', () => {
   const interactor = createUnsupportedInteractor('Vega OS');
 
   assert.deepEqual(Object.keys(interactor).sort(), [...OPERATIONS].sort());

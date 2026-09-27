@@ -5,7 +5,6 @@ import type * as HostProcess from '@agent-device/host-kit/process';
 import type * as HostRequest from '@agent-device/host-kit/request';
 import type * as HostRetry from '@agent-device/host-kit/retry';
 import type * as HostVersion from '@agent-device/host-kit/version';
-import type * as KernelDeviceIsolation from '@agent-device/kernel/device-isolation';
 import type * as KernelDeviceShell from '@agent-device/kernel/device-shell';
 import type * as KernelKeyedLock from '@agent-device/kernel/keyed-lock';
 import type * as KernelRecord from '@agent-device/kernel/record';
@@ -25,8 +24,8 @@ import type * as AppleToolProvider from '../core/tool-provider.ts';
  * enters through this object: process execution, diagnostics, retry, process
  * probes, locks, Apple foreground tooling, and physical-device control. The
  * package never imports root implementation files; the composition root
- * (`packages/platform-apple/src/core/runner-client.ts`) constructs the client with the
- * real implementations exactly once per process.
+ * (`packages/platform-apple/src/core/runner-client.ts`) binds the real
+ * implementations exactly once per process.
  *
  * The port is DERIVED from the modules it fronts, never re-typed: the `Pick`
  * lists below are the one place that says which symbol of which module the
@@ -78,11 +77,10 @@ export type AppleRunnerHost = Pick<
   Pick<typeof KernelTtlMemo, 'createTtlMemo'> &
   Pick<typeof KernelRecord, 'isRecord'> &
   Pick<typeof KernelSourceValue, 'parseBooleanLiteral'> &
-  Pick<typeof KernelDeviceIsolation, 'resolveIosSimulatorDeviceSetPath'> &
   Pick<typeof KernelDeviceShell, 'shellQuote'> &
   Pick<typeof BootDiagnostics, 'classifyBootFailure' | 'bootFailureHint'> &
   Pick<typeof AppleToolProvider, 'runAppleToolCommand' | 'runXcrun' | 'readApplePlistJson'> &
-  Pick<typeof AppleSimctl, 'buildSimctlArgsForDevice'> &
+  Pick<typeof AppleSimctl, 'buildSimctlArgsForDevice' | 'simulatorAddressFor'> &
   Pick<typeof ApplePlistXml, 'visitXmlPlistEntries'> & {
     /**
      * The `Deadline` constructor is a class static, so the port carries the factory alone, typed
@@ -105,10 +103,21 @@ export type AppleRunnerHost = Pick<
 /** The runner's deadline type is the host's read side; the {@link Deadline} shim below builds them. */
 export type Deadline = HostRetry.DeadlineClock;
 
+/**
+ * What an iPhone reports about its own fitness to host development tooling (#2683), under the name the
+ * module that reads it owns. Re-exported rather than restated or re-derived, so the runner, its tests,
+ * and the core reader all speak one type for one device report.
+ */
+export type {
+  IosDeveloperDiskImageState,
+  IosDeveloperModeState,
+  IosDeviceReadiness,
+} from '../core/physical-device-coredevice.ts';
+
 let boundHost: AppleRunnerHost | undefined;
 
 /**
- * Binds the process-wide host. Called by `createAppleRunnerClient`; binding a
+ * Binds the process-wide host. Called by the composition root; binding a
  * different host after one is bound throws, because the runner keeps
  * process-wide state (sessions, leases, provider scopes) that cannot serve two
  * hosts. Rebinding the same reference is a no-op.
@@ -123,7 +132,7 @@ export function bindAppleRunnerHost(host: AppleRunnerHost): void {
 function requireHost(): AppleRunnerHost {
   if (!boundHost) {
     throw new Error(
-      'Apple runner host is not bound. Construct the client via createAppleRunnerClient() before using runner operations.',
+      'Apple runner host is not bound. Production binds it in core/runner-client.ts; package tests bind it through runner/test-host.ts.',
     );
   }
   return boundHost;
@@ -167,13 +176,13 @@ export const withKeyedLock = delegate('withKeyedLock');
 export const createTtlMemo = delegate('createTtlMemo');
 export const isRecord = delegate('isRecord');
 export const parseBooleanLiteral = delegate('parseBooleanLiteral');
-export const resolveIosSimulatorDeviceSetPath = delegate('resolveIosSimulatorDeviceSetPath');
 export const classifyBootFailure = delegate('classifyBootFailure');
 export const bootFailureHint = delegate('bootFailureHint');
 export const runAppleToolCommand = delegate('runAppleToolCommand');
 export const runXcrun = delegate('runXcrun');
 export const readApplePlistJson = delegate('readApplePlistJson');
 export const buildSimctlArgsForDevice = delegate('buildSimctlArgsForDevice');
+export const simulatorAddressFor = delegate('simulatorAddressFor');
 export const visitXmlPlistEntries = delegate('visitXmlPlistEntries');
 export const resolveIosPhysicalDeviceControl = delegate('resolveIosPhysicalDeviceControl');
 export const leaseOwnerStateDir = delegate('leaseOwnerStateDir');

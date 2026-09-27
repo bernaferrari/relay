@@ -5,7 +5,11 @@ import type {
   SnapshotNode,
   SnapshotState,
 } from '@agent-device/kernel/snapshot';
-import { findNodeByRef, normalizeRef } from '@agent-device/kernel/snapshot';
+import {
+  findNodeByRef,
+  inheritPostGestureOutcome,
+  normalizeRef,
+} from '@agent-device/kernel/snapshot';
 import { resolveRectCenter } from '@agent-device/kernel/rect-center';
 import type {
   AgentDeviceRuntime,
@@ -356,7 +360,7 @@ async function resolveRefInteractionTarget(
     },
     resolveTapPoint: (node) =>
       resolveNodeTouchPoint(node, nodes, {
-        invalidMessage: `Ref ${target.ref} not found or has invalid bounds`,
+        invalidMessage: `Ref ${target.ref} has no usable bounds`,
         blockedTargetLabel: `Ref ${target.ref}`,
         blockedTargetDetails: { ref: `@${normalizeRef(target.ref) ?? node.ref}` },
       }),
@@ -390,7 +394,9 @@ async function resolveSelectorInteractionTarget(
     params.pipeline,
   );
   if ((!resolved || !resolved.node.rect) && params.requireInteractive) {
+    const interactive = capture.snapshot;
     capture = await captureInteractionSnapshot(runtime, options, false);
+    inheritPostGestureOutcome(interactive, capture.snapshot);
     resolved = resolveActionSelector(
       capture.snapshot.nodes,
       selectorExpression,
@@ -785,7 +791,7 @@ async function resolveSnapshotForRef(
   const { session, snapshot: frameTree } = await requireSnapshotSession(runtime, options.session);
 
   const fallbackLabel = target.fallbackLabel ?? '';
-  const authorized = tryResolveRefNode(frameTree.nodes, target.ref, {
+  const outcome = tryResolveRefNode(frameTree.nodes, target.ref, {
     fallbackLabel,
   });
   // ADR 0014: missing authorized-frame evidence FAILS. It must not fall through
@@ -793,17 +799,13 @@ async function resolveSnapshotForRef(
   // exactly the positional-coincidence retarget the frame model forbids. A stale
   // read is observable and recoverable; a stale mutation can act on the wrong
   // element. The caller re-observes (snapshot) or uses a selector.
-  if (!authorized) {
-    throw new AppError('COMMAND_FAILED', `Ref ${target.ref} not found or has no bounds`, {
-      hint: STALE_REF_HINT,
-    });
-  }
+  if (outcome.kind !== 'resolved') throw refMissRefusal(outcome, target.ref);
   return reconcileFreshObservation({
     session,
     frameTree,
     target,
     fallbackLabel,
-    authorized,
+    authorized: outcome.resolved,
   });
 }
 
@@ -831,37 +833,48 @@ function reconcileFreshObservation(params: {
   }
   const observed = tryResolveRefNode(observation.nodes, target.ref, { fallbackLabel });
   if (
-    observed &&
+    observed.kind === 'resolved' &&
     localIdentitiesEqual(
       readNodeLocalIdentity(authorized.node),
-      readNodeLocalIdentity(observed.node),
+      readNodeLocalIdentity(observed.resolved.node),
     )
   ) {
-    return { snapshot: observation, resolved: observed };
+    return { snapshot: observation, resolved: observed.resolved };
   }
   return { snapshot: frameTree, resolved: authorized };
 }
 
 /** The runtime-ref resolver: `exact` for a resolved `@ref`, `label-fallback` for trailing-label recovery. */
+/**
+ * What one tree makes of a ref: the node it authorizes (exact, or the trailing-label recovery), a
+ * node it lists (by ref or by that label) that has no usable centre, or no node at all. The two
+ * misses are distinct outcomes so a caller can name a stale ref and an unactionable target apart.
+ */
+export type RefResolutionOutcome =
+  | { kind: 'resolved'; resolved: ResolvedRefNode }
+  | { kind: 'unusable'; node: SnapshotNode }
+  | { kind: 'missing' };
+
 export function tryResolveRefNode(
   nodes: SnapshotState['nodes'],
   refInput: string,
   options: {
     fallbackLabel: string;
   },
-): ResolvedRefNode | null {
+): RefResolutionOutcome {
   const ref = normalizeRef(refInput);
   if (!ref) throw new AppError('INVALID_ARGS', `Invalid ref: ${refInput}`);
   const refNode = findNodeByRef(nodes, ref);
   if (isUsableResolvedNode(refNode)) {
-    return buildRefResolution(ref, refNode, 'exact');
+    return { kind: 'resolved', resolved: buildRefResolution(ref, refNode, 'exact') };
   }
   const fallbackNode =
     options.fallbackLabel.length > 0 ? findNodeByLabel(nodes, options.fallbackLabel) : null;
   if (isUsableResolvedNode(fallbackNode)) {
-    return buildRefResolution(ref, fallbackNode, 'label-fallback');
+    return { kind: 'resolved', resolved: buildRefResolution(ref, fallbackNode, 'label-fallback') };
   }
-  return null;
+  const found = refNode ?? fallbackNode;
+  return found ? { kind: 'unusable', node: found } : { kind: 'missing' };
 }
 
 type ResolvedRefNode = {
@@ -869,6 +882,30 @@ type ResolvedRefNode = {
   node: SnapshotNode;
   resolution: ResolutionDisclosure;
 };
+
+/**
+ * The refusal for a ref the frame could not authorize: a ref no node carries is stale or was never
+ * issued (`ref_not_found`); a ref whose node is listed but has no usable centre is present and
+ * unactionable (`target_bounds_invalid`). Both recover the same way, a fresh observation, so both
+ * carry the stale-ref hint; `details.ref` is the bare ref body either way.
+ */
+function refMissRefusal(
+  miss: Exclude<RefResolutionOutcome, { kind: 'resolved' }>,
+  refInput: string,
+): AppError {
+  const ref = normalizeRef(refInput) ?? refInput;
+  return miss.kind === 'unusable'
+    ? new AppError('COMMAND_FAILED', `Ref ${refInput} has no usable bounds`, {
+        reason: INTERACTION_ERROR_REASONS.targetBoundsInvalid,
+        ref,
+        hint: STALE_REF_HINT,
+      })
+    : new AppError('COMMAND_FAILED', `Ref ${refInput} not found`, {
+        reason: INTERACTION_ERROR_REASONS.refNotFound,
+        ref,
+        hint: STALE_REF_HINT,
+      });
+}
 
 function resolveNodeTouchPoint(
   node: SnapshotNode,
@@ -887,7 +924,10 @@ function resolveNodeTouchPoint(
   });
   if (resolution.kind === 'resolved') return resolution.point;
   if (resolution.kind === 'invalid') {
-    throw new AppError('COMMAND_FAILED', failure.invalidMessage);
+    throw new AppError('COMMAND_FAILED', failure.invalidMessage, {
+      reason: INTERACTION_ERROR_REASONS.targetBoundsInvalid,
+      ...bareTargetDetails(failure.blockedTargetDetails),
+    });
   }
   throw new AppError(
     'COMMAND_FAILED',
@@ -900,6 +940,13 @@ function resolveNodeTouchPoint(
       hint: 'Tap the specific interactive child you intend, or use a more specific selector. Every safely tappable region of the parent belongs to one of its child controls.',
     },
   );
+}
+
+/** `details.ref` is the bare ref body on every reason; the blocked-target label keeps its `@`. */
+function bareTargetDetails(
+  details: { ref: string } | { selector: string },
+): { ref: string } | { selector: string } {
+  return 'ref' in details ? { ref: normalizeRef(details.ref) ?? details.ref } : details;
 }
 
 function isUsableResolvedNode(node: SnapshotNode | null | undefined): node is SnapshotNode {
@@ -1018,10 +1065,11 @@ export async function preflightNativeRefInteraction(
   const storedSnapshot = session?.snapshot;
   const nodes = storedSnapshot?.nodes;
   if (!storedSnapshot || !nodes || normalizeRef(target.ref) === null) return {};
-  const resolved = tryResolveRefNode(nodes, target.ref, {
+  const outcome = tryResolveRefNode(nodes, target.ref, {
     fallbackLabel: target.fallbackLabel ?? '',
   });
-  if (!resolved) return {};
+  if (outcome.kind !== 'resolved') return {};
+  const { resolved } = outcome;
   // `resolvedTarget` whatever the command: its `none` promotion is what holds
   // ADR 0011's "the preflight never changes which element the backend acts on".
   const pipeline = SELECTOR_PIPELINE_POLICIES.resolvedTarget;

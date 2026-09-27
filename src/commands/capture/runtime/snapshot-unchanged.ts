@@ -88,6 +88,7 @@ type ComparableSnapshotNode = Omit<
   | 'selectionStart'
   | 'selectionEnd'
   | 'visibleToUser'
+  | 'userInteractionEnabled'
   | 'inheritsLabel'
   | 'inheritsIdentifier'
 >;
@@ -106,10 +107,15 @@ const PRESENTATION_SCALAR_FIELDS = {
   subrole: true,
   label: true,
   value: true,
+  contentDescription: true,
   identifier: true,
   enabled: true,
   selected: true,
+  checked: true,
   focused: true,
+  heading: true,
+  roleDescription: true,
+  placeholder: true,
   hittable: true,
   bundleId: true,
   appName: true,

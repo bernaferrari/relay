@@ -13,6 +13,7 @@ installProviderDeviceAdmission({ isActive: isActiveProviderDevice });
 import { platformResourceCleanup } from '../../../platform-runtime-resource-cleanup.ts';
 import {
   fixtureSettingsMutations,
+  fixtureSettingsReads,
   resetSnapshotRuntimeFixture,
   snapshotRuntimeFixture,
 } from '../../__tests__/snapshot-runtime-fixture.ts';
@@ -22,7 +23,9 @@ import {
   makeSession,
   makeSessionStore,
   snapshotRequest,
+  tvOsSimulatorDevice,
 } from './snapshot-handler.fixtures.ts';
+import { activateCompleteRefFrame, refFrameState } from '../../ref-frame.ts';
 
 vi.mock('../../snapshot-interactor-capture.ts', async () => {
   const fixture = await import('../../__tests__/legacy-snapshot-capture-fixture.ts');
@@ -187,6 +190,142 @@ test('settings reset-keychain rejects an extra app argument instead of dropping 
   expect(fixtureSettingsMutations).toHaveLength(0);
 });
 
+test('settings text-size reads the category the owner holds without mutating anything', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'ios-text-size-read';
+  sessionStore.set(sessionName, makeSession(sessionName, iosSimulatorDevice));
+
+  const response = await handleSnapshotCommands({
+    req: snapshotRequest(sessionName, 'settings', { positionals: ['text-size'] }),
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  expect(response?.ok).toBe(true);
+  expect(response?.ok && response.data).toMatchObject({
+    setting: 'text-size',
+    category: 'extra-extra-large',
+    platformValue: 'extra-extra-large',
+    message: 'Text size is extra-extra-large',
+  });
+  expect(fixtureSettingsReads).toMatchObject([{ setting: 'text-size' }]);
+  expect(fixtureSettingsMutations).toHaveLength(0);
+});
+
+test('settings text-size refuses the macOS host on both legs with the same code', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'macos-text-size-read';
+  sessionStore.set(sessionName, makeSession(sessionName, macOsDevice));
+
+  const read = await handleSnapshotCommands({
+    req: snapshotRequest(sessionName, 'settings', { positionals: ['text-size'] }),
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+  const write = await handleSnapshotCommands({
+    req: snapshotRequest(sessionName, 'settings', { positionals: ['text-size', 'large'] }),
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  for (const response of [read, write]) {
+    expect(response?.ok).toBe(false);
+    if (response && !response.ok) {
+      expect(response.error.code).toBe('INVALID_ARGS');
+      expect(response.error.message).toMatch(/Unsupported macOS setting: text-size/i);
+    }
+  }
+  expect(fixtureSettingsReads).toHaveLength(0);
+  expect(fixtureSettingsMutations).toHaveLength(0);
+});
+
+test('settings text-size applies a ladder category through the write leg', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'ios-text-size-write';
+  const session = makeSession(sessionName, iosSimulatorDevice);
+  activateCompleteRefFrame(session);
+  sessionStore.set(sessionName, session);
+
+  const response = await handleSnapshotCommands({
+    req: snapshotRequest(sessionName, 'settings', {
+      positionals: ['text-size', 'accessibility-extra-large'],
+    }),
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  expect(response?.ok).toBe(true);
+  expect(response?.ok && response.data).toMatchObject({
+    setting: 'text-size',
+    state: 'accessibility-extra-large',
+    message: 'Text size set to accessibility-extra-large',
+  });
+  expect(fixtureSettingsMutations.at(-1)).toMatchObject({
+    setting: 'text-size',
+    state: 'accessibility-extra-large',
+  });
+  expect(fixtureSettingsReads).toHaveLength(0);
+  // ADR 0014: the admitted mutation leg expires the frame it is about to invalidate.
+  expect(refFrameState(session)).toBe('expired');
+});
+
+test('settings text-size refuses an Apple leaf with no content size before it expires the frame', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'tvos-text-size';
+  const session = makeSession(sessionName, tvOsSimulatorDevice);
+  activateCompleteRefFrame(session);
+  sessionStore.set(sessionName, session);
+
+  for (const positionals of [['text-size'], ['text-size', 'large']]) {
+    const response = await handleSnapshotCommands({
+      req: snapshotRequest(sessionName, 'settings', { positionals }),
+      sessionName,
+      logPath: '/tmp/daemon.log',
+      sessionStore,
+    });
+    expect(response?.ok).toBe(false);
+    if (response && !response.ok) {
+      expect(response.error.code).toBe('UNSUPPORTED_OPERATION');
+      expect(response.error.message).toMatch(/iOS and iPadOS simulators/i);
+    }
+  }
+  // The refusal is the point of checking before admission: the write leg expires the frame the
+  // moment it binds, so a request that never reached a device would otherwise have taken down a
+  // frame no mutation invalidated.
+  expect(refFrameState(session)).toBe('active');
+  expect(fixtureSettingsReads).toHaveLength(0);
+  expect(fixtureSettingsMutations).toHaveLength(0);
+});
+
+test('settings text-size refuses an off-ladder category with the whole ladder', async () => {
+  const sessionStore = makeSessionStore();
+  const sessionName = 'ios-text-size-invalid';
+  sessionStore.set(sessionName, makeSession(sessionName, iosSimulatorDevice));
+
+  const response = await handleSnapshotCommands({
+    req: snapshotRequest(sessionName, 'settings', { positionals: ['text-size', 'gigantic'] }),
+    sessionName,
+    logPath: '/tmp/daemon.log',
+    sessionStore,
+  });
+
+  expect(response?.ok).toBe(false);
+  if (response && !response.ok) {
+    expect(response.error.code).toBe('INVALID_ARGS');
+    expect(response.error.message).toMatch(/Invalid text size: gigantic/);
+    expect(response.error.message).toMatch(/extra-small\|small\|medium\|large/);
+    expect(response.error.message).toMatch(/accessibility-extra-extra-extra-large/);
+  }
+  // `simctl ui <device> content_size <bogus>` answers "Invalid argument" with exit 0, so a category
+  // this gate let through would have been reported back as a change that changed nothing.
+  expect(fixtureSettingsMutations).toHaveLength(0);
+  expect(fixtureSettingsReads).toHaveLength(0);
+});
+
 test('settings usage hint documents canonical faceid states', async () => {
   const sessionStore = makeSessionStore();
   const response = await handleSnapshotCommands({
@@ -230,7 +369,7 @@ test('settings on macOS rejects wifi before dispatch with explicit subset guidan
       /permission <grant\|reset> <accessibility\|screen-recording\|input-monitoring>/,
     );
     expect(response.error.message).toMatch(
-      /wifi\|airplane\|location\|animations remain unsupported on macOS/i,
+      /wifi\|airplane\|location\|animations\|text-size remain unsupported on macOS/i,
     );
   }
 });

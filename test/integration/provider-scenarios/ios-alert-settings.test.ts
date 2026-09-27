@@ -78,18 +78,6 @@ test('Provider-backed integration iOS Settings permission and alert flow uses pr
       if (listDevices) {
         return listDevices;
       }
-      if (args.join(' ') === 'privacy help') {
-        return {
-          stdout: [
-            'service',
-            '  camera - Camera',
-            '  microphone - Microphone',
-            'bundle identifier',
-          ].join('\n'),
-          stderr: '',
-          exitCode: 0,
-        };
-      }
       if (args.join(' ') === 'help') {
         return { stdout: 'simctl help\n', stderr: '', exitCode: 0 };
       }
@@ -296,10 +284,10 @@ function createRecordingPlatformRuntimeGateway(params: {
           // R59 does the same for `alert`: the scenario's gateway states and serves the four
           // legs, reusing the Apple family's own module so the runner transcript this scenario
           // scripts — including its retry and poll windows — is what actually runs.
-          readAlert: async (input) => await interactor.readAlert(alertOptions(input)),
-          awaitAlert: async (input) => await interactor.awaitAlert(alertOptions(input)),
-          acceptAlert: async (input) => await interactor.acceptAlert(alertOptions(input)),
-          dismissAlert: async (input) => await interactor.dismissAlert(alertOptions(input)),
+          readAlert: async (input) => await interactor.readAlert!(alertOptions(input)),
+          awaitAlert: async (input) => await interactor.awaitAlert!(alertOptions(input)),
+          acceptAlert: async (input) => await interactor.acceptAlert!(alertOptions(input)),
+          dismissAlert: async (input) => await interactor.dismissAlert!(alertOptions(input)),
           appLogReattach: async () => ({ status: 'missing' }),
           appLogCleanup: async () => ({ status: 'already-missing' }),
           resolveOpenTarget: async (input) => ({

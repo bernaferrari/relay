@@ -1,24 +1,35 @@
-import type { SnapshotQualityVerdict } from '@agent-device/kernel/snapshot';
+import type { SnapshotQualityState, SnapshotQualityVerdict } from '@agent-device/kernel/snapshot';
 import { SNAPSHOT_QUALITY_BACKEND_CAPABILITIES } from './snapshot-quality-backend-capabilities.ts';
 
-const SNAPSHOT_QUALITY_STATES = new Set<SnapshotQualityVerdict['state']>([
-  'healthy',
-  'recovered',
-  'sparse',
-]);
-const SNAPSHOT_QUALITY_BACKENDS = new Set<SnapshotQualityVerdict['backend']>(
-  Object.keys(SNAPSHOT_QUALITY_BACKEND_CAPABILITIES) as SnapshotQualityVerdict['backend'][],
-);
-const SNAPSHOT_QUALITY_REASON_CODES = new Set<NonNullable<SnapshotQualityVerdict['reasonCode']>>([
-  'ax-rejected',
-  'sparse-tree',
-  'budget',
-  'no-nodes',
-  'capture-failed',
-  'presentation-failed',
-  'deferred',
-  'requested-backend',
-]);
+/**
+ * The verdict names this version can speak, keyed against the kernel unions so a map cannot fall
+ * behind one. They cannot be one shared kernel predicate: this module's eager closure is frozen at
+ * its merge-base size (#2872). The strategies need no map — `SNAPSHOT_QUALITY_BACKEND_CAPABILITIES`
+ * is already keyed by exactly those names.
+ */
+const DECLARED_STATES: Record<SnapshotQualityState, true> = {
+  healthy: true,
+  recovered: true,
+  sparse: true,
+};
+
+const DECLARED_REASON_CODES: Record<NonNullable<SnapshotQualityVerdict['reasonCode']>, true> = {
+  'ax-rejected': true,
+  'sparse-tree': true,
+  budget: true,
+  'no-nodes': true,
+  'capture-failed': true,
+  'presentation-failed': true,
+  deferred: true,
+  'requested-backend': true,
+};
+
+function isDeclared<Key extends string, Value>(
+  vocabulary: Record<Key, Value>,
+  value: unknown,
+): value is Key {
+  return typeof value === 'string' && Object.hasOwn(vocabulary, value);
+}
 
 export function readSnapshotQualityVerdict(value: unknown): SnapshotQualityVerdict | undefined {
   if (!value || typeof value !== 'object') return undefined;
@@ -27,31 +38,19 @@ export function readSnapshotQualityVerdict(value: unknown): SnapshotQualityVerdi
   // verdict this version understands, so it falls through as verdict-absent and the legacy
   // node-shape detectors run instead of being silently suppressed by a malformed payload.
   if (
-    typeof raw.state !== 'string' ||
-    !SNAPSHOT_QUALITY_STATES.has(raw.state as SnapshotQualityVerdict['state'])
-  ) {
-    return undefined;
-  }
-  if (
-    typeof raw.backend !== 'string' ||
-    !SNAPSHOT_QUALITY_BACKENDS.has(raw.backend as SnapshotQualityVerdict['backend'])
+    !isDeclared(DECLARED_STATES, raw.state) ||
+    !isDeclared(SNAPSHOT_QUALITY_BACKEND_CAPABILITIES, raw.backend)
   ) {
     return undefined;
   }
   const timing = readSnapshotQualityTiming(raw.timing);
   return {
-    state: raw.state as SnapshotQualityVerdict['state'],
-    backend: raw.backend as SnapshotQualityVerdict['backend'],
+    state: raw.state,
+    backend: raw.backend,
     reason: typeof raw.reason === 'string' ? raw.reason : undefined,
     // An unknown reasonCode is dropped, not rejected: a forward-version runner that adds one
     // still yields a usable verdict (only the budget-specific wording is keyed off it).
-    reasonCode:
-      typeof raw.reasonCode === 'string' &&
-      SNAPSHOT_QUALITY_REASON_CODES.has(
-        raw.reasonCode as NonNullable<SnapshotQualityVerdict['reasonCode']>,
-      )
-        ? (raw.reasonCode as SnapshotQualityVerdict['reasonCode'])
-        : undefined,
+    reasonCode: isDeclared(DECLARED_REASON_CODES, raw.reasonCode) ? raw.reasonCode : undefined,
     customActions: readCustomActionCoverage(raw.customActions),
     effectiveDepth: typeof raw.effectiveDepth === 'number' ? raw.effectiveDepth : undefined,
     collapsedLeafIndexes: Array.isArray(raw.collapsedLeafIndexes)

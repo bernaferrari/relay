@@ -1,5 +1,5 @@
 import { beforeEach, expect, test, vi } from 'vitest';
-import type { IosTargetActivation } from '@agent-device/kernel/snapshot';
+import type { IosTargetActivation, PostGestureOutcome } from '@agent-device/kernel/snapshot';
 import { iosTargetActivationDisclosure } from '@agent-device/contracts/ios-target-activation';
 import { makeSessionStore } from '../../../../__tests__/test-utils/store-factory.ts';
 import { makeIosSession } from '../../../../__tests__/test-utils/session-factories.ts';
@@ -7,6 +7,8 @@ import type { DaemonResponse } from '../../../daemon-request.ts';
 import { legacyDispatchCapture } from '../../../__tests__/legacy-snapshot-capture-fixture.ts';
 import { getRuntimeBindings } from '../../../__tests__/interaction-get-runtime-fixture.ts';
 import { handleFindCommands } from '../../index.ts';
+import { markDeferredInteractionOutcome } from '../../../deferred-interaction-outcome.ts';
+import { formatPostGestureOutcomeWarning } from '@agent-device/capture-kit/post-gesture-stability';
 
 vi.mock('../../../snapshot-interactor-capture.ts', async () => {
   const fixture = await import('../../../__tests__/legacy-snapshot-capture-fixture.ts');
@@ -71,12 +73,20 @@ beforeEach(() => {
   legacyDispatchCapture.mockReset();
 });
 
-async function findClick(captures: Record<string, unknown>[]) {
+type CaptureScript = (call: number, context?: Record<string, unknown>) => Record<string, unknown>;
+
+async function findClick(captures: Record<string, unknown>[] | CaptureScript, afterScroll = false) {
   const sessionStore = makeSessionStore();
-  sessionStore.set('default', makeIosSession('default', { appBundleId: 'com.example.app' }));
+  const session = makeIosSession('default', { appBundleId: 'com.example.app' });
+  if (afterScroll)
+    markDeferredInteractionOutcome({ session, command: 'scroll', positionals: [], flags: {} });
+  sessionStore.set('default', session);
   let call = 0;
   legacyDispatchCapture.mockImplementation(
-    async () => captures[Math.min(call++, captures.length - 1)],
+    async (_device, _command, _positionals, _out, context) =>
+      typeof captures === 'function'
+        ? captures(call++, context)
+        : captures[Math.min(call++, captures.length - 1)],
   );
 
   const response = await handleFindCommands({
@@ -120,6 +130,47 @@ test('a find that stayed sparse reports the repair on the failure it returns', a
 
   expect(response?.ok).toBe(false);
   if (!response || response.ok) return;
-  const hint = String(response.error.details?.hint ?? '');
-  expect(hint).toContain(iosTargetActivationDisclosure(FACT));
+  expect(response.error.hint).toContain(iosTargetActivationDisclosure(FACT));
+});
+
+/**
+ * A sparse capture on a surface still moving after a scroll is replaced by find's query-scoped
+ * recovery right away. The recovery reads the same moment, so its miss is not proof of absence either.
+ */
+test('a find that misses after recovering a sparse capture of a moving surface reports the unsettled outcome', async () => {
+  const movingSparse = (call: number) => ({
+    ...SPARSE_VERDICT,
+    targetActivation: undefined,
+    nodes: [
+      SPARSE_VERDICT.nodes[0],
+      { ...RECOVERED_TREE.nodes[1], label: 'Wi-Fi', rect: { ...SCREEN, y: 600 - call * 37 } },
+    ],
+  });
+  const recoveredWithoutTarget = {
+    ...RECOVERED_TREE,
+    nodes: [RECOVERED_TREE.nodes[0], { ...RECOVERED_TREE.nodes[1], label: 'Wi-Fi' }],
+  };
+  const realSetTimeout = globalThis.setTimeout;
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  let done = false;
+  const pending = findClick(
+    (call, context) => (context?.snapshotScope ? recoveredWithoutTarget : movingSparse(call)),
+    true,
+  ).finally(() => (done = true));
+  // The route awaits real I/O between polls, so the faked clock advances while the test yields.
+  while (!done) {
+    await vi.advanceTimersByTimeAsync(50);
+    await new Promise((resolve) => realSetTimeout(resolve, 1));
+  }
+  const { response } = await pending;
+  vi.useRealTimers();
+
+  const outcome: PostGestureOutcome = {
+    kind: 'unsettled',
+    gesture: { action: 'scroll', positionals: [] },
+  };
+  expect(response?.ok === false && response.error).toMatchObject({
+    hint: expect.stringContaining(formatPostGestureOutcomeWarning(outcome)),
+    details: { postGestureOutcome: outcome },
+  });
 });

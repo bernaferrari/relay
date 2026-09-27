@@ -1,7 +1,13 @@
 import type { DeviceInfo } from '@agent-device/kernel/device';
-import { AppError } from '@agent-device/kernel/errors';
+import { AppError, createRequestCanceledError } from '@agent-device/kernel/errors';
+import type { ReadinessPhase } from '@agent-device/contracts/wait';
 import { createDetachedAttempts, waitForDetachedAttempt } from './detached-attempt.ts';
-import { runSimctl } from './core/apps-simctl.ts';
+import {
+  readSimctlDevicesByRuntime,
+  runSimctlForDevice,
+  simulatorAddressFor,
+  type SimulatorAddress,
+} from './core/simctl.ts';
 import { readSnapshotTargetProcessStartTime } from './snapshot-process.ts';
 
 /** Identity re-check of a cached target: one local `ps`, never CoreSimulator IPC. */
@@ -15,9 +21,11 @@ const TARGET_IDENTITY_TIMEOUT_MS = 3_000;
 const TARGET_DISCOVERY_WAIT_MS = 1_500;
 /** Overall deadline of one discovery (both simctl probes and the `ps` identity read). */
 const TARGET_DISCOVERY_TIMEOUT_MS = 15_000;
+/** A caller's wait slice ran out while the discovery it joined is still running. */
+const TARGET_DISCOVERY_PENDING = 'simulator-target-discovery-pending';
 
 export type SimulatorSnapshotTarget = Readonly<{
-  udid: string;
+  simulator: SimulatorAddress;
   runtime: string;
   pid: number;
   generation: string;
@@ -50,6 +58,7 @@ export function createSimulatorSnapshotTargetResolver(): SimulatorSnapshotTarget
         signal,
         timeoutMs: TARGET_IDENTITY_TIMEOUT_MS,
       });
+      signal.throwIfAborted();
       if (observed === cached.processStartTime) return cached;
     }
     targets.delete(key);
@@ -60,10 +69,31 @@ export function createSimulatorSnapshotTargetResolver(): SimulatorSnapshotTarget
         return target;
       },
       wait: (waitMs, stop) =>
-        waitForDetachedAttempt({ waitMs, signal, stop, cancelled: () => signal.reason }),
-      pending: () => targetError('simulator-target-discovery-pending', device, appBundleId),
+        waitForDetachedAttempt({
+          waitMs,
+          signal,
+          stop,
+          cancelled: () => discoveryCancelled(signal),
+        }),
+      pending: () => targetError(TARGET_DISCOVERY_PENDING, device, appBundleId),
     });
   };
+}
+
+/** A caller cancelled while it waited on a running discovery: its time went to readiness work. */
+function discoveryCancelled(signal: AbortSignal): AppError {
+  return createRequestCanceledError(
+    { readinessPhase: 'target-discovery' satisfies ReadinessPhase },
+    signal.reason,
+  );
+}
+
+/**
+ * Whether a resolver failure only says the discovery is still running. The discovery keeps going
+ * under its own deadline, so asking again joins it rather than starting another.
+ */
+export function isSimulatorTargetDiscoveryPending(error: unknown): boolean {
+  return error instanceof AppError && error.details?.reason === TARGET_DISCOVERY_PENDING;
 }
 
 async function resolveSimulatorSnapshotTarget(
@@ -76,7 +106,7 @@ async function resolveSimulatorSnapshotTarget(
   // failure would release its single-flight slot while the other probe still runs, and every
   // capture after it would start a probe of its own.
   const [jobsProbe, runtimeProbe] = await Promise.allSettled([
-    runSimctl(device, ['spawn', device.id, 'launchctl', 'list'], {
+    runSimctlForDevice(device, ['spawn', device.id, 'launchctl', 'list'], {
       allowFailure: true,
       timeoutMs: remainingMs(deadline),
     }),
@@ -100,7 +130,7 @@ async function resolveSimulatorSnapshotTarget(
     throw targetError('simulator-target-identity-unavailable', device, appBundleId);
   }
   return Object.freeze({
-    udid: device.id,
+    simulator: simulatorAddressFor(device),
     runtime,
     pid: job.pid,
     generation: `${job.pid}:${job.label}:${processStartTime}`,
@@ -116,15 +146,12 @@ async function readSimulatorRuntime(
 ): Promise<string> {
   const existing = runtimeByDevice.get(device.id);
   if (existing) return await existing;
-  const pending = runSimctl(device, ['list', 'devices', '-j'], {
+  const pending = runSimctlForDevice(device, ['list', 'devices', '-j'], {
     allowFailure: true,
     timeoutMs: remainingMs(deadline),
   }).then((result) => {
     if (result.exitCode !== 0) throw targetError('simulator-runtime-probe-failed', device, '');
-    const payload = JSON.parse(result.stdout) as {
-      devices?: Record<string, Array<{ udid?: string }>>;
-    };
-    const runtime = Object.entries(payload.devices ?? {}).find(([, devices]) =>
+    const runtime = Object.entries(readSimctlDevicesByRuntime(result.stdout)).find(([, devices]) =>
       devices.some((candidate) => candidate.udid === device.id),
     )?.[0];
     if (!runtime) throw targetError('simulator-runtime-unavailable', device, '');

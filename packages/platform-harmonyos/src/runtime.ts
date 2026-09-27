@@ -23,12 +23,11 @@ import {
   bindLocalScrollInteractor,
   scrollRuntimeOperationFacts,
 } from '@agent-device/contracts/scroll-runtime';
-import { homeRuntimeOperationFacts } from '@agent-device/contracts/home-runtime';
 import { bindAdmittedLocalInteractorOperations } from '@agent-device/contracts/interactor-operation-catalog';
 import { alertRuntimeOperationFacts } from '@agent-device/contracts/alert-runtime';
 import { appEventRuntimeOperationFacts } from '@agent-device/contracts/app-event-runtime';
 import { settingsRuntimeOperationFacts } from '@agent-device/contracts/settings-runtime';
-import { appSwitcherRuntimeOperationFacts } from '@agent-device/contracts/app-switcher-runtime';
+import { systemButtonRuntimeOperationFacts } from '@agent-device/contracts/system-button-runtime';
 import { clipboardRuntimeOperationFacts } from '@agent-device/contracts/clipboard-runtime';
 import { keyboardRuntimeOperationFacts } from '@agent-device/contracts/keyboard-runtime';
 import { orientationRuntimeOperationFacts } from '@agent-device/contracts/orientation-runtime';
@@ -272,15 +271,23 @@ export function createHarmonyPlatformRuntime(host: PlatformRuntimeHost): Platfor
         // the legacy dispatch already did after its Apple-runner attempt failed.
         ...elementTextRuntimeOperationFacts({ readTextAtPoint: elementTextUnavailable }),
         ...backRuntimeOperationFacts({ back: harmonyFocusFact(device) }),
-        ...homeRuntimeOperationFacts({ home: harmonyFocusFact(device) }),
-        // App switcher rides the same HDC-driven key input as home, so it shares that cell.
-        ...appSwitcherRuntimeOperationFacts({ appSwitcher: harmonyFocusFact(device) }),
-        // HarmonyOS devices have no Action Button control for HDC to press.
-        actionButton: harmonyPlatformLeafUnavailable,
+        // Home and the app switcher ride the same HDC-driven key input; no other system button
+        // has a HarmonyOS control for HDC to press.
+        ...systemButtonRuntimeOperationFacts({
+          unsupported: harmonyPlatformLeafUnavailable,
+          home: harmonyFocusFact(device),
+          appSwitcher: harmonyFocusFact(device),
+        }),
+        // HarmonyOS devices have no foldable hinge control for HDC to pose.
+        setFoldPose: harmonyPlatformLeafUnavailable,
         // HarmonyOS has no trigger-app-event implementation.
         ...appEventRuntimeOperationFacts({ triggerAppEvent: harmonyPlatformLeafUnavailable }),
-        // The HDC-driven settings surface shares the interaction kind gate.
-        ...settingsRuntimeOperationFacts({ setSetting: harmonyFocusFact(device) }),
+        // The HDC-driven settings surface shares the interaction kind gate. No HDC leaf reads a
+        // setting back, so the read half states the platform-leaf denial it would otherwise throw.
+        ...settingsRuntimeOperationFacts({
+          setSetting: harmonyFocusFact(device),
+          readSetting: harmonyPlatformLeafUnavailable,
+        }),
         // HarmonyOS exposes no alert automation operation.
         ...alertRuntimeOperationFacts({
           read: harmonyPlatformLeafUnavailable,

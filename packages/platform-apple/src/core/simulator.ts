@@ -12,11 +12,8 @@ import {
   IOS_SIMCTL_LIST_TIMEOUT_MS,
   IOS_SIMULATOR_FOCUS_TIMEOUT_MS,
 } from './config.ts';
-import { buildSimctlArgsForDevice } from './simctl.ts';
+import { buildSimctlArgsForDevice, readSimctlDeviceState } from './simctl.ts';
 import { runAppleToolCommand, runXcrun } from './tool-provider.ts';
-
-const IOS_SIMULATOR_HOST_APPS = ['Simulator'] as const;
-const IOS_DEVICE_HUB_HOST_APPS = ['Device Hub', 'Simulator'] as const;
 
 const simulatorReadiness = createScopedProvider<
   ((device: DeviceInfo) => Promise<void>) | undefined
@@ -29,16 +26,7 @@ export async function withSimulatorReadiness<T>(
   return await simulatorReadiness.run(ensureReady, task);
 }
 
-type OpenIosSimulatorAppOptions = {
-  background?: boolean;
-  deviceHub?: boolean;
-  signal?: AbortSignal;
-};
-
-type EnsureBootedSimulatorOptions = {
-  deviceHub?: boolean;
-  focusExisting?: boolean;
-  onColdBootStart?: (device: DeviceInfo) => void;
+type SimulatorCommandOptions = {
   signal?: AbortSignal;
 };
 
@@ -78,22 +66,17 @@ export function requireSimulatorDevice(device: DeviceInfo, command: string): voi
   }
 }
 
-export async function openIosSimulatorApp(options: OpenIosSimulatorAppOptions = {}): Promise<void> {
-  const appNames = options.deviceHub ? IOS_DEVICE_HUB_HOST_APPS : IOS_SIMULATOR_HOST_APPS;
-  const openArgsPrefix = options.background ? ['-g', '-a'] : ['-a'];
-  for (const appName of appNames) {
-    const result = await runAppleToolCommand('open', [...openArgsPrefix, appName], {
-      allowFailure: true,
-      signal: options.signal,
-      timeoutMs: IOS_SIMULATOR_FOCUS_TIMEOUT_MS,
-    });
-    if (result.exitCode === 0) return;
-  }
+export async function openIosSimulatorApp(options: SimulatorCommandOptions = {}): Promise<void> {
+  await runAppleToolCommand('open', ['-a', 'Simulator'], {
+    allowFailure: true,
+    signal: options.signal,
+    timeoutMs: IOS_SIMULATOR_FOCUS_TIMEOUT_MS,
+  });
 }
 
 export async function ensureBootedSimulator(
   device: DeviceInfo,
-  options: EnsureBootedSimulatorOptions = {},
+  options: SimulatorCommandOptions = {},
 ): Promise<void> {
   if (device.kind !== 'simulator') return;
   options.signal?.throwIfAborted();
@@ -109,16 +92,8 @@ export async function ensureBootedSimulator(
     : await getSimulatorState(device, options.signal);
   if (state === 'Booted') {
     markSimulatorBooted(device);
-    if (options.focusExisting) {
-      await openIosSimulatorApp({
-        background: options.deviceHub,
-        deviceHub: options.deviceHub,
-        signal: options.signal,
-      });
-    }
     return;
   }
-  options.onColdBootStart?.(device);
 
   const deadline = Deadline.fromTimeoutMs(IOS_BOOT_TIMEOUT_MS);
   let bootResult:
@@ -231,7 +206,7 @@ export async function ensureBootedSimulator(
   }
 
   markSimulatorBooted(device);
-  await openIosSimulatorApp({ deviceHub: options.deviceHub, signal: options.signal });
+  await openIosSimulatorApp({ signal: options.signal });
 }
 
 export async function shutdownSimulator(
@@ -262,18 +237,5 @@ async function getSimulatorState(device: DeviceInfo, signal?: AbortSignal): Prom
     timeoutMs: IOS_SIMCTL_LIST_TIMEOUT_MS,
   });
   if (result.exitCode !== 0) return null;
-
-  try {
-    const payload = JSON.parse(result.stdout) as {
-      devices: Record<string, { udid: string; state: string }[]>;
-    };
-
-    for (const runtime of Object.values(payload.devices ?? {})) {
-      const match = runtime.find((entry) => entry.udid === device.id);
-      if (match) return match.state;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  return readSimctlDeviceState(result.stdout, device.id);
 }

@@ -11,7 +11,9 @@ import { approveDownloadSourceUrl } from './install-source-network.ts';
 import * as networkTransport from './install-source-network-transport.ts';
 
 const MAX_REDIRECTS = 5;
+const DEFAULT_USER_AGENT = 'agent-device';
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const NETWORK_ERROR_CODE_RE = /^[A-Z][A-Z0-9_]{0,63}$/;
 const FORBIDDEN_HEADERS = new Set([
   'accept-encoding',
   'connection',
@@ -33,7 +35,7 @@ export async function downloadInstallSource(params: {
   signal: AbortSignal;
 }): Promise<string> {
   let currentUrl = parseSourceUrl(params.url);
-  let headers = sanitizeHeaders(params.headers);
+  let headers = withDefaultUserAgent(sanitizeHeaders(params.headers));
   for (let redirectCount = 0; ; redirectCount += 1) {
     const response = await requestHop(currentUrl, headers, params.signal);
     try {
@@ -67,13 +69,23 @@ async function requestHop(
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
+    const networkErrorCode = readNetworkErrorCode(error);
     throw new AppError(
       'COMMAND_FAILED',
-      'The daemon failed to fetch the app source',
-      undefined,
+      networkErrorCode
+        ? `The daemon failed to fetch the app source (network error code: ${networkErrorCode})`
+        : 'The daemon failed to fetch the app source',
+      networkErrorCode ? { networkErrorCode } : undefined,
       error,
     );
   }
+}
+
+// Only the code crosses to the caller: a remote daemon's cause message can name
+// its resolved addresses, proxy, or server-supplied certificate names.
+function readNetworkErrorCode(error: unknown): string | undefined {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && NETWORK_ERROR_CODE_RE.test(code) ? code : undefined;
 }
 
 function readRedirect(
@@ -157,6 +169,11 @@ function sanitizeHeaders(input: Record<string, string> | undefined): Record<stri
       return !FORBIDDEN_HEADERS.has(lower) && !connectionTokens.has(lower);
     }),
   );
+}
+
+function withDefaultUserAgent(headers: Record<string, string>): Record<string, string> {
+  if (Object.keys(headers).some((name) => name.toLowerCase() === 'user-agent')) return headers;
+  return { ...headers, 'user-agent': DEFAULT_USER_AGENT };
 }
 
 function crossOriginHeaders(headers: Record<string, string>): Record<string, string> {

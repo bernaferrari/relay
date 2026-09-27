@@ -18,13 +18,12 @@ const signal = () => new AbortController().signal;
 
 function targetFixture() {
   const state = { pid: 42, launch: 'launch-a', start: 'start-a' as string | null };
-  const run = vi.fn(async (args: string[], _options?: { timeoutMs?: number }) => ({
-    stdout:
-      args[0] === 'spawn'
-        ? `90\t0\tUIKitApplication:com.example.app.beta[wrong][rb-legacy]\n${state.pid}\t0\tUIKitApplication:${app}[${state.launch}][rb-legacy]`
-        : JSON.stringify({
-            devices: { 'com.apple.CoreSimulator.SimRuntime.iOS-26-0': [{ udid: ios.id }] },
-          }),
+  const run = vi.fn(async (args: readonly string[], _options?: { timeoutMs?: number }) => ({
+    stdout: args.includes('spawn')
+      ? `90\t0\tUIKitApplication:com.example.app.beta[wrong][rb-legacy]\n${state.pid}\t0\tUIKitApplication:${app}[${state.launch}][rb-legacy]`
+      : JSON.stringify({
+          devices: { 'com.apple.CoreSimulator.SimRuntime.iOS-26-0': [{ udid: ios.id }] },
+        }),
     stderr: '',
     exitCode: 0,
   }));
@@ -43,7 +42,7 @@ function targetFixture() {
     runCommand,
     provider,
     resolve,
-    discoveryCount: () => run.mock.calls.filter(([args]) => args[0] === 'spawn').length,
+    discoveryCount: () => run.mock.calls.filter(([args]) => args.includes('spawn')).length,
   };
 }
 
@@ -54,7 +53,7 @@ test('an unchanged OS process reuses its exact app target without another simctl
     const second = await fixture.resolve(ios, app, signal());
     expect(second).toBe(first);
     expect(first).toEqual({
-      udid: ios.id,
+      simulator: { udid: ios.id, simulatorSetPath: undefined },
       runtime: 'com.apple.CoreSimulator.SimRuntime.iOS-26-0',
       pid: 42,
       generation: `42:UIKitApplication:${app}[launch-a][rb-legacy]:start-a`,
@@ -63,6 +62,22 @@ test('an unchanged OS process reuses its exact app target without another simctl
     });
     expect(fixture.discoveryCount()).toBe(1);
     expect(fixture.runCommand).toHaveBeenCalledTimes(2);
+  });
+});
+
+test('a target in a scoped simulator set carries that set to the bridge', async () => {
+  const fixture = targetFixture();
+  await withAppleToolProvider(fixture.provider, async () => {
+    const target = await fixture.resolve(
+      { ...ios, simulatorSetPath: '/tmp/scoped-set' },
+      app,
+      signal(),
+    );
+    expect(target.simulator.simulatorSetPath).toBe('/tmp/scoped-set');
+    expect(fixture.run.mock.calls.map(([args]) => args.slice(0, 2))).toEqual([
+      ['--set', '/tmp/scoped-set'],
+      ['--set', '/tmp/scoped-set'],
+    ]);
   });
 });
 
@@ -152,7 +167,7 @@ function deferredSpawn(fixture: ReturnType<typeof targetFixture>) {
     release = resolve;
   });
   const respond = fixture.run.getMockImplementation()!;
-  fixture.run.mockImplementation(async (args: string[]) =>
+  fixture.run.mockImplementation(async (args: readonly string[]) =>
     args[0] === 'spawn' ? await released.then(() => respond(args)) : await respond(args),
   );
   return release;
@@ -202,10 +217,34 @@ test('a cancelled caller leaves discovery running for the next capture', async (
   await withAppleToolProvider(fixture.provider, async () => {
     const controller = new AbortController();
     const cancelled = fixture.resolve(ios, app, controller.signal);
-    controller.abort(new Error('request-ended'));
-    await expect(cancelled).rejects.toThrow('request-ended');
+    const reason = new Error('request-ended');
+    controller.abort(reason);
+    // The caller spent its time waiting on discovery, so its cancellation names that readiness
+    // work (#2343) and keeps the caller's own reason as the cause.
+    await expect(cancelled).rejects.toMatchObject({
+      details: { reason: 'request_canceled', readinessPhase: 'target-discovery' },
+      cause: reason,
+    });
 
     release();
+    expect(await fixture.resolve(ios, app, signal())).toMatchObject({ pid: 42 });
+    expect(fixture.discoveryCount()).toBe(1);
+  });
+});
+
+test('a cancelled re-check of a known target keeps it and names no readiness work', async () => {
+  const fixture = targetFixture();
+  await withAppleToolProvider(fixture.provider, async () => {
+    await fixture.resolve(ios, app, signal());
+    const controller = new AbortController();
+    const reason = new Error('wait-deadline');
+    fixture.runCommand.mockImplementationOnce(async () => {
+      controller.abort(reason);
+      return { stdout: '', stderr: '', exitCode: 1 };
+    });
+
+    await expect(fixture.resolve(ios, app, controller.signal)).rejects.toBe(reason);
+
     expect(await fixture.resolve(ios, app, signal())).toMatchObject({ pid: 42 });
     expect(fixture.discoveryCount()).toBe(1);
   });
@@ -240,7 +279,7 @@ test('a failed runtime probe does not release the slot while the launch-job prob
   const fixture = targetFixture();
   const release = deferredSpawn(fixture);
   const respond = fixture.run.getMockImplementation()!;
-  fixture.run.mockImplementation(async (args: string[], options) =>
+  fixture.run.mockImplementation(async (args: readonly string[], options) =>
     args[0] === 'list'
       ? { stdout: '', stderr: 'simctl list failed', exitCode: 1 }
       : await respond(args, options),
