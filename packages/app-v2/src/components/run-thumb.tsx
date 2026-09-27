@@ -1,11 +1,12 @@
 /** @jsxImportSource react */
+import { ImageOff, Layers } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouteContext } from "@tanstack/react-router";
 import { productClientForPlatform } from "../data/product-client";
 
 /** Blob URL of a Run's last screenshot (the capture people review, else the last frame). */
-export function useRunThumbnail(runId: string | undefined, enabled = true): string | undefined {
+function useRunThumbnail(runId: string | undefined, enabled = true) {
   const { platform } = useRouteContext({ from: "__root__" });
   const image = useQuery({
     queryKey: ["run-thumb", runId],
@@ -19,7 +20,9 @@ export function useRunThumbnail(runId: string | undefined, enabled = true): stri
     },
     enabled: Boolean(runId && enabled),
     staleTime: Infinity,
-    retry: false,
+    retry: (failureCount, error) =>
+      failureCount < 1 && !("status" in error && [401, 403, 404].includes(Number(error.status))),
+    retryDelay: 1_000,
   });
   const [url, setUrl] = useState<string>();
   useEffect(() => {
@@ -28,7 +31,7 @@ export function useRunThumbnail(runId: string | undefined, enabled = true): stri
     setUrl(next);
     return () => URL.revokeObjectURL(next);
   }, [image.data]);
-  return url;
+  return { url, loading: image.isFetching || (Boolean(runId) && !enabled) };
 }
 
 /** The last screenshot of a Run in a small device frame; loads when scrolled into view. */
@@ -53,7 +56,7 @@ export function RunThumb({ runId, label }: { runId?: string; label: string }) {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const url = useRunThumbnail(runId, visible);
+  const { url, loading } = useRunThumbnail(runId, visible);
   return (
     <div ref={box} className="h-11 w-16 shrink-0" aria-hidden="true">
       {url ? (
@@ -63,7 +66,16 @@ export function RunThumb({ runId, label }: { runId?: string; label: string }) {
           className="size-full rounded-md border border-border bg-card object-cover object-top shadow-xs"
         />
       ) : (
-        <span className="block size-full rounded-md border border-dashed border-border bg-muted/40" />
+        <span
+          className="flex size-full items-center justify-center rounded-md bg-muted/40 text-muted-foreground"
+          title={!runId ? "Test plan" : loading ? "Loading screenshot" : "No preview available"}
+        >
+          {!runId ? (
+            <Layers className="size-4" />
+          ) : loading ? null : (
+            <ImageOff className="size-4" />
+          )}
+        </span>
       )}
     </div>
   );
