@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import type { ProductTestSummary } from "@relay/product/catalog";
@@ -8,7 +8,13 @@ import { ChevronRight, CircleDot, CircleX, Clock, Eye, Play, Plus, Search, X } f
 import { Input } from "@relay/ui-react/components/input";
 import { EmptyState, ReadinessMark } from "../components/product-patterns";
 import { LibraryPage } from "../components/page-layout";
-import { StatusPill, runStateLabel, runStateOf, type RunState } from "../components/run-status";
+import {
+  StatusPill,
+  runStateDot,
+  runStateLabel,
+  runStateOf,
+  type RunState,
+} from "../components/run-status";
 import { libraryRowSurface } from "../components/library-row-styles";
 import { catalogQueryKeys } from "../data/catalog-queries";
 import { createReviewProductService, reviewQueryKeys } from "../data/review-product-service";
@@ -451,7 +457,7 @@ function PlanGroup({
               {last ? ` · ${relativeTime(last)}` : ""}
             </span>
           </span>
-          <span className="hidden w-48 shrink-0 md:block">
+          <span className="hidden w-56 shrink-0 md:block">
             <PlanResultSummary states={states} />
           </span>
         </button>
@@ -474,9 +480,6 @@ function PlanGroup({
           <div className="px-4 pt-3 md:hidden">
             <PlanResultSummary states={states} />
           </div>
-          <p className="px-3 pb-2 text-xs text-muted-foreground">
-            Choose a test to view its steps.
-          </p>
           <TestList tests={members} shared={shared} bare plan={suite} />
         </div>
       ) : null}
@@ -590,14 +593,49 @@ function TestRow({
   );
 }
 
+const SUMMARY_ORDER: readonly RunState[] = [
+  "failed",
+  "review",
+  "running",
+  "passed",
+  "cancelled",
+  "not-run",
+];
+
+/** One glance: a health bar, then only the counts that matter. */
 function PlanResultSummary({ states }: { states: readonly RunState[] }) {
   const counts = new Map<RunState, number>();
   for (const state of states) counts.set(state, (counts.get(state) ?? 0) + 1);
+  const ordered = SUMMARY_ORDER.filter((state) => counts.has(state));
+  const description = ordered
+    .map((state) => `${counts.get(state)} ${runStateLabel(state).toLowerCase()}`)
+    .join(", ");
+  if (!states.length) return null;
   return (
-    <span className="text-xs text-muted-foreground">
-      {[...counts]
-        .map(([state, count]) => `${count} ${runStateLabel(state).toLowerCase()}`)
-        .join(" · ")}
+    <span className="grid gap-1.5" title={description} aria-label={description}>
+      <span className="flex h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+        {ordered.map((state) => (
+          <span
+            key={state}
+            className={`grow-(--share) ${runStateDot(state)}`}
+            style={{ "--share": counts.get(state) } as CSSProperties}
+          />
+        ))}
+      </span>
+      <span className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden="true">
+        {ordered
+          .filter((state) => state !== "not-run" && state !== "cancelled")
+          .map((state) => (
+            <span key={state} className="inline-flex items-center gap-1 tabular-nums">
+              <span className={`size-1.5 rounded-full ${runStateDot(state)}`} />
+              {counts.get(state)}{" "}
+              {state === "review" ? "to review" : runStateLabel(state).toLowerCase()}
+            </span>
+          ))}
+        {counts.has("not-run") ? (
+          <span className="tabular-nums">{counts.get("not-run")} not run</span>
+        ) : null}
+      </span>
     </span>
   );
 }

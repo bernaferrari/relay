@@ -399,6 +399,13 @@ const deviceRoute = createRoute({
   path: "/devices/$deviceId",
   component: DevicePage,
 });
+const settingsIndexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings",
+  beforeLoad: () => {
+    throw redirect({ to: "/settings/general", replace: true });
+  },
+});
 const settingsGeneralRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/general",
@@ -475,6 +482,7 @@ const routeTree = rootRoute.addChildren([
   agentDebugRoute,
   goalsRoute,
   prototypeWorkbenchRoute,
+  settingsIndexRoute,
   settingsGeneralRoute,
   settingsEvidenceRoute,
   legacyEvidenceRoute,
