@@ -143,17 +143,26 @@ export function evaluateProductV2Contract({
 export async function loadProductV2Contract(
   root = resolve(fileURLToPath(new URL("..", import.meta.url))),
 ) {
-  return readFile(resolve(root, "PRODUCT_V2.md"), "utf8");
+  try {
+    return await readFile(resolve(root, "PRODUCT_V2.md"), "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const document = await loadProductV2Contract();
-  const violations = evaluateProductV2Contract({ document });
-  if (violations.length) {
-    console.error(violations.join("\n"));
-    process.exitCode = 1;
-  } else
-    console.log(
-      `Product V2 contract passed (${PRODUCT_V2_ROUTES.length} routes, ${PRODUCT_V2_PUBLIC_OBJECTS.length} public objects)`,
-    );
+  if (document == null) {
+    console.log("Product V2 contract skipped; PRODUCT_V2.md is local-only and not present.");
+  } else {
+    const violations = evaluateProductV2Contract({ document });
+    if (violations.length) {
+      console.error(violations.join("\n"));
+      process.exitCode = 1;
+    } else
+      console.log(
+        `Product V2 contract passed (${PRODUCT_V2_ROUTES.length} routes, ${PRODUCT_V2_PUBLIC_OBJECTS.length} public objects)`,
+      );
+  }
 }

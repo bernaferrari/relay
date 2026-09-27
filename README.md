@@ -17,8 +17,6 @@ Relay helps you test real user flows and understand their results. Record action
 
 The **App map** connects captured screens and the paths between them, so you can see what you have explored and turn those paths into reusable tests.
 
-![Relay’s App map showing captured Android screens and their navigation paths.](./docs/images/relay-app-map.png)
-
 ## How it works
 
 1. **Record a test.** Open a website in Relay’s browser or connect a phone or tablet. Perform the actions you want to repeat, then add checks and screenshot checkpoints.
@@ -38,7 +36,7 @@ Execution and screenshot approval are separate: a passing run can still have scr
 | Run evidence              | Inspect captures, steps, logs, network requests, and performance when available. |
 | CLI and MCP               | Use the same saved tests and evidence from scripts and coding agents.            |
 
-Relay is pre-release. Browser, Android, and iOS capabilities differ; evidence availability depends on the target and capture settings. See [product flows](./docs/PRODUCT_FLOWS.md) for the current behavior.
+Relay is pre-release. Browser, Android, and iOS capabilities differ; evidence availability depends on the target and capture settings.
 
 ## Get started
 
@@ -52,7 +50,7 @@ pnpm doctor --json
 pnpm dev:desktop
 ```
 
-The desktop launcher starts the local Relay service. The doctor checks your workspace and reports optional browser, Android, and iOS setup separately. Android requires `adb`; physical iOS devices require additional Apple tooling. See [local workflows](./docs/LOCAL_WORKFLOWS.md) and the [iOS authoring guide](./docs/IOS_AUTHORING_PLAYBOOK.md).
+The desktop launcher starts the local Relay service. The doctor checks your workspace and reports optional browser, Android, and iOS setup separately. Android requires `adb`; physical iOS devices require additional Apple tooling.
 
 In the app:
 
@@ -62,7 +60,7 @@ In the app:
 4. Run the test. Open it from **Runs** to inspect its steps and captures.
 5. Choose **Review screenshots** when captures need approval.
 
-See [your first screenshot review](./docs/FIRST_SCREENSHOT_REVIEW.md) for a longer walkthrough. To use Relay in a browser instead, run `pnpm dev:web` and open the URL printed in the terminal.
+To use Relay in a browser instead, run `pnpm dev:web` and open the URL printed in the terminal.
 
 ## For coding agents
 
@@ -74,7 +72,7 @@ pnpm relay run settings-localization
 pnpm relay export-evidence <run-id>
 ```
 
-This example assumes a saved test named `settings-localization`. See the [CLI and automation guide](./docs/LOCAL_WORKFLOWS.md) for recording, target selection, data sets, and recovery.
+This example assumes a saved test named `settings-localization`.
 
 ### Optional AI exploration
 
@@ -96,7 +94,7 @@ pnpm relay goal reproduce <session-id> --confirm
 pnpm relay goal promote <session-id> --confirm --title "Empty cart regression"
 ```
 
-Exploration does not approve its own findings. See [goal-first discovery](./docs/GOAL_FIRST_PLAYWRIGHT.md) for the HTTP integration, including use from existing Playwright suites. For revision-bound verification and GitHub Checks, see [PR proof integration](./docs/PR_PROOF_CI.md).
+Exploration does not approve its own findings.
 
 ## Local by default
 
@@ -113,17 +111,12 @@ pnpm test          # Package and runtime tests
 pnpm check:docs    # Documentation links and commands
 ```
 
-Use `pnpm doctor` for setup issues and `pnpm server:doctor` to inspect a running service. See [architecture](./ARCHITECTURE.md) for package boundaries and [development and verification](./docs/LOCAL_WORKFLOWS.md#develop-and-verify) for the full workflow.
+Use `pnpm doctor` for setup issues and `pnpm server:doctor` to inspect a running service.
 
 ## Documentation
 
-| Guide                                                        | Contents                                                |
-| ------------------------------------------------------------ | ------------------------------------------------------- |
-| [Product flows](./docs/PRODUCT_FLOWS.md)                     | Recording, running, and reviewing tests                 |
-| [First screenshot review](./docs/FIRST_SCREENSHOT_REVIEW.md) | Capture, review, and share evidence                     |
-| [Browser capture](./docs/BROWSER_CAPTURE.md)                 | Browser control and screenshot comparison               |
-| [Language runs](./docs/LANGUAGE_SWEEP_LOOP.md)               | Localization workflows                                  |
-| [CLI and automation](./docs/LOCAL_WORKFLOWS.md)              | Commands, device setup, service operation, and recovery |
-| [MCP adapter](./packages/mcp/README.md)                      | Connect a coding agent                                  |
-| [Readiness](./docs/ENTERPRISE_READINESS.md)                  | Current capabilities and limitations                    |
-| [Architecture](./ARCHITECTURE.md)                            | How the system fits together                            |
+Longer guides and plans stay in the local checkout and are not part of this repository. The [MCP adapter](./packages/mcp/README.md) explains how to connect a coding agent.
+
+## License
+
+Relay is released under the [MIT license](./LICENSE).

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const readmePath = resolve(repositoryRoot, "README.md");
 const packagePath = resolve(repositoryRoot, "package.json");
-const publicContractPaths = [
+const publicContractCandidates = [
   "docs/PRODUCT_FLOWS.md",
   "docs/RECORDING_FORMAT.md",
   "docs/ENTERPRISE_READINESS.md",
@@ -37,11 +37,18 @@ function documentedPnpmScripts(markdown) {
   return scripts;
 }
 
-const [readme, packageSource, ...publicContracts] = await Promise.all([
-  readFile(readmePath, "utf8"),
-  readFile(packagePath, "utf8"),
-  ...publicContractPaths.map((path) => readFile(resolve(repositoryRoot, path), "utf8")),
-]);
+const readme = await readFile(readmePath, "utf8");
+const packageSource = await readFile(packagePath, "utf8");
+const publicContractPaths = [];
+const publicContracts = [];
+for (const path of publicContractCandidates) {
+  try {
+    publicContracts.push(await readFile(resolve(repositoryRoot, path), "utf8"));
+    publicContractPaths.push(path);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+}
 const packageJson = JSON.parse(packageSource);
 const violations = [];
 

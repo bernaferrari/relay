@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { extname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -53,7 +53,14 @@ export function evaluateCanonicalProductModel(entries) {
 
 async function sourceFiles(directory) {
   const files = [];
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
+  let listing;
+  try {
+    listing = await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === "ENOENT") return files;
+    throw error;
+  }
+  for (const entry of listing) {
     const path = resolve(directory, entry.name);
     if (entry.isDirectory()) {
       if (entry.name === "node_modules" || entry.name === "vendor" || entry.name === ".git")
@@ -69,11 +76,15 @@ async function sourceFiles(directory) {
 async function main() {
   const roots = ["packages", "scripts", "docs"].map((path) => resolve(repositoryRoot, path));
   const paths = (await Promise.all(roots.map(sourceFiles))).flat();
-  paths.push(
-    resolve(repositoryRoot, "README.md"),
-    resolve(repositoryRoot, "ARCHITECTURE.md"),
-    resolve(repositoryRoot, "package.json"),
-  );
+  for (const path of ["README.md", "ARCHITECTURE.md", "package.json"]) {
+    const absolute = resolve(repositoryRoot, path);
+    try {
+      await access(absolute);
+      paths.push(absolute);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
   const entries = await Promise.all(
     paths.map(async (path) => ({
       path: relative(repositoryRoot, path),
