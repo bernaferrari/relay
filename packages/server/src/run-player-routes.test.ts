@@ -79,6 +79,16 @@ async function writeRun(
             },
           ]),
       {
+        kind: "campaign-transition-proof",
+        capturedAt: 2,
+        data: {
+          connectionId: "open-settings",
+          originScreenId: "screen-home",
+          destination: { kind: "screen", screenId: "screen-settings" },
+          status: "verified",
+        },
+      },
+      {
         kind: "capture-review",
         capturedAt: 2,
         data: {

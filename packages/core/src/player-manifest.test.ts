@@ -109,6 +109,24 @@ function reviewArtifact(input: {
   };
 }
 
+function transitionProof(
+  connectionId: string,
+  originScreenId: string,
+  destinationScreenId: string,
+  capturedAt: number,
+): PersistedRun["artifacts"][number] {
+  return {
+    kind: "campaign-transition-proof",
+    capturedAt,
+    data: {
+      connectionId,
+      originScreenId,
+      destination: { kind: "screen", screenId: destinationScreenId },
+      status: "verified",
+    },
+  };
+}
+
 function run(input: {
   id: string;
   artifacts: PersistedRun["artifacts"];
@@ -143,6 +161,8 @@ test("§6.6 fixture: three states, recorded and authored links, two configuratio
       run({
         id: "run-member",
         artifacts: [
+          transitionProof("open-settings", "screen-home", "screen-settings", 8),
+          transitionProof("open-language", "screen-settings", "screen-language", 9),
           reviewArtifact({
             frame: "frames/001.png",
             sha: memberHomeSha,
@@ -169,6 +189,7 @@ test("§6.6 fixture: three states, recorded and authored links, two configuratio
       run({
         id: "run-admin",
         artifacts: [
+          transitionProof("open-settings", "screen-home", "screen-settings", 24),
           reviewArtifact({
             frame: "frames/001.png",
             sha: adminSettingsSha,
@@ -193,8 +214,8 @@ test("§6.6 fixture: three states, recorded and authored links, two configuratio
   // Two exact configurations become two variants.
   assert.equal(manifest.variants.length, 2);
 
-  // open-settings and open-language were executed by included runs
-  // (destination captures exist) → recorded; home-shortcut → authored.
+  // Exact transition proofs make the executed connections recorded;
+  // home-shortcut remains an authored link.
   const byId = new Map(manifest.connections.map((connection) => [connection.id, connection]));
   assert.equal(byId.get("open-settings")?.kind, "recorded");
   assert.deepEqual(
@@ -292,6 +313,66 @@ test("a review decision binds to one exact capture as a finding", () => {
   );
 });
 
+test("a destination capture or recording provenance alone never proves an action", () => {
+  const map = fixtureMap();
+  (map.connections as Record<string, { provenance?: { source: string } }>)[
+    "open-settings"
+  ]!.provenance = { source: "recording" };
+  const manifest = buildPlayerManifest({
+    map,
+    runs: [
+      run({
+        id: "capture-only",
+        artifacts: [
+          reviewArtifact({
+            frame: "frames/001.png",
+            sha: "f".repeat(64),
+            checkpointId: "member-open-settings",
+            configuration: { browser: "firefox", account: "member" },
+            capturedAt: 20,
+          }),
+        ],
+      }),
+    ],
+  });
+  const connection = manifest.connections.find((item) => item.id === "open-settings");
+  assert.equal(connection?.kind, "authored");
+  assert.equal(connection?.provenance, undefined);
+  assert.equal(manifest.captures.length, 1);
+});
+
+test("a verified transition without a destination image keeps proof separate from pixels", () => {
+  const manifest = buildPlayerManifest({
+    map: fixtureMap(),
+    runs: [
+      run({
+        id: "proof-only-transition",
+        artifacts: [
+          transitionProof("open-language", "screen-settings", "screen-language", 10),
+          reviewArtifact({
+            frame: "frames/settings.png",
+            sha: "a".repeat(64),
+            checkpointId: "member-open-settings",
+            configuration: { browser: "firefox", account: "member" },
+            capturedAt: 20,
+          }),
+        ],
+      }),
+    ],
+  });
+  const connection = manifest.connections.find((item) => item.id === "open-language");
+  assert.equal(connection?.kind, "recorded");
+  assert.deepEqual(connection?.provenance, { runId: "proof-only-transition" });
+  assert.equal(
+    resolvePlayerCapture(
+      manifest,
+      "screen-language",
+      "account=member · browser=firefox @ slice4-member",
+    ),
+    undefined,
+  );
+});
+
 test("no captures yields an empty manifest, not invented states or links", () => {
   const manifest = buildPlayerManifest({ map: fixtureMap(), runs: [] });
   assert.equal(manifest.captures.length, 0);
@@ -342,7 +423,7 @@ test("captions never create identity: two same-caption captures stay distinct", 
   assert.equal(resolved?.imageSha256, "2".repeat(64));
 });
 
-test("discovery stays suggested and a manual link stays authored even when the destination was captured", () => {
+test("discovery and unproved recording links never become recorded transitions", () => {
   const map = fixtureMap();
   const connections = map.connections as unknown as Record<
     string,
@@ -374,5 +455,6 @@ test("discovery stays suggested and a manual link stays authored even when the d
   assert.equal(byId.get("open-settings")?.provenance, undefined);
   assert.deepEqual(byId.get("open-settings")?.hotspot?.point, { x: 0.5, y: 0.1 });
   assert.equal(byId.get("home-shortcut")?.kind, "authored");
-  assert.equal(byId.get("open-language")?.kind, "recorded");
+  assert.equal(byId.get("open-language")?.kind, "authored");
+  assert.equal(byId.get("open-language")?.provenance, undefined);
 });
