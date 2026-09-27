@@ -511,7 +511,10 @@ function RunReport({
     <>
       {!hasFailedStep ? failureNotice : null}
 
-      <section className="mt-3 flex min-h-0 flex-1 flex-col gap-3" aria-label="Run evidence">
+      <section
+        className="flex min-h-0 flex-1 flex-col border-t border-border"
+        aria-label="Run evidence"
+      >
         {report.timeline.length || report.evidence.length ? (
           <RunWorkbench
             key={report.runId}

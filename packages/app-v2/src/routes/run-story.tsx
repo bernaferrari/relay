@@ -242,7 +242,7 @@ export function RunStoryView({
               />
             ) : selected ? (
               <p className="text-sm text-muted-foreground">
-                {pinned ? selected.label : status === "running" ? "Live" : "Last screen"}
+                {selected.framePath === framePath ? selected.label : "Latest captured screenshot"}
               </p>
             ) : null}
           </div>
