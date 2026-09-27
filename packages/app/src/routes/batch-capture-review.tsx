@@ -423,7 +423,9 @@ export function PlanCaptureReviewSection({
       <details className="pt-2 text-xs text-muted-foreground">
         <summary className="w-fit cursor-pointer">Coverage and review details</summary>
         <p className="mt-2">{formatCaptureReviewCoverageSummary(queue.summary)}</p>
-        <p className="mt-1">Looks correct makes that screenshot the reference for later runs.</p>
+        <p className="mt-1">
+          Looks correct reviews this capture. Accept as reference also governs later Runs.
+        </p>
       </details>
     </section>
   );

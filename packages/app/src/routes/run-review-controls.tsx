@@ -169,6 +169,7 @@ export function RunReviewControls({
 function visualComparisonLabel(code: string): string {
   if (code === "VISUAL_MATCH") return "Visual evidence matches the baseline";
   if (code === "VISUAL_BASELINE_MISSING") return "No approved visual baseline";
+  if (code === "VISUAL_NOT_COMPARABLE") return "No pixels could be compared — review needed";
   if (code === "VISUAL_EXPECTED_VARIATION") return "Expected visual variation";
   return "Visual changes need review";
 }

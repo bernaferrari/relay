@@ -116,9 +116,9 @@ const extraGuidance: Partial<Record<OperationId, string>> = {
   "job.combine.analysis":
     " Read durable Plan findings without writing a pack. Each finding names its source frame; export only when a person needs a portable folder.",
   "job.combine.capture.review":
-    " Aggregate screenshot review across one Plan. Filter with pending, screen, device, or account; coverage counts stay planned/captured/blocked + accepted/issue/pending. Missing stays in the denominator. Looks correct makes that screenshot the reference for later runs.",
+    " Aggregate screenshot review across one Plan. Filter with pending, screen, device, or account; coverage counts stay planned/captured/blocked + accepted/issue/pending. Missing stays in the denominator. Accept as reference explicitly governs later Runs.",
   "job.combine.capture.review.apply":
-    " Human-only bulk screenshot review for exact selected Plan items. Bind runId, captureId, and image hash. Never accepts future arrivals, missing frames, or items hidden by pending/screen/device/account filters. Looks correct makes that screenshot the reference for later runs.",
+    " Human-only bulk screenshot review for exact selected Plan items. Bind runId, captureId, and image hash. Never accepts future arrivals, missing frames, or items hidden by pending/screen/device/account filters. Accept as reference explicitly governs later Runs.",
   "job.combine.start":
     " Run a saved Plan. Default is one cell. Pass executionMode all to run every selected world. Missing extra sign-ins or devices fail closed as Infra columns, not a smaller Plan. cell or selectedCellIds names the worlds to queue. A default serial/target fills missing cell bindings. A single Test with in worlds uses app-map.test.run. Never invent a Variable for screenshots.",
   "app-map.test.edit":

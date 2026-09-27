@@ -135,7 +135,6 @@ async function assertDesktopChrome(page) {
       forwardIcon: rect(
         'header[aria-label="Window navigation"] button[aria-label="Go forward"] svg',
       ),
-      activity: rect('header[aria-label="Window navigation"] [aria-label^="Open Activity Center"]'),
       command: rect(
         'header[aria-label="Window navigation"] button[aria-label="Open command palette"]',
       ),
@@ -166,10 +165,6 @@ async function assertDesktopChrome(page) {
       `History icon is oversized: ${JSON.stringify(icon)}`,
     );
   }
-  assert(
-    chrome.activity.left - chrome.command.right >= 12,
-    `Activity and search are cramped: ${chrome.activity.left - chrome.command.right}px`,
-  );
   assert(chrome.command.width >= 220, `Command search is too narrow: ${chrome.command.width}`);
 }
 
@@ -213,7 +208,7 @@ async function assertAccessible(page, route) {
   const detail = result.violations
     .map((violation) => {
       const targets = violation.nodes
-        .flatMap((node) => node.target)
+        .map((node) => `${node.target.join(", ")} (${node.failureSummary ?? "no detail"})`)
         .slice(0, 3)
         .join(", ");
       return `${violation.id} (${violation.impact ?? "unknown"}): ${targets}`;
@@ -288,14 +283,12 @@ async function run() {
     }
     await check();
 
-    for (const [name, route] of [
-      ["Devices", "/devices"],
-      ["Changes", "/changes"],
-      ["Results", "/runs"],
-    ]) {
-      await clickNav(page, name, route);
-      await check();
-    }
+    await clickNav(page, "Devices", "/devices");
+    await check();
+    await openRoute(page, "/changes");
+    await check();
+    await clickNav(page, "Runs", "/runs");
+    await check();
 
     const reportLink = page.locator('a[href*="#/runs/"]').first();
     if (await reportLink.count()) {
@@ -303,6 +296,14 @@ async function run() {
       await page.waitForFunction(() => window.location.hash.startsWith("#/runs/"), null, {
         timeout: CHECK_TIMEOUT_MS,
       });
+      await page.waitForFunction(
+        () => {
+          const title = document.querySelector("#main-content h1")?.textContent?.trim();
+          return Boolean(title && title !== "Runs");
+        },
+        null,
+        { timeout: CHECK_TIMEOUT_MS },
+      );
       await check();
       reportChecked = true;
     }

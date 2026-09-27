@@ -30,7 +30,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@relay/ui-react/compon
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { ChevronLeft, Circle, MoreHorizontal, Play, SlidersHorizontal } from "lucide-react";
-import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
 import { runQueryKeys } from "../data/run-queries";
@@ -99,6 +99,21 @@ export function TestPage() {
     if (search.setup === "run") setSetupAnchor(configurationTriggerRef.current);
   }, [search.setup, testId]);
   const [evidenceStepId, setEvidenceStepId] = useState("");
+  const editorScopeKey = `${appScope ?? "unscoped"}:${testId}`;
+  const [editing, setEditing] = useState<{
+    key: string;
+    state: "loading" | "dirty" | "saving" | "saved" | "failed";
+  }>({ key: editorScopeKey, state: "loading" });
+  const editorState = editing.key === editorScopeKey ? editing.state : "loading";
+  const onEditorStateChange = useCallback(
+    (state: typeof editing.state) =>
+      setEditing((current) =>
+        current.key === editorScopeKey && current.state === state
+          ? current
+          : { key: editorScopeKey, state },
+      ),
+    [editorScopeKey],
+  );
   const searchRunId = typeof search.run === "string" ? search.run : undefined;
   const [pinnedRunId, setPinnedRunId] = useState<string | undefined>(searchRunId);
   const startedForTestId = useRef<string | undefined>(undefined);
@@ -109,7 +124,7 @@ export function TestPage() {
     queryFn: () => runService.getTest(testId, appScope),
     retry: (count, error) => !(error instanceof AmbiguousTestError) && count < 2,
   });
-  const { recentRuns } = useLatestTestReport(runService, testId);
+  const { recentRuns } = useLatestTestReport(runService, testId, appScope);
   const completeStabilityRuns = useQuery({
     queryKey: runQueryKeys.testStability(testId),
     queryFn: () => runService.listTestRunsComplete!(testId),
@@ -224,12 +239,24 @@ export function TestPage() {
   const canStart =
     (usePairs ? paired.workspace.rows.length > 0 : targetReady) &&
     !configuration.loading &&
-    admission.status === "ready";
+    admission.status === "ready" &&
+    editorState === "saved";
   const start = useMutation({
     mutationFn: async () => {
       if (!test.data || !canStart) {
         throw new TypeError(
           admission.blockers[0]?.detail ?? "Choose a ready device or browser for this Run.",
+        );
+      }
+      const acknowledged = queryClient.getQueryData<{ revision: number }>([
+        "test-editor",
+        testId,
+        test.data.appMapId,
+      ]);
+      const current = await testEditorService.get(testId, test.data.appMapId);
+      if (!acknowledged || !current || current.revision !== acknowledged.revision) {
+        throw new TypeError(
+          "The saved Test changed. Reload it and review the latest version before running.",
         );
       }
       return startOwnedTestRun({
@@ -238,6 +265,7 @@ export function TestPage() {
           workspace: paired.workspace,
           testId,
           appMapId: test.data.appMapId,
+          documentRevision: acknowledged.revision,
           targetId,
           targetProfileId: admission.start.targetProfileId,
           profiles: profiles.data,
@@ -289,9 +317,10 @@ export function TestPage() {
     },
   });
   const editorDocument = useQuery({
-    queryKey: ["test-editor", testId],
-    queryFn: () => testEditorService.get(testId),
+    queryKey: ["test-editor", testId, test.data?.appMapId],
+    queryFn: () => testEditorService.get(testId, test.data!.appMapId),
     staleTime: 5_000,
+    enabled: Boolean(test.data?.appMapId),
   });
   // Record more steps into this Test, after the selected step, as its login.
   const record = useMutation({
@@ -430,6 +459,18 @@ export function TestPage() {
             },
             validated: canStart,
             blockers: [
+              ...(editorState !== "saved"
+                ? [
+                    {
+                      id: "test-document",
+                      label: editorState === "saving" ? "Saving Test changes" : "Save Test changes",
+                      detail:
+                        editorState === "failed"
+                          ? "Resolve the save problem before running this Test."
+                          : "Run uses the saved Test. Save the visible edits first.",
+                    },
+                  ]
+                : []),
               ...(configuration.targetUnavailable
                 ? [
                     {
@@ -777,50 +818,55 @@ export function TestPage() {
             }
             trailing={<TestLastRunLine run={latestRunOf(recentRuns.data)} />}
           />
-          {!showRecording && attachedRunId ? (
+          {attachedRunId ? (
             <TabsContent value="run" className="min-h-0 overflow-auto">
               <RunInspection key={attachedRunId} runId={attachedRunId} testId={testId} embedded />
             </TabsContent>
-          ) : (
-            <TabsContent value="definition" className="flex min-h-0 flex-1 flex-col">
-              <TestEditor
-                testId={testId}
-                stepId={typeof search.step === "string" ? search.step : undefined}
-                onStepChange={(step) =>
-                  void navigate({ search: (previous) => ({ ...previous, step }), replace: true })
-                }
-                onSelectedStepChange={(step) => setEvidenceStepId(step ?? "")}
-                stage={
-                  <TestStage
-                    key={testId}
-                    recorded={
-                      selectedEvidenceStep?.recordingFrames?.length ? (
-                        <TestStepEvidencePreview
-                          key={selectedEvidenceStep.id}
-                          step={selectedEvidenceStep}
-                          report={undefined}
-                          hasRuns={false}
-                          loading={false}
-                        />
-                      ) : (
-                        <TestLastRunStage run={latestRunOf(recentRuns.data)} />
-                      )
-                    }
-                    live={
-                      editorDocument.data ? (
-                        <TestEditorBrowserPane
-                          appMapId={editorDocument.data.appMapId}
-                          startUrl={editorDocument.data.test.originApplication}
-                          browserTargetIds={editorDocument.data.browserTargetIds}
-                          recentAccountIds={recentAccountIds(recentRuns.data)}
-                        />
-                      ) : null
-                    }
-                  />
-                }
-              />
-            </TabsContent>
-          )}
+          ) : null}
+          <TabsContent
+            value="definition"
+            keepMounted
+            className="flex min-h-0 flex-1 flex-col [&[hidden]]:hidden"
+          >
+            <TestEditor
+              testId={testId}
+              appMapId={test.data.appMapId}
+              onEditingStateChange={onEditorStateChange}
+              stepId={typeof search.step === "string" ? search.step : undefined}
+              onStepChange={(step) =>
+                void navigate({ search: (previous) => ({ ...previous, step }), replace: true })
+              }
+              onSelectedStepChange={(step) => setEvidenceStepId(step ?? "")}
+              stage={
+                <TestStage
+                  key={testId}
+                  recorded={
+                    selectedEvidenceStep?.recordingFrames?.length ? (
+                      <TestStepEvidencePreview
+                        key={selectedEvidenceStep.id}
+                        step={selectedEvidenceStep}
+                        report={undefined}
+                        hasRuns={false}
+                        loading={false}
+                      />
+                    ) : (
+                      <TestLastRunStage run={latestRunOf(recentRuns.data)} />
+                    )
+                  }
+                  live={
+                    editorDocument.data ? (
+                      <TestEditorBrowserPane
+                        appMapId={editorDocument.data.appMapId}
+                        startUrl={editorDocument.data.test.originApplication}
+                        browserTargetIds={editorDocument.data.browserTargetIds}
+                        recentAccountIds={recentAccountIds(recentRuns.data)}
+                      />
+                    ) : null
+                  }
+                />
+              }
+            />
+          </TabsContent>
         </Tabs>
       ) : null}
 

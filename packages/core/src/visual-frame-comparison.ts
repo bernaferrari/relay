@@ -83,7 +83,10 @@ function compareDecodedFrames(
       maxY = Math.max(maxY, y);
     }
   }
-  const changeRatio = consideredPixels === 0 ? 0 : changedPixels / consideredPixels;
+  if (consideredPixels === 0) {
+    return { code: "FRAME_NOT_COMPARABLE", consideredPixels, changedPixels };
+  }
+  const changeRatio = changedPixels / consideredPixels;
   return {
     code: changeRatio > policy.changeThreshold ? "FRAME_CHANGED" : "FRAME_MATCH",
     consideredPixels,
@@ -143,7 +146,8 @@ export async function buildDiff(
         : join(run.dir, "frames", safeFrameName(prior.path, index));
       const latestPath = join(run.dir, "frames", safeFrameName(current.path, index));
       const pixelDiff =
-        prior.sha256 === current.sha256
+        prior.sha256 === current.sha256 &&
+        !policy.regions.some((region) => region.frameIndex === index)
           ? {
               code: "FRAME_MATCH" as const,
               consideredPixels: (current.width ?? 0) * (current.height ?? 0),
@@ -167,14 +171,17 @@ export async function buildDiff(
   }
   const count = (code: VisualFrameDiff["code"]) =>
     frames.filter((frame) => frame.code === code).length;
+  const incomparable = frames.some((frame) => frame.code === "FRAME_NOT_COMPARABLE");
   const changed = frames.some((frame) => frame.code !== "FRAME_MATCH");
   return {
     algorithm: "pixel-rgba-regions-v1",
-    code: changed
-      ? expectedVariation
-        ? "VISUAL_EXPECTED_VARIATION"
-        : "VISUAL_CHANGED"
-      : "VISUAL_MATCH",
+    code: incomparable
+      ? "VISUAL_NOT_COMPARABLE"
+      : changed
+        ? expectedVariation
+          ? "VISUAL_EXPECTED_VARIATION"
+          : "VISUAL_CHANGED"
+        : "VISUAL_MATCH",
     approvedFrameCount: approved.frameCount,
     latestFrameCount: latest.frameCount,
     matchedFrames: count("FRAME_MATCH"),

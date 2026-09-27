@@ -90,6 +90,8 @@ export type ProductRunStartInput = {
   testId: string;
   /** Optional when exactly one App is available; Relay resolves it canonically. */
   appMapId?: string;
+  /** Exact saved App Map revision acknowledged by the visible Test editor. */
+  documentRevision?: number;
   /** A selected ready target. Relay rejects targets that are not runnable. */
   targetId?: string;
   /** Optional saved evidence profile; distinct from the runtime target id. */
@@ -426,6 +428,9 @@ export function createProductRunJourney(input: { jobs: RunJobs }): ProductRunJou
         kind: "run-test",
         testId: input.testId,
         ...(input.appMapId ? { appMapId: input.appMapId } : {}),
+        ...(input.documentRevision !== undefined
+          ? { revision: { exact: input.documentRevision } }
+          : {}),
         ...(input.targetId ? { targetId: input.targetId } : {}),
         ...(input.targetProfileId ? { targetProfileId: input.targetProfileId } : {}),
         ...(input.sourceRevision ? { sourceRevision: structuredClone(input.sourceRevision) } : {}),

@@ -230,9 +230,7 @@ export async function runInteractiveReview(input: {
           });
           if (action === "accept") tally.accepted += 1;
           else tally.issues += 1;
-          out(
-            action === "accept" ? "✓ Saved — this is now the reference.\n" : "✗ Issue reported.\n",
-          );
+          out(action === "accept" ? "✓ Review saved.\n" : "✗ Issue reported.\n");
           decided = true;
         } catch (error) {
           out(`Not saved: ${error instanceof Error ? error.message : String(error)}\n`);

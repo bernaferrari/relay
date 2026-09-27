@@ -73,6 +73,7 @@ export function useTestStepDrafts(
   platform: Platform,
   testId: string,
   setSaveNotice: (notice: string) => void,
+  appMapId?: string,
 ) {
   const [stepDrafts, setStepDrafts] = useState<Record<string, StepDraft>>({});
   const [draftsLoadedFor, setDraftsLoadedFor] = useState<string>();
@@ -82,7 +83,7 @@ export function useTestStepDrafts(
     chain: Promise.resolve(),
   });
   const draftStorageKey = connectionScope
-    ? `test-editor-drafts:${encodeURIComponent(connectionScope)}:${encodeURIComponent(testId)}`
+    ? `test-editor-drafts:${encodeURIComponent(connectionScope)}:${appMapId ? `${encodeURIComponent(appMapId)}:` : ""}${encodeURIComponent(testId)}`
     : undefined;
 
   useEffect(() => {

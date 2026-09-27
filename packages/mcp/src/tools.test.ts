@@ -821,10 +821,7 @@ test("Plan capture review is a human screenshot queue, not a baseline", () => {
   const applied = tool("job.combine.capture.review.apply");
   assert.equal(listed.requiresConfirmation, false);
   assert.equal(applied.requiresConfirmation, true);
-  assert.match(
-    listed.description,
-    /Looks correct makes that screenshot the reference for later runs/u,
-  );
+  assert.match(listed.description, /Accept as reference explicitly governs later Runs/u);
   assert.match(applied.description, /exact selected Plan items/u);
   assert.match(applied.description, /confirm: true/u);
   assert.equal(

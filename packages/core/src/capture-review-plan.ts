@@ -39,7 +39,7 @@ export type PlanCaptureReviewApplyResult = {
 export type PlanCaptureReviewItemResult = {
   runId: string;
   captureId: string;
-  status: "applied" | "missing" | "not-found" | "conflict" | "actor-required";
+  status: "applied" | "reference-failed" | "missing" | "not-found" | "conflict" | "actor-required";
   error?: string;
 };
 
@@ -467,11 +467,26 @@ export async function reviewPersistedPlanCaptures(
         const item = items.find((candidate) => candidate.captureId === selection.captureId);
         if (!item) continue;
         const action = selection.action ?? input.action;
-        await (
-          action === "accept"
-            ? setCaptureReference(root, latest, item, input.actor)
-            : revokeCaptureReference(root, latest, item)
-        ).catch(() => undefined);
+        try {
+          const updated =
+            action === "accept-as-reference"
+              ? await setCaptureReference(root, latest, item, input.actor)
+              : await revokeCaptureReference(root, latest, item);
+          if (action === "accept-as-reference" && !updated) {
+            results[indexes[offset]!] = {
+              ...result,
+              status: "reference-failed",
+              error:
+                "The review was saved, but the reference image could not be stored. Retry this review.",
+            };
+          }
+        } catch (error) {
+          results[indexes[offset]!] = {
+            ...result,
+            status: "reference-failed",
+            error: `The review was saved, but the reference update failed: ${error instanceof Error ? error.message : String(error)}. Retry this review.`,
+          };
+        }
       }
     });
   }

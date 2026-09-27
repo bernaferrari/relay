@@ -234,7 +234,7 @@ export const relayOperatorTools = Object.freeze([
   verb(
     "relay_recover",
     "Recover the runner",
-    'When to use: the runner is down. Pass the same Lane used for screenshots, or a serial. Never reboot. Example: {lane:"grok-daily"}.',
+    'When to use: the runner is down. On iOS, Reconnect repairs and adopts the live XCTest runner. Pass the same Lane used for screenshots, or a serial. Never reboot. Example: {lane:"grok-daily"}.',
     z.object(controlTargetFields).strict().superRefine(requireControlTarget),
     rw,
   ),

@@ -40,6 +40,24 @@ function map(revision: number, name = test.name): AppMap {
 }
 
 describe("Test editor product history transport", () => {
+  it("opens the selected App's Test when another App uses the same ID", async () => {
+    const service = createTestEditorProductService(platform);
+    const other = {
+      ...map(7, "Admin checkout"),
+      id: "admin",
+      name: "Admin",
+      tests: {
+        checkout: { ...test, appMapId: "admin", name: "Admin checkout" },
+      },
+    };
+    clientRef.current.invoke.mockResolvedValue({ appMaps: [map(3), other] });
+
+    await expect(service.get("checkout")).rejects.toThrow("more than one app");
+    expect((await service.get("checkout", "store"))?.appMapId).toBe("store");
+    expect((await service.get("checkout", "admin"))?.test.name).toBe("Admin checkout");
+    clientRef.current.invoke.mockReset();
+  });
+
   it("invokes server-owned undo and redo with the document revision", async () => {
     const service = createTestEditorProductService(platform);
     const document = {

@@ -103,7 +103,7 @@ export class AmbiguousTestError extends Error {
 
 export type RunProductService = {
   getTest(testId: string, appMapId?: string): Promise<ProductTestSummary | undefined>;
-  listTestRuns?(testId: string): Promise<readonly ProductRunSummary[]>;
+  listTestRuns?(testId: string, appMapId?: string): Promise<readonly ProductRunSummary[]>;
   listTestRunsComplete?(testId: string): Promise<readonly ProductRunSummary[]>;
   listTargets(): Promise<readonly ProductTargetOption[]>;
   listBuilds?(): Promise<readonly ProductRunBuildOption[]>;
@@ -219,10 +219,10 @@ export function createRunProductService(platform: Platform): RunProductService {
       const { productTestDetail } = await import("@relay/product/catalog");
       return productTestDetail(match);
     },
-    async listTestRuns(testId) {
+    async listTestRuns(testId, appMapId) {
       const { client } = await runtime();
       const { createProductCatalog } = await import("@relay/product/catalog");
-      return createProductCatalog(client).listRuns({ testId });
+      return createProductCatalog(client).listRuns({ testId, ...(appMapId ? { appMapId } : {}) });
     },
     async listTestRunsComplete(testId) {
       const { client } = await runtime();

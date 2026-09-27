@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@relay/ui-react/components/button";
 import { ChevronLeft, CircleX, Eye, LoaderCircle, Play, Square, Wrench } from "lucide-react";
-import type { CaptureReviewItem } from "@relay/protocol";
+import type { CaptureReviewAction, CaptureReviewItem } from "@relay/protocol";
 import type { ProductRunReportOverview } from "../data/run-report-model";
 import type { RunProductService } from "../data/run-product-service";
 import { runQueryKeys } from "../data/run-queries";
@@ -137,10 +137,7 @@ export function SavedRunStory({
       ) : null}
     </div>
   ) : null;
-  const review = async (
-    item: CaptureReviewItem,
-    action: "accept" | "report-issue" | "need-more-evidence",
-  ) => {
+  const review = async (item: CaptureReviewItem, action: CaptureReviewAction) => {
     await runService.reviewCapture?.({
       runId: report.runId,
       captureId: item.captureId,

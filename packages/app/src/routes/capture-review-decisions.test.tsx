@@ -31,10 +31,36 @@ describe("screenshot issue note", () => {
     expect(host.querySelector('[aria-label="Issue note"]')).toBeNull();
     const more = host.querySelector<HTMLButtonElement>('[aria-label="More review options"]')!;
     await act(async () => more.click());
-    const evidence = document.querySelector<HTMLElement>('[role="menuitem"]')!;
+    const evidence = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
+      item.textContent?.includes("Need more evidence"),
+    )!;
     expect(evidence.textContent).toContain("Need more evidence");
     await act(async () => evidence.click());
     expect(onReview).toHaveBeenCalledExactlyOnceWith("need-more-evidence", undefined);
+  });
+
+  it("keeps human acceptance separate from explicit reference promotion", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    const onReview = vi.fn(async () => true);
+    await act(async () => root.render(<CaptureReviewDecisions onReview={onReview} />));
+
+    const accept = [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Looks correct"),
+    )!;
+    await act(async () => accept.click());
+    expect(onReview).toHaveBeenLastCalledWith("accept", undefined);
+
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="More review options"]')!.click(),
+    );
+    const promote = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
+      item.textContent?.includes("Accept as reference"),
+    )!;
+    await act(async () => promote.click());
+    expect(onReview).toHaveBeenLastCalledWith("accept-as-reference", undefined);
   });
 
   it("does not save a decision when the screenshot is unavailable", async () => {

@@ -750,7 +750,7 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
     if (!CAPTURE_REVIEW_ACTIONS.includes(body.action as CaptureReviewAction)) {
       throw new HttpError(400, "Unknown capture review action", {
         code: "CAPTURE_REVIEW_ACTION_INVALID",
-        recovery: `Choose one of: ${CAPTURE_REVIEW_ACTIONS.join(", ")}. Looks correct makes that screenshot the reference for later runs.`,
+        recovery: `Choose one of: ${CAPTURE_REVIEW_ACTIONS.join(", ")}. Accept as reference explicitly governs later Runs.`,
       });
     }
     try {

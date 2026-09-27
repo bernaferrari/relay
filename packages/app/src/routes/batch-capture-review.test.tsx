@@ -140,7 +140,7 @@ describe("Plan screenshot review filters", () => {
     expect(host.textContent).toContain("3 planned · 3 captured");
     expect(host.textContent).toContain("3 to review");
     expect(host.textContent).toContain(
-      "Looks correct makes that screenshot the reference for later runs.",
+      "Looks correct reviews this capture. Accept as reference also governs later Runs.",
     );
     expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe("Gallery");
     expect(host.querySelector('[aria-label="Selected screenshot"]')).toBeNull();

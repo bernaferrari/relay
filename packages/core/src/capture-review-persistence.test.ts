@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { PNG } from "pngjs";
 import {
   CaptureReviewError,
   captureReviewQueueForRun,
@@ -13,9 +14,17 @@ import {
 import { persistRun, readCompletedPersistedRun } from "./runs.js";
 import type { TestJob } from "./session.js";
 
+function screenshot(): Buffer {
+  const image = new PNG({ width: 2, height: 2 });
+  image.data.fill(255);
+  return PNG.sync.write(image);
+}
+
 test("retrying an earlier screenshot returns its exact persisted decision", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-review-retry-"));
   try {
+    const bytes = screenshot();
+    const sha = createHash("sha256").update(bytes).digest("hex");
     const run = await persistRun({
       runDir: join(root, "review-retry"),
       id: "review-retry",
@@ -35,11 +44,15 @@ test("retrying an earlier screenshot returns its exact persisted decision", asyn
       artifacts: ["a", "b"].map((name) => ({
         kind: "capture-review",
         capturedAt: 2,
-        data: { caption: name, framePath: `frames/${name}.png`, imageSha256: name },
+        data: { caption: name, framePath: `frames/${name}.png`, imageSha256: sha },
       })),
       resolvedInputs: {},
       evidencePolicy: { schemaVersion: 1, sensitive: {} },
     } as unknown as TestJob);
+    await mkdir(join(run.dir, "frames"), { recursive: true });
+    await Promise.all(
+      ["a", "b"].map((name) => writeFile(join(run.dir, "frames", `${name}.png`), bytes)),
+    );
     await rebuildRunCatalog(root);
     assert.equal((await catalogSummaries(root))[0]?.captureSummary?.pending, 2);
     const [a, b] = captureReviewQueueForRun(run).items;
@@ -78,7 +91,7 @@ test("retrying an earlier screenshot returns its exact persisted decision", asyn
 test("a review is refused when the saved frame bytes no longer match", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-review-tamper-"));
   try {
-    const png = Buffer.from("original-png");
+    const png = screenshot();
     const sha = createHash("sha256").update(png).digest("hex");
     const run = await persistRun({
       runDir: join(root, "review-tamper"),
@@ -137,6 +150,8 @@ test("a review is refused when the saved frame bytes no longer match", async () 
 test("a second reviewer cannot replace the first saved decision", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-review-second-"));
   try {
+    const bytes = screenshot();
+    const sha = createHash("sha256").update(bytes).digest("hex");
     const run = await persistRun({
       runDir: join(root, "review-second"),
       id: "review-second",
@@ -157,12 +172,14 @@ test("a second reviewer cannot replace the first saved decision", async () => {
         {
           kind: "capture-review",
           capturedAt: 2,
-          data: { caption: "Settings", framePath: "frames/001.png", imageSha256: "a" },
+          data: { caption: "Settings", framePath: "frames/001.png", imageSha256: sha },
         },
       ],
       resolvedInputs: {},
       evidencePolicy: { schemaVersion: 1, sensitive: {} },
     } as unknown as TestJob);
+    await mkdir(join(run.dir, "frames"), { recursive: true });
+    await writeFile(join(run.dir, "frames", "001.png"), bytes);
     const captureId = captureReviewQueueForRun(run).items[0]?.captureId;
     assert.ok(captureId);
     const first = await reviewPersistedCapture(root, run, {
@@ -197,6 +214,8 @@ test("a second reviewer cannot replace the first saved decision", async () => {
 test("a delayed Looks correct cannot replace the same reviewer's newer issue", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-review-stale-"));
   try {
+    const bytes = screenshot();
+    const sha = createHash("sha256").update(bytes).digest("hex");
     const run = await persistRun({
       runDir: join(root, "review-stale"),
       id: "review-stale",
@@ -217,12 +236,14 @@ test("a delayed Looks correct cannot replace the same reviewer's newer issue", a
         {
           kind: "capture-review",
           capturedAt: 2,
-          data: { caption: "Settings", framePath: "frames/001.png", imageSha256: "a" },
+          data: { caption: "Settings", framePath: "frames/001.png", imageSha256: sha },
         },
       ],
       resolvedInputs: {},
       evidencePolicy: { schemaVersion: 1, sensitive: {} },
     } as unknown as TestJob);
+    await mkdir(join(run.dir, "frames"), { recursive: true });
+    await writeFile(join(run.dir, "frames", "001.png"), bytes);
     const captureId = captureReviewQueueForRun(run).items[0]?.captureId;
     assert.ok(captureId);
     const actor = { id: "human:qa", kind: "human" as const };

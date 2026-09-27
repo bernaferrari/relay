@@ -60,7 +60,7 @@ export type TestEditorProductService = {
     name: string;
     instructions: readonly string[];
   }): Promise<ProductTestEditorDocument>;
-  get(testId: string): Promise<ProductTestEditorDocument | undefined>;
+  get(testId: string, appMapId?: string): Promise<ProductTestEditorDocument | undefined>;
   saveSettings?(input: {
     document: ProductTestEditorDocument;
     name: string;
@@ -113,9 +113,11 @@ export function createTestEditorProductService(platform: Platform): TestEditorPr
       });
       return requireDocument(appMap, testId);
     },
-    async get(testId) {
+    async get(testId, appMapId) {
       const { appMaps } = await (await client()).invoke("app-map.list", {});
-      const owners = appMaps.filter((candidate) => Boolean(candidate.tests[testId]));
+      const owners = appMaps.filter(
+        (candidate) => (!appMapId || candidate.id === appMapId) && Boolean(candidate.tests[testId]),
+      );
       if (owners.length > 1) {
         throw new TypeError("This Test appears in more than one app and cannot be edited safely.");
       }

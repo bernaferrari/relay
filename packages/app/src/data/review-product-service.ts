@@ -21,7 +21,10 @@ export type ReviewProductService = {
     item: CaptureReviewItem,
     action: CaptureReviewAction,
     note?: string,
-  ): Promise<CaptureReviewQueue>;
+  ): Promise<{
+    queue: CaptureReviewQueue;
+    referenceUpdate?: { status: "updated" | "revoked" | "unchanged" | "failed"; message?: string };
+  }>;
   setIgnoreRegions(
     runId: string,
     item: CaptureReviewItem,
@@ -101,7 +104,10 @@ export function createReviewProductService(platform: Platform): ReviewProductSer
         ...(note?.trim() ? { note: note.trim() } : {}),
         ...(item.reviewVersion !== undefined ? { expectedReviewVersion: item.reviewVersion } : {}),
       });
-      return result.queue;
+      return {
+        queue: result.queue,
+        ...(result.referenceUpdate ? { referenceUpdate: result.referenceUpdate } : {}),
+      };
     },
     async setIgnoreRegions(runId, item, regions) {
       const result = await (

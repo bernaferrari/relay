@@ -94,7 +94,12 @@ export class TargetSupervisorRecoveryCoordinator {
           durationMs: receipt.durationMs ?? Math.max(0, Date.now() - startedAt),
           reason: receipt.reason,
         }).effects;
-        if (receipt.readiness) this.store.health(target, receipt.readiness);
+        // A failed final stage can still report incidental pixels gathered before
+        // exhaustion. Applying that proof afterward would clear the new human
+        // hold as if it were a separate, later recovery observation.
+        if (receipt.readiness && (receipt.outcome === "succeeded" || effects.length > 0)) {
+          this.store.health(target, receipt.readiness);
+        }
       }
       return { health: this.store.health(target), attempts };
     } finally {

@@ -100,7 +100,12 @@ export function TestLastRunStage({ run }: { run?: ProductRunSummary }) {
   const failed = report.isError || frame.isError;
   if (run && url) {
     return (
-      <div className="flex h-full min-h-0 flex-col items-center justify-start gap-3 overflow-auto bg-stage px-6 py-6">
+      <div
+        className="flex h-full min-h-0 flex-col items-center justify-start gap-3 overflow-auto bg-stage px-6 py-6 focus-visible:outline-2 focus-visible:outline-ring"
+        role="region"
+        aria-label="Latest run screenshot"
+        tabIndex={0}
+      >
         <WorkspaceScreenshot
           caption={<>Screenshot from latest run · {ago(run.finishedAt ?? run.queuedAt)}</>}
         >
@@ -110,7 +115,12 @@ export function TestLastRunStage({ run }: { run?: ProductRunSummary }) {
     );
   }
   return (
-    <div className="grid h-full min-h-0 place-items-center overflow-auto bg-stage px-6 py-5">
+    <div
+      className="grid h-full min-h-0 place-items-center overflow-auto bg-stage px-6 py-5 focus-visible:outline-2 focus-visible:outline-ring"
+      role="region"
+      aria-label="Latest run preview"
+      tabIndex={0}
+    >
       <div className="grid max-w-sm justify-items-center gap-3 text-center">
         <div className="grid size-12 place-items-center rounded-2xl bg-card shadow-xs">
           <Camera className="size-5 text-muted-foreground" aria-hidden="true" />

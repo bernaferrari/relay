@@ -882,6 +882,29 @@ test("labels a recorded message transition from its meaningful action", () => {
   assert.equal(result.appMap.connections[result.connectionId]?.label, "Send message");
 });
 
+test("a recorded type action never names the connection with entered text", () => {
+  const result = commitAppMapRecording(
+    mapFixture(),
+    {
+      sessionId: "session-type-secret",
+      target: { kind: "device", platform: "ios", targetId: "ipad" },
+      takeId: "take-type-secret",
+      takeRevision: 1,
+      actions: [
+        {
+          ...action("type-secret"),
+          steps: [{ id: "type-secret", kind: "type", text: "secret without password label" }],
+        },
+      ],
+      before: observation("before", beforeFingerprint, "evidence-before"),
+      after: observation("after", afterFingerprint, "evidence-after"),
+      evidenceIds: ["evidence-before", "evidence-after"],
+    },
+    context("event-type-secret"),
+  );
+  assert.equal(result.appMap.connections[result.connectionId]?.label, "Type text");
+});
+
 test("names a captured destination from its deepest observed navigation title", () => {
   const result = commitAppMapRecording(
     mapFixture(),

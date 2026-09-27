@@ -40,7 +40,7 @@ function png(mark?: { x: number; y: number }): Buffer {
   return PNG.sync.write(image);
 }
 
-async function captureRun(root: string, id: string, bytes: Buffer) {
+async function captureRun(root: string, id: string, bytes: Buffer, lookFor?: string) {
   const sha = createHash("sha256").update(bytes).digest("hex");
   const run = await persistRun({
     runDir: join(root, id),
@@ -69,6 +69,7 @@ async function captureRun(root: string, id: string, bytes: Buffer) {
           framePath: "frames/001.png",
           imageSha256: sha,
           checkpointId: "checkout-screen",
+          ...(lookFor ? { lookFor } : {}),
           attempt: 1,
         },
       },
@@ -81,17 +82,32 @@ async function captureRun(root: string, id: string, bytes: Buffer) {
   return run;
 }
 
-test("Looks correct becomes the reference and unchanged runs pass on their own", async () => {
+test("only explicit reference approval governs unchanged future runs", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-reference-"));
   try {
     const first = await applyCaptureReferences(root, await captureRun(root, "run-1", png()));
     const [item] = captureReviewQueueForRun(first).items;
     assert.equal(item?.reference?.state, "new");
     assert.equal(item?.status, "pending");
-    await reviewPersistedCapture(root, first, {
+    const manual = await reviewPersistedCapture(root, first, {
       captureId: item!.captureId,
       action: "accept",
       actor: human,
+    });
+    assert.equal(manual.referenceUpdate.status, "unchanged");
+    assert.equal(await findCaptureReference(root, first, item!), undefined);
+
+    const unchecked = await applyCaptureReferences(
+      root,
+      await captureRun(root, "run-manual", png()),
+    );
+    assert.equal(captureReviewQueueForRun(unchecked).items[0]?.status, "pending");
+
+    await reviewPersistedCapture(root, manual.run, {
+      captureId: item!.captureId,
+      action: "accept-as-reference",
+      actor: human,
+      expectedReviewVersion: manual.decision.reviewVersion,
     });
 
     // Same pixels, different run and Test revision: approved automatically.
@@ -127,6 +143,32 @@ test("Looks correct becomes the reference and unchanged runs pass on their own",
   }
 });
 
+test("changing a checkpoint criterion requires a new reference review", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-reference-criterion-"));
+  try {
+    const first = await applyCaptureReferences(
+      root,
+      await captureRun(root, "run-criterion-1", png(), "Price is visible"),
+    );
+    const item = captureReviewQueueForRun(first).items[0]!;
+    await reviewPersistedCapture(root, first, {
+      captureId: item.captureId,
+      action: "accept-as-reference",
+      actor: human,
+    });
+
+    const changedCriterion = await applyCaptureReferences(
+      root,
+      await captureRun(root, "run-criterion-2", png(), "Total includes tax"),
+    );
+    const changedItem = captureReviewQueueForRun(changedCriterion).items[0]!;
+    assert.equal(changedItem.reference?.state, "new");
+    assert.equal(changedItem.status, "pending");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("a person can override an automatic approval, and withdrawing restores the old reference", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-reference-override-"));
   try {
@@ -134,7 +176,7 @@ test("a person can override an automatic approval, and withdrawing restores the 
     const [item] = captureReviewQueueForRun(first).items;
     await reviewPersistedCapture(root, first, {
       captureId: item!.captureId,
-      action: "accept",
+      action: "accept-as-reference",
       actor: human,
     });
     const auto = await applyCaptureReferences(root, await captureRun(root, "run-2", png()));
@@ -156,7 +198,7 @@ test("a person can override an automatic approval, and withdrawing restores the 
     const [changedItem] = captureReviewQueueForRun(changedRun).items;
     const accepted = await reviewPersistedCapture(root, changedRun, {
       captureId: changedItem!.captureId,
-      action: "accept",
+      action: "accept-as-reference",
       actor: human,
     });
     assert.equal((await findCaptureReference(root, changedRun, changedItem!))?.runId, "run-3");
@@ -175,9 +217,74 @@ test("a person can override an automatic approval, and withdrawing restores the 
 test("different sizes always count as changed", () => {
   const a = PNG.sync.read(png());
   const b = new PNG({ width: 20, height: 20 });
-  assert.deepEqual(compareCaptureImages(a, b), {
-    changed: true,
-    sizeChanged: true,
-    changeRatio: 1,
-  });
+  const result = compareCaptureImages(a, b);
+  assert.equal(result.changed, true);
+  assert.equal(result.sizeChanged, true);
+  assert.equal(result.changeRatio, 1);
+});
+
+test("a full-image mask cannot approve a screenshot, even with identical bytes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-reference-no-data-"));
+  try {
+    const first = await applyCaptureReferences(root, await captureRun(root, "run-1", png()));
+    const [item] = captureReviewQueueForRun(first).items;
+    await reviewPersistedCapture(root, first, {
+      captureId: item!.captureId,
+      action: "accept-as-reference",
+      actor: human,
+    });
+    await updateCaptureReferenceIgnoreRegions(root, first, item!, [
+      { x: 0, y: 0, width: 1, height: 1, name: "Everything" },
+    ]);
+    const next = await applyCaptureReferences(root, await captureRun(root, "run-2", png()));
+    const [review] = captureReviewQueueForRun(next).items;
+    assert.equal(review?.reference?.state, "incomparable");
+    assert.equal(review?.reference?.consideredPixels, 0);
+    assert.equal(review?.reference?.ignoredPixels, 800);
+    assert.equal(review?.status, "pending");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a tolerated small change reports its threshold and compared area", () => {
+  const first = PNG.sync.read(png());
+  const next = PNG.sync.read(png({ x: 1, y: 1 }));
+  const compared = compareCaptureImages(first, next, [], { changeThreshold: 0.03 });
+  assert.equal(compared.comparable, true);
+  assert.equal(compared.changed, false);
+  assert.equal(compared.consideredPixels, 800);
+  assert.equal(compared.changedPixels, 16);
+  assert.equal(compared.changeRatio, 0.02);
+  assert.equal(compared.changeThreshold, 0.03);
+});
+
+test("a failed reference write is reported and a repeat review repairs it", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-reference-retry-"));
+  try {
+    const run = await applyCaptureReferences(root, await captureRun(root, "run-1", png()));
+    const [item] = captureReviewQueueForRun(run).items;
+    const blocked = join(root, ".capture-reference-artifacts");
+    await writeFile(blocked, "not a directory");
+    const first = await reviewPersistedCapture(root, run, {
+      captureId: item!.captureId,
+      action: "accept-as-reference",
+      actor: human,
+    });
+    assert.equal(first.decision.action, "accept-as-reference");
+    assert.equal(first.referenceUpdate.status, "failed");
+    assert.equal(await findCaptureReference(root, first.run, item!), undefined);
+
+    await rm(blocked);
+    const retried = await reviewPersistedCapture(root, first.run, {
+      captureId: item!.captureId,
+      action: "accept-as-reference",
+      actor: human,
+      expectedReviewVersion: first.decision.reviewVersion,
+    });
+    assert.equal(retried.referenceUpdate.status, "updated");
+    assert.equal((await findCaptureReference(root, retried.run, item!))?.runId, "run-1");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

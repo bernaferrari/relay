@@ -97,6 +97,15 @@ it("retries a failed setup read without starting execution", async () => {
   } as unknown as RunProductService;
   const host = await mount("member", service);
   await click(host, "Set up another run");
+  for (
+    let index = 0;
+    index < 20 && !host.textContent?.includes("Could not load the saved setup");
+    index++
+  ) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+  }
   expect(host.textContent).toContain("Could not load the saved setup");
   await click(host, "Retry run setup");
   expect(service.getReport).toHaveBeenCalledTimes(2);

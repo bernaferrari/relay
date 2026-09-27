@@ -100,12 +100,13 @@ export function RunAcrossPage() {
   const start = useMutation({
     mutationFn: () => {
       if (!setup.data || !runTarget || configuration.loading || !preview) {
-        throw new TypeError("Choose a ready device or browser and at least one data value.");
+        throw new TypeError("Choose a ready device or browser and resolve the saved data choices.");
       }
       return runAcrossService.startPilot({
         setup: setup.data,
         selected,
         target: runTarget,
+        executionMode: "all",
       });
     },
     onSuccess: async (batch) => {
@@ -123,7 +124,7 @@ export function RunAcrossPage() {
           { label: "Run across" },
         ]}
         title={setup.data ? `Run across · ${setup.data.testName}` : "Run across"}
-        description="Choose the data to try. Run the first combination, review its screenshots, then continue with the rest."
+        description="Choose a device or browser and any saved data values. Run the selected cases together, then review their results."
       />
       {loading ? <PageLoading label="Loading saved data and available devices…" /> : null}
       <RecordingProblem
@@ -137,14 +138,14 @@ export function RunAcrossPage() {
       />
       {!loading && setup.data && !setup.error && !hasDataValues ? (
         <EmptyState
-          title="No data values to run across"
-          detail="This Test has no complete data set to repeat. You can still run it once and review its screenshots."
+          title="Run this Test across configurations"
+          detail="Choose one or more devices, browsers, or accounts in the Test's Run setup. Saved data values are optional there."
           action={
             <Button
               nativeButton={false}
               render={<Link to="/tests/$testId" params={{ testId }} search={{ setup: "run" }} />}
             >
-              Set up a run
+              Choose configurations
             </Button>
           }
         />
@@ -229,7 +230,7 @@ export function RunAcrossPage() {
                 <div className="grid gap-1 text-sm" role="status">
                   <span>{preview.scopeLabel}</span>
                   <small className="text-muted-foreground">
-                    Review the first result before starting the remaining combinations.
+                    Review all selected cases in one result.
                   </small>
                 </div>
               ) : (
@@ -244,7 +245,13 @@ export function RunAcrossPage() {
                 onClick={() => start.mutate()}
                 disabled={!preview || start.isPending || configuration.loading}
               >
-                {start.isPending ? "Starting first case…" : "Run first case"}
+                {start.isPending
+                  ? "Starting selected cases…"
+                  : !preview
+                    ? "Run selected cases"
+                    : preview.caseCount === 1
+                      ? "Run selected case"
+                      : `Run ${preview.caseCount} selected cases`}
               </Button>
             </footer>
           </RunConfigurationComposer>

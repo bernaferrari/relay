@@ -53,6 +53,7 @@ describe("start owned Test runs", () => {
       workspace,
       testId: "checkout",
       appMapId: "app-1",
+      documentRevision: 8,
       targetId: "ignored-pixel",
     });
     expect(requests.map((request) => request.targetId)).toEqual([
@@ -66,14 +67,16 @@ describe("start owned Test runs", () => {
       { kind: "signed-out", attested: true },
     ]);
     expect(requests[0]).not.toEqual(requests[1]);
+    expect(requests.map((request) => request.documentRevision)).toEqual([8, 8, 8]);
     expect(
       testStartRequests({
         workspace: emptyPairedWorkspace(),
         testId: "checkout",
         appMapId: "app-1",
+        documentRevision: 8,
         targetId: "pixel",
       }),
-    ).toEqual([{ testId: "checkout", appMapId: "app-1", targetId: "pixel" }]);
+    ).toEqual([{ testId: "checkout", appMapId: "app-1", documentRevision: 8, targetId: "pixel" }]);
   });
 
   it("starts a single request through the ordinary Run path", async () => {
@@ -129,6 +132,7 @@ describe("start owned Test runs", () => {
       workspace,
       testId: "checkout",
       appMapId: "app-1",
+      documentRevision: 8,
       targetId: "ignored",
       profiles: [
         { id: "profile-admin", targetId: "chrome-1", account: { id: "acct-admin" } },
@@ -210,6 +214,7 @@ describe("start owned Test runs", () => {
         appMapId: "app-1",
         testId: "checkout",
         executionMode: "all",
+        expectedRevision: 8,
         profileTargets: profileTargetsFromStarts(requests),
       },
     ]);

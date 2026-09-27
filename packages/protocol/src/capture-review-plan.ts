@@ -377,7 +377,7 @@ export function formatPlanCaptureReviewQueue(queue: PlanCaptureReviewQueue): str
   return [
     formatCaptureReviewCoverageSummary(dest.summary),
     ...shown,
-    "Looks correct makes that screenshot the reference for later runs.",
+    "Looks correct reviews this capture. Accept as reference also governs later Runs.",
     ...rows,
   ].join("\n");
 }

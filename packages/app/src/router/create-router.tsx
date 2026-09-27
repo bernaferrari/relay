@@ -6,10 +6,11 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
-  lazyRouteComponent,
   redirect,
+  type AsyncRouteComponent,
   type RouterHistory,
 } from "@tanstack/react-router";
+import { createElement, type ComponentType } from "react";
 import { Skeleton } from "@relay/ui-react/components/skeleton";
 import { RouteErrorPage } from "../routes/route-error-page";
 import {
@@ -78,10 +79,31 @@ const preloadableRoutes: PreloadableRoute[] = [];
 function lazyNamedRoute<TModule extends Record<string, unknown>, TName extends keyof TModule>(
   importer: () => Promise<TModule>,
   name: TName,
-) {
-  const component = lazyRouteComponent(importer, name);
-  preloadableRoutes.push(component as PreloadableRoute);
-  return component;
+): TModule[TName] extends (props: infer TProps) => unknown ? AsyncRouteComponent<TProps> : never {
+  let loaded: ComponentType<Record<string, unknown>> | undefined;
+  let loading: Promise<void> | undefined;
+  let loadError: unknown;
+  const preload = () => {
+    loading ??= importer()
+      .then((module) => {
+        loaded = module[name] as ComponentType<Record<string, unknown>>;
+      })
+      .catch((error: unknown) => {
+        loadError = error;
+        throw error;
+      });
+    return loading;
+  };
+  const component = (props: Record<string, unknown>) => {
+    if (loadError) throw loadError;
+    if (!loaded) throw preload();
+    return createElement(loaded, props);
+  };
+  component.preload = preload;
+  preloadableRoutes.push(component);
+  return component as TModule[TName] extends (props: infer TProps) => unknown
+    ? AsyncRouteComponent<TProps>
+    : never;
 }
 
 const NotFoundPage = lazyNamedRoute(() => import("../routes/not-found-page"), "NotFoundPage");
@@ -135,8 +157,8 @@ const PrototypeWorkbenchPage = lazyNamedRoute(
 );
 
 // Route tests assert settled product behavior, not Suspense timing. Production
-// keeps the split chunks and TanStack intent preloading; tests eagerly resolve
-// the same route registry once so React 19's `use()` boundary is deterministic.
+// keeps the split chunks and intent preloading; tests eagerly resolve
+// the same route registry to assert settled product behavior.
 if (import.meta.env.MODE === "test") {
   await Promise.all(preloadableRoutes.map((route) => route.preload?.()));
 }

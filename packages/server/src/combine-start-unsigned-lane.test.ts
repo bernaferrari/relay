@@ -7,6 +7,7 @@ import { ApiError, RelayClient } from "@relay/client";
 import {
   cancelJob,
   createCombineCampaign,
+  findActiveCombineCampaignForCombine,
   mutateStoredAppMap,
   readAppMap,
   resetControlDatabaseCache,
@@ -196,6 +197,16 @@ test("distinct unsigned Lanes admit the same Plan; the same Lane still 409s", as
       actorKind: "human",
     });
     await saveUnsignedShopCombine(client);
+    await assert.rejects(
+      client.invoke("job.combine.start", {
+        appMapId: "store",
+        combineId: "daily",
+        executionMode: "all",
+        laneId: "shop-daily",
+        expectedRevision: 0,
+      }),
+      (error: unknown) => error instanceof ApiError && error.status === 409,
+    );
     const first = startDaily(client, "shop-daily");
     await firstControl;
     const second = startDaily(client, "shop-daily-b");
@@ -273,8 +284,8 @@ test("seeded same-lane Combine campaign 409s before a second unsigned start", as
       sourceRevision: 1,
       latestRevision: 1,
       status: "running",
-      createdAt: 10,
-      updatedAt: 10,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
       cases: [
         {
           index: 0,
@@ -288,8 +299,7 @@ test("seeded same-lane Combine campaign 409s before a second unsigned start", as
           wrapperGraphDigest: "c".repeat(64),
           staticInputDigest: "d".repeat(64),
           phase: "coverage",
-          status: "running",
-          jobId: "seeded-job",
+          status: "queued",
         },
       ],
       lineage: [{ kind: "created", at: 10, appMapRevision: 1, actorId: "human:designer" }],
@@ -299,6 +309,10 @@ test("seeded same-lane Combine campaign 409s before a second unsigned start", as
         unsignedLaneId: "shop-daily",
       },
     });
+    assert.equal(
+      (await findActiveCombineCampaignForCombine("mobile", "store", "daily", "shop-daily"))?.id,
+      "already-daily",
+    );
     await assert.rejects(
       startDaily(client, "shop-daily"),
       (error: unknown) =>

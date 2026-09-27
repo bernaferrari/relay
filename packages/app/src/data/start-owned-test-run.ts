@@ -11,6 +11,7 @@ export function testStartRequests(input: {
   workspace: PairedConfigurationWorkspace;
   testId: string;
   appMapId: string;
+  documentRevision?: number;
   targetId: string;
   targetProfileId?: string;
   sourceRevision?: ProductRunStartInput["sourceRevision"];
@@ -25,12 +26,16 @@ export function testStartRequests(input: {
       sourceRevision: input.sourceRevision,
       startup: input.startup,
       profiles: input.profiles,
-    });
+    }).map((request) => ({
+      ...request,
+      ...(input.documentRevision !== undefined ? { documentRevision: input.documentRevision } : {}),
+    }));
   }
   return [
     {
       testId: input.testId,
       appMapId: input.appMapId,
+      ...(input.documentRevision !== undefined ? { documentRevision: input.documentRevision } : {}),
       targetId: input.targetId,
       ...(input.targetProfileId ? { targetProfileId: input.targetProfileId } : {}),
       ...(input.sourceRevision ? { sourceRevision: input.sourceRevision } : {}),
@@ -66,6 +71,7 @@ export type CombineStartBody = {
   testId: string;
   executionMode: "all";
   profileTargets: CombineProfileTarget[];
+  expectedRevision?: number;
   sourceRevision?: ProductRunStartInput["sourceRevision"];
 };
 
@@ -183,6 +189,7 @@ export function campaignCaseMatchesRequest(
 
 export function pairedBatchFields(requests: readonly ProductRunStartInput[]): {
   sourceRevision?: ProductRunStartInput["sourceRevision"];
+  expectedRevision?: number;
 } {
   if (requests.some((request) => request.startup)) {
     throw new TypeError(
@@ -195,8 +202,16 @@ export function pairedBatchFields(requests: readonly ProductRunStartInput[]): {
   if (revisions.size > 1) {
     throw new TypeError("Every pair in this Batch must use the same build.");
   }
+  const documentRevisions = new Set(requests.map((request) => request.documentRevision));
+  if (documentRevisions.size > 1) {
+    throw new TypeError("Every pair in this Batch must use the same saved Test revision.");
+  }
   const sourceRevision = requests[0]?.sourceRevision;
-  return sourceRevision ? { sourceRevision } : {};
+  const expectedRevision = requests[0]?.documentRevision;
+  return {
+    ...(sourceRevision ? { sourceRevision } : {}),
+    ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+  };
 }
 
 /** One Combine campaign owns every compiled pair. Do not start children locally. */

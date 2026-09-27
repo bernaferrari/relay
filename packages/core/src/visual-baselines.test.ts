@@ -345,6 +345,50 @@ test("visual policies compare selected regions and ignore approved dynamic conte
   }
 });
 
+test("a visual policy that masks the entire frame cannot report a match", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-visual-no-data-"));
+  try {
+    const approved = await runFixture(root, {
+      id: "approved",
+      projectId: "project-a",
+      serial: "pixel-1",
+      frames: [pngWithChangedTopLeft(false)],
+    });
+    await approveVisualBaseline(root, approved);
+    const latest = await runFixture(root, {
+      id: "latest",
+      projectId: "project-a",
+      serial: "pixel-1",
+      frames: [pngWithChangedTopLeft(false)],
+    });
+    const policy = await getVisualComparisonPolicy(root, latest);
+    await updateVisualComparisonPolicy(root, latest, {
+      expectedRevision: policy.revision,
+      changeThreshold: policy.changeThreshold,
+      pixelThreshold: policy.pixelThreshold,
+      regions: [
+        {
+          id: "all",
+          name: "Entire frame",
+          mode: "ignore",
+          frameIndex: 0,
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+        },
+      ],
+      actor: { id: "reviewer-1", kind: "human" },
+    });
+    const compared = await compareVisualBaseline(root, latest);
+    assert.equal(compared.code, "VISUAL_NOT_COMPARABLE");
+    assert.equal(compared.diff.frames[0]?.code, "FRAME_NOT_COMPARABLE");
+    assert.equal(compared.diff.frames[0]?.consideredPixels, 0);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("identity-ignore is not a visual exclusion until comparison policy is updated", async () => {
   const root = await mkdtemp(join(tmpdir(), "relay-visual-identity-ignore-"));
   try {

@@ -29,9 +29,8 @@ The default configuration needs no profile flag: the local defaults use the loop
 the local project, actor `agent:cursor`, and the `operator` profile (~19 hand-named verbs plus
 `relay_advanced`). That default is a complete ordinary task surface — resolve a target, observe,
 operate within scope, run saved coverage, inspect progress, save a Test, and export evidence — so
-an agent never switches profiles mid-task. `lease.takeover` is not on that profile. This
-workspace's Cursor MCP (`.cursor/mcp.json`) matches those defaults; reload MCP after changing that
-file.
+an agent never switches profiles mid-task. `lease.takeover` is not on that profile. Configure
+your MCP client with the installed command below and reload its connection after changing it.
 
 ```json
 {
@@ -137,8 +136,7 @@ the bridge exposes exactly the profile selected by `RELAY_MCP_PROFILE`.
 ## Tool profiles
 
 Relay defaults to the `operator` profile (~19 hand-named verbs plus `relay_advanced`; no
-`lease.takeover`). Cursor in this repo uses that default (`.cursor/mcp.json`); reload MCP after
-changing the file. Agents do not need to select a profile for ordinary device and Plan work.
+`lease.takeover`). Agents do not need to select a profile for ordinary device and Plan work.
 Trusted orchestrators can opt into a lower-level profile with `--profile <name>` or
 `RELAY_MCP_PROFILE`. `full` is trusted orchestration only and is the only profile that exposes
 `lease.takeover`.
@@ -193,21 +191,22 @@ not a destination path. The existing blocking behavior remains the default.
 
 ## Agent quickstart: verify one flow across languages
 
-Run the Relay service first (`pnpm ensure:serve`). Operator verbs (`relay_screenshot`,
-`relay_preview`, `relay_run` with `lane`) are the Cursor default. For the recorded Test workflow,
-use `--profile outcome`:
+Run the Relay service first (`pnpm ensure:serve`) and check `relay-mcp doctor --json`. With the
+default operator profile:
 
-1. `relay_connect_target`
-2. `relay_observe_target`
-3. `relay_record_test` → `relay_record_action` / `relay_add_checkpoint`
-4. `relay_stop_recording` → `relay_edit_recording` → `relay_replay_recording`
-5. `relay_approve_recording`
-6. `relay_repeat_test` to run one pilot
-7. `relay_inspect_workflow`, then `relay_continue_repeat` with explicit confirmation
-8. `relay_inspect_failure` or `relay_export_evidence`
+1. Use `relay_lanes` or `relay_devices` to choose the exact saved account context or device.
+2. Use `relay_snapshot` and `relay_preview` to inspect the current app before a manual action.
+3. Use `relay_run` for one saved Test, or `relay_plan_run` for one case of a saved Plan. Pass
+   `executionMode:"all"` only when every selected case is requested.
+4. Use `relay_wait` with the returned job ID, then `relay_evidence`, `relay_findings`, or
+   `relay_export` to inspect and share the result.
 
-Every workflow mutation carries the continuation reference and expected version returned by the
-previous step. The language variant is documented in
+For an authored Test, `relay_save` accepts the canonical Test document and its current
+`expectedRevision`. The operator profile exposes lower-level recording operations through
+`relay_advanced`; its input is the named canonical operation plus that operation's schema. The
+`outcome` specialist profile offers separate recording workflow verbs when a host deliberately
+uses that interface. A recording workflow mutation carries the continuation reference and
+expected version returned by the previous step. The language variant is documented in
 [Repeat a Test across languages](../../docs/LANGUAGE_SWEEP_LOOP.md).
 
 ## Advanced graph Test loop

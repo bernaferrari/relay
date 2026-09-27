@@ -36,7 +36,7 @@ export function ReferenceCompareLine({
         : `Changed ${Math.max(0.1, (reference.changeRatio ?? 0) * 100).toFixed(1)}% from the reference`
       : reference.state === "match"
         ? "Matches the reference"
-        : "Reference unavailable";
+        : "No pixels could be compared — review needed";
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
       <span>{label}</span>
@@ -49,6 +49,15 @@ export function ReferenceCompareLine({
             <DialogTitle>Compare with reference</DialogTitle>
             <DialogDescription>{label}</DialogDescription>
           </DialogHeader>
+          {reference.consideredPixels !== undefined ? (
+            <p className="text-xs text-muted-foreground">
+              {reference.consideredPixels.toLocaleString()} pixels compared ·{" "}
+              {(reference.ignoredPixels ?? 0).toLocaleString()} excluded ·{" "}
+              {(reference.changedPixels ?? 0).toLocaleString()} changed. Tolerance: up to{" "}
+              {((reference.changeThreshold ?? 0) * 100).toFixed(2)}% changed area and{" "}
+              {reference.pixelThreshold ?? 0} per color channel.
+            </p>
+          ) : null}
           {open ? (
             <ReviewCompare
               service={service}

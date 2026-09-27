@@ -1,10 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import type { RunProductService } from "../data/run-product-service";
 
-export function useLatestTestReport(runService: RunProductService, testId: string) {
+export function useLatestTestReport(
+  runService: RunProductService,
+  testId: string,
+  appMapId?: string,
+) {
   const recentRuns = useQuery({
-    queryKey: ["catalog", "runs", "test", testId],
-    queryFn: () => runService.listTestRuns!(testId),
+    queryKey: ["catalog", "runs", "test", testId, appMapId],
+    queryFn: () => runService.listTestRuns!(testId, appMapId),
     enabled: typeof runService.listTestRuns === "function",
     staleTime: 10_000,
     refetchInterval: 3_000,

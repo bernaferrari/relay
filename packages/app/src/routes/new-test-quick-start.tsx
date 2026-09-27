@@ -60,11 +60,15 @@ export function NewTestQuickStart({
   rememberedAccount,
   initialAddress,
   initialAccount,
+  setupStatus = "ready",
+  onRetrySetup,
 }: {
   /** Prefilled website, e.g. from "New test as this account". */
   initialAddress?: string;
   /** Preselected saved login for the prefilled website. */
   initialAccount?: string;
+  setupStatus?: "loading" | "unavailable" | "ready";
+  onRetrySetup?(): void;
   recent: readonly string[];
   /** Saved logins that work on this website address. */
   accountsFor?(url: string): readonly WebsiteAccount[];
@@ -84,16 +88,12 @@ export function NewTestQuickStart({
   // undefined: not chosen yet (use the remembered one); "": explicitly Guest.
   const [chosen, setChosen] = useState<string>();
   const selectedReference =
-    chosen ??
-    (initialAccount && accounts.some((item) => item.reference === initialAccount)
-      ? initialAccount
-      : undefined) ??
-    (address ? rememberedAccount?.(address) : undefined) ??
-    "";
+    chosen ?? initialAccount ?? (address ? rememberedAccount?.(address) : undefined) ?? "";
   const account = accounts.find((item) => item.reference === selectedReference);
+  const missingAccount = Boolean(selectedReference && !account);
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (address && !busy) onStart(address, account);
+    if (address && !busy && setupStatus === "ready" && !missingAccount) onStart(address, account);
   }
   return (
     <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto px-6 py-12">
@@ -129,7 +129,12 @@ export function NewTestQuickStart({
                 onChange={(event) => setValue(event.currentTarget.value)}
               />
             </div>
-            <Button type="submit" size="lg" className="h-11" disabled={!address || busy}>
+            <Button
+              type="submit"
+              size="lg"
+              className="h-11"
+              disabled={!address || busy || setupStatus !== "ready" || missingAccount}
+            >
               {busy ? (
                 <LoaderCircle
                   className="animate-spin motion-reduce:animate-none"
@@ -141,7 +146,30 @@ export function NewTestQuickStart({
               {busy ? "Starting" : "Start"}
             </Button>
           </div>
-          {accounts.length ? (
+          {setupStatus === "unavailable" ? (
+            <div
+              role="alert"
+              className="flex flex-wrap items-center gap-2 text-sm text-destructive"
+            >
+              Saved accounts or browsers could not be loaded. Your login choice has not been
+              changed.
+              {onRetrySetup ? (
+                <Button type="button" variant="outline" size="sm" onClick={onRetrySetup}>
+                  Retry setup lookup
+                </Button>
+              ) : null}
+            </div>
+          ) : setupStatus === "loading" ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              Checking saved accounts and browsers…
+            </p>
+          ) : null}
+          {setupStatus === "ready" && missingAccount ? (
+            <p role="alert" className="text-sm text-destructive">
+              The selected account is unavailable. Choose another account or Guest explicitly.
+            </p>
+          ) : null}
+          {setupStatus === "ready" && (accounts.length || missingAccount) ? (
             <div
               className="flex flex-wrap items-center gap-2"
               role="radiogroup"

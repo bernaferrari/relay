@@ -257,10 +257,15 @@ export function RunStoryView({
 function captureBadge(item?: CaptureReviewItem): string | undefined {
   if (!item) return undefined;
   if (item.status === "accepted")
-    return decidedByReference(item.decidedBy) ? "Matches reference" : "Looks correct";
+    return decidedByReference(item.decidedBy)
+      ? (item.reference?.changeRatio ?? 0) > 0
+        ? "Matches reference within tolerance"
+        : "Matches reference"
+      : "Looks correct";
   if (item.status === "issue") return "Issue reported";
   if (item.reference?.state === "changed")
     return `Changed ${Math.max(0.1, (item.reference.changeRatio ?? 0) * 100).toFixed(1)}%`;
+  if (item.reference?.state === "incomparable") return "Cannot compare · review needed";
   if (item.status === "pending") return "To review";
   return undefined;
 }
@@ -348,6 +353,14 @@ function CaptureBar({
         <div className="flex gap-2">
           <Button size="sm" disabled={busy} onClick={() => void decide("accept")}>
             <Check aria-hidden="true" /> Looks correct
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => void decide("accept-as-reference")}
+          >
+            Accept as reference
           </Button>
           <Button
             size="sm"
