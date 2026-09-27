@@ -114,33 +114,30 @@ export function EmbeddedRunResult({
               ) : null}
             </div>
             {report.captureReview?.items.length && onReviewCaptures ? (
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm text-muted-foreground">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="justify-between"
+                onClick={onReviewCaptures}
+              >
+                <span>Screenshots</span>
+                <span className="text-xs">
                   {report.captureReview.summary?.pending
                     ? `${report.captureReview.summary.pending} to review`
-                    : "Screenshot review"}
-                  {report.captureReview.summary?.missing
-                    ? ` · ${report.captureReview.summary.missing} missing`
-                    : ""}
-                </p>
-                <Button size="sm" variant="outline" onClick={onReviewCaptures}>
-                  Review screenshots
-                </Button>
-              </div>
+                    : report.captureReview.summary?.missing
+                      ? `${report.captureReview.summary.missing} missing`
+                      : "View"}
+                </span>
+              </Button>
             ) : null}
             {destPath ? (
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-medium">
-                  {showingCapturedResult ? "Captured result" : "Run steps"}
-                </p>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setInspectingSteps((value) => !value)}
-                >
-                  {showingCapturedResult ? "View steps" : "Back to captured result"}
-                </Button>
-              </div>
+              <TestStepButton
+                number=""
+                selected={showingCapturedResult}
+                onClick={() => setInspectingSteps(false)}
+              >
+                Captured result
+              </TestStepButton>
             ) : null}
             {report.timeline.length ? (
               <ol className="grid list-none gap-1 p-0" aria-label="Run steps">
@@ -163,30 +160,6 @@ export function EmbeddedRunResult({
             ) : null}
             {step && !showingCapturedResult ? (
               <div className="grid gap-2">
-                <div className="flex items-center gap-3">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    aria-label="Previous run step"
-                    disabled={stepIndex === 0}
-                    onClick={() => setStepIndex((index) => index - 1)}
-                  >
-                    Previous
-                  </Button>
-                  <p className="min-w-0 flex-1 text-sm font-medium" aria-live="polite">
-                    {stepIndex + 1} / {report.timeline.length} · {step.title}
-                  </p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    aria-label="Next run step"
-                    disabled={stepIndex >= report.timeline.length - 1}
-                    onClick={() => setStepIndex((index) => index + 1)}
-                  >
-                    Next
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">Saved run step · {step.state}</p>
                 {step.expected ? (
                   <p className="text-sm">
                     <span className="text-muted-foreground">Expected: </span>
