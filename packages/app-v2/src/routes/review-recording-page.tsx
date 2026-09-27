@@ -468,10 +468,10 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                   : transition.variables?.action === "edit"
                     ? "Saving step changes…"
                     : "Saving Test…"
-                : canApprove
-                  ? "Recording captured. Ready to save."
-                  : review?.latestReplay
-                    ? replayDetail(review.latestReplay.outcome, canApprove)
+                : review?.latestReplay
+                  ? replayDetail(review.latestReplay.outcome, canApprove)
+                  : canApprove
+                    ? "Recording captured. Ready to save."
                     : actions.length
                       ? `Replay runs these steps on ${replayDeviceName} before saving.`
                       : "No actions were recorded. Start a new recording to capture your Test."}

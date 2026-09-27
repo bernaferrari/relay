@@ -64,6 +64,14 @@ export type RecordingEditProductService = RecordingEditAdapter;
 
 /** The only recording capability React components can see. It expresses
  * product intents rather than transports or workflow mutations. */
+/** A wait or check added while recording. */
+export type RecordingCondition = {
+  kind: "wait" | "check";
+  /** Text that must be on screen. */
+  text: string;
+  timeoutMs: number;
+};
+
 export type RecordingProductService = {
   listApps(): Promise<readonly ProductAppOption[]>;
   connect(): Promise<ProductRecordingState>;
@@ -80,6 +88,9 @@ export type RecordingProductService = {
   ): Promise<RecordingEvidencePreview | null>;
   recordCurrent(): Promise<ProductRecordingState>;
   checkpoint(label?: string): Promise<ProductRecordingState>;
+  /** Record "wait until this text appears" or "check this text is on screen";
+   * it runs on the live page now, so the person sees it hold. */
+  recordCondition?(input: RecordingCondition): Promise<ProductRecordingState>;
   captureFullPage?(): Promise<ProductRecordingState>;
   recoverForReview?(sessionId: string): Promise<ProductRecordingState>;
   stop(): Promise<ProductRecordingState>;
@@ -338,6 +349,26 @@ export function createRecordingProductService(
     },
     async checkpoint(label) {
       return (await product()).journey.checkpoint(label);
+    },
+    async recordCondition(input) {
+      const text = input.text.trim();
+      if (!text) throw new TypeError("Enter the text to look for.");
+      const seconds = Math.round(input.timeoutMs / 1000);
+      return (await product()).journey.record(
+        input.kind === "wait"
+          ? {
+              kind: "steps",
+              label: `Wait until “${text}” appears (up to ${seconds}s)`,
+              steps: [{ kind: "wait-for", target: { text }, timeoutMs: input.timeoutMs }],
+            }
+          : {
+              kind: "steps",
+              label: `Check “${text}” is on screen`,
+              steps: [
+                { kind: "expect", target: { text }, condition: "visible", timeoutMs: input.timeoutMs },
+              ],
+            },
+      );
     },
     async stop() {
       return (await product()).journey.stop();

@@ -5,8 +5,13 @@ import type {
   AuthoringTakeRevision,
   TargetProfile,
 } from "@relay/protocol";
-import { authoringCaptureProvenance, captureProofForAuthoring } from "@relay/protocol";
+import {
+  authoringCaptureProvenance,
+  captureProofForAuthoring,
+  compileBrowserEnvironment,
+} from "@relay/protocol";
 import { commitAppMapRecording } from "./app-map.js";
+import { overlayHonestBrowserTargetProfile } from "./app-map-run-history.js";
 import { mutateStoredAppMap, readAppMap } from "./collaboration.js";
 import { authoringEvidenceExists } from "./authoring-evidence.js";
 import { AuthoringStateError } from "./authoring-session-state.js";
@@ -119,5 +124,17 @@ async function frozenAuthoringTargetProfile(
       "Managed browser target is required to freeze a recording before it can be saved",
     );
   }
-  return managedBrowserTargetProfile(target, observedAt);
+  const unsigned = managedBrowserTargetProfile(target, observedAt);
+  // A recording made as a saved login ran in the signed-in browser, so its
+  // evidence belongs to that login's Variant. Stamp the same overlay-honest
+  // identity a fixture Lane/runtime profile computes; never the unsigned id.
+  const fixtureId = session.target.authenticationFixtureId?.trim();
+  if (!fixtureId) return unsigned;
+  return overlayHonestBrowserTargetProfile({
+    ...unsigned,
+    browserCaseProfile: compileBrowserEnvironment({
+      ...unsigned.browserCaseProfile!,
+      authenticationFixtureId: fixtureId,
+    }),
+  });
 }
