@@ -377,6 +377,7 @@ async function renderRun(
   runService: RunProductService,
   platform: Platform,
   runAcrossService?: RunAcrossProductService,
+  editorService: TestEditorProductService = fakeEditorService(),
 ) {
   const history = createMemoryHistory({ initialEntries: [path] });
   const host = document.createElement("div");
@@ -391,7 +392,7 @@ async function renderRun(
         productService={recordingService}
         runService={runService}
         runAcrossService={runAcrossService}
-        testEditorService={fakeEditorService()}
+        testEditorService={editorService}
       />,
     );
   });
@@ -852,6 +853,44 @@ describe("Run and Report", () => {
         ?.textContent,
     ).toContain("Checkout browser");
     expect(button("Run now").disabled).toBe(false);
+  });
+
+  it("blocks Run when the saved Test revision changes after the editor loads", async () => {
+    const fake = fakeRunService();
+    fake.service.listTargets = async () => [
+      {
+        kind: "browser",
+        platform: "browser",
+        targetId: "browser-golden",
+        name: "Checkout browser",
+        detail: "Managed browser · Ready",
+      },
+    ];
+    const editor = fakeEditorService();
+    const getSaved = editor.get.bind(editor);
+    let remoteRevision = 1;
+    editor.get = async (testId, appMapId) => {
+      const document = await getSaved(testId, appMapId);
+      return document ? { ...document, revision: remoteRevision } : undefined;
+    };
+    await renderRun(
+      "/tests/test-1",
+      fake.service,
+      platformWithStorage().platform,
+      undefined,
+      editor,
+    );
+    await openRunSettings();
+    expect(button("Run now").disabled).toBe(false);
+
+    remoteRevision = 2;
+    await click(button("Run now"));
+    expect(fake.startInputs).toHaveLength(0);
+    expect(document.body.textContent).toContain("saved Test changed");
+    await click(button("Reload Test"));
+    await openRunSettings();
+    await click(button("Run now"));
+    expect(fake.startInputs[0]).toMatchObject({ documentRevision: 2 });
   });
 
   it("keeps the recording browser over a different workspace destination", async () => {

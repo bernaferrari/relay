@@ -60,6 +60,8 @@ import { ReviewRecordingPage } from "./review-recording-page";
 import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/tests/$testId");
+const staleTestMessage =
+  "The saved Test changed. Reload it and review the latest version before running.";
 
 export function TestPage() {
   const { runService, platform, queryClient, productService, testEditorService } = useRouteContext({
@@ -265,9 +267,7 @@ export function TestPage() {
       ]);
       const current = await testEditorService.get(testId, test.data.appMapId);
       if (!acknowledged || !current || current.revision !== acknowledged.revision) {
-        throw new TypeError(
-          "The saved Test changed. Reload it and review the latest version before running.",
-        );
+        throw new TypeError(staleTestMessage);
       }
       return startOwnedTestRun({
         requests: testStartRequests({
@@ -788,9 +788,34 @@ export function TestPage() {
         className="mx-4 my-3 !mt-3 !max-w-none"
         operation="run"
         error={start.error}
-        recovery={start.data?.recovery}
+        recovery={
+          start.error instanceof TypeError && start.error.message === staleTestMessage
+            ? {
+                code: "test-document-changed",
+                title: "Saved Test changed",
+                detail: staleTestMessage,
+                recovery: "Reload the Test, review its latest steps, then run again.",
+                retryable: false,
+              }
+            : start.data?.recovery
+        }
         action={
-          start.data?.recovery?.sourceCode === "raw-evidence-variant-recapture-required" ? (
+          start.error instanceof TypeError && start.error.message === staleTestMessage ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                start.reset();
+                setSettingsOpen(false);
+                selectSource("definition");
+                void queryClient.invalidateQueries({
+                  queryKey: ["test-editor", testId, test.data?.appMapId],
+                });
+              }}
+            >
+              Reload Test
+            </Button>
+          ) : start.data?.recovery?.sourceCode === "raw-evidence-variant-recapture-required" ? (
             <Button
               nativeButton={false}
               variant="outline"

@@ -216,6 +216,7 @@ async function render(
   editor: TestEditorProductService,
   path = "/tests/test-checkout?step=step-pay",
   renderPlatform: Platform = platform,
+  runViewService: RunProductService = runService(editor),
 ) {
   const history = createMemoryHistory({
     initialEntries: [path],
@@ -231,7 +232,7 @@ async function render(
         history={history}
         productService={{ listApps: async () => [] } as unknown as RecordingProductService}
         testEditorService={editor}
-        runService={runService(editor)}
+        runService={runViewService}
       />,
     );
   });
@@ -644,6 +645,45 @@ describe("Test editor", () => {
     expect(document.querySelector('[data-slot="editor-save-status"]')?.textContent).toBe("Saved");
     expect(document.body.textContent).not.toContain("Unsaved draft");
     expect(history.location.pathname).toBe("/tests/test-checkout");
+  });
+
+  it("keeps Run blocked while a visible checkpoint save awaits acknowledgement", async () => {
+    const harness = service();
+    const saveEdit = harness.editor.edit.bind(harness.editor);
+    let acknowledgeSave: (() => void) | undefined;
+    const pendingSave = new Promise<void>((resolve) => {
+      acknowledgeSave = resolve;
+    });
+    harness.editor.edit = async (input) => {
+      await pendingSave;
+      return saveEdit(input);
+    };
+    const availableRun = runService(harness.editor);
+    availableRun.listTargets = async () => [
+      {
+        kind: "browser",
+        platform: "browser",
+        targetId: "checkout-browser",
+        name: "Checkout browser",
+        detail: "Managed browser · Ready",
+      },
+    ];
+    await render(harness.editor, "/tests/test-checkout?step=step-cart", platform, availableRun);
+    await click("Add a check");
+    await chooseCheckpoint("Wait for a control");
+    await fill(document.querySelector<HTMLInputElement>("#wait-control")!, "Download");
+    await click("Save");
+    await click("Run settings");
+    const runNow = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (candidate) => candidate.textContent?.trim() === "Run now",
+    );
+    expect(runNow?.disabled).toBe(true);
+    expect(harness.edits).toHaveLength(0);
+
+    await act(async () => acknowledgeSave?.());
+    await settle();
+    expect(harness.edits).toHaveLength(1);
+    expect(runNow?.disabled).toBe(false);
   });
 
   it("authors an upload checkpoint without YAML", async () => {
