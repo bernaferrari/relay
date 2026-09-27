@@ -422,7 +422,7 @@ function PlanGroup({
   const panelId = `plan-${suite.appMapId}-${suite.id}`;
   return (
     <li className="overflow-hidden">
-      <div className="flex items-center gap-3 py-4 pr-2">
+      <div className={`flex items-center gap-3 rounded-lg py-4 pr-2 ${libraryRowSurface}`}>
         <button
           type="button"
           aria-expanded={open}
@@ -437,7 +437,7 @@ function PlanGroup({
               replace: true,
             })
           }
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-lg p-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg p-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronRight
             className={`size-4 shrink-0 text-muted-foreground transition-transform duration-150 ease-out ${open ? "rotate-90" : ""}`}
