@@ -220,7 +220,7 @@ async function fill(input: HTMLInputElement | HTMLTextAreaElement, value: string
 }
 
 async function click(label: string) {
-  const target = [...document.querySelectorAll<HTMLElement>("button, a")].find(
+  const target = [...document.querySelectorAll<HTMLElement>('button, a, [role="menuitem"]')].find(
     (candidate) =>
       candidate.textContent?.trim() === label || candidate.getAttribute("aria-label") === label,
   );
@@ -431,6 +431,7 @@ describe("Test editor", () => {
     const harness = service();
     await render(harness.editor);
 
+    await click("Options for step 2");
     await click("Move Confirm the total up");
     expect(harness.edits.at(-1)).toEqual([
       { kind: "step.reorder", orderedStepIds: ["step-pay", "step-cart"] },
