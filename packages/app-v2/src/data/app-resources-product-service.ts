@@ -42,8 +42,12 @@ export type ProductBrowserAccount = {
     | "revokedAt"
     | "health"
   >;
-  target: Pick<TargetDefinition, "id" | "name">;
+  /** The browser that holds this login; `startUrl` is the website it opens. */
+  target: Pick<TargetDefinition, "id" | "name"> & { startUrl?: string };
 };
+
+/** A managed browser a login can be saved in. */
+export type ProductBrowserTarget = Pick<TargetDefinition, "id" | "name"> & { startUrl?: string };
 
 export type ProductAccountLane = {
   id: string;
@@ -117,7 +121,7 @@ export type AppResourcesProductService = {
   createApp(name: string): Promise<{ id: string; name: string }>;
   listVersions(): Promise<readonly ProductAppVersion[]>;
   listBrowserAccounts(): Promise<readonly ProductBrowserAccount[]>;
-  listBrowserTargets?(): Promise<readonly Pick<TargetDefinition, "id" | "name">[]>;
+  listBrowserTargets?(): Promise<readonly ProductBrowserTarget[]>;
   /** Optional for existing read-only fixture adapters; production includes the operations below. */
   saveVersion?: AppVersionProductService["saveVersion"];
   createVersion?: AppVersionProductService["createVersion"];
@@ -147,9 +151,20 @@ function projectVersion(build: RegisteredBuild): ProductAppVersion {
   };
 }
 
+function projectBrowserTarget(target: TargetDefinition): ProductBrowserTarget {
+  return {
+    id: target.id,
+    name: target.name,
+    ...(target.kind === "browser" && target.browser?.startUrl
+      ? { startUrl: target.browser.startUrl }
+      : {}),
+  };
+}
+
 function projectBrowserAccount(
   fixture: BrowserAuthenticationFixture,
-  target: Pick<TargetDefinition, "id" | "name">,
+  target: Pick<TargetDefinition, "id" | "name"> &
+    Partial<Pick<TargetDefinition, "kind" | "browser">>,
 ): ProductBrowserAccount {
   return {
     fixture: {
@@ -165,7 +180,13 @@ function projectBrowserAccount(
       ...(fixture.revokedAt === undefined ? {} : { revokedAt: fixture.revokedAt }),
       ...(fixture.health === undefined ? {} : { health: fixture.health }),
     },
-    target: { id: target.id, name: target.name },
+    target: {
+      id: target.id,
+      name: target.name,
+      ...(target.kind === "browser" && target.browser?.startUrl
+        ? { startUrl: target.browser.startUrl }
+        : {}),
+    },
   };
 }
 
@@ -219,7 +240,7 @@ export function createAppResourcesProductService(
       const { targets } = await (await client()).invoke("target.list", {});
       return targets
         .filter((target) => target.kind === "browser" && target.browser)
-        .map(({ id, name }) => ({ id, name }));
+        .map(projectBrowserTarget);
     },
     async listBrowserAccounts() {
       const relay = await client();

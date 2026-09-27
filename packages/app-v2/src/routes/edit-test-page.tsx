@@ -830,6 +830,7 @@ function TestEditorDocument({
                   appMapId={editorDocument.appMapId}
                   startUrl={editorDocument.test.originApplication}
                   browserTargetIds={editorDocument.browserTargetIds}
+                  recentAccountIds={recentAccountIds(recentRuns.data)}
                 />
               )}
               {!embedded && !sessionId && recentRuns.data?.length ? (
@@ -853,4 +854,13 @@ function TestEditorDocument({
 
 function EmbeddedFrame(props: import("react").ComponentProps<"div">) {
   return <div {...props} />;
+}
+
+/** Accounts this Test ran as, newest run first. */
+export function recentAccountIds(
+  runs: readonly { queuedAt: number; executionIdentity?: { accountId?: string } }[] = [],
+): string[] {
+  return [...runs]
+    .sort((left, right) => right.queuedAt - left.queuedAt)
+    .flatMap((run) => (run.executionIdentity?.accountId ? [run.executionIdentity.accountId] : []));
 }

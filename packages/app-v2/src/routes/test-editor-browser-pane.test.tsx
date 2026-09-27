@@ -46,7 +46,27 @@ afterEach(async () => {
   document.body.replaceChildren();
 });
 
-async function setup(startUrl?: string) {
+function account(id: string, targetId: string, name: string, extra: object = {}) {
+  return {
+    target: { id: targetId, name: targetId },
+    fixture: {
+      id,
+      reference: `authfx:${id}:1`,
+      revision: 1,
+      targetId,
+      name,
+      origins: ["https://grok.com"],
+      cookieCount: 1,
+      createdAt: 1,
+      ...extra,
+    },
+  };
+}
+
+async function setup(
+  startUrl?: string,
+  options: { recentAccountIds?: string[]; remembered?: string } = {},
+) {
   const unmount = vi.fn();
   const live = {
     snapshot: () => ({
@@ -66,12 +86,22 @@ async function setup(startUrl?: string) {
       openSpace,
     },
     appResourcesService: {
-      listAccountLanes: async () => [
-        { id: "grok-lab", targetId: "grok", kind: "fixture", reference: "authfx:lab:1" },
-        { id: "different-app", targetId: "another", kind: "fixture", reference: "authfx:other:1" },
+      listBrowserAccounts: async () => [
+        account("lab", "grok", "SuperGrok lab"),
+        account("mail", "grok", "Email tester", {
+          health: { status: "needs-relogin", checkedAt: 1 },
+        }),
+        account("gone", "grok", "Old account", { revokedAt: 1 }),
+        account("other", "another", "Different app"),
       ],
     },
     productService: { previewTarget },
+    platform: {
+      storage: {
+        get: (key: string) =>
+          key === "relay:website-account:grok.com" ? (options.remembered ?? null) : null,
+      },
+    },
   };
   const host = document.createElement("div");
   document.body.append(host);
@@ -84,7 +114,11 @@ async function setup(startUrl?: string) {
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
-        <TestEditorBrowserPane appMapId="grok-map" startUrl={startUrl} />
+        <TestEditorBrowserPane
+          appMapId="grok-map"
+          startUrl={startUrl}
+          {...(options.recentAccountIds ? { recentAccountIds: options.recentAccountIds } : {})}
+        />
       </QueryClientProvider>,
     );
   });
@@ -122,8 +156,8 @@ describe("saved Test browser", () => {
     const harness = await setup();
     expect(harness.previewTarget).not.toHaveBeenCalled();
     await click("Grokhttps://grok.com");
-    expect(document.body.textContent).not.toContain("different-app");
-    await choose("Account", "grok-lab");
+    expect(document.body.textContent).not.toContain("Different app");
+    await choose("Account", "authfx:lab:1");
     await click("Open browser");
     expect(harness.previewTarget).toHaveBeenCalledWith(
       { kind: "browser", platform: "browser", targetId: "grok" },
@@ -143,6 +177,36 @@ describe("saved Test browser", () => {
     expect(harness.previewTarget).toHaveBeenCalledWith(
       { kind: "browser", platform: "browser", targetId: "grok" },
       { signedOut: true },
+    );
+  });
+  it("names accounts people recognise and never shows internal ids", async () => {
+    await setup("https://grok.com/");
+    const options = [
+      ...document.querySelectorAll<HTMLOptionElement>('select[aria-label="Account"] option'),
+    ].map((option) => option.textContent);
+    expect(options).toEqual([
+      "Guest · not signed in",
+      "SuperGrok lab",
+      "Email tester · needs sign-in",
+    ]);
+    expect(document.body.textContent).not.toContain("authfx:");
+  });
+  it("defaults to the account the Test last ran as", async () => {
+    const harness = await setup("https://grok.com/", { recentAccountIds: ["mail", "lab"] });
+    expect(document.querySelector<HTMLSelectElement>('select[aria-label="Account"]')?.value).toBe(
+      "authfx:mail:1",
+    );
+    expect(document.body.textContent).toContain("Email tester · recorded with");
+    await click("Open browser");
+    expect(harness.previewTarget).toHaveBeenCalledWith(
+      { kind: "browser", platform: "browser", targetId: "grok" },
+      { authenticationFixtureId: "authfx:mail:1" },
+    );
+  });
+  it("falls back to the account last chosen when recording on this website", async () => {
+    await setup("https://grok.com/", { remembered: "authfx:lab:1" });
+    expect(document.querySelector<HTMLSelectElement>('select[aria-label="Account"]')?.value).toBe(
+      "authfx:lab:1",
     );
   });
 });

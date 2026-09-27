@@ -91,10 +91,7 @@ const AppVersionsPage = lazyNamedRoute(
   () => import("../routes/app-resource-pages"),
   "AppVersionsPage",
 );
-const AppAccountsPage = lazyNamedRoute(
-  () => import("../routes/app-resource-pages"),
-  "AppAccountsPage",
-);
+const AppAccountsPage = lazyNamedRoute(() => import("../routes/accounts-page"), "AppAccountsPage");
 const MapPage = lazyNamedRoute(() => import("../routes/map-page"), "MapPage");
 const TestsPage = lazyNamedRoute(() => import("../routes/tests-page"), "TestsPage");
 const NewTestPage = lazyNamedRoute(() => import("../routes/new-test-page"), "NewTestPage");

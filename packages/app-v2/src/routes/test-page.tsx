@@ -4,7 +4,7 @@ import { TestRunHistory } from "./test-run-history";
 import { TestStepsOutline } from "./test-steps-outline";
 import { flattenSteps } from "./saved-test-steps";
 import { runSetupContinuation } from "../data/setup-continuation";
-import { TestEditor } from "./edit-test-page";
+import { TestEditor, recentAccountIds } from "./edit-test-page";
 import { TestEditorBrowserPane } from "./test-editor-browser-pane";
 import { Popover, PopoverContent, PopoverTrigger } from "@relay/ui-react/components/popover";
 import { rememberRecordingInto } from "../data/record-into-test";
@@ -812,6 +812,7 @@ export function TestPage() {
                           appMapId={editorDocument.data.appMapId}
                           startUrl={editorDocument.data.test.originApplication}
                           browserTargetIds={editorDocument.data.browserTargetIds}
+                          recentAccountIds={recentAccountIds(recentRuns.data)}
                         />
                       ) : null
                     }
