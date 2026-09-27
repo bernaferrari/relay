@@ -84,4 +84,11 @@ evidence/
 # Local plans and product docs. Kept on disk only.
 /docs/
 /plans/
+/advisor-plans/
+
+# Markdown stays on disk. READMEs, the vendored tree, and shipped skill files stay tracked.
+*.md
+!README.md
+!vendor/**/*.md
+!plugins/relay-proof/skills/**/SKILL.md
 packages/ios-preview-producer/ios-preview-producer

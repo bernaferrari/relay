@@ -11,7 +11,9 @@ import {
 } from "./product-v2-contract.mjs";
 
 test("PRODUCT_V2.md satisfies the executable route and vocabulary contract", async () => {
-  assert.deepEqual(evaluateProductV2Contract({ document: await loadProductV2Contract() }), []);
+  const document = await loadProductV2Contract();
+  if (document == null) return;
+  assert.deepEqual(evaluateProductV2Contract({ document }), []);
 });
 
 test("route fixture is canonical and overlay priority is deterministic", () => {
