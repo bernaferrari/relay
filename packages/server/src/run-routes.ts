@@ -58,6 +58,7 @@ import {
   visualTargetKey,
   catalogLatestRunPerTest,
 } from "@relay/core";
+import { playerMapForRuns } from "./run-player-map.js";
 import type {
   CampaignRepairTarget,
   CaptureReviewAction,
@@ -815,9 +816,8 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
       assertJoinedRunSharesAppMap(extra, appMapId);
       runs.push(extra);
     }
-    const map = await readAppMap(scope.projectId, appMapId);
-    if (!map) throw new HttpError(404, `App Map ${appMapId} not found`);
-    json(response, 200, { manifest: buildPlayerManifest({ map, runs, now: Date.now() }) });
+    const map = await playerMapForRuns({ projectId: scope.projectId, appMapId, runs });
+    json(response, 200, { manifest: buildPlayerManifest({ map, runs, now: run.queuedAt }) });
     return true;
   }
 
@@ -831,10 +831,9 @@ export async function handleRunRoute(context: RunRouteContext): Promise<boolean>
       assertJoinedRunSharesAppMap(extra, appMapId);
       runs.push(extra);
     }
-    const map = await readAppMap(scope.projectId, appMapId);
-    if (!map) throw new HttpError(404, `App Map ${appMapId} not found`);
+    const map = await playerMapForRuns({ projectId: scope.projectId, appMapId, runs });
     json(response, 200, {
-      pack: await exportWalkthroughPack({ map, runs, now: Date.now() }),
+      pack: await exportWalkthroughPack({ map, runs, now: run.queuedAt }),
     });
     return true;
   }

@@ -3,7 +3,7 @@ import test from "node:test";
 
 import type { AppMap } from "@relay/protocol";
 import type { PersistedRun } from "./runs.js";
-import { buildPlayerManifest, resolvePlayerCapture } from "./player-manifest.js";
+import { buildPlayerManifest, resolvePlayerCapture, snapshotPlayerMap } from "./player-manifest.js";
 
 const APP_MAP_SCHEMA_VERSION = 1;
 
@@ -80,6 +80,23 @@ function fixtureMap(): AppMap {
     tests,
   } as unknown as AppMap;
 }
+
+test("frozen player Map excludes Test inputs and action targets", () => {
+  const map = fixtureMap();
+  map.tests["test-member-v2"]!.steps[0]!.intent = "private-value-123";
+  map.connections["open-settings"]!.actions = [
+    { id: "tap-private", kind: "tap", target: { label: "private-control-456" } },
+  ];
+  const snapshot = snapshotPlayerMap(map);
+  const serialized = JSON.stringify(snapshot);
+  assert.equal(serialized.includes("private-value-123"), false);
+  assert.equal(serialized.includes("private-control-456"), false);
+  assert.equal(snapshot.screens["screen-home"]?.title, "Member home");
+  assert.equal(snapshot.connections["open-settings"]?.sourceAnchor?.point?.x, 0.5);
+  assert.deepEqual(snapshot.tests["test-member-v2"]?.steps[0]?.binding?.connectionIds, [
+    "open-settings",
+  ]);
+});
 
 function reviewArtifact(input: {
   frame: string;

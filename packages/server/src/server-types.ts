@@ -6,7 +6,7 @@ import type {
   TargetDriverRegistry,
 } from "@relay/core";
 import type { ExternalIdentityVerifier } from "./external-identity.js";
-import type { AppMapTestRunRouteRuntime } from "./app-map-run-routes.js";
+import type { AppMapTestRunRouteRuntime } from "./app-map-test-run-runtime.js";
 import type { CampaignDurationRouteRuntime } from "./campaign-duration-routes.js";
 import type { JobRouteRuntime } from "./job-routes.js";
 import type { RunRouteRuntime } from "./run-routes.js";

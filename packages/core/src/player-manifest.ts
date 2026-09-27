@@ -30,6 +30,115 @@ import {
 import type { PersistedRun } from "./runs.js";
 
 export const PLAYER_MANIFEST_SCHEMA_VERSION = 1;
+export const PLAYER_MAP_SNAPSHOT_ARTIFACT_KIND = "app-map-player-snapshot";
+
+/** Only display and topology fields. Test inputs and locator payloads stay out
+ * of the Run artifact, which has a different sharing lifecycle than the Map. */
+export type PlayerMapSnapshot = {
+  id: string;
+  revision: number;
+  screens: Record<string, { title: string }>;
+  connections: Record<string, MapConnection>;
+  tests: Record<string, { steps: MapTestStep[] }>;
+};
+
+export function snapshotPlayerMap(map: AppMap): PlayerMapSnapshot {
+  return {
+    id: map.id,
+    revision: map.revision,
+    screens: Object.fromEntries(
+      Object.entries(map.screens).map(([id, screen]) => [id, { title: screen.title }]),
+    ),
+    connections: Object.fromEntries(
+      Object.entries(map.connections).map(([id, connection]) => [
+        id,
+        {
+          id: connection.id,
+          fromScreenId: connection.fromScreenId,
+          ...(connection.destination.kind === "screen"
+            ? {
+                destination: {
+                  kind: "screen",
+                  screenId: connection.destination.screenId,
+                },
+              }
+            : {}),
+          ...(connection.label ? { label: connection.label } : {}),
+          ...((connection as { provenance?: { source?: string } }).provenance?.source
+            ? {
+                provenance: {
+                  source: (connection as unknown as { provenance: { source: string } }).provenance
+                    .source,
+                },
+              }
+            : {}),
+          actions: (connection.actions ?? []).map((action) => ({
+            kind: action.kind,
+            ...(action.label ? { label: action.label } : {}),
+          })),
+          ...(connection.sourceAnchor?.point || connection.sourceAnchor?.rect
+            ? {
+                sourceAnchor: {
+                  ...(connection.sourceAnchor.point
+                    ? { point: { ...connection.sourceAnchor.point } }
+                    : {}),
+                  ...(connection.sourceAnchor.rect
+                    ? { rect: { ...connection.sourceAnchor.rect } }
+                    : {}),
+                },
+              }
+            : {}),
+        },
+      ]),
+    ),
+    tests: Object.fromEntries(
+      Object.entries(map.tests).map(([id, test]) => [
+        id,
+        {
+          steps: (test.steps ?? []).map((step) => {
+            const binding = step.binding as { connectionIds?: unknown } | undefined;
+            return {
+              id: step.id,
+              capture: step.capture === true,
+              ...(Array.isArray(binding?.connectionIds)
+                ? {
+                    binding: {
+                      connectionIds: binding.connectionIds.filter(
+                        (connectionId): connectionId is string => typeof connectionId === "string",
+                      ),
+                    },
+                  }
+                : {}),
+            };
+          }),
+        },
+      ]),
+    ),
+  };
+}
+
+export function playerMapSnapshotArtifact(map: AppMap, capturedAt: number) {
+  return {
+    kind: PLAYER_MAP_SNAPSHOT_ARTIFACT_KIND,
+    capturedAt,
+    data: snapshotPlayerMap(map),
+  };
+}
+
+export function playerMapSnapshotFromRun(run: PersistedRun): PlayerMapSnapshot | undefined {
+  const data = run.artifacts?.find(
+    (artifact) => artifact.kind === PLAYER_MAP_SNAPSHOT_ARTIFACT_KIND,
+  )?.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return undefined;
+  const value = data as Record<string, unknown>;
+  if (typeof value.id !== "string" || !value.id.trim()) return undefined;
+  if (typeof value.revision !== "number" || !Number.isSafeInteger(value.revision)) return undefined;
+  for (const key of ["screens", "connections", "tests"] as const) {
+    if (!value[key] || typeof value[key] !== "object" || Array.isArray(value[key]))
+      return undefined;
+  }
+  return value as PlayerMapSnapshot;
+}
 
 export type PlayerVariantKey = string;
 
@@ -217,15 +326,15 @@ type MapConnection = {
   };
 };
 
-function mapConnectionsOf(map: AppMap): MapConnection[] {
+function mapConnectionsOf(map: PlayerMapSnapshot): MapConnection[] {
   return Object.values(map.connections ?? {}) as unknown as MapConnection[];
 }
 
-function mapTestsOf(map: AppMap): Record<string, { steps?: MapTestStep[] }> {
+function mapTestsOf(map: PlayerMapSnapshot): Record<string, { steps?: MapTestStep[] }> {
   return (map.tests ?? {}) as unknown as Record<string, { steps?: MapTestStep[] }>;
 }
 
-function screenTitleOf(map: AppMap, screenId: string): string {
+function screenTitleOf(map: PlayerMapSnapshot, screenId: string): string {
   const screen = (map.screens ?? {})[screenId] as { title?: string } | undefined;
   return screen?.title ?? screenId;
 }
@@ -343,11 +452,12 @@ function connectionHotspot(connection: MapConnection): PlayerHotspot | undefined
 }
 
 export function buildPlayerManifest(input: {
-  map: AppMap;
+  map: AppMap | PlayerMapSnapshot;
   runs: readonly PersistedRun[];
   now?: number;
 }): PlayerManifest {
-  const { map, runs } = input;
+  const map = "schemaVersion" in input.map ? snapshotPlayerMap(input.map) : input.map;
+  const { runs } = input;
   const now = input.now ?? 0;
   const connections = mapConnectionsOf(map);
   const tests = mapTestsOf(map);

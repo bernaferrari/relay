@@ -9,6 +9,7 @@ import {
 import { appMapCombineCellExecutionIntentArtifactKind } from "./app-map-combine-cell-intent.js";
 import type { PreparedAppMapCombineCell } from "./app-map-combine-cell-prepare.js";
 import { digestAppMapTestExecutionValue } from "./app-map-test-execution-intent.js";
+import { PLAYER_MAP_SNAPSHOT_ARTIFACT_KIND, type PlayerMapSnapshot } from "./player-manifest.js";
 import { currentOperationContext, type OperationContext } from "./operation-context.js";
 import { prepareJobBatch, type EnqueueJobInput, type TestJob } from "./session.js";
 
@@ -90,6 +91,7 @@ export type EnqueuePreparedAppMapCombineCellsInput = {
   /** Invoked Lane, including fixture Lanes that omit unsignedLaneId. */
   laneId?: string;
   authenticationHealth?: BrowserAuthenticationHealth;
+  playerMapSnapshot?: PlayerMapSnapshot;
 };
 
 export type StagedAppMapCombineCellBatch = {
@@ -162,6 +164,15 @@ export function stagePreparedAppMapCombineCells(
           capturedAt: queuedAt,
           data: cell.childIntent.plan,
         },
+        ...(input.playerMapSnapshot
+          ? [
+              {
+                kind: PLAYER_MAP_SNAPSHOT_ARTIFACT_KIND,
+                capturedAt: queuedAt,
+                data: structuredClone(input.playerMapSnapshot),
+              },
+            ]
+          : []),
         {
           kind: "app-map-test-preflight",
           capturedAt: queuedAt,

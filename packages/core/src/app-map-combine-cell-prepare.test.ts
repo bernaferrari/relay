@@ -16,6 +16,7 @@ import {
   unresolvedTargetProfileMessage,
 } from "./app-map-combine-cell-prepare.js";
 import { stagePreparedAppMapCombineCells } from "./app-map-combine-cell-run.js";
+import { snapshotPlayerMap } from "./player-manifest.js";
 
 function scope(id: string) {
   return { organizationId: "org", projectId: "project", appMapId: "settings", id };
@@ -319,6 +320,7 @@ test("the frozen inputs artifact records an inherited profile id for audit", asy
     () =>
       stagePreparedAppMapCombineCells({
         cells: prepared.cells,
+        playerMapSnapshot: snapshotPlayerMap(map),
         title: "Language × Prepare",
         targetForCell: (cell) => cell.executionTarget,
         queuedTargetProfile: (cell) => ({
@@ -333,6 +335,10 @@ test("the frozen inputs artifact records an inherited profile id for audit", asy
       }),
   );
   const frozen = staged.jobs[0]!.artifacts.find((artifact) => artifact.kind === "frozen-inputs");
+  const player = staged.jobs[0]!.artifacts.find(
+    (artifact) => artifact.kind === "app-map-player-snapshot",
+  );
+  assert.equal((player?.data as { id?: string })?.id, map.id);
   assert.ok(frozen, "staged combine cell job carries a frozen-inputs artifact");
   const data = frozen.data as Record<string, unknown>;
   assert.equal(data.kind, "combine-cell");

@@ -41,6 +41,7 @@ import {
   combineCellShareAccountId,
   queueablePreparedCombineCells,
   readAppMap,
+  snapshotPlayerMap,
   listTargets,
   resolveCombineCellSelector,
   stagePreparedAppMapCombineCells,
@@ -642,6 +643,7 @@ async function executeCombineStartUnlocked(
     const stageCells = (acceptedAdmission?: LocalCombineCampaignAdmission) =>
       stagePreparedAppMapCombineCells({
         cells: selectedToQueue,
+        playerMapSnapshot: snapshotPlayerMap(map),
         combineId: scopedCombine.id,
         title: body.title ?? scopedCombine.name,
         ...(targetId
