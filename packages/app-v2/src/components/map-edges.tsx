@@ -475,10 +475,6 @@ export function MapEdges({
             geometry.path.toScreenId === selectedScreenId),
         );
         const state = dimmed ? "muted" : activePathId || connected ? "selected" : "neutral";
-        const source = positions.get(geometry.path.fromScreenId);
-        const target = positions.get(geometry.path.toScreenId ?? "");
-        const returning =
-          isRoutineReturn(geometry.path) || Boolean(source && target && target.x < source.x);
         return (
           <g
             key={geometry.path.id}
@@ -545,12 +541,12 @@ export function MapEdges({
               data-slot="map-edge-line"
               fill="none"
               stroke="currentColor"
-              strokeWidth={state === "selected" ? 2 : 1.25}
+              strokeWidth="1.5"
               vectorEffect="non-scaling-stroke"
               id={geometry.id}
               d={geometry.d}
               markerEnd={geometry.path.toScreenId ? `url(#${markerId}-${state})` : undefined}
-              strokeDasharray={!geometry.path.toScreenId || returning ? "5 5" : undefined}
+              strokeDasharray={!geometry.path.toScreenId ? "5 5" : undefined}
             />
             {geometry.anchor ? (
               <path
@@ -671,6 +667,18 @@ export function returnConnector(
   const corridorX = leftward
     ? (source.x + target.x + target.width) / 2 + 24 + Math.min(slot, 3) * 12
     : (source.x + source.width + target.x) / 2 - 24 - Math.min(slot, 3) * 12;
+  // An upper screen returns to a visible side port, not underneath the
+  // destination's discovery chip where the arrowhead would be obscured.
+  if (source.y < target.y) {
+    const sideEnd = {
+      x: leftward ? target.x + target.width + gap : target.x - gap,
+      y: target.y + target.height * (0.7 + (0.2 * (slot + 1)) / (Math.max(1, count) + 1)),
+    };
+    return {
+      points: [start, { x: corridorX, y: start.y }, { x: corridorX, y: sideEnd.y }, sideEnd],
+      label: { x: corridorX, y: (start.y + sideEnd.y) / 2 },
+    };
+  }
   const y = targetBottom + 44 + (slot / Math.max(1, count - 1)) * 48;
   return {
     points: [start, { x: corridorX, y: start.y }, { x: corridorX, y }, { x: end.x, y }, end],
