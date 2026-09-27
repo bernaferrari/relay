@@ -81,6 +81,7 @@ export function createRelayRecordingOutcomeJobs(
       const target = recordingTarget(
         await selectTarget(operations, intent.targetId),
         intent.authenticationFixtureId,
+        intent.liveSessionId,
       );
       const appMapId = await selectAppMap(operations, intent.appMapId, intent.title);
       const leaseId = await acquireOwnLease(operations, options.actorId, target.targetId);
@@ -109,11 +110,17 @@ export function createRelayRecordingOutcomeJobs(
 export function recordingTarget<T extends { kind: "device" | "browser" }>(
   selected: T,
   authenticationFixtureId?: string,
-): T & { authenticationFixtureId?: string } {
+  liveSessionId?: string,
+): T & { authenticationFixtureId?: string; liveSessionId?: string } {
   const account = authenticationFixtureId?.trim();
-  if (!account) return selected;
+  const live = liveSessionId?.trim();
+  if (!account && !live) return selected;
   if (selected.kind !== "browser") {
-    throw new TypeError("Only a browser recording can sign in with a saved login.");
+    throw new TypeError("Only a browser recording can use a saved login or live session.");
   }
-  return { ...selected, authenticationFixtureId: account };
+  return {
+    ...selected,
+    ...(account ? { authenticationFixtureId: account } : {}),
+    ...(live ? { liveSessionId: live } : {}),
+  };
 }

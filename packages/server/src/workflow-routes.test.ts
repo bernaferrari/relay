@@ -625,6 +625,44 @@ test("durable Authoring preserves identity and provenance across restart and cli
   });
 });
 
+test("durable Authoring carries the prepared browser session into its controlled start", async () => {
+  await withServer(async ({ port }) => {
+    const actor = client(port, "agent:first");
+    const created = await actor.invoke(
+      "workflow.create",
+      {
+        kind: "author-test",
+        frozenIdentity: {
+          ...frozenAuthor("browser-authoring"),
+          originApplication: "https://checkout.example.test",
+          target: {
+            kind: "browser",
+            platform: "browser",
+            targetId: "checkout-browser",
+            authenticationFixtureId: "authfx:member:1",
+            liveSessionId: "prepared-member-session",
+          },
+        },
+        expiresAt: 50_000,
+      },
+      { requestId: "browser-authoring" },
+    );
+    const started = await actor.invoke("workflow.transition", {
+      workflowId: created.workflow.record.workflowId,
+      expectedVersion: 1,
+      action: "start-authoring",
+      leaseId: "lease-1",
+    });
+    assert.deepEqual(started.session?.target, {
+      kind: "browser",
+      platform: "browser",
+      targetId: "checkout-browser",
+      authenticationFixtureId: "authfx:member:1",
+      liveSessionId: "prepared-member-session",
+    });
+  });
+});
+
 test("Authoring stale versions do not mutate and approval commits exactly once", async () => {
   await withServer(async ({ port, authoringTransitionCalls }) => {
     const actor = client(port, "agent:first");

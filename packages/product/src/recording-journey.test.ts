@@ -86,6 +86,31 @@ test("recording preserves selected Map path identity", async () => {
   });
 });
 
+test("recording carries the prepared browser session and account", async () => {
+  let recordedIntent: unknown;
+  const journey = createProductRecordingJourney({
+    jobs: jobsFor({ onRecord: (intent) => (recordedIntent = intent) }),
+  });
+
+  await journey.begin({
+    title: "Checkout path",
+    appMapId: "app-1",
+    targetId: "checkout-browser",
+    liveSessionId: "live-member-session",
+    authenticationFixtureId: "authfx:member:1",
+  });
+
+  assert.deepEqual(recordedIntent, {
+    kind: "record-test",
+    title: "Checkout path",
+    appMapId: "app-1",
+    targetId: "checkout-browser",
+    liveSessionId: "live-member-session",
+    authenticationFixtureId: "authfx:member:1",
+    confirmControl: true,
+  });
+});
+
 test("recording transitions are gated by canonical allowedNextActions", async () => {
   let advanceCalls = 0;
   const journey = createProductRecordingJourney({

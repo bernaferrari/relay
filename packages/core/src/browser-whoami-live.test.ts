@@ -8,7 +8,12 @@ import { fileURLToPath } from "node:url";
 import { saveBrowserAuthenticationFixture } from "./browser-authentication-fixtures.js";
 import { openBrowserDeviceSession } from "./browser-device-session.js";
 import { closeBrowserHostPool } from "./browser-host-pool.js";
-import { closeBrowserTarget, openBrowserLiveRuntime, openBrowserTarget } from "./browser-target.js";
+import {
+  closeBrowserTarget,
+  openBrowserLiveRuntime,
+  openBrowserTarget,
+  sessionFor,
+} from "./browser-target.js";
 import { deleteTarget, saveBrowserTarget } from "./targets.js";
 
 const CHROME =
@@ -123,6 +128,39 @@ test(
           canvas.sessionId,
           opened.sessionId,
           `${role}: in-app Browser Device must attach to the target.open session, not authoring`,
+        );
+        const exact = await sessionFor(targetId, {
+          projectId,
+          attachSessionId: opened.sessionId,
+          profile: live.profile,
+        });
+        assert.equal(exact.sessionId, opened.sessionId);
+        await assert.rejects(
+          sessionFor(targetId, {
+            projectId,
+            attachSessionId: "expired-session",
+            profile: live.profile,
+          }),
+          /no longer available/,
+        );
+        await assert.rejects(
+          sessionFor(targetId, {
+            projectId: "other-project",
+            attachSessionId: opened.sessionId,
+            profile: live.profile,
+          }),
+          /different project/,
+        );
+        await assert.rejects(
+          sessionFor(targetId, {
+            projectId,
+            attachSessionId: opened.sessionId,
+            profile: {
+              ...live.profile,
+              authenticationFixtureId: "authfx:wrong-account:1",
+            },
+          }),
+          /account changed/,
         );
         const page = await live.activePage();
         const cdp = await page.context().newCDPSession(page);

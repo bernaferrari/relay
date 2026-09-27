@@ -63,7 +63,17 @@ export async function commitAuthoringSessionMap(input: {
         sourceScreenId: session.sourceScreenId,
         pendingConnectionId: session.pendingConnectionId,
         destination: input.destination ?? session.destination,
-        target: session.target,
+        target:
+          session.target.kind === "browser"
+            ? {
+                kind: "browser",
+                platform: "browser",
+                targetId: session.target.targetId,
+                ...(session.target.authenticationFixtureId
+                  ? { authenticationFixtureId: session.target.authenticationFixtureId }
+                  : {}),
+              }
+            : session.target,
         takeId: session.take!.id,
         takeRevision: revision.revision,
         actions: revision.actions,

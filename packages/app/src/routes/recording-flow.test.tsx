@@ -517,6 +517,7 @@ describe("record, review, replay, and save", () => {
             target: browserTarget,
             frameSequence: 1,
             browserContext: {
+              sessionId: "session-test",
               pageUrl: "https://staging.example.test/account",
               engine: "chromium",
               viewport: { width: 1280, height: 800 },

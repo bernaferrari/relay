@@ -453,6 +453,11 @@ export async function handleWorkflowRoute(input: {
                   target.authenticationFixtureId.trim()
                     ? { authenticationFixtureId: target.authenticationFixtureId.trim() }
                     : {}),
+                  ...(target.kind === "browser" &&
+                  typeof target.liveSessionId === "string" &&
+                  target.liveSessionId.trim()
+                    ? { liveSessionId: target.liveSessionId.trim() }
+                    : {}),
                 } as CreateAuthoringSessionInput["target"],
                 leaseId: body.leaseId,
                 expectedAppMapRevision: frozen.appMapRevision,

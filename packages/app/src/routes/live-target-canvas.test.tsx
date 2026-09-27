@@ -165,6 +165,7 @@ describe("LiveTargetCanvas", () => {
         detail: "Manual session",
         send: async () => true,
         browserContext: {
+          sessionId: "session-test",
           engine: "chromium",
           viewport: { width: 1280, height: 720 },
           locale: "en-US",

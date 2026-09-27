@@ -42,6 +42,7 @@ export const authoringTarget = z.discriminatedUnion("kind", [
       platform: z.literal("browser"),
       targetId: identifier("Managed browser target identifier"),
       authenticationFixtureId: z.string().trim().min(1).max(256).optional(),
+      liveSessionId: identifier("Prepared live browser session").optional(),
     })
     .strict(),
 ]);

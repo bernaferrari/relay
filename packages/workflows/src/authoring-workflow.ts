@@ -129,7 +129,13 @@ function initialProblem(input: {
 
 function sameTarget(left: AuthoringSession["target"], right: AuthoringSession["target"]): boolean {
   return (
-    left.kind === right.kind && left.platform === right.platform && left.targetId === right.targetId
+    left.kind === right.kind &&
+    left.platform === right.platform &&
+    left.targetId === right.targetId &&
+    (left.kind !== "browser" ||
+      (right.kind === "browser" &&
+        left.authenticationFixtureId === right.authenticationFixtureId &&
+        left.liveSessionId === right.liveSessionId))
   );
 }
 

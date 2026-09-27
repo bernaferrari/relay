@@ -5,7 +5,7 @@ import { TestStepsOutline } from "./test-steps-outline";
 import { flattenSteps } from "./saved-test-steps";
 import { runSetupContinuation } from "../data/setup-continuation";
 import { TestEditor, recentAccountIds } from "./edit-test-page";
-import { TestEditorBrowserPane } from "./test-editor-browser-pane";
+import { TestEditorBrowserPane, type PreparedBrowserRecording } from "./test-editor-browser-pane";
 import { Popover, PopoverContent, PopoverTrigger } from "@relay/ui-react/components/popover";
 import { rememberRecordingInto } from "../data/record-into-test";
 import { writeWorkflowPointer } from "../data/workflow-pointer";
@@ -80,6 +80,16 @@ export function TestPage() {
   const reviewRecordingId = useTestDocumentReview(platform, search.view);
   const navigate = useNavigate({ from: "/tests/$testId" });
   const [setupAnchor, setSetupAnchor] = useState<HTMLElement | null>(null);
+  const [preparedBrowserState, setPreparedBrowserState] = useState<
+    (PreparedBrowserRecording & { testId: string }) | undefined
+  >();
+  const preparedBrowser =
+    preparedBrowserState?.testId === testId ? preparedBrowserState : undefined;
+  const setPreparedBrowser = useCallback(
+    (browser: PreparedBrowserRecording | undefined) =>
+      setPreparedBrowserState(browser ? { ...browser, testId } : undefined),
+    [testId],
+  );
   const configurationTriggerRef = useRef<HTMLButtonElement>(null);
 
   function selectSource(view: "definition" | "run") {
@@ -325,17 +335,27 @@ export function TestPage() {
   // Record more steps into this Test, after the selected step, as its login.
   const record = useMutation({
     mutationFn: async () => {
-      if (!test.data || !targetReady) throw new TypeError("Choose a ready browser first.");
+      if (!test.data || (!preparedBrowser && !targetReady))
+        throw new TypeError("Choose a ready browser first.");
+      if (preparedBrowser && !preparedBrowser.sessionId)
+        throw new TypeError("Wait for the live browser to connect before recording.");
+      if (preparedBrowser?.busy)
+        throw new TypeError("Wait for the current browser action to finish before recording.");
       const afterStepId = test.data.steps?.some((step) => step.id === evidenceStepId)
         ? evidenceStepId
         : undefined;
       const state = await productService.begin({
         title: `${test.data.name} · added steps`,
         appMapId: test.data.appMapId,
-        targetId,
-        ...(selectedProfile?.account
-          ? { authenticationFixtureId: selectedProfile.account.id }
-          : {}),
+        targetId: preparedBrowser?.targetId ?? targetId,
+        ...(preparedBrowser?.sessionId ? { liveSessionId: preparedBrowser.sessionId } : {}),
+        ...(preparedBrowser
+          ? preparedBrowser.authenticationFixtureId
+            ? { authenticationFixtureId: preparedBrowser.authenticationFixtureId }
+            : {}
+          : selectedProfile?.account
+            ? { authenticationFixtureId: selectedProfile.account.id }
+            : {}),
       });
       const workflowId = state.snapshot?.workflow?.workflowId;
       if (!workflowId)
@@ -652,7 +672,9 @@ export function TestPage() {
                 variant="outline"
                 size="sm"
                 onClick={() => record.mutate()}
-                disabled={record.isPending || !targetReady}
+                disabled={
+                  record.isPending || preparedBrowser?.busy || (!preparedBrowser && !targetReady)
+                }
                 title={
                   evidenceStepId
                     ? "Record new steps after the selected step"
@@ -752,6 +774,15 @@ export function TestPage() {
           if (targets.isError) void targets.refetch();
         }}
         retrying={test.isFetching || targets.isFetching}
+      />
+      <RecordingProblem
+        className="mx-4 my-3 !mt-3 !max-w-none"
+        error={record.error}
+        action={
+          <Button size="sm" variant="outline" onClick={() => record.reset()}>
+            Dismiss
+          </Button>
+        }
       />
       <RecordingProblem
         className="mx-4 my-3 !mt-3 !max-w-none"
@@ -860,6 +891,7 @@ export function TestPage() {
                         startUrl={editorDocument.data.test.originApplication}
                         browserTargetIds={editorDocument.data.browserTargetIds}
                         recentAccountIds={recentAccountIds(recentRuns.data)}
+                        onPreparedBrowserChange={setPreparedBrowser}
                       />
                     ) : null
                   }

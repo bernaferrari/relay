@@ -86,6 +86,38 @@ export async function deviceFor(
     const captureFixtureId = options.authenticationFixtureId?.trim();
     const recordingFixtureId = session.target.authenticationFixtureId?.trim();
     const fixtureId = captureFixtureId || recordingFixtureId;
+    if (session.target.liveSessionId && session.state !== "reviewing") {
+      if (captureFixtureId) {
+        throw new Error("A capture fixture cannot replace a prepared live browser.");
+      }
+      const target = await readTarget(session.target.targetId);
+      if (!target?.browser)
+        throw new Error(`managed browser target not found: ${session.target.targetId}`);
+      const { authenticationFixtureId: _savedFixture, ...unsignedProfile } =
+        browserCaseProfileForTarget(target);
+      return getBrowserDevice(session.target.targetId, {
+        projectId: session.projectId,
+        attachSessionId: session.target.liveSessionId,
+        profile: compileBrowserEnvironment({
+          ...unsignedProfile,
+          ...(recordingFixtureId ? { authenticationFixtureId: recordingFixtureId } : {}),
+        }),
+      });
+    }
+    if (session.target.liveSessionId && !fixtureId) {
+      const target = await readTarget(session.target.targetId);
+      if (!target?.browser)
+        throw new Error(`managed browser target not found: ${session.target.targetId}`);
+      const { authenticationFixtureId: _savedFixture, ...unsignedProfile } =
+        browserCaseProfileForTarget(target);
+      return getBrowserDevice(session.target.targetId, {
+        mode: "proof",
+        headless: true,
+        projectId: session.projectId,
+        reuseMatchingIdentity: true,
+        profile: compileBrowserEnvironment(unsignedProfile),
+      });
+    }
     if (!fixtureId) return getBrowserDevice(session.target.targetId);
     const projectId = options.projectId?.trim() || session.projectId;
     if (!projectId) {

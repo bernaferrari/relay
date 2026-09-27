@@ -28,6 +28,10 @@ export const createAuthoringSessionParser = objectParser<CreateAuthoringSessionI
       if (target.kind !== "browser") fail("authoring target", "only a browser can sign in");
       string(target.authenticationFixtureId, "authoring target authenticationFixtureId");
     }
+    if (target.liveSessionId !== undefined) {
+      if (target.kind !== "browser") fail("authoring target", "only a browser has a live session");
+      string(target.liveSessionId, "authoring target liveSessionId");
+    }
     if (number(input.expectedAppMapRevision, "expectedAppMapRevision") < 0) {
       fail("expectedAppMapRevision", "must be non-negative");
     }
