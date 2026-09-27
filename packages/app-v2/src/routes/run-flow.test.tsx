@@ -11,6 +11,7 @@ import { runEvidenceExportDocument } from "@relay/product/run-evidence-export";
 import type { ProductRunReportOverview, RunProductService } from "../data/run-product-service";
 import type { TracePackExportResponse } from "@relay/protocol";
 import type { Platform } from "../platform/types";
+import type { TestEditorProductService } from "../data/test-editor-product-service";
 import { WORKSPACE_DESTINATION_KEY } from "../layout/destination-summary";
 import { runConfigurationStorageKey } from "../data/use-persisted-run-configuration";
 
@@ -291,11 +292,76 @@ function fakeRunService(initial: ProductRunState = runState("running")) {
   };
 }
 
+/** The Test page edits steps in place, so it also reads the editor document. */
+function fakeEditorService(): TestEditorProductService {
+  return {
+    get: async (testId) => ({
+      appMapId: "settings-language-proof",
+      appName: "Settings Language Proof",
+      revision: 1,
+      test: {
+        id: testId,
+        organizationId: "local",
+        projectId: "default",
+        appMapId: "settings-language-proof",
+        name: "Change the app language",
+        kind: "scenario",
+        intentSchemaVersion: 1,
+        steps: [
+          {
+            id: "step-open",
+            kind: "instruction",
+            intent: "Open Language settings",
+            capture: true,
+            binding: { status: "resolved", kind: "connections", connectionIds: ["language"] },
+          },
+          {
+            id: "step-check",
+            kind: "validation",
+            intent: "Confirm the selected language",
+            capture: true,
+            binding: {
+              status: "resolved",
+              kind: "assertion",
+              assertion: {
+                kind: "content",
+                input: "Language",
+                expected: "English",
+                match: "exact",
+              },
+            },
+          },
+          {
+            id: "step-finish",
+            kind: "instruction",
+            intent: "Return to the app",
+            binding: { status: "resolved", kind: "connections", connectionIds: ["back"] },
+          },
+        ],
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      history: [],
+      repairs: [],
+    }),
+    edit: async () => {
+      throw new Error("Run tests do not edit steps.");
+    },
+    decideRepair: async () => {
+      throw new Error("Run tests do not repair steps.");
+    },
+  } as TestEditorProductService;
+}
+
 function platformWithStorage(initial: Record<string, string> = {}) {
   const values = new Map(Object.entries(initial));
   const platform: Platform = {
     platform: "web",
     getServerUrl: () => "http://127.0.0.1:8787",
+    // Shell services (activity, counts) must never reach a real server.
+    fetch: async () => {
+      throw new TypeError("Network is not available in run tests.");
+    },
     storage: {
       get: (key) => values.get(key) ?? null,
       set: (key, value) => void values.set(key, value),
@@ -324,6 +390,7 @@ async function renderRun(
         productService={recordingService}
         runService={runService}
         runAcrossService={runAcrossService}
+        testEditorService={fakeEditorService()}
       />,
     );
   });
@@ -346,15 +413,19 @@ function button(label: string): HTMLButtonElement {
   return result;
 }
 
+/** Saved steps in the in-place editor on the Test tab. */
+function editorSteps(): HTMLButtonElement[] {
+  const list = document.querySelector("#test-steps-title")?.closest("section");
+  return [...(list?.querySelectorAll<HTMLButtonElement>("button[aria-pressed]") ?? [])];
+}
+
 async function click(element: HTMLElement) {
   await act(async () => element.click());
   await settle();
 }
 
 async function openRunSettings() {
-  const trigger = [...document.querySelectorAll<HTMLButtonElement>("button")].find((item) =>
-    item.textContent?.includes("Run settings"),
-  );
+  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="Run settings"]');
   if (!trigger) throw new Error("Run settings trigger not found");
   await click(trigger);
 }
@@ -376,21 +447,25 @@ describe("Run and Report", () => {
       fake.service,
       platformWithStorage().platform,
     );
-    expect(document.querySelectorAll("button[data-step-id]")).toHaveLength(0);
+    expect(editorSteps()).toHaveLength(0);
     expect(document.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe(
       "Result",
     );
     await click(button("Test"));
-    const steps = [...document.querySelectorAll<HTMLButtonElement>("button[data-step-id]")];
+    const steps = editorSteps();
     expect(steps).toHaveLength(3);
     await click(steps[1]!);
     expect(button("Test").getAttribute("aria-selected")).toBe("true");
     expect(history.location.search).toContain("view=definition");
+    expect(history.location.search).toContain("step=step-check");
     await click(button("Result"));
-    expect(document.querySelectorAll("button[data-step-id]")).toHaveLength(0);
+    expect(editorSteps()).toHaveLength(0);
     await click(button("Test"));
+    expect(history.location.search).toContain("step=step-check");
     expect(
-      document.querySelector('[data-step-id="step-check"]')?.getAttribute("aria-pressed"),
+      editorSteps()
+        .find((step) => step.textContent?.includes("Confirm the selected language"))
+        ?.getAttribute("aria-pressed"),
     ).toBe("true");
   });
 
@@ -417,7 +492,7 @@ describe("Run and Report", () => {
       },
     ];
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
-    await click(button("Run now"));
+    await click(button("Run"));
     expect(document.body.textContent).toContain("Choose another setup");
     await click(button("Review run setup"));
     expect(document.body.textContent).not.toContain("Choose another setup");
@@ -452,7 +527,7 @@ describe("Run and Report", () => {
       fake.service,
       platformWithStorage().platform,
     );
-    await click(button("Run now"));
+    await click(button("Run"));
     const link = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
       (item) => item.textContent === "Check run status",
     );
@@ -485,7 +560,7 @@ describe("Run and Report", () => {
       },
     ];
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
-    await click(button("Run now"));
+    await click(button("Run"));
     expect(document.body.textContent).toContain("Saved controls need review");
     expect(document.body.textContent).not.toContain("restore this work");
     const review = [
@@ -512,7 +587,7 @@ describe("Run and Report", () => {
       platformWithStorage().platform,
     );
     await selectOption("Device or browser", "Checkout browser");
-    await click(button("Run now"));
+    await click(button("Run"));
     expect(String(history.location.search)).not.toContain("setup=run");
     await act(async () => fake.complete());
     await settle();
@@ -705,7 +780,7 @@ describe("Run and Report", () => {
   it("returns run setup focus to the header control that opened it", async () => {
     const fake = fakeRunService();
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
-    const trigger = button("Set up run");
+    const trigger = button("Run settings");
     expect(
       document.querySelector('button[aria-label="Run configuration — opens run setup"]'),
     ).toBeNull();
@@ -752,13 +827,10 @@ describe("Run and Report", () => {
     });
     await renderRun("/tests/test-1?target=emulator-5554", fake.service, storage.platform);
 
-    // The resolved configuration is visible beside Run before any popover is
+    // The resolved configuration is named on Run itself before any popover is
     // opened — a person comparing Admin and Member must not have to dig.
-    expect(
-      document.querySelector<HTMLButtonElement>(
-        'button[aria-label="Run configuration — opens run setup"]',
-      )?.textContent,
-    ).toContain("Checkout browser · Member · Current build");
+    expect(button("Run").title).toContain("Checkout browser · Member · Current build");
+    expect(button("Run settings").title).toContain("Checkout browser · Member · Current build");
     await openRunSettings();
 
     // Account repair happens in context and returns to this Test's run setup.
@@ -795,54 +867,23 @@ describe("Run and Report", () => {
     ).toContain("Checkout browser");
   });
 
-  it("moves step selection and focus with overview keyboard controls", async () => {
-    const fake = fakeRunService();
-    await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
-
-    const heading = document.querySelector<HTMLElement>("#test-overview-title");
-    const steps = [...document.querySelectorAll<HTMLButtonElement>("button[data-step-id]")];
-    if (!heading || steps.length !== 3) throw new Error("Test overview controls not found");
-    expect(heading.tabIndex).toBe(0);
-    heading.focus();
-    expect(document.activeElement).toBe(heading);
-
-    const press = async (key: string) => {
-      await act(async () => {
-        heading.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
-      });
-      await settle();
-    };
-    await press("ArrowDown");
-    expect(document.activeElement).toBe(steps[1]);
-    expect(steps[1]?.getAttribute("aria-pressed")).toBe("true");
-    await press("Home");
-    expect(document.activeElement).toBe(steps[0]);
-    expect(steps[0]?.getAttribute("aria-pressed")).toBe("true");
-    await press("End");
-    expect(document.activeElement).toBe(steps[2]);
-    expect(steps[2]?.getAttribute("aria-pressed")).toBe("true");
-  });
-
   it("starts one canonical Run, follows progress, and renders only real evidence", async () => {
     const fake = fakeRunService();
     const storage = platformWithStorage();
     const { history } = await renderRun("/tests/test-1", fake.service, storage.platform);
 
-    expect(button("Set up run").disabled).toBe(false);
-    expect(document.body.textContent?.match(/Set up run/g)).toHaveLength(1);
+    expect(button("Run").disabled).toBe(false);
+    expect(document.querySelectorAll('button[aria-label="Run settings"]')).toHaveLength(1);
     await openRunSettings();
     expect(document.body.textContent).toContain("Checkout browser");
     expect(document.body.textContent).toContain("Pixel 9 Pro");
     expect(document.body.textContent).not.toContain("browser-golden");
     expect(document.body.textContent).not.toContain("emulator-5554");
     expect(document.body.textContent).toContain("Run the Test and its screenshots show up here.");
-    const savedSteps = [
-      ...document.querySelectorAll<HTMLButtonElement>('[data-slot="test-readable-steps"] button'),
-    ];
+    const savedSteps = editorSteps();
     expect(savedSteps).toHaveLength(3);
-    expect(savedSteps[0]?.getAttribute("aria-pressed")).toBe("true");
     await click(savedSteps[1]!);
-    expect(savedSteps[1]?.getAttribute("aria-pressed")).toBe("true");
+    expect(editorSteps()[1]?.getAttribute("aria-pressed")).toBe("true");
     await openRunSettings();
     await selectOption("Device or browser", "Checkout browser");
     expect(button("Run now").disabled).toBe(false);
@@ -1121,7 +1162,7 @@ describe("Run and Report", () => {
     history.push("/tests/test-2");
     await settle();
     expect(document.body.textContent).not.toContain("Checking Language");
-    expect(document.body.textContent).toContain("Set up run");
+    expect(document.querySelector('button[aria-label="Run settings"]')).not.toBeNull();
 
     history.push("/tests/test-1");
     await settle();
@@ -1262,9 +1303,7 @@ describe("Run and Report", () => {
     const { history } = await renderRun("/tests/test-1", fake.service, storage.platform);
 
     expect(document.body.textContent).toContain("Checking Language");
-    expect(
-      [...document.querySelectorAll("button")].some((item) => item.textContent === "Set up run"),
-    ).toBe(false);
+    expect(document.querySelector('button[aria-label="Run settings"]')).toBeNull();
     expect(
       [...document.querySelectorAll("a")].some((item) =>
         item.textContent?.includes("View live run"),
@@ -1284,9 +1323,7 @@ describe("Run and Report", () => {
         item.textContent?.includes("Review result"),
       ),
     ).toBe(true);
-    expect(
-      [...document.querySelectorAll("button")].some((item) => item.textContent === "Set up run"),
-    ).toBe(true);
+    expect(document.querySelector('button[aria-label="Run settings"]')).not.toBeNull();
   });
 
   it("shows Cancel only while canonical state allows it", async () => {

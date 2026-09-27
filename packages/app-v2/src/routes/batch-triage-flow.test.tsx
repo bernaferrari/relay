@@ -181,10 +181,11 @@ describe("Batch review controls", () => {
     expect(document.body.textContent).toContain("product issues");
     expect(document.body.textContent).not.toContain("Execution");
     expect(document.body.textContent).not.toContain("31 of 33 planned cases");
-    const workbench = [...document.querySelectorAll("a")].find((link) =>
-      (link.getAttribute("href") || "").includes("/runs/run-1"),
+    // Checklist rows open the Run; the findings report opens its screenshots.
+    const workbench = [...document.querySelectorAll("a")].find(
+      (link) => link.textContent === "Open full report",
     );
-    expect(workbench?.getAttribute("href")).toContain("reportView=captures");
+    expect(workbench?.getAttribute("href")).toBe("/runs/run-1?reportView=captures");
   });
 
   it("assigns the authenticated actor from the visible control, not the me placeholder", async () => {
@@ -535,7 +536,11 @@ describe("Batch review controls", () => {
       }),
       cancel: async () => report,
     } as unknown as RunAcrossProductService);
-    expect(document.body.textContent).toContain("Relay is running this Plan");
+    // The live Plan checklist shows it is running and can be stopped.
+    expect(document.body.textContent).toContain("Running");
+    expect(
+      [...document.querySelectorAll("button")].some((item) => item.textContent === "Stop"),
+    ).toBe(true);
     expect(document.body.textContent).toContain("Screenshot review");
     expect(document.body.textContent).toContain(
       "New captures appear here as they finish. Selection does not include later arrivals.",

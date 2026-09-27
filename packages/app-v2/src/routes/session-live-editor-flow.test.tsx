@@ -164,9 +164,11 @@ async function settle() {
 
 async function fill(id: string, value: string) {
   const input = document.getElementById(id);
-  if (!(input instanceof HTMLInputElement)) throw new Error(`Input not found: ${id}`);
+  if (!(input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement))
+    throw new Error(`Input not found: ${id}`);
+  const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement : HTMLInputElement;
   await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set?.call(input, value);
+    Object.getOwnPropertyDescriptor(proto.prototype, "value")?.set?.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await settle();
@@ -368,7 +370,7 @@ describe("live Session to Test editor", () => {
     expect(history.location.search).toBe("?session=session-live");
 
     await fill("selected-step-intent", "Open the updated cart");
-    await click("Save step");
+    await click("Save");
 
     const editCall = edit.mock.calls[0]?.[0];
     expect(editCall?.current.test.test.id).toBe("test-live");

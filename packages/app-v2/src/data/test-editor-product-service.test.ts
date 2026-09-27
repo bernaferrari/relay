@@ -31,6 +31,9 @@ function map(revision: number, name = test.name): AppMap {
     name: "Store",
     revision,
     tests: { checkout: { ...test, name } },
+    screens: {},
+    screenVariants: {},
+    connections: {},
     activity: {},
     proposals: {},
   } as unknown as AppMap;
