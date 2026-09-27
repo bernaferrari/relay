@@ -443,6 +443,7 @@ export async function handleCombineCampaignRoute(context: JobRouteContext): Prom
           stagePreparedAppMapCombineCells({
             cells: toQueue,
             playerMapSnapshot: snapshotPlayerMap(map),
+            referenceReviewMode: projected.execution.referenceReviewMode ?? "human",
             combineId: projected.combineId,
             batchId: projected.id,
             title: projected.execution.title,

@@ -42,6 +42,8 @@ export type TestJob = {
    */
   executionTarget?: ExecutionTargetRef;
   action: string;
+  /** Frozen before execution; absent means a person reviews captures. */
+  referenceReviewMode?: import("@relay/protocol").CaptureReferenceReviewMode;
   /** recipe id when this job runs a recipe (action == recipeId for naming) */
   recipeId?: string;
   serial?: string;
@@ -145,6 +147,7 @@ export type TestJob = {
 export type EnqueueJobInput = {
   /** Internal executable recipe projection for a canonical App Map Flow. */
   recipe: string;
+  referenceReviewMode?: import("@relay/protocol").CaptureReferenceReviewMode;
   /**
    * Canonical provider-neutral target identity. When supplied it must agree
    * with any legacy serial/browser fields rather than silently picking one.

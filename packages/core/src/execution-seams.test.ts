@@ -397,6 +397,7 @@ test("session factory freezes browser environment identity across queue and retr
       browserTargetId: "chat",
       targetProfile: labProfile,
       laneId: "grok-lab",
+      referenceReviewMode: "approved-reference",
     },
     { findJob: () => undefined, toTransport: (value) => value },
   );
@@ -408,6 +409,7 @@ test("session factory freezes browser environment identity across queue and retr
   });
   assert.equal(labRetry.laneId, "grok-lab");
   assert.equal(labRetry.unsignedLaneId, undefined);
+  assert.equal(labRetry.referenceReviewMode, "approved-reference");
 
   const retry = createSessionJob(retryInputFromJob(job), {
     findJob: (id) => (id === job.id ? job : undefined),

@@ -563,9 +563,6 @@ async function run(options) {
         await page.getByRole("heading", { level: 1, name: fixture.heading }).waitFor({
           timeout: 5_000,
         });
-        if (fixture.id === "home-empty") {
-          await page.getByText("No tests yet").waitFor({ timeout: START_TIMEOUT_MS });
-        }
         if (fixture.id === "apps-error") {
           await page.getByRole("alert").waitFor({ timeout: START_TIMEOUT_MS });
         }

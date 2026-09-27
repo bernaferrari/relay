@@ -106,6 +106,7 @@ export type ProductSuite = {
   readonly variableIds: readonly string[];
   readonly strategy: AppMapCombine["strategy"];
   readonly selected?: Readonly<Record<string, readonly string[]>>;
+  readonly referenceReviewMode: "human" | "approved-reference";
   /** The canonical Combine is still the durable object behind this view. */
   readonly source: { readonly kind: "app-map-combine"; readonly id: string };
 };
@@ -119,6 +120,7 @@ export type ProductSuiteInput = {
   readonly variableIds: readonly string[];
   readonly strategy: NonNullable<AppMapCombine["strategy"]>;
   readonly selected?: Readonly<Record<string, readonly string[]>>;
+  readonly referenceReviewMode?: "human" | "approved-reference";
 };
 
 export type ProductSuiteEditor = {
@@ -315,6 +317,7 @@ export function projectProductSuite(map: AppMap, combine: AppMapCombine): Produc
     variableIds: [...combine.variableIds],
     strategy: combine.strategy,
     ...(combine.selected ? { selected: structuredClone(combine.selected) } : {}),
+    referenceReviewMode: combine.referenceReviewMode ?? "human",
     source: { kind: "app-map-combine", id: combine.id },
   };
 }
@@ -629,6 +632,7 @@ export function createSuiteProfileProductService(platform: Platform): SuiteProfi
           testIds,
           variableIds,
           strategy: input.strategy,
+          referenceReviewMode: input.referenceReviewMode ?? "human",
           selected: selected && Object.keys(selected).length ? selected : undefined,
         } as AppMapCombine,
       });

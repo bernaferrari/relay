@@ -92,6 +92,7 @@ export type EnqueuePreparedAppMapCombineCellsInput = {
   laneId?: string;
   authenticationHealth?: BrowserAuthenticationHealth;
   playerMapSnapshot?: PlayerMapSnapshot;
+  referenceReviewMode?: import("@relay/protocol").CaptureReferenceReviewMode;
 };
 
 export type StagedAppMapCombineCellBatch = {
@@ -130,6 +131,7 @@ export function stagePreparedAppMapCombineCells(
     });
     const enqueue: EnqueueJobInput = {
       recipe: cell.recipeSnapshot.id,
+      ...(input.referenceReviewMode ? { referenceReviewMode: input.referenceReviewMode } : {}),
       title: `${title} · ${cell.worldLabel} · ${cell.testName}`,
       ...enqueueInputForTarget(target),
       // Persist the canonical provider-neutral binding alongside legacy target fields.

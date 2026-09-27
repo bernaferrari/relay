@@ -111,6 +111,7 @@ const smoke: ProductSuite = {
   ],
   variableIds: [],
   strategy: "cartesian",
+  referenceReviewMode: "human",
   source: { kind: "app-map-combine", id: "suite-smoke" },
 };
 

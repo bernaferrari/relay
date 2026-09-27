@@ -129,6 +129,8 @@ export type PersistedRun = {
   outcome?: RunOutcome;
   failureCategory?: FailureCategory;
   review?: RunReview;
+  /** Saved Plan policy frozen with this Run; legacy absence is human review. */
+  referenceReviewMode?: import("@relay/protocol").CaptureReferenceReviewMode;
   /** Human screenshot review. Independent of execution outcome and visual baselines. */
   captureReviews?: CaptureReviewDecision[];
   /** Reference screenshot comparisons keyed by captureId. */
@@ -388,6 +390,7 @@ function buildPersistedRun(job: TestJob, dir: string, writtenAt: number): Persis
     outcome: job.outcome,
     failureCategory: job.failureCategory,
     review: job.review,
+    ...(job.referenceReviewMode ? { referenceReviewMode: job.referenceReviewMode } : {}),
     appVersion: job.appVersion,
     batchId: job.batchId,
     caseIndex: job.caseIndex,
