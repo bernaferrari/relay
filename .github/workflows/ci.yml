@@ -87,6 +87,14 @@ jobs:
       - name: Check Product visual baselines and accessibility
         run: pnpm run test:visual
 
+      - name: Preserve failed Product visual captures
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: product-visual-failure
+          path: .relay/visual-regression/*.png
+          if-no-files-found: ignore
+
       - name: Run Product browser acceptance
         run: pnpm run test:browser
 
