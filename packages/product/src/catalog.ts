@@ -93,6 +93,8 @@ export type ProductRunIdentity = {
 
 export type ProductRunSummary = {
   captureSummary?: RunSummary["captureSummary"];
+  /** Known retained frames; zero means the Runs list should not request a thumbnail. */
+  frameCount?: number;
   id: string;
   title: string;
   action: string;
@@ -332,6 +334,7 @@ function projectRun(run: RunSummary, maps: readonly AppMap[]): ProductRunSummary
   return {
     id: run.id,
     captureSummary: run.captureSummary,
+    frameCount: run.frameCount,
     title,
     action: run.action,
     status: run.status,

@@ -299,7 +299,7 @@ function RunRow({
   const state = runStateOf(run);
   const body = (
     <>
-      <RunThumb runId={run.id} label={title} />
+      <RunThumb runId={run.id} label={title} available={run.frameCount !== 0} />
       <span className="grid min-w-0 gap-1.5">
         <strong className="truncate text-sm font-semibold text-foreground">{title}</strong>
         <span className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-muted-foreground">

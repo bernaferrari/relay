@@ -6,7 +6,7 @@ import { useRouteContext } from "@tanstack/react-router";
 import { productClientForPlatform } from "../data/product-client";
 
 /** Blob URL of a Run's last screenshot (the capture people review, else the last frame). */
-function useRunThumbnail(runId: string | undefined, enabled = true) {
+function useRunThumbnail(runId: string | undefined, enabled = true, available = true) {
   const { platform } = useRouteContext({ from: "__root__" });
   const image = useQuery({
     // Retire immutable thumbnails cached before origin-aware CORS responses.
@@ -19,7 +19,7 @@ function useRunThumbnail(runId: string | undefined, enabled = true) {
       if (!response.ok) return null;
       return response.blob();
     },
-    enabled: Boolean(runId && enabled),
+    enabled: Boolean(runId && enabled && available),
     staleTime: Infinity,
     retry: (failureCount, error) =>
       failureCount < 1 && !("status" in error && [401, 403, 404].includes(Number(error.status))),
@@ -32,11 +32,19 @@ function useRunThumbnail(runId: string | undefined, enabled = true) {
     setUrl(next);
     return () => URL.revokeObjectURL(next);
   }, [image.data]);
-  return { url, loading: image.isFetching || (Boolean(runId) && !enabled) };
+  return { url, loading: available && (image.isFetching || (Boolean(runId) && !enabled)) };
 }
 
 /** The last screenshot of a Run in a small device frame; loads when scrolled into view. */
-export function RunThumb({ runId, label }: { runId?: string; label: string }) {
+export function RunThumb({
+  runId,
+  label,
+  available = true,
+}: {
+  runId?: string;
+  label: string;
+  available?: boolean;
+}) {
   const box = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -57,7 +65,7 @@ export function RunThumb({ runId, label }: { runId?: string; label: string }) {
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const { url, loading } = useRunThumbnail(runId, visible);
+  const { url, loading } = useRunThumbnail(runId, visible, available);
   return (
     <div ref={box} className="h-11 w-16 shrink-0" aria-hidden="true">
       {url ? (
@@ -69,7 +77,15 @@ export function RunThumb({ runId, label }: { runId?: string; label: string }) {
       ) : (
         <span
           className="flex size-full items-center justify-center rounded-md bg-muted/40 text-muted-foreground"
-          title={!runId ? "Test plan" : loading ? "Loading screenshot" : "No preview available"}
+          title={
+            !runId
+              ? "Test plan"
+              : !available
+                ? "Screenshot missing"
+                : loading
+                  ? "Loading screenshot"
+                  : "No preview available"
+          }
         >
           {!runId ? (
             <Layers className="size-4" />
