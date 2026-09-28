@@ -22,11 +22,10 @@ import {
 } from "./control.js";
 import { readRecipe, freezeRecipeExecution, describeRecipeStep, glyphsForStep } from "./recipes.js";
 import { applyCoverageOutcomeToTrace } from "./coverage-step-outcome.js";
+import { redactPrivateValue } from "./private-inputs.js";
 import { resolveRecipeStep, runRecipeStep } from "./recipe-runner.js";
 import type { RecipeRuntimeState, RecipeStepContext } from "./recipe-runner-context.js";
 import { finalizeDeferredChecksForJob } from "./session-campaign-finalization.js";
-import { classifyRunOutcome } from "./outcomes.js";
-import { redactPrivateValue } from "./private-inputs.js";
 import {
   initializeRunEvidence,
   runEvidenceFinalizationDevice,
@@ -78,6 +77,8 @@ import {
   type SessionBatchInput,
 } from "./session-batch-admission.js";
 import { AccountNeedsReloginError } from "./browser-auth-health.js";
+import { setOutcome, jobForTransport } from "./session-job-projection.js";
+export { jobForTransport } from "./session-job-projection.js";
 import {
   admitClaimedBrowserJobBatch,
   assertClaimedBrowserExecutionAllowed,
@@ -172,12 +173,6 @@ export function getActiveJob(targetId?: string): TestJob | null {
 
 export const listTargetWorkers = (): TargetWorkerStatus[] => scheduler.statuses();
 
-function setOutcome(job: TestJob): void {
-  const classified = classifyRunOutcome(job);
-  job.outcome = classified.outcome;
-  job.failureCategory = classified.failureCategory;
-}
-
 /** Re-run an immutable persisted execution and preserve its source lineage. */
 export function replayPersistedRun(
   run: PersistedRun,
@@ -209,16 +204,6 @@ function makeJob(input: EnqueueJobInput, attemptSeed = 1): TestJob {
   });
   captureProviderDriverRegistry(job);
   return job;
-}
-
-/** The runtime keeps private values only in memory for step resolution. Every
- * HTTP, MCP, event, and JSON boundary receives this redacted projection. */
-export function jobForTransport(job: TestJob): TestJob {
-  return redactPrivateValue(
-    Object.fromEntries(Object.entries(job).filter(([key]) => key !== "toJSON")),
-    job.resolvedInputs,
-    job.sensitiveInputNames ?? [],
-  ) as TestJob;
 }
 
 export function prepareJobBatch(inputs: readonly SessionBatchInput[]): DeferredSessionJobBatch {

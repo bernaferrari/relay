@@ -1,19 +1,11 @@
 import { ScanLine } from "lucide-react";
 import { AuthoringWorkspace } from "./authoring-workspace";
-import { AuthoringHeader } from "./authoring-header";
+import { RecordTestHeader } from "./record-test-header";
 import { RecordingScreenCapture } from "./recording-screen-capture";
 import { RecordingCondition as RecordingConditionDialog } from "./recording-condition";
 import type { RecordingCondition } from "../data/recording-product-service";
 import { RecordingTimelineSidebar } from "./recording-timeline-sidebar";
 /** @jsxImportSource react */
-import {
-  Dialog,
-  DialogTrigger,
-  DialogClose,
-  DialogContent,
-  DialogTitle,
-  DialogDescription,
-} from "@relay/ui-react/components/dialog";
 import { Button } from "@relay/ui-react/components/button";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -44,7 +36,7 @@ import {
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
 import { clearWorkflowPointerIfCurrent, writeWorkflowPointer } from "../data/workflow-pointer";
 import { LiveTargetCanvas } from "./live-target-canvas";
-import { PageLoading, errorMessage, targetLabel } from "./recording-shared";
+import { PageLoading, errorMessage, targetLabel, liveIssueMessage } from "./recording-shared";
 import { TalkBackModeSelect, TalkBackOverlay, useTalkBackReview } from "./talkback-review-panel";
 
 const testRouteApi = getRouteApi("/tests/$testId/record");
@@ -527,78 +519,30 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
 
   return (
     <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-card">
-      <div className="min-w-0">
-        <Dialog open={exitOpen} onOpenChange={setExitOpen}>
-          <DialogContent showCloseButton={false}>
-            <DialogTitle>Cancel recording?</DialogTitle>
-            <DialogDescription>
-              End this recording without saving a Test. Captured evidence remains available in
-              Activity. To keep the steps as a Test, choose Stop and review instead.
-            </DialogDescription>
-            <div className="flex justify-end gap-2 pt-4">
-              <DialogClose render={<Button variant="outline">Keep recording</Button>} />
-              <Button
-                variant="destructive"
-                disabled={action.isPending || liveInputBusy || !productService.cancel}
-                onClick={() => {
-                  setExitOpen(false);
-                  action.mutate({ action: "cancel" });
-                }}
-              >
-                Cancel recording
-              </Button>
-            </div>
-          </DialogContent>
-          <AuthoringHeader
-            title={
-              recording.isError || recording.data?.recovery
-                ? "Recording interrupted"
-                : "Record test"
-            }
-            back={
-              <DialogTrigger
-                render={
-                  <Button
-                    className="inline-flex w-fit [-webkit-app-region:no-drag]"
-                    variant="ghost"
-                    size="sm"
-                  />
-                }
-              >
-                Cancel
-              </DialogTrigger>
-            }
-            actions={
-              <>
-                <Button
-                  className="[-webkit-app-region:no-drag]"
-                  variant="default"
-                  size="sm"
-                  onClick={() =>
-                    snapshot?.stage === "failed"
-                      ? action.mutate({ action: "recover" })
-                      : void stopAfterInputDrain()
-                  }
-                  disabled={
-                    (!allowed.has("stop") &&
-                      !(snapshot?.stage === "failed" && productService.recoverForReview)) ||
-                    action.isPending ||
-                    stopWaitingForInput
-                  }
-                >
-                  {snapshot?.stage === "failed"
-                    ? action.isPending
-                      ? "Opening saved steps…"
-                      : "Review saved steps"
-                    : stopWaitingForInput
-                      ? "Finishing interaction…"
-                      : "Stop and review"}
-                </Button>
-              </>
-            }
-          />
-        </Dialog>
-      </div>
+      <RecordTestHeader
+        open={exitOpen}
+        onOpenChange={setExitOpen}
+        interrupted={Boolean(recording.isError || recording.data?.recovery)}
+        cancelDisabled={action.isPending || liveInputBusy || !productService.cancel}
+        stopDisabled={
+          (!allowed.has("stop") &&
+            !(snapshot?.stage === "failed" && productService.recoverForReview)) ||
+          action.isPending ||
+          stopWaitingForInput
+        }
+        failed={snapshot?.stage === "failed"}
+        pending={action.isPending}
+        stopping={stopWaitingForInput}
+        onCancel={() => {
+          setExitOpen(false);
+          action.mutate({ action: "cancel" });
+        }}
+        onStop={() =>
+          snapshot?.stage === "failed"
+            ? action.mutate({ action: "recover" })
+            : void stopAfterInputDrain()
+        }
+      />
 
       <div className="flex min-h-0 flex-col overflow-auto">
         {recording.isPending ? <PageLoading label="Restoring the recording…" /> : null}
@@ -743,15 +687,4 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
       </div>
     </section>
   );
-}
-
-function liveIssueMessage(message: string): string {
-  if (
-    /packet|metadata|content type|transport marker|canvas context|codec|decode|base64|targetid|operation/iu.test(
-      message,
-    )
-  ) {
-    return "Relay could not show the live view. Reconnect, then try again.";
-  }
-  return message;
 }

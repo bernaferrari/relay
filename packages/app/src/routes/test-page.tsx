@@ -1,36 +1,24 @@
-import { TestWorkspaceHeader, WorkspaceToolbar } from "../components/test-workspace";
+import { WorkspaceToolbar } from "../components/test-workspace";
 import { TestPlanNavigation } from "./test-plan-navigation";
 import { TestRunHistory } from "./test-run-history";
 import { TestStepsOutline } from "./test-steps-outline";
 import { flattenSteps } from "./saved-test-steps";
-import { runSetupContinuation } from "../data/setup-continuation";
 import { TestEditor, recentAccountIds } from "./edit-test-page";
 import { TestEditorBrowserPane, type PreparedBrowserRecording } from "./test-editor-browser-pane";
-import { Popover, PopoverContent, PopoverTrigger } from "@relay/ui-react/components/popover";
 import { rememberRecordingInto } from "../data/record-into-test";
 import { writeWorkflowPointer } from "../data/workflow-pointer";
 import { recordingQueryKeys } from "../data/recording-queries";
-import { SelectField } from "../components/filter-select";
-import { Checkbox } from "@relay/ui-react/components/checkbox";
 /** @jsxImportSource react */
-import { RunConfigurationComposer } from "../components/run-configuration-composer";
 import {
   usePersistedRunConfiguration,
   useRunConfigurationKey,
 } from "../data/use-persisted-run-configuration";
 import { WorkbenchPage } from "../components/page-layout";
 import { Button } from "@relay/ui-react/components/button";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@relay/ui-react/components/dropdown-menu";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@relay/ui-react/components/tabs";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { ChevronLeft, Circle, MoreHorizontal, Play, SlidersHorizontal } from "lucide-react";
-import { type MouseEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
 import { runQueryKeys } from "../data/run-queries";
@@ -43,7 +31,7 @@ import {
   summarizeProductStability,
 } from "../data/stability-product-service";
 import { useLatestTestReport } from "../hooks/use-latest-test-report";
-import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
+import { PageLoading, RecordingProblem } from "./recording-shared";
 import { RunInspection } from "./run-page";
 import {
   WORKSPACE_DESTINATION_KEY,
@@ -57,6 +45,9 @@ import { startOwnedTestRun, testStartRequests } from "../data/start-owned-test-r
 import { useTestDocumentReview } from "../data/test-document-surface";
 import { currentTestOutlineCopy } from "../data/workbench-step-selection";
 import { ReviewRecordingPage } from "./review-recording-page";
+import { TestRunSettings } from "./test-run-settings";
+import { TestWorkspaceActions } from "./test-workspace-actions";
+import { TestStage } from "./test-stage";
 import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/tests/$testId");
@@ -455,185 +446,26 @@ export function TestPage() {
       })
     : undefined;
 
-  const runSettings =
-    !activeRun && !targets.isError ? (
-      <section
-        id="test-run-setup"
-        tabIndex={-1}
-        className="min-w-0 scroll-mt-6 p-4 outline-none focus-visible:ring-3 focus-visible:ring-ring/40 [&_select]:w-full [&_select]:min-w-0"
-        aria-labelledby="test-run-setup-title"
-      >
-        <h2 id="test-run-setup-title" className="sr-only">
-          Run setup
-        </h2>
-        <RunConfigurationComposer
-          variant="plain"
-          pairedWorkspaceLabel={
-            paired.workspace.rows.length
-              ? `Use saved workspace · ${paired.workspace.rows.length} paired configurations`
-              : undefined
-          }
-          configuration={{
-            values: {
-              targetName: targets.data?.find((target) => target.targetId === targetId)?.name,
-            },
-            validated: canStart,
-            blockers: [
-              ...(editorState !== "saved"
-                ? [
-                    {
-                      id: "test-document",
-                      label: editorState === "saving" ? "Saving Test changes" : "Save Test changes",
-                      detail:
-                        editorState === "failed"
-                          ? "Resolve the save problem before running this Test."
-                          : "Run uses the saved Test. Save the visible edits first.",
-                    },
-                  ]
-                : []),
-              ...(configuration.targetUnavailable
-                ? [
-                    {
-                      id: "target",
-                      label: "Saved target is unavailable",
-                      detail: "Choose a ready device or browser to continue.",
-                    },
-                  ]
-                : []),
-              ...(profileBlocker ? [profileBlocker] : []),
-            ],
-          }}
-          targetOptions={targets.data?.map((target) => ({
-            id: target.targetId,
-            label: `${targetLabel(target).title} · ${
-              target.kind === "browser" ? "Browser" : target.platform === "ios" ? "iOS" : "Android"
-            }${target.targetId === lastRunTargetId ? " · last used" : ""}`,
-            detail: targetLabel(target).detail,
-          }))}
-          selection={{
-            ...configuration.selection,
-            targetProfileId: targetId,
-          }}
-          onSelectionChange={(selection) => {
-            const { targetProfileId: selectedTargetId, ...rest } = selection;
-            configuration.setSelection({
-              ...rest,
-              targetId: selectedTargetId,
-            });
-          }}
-          loading={configuration.loading || targets.isPending}
-          error={scope.error ?? configuration.error}
-          onRetry={scope.error ? scope.retry : configuration.retry}
-        >
-          {profiles.data?.length ? (
-            <SelectField
-              label="Sign in as"
-              value={configuration.selection.savedProfileId ?? "automatic"}
-              options={[
-                { value: "automatic", label: "No saved login (browser as it is)" },
-                ...profiles.data.map((profile) => ({
-                  value: profile.id,
-                  // Name the login people recognize; the setup name only
-                  // when there is no login to show.
-                  label: `${profile.account?.name ?? profile.name}${profile.targetId && profile.targetId !== targetId ? " · other device" : ""}`,
-                })),
-              ]}
-              onValueChange={(value) =>
-                configuration.setSelection({
-                  ...configuration.selection,
-                  savedProfileId: value === "automatic" ? undefined : value,
-                })
-              }
-            />
-          ) : null}
-          {selectedProfile?.account ? (
-            <p className="grid gap-1 text-xs leading-4 text-muted-foreground">
-              Runs as {selectedProfile.account.name} using its saved browser sign-in.
-              <Link
-                className={productLinkClassName}
-                to="/environments"
-                search={{ returnTo: runSetupContinuation(testId) }}
-              >
-                Refresh sign-in
-              </Link>
-            </p>
-          ) : null}
-          <details
-            className="group border-t border-border/60 pt-3"
-            open={
-              configuration.selection.buildId || configuration.selection.startupMode === "cold"
-                ? true
-                : undefined
-            }
-          >
-            <summary className="min-h-10 cursor-pointer text-sm font-medium">
-              Advanced run options
-            </summary>
-            <div className="grid gap-3 pt-2">
-              {builds.data?.length ? (
-                <SelectField
-                  label="Build"
-                  value={configuration.selection.buildId ?? "current"}
-                  options={[
-                    { value: "current", label: "Current build" },
-                    ...builds.data
-                      .filter((build) => build.status === "ready" && build.sourceSha)
-                      .map((build) => ({
-                        value: build.id,
-                        label: `${build.name} · ${build.sourceSha?.slice(0, 12)}`,
-                      })),
-                  ]}
-                  onValueChange={(value) =>
-                    configuration.setSelection({
-                      ...configuration.selection,
-                      buildId: value === "current" ? undefined : value,
-                    })
-                  }
-                />
-              ) : null}
-              <label className="flex min-h-11 items-center gap-2 text-sm">
-                <Checkbox
-                  checked={configuration.selection.startupMode === "cold"}
-                  onCheckedChange={(checked) =>
-                    configuration.setSelection({
-                      ...configuration.selection,
-                      startupMode: checked ? "cold" : undefined,
-                    })
-                  }
-                />
-                Restart app before running
-              </label>
-            </div>
-          </details>
-          {targets.isPending ? (
-            <PageLoading label="Finding devices…" />
-          ) : !targets.data?.length ? (
-            <EmptyState
-              title="No device or browser is ready"
-              detail="Connect a target to continue with this Test."
-              action={
-                <Link className={productLinkClassName} to="/devices">
-                  View devices
-                </Link>
-              }
-            />
-          ) : null}
-          <div className="flex justify-end border-t border-border pt-3">
-            <Button
-              variant="default"
-              onClick={() => start.mutate()}
-              disabled={!canStart || start.isPending}
-            >
-              {start.isPending ? "Starting…" : "Run now"}
-            </Button>
-          </div>
-        </RunConfigurationComposer>
-      </section>
-    ) : (
-      <p className="p-4 text-sm text-muted-foreground">
-        {activeRun ? "This Test is running." : "Devices are unavailable right now."}
-      </p>
-    );
+  const runSettings = (
+    <TestRunSettings
+      testId={testId}
+      activeRun={Boolean(activeRun)}
+      targets={targets}
+      profiles={profiles}
+      builds={builds}
+      configuration={configuration}
+      pairedCount={paired.workspace.rows.length}
+      targetId={targetId}
+      lastRunTargetId={lastRunTargetId}
+      canStart={canStart}
+      editorState={editorState}
+      profileBlocker={profileBlocker}
+      scopeError={scope.error}
+      onRetryScope={scope.retry}
+      startPending={start.isPending}
+      onStart={() => start.mutate()}
+    />
+  );
 
   if (reviewRecordingId) return <ReviewRecordingPage recordingId={reviewRecordingId} />;
 
@@ -656,109 +488,29 @@ export function TestPage() {
       {typeof search.plan === "string" && typeof search.planApp === "string" ? (
         <TestPlanNavigation testId={testId} planId={search.plan} appId={search.planApp} />
       ) : null}
-      <TestWorkspaceHeader
-        title={test.data?.name ?? "Test"}
-        context={
-          typeof search.plan !== "string" ? (
-            <Link to="/tests" className="inline-flex items-center gap-1 hover:text-foreground">
-              <ChevronLeft className="size-4" aria-hidden="true" /> Tests
-            </Link>
-          ) : undefined
+      <TestWorkspaceActions
+        testId={testId}
+        testName={test.data?.name}
+        testPresent={Boolean(test.data)}
+        inPlan={typeof search.plan === "string"}
+        activeRun={Boolean(activeRun)}
+        attachedRunId={attachedRunId}
+        recordDisabled={
+          record.isPending || Boolean(preparedBrowser?.busy) || (!preparedBrowser && !targetReady)
         }
-        actions={
-          <>
-            {test.data && !activeRun ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => record.mutate()}
-                disabled={
-                  record.isPending || preparedBrowser?.busy || (!preparedBrowser && !targetReady)
-                }
-                title={
-                  evidenceStepId
-                    ? "Record new steps after the selected step"
-                    : "Record new steps at the end"
-                }
-              >
-                <Circle className="fill-destructive text-destructive" aria-hidden="true" />
-                {record.isPending ? "Starting…" : "Record steps"}
-              </Button>
-            ) : null}
-            {activeRun && attachedRunId ? (
-              <Button
-                nativeButton={false}
-                render={<Link to="/runs/$runId" params={{ runId: attachedRunId }} />}
-                size="sm"
-              >
-                View live run
-              </Button>
-            ) : (
-              <div className="flex items-center gap-1">
-                <Button
-                  size="sm"
-                  onClick={runOrFocusSetup}
-                  disabled={start.isPending}
-                  title={configurationLabel}
-                >
-                  <Play aria-hidden="true" />
-                  {start.isPending ? "Starting…" : profileBlocker ? "Fix setup" : "Run"}
-                </Button>
-                <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
-                  <PopoverTrigger
-                    ref={configurationTriggerRef}
-                    render={
-                      <Button
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label="Run settings"
-                        title={configurationLabel}
-                      />
-                    }
-                  >
-                    <SlidersHorizontal aria-hidden="true" />
-                  </PopoverTrigger>
-                  <PopoverContent
-                    align="end"
-                    className="max-h-[min(640px,80dvh)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto p-0"
-                    aria-label="Run settings"
-                  >
-                    {runSettings}
-                  </PopoverContent>
-                </Popover>
-              </div>
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={<Button variant="ghost" size="sm" />}
-                aria-label="More Test actions"
-              >
-                <MoreHorizontal aria-hidden="true" /> More
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                {!activeRun && test.data ? (
-                  <DropdownMenuItem
-                    render={<Link to="/tests/$testId/run-across" params={{ testId }} />}
-                  >
-                    Run across…
-                  </DropdownMenuItem>
-                ) : null}
-                {attachedRunId ? (
-                  <DropdownMenuItem
-                    render={<Link to="/runs/$runId" params={{ runId: attachedRunId }} />}
-                  >
-                    Review result
-                  </DropdownMenuItem>
-                ) : null}
-                {recentRuns.data?.length ? (
-                  <DropdownMenuItem onClick={() => setHistoryOpen(true)}>
-                    Run history
-                  </DropdownMenuItem>
-                ) : null}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </>
-        }
+        recordPending={record.isPending}
+        recordStepSelected={Boolean(evidenceStepId)}
+        onRecord={() => record.mutate()}
+        startPending={start.isPending}
+        configurationLabel={configurationLabel}
+        profileBlocked={Boolean(profileBlocker)}
+        onRun={runOrFocusSetup}
+        settingsOpen={settingsOpen}
+        onSettingsOpen={setSettingsOpen}
+        configurationTriggerRef={configurationTriggerRef}
+        runSettings={runSettings}
+        hasRecentRuns={Boolean(recentRuns.data?.length)}
+        onHistoryOpen={() => setHistoryOpen(true)}
       />
 
       {loading ? <PageLoading label="Loading the Test and available devices…" /> : null}
@@ -937,48 +689,5 @@ export function TestPage() {
         historyComplete={stabilityHistoryComplete}
       />
     </WorkbenchPage>
-  );
-}
-
-/** The app beside the steps: the recorded screenshot, or the live browser. */
-function TestStage({ recorded, live }: { recorded: ReactNode; live: ReactNode }) {
-  const [mode, setMode] = useState<"recorded" | "live">("recorded");
-  const [liveOpened, setLiveOpened] = useState(false);
-  return (
-    <div className="flex h-full min-h-0 flex-col bg-stage">
-      <div
-        className="flex shrink-0 items-center gap-1 border-b border-border px-3 py-2"
-        role="tablist"
-        aria-label="App view"
-      >
-        {(
-          [
-            ["recorded", "Screenshot"],
-            ["live", "Live browser"],
-          ] as const
-        ).map(([value, label]) => (
-          <Button
-            key={value}
-            role="tab"
-            size="sm"
-            variant={mode === value ? "secondary" : "ghost"}
-            aria-selected={mode === value}
-            disabled={value === "live" && !live}
-            onClick={() => {
-              setMode(value);
-              if (value === "live") setLiveOpened(true);
-            }}
-          >
-            {label}
-          </Button>
-        ))}
-      </div>
-      <div className={mode === "recorded" ? "min-h-0 flex-1 overflow-auto" : "hidden"}>
-        {recorded}
-      </div>
-      {liveOpened ? (
-        <div className={mode === "live" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>{live}</div>
-      ) : null}
-    </div>
   );
 }

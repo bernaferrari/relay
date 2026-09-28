@@ -42,6 +42,7 @@ import {
 } from "./workflow-ref.js";
 import { executionRiskPreflightProblem } from "./execution-risk-preflight.js";
 import { invalidRefSnapshot } from "./invalid-workflow-snapshot.js";
+import { readRunJob } from "./run-workflow-job-inspection.js";
 import {
   mutationUnknownWorkflowProblem as mutationUnknownProblem,
   unavailableWorkflowProblem as unavailableProblem,
@@ -726,7 +727,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     if (authoringReference) return this.authoring.inspect(ref, authoringReference);
     const reference = decodeRunWorkflowRef(ref);
     if (!reference) return invalidRefSnapshot(ref);
-    return this.readJob(ref, reference);
+    return readRunJob(this.operations, ref, reference);
   }
 
   async inspectRun(workflowId: string): Promise<RunTestSnapshot> {
@@ -822,7 +823,7 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
     }
     const reference = decodeRunWorkflowRef(decision.ref);
     if (!reference) return invalidRefSnapshot(decision.ref);
-    const current = await this.readJob(decision.ref, reference);
+    const current = await readRunJob(this.operations, decision.ref, reference);
     if (!current.execution || current.version === "unavailable") return current;
     if (current.version !== decision.expectedVersion) {
       return {
@@ -874,44 +875,6 @@ class CanonicalRelayWorkflows implements RelayWorkflows {
           mutationUnknownProblem("the exact run was cancelled", error),
         ],
         progress: { label: "Cancellation outcome needs inspection" },
-      };
-    }
-  }
-
-  private async readJob(
-    ref: WorkflowRef,
-    reference: RunWorkflowReference,
-  ): Promise<RunTestSnapshot> {
-    try {
-      const output = await this.operations.invoke("job.get", { jobId: reference.jobId });
-      const job = parseCanonicalJob(output.job);
-      if (!job || job.id !== reference.jobId) {
-        throw new TypeError("Job response does not identify the workflow job");
-      }
-      return snapshotFromJob({ ref, frozen: reference.frozen, job });
-    } catch (error) {
-      return {
-        schemaVersion: 1,
-        kind: "run-test",
-        title: `Run ${reference.frozen.testId}`,
-        phase: "needs-attention",
-        version: "unavailable",
-        ref,
-        frozen: reference.frozen,
-        execution: { jobId: reference.jobId },
-        progress: { label: "Relay could not inspect the canonical job" },
-        allowedNextActions: ["inspect"],
-        problems: [
-          {
-            code: "malformed-response",
-            title: "Relay could not inspect this run",
-            detail: errorDetail(error),
-            recovery:
-              "Restore Relay connectivity or repair the response contract, then inspect again.",
-            retryable: true,
-          },
-        ],
-        evidenceRefs: [],
       };
     }
   }

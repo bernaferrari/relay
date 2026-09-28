@@ -72,6 +72,8 @@ import {
   redactedArtifactRef,
 } from "./artifact-ref.js";
 import { readFrameFile, runArtifactFile } from "./run-artifact-files.js";
+import { persistedRunIdAt } from "./run-id-probe.js";
+import { summarizeRecipeStability } from "./run-stability.js";
 export { readFrameFile, runArtifactFile } from "./run-artifact-files.js";
 import { formatRunFolder } from "./run-folder.js";
 export { formatRunFolder } from "./run-folder.js";
@@ -667,33 +669,6 @@ export async function readPersistedRun(idOrDir: string): Promise<PersistedRun | 
   }
 }
 
-const RUN_ID_PROBE_BYTES = 4096;
-const PRETTY_TOP_LEVEL_ID = /\n {2}"id": "([^"\\]+)"/u;
-
-/** The manifest's top-level id, read from its head when it is pretty-printed. */
-async function persistedRunIdAt(dir: string): Promise<string | null> {
-  const path = join(dir, "run.json");
-  let handle: Awaited<ReturnType<typeof open>> | undefined;
-  try {
-    handle = await open(path, "r");
-    const buffer = Buffer.alloc(RUN_ID_PROBE_BYTES);
-    const { bytesRead } = await handle.read(buffer, 0, RUN_ID_PROBE_BYTES, 0);
-    const head = buffer.subarray(0, bytesRead).toString("utf8");
-    const pretty = PRETTY_TOP_LEVEL_ID.exec(head)?.[1];
-    if (pretty) return pretty;
-  } catch {
-    return null;
-  } finally {
-    await handle?.close().catch(() => undefined);
-  }
-  try {
-    const parsed = JSON.parse(await readFile(path, "utf8")) as { id?: unknown };
-    return typeof parsed.id === "string" ? parsed.id : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Resolve many run ids (keyed by trimmed id) with at most one directory scan.
  * Ids whose run was pruned or never persisted map to null instead of each
@@ -892,78 +867,14 @@ export function reviewPersistedRun(
   });
 }
 
-export async function recipeStability(
-  recipeId: string,
-  limit = 20,
-): Promise<{
-  total: number;
-  passed: number;
-  productFailures: number;
-  harnessFailures: number;
-  uncertain: number;
-  passRate: number | null;
-}> {
+export async function recipeStability(recipeId: string, limit = 20) {
   const runs = (await listPersistedRuns(200))
     .filter((run) => run.action === recipeId)
     .slice(0, Math.max(1, Math.min(limit, 100)));
-  const passed = runs.filter(
-    (run) =>
-      run.review?.status !== "pending" &&
-      run.review?.status !== "rejected" &&
-      (run.outcome === "passed" || run.status === "ok" || run.status === "healed"),
-  ).length;
-  const productFailures = runs.filter((run) => run.outcome === "product-failure").length;
-  const harnessFailures = runs.filter((run) => run.outcome === "harness-failure").length;
-  const uncertain = runs.filter((run) => run.outcome === "uncertain").length;
-  const judged = passed + productFailures;
-  return {
-    total: runs.length,
-    passed,
-    productFailures,
-    harnessFailures,
-    uncertain,
-    passRate: judged > 0 ? passed / judged : null,
-  };
+  return summarizeRecipeStability(runs);
 }
 
-/** Canonical, additive projection for a persisted or live run frame. The
- * supplied run directory remains inside this source adapter; the resulting
- * reference contains only a non-authoritative opaque locator. */
-export async function projectRunFrameArtifact(input: {
-  runId: string;
-  runDir: string;
-  frame: TraceFrameRef;
-}): Promise<ArtifactRefProjection> {
-  const mime = input.frame.mime ?? "image/png";
-  const media = { kind: artifactMediaKindForMime(mime), mime };
-  if (!visualEvidenceAllowed()) {
-    return redactedArtifactRef({
-      source: "run-frame",
-      media,
-      capturedAt: input.frame.capturedAt,
-    });
-  }
-  const data = input.frame.base64
-    ? Buffer.from(input.frame.base64, "base64")
-    : await readFrameFile(input.runDir, input.frame.path);
-  if (!data) {
-    return missingArtifactRef({
-      source: "run-frame",
-      media,
-      capturedAt: input.frame.capturedAt,
-    });
-  }
-  return projectArtifactRef(
-    artifactRefFromBytes({
-      data,
-      media,
-      capturedAt: input.frame.capturedAt,
-      provenance: { source: "run-frame", capture: "recorded" },
-      retention: { scope: "run-directory", recoverability: "best-effort" },
-      locations: [opaqueArtifactLocation("run", [input.runId, input.frame.path])],
-    }),
-  );
-}
+export { projectRunFrameArtifact } from "./run-frame-projection.js";
 
 export {
   RelayRunBundleError,

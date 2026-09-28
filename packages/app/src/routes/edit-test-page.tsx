@@ -1,24 +1,26 @@
 /** @jsxImportSource react */
 import { TestEditorBrowserPane } from "./test-editor-browser-pane";
-import { TestEditorDoneButton } from "./test-editor-done-button";
+import { TestEditorSelectedStep } from "./test-editor-selected-step";
+import { TestEditorChrome } from "./test-editor-chrome";
+import { TestEditorWorkspace } from "./test-editor-workspace";
+import { testEditorSaveState } from "./test-editor-save-state";
+import { recentAccountIds } from "./test-editor-recent-accounts";
+export { recentAccountIds } from "./test-editor-recent-accounts";
 import { EditorSaveStatus } from "../components/editor-save-status";
 import { WorkbenchPage } from "../components/page-layout";
 import type { AppMapScenarioTestStep, AppMapTestStepPlacement } from "@relay/protocol";
 import { ApiError } from "@relay/client";
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { Settings2 } from "lucide-react";
+import { Link, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
 import { TestEditorEvidencePanel } from "../components/test-editor-evidence-panel";
 import {
-  SelectedStepEditor,
   validationDraft,
   type EditTransaction,
   type StepEntry,
 } from "../components/test-editor-step";
-import { TestEditorStepOutline } from "../components/test-editor-step-list";
 import type {
   ProductTestEditorDocument,
   ProductTestRepair,
@@ -27,8 +29,6 @@ import type { LiveTestEditorSession } from "../data/live-test-editor-product-ser
 import { useLatestTestReport } from "../hooks/use-latest-test-report";
 import { LiveTestEditorPane } from "./live-test-editor-pane";
 import { PageLoading, RecordingProblem } from "./recording-shared";
-import { HistorySection, RepairSection } from "./test-editor-context-panels";
-import { TestEditorHistoryBar, TestEditorSettingsPanel } from "./test-editor-page-sections";
 import {
   collectStepEntries,
   insertPendingCheckpoint,
@@ -37,39 +37,7 @@ import {
 import { useTestStepDrafts } from "./use-test-step-drafts";
 import { productLinkClassName } from "../lib/class-names";
 
-const routeApi = getRouteApi("/tests/$testId/edit");
-
-/** Editing lives on the Test page. This route only hosts live device sessions. */
-export function EditTestPage() {
-  const { testId } = routeApi.useParams();
-  const search = routeApi.useSearch() as { step?: unknown; session?: unknown; app?: unknown };
-  const navigate = useNavigate({ from: "/tests/$testId/edit" });
-  const sessionId = typeof search.session === "string" ? search.session : undefined;
-  const stepId = typeof search.step === "string" ? search.step : undefined;
-  const appMapId = typeof search.app === "string" ? search.app : undefined;
-  useEffect(() => {
-    if (sessionId) return;
-    void navigate({
-      to: "/tests/$testId",
-      params: { testId },
-      search: { ...(stepId ? { step: stepId } : {}), ...(appMapId ? { app: appMapId } : {}) },
-      replace: true,
-    });
-  }, [appMapId, navigate, sessionId, stepId, testId]);
-  if (!sessionId) return <PageLoading label="Opening the Test…" />;
-  return (
-    <TestEditor
-      key={`${appMapId ?? "unscoped"}:${testId}`}
-      testId={testId}
-      appMapId={appMapId}
-      sessionId={sessionId}
-      stepId={stepId}
-      onStepChange={(step) =>
-        void navigate({ search: (previous) => ({ ...previous, step }), replace: true })
-      }
-    />
-  );
-}
+export { EditTestPage } from "./edit-test-route";
 
 export function TestEditor(props: {
   testId: string;
@@ -550,103 +518,30 @@ function TestEditorDocument({
     Boolean(testEditorService.undo) &&
     Boolean(editorDocument?.history.some((item) => item.eventType !== "test.redone"));
   const stepEditor = editorDocument ? (
-    <aside className="min-w-0" aria-label="Selected step editor">
-      {selected ? (
-        <SelectedStepEditor
-          key={`${selected.step.id}:${editorDocument.revision}`}
-          entry={selected}
-          savedPaths={editorDocument.savedPaths}
-          appMapId={editorDocument.appMapId}
-          draft={stepDrafts[selected.step.id]}
-          onDraftChange={(draft) => {
-            onEditingStateChange?.("dirty");
-            updateStepDraft(selected.step.id, draft);
-          }}
-          busy={edit.isPending}
-          unsavedCheckpoint={pendingCheckpoint?.step.id === selected.step.id}
-          onSave={(transaction) => {
-            if (pendingCheckpoint?.step.id !== selected.step.id) {
-              apply(transaction);
-              return;
-            }
-            const patch = transaction.forward.find((item) => item.kind === "step.patch");
-            if (!patch || patch.kind !== "step.patch") return;
-            const binding = patch.patch.binding;
-            if (
-              !binding ||
-              binding.status !== "resolved" ||
-              (binding.kind !== "assertion" && binding.kind !== "recipe-step")
-            )
-              return;
-            apply({
-              label: "Added a checkpoint",
-              forward: [
-                {
-                  kind: "step.add",
-                  step: {
-                    ...pendingCheckpoint.step,
-                    ...(patch.patch.intent === undefined ? {} : { intent: patch.patch.intent }),
-                    ...(patch.patch.note === undefined
-                      ? {}
-                      : patch.patch.note === null
-                        ? { note: undefined }
-                        : { note: patch.patch.note }),
-                    ...(patch.patch.capture === undefined ? {} : { capture: patch.patch.capture }),
-                    binding,
-                  },
-                  ...(pendingCheckpoint.placement
-                    ? { placement: pendingCheckpoint.placement }
-                    : {}),
-                  index: pendingCheckpoint.index,
-                },
-              ],
-              reverse: [{ kind: "step.remove", stepId: pendingCheckpoint.step.id }],
-            });
-          }}
-          onBind={(transaction) => {
-            if (pendingCheckpoint?.step.id === selected.step.id) return;
-            apply(transaction);
-          }}
-          onRemove={() => {
-            if (pendingCheckpoint?.step.id === selected.step.id) {
-              const previous =
-                selected.siblingIds[selected.index - 1] ?? selected.placement?.parentStepId ?? null;
-              setPendingCheckpoint(null);
-              if (previous) selectStep(previous);
-              else onStepChange(undefined);
-              return;
-            }
-            removeStep(selected);
-          }}
-          onAddChild={(branch) => addChildStep(selected, branch)}
-          platformBlocker={editorDocument.stepPlatformBlockers?.[selected.step.id]}
-          hasRememberableReply={editorDocument.hasRememberableReply === true}
-        />
-      ) : (
-        <EmptyState
-          title="Choose a step"
-          detail="Select a step to edit its instruction, note, and evidence capture."
-        />
-      )}
-    </aside>
+    <TestEditorSelectedStep
+      editorDocument={editorDocument}
+      selected={selected}
+      stepDrafts={stepDrafts}
+      onEditingStateChange={onEditingStateChange}
+      updateStepDraft={updateStepDraft}
+      busy={edit.isPending}
+      pendingCheckpoint={pendingCheckpoint}
+      apply={apply}
+      onClearPending={() => setPendingCheckpoint(null)}
+      selectStep={selectStep}
+      onStepChange={onStepChange}
+      onRemoveStep={removeStep}
+      onAddChildStep={addChildStep}
+    />
   ) : null;
 
   const saveState = (
     <EditorSaveStatus
-      state={
-        edit.isPending || historyAction.isPending
-          ? "saving"
-          : saveNotice.startsWith("Conflict")
-            ? "conflicted"
-            : saveNotice.startsWith("Could not") ||
-                saveNotice.toLowerCase().includes("failed") ||
-                saveNotice.includes("unavailable")
-              ? "failed"
-              : hasUnsavedDrafts
-                ? "dirty"
-                : "saved"
-      }
-      detail={hasUnsavedDrafts && saveNotice === "Saved" ? "Unsaved draft" : saveNotice}
+      {...testEditorSaveState(
+        edit.isPending || historyAction.isPending,
+        saveNotice,
+        hasUnsavedDrafts,
+      )}
     />
   );
   const Frame = embedded ? EmbeddedFrame : WorkbenchPage;
@@ -672,79 +567,35 @@ function TestEditorDocument({
         }
       }}
     >
-      {embedded ? (
-        <TestEditorDoneButton
-          saving={
-            edit.isPending || historyAction.isPending || settings.isPending || repair.isPending
-          }
-          hasUnsavedChanges={
-            hasUnsavedDrafts ||
-            settingsName !== (editorDocument?.test.name ?? "") ||
-            settingsOrigin !== (editorDocument?.test.originApplication ?? "")
-          }
-          hasUnsavedCheckpoint={Boolean(pendingCheckpoint)}
-          onLeave={() => void navigate({ to: "/tests/$testId", params: { testId } })}
-          showDoneButton={false}
-        />
-      ) : null}
-      {embedded ? null : (
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <div className="min-w-0">
-            <h1 className="truncate text-sm font-semibold" title={editorDocument?.test.name}>
-              {editorDocument?.test.name ?? "Edit Test"}
-            </h1>
-            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {editorDocument?.appName}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {saveState}
-            {!sessionId ? (
-              <Button
-                size="icon-sm"
-                aria-label="Test settings"
-                title="Test settings"
-                variant="ghost"
-                onClick={() => setSettingsOpen((open) => !open)}
-              >
-                <Settings2 aria-hidden="true" />
-              </Button>
-            ) : null}
-            <TestEditorDoneButton
-              saving={
-                edit.isPending || historyAction.isPending || settings.isPending || repair.isPending
-              }
-              hasUnsavedChanges={
-                hasUnsavedDrafts ||
-                settingsName !== (editorDocument?.test.name ?? "") ||
-                settingsOrigin !== (editorDocument?.test.originApplication ?? "")
-              }
-              hasUnsavedCheckpoint={Boolean(pendingCheckpoint)}
-              onLeave={() => void navigate({ to: "/tests/$testId", params: { testId } })}
-            />
-          </div>
-        </header>
-      )}
-      {!sessionId ? (
-        <TestEditorSettingsPanel
-          name={settingsName}
-          originApplication={settingsOrigin}
-          open={settingsOpen}
-          saving={settings.isPending}
-          error={settings.error}
-          onNameChange={(name) => {
-            onEditingStateChange?.("dirty");
-            setSettingsName(name);
-          }}
-          onOriginChange={(origin) => {
-            onEditingStateChange?.("dirty");
-            setSettingsOrigin(origin);
-          }}
-          onOpenChange={setSettingsOpen}
-          onRetry={() => settings.mutate()}
-          onSave={() => settings.mutate()}
-        />
-      ) : null}
+      <TestEditorChrome
+        embedded={embedded}
+        sessionId={sessionId}
+        editorDocument={editorDocument}
+        saveState={saveState}
+        saving={edit.isPending || historyAction.isPending || settings.isPending || repair.isPending}
+        hasUnsavedChanges={
+          hasUnsavedDrafts ||
+          settingsName !== (editorDocument?.test.name ?? "") ||
+          settingsOrigin !== (editorDocument?.test.originApplication ?? "")
+        }
+        hasUnsavedCheckpoint={Boolean(pendingCheckpoint)}
+        onLeave={() => void navigate({ to: "/tests/$testId", params: { testId } })}
+        settingsName={settingsName}
+        settingsOrigin={settingsOrigin}
+        settingsOpen={settingsOpen}
+        settingsSaving={settings.isPending}
+        settingsError={settings.error}
+        onNameChange={(name) => {
+          onEditingStateChange?.("dirty");
+          setSettingsName(name);
+        }}
+        onOriginChange={(origin) => {
+          onEditingStateChange?.("dirty");
+          setSettingsOrigin(origin);
+        }}
+        onSettingsOpenChange={setSettingsOpen}
+        onSaveSettings={() => settings.mutate()}
+      />
 
       {(sessionId ? liveEditor.isPending : document.isPending) ? (
         <PageLoading label="Loading Test steps…" />
@@ -772,147 +623,69 @@ function TestEditorDocument({
       ) : null}
 
       {editorDocument ? (
-        <>
-          <div
-            className="flex shrink-0 gap-1 border-b border-border px-3 py-2 min-[1100px]:hidden"
-            aria-label="Editor view"
-          >
-            {(["steps", "browser"] as const).map((view) => (
-              <Button
-                key={view}
-                size="sm"
-                variant={workspaceView === view ? "secondary" : "ghost"}
-                aria-pressed={workspaceView === view}
-                onClick={() => setWorkspaceView(view)}
-              >
-                {view === "steps" ? "Steps" : "Browser"}
-              </Button>
-            ))}
-          </div>
-          <div
-            className={`grid min-h-0 flex-1 ${embedded ? "min-[1100px]:grid-cols-[340px_minmax(0,1fr)]" : "min-[1100px]:grid-cols-[280px_minmax(0,1fr)]"}`}
-          >
-            <div
-              className={`${workspaceView === "steps" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col min-[1100px]:flex min-[1100px]:border-r min-[1100px]:border-border`}
-            >
-              <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
-                <TestEditorStepOutline
-                  headerAside={
-                    embedded ? (
-                      <>
-                        {saveState}
-                        <Button
-                          size="icon-sm"
-                          aria-label="Test settings"
-                          title="Name and details"
-                          variant="ghost"
-                          onClick={() => setSettingsOpen((open) => !open)}
-                        >
-                          <Settings2 aria-hidden="true" />
-                        </Button>
-                      </>
-                    ) : undefined
-                  }
-                  showDetails={settingsOpen}
-                  selectedEditor={editorExpanded || pendingCheckpoint ? stepEditor : null}
-                  test={editorDocument.test}
-                  recordedPlatforms={editorDocument.recordedPlatforms}
-                  routePlatformBlockers={editorDocument.routePlatformBlockers}
-                  stepPlatformBlockers={editorDocument.stepPlatformBlockers}
-                  originEvidenceMissing={editorDocument.originEvidenceMissing}
-                  entries={entries}
-                  selectedStepId={
-                    editorExpanded || pendingCheckpoint ? selected?.step.id : undefined
-                  }
-                  busy={edit.isPending || repair.isPending}
-                  draggedStepId={draggedStepId}
-                  onAdd={addStep}
-                  onAddCheckpoint={addCheckpoint}
-                  onSelect={(id) => {
-                    if (id === selected?.step.id && editorExpanded) setEditorExpanded(false);
-                    else selectStep(id);
-                  }}
-                  onMove={move}
-                  onDrop={dropOn}
+        <TestEditorWorkspace
+          editorDocument={editorDocument}
+          embedded={embedded}
+          workspaceView={workspaceView}
+          onWorkspaceViewChange={setWorkspaceView}
+          saveState={saveState}
+          settingsOpen={settingsOpen}
+          onToggleSettings={() => setSettingsOpen((open) => !open)}
+          editorExpanded={editorExpanded}
+          hasPendingCheckpoint={Boolean(pendingCheckpoint)}
+          stepEditor={stepEditor}
+          entries={entries}
+          selected={selected}
+          editPending={edit.isPending}
+          repairPending={repair.isPending}
+          draggedStepId={draggedStepId}
+          addStep={addStep}
+          addCheckpoint={addCheckpoint}
+          onSelectStep={selectStep}
+          onCollapseEditor={() => setEditorExpanded(false)}
+          move={move}
+          dropOn={dropOn}
+          onRepairDecision={(proposal, decision) => repair.mutate({ proposal, decision })}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          historyPending={historyAction.isPending}
+          latestSummary={latestHistory?.summary}
+          undo={undo}
+          redo={redo}
+          testId={testId}
+          inspectorKind={liveEditor.data ? "device" : "browser"}
+          browserPane={
+            embedded ? (
+              stage
+            ) : sessionId ? (
+              <LiveTestEditorPane
+                session={liveEditor.data}
+                loading={liveEditor.isPending}
+                error={liveEditor.error}
+              />
+            ) : (
+              <TestEditorBrowserPane
+                appMapId={editorDocument.appMapId}
+                startUrl={editorDocument.test.originApplication}
+                browserTargetIds={editorDocument.browserTargetIds}
+                recentAccountIds={recentAccountIds(recentRuns.data)}
+              />
+            )
+          }
+          latestEvidence={
+            !embedded && !sessionId && recentRuns.data?.length ? (
+              <details className="mt-4 text-sm text-muted-foreground">
+                <summary className="cursor-pointer py-2">Latest result</summary>
+                <TestEditorEvidencePanel
+                  step={selected?.step}
+                  report={latestReport.data}
+                  hasRuns
+                  loading={reportLoading}
                 />
-                {editorDocument.repairs.length ? (
-                  <RepairSection
-                    repairs={editorDocument.repairs}
-                    busy={repair.isPending}
-                    onDecision={(proposal, decision) => repair.mutate({ proposal, decision })}
-                  />
-                ) : null}
-                {settingsOpen &&
-                (editorDocument.repairs.length || editorDocument.history.length) ? (
-                  <details className="mt-4 border-t border-border pt-2 text-sm text-muted-foreground">
-                    <summary className="cursor-pointer py-2">
-                      History
-                      {editorDocument.repairs.length
-                        ? ` and ${editorDocument.repairs.length} suggested repairs`
-                        : ""}
-                    </summary>
-                    <div className="grid gap-6 pt-4">
-                      {editorDocument.history.length ? (
-                        <HistorySection items={editorDocument.history} />
-                      ) : null}
-                    </div>
-                  </details>
-                ) : null}
-              </div>
-              <div className="flex shrink-0 items-center justify-between border-t border-border px-3 py-2">
-                <TestEditorHistoryBar
-                  canUndo={canUndo}
-                  canRedo={canRedo}
-                  busy={edit.isPending || historyAction.isPending}
-                  latestSummary={latestHistory?.summary}
-                  onUndo={undo}
-                  onRedo={redo}
-                />
-                {embedded ? null : (
-                  <Link
-                    className="text-xs text-muted-foreground hover:text-foreground"
-                    to="/tests/$testId"
-                    params={{ testId }}
-                  >
-                    Run setup →
-                  </Link>
-                )}
-              </div>
-            </div>
-            <div
-              className={`${workspaceView === "browser" ? "flex" : "hidden"} min-h-0 min-w-0 flex-col overflow-y-auto min-[1100px]:flex`}
-              data-inspector-kind={liveEditor.data ? "device" : "browser"}
-            >
-              {embedded ? (
-                stage
-              ) : sessionId ? (
-                <LiveTestEditorPane
-                  session={liveEditor.data}
-                  loading={liveEditor.isPending}
-                  error={liveEditor.error}
-                />
-              ) : (
-                <TestEditorBrowserPane
-                  appMapId={editorDocument.appMapId}
-                  startUrl={editorDocument.test.originApplication}
-                  browserTargetIds={editorDocument.browserTargetIds}
-                  recentAccountIds={recentAccountIds(recentRuns.data)}
-                />
-              )}
-              {!embedded && !sessionId && recentRuns.data?.length ? (
-                <details className="mt-4 text-sm text-muted-foreground">
-                  <summary className="cursor-pointer py-2">Latest result</summary>
-                  <TestEditorEvidencePanel
-                    step={selected?.step}
-                    report={latestReport.data}
-                    hasRuns
-                    loading={reportLoading}
-                  />
-                </details>
-              ) : null}
-            </div>
-          </div>
-        </>
+              </details>
+            ) : null
+          }
+        />
       ) : null}
     </Frame>
   );
@@ -920,13 +693,4 @@ function TestEditorDocument({
 
 function EmbeddedFrame(props: import("react").ComponentProps<"div">) {
   return <div {...props} />;
-}
-
-/** Accounts this Test ran as, newest run first. */
-export function recentAccountIds(
-  runs: readonly { queuedAt: number; executionIdentity?: { accountId?: string } }[] = [],
-): string[] {
-  return [...runs]
-    .sort((left, right) => right.queuedAt - left.queuedAt)
-    .flatMap((run) => (run.executionIdentity?.accountId ? [run.executionIdentity.accountId] : []));
 }
