@@ -15,7 +15,13 @@ import process from "node:process";
 import { prepareReportVideoFixture } from "./product-visual-video-fixture.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
-const BASELINE_DIR = resolve(ROOT, "packages/app/visual-fixtures");
+// Chrome's text rasterization differs between macOS and Linux even with the
+// bundled Inter font. Keep each platform's strict pixel comparison intact.
+const BASELINE_DIR = resolve(
+  ROOT,
+  "packages/app/visual-fixtures",
+  process.platform === "linux" ? "linux" : "",
+);
 const FAILURE_DIR = resolve(ROOT, ".relay/visual-regression");
 const PORT = Number(process.env.RELAY_VISUAL_APP_PORT ?? 4178);
 const START_TIMEOUT_MS = 30_000;
