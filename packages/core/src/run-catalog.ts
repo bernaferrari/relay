@@ -432,6 +432,32 @@ export async function catalogRunDirectory(root: string, id: string): Promise<str
   }
 }
 
+/** Resolve a quote's Run ids with one catalog open, including large batches. */
+export async function catalogRunDirectories(
+  root: string,
+  ids: readonly string[],
+): Promise<Map<string, string>> {
+  const directories = new Map<string, string>();
+  if (!ids.length) return directories;
+  await mkdir(root, { recursive: true });
+  const db = database(root);
+  try {
+    const unique = [...new Set(ids)];
+    const batchSize = 400;
+    for (let offset = 0; offset < unique.length; offset += batchSize) {
+      const batch = unique.slice(offset, offset + batchSize);
+      const placeholders = batch.map(() => "?").join(",");
+      const rows = db
+        .prepare(`SELECT id, dir FROM runs WHERE id IN (${placeholders})`)
+        .all(...batch) as Array<{ id: string; dir: string }>;
+      for (const row of rows) directories.set(row.id, row.dir);
+    }
+    return directories;
+  } finally {
+    db.close();
+  }
+}
+
 export async function setRunPinned(root: string, id: string, pinned: boolean): Promise<boolean> {
   await mkdir(root, { recursive: true });
   const db = database(root);

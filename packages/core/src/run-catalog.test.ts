@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import {
   applyRunRetention,
   catalogRunDirectory,
+  catalogRunDirectories,
   catalogSurfaceComparisons,
   catalogSummaries,
   catalogSummaryPage,
@@ -41,6 +42,9 @@ test("run catalog rebuilds from committed manifests and retention is dry-run saf
     assert.deepEqual(await rebuildRunCatalog(root), { indexed: 1, incomplete: 0 });
     assert.equal((await catalogSummaries(root))[0]?.id, "fixture-id");
     assert.equal(await catalogRunDirectory(root, "fixture-id"), dir);
+    const batchIds = Array.from({ length: 1_000 }, (_, index) => `missing-${index}`);
+    batchIds[501] = "fixture-id";
+    assert.deepEqual(await catalogRunDirectories(root, batchIds), new Map([["fixture-id", dir]]));
     const preview = await applyRunRetention(root, { maxAgeDays: 1, dryRun: true });
     assert.deepEqual(preview.deleted, []);
     assert.equal(JSON.parse(await readFile(join(dir, "run.json"), "utf8")).id, "fixture-id");

@@ -41,6 +41,7 @@ import {
 } from "./redaction.js";
 import {
   catalogRunDirectory,
+  catalogRunDirectories,
   catalogSurfaceComparisons,
   catalogSummaries,
   indexRun,
@@ -692,8 +693,9 @@ export async function readPersistedRuns(
     return results;
   }
   const unresolved = new Set<string>();
+  const indexedDirectories = await catalogRunDirectories(root, wanted).catch(() => new Map());
   for (const id of wanted) {
-    const indexed = await catalogRunDirectory(root, id).catch(() => null);
+    const indexed = indexedDirectories.get(id);
     const named = indexed
       ? null
       : entries.find((e) => e === id || e.endsWith(`_${id}`) || e.startsWith(`${id}_`));
