@@ -15,6 +15,7 @@
  * test-member-v2 Test (created during the Slice 4 pilot; see
  * docs/release/PRODUCT-DIRECTION.md). */
 import { execFileSync, spawnSync } from "node:child_process";
+import { captureReviewQueueForRun } from "../packages/core/src/index.ts";
 
 const BASE = process.env.RELAY_URL ?? "http://127.0.0.1:8787";
 const APP = process.env.SEEDED_APP_URL ?? "http://127.0.0.1:8791";
@@ -22,8 +23,7 @@ const HUMAN = { "x-relay-actor-id": "human:demo", "x-relay-actor-kind": "human" 
 const AGENT = { "x-relay-actor-id": "agent:demo", "x-relay-actor-kind": "agent" };
 
 function fail(step, detail) {
-  console.error(`FAIL ${step}: ${detail}`);
-  process.exit(1);
+  throw new Error(`FAIL ${step}: ${detail}`);
 }
 
 async function api(path, init = {}, attempt = 0) {
@@ -87,16 +87,23 @@ function runMemberLane() {
 
 async function reviewCapture(runId) {
   const { run } = await api(`/runs/${runId}`, { headers: AGENT });
-  const artifact = (run.artifacts ?? []).find((item) => item.kind === "capture-review");
-  if (!artifact) fail("reviewCapture", `run ${runId} has no capture-review artifact`);
-  return `${artifact.data.framePath}::${artifact.data.imageSha256}`;
+  const capture = captureReviewQueueForRun(run).items.find(
+    (item) => item.status === "pending" && item.framePath && item.imageSha256,
+  );
+  if (!capture) fail("reviewCapture", `run ${runId} has no retained screenshot to review`);
+  return capture;
 }
 
 async function decide(runId, capture, action, note) {
   await api(`/runs/${runId}/capture-review`, {
     method: "POST",
     headers: HUMAN,
-    body: JSON.stringify({ captureId: capture, action, note }),
+    body: JSON.stringify({
+      captureId: capture.captureId,
+      imageSha256: capture.imageSha256,
+      action,
+      note,
+    }),
   });
 }
 
@@ -112,41 +119,45 @@ function report(runId) {
 }
 
 console.log("== Relay reference-task demo (docs/release/PRODUCT-DIRECTION.md)");
-console.log("1. seed the visual defect");
-await setDefect(true);
-console.log("2. run the same member coverage (immutable fixture lane)");
-const defectRun = await runMemberLane();
-console.log(`   defect run ${defectRun}`);
-const defectCapture = await reviewCapture(defectRun);
-console.log("3. review: report the issue on the exact capture");
-await decide(
-  defectRun,
-  defectCapture,
-  "report-issue",
-  "Demo: Save overlaps the heading area — seeded layout defect.",
-);
-console.log("4. repair (defect off) and rerun the SAME coverage");
-await setDefect(false);
-const repairRun = await runMemberLane();
-console.log(`   repair run ${repairRun}`);
-const repairCapture = await reviewCapture(repairRun);
-console.log("5. review: accept the repair under the same criterion");
-await decide(
-  repairRun,
-  repairCapture,
-  "accept",
-  "Demo: Save inline again — same criterion accepts the repair.",
-);
-const defectReport = report(defectRun);
-const repairReport = report(repairRun);
-console.log("6. reports keep execution and human review side by side");
-console.log(
-  `   defect run : verdict=${defectReport.verdict} review=${JSON.stringify(defectReport.captureReview)}`,
-);
-console.log(
-  `   repair run : verdict=${repairReport.verdict} review=${JSON.stringify(repairReport.captureReview)}`,
-);
-const issueOk = defectReport.captureReview?.issue === 1;
-const acceptOk = repairReport.captureReview?.accepted === 1;
-if (!issueOk || !acceptOk) fail("reports", "expected issue=1 then accepted=1");
-console.log("PASS — collect, decide, repair, rerun, report; three outcomes never folded.");
+try {
+  console.log("1. seed the visual defect");
+  await setDefect(true);
+  console.log("2. run the same member coverage (immutable fixture lane)");
+  const defectRun = await runMemberLane();
+  console.log(`   defect run ${defectRun}`);
+  const defectCapture = await reviewCapture(defectRun);
+  console.log("3. review: report the issue on the exact capture");
+  await decide(
+    defectRun,
+    defectCapture,
+    "report-issue",
+    "Demo: Save overlaps the heading area — seeded layout defect.",
+  );
+  console.log("4. repair (defect off) and rerun the SAME coverage");
+  await setDefect(false);
+  const repairRun = await runMemberLane();
+  console.log(`   repair run ${repairRun}`);
+  const repairCapture = await reviewCapture(repairRun);
+  console.log("5. review: accept the repair under the same criterion");
+  await decide(
+    repairRun,
+    repairCapture,
+    "accept",
+    "Demo: Save inline again — same criterion accepts the repair.",
+  );
+  const defectReport = report(defectRun);
+  const repairReport = report(repairRun);
+  console.log("6. reports keep execution and human review side by side");
+  console.log(
+    `   defect run : verdict=${defectReport.verdict} review=${JSON.stringify(defectReport.captureReview)}`,
+  );
+  console.log(
+    `   repair run : verdict=${repairReport.verdict} review=${JSON.stringify(repairReport.captureReview)}`,
+  );
+  const issueOk = defectReport.captureReview?.issue === 1;
+  const acceptOk = repairReport.captureReview?.accepted === 1;
+  if (!issueOk || !acceptOk) fail("reports", "expected issue=1 then accepted=1");
+  console.log("PASS — collect, decide, repair, rerun, report; three outcomes never folded.");
+} finally {
+  await setDefect(false);
+}
