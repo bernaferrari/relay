@@ -12,6 +12,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import process from "node:process";
+import { prepareReportVideoFixture } from "./product-visual-video-fixture.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const BASELINE_DIR = resolve(ROOT, "packages/app/visual-fixtures");
@@ -393,31 +394,7 @@ async function assertLayout(page, fixture, viewport) {
     });
   }
   if (fixture.video) {
-    await page.waitForFunction(() => {
-      const video = document.querySelector("video");
-      return video instanceof HTMLVideoElement && video.readyState >= 2 && video.duration > 0;
-    });
-    await page.getByRole("button", { name: "Confirmation timeout", exact: true }).click();
-    await page.waitForFunction(() => {
-      const video = document.querySelector("video");
-      return (
-        video instanceof HTMLVideoElement && !video.seeking && Math.abs(video.currentTime - 2) < 0.1
-      );
-    });
-    await page.evaluate(async () => {
-      const video = document.querySelector("video");
-      if (!(video instanceof HTMLVideoElement)) return;
-      video.pause();
-      video.currentTime = 2;
-      if (video.seeking) {
-        await new Promise((resolve) => video.addEventListener("seeked", resolve, { once: true }));
-      }
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    });
-    await page.evaluate(() => {
-      const main = document.querySelector("#main-content");
-      if (main) main.scrollTop = 0;
-    });
+    await prepareReportVideoFixture(page);
   }
   if (fixture.evidenceMedia) {
     const preview = page.locator('[data-slot="evidence-image-frame"] img').first();
