@@ -585,6 +585,14 @@ async function run(options) {
             .getByText("No tests yet")
             .waitFor({ state: "visible", timeout: START_TIMEOUT_MS });
         }
+        // Layout and accessibility probes may leave focus on the skip link.
+        // Capture the route at rest; keyboard reachability is checked below.
+        await page.evaluate(async () => {
+          if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+          await new Promise((resolveFrame) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolveFrame)),
+          );
+        });
         const actual = await page.screenshot({ animations: "disabled", type: "png" });
         if (!(await heading.isVisible())) {
           throw new Error(
