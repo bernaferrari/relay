@@ -2,19 +2,14 @@ import { compactMap, type PresentedMapPath } from "./map-presentation";
 import { useIsMobile } from "@relay/ui-react/hooks/use-mobile";
 import { useMapSelection } from "../hooks/use-map-selection";
 import { separateMapScreens } from "./map-layout";
-import { useQueries } from "@tanstack/react-query";
 import { snapMapPreview, type AlignmentGuide } from "./map-alignment";
-import { accessibilityControls } from "./map-accessibility-overlay";
 import {
   containedImageRect,
   INITIAL_TRANSFORM,
   fitMapToBounds,
   zoomMapAtPoint,
   layoutMapScreens,
-  LANDSCAPE_NODE,
-  mapNodeSizeFor,
   PORTRAIT_NODE,
-  type MapNodeSize,
   mapContentBounds,
   type MapPoint,
   type MapTransform,
@@ -22,6 +17,8 @@ import {
 } from "./map-canvas-geometry";
 export * from "./map-canvas-geometry";
 import { ScreenInspector } from "./map-screen-inspector";
+import { useMapNodeSize } from "./use-map-node-size";
+import { useMapOriginPaths } from "./map-origin-paths";
 /** @jsxImportSource react */
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 import { MapCanvasPanels } from "./infinite-map-canvas-panels";
@@ -37,34 +34,6 @@ import {
   type PointerEvent,
   type WheelEvent,
 } from "react";
-
-/** Wide screenshots (tablets, browsers) get wide nodes. Remember the shape per
- * App so the layout does not jump while screenshots load on the next visit. */
-function useMapNodeSize(appId: string, images: ReadonlyMap<string, ImageDimensions>) {
-  const key = `relay:map-node-shape:${appId}`;
-  const [remembered] = useState<MapNodeSize | undefined>(() => {
-    try {
-      const value = localStorage.getItem(key);
-      return value === "landscape"
-        ? LANDSCAPE_NODE
-        : value === "portrait"
-          ? PORTRAIT_NODE
-          : undefined;
-    } catch {
-      return undefined;
-    }
-  });
-  const measured = images.size ? mapNodeSizeFor(images.values()) : undefined;
-  useEffect(() => {
-    if (!measured) return;
-    try {
-      localStorage.setItem(key, measured === LANDSCAPE_NODE ? "landscape" : "portrait");
-    } catch {
-      // Storage is a convenience; the measured shape still applies.
-    }
-  }, [key, measured]);
-  return measured ?? remembered ?? PORTRAIT_NODE;
-}
 
 /** Screens open no smaller than this; Fit still shows the whole map. */
 const MAP_OPEN_SCALE = 0.4;
@@ -194,53 +163,13 @@ export function InfiniteMapCanvas({
     setSelectedIds(new Set(id ? [id] : []));
   }
   const selected = visibleScreens.find((screen) => screen.id === selectedScreenId);
-  const treeValues = useQueries({
-    queries: visibleScreens.map((screen) => ({
-      queryKey: ["map-accessibility", screen.accessibilityTreeUri],
-      queryFn: () => loadAccessibilityTree!(screen.accessibilityTreeUri!),
-      enabled: Boolean(showControlOrigins && screen.accessibilityTreeUri && loadAccessibilityTree),
-      staleTime: Infinity,
-      retry: false,
-    })),
-    combine: (results) => results.map((result) => result.data),
-  });
-  const controlsByScreen = useMemo(
-    () =>
-      new Map(
-        visibleScreens.map((screen, index) => {
-          const dimensions = imageDimensions.get(screen.id);
-          return [
-            screen.id,
-            dimensions ? accessibilityControls(treeValues[index], dimensions) : [],
-          ] as const;
-        }),
-      ),
-    [visibleScreens, treeValues, imageDimensions],
+  const originPaths = useMapOriginPaths(
+    visibleScreens,
+    visiblePaths,
+    imageDimensions,
+    showControlOrigins,
+    loadAccessibilityTree,
   );
-  const originPaths = visiblePaths.map((path) => {
-    if (!showControlOrigins || path.sourceAnchor || !path.sourceTarget) return path;
-    const target = path.sourceTarget;
-    const controls = controlsByScreen.get(path.fromScreenId) ?? [];
-    const matches = controls.filter((control) =>
-      target.identifier
-        ? control.identifier === target.identifier
-        : control.label === (target.label ?? target.text),
-    );
-    const unique = [
-      ...new Map(
-        matches.map((control) => [
-          `${control.x},${control.y},${control.width},${control.height}`,
-          control,
-        ]),
-      ).values(),
-    ];
-    if (unique.length !== 1) return path;
-    const rect = unique[0]!;
-    return {
-      ...path,
-      sourceAnchor: { point: { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }, rect },
-    };
-  });
   // Resolve ordering as paired trees arrive, not only after a manual reset.
   // Retain the ordering when the overlay is hidden; toggling it off must not
   // move the map back to creation order. Manual positions still override it.

@@ -17,11 +17,11 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { framePathsForTraceStep, type ProductRunReportOverview } from "../data/run-product-service";
 import { CaptureReviewDecisions } from "./capture-review-decisions";
 import { CaptureReviewPanel } from "./run-capture-review-panel";
-import { timelineStateLabel } from "./run-workbench-presentation";
+import { initialRunPanel, timelineStateLabel, type RunPanel } from "./run-workbench-presentation";
+import { selectRunCaptureFrames } from "./run-capture-selection";
 import {
   type CaptureReviewAction,
   type CaptureReviewItem,
-  destIdentityReviewItems,
   captureReviewQueueItemKey,
 } from "@relay/protocol";
 
@@ -57,19 +57,7 @@ export function RunWorkbench({
   }): Promise<void>;
   renderEvidence?(section: Report["evidence"][number]): ReactNode;
 }) {
-  const [requestedPanel, setRequestedPanel] = useState<
-    "steps" | "captures" | "performance" | "details" | "video" | "logs" | "network"
-  >(() =>
-    report.captureReview?.items.length
-      ? "captures"
-      : report.timeline.some((item) => item.framePaths?.length) ||
-          report.stepEvidence?.some((item) => item.evidence.framePaths.length) ||
-          !report.evidence.some(
-            (section) => section.id === "screenshot" && section.items.some((item) => item.media),
-          )
-        ? "steps"
-        : "captures",
-  );
+  const [requestedPanel, setRequestedPanel] = useState<RunPanel>(() => initialRunPanel(report));
   const [previewSource, setPreviewSource] = useState<"steps" | "captures">(
     view === "steps" ? "steps" : report.captureReview?.items.length ? "captures" : "steps",
   );
@@ -99,39 +87,8 @@ export function RunWorkbench({
   const visibleIndexes = report.timeline.flatMap((item, index) =>
     item.phase !== "setup" || setupVisible ? [index] : [],
   );
-  const allFrames =
-    report.evidence
-      .find((section) => section.id === "screenshot")
-      ?.items.filter((item) => item.media) ?? [];
-  const reviewItems = destIdentityReviewItems(report.captureReview?.items ?? []);
-  const destFrameIds = new Set(
-    reviewItems.flatMap((item) => (item.framePath ? [item.framePath] : [])),
-  );
-  const leftoverFrameIds = (() => {
-    if (!destFrameIds.size) return new Set<string>();
-    const leftover = new Set<string>();
-    let seenDest = false;
-    for (const item of allFrames) {
-      if (destFrameIds.has(item.id)) {
-        seenDest = true;
-        continue;
-      }
-      if (seenDest) leftover.add(item.id);
-    }
-    return leftover;
-  })();
-  const destFrames = destFrameIds.size
-    ? allFrames.filter((item) => destFrameIds.has(item.id))
-    : allFrames;
-  const listedFrames = leftoverFrameIds.size
-    ? allFrames.filter((item) => !leftoverFrameIds.has(item.id))
-    : allFrames;
-  const reviewMode = reviewItems.length > 0;
-  const selectedCapture = Math.min(
-    requestedCapture,
-    Math.max(0, (reviewMode ? reviewItems.length : listedFrames.length) - 1),
-  );
-  const selectedReview = reviewItems[selectedCapture];
+  const { reviewItems, destFrames, listedFrames, reviewMode, selectedCapture, selectedReview } =
+    selectRunCaptureFrames(report, requestedCapture);
   const reviewCaptures = async (
     action: CaptureReviewAction,
     items: CaptureReviewItem[],

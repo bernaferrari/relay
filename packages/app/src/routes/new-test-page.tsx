@@ -1,4 +1,11 @@
 import { NewTestDraftDialog } from "./new-test-draft-dialog";
+import { NewTestDetailedSetup } from "./new-test-detailed-setup";
+import {
+  NEW_TEST_DRAFT_KEY,
+  friendlyPreviewIssue,
+  readNewTestDraft,
+  websiteAccounts,
+} from "./new-test-setup-helpers";
 import { BrowserSetup, startManagedBrowser } from "./new-test-browser-setup";
 import { AuthoringWorkspace } from "./authoring-workspace";
 import { AuthoringHeader } from "./authoring-header";
@@ -34,10 +41,6 @@ import {
   websiteHost,
   type WebsiteAccount,
 } from "./new-test-quick-start";
-import type { ProductBrowserAccount } from "../data/app-resources-product-service";
-import { accountDisplayName } from "./account-presentation";
-
-const NEW_TEST_DRAFT_KEY = "newTestDraft";
 
 export function NewTestPage() {
   const {
@@ -634,290 +637,60 @@ export function NewTestPage() {
         !targets.isError &&
         !targets.data?.recovery &&
         !blocksNewRecording ? (
-          <AuthoringWorkspace
-            mobileOrder="setup-first"
-            tools={
-              <form
-                id="new-test-form"
-                onSubmit={submit}
-                className="grid min-w-0 content-start gap-5 rounded-lg border border-border p-4"
-                aria-label="Record setup"
-              >
-                <div className="grid gap-1">
-                  <h2 className="text-sm font-medium">Recording setup</h2>
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    Choose where to save this Test and where to record it.
-                  </p>
-                </div>
-                {startsFromPath ? (
-                  <p className="text-sm text-muted-foreground">
-                    Starting from{" "}
-                    <strong className="font-medium text-foreground">
-                      {pathContext.data
-                        ? `${pathContext.data.fromTitle} → ${pathContext.data.toTitle ?? "Finish"}`
-                        : "the selected path"}
-                    </strong>
-                  </p>
-                ) : null}
-                <RecordingAppChoice
-                  apps={apps.data ?? []}
-                  value={appId}
-                  onChange={chooseApp}
-                  onCreatingChange={setCreatingApp}
-                  createApp={(name) => appResourcesService.createApp(name)}
-                  onCreated={(app) => {
-                    queryClient.setQueryData(recordingQueryKeys.apps, [...(apps.data ?? []), app]);
-                    chooseApp(app.id);
-                    void queryClient.invalidateQueries({ queryKey: ["app-maps"] });
-                  }}
-                />
-                <RecordingDeviceChoice
-                  service={deviceService}
-                  onStarted={async (serial) => {
-                    await targets.refetch();
-                    chooseTarget(serial);
-                  }}
-                  value={targetId}
-                  options={(targets.data?.targetOptions ?? []).map((target) => {
-                    const label = targetLabel(target);
-                    return {
-                      value: target.targetId,
-                      label: label.detail ? `${label.title} · ${label.detail}` : label.title,
-                    };
-                  })}
-                  onChange={(value) => {
-                    setNewBrowserOpen(false);
-                    chooseTarget(value);
-                  }}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    chooseTarget("");
-                    setNewBrowserOpen(true);
-                  }}
-                >
-                  New browser
-                </Button>
-                {selectedTarget?.kind === "device" ? (
-                  <InstalledAppChoice
-                    service={deviceService}
-                    serial={selectedTarget.targetId}
-                    value={originApplication}
-                    onChange={(value) => {
-                      setOriginApplication(value);
-                      setOpenedApplication("");
-                    }}
-                    onOpened={setOpenedApplication}
-                  />
-                ) : null}
-                <p
-                  id="recording-readiness"
-                  role="status"
-                  className="text-sm leading-5 text-muted-foreground"
-                >
-                  {formReady
-                    ? "Ready to record. Capture screenshots along the way for review."
-                    : startHint}
-                </p>
-                <Button
-                  type="submit"
-                  disabled={!formReady}
-                  aria-describedby="recording-readiness"
-                  className="w-full"
-                >
-                  <Play aria-hidden="true" />
-                  {begin.isPending ? "Starting…" : "Start recording"}
-                </Button>
-              </form>
-            }
-            stage={
-              <div
-                className="flex h-full min-h-0 w-full overflow-hidden bg-background/40"
-                aria-label="Recording stage"
-              >
-                {selectedTarget ? (
-                  <section
-                    className="grid min-h-0 min-w-0 flex-1 grid-rows-[auto_minmax(0,1fr)]"
-                    aria-label="Device preview"
-                  >
-                    <div className="flex items-center justify-end gap-1">
-                      {browserContext?.pageUrl ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            void navigate({
-                              to: "/goals",
-                              search: { url: browserContext.pageUrl },
-                            })
-                          }
-                        >
-                          <Compass aria-hidden="true" />
-                          Explore URL in a new browser
-                        </Button>
-                      ) : null}
-                      {previewIssue ? (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          disabled={reconnectPreview.isPending}
-                          onClick={() => {
-                            if (
-                              selectedTarget.platform === "android" ||
-                              selectedTarget.platform === "ios"
-                            )
-                              reconnectPreview.mutate(selectedTarget.targetId);
-                            else setPreviewAttempt((value) => value + 1);
-                          }}
-                        >
-                          <RotateCcw aria-hidden="true" />
-                          {reconnectPreview.isPending ? "Connecting…" : "Connect device"}
-                        </Button>
-                      ) : null}
-                    </div>
-                    <LiveTargetCanvas
-                      canvasRef={previewCanvas}
-                      status={previewStatus}
-                      issue={previewIssue}
-                      busy={previewBusy}
-                      targetTitle={targetLabel(selectedTarget).title}
-                      targetDetail={targetLabel(selectedTarget).detail}
-                      browserContext={browserContext}
-                      directBrowser={selectedTarget.kind === "browser"}
-                      send={sendPreview}
-                      recording={false}
-                      showTargetDetails={false}
-                      targetPlatform={selectedTarget?.platform}
-                      helpText=""
-                    />
-                  </section>
-                ) : targetId ? (
-                  <div className="grid min-h-0 w-full place-items-center p-6">
-                    <div className="grid max-w-sm justify-items-center gap-3 text-center">
-                      <CircleDot className="size-6 text-muted-foreground" aria-hidden="true" />
-                      <h2 className="text-sm font-medium">
-                        {targets.isFetching
-                          ? "Connecting to your device…"
-                          : "Your selected device isn’t ready"}
-                      </h2>
-                      <p className="text-sm text-muted-foreground">
-                        {targets.isFetching
-                          ? "Waiting for the device to become available."
-                          : "Check that it’s running, or choose another device."}
-                      </p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={targets.isFetching}
-                        onClick={() => void targets.refetch()}
-                      >
-                        Check again
-                      </Button>
-                    </div>
-                  </div>
-                ) : savedBrowsers.isError ? (
-                  <div className="grid min-h-0 w-full place-items-center p-6">
-                    <div className="grid max-w-sm gap-3 text-center">
-                      <p role="alert" className="text-sm text-destructive">
-                        Saved browsers could not be loaded. Your existing browser choices are
-                        unavailable.
-                      </p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => void savedBrowsers.refetch()}
-                      >
-                        Retry browser lookup
-                      </Button>
-                    </div>
-                  </div>
-                ) : noTargets || newBrowserOpen ? (
-                  <BrowserSetup
-                    browsers={savedBrowsers.data ?? []}
-                    browserUrl={browserUrl}
-                    newBrowserOpen={newBrowserOpen || !(savedBrowsers.data?.length ?? 0)}
-                    pending={startBrowser.isPending}
-                    checking={targets.isFetching}
-                    error={startBrowser.error}
-                    onBrowserUrlChange={setBrowserUrl}
-                    onToggleNewBrowser={() => setNewBrowserOpen((open) => !open)}
-                    onStart={requestBrowserStart}
-                    onCheckAgain={() => void targets.refetch()}
-                  />
-                ) : (
-                  <div className="grid min-h-0 w-full place-items-center p-6">
-                    <EmptyState
-                      title="Choose where to record"
-                      detail="Pick a Device or Browser. The live view opens here."
-                    />
-                  </div>
-                )}
-              </div>
-            }
+          <NewTestDetailedSetup
+            startsFromPath={startsFromPath}
+            pathSummary={pathContext.data ?? undefined}
+            apps={apps.data ?? []}
+            appId={appId}
+            chooseApp={chooseApp}
+            onCreatingChange={setCreatingApp}
+            createApp={(name) => appResourcesService.createApp(name)}
+            onAppCreated={(app) => {
+              queryClient.setQueryData(recordingQueryKeys.apps, [...(apps.data ?? []), app]);
+              chooseApp(app.id);
+              void queryClient.invalidateQueries({ queryKey: ["app-maps"] });
+            }}
+            deviceService={deviceService}
+            targetId={targetId}
+            targetOptions={targets.data?.targetOptions ?? []}
+            onRefreshTargets={async () => {
+              await targets.refetch();
+            }}
+            chooseTarget={chooseTarget}
+            onNewBrowserOpen={setNewBrowserOpen}
+            selectedTarget={selectedTarget}
+            originApplication={originApplication}
+            onOriginChange={setOriginApplication}
+            onOpened={setOpenedApplication}
+            formReady={formReady}
+            startHint={startHint}
+            beginPending={begin.isPending}
+            submit={submit}
+            browserContext={browserContext}
+            previewIssue={previewIssue}
+            reconnecting={reconnectPreview.isPending}
+            onReconnect={(id) => reconnectPreview.mutate(id)}
+            onRetryPreview={() => setPreviewAttempt((value) => value + 1)}
+            previewCanvas={previewCanvas}
+            previewStatus={previewStatus}
+            previewBusy={previewBusy}
+            sendPreview={sendPreview}
+            onExploreUrl={(url) => void navigate({ to: "/goals", search: { url } })}
+            targetFetching={targets.isFetching}
+            browsersUnavailable={savedBrowsers.isError}
+            savedBrowsers={savedBrowsers.data ?? []}
+            onRetryBrowsers={() => void savedBrowsers.refetch()}
+            noTargets={noTargets}
+            newBrowserOpen={newBrowserOpen}
+            browserUrl={browserUrl}
+            browserStarting={startBrowser.isPending}
+            browserStartError={startBrowser.error}
+            onBrowserUrlChange={setBrowserUrl}
+            onToggleNewBrowser={() => setNewBrowserOpen((open) => !open)}
+            onBrowserStart={requestBrowserStart}
           />
         ) : null}
       </div>
     </WorkbenchPage>
   );
-}
-
-function friendlyPreviewIssue(message: string): string {
-  if (/view only|locked|unlock/iu.test(message)) {
-    return "Keep the Device connected and unlocked, then reconnect.";
-  }
-  if (
-    /packet|transport|codec|decode|base64|operation|targetid|502|503|fetch|gateway/iu.test(message)
-  ) {
-    return "Relay could not show the live view. Reconnect, then try again.";
-  }
-  return message;
-}
-
-async function readNewTestDraft(platform: {
-  storage: { get(key: string): string | null | Promise<string | null> };
-}): Promise<{
-  appId?: string;
-  targetId?: string;
-}> {
-  try {
-    const stored = await Promise.resolve(platform.storage.get(NEW_TEST_DRAFT_KEY));
-    const parsed = JSON.parse(stored ?? "null") as unknown;
-    if (!parsed || typeof parsed !== "object") return {};
-    const value = parsed as Record<string, unknown>;
-    return {
-      ...(typeof value.appId === "string" ? { appId: value.appId } : {}),
-      ...(typeof value.targetId === "string" ? { targetId: value.targetId } : {}),
-    };
-  } catch {
-    return {};
-  }
-}
-
-/** Saved logins, not revoked, whose cookies cover this website. */
-function websiteAccounts(
-  accounts: readonly ProductBrowserAccount[],
-  url: string,
-): WebsiteAccount[] {
-  const bare = (value: string) => websiteHost(value).replace(/^www\./, "");
-  const host = bare(url);
-  return accounts
-    .filter(
-      (item) =>
-        !item.fixture.revokedAt &&
-        Boolean(item.fixture.reference) &&
-        [
-          ...(item.fixture.origins ?? []),
-          ...(item.target.startUrl ? [item.target.startUrl] : []),
-        ].some((origin) => bare(origin) === host),
-    )
-    .map((item) => ({
-      reference: item.fixture.reference,
-      name: accountDisplayName(item),
-      targetId: item.fixture.targetId,
-    }));
 }

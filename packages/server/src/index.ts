@@ -106,7 +106,8 @@ import {
 } from "./http.js";
 import { streamTargetVideo } from "./target-video-stream.js";
 import { pruneIosVideoTakes, reconcileIosVideoTake } from "./ios-video-capture.js";
-import { bindOperationRequest, serverOperationManifest } from "./operations.js";
+import { bindOperationRequest } from "./operations.js";
+import { PRODUCT_VERSION, serverMeta } from "./server-meta.js";
 import { handleAuthoringActionReplace, handleAuthoringRoute } from "./authoring-routes.js";
 import {
   flushOperationActivity,
@@ -144,7 +145,6 @@ export type { StartServerOptions, StartedServer } from "./server-types.js";
 
 const serverStartedAt = Date.now();
 let lastKnownDeviceCount: number | null = null;
-const PRODUCT_VERSION = "0.1.0";
 
 async function handleRequest(
   req: http.IncomingMessage,
@@ -673,29 +673,7 @@ async function handleRequest(
     }
 
     if (method === "GET" && pathname === "/meta") {
-      json(res, 200, {
-        name: "relay",
-        description: "Relay app graph authoring and testing server",
-        version: PRODUCT_VERSION,
-        runsDir: scope.localTrusted ? runsRoot() : "runs",
-        operations: serverOperationManifest(),
-        resources: [
-          { method: "POST", path: "/goal", mediaType: "application/json" },
-          { method: "POST", path: "/explore", mediaType: "application/json" },
-          { method: "GET", path: "/goal/:id", mediaType: "application/json" },
-          { method: "GET", path: "/explore/:id", mediaType: "application/json" },
-          { method: "POST", path: "/goal/:id/resume", mediaType: "application/json" },
-          { method: "POST", path: "/explore/:id/resume", mediaType: "application/json" },
-          { method: "POST", path: "/goal/:id/reproduce", mediaType: "application/json" },
-          { method: "POST", path: "/goal/:id/promote", mediaType: "application/json" },
-          { method: "GET", path: "/events", mediaType: "text/event-stream" },
-          { method: "GET", path: "/device/stream", mediaType: "application/x-relay-h264" },
-          { method: "GET", path: "/runs/:id/frames/:file", mediaType: "image/*" },
-          { method: "GET", path: "/runs/:id/video/:file", mediaType: "video/*" },
-          { method: "GET", path: "/runs/:id/evidence", mediaType: "application/json" },
-          { method: "GET", path: "/authoring-evidence/:sha256", mediaType: "image/*|video/*" },
-        ],
-      });
+      json(res, 200, serverMeta(scope));
       return;
     }
 

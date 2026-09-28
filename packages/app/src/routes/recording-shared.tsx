@@ -231,3 +231,14 @@ export function targetLabel(target: {
     detail: "Ready to record",
   };
 }
+
+export function liveIssueMessage(message: string): string {
+  if (
+    /packet|metadata|content type|transport marker|canvas context|codec|decode|base64|targetid|operation/iu.test(
+      message,
+    )
+  ) {
+    return "Relay could not show the live view. Reconnect, then try again.";
+  }
+  return message;
+}
