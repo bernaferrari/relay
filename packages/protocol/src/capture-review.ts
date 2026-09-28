@@ -190,6 +190,8 @@ export type CaptureReviewDecision = {
   requestId?: string;
   /** Version of this capture after the decision was applied. */
   reviewVersion?: number;
+  /** Reference generation observed when this promotion was decided; null means none. */
+  referenceBaseId?: string | null;
 };
 
 export type CaptureReviewSummary = {

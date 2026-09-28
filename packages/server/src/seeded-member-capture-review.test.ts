@@ -8,6 +8,7 @@ import { ApiError, RelayClient } from "@relay/client";
 import {
   assertSeededMemberPng,
   captureSeededMemberSettingsPng,
+  findCaptureReference,
   getVisualBaseline,
   persistPersistedRun,
   persistRun,
@@ -432,6 +433,57 @@ test(
       assert.doesNotMatch(html, /runs passed/u);
       assert.doesNotMatch(html, /\d+ tests passed/u);
       assert.match(html, /Accept as reference also governs later Runs/u);
+
+      const promotionRequest = {
+        requestId: "capture-reference-route-promotion",
+        idempotencyKey: "capture-reference-route-promotion",
+      };
+      const promoted = await client(server.port, "human:reviewer", "human").invoke(
+        "run.capture.review",
+        {
+          runId,
+          captureId: pendingItem.captureId,
+          action: "accept-as-reference",
+          imageSha256: pendingItem.imageSha256,
+          expectedReviewVersion: 3,
+        },
+        promotionRequest,
+      );
+      assert.equal(promoted.referenceUpdate?.status, "updated");
+      assert.ok(await findCaptureReference(runsRoot(), persisted!, pendingItem));
+      await server.close();
+      resetControlDatabaseCache();
+      server = await startServer({ host: "127.0.0.1", port: 0 });
+      const reviewerAfterRestart = client(server.port, "human:reviewer", "human");
+      const withdrawn = await reviewerAfterRestart.invoke(
+        "run.capture.review",
+        {
+          runId,
+          captureId: pendingItem.captureId,
+          action: "report-issue",
+          imageSha256: pendingItem.imageSha256,
+          expectedReviewVersion: promoted.decision.reviewVersion,
+        },
+        {
+          requestId: "capture-reference-route-withdraw",
+          idempotencyKey: "capture-reference-route-withdraw",
+        },
+      );
+      assert.equal(withdrawn.referenceUpdate?.status, "revoked");
+      const delayedPromotion = await reviewerAfterRestart.invoke(
+        "run.capture.review",
+        {
+          runId,
+          captureId: pendingItem.captureId,
+          action: "accept-as-reference",
+          imageSha256: pendingItem.imageSha256,
+          expectedReviewVersion: 3,
+        },
+        promotionRequest,
+      );
+      assert.equal(delayedPromotion.decision.reviewVersion, 4);
+      assert.equal(delayedPromotion.referenceUpdate?.status, "unchanged");
+      assert.equal(await findCaptureReference(runsRoot(), persisted!, pendingItem), undefined);
     } finally {
       await server?.close().catch(() => undefined);
       resetControlDatabaseCache();
