@@ -141,3 +141,30 @@ test("a display-string cookie named relay-role does not become Member or Admin",
     );
   }
 });
+
+test("a selected cohort changes the app response without changing account identity", async () => {
+  const { server, url } = await listenSeededMemberApp({ defect: false });
+  try {
+    const selected = await read(new URL("/cohort/two", url).href);
+    assert.equal(selected.response.status, 303);
+    assert.match(selected.response.headers.get("set-cookie") ?? "", /relay_cohort=two/u);
+
+    const admin = mintSeededMemberSession("admin");
+    const cookies = `${cookieHeader(admin)}; relay_cohort=two`;
+    const home = await read(url, cookies);
+    assert.match(home.text, /id="session-role">admin/u);
+    assert.match(home.text, /id="acceptance-cohort">two/u);
+    const whoami = await read(new URL("/whoami", url).href, cookies);
+    const identity = JSON.parse(whoami.text) as { role: string; cohort: string };
+    assert.equal(identity.role, "admin");
+    assert.equal(identity.cohort, "two");
+
+    const signedOut = await read(url, "relay_cohort=one");
+    assert.match(signedOut.text, /id="session-role">signed-out/u);
+    assert.match(signedOut.text, /id="acceptance-cohort">one/u);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
+});
