@@ -50,9 +50,10 @@ it("recovers a visible thumbnail after a temporary request failure", async () =>
 it.each([
   { runId: undefined, title: "Test plan", requests: 0 },
   { runId: "no-capture", title: "No preview available", requests: 1 },
+  { runId: "known-missing", available: false, title: "Screenshot missing", requests: 0 },
 ])(
   "distinguishes $title without retrying a missing capture",
-  async ({ runId, title, requests }) => {
+  async ({ runId, available, title, requests }) => {
     vi.stubGlobal("IntersectionObserver", undefined);
     download
       .mockReset()
@@ -64,7 +65,7 @@ it.each([
       await act(async () =>
         root.render(
           <QueryClientProvider client={client}>
-            <RunThumb runId={runId} label="Run" />
+            <RunThumb runId={runId} label="Run" available={available} />
           </QueryClientProvider>,
         ),
       );
