@@ -85,14 +85,21 @@ jobs:
         run: pnpm --filter @relay/desktop build
 
       - name: Check Product visual baselines and accessibility
+        id: product-visual
         run: pnpm run test:visual
 
+      - name: Capture hosted Product visual baselines after a mismatch
+        if: failure() && steps.product-visual.outcome == 'failure'
+        run: node scripts/product-visual-regression.mjs --update
+
       - name: Preserve failed Product visual captures
-        if: failure()
+        if: failure() && steps.product-visual.outcome == 'failure'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: product-visual-failure
-          path: .relay/visual-regression/*.png
+          path: |
+            .relay/visual-regression/*.png
+            packages/app/visual-fixtures/*.png
           if-no-files-found: ignore
 
       - name: Run Product browser acceptance
