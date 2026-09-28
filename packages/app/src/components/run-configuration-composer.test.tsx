@@ -23,7 +23,7 @@ describe("run configuration", () => {
 
   it("is the shared setup composer for Test, Suite, and dataset setup surfaces", () => {
     const surfaces = [
-      "../routes/test-page.tsx",
+      "../routes/test-run-settings.tsx",
       "../routes/suite-page.tsx",
       "../routes/run-across-page.tsx",
     ];
@@ -32,5 +32,8 @@ describe("run configuration", () => {
       expect(source).toContain("RunConfigurationComposer");
       expect(source).toContain("run-configuration-composer");
     }
+    const testPage = readFileSync(join(here, "../routes/test-page.tsx"), "utf8");
+    expect(testPage).toContain("TestRunSettings");
+    expect(testPage).toContain("./test-run-settings");
   });
 });
