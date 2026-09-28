@@ -12,6 +12,10 @@ process.env.RELAY_RUNS_DIR = runStore;
 // Node test worker its own one so independent test files can still run in
 // parallel without weakening the production singleton boundary.
 process.env.RELAY_STATE_DIR = stateStore;
+// agent-device otherwise starts every parallel server test worker against the
+// same developer/runner daemon directory. Two goal tests can replace each
+// other's startup metadata and report "Failed to start daemon".
+process.env.AGENT_DEVICE_STATE_DIR = join(stateStore, "agent-device");
 process.env.RELAY_SKIP_BROWSER_WARMUP = "1";
 
 process.once("exit", () => {

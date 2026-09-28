@@ -263,7 +263,7 @@ test(
       // Arm 1 — goal loop against the defective build.
       const defectiveRun = await runGoalArm("goal-defective", walkthroughProvider("defective"));
       const defective = defectiveRun.result;
-      assert.equal(defective.status, "completed");
+      assert.equal(defective.status, "completed", JSON.stringify(defective.stopReason));
       // The model "proposed" completion; the machine-readable record must say so.
       assert.match(defective.stopReason?.message ?? "", /no stronger deterministic verifier/u);
       // The defect is observable in the retained evidence and nothing labeled
