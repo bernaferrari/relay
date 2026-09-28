@@ -119,7 +119,10 @@ export function seededMemberLocaleFromRequest(
 export function renderSeededMemberHome(
   role: SeededMemberVisibleRole,
   locale: SeededMemberLocale = "en",
+  cohort?: "one" | "two",
 ): string {
+  const cohortControls = `<p>Acceptance cohort: <span id="acceptance-cohort">${cohort ?? "unset"}</span></p>
+<a id="open-cohort" href="/cohort">Acceptance cohort</a>`;
   if (role === "signed-out") {
     return htmlPage(
       locale === "ar" ? "تسجيل الدخول" : "Sign in",
@@ -127,6 +130,7 @@ export function renderSeededMemberHome(
         ? `<h1>تسجيل الدخول</h1>
 <p id="session-role">signed-out</p>
 <p>جلسات المسؤول والعضو صادرة من الخادم. تسجيل الخروج ليس عضواً.</p>
+${cohortControls}
 <form method="POST" action="/session">
 <button type="submit" name="role" value="member">متابعة كعضو</button>
 <button type="submit" name="role" value="admin">متابعة كمسؤول</button>
@@ -134,6 +138,7 @@ export function renderSeededMemberHome(
         : `<h1>Sign in</h1>
 <p id="session-role">signed-out</p>
 <p>Server-issued Admin and Member sessions are distinct. Signed-out is not Member.</p>
+${cohortControls}
 <form method="POST" action="/session">
 <button type="submit" name="role" value="member">Continue as Member</button>
 <button type="submit" name="role" value="admin">Continue as Admin</button>
@@ -146,10 +151,12 @@ export function renderSeededMemberHome(
     locale === "ar"
       ? `<h1>الصفحة الرئيسية لمساحة العمل</h1>
 <p>مسجّل الدخول كـ <span id="session-role">${role}</span></p>
-<nav><a id="open-settings" href="/settings">الإعدادات</a></nav>`
+<nav><a id="open-settings" href="/settings">الإعدادات</a></nav>
+${cohortControls}`
       : `<h1>Workspace home</h1>
 <p>Signed in as <span id="session-role">${role}</span></p>
-<nav><a id="open-settings" href="/settings">Settings</a></nav>`,
+<nav><a id="open-settings" href="/settings">Settings</a></nav>
+${cohortControls}`,
     { locale },
   );
 }
@@ -421,9 +428,43 @@ export function createSeededMemberApp(input?: {
       const session = sessionFrom(request);
       const role: SeededMemberVisibleRole = session?.role ?? "signed-out";
       const locale = seededMemberLocaleFromRequest(request, url);
+      const cohort = /(?:^|;\s*)relay_cohort=(one|two)(?:;|$)/u.exec(
+        request.headers.cookie ?? "",
+      )?.[1] as "one" | "two" | undefined;
       if (url.pathname === "/whoami") {
         response.setHeader("content-type", "application/json");
-        response.end(JSON.stringify({ role, issuedAt: session?.issuedAt ?? null, locale }));
+        response.end(
+          JSON.stringify({
+            role,
+            issuedAt: session?.issuedAt ?? null,
+            locale,
+            cohort: cohort ?? null,
+          }),
+        );
+        return;
+      }
+      if (url.pathname === "/cohort/one" || url.pathname === "/cohort/two") {
+        response.statusCode = 303;
+        response.setHeader(
+          "set-cookie",
+          `relay_cohort=${url.pathname.slice(8)}; Path=/; SameSite=Lax`,
+        );
+        response.setHeader("location", "/");
+        response.end();
+        return;
+      }
+      if (url.pathname === "/cohort") {
+        response.setHeader("content-type", "text/html; charset=utf-8");
+        response.end(
+          htmlPage(
+            "Acceptance cohort",
+            `<h1>Acceptance cohort</h1>
+<p id="session-role">${role}</p>
+<a href="/cohort/one">One</a>
+<a href="/cohort/two">Two</a>`,
+            { locale },
+          ),
+        );
         return;
       }
       response.setHeader("content-type", "text/html; charset=utf-8");
@@ -444,7 +485,7 @@ export function createSeededMemberApp(input?: {
         response.end(renderSeededMemberSettings(role, defectOn, locale));
         return;
       }
-      response.end(renderSeededMemberHome(role, locale));
+      response.end(renderSeededMemberHome(role, locale, cohort));
     })().catch(() => {
       if (!response.headersSent) response.statusCode = 500;
       response.end("fixture failed");
