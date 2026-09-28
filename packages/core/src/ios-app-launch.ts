@@ -767,7 +767,13 @@ export async function captureIosPngViaGoIos(
 export async function launchIosAppOutsideXctest(
   serial: string,
   app: string,
-  input: { relaunch?: boolean; run?: CommandRunner; timeoutMs?: number; bin?: string } = {},
+  input: {
+    relaunch?: boolean;
+    run?: CommandRunner;
+    timeoutMs?: number;
+    bin?: string;
+    tunnel?: Pick<EnsureGoIosTunnelInput, "spawnTunnel" | "probeInfoPort">;
+  } = {},
 ): Promise<{ bundleId: string; method: "devicectl" | "go-ios" }> {
   try {
     return await launchIosAppViaDevicectl(serial, app, input);
@@ -778,7 +784,7 @@ export async function launchIosAppOutsideXctest(
     if (!(devicectlError instanceof IosAppLaunchPreDispatchError)) throw devicectlError;
     // Tunnel preparation is observation/setup, not an app activation. Do it
     // before the one go-ios launch rather than retrying after a failed launch.
-    await ensureGoIosTunnel({ bin: input.bin, run: input.run });
+    await ensureGoIosTunnel({ bin: input.bin, run: input.run, ...input.tunnel });
     return await launchIosAppViaGoIos(serial, app, input);
   }
 }

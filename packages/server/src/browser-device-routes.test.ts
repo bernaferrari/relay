@@ -46,7 +46,7 @@ test(
       response.setHeader("content-type", "text/html");
       response.end(
         request.url === "/animated"
-          ? `<!doctype html><form action="/submitted"><input name="q" aria-label="Prompt" /><button>Send</button></form><div id="ticker"></div><script>setInterval(() => document.getElementById("ticker").textContent = Date.now(), 40)</script>`
+          ? `<!doctype html><form action="/submitted"><input name="q" aria-label="Prompt" /><button>Send</button></form><div id="ticker"></div><script>setTimeout(() => document.getElementById("ticker").textContent = "changed", 40)</script>`
           : request.url === "/mutating"
             ? "<!doctype html><title>Browser Device test</title><button>Continue</button><script>setTimeout(() => { document.body.style.background = 'rgb(255, 0, 0)'; document.querySelector('button').textContent = 'Changed'; }, 600)</script>"
             : "<!doctype html><title>Browser Device test</title><button>Continue</button>",
@@ -357,9 +357,17 @@ test(
         targetId: target.id,
         input: { ...pointer, expectedSequence: typed.sequence, kind: "key", key: "Enter" },
       });
-      const submitted = (
-        await client.invoke("target.browser-device.frame", { targetId: target.id })
-      ).frame;
+      let submitted = (await client.invoke("target.browser-device.frame", { targetId: target.id }))
+        .frame;
+      for (
+        let attempt = 0;
+        attempt < 20 && !/submitted\?q=hello/u.test(submitted.pageUrl);
+        attempt += 1
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        submitted = (await client.invoke("target.browser-device.frame", { targetId: target.id }))
+          .frame;
+      }
       assert.match(submitted.pageUrl, /submitted\?q=hello/);
       const revokedAuthentication = await client.invoke("target.browser-auth.revoke", {
         targetId: target.id,

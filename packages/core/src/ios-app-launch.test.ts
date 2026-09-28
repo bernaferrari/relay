@@ -176,6 +176,12 @@ test("only a proven local devicectl incompatibility may select go-ios", async ()
   const calls: string[][] = [];
   const launched = await launchIosAppOutsideXctest("udid-1", "Grok", {
     bin: "ios",
+    tunnel: {
+      probeInfoPort: async () => true,
+      spawnTunnel: () => {
+        throw new Error("A live mocked tunnel must not spawn a process");
+      },
+    },
     run: runner((file, args) => {
       calls.push([file, ...args]);
       if (file === "xcrun") {

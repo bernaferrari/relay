@@ -223,7 +223,7 @@ test(
 
       // Exact Member identity: the app itself reports the session role.
       const member = await runGoal(memberFx.reference);
-      assert.equal(member.status, "completed");
+      assert.equal(member.status, "completed", JSON.stringify(member.stopReason));
       assert.equal(member.stopReason?.code, "goal-achieved");
       assert.equal(member.target.appliedAuthenticationFixtureId, memberFx.reference);
       console.log(
