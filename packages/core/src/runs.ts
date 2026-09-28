@@ -702,12 +702,19 @@ export async function readPersistedRuns(
     else unresolved.add(id);
   }
   if (unresolved.size) {
-    for (const entry of entries) {
-      const id = await persistedRunIdAt(join(root, entry));
-      if (!id || !unresolved.has(id)) continue;
-      directories.set(id, join(root, entry));
-      unresolved.delete(id);
-      if (!unresolved.size) break;
+    // Probe the store once in bounded groups. Serial file opens make a
+    // preflight quote sensitive to unrelated I/O, while an unbounded scan can
+    // overwhelm the same disk under several concurrent Plans.
+    const probeConcurrency = 16;
+    for (let offset = 0; offset < entries.length && unresolved.size; offset += probeConcurrency) {
+      const group = entries.slice(offset, offset + probeConcurrency);
+      const ids = await Promise.all(group.map((entry) => persistedRunIdAt(join(root, entry))));
+      for (let index = 0; index < group.length; index += 1) {
+        const id = ids[index];
+        if (!id || !unresolved.has(id)) continue;
+        directories.set(id, join(root, group[index]!));
+        unresolved.delete(id);
+      }
     }
   }
   for (const [id, dir] of directories) {
