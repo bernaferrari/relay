@@ -13,7 +13,7 @@ import {
   findCaptureReference,
   updateCaptureReferenceIgnoreRegions,
 } from "./capture-references.js";
-import { persistRun } from "./runs.js";
+import { persistRun, readCompletedPersistedRun } from "./runs.js";
 import type { TestJob } from "./session.js";
 
 const human = { id: "human:qa", kind: "human" as const };
@@ -300,20 +300,101 @@ test("a failed reference write is reported and a repeat review repairs it", asyn
       captureId: item!.captureId,
       action: "accept-as-reference",
       actor: human,
+      requestId: "promote-once",
     });
     assert.equal(first.decision.action, "accept-as-reference");
     assert.equal(first.referenceUpdate.status, "failed");
     assert.equal(await findCaptureReference(root, first.run, item!), undefined);
 
     await rm(blocked);
-    const retried = await reviewPersistedCapture(root, first.run, {
+    const reloaded = await readCompletedPersistedRun(first.run.dir);
+    const retried = await reviewPersistedCapture(root, reloaded!, {
       captureId: item!.captureId,
       action: "accept-as-reference",
       actor: human,
+      requestId: "promote-once",
       expectedReviewVersion: first.decision.reviewVersion,
     });
     assert.equal(retried.referenceUpdate.status, "updated");
     assert.equal((await findCaptureReference(root, retried.run, item!))?.runId, "run-1");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a delayed promotion receipt cannot undo a newer issue decision after restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-reference-obsolete-review-"));
+  try {
+    const run = await captureRun(root, "run-1", png());
+    const item = captureReviewQueueForRun(run).items[0]!;
+    const accepted = await reviewPersistedCapture(root, run, {
+      captureId: item.captureId,
+      action: "accept-as-reference",
+      actor: human,
+      requestId: "request-a",
+    });
+    assert.equal(accepted.referenceUpdate.status, "updated");
+    const rejected = await reviewPersistedCapture(root, accepted.run, {
+      captureId: item.captureId,
+      action: "report-issue",
+      actor: human,
+      requestId: "request-b",
+      expectedReviewVersion: accepted.decision.reviewVersion,
+    });
+    assert.equal(rejected.referenceUpdate.status, "revoked");
+    const reloaded = await readCompletedPersistedRun(run.dir);
+    const delayed = await reviewPersistedCapture(root, reloaded!, {
+      captureId: item.captureId,
+      action: "accept-as-reference",
+      actor: human,
+      requestId: "request-a",
+      expectedReviewVersion: 0,
+    });
+    assert.equal(delayed.decision.reviewVersion, 1);
+    assert.equal(delayed.referenceUpdate.status, "unchanged");
+    assert.equal(captureReviewQueueForRun(delayed.run).items[0]?.status, "issue");
+    assert.equal(await findCaptureReference(root, delayed.run, item), undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a failed promotion retry cannot replace a newer Run's reference", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-reference-obsolete-generation-"));
+  try {
+    const oldRun = await captureRun(root, "run-old", png());
+    const oldItem = captureReviewQueueForRun(oldRun).items[0]!;
+    const blocked = join(root, ".capture-reference-artifacts");
+    await writeFile(blocked, "not a directory");
+    const failed = await reviewPersistedCapture(root, oldRun, {
+      captureId: oldItem.captureId,
+      action: "accept-as-reference",
+      actor: human,
+      requestId: "old-promotion",
+    });
+    assert.equal(failed.referenceUpdate.status, "failed");
+    await rm(blocked);
+
+    const newerRun = await captureRun(root, "run-new", png({ x: 8, y: 8 }));
+    const newerItem = captureReviewQueueForRun(newerRun).items[0]!;
+    const newer = await reviewPersistedCapture(root, newerRun, {
+      captureId: newerItem.captureId,
+      action: "accept-as-reference",
+      actor: human,
+      requestId: "new-promotion",
+    });
+    assert.equal(newer.referenceUpdate.status, "updated");
+    const currentId = (await findCaptureReference(root, newer.run, newerItem))?.id;
+
+    const reloaded = await readCompletedPersistedRun(oldRun.dir);
+    const stale = await reviewPersistedCapture(root, reloaded!, {
+      captureId: oldItem.captureId,
+      action: "accept-as-reference",
+      actor: human,
+      requestId: "old-promotion",
+    });
+    assert.equal(stale.referenceUpdate.status, "unchanged");
+    assert.equal((await findCaptureReference(root, oldRun, oldItem))?.id, currentId);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -19,7 +19,11 @@ import {
 } from "./runs.js";
 import { currentOperationContext } from "./operation-context.js";
 import { readFrameFile } from "./run-artifact-files.js";
-import { revokeCaptureReference, setCaptureReference } from "./capture-references.js";
+import {
+  findCaptureReference,
+  revokeCaptureReference,
+  setCaptureReference,
+} from "./capture-references.js";
 
 export class CaptureReviewError extends Error {
   readonly code:
@@ -286,6 +290,28 @@ export async function reviewPersistedCapture(
       }
     }
     const applied = applyCaptureReviewDecision(latest, input);
+    const previous = latest.captureReviews?.find(
+      (decision) => decision.captureId === input.captureId,
+    );
+    if (
+      queued &&
+      applied.decision.action === "accept-as-reference" &&
+      applied.decision.reviewVersion !== previous?.reviewVersion
+    ) {
+      const decision = {
+        ...applied.decision,
+        referenceBaseId: (await findCaptureReference(root, latest, queued))?.id ?? null,
+      };
+      applied.decision = decision;
+      applied.captureReviews = applied.captureReviews.map((entry) =>
+        entry.captureId === decision.captureId ? decision : entry,
+      );
+      applied.captureReviewReceipts = applied.captureReviewReceipts.map((entry) =>
+        entry.captureId === decision.captureId && entry.requestId === decision.requestId
+          ? decision
+          : entry,
+      );
+    }
     const next: PersistedRun = structuredClone(latest);
     next.captureReviews = applied.captureReviews;
     next.captureReviewReceipts = applied.captureReviewReceipts;
@@ -296,15 +322,40 @@ export async function reviewPersistedCapture(
     if (queued) {
       // A repeat accept can repair a reference write that failed after the review was saved.
       try {
-        if (input.action === "accept-as-reference") {
-          const reference = await setCaptureReference(root, latest, queued, input.actor);
-          referenceUpdate = reference
-            ? { status: "updated" }
-            : {
-                status: "failed",
-                message:
-                  "The screenshot review was saved, but the reference image could not be stored. Retry the review after recapturing the image.",
-              };
+        const currentDecision = persisted.captureReviews?.find(
+          (decision) => decision.captureId === applied.decision.captureId,
+        );
+        const promotionIsCurrent =
+          currentDecision?.action === "accept-as-reference" &&
+          currentDecision.reviewVersion === applied.decision.reviewVersion &&
+          currentDecision.decidedAt === applied.decision.decidedAt &&
+          currentDecision.imageSha256 === applied.decision.imageSha256;
+        if (input.action === "accept-as-reference" && promotionIsCurrent) {
+          const reference =
+            applied.decision.referenceBaseId === undefined
+              ? null
+              : await setCaptureReference(
+                  root,
+                  latest,
+                  queued,
+                  input.actor,
+                  applied.decision.referenceBaseId,
+                );
+          referenceUpdate =
+            reference === null
+              ? { status: "unchanged", message: "A newer reference superseded this approval." }
+              : reference
+                ? { status: "updated" }
+                : {
+                    status: "failed",
+                    message:
+                      "The screenshot review was saved, but the reference image could not be stored. Retry the review after recapturing the image.",
+                  };
+        } else if (input.action === "accept-as-reference") {
+          referenceUpdate = {
+            status: "unchanged",
+            message: "A newer review superseded this approval.",
+          };
         } else if (applied.changed) {
           referenceUpdate = (await revokeCaptureReference(root, latest, queued))
             ? { status: "revoked" }

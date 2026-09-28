@@ -1,5 +1,9 @@
 import { captureReviewQueueForRun } from "./capture-review-queue.js";
-import { revokeCaptureReference, setCaptureReference } from "./capture-references.js";
+import {
+  findCaptureReference,
+  revokeCaptureReference,
+  setCaptureReference,
+} from "./capture-references.js";
 import type { ActorKind, CombineCampaign } from "@relay/protocol";
 import {
   filterPlanCaptureReviewQueue,
@@ -459,19 +463,55 @@ export async function reviewPersistedPlanCaptures(
       persisted.captureReviews = applied.runs[0]?.captureReviews ?? latest.captureReviews;
       persisted.captureReviewReceipts =
         applied.runs[0]?.captureReviewReceipts ?? latest.captureReviewReceipts;
-      await persistPersistedRun(root, latest, persisted, "capture-review");
       const items = captureReviewQueueForRun(latest).items;
+      for (const [offset, result] of applied.results.entries()) {
+        if (result.status !== "applied") continue;
+        const selection = input.items[indexes[offset]!]!;
+        if ((selection.action ?? input.action) !== "accept-as-reference") continue;
+        const item = items.find((candidate) => candidate.captureId === selection.captureId);
+        const decision: CaptureReviewDecision | undefined = persisted.captureReviews?.find(
+          (entry) => entry.captureId === selection.captureId,
+        );
+        const previous = latest.captureReviews?.find(
+          (entry) => entry.captureId === selection.captureId,
+        );
+        if (
+          !item ||
+          !decision ||
+          decision.action !== "accept-as-reference" ||
+          decision.reviewVersion === previous?.reviewVersion
+        )
+          continue;
+        const referenceBaseId = (await findCaptureReference(root, latest, item))?.id ?? null;
+        persisted.captureReviews = persisted.captureReviews?.map((entry) =>
+          entry === decision ? { ...entry, referenceBaseId } : entry,
+        );
+      }
+      await persistPersistedRun(root, latest, persisted, "capture-review");
       for (const [offset, result] of applied.results.entries()) {
         if (result.status !== "applied") continue;
         const selection = input.items[indexes[offset]!]!;
         const item = items.find((candidate) => candidate.captureId === selection.captureId);
         if (!item) continue;
         const action = selection.action ?? input.action;
+        const currentDecision = persisted.captureReviews?.find(
+          (decision) => decision.captureId === selection.captureId,
+        );
+        if (action === "accept-as-reference" && currentDecision?.action !== action) continue;
         try {
           const updated =
             action === "accept-as-reference"
-              ? await setCaptureReference(root, latest, item, input.actor)
+              ? currentDecision?.referenceBaseId === undefined
+                ? null
+                : await setCaptureReference(
+                    root,
+                    latest,
+                    item,
+                    input.actor,
+                    currentDecision.referenceBaseId,
+                  )
               : await revokeCaptureReference(root, latest, item);
+          if (action === "accept-as-reference" && updated === null) continue;
           if (action === "accept-as-reference" && !updated) {
             results[indexes[offset]!] = {
               ...result,

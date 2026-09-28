@@ -197,7 +197,8 @@ export async function setCaptureReference(
   run: ReferenceRun & Pick<PersistedRun, "id" | "dir">,
   item: CaptureReviewItem,
   approvedBy: CaptureReference["approvedBy"],
-): Promise<CaptureReference | undefined> {
+  expectedReferenceId: string | null,
+): Promise<CaptureReference | undefined | null> {
   if (!item.framePath || item.status === "missing") return undefined;
   const bytes = await readFrameFile(run.dir, item.framePath);
   if (!bytes) return undefined;
@@ -213,6 +214,11 @@ export async function setCaptureReference(
   return serialize(root, async () => {
     const references = await readReferences(root);
     const prior = current(references, key);
+    // A review may be persisted before its image write succeeds. Its retry may
+    // finish only while the reference generation it reviewed is still current.
+    if (prior?.runId === run.id && prior.captureId === item.captureId && prior.sha256 === sha256)
+      return prior;
+    if ((prior?.id ?? null) !== expectedReferenceId) return null;
     if (prior?.sha256 === sha256) return prior;
     const id = `capture-reference-${randomUUID()}`;
     const artifactPath = join(REFERENCE_ARTIFACTS, `${id}.png`);
