@@ -117,6 +117,7 @@ export function TestsPage() {
   const loose = all
     .filter((test) => inApp(test) && !planned.has(`${test.appMapId}:${test.id}`))
     .sort((left, right) => runTime(right.recentRun) - runTime(left.recentRun));
+  const testCount = all.filter(inApp).length;
 
   const flat = Boolean(deferredQuery) || result !== "all";
   const matches = all
@@ -155,7 +156,7 @@ export function TestsPage() {
           <h1 className="text-3xl leading-9 font-semibold tracking-tight">Tests</h1>
           <p className="text-sm text-muted-foreground">
             {tests.data
-              ? `${all.filter(inApp).length} tests${plans.length ? ` · ${plans.length} plans` : ""}`
+              ? `${testCount} ${testCount === 1 ? "test" : "tests"}${plans.length ? ` · ${plans.length} ${plans.length === 1 ? "plan" : "plans"}` : ""}`
               : " "}
           </p>
         </div>
