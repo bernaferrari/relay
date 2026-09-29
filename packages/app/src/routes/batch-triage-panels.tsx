@@ -38,12 +38,14 @@ export function BatchFailureClusters({
   selected,
   onToggle,
   cases = [],
+  testNames = {},
   onInspect,
 }: {
   clusters: readonly ProductBatchFailureCluster[];
   selected: ReadonlySet<string>;
   onToggle(cluster: ProductBatchFailureCluster, checked: boolean): void;
   cases?: readonly ProductBatchCase[];
+  testNames?: BatchTestNames;
   onInspect?(runId: string): void;
 }) {
   if (!clusters.length) return null;
@@ -88,13 +90,19 @@ export function BatchFailureClusters({
                 {copy.repair ? (
                   <p className="text-sm leading-5 text-foreground">{copy.repair}</p>
                 ) : null}
+                {copy.repair ? (
+                  <Link to="/environments" className="text-sm font-medium text-primary">
+                    Open saved browsers
+                  </Link>
+                ) : null}
                 {copy.repairTestId ? (
                   <Link
                     to="/tests/$testId"
                     params={{ testId: copy.repairTestId }}
+                    search={{ setup: "run" }}
                     className="text-sm font-medium text-primary"
                   >
-                    Return to {copy.repairTestId}
+                    Open {testNames[copy.repairTestId] ?? "Test"} setup
                   </Link>
                 ) : null}
               </div>

@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ProductBatchReport } from "@relay/product/run-across";
 import { Button } from "@relay/ui-react/components/button";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
@@ -10,23 +10,37 @@ import { formatBatchCaseError, formatBatchWorldLabel } from "./batch-result-view
 
 export function BatchReviewWorkspace({
   report,
+  focusedCaseId,
+  focusRequest,
   selected,
   onToggle,
   onResolve,
+  onRerun,
   pending,
+  rerunning,
   groups,
   matrix,
 }: {
   report: ProductBatchReport;
+  focusedCaseId?: string;
+  focusRequest?: number;
   selected: ReadonlySet<string>;
   onToggle(id: string, checked: boolean): void;
   onResolve(id: string): Promise<unknown>;
+  onRerun(id: string): void;
   pending: boolean;
+  rerunning: boolean;
   groups: (inspect: (id: string) => void) => ReactNode;
   matrix: (inspect: (id: string) => void) => ReactNode;
 }) {
   const [view, setView] = useState<"queue" | "matrix" | "groups">("queue");
-  const [focusedId, setFocusedId] = useState<string>();
+  const [focusedId, setFocusedId] = useState<string | undefined>(focusedCaseId);
+  useEffect(() => {
+    if (focusedCaseId) {
+      setFocusedId(focusedCaseId);
+      setView("queue");
+    }
+  }, [focusedCaseId, focusRequest]);
   const unresolved = report.cases.filter(
     (item) =>
       isBatchCaseProblem(item) &&
@@ -200,24 +214,45 @@ export function BatchReviewWorkspace({
                         Walk through
                       </Button>
                     </>
+                  ) : focused.identity?.testId ? (
+                    <Button
+                      nativeButton={false}
+                      variant="outline"
+                      render={
+                        <Link
+                          to="/tests/$testId"
+                          params={{ testId: focused.identity.testId }}
+                          search={{ setup: "run" }}
+                        />
+                      }
+                    >
+                      Open Test setup
+                    </Button>
                   ) : null}
                   {isBatchCaseProblem(focused) &&
                   focused.triageStatus !== "resolved" &&
                   focused.triageStatus !== "wont-fix" ? (
-                    <Button
-                      variant="outline"
-                      disabled={pending}
-                      onClick={async () => {
-                        try {
-                          await onResolve(focused.id);
-                          setFocusedId(next?.id ?? focused.id);
-                        } catch {
-                          /* The parent presents mutation errors. */
-                        }
-                      }}
-                    >
-                      {pending ? "Saving…" : "Resolve and continue"}
-                    </Button>
+                    <>
+                      {isBatchCaseRerunnable(focused) ? (
+                        <Button disabled={rerunning} onClick={() => onRerun(focused.id)}>
+                          {rerunning ? "Starting rerun…" : "Rerun this case"}
+                        </Button>
+                      ) : null}
+                      <Button
+                        variant="outline"
+                        disabled={pending}
+                        onClick={async () => {
+                          try {
+                            await onResolve(focused.id);
+                            setFocusedId(next?.id ?? focused.id);
+                          } catch {
+                            /* The parent presents mutation errors. */
+                          }
+                        }}
+                      >
+                        {pending ? "Saving…" : "Mark resolved"}
+                      </Button>
+                    </>
                   ) : null}
                   <p className="w-full text-xs text-muted-foreground">
                     Review decisions do not change execution outcomes or approve visual baselines.
@@ -228,7 +263,8 @@ export function BatchReviewWorkspace({
                     <RunInspection key={focused.runId} runId={focused.runId} embedded />
                   ) : (
                     <p className="p-6 text-sm text-muted-foreground">
-                      No run evidence is available for this case.
+                      This case stopped before a Run captured evidence. Check its setup, then start
+                      the Test again.
                     </p>
                   )}
                 </div>

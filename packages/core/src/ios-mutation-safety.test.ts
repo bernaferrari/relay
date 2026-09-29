@@ -96,6 +96,10 @@ test("a confirmed iOS input fences a delayed tree without overlapping XCTest rea
   const beforeInput = [{ role: "button", label: "Old screen" }];
   const afterInput = [{ role: "button", label: "New screen" }];
   let snapshotCalls = 0;
+  let signalReadStarted!: () => void;
+  const readStarted = new Promise<void>((resolve) => {
+    signalReadStarted = resolve;
+  });
   let releaseOldTree!: (value: { nodes: typeof beforeInput }) => void;
   const oldTree = new Promise<{ nodes: typeof beforeInput }>((resolve) => {
     releaseOldTree = resolve;
@@ -104,6 +108,7 @@ test("a confirmed iOS input fences a delayed tree without overlapping XCTest rea
     capture: {
       snapshot: () => {
         snapshotCalls += 1;
+        signalReadStarted();
         return snapshotCalls === 1 ? oldTree : Promise.resolve({ nodes: afterInput });
       },
     },
@@ -111,7 +116,7 @@ test("a confirmed iOS input fences a delayed tree without overlapping XCTest rea
   } as unknown as Device;
 
   const preInputRead = runWithTargetContext(ios(serial), () => snapshot(device));
-  await new Promise<void>((resolve) => setImmediate(resolve));
+  await readStarted;
 
   await runWithTargetContext(ios(serial), () => pressPoint(device, 48, 72));
 

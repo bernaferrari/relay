@@ -60,6 +60,12 @@ describe("screenshot issue note", () => {
       item.textContent?.includes("Accept as reference"),
     )!;
     await act(async () => promote.click());
+    expect(onReview).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).toContain("future Runs");
+    const confirm = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Use as reference"),
+    )!;
+    await act(async () => confirm.click());
     expect(onReview).toHaveBeenLastCalledWith("accept-as-reference", undefined);
   });
 

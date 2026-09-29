@@ -48,6 +48,7 @@ async function render(
   reviewCaptures: RunAcrossProductService["reviewCaptures"],
   getCaptureReview?: RunAcrossProductService["getCaptureReview"],
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  onInspectProblems?: () => void,
 ) {
   const host = document.createElement("div");
   document.body.append(host);
@@ -59,6 +60,7 @@ async function render(
         <PlanCaptureReviewSection
           batchId="plan-1"
           platform={platform()}
+          onInspectProblems={onInspectProblems}
           runAcrossService={
             {
               getCaptureReview:
@@ -119,6 +121,56 @@ async function render(
 }
 
 describe("Plan screenshot review filters", () => {
+  it("selects an available screenshot when the remembered choice is gone", async () => {
+    sessionStorage.setItem(
+      "relay.plan-review.plan-1",
+      JSON.stringify({ selectedKey: "removed-capture" }),
+    );
+    const host = await render(undefined);
+    const inspect = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent === "Inspect",
+    );
+    await act(async () => inspect?.click());
+    expect(host.querySelector('[aria-label="Selected screenshot"]')).not.toBeNull();
+  });
+
+  it("explains missing captures and opens the affected cases", async () => {
+    const inspect = vi.fn();
+    const host = await render(
+      undefined,
+      async () => ({
+        items: [
+          item({
+            runId: "run-1",
+            caption: "Settings",
+            captureId: "missing-settings",
+            framePath: undefined,
+            status: "missing",
+            executionCaseId: "case-1",
+          }),
+        ],
+        summary: {
+          planned: 1,
+          captured: 0,
+          missing: 1,
+          blocked: 0,
+          pending: 0,
+          accepted: 0,
+          issue: 0,
+          needMoreEvidence: 0,
+        },
+      }),
+      undefined,
+      inspect,
+    );
+    expect(host.textContent).toContain("Missing screenshots cannot be approved");
+    const open = [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Review affected cases"),
+    );
+    await act(async () => open?.click());
+    expect(inspect).toHaveBeenCalledExactlyOnceWith("case-1");
+  });
+
   it("keeps coverage counts and bulk-accepts only the visible selection", async () => {
     const reviewCaptures = vi.fn(async () => ({
       queue: {

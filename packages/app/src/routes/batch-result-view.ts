@@ -175,9 +175,7 @@ export function batchClusterCopy(
 function signInRepair(members: readonly ProductBatchCase[]): string | undefined {
   const expired = members.filter((item) => item.findingCode === "ACCOUNT_NEEDS_RELOGIN");
   if (!expired.length) return undefined;
-  const testId = expired.find((item) => item.identity?.testId)?.identity?.testId;
-  const destination = testId ? ` Return to ${testId}.` : " Return to this Test.";
-  return `Completed captures are preserved. Sign in again, save a new sign-in revision, then choose that revision for the pending configuration.${destination} Earlier runs stay on their original sign-in. Do not start the same Plan again until that sign-in is saved.`;
+  return "Sign-in expired. Completed screenshots are saved. Open the browser used for this case, sign in again, and save the updated account. Then choose that account in the Test setup and rerun the affected case.";
 }
 
 export function batchClusterTitle(

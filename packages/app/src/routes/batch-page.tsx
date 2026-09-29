@@ -64,6 +64,8 @@ function BatchDocument({ batchId }: { batchId: string }) {
   const [resultView, setResultView] = useState(
     runAcrossService.getCaptureReview ? "screenshots" : "cases",
   );
+  const [focusedCaseId, setFocusedCaseId] = useState<string>();
+  const [caseFocusRequest, setCaseFocusRequest] = useState(0);
   const [selectedCases, setSelectedCases] = useState<Set<string>>(() => new Set());
   const [selectedClusters, setSelectedClusters] = useState<Set<string>>(() => new Set());
   const [downloadUrl, setDownloadUrl] = useState<string>();
@@ -367,6 +369,11 @@ function BatchDocument({ batchId }: { batchId: string }) {
                   runAcrossService={runAcrossService}
                   platform={platform}
                   streaming={active}
+                  onInspectProblems={(caseId) => {
+                    setFocusedCaseId(caseId);
+                    setCaseFocusRequest((request) => request + 1);
+                    setResultView("cases");
+                  }}
                 />
               </TabsContent>
               <TabsContent value="cases">
@@ -376,12 +383,16 @@ function BatchDocument({ batchId }: { batchId: string }) {
                 <BatchReviewWorkspace
                   key={batchId}
                   report={report}
+                  focusedCaseId={focusedCaseId}
+                  focusRequest={caseFocusRequest}
                   selected={selectedCases}
                   onToggle={(id, checked) => toggleCase(id, checked)}
                   onResolve={(id) =>
                     triage.mutateAsync({ caseIds: [id], triageStatus: "resolved" })
                   }
+                  onRerun={(id) => rerun.mutate([id])}
                   pending={triage.isPending}
+                  rerunning={rerun.isPending}
                   groups={(inspect) => (
                     <>
                       {hasProblems && clusters.isPending && !clusterValues.length ? (
@@ -394,6 +405,7 @@ function BatchDocument({ batchId }: { batchId: string }) {
                         <BatchFailureClusters
                           clusters={clusterValues}
                           cases={report.cases}
+                          testNames={testNames}
                           selected={selectedClusters}
                           onToggle={(cluster, checked) => toggleCluster(cluster.id, checked)}
                           onInspect={(runId) => {

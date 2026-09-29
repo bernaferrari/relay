@@ -300,7 +300,7 @@ describe("Batch result presentation", () => {
     ).toMatchObject({
       lane: "Infra",
       repair:
-        "Completed captures are preserved. Sign in again, save a new sign-in revision, then choose that revision for the pending configuration. Return to account-settings. Earlier runs stay on their original sign-in. Do not start the same Plan again until that sign-in is saved.",
+        "Sign-in expired. Completed screenshots are saved. Open the browser used for this case, sign in again, and save the updated account. Then choose that account in the Test setup and rerun the affected case.",
       repairTestId: "account-settings",
     });
     expect(
