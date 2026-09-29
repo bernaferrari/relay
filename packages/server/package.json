@@ -11,7 +11,7 @@
     "postinstall": "fetch-scrcpy-server 2.5",
     "start": "tsx src/index.ts",
     "test": "tsx --import ./scripts/test-environment.mjs --test src/*.test.ts",
-    "test:coverage": "tsx --import ./scripts/test-environment.mjs --test --experimental-test-coverage src/*.test.ts",
+    "test:coverage": "tsx --import ./scripts/test-environment.mjs --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov src/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
