@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   evaluateProductContract,
@@ -10,10 +12,34 @@ import {
   PRODUCT_ROUTES,
 } from "./product-contract.mjs";
 
-test("PRODUCT.md satisfies the executable route and vocabulary contract", async () => {
+test("tracked product contract matches the route registry and vocabulary", async () => {
   const document = await loadProductContract();
-  if (document == null) return;
   assert.deepEqual(evaluateProductContract({ document }), []);
+});
+
+test("a missing product contract fails instead of skipping verification", async () => {
+  const root = await mkdtemp(join(tmpdir(), "relay-product-contract-"));
+  try {
+    await assert.rejects(loadProductContract(root), { code: "ENOENT" });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a stale route or advanced term fails the contract", async () => {
+  const document = await loadProductContract();
+  const staleRoute = document.replace("/runs/:runId/walkthrough\n", "");
+  assert.ok(
+    evaluateProductContract({ document: staleRoute }).includes(
+      "documented route missing: /runs/:runId/walkthrough",
+    ),
+  );
+  const staleTerm = document.replace("publication receipt, ", "");
+  assert.ok(
+    evaluateProductContract({ document: staleTerm }).includes(
+      "documented advanced term missing: publication receipt",
+    ),
+  );
 });
 
 test("route fixture is canonical and overlay priority is deterministic", () => {
