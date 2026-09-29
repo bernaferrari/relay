@@ -19,6 +19,7 @@ export const rawDeviceMutationBoundaryPaths = new Set([
   // the dispatcher/native transport calls they contain.
   "packages/core/src/device-dispatch.ts",
   "packages/core/src/device-text-entry.ts",
+  "packages/core/src/device-clipboard.ts",
   // Canonical SDK-client construction (0.21.x method rebinding + facade).
   // It builds the transport device.ts dispatches through; no workflow code
   // may import it.
@@ -48,6 +49,7 @@ const rawSdkBoundaryPaths = new Set([
   "packages/core/src/device-mutation-adapter.ts",
   "packages/core/src/device.ts",
   "packages/core/src/device-android-text.ts",
+  "packages/core/src/device-clipboard.ts",
   // Read-only Android app discovery is a narrow host SDK adapter; it never
   // launches or mutates a target and is exported only through core.
   "packages/core/src/android-installed-apps.ts",
@@ -63,6 +65,7 @@ const internalDeviceModuleOwners = new Map([
       "packages/core/src/testing.ts",
       "packages/core/src/ios-runner-listener-command.ts",
       "packages/core/src/device-android-text.ts",
+      "packages/core/src/device-clipboard.ts",
     ]),
   ],
   [
