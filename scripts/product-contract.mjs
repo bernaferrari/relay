@@ -1,49 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ROUTE_DEFINITIONS } from "../packages/product/src/routes.ts";
 
-export const PRODUCT_ROUTES = Object.freeze([
-  "/home",
-  "/apps",
-  "/apps/:appId",
-  "/apps/:appId/versions",
-  "/apps/:appId/accounts",
-  "/versions",
-  "/accounts",
-  "/apps/:appId/map",
-  "/tests",
-  "/tests/new",
-  "/tests/:testId",
-  "/tests/:testId/edit",
-  "/tests/:testId/record",
-  "/tests/:testId/run-across",
-  "/suites",
-  "/apps/:appId/suites/:suiteId",
-  "/environments",
-  "/environments/:profileId",
-  "/sessions",
-  "/sessions/:sessionId",
-  "/recordings/:recordingId",
-  "/recordings/:recordingId/review",
-  "/review",
-  "/runs",
-  "/runs/:runId",
-  "/runs/:runId/walkthrough",
-  "/batches/:batchId",
-  "/changes",
-  "/changes/:changeId",
-  "/devices",
-  "/devices/:deviceId",
-  "/goals",
-  "/prototype/workbench",
-  "/debug",
-  "/settings/general",
-  "/settings/evidence",
-  "/settings/integrations",
-  "/settings/appearance",
-  "/settings/advanced",
-  "/settings/about",
-]);
+export const PRODUCT_ROUTES = Object.freeze(ROUTE_DEFINITIONS.map(({ id }) => id));
 
 export const PRODUCT_PUBLIC_OBJECTS = Object.freeze([
   "App",
@@ -113,6 +73,17 @@ const requiredSections = [
   "One product shell",
 ];
 
+function sectionTerms(document, heading, separator) {
+  const section = document?.split(`## ${heading}\n`)[1]?.split(/^## /mu)[0];
+  const codeBlock = section?.match(/```text\n([\s\S]*?)\n```/u)?.[1];
+  return (
+    codeBlock
+      ?.split(separator)
+      .map((term) => term.trim())
+      .filter(Boolean) ?? []
+  );
+}
+
 export function evaluateProductContract({
   document,
   routes = PRODUCT_ROUTES,
@@ -120,51 +91,59 @@ export function evaluateProductContract({
   advancedTerms = PRODUCT_ADVANCED_TERMS,
 } = {}) {
   const violations = [];
-  if (!document?.trim()) violations.push("PRODUCT.md is empty");
+  if (!document?.trim()) violations.push("PRODUCT_CONTRACT.md is empty");
   for (const section of requiredSections)
     if (!document?.includes(`## ${section}`))
-      violations.push(`PRODUCT.md is missing section: ${section}`);
+      violations.push(`PRODUCT_CONTRACT.md is missing section: ${section}`);
   if (new Set(routes).size !== routes.length)
     violations.push("canonical routes contain duplicates");
   for (const route of PRODUCT_ROUTES)
     if (!routes.includes(route)) violations.push(`canonical route missing: ${route}`);
+  const documentedRoutes = sectionTerms(document, "Canonical routes", /\n/u);
+  if (new Set(documentedRoutes).size !== documentedRoutes.length)
+    violations.push("documented routes contain duplicates");
+  for (const route of routes)
+    if (!documentedRoutes.includes(route)) violations.push(`documented route missing: ${route}`);
+  for (const route of documentedRoutes)
+    if (!routes.includes(route)) violations.push(`documented route is not registered: ${route}`);
   for (const noun of PRODUCT_PUBLIC_OBJECTS)
     if (!publicObjects.includes(noun)) violations.push(`public object missing: ${noun}`);
+  for (const noun of publicObjects)
+    if (!document?.includes(`**${noun}**`))
+      violations.push(`documented public object missing: ${noun}`);
   for (const term of PRODUCT_ADVANCED_TERMS)
     if (!advancedTerms.includes(term)) violations.push(`advanced term missing: ${term}`);
+  const documentedAdvancedTerms = sectionTerms(document, "Public vocabulary boundary", /,/u);
+  for (const term of advancedTerms)
+    if (!documentedAdvancedTerms.includes(term))
+      violations.push(`documented advanced term missing: ${term}`);
+  for (const term of documentedAdvancedTerms)
+    if (!advancedTerms.includes(term))
+      violations.push(`documented advanced term is not registered: ${term}`);
   for (const noun of publicObjects)
     if (advancedTerms.includes(noun))
       violations.push(`advanced term is incorrectly public: ${noun}`);
-  if (PRODUCT_OVERLAY_PRIORITY.length !== 7)
-    violations.push("overlay priority must contain seven layers");
-  if (PRODUCT_NARROW_WINDOW.width !== 800 || PRODUCT_NARROW_WINDOW.height !== 560)
-    violations.push("minimum narrow window must be 800x560");
+  if (!document?.replace(/\s+/gu, " ").includes(PRODUCT_OVERLAY_PRIORITY.join(", ")))
+    violations.push("documented overlay priority differs from the product contract");
+  if (!document?.includes(`${PRODUCT_NARROW_WINDOW.width}×${PRODUCT_NARROW_WINDOW.height}`))
+    violations.push("documented minimum window differs from the product contract");
   return violations;
 }
 
 export async function loadProductContract(
   root = resolve(fileURLToPath(new URL("..", import.meta.url))),
 ) {
-  try {
-    return await readFile(resolve(root, "PRODUCT.md"), "utf8");
-  } catch (error) {
-    if (error?.code === "ENOENT") return null;
-    throw error;
-  }
+  return readFile(resolve(root, "PRODUCT_CONTRACT.md"), "utf8");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const document = await loadProductContract();
-  if (document == null) {
-    console.log("Product contract skipped; PRODUCT.md is local-only and not present.");
-  } else {
-    const violations = evaluateProductContract({ document });
-    if (violations.length) {
-      console.error(violations.join("\n"));
-      process.exitCode = 1;
-    } else
-      console.log(
-        `Product contract passed (${PRODUCT_ROUTES.length} routes, ${PRODUCT_PUBLIC_OBJECTS.length} public objects)`,
-      );
-  }
+  const violations = evaluateProductContract({ document });
+  if (violations.length) {
+    console.error(violations.join("\n"));
+    process.exitCode = 1;
+  } else
+    console.log(
+      `Product contract passed (${PRODUCT_ROUTES.length} routes, ${PRODUCT_PUBLIC_OBJECTS.length} public objects)`,
+    );
 }
