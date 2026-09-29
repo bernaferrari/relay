@@ -9,7 +9,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "tsx --test src/*.test.ts",
-    "test:coverage": "tsx --test --experimental-test-coverage src/*.test.ts"
+    "test:coverage": "tsx --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov src/*.test.ts"
   },
   "dependencies": {
     "@noble/hashes": "2.4.0",

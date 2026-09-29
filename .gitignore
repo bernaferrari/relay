@@ -10,6 +10,7 @@ out/
 .pnpm-store/
 .relay/
 coverage/
+packages/*/coverage.lcov
 # Reviewed Grok QA inventories (not Vitest HTML).
 !tests/coverage/
 !tests/coverage/**
