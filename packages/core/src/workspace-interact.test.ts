@@ -187,6 +187,10 @@ test("a successful HID tap fences an in-flight tree and records the same mutatio
   const oldTree = new Promise<{ nodes: typeof beforeInput }>((resolve) => {
     releaseOldTree = resolve;
   });
+  let markSnapshotStarted!: () => void;
+  const snapshotStarted = new Promise<void>((resolve) => {
+    markSnapshotStarted = resolve;
+  });
   const taps: unknown[] = [];
   setIosPixelTapForTests(async (input) => {
     taps.push(input);
@@ -195,6 +199,7 @@ test("a successful HID tap fences an in-flight tree and records the same mutatio
     capture: {
       snapshot: () => {
         snapshotCalls += 1;
+        markSnapshotStarted();
         return snapshotCalls === 1 ? oldTree : Promise.resolve({ nodes: afterInput });
       },
     },
@@ -210,9 +215,7 @@ test("a successful HID tap fences an in-flight tree and records the same mutatio
     const preInputRead = runWithTargetSupervisorStore(supervisors, () =>
       runWithTargetContext({ kind: "device", platform: "ios", serial }, () => snapshot(device)),
     );
-    for (let i = 0; i < 50 && snapshotCalls === 0; i += 1) {
-      await new Promise<void>((resolve) => setImmediate(resolve));
-    }
+    await snapshotStarted;
 
     await runWithTargetSupervisorStore(supervisors, () =>
       runWithTargetContext({ kind: "device", platform: "ios", serial }, () =>

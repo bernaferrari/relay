@@ -389,7 +389,7 @@ describe("Tests workspace", () => {
     );
 
     const main = document.querySelector<HTMLElement>("#main-content")!;
-    expect(main.textContent).toContain("2 tests · 1 plans");
+    expect(main.textContent).toContain("2 tests · 1 plan");
     expect(main.querySelector('a[href="/tests/new"]')?.textContent?.trim()).toBe("New test");
     expect(
       [...main.querySelectorAll("button")].some(
