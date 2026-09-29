@@ -4,7 +4,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { changedFiles, evaluateChangedCoverage, parseLcov } from "./check-coverage.mjs";
+import {
+  changedFiles,
+  coverageBase,
+  evaluateChangedCoverage,
+  parseLcov,
+} from "./check-coverage.mjs";
 
 test("committed changes are selected from the base in a clean checkout", (t) => {
   const root = mkdtempSync(join(tmpdir(), "relay-coverage-"));
@@ -24,6 +29,12 @@ test("committed changes are selected from the base in a clean checkout", (t) => 
 
   assert.deepEqual(changedFiles(base, root), ["source.ts"]);
   assert.deepEqual(changedFiles(undefined, root), []);
+  assert.equal(coverageBase(undefined, true, root), base);
+  assert.throws(() => coverageBase("0".repeat(40), true, root), /newly created branch/u);
+
+  git("rm", "source.ts");
+  git("commit", "-qm", "delete");
+  assert.deepEqual(changedFiles(base, root), []);
 });
 
 test("LCOV source paths resolve within their package", () => {
