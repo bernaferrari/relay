@@ -145,20 +145,23 @@ test("an iOS selector miss or outcome-unknown mutation does not falsely fence a 
     const tree = new Promise<{ nodes: Array<{ label: string }> }>((resolve) => {
       releaseTree = resolve;
     });
+    let markSnapshotStarted!: () => void;
+    const snapshotStarted = new Promise<void>((resolve) => {
+      markSnapshotStarted = resolve;
+    });
     let snapshotCalls = 0;
     const device = {
       capture: {
         snapshot: () => {
           snapshotCalls += 1;
+          markSnapshotStarted();
           return tree;
         },
       },
     } as unknown as Device;
 
     const first = runWithTargetContext(ios(serial), () => snapshot(device));
-    for (let i = 0; i < 50 && snapshotCalls === 0; i += 1) {
-      await new Promise<void>((resolve) => setImmediate(resolve));
-    }
+    await snapshotStarted;
     await assert.rejects(
       runWithTargetContext(ios(serial), () =>
         runIosMutationOnce(serial, "press", async () => {
