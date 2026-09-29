@@ -121,33 +121,38 @@ export function TestWorkspaceActions({
               </Popover>
             </div>
           )}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={<Button variant="ghost" size="sm" />}
-              aria-label="More Test actions"
+          {!activeRun && testPresent ? (
+            <Button
+              nativeButton={false}
+              variant="ghost"
+              size="sm"
+              render={<Link to="/tests/$testId/run-across" params={{ testId }} />}
             >
-              <MoreHorizontal aria-hidden="true" /> More
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-52">
-              {!activeRun && testPresent ? (
-                <DropdownMenuItem
-                  render={<Link to="/tests/$testId/run-across" params={{ testId }} />}
-                >
-                  Run across…
-                </DropdownMenuItem>
-              ) : null}
-              {attachedRunId ? (
-                <DropdownMenuItem
-                  render={<Link to="/runs/$runId" params={{ runId: attachedRunId }} />}
-                >
-                  Review result
-                </DropdownMenuItem>
-              ) : null}
-              {hasRecentRuns ? (
-                <DropdownMenuItem onClick={() => onHistoryOpen()}>Run history</DropdownMenuItem>
-              ) : null}
-            </DropdownMenuContent>
-          </DropdownMenu>
+              Run across…
+            </Button>
+          ) : null}
+          {attachedRunId || hasRecentRuns ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={<Button variant="ghost" size="sm" />}
+                aria-label="More Test actions"
+              >
+                <MoreHorizontal aria-hidden="true" /> More
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                {attachedRunId ? (
+                  <DropdownMenuItem
+                    render={<Link to="/runs/$runId" params={{ runId: attachedRunId }} />}
+                  >
+                    Review result
+                  </DropdownMenuItem>
+                ) : null}
+                {hasRecentRuns ? (
+                  <DropdownMenuItem onClick={() => onHistoryOpen()}>Run history</DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
         </>
       }
     />

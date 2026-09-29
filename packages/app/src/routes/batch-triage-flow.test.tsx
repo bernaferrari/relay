@@ -153,7 +153,7 @@ describe("Batch review controls", () => {
       triage,
     } as unknown as RunAcrossProductService);
     const resolve = [...document.querySelectorAll("button")].find(
-      (button) => button.textContent === "Resolve and continue",
+      (button) => button.textContent === "Mark resolved",
     );
     if (!resolve) throw new Error("Resolve action not found");
     await act(async () => resolve.click());
@@ -164,6 +164,57 @@ describe("Batch review controls", () => {
     });
     expect(document.querySelector("h3")?.textContent).toContain("Case 2");
     expect(report.cases.every((item) => item.status === "failed")).toBe(true);
+  });
+
+  it("offers the affected case's rerun beside its failure evidence", async () => {
+    const rerun = vi.fn(async () => report);
+    await render({
+      getReport: async () => report,
+      getFailureClusters: async () => ({ campaignId: "batch-1", clusters: [] }),
+      getFindings: async () => undefined,
+      rerun,
+    } as unknown as RunAcrossProductService);
+    const button = [...document.querySelectorAll("button")].find(
+      (item) => item.textContent === "Rerun this case",
+    );
+    expect(button).toBeDefined();
+    await act(async () => button?.click());
+    expect(rerun).toHaveBeenCalledWith("batch-1", { caseIds: ["login-ios"] });
+  });
+
+  it("opens the exact case behind a missing screenshot", async () => {
+    await render({
+      getReport: async () => report,
+      getFailureClusters: async () => ({ campaignId: "batch-1", clusters: [] }),
+      getFindings: async () => undefined,
+      getCaptureReview: async () => ({
+        items: [
+          {
+            runId: "run-2",
+            executionCaseId: "checkout-ios",
+            captureId: "checkout-missing",
+            caption: "Checkout",
+            status: "missing",
+          },
+        ],
+        summary: {
+          planned: 1,
+          captured: 0,
+          missing: 1,
+          blocked: 0,
+          pending: 0,
+          accepted: 0,
+          issue: 0,
+          needMoreEvidence: 0,
+        },
+      }),
+    } as unknown as RunAcrossProductService);
+    const open = [...document.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Review affected cases"),
+    );
+    expect(open).toBeDefined();
+    await act(async () => open?.click());
+    expect(document.querySelector("h3")?.textContent).toContain("Case 2");
   });
 
   it("still shows morning Findings copy when analysis is missing", async () => {

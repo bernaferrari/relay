@@ -391,14 +391,14 @@ describe("Suite and Environment routes", () => {
       },
     });
     const { history } = await render("/apps/app-1/suites/suite-1", { suiteService: service });
-    const run = [...document.querySelectorAll('[data-slot="page-actions"] button')].find(
-      (candidate) => /^Run (test|all|on)/u.test(candidate.textContent ?? ""),
+    const run = [...document.querySelectorAll("#suite-run-setup button")].find((candidate) =>
+      /^Run (test|all|on)/u.test(candidate.textContent ?? ""),
     );
     expect(run).toBeInstanceOf(HTMLButtonElement);
     expect((run as HTMLButtonElement).disabled).toBe(true);
     expect(document.body.textContent).toContain("Setup needed before running");
 
-    await clickButton("Edit");
+    await clickButton("Edit Plan");
     expect(document.querySelector("#edit-suite-name")).not.toBeNull();
     await fill("edit-suite-name", "Release smoke updated");
     await clickButton("Save changes");
@@ -439,6 +439,24 @@ describe("Suite and Environment routes", () => {
     expect(document.body.textContent).toContain("Every test runs on 2 setups");
     expect(document.body.textContent).not.toContain("2 cases ready");
     expect(document.body.textContent).toContain("Multi-environment execution is unavailable.");
+  });
+
+  it("opens the existing Plan result instead of offering a second start", async () => {
+    const start = vi.fn(async () => {
+      throw Object.assign(new Error("This Plan has a run in progress"), {
+        body: { code: "ACTIVE_REPEAT_EXISTS", repeatId: "batch-existing" },
+      });
+    });
+    await render("/apps/app-1/suites/suite-1", {
+      suiteService: suiteService({ startSuite: start }),
+    });
+    await clickButton("Run test");
+    expect(start).toHaveBeenCalledTimes(1);
+    const link = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
+      (item) => item.textContent?.trim() === "Open existing result",
+    );
+    expect(link?.getAttribute("href")).toBe("/batches/batch-existing");
+    expect(document.querySelector("#suite-run-setup")?.textContent).not.toContain("Run test");
   });
 
   it("creates a browser with labeled fields and opens its canonical detail route", async () => {

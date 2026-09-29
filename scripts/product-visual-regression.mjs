@@ -556,7 +556,7 @@ async function run(options) {
         await page.getByRole("heading", { level: 1, name: fixture.heading }).waitFor({
           timeout: 5_000,
         });
-        if (fixture.id === "apps-error") {
+        if (["apps-error", "app-versions-error", "app-accounts-error"].includes(fixture.id)) {
           await page.getByRole("alert").waitFor({ timeout: START_TIMEOUT_MS });
         }
         await page.addStyleTag({

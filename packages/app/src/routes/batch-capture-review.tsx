@@ -94,11 +94,13 @@ export function PlanCaptureReviewSection({
   runAcrossService,
   platform,
   streaming = false,
+  onInspectProblems,
 }: {
   batchId: string;
   runAcrossService: RunAcrossProductService;
   platform: Platform;
   streaming?: boolean;
+  onInspectProblems?: (caseId?: string) => void;
 }) {
   const queryClient = useQueryClient();
   const remembered = readPlanReviewView(batchId);
@@ -166,7 +168,12 @@ export function PlanCaptureReviewSection({
     [queue, filter],
   );
   useEffect(() => {
-    if (selectedKey || !visible?.items.length) return;
+    if (!visible?.items.length) return;
+    if (
+      selectedKey &&
+      visible.items.some((item) => captureReviewQueueItemKey(item) === selectedKey)
+    )
+      return;
     const first = visible.items[0];
     if (first) setSelectedKey(captureReviewQueueItemKey(first));
   }, [selectedKey, visible]);
@@ -245,6 +252,40 @@ export function PlanCaptureReviewSection({
           <span>{queue.summary.needMoreEvidence} need more evidence</span>
         ) : null}
       </div>
+      {queue.summary.pending ? (
+        <p className="text-sm leading-6 text-foreground">
+          Open each unreviewed screenshot, then choose Looks correct, Report issue, or Need more
+          evidence. Looks correct reviews this Run only; Use as reference also affects future Runs.
+        </p>
+      ) : null}
+      {!streaming && (queue.summary.missing || queue.summary.blocked) ? (
+        <div
+          role="status"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm"
+        >
+          <p className="max-w-prose leading-6">
+            {queue.summary.missing
+              ? `${queue.summary.missing} screenshot${queue.summary.missing === 1 ? " was" : "s were"} not captured. `
+              : ""}
+            {queue.summary.blocked ? `${queue.summary.blocked} could not be captured. ` : ""}
+            Check the affected case, fix its setup or Test, then run it again. Missing screenshots
+            cannot be approved.
+          </p>
+          {onInspectProblems ? (
+            <Button
+              variant="outline"
+              onClick={() =>
+                onInspectProblems(
+                  queue.items.find((item) => item.status === "missing" || item.blocked)
+                    ?.executionCaseId,
+                )
+              }
+            >
+              Review affected cases
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {captures.isError ? (
         <div role="alert" className="flex flex-wrap items-center gap-2 px-5 pt-2 text-sm">
           <p>Showing saved results. New captures could not be loaded.</p>

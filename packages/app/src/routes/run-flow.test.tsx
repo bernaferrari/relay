@@ -629,11 +629,11 @@ describe("Run and Report", () => {
       platformWithStorage().platform,
       runAcross,
     );
-    expect(document.body.textContent).toContain("Add values to this data set");
+    expect(document.body.textContent).toContain("This data set has no values yet");
     expect(document.querySelector('[aria-label="Search values"]')).toBeNull();
     expect(document.querySelector('[aria-label="Run configuration"]')).toBeNull();
     const link = [...document.querySelectorAll<HTMLAnchorElement>("a")].find(
-      (item) => item.textContent === "Choose configurations",
+      (item) => item.textContent === "Run this Test once",
     );
     expect(link?.getAttribute("href")).toContain("/tests/test-1?setup=run");
     expect(preview).not.toHaveBeenCalled();
@@ -677,6 +677,55 @@ describe("Run and Report", () => {
     ).toContain("/tests/test-1?setup=run");
     expect(button("Run selected cases").disabled).toBe(true);
     expect(startPilot).not.toHaveBeenCalled();
+  });
+
+  it("opens an existing Batch when starting selected cases finds one already running", async () => {
+    const fake = fakeRunService();
+    const startPilot = vi.fn(async () => {
+      throw Object.assign(new Error("This Plan is already running"), {
+        body: { code: "ACTIVE_REPEAT_EXISTS", repeatId: "batch-existing" },
+      });
+    });
+    const runAcross = {
+      getSetup: async () => ({
+        appMapId: "settings-language-proof",
+        appMapRevision: 1,
+        testId: "test-1",
+        testName: "Change the app language",
+        appName: "Settings Language Proof",
+        dataSet: {
+          name: "Languages",
+          dimensions: [
+            {
+              id: "language",
+              name: "Language",
+              values: [{ id: "en", label: "English" }],
+            },
+          ],
+        },
+      }),
+      preview: () => ({ caseCount: 1, scopeLabel: "1 selected case" }),
+      startPilot,
+    } as unknown as RunAcrossProductService;
+    await renderRun(
+      "/tests/test-1/run-across",
+      fake.service,
+      platformWithStorage().platform,
+      runAcross,
+    );
+    await selectOption("Device or browser", "Checkout browser");
+    const value = document.querySelector<HTMLElement>(
+      '[aria-label="Available values"] [role="checkbox"]',
+    );
+    if (!value) throw new Error("English value missing");
+    await click(value.closest("label") ?? value);
+    await click(button("Run selected case"));
+    expect(startPilot).toHaveBeenCalledTimes(1);
+    expect(
+      [...document.querySelectorAll<HTMLAnchorElement>("a")]
+        .find((link) => link.textContent?.trim() === "Open existing result")
+        ?.getAttribute("href"),
+    ).toBe("/batches/batch-existing");
   });
 
   it("waits for every data dimension and uses the selected target", async () => {

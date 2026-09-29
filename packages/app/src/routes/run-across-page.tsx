@@ -18,6 +18,14 @@ import { PageLoading, RecordingProblem, errorMessage } from "./recording-shared"
 
 const routeApi = getRouteApi("/tests/$testId/run-across");
 
+function existingBatchId(error: unknown): string | undefined {
+  const body = (error as { body?: { code?: unknown; repeatId?: unknown } } | null)?.body;
+  if (body?.code === "ACTIVE_REPEAT_EXISTS" && typeof body.repeatId === "string")
+    return body.repeatId;
+  const message = error instanceof Error ? error.message : "";
+  return /\bBatch ([0-9a-f-]{36}) was created; inspect it in Runs\./iu.exec(message)?.[1];
+}
+
 export function RunAcrossPage() {
   const { runAcrossService, runService, platform } = useRouteContext({ from: "__root__" });
   const { testId } = routeApi.useParams();
@@ -185,6 +193,7 @@ export function RunAcrossPage() {
       await navigate({ to: "/batches/$batchId", params: { batchId: batch.id } });
     },
   });
+  const savedBatchId = existingBatchId(start.error);
 
   const loading =
     setup.isPending ||
@@ -206,7 +215,6 @@ export function RunAcrossPage() {
         error={
           setup.error ??
           (usePairs ? (profiles.error ?? paired.error) : targets.error) ??
-          start.error ??
           previewResult.error
         }
         onRetry={() => {
@@ -220,14 +228,14 @@ export function RunAcrossPage() {
       />
       {!loading && setup.data && !setup.error && !hasDataValues ? (
         <EmptyState
-          title="Add values to this data set"
-          detail="A saved data set has no values. Add its values before running across configurations."
+          title="This data set has no values yet"
+          detail="Add values to the App's saved data set before running across them. You can still run this Test once."
           action={
             <Button
               nativeButton={false}
               render={<Link to="/tests/$testId" params={{ testId }} search={{ setup: "run" }} />}
             >
-              Choose configurations
+              Run this Test once
             </Button>
           }
         />
@@ -330,6 +338,21 @@ export function RunAcrossPage() {
                 Remove unavailable choices
               </Button>
             ) : null}
+            {start.error ? (
+              <div
+                role="alert"
+                className="grid gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm"
+              >
+                <p>
+                  {start.error instanceof Error
+                    ? start.error.message
+                    : "Relay could not start these cases."}
+                </p>
+                {savedBatchId ? (
+                  <p>The result is saved. Open it before starting another Run.</p>
+                ) : null}
+              </div>
+            ) : null}
             <footer className="sticky bottom-0 -mx-5 -mb-5 -mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-card px-5 py-4">
               {preview ? (
                 <div className="grid gap-1 text-sm" role="status">
@@ -356,19 +379,28 @@ export function RunAcrossPage() {
                   Run once from Test
                 </Link>
               ) : null}
-              <Button
-                variant="default"
-                onClick={() => start.mutate()}
-                disabled={!preview || start.isPending || configuration.loading || paired.loading}
-              >
-                {start.isPending
-                  ? "Starting selected cases…"
-                  : !preview
-                    ? "Run selected cases"
-                    : preview.caseCount === 1
-                      ? "Run selected case"
-                      : `Run ${preview.caseCount} selected cases`}
-              </Button>
+              {savedBatchId ? (
+                <Button
+                  nativeButton={false}
+                  render={<Link to="/batches/$batchId" params={{ batchId: savedBatchId }} />}
+                >
+                  Open existing result
+                </Button>
+              ) : (
+                <Button
+                  variant="default"
+                  onClick={() => start.mutate()}
+                  disabled={!preview || start.isPending || configuration.loading || paired.loading}
+                >
+                  {start.isPending
+                    ? "Starting selected cases…"
+                    : !preview
+                      ? "Run selected cases"
+                      : preview.caseCount === 1
+                        ? "Run selected case"
+                        : `Run ${preview.caseCount} selected cases`}
+                </Button>
+              )}
             </footer>
           </RunConfigurationComposer>
         </div>

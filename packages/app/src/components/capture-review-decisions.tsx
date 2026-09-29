@@ -9,6 +9,12 @@ import {
   DropdownMenuTrigger,
 } from "@relay/ui-react/components/dropdown-menu";
 import type { CaptureReviewAction, CaptureReviewItem } from "@relay/protocol";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@relay/ui-react/components/dialog";
 
 export function CaptureReviewDecisions({
   busy,
@@ -29,6 +35,7 @@ export function CaptureReviewDecisions({
   const noteId = useId();
   const [note, setNote] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
+  const [referenceOpen, setReferenceOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   const inFlight = useRef(false);
@@ -51,6 +58,7 @@ export function CaptureReviewDecisions({
         setNote("");
         setReportOpen(false);
       }
+      if (action === "accept-as-reference") setReferenceOpen(false);
     } catch {
       setError("Your decision wasn’t saved. Try again.");
     } finally {
@@ -127,10 +135,7 @@ export function CaptureReviewDecisions({
               <MoreHorizontal aria-hidden="true" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                disabled={disabled}
-                onClick={() => void submit("accept-as-reference")}
-              >
+              <DropdownMenuItem disabled={disabled} onClick={() => setReferenceOpen(true)}>
                 <BookmarkPlus aria-hidden="true" /> Accept as reference for future Runs
                 <span className="sr-only">{suffix}</span>
               </DropdownMenuItem>
@@ -186,6 +191,28 @@ export function CaptureReviewDecisions({
           {error}
         </p>
       ) : null}
+      <Dialog open={referenceOpen} onOpenChange={setReferenceOpen}>
+        <DialogContent showCloseButton={false}>
+          <DialogTitle>
+            {bulkCount
+              ? `Use ${bulkCount} screenshots as references?`
+              : "Use this screenshot as a reference?"}
+          </DialogTitle>
+          <DialogDescription>
+            Relay will compare future Runs with {bulkCount ? "these images" : "this image"}. This
+            also marks {bulkCount ? "these screenshots" : "this screenshot"} as correct in this
+            review. Choose Looks correct instead if you only want to review this Run.
+          </DialogDescription>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" disabled={disabled} onClick={() => setReferenceOpen(false)}>
+              Cancel
+            </Button>
+            <Button disabled={disabled} onClick={() => void submit("accept-as-reference")}>
+              {saving ? "Saving…" : "Use as reference"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

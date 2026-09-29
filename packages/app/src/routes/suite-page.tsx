@@ -243,6 +243,7 @@ export function SuitePage() {
         : previewChecking && previewSlow
           ? { tone: "muted", message: "Still checking this Plan's setup…" }
           : null;
+  const unfinishedBatchId = unfinishedRunOf(start.error);
   const runningCases = executionMode === "pilot" ? Math.min(1, plannedCases) : plannedCases;
 
   return (
@@ -283,61 +284,9 @@ export function SuitePage() {
               .filter(Boolean)
               .join(" · ")}
             actions={
-              <>
-                {runHint ? (
-                  <span
-                    className={`flex max-w-80 items-center gap-2 text-xs leading-5 ${
-                      runHint.tone === "error" ? "text-destructive" : "text-muted-foreground"
-                    }`}
-                    role={runHint.tone === "error" ? "alert" : "status"}
-                  >
-                    {runHint.message}
-                    {preview.error ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={preview.isFetching}
-                        onClick={() => void preview.refetch()}
-                      >
-                        {preview.isFetching ? "Checking…" : "Retry"}
-                      </Button>
-                    ) : null}
-                  </span>
-                ) : null}
-                <Button variant="ghost" onClick={() => setEditOpen(true)}>
-                  Edit
-                </Button>
-                <Button
-                  variant="default"
-                  onClick={() => {
-                    if (!selectedProfileIds.length) {
-                      // Nothing chosen yet: take the person to the choice instead of a dead button.
-                      const setup = document.getElementById("suite-environment-title");
-                      setup?.scrollIntoView({ behavior: "smooth", block: "center" });
-                      setup?.closest("section")?.querySelector<HTMLElement>("button")?.focus();
-                      return;
-                    }
-                    start.mutate();
-                  }}
-                  disabled={
-                    (Boolean(selectedProfileIds.length) && !preview.data) ||
-                    Boolean(previewBlockers.length) ||
-                    preview.data?.execution?.capacity === "unavailable" ||
-                    start.isPending
-                  }
-                >
-                  <Play aria-hidden="true" />
-                  {!selectedProfileIds.length
-                    ? "Choose where to run"
-                    : previewChecking
-                      ? "Checking setup…"
-                      : start.isPending
-                        ? "Starting…"
-                        : executionMode === "all" && plannedCases > 1
-                          ? `Run on all ${plannedCases} setups`
-                          : `Run ${value.tests.length === 1 ? "test" : `all ${value.tests.length} tests`}`}
-                </Button>
-              </>
+              <Button variant="ghost" onClick={() => setEditOpen(true)}>
+                Edit Plan
+              </Button>
             }
           />
 
@@ -345,6 +294,7 @@ export function SuitePage() {
             <PlanChecklist appId={appId} suiteId={suiteId} tests={value.tests} />
 
             <section
+              id="suite-run-setup"
               className="min-w-0 rounded-xl border border-border bg-card p-4"
               aria-labelledby="suite-environment-title"
             >
@@ -555,7 +505,60 @@ export function SuitePage() {
                     : "Relay could not check this Plan."}
                 </FieldError>
               ) : null}
-              {start.error && unfinishedRunOf(start.error) ? (
+              <div className="mt-5 grid gap-3 border-t border-border pt-4">
+                {runHint ? (
+                  <p
+                    className={`text-sm leading-5 ${runHint.tone === "error" ? "text-destructive" : "text-muted-foreground"}`}
+                    role={runHint.tone === "error" ? "alert" : "status"}
+                  >
+                    {runHint.message}
+                  </p>
+                ) : null}
+                {unfinishedBatchId ? (
+                  <Button
+                    nativeButton={false}
+                    className="w-full"
+                    render={<Link to="/batches/$batchId" params={{ batchId: unfinishedBatchId }} />}
+                  >
+                    Open existing result
+                  </Button>
+                ) : (
+                  <Button
+                    variant="default"
+                    className="w-full"
+                    onClick={() => start.mutate()}
+                    disabled={
+                      !selectedProfileIds.length ||
+                      !preview.data ||
+                      Boolean(previewBlockers.length) ||
+                      preview.data.execution?.capacity === "unavailable" ||
+                      start.isPending
+                    }
+                  >
+                    <Play aria-hidden="true" />
+                    {!selectedProfileIds.length
+                      ? "Choose where to run"
+                      : previewChecking
+                        ? "Checking setup…"
+                        : start.isPending
+                          ? "Starting…"
+                          : executionMode === "all" && plannedCases > 1
+                            ? `Run on all ${plannedCases} setups`
+                            : `Run ${value.tests.length === 1 ? "test" : `all ${value.tests.length} tests`}`}
+                  </Button>
+                )}
+                {preview.error ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={preview.isFetching}
+                    onClick={() => void preview.refetch()}
+                  >
+                    {preview.isFetching ? "Checking…" : "Retry setup check"}
+                  </Button>
+                ) : null}
+              </div>
+              {unfinishedBatchId ? (
                 <div
                   className="grid gap-2 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm"
                   role="alert"
@@ -564,29 +567,17 @@ export function SuitePage() {
                     <strong className="font-semibold">
                       This plan has a run that never finished.
                     </strong>{" "}
-                    Open it to see where it stopped, or stop it and run the plan again.
+                    Open the existing result to see where it stopped, or stop it and run the plan
+                    again.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <Button
                       size="sm"
                       disabled={restart.isPending}
-                      onClick={() => restart.mutate(unfinishedRunOf(start.error)!)}
+                      onClick={() => restart.mutate(unfinishedBatchId)}
                     >
                       <Play aria-hidden="true" />
                       {restart.isPending ? "Stopping…" : "Stop it and run again"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      nativeButton={false}
-                      render={
-                        <Link
-                          to="/batches/$batchId"
-                          params={{ batchId: unfinishedRunOf(start.error)! }}
-                        />
-                      }
-                    >
-                      Open it
                     </Button>
                   </div>
                   {restart.error ? (
