@@ -58,3 +58,10 @@ jobs:
           # Live-device journeys are golden-device work; this lane verifies
           # the repository and must not contend for the one device slot.
           RELAY_SKIP_LIVE_DEVICE_TESTS: "1"
+
+      - name: Check changed-source coverage
+        env:
+          RELAY_COVERAGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          RELAY_COVERAGE_STRICT: "1"
+          RELAY_SKIP_LIVE_DEVICE_TESTS: "1"
+        run: pnpm run test:coverage

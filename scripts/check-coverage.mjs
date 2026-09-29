@@ -1,115 +1,149 @@
 import { execFileSync } from "node:child_process";
-import { access, readdir, readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { readFile, readdir } from "node:fs/promises";
+import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LINE_THRESHOLD = 70;
 
-// Advisory gate: reads lcov+json-summary-style lcov.info output produced by
-// `pnpm test:coverage` and fails only when changed first-party source files'
-// aggregate line coverage drops below the threshold. Tolerant by design —
-// with no coverage data present it exits 0 with an explanatory message so
-// CI and ad-hoc runs never break on a fresh checkout.
-
-async function exists(path) {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
+function gitAt(root, ...args) {
+  return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 }
 
-function changedFiles() {
-  try {
-    const out = execFileSync("git", ["diff", "--name-only", "HEAD"], {
-      cwd: repositoryRoot,
-      encoding: "utf8",
-    });
-    return out
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
-  } catch {
+export function changedFiles(base, root = repositoryRoot) {
+  if (base) {
+    const common = gitAt(root, "merge-base", base, "HEAD");
+    return gitAt(root, "diff", "--name-only", `${common}...HEAD`).split("\n").filter(Boolean);
+  }
+  return gitAt(root, "diff", "--name-only", "HEAD").split("\n").filter(Boolean);
+}
+
+function repoPath(path) {
+  return path.split(sep).join("/");
+}
+
+function productionSourcePackage(path) {
+  const parts = path.split("/");
+  if (parts[0] !== "packages" || parts[2] !== "src") return null;
+  if (!/\.[cm]?[jt]sx?$/u.test(path) || /\.(?:test|spec|d)\.[cm]?[jt]sx?$/u.test(path)) {
     return null;
   }
+  return parts[1];
 }
 
-async function lcovPaths() {
-  const packagesDir = resolve(repositoryRoot, "packages");
-  const entries = await readdir(packagesDir, { withFileTypes: true });
-  const paths = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const candidate = resolve(packagesDir, entry.name, "coverage", "lcov.info");
-    if (await exists(candidate)) paths.push(candidate);
+export function parseLcov(content, packageDirectory, root = repositoryRoot) {
+  const files = new Map();
+  for (const record of content.split("end_of_record")) {
+    const source = record.match(/^SF:(.+)$/m)?.[1];
+    const found = record.match(/^LF:(\d+)$/m)?.[1];
+    const hit = record.match(/^LH:(\d+)$/m)?.[1];
+    if (!source || found === undefined || hit === undefined) continue;
+    const path = repoPath(relative(root, resolve(root, "packages", packageDirectory, source)));
+    if (!path.startsWith(`packages/${packageDirectory}/src/`)) continue;
+    files.set(path, { found: Number(found), hit: Number(hit) });
   }
-  return paths;
+  return files;
 }
 
-function normalizeRepoPath(filePath) {
-  return filePath.replaceAll("\\", "/").replace(/^\.\//, "");
+export function evaluateChangedCoverage(
+  changed,
+  reports,
+  measuredPackages,
+  threshold = LINE_THRESHOLD,
+) {
+  const sourceFiles = changed.filter((path) => measuredPackages.has(productionSourcePackage(path)));
+  const missing = sourceFiles.filter((path) => !reports.has(path));
+  const measured = sourceFiles.filter((path) => reports.has(path));
+  const found = measured.reduce((sum, path) => sum + reports.get(path).found, 0);
+  const hit = measured.reduce((sum, path) => sum + reports.get(path).hit, 0);
+  const percent = found === 0 ? null : (hit / found) * 100;
+  return {
+    sourceFiles,
+    missing,
+    measured,
+    found,
+    hit,
+    percent,
+    passed: missing.length === 0 && (percent === null || percent >= threshold),
+  };
+}
+
+async function coveragePackages() {
+  const names = await readdir(resolve(repositoryRoot, "packages"));
+  const packages = [];
+  for (const name of names) {
+    try {
+      const manifest = JSON.parse(
+        await readFile(resolve(repositoryRoot, "packages", name, "package.json"), "utf8"),
+      );
+      if (manifest.scripts?.["test:coverage"]) packages.push(name);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+  return packages;
 }
 
 async function main() {
-  const paths = await lcovPaths();
-  if (paths.length === 0) {
-    console.log("check-coverage: no coverage data found (run `pnpm run test:coverage`); skipping.");
-    return;
+  const strict = process.env.RELAY_COVERAGE_STRICT === "1";
+  const configuredBase = process.env.RELAY_COVERAGE_BASE?.trim();
+  const base =
+    strict && (!configuredBase || /^0+$/u.test(configuredBase))
+      ? gitAt(repositoryRoot, "rev-parse", "HEAD^")
+      : configuredBase;
+
+  const packages = await coveragePackages();
+  const reports = new Map();
+  for (const name of packages) {
+    let content;
+    try {
+      content = await readFile(resolve(repositoryRoot, "packages", name, "coverage.lcov"), "utf8");
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      if (strict) throw new Error(`Missing coverage report for packages/${name}`);
+      console.warn(`check-coverage: missing report for packages/${name}; run pnpm test:coverage`);
+      continue;
+    }
+    const packageReport = parseLcov(content, name);
+    if (strict && packageReport.size === 0) {
+      throw new Error(`Empty coverage report for packages/${name}`);
+    }
+    for (const [path, coverage] of packageReport) reports.set(path, coverage);
   }
 
-  const changed = changedFiles();
-  if (!changed) {
-    console.log("check-coverage: git unavailable; cannot determine changed files; skipping.");
+  const changed = changedFiles(base);
+  const unmeasured = changed.filter((path) => {
+    const name = productionSourcePackage(path);
+    return name !== null && !packages.includes(name);
+  });
+  if (unmeasured.length) {
+    const names = [...new Set(unmeasured.map((path) => productionSourcePackage(path)))];
+    console.warn(
+      `check-coverage: ${unmeasured.length} changed source files in packages without coverage scripts: ${names.join(", ")}`,
+    );
+  }
+  const result = evaluateChangedCoverage(changed, reports, new Set(packages));
+  if (result.sourceFiles.length === 0) {
+    console.log("check-coverage: no changed source files in measured packages");
     return;
   }
-  const changedSet = new Set(changed.map(normalizeRepoPath));
-  if (changedSet.size === 0) {
-    console.log("check-coverage: no changed files; nothing to check.");
-    return;
+  if (result.missing.length) {
+    console.error(`check-coverage: missing coverage for ${result.missing.join(", ")}`);
   }
-
-  let linesFound = 0;
-  let linesHit = 0;
-  const matchedFiles = [];
-
-  for (const lcovPath of paths) {
-    const content = await readFile(lcovPath, "utf8");
-    for (const record of content.split("end_of_record")) {
-      const sfMatch = record.match(/^SF:(.+)$/m);
-      if (!sfMatch) continue;
-      // lcov SF paths are relative to the package directory that produced them.
-      const relative = normalizeRepoPath(sfMatch[1]).replace(/^(\.\.\/)+packages\//, "packages/");
-      if (!changedSet.has(relative)) continue;
-      matchedFiles.push(relative);
-      const found = [...record.matchAll(/^LF:(\d+)$/gm)].pop();
-      const hit = [...record.matchAll(/^LH:(\d+)$/gm)].pop();
-      if (found) linesFound += Number(found[1]);
-      if (hit) linesHit += Number(hit[1]);
+  if (result.percent !== null) {
+    console.log(
+      `check-coverage: ${result.measured.length}/${result.sourceFiles.length} files, ${result.hit}/${result.found} lines (${result.percent.toFixed(2)}%).`,
+    );
+    if (result.percent < LINE_THRESHOLD) {
+      console.error(`check-coverage: below ${LINE_THRESHOLD}% changed-source line threshold`);
     }
   }
-
-  if (matchedFiles.length === 0) {
-    console.log(
-      "check-coverage: coverage data present but none of the changed files are covered; skipping.",
-    );
-    return;
-  }
-
-  const pct = linesFound === 0 ? 100 : (linesHit / linesFound) * 100;
-  console.log(
-    `check-coverage: ${matchedFiles.length} changed file(s), ${linesHit}/${linesFound} lines (${pct.toFixed(2)}%).`,
-  );
-  if (pct < LINE_THRESHOLD) {
-    console.error(
-      `check-coverage: line coverage ${pct.toFixed(2)}% is below ${LINE_THRESHOLD}% for changed files.`,
-    );
-    process.exitCode = 1;
-  }
+  if (!result.passed) process.exitCode = 1;
 }
 
-main().catch((error) => {
-  // Advisory tool: unexpected failures degrade to a warning, never block.
-  console.warn(`check-coverage: skipped (${error?.message ?? error})`);
-});
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error) => {
+    console.error(`check-coverage: ${error?.message ?? error}`);
+    process.exitCode = 1;
+  });
+}
