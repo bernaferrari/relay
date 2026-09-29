@@ -13,9 +13,21 @@ function gitAt(root, ...args) {
 export function changedFiles(base, root = repositoryRoot) {
   if (base) {
     const common = gitAt(root, "merge-base", base, "HEAD");
-    return gitAt(root, "diff", "--name-only", `${common}...HEAD`).split("\n").filter(Boolean);
+    return gitAt(root, "diff", "--name-only", "--diff-filter=ACMRT", `${common}...HEAD`)
+      .split("\n")
+      .filter(Boolean);
   }
-  return gitAt(root, "diff", "--name-only", "HEAD").split("\n").filter(Boolean);
+  return gitAt(root, "diff", "--name-only", "--diff-filter=ACMRT", "HEAD")
+    .split("\n")
+    .filter(Boolean);
+}
+
+export function coverageBase(configuredBase, strict, root = repositoryRoot) {
+  if (!strict) return configuredBase;
+  if (/^0+$/u.test(configuredBase ?? "")) {
+    throw new Error("Cannot determine coverage base for a newly created branch");
+  }
+  return configuredBase || gitAt(root, "rev-parse", "HEAD^");
 }
 
 function repoPath(path) {
@@ -87,10 +99,7 @@ async function coveragePackages() {
 async function main() {
   const strict = process.env.RELAY_COVERAGE_STRICT === "1";
   const configuredBase = process.env.RELAY_COVERAGE_BASE?.trim();
-  const base =
-    strict && (!configuredBase || /^0+$/u.test(configuredBase))
-      ? gitAt(repositoryRoot, "rev-parse", "HEAD^")
-      : configuredBase;
+  const base = coverageBase(configuredBase, strict);
 
   const packages = await coveragePackages();
   const reports = new Map();
