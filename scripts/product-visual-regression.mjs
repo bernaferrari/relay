@@ -13,6 +13,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import process from "node:process";
 import { prepareReportVideoFixture } from "./product-visual-video-fixture.mjs";
+import { comparePng, decodedVideoFrameRegion } from "./product-visual-comparison.mjs";
 
 const ROOT = resolve(import.meta.dirname, "..");
 // Chrome's text rasterization differs between macOS and Linux even with the
@@ -25,7 +26,6 @@ const BASELINE_DIR = resolve(
 const FAILURE_DIR = resolve(ROOT, ".relay/visual-regression");
 const PORT = Number(process.env.RELAY_VISUAL_APP_PORT ?? 4178);
 const START_TIMEOUT_MS = 30_000;
-const PIXEL_DELTA = 18;
 const MAX_DIFFERENT_PIXEL_RATIO = 0.0005;
 const zoomAcceptanceFixtures = new Set([
   "test-detail",
@@ -463,29 +463,6 @@ async function assertLayout(page, fixture, viewport) {
   }
 }
 
-function comparePng(PNG, expectedBytes, actualBytes) {
-  const expected = PNG.sync.read(expectedBytes);
-  const actual = PNG.sync.read(actualBytes);
-  if (expected.width !== actual.width || expected.height !== actual.height) {
-    return { ratio: 1, differentPixels: expected.width * expected.height, dimensionsChanged: true };
-  }
-  let differentPixels = 0;
-  for (let offset = 0; offset < expected.data.length; offset += 4) {
-    const delta = Math.max(
-      Math.abs(expected.data[offset] - actual.data[offset]),
-      Math.abs(expected.data[offset + 1] - actual.data[offset + 1]),
-      Math.abs(expected.data[offset + 2] - actual.data[offset + 2]),
-      Math.abs(expected.data[offset + 3] - actual.data[offset + 3]),
-    );
-    if (delta > PIXEL_DELTA) differentPixels += 1;
-  }
-  return {
-    ratio: differentPixels / (expected.width * expected.height),
-    differentPixels,
-    dimensionsChanged: false,
-  };
-}
-
 async function run(options) {
   if (!Number.isInteger(PORT) || PORT < 1) throw new TypeError("Visual fixture port is invalid");
   if (options.filter && !fixtures.some((fixture) => fixture.id.includes(options.filter)))
@@ -593,6 +570,9 @@ async function run(options) {
             requestAnimationFrame(() => requestAnimationFrame(resolveFrame)),
           );
         });
+        const ignoredRegion = fixture.video
+          ? decodedVideoFrameRegion(await page.locator("video").boundingBox())
+          : undefined;
         const actual = await page.screenshot({ animations: "disabled", type: "png" });
         if (!(await heading.isVisible())) {
           throw new Error(
@@ -616,7 +596,7 @@ async function run(options) {
             `Missing visual baseline ${baselinePath}. Run with --update to create it.`,
           );
         }
-        const comparison = comparePng(PNG, expected, actual);
+        const comparison = comparePng(PNG, expected, actual, ignoredRegion);
         if (comparison.ratio > MAX_DIFFERENT_PIXEL_RATIO) {
           await mkdir(FAILURE_DIR, { recursive: true });
           const failurePath = resolve(FAILURE_DIR, filename);
