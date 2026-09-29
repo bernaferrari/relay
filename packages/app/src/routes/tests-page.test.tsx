@@ -213,8 +213,14 @@ describe("Tests home", () => {
     await render("/tests?app=app-shop");
     expect(main().querySelector("h1")?.textContent).toBe("Tests");
     // Banking's invoice test is out of scope.
-    expect(main().textContent).toContain("2 tests · 1 plans");
+    expect(main().textContent).toContain("2 tests · 1 plan");
     expect(main().textContent).not.toContain("Pay invoice");
+  });
+
+  it("uses singular test wording when one Test belongs to the chosen App", async () => {
+    await render("/tests?app=app-bank");
+    expect(main().textContent).toContain("1 test");
+    expect(main().textContent).not.toContain("1 tests");
   });
 
   it("groups a plan's tests under its card, shown on expand, and lists the rest as Other tests", async () => {
