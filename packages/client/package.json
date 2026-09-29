@@ -8,7 +8,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "tsx --test src/index.test.ts"
+    "test": "tsx --test src/index.test.ts",
+    "test:coverage": "tsx --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov src/index.test.ts"
   },
   "dependencies": {
     "@relay/protocol": "workspace:*"
