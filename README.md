@@ -48,4 +48,5 @@ pnpm relay export-evidence <run-id>
 Replace `settings-localization` with the name of your test. `pnpm relay --help` lists the available commands. Optional AI exploration requires `OPENROUTER_API_KEY`.
 
 If you’re making changes to Relay, use `vp check` for formatting and lint, `pnpm typecheck` for type checks, and `pnpm test` to run the tests.
+`pnpm test:coverage` writes package LCOV reports; CI requires at least 70% line coverage across changed source in packages with a coverage script. The `ui-react` package contains shared UI components without a separate unit suite; product visual and accessibility checks cover its rendered use in the app.
 The [product contract](./PRODUCT_CONTRACT.md) defines the public routes, vocabulary, and interaction rules checked in CI.

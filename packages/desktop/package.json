@@ -14,6 +14,7 @@
     "dist": "node scripts/build.mjs && node scripts/sign-mac-dist.mjs --mac dmg zip",
     "preview": "node scripts/build.mjs && node scripts/preview.mjs",
     "test": "node --experimental-strip-types --test src/main/server-readiness.test.ts src/main/ios-preview-sidecar.test.ts src/main/window-state.test.ts src/main/windows-launcher.test.ts src/main/lane-session.test.ts && node --test scripts/ensure-dev-service.test.mjs scripts/dev-app-entry.test.mjs scripts/ensure-electron-binary.test.mjs scripts/macos-icon-packaging.test.mjs scripts/require-developer-id.test.mjs && node scripts/verify-server-bundle.mjs",
+    "test:coverage": "node --experimental-strip-types --test --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage.lcov src/main/server-readiness.test.ts src/main/ios-preview-sidecar.test.ts src/main/window-state.test.ts src/main/windows-launcher.test.ts src/main/lane-session.test.ts scripts/ensure-dev-service.test.mjs scripts/dev-app-entry.test.mjs scripts/ensure-electron-binary.test.mjs scripts/macos-icon-packaging.test.mjs scripts/require-developer-id.test.mjs && node scripts/verify-server-bundle.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
