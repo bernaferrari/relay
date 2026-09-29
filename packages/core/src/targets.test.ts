@@ -330,6 +330,12 @@ test("in-app Browser Device bounds popup admission and retained page tombstones"
         response.end(`<!doctype html><title>Popup</title><p>Popup</p>`);
       });
       await new Promise<void>((resolve) => popupServer.listen(0, "127.0.0.1", resolve));
+      t.after(
+        () =>
+          new Promise<void>((resolve, reject) =>
+            popupServer.close((error) => (error ? reject(error) : resolve())),
+          ),
+      );
       const popupAddress = popupServer.address();
       assert(popupAddress && typeof popupAddress === "object");
       const popupUrl = `http://127.0.0.1:${popupAddress.port}`;
@@ -340,6 +346,12 @@ test("in-app Browser Device bounds popup admission and retained page tombstones"
         );
       });
       await new Promise<void>((resolve) => rootServer.listen(0, "127.0.0.1", resolve));
+      t.after(
+        () =>
+          new Promise<void>((resolve, reject) =>
+            rootServer.close((error) => (error ? reject(error) : resolve())),
+          ),
+      );
       const rootAddress = rootServer.address();
       assert(rootAddress && typeof rootAddress === "object");
       const target = await saveBrowserTarget({
@@ -417,13 +429,7 @@ test("in-app Browser Device bounds popup admission and retained page tombstones"
       } finally {
         await closeBrowserTarget(target.id, { mode: "authoring" });
         await deleteTarget(target.id);
-        await new Promise<void>((resolve, reject) =>
-          rootServer.close((error) => (error ? reject(error) : resolve())),
-        );
       }
-      await new Promise<void>((resolve, reject) =>
-        popupServer.close((error) => (error ? reject(error) : resolve())),
-      );
     });
   } finally {
     supervisor.close();
