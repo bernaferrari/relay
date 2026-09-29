@@ -82,13 +82,14 @@ export async function clipboardPaste(
   target: ClipboardTarget,
   focusTarget: FocusTarget,
 ): Promise<string> {
+  const selector = atomicClipboardSelector(target);
   try {
     const result = await controlledMutation("clipboard-paste", () =>
       nativeDevice(device).command.clipboard({
         ...base(),
         action: "paste",
         text,
-        ...atomicClipboardSelector(target),
+        ...selector,
       }),
     );
     if (result.action !== "paste") throw new Error("clipboard paste returned an unexpected result");
@@ -112,12 +113,13 @@ export async function clipboardCopy(
   expectedText: string | undefined,
   focusTarget: FocusTarget,
 ): Promise<string> {
+  const selector = atomicClipboardSelector(target);
   try {
     const result = await controlledMutation("clipboard-copy", () =>
       nativeDevice(device).command.clipboard({
         ...base(),
         action: "copy",
-        ...atomicClipboardSelector(target),
+        ...selector,
         ...(expectedText !== undefined ? { expectedText } : {}),
       }),
     );
