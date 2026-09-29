@@ -436,7 +436,7 @@ describe("Suite and Environment routes", () => {
       }),
     });
 
-    expect(document.body.textContent).toContain("Every test runs on 2 setups");
+    expect(document.body.textContent).toContain("One setup first, then 1 more when you continue");
     expect(document.body.textContent).not.toContain("2 cases ready");
     expect(document.body.textContent).toContain("Multi-environment execution is unavailable.");
   });

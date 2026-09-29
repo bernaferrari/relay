@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { defaultPlanExecutionMode, planRunCountLabel } from "./suite-page";
 
 describe("plan run defaults", () => {
-  it("runs every test when someone presses Run all", () => {
-    expect(defaultPlanExecutionMode).toBe("all");
+  it("starts with one setup before someone chooses to run every combination", () => {
+    expect(defaultPlanExecutionMode).toBe("pilot");
   });
 
   it("describes the run in tests and setups, not cases", () => {

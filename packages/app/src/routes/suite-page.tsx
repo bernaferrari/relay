@@ -41,9 +41,9 @@ const routeApi = getRouteApi("/apps/$appId/suites/$suiteId");
 /** After this long without a setup answer, say so next to the Run button. */
 const PREVIEW_SLOW_MS = 5_000;
 
-// "Run all" runs everything. Running one setup first is an option for large
-// plans (several devices, accounts, or data sets).
-export const defaultPlanExecutionMode = "all" as const;
+// Start with one setup so a saved Plan cannot unexpectedly launch every
+// device, account, and data combination at once.
+export const defaultPlanExecutionMode = "pilot" as const;
 
 export function planRunCountLabel(input: {
   blockers: number;
