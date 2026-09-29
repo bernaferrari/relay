@@ -105,10 +105,15 @@ async function main() {
   const reports = new Map();
   for (const name of packages) {
     let content;
-    try {
-      content = await readFile(resolve(repositoryRoot, "packages", name, "coverage.lcov"), "utf8");
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
+    for (const path of ["coverage.lcov", "coverage/lcov.info"]) {
+      try {
+        content = await readFile(resolve(repositoryRoot, "packages", name, path), "utf8");
+        break;
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+      }
+    }
+    if (content === undefined) {
       if (strict) throw new Error(`Missing coverage report for packages/${name}`);
       console.warn(`check-coverage: missing report for packages/${name}; run pnpm test:coverage`);
       continue;
