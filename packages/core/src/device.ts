@@ -5,10 +5,6 @@
  */
 import { createAgentDeviceClient } from "agent-device";
 import {
-  readAndroidClipboardWithAdb,
-  writeAndroidClipboardWithAdb,
-} from "agent-device/android-adb";
-import {
   cooperativeCheckpoint,
   getExecutingJobId,
   raceCancel,
@@ -28,13 +24,7 @@ import {
   nativeDevice,
   type DeviceTransport,
 } from "./device-dispatch.js";
-import {
-  isAndroidClipboardTransportFailure,
-  androidAdbExecutor,
-  pasteAndroidTextWithAdb,
-  type DeviceTextInputDependencies,
-  typeDeviceText,
-} from "./device-android-text.js";
+import { type DeviceTextInputDependencies, typeDeviceText } from "./device-android-text.js";
 export {
   androidKeyboardShifted,
   escapeAndroidShellText,
@@ -67,6 +57,12 @@ import {
   resolveAppleControlRoute,
 } from "./apple-control-route.js";
 import { buildDeviceTransport } from "./device-client-bindings.js";
+import {
+  clipboardCopy as copyDeviceClipboard,
+  clipboardPaste as pasteDeviceClipboard,
+  type ClipboardTarget,
+} from "./device-clipboard.js";
+export { clipboardRead, clipboardWrite } from "./device-clipboard.js";
 import {
   targetKey,
   rememberedTargetApplication,
@@ -538,60 +534,7 @@ export async function longPressTarget(
   }
 }
 
-export async function clipboardWrite(device: Device, text: string): Promise<void> {
-  try {
-    await controlledMutation("clipboard-write", () =>
-      nativeDevice(device).command.clipboard({ ...base(), action: "write", text }),
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (selectedPlatform() !== "android" || !isAndroidClipboardTransportFailure(message)) {
-      throw error;
-    }
-    await controlled(() =>
-      mutateCurrentTarget(() =>
-        writeAndroidClipboardWithAdb(androidAdbExecutor(targetIdentity()), text),
-      ),
-    );
-  }
-}
-
-export async function clipboardRead(device: Device): Promise<string> {
-  try {
-    const result = await controlled(() =>
-      nativeDevice(device).command.clipboard({ ...base(), action: "read" }),
-    );
-    if (result.action !== "read") throw new Error("clipboard read returned an unexpected result");
-    return result.text;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (selectedPlatform() !== "android" || !isAndroidClipboardTransportFailure(message)) {
-      throw error;
-    }
-    return controlled(() => readAndroidClipboardWithAdb(androidAdbExecutor(targetIdentity())));
-  }
-}
-
-type AtomicClipboardTarget = {
-  identifier?: string;
-  label?: string;
-  text?: string;
-};
-
-function atomicClipboardSelector(target: AtomicClipboardTarget): {
-  selectorKey: "id" | "label" | "text";
-  selectorValue: string;
-} {
-  if (target.identifier) return { selectorKey: "id", selectorValue: target.identifier };
-  if (target.label) return { selectorKey: "label", selectorValue: target.label };
-  if (target.text) return { selectorKey: "text", selectorValue: target.text };
-  throw new Error("clipboard copy/paste requires an identifier, label, or text target");
-}
-
-async function focusClipboardTarget(
-  device: Device,
-  target: AtomicClipboardTarget & { ref?: string; point?: { x: number; y: number } },
-): Promise<void> {
+async function focusClipboardTarget(device: Device, target: ClipboardTarget): Promise<void> {
   if (target.identifier) return pressIdentifier(device, target.identifier);
   if (target.ref) return pressRef(device, target.ref);
   if (target.label) return pressLabel(device, target.label);
@@ -600,84 +543,20 @@ async function focusClipboardTarget(
   throw new Error("clipboard copy/paste requires an identifier, label, or text target");
 }
 
-/** Replace the target field through the iOS system Paste action before XCTest
- * exits. Write and Paste are one verified runner command (empty text clears
- * the field). Intermediate probe-app foreground and pasteboard writes can
- * occur before an error; a lost response after Paste must not be replayed. */
-export async function clipboardPaste(
+export function clipboardPaste(
   device: Device,
   text: string,
-  target: AtomicClipboardTarget & { ref?: string; point?: { x: number; y: number } },
+  target: ClipboardTarget,
 ): Promise<string> {
-  try {
-    const result = await controlledMutation("clipboard-paste", () =>
-      nativeDevice(device).command.clipboard({
-        ...base(),
-        action: "paste",
-        text,
-        ...atomicClipboardSelector(target),
-      }),
-    );
-    if (result.action !== "paste") throw new Error("clipboard paste returned an unexpected result");
-    return result.text;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (selectedPlatform() !== "android" || !isAndroidClipboardTransportFailure(message)) {
-      throw error;
-    }
-    await focusClipboardTarget(device, target);
-    await mutateCurrentTarget(() => pasteAndroidTextWithAdb(text, targetIdentity()));
-    return text;
-  }
+  return pasteDeviceClipboard(device, text, target, focusClipboardTarget);
 }
 
-/** Select and copy editable text through the real iOS edit menu, then read and
- * optionally verify it before XCTest exits. */
-export async function clipboardCopy(
+export function clipboardCopy(
   device: Device,
-  target: AtomicClipboardTarget & { ref?: string; point?: { x: number; y: number } },
+  target: ClipboardTarget,
   expectedText?: string,
 ): Promise<string> {
-  try {
-    const result = await controlledMutation("clipboard-copy", () =>
-      nativeDevice(device).command.clipboard({
-        ...base(),
-        action: "copy",
-        ...atomicClipboardSelector(target),
-        ...(expectedText !== undefined ? { expectedText } : {}),
-      }),
-    );
-    if (result.action !== "copy") throw new Error("clipboard copy returned an unexpected result");
-    return result.text;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (selectedPlatform() !== "android" || !isAndroidClipboardTransportFailure(message)) {
-      throw error;
-    }
-    await focusClipboardTarget(device, target);
-    const adb = androidAdbExecutor(targetIdentity());
-    const selectAll = await adb([
-      "shell",
-      "input",
-      "keycombination",
-      "KEYCODE_CTRL_LEFT",
-      "KEYCODE_A",
-    ]);
-    if (selectAll.exitCode !== 0) {
-      throw new Error(selectAll.stderr || "Android could not select the target text");
-    }
-    const copy = await adb(["shell", "input", "keycombination", "KEYCODE_CTRL_LEFT", "KEYCODE_C"]);
-    if (copy.exitCode !== 0) {
-      throw new Error(copy.stderr || "Android could not copy the target text");
-    }
-    const copiedText = await readAndroidClipboardWithAdb(adb);
-    if (expectedText !== undefined && copiedText !== expectedText) {
-      throw new Error(
-        `Android clipboard text did not match the expected value (received ${copiedText.length} characters)`,
-      );
-    }
-    return copiedText;
-  }
+  return copyDeviceClipboard(device, target, expectedText, focusClipboardTarget);
 }
 
 export async function closeApp(device: Device, app?: string): Promise<void> {
