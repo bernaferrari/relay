@@ -18,6 +18,7 @@ import { AuthoringStateError } from "./authoring-session-state.js";
 import { managedBrowserTargetProfile } from "./browser-case-profile-target.js";
 import { now } from "./events.js";
 import { readTarget } from "./targets.js";
+import { authoringOriginApplication } from "./authoring-session-runtime.js";
 
 export type AuthoringMapCommitFault = (
   boundary: "before-verify" | "after-verify" | "before-rename" | "before-persist",
@@ -53,6 +54,7 @@ export async function commitAuthoringSessionMap(input: {
   fault?.("before-rename");
   const committedAt = Math.max(now(), appMap.updatedAt + 1);
   const targetProfile = await frozenAuthoringTargetProfile(session, committedAt);
+  const originApplication = authoringOriginApplication(session);
   let connectionId = "";
   let testId: string | undefined;
   const result = await mutateStoredAppMap(session.projectId, session.appMapId, (current) => {
@@ -101,9 +103,7 @@ export async function commitAuthoringSessionMap(input: {
           ? {
               testId: session.commitTestId,
               testName: session.testName!,
-              ...(session.originApplication
-                ? { originApplication: session.originApplication }
-                : {}),
+              ...(originApplication ? { originApplication } : {}),
             }
           : {}),
       },

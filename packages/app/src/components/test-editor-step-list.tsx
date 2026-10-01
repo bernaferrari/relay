@@ -2,7 +2,13 @@
 import type { AppMapScenarioTest } from "@relay/protocol";
 import type { PlanPlatform } from "@relay/product/test-route-platforms";
 import { Button } from "@relay/ui-react/components/button";
-import { ChevronRight, Plus } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@relay/ui-react/components/dropdown-menu";
+import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import type { CSSProperties, ReactNode, RefObject } from "react";
 import { EmptyState } from "./product-patterns";
 import { TestEditorRoutes } from "./test-editor-routes";
@@ -65,7 +71,10 @@ export function TestEditorStepOutline({
     <section className="min-w-0" aria-labelledby="test-steps-title">
       <div className="flex min-h-8 items-center justify-between gap-2 pl-3">
         <h2 id="test-steps-title" className="text-sm font-semibold">
-          {entries.length} {entries.length === 1 ? "step" : "steps"}
+          Steps{" "}
+          <span className="ml-1.5 rounded-md bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+            {entries.length}
+          </span>
         </h2>
         {headerAside ? <div className="flex items-center gap-1">{headerAside}</div> : null}
       </div>
@@ -143,12 +152,15 @@ export function TestEditorStepOutline({
         />
       )}
       <div className="mt-2 flex flex-wrap items-center gap-1 px-1">
-        <Button size="sm" variant="ghost" onClick={onAdd} disabled={busy}>
-          <Plus aria-hidden="true" /> Write a step
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onAddCheckpoint} disabled={busy}>
-          <Plus aria-hidden="true" /> Add a check
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button size="sm" variant="ghost" disabled={busy} />}>
+            <Plus aria-hidden="true" /> Add step <ChevronDown aria-hidden="true" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={onAdd}>Write a step</DropdownMenuItem>
+            <DropdownMenuItem onClick={onAddCheckpoint}>Add a check</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       {showDetails ? (
         <details className="mt-5 text-sm text-muted-foreground">

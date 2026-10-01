@@ -69,10 +69,7 @@ export type AuthoringCommitFault = (
 export function authoringReplaySourceSteps(session: AuthoringSession, map?: AppMap): RecipeStep[] {
   if (session.target.kind === "browser") return [{ kind: "key", key: "home" }];
   if (session.target.platform !== "android") return [];
-  const before = session.take ? currentRevision(session).before : undefined;
-  const app =
-    session.originApplication ??
-    (before && hasCurrentAuthoringSemantics(before.proof) ? before.foregroundApp : undefined);
+  const app = authoringOriginApplication(session);
   if (!app) return [];
   const steps: RecipeStep[] = [{ kind: "app", action: "open", app, relaunch: true }];
   const sourceId =
@@ -95,4 +92,12 @@ export function authoringReplaySourceSteps(session: AuthoringSession, map?: AppM
   };
   attachMappedInboundPrelude(map, graph, "source");
   return [...steps, ...graph.source!.steps];
+}
+
+/** Current-screen recording freezes the app the operator chose by recording there. */
+export function authoringOriginApplication(session: AuthoringSession): string | undefined {
+  if (session.originApplication) return session.originApplication;
+  if (session.target.platform !== "android" || !session.take) return undefined;
+  const before = currentRevision(session).before;
+  return before && hasCurrentAuthoringSemantics(before.proof) ? before.foregroundApp : undefined;
 }

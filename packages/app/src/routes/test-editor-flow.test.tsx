@@ -256,6 +256,8 @@ async function fill(input: HTMLInputElement | HTMLTextAreaElement, value: string
 }
 
 async function click(label: string) {
+  if (label === "Write a step" || label === "Add a check") await click("Add step");
+  if (label === "Run settings") await click("More Test actions");
   const target = [...document.querySelectorAll<HTMLElement>('button, a, [role="menuitem"]')].find(
     (candidate) =>
       candidate.textContent?.trim() === label || candidate.getAttribute("aria-label") === label,

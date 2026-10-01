@@ -4,7 +4,7 @@ import { TestRunHistory } from "./test-run-history";
 import { TestStepsOutline } from "./test-steps-outline";
 import { flattenSteps } from "./saved-test-steps";
 import { TestEditor, recentAccountIds } from "./edit-test-page";
-import { TestEditorBrowserPane, type PreparedBrowserRecording } from "./test-editor-browser-pane";
+import type { PreparedBrowserRecording } from "./test-editor-browser-pane";
 import { rememberRecordingInto } from "../data/record-into-test";
 import { writeWorkflowPointer } from "../data/workflow-pointer";
 import { recordingQueryKeys } from "../data/recording-queries";
@@ -20,11 +20,10 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { type MouseEvent, useCallback, useEffect, useRef, useState } from "react";
 import { EmptyState } from "../components/product-patterns";
-import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
 import { runQueryKeys } from "../data/run-queries";
 import { AmbiguousTestError } from "../data/run-product-service";
 import { ChooseTestApp } from "./choose-test-app";
-import { TestLastRunLine, TestLastRunStage, latestRunOf } from "./test-last-run";
+import { TestLastRunLine, latestRunOf } from "./test-last-run";
 import { readRunPointer, writeRunPointer } from "../data/run-pointer";
 import {
   stabilitySamplesFromRuns,
@@ -47,7 +46,7 @@ import { currentTestOutlineCopy } from "../data/workbench-step-selection";
 import { ReviewRecordingPage } from "./review-recording-page";
 import { TestRunSettings } from "./test-run-settings";
 import { TestWorkspaceActions } from "./test-workspace-actions";
-import { TestStage } from "./test-stage";
+import { TestWorkspaceStage } from "./test-stage";
 import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/tests/$testId");
@@ -73,6 +72,7 @@ export function TestPage() {
   const reviewRecordingId = useTestDocumentReview(platform, search.view);
   const navigate = useNavigate({ from: "/tests/$testId" });
   const [setupAnchor, setSetupAnchor] = useState<HTMLElement | null>(null);
+  const [devicePreviewBusy, setDevicePreviewBusy] = useState(false);
   const [preparedBrowserState, setPreparedBrowserState] = useState<
     (PreparedBrowserRecording & { testId: string }) | undefined
   >();
@@ -142,6 +142,7 @@ export function TestPage() {
     queryKey: runQueryKeys.targets,
     queryFn: () => runService.listTargets(),
     staleTime: 5_000,
+    refetchInterval: 5_000,
   });
   const builds = useQuery({
     queryKey: ["run-config", "builds"],
@@ -217,9 +218,6 @@ export function TestPage() {
   const profileBlocker = admission.blockers.find((item) => item.id === "saved-profile");
   const paired = usePairedConfigurationWorkspace(platform);
   const usePairs = configuration.selection.usePairedWorkspace === true;
-  // The resolved configuration determines the meaning of everything a Run
-  // produces, so it stays visible beside Run — not folded into a hidden
-  // settings popover (product direction: one configuration contract).
   const selectedProfile = profiles.data?.find(
     (profile) => profile.id === configuration.selection.savedProfileId,
   );
@@ -323,15 +321,25 @@ export function TestPage() {
     staleTime: 5_000,
     enabled: Boolean(test.data?.appMapId),
   });
+  const recordedPlatform =
+    profiles.data?.find((profile) => profile.id === test.data?.recordedProfileId)?.platform ??
+    (editorDocument.data?.recordedPlatforms?.length === 1
+      ? editorDocument.data.recordedPlatforms[0]
+      : undefined);
+  const deviceTest =
+    selectedTarget?.kind === "device" ||
+    (!selectedTarget && (recordedPlatform === "android" || recordedPlatform === "ios"));
   // Record more steps into this Test, after the selected step, as its login.
   const record = useMutation({
     mutationFn: async () => {
       if (!test.data || (!preparedBrowser && !targetReady))
-        throw new TypeError("Choose a ready browser first.");
+        throw new TypeError("Choose a ready device or browser first.");
       if (preparedBrowser && !preparedBrowser.sessionId)
         throw new TypeError("Wait for the live browser to connect before recording.");
       if (preparedBrowser?.busy)
         throw new TypeError("Wait for the current browser action to finish before recording.");
+      if (devicePreviewBusy)
+        throw new TypeError("Wait for the current device action to finish before recording.");
       const afterStepId = test.data.steps?.some((step) => step.id === evidenceStepId)
         ? evidenceStepId
         : undefined;
@@ -496,7 +504,10 @@ export function TestPage() {
         activeRun={Boolean(activeRun)}
         attachedRunId={attachedRunId}
         recordDisabled={
-          record.isPending || Boolean(preparedBrowser?.busy) || (!preparedBrowser && !targetReady)
+          record.isPending ||
+          devicePreviewBusy ||
+          Boolean(preparedBrowser?.busy) ||
+          (!preparedBrowser && !targetReady)
         }
         recordPending={record.isPending}
         recordStepSelected={Boolean(evidenceStepId)}
@@ -646,31 +657,23 @@ export function TestPage() {
               }
               onSelectedStepChange={(step) => setEvidenceStepId(step ?? "")}
               stage={
-                <TestStage
+                <TestWorkspaceStage
                   key={testId}
-                  recorded={
-                    selectedEvidenceStep?.recordingFrames?.length ? (
-                      <TestStepEvidencePreview
-                        key={selectedEvidenceStep.id}
-                        step={selectedEvidenceStep}
-                        report={undefined}
-                        hasRuns={false}
-                        loading={false}
-                      />
-                    ) : (
-                      <TestLastRunStage run={latestRunOf(recentRuns.data)} />
-                    )
-                  }
-                  live={
-                    editorDocument.data ? (
-                      <TestEditorBrowserPane
-                        appMapId={editorDocument.data.appMapId}
-                        startUrl={editorDocument.data.test.originApplication}
-                        browserTargetIds={editorDocument.data.browserTargetIds}
-                        recentAccountIds={recentAccountIds(recentRuns.data)}
-                        onPreparedBrowserChange={setPreparedBrowser}
-                      />
-                    ) : null
+                  step={selectedEvidenceStep}
+                  lastRun={latestRunOf(recentRuns.data)}
+                  deviceTest={deviceTest}
+                  target={selectedTarget}
+                  onDeviceBusyChange={setDevicePreviewBusy}
+                  browser={
+                    editorDocument.data
+                      ? {
+                          appMapId: editorDocument.data.appMapId,
+                          startUrl: editorDocument.data.test.originApplication,
+                          browserTargetIds: editorDocument.data.browserTargetIds,
+                          recentAccountIds: recentAccountIds(recentRuns.data),
+                          onPreparedBrowserChange: setPreparedBrowser,
+                        }
+                      : undefined
                   }
                 />
               }

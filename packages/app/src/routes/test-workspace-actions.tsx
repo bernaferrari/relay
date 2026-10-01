@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { TestWorkspaceHeader } from "../components/test-workspace";
 import { Button } from "@relay/ui-react/components/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@relay/ui-react/components/popover";
+import { Popover, PopoverContent } from "@relay/ui-react/components/popover";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -97,49 +97,31 @@ export function TestWorkspaceActions({
                 <Play aria-hidden="true" />
                 {startPending ? "Starting…" : profileBlocked ? "Fix setup" : "Run"}
               </Button>
-              <Popover open={settingsOpen} onOpenChange={onSettingsOpen}>
-                <PopoverTrigger
-                  ref={configurationTriggerRef}
-                  render={
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label="Run settings"
-                      title={configurationLabel}
-                    />
-                  }
-                >
-                  <SlidersHorizontal aria-hidden="true" />
-                </PopoverTrigger>
-                <PopoverContent
-                  align="end"
-                  className="max-h-[min(640px,80dvh)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto p-0"
-                  aria-label="Run settings"
-                >
-                  {runSettings}
-                </PopoverContent>
-              </Popover>
             </div>
           )}
-          {!activeRun && testPresent ? (
-            <Button
-              nativeButton={false}
-              variant="ghost"
-              size="sm"
-              render={<Link to="/tests/$testId/run-across" params={{ testId }} />}
-            >
-              Run across…
-            </Button>
-          ) : null}
-          {attachedRunId || hasRecentRuns ? (
+          {testPresent || attachedRunId || hasRecentRuns ? (
             <DropdownMenu>
               <DropdownMenuTrigger
-                render={<Button variant="ghost" size="sm" />}
+                ref={configurationTriggerRef}
+                render={<Button variant="ghost" size="icon-sm" />}
                 aria-label="More Test actions"
+                title={configurationLabel}
               >
-                <MoreHorizontal aria-hidden="true" /> More
+                <MoreHorizontal aria-hidden="true" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
+                {!activeRun && testPresent ? (
+                  <>
+                    <DropdownMenuItem onClick={() => onSettingsOpen(true)}>
+                      <SlidersHorizontal aria-hidden="true" /> Run settings
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      render={<Link to="/tests/$testId/run-across" params={{ testId }} />}
+                    >
+                      Run across…
+                    </DropdownMenuItem>
+                  </>
+                ) : null}
                 {attachedRunId ? (
                   <DropdownMenuItem
                     render={<Link to="/runs/$runId" params={{ runId: attachedRunId }} />}
@@ -153,6 +135,17 @@ export function TestWorkspaceActions({
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
+          <Popover open={settingsOpen} onOpenChange={onSettingsOpen}>
+            <PopoverContent
+              anchor={configurationTriggerRef}
+              finalFocus={configurationTriggerRef}
+              align="end"
+              className="max-h-[min(640px,80dvh)] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto p-0"
+              aria-label="Run settings"
+            >
+              {runSettings}
+            </PopoverContent>
+          </Popover>
         </>
       }
     />
