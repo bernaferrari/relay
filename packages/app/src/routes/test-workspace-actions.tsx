@@ -14,6 +14,7 @@ import type { MouseEvent, ReactNode, RefObject } from "react";
 
 export function TestWorkspaceActions({
   testId,
+  appMapId,
   testName,
   testPresent,
   inPlan,
@@ -35,6 +36,7 @@ export function TestWorkspaceActions({
   onHistoryOpen,
 }: {
   testId: string;
+  appMapId?: string;
   testName?: string;
   testPresent: boolean;
   inPlan: boolean;
@@ -60,7 +62,11 @@ export function TestWorkspaceActions({
       title={testName ?? "Test"}
       context={
         !inPlan ? (
-          <Link to="/tests" className="inline-flex items-center gap-1 hover:text-foreground">
+          <Link
+            to="/tests"
+            search={{ app: appMapId }}
+            className="inline-flex items-center gap-1 hover:text-foreground"
+          >
             <ChevronLeft className="size-4" aria-hidden="true" /> Tests
           </Link>
         ) : undefined
@@ -116,7 +122,13 @@ export function TestWorkspaceActions({
                       <SlidersHorizontal aria-hidden="true" /> Run settings
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      render={<Link to="/tests/$testId/run-across" params={{ testId }} />}
+                      render={
+                        <Link
+                          to="/tests/$testId/run-across"
+                          params={{ testId }}
+                          search={{ app: appMapId }}
+                        />
+                      }
                     >
                       Run across…
                     </DropdownMenuItem>

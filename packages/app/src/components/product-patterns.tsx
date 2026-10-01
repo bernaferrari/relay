@@ -34,7 +34,6 @@ export type BreadcrumbItem =
       label: string;
       to:
         | "/apps"
-        | "/tests"
         | "/suites"
         | "/environments"
         | "/sessions"
@@ -43,8 +42,9 @@ export type BreadcrumbItem =
         | "/devices"
         | "/home";
     }
+  | { label: string; to: "/tests"; search?: { app?: string } }
   | { label: string; to: "/apps/$appId"; params: { appId: string } }
-  | { label: string; to: "/tests/$testId"; params: { testId: string } }
+  | { label: string; to: "/tests/$testId"; params: { testId: string }; search?: { app?: string } }
   | { label: string };
 
 export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
@@ -70,6 +70,7 @@ export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
                   className="inline-flex items-center text-muted-foreground hover:text-foreground"
                   to={item.to}
                   params={item.params}
+                  search={"search" in item ? item.search : undefined}
                 >
                   {item.label}
                 </Link>
@@ -77,6 +78,7 @@ export function Breadcrumbs({ items }: { items: readonly BreadcrumbItem[] }) {
                 <Link
                   className="inline-flex items-center text-muted-foreground hover:text-foreground"
                   to={item.to}
+                  search={"search" in item ? item.search : undefined}
                 >
                   {item.label}
                 </Link>

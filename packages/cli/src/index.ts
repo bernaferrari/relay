@@ -42,6 +42,7 @@ import { exportWatchedCombinePack, finalizeCombineExportResult } from "./evidenc
 import { emitScreenshot, emitSnapshotFile } from "./screenshot.js";
 import { persistScrollSurvey, scrollSurveyPersistDigest } from "./survey-persist.js";
 import { runDbCommand } from "./db-commands.js";
+import { runGuideCommand } from "./guide-command.js";
 import { runReportCommand } from "./report-commands.js";
 import { ensureLocalRelayServer, type LocalServerResult } from "./local-server.js";
 import { readReplayLabTracePacks } from "./replay-lab-files.js";
@@ -550,6 +551,10 @@ export async function runCli(
     }
   };
   try {
+    if (firstPositional(argv) === "guide") {
+      operationId = "local.guide";
+      return runGuideCommand(argv, streams);
+    }
     if (firstPositional(argv) === "db") {
       return await runDbCommand(argv, streams, dependencies.env ?? process.env);
     }

@@ -152,6 +152,7 @@ Everyday tasks:
   Review what changed     relay review [--app <appId>]   (a looks correct · r report · o open)
   Export the evidence     relay export <runId> --out ./review
   Check the local server  relay doctor
+  Read a task guide       relay guide [start|record|run|targets|waits|debug|review|maps|agents]
 
 Full command reference:
   relay review [--app <appId>]

@@ -643,6 +643,143 @@ describe("Run and Report", () => {
     expect(preview).not.toHaveBeenCalled();
   });
 
+  it("keeps colliding Test IDs scoped to the selected App through setup, cache, and return links", async () => {
+    const fake = fakeRunService();
+    const original = await fake.service.getTest("test-1");
+    const getTest = vi.fn(async (id: string, app?: string) => ({
+      ...original!,
+      id,
+      appMapId: app!,
+      name: `${app} Test`,
+    }));
+    fake.service.getTest = getTest;
+    const getSetup = vi.fn(async (appMapId: string, testId: string) => ({
+      appMapId,
+      appMapRevision: 1,
+      testId,
+      testName: `${appMapId} Test`,
+      appName: appMapId,
+      dataSet: { name: "Languages", dimensions: [] },
+    }));
+    const runAcross = {
+      getSetup,
+      preview: vi.fn(),
+      startPilot: vi.fn(),
+    } as unknown as RunAcrossProductService;
+    const { history } = await renderRun(
+      "/tests/test-1/run-across?app=first-app",
+      fake.service,
+      platformWithStorage().platform,
+      runAcross,
+    );
+    expect(getTest).toHaveBeenCalledWith("test-1", "first-app");
+    expect(getSetup).toHaveBeenCalledWith("first-app", "test-1");
+    expect(
+      document.querySelector<HTMLAnchorElement>('nav[aria-label="Breadcrumb"] a')?.href,
+    ).toContain("app=first-app");
+    expect(
+      document.querySelector<HTMLAnchorElement>('nav[aria-label="Breadcrumb"] a[href*="test-1"]')
+        ?.href,
+    ).toContain("app=first-app");
+    expect(document.querySelector<HTMLAnchorElement>('a[href*="setup=run"]')?.href).toContain(
+      "app=first-app",
+    );
+    await act(async () => history.push("/tests/test-1/run-across?app=second-app"));
+    await settle();
+    expect(getTest).toHaveBeenCalledWith("test-1", "second-app");
+    expect(getSetup).toHaveBeenCalledWith("second-app", "test-1");
+    expect(document.body.textContent).toContain("second-app Test");
+    expect(document.querySelector<HTMLAnchorElement>('a[href*="setup=run"]')?.href).toContain(
+      "app=second-app",
+    );
+  });
+
+  it.each(["empty", "missing-account", "profiles-offline"])(
+    "blocks %s saved pairs instead of using the remembered ordinary target",
+    async (problem) => {
+      const fake = fakeRunService();
+      fake.service.listProfiles = async () => {
+        if (problem === "profiles-offline") throw new Error("Profiles offline");
+        return [];
+      };
+      const preview = vi.fn(() => ({ caseCount: 1, scopeLabel: "Wrong fallback" }));
+      const startPilot = vi.fn();
+      const runAcross = {
+        getSetup: async () => ({
+          appMapId: "settings-language-proof",
+          appMapRevision: 1,
+          testId: "test-1",
+          testName: "Language",
+          appName: "Settings",
+          dataSet: {
+            name: "Languages",
+            dimensions: [
+              { id: "language", name: "Language", values: [{ id: "en", label: "English" }] },
+            ],
+          },
+        }),
+        preview,
+        startPilot,
+      } as unknown as RunAcrossProductService;
+      const key = runConfigurationStorageKey({
+        server: "http://127.0.0.1:8787",
+        appId: "settings-language-proof",
+        entity: "test:test-1",
+      });
+      await renderRun(
+        "/tests/test-1/run-across",
+        fake.service,
+        platformWithStorage({
+          [key]: JSON.stringify({
+            usePairedWorkspace: true,
+            targetProfileId: "emulator-5554",
+            dataSetIds: [JSON.stringify(["language", "en"])],
+          }),
+          [PAIRED_CONFIGURATION_STORAGE_KEY]: JSON.stringify({
+            schemaVersion: 1,
+            updatedAt: 1,
+            rows:
+              problem === "empty"
+                ? []
+                : [
+                    {
+                      id: "missing-row",
+                      name: "Member",
+                      browserId: "browser-golden",
+                      browserName: "Checkout browser",
+                      engine: "chromium",
+                      accountId: "missing",
+                      accountRevision: "1",
+                    },
+                  ],
+          }),
+        }).platform,
+        runAcross,
+      );
+      if (problem === "profiles-offline") {
+        await vi.waitFor(
+          async () => {
+            await settle();
+            expect(document.body.textContent).toContain("Browser and Account pairs unavailable");
+          },
+          { timeout: 3_000 },
+        );
+      }
+      expect(document.body.textContent).toContain("Browser and Account pairs unavailable");
+      expect(document.body.textContent).toContain(
+        problem === "empty"
+          ? "Save at least one Browser and Account pair."
+          : problem === "profiles-offline"
+            ? "Saved Browser profiles are unavailable."
+            : "Relay has no saved profile for this Browser and Account pair.",
+      );
+      expect(button("Run selected cases").disabled).toBe(true);
+      expect(preview).not.toHaveBeenCalled();
+      await click(button("Run selected cases"));
+      expect(startPilot).not.toHaveBeenCalled();
+    },
+  );
+
   it("asks for saved pairs when Run Across has no data and one browser is chosen", async () => {
     const fake = fakeRunService();
     const preview = vi.fn((input) => ({
