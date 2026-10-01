@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { Tabs, TabsList, TabsTrigger } from "@relay/ui-react/components/tabs";
-import { Check } from "lucide-react";
+import { Info, SquareCheck } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
+import { Checkbox } from "@relay/ui-react/components/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@relay/ui-react/components/popover";
 import {
   captureReviewAdvanceIndex,
   decidedByReference,
@@ -185,7 +187,7 @@ export function CaptureReviewPanel({
         if (
           target instanceof Element &&
           target.closest(
-            'input, textarea, select, button, a, [role="tab"], [role="combobox"], [contenteditable="true"], [role="dialog"]',
+            'input, textarea, select, button, a, [role="tab"], [role="combobox"], [role="checkbox"], [contenteditable="true"], [role="dialog"]',
           )
         )
           return;
@@ -250,14 +252,16 @@ export function CaptureReviewPanel({
         {!showImage && canSelect ? (
           <Button
             size="sm"
-            variant="ghost"
-            className="w-fit"
+            variant={selecting ? "secondary" : "outline"}
+            className="min-h-11 w-full justify-center"
+            aria-pressed={selecting}
             disabled={busy}
             onClick={() => {
               setSelecting(!selecting);
               setSelectedIds(new Set());
             }}
           >
+            <SquareCheck className="size-4" />
             {selecting ? "Done selecting" : "Select screenshots"}
           </Button>
         ) : null}
@@ -290,7 +294,7 @@ export function CaptureReviewPanel({
               ? "grid grid-cols-1 items-start gap-x-4 gap-y-5 p-0.5 sm:grid-cols-2"
               : showImage
                 ? "flex gap-2 overflow-x-auto p-0.5 lg:grid lg:max-h-[min(60vh,36rem)] lg:overflow-y-auto"
-                : "grid max-h-[min(45vh,24rem)] gap-2 overflow-y-auto p-0.5"
+                : "grid gap-2 p-0.5"
           }
           aria-label="Screenshots for review"
         >
@@ -306,33 +310,22 @@ export function CaptureReviewPanel({
                 className={`relative min-w-0 ${showImage && !gallery ? "w-72 shrink-0 lg:w-auto" : ""}`}
               >
                 {showSelection && reviewable(item) ? (
-                  <label
-                    className={`absolute start-0 z-10 flex size-10 items-center justify-center ${gallery ? "top-0 start-0 cursor-pointer" : "top-1/2 -translate-y-1/2"}`}
+                  <div
+                    className={`absolute end-1 z-10 flex size-11 items-center justify-center ${gallery ? "top-1" : "top-1/2 -translate-y-1/2"}`}
                   >
-                    <span className="sr-only">Select {caption(item, index)}</span>
-                    <input
-                      type="checkbox"
-                      role="checkbox"
+                    <Checkbox
                       aria-label={`Select ${caption(item, index)}`}
-                      aria-checked={selectedIds.has(key)}
-                      className="peer sr-only"
+                      className="size-5 border-muted-foreground/60 bg-card shadow-none after:-inset-3 dark:bg-card"
                       checked={selectedIds.has(key)}
                       disabled={busy}
-                      onChange={(event) => toggleSelected(key, event.target.checked)}
-                      onClick={(event) => event.stopPropagation()}
+                      onCheckedChange={(checked) => toggleSelected(key, checked)}
                     />
-                    <span
-                      aria-hidden="true"
-                      className="flex size-6 items-center justify-center rounded-full border border-black/20 bg-white/95 text-transparent shadow-sm transition-colors peer-checked:border-info peer-checked:bg-info peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-info peer-focus-visible:ring-offset-2"
-                    >
-                      <Check className="size-3.5" strokeWidth={2.5} />
-                    </span>
-                  </label>
+                  </div>
                 ) : null}
                 <button
                   type="button"
                   aria-pressed={gallery ? undefined : index === selectedIndex}
-                  className={`${gallery ? "" : " cursor-pointer hover:bg-accent"} flex min-h-20 w-full gap-3 rounded-lg text-left transition-colors focus-visible:outline-2 ${gallery ? "flex-col overflow-hidden pb-1" : `items-center py-3 pr-3 ${showSelection ? "pl-10" : "pl-3"}`} ${index === selectedIndex ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
+                  className={`${gallery ? "" : " cursor-pointer hover:bg-accent"} flex min-h-20 w-full gap-3 rounded-lg text-left transition-colors focus-visible:outline-2 focus-visible:outline-ring ${gallery ? "flex-col overflow-hidden pb-1" : `items-center py-3 pl-3 ${showSelection ? "pr-12" : "pr-3"}`} ${index === selectedIndex ? "bg-accent ring-1 ring-inset ring-border" : ""}`}
                   aria-label={gallery ? `Inspect ${caption(item, index)}` : undefined}
                   onClick={() => {
                     onSelect(index);
@@ -357,7 +350,9 @@ export function CaptureReviewPanel({
                     </span>
                   )}
                   <span className={`grid min-w-0 gap-1 ${gallery ? "w-full px-0.5" : ""}`}>
-                    <span className="truncate text-sm font-medium">{caption(item, index)}</span>
+                    <span className="line-clamp-2 text-sm font-medium leading-5">
+                      {caption(item, index)}
+                    </span>
                     <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground">
                       {place ? (
                         <>
@@ -425,18 +420,41 @@ export function CaptureReviewPanel({
           selectedMeta.runId ||
           configuration.length ||
           selected.caption !== caption(selected, selectedIndex) ? (
-            <details className="order-last text-xs text-muted-foreground">
-              <summary className="w-fit cursor-pointer py-1">Capture details</summary>
-              {configuration.length ? (
-                <p className="break-all">{configuration.join(" · ")}</p>
-              ) : null}
-              <p className="break-all">Capture: {selected.caption}</p>
-              {selectedMeta.runId ? <p className="break-all">Run: {selectedMeta.runId}</p> : null}
-              {selected.framePath ? (
-                <p className="break-all">Full image: {selected.framePath}</p>
-              ) : null}
-              {selected.attempt ? <p>Attempt {selected.attempt}</p> : null}
-            </details>
+            <div className="order-last border-t border-border/60 pt-3">
+              <Popover>
+                <PopoverTrigger
+                  render={
+                    <Button variant="outline" size="sm" className="min-h-11 w-full justify-start" />
+                  }
+                >
+                  <Info className="size-4 text-muted-foreground" />
+                  Capture details
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  side="top"
+                  className="max-h-[70dvh] w-80 max-w-[calc(100vw-2rem)] overflow-auto p-4"
+                >
+                  <h3 className="text-sm font-medium">Capture details</h3>
+                  <dl className="grid gap-3 text-xs leading-5">
+                    {[
+                      ["Configuration", configuration.join(" · ")],
+                      ["Capture", selected.caption],
+                      ["Run", selectedMeta.runId],
+                      ["Full image", selected.framePath],
+                      ["Attempt", selected.attempt ? String(selected.attempt) : undefined],
+                    ].map(([label, value]) =>
+                      value ? (
+                        <div key={label} className="space-y-0.5">
+                          <dt className="text-muted-foreground">{label}</dt>
+                          <dd className="wrap-anywhere">{value}</dd>
+                        </div>
+                      ) : null,
+                    )}
+                  </dl>
+                </PopoverContent>
+              </Popover>
+            </div>
           ) : null}
           {(showImage && (selected.status !== "pending" || !onReview)) ||
           selected.status === "missing" ||
@@ -465,12 +483,11 @@ export function CaptureReviewPanel({
           ) : null}
           {selected.note ? <p className="text-sm">{selected.note}</p> : null}
           {selected.masks?.length && onShowMasksChange ? (
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                className="size-3.5 accent-foreground"
+            <label className="flex min-h-11 cursor-pointer items-center gap-3 text-xs text-muted-foreground">
+              <Checkbox
+                className="size-5 after:-inset-3"
                 checked={Boolean(showMasks)}
-                onChange={(event) => onShowMasksChange(event.target.checked)}
+                onCheckedChange={onShowMasksChange}
               />
               Show review overlays
             </label>

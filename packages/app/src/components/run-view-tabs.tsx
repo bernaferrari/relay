@@ -19,16 +19,25 @@ export function RunViewTabs({ report }: { report: ProductRunReportOverview }) {
       : []),
   ];
   return (
-    <TabsList
-      variant="line"
-      className="h-12 w-full shrink-0 justify-start gap-3 overflow-x-auto border-y border-border px-5"
-      aria-label="Run views"
+    <div
+      className="shrink-0 overflow-x-auto overflow-y-hidden border-y border-border"
+      data-slot="run-view-tabs"
     >
-      {views.map(([value, label]) => (
-        <TabsTrigger key={value} value={value} className="h-10 flex-none px-2 after:bottom-0">
-          {label}
-        </TabsTrigger>
-      ))}
-    </TabsList>
+      <TabsList
+        variant="line"
+        className="group-data-horizontal/tabs:h-12 w-max min-w-full justify-start gap-3 px-5 py-0"
+        aria-label="Run views"
+      >
+        {views.map(([value, label]) => (
+          <TabsTrigger
+            key={value}
+            value={value}
+            className="h-11 flex-none px-2 transition-colors after:bottom-0"
+          >
+            {label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+    </div>
   );
 }
