@@ -1,4 +1,5 @@
 import type { LogicalScrollSurface, ScreenConsolidationPreview, StepTarget } from "@relay/protocol";
+import { mergeScreenIdentity } from "./same-screen-identity.js";
 import { appMapFail } from "./errors.js";
 import type {
   ActionSpec,
@@ -20,6 +21,7 @@ export type ConsolidateScreensInput = {
   sourceScreenIds: string[];
   targetTitle?: string;
   importedSurface?: LogicalScrollSurface;
+  mode?: "scroll-surface" | "same-screen";
 };
 
 function revealPlan(
@@ -292,6 +294,10 @@ export function previewScreenConsolidation(
   map: AppMap,
   input: ConsolidateScreensInput,
 ): ScreenConsolidationPreview {
+  if (input.mode !== undefined && input.mode !== "same-screen" && input.mode !== "scroll-surface")
+    appMapFail("invalid-map", "Unknown screen consolidation mode");
+  if (input.mode === "same-screen" && input.importedSurface)
+    appMapFail("invalid-map", "Same-screen merging cannot import a scroll surface");
   identifier(input.targetScreenId, "screen consolidation targetScreenId");
   if (input.targetTitle !== undefined)
     requiredText(input.targetTitle, "screen consolidation targetTitle", 240);
@@ -337,7 +343,7 @@ export function previewScreenConsolidation(
     const fromMerged = all.has(connection.fromScreenId);
     const toMerged =
       connection.destination.kind === "screen" && all.has(connection.destination.screenId);
-    if (fromMerged && toMerged) {
+    if (fromMerged && toMerged && input.mode !== "same-screen") {
       removedSelfLoopConnectionIds.push(connection.id);
       continue;
     }
@@ -349,7 +355,9 @@ export function previewScreenConsolidation(
         if (clone.return) clone.return.expectedDestination.screenId = input.targetScreenId;
       }
       const target = semanticTarget(connection);
-      if (!target)
+      if (input.mode === "same-screen") {
+        // Recorded actions between states remain executable self loops.
+      } else if (!target)
         blockers.push({
           code: "semantic-reveal-required",
           message: `Connection ${connection.id} cannot be made viewport-independent because its first interaction has no semantic tap target`,
@@ -406,7 +414,7 @@ export function previewScreenConsolidation(
   const distinctViewportEvidence = new Set(
     evidenceBackedVariants.map((variant) => [...variant.evidenceIds].sort().join("\u0000")),
   );
-  if (!input.importedSurface && distinctViewportEvidence.size > 1)
+  if (input.mode !== "same-screen" && !input.importedSurface && distinctViewportEvidence.size > 1)
     blockers.push({
       code: "logical-surface-required",
       message:
@@ -568,6 +576,11 @@ export function consolidateAppMapScreens(
         ]),
       );
       const targetScreen = draft.screens[input.targetScreenId]!;
+      if (input.mode === "same-screen")
+        mergeScreenIdentity(
+          targetScreen,
+          preview.sourceScreenIds.map((id) => draft.screens[id]!),
+        );
       if (input.targetTitle !== undefined) targetScreen.title = input.targetTitle.trim();
       targetScreen.consolidations = [
         ...(targetScreen.consolidations ?? []),
@@ -635,7 +648,8 @@ export function consolidateAppMapScreens(
         if (
           all.has(connection.fromScreenId) &&
           connection.destination.kind === "screen" &&
-          all.has(connection.destination.screenId)
+          all.has(connection.destination.screenId) &&
+          input.mode !== "same-screen"
         ) {
           delete draft.connections[connection.id];
           continue;
@@ -646,15 +660,15 @@ export function consolidateAppMapScreens(
             if (connection.return)
               connection.return.expectedDestination.screenId = input.targetScreenId;
           }
-          const plan = revealPlan(connection)!;
+          const plan = input.mode === "same-screen" ? undefined : revealPlan(connection)!;
           const alreadyRevealed = connection.actions
-            .slice(0, plan.actionIndex)
+            .slice(0, plan?.actionIndex ?? 0)
             .some((action) => action.kind === "reveal");
-          if (!alreadyRevealed)
-            connection.actions.splice(plan.actionIndex, 0, {
+          if (input.mode !== "same-screen" && !alreadyRevealed)
+            connection.actions.splice(plan!.actionIndex, 0, {
               id: `${context.eventId}-reveal-${connection.id}`,
               kind: "reveal",
-              target: plan.target,
+              target: plan!.target,
               direction: "auto",
               maxAttempts: 16,
             });

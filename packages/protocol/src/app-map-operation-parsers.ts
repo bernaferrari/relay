@@ -467,6 +467,10 @@ export function createAppMapOperationParsers(dependencies: AppMapParserDependenc
     if (input.dryRun !== undefined) boolean(input.dryRun, "screen consolidation dryRun");
     if (input.targetTitle !== undefined)
       string(input.targetTitle, "screen consolidation targetTitle");
+    if (input.mode !== undefined && input.mode !== "scroll-surface" && input.mode !== "same-screen")
+      fail("screen consolidation mode", "must be scroll-surface or same-screen");
+    if (input.mode === "same-screen" && input.surfaceImport !== undefined)
+      fail("screen consolidation surfaceImport", "cannot be used for same-screen merging");
     if (input.surfaceImport !== undefined) {
       const surface = record(input.surfaceImport, "screen consolidation surfaceImport");
       number(surface.schemaVersion, "screen consolidation surfaceImport schemaVersion");

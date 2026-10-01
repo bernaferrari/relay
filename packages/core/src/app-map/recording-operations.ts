@@ -1,3 +1,4 @@
+import { equivalentScreenCapture } from "./equivalent-screen-capture.js";
 import { createHash } from "node:crypto";
 import type {
   AuthoringAction,
@@ -104,13 +105,18 @@ function findObservedScreen(map: AppMap, observation?: AuthoringObservation): Sc
     (value): value is string => Boolean(value),
   );
   if (!fingerprints.length) return undefined;
-  return Object.values(map.screens).find((screen) =>
+  const matches = Object.values(map.screens).filter((screen) =>
     fingerprints.some(
       (fingerprint) =>
         screen.identity?.fingerprint === fingerprint ||
         screen.identity?.aliases?.includes(fingerprint),
     ),
   );
+  return matches.length === 1
+    ? matches[0]
+    : matches.length
+      ? undefined
+      : equivalentScreenCapture(map, observation);
 }
 
 function screenOwnsFingerprint(map: AppMap, fingerprint: string, screenId: string): boolean {

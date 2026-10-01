@@ -1138,6 +1138,17 @@ test("browser capture-plan uses shared connection and JSON input parsing", () =>
   assert.equal(parsed.config.output, "json");
 });
 
+test("the advertised walkthrough export accepts --out", () => {
+  const parsed = parseCli(
+    ["--out", "/tmp/relay-review", "run", "walkthrough-pack", "get", "run-1"],
+    {},
+  );
+  assert.equal(parsed.command, "invoke");
+  if (parsed.command !== "invoke") return;
+  assert.equal(parsed.operationId, "run.walkthrough-pack.get");
+  assert.equal(parsed.outDir, "/tmp/relay-review");
+});
+
 test("--out is accepted on run verbs and rejected elsewhere", () => {
   const run = parseCli(
     ["test", "run", "checkout", "smoke", "--out", "/tmp/relay-out", "--json"],

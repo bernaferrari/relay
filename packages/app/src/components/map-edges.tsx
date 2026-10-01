@@ -358,38 +358,37 @@ export function MapEdges({
         sharedJunction ? 1 : directionSiblings.length,
         branchEnd,
       );
-    if (!returning)
-      points = avoidPreviewObstacles(
-        points,
-        [...positions]
-          .filter(([id]) => id !== path.fromScreenId && id !== path.toScreenId)
-          .flatMap(([id, point]) => {
-            const image = containedImageRect(
-              {
-                x: point.x,
-                y: point.y + node.titleHeight + node.gap,
-                width: node.width,
-                height: node.imageHeight,
-              },
-              imageDimensions.get(id) ?? { width: node.width, height: node.imageHeight },
-              "top",
-            )!;
-            return [
-              {
-                x: image.x - 10,
-                y: image.y - 10,
-                width: image.width + 20,
-                height: image.height + 20,
-              },
-              {
-                x: point.x - 8,
-                y: point.y - 8,
-                width: node.width + 16,
-                height: node.titleHeight + 16,
-              },
-            ];
-          }),
-      );
+    points = avoidPreviewObstacles(
+      points,
+      [...positions]
+        .filter(([id]) => id !== path.fromScreenId && id !== path.toScreenId)
+        .flatMap(([id, point]) => {
+          const image = containedImageRect(
+            {
+              x: point.x,
+              y: point.y + node.titleHeight + node.gap,
+              width: node.width,
+              height: node.imageHeight,
+            },
+            imageDimensions.get(id) ?? { width: node.width, height: node.imageHeight },
+            "top",
+          )!;
+          return [
+            {
+              x: image.x - 10,
+              y: image.y - 10,
+              width: image.width + 20,
+              height: image.height + 20,
+            },
+            {
+              x: point.x - 8,
+              y: point.y - 8,
+              width: node.width + 16,
+              height: node.titleHeight + 16,
+            },
+          ];
+        }),
+    );
     return [
       {
         path,
@@ -398,10 +397,7 @@ export function MapEdges({
         anchorRect,
         // A same-row return reads best as one shallow curve. Between rows the
         // curve would cut through the target screen; follow the corridor.
-        d:
-          returning && Math.abs(points[0]!.y - points.at(-1)!.y) < 40
-            ? quadraticReturn(points)
-            : roundedConnector(points),
+        d: roundedConnector(points),
         label: {
           x:
             returning?.label.x ??
@@ -499,7 +495,7 @@ export function MapEdges({
             data-state={state}
             role={onSelectPath ? "button" : undefined}
             tabIndex={onSelectPath ? 0 : undefined}
-            aria-label={`${geometry.path.fromTitle}: ${geometry.path.label}${geometry.path.toTitle ? ` → ${geometry.path.toTitle}` : ""}`}
+            aria-label={`${geometry.path.fromTitle}: ${geometry.path.label}${geometry.path.toTitle ? ` → ${geometry.path.toTitle}` : ""}${geometry.path.parallelPaths ? ` (${geometry.path.parallelPaths.length} paths)` : ""}`}
             aria-pressed={onSelectPath ? selectedPathId === geometry.path.id : undefined}
             onPointerEnter={() => setHoveredPathId(geometry.path.id)}
             onPointerLeave={() => setHoveredPathId(undefined)}
@@ -555,6 +551,14 @@ export function MapEdges({
               />
             ) : null}
             <path
+              data-slot="map-edge-clearance"
+              d={geometry.d}
+              fill="none"
+              stroke="var(--background)"
+              strokeWidth="6"
+              vectorEffect="non-scaling-stroke"
+            />
+            <path
               data-slot="map-edge-line"
               fill="none"
               stroke="currentColor"
@@ -574,7 +578,9 @@ export function MapEdges({
                 strokeWidth="1.5"
               />
             ) : null}
-            {!geometry.path.toScreenId ? (
+            {!geometry.path.toScreenId ||
+            geometry.path.id === activePathId ||
+            geometry.path.parallelPaths ? (
               <g
                 data-slot="map-edge-label"
                 className={onSelectPath ? "pointer-events-auto cursor-pointer" : undefined}
@@ -594,7 +600,11 @@ export function MapEdges({
                   textAnchor="middle"
                   className="fill-current font-sans text-xs font-medium"
                 >
-                  {geometry.path.label}
+                  {geometry.path.parallelPaths && geometry.path.id !== activePathId
+                    ? `${geometry.path.parallelPaths.length} paths`
+                    : geometry.path.label.length > 28 && geometry.path.toScreenId
+                      ? `${geometry.path.label.slice(0, 27)}…`
+                      : geometry.path.label}
                 </text>
                 {!geometry.path.toScreenId ? (
                   <text

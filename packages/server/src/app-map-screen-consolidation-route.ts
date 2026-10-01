@@ -45,6 +45,7 @@ export async function handleScreenConsolidationRoute({
     targetScreenId: route.targetScreenId!,
     sourceScreenIds: body.sourceScreenIds,
     targetTitle: body.targetTitle,
+    mode: body.mode,
   };
   let importedSurface: LogicalScrollSurface | undefined;
   if (body.surfaceImport) {

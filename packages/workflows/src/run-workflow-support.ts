@@ -196,9 +196,23 @@ export function selectDeviceTargetProfile(
     compiled,
     target.platform,
     target.targetId,
+    true,
   );
   const referenced = candidates.filter((profile) => referencedProfileIds.has(profile.id));
-  const eligible = referenced.length ? referenced : candidates;
+  let eligible = referenced.length ? referenced : candidates;
+  // Historical capture profiles can name the same physical setup differently.
+  // Collapse only complete, matching viewports with no conflicting device facts.
+  if (
+    eligible.length > 1 &&
+    eligible.every((profile) => profile.viewport) &&
+    new Set(eligible.map((profile) => `${profile.viewport!.width}x${profile.viewport!.height}`))
+      .size === 1 &&
+    (["model", "osVersion", "androidAvdName"] as const).every(
+      (key) =>
+        new Set(eligible.flatMap((profile) => (profile[key] ? [profile[key]] : []))).size <= 1,
+    )
+  )
+    eligible = [...eligible].sort((a, b) => a.id.localeCompare(b.id)).slice(0, 1);
   if (eligible.length !== 1) {
     throw new DeviceTargetProfileSelectionError(
       "This device matches more than one saved setup for this Test.",
@@ -517,6 +531,7 @@ function referencedTargetProfileIds(
   compiled: ValidCompile,
   platform: string,
   targetId: string,
+  requireEveryScreen = false,
 ): Set<string> {
   const expectedScreenIds = new Set<string>();
   for (const recipe of Object.values(compiled.plan.recipes ?? {})) {
@@ -525,11 +540,20 @@ function referencedTargetProfileIds(
     }
   }
   const referencedProfileIds = new Set<string>();
+  let firstReferencedScreen = true;
   for (const screenId of expectedScreenIds) {
+    const screenProfiles = new Set<string>();
     for (const variant of compiled.plan.rawAccessibilityVariantsByScreenId?.[screenId] ?? []) {
       if (variant.platform !== platform || variant.targetId !== targetId) continue;
-      referencedProfileIds.add(variant.targetProfileId);
+      screenProfiles.add(variant.targetProfileId);
     }
+    if (!screenProfiles.size) continue;
+    if (requireEveryScreen && !firstReferencedScreen) {
+      for (const profileId of referencedProfileIds) {
+        if (!screenProfiles.has(profileId)) referencedProfileIds.delete(profileId);
+      }
+    } else for (const profileId of screenProfiles) referencedProfileIds.add(profileId);
+    firstReferencedScreen = false;
   }
   return referencedProfileIds;
 }

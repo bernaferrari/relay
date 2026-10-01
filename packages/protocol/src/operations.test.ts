@@ -2393,3 +2393,18 @@ test("recording insertion reuses the validated interaction contract", () => {
     }),
   );
 });
+
+test("same-screen merge is discoverable and rejects scroll evidence or unknown modes", () => {
+  const definition = operationDefinition("app-map.screen.consolidate");
+  const input = {
+    appMapId: "grok",
+    targetScreenId: "home",
+    sourceScreenIds: ["keyboard"],
+    expectedRevision: 2,
+    dryRun: true,
+    mode: "same-screen",
+  };
+  assert.equal(definition.input.parse(input).mode, "same-screen");
+  assert.throws(() => definition.input.parse({ ...input, mode: "guess" }), /mode/);
+  assert.throws(() => definition.input.parse({ ...input, surfaceImport: {} }), /cannot be used/);
+});

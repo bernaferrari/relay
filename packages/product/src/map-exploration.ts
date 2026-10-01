@@ -7,6 +7,7 @@ import type {
   OperationOutput,
   Proposal,
   Screen,
+  ScreenVariant,
 } from "@relay/protocol";
 import { createRelayOperationPort, type RelayInvokeClient } from "@relay/workflows/operation-port";
 import { routeUrls } from "./routes.js";
@@ -27,6 +28,8 @@ export type ProductMapScreen = {
   readonly screenshotUri?: string;
   readonly accessibilityTreeUri?: string;
   readonly variantCount: number;
+  /** A saved flow starts here. Used to order navigation, never inferred from its title. */
+  readonly entryPoint?: boolean;
   /** Retained screenshot choices backed by canonical map evidence. */
   readonly variants: readonly ProductMapScreenVariant[];
   readonly coveringTests: readonly { readonly id: string; readonly name: string }[];
@@ -100,6 +103,11 @@ export type ProductMapService = {
   ): Promise<OperationOutput<"app-map.screen.refresh.prepare">>;
   applyRefresh?(input: OperationInput<"app-map.screen.refresh.apply">): Promise<ProductMapOverview>;
   get(appMapId: string): Promise<ProductMapOverview>;
+  consolidateScreens?(input: OperationInput<"app-map.screen.consolidate">): Promise<{
+    overview: ProductMapOverview;
+    preview: OperationOutput<"app-map.screen.consolidate">["preview"];
+    applied: boolean;
+  }>;
   updateScreen?(input: OperationInput<"app-map.screen.update">): Promise<ProductMapOverview>;
   /** Bounded drilldown over the same canonical App Map snapshot as `get`. */
   getScreen?(appMapId: string, screenId: string): Promise<ProductMapScreen | undefined>;
@@ -139,10 +147,33 @@ function canonicalScreenshotUri(
     : undefined;
 }
 
-function projectScreenVariants(screen: Screen, map: AppMap): readonly ProductMapScreenVariant[] {
-  return screen.variantIds
-    .map((id) => map.screenVariants?.[id])
-    .filter((variant): variant is NonNullable<typeof variant> => Boolean(variant))
+function retainedScreenVariants(screen: Screen, map: AppMap): ScreenVariant[] {
+  const variants = new Map<string, ScreenVariant>();
+  const retain = (variant: ScreenVariant | undefined) => {
+    if (
+      variant &&
+      (!variants.has(variant.id) || variants.get(variant.id)!.updatedAt < variant.updatedAt)
+    )
+      variants.set(variant.id, variant);
+  };
+  for (const id of screen.variantIds) retain(map.screenVariants?.[id]);
+  const pending = [screen];
+  for (let index = 0; index < pending.length; index++) {
+    for (const record of pending[index]!.consolidations ?? []) {
+      for (const variant of record.sourceVariants) retain(variant);
+      pending.push(...(record.sourceScreens ?? []));
+    }
+  }
+  return [...variants.values()].sort(
+    (a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id),
+  );
+}
+
+function projectScreenVariants(
+  captures: readonly ScreenVariant[],
+  map: AppMap,
+): readonly ProductMapScreenVariant[] {
+  return captures
     .map((variant) => {
       const screenshotUri = canonicalScreenshotUri(variant);
       if (!screenshotUri) return undefined;
@@ -177,12 +208,7 @@ function projectScreenVariants(screen: Screen, map: AppMap): readonly ProductMap
         ...(provenance?.locale ? { locale: provenance.locale } : {}),
       } satisfies ProductMapScreenVariant;
     })
-    .filter((variant): variant is ProductMapScreenVariant => Boolean(variant))
-    .sort((left, right) => {
-      const leftUpdatedAt = map.screenVariants[left.id]?.updatedAt ?? 0;
-      const rightUpdatedAt = map.screenVariants[right.id]?.updatedAt ?? 0;
-      return rightUpdatedAt - leftUpdatedAt || left.id.localeCompare(right.id);
-    });
+    .filter((variant): variant is ProductMapScreenVariant => Boolean(variant));
 }
 
 function projectMap(map: AppMap): ProductMapOverview {
@@ -219,7 +245,9 @@ function projectMap(map: AppMap): ProductMapOverview {
       ]);
   }
   const screens = Object.values(map.screens).map((screen: Screen) => {
-    const variants = projectScreenVariants(screen, map);
+    const captures = retainedScreenVariants(screen, map);
+    const variants = projectScreenVariants(captures, map);
+    const displayedCapture = captures.find((variant) => variant.screenshotUri);
     const covering = new Map<string, { id: string; name: string }>();
     for (const connection of Object.values(map.connections)) {
       const reachesScreen =
@@ -233,17 +261,13 @@ function projectMap(map: AppMap): ProductMapOverview {
       title: text(screen.title, "Known screen"),
       ...(screen.description ? { description: text(screen.description, "") } : {}),
       ...(screen.position ? { position: { x: screen.position.x, y: screen.position.y } } : {}),
-      screenshotUri: screen.variantIds
-        .map((id) => map.screenVariants?.[id])
-        .filter((variant) => Boolean(variant?.screenshotUri))
-        .sort((a, b) => b!.updatedAt - a!.updatedAt)[0]?.screenshotUri,
-      accessibilityTreeUri: screen.variantIds
-        .map((id) => map.screenVariants?.[id])
-        .filter((variant) => Boolean(variant?.screenshotUri))
-        .sort((a, b) => b!.updatedAt - a!.updatedAt)
-        .map((variant) => variant?.rawAccessibilityTree?.uri)[0],
-      variantCount: screen.variantIds.length,
+      screenshotUri: displayedCapture?.screenshotUri,
+      accessibilityTreeUri: displayedCapture?.rawAccessibilityTree?.uri,
+      variantCount: captures.length,
       variants,
+      ...(Object.values(map.flows ?? {}).some((flow) => flow.startScreenId === screen.id)
+        ? { entryPoint: true }
+        : {}),
       coveringTests: [...covering.values()],
       recentFailures: (failuresByScreen.get(screen.id) ?? []).slice(0, 8),
       ...(screen.identity?.ignoreRegions?.length
@@ -332,6 +356,14 @@ export function createProductMapService(client: RelayInvokeClient): ProductMapSe
   }
   return {
     get: getOverview,
+    async consolidateScreens(input) {
+      const result = await operations.invoke("app-map.screen.consolidate", input);
+      return {
+        overview: projectMap(result.appMap),
+        preview: result.preview,
+        applied: result.applied,
+      };
+    },
     prepareRefresh(input) {
       return operations.invoke("app-map.screen.refresh.prepare", input);
     },

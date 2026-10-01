@@ -1,3 +1,4 @@
+import { mapEntryScreenIds } from "./map-entry-screens";
 import { orderMapBranches } from "./map-branch-order";
 import { layoutMapGraph, separateMapScreens, reserveStraightConnections } from "./map-layout";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
@@ -127,10 +128,12 @@ export function layoutMapScreens(
   const positions = layoutMapGraph(
     screens.map((screen) => screen.id),
     orderMapBranches(
-      paths.filter(
-        (path) =>
-          path.toScreenId && !/^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),
-      ),
+      [...paths]
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .filter(
+          (path) =>
+            path.toScreenId && !/^(back|close|dismiss|return|cancel|disable)\b/i.test(path.label),
+        ),
       mode === "horizontal",
     )
       .filter(
@@ -141,6 +144,7 @@ export function layoutMapScreens(
     mode === "horizontal" ? 600 : mode === "staggered" ? 560 : node.width + 160,
     mode === "horizontal" ? node.width + 112 : node.height + 40,
     mode === "staggered",
+    mapEntryScreenIds(screens, paths),
   );
   if (mode === "horizontal") {
     // Exchange flow and branch axes without rotating the portrait captures.
