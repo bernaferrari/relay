@@ -255,6 +255,7 @@ export async function attachLiveDemonstrationAttempt(
   const stayed = recordingStayedOnSourceError(session, revision, destination);
   const matches = !stayed && observationMatchesExpectedDestination(revision.after, expected);
   const attempt: AuthoringReplayAttempt = {
+    source: "recording",
     id: `replay-${randomUUID()}`,
     takeId: take.id,
     takeRevision: revision.revision,

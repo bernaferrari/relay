@@ -247,13 +247,22 @@ function reviewForSession(session: AuthoringSession): AuthorTestSnapshot["review
         evidence: linkedEvidence.evidence,
         ...(action.fullPage ? { fullPage: structuredClone(action.fullPage) } : {}),
         ...(action.proofStatus ? { proofStatus: action.proofStatus } : {}),
-        captureProof: captureProofForAuthoring(captureProvenance, approvedReplay),
+        captureProof: captureProofForAuthoring(
+          captureProvenance,
+          take.replayAttempts.some(
+            (attempt) =>
+              attempt.source !== "recording" &&
+              attempt.takeRevision === revision.revision &&
+              attempt.outcome === "passed",
+          ),
+        ),
       };
     }),
     timeline: timelineForRevision(revision),
     ...(latestReplay
       ? {
           latestReplay: {
+            ...(latestReplay.source ? { source: latestReplay.source } : {}),
             id: latestReplay.id,
             takeRevision: latestReplay.takeRevision,
             outcome: latestReplay.outcome,
@@ -409,7 +418,9 @@ export function snapshotFromAuthoringSession(input: {
         captureProvenance,
         session.take?.replayAttempts.some(
           (attempt) =>
-            attempt.takeRevision === session.take?.currentRevision && attempt.outcome === "passed",
+            attempt.source !== "recording" &&
+            attempt.takeRevision === session.take?.currentRevision &&
+            attempt.outcome === "passed",
         ) === true,
       ),
       replayRequiredBeforeApproval: authoringCaptureNeedsReplay(captureProvenance),

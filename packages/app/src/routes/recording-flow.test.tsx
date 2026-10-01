@@ -11,6 +11,7 @@ import type {
   RecordingProductService,
 } from "../data/recording-product-service";
 import type { LiveTargetSession } from "../data/live-target-session";
+import { RecordingInputNotSentError } from "../data/recording-input-outcome";
 import type { MapProductService } from "../data/map-product-service";
 import type { Platform } from "../platform/types";
 import type { BrowserSpacesProductService } from "../data/browser-spaces-product-service";
@@ -392,6 +393,74 @@ async function interactWithLiveTarget() {
 }
 
 describe("record, review, replay, and save", () => {
+  it("describes a verified recording without claiming that a replay ran", async () => {
+    const recorded = state("reviewing", ["inspect", "replay", "approve"], { replay: "passed" });
+    recorded.snapshot!.review!.latestReplay!.source = "recording";
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      fakeService(recorded).service,
+      platformWithStorage().platform,
+    );
+    expect(document.body.textContent).toContain("Recording verified. Ready to save.");
+    expect(document.body.textContent).not.toContain("Replay passed.");
+    expect(button("Save Test").disabled).toBe(false);
+  });
+  it("keeps an input failure visible when healthy preview frames arrive", async () => {
+    const fake = fakeService();
+    const originalLiveTarget = fake.service.liveTarget!;
+    let publish: Parameters<LiveTargetSession["subscribe"]>[0] | undefined;
+    fake.service.liveTarget = async (selected) => {
+      const session = await originalLiveTarget(selected);
+      return {
+        ...session,
+        subscribe(listener) {
+          publish = listener;
+          return session.subscribe(listener);
+        },
+        async input() {
+          throw new RecordingInputNotSentError("The menu control could not be reached.");
+        },
+      };
+    };
+    await renderJourney("/recordings/workflow-1", fake.service, platformWithStorage().platform);
+    await tapLiveTarget();
+    expect(document.body.textContent).toContain("The menu control could not be reached.");
+    await act(async () => publish!({ status: "streaming", target, frameSequence: 2 }));
+    expect(document.body.textContent).toContain("The menu control could not be reached.");
+  });
+  it("reopens an ended live preview without starting or mutating the recording", async () => {
+    const fake = fakeService();
+    const originalLiveTarget = fake.service.liveTarget!;
+    const close = vi.fn();
+    let attempts = 0;
+    fake.service.liveTarget = async (selected) => {
+      attempts += 1;
+      if (attempts > 1) return originalLiveTarget(selected);
+      return {
+        snapshot: () => ({ status: "offline", target: selected }),
+        subscribe(listener) {
+          listener({ status: "offline", target: selected, issue: "The live target stream ended." });
+          return () => undefined;
+        },
+        mount: () => () => undefined,
+        input: vi.fn(),
+        close,
+      };
+    };
+    const { history } = await renderJourney(
+      "/recordings/workflow-1",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(document.body.textContent).toContain("Live view unavailable");
+    await click(button("Reconnect live view"));
+    expect(attempts).toBe(2);
+    expect(close).toHaveBeenCalledOnce();
+    expect(document.body.textContent).not.toContain("Live view unavailable");
+    expect(button("Android Back").disabled).toBe(false);
+    expect(history.location.pathname).toBe("/recordings/workflow-1");
+    expect(fake.calls.some((call) => /^(begin|input|record|stop)/u.test(call))).toBe(false);
+  });
   it("isolates naming and edit mode when navigating between recordings", async () => {
     const fake = fakeService(state("reviewing", ["inspect", "edit", "replay"]));
     const storage = platformWithStorage({ "recordingName:workflow-2": "Second recording" });

@@ -288,6 +288,7 @@ export type AuthoringReview = {
     captureProof: AuthoringCaptureProof;
   }[];
   latestReplay?: {
+    source?: "recording" | "replay";
     id: string;
     takeRevision: number;
     outcome: "passed" | "failed" | "cancelled";

@@ -103,6 +103,31 @@ test("a passing replay upgrades inferred actions without rewriting their provena
   assert.equal(snapshot.allowedNextActions.includes("approve"), true);
 });
 
+test("a verified live demonstration allows saving without claiming replay proof", () => {
+  const recorded = structuredClone(session);
+  recorded.captureProvenance = {
+    schemaVersion: 1,
+    mode: "control-and-record",
+    origin: "relay-control",
+  };
+  recorded.take!.replayAttempts.push({
+    source: "recording",
+    id: "recording-proof",
+    takeId: "take-1",
+    takeRevision: 1,
+    startedAt: 1,
+    finishedAt: 2,
+    outcome: "passed",
+    evidence: [],
+  });
+  const snapshot = snapshotFromAuthoringSession({ frozen, session: recorded });
+  assert.equal(snapshot.review?.latestReplay?.source, "recording");
+  assert.equal(snapshot.capture?.proof, "relay-controlled");
+  assert.equal(snapshot.review?.actions[0]?.captureProof, "relay-controlled");
+  assert.equal(snapshot.review?.replayRequired, false);
+  assert.equal(snapshot.allowedNextActions.includes("approve"), true);
+});
+
 test("point interactions remain distinguishable in human recording review", () => {
   const withPoint = structuredClone(session);
   withPoint.take!.revisions[0]!.actions[0]!.steps = [
