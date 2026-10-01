@@ -1,9 +1,73 @@
 /** @jsxImportSource react */
 import { Button } from "@relay/ui-react/components/button";
-import { useState, type ReactNode } from "react";
+import { useState, type ComponentProps, type ReactNode } from "react";
+import type { ProductTestStep } from "@relay/product/catalog";
+import type { ProductTargetOption } from "../data/target-presentation";
+import { TestStepEvidencePreview } from "../components/test-step-evidence-preview";
+import { TestLastRunStage } from "./test-last-run";
+import { TestDevicePane } from "./test-device-pane";
+import { TestEditorBrowserPane } from "./test-editor-browser-pane";
 
-/** The app beside the steps: the recorded screenshot, or the live browser. */
-export function TestStage({ recorded, live }: { recorded: ReactNode; live: ReactNode }) {
+/** Keep recorded evidence and the matching live target together in the preview pane. */
+export function TestWorkspaceStage({
+  step,
+  lastRun,
+  deviceTest,
+  target,
+  browser,
+  onDeviceBusyChange,
+}: {
+  step?: ProductTestStep;
+  lastRun: ComponentProps<typeof TestLastRunStage>["run"];
+  deviceTest: boolean;
+  target?: ProductTargetOption;
+  browser?: ComponentProps<typeof TestEditorBrowserPane>;
+  onDeviceBusyChange(busy: boolean): void;
+}) {
+  return (
+    <TestStage
+      key={deviceTest ? "device" : "browser"}
+      liveLabel={deviceTest ? "Live device" : "Live browser"}
+      recorded={
+        step?.recordingFrames?.length ? (
+          <TestStepEvidencePreview
+            key={step.id}
+            step={step}
+            report={undefined}
+            hasRuns={false}
+            loading={false}
+          />
+        ) : (
+          <TestLastRunStage run={lastRun} />
+        )
+      }
+      live={
+        deviceTest ? (
+          target?.kind === "device" ? (
+            <TestDevicePane target={target} onBusyChange={onDeviceBusyChange} />
+          ) : (
+            <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
+              Connect the recorded device to open its live view.
+            </div>
+          )
+        ) : browser ? (
+          <TestEditorBrowserPane {...browser} />
+        ) : null
+      }
+    />
+  );
+}
+
+/** The app beside the steps: the recorded screenshot, or its live device or browser. */
+export function TestStage({
+  recorded,
+  live,
+  liveLabel = "Live browser",
+}: {
+  recorded: ReactNode;
+  live: ReactNode;
+  liveLabel?: string;
+}) {
   const [mode, setMode] = useState<"recorded" | "live">("recorded");
   const [liveOpened, setLiveOpened] = useState(false);
   return (
@@ -16,7 +80,7 @@ export function TestStage({ recorded, live }: { recorded: ReactNode; live: React
         {(
           [
             ["recorded", "Screenshot"],
-            ["live", "Live browser"],
+            ["live", liveLabel],
           ] as const
         ).map(([value, label]) => (
           <Button

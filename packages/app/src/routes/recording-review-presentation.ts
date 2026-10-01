@@ -29,7 +29,7 @@ export function useEvidenceObjectUrl(
     setLoaded({ preview, url: next });
     return () => URL.revokeObjectURL(next);
   }, [preview]);
-  return loaded?.preview === preview ? loaded.url : null;
+  return loaded && loaded.preview === preview ? loaded.url : null;
 }
 
 export function formatDuration(durationMs: number): string {

@@ -698,6 +698,33 @@ test("commits a recording as one immutable App Map revision", () => {
   assert.equal(result.appMap.activity["event-1"]?.subject.id, result.connectionId);
 });
 
+test("an edited multi-action recording uses its Test name and retains every executable action", () => {
+  const result = commitAppMapRecording(
+    mapFixture(),
+    {
+      sessionId: "edited-flow",
+      testId: "fast-chat",
+      testName: "Grok · Fast chat",
+      target: { kind: "device", platform: "android", targetId: "pixel-8" },
+      takeId: "take-edited",
+      takeRevision: 2,
+      actions: [action("send"), action("new-chat")],
+      before: observation("before", beforeFingerprint, "evidence-before"),
+      after: observation("after", afterFingerprint, "evidence-after"),
+      evidenceIds: ["evidence-before", "evidence-after"],
+    },
+    context("edited-flow"),
+  );
+  const connection = result.appMap.connections[result.connectionId]!;
+  assert.equal(connection.label, "Grok · Fast chat");
+  const recorded = connection.actions[0]!;
+  assert.equal(recorded.kind, "recorded");
+  assert.deepEqual(recorded.kind === "recorded" ? recorded.steps.map((step) => step.id) : [], [
+    "step-send",
+    "step-new-chat",
+  ]);
+});
+
 test("saved Tests retain reviewed screenshots independently of later screen captures", () => {
   const beforeUri = `relay-evidence://${"a".repeat(64)}`;
   const afterUri = `relay-evidence://${"b".repeat(64)}`;

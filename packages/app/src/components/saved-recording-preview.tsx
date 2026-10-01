@@ -60,12 +60,16 @@ export function SavedRecordingPreview({
             className="h-full max-h-full w-full rounded-md object-contain"
           />
         ) : (
-          <div className="grid justify-items-center gap-3 text-sm text-muted-foreground">
-            <p>
-              {preview.isError || failedUri === frame.uri || !catalogService.getRecordingFrame
-                ? "This saved screenshot could not be loaded."
-                : "Loading recorded screen…"}
-            </p>
+          <div className="grid h-full w-full place-items-center text-sm text-muted-foreground">
+            {preview.isError || failedUri === frame.uri || !catalogService.getRecordingFrame ? (
+              <p>This saved screenshot could not be loaded.</p>
+            ) : (
+              <div
+                role="status"
+                aria-label="Loading recorded screen"
+                className="pointer-events-none aspect-[9/19.5] h-full max-w-full rounded-2xl bg-muted/30 ring-1 ring-border/40"
+              />
+            )}
             {preview.isError ? (
               <Button variant="outline" size="sm" onClick={() => void preview.refetch()}>
                 Try again

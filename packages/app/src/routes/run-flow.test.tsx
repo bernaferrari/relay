@@ -436,9 +436,13 @@ async function click(element: HTMLElement) {
 }
 
 async function openRunSettings() {
-  const trigger = document.querySelector<HTMLButtonElement>('button[aria-label="Run settings"]');
-  if (!trigger) throw new Error("Run settings trigger not found");
-  await click(trigger);
+  await click(button("More Test actions"));
+  const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (item) => item.textContent?.trim() === "Run settings",
+  );
+  if (!item) throw new Error("Run settings menu item not found");
+  await act(async () => item.click());
+  await settle();
 }
 
 async function selectOption(label: string, option: string) {
@@ -1042,11 +1046,11 @@ describe("Run and Report", () => {
   it("returns run setup focus to the header control that opened it", async () => {
     const fake = fakeRunService();
     await renderRun("/tests/test-1", fake.service, platformWithStorage().platform);
-    const trigger = button("Run settings");
+    const trigger = button("More Test actions");
     expect(
       document.querySelector('button[aria-label="Run configuration — opens run setup"]'),
     ).toBeNull();
-    await click(trigger);
+    await openRunSettings();
     const popup = document.querySelector<HTMLElement>(
       '[role="dialog"][aria-label="Run settings"]',
     )!;
@@ -1092,7 +1096,9 @@ describe("Run and Report", () => {
     // The resolved configuration is named on Run itself before any popover is
     // opened — a person comparing Admin and Member must not have to dig.
     expect(button("Run").title).toContain("Checkout browser · Member · Current build");
-    expect(button("Run settings").title).toContain("Checkout browser · Member · Current build");
+    expect(button("More Test actions").title).toContain(
+      "Checkout browser · Member · Current build",
+    );
     await openRunSettings();
 
     // Account repair happens in context and returns to this Test's run setup.
@@ -1135,7 +1141,7 @@ describe("Run and Report", () => {
     const { history } = await renderRun("/tests/test-1", fake.service, storage.platform);
 
     expect(button("Run").disabled).toBe(false);
-    expect(document.querySelectorAll('button[aria-label="Run settings"]')).toHaveLength(1);
+    expect(document.querySelectorAll('button[aria-label="More Test actions"]')).toHaveLength(1);
     await openRunSettings();
     expect(document.body.textContent).toContain("Checkout browser");
     expect(document.body.textContent).toContain("Pixel 9 Pro");
@@ -1425,7 +1431,7 @@ describe("Run and Report", () => {
     history.push("/tests/test-2");
     await settle();
     expect(document.body.textContent).not.toContain("Checking Language");
-    expect(document.querySelector('button[aria-label="Run settings"]')).not.toBeNull();
+    expect(document.querySelector('button[aria-label="More Test actions"]')).not.toBeNull();
 
     history.push("/tests/test-1");
     await settle();
@@ -1566,7 +1572,13 @@ describe("Run and Report", () => {
     const { history } = await renderRun("/tests/test-1", fake.service, storage.platform);
 
     expect(document.body.textContent).toContain("Checking Language");
-    expect(document.querySelector('button[aria-label="Run settings"]')).toBeNull();
+    await click(button("More Test actions"));
+    expect(
+      [...document.querySelectorAll('[role="menuitem"]')].some((item) =>
+        item.textContent?.includes("Run settings"),
+      ),
+    ).toBe(false);
+    await click(button("More Test actions"));
     expect(
       [...document.querySelectorAll("a")].some((item) =>
         item.textContent?.includes("View live run"),
@@ -1586,7 +1598,7 @@ describe("Run and Report", () => {
         item.textContent?.includes("Review result"),
       ),
     ).toBe(true);
-    expect(document.querySelector('button[aria-label="Run settings"]')).not.toBeNull();
+    expect(document.querySelector('button[aria-label="More Test actions"]')).not.toBeNull();
   });
 
   it("shows Cancel only while canonical state allows it", async () => {

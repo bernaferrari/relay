@@ -655,6 +655,7 @@ function recordedConnectionLabel(input: AppMapRecordingInput, actions: ActionSpe
     return input.actions.find((action) => action.label?.trim())?.label?.trim() ?? "Observe";
   }
   const active = input.actions.filter((action) => action.steps.length > 0);
+  if (active.length > 1 && input.testName?.trim()) return input.testName.trim();
   if (active.length === 1 && active[0]!.label?.trim()) return active[0]!.label!.trim();
   const steps = input.actions.flatMap((action) => action.steps);
   const reversed = [...steps].reverse();
