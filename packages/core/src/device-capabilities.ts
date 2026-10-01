@@ -87,6 +87,8 @@ export type SnapshotNode = {
   enabled?: boolean;
   selected?: boolean;
   focused?: boolean;
+  /** Native editable text control, including composers with nested buttons. */
+  editable?: boolean;
   visibleToUser?: boolean;
   hittable?: boolean;
   rect?: { x: number; y: number; width: number; height: number };

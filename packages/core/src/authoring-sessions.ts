@@ -768,6 +768,7 @@ export class AuthoringSessionStore {
             session,
             runtime,
             recordingLifecycleDependencies,
+            { inferCompletion: false },
           );
         }
         session = transition(session, "cancelled");

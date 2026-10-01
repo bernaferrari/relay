@@ -41,6 +41,25 @@ export function semanticTargetForRecording(
       const role = (node.role ?? node.type ?? "").toLowerCase().split(".").at(-1) ?? "";
       if (key === "identifier" && node.hittable !== true && !INTERACTIVE_SNAPSHOT_ROLES.has(role))
         continue;
+      // A composer can publish an editable ID around independent buttons.
+      // Its ID does not own a click on the smaller activation target inside it.
+      if (
+        key === "identifier" &&
+        node.editable === true &&
+        candidates.some((inner) => {
+          if (inner === node || !inner.rect) return false;
+          const innerRole = (inner.role ?? inner.type ?? "").toLowerCase().split(".").at(-1) ?? "";
+          return (
+            (inner.hittable === true || innerRole === "button") &&
+            inner.rect.width * inner.rect.height < node.rect!.width * node.rect!.height &&
+            inner.rect.x >= node.rect!.x &&
+            inner.rect.y >= node.rect!.y &&
+            inner.rect.x + inner.rect.width <= node.rect!.x + node.rect!.width &&
+            inner.rect.y + inner.rect.height <= node.rect!.y + node.rect!.height
+          );
+        })
+      )
+        continue;
       // A full-screen container's name is not the control the person clicked.
       if (
         node.rect!.width * node.rect!.height >

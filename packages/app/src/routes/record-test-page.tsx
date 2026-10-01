@@ -221,7 +221,7 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
     enabled: Boolean(selectedTargetId),
     serial: selectedTargetId,
     capture: productService.reviewTalkBack,
-    refreshKey: talkBackRefresh,
+    refreshKey: talkBackRefresh * 2 + Number(conditionOpen),
     platform,
   });
   const targetPresentation = useQuery({
@@ -277,32 +277,17 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
     return outcome;
   }
 
-  // Offer text already on screen so a wait or check is picked, not typed.
-  const [screenText, setScreenText] = useState<readonly string[]>([]);
-  useEffect(() => {
-    if (!conditionOpen) return;
-    const session = liveSession.current;
-    if (!session) return;
-    session.setAccessibilityInspection?.(true);
-    const read = () => {
-      const items = session.snapshot().accessibility?.review.items ?? [];
-      const seen = new Set<string>();
-      const texts: string[] = [];
-      for (const item of items) {
+  // Physical devices expose inspection through reviewTalkBack rather than the
+  // browser live transport. Refresh when opening the picker and use that same
+  // current inspection for both hover labels and condition suggestions.
+  const screenText = [
+    ...new Set(
+      talkBack.inspection.overlayItems.flatMap((item) => {
         const value = (item.text ?? item.name ?? "").trim();
-        if (value.length < 2 || value.length > 40 || seen.has(value)) continue;
-        seen.add(value);
-        texts.push(value);
-      }
-      setScreenText(texts.slice(0, 16));
-    };
-    read();
-    const timer = setInterval(read, 1_000);
-    return () => {
-      clearInterval(timer);
-      session.setAccessibilityInspection?.(false);
-    };
-  }, [conditionOpen]);
+        return value.length >= 2 && value.length <= 40 ? [value] : [];
+      }),
+    ),
+  ].slice(0, 16);
 
   function sendLiveInput(input: Parameters<LiveTargetSession["input"]>[0]): Promise<boolean> {
     const queued = liveInputOutcome.current

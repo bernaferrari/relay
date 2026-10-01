@@ -18,6 +18,7 @@ import {
   observeVisualScreenFingerprint,
   proposeAuthoringRawOptimizations,
   runRecipeStep,
+  readAppMap,
   runWithTargetContext,
   type AuthoringRuntime,
   type CapturedAuthoringObservation,
@@ -428,7 +429,8 @@ export function createAuthoringRuntime(options: AuthoringDeviceOptions = {}): Au
       await executeSteps(session, steps);
     },
     async prepareReplaySource(session) {
-      const steps = authoringReplaySourceSteps(session);
+      const map = await readAppMap(session.projectId, session.appMapId);
+      const steps = authoringReplaySourceSteps(session, map ?? undefined);
       if (steps.length) await executeSteps(session, steps);
     },
     async replayAction(session, action: AuthoringAction) {

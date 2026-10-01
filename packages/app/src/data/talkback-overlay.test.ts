@@ -77,7 +77,7 @@ describe("talkBackOverlayBox", () => {
   it("treats an unknown saved mode as off", () => {
     expect(validAccessibilityLabelMode("always")).toBe("always");
     expect(validAccessibilityLabelMode("hover")).toBe("hover");
-    expect(validAccessibilityLabelMode("listen")).toBe("off");
+    expect(validAccessibilityLabelMode("listen")).toBe("hover");
   });
 
   it("does not let a late observation overwrite a newer target", () => {

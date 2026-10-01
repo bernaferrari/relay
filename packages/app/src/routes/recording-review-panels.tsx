@@ -7,13 +7,14 @@ import type {
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { Button } from "@relay/ui-react/components/button";
+import { ToggleGroup, ToggleGroupItem } from "@relay/ui-react/components/toggle-group";
 import { useState, type CSSProperties } from "react";
 import {
   pickRecordingEvidenceControl,
   imagePointFromClick,
   type RecordingEvidenceControl,
 } from "../data/recording-evidence-target";
-import { MoreHorizontal, Sparkles, Target, ScanLine } from "lucide-react";
+import { MoreHorizontal, Sparkles, Target, ScanLine, LoaderCircle } from "lucide-react";
 import { EmptyState } from "../components/product-patterns";
 import {
   recordedMomentCount,
@@ -27,6 +28,7 @@ type OptimizationSuggestion = NonNullable<
 
 export function RecordingEvidencePanel({
   action,
+  stepNumber,
   evidenceRole,
   previewUrl,
   onEvidenceRoleChange,
@@ -34,10 +36,13 @@ export function RecordingEvidencePanel({
   fullPage,
   controls = [],
   exactMoment = true,
+  loading = false,
 }: {
   exactMoment?: boolean;
+  loading?: boolean;
   controls?: readonly RecordingEvidenceControl[];
   action?: ReviewAction;
+  stepNumber?: number;
   evidenceRole: "entrance" | "exit";
   previewUrl: string | null;
   onEvidenceRoleChange(role: "entrance" | "exit"): void;
@@ -56,45 +61,50 @@ export function RecordingEvidencePanel({
         <h2 id="recording-evidence-title" className="flex items-center gap-2 text-sm font-medium">
           {action ? (
             <>
-              <RecordingActionIcon action={action} />
+              {stepNumber ? (
+                <span className="text-muted-foreground">Step {stepNumber} ·</span>
+              ) : null}
               {reviewActionCopy(action).title}
             </>
           ) : (
             "Step preview"
           )}
         </h2>
-        <div
-          className="inline-flex shrink-0 gap-0.5 rounded-md bg-muted p-0.5"
-          aria-label="Evidence moment"
-        >
+        <div className="inline-flex shrink-0 items-center gap-2">
           <Button
             size="sm"
             variant="ghost"
+            aria-label="Elements"
             aria-pressed={showElements}
             title="Show captured accessibility elements"
             onClick={() => setShowElements(!showElements)}
           >
             <ScanLine className="size-4" />
-            Elements
           </Button>
-          <Button
-            size="sm"
-            variant={evidenceRole === "entrance" ? "secondary" : "ghost"}
-            type="button"
-            aria-pressed={evidenceRole === "entrance"}
-            onClick={() => onEvidenceRoleChange("entrance")}
+          <ToggleGroup
+            className="gap-0.5 rounded-lg bg-background/60 p-1"
+            aria-label="Evidence moment"
+            value={[evidenceRole]}
+            onValueChange={(values) => {
+              const role = values[0];
+              if (role === "entrance" || role === "exit") onEvidenceRoleChange(role);
+            }}
           >
-            Before step
-          </Button>
-          <Button
-            size="sm"
-            variant={evidenceRole === "exit" ? "secondary" : "ghost"}
-            type="button"
-            aria-pressed={evidenceRole === "exit"}
-            onClick={() => onEvidenceRoleChange("exit")}
-          >
-            After step
-          </Button>
+            <ToggleGroupItem
+              size="sm"
+              value="entrance"
+              className="rounded-md border border-transparent px-3 text-muted-foreground aria-pressed:border-border aria-pressed:bg-foreground/15 aria-pressed:text-foreground aria-pressed:shadow-sm"
+            >
+              Before
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              size="sm"
+              value="exit"
+              className="rounded-md border border-transparent px-3 text-muted-foreground aria-pressed:border-border aria-pressed:bg-foreground/15 aria-pressed:text-foreground aria-pressed:shadow-sm"
+            >
+              After
+            </ToggleGroupItem>
+          </ToggleGroup>
         </div>
       </div>
       {fullPage ? (
@@ -135,7 +145,18 @@ export function RecordingEvidencePanel({
         </div>
       ) : null}
       <div className="mt-3 flex min-h-0 items-center justify-center overflow-hidden rounded-lg bg-background/40 p-2">
-        {previewUrl ? (
+        {loading ? (
+          <div
+            role="status"
+            aria-label="Loading screenshot"
+            className="flex items-center justify-center p-6 text-muted-foreground"
+          >
+            <LoaderCircle
+              className="size-5 animate-spin motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+          </div>
+        ) : previewUrl ? (
           <div
             className="relative max-h-full max-w-full"
             onPointerLeave={() => setHovered(undefined)}
@@ -146,15 +167,14 @@ export function RecordingEvidencePanel({
               setHovered(point ? pickRecordingEvidenceControl(controls, point) : undefined);
             }}
           >
-            {!exactMoment ? (
-              <span className="absolute start-2 top-2 z-10 rounded-md bg-popover px-2 py-1 text-xs text-muted-foreground">
-                Captured screenshot · timing unavailable
-              </span>
-            ) : null}
             <img
               className="max-h-[65vh] max-w-full rounded-md object-contain"
               src={previewUrl}
-              alt={`${evidenceRole === "entrance" ? "Before" : "After"} the step: ${action?.intent}`}
+              alt={
+                exactMoment
+                  ? `${evidenceRole === "entrance" ? "Before" : "After"} the step: ${action?.intent}`
+                  : `Screenshot for step: ${action?.intent}`
+              }
               onLoad={(event) => {
                 setImageSize({
                   width: event.currentTarget.naturalWidth,
@@ -194,7 +214,7 @@ export function RecordingEvidencePanel({
           <div className="grid max-w-[22ch] justify-items-center gap-2 p-6 text-center text-muted-foreground">
             <Target aria-hidden="true" />
             <strong className="text-sm text-foreground">
-              {action ? "No visual frame for this moment" : "Select an action"}
+              {action ? "No screenshot" : "Select a step"}
             </strong>
             <span className="text-xs leading-normal">
               {action
@@ -243,17 +263,28 @@ export function RecordingActionsPanel({
     >
       <div className="flex min-h-12 min-w-0 flex-wrap items-center justify-between gap-3.5 border-b border-border px-4 py-3">
         <div className="min-w-0">
-          <h2 id="recording-actions-title">{recordedMomentCount(actions.length)}</h2>
+          <h2
+            id="recording-actions-title"
+            className="flex items-center gap-2 text-sm font-medium"
+            aria-label={recordedMomentCount(actions.length)}
+          >
+            Steps
+            <span className="rounded-md bg-muted px-1.5 py-0.5 text-xs font-normal text-muted-foreground">
+              {actions.length}
+            </span>
+          </h2>
         </div>
         <div className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-pressed={selecting}
-            onClick={() => onSelectionModeChange?.(!selecting)}
-          >
-            {selecting ? "Done selecting" : "Select steps"}
-          </Button>
+          {editing ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-pressed={selecting}
+              onClick={() => onSelectionModeChange?.(!selecting)}
+            >
+              {selecting ? "Done selecting" : "Select steps"}
+            </Button>
+          ) : null}
           {editing ? (
             <Button
               size="sm"
