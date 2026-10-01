@@ -681,6 +681,7 @@ export function InfiniteMapCanvas({
         screen={selected}
         paths={visiblePaths}
         onSelectScreen={focusScreen}
+        onSelectPath={setSelectedPathId}
         onRefresh={onRefreshScreen && selected ? () => onRefreshScreen(selected) : undefined}
         onMerge={onMergeScreen && selected ? () => onMergeScreen(selected) : undefined}
         onRename={onUpdateScreen ? (title) => onUpdateScreen(selected!.id, { title }) : undefined}

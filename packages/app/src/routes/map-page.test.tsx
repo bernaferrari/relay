@@ -334,17 +334,71 @@ describe("Map exploration", () => {
     )!;
     await act(async () => home.click());
     const inspector = document.querySelector('[aria-label="Screen details"]')!;
-    expect(inspector.textContent).toContain("Continue to");
-    expect(inspector.textContent).toContain("Ignores reply body");
-    expect(inspector.textContent).toContain("Visual baselines compare chrome only");
-    expect(inspector.textContent).not.toContain("Arrive from");
-    const connection = [...inspector.querySelectorAll("button")].find((button) =>
-      button.textContent?.includes("Open cart"),
+    expect(inspector.textContent).toContain("Connected screens");
+    expect(inspector.querySelector("summary")?.textContent).toContain("Open Cart");
+    expect(inspector.textContent).toContain("Ignored content: reply body");
+    expect(inspector.querySelector("details")?.open).toBe(false);
+    await act(async () => inspector.querySelector("summary")!.click());
+    const connection = inspector.querySelector<HTMLButtonElement>(
+      '[aria-label="Open Cart screen"]',
     )!;
     await act(async () => connection.click());
-    expect(inspector.textContent).toContain("Arrive from");
-    expect(inspector.textContent).not.toContain("Continue to");
+    expect(inspector.querySelector("summary")?.textContent).toContain("Open from Home");
+    expect(inspector.querySelector("h4")?.textContent).toContain("Home to Cart");
     expect(inspector.textContent).not.toContain("Record test");
+  });
+
+  it("groups destinations across forward and return paths while keeping every path inspectable", async () => {
+    const { history } = await render({
+      get: async () => ({
+        ...overview,
+        screens: [
+          ...overview.screens,
+          { ...overview.screens[1]!, id: "settings", title: "Settings" },
+        ],
+        paths: [
+          overview.paths[0]!,
+          { ...overview.paths[0]!, id: "home-cart-back", label: "Back to cart" },
+          {
+            ...overview.paths[0]!,
+            id: "cart-home",
+            fromScreenId: "cart",
+            fromTitle: "Cart",
+            toScreenId: "home",
+            toTitle: "Home",
+            label: "Back to Home",
+          },
+          {
+            ...overview.paths[0]!,
+            id: "home-settings",
+            toScreenId: "settings",
+            toTitle: "Settings",
+            label: "Tap “settings_button”",
+          },
+        ],
+      }),
+    });
+    await act(async () => button("Home").click());
+    const inspector = document.querySelector('[aria-label="Screen details"]')!;
+    expect(inspector.querySelectorAll('[aria-label="Open Cart screen"]')).toHaveLength(1);
+    const group = inspector.querySelector("details")!;
+    expect(inspector.querySelectorAll("details")).toHaveLength(3);
+    expect(group.querySelector("summary")?.textContent).toContain("Return from Cart · Open Cart");
+    expect(group.open).toBe(false);
+    expect(group.querySelector("h4")?.textContent).toContain("Cart to Home");
+    expect(group.querySelectorAll("button")).toHaveLength(4);
+    expect(inspector.querySelector('[aria-label="Inspect Settings"]')).not.toBeNull();
+    await act(async () => group.querySelector("summary")!.click());
+    expect(group.open).toBe(true);
+    const action = inspector.querySelector<HTMLButtonElement>(
+      '[aria-label="Inspect Back to cart, path 2"]',
+    )!;
+    await act(async () => action.click());
+    expect(history.location.search).toContain("path=home-cart-back");
+    expect(document.querySelector('[aria-label="Selected path"]')?.textContent).toContain(
+      "Back to cart",
+    );
+    expect(inspector.querySelector('[aria-label="Open Cart screen"]')).not.toBeNull();
   });
 
   it("switches retained captures and their source runs without changing the screen", async () => {
@@ -407,7 +461,7 @@ describe("Map exploration", () => {
       button.textContent?.includes("Cart"),
     );
     await act(async () => cart?.click());
-    expect(document.body.textContent).toContain("Used in tests");
+    expect(document.body.textContent).toContain("Used in 0 tests");
     expect(document.body.textContent).toContain("No saved test includes this screen.");
     expect(document.body.textContent).toContain("Recent failures");
     expect(document.querySelector('a[href="/runs/run-1"]')).not.toBeNull();
@@ -520,8 +574,12 @@ it("prepares screen refresh with canonical target fields and waits for a visible
       .click(),
   );
   await act(async () =>
-    document.querySelector<HTMLButtonElement>('button[aria-label="Update screen"]')!.click(),
+    document.querySelector<HTMLButtonElement>('button[aria-label="Screen actions"]')!.click(),
   );
+  const updateCapture = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+    (item) => item.textContent?.includes("Update screen capture"),
+  )!;
+  await act(async () => updateCapture.click());
   for (let i = 0; i < 5; i++)
     await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
   expect(document.body.textContent).toContain("does not accept a visual baseline");
