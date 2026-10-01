@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 describe("CaptureReviewPanel selection", () => {
-  it("shows the full image path and criterion without a baseline action", () => {
+  it("opens capture details with the full image path while retaining review controls", async () => {
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
@@ -57,7 +57,14 @@ describe("CaptureReviewPanel selection", () => {
       ),
     );
     expect(host.textContent).toContain("Look for: Save is visible");
-    expect(host.textContent).toContain("Full image: frames/001.png");
+    expect(document.querySelector('[data-slot="popover-content"]')).toBeNull();
+    const details = [...host.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Capture details"),
+    )!;
+    await act(async () => details.click());
+    const metadata = document.querySelector('[data-slot="popover-content"]')!;
+    expect(metadata.querySelector("dl")?.textContent).toContain("Full imageframes/001.png");
+    expect(metadata.textContent).toContain("Settings");
     expect(host.querySelector("img")?.getAttribute("src")).toBe("/runs/run-1/frames/001.png");
     expect(host.textContent).toContain("Looks correct");
     expect(host.textContent).toContain("Report issue");
@@ -385,6 +392,7 @@ it("keeps bulk selection out of screenshot browsing until requested", () => {
   document.body.append(host);
   const root = createRoot(host);
   roots.push(root);
+  const selectCapture = vi.fn();
   const items = ["Settings", "Home"].map((caption, index) => ({
     captureId: `frames/${index}.png::hash${index}`,
     caption,
@@ -408,13 +416,13 @@ it("keeps bulk selection out of screenshot browsing until requested", () => {
         }}
         frames={[]}
         selectedIndex={0}
-        onSelect={() => undefined}
+        onSelect={selectCapture}
         onReviewMany={vi.fn()}
         showImage={false}
       />,
     ),
   );
-  expect(host.querySelector('input[type="checkbox"]')).toBeNull();
+  expect(host.querySelector('[role="checkbox"]')).toBeNull();
   expect(host.querySelector('[aria-label="Selected screenshot"]')?.textContent).not.toContain(
     "Pending review",
   );
@@ -422,11 +430,18 @@ it("keeps bulk selection out of screenshot browsing until requested", () => {
     (node) => node.textContent === "Select screenshots",
   )!;
   act(() => button.click());
-  expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
+  expect(host.querySelectorAll('[role="checkbox"]')).toHaveLength(2);
+  const checkbox = host.querySelector<HTMLElement>('[role="checkbox"]')!;
+  act(() => checkbox.click());
+  expect(checkbox.getAttribute("aria-checked")).toBe("true");
+  act(() =>
+    checkbox.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })),
+  );
+  expect(selectCapture).not.toHaveBeenCalled();
   act(() =>
     [...host.querySelectorAll("button")]
       .find((node) => node.textContent === "Done selecting")!
       .click(),
   );
-  expect(host.querySelector('input[type="checkbox"]')).toBeNull();
+  expect(host.querySelector('[role="checkbox"]')).toBeNull();
 });

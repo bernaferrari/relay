@@ -494,19 +494,18 @@ describe("RunWorkbench", () => {
         .click(),
     );
     await act(async () => {
-      for (const input of host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
-        input.click();
+      for (const input of host.querySelectorAll<HTMLElement>('[role="checkbox"]')) input.click();
     });
     const button = [...host.querySelectorAll("button")].find((item) =>
       item.textContent?.includes("Looks correct for 2 selected"),
     )!;
     expect(button).toBeDefined();
     await act(async () => button.click());
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Select First"]')?.checked).toBe(
-      false,
+    expect(host.querySelector('[aria-label="Select First"]')?.getAttribute("aria-checked")).toBe(
+      "false",
     );
-    expect(host.querySelector<HTMLInputElement>('[aria-label="Select Second"]')?.checked).toBe(
-      true,
+    expect(host.querySelector('[aria-label="Select Second"]')?.getAttribute("aria-checked")).toBe(
+      "true",
     );
     expect(host.textContent).toContain("1 of 2 decisions saved");
   });
