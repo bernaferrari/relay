@@ -100,6 +100,12 @@ export const appMapAuthoringOperationSchemas = {
       ...mutationIdentity,
       dryRun: z.boolean().optional(),
       targetTitle: z.string().optional(),
+      mode: z
+        .enum(["scroll-surface", "same-screen"])
+        .optional()
+        .describe(
+          "same-screen approves equivalent captures such as keyboard open/closed, keeping actions and aliases. Default scroll-surface requires ordered viewport evidence.",
+        ),
       surfaceImport: unknownRecord.optional(),
     })
     .strict(),

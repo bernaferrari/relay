@@ -282,7 +282,7 @@ export function createAppMapOperationDefinitions(parserDependencies: AppMapParse
     ),
     command(
       "app-map.screen.consolidate",
-      "Consolidate viewport screens into one logical screen",
+      "Merge duplicate captures with mode same-screen, preserving actions and accepted identity aliases; default mode consolidates scroll viewports. Use dryRun to review rewiring first.",
       "POST",
       "/app-maps/:appMapId/screens/:targetScreenId/consolidate",
       {

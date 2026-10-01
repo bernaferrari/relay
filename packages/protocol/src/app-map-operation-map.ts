@@ -304,6 +304,8 @@ export type AppMapOperationMap = {
       eventId?: string;
       dryRun?: boolean;
       targetTitle?: string;
+      /** Explicitly approve duplicate captures as the same screen, preserving actions. */
+      mode?: "scroll-surface" | "same-screen";
       surfaceImport?: LogicalScrollSurfaceImport;
     };
     output: {

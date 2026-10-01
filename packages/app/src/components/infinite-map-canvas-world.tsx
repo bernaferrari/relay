@@ -3,6 +3,8 @@ import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import { Compass, RotateCcw } from "lucide-react";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 import { MapAccessibilityOverlay } from "./map-accessibility-overlay";
+import { canvasMapPaths } from "./map-path-groups";
+import { isMapReturn } from "./map-edge-paths";
 import { MapEdges, isRoutineReturn } from "./map-edges";
 import { mapClusters } from "./map-clusters";
 import { MapFrameTitle } from "./map-frame-title";
@@ -155,12 +157,15 @@ export function MapCanvasWorld({
         horizontal={layoutMode === "horizontal"}
         selectedPathId={selectedPathId}
         onSelectPath={panningTool ? undefined : onSelectPath}
-        paths={originPaths.filter(
-          (path) =>
-            path.id === selectedPathId ||
-            // Unexplored controls stay folded into one chip until their screen is selected.
-            (!isRoutineReturn(path) &&
-              (Boolean(path.toScreenId) || path.fromScreenId === selectedScreenId)),
+        paths={canvasMapPaths(
+          originPaths.filter(
+            (path) =>
+              path.id === selectedPathId ||
+              // Unrecorded destinations live in the inspector, avoiding overlapping terminal wires.
+              (!isMapReturn(path, positions, layoutMode === "horizontal") &&
+                Boolean(path.toScreenId)),
+          ),
+          selectedPathId,
         )}
         positions={positions}
         markerId={markerId}
@@ -322,7 +327,9 @@ export function MapCanvasWorld({
       })}
       {visibleScreens.map((screen) => {
         const returns = visiblePaths.filter(
-          (path) => path.fromScreenId === screen.id && isRoutineReturn(path),
+          (path) =>
+            path.fromScreenId === screen.id &&
+            isMapReturn(path, positions, layoutMode === "horizontal"),
         );
         const unexplored =
           selectedScreenId === screen.id
@@ -372,7 +379,7 @@ export function MapCanvasWorld({
               >
                 <RotateCcw className="size-3 shrink-0" aria-hidden="true" />
                 <span className="truncate">
-                  {/^(?:disable)\b/i.test(path.label)
+                  {!isRoutineReturn(path) || /^(?:disable)\b/i.test(path.label)
                     ? path.label
                     : path.toTitle
                       ? `Back to ${path.toTitle}`

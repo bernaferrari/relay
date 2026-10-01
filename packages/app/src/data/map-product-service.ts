@@ -67,6 +67,11 @@ export function createMapProductService(platform: Platform): MapProductService {
         if (!item.updateScreen) throw new TypeError("Screen editing is unavailable.");
         return item.updateScreen(input);
       }),
+    consolidateScreens: (input) =>
+      service().then((item) => {
+        if (!item.consolidateScreens) throw new Error("Screen merging is unavailable.");
+        return item.consolidateScreens(input);
+      }),
     get: (appMapId) => service().then((item) => item.get(appMapId)),
     getScreen: (appMapId, screenId) =>
       service().then((item) => item.getScreen?.(appMapId, screenId)),

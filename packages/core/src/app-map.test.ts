@@ -2109,3 +2109,72 @@ test("serializes a deterministic YAML-ready plain object without sharing referen
   assert.equal(first.screens.home!.title, "Home");
   assert.doesNotThrow(() => JSON.stringify(serialized));
 });
+
+test("same-screen merge retains state actions, identity aliases, captures and Test bindings", () => {
+  const map = mapFixture();
+  map.screens.start!.identity = {
+    schemaVersion: 1,
+    fingerprint: "b".repeat(64),
+    aliases: ["c".repeat(64)],
+  };
+  map.screenVariants["variant-start"]!.evidenceIds = ["keyboard-open"];
+  map.connections["open-home"]!.actions = [{ id: "dismiss-keyboard", kind: "back" }];
+  map.tests.keyboard = {
+    ...entity("keyboard"),
+    name: "Dismiss keyboard",
+    kind: "scenario",
+    intentSchemaVersion: 1,
+    steps: [
+      {
+        id: "dismiss",
+        kind: "instruction",
+        intent: "Dismiss keyboard",
+        binding: { status: "resolved", kind: "connections", connectionIds: ["open-home"] },
+      },
+    ],
+  };
+  const input = {
+    targetScreenId: "home",
+    sourceScreenIds: ["start"],
+    mode: "same-screen" as const,
+  };
+  const preview = previewScreenConsolidation(map, input);
+  assert.deepEqual(preview.blockers, []);
+  assert.deepEqual(preview.removedSelfLoopConnectionIds, []);
+  assert.deepEqual(preview.semanticRevealConnectionIds, []);
+  const merged = consolidateAppMapScreens(map, input, context(map, "merge-keyboard"));
+  assert.equal(Object.keys(merged.screens).length, 1);
+  assert.deepEqual(merged.screens.home!.identity!.aliases, ["b".repeat(64), "c".repeat(64)]);
+  assert.equal(merged.connections["open-home"]!.fromScreenId, "home");
+  assert.equal(merged.connections["open-home"]!.destination.kind, "screen");
+  assert.deepEqual(merged.connections["open-home"]!.actions, [
+    { id: "dismiss-keyboard", kind: "back" },
+  ]);
+  assert.deepEqual(merged.tests.keyboard!.steps, map.tests.keyboard!.steps);
+  assert.equal(merged.flows.main!.startScreenId, "home");
+  assert.equal(merged.flows.main!.connectionIds[0], "open-home");
+  assert.equal(merged.screens.home!.consolidations![0]!.sourceVariants[0]!.id, "variant-start");
+  assert.ok(merged.screenVariants["variant-home"]!.evidenceIds.includes("keyboard-open"));
+  assert.deepEqual(
+    merged.screenVariants["variant-home"]!.baseline,
+    map.screenVariants["variant-home"]!.baseline,
+  );
+  assert.equal(map.screens.start!.id, "start");
+});
+
+test("same-screen merge rewires outgoing actions without adding scroll reveal", () => {
+  const map = mapFixture();
+  map.connections.exit = connection({
+    id: "exit",
+    fromScreenId: "start",
+    destination: { kind: "end" },
+    actions: [{ id: "tap", kind: "tap", target: { point: { x: 20, y: 30 } } }],
+  });
+  const merged = consolidateAppMapScreens(
+    map,
+    { targetScreenId: "home", sourceScreenIds: ["start"], mode: "same-screen" },
+    context(map, "merge-state"),
+  );
+  assert.equal(merged.connections.exit!.fromScreenId, "home");
+  assert.deepEqual(merged.connections.exit!.actions, map.connections.exit!.actions);
+});

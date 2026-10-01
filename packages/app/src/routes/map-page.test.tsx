@@ -234,7 +234,7 @@ describe("Map exploration", () => {
     );
     expect(document.querySelector('[data-slot="map-edge-label"]')).toBeNull();
     expect(
-      document.querySelector<HTMLElement>('[data-slot="map-screen"][style*="left: 560px"]'),
+      document.querySelector<HTMLElement>('[data-slot="map-screen"][style*="left: 368px"]'),
     ).not.toBeNull();
     expect(document.body.textContent).not.toContain("Pan right");
 

@@ -1435,3 +1435,59 @@ test("a recorded tour retains intermediate screens and revisits in one atomic co
     screenId: connections[0]!.fromScreenId,
   });
 });
+
+test("future captures reuse Home automatically when only keyboard and input focus changed", () => {
+  const chrome = ["Menu", "Ask", "Imagine", "Build", "Speak"].map((label) => ({
+    role: "button",
+    label,
+    bundleId: "ai.x.grok",
+  }));
+  const home = (id: string, fingerprint: string, focused: boolean): AuthoringObservation => ({
+    ...observation(id, fingerprint, `shot-${id}`),
+    proof: {
+      schemaVersion: 1,
+      captureOrder: "pixels-first",
+      pixels: { status: "captured", capturedAt: 2, fingerprint },
+      semantics: { status: "current", capturedAt: 2, fingerprint },
+    },
+    nodes: [
+      ...chrome,
+      { role: "textfield", identifier: "composer", focused, bundleId: "ai.x.grok" },
+      ...(focused
+        ? [{ role: "button", label: "Keyboard space", bundleId: "com.touchtype.swiftkey" }]
+        : []),
+    ],
+  });
+  const first = commitAppMapScreenCapture(
+    mapFixture(),
+    {
+      target: { kind: "device", platform: "android", targetId: "phone" },
+      title: "Home",
+      observation: home("home", beforeFingerprint, false),
+    },
+    context("home"),
+  );
+  const next = commitAppMapScreenCapture(
+    first.appMap,
+    {
+      target: { kind: "device", platform: "android", targetId: "phone" },
+      observation: home("keyboard", afterFingerprint, true),
+    },
+    context("keyboard", first.appMap.revision, 11),
+  );
+  assert.equal(next.created, false);
+  assert.equal(next.screenId, first.screenId);
+  assert.equal(Object.keys(next.appMap.screens).length, 1);
+  assert.ok(next.appMap.screens[first.screenId]!.identity!.aliases!.includes(afterFingerprint));
+  const changed = home("settings", "c".repeat(64), true);
+  changed.nodes = [
+    ...changed.nodes!,
+    { role: "button", label: "App Language", bundleId: "ai.x.grok" },
+  ];
+  const separate = commitAppMapScreenCapture(
+    next.appMap,
+    { target: { kind: "device", platform: "android", targetId: "phone" }, observation: changed },
+    context("settings", next.appMap.revision, 12),
+  );
+  assert.equal(separate.created, true);
+});

@@ -92,6 +92,56 @@ test("writeRunOutDir writes a passive walkthrough page beside the machine result
   }
 });
 
+test("the walkthrough command preserves frame bytes in its saved HTML and JSON", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "relay-cli-walkthrough-"));
+  const io = capture();
+  const response = {
+    pack: {
+      schemaVersion: 1,
+      kind: "relay-walkthrough-pack",
+      digest: `sha256:${"a".repeat(64)}`,
+      manifest: {
+        schemaVersion: 1,
+        pinned: { appMapId: "map", appMapRevision: 1, runIds: ["run-1"], generatedAt: 1 },
+        captures: [
+          {
+            stateId: "settings",
+            variantId: "android",
+            runId: "run-1",
+            framePath: "frames/001.png",
+          },
+        ],
+      },
+      frames: [
+        {
+          runId: "run-1",
+          framePath: "frames/001.png",
+          imageSha256: "6105d6cc76af400325e94d588ce511be5bfdbb73b437dc51eca43917d7a43e3d",
+          content: "aW1hZ2U=",
+        },
+      ],
+    },
+  };
+  try {
+    const code = await runCli(["run", "walkthrough-pack", "get", "run-1", "--out", dir, "--json"], {
+      streams: io.streams,
+      createClient: () => ({
+        async invoke() {
+          return response;
+        },
+        events: async () => {},
+      }),
+      registerSignalHandlers: false,
+      env: {},
+    });
+    assert.equal(code, ExitCode.success, io.stderr());
+    assert.equal(JSON.parse(io.stdout()).result.pack.frames[0].content, "aW1hZ2U=");
+    assert.match(await readFile(join(dir, "walkthrough.html"), "utf8"), /aW1hZ2U=/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("writeEvidenceReviewDir saves the trace pack and a passive review page", async () => {
   const dir = await mkdtemp(join(tmpdir(), "relay-export-review-"));
   try {

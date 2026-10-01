@@ -175,6 +175,8 @@ function summarizeResult(
   input?: unknown,
   commandPath?: string,
 ): unknown {
+  // This explicit export needs the captured bytes for JSON and passive HTML.
+  if (operationId === "run.walkthrough-pack.get") return result;
   const inner = summarizeExecutionOperationResult(
     operationId,
     summarizeAppMapOperationResult(

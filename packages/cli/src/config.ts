@@ -726,7 +726,11 @@ export function parseCli(argv: readonly string[], env: Environment = process.env
   const budgetMs = budgetRaw ? parseBudgetMs(budgetRaw) : undefined;
   const effectiveTimeout =
     budgetMs !== undefined && !tokens.values.has("--timeout") ? budgetMs : timeoutMs;
-  const outDir = parseRunOutDir(tokens, resolved.behavior?.includes("job") === true);
+  const outDir = parseRunOutDir(
+    tokens,
+    resolved.behavior?.includes("job") === true ||
+      resolved.operationId === "run.walkthrough-pack.get",
+  );
   return {
     config: {
       connection,

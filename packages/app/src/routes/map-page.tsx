@@ -1,3 +1,4 @@
+import { MapScreenMergeDialog } from "../components/map-screen-merge-dialog";
 import { MapScreensPanel } from "../components/map-screens-panel";
 /** @jsxImportSource react */
 import type { ProductMapOverview } from "@relay/product/map-exploration";
@@ -31,6 +32,7 @@ export function MapPage() {
   const { mapService, productService, queryClient, platform } = useRouteContext({
     from: "__root__",
   });
+  const [mergeScreen, setMergeScreen] = useState<{ screen: ProductMapScreen; revision: number }>();
   const [refresh, setRefresh] = useState<{ screen: ProductMapScreen; revision: number }>();
   const { appId } = routeApi.useParams();
   const search = routeApi.useSearch();
@@ -109,10 +111,12 @@ export function MapPage() {
   ]);
   const visibleScreens = [...(map.data?.screens ?? [])]
     .sort((a, b) => Number(priorityScreens.has(b.id)) - Number(priorityScreens.has(a.id)))
-    .slice(0, 500);
+    .slice(0, 500)
+    .sort((a, b) => a.id.localeCompare(b.id));
   const visiblePaths = [...(map.data?.paths ?? [])]
     .sort((a, b) => Number(b.id === inspectedPathId) - Number(a.id === inspectedPathId))
-    .slice(0, 500);
+    .slice(0, 500)
+    .sort((a, b) => a.id.localeCompare(b.id));
 
   return (
     <section className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-background">
@@ -178,6 +182,31 @@ export function MapPage() {
           </DropdownMenu>
         </div>
       </header>
+      {mergeScreen && map.data ? (
+        <MapScreenMergeDialog
+          screen={mergeScreen.screen}
+          screens={map.data.screens}
+          loadScreenshot={mapService.loadScreenshot}
+          onClose={() => setMergeScreen(undefined)}
+          merge={async (sourceScreenId, dryRun) => {
+            if (!mapService.consolidateScreens) throw new Error("Screen merging is unavailable.");
+            const result = await mapService.consolidateScreens({
+              appMapId: appId,
+              targetScreenId: mergeScreen.screen.id,
+              sourceScreenIds: [sourceScreenId],
+              expectedRevision: mergeScreen.revision,
+              mode: "same-screen",
+              dryRun,
+            });
+            if (result.applied) {
+              queryClient.setQueryData(["map", appId], result.overview);
+              await queryClient.invalidateQueries({ queryKey: ["tests"] });
+              openScreen(mergeScreen.screen.id);
+            }
+            return result.preview;
+          }}
+        />
+      ) : null}
       {map.isPending ? <PageLoading label="Loading known screens…" /> : null}
       <RecordingProblem
         layout={map.data ? "compact" : "centered"}
@@ -228,6 +257,11 @@ export function MapPage() {
                   appId={appId}
                   screens={visibleScreens}
                   paths={visiblePaths}
+                  onMergeScreen={
+                    mapService.consolidateScreens
+                      ? (screen) => setMergeScreen({ screen, revision: map.data.revision })
+                      : undefined
+                  }
                   onRefreshScreen={
                     mapService.prepareRefresh && mapService.applyRefresh
                       ? (screen) => setRefresh({ screen, revision: map.data.revision })

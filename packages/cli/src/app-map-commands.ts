@@ -508,12 +508,17 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
   mapped(
     "app-map.screen.consolidate",
     path("screen consolidate", ["appMapId", "targetScreenId"], undefined, {
-      summary: "Merge viewport cards into one scroll-aware logical screen",
+      summary: "Merge captures of one screen or consolidate scroll viewports",
       argumentHelp: [
         { name: "appMapId", type: "string", description: "App Map identifier" },
         { name: "targetScreenId", type: "string", description: "Canonical logical screen" },
       ],
       inputHelp: [
+        {
+          name: "mode",
+          type: "same-screen | scroll-surface",
+          description: "Approve duplicate states or combine scroll viewports (default)",
+        },
         {
           name: "expectedRevision",
           type: "number",
@@ -524,7 +529,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
           name: "sourceScreenIds",
           type: "string[]",
           required: true,
-          description: "Viewport screens to absorb",
+          description: "Screens to absorb",
         },
         {
           name: "dryRun",
@@ -546,7 +551,7 @@ export const appMapAuthoringCommandDescriptors: readonly MappedOperationDescript
       examples: [
         'relay screen consolidate grok settings --input \'{"expectedRevision":12,"sourceScreenIds":["settings-middle","settings-bottom"],"dryRun":true}\'',
       ],
-      note: "Outgoing edges receive semantic reveal-to-control actions. Evidence-backed viewport cards require a seam-honest imported surface; point-only edges block consolidation.",
+      note: "Use mode: same-screen to approve duplicate captures while preserving actions and identity aliases. The default scroll-surface mode adds semantic reveal-to-control actions. Evidence-backed viewport cards require a seam-honest imported surface; point-only edges block consolidation.",
     }),
   ),
   mapped(

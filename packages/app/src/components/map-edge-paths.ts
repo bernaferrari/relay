@@ -119,3 +119,15 @@ export function selfLoopConnector(
   const lane = edge + 48 + slot * 24;
   return [start, { x: lane, y: start.y }, { x: lane, y: end.y }, end];
 }
+
+/** Reciprocal tab and new-chat actions also return to an earlier screen in this layout. */
+export function isMapReturn(
+  path: Pick<ProductMapPath, "label" | "fromScreenId" | "toScreenId">,
+  positions: ReadonlyMap<string, MapPoint>,
+  horizontal = false,
+): boolean {
+  if (isRoutineReturn(path)) return true;
+  const from = positions.get(path.fromScreenId),
+    to = positions.get(path.toScreenId ?? "");
+  return Boolean(from && to && (horizontal ? to.y < from.y : to.x < from.x));
+}

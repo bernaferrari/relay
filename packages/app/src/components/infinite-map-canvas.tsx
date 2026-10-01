@@ -46,6 +46,7 @@ export function InfiniteMapCanvas({
   loadAccessibilityTree,
   onUpdateScreen,
   onRefreshScreen,
+  onMergeScreen,
   saving = false,
   initialPathId,
   initialScreenId,
@@ -58,6 +59,7 @@ export function InfiniteMapCanvas({
   onPathChange?(id: string | undefined): void;
   saving?: boolean;
   onRefreshScreen?: (screen: ProductMapScreen) => void;
+  onMergeScreen?: (screen: ProductMapScreen) => void;
   onUpdateScreen?: (
     screenId: string,
     patch: { title?: string; position?: MapPoint },
@@ -76,7 +78,14 @@ export function InfiniteMapCanvas({
       ? { screens: boundedScreens, paths: boundedPaths }
       : compactMap(boundedScreens, boundedPaths, initialScreenId, initialPathId);
   }, [screens, paths, showIntermediateScreens, initialScreenId, initialPathId]);
-  const visibleScreens = presentation.screens;
+  const visibleScreens = useMemo(() => {
+    const arranged = layoutMapScreens(presentation.screens, presentation.paths);
+    return [...presentation.screens].sort((a, b) => {
+      const left = arranged.get(a.id)!;
+      const right = arranged.get(b.id)!;
+      return left.x - right.x || left.y - right.y || a.id.localeCompare(b.id);
+    });
+  }, [presentation]);
   const visiblePaths = presentation.paths;
   const [alignmentGuides, setAlignmentGuides] = useState<AlignmentGuide[]>([]);
   const [dragged, setDragged] = useState<{ id: string; position: MapPoint }>();
@@ -92,7 +101,7 @@ export function InfiniteMapCanvas({
     | undefined
   >(undefined);
   const [layoutMode, setLayoutMode] = useState<"saved" | "aligned" | "staggered" | "horizontal">(
-    "staggered",
+    "aligned",
   );
   const autoArrange = layoutMode !== "saved";
   const [arrangedEdits, setArrangedEdits] = useState<Map<string, MapPoint>>(() => new Map());
@@ -255,7 +264,9 @@ export function InfiniteMapCanvas({
   }
 
   function fitContent() {
-    applyTransform(fitMapToBounds(bounds, viewportSize()));
+    applyTransform(
+      fitMapToBounds(bounds, selectedScreenId ? navigationViewportSize() : viewportSize()),
+    );
     viewportRef.current?.focus({ preventScroll: true });
   }
 
@@ -271,7 +282,10 @@ export function InfiniteMapCanvas({
       node,
     );
     animateTransform(
-      fitMapToBounds(mapContentBounds(visibleScreens, resetPositions), viewportSize()),
+      fitMapToBounds(
+        mapContentBounds(visibleScreens, resetPositions),
+        selectedScreenId ? navigationViewportSize() : viewportSize(),
+      ),
     );
     viewportRef.current?.focus({ preventScroll: true });
   }
@@ -366,7 +380,7 @@ export function InfiniteMapCanvas({
       const next = fitMapToBounds(
         bounds,
         {
-          width: viewport?.clientWidth || 900,
+          width: Math.max(240, (viewport?.clientWidth || 900) - (selectedScreenId ? 288 : 0)),
           height: viewport?.clientHeight || 560,
         },
         MAP_OPEN_SCALE,
@@ -606,7 +620,7 @@ export function InfiniteMapCanvas({
         setLayoutAnchors={setLayoutAnchors}
         setArrangedEdits={setArrangedEdits}
         animateTransform={animateTransform}
-        viewportSize={viewportSize}
+        viewportSize={() => (selectedScreenId ? navigationViewportSize() : viewportSize())}
         resetView={resetView}
         selectedPath={selectedPath}
         setSelectedPathId={setSelectedPathId}
@@ -668,6 +682,7 @@ export function InfiniteMapCanvas({
         paths={visiblePaths}
         onSelectScreen={focusScreen}
         onRefresh={onRefreshScreen && selected ? () => onRefreshScreen(selected) : undefined}
+        onMerge={onMergeScreen && selected ? () => onMergeScreen(selected) : undefined}
         onRename={onUpdateScreen ? (title) => onUpdateScreen(selected!.id, { title }) : undefined}
         saving={saving}
         onClose={() => {

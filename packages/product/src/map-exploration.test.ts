@@ -303,3 +303,47 @@ test("map proposal review forwards revision-guarded canonical mutations", async 
     prove: false,
   });
 });
+
+test("merged captures remain selectable and their raw tree stays paired with the displayed image", () => {
+  const capture = (id: string, updatedAt: number) => ({
+    id,
+    updatedAt,
+    screenshotUri: `relay-evidence://${id}`,
+    evidenceUris: [`relay-evidence://${id}`],
+    rawAccessibilityTree: { uri: `relay-evidence://${id}-tree` },
+  });
+  const overview = projectProductMap({
+    id: "merged",
+    name: "Merged",
+    revision: 2,
+    screens: {
+      home: {
+        id: "home",
+        title: "Home",
+        variantIds: ["old"],
+        consolidations: [
+          {
+            sourceVariants: [capture("keyboard", 2)],
+            sourceScreens: [
+              {
+                consolidations: [{ sourceVariants: [capture("nested", 0)], sourceScreens: [] }],
+              },
+            ],
+          },
+        ],
+      },
+    },
+    screenVariants: { old: capture("old", 1) },
+    connections: {},
+    tests: {},
+    flows: { main: { startScreenId: "home" } },
+  } as never);
+  assert.deepEqual(
+    overview.screens[0]!.variants.map((item) => item.id),
+    ["keyboard", "old", "nested"],
+  );
+  assert.equal(overview.screens[0]!.variantCount, 3);
+  assert.equal(overview.screens[0]!.screenshotUri, "relay-evidence://keyboard");
+  assert.equal(overview.screens[0]!.accessibilityTreeUri, "relay-evidence://keyboard-tree");
+  assert.equal(overview.screens[0]!.entryPoint, true);
+});

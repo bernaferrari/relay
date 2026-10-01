@@ -1,3 +1,4 @@
+import { mapPathGroups } from "./map-path-groups";
 import { isRoutineReturn } from "./map-edges";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 import { Button } from "@relay/ui-react/components/button";
@@ -17,6 +18,7 @@ export function ScreenInspector({
   onFocusScreen,
   onRename,
   onRefresh,
+  onMerge,
   saving,
   onClose,
 }: {
@@ -25,6 +27,7 @@ export function ScreenInspector({
   onFocusScreen(): void;
   onRename?: (title: string) => Promise<void>;
   onRefresh?: () => void;
+  onMerge?: () => void;
   saving: boolean;
   loadScreenshot?: (uri: string) => Promise<Blob>;
   screen: ProductMapScreen | undefined;
@@ -169,6 +172,17 @@ export function ScreenInspector({
               </Link>
             ) : null}
           </div>
+          {onMerge ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              disabled={saving}
+              onClick={onMerge}
+            >
+              Merge with another screen
+            </Button>
+          ) : null}
           <section className="space-y-4 border-t border-border pt-4" aria-label="Connected screens">
             <Connections
               title="Arrive from"
@@ -271,7 +285,8 @@ function Connections({
       </h3>
       {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
       <div className="overflow-hidden rounded-lg border border-border/60 divide-y divide-border/60">
-        {paths.map((path) => {
+        {mapPathGroups(paths).map((group) => {
+          const path = group[0]!;
           const id = outgoing ? path.toScreenId : path.fromScreenId;
           const name = outgoing ? (path.toTitle ?? path.label) : path.fromTitle;
           const content = (
@@ -280,7 +295,9 @@ function Connections({
                 <span className="block break-words leading-5 font-medium">{name}</span>
                 {!isRoutineReturn(path) && path.label !== name ? (
                   <span className="mt-0.5 block break-words text-xs leading-4 text-muted-foreground">
-                    {path.label}
+                    {group.length > 1
+                      ? `${group.length} paths · ${[...new Set(group.map((item) => item.label))].join(" · ")}`
+                      : path.label}
                   </span>
                 ) : null}
               </span>

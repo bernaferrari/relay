@@ -12,6 +12,7 @@ export function layoutMapGraph(
   columnGap: number,
   rowGap: number,
   staggered = false,
+  preferredRoots: readonly string[] = [],
 ): Map<string, LayoutPoint> {
   const known = new Set(ids);
   const children = new Map<string, string[]>();
@@ -26,7 +27,11 @@ export function layoutMapGraph(
   }
   const visited = new Set<string>();
   const roots: string[] = [];
-  for (const id of [...ids.filter((id) => !incoming.has(id)), ...ids]) {
+  for (const id of [
+    ...preferredRoots.filter((id) => known.has(id)),
+    ...ids.filter((id) => !incoming.has(id)),
+    ...ids,
+  ]) {
     if (visited.has(id)) continue;
     roots.push(id);
     visited.add(id);

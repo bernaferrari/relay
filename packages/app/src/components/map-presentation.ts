@@ -1,6 +1,7 @@
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 
 export type PresentedMapPath = ProductMapPath & {
+  readonly parallelPaths?: readonly ProductMapPath[];
   readonly intermediateScreens?: readonly ProductMapScreen[];
 };
 

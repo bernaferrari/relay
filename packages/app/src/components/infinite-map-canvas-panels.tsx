@@ -351,6 +351,30 @@ export function MapCanvasPanels({
             ) : (
               <span className="text-xs">Finish</span>
             )}
+            {paths.filter(
+              (path) =>
+                path.fromScreenId === selectedPath.fromScreenId &&
+                path.toScreenId === selectedPath.toScreenId,
+            ).length > 1 ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
+                  Choose path
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  {paths
+                    .filter(
+                      (path) =>
+                        path.fromScreenId === selectedPath.fromScreenId &&
+                        path.toScreenId === selectedPath.toScreenId,
+                    )
+                    .map((path) => (
+                      <DropdownMenuItem key={path.id} onClick={() => setSelectedPathId(path.id)}>
+                        {path.label}
+                      </DropdownMenuItem>
+                    ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
             {selectedPath.intermediateScreens?.length ? (
               <Button size="sm" variant="outline" onClick={() => setShowIntermediateScreens(true)}>
                 Show intermediate screens

@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { createAppMap } from "./collaboration.js";
 import type {
   AuthoringCaptureProvenance,
   AuthoringObservation,
@@ -86,15 +90,30 @@ test("watch-and-infer never turns screen observations into a synthetic passing r
 });
 
 test("a verified live demonstration identifies recording as its proof source", async () => {
-  const reviewed = await attachLiveDemonstrationAttempt(
-    reviewingSession({
-      schemaVersion: 1,
-      mode: "control-and-record",
-      origin: "relay-control",
-    }),
-  );
-  assert.equal(reviewed.take?.replayAttempts.at(-1)?.source, "recording");
-  assert.equal(reviewed.take?.replayAttempts.at(-1)?.outcome, "passed");
+  const directory = await mkdtemp(join(tmpdir(), "relay-recording-proof-"));
+  const previous = process.env.RELAY_STATE_DIR;
+  process.env.RELAY_STATE_DIR = directory;
+  try {
+    await createAppMap({
+      organizationId: "local",
+      projectId: "project-1",
+      appMapId: "map-1",
+      name: "Recording proof",
+    });
+    const reviewed = await attachLiveDemonstrationAttempt(
+      reviewingSession({
+        schemaVersion: 1,
+        mode: "control-and-record",
+        origin: "relay-control",
+      }),
+    );
+    assert.equal(reviewed.take?.replayAttempts.at(-1)?.source, "recording");
+    assert.equal(reviewed.take?.replayAttempts.at(-1)?.outcome, "passed");
+  } finally {
+    if (previous === undefined) delete process.env.RELAY_STATE_DIR;
+    else process.env.RELAY_STATE_DIR = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("instrumented provenance also waits for explicit replay in the offline first slice", async () => {

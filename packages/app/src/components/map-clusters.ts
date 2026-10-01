@@ -1,3 +1,4 @@
+import { mapEntryScreenIds } from "./map-entry-screens";
 import type { ProductMapPath, ProductMapScreen } from "@relay/product/map-exploration";
 import type { MapBounds, MapNodeSize, MapPoint } from "./map-canvas-geometry";
 
@@ -27,12 +28,11 @@ export function mapClusters(
     parent.set(id, root);
     return root;
   };
-  const incoming = new Set<string>();
+  const entries = new Set(mapEntryScreenIds(screens, paths));
   for (const path of paths) {
     if (!path.toScreenId || path.toScreenId === path.fromScreenId) continue;
     if (!parent.has(path.fromScreenId) || !parent.has(path.toScreenId)) continue;
     parent.set(find(path.fromScreenId), find(path.toScreenId));
-    incoming.add(path.toScreenId);
   }
   const groups = new Map<string, ProductMapScreen[]>();
   for (const screen of screens) {
@@ -47,7 +47,7 @@ export function mapClusters(
         return point ? [point] : [];
       });
       if (!points.length) return [];
-      const entry = members.find((screen) => !incoming.has(screen.id)) ?? members[0]!;
+      const entry = members.find((screen) => entries.has(screen.id)) ?? members[0]!;
       return [
         {
           id: members.map((screen) => screen.id).sort()[0]!,
