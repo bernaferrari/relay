@@ -40,12 +40,27 @@ Run `pnpm doctor` if you have trouble with setup. Android requires `adb`, and ph
 The plugin bundles MCP configuration and a skill for verifying code changes. Setup instructions cover Codex, Claude Code, and compatible MCP hosts. You can also use the CLI to run a saved test:
 
 ```bash
-pnpm relay connect
-pnpm relay run settings-localization
-pnpm relay export-evidence <run-id>
+./bin/relay device list --json
+./bin/relay run <test-id> --map <app-id> --device <serial> --json
+./bin/relay export <run-id> --out ./review --json
 ```
 
-Replace `settings-localization` with the name of your test. `pnpm relay --help` lists the available commands. Optional AI exploration requires `OPENROUTER_API_KEY`.
+Use the saved Test and App IDs, a serial from the device list, and the Run ID
+returned by the run command. For a saved browser/account configuration, replace
+`--device <serial>` with `--lane <lane-id>`. `./bin/relay --help` lists the available
+commands. Optional AI exploration requires a configured model provider.
+
+Task guidance is bundled with the code, so an agent can use it before connecting:
+
+```bash
+./bin/relay guide
+./bin/relay guide record
+./bin/relay guide waits
+```
+
+Installed MCP users can run `relay-mcp guide` or read `relay://guides` in any
+profile. The guides cover setup, recording, running, targets, waits, debugging,
+review, maps, and agent use. Reading them needs no server, model, or credentials.
 
 ### Keeping screen identity consistent
 

@@ -12,13 +12,17 @@ const workspaceAliases = new Map([
   ["@relay/protocol", resolve(repositoryRoot, "packages/protocol/src/index.ts")],
   ["@relay/workflows", resolve(repositoryRoot, "packages/workflows/src/index.ts")],
   ["@relay/workflows/outcomes", resolve(repositoryRoot, "packages/workflows/src/outcome-jobs.ts")],
+  [
+    "@relay/workflows/task-guides",
+    resolve(repositoryRoot, "packages/workflows/src/task-guides.ts"),
+  ],
 ]);
 
 const workspaceAliasPlugin = {
   name: "relay-workspace-aliases",
   setup(buildContext) {
     buildContext.onResolve(
-      { filter: /^@relay\/(client|protocol|workflows)(\/outcomes)?$/ },
+      { filter: /^@relay\/(client|protocol|workflows)(\/(outcomes|task-guides))?$/ },
       (args) => {
         const target = workspaceAliases.get(args.path);
         return target ? { path: target } : undefined;

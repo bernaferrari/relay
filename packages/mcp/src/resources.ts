@@ -52,6 +52,7 @@ import {
 } from "./tools.js";
 import { relayMcpPrompts, relayMcpPromptsForTools } from "./prompts.js";
 import { relayOperatorTools } from "./operator-tools.js";
+import { registerTaskGuideResources } from "./task-guide-resources.js";
 
 export const relayMcpResourceUris = {
   project: "relay://project/current",
@@ -94,6 +95,7 @@ export function registerRelayResources(
   server: McpServer,
   { invoker, scope, profile, tools }: RegisterRelayResourcesOptions,
 ): void {
+  registerTaskGuideResources(server, scope, profile, tools);
   const activeOperations = new Set(tools.map(({ operationId }) => operationId));
   const leaseRecoveryRule =
     profile === "operator"

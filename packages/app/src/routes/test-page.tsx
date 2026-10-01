@@ -498,6 +498,7 @@ export function TestPage() {
       ) : null}
       <TestWorkspaceActions
         testId={testId}
+        appMapId={test.data?.appMapId}
         testName={test.data?.name}
         testPresent={Boolean(test.data)}
         inPlan={typeof search.plan === "string"}

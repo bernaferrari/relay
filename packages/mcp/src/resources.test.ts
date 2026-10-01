@@ -7,6 +7,7 @@ import {
   relayMcpResourceUris,
 } from "./resources.js";
 import { createMcpServer, type OperationInvoker } from "./server.js";
+import { relayTaskGuideCatalog, formatRelayTaskGuide } from "@relay/workflows/task-guides";
 import {
   defaultRelayMcpProfile,
   relayMcpTools,
@@ -309,6 +310,34 @@ test("lists stable scoped Relay resources and templates with JSON MIME types", a
     );
   } finally {
     await session.close();
+  }
+});
+
+test("all MCP profiles expose the same bundled task guides without contacting Relay", async () => {
+  for (const profile of ["operator", "outcome", "proof", "full"] as const) {
+    const session = await connectMcp(
+      {
+        async invoke() {
+          throw new Error("Relay is offline");
+        },
+      },
+      profile,
+    );
+    try {
+      const index = resourceContent(
+        await session.request("resources/read", { uri: "relay://guides" }),
+      );
+      assert.ok(index.text.includes("relay://guides/record"));
+      for (const guide of relayTaskGuideCatalog) {
+        const content = resourceContent(
+          await session.request("resources/read", { uri: `relay://guides/${guide.topic}` }),
+        );
+        const value = JSON.parse(content.text);
+        assert.equal(value.data.markdown, formatRelayTaskGuide(guide));
+      }
+    } finally {
+      await session.close();
+    }
   }
 });
 

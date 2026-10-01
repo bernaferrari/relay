@@ -7,6 +7,20 @@ stdio; the reviewed `relay-mcp-bridge` command adapts that same process to Strea
 hosts that accept only a remote MCP URL. Stdout is reserved for MCP protocol messages and
 diagnostics go to stderr.
 
+## Read task guidance offline
+
+```bash
+relay-mcp guide
+relay-mcp guide record
+relay-mcp guide waits --json
+```
+
+The installed artifact includes guidance for setup, recording, running, target
+selection, waits, debugging, review, maps, and agents. These commands do not
+connect to Relay or require credentials. Every MCP profile also exposes
+`relay://guides` and the topic URIs it lists. The CLI's `relay guide` reads the
+same catalog, so instructions match the shipped code.
+
 ## Install and configure a client
 
 For a released host installation, use the host-neutral executable. Codex, Claude Code, and

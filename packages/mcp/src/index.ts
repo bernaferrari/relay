@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { parseMcpConfig } from "./config.js";
 import { runRelayMcpDoctorCommand } from "./doctor.js";
 import { createMcpServer, createRelayOperationInvoker } from "./server.js";
+import { runRelayMcpGuide } from "./task-guide-cli.js";
 
 function diagnostic(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
@@ -15,6 +16,10 @@ export function runMcp(
   argv: readonly string[] = process.argv.slice(2),
   env: Record<string, string | undefined> = process.env,
 ) {
+  if (argv[0] === "guide") {
+    runRelayMcpGuide(argv.slice(1), process.stdout);
+    return Promise.resolve();
+  }
   if (argv[0] === "doctor") {
     return runRelayMcpDoctorCommand(argv.slice(1), env).then((exitCode) => {
       process.exitCode = exitCode;

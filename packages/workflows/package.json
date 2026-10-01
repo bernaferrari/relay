@@ -12,7 +12,8 @@
     "./recording-outcomes": "./src/recording-outcome-jobs.ts",
     "./target-catalog": "./src/target-catalog.ts",
     "./types": "./src/types.ts",
-    "./testing": "./src/testing.ts"
+    "./testing": "./src/testing.ts",
+    "./task-guides": "./src/task-guides.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",

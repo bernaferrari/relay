@@ -111,6 +111,7 @@ async function readMcpResponses(command, args, environment) {
   const responses = [];
   let output = "";
   let stderr = "";
+  const complete = () => [2, 3, 4].every((id) => responses.some((response) => response.id === id));
   const done = new Promise((resolvePromise, reject) => {
     child.stdout.on("data", (chunk) => {
       output += String(chunk);
@@ -124,15 +125,15 @@ async function readMcpResponses(command, args, environment) {
         }
       }
       output = output.slice(output.lastIndexOf("\n") + 1);
-      if (responses.some((response) => response.id === 2)) resolvePromise();
+      if (complete()) resolvePromise();
     });
     child.stderr.on("data", (chunk) => {
       stderr += String(chunk);
     });
     child.once("error", reject);
     child.once("exit", (code) => {
-      if (!responses.some((response) => response.id === 2)) {
-        reject(new Error(`relay-mcp exited before tools/list (${code}): ${stderr}`));
+      if (!complete()) {
+        reject(new Error(`relay-mcp exited before tool and guide discovery (${code}): ${stderr}`));
       }
     });
   });
@@ -154,6 +155,14 @@ async function readMcpResponses(command, args, environment) {
   child.stdin.write(
     `${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })}\n`,
   );
+  for (const [id, uri] of [
+    [3, "relay://guides"],
+    [4, "relay://guides/waits"],
+  ]) {
+    child.stdin.write(
+      `${JSON.stringify({ jsonrpc: "2.0", id, method: "resources/read", params: { uri } })}\n`,
+    );
+  }
   let timeout;
   try {
     await Promise.race([
@@ -164,8 +173,16 @@ async function readMcpResponses(command, args, environment) {
     ]);
   } finally {
     if (timeout) clearTimeout(timeout);
+    child.kill();
   }
-  child.kill();
+  const index = responses.find((response) => response.id === 3);
+  assert.ok(index?.result?.contents?.[0]?.text, JSON.stringify(index));
+  assert.match(index.result.contents[0].text, /relay:\/\/guides\/record/u);
+  const waits = responses.find((response) => response.id === 4);
+  assert.ok(waits?.result?.contents?.[0]?.text, JSON.stringify(waits));
+  const guide = JSON.parse(waits.result.contents[0].text).data;
+  assert.equal(guide.topic, "waits");
+  assert.match(guide.markdown, /timeout is the maximum wait/u);
   return responses;
 }
 
@@ -218,6 +235,20 @@ async function main() {
     await mkdir(installRoot, { recursive: true });
     run("npm", ["init", "--yes"], { cwd: installRoot });
     run("npm", ["install", "--ignore-scripts", "--no-save", tarball], { cwd: installRoot });
+    const offlineGuide = run(
+      process.execPath,
+      [join(installRoot, "node_modules/@relay/mcp/dist/relay-mcp.js"), "guide", "waits", "--json"],
+      {
+        cwd: installRoot,
+        env: {
+          RELAY_URL: "http://127.0.0.1:1",
+          RELAY_CREDENTIAL_SOURCE: "env:MISSING_GUIDE_TOKEN",
+          MISSING_GUIDE_TOKEN: "",
+        },
+      },
+    );
+    assert.equal(JSON.parse(offlineGuide.stdout).topic, "waits");
+    assert.match(JSON.parse(offlineGuide.stdout).markdown, /timeout is the maximum wait/u);
     await typecheckPublicExports(installRoot);
     ({ fixture } = await startFixture(operationIds));
     const address = fixture.address();
