@@ -277,6 +277,8 @@ export type AuthoringTakeRevision = {
 };
 
 export type AuthoringReplayAttempt = {
+  /** An unedited live demonstration can authorize saving without a second execution. */
+  source?: "recording" | "replay";
   id: string;
   takeId: string;
   takeRevision: number;
@@ -691,6 +693,7 @@ export type AuthoringSessionSummary = {
       captureProof: AuthoringCaptureProof;
     }>;
     latestReplay?: {
+      source?: "recording" | "replay";
       id: string;
       outcome: AuthoringReplayAttempt["outcome"];
       takeRevision: number;

@@ -32,7 +32,7 @@ export function summarizeAuthoringSession(session: AuthoringSession): AuthoringS
     .filter((attempt) => attempt.takeRevision === revision?.revision)
     .at(-1);
   const captureProvenance = authoringCaptureProvenance(session.captureProvenance);
-  const replayPassed = replay?.outcome === "passed";
+  const replayPassed = replay?.source !== "recording" && replay?.outcome === "passed";
   return {
     id: session.id,
     actorId: session.actorId,
@@ -74,6 +74,7 @@ export function summarizeAuthoringSession(session: AuthoringSession): AuthoringS
             ...(replay
               ? {
                   latestReplay: {
+                    ...(replay.source ? { source: replay.source } : {}),
                     id: replay.id,
                     outcome: replay.outcome,
                     takeRevision: replay.takeRevision,

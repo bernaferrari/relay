@@ -1,6 +1,9 @@
 import { resolveStepPoint, type AuthoringObservation, type StepTarget } from "@relay/protocol";
 import type { SnapshotNode } from "./device.js";
-import { resolveNamedControlOutcome } from "./device-target-resolution.js";
+import {
+  INTERACTIVE_SNAPSHOT_ROLES,
+  resolveNamedControlOutcome,
+} from "./device-target-resolution.js";
 import { hasCurrentAuthoringSemantics } from "./authoring-observation-proof.js";
 
 /** Promote a pixel click only when a fresh tree identifies a unique control at
@@ -32,6 +35,12 @@ export function semanticTargetForRecording(
   // Search every hit control for a unique ID before considering translated labels.
   for (const key of ["identifier", "label"] as const) {
     for (const node of candidates) {
+      // Region IDs (toolbars, sections, Compose wrappers) do not identify the
+      // clicked control. Prefer its label unless the ID belongs to an actual
+      // activation target, including non-hittable native control roles.
+      const role = (node.role ?? node.type ?? "").toLowerCase().split(".").at(-1) ?? "";
+      if (key === "identifier" && node.hittable !== true && !INTERACTIVE_SNAPSHOT_ROLES.has(role))
+        continue;
       // A full-screen container's name is not the control the person clicked.
       if (
         node.rect!.width * node.rect!.height >

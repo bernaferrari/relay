@@ -85,6 +85,18 @@ test("watch-and-infer never turns screen observations into a synthetic passing r
   );
 });
 
+test("a verified live demonstration identifies recording as its proof source", async () => {
+  const reviewed = await attachLiveDemonstrationAttempt(
+    reviewingSession({
+      schemaVersion: 1,
+      mode: "control-and-record",
+      origin: "relay-control",
+    }),
+  );
+  assert.equal(reviewed.take?.replayAttempts.at(-1)?.source, "recording");
+  assert.equal(reviewed.take?.replayAttempts.at(-1)?.outcome, "passed");
+});
+
 test("instrumented provenance also waits for explicit replay in the offline first slice", async () => {
   const session = reviewingSession({
     schemaVersion: 1,

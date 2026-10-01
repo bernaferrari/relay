@@ -531,7 +531,11 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                     ? "Saving step changes…"
                     : "Saving Test…"
                 : review?.latestReplay
-                  ? replayDetail(review.latestReplay.outcome, canApprove)
+                  ? replayDetail(
+                      review.latestReplay.outcome,
+                      canApprove,
+                      review.latestReplay.source,
+                    )
                   : canApprove
                     ? "Recording captured. Ready to save."
                     : actions.length

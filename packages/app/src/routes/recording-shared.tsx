@@ -14,6 +14,20 @@ type ProductRecovery = {
   retryable: boolean;
 };
 
+export function ReconnectLiveViewButton({
+  disabled,
+  onClick,
+}: {
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button variant="secondary" disabled={disabled} onClick={onClick}>
+      Reconnect live view
+    </Button>
+  );
+}
+
 export function errorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : "";
   if (/raw accessibility|immutable raw|offline geometry|raw-evidence/iu.test(message)) {

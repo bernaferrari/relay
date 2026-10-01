@@ -83,3 +83,37 @@ test("stale trees and ambiguous labels do not replace a coordinate click", () =>
   capture.proof!.semantics.status = "unavailable";
   assert.equal(semanticTargetForRecording({ point: { x: 70, y: 120 } }, capture), undefined);
 });
+
+test("an Android toolbar identifier does not replace the menu control inside it", () => {
+  const capture = observation();
+  capture.bounds = { width: 1080, height: 2340 };
+  capture.nodes = [
+    {
+      identifier: "conversation_top_bar",
+      role: "android.view.View",
+      index: 1,
+      enabled: true,
+      rect: { x: 0, y: 0, width: 1080, height: 295 },
+    },
+    {
+      role: "android.view.View",
+      index: 2,
+      parentIndex: 1,
+      hittable: true,
+      enabled: true,
+      rect: { x: 36, y: 127, width: 144, height: 144 },
+    },
+    {
+      label: "Show navigation drawer",
+      role: "android.view.View",
+      index: 3,
+      parentIndex: 2,
+      enabled: true,
+      rect: { x: 72, y: 163, width: 72, height: 72 },
+    },
+  ];
+  assert.deepEqual(semanticTargetForRecording({ point: { x: 107, y: 206 } }, capture), {
+    target: { label: "Show navigation drawer" },
+    name: "Show navigation drawer",
+  });
+});

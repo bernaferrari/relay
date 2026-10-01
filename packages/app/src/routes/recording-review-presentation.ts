@@ -151,7 +151,12 @@ export function replayTitle(
 export function replayDetail(
   outcome: "passed" | "failed" | "cancelled" | undefined,
   canApprove: boolean,
+  source?: "recording" | "replay",
 ) {
+  if (source === "recording")
+    return canApprove
+      ? "Recording verified. Ready to save."
+      : "Recording needs attention. Review the steps, then replay.";
   if (outcome === "passed" && canApprove) return "Replay passed. Ready to save.";
   if (outcome === "passed")
     return "Steps changed since the last replay. Replay again before saving.";

@@ -11,11 +11,8 @@ import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { getRouteApi, useNavigate, useRouteContext } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import type {
-  LiveTargetBrowserContext,
-  LiveTargetSession,
-  LiveTargetStatus,
-} from "../data/live-target-session";
+import type { LiveTargetSession } from "../data/live-target-session";
+import { useRecordingLivePreview } from "./recording-live-preview";
 import {
   appendRecordingMutation,
   dispatchRecordingInput,
@@ -36,7 +33,12 @@ import {
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
 import { clearWorkflowPointerIfCurrent, writeWorkflowPointer } from "../data/workflow-pointer";
 import { LiveTargetCanvas } from "./live-target-canvas";
-import { PageLoading, errorMessage, targetLabel, liveIssueMessage } from "./recording-shared";
+import {
+  PageLoading,
+  ReconnectLiveViewButton,
+  errorMessage,
+  targetLabel,
+} from "./recording-shared";
 import { TalkBackModeSelect, TalkBackOverlay, useTalkBackReview } from "./talkback-review-panel";
 
 const testRouteApi = getRouteApi("/tests/$testId/record");
@@ -70,15 +72,11 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
   const [conditionOpen, setConditionOpen] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
   const [checkpointLabel, setCheckpointLabel] = useState("");
-  const liveCanvas = useRef<HTMLCanvasElement>(null);
-  const [liveStatus, setLiveStatus] = useState<LiveTargetStatus>("idle");
-  const [browserContext, setBrowserContext] = useState<LiveTargetBrowserContext>();
   const [liveIssue, setLiveIssue] = useState<string>();
   const [recoveryKind, setRecoveryKind] = useState<RecordingInputOutcome["kind"]>("confirmed");
   const [liveInputBusy, setLiveInputBusy] = useState(false);
   const [talkBackRefresh, setTalkBackRefresh] = useState(0);
   const [stopWaitingForInput, setStopWaitingForInput] = useState(false);
-  const liveSession = useRef<LiveTargetSession | undefined>(undefined);
   const liveInputQueue = useRef<Promise<boolean>>(Promise.resolve(true));
 
   const recording = useQuery({
@@ -213,6 +211,12 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
 
   const selectedTarget = recording.data?.selectedTarget ?? snapshot?.frozen?.target;
   const selectedTargetId = selectedTarget?.targetId;
+  const { liveCanvas, liveSession, liveStatus, browserContext, previewIssue, reconnect } =
+    useRecordingLivePreview({
+      enabled: previewAvailable,
+      selectedTarget,
+      createLiveTarget: productService.liveTarget,
+    });
   const talkBack = useTalkBackReview({
     enabled: Boolean(selectedTargetId),
     serial: selectedTargetId,
@@ -226,55 +230,6 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
     enabled: Boolean(selectedTarget),
     staleTime: 30_000,
   });
-
-  useEffect(() => {
-    const createLiveTarget = productService.liveTarget;
-    if (!previewAvailable || !selectedTarget || !liveCanvas.current || !createLiveTarget) {
-      setLiveStatus("idle");
-      setLiveIssue(undefined);
-      return;
-    }
-    let disposed = false;
-    let stop: (() => void) | undefined;
-    let unsubscribe: (() => void) | undefined;
-    let mountedSession: LiveTargetSession | undefined;
-    setBrowserContext(undefined);
-    // Show the same signed-in browser the recording drives.
-    const account =
-      selectedTarget.kind === "browser" ? selectedTarget.authenticationFixtureId : undefined;
-    void createLiveTarget(
-      selectedTarget,
-      account ? { authenticationFixtureId: account } : undefined,
-    )
-      .then((session) => {
-        if (disposed || !liveCanvas.current) {
-          session.close();
-          return;
-        }
-        mountedSession = session;
-        liveSession.current = session;
-        unsubscribe = session.subscribe((next) => {
-          setLiveStatus(next.status);
-          setBrowserContext(next.browserContext);
-          if (recordingRecoveryBlocksSend(recordingLedger.current)) return;
-          setLiveIssue(next.issue ? liveIssueMessage(next.issue) : undefined);
-        });
-        stop = session.mount(liveCanvas.current);
-      })
-      .catch((error: unknown) => {
-        if (!disposed) {
-          setLiveStatus("degraded");
-          setLiveIssue(liveIssueMessage(errorMessage(error)));
-        }
-      });
-    return () => {
-      disposed = true;
-      stop?.();
-      unsubscribe?.();
-      if (liveSession.current === mountedSession) liveSession.current = undefined;
-      mountedSession?.close();
-    };
-  }, [previewAvailable, platform, productService, selectedTargetId]);
 
   const liveInputOutcome = useRef<Promise<RecordingInputOutcome>>(
     Promise.resolve({ kind: "confirmed" }),
@@ -318,7 +273,7 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
     persistLedger(appendRecordingMutation(recordingLedger.current, outcome));
     setRecoveryKind(outcome.kind);
     const recovery = recordingInputRecoveryMessage(outcome);
-    if (recovery) setLiveIssue(recovery);
+    setLiveIssue(recovery);
     return outcome;
   }
 
@@ -594,7 +549,13 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
                     <LiveTargetCanvas
                       canvasRef={liveCanvas}
                       status={liveStatus}
-                      issue={recoveryKind === "unknown" ? undefined : liveIssue}
+                      issue={previewIssue ?? (recoveryKind === "unknown" ? undefined : liveIssue)}
+                      recoveryAction={
+                        <ReconnectLiveViewButton
+                          disabled={liveInputBusy || action.isPending}
+                          onClick={reconnect}
+                        />
+                      }
                       busy={liveInputBusy || action.isPending || !allowed.has("record")}
                       targetTitle={
                         targetLabel(targetPresentation.data?.[0] ?? selectedTarget).title
