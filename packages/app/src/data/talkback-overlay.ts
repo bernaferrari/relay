@@ -15,7 +15,7 @@ export const ACCESSIBILITY_LABEL_MODE_OPTIONS = [
 export function validAccessibilityLabelMode(
   value: string | null | undefined,
 ): AccessibilityLabelMode {
-  return value === "hover" || value === "always" ? value : "off";
+  return value === "off" || value === "always" ? value : "hover";
 }
 
 export function containsOverlayBox(box: OverlayBox, point: { x: number; y: number }): boolean {

@@ -2,7 +2,7 @@
 import { Skeleton } from "@relay/ui-react/components/skeleton";
 import { Button } from "@relay/ui-react/components/button";
 import { projectError } from "@relay/product/errors";
-import { RotateCcw } from "lucide-react";
+import { CircleAlert, RotateCcw } from "lucide-react";
 import type { ReactNode } from "react";
 import { RecoveryState } from "../components/product-patterns";
 type ProductRecovery = {
@@ -159,6 +159,20 @@ export function RecordingProblem({
     : projectedError?.title !== "Something went wrong"
       ? projectedError
       : undefined;
+  if (layout === "compact" && recovery?.title === "Replay did not prove the reviewed recording") {
+    return (
+      <div
+        role="alert"
+        data-slot="recording-problem"
+        className={`flex items-center gap-2 rounded-md bg-muted/40 px-3 py-2 text-sm ${className ?? ""}`}
+      >
+        <CircleAlert className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+        <span>
+          {publicRecovery?.detail ?? "The test stopped. Review the failed step, then run it again."}
+        </span>
+      </div>
+    );
+  }
   return (
     <RecoveryState
       className={`${layout === "centered" ? "m-0 w-full max-w-none flex-1 justify-center border-0" : "mt-7 max-w-2xl"}${className ? ` ${className}` : ""}`}
@@ -187,6 +201,17 @@ export function RecordingProblem({
 function recoveryCopy(
   recovery: ProductRecovery,
 ): Pick<ProductRecovery, "title" | "detail" | "recovery"> {
+  if (
+    /Return the device to the recorded source screen|Navigate the device to .+ before replaying/iu.test(
+      recovery.detail,
+    )
+  ) {
+    return {
+      title: "Starting screen unavailable",
+      detail: "Open the starting screen in the app, then run the test again.",
+      recovery: "",
+    };
+  }
   if (recovery.sourceCode === "raw-evidence-variant-recapture-required") {
     return {
       title: "Saved controls need review",

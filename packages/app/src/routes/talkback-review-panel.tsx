@@ -8,13 +8,14 @@ import {
   type CSSProperties,
   type RefObject,
 } from "react";
-import { Scan, Check, LoaderCircle } from "lucide-react";
+import { Scan, LoaderCircle } from "lucide-react";
 import { Button } from "@relay/ui-react/components/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
 } from "@relay/ui-react/components/dropdown-menu";
 import type { Platform } from "../platform/types";
 import {
@@ -53,7 +54,7 @@ export function TalkBackModeSelect({
         render={<Button variant="ghost" size="icon-sm" />}
         disabled={disabled}
         aria-label="Inspect elements"
-        title="Inspect elements"
+        title={`Inspect elements · ${mode === "hover" ? "Show on hover" : mode === "always" ? "Show all with labels" : "Never show"}`}
       >
         {loading ? (
           <LoaderCircle
@@ -64,19 +65,23 @@ export function TalkBackModeSelect({
           <Scan className="size-4" aria-hidden="true" />
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
-        {(
-          [
-            ["hover", "Show on hover"],
-            ["always", "Show all with labels"],
-            ["off", "Never show"],
-          ] as const
-        ).map(([value, label]) => (
-          <DropdownMenuItem key={value} onClick={() => onModeChange(value)}>
-            <span className="flex-1">{label}</span>
-            {mode === value ? <Check className="size-3.5" aria-hidden="true" /> : null}
-          </DropdownMenuItem>
-        ))}
+      <DropdownMenuContent align="start" className="min-w-56">
+        <DropdownMenuRadioGroup
+          value={mode}
+          onValueChange={(value) => onModeChange(validAccessibilityLabelMode(value))}
+        >
+          {(
+            [
+              ["hover", "Show on hover"],
+              ["always", "Show all with labels"],
+              ["off", "Never show"],
+            ] as const
+          ).map(([value, label]) => (
+            <DropdownMenuRadioItem key={value} value={value}>
+              {label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -11,7 +11,7 @@ import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useRouteContext } from "@tanstack/react-router";
-import { ArrowLeft, Redo2, RotateCcw, Save, Undo2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Redo2, RotateCcw, Save, Undo2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
@@ -25,7 +25,7 @@ import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
 import { RecordingActionsPanel, RecordingEvidencePanel } from "./recording-review-panels";
 import { replayDetail, useEvidenceObjectUrl } from "./recording-review-presentation";
 
-import { reviewPersistence, reviewVerificationLabel } from "../data/recording-review-persistence";
+import { reviewPersistence } from "../data/recording-review-persistence";
 import { useRecordingNameDraft } from "../data/use-recording-name-draft";
 import { RecordingReviewInspector } from "./recording-review-inspector";
 
@@ -433,18 +433,14 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
               {allowed.has("replay") && actions.length > 0 ? (
                 <Button
                   variant={canApprove ? "ghost" : "default"}
-                  title={
-                    snapshot?.frozen?.originApplication
-                      ? "Reopen the starting app and replay these steps"
-                      : undefined
-                  }
+                  title={`Replay on ${replayDeviceName}${snapshot?.frozen?.originApplication ? ". Reopen the starting app and replay these steps." : ""}`}
                   onClick={() => transition.mutate({ action: "replay" })}
                   disabled={transition.isPending}
                 >
                   <RotateCcw aria-hidden="true" />
                   {transition.isPending && transition.variables?.action === "replay"
                     ? "Replaying…"
-                    : `Replay on ${replayDeviceName}`}
+                    : "Run test"}
                 </Button>
               ) : null}
               {canApprove ? (
@@ -467,14 +463,8 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                 </Button>
               ) : null}
 
-              {persistence.editorState === "saving" ? <EditorSaveStatus state="saving" /> : null}
-              {persistence.kind === "name-only" && persistence.editorState === "saved" ? (
-                <EditorSaveStatus state="saved-locally" />
-              ) : null}
-              {reviewVerificationLabel(persistence.kind) ? (
-                <span role="status" className="text-xs text-muted-foreground">
-                  {reviewVerificationLabel(persistence.kind)}
-                </span>
+              {nameSaveState === "saving" && !transition.isPending ? (
+                <EditorSaveStatus state="saving" />
               ) : null}
               {persistence.editorState === "failed" ? (
                 <EditorSaveStatus state={persistence.editorState} detail={persistence.label} />
@@ -489,9 +479,11 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
             <strong className="font-medium text-foreground">{into.data.testName}</strong>.
           </p>
         ) : reviewReady ? (
-          <div className="flex items-end justify-between gap-4 [&>div]:w-full [&>div]:max-w-lg">
-            <Field>
-              <FieldLabel htmlFor="review-test-name">Test name</FieldLabel>
+          <div className="flex flex-wrap items-center gap-3">
+            <Field className="min-w-48 max-w-lg flex-1">
+              <FieldLabel className="sr-only" htmlFor="review-test-name">
+                Test name
+              </FieldLabel>
               <Input
                 id="review-test-name"
                 value={testName}
@@ -501,7 +493,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                   setNameSaveState("dirty");
                   setTestName(event.currentTarget.value);
                 }}
-                placeholder="For example, Change the app language"
+                placeholder="Name this Test"
                 maxLength={160}
                 autoComplete="off"
                 spellCheck
@@ -519,29 +511,45 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                 </Button>
               ) : null}
             </Field>
-            <p
-              className="text-xs text-muted-foreground"
-              role="status"
-              aria-label="Recording status"
-            >
-              {transition.isPending
-                ? transition.variables?.action === "replay"
-                  ? `Replaying on ${replayDeviceName}…`
-                  : transition.variables?.action === "edit"
-                    ? "Saving step changes…"
-                    : "Saving Test…"
-                : review?.latestReplay
-                  ? replayDetail(
-                      review.latestReplay.outcome,
-                      canApprove,
-                      review.latestReplay.source,
-                    )
+            {canApprove ||
+            transition.isPending ||
+            (!state?.recovery &&
+              (review?.latestReplay?.outcome === "failed" ||
+                review?.latestReplay?.outcome === "cancelled")) ? (
+              <p
+                className={`flex items-center gap-1.5 text-xs ${canApprove && !transition.isPending ? "text-success" : "text-muted-foreground"}`}
+                role="status"
+                aria-label="Recording status"
+                title={
+                  canApprove
+                    ? `${review?.latestReplay?.source === "recording" ? "Recording" : "Replay"} verified on ${replayDeviceName}. Ready to save.`
+                    : review?.latestReplay
+                      ? replayDetail(
+                          review.latestReplay.outcome,
+                          canApprove,
+                          review.latestReplay.source,
+                        )
+                      : `Replay on ${replayDeviceName} before saving.`
+                }
+              >
+                {canApprove && !transition.isPending ? (
+                  <CheckCircle2 className="size-3.5" aria-hidden="true" />
+                ) : null}
+                {transition.isPending
+                  ? transition.variables?.action === "replay"
+                    ? `Replaying on ${replayDeviceName}…`
+                    : transition.variables?.action === "edit"
+                      ? "Saving step changes…"
+                      : "Saving Test…"
                   : canApprove
-                    ? "Recording captured. Ready to save."
-                    : actions.length
-                      ? `Replay runs these steps on ${replayDeviceName} before saving.`
-                      : "No actions were recorded. Start a new recording to capture your Test."}
-            </p>
+                    ? "Verified"
+                    : review?.latestReplay?.outcome === "failed"
+                      ? "Replay failed. Open the failed step, then replay again."
+                      : review?.latestReplay?.outcome === "cancelled"
+                        ? "Replay cancelled"
+                        : null}
+              </p>
+            ) : null}
           </div>
         ) : null}
       </AuthoringHeader>
@@ -551,7 +559,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
         layout={reviewReady ? "compact" : "centered"}
         className={reviewReady ? "mx-4" : "m-auto flex-1 w-full !max-w-none !mt-0"}
         error={recording.error ?? transition.error ?? leaveDraft.error}
-        recovery={transition.data?.recovery ?? state?.recovery}
+        recovery={transition.isPending ? undefined : (transition.data?.recovery ?? state?.recovery)}
         onRetry={() => {
           void recording.refetch().then((result) => {
             if (!result.error && result.data && !blocksReview(result.data)) transition.reset();
@@ -600,10 +608,14 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
             stage={
               <RecordingEvidencePanel
                 action={selectedAction}
+                stepNumber={selectedIndex >= 0 ? selectedIndex + 1 : undefined}
                 exactMoment={Boolean(matchingEvidence)}
                 controls={evidencePreview.data?.controls ?? []}
                 evidenceRole={evidenceRole}
                 previewUrl={evidenceUrl}
+                loading={Boolean(
+                  evidence && !evidencePreview.error && (!evidencePreview.data || !evidenceUrl),
+                )}
                 fullPage={evidencePreview.data?.fullPage}
                 onEvidenceSelect={(id) => setSelectedEvidenceId(id)}
                 onEvidenceRoleChange={setEvidenceRole}

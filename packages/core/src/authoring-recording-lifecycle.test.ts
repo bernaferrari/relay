@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AuthoringEvidence, AuthoringObservation, AuthoringSession } from "@relay/protocol";
+import type {
+  AuthoringEvidence,
+  AuthoringInteraction,
+  AuthoringObservation,
+  AuthoringSession,
+} from "@relay/protocol";
 import { seedAuthoringRawRecording } from "./authoring-raw-recording.js";
 import {
   finishAuthoringRecording,
@@ -267,4 +272,137 @@ test("full-page capture retains document evidence without replacing viewport geo
   ]);
   assert.equal(revision.after?.id, "restored");
   assert.ok(!revision.after?.evidenceIds.includes("full-page"));
+});
+
+function generationObservation(
+  id: string,
+  capturedAt: number,
+  busy: boolean,
+): AuthoringObservation {
+  const result = observation(id, capturedAt);
+  result.foregroundApp = "test.app";
+  result.proof!.semantics.status = "current";
+  result.nodes = [
+    { index: 1, label: "Explain why sailboats need a keel.", bundleId: "test.app" },
+    {
+      index: 2,
+      label: busy ? "Stop message" : "Copy message",
+      bundleId: "test.app",
+      type: "android.widget.Button",
+      hittable: true,
+      rect: { x: 20, y: 200, width: 60, height: 60 },
+    },
+  ];
+  return result;
+}
+
+for (const stop of [false, true]) {
+  test(`completion is durably recorded before ${stop ? "Stop" : "the next capture"}`, async () => {
+    let tick = 100;
+    let frame = 0;
+    const executed: AuthoringInteraction[] = [];
+    const writes: AuthoringSession[] = [];
+    const lifecycle = dependencies({
+      now: () => ++tick,
+      async persistObservation() {
+        const capturedAt = 200 + frame++;
+        const captured = generationObservation(`frame-${frame}`, capturedAt, frame === 1);
+        return {
+          observation: captured,
+          evidence: [evidence(`evidence-${captured.id}`, capturedAt)],
+        };
+      },
+      async persistEvidence() {
+        throw new Error("no video");
+      },
+      async writeSession(session) {
+        writes.push(structuredClone(session));
+      },
+    });
+    const runtime = {
+      async execute(session: AuthoringSession, interaction: AuthoringInteraction) {
+        assert.equal(session.take!.rawEvents!.at(-1)!.kind, "interaction-intent");
+        executed.push(interaction);
+      },
+      async observe() {
+        return "capture";
+      },
+    };
+    let session = await recordAuthoringInteraction(
+      recordingSession(generationObservation("initial", 100, false)),
+      { kind: "tap", target: { identifier: "send" } },
+      runtime,
+      lifecycle,
+    );
+    session = stop
+      ? await finishAuthoringRecording(session, runtime, lifecycle)
+      : await recordAuthoringInteraction(
+          session,
+          { kind: "screenshot", label: "Finished response" },
+          runtime,
+          lifecycle,
+        );
+    const revision = session.take!.revisions.at(-1)!;
+    assert.equal(revision.actions[1]!.label, "Wait for result · Copy message");
+    assert.deepEqual(executed[1], {
+      kind: "steps",
+      label: "Wait for result · Copy message",
+      steps: [
+        {
+          kind: "expect",
+          target: { label: "Stop message" },
+          condition: "gone",
+          timeoutMs: 300_000,
+        },
+        { kind: "wait-for", target: { label: "Copy message" }, timeoutMs: 300_000 },
+      ],
+    });
+    assert.equal(executed.length, 2);
+    assert.equal(writes.length, stop ? 2 : 3);
+    assert.ok(
+      revision.actions.every((action) => action.steps.every((step) => step.kind !== "sleep")),
+    );
+    assert.equal(revision.after!.id, stop ? "frame-3" : "frame-4");
+    if (stop) assert.equal(session.take!.rawEvents!.at(-1)!.kind, "take-stop");
+  });
+}
+
+test("cancellation never infers completion or executes a wait", async () => {
+  let tick = 100;
+  const source = generationObservation("busy", 100, true);
+  const session = recordingSession(source);
+  session.take!.revisions[0]!.actions.push({
+    id: "send",
+    source: "manual",
+    recordedAt: 100,
+    startedAt: 100,
+    finishedAt: 100,
+    steps: [],
+    evidenceIds: [],
+  });
+  const result = await finishAuthoringRecording(
+    session,
+    {
+      async execute() {
+        throw new Error("cancel must not wait");
+      },
+      async observe() {
+        return "ready";
+      },
+    },
+    dependencies({
+      now: () => ++tick,
+      async persistObservation() {
+        return { observation: generationObservation("ready", 200, false), evidence: [] };
+      },
+      async persistEvidence() {
+        throw new Error("no video");
+      },
+      async writeSession() {
+        throw new Error("no inferred action");
+      },
+    }),
+    { inferCompletion: false },
+  );
+  assert.equal(result.take!.revisions.at(-1)!.actions.length, 1);
 });

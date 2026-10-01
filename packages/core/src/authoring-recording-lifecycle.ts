@@ -22,6 +22,10 @@ import {
 } from "./authoring-raw-recording.js";
 import { authoringTransitionProofStatus } from "./authoring-transition-proof.js";
 import { semanticTargetForRecording } from "./authoring-tap-target.js";
+import {
+  hasAuthoringBusyControl,
+  inferredAuthoringCompletionWait,
+} from "./authoring-completion-wait.js";
 
 /** The narrow runtime surface needed while one Take is actively recording. */
 export type AuthoringRecordingRuntime<Captured> = {
@@ -76,15 +80,21 @@ export type AuthoringRecordingLifecycleDependencies<Captured> = {
 export async function finishAuthoringRecording<Captured>(
   session: AuthoringSession,
   runtime: AuthoringRecordingRuntime<Captured>,
-  dependencies: Pick<
-    AuthoringRecordingLifecycleDependencies<Captured>,
-    "now" | "persistEvidence" | "persistObservation" | "nextRevision"
-  >,
+  dependencies: AuthoringRecordingLifecycleDependencies<Captured>,
+  options: { inferCompletion?: boolean } = {},
 ): Promise<AuthoringSession> {
   const { now, persistEvidence, persistObservation, nextRevision } = dependencies;
   const stoppedAt = now();
   const video = await runtime.stopVideo?.(session);
   const captured = await persistObservation(await runtime.observe(session));
+  const completion =
+    options.inferCompletion === false || currentRevision(session).actions.length === 0
+      ? undefined
+      : inferredAuthoringCompletionWait(currentRevision(session).after, captured.observation);
+  if (completion) {
+    session = await recordAuthoringInteraction(session, completion, runtime, dependencies);
+  }
+  const endpoint = completion ? currentRevision(session).after! : captured.observation;
   const before = currentRevision(session).before?.capturedAt ?? captured.observation.capturedAt;
   const videoEndMs = Math.max(0, stoppedAt - before);
   const videoEvidence = video?.data
@@ -106,14 +116,14 @@ export async function finishAuthoringRecording<Captured>(
     // not executable behavior and must never slow every replay.
     actions: revision.actions,
     evidence: [...revision.evidence, ...captured.evidence, ...videoEvidence],
-    after: captured.observation,
+    after: endpoint,
     ...(videoEvidence[0] ? { videoClip: { startMs: 0, endMs: videoEndMs } } : {}),
   }));
   const raw = appendAuthoringRawStop(session.take!, {
     target: session.target,
     recordedAt: stoppedAt,
-    observation: captured.observation,
-    evidenceIds: [...captured.evidence, ...videoEvidence].map((item) => item.id),
+    observation: endpoint,
+    evidenceIds: [...endpoint.evidenceIds, ...videoEvidence.map((item) => item.id)],
   });
   if (raw) session = { ...session, take: { ...session.take!, ...raw } };
   if (video?.warning) session.error = video.warning;
@@ -140,14 +150,28 @@ export async function recordAuthoringInteraction<Captured>(
   let targetName: string | undefined;
   // Name what was clicked (devices and browsers alike) so the step reads
   // "Tap “Business”" and replays by that control, not by a pixel.
-  if (interaction.kind === "tap" && interaction.target.point && !interaction.applied) {
+  if (
+    (interaction.kind === "tap" && interaction.target.point && !interaction.applied) ||
+    ((interaction.kind === "screenshot" || interaction.kind === "observe") &&
+      hasAuthoringBusyControl(revisionAtEntrance.after))
+  ) {
     // The last endpoint can predate a transition or a user's external input.
     // Never derive a semantic selector from that potentially stale tree.
     const fresh = await persistObservation(await runtime.observe(session));
     entrance = fresh.observation;
     entranceEvidence = fresh.evidence;
-    const semantic = semanticTargetForRecording(interaction.target, entrance);
-    if (semantic) {
+    const completion = revisionAtEntrance.actions.length
+      ? inferredAuthoringCompletionWait(revisionAtEntrance.after, entrance)
+      : undefined;
+    if (completion) {
+      session = await recordAuthoringInteraction(session, completion, runtime, input);
+      return recordAuthoringInteraction(session, interaction, runtime, input);
+    }
+    const semantic =
+      interaction.kind === "tap"
+        ? semanticTargetForRecording(interaction.target, entrance)
+        : undefined;
+    if (semantic && interaction.kind === "tap") {
       executable = { ...interaction, target: semantic.target };
       targetName = semantic.name;
     }

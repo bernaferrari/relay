@@ -3,9 +3,15 @@ import type {
   AuthoringEvidence,
   AuthoringInteraction,
   AuthoringSession,
+  AppMap,
   RecipeStep,
 } from "@relay/protocol";
 import type { CapturedAuthoringObservation } from "./authoring-observation-capture.js";
+import { currentRevision } from "./authoring-session-screen-proof.js";
+import { hasCurrentAuthoringSemantics } from "./authoring-observation-proof.js";
+import { screenExpectation } from "./app-map-compiler.js";
+import { attachMappedInboundPrelude } from "./app-map-test-inbound-prelude.js";
+import type { Recipe } from "./recipes.js";
 
 export type AuthoringRuntime = {
   captureFullPage?(
@@ -18,7 +24,7 @@ export type AuthoringRuntime = {
    * Returns a runtime with a deterministic reset primitive to the recorded
    * source before Relay captures replay evidence. Managed browser targets use
    * this to navigate to their configured start URL. Android recordings use
-   * only their explicitly saved starting app; legacy recordings omit reset.
+   * their saved starting app or the current app captured when recording began.
    */
   prepareReplaySource?(session: AuthoringSession): Promise<void>;
   /** Executes one authored action as an atomic batch. When present, the store
@@ -57,12 +63,36 @@ export type AuthoringCommitFault = (
   boundary: "before-verify" | "after-verify" | "before-rename" | "before-persist" | "after-rename",
 ) => void;
 
-/** Reset only from saved user intent. Endpoint identity is checked after these
- * steps, so opening an app never counts as proof of reaching a nested source. */
-export function authoringReplaySourceSteps(session: AuthoringSession): RecipeStep[] {
+/** Reopen the recorded app and follow approved map routes when available.
+ * Endpoint identity is checked afterward, so launch alone never proves that
+ * a nested starting screen was reached. */
+export function authoringReplaySourceSteps(session: AuthoringSession, map?: AppMap): RecipeStep[] {
   if (session.target.kind === "browser") return [{ kind: "key", key: "home" }];
-  if (session.target.platform === "android" && session.originApplication) {
-    return [{ kind: "app", action: "open", app: session.originApplication, relaunch: true }];
-  }
-  return [];
+  if (session.target.platform !== "android") return [];
+  const before = session.take ? currentRevision(session).before : undefined;
+  const app =
+    session.originApplication ??
+    (before && hasCurrentAuthoringSemantics(before.proof) ? before.foregroundApp : undefined);
+  if (!app) return [];
+  const steps: RecipeStep[] = [{ kind: "app", action: "open", app, relaunch: true }];
+  const sourceId =
+    session.sourceScreenId ??
+    (session.pendingConnectionId
+      ? map?.connections[session.pendingConnectionId]?.fromScreenId
+      : undefined);
+  const screen = sourceId ? map?.screens[sourceId] : undefined;
+  if (!map || !screen?.identity) return steps;
+  const expected = screenExpectation(map, screen, "authoring-replay-source");
+  const graph: Record<string, Recipe> = {
+    source: {
+      id: "source",
+      title: "Open starting screen",
+      source: "custom",
+      steps: [expected],
+      createdAt: 0,
+      updatedAt: 0,
+    },
+  };
+  attachMappedInboundPrelude(map, graph, "source");
+  return [...steps, ...graph.source!.steps];
 }

@@ -117,3 +117,49 @@ test("an Android toolbar identifier does not replace the menu control inside it"
     name: "Show navigation drawer",
   });
 });
+
+test("a composer identifier does not steal a click on its model chooser", () => {
+  const capture = observation();
+  capture.bounds = { width: 1080, height: 2340 };
+  capture.nodes = [
+    {
+      index: 1,
+      identifier: "chat_text_input",
+      type: "android.widget.EditText",
+      editable: true,
+      hittable: true,
+      enabled: true,
+      rect: { x: 24, y: 1224, width: 1032, height: 288 },
+    },
+    {
+      index: 2,
+      parentIndex: 1,
+      hittable: true,
+      type: "android.view.View",
+      enabled: true,
+      rect: { x: 180, y: 1368, width: 302, height: 144 },
+    },
+    {
+      index: 3,
+      parentIndex: 2,
+      label: "Fast",
+      type: "android.widget.TextView",
+      enabled: true,
+      rect: { x: 288, y: 1412, width: 100, height: 56 },
+    },
+    {
+      index: 4,
+      parentIndex: 2,
+      type: "android.widget.Button",
+      enabled: true,
+      rect: { x: 180, y: 1368, width: 302, height: 144 },
+    },
+  ];
+  assert.deepEqual(semanticTargetForRecording({ point: { x: 330, y: 1440 } }, capture), {
+    target: { label: "Fast" },
+    name: "Fast",
+  });
+  assert.deepEqual(semanticTargetForRecording({ point: { x: 330, y: 1280 } }, capture)?.target, {
+    identifier: "chat_text_input",
+  });
+});

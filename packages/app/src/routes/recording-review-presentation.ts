@@ -17,19 +17,19 @@ export function proofLabel(proof: "verified" | "pixels-only" | "unresolved"): st
 export function useEvidenceObjectUrl(
   preview: RecordingEvidencePreview | null | undefined,
 ): string | null {
-  const [url, setUrl] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<{ preview: RecordingEvidencePreview; url: string }>();
   useEffect(() => {
     if (!preview || typeof URL.createObjectURL !== "function") {
-      setUrl(null);
+      setLoaded(undefined);
       return;
     }
     const next = URL.createObjectURL(
       new Blob([Uint8Array.from(preview.bytes).buffer], { type: preview.mime }),
     );
-    setUrl(next);
+    setLoaded({ preview, url: next });
     return () => URL.revokeObjectURL(next);
   }, [preview]);
-  return url;
+  return loaded?.preview === preview ? loaded.url : null;
 }
 
 export function formatDuration(durationMs: number): string {

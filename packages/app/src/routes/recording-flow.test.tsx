@@ -401,7 +401,11 @@ describe("record, review, replay, and save", () => {
       fakeService(recorded).service,
       platformWithStorage().platform,
     );
-    expect(document.body.textContent).toContain("Recording verified. Ready to save.");
+    expect(document.querySelector('[aria-label="Recording status"]')?.textContent).toBe("Verified");
+    expect(
+      document.querySelector('[aria-label="Recording status"]')?.getAttribute("title"),
+    ).toContain("Recording verified on Pixel 9 Pro");
+    expect(document.body.textContent).not.toContain("Verified on the selected configuration");
     expect(document.body.textContent).not.toContain("Replay passed.");
     expect(button("Save Test").disabled).toBe(false);
   });
@@ -1079,12 +1083,14 @@ describe("record, review, replay, and save", () => {
 
     expect(history.location.pathname).toBe("/recordings/workflow-1/review");
     expect(String(history.location.search)).toBe("");
-    expect(document.body.textContent).toContain("2 steps");
-    expect(button("Replay on Pixel 9 Pro").disabled).toBe(false);
+    expect(document.querySelector("#recording-actions-title")?.getAttribute("aria-label")).toBe(
+      "2 steps",
+    );
+    expect(button("Run test").disabled).toBe(false);
     expect(document.body.textContent).not.toContain("Save Test");
 
-    await click(button("Replay on Pixel 9 Pro"));
-    expect(document.body.textContent).toContain("Ready to save");
+    await click(button("Run test"));
+    expect(document.body.textContent).toContain("Verified");
     expect(document.body.textContent).not.toContain(
       "Replay runs these steps on Pixel 9 Pro before saving.",
     );
@@ -1094,7 +1100,7 @@ describe("record, review, replay, and save", () => {
     expect(button("Save Test").disabled).toBe(false);
 
     await fill(document.querySelector<HTMLInputElement>("#review-test-name")!, "Language tour");
-    expect(document.body.textContent).toContain("Replay passed. Ready to save.");
+    expect(document.querySelector('[aria-label="Recording status"]')?.textContent).toBe("Verified");
     await click(button("Save Test"));
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(document.body.textContent).not.toContain("Open Test");
@@ -1162,7 +1168,9 @@ describe("record, review, replay, and save", () => {
     await settle();
     await settle();
     expect(history.location.pathname).toBe("/recordings/workflow-1/review");
-    expect(document.body.textContent).toContain("2 steps");
+    expect(document.querySelector("#recording-actions-title")?.getAttribute("aria-label")).toBe(
+      "2 steps",
+    );
     expect(fake.calls.indexOf("input:key")).toBeLessThan(fake.calls.indexOf("stop"));
   });
 
@@ -1181,9 +1189,8 @@ describe("record, review, replay, and save", () => {
     await click(button("Save instruction"));
 
     expect(fake.calls).toContain("edit:rename");
-    expect(document.body.textContent).toContain(
-      "Replay runs these steps on Pixel 9 Pro before saving.",
-    );
+    expect(document.body.textContent).not.toContain("Replay to verify edits");
+    expect(button("Run test").disabled).toBe(false);
   });
 
   it("replaces a tap target by picking a control from evidence", async () => {
@@ -1451,14 +1458,16 @@ describe("record, review, replay, and save", () => {
     const storage = platformWithStorage();
     await renderJourney("/recordings/workflow-1/review", fake.service, storage.platform);
 
-    expect(document.body.textContent).toContain("5 steps");
+    expect(document.querySelector("#recording-actions-title")?.getAttribute("aria-label")).toBe(
+      "5 steps",
+    );
     expect(document.body.textContent).toContain("Tap the highlighted control");
     expect(document.body.textContent).toContain("Tap Arabic");
     expect(document.body.textContent).not.toContain("Tap target");
     expect(document.body.textContent).toContain("Screen capture");
     expect(document.body.textContent).toContain("Pause");
     expect(document.body.textContent).toContain("Language settings visible");
-    expect(document.body.textContent).toContain("Ready to save");
+    expect(document.body.textContent).toContain("Verified");
     expect(document.body.textContent).not.toContain("0 recorded steps");
     expect(document.body.textContent).not.toContain("Recorded pause");
     expect(document.body.textContent).not.toContain(
@@ -1602,8 +1611,10 @@ describe("record, review, replay, and save", () => {
       fake.service,
       platformWithStorage().platform,
     );
-    await click(button("Replay on Pixel 9 Pro"));
-    expect(document.body.textContent).toContain("2 steps");
+    await click(button("Run test"));
+    expect(document.querySelector("#recording-actions-title")?.getAttribute("aria-label")).toBe(
+      "2 steps",
+    );
     expect(document.body.textContent).not.toContain("Checking the last step");
   });
 
@@ -1624,9 +1635,11 @@ describe("record, review, replay, and save", () => {
       fake.service,
       platformWithStorage().platform,
     );
-    expect(document.body.textContent).toContain("2 steps");
-    expect(button("Replay on Pixel 9 Pro").disabled).toBe(false);
-    expect(document.body.textContent).toContain("Replay did not prove");
+    expect(document.querySelector("#recording-actions-title")?.getAttribute("aria-label")).toBe(
+      "2 steps",
+    );
+    expect(button("Run test").disabled).toBe(false);
+    expect(document.body.textContent).toContain("Return to the recorded source");
   });
 
   it("keeps an unfinished recording as a resumable draft without approving it", async () => {
