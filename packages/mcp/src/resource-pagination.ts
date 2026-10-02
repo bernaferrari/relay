@@ -810,6 +810,7 @@ export function resourceAllowed(
   // do not expose the underlying operation tools.
   if (
     profile === "outcome" ||
+    profile === "qa" ||
     profile === "operator" ||
     profile === "full" ||
     requiredOperations.length === 0

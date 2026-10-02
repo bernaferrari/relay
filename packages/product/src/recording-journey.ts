@@ -88,6 +88,10 @@ export type ProductRecordingJourney = {
   replay(): Promise<ProductRecordingState>;
   /** Verify this reviewed revision when needed, then commit it. */
   save(input: ProductRecordingSaveInput): Promise<ProductRecordingState>;
+  /** Persist a reviewed draft edit without replay or Test approval. */
+  saveDraft(
+    input: Pick<ProductRecordingSaveInput, "reviewRevision" | "rename">,
+  ): Promise<ProductRecordingState>;
   approve(
     testName?: string,
     destination?: AuthoringCommitDestination,
@@ -392,7 +396,9 @@ export function createProductRecordingJourney(input: {
     });
   }
 
-  async function save(input: ProductRecordingSaveInput): Promise<ProductRecordingState> {
+  async function saveDraft(
+    input: Pick<ProductRecordingSaveInput, "reviewRevision" | "rename">,
+  ): Promise<ProductRecordingState> {
     const workflowId = current.snapshot?.workflow?.workflowId;
     if (!workflowId || current.snapshot?.review?.currentRevision !== input.reviewRevision)
       return changedReview();
@@ -409,7 +415,7 @@ export function createProductRecordingJourney(input: {
         )) ||
       fresh?.version === "unavailable" ||
       fresh?.phase === "needs-attention" ||
-      !fresh?.review
+      fresh?.review?.currentRevision === undefined
     )
       return result;
     if (fresh.review.currentRevision !== input.reviewRevision) return changedReview();
@@ -423,6 +429,27 @@ export function createProductRecordingJourney(input: {
       if (fresh.review.currentRevision !== fence.reviewRevision + 1) return changedReview();
       fence.reviewRevision = fresh.review.currentRevision;
     }
+    return result;
+  }
+
+  async function save(input: ProductRecordingSaveInput): Promise<ProductRecordingState> {
+    const resultDraft = await saveDraft(input);
+    const fresh = resultDraft.snapshot;
+    const workflowId = fresh?.workflow?.workflowId;
+    if (
+      (resultDraft.recovery &&
+        !(
+          resultDraft.recovery.code === "operation-unavailable" &&
+          fresh?.stage === "reviewing" &&
+          fresh.phase !== "needs-attention" &&
+          fresh.allowedNextActions.includes("replay")
+        )) ||
+      !workflowId ||
+      fresh?.review?.currentRevision === undefined
+    )
+      return resultDraft;
+    const fence = { workflowId, reviewRevision: fresh.review.currentRevision };
+    let result = resultDraft;
     if (!fresh.allowedNextActions.includes("approve")) {
       input.onProgress?.("checking");
       result = await transition({ action: "replay" }, fence);
@@ -451,6 +478,7 @@ export function createProductRecordingJourney(input: {
     compileReview: () => transition({ action: "stop" }),
     replay: () => transition({ action: "replay" }),
     save,
+    saveDraft,
     approve: (testName, destination) =>
       transition({
         action: "approve",

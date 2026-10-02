@@ -1,7 +1,7 @@
 {
   "name": "relay-proof",
-  "version": "0.1.0",
-  "description": "Runtime proof for AI-authored changes across web, Android, and iOS.",
+  "version": "0.2.0",
+  "description": "Record, run, and review app tests through an existing local Relay service.",
   "author": {
     "name": "Relay",
     "url": "https://github.com/bernaferrari/relay"
@@ -9,20 +9,20 @@
   "homepage": "https://github.com/bernaferrari/relay#readme",
   "repository": "https://github.com/bernaferrari/relay",
   "license": "MIT",
-  "keywords": ["runtime-proof", "ai-agents", "merge-gate", "mcp", "android", "ios", "web"],
+  "keywords": ["app-testing", "recording", "evidence", "mcp", "android", "ios", "web"],
   "skills": "./skills/",
   "interface": {
-    "displayName": "Relay Proof",
-    "shortDescription": "Prove an agent-authored change before merge.",
-    "longDescription": "Relay turns an agent's completion claim into an explainable, reproducible runtime Proof across web, Android, and iOS. It selects affected journeys, binds exact builds and targets, preserves evidence, and reports deterministic residual risk.",
+    "displayName": "Relay",
+    "shortDescription": "Record, run, review app tests",
+    "longDescription": "Connect to an existing Relay service, observe your app, record a reusable Test, run it again, and inspect retained evidence. Change Proof remains an explicit specialist workflow.",
     "developerName": "Relay",
     "category": "Developer Tools",
-    "capabilities": ["Interactive", "Write"],
+    "capabilities": ["Write"],
     "websiteURL": "https://github.com/bernaferrari/relay",
     "defaultPrompt": [
-      "Prove the current change before merge.",
-      "Explain why this Proof is blocked.",
-      "Rerun only the affected journeys after my fix."
+      "Record a reusable test for this app.",
+      "Run my saved test and explain the result.",
+      "Prove the current change before merge."
     ]
   },
   "mcpServers": "./.mcp.json"

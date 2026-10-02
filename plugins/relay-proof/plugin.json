@@ -1,0 +1,32 @@
+{
+  "name": "relay-proof",
+  "version": "0.2.0",
+  "description": "Record, run, and review app tests through an existing local Relay service.",
+  "author": {
+    "name": "Relay",
+    "url": "https://github.com/bernaferrari/relay"
+  },
+  "homepage": "https://github.com/bernaferrari/relay#readme",
+  "repository": "https://github.com/bernaferrari/relay",
+  "license": "MIT",
+  "keywords": ["app-testing", "recording", "evidence", "mcp", "android", "ios", "web"],
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Relay",
+        "shortDescription": "Record, run, review app tests",
+        "longDescription": "Connect to an existing Relay service, observe your app, record a reusable Test, run it again, and inspect retained evidence. Change Proof remains an explicit specialist workflow.",
+        "developerName": "Relay",
+        "category": "Developer Tools",
+        "capabilities": ["Write"],
+        "websiteURL": "https://github.com/bernaferrari/relay",
+        "defaultPrompt": [
+          "Record a reusable test for this app.",
+          "Run my saved test and explain the result.",
+          "Prove the current change before merge."
+        ]
+      }
+    }
+  }
+}

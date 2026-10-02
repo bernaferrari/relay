@@ -65,12 +65,13 @@ export async function captureBrowserViewportScreenshot(
     return await (await currentPage()).screenshot(options);
   } catch (error) {
     if (
-      !isBrowserExecutionContextDestroyed(error) &&
-      !(
-        error instanceof Error &&
-        error.name === "TimeoutError" &&
-        error.message.includes("page.screenshot")
-      )
+      (error instanceof Error && error.name === "AbortError") ||
+      (!isBrowserExecutionContextDestroyed(error) &&
+        !(
+          error instanceof Error &&
+          error.name === "TimeoutError" &&
+          error.message.includes("page.screenshot")
+        ))
     )
       throw error;
     const page = await currentPage();

@@ -143,6 +143,53 @@ test("point interactions remain distinguishable in human recording review", () =
   assert.equal(snapshot.review?.actions[0]?.intent, "Tap at 148, 93");
 });
 
+test("control-only waits expose editable conditions without changing capture provenance", () => {
+  const waiting = structuredClone(session);
+  const action = waiting.take!.revisions[0]!.actions[0]!;
+  action.steps = [
+    { kind: "expect", condition: "gone", target: { label: "Stop message" }, timeoutMs: 300_000 },
+    { kind: "wait-for", target: { identifier: "response.copy" }, timeoutMs: 120_000 },
+    { kind: "expect", condition: "visible", target: { label: "Done" } },
+  ];
+  const projected = snapshotFromAuthoringSession({ frozen, session: waiting }).review!.actions[0]!;
+  assert.deepEqual(projected.waitConditions, [
+    { kind: "expect", condition: "gone", target: { label: "Stop message" }, timeoutMs: 300_000 },
+    {
+      kind: "wait-for",
+      condition: "visible",
+      target: { identifier: "response.copy" },
+      timeoutMs: 120_000,
+    },
+    { kind: "expect", condition: "visible", target: { label: "Done" } },
+  ]);
+  assert.equal(projected.captureProof, "inferred-unproved");
+  assert.equal(waiting.take!.revisions[0]!.actions[0]!.steps.length, 3);
+});
+
+test("wait editor projection omits mixed actions, scoped targets and unsupported budgets", () => {
+  const wait = { kind: "wait-for" as const, target: { label: "Done" }, timeoutMs: 15_000 };
+  const unsupported = [
+    [wait, { kind: "tap" as const, target: { label: "Save" } }],
+    [{ ...wait, target: { text: "private document contents" } }],
+    [{ ...wait, target: { label: "Done", heading: "Account" } }],
+    [{ ...wait, target: { label: "Done", identifier: "done" } }],
+    [{ ...wait, optional: true }],
+    [{ ...wait, when: { target: { label: "Busy" }, condition: "present" as const } }],
+    [{ ...wait, note: "Keep retained step metadata" }],
+    [{ ...wait, timeoutMs: Number.NaN }],
+    [{ ...wait, timeoutMs: -1 }],
+    Array.from({ length: 17 }, () => wait),
+  ];
+  for (const steps of unsupported) {
+    const waiting = structuredClone(session);
+    waiting.take!.revisions[0]!.actions[0]!.steps = steps;
+    const projected = snapshotFromAuthoringSession({ frozen, session: waiting }).review!
+      .actions[0]!;
+    assert.equal(projected.waitConditions, undefined);
+    assert.doesNotMatch(JSON.stringify(projected), /private document contents/u);
+  }
+});
+
 test("review projects bounded action evidence and timeline metadata without payloads", () => {
   const detailed = structuredClone(session);
   const revision = detailed.take!.revisions[0]!;

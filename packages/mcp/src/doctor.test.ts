@@ -127,3 +127,31 @@ test("doctor reports unreachable Relay and does not leak bearer configuration", 
   assert.doesNotMatch(JSON.stringify(report), /do-not-print/u);
   assert.doesNotMatch(JSON.stringify(report), /network detail/u);
 });
+
+test("QA doctor checks workflow dependencies and gives a concrete recovery step", async () => {
+  const healthy = await runRelayMcpDoctor(["--profile", "qa"], env, fakeFetch());
+  assert.equal(healthy.ok, true);
+  const report = await runRelayMcpDoctor(
+    ["--profile", "qa"],
+    env,
+    fakeFetch(["workflow.transition"]),
+  );
+  assert.equal(report.ok, false);
+  assert.match(formatRelayMcpDoctor(report), /workflow.transition/u);
+  assert.match(formatRelayMcpDoctor(report), /Next: Connect to a compatible Relay runtime/u);
+  assert.doesNotMatch(formatRelayMcpDoctor(report), /Proof tools:/u);
+});
+
+test("QA doctor checks required roles rather than only read-only raw descriptors", async () => {
+  const fixture = fakeFetch();
+  const report = await runRelayMcpDoctor(["--profile", "qa"], env, async (input, init) => {
+    if (String(input).endsWith("/health"))
+      return response({
+        ok: true,
+        access: { role: "viewer", organizationId: "org-test", projectId: "project-test" },
+      });
+    return fixture(input, init);
+  });
+  assert.equal(report.ok, false);
+  assert.equal(report.checks.find(({ name }) => name === "capabilities")?.ok, false);
+});

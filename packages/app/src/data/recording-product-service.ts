@@ -105,6 +105,9 @@ export type RecordingProductService = {
   edit(edit: AuthoringRecordingEdit): Promise<ProductRecordingState>;
   replay(): Promise<ProductRecordingState>;
   save?(input: ProductRecordingSaveInput): Promise<ProductRecordingState>;
+  saveDraft?(
+    input: Pick<ProductRecordingSaveInput, "reviewRevision" | "rename">,
+  ): Promise<ProductRecordingState>;
   approve(testName: string): Promise<ProductRecordingState>;
   /** Open the selected target for exploration before durable recording begins. */
   previewTarget?(
@@ -422,6 +425,9 @@ export function createRecordingProductService(
     },
     async save(input) {
       return (await product()).journey.save(input);
+    },
+    async saveDraft(input) {
+      return (await product()).journey.saveDraft(input);
     },
     async liveTarget(target, identity) {
       const [recording, { createLiveTargetSession }] = await Promise.all([

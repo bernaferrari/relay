@@ -13,10 +13,9 @@ export RELAY_ORGANIZATION_ID=local
 export RELAY_PROJECT_ID=default
 export RELAY_ACTOR_ID=agent:claude-code
 export RELAY_AUTH_TOKEN=…
-relay-mcp doctor --profile proof
+relay-mcp doctor --profile qa
 ```
 
-Claude should use the Relay Proof instructions in
-[`../../skills/relay-proof/SKILL.md`](../../skills/relay-proof/SKILL.md). The
+Claude should use the bundled setup, recording and run/review skills under `../../skills/`. The
 MCP package owns tool names, schemas, role requirements, confirmation, and
-evidence semantics; this file only selects the `proof` profile.
+evidence semantics; this file only selects the `qa` profile.

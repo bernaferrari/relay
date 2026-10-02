@@ -5,6 +5,7 @@ type RelayToolInputSchema = z.ZodType<Record<string, unknown>>;
 export const relayMcpProfiles = [
   "operator",
   "outcome",
+  "qa",
   "control",
   "map",
   "observe",
@@ -576,7 +577,7 @@ const proofOperations = [
 ] as const satisfies readonly OperationId[];
 
 const profileOperations: Record<
-  Exclude<RelayMcpProfile, "full" | "outcome" | "operator">,
+  Exclude<RelayMcpProfile, "full" | "outcome" | "operator" | "qa">,
   ReadonlySet<OperationId>
 > = {
   control: new Set(controlOperations),
@@ -594,6 +595,8 @@ const profileOperations: Record<
 
 function toolInProfile(tool: RelayMcpToolDescriptor, profile: RelayMcpProfile): boolean {
   if (profile === "full") return true;
+  if (profile === "qa")
+    return tool.operationId === "app-map.list" || tool.operationId === "app-map.get";
   if (profile === "outcome" || profile === "operator") return false;
   return profileOperations[profile].has(tool.operationId);
 }

@@ -43,6 +43,11 @@ async function render() {
     );
   });
   await settle();
+  await act(async () =>
+    host
+      .querySelector<HTMLImageElement>('img[aria-hidden="true"]')
+      ?.dispatchEvent(new Event("load")),
+  );
   return host;
 }
 
@@ -68,9 +73,18 @@ describe("saved recording evidence", () => {
     expect(host.querySelector("img")?.src).toBe(previous);
     expect(host.querySelector("img")?.alt).toBe("After: Open Settings");
     expect(host.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(host.textContent).not.toContain("Loading Before");
     expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(previous);
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 275)));
+    expect(host.textContent).toContain("Loading Before… Showing After.");
     await act(async () => resolveBefore(bytes()));
     await settle();
+    expect(host.querySelector<HTMLImageElement>("img:not([aria-hidden])")?.alt).toBe(
+      "After: Open Settings",
+    );
+    await act(async () =>
+      host.querySelector('img[aria-hidden="true"]')!.dispatchEvent(new Event("load")),
+    );
     expect(host.querySelector("img")?.alt).toBe("Before: Open Settings");
     expect(host.querySelector('[aria-busy="true"]')).toBeNull();
     expect(URL.revokeObjectURL).toHaveBeenCalledWith(previous);
@@ -88,6 +102,9 @@ describe("saved recording evidence", () => {
     await settle();
     expect(service.getRecordingFrame).toHaveBeenCalledTimes(2);
     expect(host.querySelector("img")).not.toBeNull();
+    await act(async () =>
+      host.querySelector('img[aria-hidden="true"]')!.dispatchEvent(new Event("load")),
+    );
     expect(host.querySelector('[aria-busy="true"]')).toBeNull();
   });
 });

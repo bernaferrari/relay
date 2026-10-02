@@ -1190,7 +1190,7 @@ describe("record, review, replay, and save", () => {
     },
   );
 
-  it("offers one Save action that checks edited steps and includes the current instruction", async () => {
+  it("offers one Run and save action that checks edited steps and includes the current instruction", async () => {
     const initial = state("reviewing", ["inspect", "edit", "replay"]);
     initial.snapshot!.review!.currentRevision = 7;
     const fake = fakeService(initial);
@@ -1210,15 +1210,15 @@ describe("record, review, replay, and save", () => {
       fake.service,
       storage.platform,
     );
-    expect(button("Save test").disabled).toBe(false);
+    expect(button("Run and save").disabled).toBe(false);
     expect(document.body.textContent).not.toContain("Run test");
     await click(button("Edit steps"));
     await fill(
       document.querySelector<HTMLInputElement>("#review-action-intent")!,
       "Open app settings",
     );
-    await click(button("Save test"));
-    expect(button("Checking test…").disabled).toBe(true);
+    await click(button("Run and save"));
+    expect(button("Running before save…").disabled).toBe(true);
     expect(fake.service.save).toHaveBeenCalledWith(
       expect.objectContaining({
         reviewRevision: 7,
@@ -1252,6 +1252,41 @@ describe("record, review, replay, and save", () => {
     expect(fake.service.save).not.toHaveBeenCalled();
   });
 
+  it("saves an unverified draft and its pending instruction without operating the app", async () => {
+    const initial = state("reviewing", ["inspect", "edit", "replay"]);
+    initial.snapshot!.review!.currentRevision = 7;
+    const fake = fakeService(initial);
+    fake.service.save = vi.fn();
+    fake.service.saveDraft = vi.fn(async (input) =>
+      input.rename
+        ? fake.service.edit({ kind: "rename", ...input.rename })
+        : fake.service.inspect("workflow-1"),
+    );
+    const { history } = await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await click(button("Edit steps"));
+    await fill(
+      document.querySelector<HTMLInputElement>("#review-action-intent")!,
+      "My saved instruction",
+    );
+    await click(button("More review actions"));
+    const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (candidate) => candidate.textContent === "Save draft and close",
+    )!;
+    await click(item);
+    expect(fake.service.saveDraft).toHaveBeenCalledWith({
+      reviewRevision: 7,
+      rename: { actionId: "step-1", intent: "My saved instruction" },
+    });
+    expect(history.location.pathname).toBe("/tests");
+    expect(fake.calls).not.toContain("replay");
+    expect(fake.calls).not.toContain("approve");
+    expect(fake.service.save).not.toHaveBeenCalled();
+  });
+
   it("keeps a failed Save visible when a subsequent inspection is healthy", async () => {
     const initial = state("reviewing", ["inspect", "edit", "replay"]);
     initial.snapshot!.review!.currentRevision = 7;
@@ -1271,13 +1306,13 @@ describe("record, review, replay, and save", () => {
       fake.service,
       platformWithStorage().platform,
     );
-    await click(button("Save test"));
+    await click(button("Run and save"));
     expect(history.location.pathname).toBe("/recordings/workflow-1/review");
     expect(document.body.textContent).toContain("The steps changed");
     expect(fake.calls).not.toContain("approve");
     await click(button("Try again"));
     expect(document.body.textContent).not.toContain("The steps changed");
-    expect(button("Save test").disabled).toBe(false);
+    expect(button("Run and save").disabled).toBe(false);
   });
 
   it("follows the full server-owned progression with one dominant review action", async () => {
@@ -1727,8 +1762,8 @@ describe("record, review, replay, and save", () => {
       platformWithStorage().platform,
     );
 
-    expect(document.body.textContent).toContain("Replay failed.");
-    expect(document.body.textContent).toContain("then replay again");
+    expect(document.body.textContent).toContain("Run failed");
+    expect(button("Run test").disabled).toBe(false);
     expect(document.body.textContent).not.toContain("app:id/language");
     expect(document.body.textContent).not.toContain("accessibility geometry");
   });

@@ -1,4 +1,25 @@
 import type { ProductRecordingState } from "../data/recording-product-service";
+import type { AuthoringRecordingEdit } from "@relay/protocol";
+
+export type ReviewTransitionIntent =
+  | { action: "replay" }
+  | { action: "approve"; testName: string }
+  | {
+      action: "edit";
+      edit: AuthoringRecordingEdit;
+      history?: { kind: "new" | "undo" | "redo"; fromRevision: number };
+    };
+
+export function reviewEditIntent(
+  edit: AuthoringRecordingEdit,
+  currentRevision?: number,
+): ReviewTransitionIntent {
+  return {
+    action: "edit",
+    edit,
+    ...(currentRevision ? { history: { kind: "new", fromRevision: currentRevision } } : {}),
+  };
+}
 
 export function blocksReview(state: ProductRecordingState | undefined): boolean {
   if (!state?.recovery) return false;

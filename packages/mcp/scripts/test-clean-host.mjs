@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -82,6 +82,10 @@ async function startFixture(operationIds) {
       response.end(
         JSON.stringify({
           ok: true,
+          version: "0.1.0",
+          product: "relay",
+          at: Date.now(),
+          uptimeMs: 1,
           access: { organizationId: "local", projectId: "clean-host", role: "admin" },
         }),
       );
@@ -103,7 +107,7 @@ async function startFixture(operationIds) {
   return { fixture, url: `http://127.0.0.1:${address.port}` };
 }
 
-async function readMcpResponses(command, args, environment) {
+async function readMcpResponses(command, args, environment, callHealth = false) {
   const child = spawn(command, args, {
     env: { ...process.env, ...environment },
     stdio: ["pipe", "pipe", "pipe"],
@@ -111,7 +115,10 @@ async function readMcpResponses(command, args, environment) {
   const responses = [];
   let output = "";
   let stderr = "";
-  const complete = () => [2, 3, 4].every((id) => responses.some((response) => response.id === id));
+  const complete = () =>
+    (callHealth ? [2, 3, 4, 5] : [2, 3, 4]).every((id) =>
+      responses.some((response) => response.id === id),
+    );
   const done = new Promise((resolvePromise, reject) => {
     child.stdout.on("data", (chunk) => {
       output += String(chunk);
@@ -163,6 +170,10 @@ async function readMcpResponses(command, args, environment) {
       `${JSON.stringify({ jsonrpc: "2.0", id, method: "resources/read", params: { uri } })}\n`,
     );
   }
+  if (callHealth)
+    child.stdin.write(
+      `${JSON.stringify({ jsonrpc: "2.0", id: 5, method: "tools/call", params: { name: "relay_health", arguments: {} } })}\n`,
+    );
   let timeout;
   try {
     await Promise.race([
@@ -223,10 +234,16 @@ async function typecheckPublicExports(installRoot) {
 
 async function main() {
   const toolsSource = await readFile(join(packageRoot, "src/tools.ts"), "utf8");
-  const operationIds = [...new Set(fixtureOperationIds(toolsSource))];
+  const qaSource = await readFile(join(packageRoot, "src/qa-tools.ts"), "utf8");
+  const qaIds = [...qaSource.matchAll(/"([a-z][a-z.-]*\.[a-z.-]+)"/gu)].map((match) => match[1]);
+  const operationIds = [...new Set([...fixtureOperationIds(toolsSource), ...qaIds])];
   const tempRoot = await mkdtemp(join(tmpdir(), "relay-mcp-clean-host-"));
   let fixture;
   try {
+    const copiedPlugin = join(tempRoot, "relay-proof");
+    await cp(join(repositoryRoot, "plugins/relay-proof"), copiedPlugin, { recursive: true });
+    run(process.execPath, [join(copiedPlugin, "scripts/validate-package.mjs")], { cwd: tempRoot });
+    const copiedConfig = JSON.parse(await readFile(join(copiedPlugin, "mcp.json"), "utf8"));
     const packResult = run("npm", ["pack", "--json", "--pack-destination", tempRoot]);
     const packMetadata = JSON.parse(packResult.stdout.trim());
     assert.equal(packMetadata.length, 1);
@@ -295,6 +312,33 @@ async function main() {
     assert.ok(Array.isArray(outcomeTools));
     assert.ok(outcomeTools.some((tool) => tool.name === "relay_prove_change"));
     assert.ok(outcomeTools.some((tool) => tool.name === "relay_proof_analyze"));
+
+    const qaEnv = { ...env, RELAY_MCP_PROFILE: "qa" };
+    const qaDoctor = await runAsync(
+      process.execPath,
+      [join(bin, "relay-mcp"), "doctor", "--profile", "qa", "--json"],
+      { cwd: installRoot, env: qaEnv },
+    );
+    assert.equal(JSON.parse(qaDoctor.stdout).ok, true);
+    const qaResponses = await readMcpResponses(
+      join(bin, copiedConfig.mcpServers.relay.command),
+      copiedConfig.mcpServers.relay.args,
+      qaEnv,
+      true,
+    );
+    const qaTools = qaResponses.find((response) => response.id === 2)?.result?.tools;
+    assert.ok(qaTools.some((tool) => tool.name === "relay_record_test"));
+    assert.ok(qaTools.some((tool) => tool.name === "relay_run_test"));
+    assert.ok(qaTools.some((tool) => tool.name === "relay_inspect_workflow"));
+    assert.equal(
+      qaTools.some((tool) => tool.name === "relay_prove_change"),
+      false,
+    );
+    assert.notEqual(
+      qaResponses.find((response) => response.id === 5)?.result?.isError,
+      true,
+      JSON.stringify(qaResponses.find((response) => response.id === 5)),
+    );
 
     const bridgePort = await freePort();
     const bridge = spawn(join(bin, "relay-mcp-bridge"), [], {

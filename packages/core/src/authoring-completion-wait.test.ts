@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AuthoringObservation } from "@relay/protocol";
-import { inferredAuthoringCompletionWait } from "./authoring-completion-wait.js";
+import {
+  hasAuthoringBusyControl,
+  inferredAuthoringCompletionWait,
+} from "./authoring-completion-wait.js";
 
 function observation(busy: boolean): AuthoringObservation {
   const capturedAt = busy ? 1 : 2;
@@ -84,4 +87,81 @@ test("foreign conversations, stale semantics, and ambiguous result controls teac
     rect: { x: 150, y: 200, width: 60, height: 60 },
   });
   assert.equal(inferredAuthoringCompletionWait(before, after), undefined);
+});
+
+test("an old result label cannot become new through whitespace, case or decoration", () => {
+  for (const label of [
+    "Copy message",
+    "COPY MESSAGE",
+    " Copy\nmessage ",
+    "Copy message, previous answer",
+  ]) {
+    const before = observation(true);
+    before.nodes!.push({ ...observation(false).nodes![1]!, index: 3, label });
+    assert.equal(inferredAuthoringCompletionWait(before, observation(false)), undefined, label);
+  }
+});
+
+test("busy and result controls from another app cannot teach a completion boundary", () => {
+  const before = observation(true),
+    after = observation(false);
+  before.nodes![1]!.bundleId = "overlay.app";
+  assert.equal(hasAuthoringBusyControl(before), false);
+  assert.equal(inferredAuthoringCompletionWait(before, after), undefined);
+  before.nodes![1]!.bundleId = "test.app";
+  after.nodes![1]!.bundleId = "overlay.app";
+  assert.equal(inferredAuthoringCompletionWait(before, after), undefined);
+  after.nodes![1]!.bundleId = "test.app";
+  before.screen.deviceId = "device-a";
+  after.screen.deviceId = "device-b";
+  assert.equal(inferredAuthoringCompletionWait(before, after), undefined);
+});
+
+test("cancellation and failure evidence with a new Copy control never teaches readiness", () => {
+  for (const label of [
+    "Response cancelled",
+    "Generation failed",
+    "Error: please retry",
+    "Não foi possível concluir",
+  ]) {
+    const after = observation(false);
+    after.nodes!.push({ index: 3, label, bundleId: "test.app", role: "alert" });
+    assert.equal(inferredAuthoringCompletionWait(observation(true), after), undefined, label);
+    if (label !== "Não foi possível concluir") {
+      after.nodes![2]!.role = "text";
+      assert.equal(inferredAuthoringCompletionWait(observation(true), after), undefined, label);
+    }
+  }
+});
+
+test("unsupported localized controls do not invent English replay conditions", () => {
+  const before = observation(true),
+    after = observation(false);
+  before.nodes![1]!.label = "Parar resposta";
+  after.nodes![1]!.label = "Copiar resposta";
+  assert.equal(hasAuthoringBusyControl(before), false);
+  assert.equal(inferredAuthoringCompletionWait(before, after), undefined);
+});
+
+test("identical answer text alone teaches nothing; a new Copy control teaches only a wait", () => {
+  const before = observation(true),
+    after = observation(false);
+  const answer = {
+    index: 4,
+    bundleId: "test.app",
+    label: "A keel helps prevent sideways drift and keeps a sailboat stable.",
+  };
+  before.nodes!.push(answer);
+  after.nodes!.push({ ...answer });
+  after.nodes = after.nodes!.filter((node) => node.index !== 2);
+  assert.equal(inferredAuthoringCompletionWait(before, after), undefined);
+  after.nodes!.push(observation(false).nodes![1]!);
+  const inferred = inferredAuthoringCompletionWait(before, after);
+  assert.equal(inferred?.kind, "steps");
+  assert.ok(
+    inferred?.kind === "steps" &&
+      inferred.steps.every(
+        (step) => step.kind === "wait-for" || (step.kind === "expect" && step.condition === "gone"),
+      ),
+  );
 });

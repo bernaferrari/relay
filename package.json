@@ -37,6 +37,7 @@
     "pack": "vp pack",
     "prepare": "vp config",
     "doctor": "node scripts/workspace-doctor.mjs",
+    "demo": "node --import tsx scripts/first-run-demo.mjs",
     "server:doctor": "node node_modules/tsx/dist/cli.mjs packages/cli/src/index.ts system doctor",
     "test": "pnpm run ios-preview:test && pnpm run test:packages && vp test",
     "test:packages": "pnpm --workspace-concurrency=1 -r --if-present run test",

@@ -17,6 +17,7 @@ export function RecordingReviewActions(props: {
   canSave: boolean;
   canReplay: boolean;
   autoSave: boolean;
+  runsBeforeSave: boolean;
   saveDisabled: boolean;
   saveLabel: string;
   saving?: "checking" | "saving";
@@ -27,6 +28,7 @@ export function RecordingReviewActions(props: {
   onEdit(): void;
   onReplay(): void;
   onSave(): void;
+  onSaveDraft?(): void;
 }) {
   return (
     <>
@@ -75,14 +77,16 @@ export function RecordingReviewActions(props: {
           onClick={props.onSave}
           disabled={props.pending || props.saveDisabled}
           aria-busy={Boolean(props.saving)}
-          title={props.autoSave ? "Checks edited steps before saving" : undefined}
+          title={props.runsBeforeSave ? `Run on ${props.deviceName}, then save` : undefined}
         >
           <Save aria-hidden="true" />
           {props.saving === "checking"
-            ? "Checking test…"
+            ? "Running before save…"
             : props.saving === "saving"
               ? "Saving…"
-              : props.saveLabel}
+              : props.runsBeforeSave
+                ? "Run and save"
+                : props.saveLabel}
         </Button>
       ) : null}
       {props.canReplay && props.autoSave ? (
@@ -104,6 +108,9 @@ export function RecordingReviewActions(props: {
               <RotateCcw aria-hidden="true" />
               Run without saving
             </DropdownMenuItem>
+            {props.onSaveDraft ? (
+              <DropdownMenuItem onClick={props.onSaveDraft}>Save draft and close</DropdownMenuItem>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : null}

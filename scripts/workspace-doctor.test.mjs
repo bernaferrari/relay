@@ -41,8 +41,31 @@ test("doctor emits a stable machine-readable contract for unsupported host platf
     nodeVersion: "v24.21.0",
     platform: "freebsd",
     ...probe({ commands: new Set(["chromium"]) }),
+    environment: { PATH: "/browser" },
   });
   assert.equal(report.ready, true);
   assert.equal(report.ios.ready, false);
-  assert.deepEqual(report.browser.available, ["chromium"]);
+  assert.deepEqual(report.browser.available, ["/browser/google-chrome"]);
+});
+
+test("web prerequisites fail explicitly while optional mobile tooling does not block", () => {
+  const ready = buildWorkspaceDoctorReport({
+    platform: "linux",
+    requireBrowser: true,
+    environment: { RELAY_BROWSER_EXECUTABLE: "/browser/chrome" },
+    isExecutable: (path) => !path.includes("missing"),
+    isCommandAvailable: () => false,
+  });
+  assert.equal(ready.ready, true);
+  assert.equal(ready.browser.path, "/browser/chrome");
+  assert.ok(ready.warnings.some((warning) => warning.includes("adb")));
+  const missing = buildWorkspaceDoctorReport({
+    platform: "linux",
+    requireBrowser: true,
+    environment: { RELAY_BROWSER_EXECUTABLE: "/missing/chrome" },
+    isExecutable: (path) => !path.includes("missing"),
+    isCommandAvailable: () => false,
+  });
+  assert.equal(missing.ready, false);
+  assert.match(missing.failures.join(" "), /Fix this path/u);
 });

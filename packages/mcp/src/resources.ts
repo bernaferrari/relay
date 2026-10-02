@@ -51,6 +51,12 @@ import {
   type RelayMcpToolDescriptor,
 } from "./tools.js";
 import { relayMcpPrompts, relayMcpPromptsForTools } from "./prompts.js";
+import { relayOutcomeTools } from "./outcome-tools.js";
+import {
+  relayQaOutcomeTools,
+  relayQaOperatorTools,
+  relayQaRequiredOperationIds,
+} from "./qa-tools.js";
 import { relayOperatorTools } from "./operator-tools.js";
 import { registerTaskGuideResources } from "./task-guide-resources.js";
 
@@ -157,18 +163,39 @@ export function registerRelayResources(
     async () => {
       return {
         activeProfile: profile,
-        activeToolCount: profile === "operator" ? relayOperatorTools.length : tools.length,
+        activeToolCount:
+          profile === "qa"
+            ? relayQaOutcomeTools.length + relayQaOperatorTools.length + tools.length
+            : profile === "outcome"
+              ? relayOutcomeTools.length
+              : profile === "operator"
+                ? relayOperatorTools.length
+                : tools.length,
         activeOperations:
-          profile === "operator"
-            ? relayOperatorTools.map(({ name }) => name)
-            : tools.map(({ operationId }) => operationId),
+          profile === "qa"
+            ? [...relayQaOutcomeTools, ...relayQaOperatorTools, ...tools].map(({ name }) => name)
+            : profile === "outcome"
+              ? relayOutcomeTools.map(({ name }) => name)
+              : profile === "operator"
+                ? relayOperatorTools.map(({ name }) => name)
+                : tools.map(({ operationId }) => operationId),
         profiles: relayMcpProfiles.map((id) => ({
           id,
           toolCount:
-            id === "operator" ? relayOperatorTools.length : relayMcpToolsForProfile(id).length,
+            id === "qa"
+              ? relayQaOutcomeTools.length +
+                relayQaOperatorTools.length +
+                relayMcpToolsForProfile(id).length
+              : id === "outcome"
+                ? relayOutcomeTools.length
+                : id === "operator"
+                  ? relayOperatorTools.length
+                  : relayMcpToolsForProfile(id).length,
         })),
         additionalOperations: relayMcpOperationCatalog().filter(
-          ({ operationId }) => !activeOperations.has(operationId),
+          ({ operationId }) =>
+            !activeOperations.has(operationId) &&
+            (profile !== "qa" || relayQaRequiredOperationIds.some((id) => id === operationId)),
         ),
         excludedOperations: relayMcpExclusions,
         availablePrompts: relayMcpPrompts.map(({ name, title, description }) => ({
