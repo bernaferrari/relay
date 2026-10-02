@@ -223,3 +223,4 @@ export { captureAuthoringFullPage } from "./authoring-full-page-capture.js";
 export { InputNotDispatchedError } from "./input-not-dispatched.js";
 
 export { authoringReplaySourceSteps } from "./authoring-session-runtime.js";
+export { prepareAuthoringBrowserReplay } from "./authoring-browser-replay.js";

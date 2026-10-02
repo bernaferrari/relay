@@ -7,6 +7,7 @@ import {
   SelectItem,
 } from "@relay/ui-react/components/select";
 import { Label } from "@relay/ui-react/components/label";
+import { useId } from "react";
 
 export type FilterSelectOption = {
   value: string;
@@ -34,6 +35,8 @@ export function SelectField({
   disabled?: boolean;
   id?: string;
 }) {
+  const generatedId = useId();
+  const fieldId = id ?? generatedId;
   if (!options.length) {
     return (
       <div className={compact ? className : `grid min-w-0 gap-1.5 ${className ?? ""}`}>
@@ -57,9 +60,13 @@ export function SelectField({
       }}
     >
       <div className={compact ? className : `grid min-w-0 gap-1.5 ${className ?? ""}`}>
-        {compact ? null : <Label className="text-xs font-medium text-foreground">{label}</Label>}
+        {compact ? null : (
+          <Label htmlFor={fieldId} className="text-xs font-medium text-foreground">
+            {label}
+          </Label>
+        )}
         <SelectTrigger
-          id={id}
+          id={fieldId}
           className={
             compact ? "w-auto min-w-35" : "w-full min-w-0 [&_[data-slot=select-value]]:truncate"
           }

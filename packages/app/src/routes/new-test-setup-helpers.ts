@@ -43,7 +43,7 @@ export function websiteAccounts(
 ): WebsiteAccount[] {
   const bare = (value: string) => websiteHost(value).replace(/^www\./, "");
   const host = bare(url);
-  return accounts
+  const matching = accounts
     .filter(
       (item) =>
         !item.fixture.revokedAt &&
@@ -53,9 +53,20 @@ export function websiteAccounts(
           ...(item.target.startUrl ? [item.target.startUrl] : []),
         ].some((origin) => bare(origin) === host),
     )
-    .map((item) => ({
+    .sort((left, right) => right.fixture.createdAt - left.fixture.createdAt);
+  return matching.map((item) => {
+    const name = accountDisplayName(item);
+    const sameName = matching.filter((other) => accountDisplayName(other) === name);
+    const sameBrowser = sameName.filter((other) => other.target.name === item.target.name);
+    const version = sameBrowser.indexOf(item);
+    const label = sameName.length < 2 ? name : `${name} · ${item.target.name}`;
+    return {
       reference: item.fixture.reference,
-      name: accountDisplayName(item),
+      name:
+        sameBrowser.length < 2
+          ? label
+          : `${label} · ${version === 0 ? "Latest" : `Earlier login ${version}`}`,
       targetId: item.fixture.targetId,
-    }));
+    };
+  });
 }

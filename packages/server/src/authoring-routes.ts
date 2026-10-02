@@ -5,6 +5,7 @@ import type http from "node:http";
 import {
   AuthoringStateError,
   authoringReplaySourceSteps,
+  prepareAuthoringBrowserReplay,
   authoringSessions,
   captureScreenshot,
   captureAuthoringFullPage,
@@ -378,7 +379,9 @@ export async function captureAuthoringReplayActionEndpoint(
 }
 
 export function createAuthoringRuntime(options: AuthoringDeviceOptions = {}): AuthoringRuntime {
-  const resolveDevice = (session: AuthoringSession) => deviceFor(session, options);
+  let replayDevice: Device | undefined;
+  const resolveDevice = (session: AuthoringSession) =>
+    replayDevice ? Promise.resolve(replayDevice) : deviceFor(session, options);
   const executeSteps = async (session: AuthoringSession, steps: RecipeStep[]) => {
     const device = await resolveDevice(session);
     const variables: Record<string, string> = {};
@@ -429,6 +432,9 @@ export function createAuthoringRuntime(options: AuthoringDeviceOptions = {}): Au
       await executeSteps(session, steps);
     },
     async prepareReplaySource(session) {
+      if (session.target.kind === "browser") {
+        replayDevice = await prepareAuthoringBrowserReplay(session);
+      }
       const map = await readAppMap(session.projectId, session.appMapId);
       const steps = authoringReplaySourceSteps(session, map ?? undefined);
       if (steps.length) await executeSteps(session, steps);
