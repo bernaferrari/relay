@@ -1,3 +1,4 @@
+import { RecordingReviewActions } from "./recording-review-actions";
 import { blocksReview } from "./recording-review-state";
 import type { ProductRecordingState } from "../data/recording-product-service";
 import { AuthoringHeader } from "./authoring-header";
@@ -12,9 +13,8 @@ import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useRouteContext } from "@tanstack/react-router";
-import { ArrowLeft, CheckCircle2, Redo2, RotateCcw, Save, Undo2 } from "lucide-react";
+import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
 import {
   foldRecordingIntoTest,
@@ -25,7 +25,6 @@ import { clearWorkflowPointerIfCurrent } from "../data/workflow-pointer";
 import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
 import { RecordingActionsPanel, RecordingEvidencePanel } from "./recording-review-panels";
 import { replayDetail, useEvidenceObjectUrl } from "./recording-review-presentation";
-
 import { reviewPersistence } from "../data/recording-review-persistence";
 import { useRecordingNameDraft } from "../data/use-recording-name-draft";
 import { RecordingReviewInspector } from "./recording-review-inspector";
@@ -92,6 +91,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
   const [editing, setEditing] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const historyInitialized = useRef(false);
+  const [savePhase, setSavePhase] = useState<"checking" | "saving">();
 
   const recording = useQuery({
     queryKey: recordingQueryKeys.workflow(workflowId),
@@ -99,14 +99,35 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
     staleTime: 0,
   });
   const transition = useMutation({
-    mutationFn: (intent: ReviewTransitionIntent) => {
+    mutationFn: async (intent: ReviewTransitionIntent) => {
       if (intent.action === "replay") return productService.replay();
       if (intent.action === "edit") return productService.edit(intent.edit);
-      return productService.approve(intent.testName);
+      await nameWrites.current;
+      if (!productService.save || currentRevision === undefined)
+        return productService.approve(intent.testName);
+      setSavePhase(canApprove ? "saving" : "checking");
+      try {
+        return await productService.save({
+          testName: intent.testName,
+          reviewRevision: currentRevision,
+          ...(selectedAction && actionIntent.trim() && actionIntent.trim() !== selectedAction.intent
+            ? { rename: { actionId: selectedAction.id, intent: actionIntent.trim() } }
+            : {}),
+          onProgress: setSavePhase,
+        });
+      } finally {
+        setSavePhase(undefined);
+      }
     },
     onSuccess: async (_state, intent) => {
       const canonical = await refreshRecording(queryClient, productService, workflowId);
       if (blocksReview(canonical)) return;
+      if (
+        intent.action === "approve" &&
+        _state.recovery &&
+        canonical.snapshot?.stage !== "committed"
+      )
+        return;
       // The fresh durable snapshot supersedes a transient transport warning.
       transition.reset();
       if (intent.action === "edit") {
@@ -281,11 +302,9 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
       current.some((id) => actions.some((action) => action.id === id)) ? current : [actions[0]!.id],
     );
   }, [actions]);
-
   useEffect(() => {
     setActionIntent(selectedAction?.intent ?? "");
   }, [selectedAction?.id, selectedAction?.intent]);
-
   useEffect(() => {
     if (!review?.timeline) return;
     setTrimStartMs(review.videoClip?.startMs ?? 0);
@@ -409,68 +428,46 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                 </Button>
               ) : null}
               {restartEmpty.error ? <p role="alert">{restartEmpty.error.message}</p> : null}
-              {editing ? (
-                <div className="flex items-center gap-2" aria-label="Edit history">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => restore("undo")}
-                    disabled={!canEdit || undoStack.length === 0}
-                  >
-                    <Undo2 aria-hidden="true" /> Undo
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => restore("redo")}
-                    disabled={!canEdit || redoStack.length === 0}
-                  >
-                    <Redo2 aria-hidden="true" /> Redo
-                  </Button>
-                </div>
-              ) : null}
-              <Button
-                variant="ghost"
-                aria-pressed={editing}
-                onClick={() => {
+              <RecordingReviewActions
+                editing={editing}
+                pending={transition.isPending}
+                canEdit={canEdit}
+                canUndo={undoStack.length > 0}
+                canRedo={redoStack.length > 0}
+                canSave={
+                  canApprove ||
+                  Boolean(
+                    productService.save &&
+                    currentRevision !== undefined &&
+                    allowed.has("replay") &&
+                    actions.length,
+                  )
+                }
+                canReplay={allowed.has("replay") && actions.length > 0}
+                autoSave={Boolean(productService.save && currentRevision !== undefined)}
+                saveDisabled={!into.data && !testName.trim()}
+                saveLabel={into.data ? `Add to “${into.data.testName}”` : "Save test"}
+                saving={
+                  transition.isPending && transition.variables?.action === "approve"
+                    ? (savePhase ?? "saving")
+                    : undefined
+                }
+                replaying={transition.isPending && transition.variables?.action === "replay"}
+                deviceName={replayDeviceName}
+                onUndo={() => restore("undo")}
+                onRedo={() => restore("redo")}
+                onEdit={() => {
                   setEditing((open) => !open);
                   setSelecting(false);
                 }}
-              >
-                {editing ? "Done editing" : "Edit steps"}
-              </Button>
-              {allowed.has("replay") && actions.length > 0 ? (
-                <Button
-                  variant={canApprove ? "ghost" : "default"}
-                  title={`Replay on ${replayDeviceName}${snapshot?.frozen?.originApplication ? ". Reopen the starting app and replay these steps." : ""}`}
-                  onClick={() => transition.mutate({ action: "replay" })}
-                  disabled={transition.isPending}
-                >
-                  <RotateCcw aria-hidden="true" />
-                  {transition.isPending && transition.variables?.action === "replay"
-                    ? "Replaying…"
-                    : "Run test"}
-                </Button>
-              ) : null}
-              {canApprove ? (
-                <Button
-                  variant="default"
-                  onClick={() =>
-                    transition.mutate({
-                      action: "approve",
-                      testName: into.data ? `${into.data.testName} · added steps` : testName.trim(),
-                    })
-                  }
-                  disabled={transition.isPending || (!into.data && !testName.trim())}
-                >
-                  <Save aria-hidden="true" />
-                  {transition.isPending && transition.variables?.action === "approve"
-                    ? "Saving…"
-                    : into.data
-                      ? `Add to “${into.data.testName}”`
-                      : "Save Test"}
-                </Button>
-              ) : null}
+                onReplay={() => transition.mutate({ action: "replay" })}
+                onSave={() =>
+                  transition.mutate({
+                    action: "approve",
+                    testName: into.data ? `${into.data.testName} · added steps` : testName.trim(),
+                  })
+                }
+              />
 
               {nameSaveState === "saving" && !transition.isPending ? (
                 <EditorSaveStatus state="saving" />
@@ -549,7 +546,9 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                     ? `Replaying on ${replayDeviceName}…`
                     : transition.variables?.action === "edit"
                       ? "Saving step changes…"
-                      : "Saving Test…"
+                      : savePhase === "checking"
+                        ? `Checking on ${replayDeviceName}…`
+                        : "Saving test…"
                   : canApprove
                     ? "Verified"
                     : review?.latestReplay?.outcome === "failed"

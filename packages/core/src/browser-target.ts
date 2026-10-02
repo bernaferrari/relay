@@ -30,6 +30,7 @@ import { getEvidenceCollectionPolicy, hasSensitiveEvidenceConsent } from "./evid
 import { redactSensitiveEvidenceValue, redactValue, visualEvidenceAllowed } from "./redaction.js";
 import {
   attachBrowserEvidence,
+  captureBrowserViewportScreenshot,
   snapshotBrowserPage,
   type BrowserNetworkEntry,
 } from "./browser-target-evidence.js";
@@ -426,7 +427,7 @@ export async function getBrowserDevice(
       screenshot: async (input?: { path?: string }) => {
         const path = input?.path;
         if (path) await mkdir(dirname(path), { recursive: true });
-        const buffer = await (await activePage(session)).screenshot({ path, fullPage: false });
+        const buffer = await captureBrowserViewportScreenshot(() => activePage(session), path);
         return {
           path: path ?? "",
           base64: path ? undefined : buffer.toString("base64"),

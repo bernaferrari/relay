@@ -129,7 +129,7 @@ export function RecordingEvidencePanel({
           ) : null}
         </div>
       ) : null}
-      <div className="mt-3 flex min-h-0 items-center justify-center overflow-hidden rounded-lg bg-background/40 p-2">
+      <div className="mt-3 flex min-h-0 items-start justify-center overflow-hidden rounded-lg bg-background/40 p-2">
         {loading ? (
           <div
             role="status"

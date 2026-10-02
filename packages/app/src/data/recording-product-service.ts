@@ -4,6 +4,7 @@ import {
 } from "./recording-input-outcome";
 import type {
   ProductRecordingBeginInput,
+  ProductRecordingSaveInput,
   ProductRecordingState,
 } from "@relay/product/recording-journey";
 import { reviewAndroidTalkBack } from "@relay/protocol";
@@ -103,6 +104,7 @@ export type RecordingProductService = {
   cancel?(): Promise<ProductRecordingState>;
   edit(edit: AuthoringRecordingEdit): Promise<ProductRecordingState>;
   replay(): Promise<ProductRecordingState>;
+  save?(input: ProductRecordingSaveInput): Promise<ProductRecordingState>;
   approve(testName: string): Promise<ProductRecordingState>;
   /** Open the selected target for exploration before durable recording begins. */
   previewTarget?(
@@ -417,6 +419,9 @@ export function createRecordingProductService(
     },
     async approve(testName) {
       return (await product()).journey.approve(testName);
+    },
+    async save(input) {
+      return (await product()).journey.save(input);
     },
     async liveTarget(target, identity) {
       const [recording, { createLiveTargetSession }] = await Promise.all([
