@@ -9,12 +9,14 @@ export function RecordingDeviceChoice({
   options,
   onChange,
   onStarted,
+  deviceOnly = false,
 }: {
   service: DeviceProductService;
   value: string;
   options: readonly FilterSelectOption[];
   onChange(value: string): void;
   onStarted(serial: string): Promise<void>;
+  deviceOnly?: boolean;
 }) {
   const starting = useRef(false);
   const inventory = useQuery({
@@ -48,7 +50,9 @@ export function RecordingDeviceChoice({
             ? "Starting Android emulator…"
             : value
               ? "Selected device unavailable"
-              : "Choose a device or browser"
+              : deviceOnly
+                ? "Choose a phone, tablet or emulator"
+                : "Choose a device or browser"
         }
         options={[
           ...options,

@@ -167,7 +167,15 @@ export function RunInspection({
   useEffect(() => {
     if (!report.data) return;
     void clearRunPointerIfCurrent(platform, runId).then((cleared) => {
-      if (cleared) queryClient.setQueryData(runQueryKeys.pointer, null);
+      if (!cleared) return;
+      queryClient.setQueryData(runQueryKeys.pointer, null);
+      const testId = report.data.testId ?? originTest.current.testId;
+      if (testId) {
+        // Completing a Run can update the map revision behind the saved Test.
+        // Refresh the document we just ran before offering another Run.
+        void queryClient.invalidateQueries({ queryKey: ["test-editor", testId] });
+        void queryClient.invalidateQueries({ queryKey: runQueryKeys.test(testId) });
+      }
     });
   }, [platform, queryClient, report.data, runId]);
 

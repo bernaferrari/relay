@@ -50,8 +50,7 @@ import { TestWorkspaceStage } from "./test-stage";
 import { productLinkClassName } from "../lib/class-names";
 
 const routeApi = getRouteApi("/tests/$testId");
-const staleTestMessage =
-  "The saved Test changed. Reload it and review the latest version before running.";
+const staleTestMessage = "The saved Test changed.";
 
 export function TestPage() {
   const { runService, platform, queryClient, productService, testEditorService } = useRouteContext({
@@ -558,7 +557,7 @@ export function TestPage() {
                 code: "test-document-changed",
                 title: "Saved Test changed",
                 detail: staleTestMessage,
-                recovery: "Reload the Test, review its latest steps, then run again.",
+                recovery: "Reload to review its latest steps.",
                 retryable: false,
               }
             : start.data?.recovery

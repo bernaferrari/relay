@@ -1,21 +1,21 @@
 import { NewTestDraftDialog } from "./new-test-draft-dialog";
 import { NewTestDetailedSetup } from "./new-test-detailed-setup";
+import { NewTestTargetMode } from "./new-test-target-mode";
+import { useWebsiteAccountPreference } from "./use-website-account-preference";
 import {
   NEW_TEST_DRAFT_KEY,
   friendlyPreviewIssue,
   readNewTestDraft,
   websiteAccounts,
 } from "./new-test-setup-helpers";
-import { BrowserSetup, startManagedBrowser } from "./new-test-browser-setup";
-import { AuthoringWorkspace } from "./authoring-workspace";
+import { startManagedBrowser } from "./new-test-browser-setup";
 import { AuthoringHeader } from "./authoring-header";
-import { RecordingAppChoice } from "./recording-app-choice";
 /** @jsxImportSource react */
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@relay/ui-react/components/alert";
 import { Button } from "@relay/ui-react/components/button";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useRouteContext } from "@tanstack/react-router";
-import { CircleDot, Compass, Play, RotateCcw } from "lucide-react";
+import { CircleDot } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type {
   LiveTargetBrowserContext,
@@ -24,17 +24,13 @@ import type {
 } from "../data/live-target-session";
 import { recordingQueryKeys } from "../data/recording-queries";
 import { WorkbenchPage } from "../components/page-layout";
-import { EmptyState } from "../components/product-patterns";
 import {
   clearWorkflowPointerIfCurrent,
   readWorkflowPointer,
   writeWorkflowPointer,
 } from "../data/workflow-pointer";
-import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
+import { PageLoading, RecordingProblem } from "./recording-shared";
 import { ReviewRecordingPage } from "./review-recording-page";
-import { LiveTargetCanvas } from "./live-target-canvas";
-import { RecordingDeviceChoice } from "../components/recording-device-choice";
-import { InstalledAppChoice } from "../components/installed-app-choice";
 import {
   NewTestQuickStart,
   recentWebsites,
@@ -80,7 +76,7 @@ export function NewTestPage() {
   const [previewIssue, setPreviewIssue] = useState<string>();
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewAttempt, setPreviewAttempt] = useState(0);
-  const [browserUrl, setBrowserUrl] = useState("");
+  const [browserUrl, setBrowserUrl] = useState(requestedSite ?? "");
   const [newBrowserOpen, setNewBrowserOpen] = useState(false);
   const [creatingApp, setCreatingApp] = useState(false);
   const previousTargetId = useRef<string | undefined>(undefined);
@@ -90,43 +86,25 @@ export function NewTestPage() {
     requestedAppId || requestedTargetId || startsFromPath ? "detailed" : "website",
   );
   const [quickProgress, setQuickProgress] = useState<string>();
+  const [wantsDevice, setWantsDevice] = useState(false);
   const accounts = useQuery({
     queryKey: ["new-test", "browser-accounts"],
     queryFn: () => appResourcesService.listBrowserAccounts(),
     staleTime: 30_000,
   });
-  // The login last used per website, so the daily case is one click.
-  const rememberedAccounts = useQuery({
-    queryKey: ["new-test", "remembered-accounts", accounts.data?.length ?? 0],
-    queryFn: async () => {
-      const hosts = [
-        ...new Set(
-          (accounts.data ?? []).flatMap((item) =>
-            (item.fixture.origins ?? []).map((origin) => websiteHost(origin)),
-          ),
-        ),
-      ];
-      const entries = await Promise.all(
-        hosts.map(
-          async (host) =>
-            [
-              host,
-              await Promise.resolve(platform.storage.get(`relay:website-account:${host}`)),
-            ] as const,
-        ),
-      );
-      return Object.fromEntries(
-        entries.filter((entry): entry is readonly [string, string] => typeof entry[1] === "string"),
-      );
-    },
-    enabled: Boolean(accounts.data?.length),
-  });
+  const rememberedAccounts = useWebsiteAccountPreference(platform, accounts.data);
   const [quickError, setQuickError] = useState<string>();
 
   const apps = useQuery({
     queryKey: recordingQueryKeys.apps,
     queryFn: () => productService.listApps(),
   });
+  const appPlatform = apps.data?.find((app) => app.id === appId)?.platform;
+  const deviceOnly =
+    wantsDevice ||
+    (setupMode === "detailed" &&
+      !requestedTargetId &&
+      (appPlatform === "ios" || appPlatform === "android"));
   const draft = useQuery({
     queryKey: ["recording", "new-test-draft"],
     queryFn: () => readNewTestDraft(platform),
@@ -185,7 +163,8 @@ export function NewTestPage() {
     // for hardware that may no longer be connected.
     if (!requestedTargetId && !targetId) {
       const saved = targets.data.targetOptions.find(
-        (target) => target.targetId === draft.data?.targetId,
+        (target) =>
+          target.targetId === draft.data?.targetId && (!deviceOnly || target.kind === "device"),
       );
       if (saved) setTargetId(saved.targetId);
     }
@@ -200,13 +179,16 @@ export function NewTestPage() {
     targetId,
     targets.data,
     targets.isSuccess,
+    deviceOnly,
   ]);
   useEffect(() => {
     if (!draftRestored || targetId || !targets.data || newBrowserOpen) return;
-    const available = targets.data.targetOptions;
+    const available = targets.data.targetOptions.filter(
+      (target) => !deviceOnly || target.kind === "device",
+    );
     const preferred = available.length === 1 ? available[0] : undefined;
     if (preferred) setTargetId(preferred.targetId);
-  }, [draftRestored, targetId, targets.data, newBrowserOpen]);
+  }, [draftRestored, targetId, targets.data, newBrowserOpen, deviceOnly]);
   const activePointer = useQuery({
     queryKey: recordingQueryKeys.reconciledPointer,
     queryFn: async () => {
@@ -378,6 +360,13 @@ export function NewTestPage() {
   /** The app a website's Tests belong to: remembered, else where this browser's
    * runs were filed, else an app named after the site, else a new one. */
   async function appForWebsite(host: string, browserTargetId: string): Promise<string> {
+    if (
+      requestedAppId &&
+      apps.data?.some(
+        (app) => app.id === requestedAppId && app.platform !== "android" && app.platform !== "ios",
+      )
+    )
+      return requestedAppId;
     const key = `relay:website-app:${host}`;
     const known = new Set((apps.data ?? []).map((app) => app.id));
     const remembered = await Promise.resolve(platform.storage.get(key));
@@ -409,6 +398,7 @@ export function NewTestPage() {
       const typedPath = new URL(url).pathname;
       const saved = savedBrowsers.data?.find(
         (space) =>
+          !accounts.data?.some((item) => item.fixture.targetId === space.id) &&
           websiteHost(space.startUrl) === host &&
           (typedPath === "/" || new URL(space.startUrl).pathname === typedPath),
       );
@@ -421,13 +411,11 @@ export function NewTestPage() {
       await Promise.resolve(
         platform.storage.set(`relay:website-account:${host}`, account?.reference ?? ""),
       );
-      setQuickProgress("Finding where to save it…");
       const chosenApp = await appForWebsite(host, browserTargetId);
       await queryClient.invalidateQueries({ queryKey: ["browser-spaces"] });
       await queryClient.invalidateQueries({ queryKey: recordingQueryKeys.apps });
       setAppId(chosenApp);
       setTargetId(browserTargetId);
-      setQuickProgress("Starting the recording…");
       await begin.mutateAsync({
         appId: chosenApp,
         targetId: browserTargetId,
@@ -517,11 +505,28 @@ export function NewTestPage() {
           phase="setup"
           title="New test"
           actions={
-            <Button nativeButton={false} render={<Link to="/tests" />} variant="ghost" size="sm">
+            <Button
+              nativeButton={false}
+              render={<Link to="/tests" search={{ app: requestedAppId }} />}
+              variant="ghost"
+              size="sm"
+            >
               Cancel
             </Button>
           }
-        />
+        >
+          {!startsFromPath && !blocksNewRecording ? (
+            <NewTestTargetMode
+              device={setupMode === "detailed" && (deviceOnly || selectedTarget?.kind === "device")}
+              disabled={begin.isPending || Boolean(quickProgress)}
+              onChange={(device) => {
+                setWantsDevice(device);
+                setSetupMode(device ? "detailed" : "website");
+                if (device && selectedTarget?.kind === "browser") chooseTarget("");
+              }}
+            />
+          ) : null}
+        </AuthoringHeader>
 
         {blocksNewRecording ? (
           <Alert className="max-w-3xl" variant="default">
@@ -597,7 +602,7 @@ export function NewTestPage() {
           }
         />
 
-        {setupMode === "website" && !loading && !blocksNewRecording ? (
+        {setupMode === "website" && setupOpen ? (
           <NewTestQuickStart
             recent={recentWebsites(savedBrowsers.data ?? [])}
             setupStatus={
@@ -616,7 +621,8 @@ export function NewTestPage() {
             {...(quickError ? { error: quickError } : {})}
             accountsFor={(url) => websiteAccounts(accounts.data ?? [], url)}
             rememberedAccount={(url) => rememberedAccounts.data?.[websiteHost(url)]}
-            {...(requestedSite ? { initialAddress: requestedSite } : {})}
+            initialAddress={browserUrl}
+            onAddressChange={setBrowserUrl}
             {...(requestedAccount
               ? {
                   initialAccount:
@@ -628,16 +634,11 @@ export function NewTestPage() {
                 }
               : {})}
             onStart={(url, account) => void startWebsiteTest(url, account)}
-            onUseDevice={() => setSetupMode("detailed")}
           />
         ) : null}
-        {setupMode === "detailed" &&
-        !loading &&
-        !apps.isError &&
-        !targets.isError &&
-        !targets.data?.recovery &&
-        !blocksNewRecording ? (
+        {setupMode === "detailed" && setupOpen ? (
           <NewTestDetailedSetup
+            deviceOnly={deviceOnly}
             startsFromPath={startsFromPath}
             pathSummary={pathContext.data ?? undefined}
             apps={apps.data ?? []}

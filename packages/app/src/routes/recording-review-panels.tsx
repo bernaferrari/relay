@@ -7,14 +7,14 @@ import type {
 import { ScrollArea } from "@relay/ui-react/components/scroll-area";
 import { Checkbox } from "@relay/ui-react/components/checkbox";
 import { Button } from "@relay/ui-react/components/button";
-import { ToggleGroup, ToggleGroupItem } from "@relay/ui-react/components/toggle-group";
+import { ScreenshotMomentSwitch } from "../components/screenshot-moment-switch";
 import { useState, type CSSProperties } from "react";
 import {
   pickRecordingEvidenceControl,
   imagePointFromClick,
   type RecordingEvidenceControl,
 } from "../data/recording-evidence-target";
-import { MoreHorizontal, Sparkles, Target, ScanLine, LoaderCircle } from "lucide-react";
+import { MoreHorizontal, Sparkles, Target, ScanLine } from "lucide-react";
 import { EmptyState } from "../components/product-patterns";
 import {
   recordedMomentCount,
@@ -81,30 +81,15 @@ export function RecordingEvidencePanel({
           >
             <ScanLine className="size-4" />
           </Button>
-          <ToggleGroup
-            className="gap-0.5 rounded-lg bg-background/60 p-1"
-            aria-label="Evidence moment"
-            value={[evidenceRole]}
-            onValueChange={(values) => {
-              const role = values[0];
-              if (role === "entrance" || role === "exit") onEvidenceRoleChange(role);
-            }}
-          >
-            <ToggleGroupItem
-              size="sm"
-              value="entrance"
-              className="rounded-md border border-transparent px-3 text-muted-foreground aria-pressed:border-border aria-pressed:bg-foreground/15 aria-pressed:text-foreground aria-pressed:shadow-sm"
-            >
-              Before
-            </ToggleGroupItem>
-            <ToggleGroupItem
-              size="sm"
-              value="exit"
-              className="rounded-md border border-transparent px-3 text-muted-foreground aria-pressed:border-border aria-pressed:bg-foreground/15 aria-pressed:text-foreground aria-pressed:shadow-sm"
-            >
-              After
-            </ToggleGroupItem>
-          </ToggleGroup>
+          <ScreenshotMomentSwitch
+            label="Evidence moment"
+            value={evidenceRole}
+            items={[
+              { value: "entrance", label: "Before" },
+              { value: "exit", label: "After" },
+            ]}
+            onChange={onEvidenceRoleChange}
+          />
         </div>
       </div>
       {fullPage ? (
@@ -149,13 +134,8 @@ export function RecordingEvidencePanel({
           <div
             role="status"
             aria-label="Loading screenshot"
-            className="flex items-center justify-center p-6 text-muted-foreground"
-          >
-            <LoaderCircle
-              className="size-5 animate-spin motion-reduce:animate-none"
-              aria-hidden="true"
-            />
-          </div>
+            className="pointer-events-none aspect-[9/19.5] h-full max-w-full rounded-2xl bg-muted/30 ring-1 ring-border/40"
+          />
         ) : previewUrl ? (
           <div
             className="relative max-h-full max-w-full"

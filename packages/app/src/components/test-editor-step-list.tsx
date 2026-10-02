@@ -116,6 +116,7 @@ export function TestEditorStepOutline({
                   type="button"
                   onClick={() => onSelect(entry.step.id)}
                   aria-pressed={selectedStepId === entry.step.id}
+                  aria-expanded={selectedStepId === entry.step.id && Boolean(selectedEditor)}
                 >
                   <span className="text-center text-xs tabular-nums text-muted-foreground">
                     {entry.number}
@@ -136,7 +137,7 @@ export function TestEditorStepOutline({
                     </small>
                   </span>
                   <ChevronRight
-                    className={`size-3.5 text-muted-foreground ${selectedStepId === entry.step.id ? "rotate-90" : ""}`}
+                    className={`size-3.5 text-muted-foreground ${selectedStepId === entry.step.id && selectedEditor ? "rotate-90" : ""}`}
                     aria-hidden="true"
                   />
                 </button>

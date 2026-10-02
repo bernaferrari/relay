@@ -38,6 +38,7 @@ const now = Date.now();
 
 beforeEach(() => {
   inbox.current = undefined;
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Offline test fixture")));
 });
 
 afterEach(async () => {
@@ -45,6 +46,7 @@ afterEach(async () => {
     for (const root of roots.splice(0)) root.unmount();
   });
   document.body.replaceChildren();
+  vi.unstubAllGlobals();
 });
 
 function run(
@@ -209,6 +211,16 @@ function buttonNamed(label: string, scope: ParentNode = document) {
 }
 
 describe("Tests home", () => {
+  it("offers a scoped first test when only other Apps have tests", async () => {
+    await render("/tests?app=app-empty");
+    expect(main().textContent).toContain("No tests for this App yet");
+    const links = [...main().querySelectorAll<HTMLAnchorElement>('a[href^="/tests/new"]')];
+    expect(links.length).toBeGreaterThan(0);
+    expect(links.every((link) => new URL(link.href).searchParams.get("app") === "app-empty")).toBe(
+      true,
+    );
+    expect(main().textContent).not.toContain("Pay invoice");
+  });
   it("summarizes tests and plans for the chosen App", async () => {
     await render("/tests?app=app-shop");
     expect(main().querySelector("h1")?.textContent).toBe("Tests");

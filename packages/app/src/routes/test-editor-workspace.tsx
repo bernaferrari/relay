@@ -132,9 +132,7 @@ export function TestEditorWorkspace({
               stepPlatformBlockers={editorDocument.stepPlatformBlockers}
               originEvidenceMissing={editorDocument.originEvidenceMissing}
               entries={entries}
-              selectedStepId={
-                editorExpanded || hasPendingCheckpoint ? selected?.step.id : undefined
-              }
+              selectedStepId={selected?.step.id}
               busy={editPending || repairPending}
               draggedStepId={draggedStepId}
               onAdd={addStep}
