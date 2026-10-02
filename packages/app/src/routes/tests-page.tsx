@@ -162,7 +162,10 @@ export function TestsPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <NewPlanDialog {...(app ? { appId: app } : {})} />
-          <Button nativeButton={false} render={<Link to="/tests/new" />}>
+          <Button
+            nativeButton={false}
+            render={<Link to="/tests/new" search={{ app: app || undefined }} />}
+          >
             <Plus aria-hidden="true" /> New test
           </Button>
         </div>
@@ -200,19 +203,22 @@ export function TestsPage() {
         layout="centered"
       />
 
-      {tests.data && !all.length ? (
+      {tests.data && !testCount ? (
         <EmptyState
-          title="No tests yet"
-          detail="Enter a website, click through it, and Relay saves the steps as a test."
+          title={app ? "No tests for this App yet" : "No tests yet"}
+          detail="Record a flow on your website or device, then save it as a test."
           action={
-            <Button nativeButton={false} render={<Link to="/tests/new" />}>
+            <Button
+              nativeButton={false}
+              render={<Link to="/tests/new" search={{ app: app || undefined }} />}
+            >
               <Plus aria-hidden="true" /> New test
             </Button>
           }
         />
       ) : null}
 
-      {tests.data && all.length && flat ? (
+      {tests.data && testCount > 0 && flat ? (
         <section className="mt-4" aria-label="Matching tests">
           <div className="mb-2 flex items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">
@@ -234,7 +240,7 @@ export function TestsPage() {
         </section>
       ) : null}
 
-      {tests.data && all.length && !flat ? (
+      {tests.data && testCount > 0 && !flat ? (
         <div className="mt-6 grid gap-8">
           {plans.length ? (
             <section aria-labelledby="plans-heading" className="grid gap-3">

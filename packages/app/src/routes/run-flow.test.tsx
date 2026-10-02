@@ -1126,6 +1126,33 @@ describe("Run and Report", () => {
     expect(fake.startInputs[0]).toMatchObject({ documentRevision: 2 });
   });
 
+  it("refreshes the owned Test after completion so the same flow can run again", async () => {
+    const fake = fakeRunService();
+    const editor = fakeEditorService();
+    const get = editor.get.bind(editor);
+    let revision = 1;
+    editor.get = async (id, app) => {
+      const document = await get(id, app);
+      return document ? { ...document, revision } : undefined;
+    };
+    await renderRun(
+      "/tests/test-1?target=browser-golden",
+      fake.service,
+      platformWithStorage().platform,
+      undefined,
+      editor,
+    );
+    await click(button("Run"));
+    expect(fake.startInputs[0]).toMatchObject({ documentRevision: 1 });
+    revision = 2;
+    await act(async () => fake.complete());
+    await settle();
+    await click(button("Run"));
+    expect(fake.startInputs).toHaveLength(2);
+    expect(fake.startInputs[1]).toMatchObject({ documentRevision: 2 });
+    expect(document.body.textContent).not.toContain("The saved Test changed.");
+  });
+
   it("keeps the recording browser over a different workspace destination", async () => {
     const fake = fakeRunService();
     const stored = platformWithStorage({

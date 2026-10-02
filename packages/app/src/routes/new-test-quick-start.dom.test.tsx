@@ -13,6 +13,33 @@ afterEach(async () => {
 });
 
 describe("New test as this account", () => {
+  it("fills a recent website without starting or bypassing unavailable setup", async () => {
+    const onStart = vi.fn();
+    const onAddressChange = vi.fn();
+    const host = document.createElement("div");
+    document.body.append(host);
+    root = createRoot(host);
+    await act(async () =>
+      root!.render(
+        <NewTestQuickStart
+          recent={["https://shop.example/"]}
+          setupStatus="unavailable"
+          onStart={onStart}
+          onAddressChange={onAddressChange}
+        />,
+      ),
+    );
+    const recent = [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("shop.example"),
+    )!;
+    await act(async () => recent.click());
+    expect(host.querySelector<HTMLInputElement>("#new-test-website")?.value).toBe(
+      "https://shop.example/",
+    );
+    expect(onAddressChange).toHaveBeenCalledWith("https://shop.example/");
+    expect(onStart).not.toHaveBeenCalled();
+    expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
+  });
   it("starts with the account's website and login already chosen", async () => {
     const onStart = vi.fn();
     const host = document.createElement("div");

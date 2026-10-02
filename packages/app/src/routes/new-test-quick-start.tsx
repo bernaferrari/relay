@@ -2,6 +2,7 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
+import { Label } from "@relay/ui-react/components/label";
 import { ArrowRight, Globe, LoaderCircle, Smartphone } from "lucide-react";
 import type { ProductBrowserSpace } from "../data/browser-spaces-product-service";
 
@@ -62,6 +63,7 @@ export function NewTestQuickStart({
   initialAccount,
   setupStatus = "ready",
   onRetrySetup,
+  onAddressChange,
 }: {
   /** Prefilled website, e.g. from "New test as this account". */
   initialAddress?: string;
@@ -69,6 +71,7 @@ export function NewTestQuickStart({
   initialAccount?: string;
   setupStatus?: "loading" | "unavailable" | "ready";
   onRetrySetup?(): void;
+  onAddressChange?(value: string): void;
   recent: readonly string[];
   /** Saved logins that work on this website address. */
   accountsFor?(url: string): readonly WebsiteAccount[];
@@ -78,10 +81,14 @@ export function NewTestQuickStart({
   progress?: string;
   error?: string;
   onStart(url: string, account?: WebsiteAccount): void;
-  onUseDevice(): void;
+  onUseDevice?(): void;
   manualAction?: ReactNode;
 }) {
   const [value, setValue] = useState(initialAddress ?? "");
+  function changeAddress(value: string) {
+    setValue(value);
+    onAddressChange?.(value);
+  }
   const address = websiteAddress(value);
   const busy = Boolean(progress);
   const accounts = address ? (accountsFor?.(address) ?? []) : [];
@@ -97,23 +104,23 @@ export function NewTestQuickStart({
   }
   return (
     <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto px-6 py-12">
-      <div className="grid w-full max-w-xl gap-8">
-        <div className="grid gap-2 text-center">
-          <h1 className="text-3xl leading-9 font-semibold tracking-tight">
-            What do you want to test?
-          </h1>
-          <p className="text-muted-foreground">
-            Enter a website. Relay opens it, and every click and keystroke becomes a step.
+      <div className="grid w-full max-w-lg gap-6">
+        <div className="grid gap-2">
+          <h2 className="text-2xl font-semibold tracking-tight">Record a website</h2>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Open your website here. Your clicks and typing become test steps.
           </p>
         </div>
         <form className="grid gap-3" onSubmit={submit} aria-label="Start a test">
-          <div className="flex gap-2">
+          <Label htmlFor="new-test-website">Website address</Label>
+          <div className="flex flex-wrap gap-2">
             <div className="relative flex-1">
               <Globe
                 className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
                 aria-hidden="true"
               />
               <Input
+                id="new-test-website"
                 aria-label="Website address"
                 className="h-11 pl-9 text-base"
                 type="text"
@@ -123,10 +130,10 @@ export function NewTestQuickStart({
                 spellCheck={false}
                 autoComplete="url"
                 autoFocus
-                placeholder="grok.com or https://staging.example.com"
+                placeholder="example.com"
                 value={value}
                 disabled={busy}
-                onChange={(event) => setValue(event.currentTarget.value)}
+                onChange={(event) => changeAddress(event.currentTarget.value)}
               />
             </div>
             <Button
@@ -143,7 +150,7 @@ export function NewTestQuickStart({
               ) : (
                 <ArrowRight aria-hidden="true" />
               )}
-              {busy ? "Starting" : "Start"}
+              {busy ? "Starting…" : "Start recording"}
             </Button>
           </div>
           {setupStatus === "unavailable" ? (
@@ -207,7 +214,7 @@ export function NewTestQuickStart({
         {recent.length ? (
           <div className="grid gap-2">
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Recent
+              Recent websites
             </p>
             <div className="flex flex-wrap gap-2">
               {recent.map((url) => (
@@ -217,10 +224,7 @@ export function NewTestQuickStart({
                   variant="outline"
                   size="sm"
                   disabled={busy}
-                  onClick={() =>
-                    // A site with saved logins asks who to sign in as first.
-                    accountsFor?.(url).length ? setValue(url) : onStart(url)
-                  }
+                  onClick={() => changeAddress(url)}
                 >
                   <Globe aria-hidden="true" /> {websiteHost(url)}
                 </Button>
@@ -230,9 +234,11 @@ export function NewTestQuickStart({
         ) : null}
         <div className="flex flex-wrap justify-center gap-2 border-t border-border pt-4 text-center">
           {manualAction}
-          <Button type="button" variant="ghost" size="sm" onClick={onUseDevice} disabled={busy}>
-            <Smartphone aria-hidden="true" /> Test a phone or tablet instead
-          </Button>
+          {onUseDevice ? (
+            <Button type="button" variant="ghost" size="sm" onClick={onUseDevice} disabled={busy}>
+              <Smartphone aria-hidden="true" /> Test a phone or tablet instead
+            </Button>
+          ) : null}
         </div>
       </div>
     </div>

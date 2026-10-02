@@ -6,7 +6,7 @@ import { InstalledAppChoice } from "../components/installed-app-choice";
 import { BrowserSetup } from "./new-test-browser-setup";
 import { LiveTargetCanvas } from "./live-target-canvas";
 import { Button } from "@relay/ui-react/components/button";
-import { CircleDot, Compass, Play, RotateCcw } from "lucide-react";
+import { CircleDot, Compass, Play, RotateCcw, Smartphone } from "lucide-react";
 import { EmptyState } from "../components/product-patterns";
 import { targetLabel } from "./recording-shared";
 import type { ProductTargetOption } from "../data/target-presentation";
@@ -65,7 +65,9 @@ export function NewTestDetailedSetup({
   onBrowserUrlChange,
   onToggleNewBrowser,
   onBrowserStart,
+  deviceOnly = false,
 }: {
+  deviceOnly?: boolean;
   startsFromPath: boolean;
   pathSummary?: { fromTitle: string; toTitle?: string };
   apps: readonly App[];
@@ -111,6 +113,59 @@ export function NewTestDetailedSetup({
   onToggleNewBrowser(): void;
   onBrowserStart: ComponentProps<typeof BrowserSetup>["onStart"];
 }) {
+  const choices = deviceOnly
+    ? targetOptions.filter((target) => target.kind === "device")
+    : targetOptions;
+  const deviceChoice = (
+    <RecordingDeviceChoice
+      service={deviceService}
+      deviceOnly={deviceOnly}
+      onStarted={async (serial) => {
+        await onRefreshTargets();
+        chooseTarget(serial);
+      }}
+      value={targetId}
+      options={choices.map((target) => {
+        const label = targetLabel(target);
+        return {
+          value: target.targetId,
+          label: label.detail ? `${label.title} · ${label.detail}` : label.title,
+        };
+      })}
+      onChange={(value) => {
+        onNewBrowserOpen(false);
+        chooseTarget(value);
+      }}
+    />
+  );
+  if (deviceOnly && !targetId) {
+    return (
+      <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto px-6 py-8">
+        <div className="grid w-full max-w-md gap-6">
+          <div className="grid gap-3">
+            <Smartphone className="size-8 text-muted-foreground" aria-hidden="true" />
+            <h2 className="text-2xl font-semibold tracking-tight">
+              {choices.length ? "Choose your device" : "Connect your device"}
+            </h2>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Connect your phone or tablet by USB and unlock it, or start an Android emulator below.
+            </p>
+          </div>
+          {deviceChoice}
+          <Button
+            type="button"
+            variant="outline"
+            className="w-fit"
+            disabled={targetFetching}
+            onClick={() => void onRefreshTargets()}
+          >
+            <RotateCcw aria-hidden="true" />
+            {targetFetching ? "Checking…" : "Refresh devices"}
+          </Button>
+        </div>
+      </div>
+    );
+  }
   return (
     <AuthoringWorkspace
       mobileOrder="setup-first"
@@ -121,12 +176,6 @@ export function NewTestDetailedSetup({
           className="grid min-w-0 content-start gap-5 rounded-lg border border-border p-4"
           aria-label="Record setup"
         >
-          <div className="grid gap-1">
-            <h2 className="text-sm font-medium">Recording setup</h2>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              Choose where to save this Test and where to record it.
-            </p>
-          </div>
           {startsFromPath ? (
             <p className="text-sm text-muted-foreground">
               Starting from{" "}
@@ -145,35 +194,19 @@ export function NewTestDetailedSetup({
             createApp={(name) => createApp(name)}
             onCreated={onAppCreated}
           />
-          <RecordingDeviceChoice
-            service={deviceService}
-            onStarted={async (serial) => {
-              await onRefreshTargets();
-              chooseTarget(serial);
-            }}
-            value={targetId}
-            options={targetOptions.map((target) => {
-              const label = targetLabel(target);
-              return {
-                value: target.targetId,
-                label: label.detail ? `${label.title} · ${label.detail}` : label.title,
-              };
-            })}
-            onChange={(value) => {
-              onNewBrowserOpen(false);
-              chooseTarget(value);
-            }}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              chooseTarget("");
-              onNewBrowserOpen(true);
-            }}
-          >
-            New browser
-          </Button>
+          {deviceChoice}
+          {!deviceOnly ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                chooseTarget("");
+                onNewBrowserOpen(true);
+              }}
+            >
+              New browser
+            </Button>
+          ) : null}
           {selectedTarget?.kind === "device" ? (
             <InstalledAppChoice
               service={deviceService}
@@ -186,15 +219,15 @@ export function NewTestDetailedSetup({
               onOpened={onOpened}
             />
           ) : null}
-          <p
-            id="recording-readiness"
-            role="status"
-            className="text-sm leading-5 text-muted-foreground"
-          >
-            {formReady
-              ? "Ready to record. Capture screenshots along the way for review."
-              : startHint}
-          </p>
+          {!formReady ? (
+            <p
+              id="recording-readiness"
+              role="status"
+              className="text-sm leading-5 text-muted-foreground"
+            >
+              {startHint}
+            </p>
+          ) : null}
           <Button
             type="submit"
             disabled={!formReady}

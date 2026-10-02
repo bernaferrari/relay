@@ -1,0 +1,93 @@
+/** @jsxImportSource react */
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SavedRecordingPreview } from "./saved-recording-preview";
+
+const service = vi.hoisted(() => ({ getRecordingFrame: vi.fn() }));
+vi.mock("@tanstack/react-router", () => ({
+  useRouteContext: () => ({ catalogService: service }),
+}));
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+let root: Root;
+const frames = [
+  { evidenceId: "before", uri: "before.png", role: "before" as const },
+  { evidenceId: "after", uri: "after.png", role: "after" as const },
+];
+const bytes = () => ({ bytes: [1, 2, 3], mime: "image/png" });
+beforeEach(() => {
+  service.getRecordingFrame.mockReset();
+  vi.spyOn(URL, "createObjectURL").mockImplementation(() => `blob:${Math.random()}`);
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+});
+afterEach(async () => {
+  await act(async () => root?.unmount());
+  document.body.replaceChildren();
+  vi.restoreAllMocks();
+});
+async function settle() {
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+}
+async function render() {
+  const host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  await act(async () => {
+    root.render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <SavedRecordingPreview frames={frames} intent="Open Settings" />
+      </QueryClientProvider>,
+    );
+  });
+  await settle();
+  return host;
+}
+
+describe("saved recording evidence", () => {
+  it("keeps the displayed screenshot alive while another moment loads and never deselects it", async () => {
+    let resolveBefore!: (value: ReturnType<typeof bytes>) => void;
+    service.getRecordingFrame.mockImplementation((uri) =>
+      uri === "after.png"
+        ? Promise.resolve(bytes())
+        : new Promise((resolve) => {
+            resolveBefore = resolve;
+          }),
+    );
+    const host = await render();
+    const previous = host.querySelector("img")!.src;
+    const before = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Before",
+    )!;
+    await act(async () => before.click());
+    expect(before.getAttribute("aria-pressed")).toBe("true");
+    await act(async () => before.click());
+    expect(before.getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelector("img")?.src).toBe(previous);
+    expect(host.querySelector("img")?.alt).toBe("After: Open Settings");
+    expect(host.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(previous);
+    await act(async () => resolveBefore(bytes()));
+    await settle();
+    expect(host.querySelector("img")?.alt).toBe("Before: Open Settings");
+    expect(host.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(previous);
+  });
+
+  it("provides a working retry when image decoding fails", async () => {
+    service.getRecordingFrame.mockResolvedValue(bytes());
+    const host = await render();
+    await act(async () => host.querySelector("img")!.dispatchEvent(new Event("error")));
+    expect(host.textContent).toContain("could not be loaded");
+    const retry = [...host.querySelectorAll("button")].find(
+      (button) => button.textContent === "Try again",
+    )!;
+    await act(async () => retry.click());
+    await settle();
+    expect(service.getRecordingFrame).toHaveBeenCalledTimes(2);
+    expect(host.querySelector("img")).not.toBeNull();
+    expect(host.querySelector('[aria-busy="true"]')).toBeNull();
+  });
+});

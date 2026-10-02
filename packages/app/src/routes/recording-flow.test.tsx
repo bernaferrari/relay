@@ -310,9 +310,10 @@ async function renderJourney(
   await settle();
   // These journeys cover the detailed setup; a new Test first asks for a website.
   const detailed = [...document.querySelectorAll("button")].find(
-    (candidate) => candidate.textContent?.trim() === "Test a phone or tablet instead",
+    (candidate) => candidate.textContent?.trim() === "Phone or tablet",
   );
-  if (detailed && !quickStart) await click(detailed);
+  if (detailed && !quickStart && document.querySelector('form[aria-label="Start a test"]'))
+    await click(detailed);
   return { history, host };
 }
 
@@ -994,7 +995,7 @@ describe("record, review, replay, and save", () => {
       fake.service,
       platformWithStorage().platform,
     );
-    expect(document.body.textContent).toContain("Recording setup");
+    expect(document.querySelector('form[aria-label="Record setup"]')).not.toBeNull();
     expect(document.body.textContent).not.toContain("This page couldn’t load");
   });
 
@@ -1052,6 +1053,86 @@ describe("record, review, replay, and save", () => {
     expect(document.querySelector('form[aria-label="Start a test"]')).not.toBeNull();
     expect(document.querySelector("form form")).toBeNull();
   });
+
+  it("preserves the website address across mode switches and filters browsers out of phone setup", async () => {
+    const fake = fakeService();
+    fake.service.connect = async () => ({
+      status: "target-selection",
+      targets: [{ kind: "browser", platform: "browser", targetId: "signed-in-browser" }],
+    });
+    await renderJourney(
+      "/tests/new",
+      fake.service,
+      platformWithStorage().platform,
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    await fill(document.querySelector<HTMLInputElement>("#new-test-website")!, "shop.example");
+    await click(button("Phone or tablet"));
+    expect(document.body.textContent).toContain("Connect your device");
+    expect(document.querySelector('[aria-label="Record on"]')?.textContent).not.toContain(
+      "Pixel 9 Pro",
+    );
+    expect(document.querySelector('form[aria-label="Record setup"]')).toBeNull();
+    await click(button("Website"));
+    expect(document.querySelector<HTMLInputElement>("#new-test-website")?.value).toBe(
+      "shop.example",
+    );
+    expect(fake.calls.some((call) => call.startsWith("begin:"))).toBe(false);
+  });
+
+  it.each([false, true])(
+    "keeps App context and respects an explicit saved account choice (%s)",
+    async (useAccount) => {
+      const fake = fakeService();
+      const open = vi.fn().mockImplementation(async (spaceId: string) => ({
+        targetId: spaceId,
+        name: "Shop",
+        url: "https://shop.example/",
+      }));
+      const create = vi.fn().mockResolvedValue({ id: "guest-browser" });
+      const account = {
+        target: { id: "signed-in-browser", name: "Shop", startUrl: "https://shop.example/" },
+        fixture: {
+          id: "member",
+          reference: "authfx:member:1",
+          revision: 1,
+          targetId: "signed-in-browser",
+          name: "Member",
+          origins: ["https://shop.example"],
+          cookieCount: 1,
+          createdAt: 1,
+        },
+      };
+      await renderJourney(
+        "/tests/new?app=app-1",
+        fake.service,
+        platformWithStorage().platform,
+        undefined,
+        {
+          listSpaces: async () => [{ id: "signed-in-browser", startUrl: "https://shop.example/" }],
+          createSpace: create,
+          openSpace: open,
+        } as unknown as BrowserSpacesProductService,
+        { ...emptyAppResources, listBrowserAccounts: async () => [account] },
+        true,
+      );
+      await click(button("Website"));
+      await fill(
+        document.querySelector<HTMLInputElement>("#new-test-website")!,
+        "https://shop.example/",
+      );
+      if (useAccount) await click(button("Member"));
+      await click(button("Start recording"));
+      expect(create).toHaveBeenCalledTimes(useAccount ? 0 : 1);
+      expect(open.mock.calls[0]?.[0]).toBe(useAccount ? "signed-in-browser" : "guest-browser");
+      expect(fake.calls).toContain(
+        `begin:Test on shop.example:app-1:${useAccount ? "signed-in-browser" : "guest-browser"}`,
+      );
+    },
+  );
 
   it("follows the full server-owned progression with one dominant review action", async () => {
     const fake = fakeService();
@@ -1353,7 +1434,7 @@ describe("record, review, replay, and save", () => {
     const browser = { kind: "browser", platform: "browser", targetId: "browser-one" } as const;
     fake.service.connect = async () => ({
       status: "target-selection",
-      targets: [browser, phone, { ...browser, targetId: "browser-two" }],
+      targets: [browser, phone, { ...phone, targetId: "second-phone" }],
     });
     fake.service.presentTargets = async (targets) =>
       targets.map((target) => ({ ...target, name: target.targetId, detail: "Ready" }));
@@ -1362,10 +1443,10 @@ describe("record, review, replay, and save", () => {
     });
     await renderJourney("/tests/new", fake.service, storage.platform);
     expect(document.querySelector('[aria-label="Record on"]')?.textContent).toContain(
-      "Choose a device or browser",
+      "Choose a phone, tablet or emulator",
     );
     expect(document.body.textContent).not.toContain("Your selected device isn’t ready");
-    expect(button("Start recording").disabled).toBe(true);
+    expect(document.body.textContent).not.toContain("Start recording");
     expect(fake.calls.some((call) => call.startsWith("begin:"))).toBe(false);
   });
 
