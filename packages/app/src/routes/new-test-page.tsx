@@ -395,17 +395,11 @@ export function NewTestPage() {
         );
       }
       setQuickProgress(account ? `Opening ${host} as ${account.name}…` : `Opening ${host}…`);
-      const typedPath = new URL(url).pathname;
-      const saved = savedBrowsers.data?.find(
-        (space) =>
-          !accounts.data?.some((item) => item.fixture.targetId === space.id) &&
-          websiteHost(space.startUrl) === host &&
-          (typedPath === "/" || new URL(space.startUrl).pathname === typedPath),
-      );
-      // A saved login belongs to one browser; record in that browser, signed in.
+      // Guest starts with an empty browser: even an unsaved login can leave cookies
+      // and a different current page in a previously used browser.
       const browserTargetId = await startManagedBrowser(
         browserSpacesService,
-        account?.targetId ?? saved?.id,
+        account?.targetId,
         url,
       );
       await Promise.resolve(

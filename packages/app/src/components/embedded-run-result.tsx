@@ -68,9 +68,16 @@ export function EmbeddedRunResult({
   const paths = authoredFrames.length ? authoredFrames : (step?.framePaths ?? []);
   const frames = report.evidence.find((section) => section.id === "screenshot")?.items ?? [];
   const reviewItems = destIdentityReviewItems(report.captureReview?.items ?? []);
+  const finalStepPath = report.timeline
+    .flatMap((item) => {
+      const authored = framePathsForTraceStep(report.stepEvidence, item.id, item.index);
+      return authored.length ? authored : (item.framePaths ?? []);
+    })
+    .at(-1);
   const destPath =
     reviewItems.find((item) => isCaptureReviewDestPhase(item.phase))?.framePath ??
-    reviewItems.find((item) => item.framePath)?.framePath;
+    finalStepPath ??
+    reviewItems.filter((item) => item.framePath).at(-1)?.framePath;
   const lastPath = paths.at(-1);
   const showingCapturedResult = Boolean(destPath) && !inspectingSteps;
   const thumbId = showingCapturedResult ? destPath : lastPath;

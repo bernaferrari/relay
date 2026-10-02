@@ -318,3 +318,49 @@ it("labels the captured result separately and shows the selected step image duri
     client.clear();
   }
 });
+
+it("uses the final executed screen when every step has a review capture", async () => {
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={new QueryClient()}>
+      <EmbeddedRunResult
+        report={
+          {
+            outcome: "passed",
+            timeline: [
+              { id: "home", index: 0, title: "Sign in", state: "passed", framePaths: ["home.png"] },
+              {
+                id: "settings",
+                index: 1,
+                title: "Settings",
+                state: "passed",
+                framePaths: ["settings.png"],
+              },
+            ],
+            captureReview: {
+              items: [
+                { captureId: "home", framePath: "home.png", status: "pending", policy: "fast" },
+                {
+                  captureId: "settings",
+                  framePath: "settings.png",
+                  status: "pending",
+                  policy: "fast",
+                },
+              ],
+            },
+            evidence: [
+              {
+                id: "screenshot",
+                items: [
+                  { id: "settings.png", media: { kind: "image", src: "/settings.png" } },
+                  { id: "home.png", media: { kind: "image", src: "/home.png" } },
+                ],
+              },
+            ],
+          } as unknown as ProductRunReportOverview
+        }
+      />
+    </QueryClientProvider>,
+  );
+  expect(html).toContain('src="/settings.png"');
+  expect(html).not.toContain('src="/home.png"');
+});

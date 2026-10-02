@@ -66,8 +66,8 @@ describe("New test as this account", () => {
     expect(document.querySelector<HTMLInputElement>('[aria-label="Website address"]')?.value).toBe(
       "https://shop.example/",
     );
-    const checked = document.querySelector('[role="radio"][aria-checked="true"]');
-    expect(checked?.textContent).toBe("Staging admin");
+    const checked = document.querySelector("#new-test-account");
+    expect(checked?.textContent).toContain("Staging admin");
     await act(async () => {
       document.querySelector<HTMLFormElement>('form[aria-label="Start a test"]')!.requestSubmit();
     });
@@ -108,7 +108,12 @@ describe("New test as this account", () => {
     expect(document.body.textContent).toContain("selected account is unavailable");
     expect(document.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
     await act(async () => {
-      document.querySelector<HTMLButtonElement>('[role="radio"]')?.click();
+      document.querySelector<HTMLButtonElement>("#new-test-account")!.click();
+    });
+    await act(async () => {
+      [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+        .find((option) => option.textContent?.includes("Guest"))!
+        .click();
     });
     expect(document.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(
       false,

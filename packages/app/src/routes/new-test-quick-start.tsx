@@ -5,6 +5,7 @@ import { Input } from "@relay/ui-react/components/input";
 import { Label } from "@relay/ui-react/components/label";
 import { ArrowRight, Globe, LoaderCircle, Smartphone } from "lucide-react";
 import type { ProductBrowserSpace } from "../data/browser-spaces-product-service";
+import { SelectField } from "../components/filter-select";
 
 /** "grok.com", "https://staging.example.com/login" → a full https URL, or "" when unusable. */
 export function websiteAddress(value: string): string {
@@ -177,30 +178,18 @@ export function NewTestQuickStart({
             </p>
           ) : null}
           {setupStatus === "ready" && (accounts.length || missingAccount) ? (
-            <div
-              className="flex flex-wrap items-center gap-2"
-              role="radiogroup"
-              aria-label="Sign in as"
-            >
-              <span className="text-sm text-muted-foreground">Sign in as</span>
-              {[{ reference: "", name: "Guest", targetId: "" }, ...accounts].map((item) => (
-                <button
-                  key={item.reference || "guest"}
-                  type="button"
-                  role="radio"
-                  aria-checked={selectedReference === item.reference}
-                  disabled={busy}
-                  onClick={() => setChosen(item.reference)}
-                  className={`rounded-full border px-3 py-1 text-sm transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                    selectedReference === item.reference
-                      ? "border-brand bg-brand-soft text-foreground"
-                      : "border-border text-muted-foreground hover:border-brand/40 hover:text-foreground"
-                  }`}
-                >
-                  {item.name}
-                </button>
-              ))}
-            </div>
+            <SelectField
+              label="Account"
+              id="new-test-account"
+              value={selectedReference || "guest"}
+              options={[
+                { value: "guest", label: "Guest · not signed in" },
+                ...accounts.map((item) => ({ value: item.reference, label: item.name })),
+              ]}
+              onValueChange={(value) => setChosen(value === "guest" ? "" : value)}
+              placeholder="Choose an account"
+              disabled={busy}
+            />
           ) : null}
           <p className="min-h-5 text-sm text-muted-foreground" role="status">
             {progress ?? (value && !address ? "Enter a website address, like grok.com." : "")}

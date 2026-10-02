@@ -7,6 +7,7 @@ import { SelectField } from "./filter-select";
 
 it("shows a choice prompt for an unavailable saved value without replacing it", async () => {
   const host = document.createElement("div");
+  document.body.append(host);
   const root = createRoot(host);
   const changed = vi.fn();
   const render = (available: boolean) =>
@@ -31,8 +32,12 @@ it("shows a choice prompt for an unavailable saved value without replacing it", 
     expect(changed).not.toHaveBeenCalled();
     await render(true);
     expect(host.textContent).toContain("QA browser");
+    expect(host.querySelector<HTMLLabelElement>("label")?.control).toBe(
+      host.querySelector('[role="combobox"]'),
+    );
     expect(changed).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
+    host.remove();
   }
 });

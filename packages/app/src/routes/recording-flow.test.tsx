@@ -1083,7 +1083,7 @@ describe("record, review, replay, and save", () => {
     expect(fake.calls.some((call) => call.startsWith("begin:"))).toBe(false);
   });
 
-  it.each([false, true])(
+  it.each([false, true, undefined])(
     "keeps App context and respects an explicit saved account choice (%s)",
     async (useAccount) => {
       const fake = fakeService();
@@ -1116,7 +1116,10 @@ describe("record, review, replay, and save", () => {
           createSpace: create,
           openSpace: open,
         } as unknown as BrowserSpacesProductService,
-        { ...emptyAppResources, listBrowserAccounts: async () => [account] },
+        {
+          ...emptyAppResources,
+          listBrowserAccounts: async () => (useAccount === undefined ? [] : [account]),
+        },
         true,
       );
       await click(button("Website"));
@@ -1124,9 +1127,23 @@ describe("record, review, replay, and save", () => {
         document.querySelector<HTMLInputElement>("#new-test-website")!,
         "https://shop.example/",
       );
-      if (useAccount) await click(button("Member"));
+      if (useAccount) {
+        await click(document.querySelector<HTMLButtonElement>("#new-test-account")!);
+        await click(
+          [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(
+            (option) => option.textContent === "Member",
+          )!,
+        );
+      }
       await click(button("Start recording"));
       expect(create).toHaveBeenCalledTimes(useAccount ? 0 : 1);
+      if (!useAccount)
+        expect(create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            startUrl: "https://shop.example/",
+            profileRetention: "ephemeral",
+          }),
+        );
       expect(open.mock.calls[0]?.[0]).toBe(useAccount ? "signed-in-browser" : "guest-browser");
       expect(fake.calls).toContain(
         `begin:Test on shop.example:app-1:${useAccount ? "signed-in-browser" : "guest-browser"}`,
