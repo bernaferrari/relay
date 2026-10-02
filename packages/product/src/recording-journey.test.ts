@@ -199,3 +199,57 @@ test("public state is bounded and detached from the canonical projection", async
   const result = await journey.record(interaction);
   assert.equal(result.snapshot?.stage, "reviewing");
 });
+
+test("an unavailable read preserves the review while blocking mutations until fresh inspection", async () => {
+  let unavailable = true;
+  let writes = 0;
+  const review = {
+    actionCount: 1,
+    actions: [
+      {
+        id: "step",
+        intent: "Open settings",
+        stepCount: 1,
+        captureProof: "relay-controlled" as const,
+      },
+    ],
+    replayRequired: false,
+  };
+  const healthy = snapshot("reviewing", ["inspect", "approve"], 9, { review });
+  const jobs = jobsFor({
+    recorded: healthy,
+    onAdvance: () => {
+      writes++;
+    },
+  });
+  jobs.inspect = async () =>
+    unavailable
+      ? snapshot("unknown", ["inspect"], 1, {
+          version: "unavailable",
+          phase: "needs-attention",
+          frozen: undefined,
+          authoring: undefined,
+          problems: [
+            {
+              code: "operation-unavailable",
+              title: "Connection interrupted",
+              detail: "Offline",
+              recovery: "Try again",
+              retryable: true,
+            },
+          ],
+        })
+      : healthy;
+  const journey = createProductRecordingJourney({ jobs });
+  await journey.begin({ title: "Settings" });
+  const failed = await journey.approve();
+  assert.equal(writes, 0);
+  assert.deepEqual(failed.snapshot?.review, review);
+  assert.deepEqual(failed.snapshot?.allowedNextActions, ["inspect"]);
+  assert.equal(failed.recovery?.code, "operation-unavailable");
+  assert.equal(failed.snapshot?.workflow?.expectedVersion, 9);
+  unavailable = false;
+  const restored = await journey.inspect();
+  assert.equal(restored.recovery, undefined);
+  assert.deepEqual(restored.snapshot?.allowedNextActions, ["inspect", "approve"]);
+});

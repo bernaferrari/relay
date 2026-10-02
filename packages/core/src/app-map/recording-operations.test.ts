@@ -962,6 +962,41 @@ test("names a captured destination from its deepest observed navigation title", 
   assert.equal(destination?.title, "Date & Time");
 });
 
+test("names browser screens from HTML headings instead of the action that reached them", () => {
+  const before = {
+    ...observation("before", beforeFingerprint, "evidence-before"),
+    nodes: [{ role: "h1", label: "Sign in" }],
+  };
+  const after = {
+    ...observation("after", afterFingerprint, "evidence-after"),
+    nodes: [
+      { role: "h2", label: "Recent activity" },
+      { role: "h1", label: "Workspace home" },
+    ],
+  };
+  const result = commitAppMapRecording(
+    mapFixture(),
+    {
+      sessionId: "browser-headings",
+      target: { kind: "browser", platform: "browser", targetId: "browser-a" },
+      targetProfile: frozenBrowserProfile("browser-a"),
+      takeId: "take-headings",
+      takeRevision: 1,
+      actions: [{ ...action(), steps: [{ kind: "tap", target: { label: "Continue as Member" } }] }],
+      before,
+      after,
+      evidenceIds: ["evidence-before", "evidence-after"],
+    },
+    context("browser-headings"),
+  );
+  const connection = result.appMap.connections[result.connectionId]!;
+  assert.equal(result.appMap.screens[connection.fromScreenId]?.title, "Sign in");
+  assert.equal(connection.destination.kind, "screen");
+  if (connection.destination.kind === "screen") {
+    assert.equal(result.appMap.screens[connection.destination.screenId]?.title, "Workspace home");
+  }
+});
+
 test("falls back to the recorded tap label when the destination has no navigation title", () => {
   const result = commitAppMapRecording(
     mapFixture(),

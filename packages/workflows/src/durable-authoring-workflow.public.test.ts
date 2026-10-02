@@ -180,3 +180,11 @@ test("durable recording retains typed pre-dispatch proof after inspecting the fa
   assert.ok(state.allowedNextActions.includes("record"));
   assert.equal(scripted.invocations.filter((call) => call.id === "workflow.transition").length, 1);
 });
+
+test("a failed inspection cannot impersonate a fresh workflow version", async () => {
+  const scripted = createScriptedRelayClient([{ id: "workflow.get", error: new Error("Offline") }]);
+  const snapshot = await createRelayWorkflows(scripted.client).inspectAuthoring("author-workflow");
+  assert.equal(snapshot.version, "unavailable");
+  assert.equal(snapshot.stage, "unknown");
+  assert.deepEqual(snapshot.allowedNextActions, ["inspect"]);
+});

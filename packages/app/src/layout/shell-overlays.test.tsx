@@ -577,7 +577,7 @@ describe("shell overlays", () => {
     expect(document.querySelector('nav[aria-label="Primary"] a[href="/devices"]')).toBeNull();
     expect(document.querySelector('[aria-label="Setup"] a[href="/devices"]')).not.toBeNull();
     const trigger = document.querySelector<HTMLButtonElement>('[aria-label^="Device or browser"]');
-    expect(trigger?.textContent).toContain("2 devices");
+    expect(trigger?.textContent).toContain("1 device · 1 browser");
     await act(async () => trigger?.click());
     await settle();
 

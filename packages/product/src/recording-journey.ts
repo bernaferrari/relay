@@ -246,8 +246,21 @@ export function createProductRecordingJourney(input: {
     action?: ProductRecordingAction["action"],
   ): ProductRecordingState {
     const recovery = recoveryFromSnapshot(snapshot, action);
+    // An unavailable read is not a new canonical state. Keep the last review
+    // visible, but remove its mutation affordances until a fresh read succeeds.
+    const retained =
+      snapshot.version === "unavailable" &&
+      current.snapshot?.review &&
+      snapshot.workflow?.workflowId === current.snapshot.workflow?.workflowId
+        ? {
+            ...current.snapshot,
+            phase: "needs-attention" as const,
+            allowedNextActions: ["inspect" as const],
+            problems: snapshot.problems,
+          }
+        : snapshot;
     return publish({
-      snapshot,
+      snapshot: retained,
       ...(snapshot.frozen?.target ? { selectedTarget: snapshot.frozen.target } : {}),
       ...(recovery ? { recovery } : {}),
     });
@@ -331,6 +344,7 @@ export function createProductRecordingJourney(input: {
     } catch (error) {
       return publish({ recovery: recoveryFromError(error, action.action) });
     }
+    if (snapshot.version === "unavailable") return publishSnapshot(snapshot, action.action);
     publishSnapshot(snapshot, action.action);
     if (!snapshot.allowedNextActions.includes(action.action)) {
       return publish({ recovery: unexpectedAction(snapshot, action.action) });

@@ -327,6 +327,12 @@ export async function captureAuthoringReplayActionEndpoint(
   session: AuthoringSession,
   dependencies: AuthoringObservationDependencies = authoringObservationDependencies,
 ): Promise<CapturedAuthoringObservation> {
+  // Browser DOM snapshots are bounded and available in the same controlled
+  // context. Keep their raw selectors so an edited replay can become a runnable
+  // mapped path. Physical-device endpoints retain the immediate pixel path.
+  if (session.target.kind === "browser") {
+    return captureAuthoringObservation(session, dependencies);
+  }
   const device = await dependencies.resolveDevice(session);
   return runWithTargetContext(targetContext(session.target), async () => {
     let screenshot: ScreenshotPayload | undefined;

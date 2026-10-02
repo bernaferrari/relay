@@ -1388,6 +1388,62 @@ test("an edited planned connection adopts the successfully replayed destination"
   });
 });
 
+test("saving an edited multi-screen replay retains its intermediate screen and raw selectors", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    runtime.fullObservationSemantics = "current";
+    runtime.nodesByScreen.set("source", [{ role: "button", label: "Sign in" }]);
+    runtime.nodesByScreen.set("middle", [{ role: "button", label: "Settings" }]);
+    runtime.execute = async () => {
+      runtime.screen = runtime.screen === "source" ? "middle" : "destination";
+    };
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    for (const label of ["Sign in", "Settings"]) {
+      session = await store.interact(session.id, { kind: "tap", target: { label } }, runtime);
+    }
+    session = await store.stop(session.id, runtime);
+    const actionIds = session.take!.revisions.at(-1)!.actions.map((action) => action.id);
+    session = await store.reorder(session.id, actionIds);
+    assert.ok(session.take!.revisions.at(-1)!.actions.every((action) => !action.exitObservationId));
+    runtime.prepareReplaySource = async () => {
+      runtime.screen = "source";
+    };
+    runtime.replayAction = async () => {
+      runtime.screen = runtime.screen === "source" ? "middle" : "destination";
+    };
+    runtime.observeReplayActionEndpoint = () => runtime.observe();
+    session = await store.replay(session.id, runtime);
+    assert.equal(session.take!.replayAttempts.at(-1)!.outcome, "passed");
+    session = await store.commit(session.id, {
+      createTest: true,
+      testName: "Sign in and open Settings",
+    });
+    const map = (await readAppMap("project-a", appMapId))!;
+    const connections = Object.values(map.connections);
+    assert.equal(connections.length, 2);
+    const first = connections.find(
+      (connection) =>
+        connection.actions[0]?.kind === "recorded" &&
+        connection.actions[0].steps[0]?.kind === "tap" &&
+        connection.actions[0].steps[0].target?.label === "Sign in",
+    )!;
+    assert.equal(first.destination.kind, "screen");
+    if (first.destination.kind !== "screen") assert.fail("Expected an intermediate screen");
+    const middle = map.screens[first.destination.screenId]!;
+    assert.equal(middle.identity?.fingerprint, createHash("sha256").update("middle").digest("hex"));
+    assert.ok(middle.variantIds.some((id) => map.screenVariants[id]?.rawAccessibilityTree));
+    assert.ok(
+      connections.some(
+        (connection) =>
+          connection.fromScreenId === middle.id &&
+          connection.actions[0]?.kind === "recorded" &&
+          connection.actions[0].steps[0]?.kind === "tap" &&
+          connection.actions[0].steps[0].target?.label === "Settings",
+      ),
+    );
+  });
+});
+
 test("an unedited live demonstration can be committed without a second pass", async () => {
   await withWorkspace(async ({ store, runtime, appMapId }) => {
     const before = await readAppMap("project-a", appMapId);
@@ -1523,6 +1579,40 @@ test("a tap that never leaves the source screen cannot become a new destination"
       store.commit(session.id, { destination: { kind: "new-screen", title: "App Language" } }),
       /did not leave the source screen/,
     );
+  });
+});
+
+test("observing reviewed work preserves its destination and requires fresh replay proof", async () => {
+  await withWorkspace(async ({ store, runtime, appMapId }) => {
+    let session = await createReadySession(store, runtime, appMapId);
+    session = await store.start(session.id, runtime);
+    session = await store.interact(
+      session.id,
+      { kind: "tap", target: { label: "Continue" } },
+      runtime,
+    );
+    session = await store.stop(session.id, runtime);
+    const recorded = structuredClone(session.take!.revisions.at(-1)!);
+    runtime.screen = "source";
+    session = await store.observe(session.id, runtime);
+    const observed = session.take!.revisions.at(-1)!;
+    assert.deepEqual(observed.after, recorded.after);
+    assert.deepEqual(observed.actions, recorded.actions);
+    assert.ok(observed.evidence.length > recorded.evidence.length);
+    assert.equal(session.take!.rawEvents?.at(-1)?.kind, "observation");
+    assert.equal(
+      session.take!.replayAttempts.some(
+        (attempt) => attempt.takeRevision === observed.revision && attempt.outcome === "passed",
+      ),
+      false,
+    );
+    await assert.rejects(
+      store.commit(session.id, { createTest: true }),
+      /Replay the current Take successfully/,
+    );
+    runtime.replayScreen = "destination";
+    session = await store.replay(session.id, runtime);
+    assert.equal(session.take!.replayAttempts.at(-1)?.outcome, "passed");
   });
 });
 

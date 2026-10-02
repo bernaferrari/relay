@@ -1,3 +1,4 @@
+import { useNewTestSetup } from "./use-new-test-setup";
 import { NewTestDraftDialog } from "./new-test-draft-dialog";
 import { NewTestDetailedSetup } from "./new-test-detailed-setup";
 import { NewTestTargetMode } from "./new-test-target-mode";
@@ -76,15 +77,9 @@ export function NewTestPage() {
   const [previewIssue, setPreviewIssue] = useState<string>();
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewAttempt, setPreviewAttempt] = useState(0);
-  const [browserUrl, setBrowserUrl] = useState(requestedSite ?? "");
   const [newBrowserOpen, setNewBrowserOpen] = useState(false);
   const [creatingApp, setCreatingApp] = useState(false);
   const previousTargetId = useRef<string | undefined>(undefined);
-  // Most Tests start from a website: ask for that first. A link that already
-  // names an app, device, or map path opens the detailed setup instead.
-  const [setupMode, setSetupMode] = useState<"website" | "detailed">(
-    requestedAppId || requestedTargetId || startsFromPath ? "detailed" : "website",
-  );
   const [quickProgress, setQuickProgress] = useState<string>();
   const [wantsDevice, setWantsDevice] = useState(false);
   const accounts = useQuery({
@@ -99,12 +94,7 @@ export function NewTestPage() {
     queryKey: recordingQueryKeys.apps,
     queryFn: () => productService.listApps(),
   });
-  const appPlatform = apps.data?.find((app) => app.id === appId)?.platform;
-  const deviceOnly =
-    wantsDevice ||
-    (setupMode === "detailed" &&
-      !requestedTargetId &&
-      (appPlatform === "ios" || appPlatform === "android"));
+  const app = apps.data?.find((app) => app.id === appId);
   const draft = useQuery({
     queryKey: ["recording", "new-test-draft"],
     queryFn: () => readNewTestDraft(platform),
@@ -128,6 +118,19 @@ export function NewTestPage() {
     staleTime: 10_000,
     retry: false,
   });
+  const { setupMode, setSetupMode, browserUrl, setBrowserUrl } = useNewTestSetup({
+    app,
+    requestedAppId,
+    requestedTargetId,
+    startsFromPath,
+    requestedSite,
+    spaces: savedBrowsers.data,
+  });
+  const deviceOnly =
+    wantsDevice ||
+    (setupMode === "detailed" &&
+      !requestedTargetId &&
+      (app?.platform === "ios" || app?.platform === "android"));
   async function adoptBrowser(targetId: string) {
     chooseTarget(targetId);
     setNewBrowserOpen(false);
@@ -615,7 +618,7 @@ export function NewTestPage() {
             {...(quickError ? { error: quickError } : {})}
             accountsFor={(url) => websiteAccounts(accounts.data ?? [], url)}
             rememberedAccount={(url) => rememberedAccounts.data?.[websiteHost(url)]}
-            initialAddress={browserUrl}
+            address={browserUrl}
             onAddressChange={setBrowserUrl}
             {...(requestedAccount
               ? {
