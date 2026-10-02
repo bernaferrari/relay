@@ -1,3 +1,4 @@
+import { blocksReview } from "./recording-review-state";
 import type { ProductRecordingState } from "../data/recording-product-service";
 import { AuthoringHeader } from "./authoring-header";
 import { RecordingReviewLayout } from "./recording-review-layout";
@@ -37,18 +38,6 @@ type ReviewTransitionIntent =
       edit: AuthoringRecordingEdit;
       history?: { kind: "new" | "undo" | "redo"; fromRevision: number };
     };
-
-function blocksReview(state: ProductRecordingState | undefined): boolean {
-  if (!state?.recovery) return false;
-  const snapshot = state.snapshot;
-  // A proved replay failure is actionable review feedback, not lost transport.
-  return !(
-    state.recovery.code === "operation-unavailable" &&
-    snapshot?.stage === "reviewing" &&
-    snapshot.phase !== "needs-attention" &&
-    snapshot.allowedNextActions.includes("replay")
-  );
-}
 
 export function ReviewRecordingPage({
   recordingId: recordingIdProp,
@@ -149,6 +138,19 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
     },
   });
 
+  const recoverReview = useMutation({
+    mutationFn: async () => {
+      const sessionId = recording.data?.snapshot?.authoring?.sessionId;
+      if (!sessionId || !productService.recoverForReview)
+        throw new Error("The saved steps are unavailable. Check the connection and try again.");
+      return productService.recoverForReview(sessionId);
+    },
+    onSuccess: async () => {
+      const canonical = await refreshRecording(queryClient, productService, workflowId);
+      if (!blocksReview(canonical)) transition.reset();
+    },
+  });
+
   const restartEmpty = useMutation({
     mutationFn: async () => {
       if (!productService.cancel)
@@ -194,6 +196,13 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
     snapshot && !blocksReview(state) && !recording.error && !blocksReview(transition.data),
   );
   const allowed = new Set(reviewReady ? (snapshot?.allowedNextActions ?? []) : []);
+  const canRecoverReview = Boolean(
+    snapshot?.review &&
+    snapshot.stage === "reviewing" &&
+    snapshot.review.recovery === "observe" &&
+    state?.recovery?.code === "mutation-outcome-unknown" &&
+    productService.recoverForReview,
+  );
   const actions = useMemo(() => review?.actions ?? [], [review?.actions]);
   const selectedActions = useMemo(
     () => actions.filter((action) => selectedActionIds.includes(action.id)),
@@ -556,16 +565,32 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
 
       {recording.isPending ? <PageLoading label="Loading the reviewed recording…" /> : null}
       <RecordingProblem
-        layout={reviewReady ? "compact" : "centered"}
-        className={reviewReady ? "mx-4" : "m-auto flex-1 w-full !max-w-none !mt-0"}
-        error={recording.error ?? transition.error ?? leaveDraft.error}
-        recovery={transition.isPending ? undefined : (transition.data?.recovery ?? state?.recovery)}
+        layout={review ? "compact" : "centered"}
+        className={review ? "mx-4" : "m-auto flex-1 w-full !max-w-none !mt-0"}
+        error={recording.error ?? transition.error ?? recoverReview.error ?? leaveDraft.error}
+        recovery={
+          transition.isPending || recoverReview.error
+            ? undefined
+            : (transition.data?.recovery ?? state?.recovery)
+        }
         onRetry={() => {
           void recording.refetch().then((result) => {
             if (!result.error && result.data && !blocksReview(result.data)) transition.reset();
           });
         }}
         retrying={recording.isFetching}
+        operation={canRecoverReview ? "replay" : "step"}
+        action={
+          canRecoverReview ? (
+            <Button
+              size="sm"
+              onClick={() => recoverReview.mutate()}
+              disabled={recoverReview.isPending}
+            >
+              {recoverReview.isPending ? "Opening saved steps…" : "Review saved steps"}
+            </Button>
+          ) : undefined
+        }
       />
 
       {leaveDraft.error ? (
@@ -575,7 +600,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
         </p>
       ) : null}
 
-      {!recording.isPending && snapshot && reviewReady ? (
+      {!recording.isPending && snapshot && review ? (
         <>
           <RecordingReviewLayout
             outline={

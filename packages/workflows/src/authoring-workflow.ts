@@ -168,6 +168,7 @@ function unavailableDurableAuthor(input: {
   problem: WorkflowProblem;
   sessionId?: string;
   canAbandon?: boolean;
+  unavailable?: boolean;
 }): AuthorTestSnapshot {
   return {
     schemaVersion: 1,
@@ -175,7 +176,7 @@ function unavailableDurableAuthor(input: {
     title: input.frozen?.title ?? "New Test",
     phase: "needs-attention",
     stage: "unknown",
-    version: `workflow-v${input.workflow.expectedVersion}`,
+    version: input.unavailable ? "unavailable" : `workflow-v${input.workflow.expectedVersion}`,
     workflow: input.workflow,
     ...(input.frozen ? { frozen: input.frozen } : {}),
     ...(input.sessionId ? { authoring: { sessionId: input.sessionId } } : {}),
@@ -271,6 +272,14 @@ function durableAuthorSnapshot(
       allowedNextActions: ["inspect"],
       progress: { label: "Finishing interaction…" },
     };
+  }
+  if (
+    uncertain &&
+    record.lastTransition === "authoring-replay-outcome-unknown" &&
+    session.state === "reviewing" &&
+    snapshot.review
+  ) {
+    return { ...snapshot, review: { ...snapshot.review, recovery: "observe" } };
   }
   return snapshot;
 }
@@ -500,6 +509,7 @@ export class CanonicalAuthoringWorkflow {
     } catch (error) {
       return unavailableDurableAuthor({
         workflow: { workflowId, expectedVersion: 1 },
+        unavailable: true,
         problem: {
           ...unavailableProblem("inspect the durable recording workflow", error),
           recovery:
@@ -534,6 +544,7 @@ export class CanonicalAuthoringWorkflow {
         // A failed read cannot justify issuing the mutation again.
       }
       return unavailableDurableAuthor({
+        unavailable: true,
         workflow: {
           workflowId: decision.workflowId,
           expectedVersion: decision.expectedVersion,

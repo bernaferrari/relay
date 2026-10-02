@@ -182,6 +182,7 @@ export class AuthoringSessionStore {
     return this.#mutate(id, async (session) => {
       assertOwner(session);
       requireState(session, "preparing", "ready", "recording", "reviewing", "failed");
+      const preserveDestination = session.state === "reviewing";
       let observed;
       try {
         observed = await persistCapturedAuthoringObservation(await runtime.observe(session));
@@ -206,7 +207,9 @@ export class AuthoringSessionStore {
         session = nextRevision(session, "manual", (revision) => ({
           ...revision,
           evidence: [...revision.evidence, ...observed.evidence],
-          after: observed.observation,
+          // Recovery evidence describes the current target. A reviewed take's
+          // endpoint still describes where its recorded actions must finish.
+          ...(preserveDestination ? {} : { after: observed.observation }),
         }));
         const raw = appendAuthoringRawObservation(session.take!, {
           target: session.target,

@@ -54,10 +54,22 @@ describe("destination summary", () => {
         ],
       }),
     ).toEqual({
-      label: "2 devices",
+      label: "1 device · 1 browser",
       detail: "Design iPad, Checkout browser",
       tone: "ready",
     });
+  });
+
+  it("labels an all-browser list as browsers", () => {
+    expect(
+      summarizeDestinations({
+        status: "success",
+        devices: [
+          device("chrome", "Chrome", "virtual", "browser"),
+          device("firefox", "Firefox", "virtual", "browser"),
+        ],
+      }).label,
+    ).toBe("2 browsers");
   });
 
   it("names attention when nothing is available to run", () => {

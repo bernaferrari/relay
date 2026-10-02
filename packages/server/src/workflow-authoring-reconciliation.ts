@@ -335,18 +335,21 @@ export async function reconcileAuthoring(
   } else if (
     (workflow.record.status === "terminal" ||
       (workflow.record.status === "needs-attention" &&
-        pending?.action === "authoring-record" &&
-        session.recoveredAt !== undefined &&
         !session.error &&
         !session.recoverable &&
         latestRawEvent?.kind === "observation" &&
-        latestRawEvent.recordedAt >= session.recoveredAt)) &&
+        ((pending?.action === "authoring-record" &&
+          session.recoveredAt !== undefined &&
+          latestRawEvent.recordedAt >= session.recoveredAt) ||
+          (pending?.action === "authoring-replay" &&
+            latestRawEvent.recordedAt > workflow.record.updatedAt)))) &&
     session.state === "reviewing" &&
     !session.archive
   ) {
-    // Explicit target observation can recover a failed take for review.
-    // This abandons the interrupted recording dispatch; it neither confirms
-    // its input nor manufactures a receipt for the unmatched raw intent.
+    // A new explicit observation can recover capture or replay for review.
+    // Active dispatches returned above; old observations cannot unlock replay.
+    // The interrupted request stays in the audit without a fabricated receipt.
+    // observe creates a new revision, so any previous replay proof is invalid.
     const recovered = await runtime.transitionWorkflow({
       organizationId: scope.organizationId,
       projectId: scope.projectId,

@@ -1163,6 +1163,82 @@ test("explicit observation recovers an interrupted recording for review without 
   });
 });
 
+test("only a new observation reopens interrupted replay, without proving replay or approval", async () => {
+  await withServer(async ({ port, authoringSessions, authoringTransitionCalls }) => {
+    const actor = client(port, "agent:first");
+    for (const action of ["authoring-replay", "authoring-approve"] as const) {
+      const requestId = `observe-${action}`;
+      const created = await actor.invoke(
+        "workflow.create",
+        {
+          kind: "author-test",
+          frozenIdentity: frozenAuthor(requestId),
+          expiresAt: 50_000,
+        },
+        { requestId },
+      );
+      const workflowId = created.workflow.record.workflowId;
+      const started = await actor.invoke("workflow.transition", {
+        workflowId,
+        expectedVersion: 1,
+        action: "start-authoring",
+        leaseId: "lease-1",
+      });
+      const sessionId = started.session!.id as string;
+      const original = authoringSessions.get(sessionId)!;
+      authoringSessions.set(sessionId, { ...original, state: "reviewing" });
+      await transitionDurableWorkflow({
+        ...project,
+        workflowId,
+        expectedVersion: 3,
+        actorId: "agent:first",
+        transition: `${action}-requested`,
+        status: "active",
+        at: 2_000,
+      });
+      const unknown = await actor.invoke("workflow.get", { workflowId });
+      const observed = (recordedAt: number) => ({
+        ...original,
+        state: "reviewing" as const,
+        take: {
+          rawCaptureVersion: 2,
+          rawEvents: [
+            {
+              id: "observation",
+              sequence: 1,
+              kind: "observation",
+              recordedAt,
+              source: { kind: "authoring-runtime", target: original.target },
+              observation: { id: "screen", evidenceIds: [] },
+            },
+          ],
+        } as unknown as NonNullable<AuthoringSession["take"]>,
+      });
+      authoringSessions.set(sessionId, observed(unknown.workflow.record.updatedAt));
+      assert.equal(
+        (await actor.invoke("workflow.get", { workflowId })).workflow.record.status,
+        "needs-attention",
+      );
+      authoringSessions.set(sessionId, observed(unknown.workflow.record.updatedAt + 1));
+      const recovered = await actor.invoke("workflow.get", { workflowId });
+      assert.equal(
+        recovered.workflow.record.status,
+        action === "authoring-replay" ? "active" : "needs-attention",
+      );
+      if (action === "authoring-replay") {
+        assert.equal(recovered.workflow.record.lastTransition, "authoring-review-recovered");
+        assert.ok(
+          recovered.workflow.audit.some(
+            (event) => event.transition === "authoring-replay-outcome-unknown",
+          ),
+        );
+        assert.deepEqual(recovered.session?.workflowMutation, original.workflowMutation);
+      }
+    }
+    assert.deepEqual(authoringTransitionCalls, []);
+  });
+});
+
 test("foreign Authoring transitions do not reveal or mutate stale or expired state", async () => {
   await withServer(async ({ port }) => {
     const owner = client(port, "agent:first");

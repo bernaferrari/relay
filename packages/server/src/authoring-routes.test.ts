@@ -503,6 +503,45 @@ test("replay action endpoint captures pixels without querying or trusting access
   assert.deepEqual(observation.bounds, { width: 1194, height: 834 });
 });
 
+test("browser replay endpoints retain a fresh raw DOM snapshot for later map execution", async () => {
+  const session = {
+    target: { kind: "browser", platform: "browser", targetId: "browser-replay" },
+  } as AuthoringSession;
+  let snapshots = 0;
+  const observation = await captureAuthoringReplayActionEndpoint(session, {
+    async resolveDevice() {
+      return {} as Device;
+    },
+    async captureSnapshot() {
+      snapshots += 1;
+      return {
+        serial: "browser-replay",
+        capturedAt: 20,
+        nodes: [{ index: 0, role: "button", label: "Settings" }],
+        interactive: [],
+        inspectable: true,
+        source: "sdk",
+        inspectionState: "active",
+        bindingState: "matched",
+        screenIdentity: { schemaVersion: 1, fingerprint: "home", nodes: [], volatileSignals: [] },
+      };
+    },
+    async captureScreenshot() {
+      return {
+        serial: "browser-replay",
+        capturedAt: 21,
+        mime: "image/png",
+        base64: Buffer.from("browser-home-png").toString("base64"),
+        path: "/browser/replay.png",
+        bytes: 16,
+      };
+    },
+  });
+  assert.equal(snapshots, 1);
+  assert.equal(observation.nodes?.[0]?.label, "Settings");
+  assert.equal(observation.proof?.semantics.status, "current");
+});
+
 test("replay action endpoint disposes the temporary raster after copying its bytes", async () => {
   const temporary = await temporaryAuthoringScreenshot("replay");
   const session = {

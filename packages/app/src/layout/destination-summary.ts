@@ -59,8 +59,13 @@ export function summarizeDestinations(input: {
     };
   }
   if (available.length > 1) {
+    const browsers = available.filter((device) => device.platform === "browser").length;
+    const physical = available.length - browsers;
+    const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
     return {
-      label: `${available.length} devices`,
+      label: [physical ? count(physical, "device") : "", browsers ? count(browsers, "browser") : ""]
+        .filter(Boolean)
+        .join(" · "),
       detail: available.map((device) => device.name).join(", "),
       tone: "ready",
     };

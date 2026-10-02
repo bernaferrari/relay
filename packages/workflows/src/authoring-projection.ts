@@ -220,7 +220,9 @@ function reviewForSession(session: AuthoringSession): AuthorTestSnapshot["review
   const take = session.take;
   const revision = take?.revisions.find((candidate) => candidate.revision === take.currentRevision);
   if (!take || !revision) return undefined;
-  const latestReplay = take.replayAttempts.at(-1);
+  const latestReplay = take.replayAttempts
+    .filter((attempt) => attempt.takeRevision === revision.revision)
+    .at(-1);
   const approvedReplay = take.replayAttempts.some(
     (attempt) => attempt.takeRevision === revision.revision && attempt.outcome === "passed",
   );
@@ -339,7 +341,12 @@ function problemsForSession(session: AuthoringSession): WorkflowProblem[] {
     });
   }
   const replay = session.take?.replayAttempts.at(-1);
-  if (session.state === "reviewing" && replay && replay.outcome !== "passed") {
+  if (
+    session.state === "reviewing" &&
+    replay &&
+    replay.takeRevision === session.take?.currentRevision &&
+    replay.outcome !== "passed"
+  ) {
     problems.push({
       code: "operation-unavailable",
       title: "Replay did not prove the reviewed recording",

@@ -35,6 +35,7 @@ export async function commitAuthoringSessionMap(input: {
   fault?: AuthoringMapCommitFault;
 }): Promise<{ revision: number; connectionId: string; testId?: string }> {
   const { session, revision, fault } = input;
+  const recording = replayRecording(session, revision);
   const appMap = await readAppMap(session.projectId, session.appMapId);
   if (!appMap) throw new AuthoringStateError("App Map no longer exists");
   if (appMap.revision !== session.expectedAppMapRevision) {
@@ -78,9 +79,9 @@ export async function commitAuthoringSessionMap(input: {
             : session.target,
         takeId: session.take!.id,
         takeRevision: revision.revision,
-        actions: revision.actions,
-        observations: revision.observations,
-        before: revision.before,
+        actions: recording.actions,
+        observations: recording.observations,
+        before: recording.before,
         // A reviewed replay is authoritative for edited actions.
         after: input.approvedAfter ?? revision.after,
         evidenceIds: [...new Set(evidence.map((item) => item.id))],
@@ -121,6 +122,45 @@ export async function commitAuthoringSessionMap(input: {
     return committed.appMap;
   });
   return { revision: result.revision, connectionId, ...(testId ? { testId } : {}) };
+}
+
+/** Edits invalidate the demonstrated path. A complete replay supplies the new
+ * action boundaries; retaining only its final frame loses intermediate screens
+ * and makes later selectors appear to belong to the starting screen. */
+function replayRecording(session: AuthoringSession, revision: AuthoringTakeRevision) {
+  const replay = session.take?.replayAttempts
+    .filter((attempt) => attempt.takeRevision === revision.revision)
+    .at(-1);
+  if (replay?.outcome !== "passed" || replay.source === "recording") return revision;
+  const observations = replay.observations;
+  if (!observations?.length) return revision;
+  const ids = new Set(observations.map((observation) => observation.id));
+  const complete = revision.actions.every((action) => {
+    const proof = replay.actionProofs?.[action.id];
+    return (
+      proof?.outcome === "passed" &&
+      proof.entranceObservationId &&
+      ids.has(proof.entranceObservationId) &&
+      proof.exitObservationId &&
+      ids.has(proof.exitObservationId)
+    );
+  });
+  if (!complete) return revision;
+  return {
+    ...revision,
+    before: replay.before ?? revision.before,
+    observations,
+    actions: revision.actions.map((action) => {
+      const proof = replay.actionProofs![action.id]!;
+      return {
+        ...action,
+        entranceObservationId: proof.entranceObservationId,
+        exitObservationId: proof.exitObservationId,
+        proofStatus: proof.proofStatus,
+        evidenceIds: proof.evidenceIds,
+      };
+    }),
+  };
 }
 
 async function frozenAuthoringTargetProfile(

@@ -304,6 +304,8 @@ export type AuthoringReview = {
     observationCount: number;
   };
   replayRequired: boolean;
+  /** Explicit observation can reopen an interrupted replay for review. */
+  recovery?: "observe";
 };
 
 export type AuthorTestSnapshot = {

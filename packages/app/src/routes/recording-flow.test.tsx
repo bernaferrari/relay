@@ -1054,6 +1054,45 @@ describe("record, review, replay, and save", () => {
     expect(document.querySelector("form form")).toBeNull();
   });
 
+  it("opens a scoped website in the address form and preserves a cleared address", async () => {
+    const fake = fakeService();
+    fake.service.listApps = async () => [{ id: "app-1", name: "shop.example", platform: "web" }];
+    const spaces = {
+      listSpaces: async () => [
+        {
+          id: "browser-shop",
+          name: "Shop",
+          startUrl: "https://shop.example/login",
+          createdAt: 1,
+          updatedAt: 2,
+          profileRetention: "ephemeral",
+          persistent: false,
+          source: { kind: "managed-browser-target", id: "browser-shop" },
+        },
+      ],
+    } as unknown as BrowserSpacesProductService;
+    await renderJourney(
+      "/tests/new?app=app-1",
+      fake.service,
+      platformWithStorage().platform,
+      undefined,
+      spaces,
+      undefined,
+      true,
+    );
+    expect(document.querySelector('form[aria-label="Start a test"]')).not.toBeNull();
+    const address = document.querySelector<HTMLInputElement>("#new-test-website")!;
+    expect(address.value).toBe("https://shop.example/login");
+    await fill(address, "");
+    await settle();
+    expect(address.value).toBe("");
+    expect(button("Start recording").disabled).toBe(true);
+    await click(button("Phone or tablet"));
+    expect(document.querySelector('form[aria-label="Start a test"]')).toBeNull();
+    await click(button("Website"));
+    expect(document.querySelector<HTMLInputElement>("#new-test-website")?.value).toBe("");
+  });
+
   it("preserves the website address across mode switches and filters browsers out of phone setup", async () => {
     const fake = fakeService();
     fake.service.connect = async () => ({
@@ -1648,7 +1687,7 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).not.toContain("Pixel 9 Pro");
   });
 
-  it("does not expose retained review content or actions during recovery", async () => {
+  it("keeps saved review content visible without offering mutations during recovery", async () => {
     const unavailable: ProductRecordingState = {
       ...state("reviewing", ["inspect", "replay", "approve"], { replay: "passed" }),
       status: "needs-attention",
@@ -1665,8 +1704,41 @@ describe("record, review, replay, and save", () => {
     await renderJourney("/recordings/workflow-1/review", fake.service, storage.platform);
 
     expect(document.body.textContent).toContain("Relay could not inspect this recording");
-    expect(document.body.textContent).not.toContain("2 steps");
-    expect(document.body.textContent).not.toContain("Replay recording");
+    expect(document.body.textContent).toContain("Steps");
+    expect(document.body.textContent).not.toContain("Run test");
+    expect(document.body.textContent).not.toContain("Save Test");
+  });
+
+  it("recovers interrupted replay by observing once, then offers an explicit run", async () => {
+    const interrupted: ProductRecordingState = {
+      ...state("reviewing", ["inspect"]),
+      recovery: {
+        code: "mutation-outcome-unknown",
+        title: "Interrupted replay",
+        detail: "Replay response was lost",
+        recovery: "Review saved steps",
+        retryable: false,
+      },
+    };
+
+    interrupted.snapshot!.phase = "needs-attention";
+    interrupted.snapshot!.review!.recovery = "observe";
+    const fake = fakeService(interrupted);
+    fake.service.recoverForReview = vi.fn(async () => {
+      fake.service.inspect = async () => state("reviewing", ["inspect", "edit", "replay"]);
+      return fake.service.inspect("workflow-1");
+    });
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(document.body.textContent).toContain("Your saved steps are safe");
+    expect(document.body.textContent).not.toContain("Save Test");
+    await act(async () => button("Review saved steps").click());
+    await settle();
+    expect(fake.service.recoverForReview).toHaveBeenCalledWith("recording-1");
+    expect(button("Run test").disabled).toBe(false);
     expect(document.body.textContent).not.toContain("Save Test");
   });
 

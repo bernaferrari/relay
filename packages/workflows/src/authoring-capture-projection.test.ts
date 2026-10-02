@@ -219,3 +219,80 @@ test("review projects bounded action evidence and timeline metadata without payl
   assert.doesNotMatch(JSON.stringify(review), /typed-secret-value/u);
   assert.doesNotMatch(JSON.stringify(review), /nodes/u);
 });
+
+test("durable review offers observation recovery only for an interrupted replay", async () => {
+  const { createRelayWorkflows } = await import("./index.js");
+  const { createScriptedRelayClient } = await import("./testing.js");
+  for (const transition of [
+    "authoring-replay-outcome-unknown",
+    "authoring-approve-outcome-unknown",
+    "authoring-replay-requested",
+  ]) {
+    const scripted = createScriptedRelayClient([
+      {
+        id: "workflow.get",
+        output: {
+          session,
+          workflow: {
+            record: {
+              schemaVersion: 1,
+              workflowId: "workflow",
+              organizationId: "local",
+              projectId: "project-1",
+              kind: "author-test",
+              version: 4,
+              status: transition.endsWith("-requested") ? "active" : "needs-attention",
+              frozenIdentity: frozen,
+              resource: { kind: "authoring-session", id: session.id },
+              createdBy: "agent:test",
+              lastActorId: "agent:test",
+              createdAt: 1,
+              updatedAt: 4,
+              expiresAt: 100_000,
+              lastTransition: transition,
+            },
+            audit: [],
+          },
+        },
+      },
+    ]);
+    const snapshot = await createRelayWorkflows(scripted.client).inspectAuthoring("workflow");
+    assert.equal(
+      snapshot.review?.recovery,
+      transition === "authoring-replay-outcome-unknown" ? "observe" : undefined,
+    );
+    assert.deepEqual(snapshot.allowedNextActions, ["inspect"]);
+    assert.equal(snapshot.allowedNextActions.includes("approve"), false);
+  }
+});
+
+test("editing after a failed replay retains its history without reporting it as the new revision result", () => {
+  const edited = structuredClone(session);
+  edited.take!.replayAttempts.push({
+    id: "failed-replay",
+    takeId: "take-1",
+    takeRevision: 1,
+    startedAt: 3,
+    finishedAt: 4,
+    outcome: "failed",
+    error: "Old target mismatch",
+    evidence: [],
+  });
+  edited.take!.currentRevision = 2;
+  edited.take!.revisions.push({
+    ...structuredClone(edited.take!.revisions[0]!),
+    id: "revision-2",
+    revision: 2,
+    reason: "edit",
+    createdAt: 5,
+  });
+  const snapshot = snapshotFromAuthoringSession({ frozen, session: edited });
+  assert.equal(snapshot.review?.latestReplay, undefined);
+  assert.equal(snapshot.review?.replayRequired, true);
+  assert.ok(
+    !snapshot.problems.some(
+      (problem) => problem.title === "Replay did not prove the reviewed recording",
+    ),
+  );
+  assert.equal(edited.take!.replayAttempts.length, 1);
+});

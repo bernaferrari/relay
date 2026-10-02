@@ -117,7 +117,7 @@ export function RecordingProblem({
   layout?: "compact" | "centered";
   className?: string;
   action?: ReactNode;
-  operation?: "step" | "run";
+  operation?: "step" | "run" | "replay";
 }) {
   if (!recovery && !error) return null;
   if (recovery?.code === "mutation-outcome-unknown") {
@@ -130,9 +130,11 @@ export function RecordingProblem({
         <span>
           {checking
             ? `Checking ${operation} status…`
-            : operation === "run"
-              ? "Run status needs checking."
-              : "Step status needs checking."}
+            : operation === "replay"
+              ? "Replay was interrupted. Your saved steps are safe."
+              : operation === "run"
+                ? "Run status needs checking."
+                : "Step status needs checking."}
         </span>
         {action ??
           (!checking && onRetry ? (

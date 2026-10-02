@@ -61,6 +61,7 @@ export function NewTestQuickStart({
   accountsFor,
   rememberedAccount,
   initialAddress,
+  address: controlledAddress,
   initialAccount,
   setupStatus = "ready",
   onRetrySetup,
@@ -68,6 +69,7 @@ export function NewTestQuickStart({
 }: {
   /** Prefilled website, e.g. from "New test as this account". */
   initialAddress?: string;
+  address?: string;
   /** Preselected saved login for the prefilled website. */
   initialAccount?: string;
   setupStatus?: "loading" | "unavailable" | "ready";
@@ -85,7 +87,8 @@ export function NewTestQuickStart({
   onUseDevice?(): void;
   manualAction?: ReactNode;
 }) {
-  const [value, setValue] = useState(initialAddress ?? "");
+  const [localValue, setValue] = useState(initialAddress ?? "");
+  const value = controlledAddress ?? localValue;
   function changeAddress(value: string) {
     setValue(value);
     onAddressChange?.(value);

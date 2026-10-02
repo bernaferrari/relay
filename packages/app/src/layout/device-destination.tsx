@@ -92,7 +92,7 @@ export function DeviceDestinationButton({
           current
             ? `New runs use ${current.name}`
             : available.length
-              ? `Choose a device for new runs. Ready: ${available.map((item) => item.name).join(", ")}`
+              ? `Choose where to run tests. Ready: ${available.map((item) => item.name).join(", ")}`
               : summary.detail
         }
       >
