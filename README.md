@@ -4,17 +4,17 @@
 
 # Relay
 
-**Record tests. Replay them. See what happened.**
+**Record a test. Run it again. Review the screenshots.**
 
 </div>
 
 Relay is a desktop app for testing websites, Android apps, and iOS apps. You use your app while Relay records your actions, then save those steps as a test you can run again. It keeps screenshots and results together so you can understand what happened without repeating the whole test yourself.
 
-![Relay’s App Map showing captured screens and the paths between them.](./docs/images/relay-app-map.png)
-
 A test can be as simple as opening a menu or as involved as going through checkout. Along the way, you can check that something appears, wait for a response, or capture a screenshot. When you run the test again, Relay shows the result of each step. You can compare screenshots with earlier versions and decide whether a change looks right.
 
-The App Map brings the screens you’ve visited into one view, connected by the actions that lead between them. It helps you understand how a flow fits into the rest of your app. As your tests grow, you can organize them into plans and repeat them with different languages, data, or devices.
+1. **Record:** choose a website or device, then use your app normally.
+2. **Run:** save the test and repeat its steps on the selected app and account.
+3. **Review:** open the result, inspect the screenshots, and report what looks wrong.
 
 Relay includes a [plugin with an agent skill](./plugins/relay-proof/README.md), an [MCP server](./packages/mcp/README.md), and a CLI for coding agents and scripts. Agents can interact with your app, run saved tests, and inspect the same screenshots and results you see in the desktop app. Optional AI exploration lets you describe something to investigate, review the findings, and save a useful path as a test.
 
@@ -33,13 +33,36 @@ pnpm dev:desktop
 
 In the app, choose **New Test** and enter a website or select a connected device. Record a short flow, review the steps, and save it. You can then run it again and open the result to see the captured screens.
 
-Choose **Save test** when the steps look right. Relay checks edited steps on the recorded target before saving; a failed or interrupted check keeps the review open. To check the recording separately, choose **Run without saving** from the review’s **More** menu.
+Choose **Save test** when the recording is already verified. After changing steps, **Run and save** executes them on the recorded target before saving; a failed or interrupted run keeps the review open. To keep unfinished work without executing it, choose **Save draft and close** from **More**. To run separately, choose **Run without saving**.
 
-Run `pnpm doctor` if you have trouble with setup. Android requires `adb`, and physical iOS devices require Apple developer tooling. To use Relay in a browser, run `pnpm dev:web` instead.
+Run `pnpm doctor -- --web` to check website prerequisites. Relay uses an installed Chrome, Chromium, or Edge executable. For a custom installation, set `RELAY_BROWSER_EXECUTABLE` to its absolute path before starting Relay. Android requires `adb`, and physical iOS devices require Apple developer tooling; missing mobile tools do not block website testing. To use Relay in a browser, run `pnpm dev:web` instead.
+
+### Try a complete test without an account or model key
+
+From the installed source checkout:
+
+```bash
+pnpm ensure:serve
+pnpm demo
+```
+
+The demo opens a controlled local website, records signing in as Member and opening Settings, captures **Member settings**, saves a reusable Test, and runs it again in a fresh browser. It prints the result link, screenshot path, and exact repeat command. Open the link after starting `pnpm dev:web`, or find **Demo · Member settings** in the desktop app.
+
+The demo deliberately includes a layout defect: **Save** overlaps the team seats. Open the screenshot and report the issue in Review. Collection passing leaves screenshot review pending for you to decide.
+
+The demo website stays available for repeat runs until you press Ctrl+C. Starting `pnpm demo` again reuses the saved Test and runs it again. `pnpm demo -- --once` completes one run and closes the demo website.
+
+This is a contributor workflow using the existing Relay server. A standalone end-user runtime installer is still pending; the installed agent plugin connects to a running Relay workspace.
+
+### Explore your app as tests grow
+
+The App Map brings captured screens into one view, connected by the actions between them. Use it to inspect navigation or maintain shared screen identities after recording your first tests. You can also organize tests into plans and repeat them with different languages, data, or devices.
+
+![Relay’s App Map showing captured screens and the paths between them.](./docs/images/relay-app-map.png)
 
 ## Agents and development
 
-The plugin bundles MCP configuration and a skill for verifying code changes. Setup instructions cover Codex, Claude Code, and compatible MCP hosts. You can also use the CLI to run a saved test:
+The plugin bundles MCP configuration and skills for setup, recording, run review, and code verification. Setup instructions cover Codex, Claude Code, and compatible MCP hosts. You can also use the CLI to run a saved test:
 
 ```bash
 ./bin/relay device list --json

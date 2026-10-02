@@ -3,7 +3,7 @@ import type { ProductRunSummary, ProductTestSummary } from "@relay/product/catal
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RelayApp } from "../app";
 import type { CatalogProductService } from "../data/catalog-product-service";
 import type { MapProductService } from "../data/map-product-service";
@@ -37,6 +37,10 @@ vi.mock("../data/review-product-service", async (importOriginal) => {
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const roots: Root[] = [];
+beforeEach(() => {
+  // In-memory services own these page reads; shell queries remain offline.
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Offline test fixture")));
+});
 const platform: Platform = {
   platform: "web",
   getServerUrl: () => "http://127.0.0.1:8787",
@@ -54,6 +58,7 @@ afterEach(async () => {
     for (const root of roots.splice(0)) root.unmount();
   });
   document.body.replaceChildren();
+  vi.unstubAllGlobals();
 });
 
 function productRun(

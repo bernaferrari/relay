@@ -286,3 +286,13 @@ remain an explicit legacy/manual `record-runs` recovery path, not the normal Pro
 The bridge is intentionally only a transport adapter. Run the Relay HTTP server separately; the
 MCP process remains a scoped adapter, not the source of truth. The package build and clean-host
 installation check can be run from this workspace with `pnpm build` and `pnpm test:clean-host`.
+
+## Ordinary QA preset
+
+`relay-mcp --profile qa` selects the existing model-free recording, run, repeat,
+inspection and export outcomes, plus health, preview and recovery operators.
+App/Test resources remain discoverable. It excludes assisted goals, raw admin
+operations and Change Proof. The `relay-proof` plugin now selects this preset;
+`proof`, `operator` and `outcome` remain explicit compatibility profiles.
+Run `relay-mcp doctor --profile qa` against the same configured service first.
+The connector still requires an existing Relay runtime and target prerequisites.

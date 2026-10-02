@@ -5,7 +5,9 @@
       "args": ["--profile", "qa"],
       "env": {
         "RELAY_MCP_PROFILE": "qa"
-      }
+      },
+      "type": "stdio"
     }
-  }
+  },
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
 }

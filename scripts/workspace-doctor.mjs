@@ -2,6 +2,7 @@ import { accessSync, constants } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveBrowserExecutable } from "../packages/core/src/browser-executable.ts";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -19,30 +20,14 @@ function commandAvailable(command, args = ["--version"]) {
   return !result.error && result.status === 0;
 }
 
-const browserCandidates = {
-  darwin: [
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-  ],
-  linux: ["google-chrome", "chromium", "chromium-browser", "microsoft-edge"],
-  win32: ["chrome.exe", "chromium.exe", "msedge.exe"],
-};
-
-function browserAvailability(platform, isExecutable, isCommandAvailable) {
-  const candidates = browserCandidates[platform] ?? browserCandidates.linux;
-  const available = candidates.filter((candidate) =>
-    candidate.startsWith("/") ? isExecutable(candidate) : isCommandAvailable(candidate),
-  );
-  return { candidates, available, ready: available.length > 0 };
-}
-
 export function buildWorkspaceDoctorReport({
   root = repositoryRoot,
   nodeVersion = process.version,
   platform = process.platform,
   isExecutable = executable,
   isCommandAvailable = commandAvailable,
+  environment = process.env,
+  requireBrowser = false,
 } = {}) {
   const failures = [];
   const warnings = [];
@@ -51,7 +36,12 @@ export function buildWorkspaceDoctorReport({
     vitePlus: isExecutable(resolve(root, "node_modules/.bin/vp")),
     relayRuntime: isExecutable(resolve(root, "node_modules/tsx/dist/cli.mjs")),
   };
-  const browser = browserAvailability(platform, isExecutable, isCommandAvailable);
+  const resolvedBrowser = resolveBrowserExecutable({ platform, environment, isExecutable });
+  const browser = {
+    ...resolvedBrowser,
+    available: resolvedBrowser.path ? [resolvedBrowser.path] : [],
+    ready: Boolean(resolvedBrowser.path),
+  };
   const android = { adb: isCommandAvailable("adb"), ready: isCommandAvailable("adb") };
   const ios = {
     xcrun: platform === "darwin" ? isCommandAvailable("xcrun", ["--version"]) : false,
@@ -67,10 +57,12 @@ export function buildWorkspaceDoctorReport({
   if (!tools.relayRuntime) {
     failures.push("The local Relay CLI runtime is missing; reinstall workspace dependencies.");
   }
-  if (!browser.ready)
-    warnings.push(
-      "A supported Chromium browser is unavailable; browser targets will not be usable.",
-    );
+  if (!browser.ready) {
+    const message = resolvedBrowser.configured
+      ? `RELAY_BROWSER_EXECUTABLE is not executable: ${resolvedBrowser.candidates[0]}. Fix this path before starting Relay; no fallback will be used.`
+      : "A supported Chromium browser is unavailable. Install Chrome or Chromium, or set RELAY_BROWSER_EXECUTABLE to an absolute executable path before starting Relay.";
+    (requireBrowser ? failures : warnings).push(message);
+  }
   if (!android.ready) warnings.push("adb is unavailable; Android targets will not be usable.");
   if (platform === "darwin" && !ios.ready) {
     warnings.push(
@@ -95,9 +87,9 @@ export function buildWorkspaceDoctorReport({
 
 function main(argv) {
   const json = argv.includes("--json");
-  const unknown = argv.filter((argument) => argument !== "--json");
-  if (unknown.length) throw new Error(`Unknown option: ${unknown[0]}. Use --json or no options.`);
-  const report = buildWorkspaceDoctorReport();
+  const unknown = argv.filter((argument) => argument !== "--json" && argument !== "--web");
+  if (unknown.length) throw new Error(`Unknown option: ${unknown[0]}. Use --json and/or --web.`);
+  const report = buildWorkspaceDoctorReport({ requireBrowser: argv.includes("--web") });
   if (json) {
     console.log(JSON.stringify(report, null, 2));
   } else {

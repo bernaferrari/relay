@@ -7,6 +7,8 @@ import {
   type RelayMcpProfile,
 } from "./tools.js";
 
+import { relayQaRequiredOperationIds } from "./qa-tools.js";
+
 const ACTOR_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:._-]{0,127}$/u;
 const ROLE_ORDER: readonly ProjectRole[] = ["viewer", "author", "runner", "admin"];
 
@@ -50,6 +52,9 @@ const operatorCoreOperationIds: readonly string[] = [
 ];
 
 function expectedOperationsForProfile(profile: RelayMcpProfile) {
+  if (profile === "qa") {
+    return relayQaRequiredOperationIds.map((operationId) => ({ operationId }));
+  }
   if (profile === "operator") {
     return operatorCoreOperationIds.map((operationId) => ({ operationId }));
   }
@@ -170,9 +175,7 @@ export async function runRelayMcpDoctor(
   const checks: RelayMcpDoctorCheck[] = [];
   const proofLifecycle = config.profile === "proof" || config.profile === "full";
   const expectedTools = expectedOperationsForProfile(config.profile);
-  const selectedTools = proofLifecycle
-    ? proofToolsForProfile(config.profile)
-    : relayMcpToolsForProfile(config.profile);
+  const selectedTools = proofLifecycle ? proofToolsForProfile(config.profile) : expectedTools;
 
   checks.push(
     check(
@@ -180,7 +183,7 @@ export async function runRelayMcpDoctor(
       expectedTools.length > 0,
       proofLifecycle
         ? `${config.profile} exposes the complete Proof lifecycle`
-        : `profile ${config.profile} exposes ${expectedTools.length} tools for ordinary agent work; the Proof lifecycle needs --profile proof`,
+        : `profile ${config.profile} requires ${expectedTools.length} server operations for ordinary agent work; the Proof lifecycle needs --profile proof`,
     ),
   );
 
@@ -192,7 +195,7 @@ export async function runRelayMcpDoctor(
         ? ACTOR_ID_PATTERN.test(config.connection.actorId)
           ? `agent identity ${config.connection.actorId} is valid and will be sent to Relay`
           : "RELAY_ACTOR_ID contains unsupported characters"
-        : "the Proof plugin must use an agent actor identity",
+        : "the Relay plugin must use an agent actor identity",
     ),
   );
 
@@ -255,15 +258,16 @@ export async function runRelayMcpDoctor(
     approval?.minimumRole === "author" &&
     approval.confirmation === "confirm" &&
     approvalTool?.requiresConfirmation === true;
-  checks.push(
-    check(
-      "approval",
-      approvalOk,
-      approvalOk
-        ? "plan approval is human-confirmed at the canonical operation boundary; this agent cannot self-approve"
-        : "canonical proof.plan.approve is missing its author role or confirmation guard",
-    ),
-  );
+  if (proofLifecycle)
+    checks.push(
+      check(
+        "approval",
+        approvalOk,
+        approvalOk
+          ? "plan approval is human-confirmed at the canonical operation boundary; this agent cannot self-approve"
+          : "canonical proof.plan.approve is missing its author role or confirmation guard",
+      ),
+    );
 
   const metaUrl = new URL("/meta", config.connection.url).toString();
   const meta = await getJson(metaUrl, config, fetchImpl);
@@ -307,15 +311,31 @@ export async function runRelayMcpDoctor(
 }
 
 export function formatRelayMcpDoctor(report: RelayMcpDoctorReport): string {
+  const remedies: Record<string, string> = {
+    reachability:
+      "Start your existing Relay service, or set RELAY_URL to its reachable address. Installing @relay/mcp installs the connector only.",
+    scope:
+      "Set RELAY_ORGANIZATION_ID and RELAY_PROJECT_ID to the authorized scope returned by this Relay service.",
+    actor: "Set RELAY_ACTOR_ID to a distinct agent:<name> identity.",
+    capabilities:
+      "Use credentials with the required project role; keep tokens in the host process environment.",
+    "proof-tools":
+      "Connect to a compatible Relay runtime with the missing operations; changing the selected target cannot repair a contract mismatch.",
+  };
   const lines = [
     `Relay doctor: ${report.ok ? "READY" : "NOT READY"}`,
     `Server: ${report.config.server}`,
     `Scope: ${report.config.organization}/${report.config.project}`,
     `Actor: ${report.config.actor} (${report.config.actorKind})`,
     `Profile: ${report.config.profile}`,
-    `Proof tools: ${report.proofTools.join(", ")}`,
+    ...(report.config.profile === "proof" || report.config.profile === "full"
+      ? [`Proof tools: ${report.proofTools.join(", ")}`]
+      : []),
     "",
-    ...report.checks.map(({ name, ok, message }) => `${ok ? "OK" : "FAIL"} ${name}: ${message}`),
+    ...report.checks.map(
+      ({ name, ok, message }) =>
+        `${ok ? "OK" : "FAIL"} ${name}: ${message}${!ok && remedies[name] ? `\n  Next: ${remedies[name]}` : ""}`,
+    ),
   ];
   return lines.join("\n");
 }

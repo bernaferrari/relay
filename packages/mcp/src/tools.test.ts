@@ -509,6 +509,7 @@ test("defines deterministic advanced profiles behind the compact operator defaul
   assert.deepEqual(relayMcpProfiles, [
     "operator",
     "outcome",
+    "qa",
     "control",
     "map",
     "observe",

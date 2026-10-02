@@ -1,6 +1,7 @@
 export type RelayMcpProfile =
   | "operator"
   | "outcome"
+  | "qa"
   | "control"
   | "map"
   | "observe"

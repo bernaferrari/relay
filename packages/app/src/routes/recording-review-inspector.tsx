@@ -23,6 +23,7 @@ import { tryReviewTarget } from "../data/recording-try-target";
 import { SelectField } from "../components/filter-select";
 import { RecordingTargetPicker } from "./recording-target-picker";
 import { RecordingWaitPicker } from "./recording-wait-picker";
+import { RecordingWaitConditions } from "./recording-wait-conditions";
 
 type ReviewAction = NonNullable<
   NonNullable<ProductRecordingState["snapshot"]>["review"]
@@ -40,6 +41,7 @@ export function RecordingReviewInspector({
   canEdit,
   selectionIsContiguous,
   onEdit,
+  onSaveWait,
   onMoveSelected,
   state,
   productService,
@@ -57,6 +59,7 @@ export function RecordingReviewInspector({
   canEdit: boolean;
   selectionIsContiguous: boolean;
   onEdit: (edit: AuthoringRecordingEdit) => void;
+  onSaveWait?: (edit: AuthoringRecordingEdit) => Promise<void>;
   onMoveSelected: (offset: -1 | 1) => void;
   state?: ProductRecordingState;
   productService: RecordingProductService;
@@ -111,6 +114,13 @@ export function RecordingReviewInspector({
             >
               Save instruction
             </Button>
+            <RecordingWaitConditions
+              key={selectedAction.id}
+              action={selectedAction}
+              canEdit={canEdit}
+              onEdit={onEdit}
+              onSaveWait={onSaveWait}
+            />
             <div className="flex flex-wrap items-center gap-1">
               {selectedAction.kind === "tap" ? (
                 <RecordingTargetPicker

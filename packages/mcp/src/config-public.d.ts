@@ -5,6 +5,7 @@ export type CredentialSource = { type: "none" } | { type: "env"; name: string };
 export type RelayMcpProfile =
   | "operator"
   | "outcome"
+  | "qa"
   | "control"
   | "map"
   | "observe"

@@ -8,6 +8,11 @@ description: Prove an AI-authored change with Relay before merge. Use the server
 Relay answers whether a specific code change has earned permission to merge.
 Keep this workflow change-first and evidence-first.
 
+This specialist skill requires the configured `proof` profile. The default
+plugin uses ordinary `qa` tools. If Proof tools are absent, explain that a
+separate explicit specialist session is needed; ordinary recording and saved
+Test replay stay in the QA session.
+
 ## Start from the active workspace
 
 Call `relay_workspace_change_inspect` before impact analysis. Treat its

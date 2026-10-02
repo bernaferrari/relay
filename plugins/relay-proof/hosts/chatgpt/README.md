@@ -1,7 +1,7 @@
 # ChatGPT-compatible MCP hosts
 
 ChatGPT-compatible hosts must expose the Relay MCP server through the host's
-supported MCP transport. `@relay/mcp` speaks MCP v2 over stdio and ships a
+supported MCP transport. `@relay/mcp` uses the MCP server SDK 2.1.0 over stdio and ships a
 reviewed `relay-mcp-bridge` that carries that exact process over an authenticated
 HTTP endpoint when the host accepts only remote servers. The bridge is a
 transport adapter: it does not fork Proof schemas, tool names, or approval
@@ -21,7 +21,7 @@ export RELAY_URL=https://relay.example
 export RELAY_ORGANIZATION_ID=acme
 export RELAY_PROJECT_ID=checkout
 export RELAY_ACTOR_ID=agent:chatgpt
-export RELAY_MCP_PROFILE=proof
+export RELAY_MCP_PROFILE=qa
 export RELAY_AUTH_TOKEN=…                  # Relay credential, process environment only
 export RELAY_MCP_BRIDGE_AUTH_TOKEN=…       # separate bridge credential, host secret/reference
 relay-mcp-bridge --host 127.0.0.1 --port 8788 --auth-env RELAY_MCP_BRIDGE_AUTH_TOKEN
@@ -44,7 +44,7 @@ Use the same package directly when the host launches local MCP commands:
   "mcpServers": {
     "relay": {
       "command": "npx",
-      "args": ["--yes", "--package", "@relay/mcp@0.1.0", "relay-mcp", "--profile", "proof"],
+      "args": ["--yes", "--package", "@relay/mcp@0.1.0", "relay-mcp", "--profile", "qa"],
       "env": {
         "RELAY_MCP_PROFILE": "proof"
       }
@@ -55,7 +55,7 @@ Use the same package directly when the host launches local MCP commands:
 
 Configure `RELAY_URL`, `RELAY_ORGANIZATION_ID`, `RELAY_PROJECT_ID`,
 `RELAY_ACTOR_ID`, and (when required) `RELAY_AUTH_TOKEN` in the process
-environment. Before the first Proof, run `relay-mcp doctor --profile proof
+environment. Before the first task, run `relay-mcp doctor --profile qa
 --json` in that same environment and require `ok: true`. A host that cannot
 run stdio locally must use the reviewed bridge and keep its endpoint
 authenticated and project-scoped.
@@ -63,3 +63,7 @@ authenticated and project-scoped.
 The ChatGPT host does not get a custom schema or a second Proof workflow. The
 same canonical MCP tools, resources, confirmation rules, and human approval
 boundary apply everywhere.
+
+This distribution has no MCP App view or Extensions entrypoint. Transport
+checks do not establish rendered host compatibility; qualify a specific host
+before claiming live panels or interactive review there.

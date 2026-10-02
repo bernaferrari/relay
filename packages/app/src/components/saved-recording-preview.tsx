@@ -31,6 +31,13 @@ export function SavedRecordingPreview({
     uri: string;
     alt: string;
   }>();
+  const [candidate, setCandidate] = useState<typeof image>();
+  const candidateUrl = useRef<string | undefined>(undefined);
+  const [attempt, setAttempt] = useState(0);
+  const displayed = useRef<typeof image>(undefined);
+  const requestedUri = useRef(frame.uri);
+  requestedUri.current = frame.uri;
+  const [showLoading, setShowLoading] = useState(false);
   const imageUrls = useRef(new Set<string>());
   useEffect(() => {
     const urls = imageUrls.current;
@@ -45,25 +52,35 @@ export function SavedRecordingPreview({
       new Blob([new Uint8Array(preview.data.bytes)], { type: preview.data.mime }),
     );
     imageUrls.current.add(url);
-    setImage({
+    candidateUrl.current = url;
+    setCandidate({
       data: preview.data,
       url,
       uri: frame.uri,
       alt: `${frame.role === "before" ? "Before" : "After"}: ${intent}`,
     });
-  }, [preview.data, frame.uri, frame.role, intent]);
-  useEffect(() => {
-    if (!image) return;
     return () => {
-      URL.revokeObjectURL(image.url);
-      imageUrls.current.delete(image.url);
+      if (displayed.current?.url !== url) {
+        URL.revokeObjectURL(url);
+        imageUrls.current.delete(url);
+      }
     };
-  }, [image]);
+  }, [preview.data, frame.uri, frame.role, intent, attempt]);
   const loading =
     Boolean(catalogService.getRecordingFrame) &&
     failedUri !== frame.uri &&
     !preview.isError &&
-    (preview.isPending || image?.data !== preview.data || image?.uri !== frame.uri);
+    (preview.isPending ||
+      image?.data !== preview.data ||
+      image?.uri !== frame.uri ||
+      (candidate?.uri === frame.uri && candidate.url !== image?.url));
+  useEffect(() => {
+    setShowLoading(false);
+    if (!loading) return;
+    const timer = setTimeout(() => setShowLoading(true), 250);
+    return () => clearTimeout(timer);
+  }, [loading, frame.uri]);
+  const failed = preview.isError || failedUri === frame.uri || !catalogService.getRecordingFrame;
   return (
     <section className="flex h-full min-h-0 flex-col gap-3 p-4" aria-label="Saved recording">
       <header className="flex shrink-0 items-center justify-between gap-3">
@@ -78,8 +95,30 @@ export function SavedRecordingPreview({
           onChange={(value) => setSelected(Number(value))}
         />
       </header>
-      <div className="flex min-h-0 flex-1 items-center justify-center" aria-busy={loading}>
-        {image && !preview.isError && failedUri !== image.uri ? (
+      <div className="relative flex min-h-0 flex-1 items-center justify-center" aria-busy={loading}>
+        {candidate && !failed && candidate.uri === frame.uri && candidate.url !== image?.url ? (
+          <img
+            src={candidate.url}
+            alt=""
+            aria-hidden="true"
+            className="pointer-events-none absolute size-px opacity-0"
+            onLoad={() => {
+              if (candidate.uri !== requestedUri.current || candidate.url !== candidateUrl.current)
+                return;
+              if (displayed.current) {
+                URL.revokeObjectURL(displayed.current.url);
+                imageUrls.current.delete(displayed.current.url);
+              }
+              displayed.current = candidate;
+              setImage(candidate);
+            }}
+            onError={() => {
+              if (candidate.uri === requestedUri.current && candidate.url === candidateUrl.current)
+                setFailedUri(candidate.uri);
+            }}
+          />
+        ) : null}
+        {image && !failed ? (
           <img
             src={image.url}
             onError={() => setFailedUri(image.uri)}
@@ -88,7 +127,7 @@ export function SavedRecordingPreview({
           />
         ) : (
           <div className="grid h-full w-full place-items-center text-sm text-muted-foreground">
-            {preview.isError || failedUri === frame.uri || !catalogService.getRecordingFrame ? (
+            {failed ? (
               <p>This saved screenshot could not be loaded.</p>
             ) : (
               <div
@@ -103,6 +142,7 @@ export function SavedRecordingPreview({
                 size="sm"
                 onClick={() => {
                   setFailedUri(undefined);
+                  setAttempt((value) => value + 1);
                   void preview.refetch();
                 }}
               >
@@ -111,6 +151,15 @@ export function SavedRecordingPreview({
             ) : null}
           </div>
         )}
+        {showLoading && loading ? (
+          <p
+            role="status"
+            className="pointer-events-none absolute bottom-3 rounded-full bg-background/95 px-3 py-1.5 text-xs text-muted-foreground shadow-sm"
+          >
+            Loading {frame.role === "before" ? "Before" : "After"}…
+            {image ? ` Showing ${image.alt.split(":")[0]}.` : ""}
+          </p>
+        ) : null}
       </div>
     </section>
   );

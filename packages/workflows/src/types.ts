@@ -256,6 +256,14 @@ export type RunTestSnapshot = {
 
 export type AuthoringReviewActionKind = RecipeStep["kind"] | "observe" | "mixed";
 
+/** Editable control waits only; arbitrary recipe payloads remain private. */
+export type AuthoringReviewWaitCondition = {
+  kind: "wait-for" | "expect";
+  condition: "visible" | "gone";
+  target: { label?: string; identifier?: string };
+  timeoutMs?: number;
+};
+
 export type AuthoringReview = {
   actionCount: number;
   currentRevision?: number;
@@ -268,6 +276,8 @@ export type AuthoringReview = {
     stepCount: number;
     /** The recipe step kind(s), without exposing step payloads such as typed text. */
     kind?: AuthoringReviewActionKind;
+    /** Present only when every step is a supported named-control wait. */
+    waitConditions?: readonly AuthoringReviewWaitCondition[];
     startedAt?: number;
     finishedAt?: number;
     durationMs?: number;

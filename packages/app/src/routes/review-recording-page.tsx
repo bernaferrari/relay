@@ -1,5 +1,10 @@
+import { RecordingReviewStatus } from "./recording-review-status";
 import { RecordingReviewActions } from "./recording-review-actions";
-import { blocksReview } from "./recording-review-state";
+import {
+  blocksReview,
+  reviewEditIntent,
+  type ReviewTransitionIntent,
+} from "./recording-review-state";
 import type { ProductRecordingState } from "../data/recording-product-service";
 import { AuthoringHeader } from "./authoring-header";
 import { RecordingReviewLayout } from "./recording-review-layout";
@@ -13,7 +18,7 @@ import { Button } from "@relay/ui-react/components/button";
 import { Input } from "@relay/ui-react/components/input";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams, useRouteContext } from "@tanstack/react-router";
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { recordingQueryKeys, refreshRecording } from "../data/recording-queries";
 import {
@@ -24,19 +29,10 @@ import {
 import { clearWorkflowPointerIfCurrent } from "../data/workflow-pointer";
 import { PageLoading, RecordingProblem, targetLabel } from "./recording-shared";
 import { RecordingActionsPanel, RecordingEvidencePanel } from "./recording-review-panels";
-import { replayDetail, useEvidenceObjectUrl } from "./recording-review-presentation";
+import { useEvidenceObjectUrl } from "./recording-review-presentation";
 import { reviewPersistence } from "../data/recording-review-persistence";
 import { useRecordingNameDraft } from "../data/use-recording-name-draft";
 import { RecordingReviewInspector } from "./recording-review-inspector";
-
-type ReviewTransitionIntent =
-  | { action: "replay" }
-  | { action: "approve"; testName: string }
-  | {
-      action: "edit";
-      edit: AuthoringRecordingEdit;
-      history?: { kind: "new" | "undo" | "redo"; fromRevision: number };
-    };
 
 export function ReviewRecordingPage({
   recordingId: recordingIdProp,
@@ -105,7 +101,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
       await nameWrites.current;
       if (!productService.save || currentRevision === undefined)
         return productService.approve(intent.testName);
-      setSavePhase(canApprove ? "saving" : "checking");
+      setSavePhase(runsBeforeSave ? "checking" : "saving");
       try {
         return await productService.save({
           testName: intent.testName,
@@ -190,7 +186,15 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
   const leaveDraft = useMutation({
     mutationFn: async () => {
       await nameWrites.current;
-      const persisted = await productService.inspect(workflowId);
+      if (pendingInstruction && !productService.saveDraft)
+        throw new Error("Save the instruction before closing this draft.");
+      const persisted =
+        productService.saveDraft && currentRevision !== undefined
+          ? await productService.saveDraft({
+              reviewRevision: currentRevision,
+              ...(pendingInstruction ? { rename: pendingInstruction } : {}),
+            })
+          : await productService.inspect(workflowId);
       if (blocksReview(persisted) || !persisted.snapshot?.review)
         throw new Error("Could not confirm the saved draft. Keep this page open and try again.");
       return persisted;
@@ -262,6 +266,11 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
     failureDetail: leaveDraft.error ? "Could not confirm the saved draft" : undefined,
   });
   const currentRevision = review?.currentRevision;
+  const pendingInstruction =
+    selectedAction && actionIntent.trim() && actionIntent.trim() !== selectedAction.intent
+      ? { actionId: selectedAction.id, intent: actionIntent.trim() }
+      : undefined;
+  const runsBeforeSave = !canApprove || Boolean(pendingInstruction);
   const sessionId = snapshot?.authoring?.sessionId;
   const optimization = useQuery({
     queryKey: ["recording-optimization", sessionId ?? "unselected", currentRevision ?? 0],
@@ -324,13 +333,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
   }, [currentRevision]);
 
   function edit(edit: AuthoringRecordingEdit) {
-    transition.mutate({
-      action: "edit",
-      edit,
-      ...(currentRevision
-        ? { history: { kind: "new" as const, fromRevision: currentRevision } }
-        : {}),
-    });
+    transition.mutate(reviewEditIntent(edit, currentRevision));
   }
 
   function restore(kind: "undo" | "redo") {
@@ -396,6 +399,19 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
     );
   }
 
+  const reviewStatus = (
+    <RecordingReviewStatus
+      canApprove={canApprove}
+      runsBeforeSave={Boolean(productService.save && runsBeforeSave)}
+      pendingAction={transition.isPending ? transition.variables?.action : undefined}
+      savePhase={savePhase}
+      deviceName={replayDeviceName}
+      deviceDetail={replayPresentation.data?.[0]?.detail}
+      replayOutcome={review?.latestReplay?.outcome}
+      verificationSource={review?.latestReplay?.source}
+    />
+  );
+
   return (
     <WorkbenchPage className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-card !p-0">
       <AuthoringHeader
@@ -430,7 +446,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
               {restartEmpty.error ? <p role="alert">{restartEmpty.error.message}</p> : null}
               <RecordingReviewActions
                 editing={editing}
-                pending={transition.isPending}
+                pending={transition.isPending || leaveDraft.isPending}
                 canEdit={canEdit}
                 canUndo={undoStack.length > 0}
                 canRedo={redoStack.length > 0}
@@ -445,6 +461,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                 }
                 canReplay={allowed.has("replay") && actions.length > 0}
                 autoSave={Boolean(productService.save && currentRevision !== undefined)}
+                runsBeforeSave={runsBeforeSave}
                 saveDisabled={!into.data && !testName.trim()}
                 saveLabel={into.data ? `Add to “${into.data.testName}”` : "Save test"}
                 saving={
@@ -454,6 +471,9 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                 }
                 replaying={transition.isPending && transition.variables?.action === "replay"}
                 deviceName={replayDeviceName}
+                onSaveDraft={
+                  productService.saveDraft && !saved ? () => leaveDraft.mutate() : undefined
+                }
                 onUndo={() => restore("undo")}
                 onRedo={() => restore("redo")}
                 onEdit={() => {
@@ -480,10 +500,13 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
         }
       >
         {reviewReady && into.data ? (
-          <p className="text-sm text-muted-foreground">
-            These steps will be added to{" "}
-            <strong className="font-medium text-foreground">{into.data.testName}</strong>.
-          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-sm text-muted-foreground">
+              These steps will be added to{" "}
+              <strong className="font-medium text-foreground">{into.data.testName}</strong>.
+            </p>
+            {reviewStatus}
+          </div>
         ) : reviewReady ? (
           <div className="flex flex-wrap items-center gap-3">
             <Field className="min-w-48 max-w-lg flex-1">
@@ -517,47 +540,7 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                 </Button>
               ) : null}
             </Field>
-            {canApprove ||
-            transition.isPending ||
-            (!state?.recovery &&
-              (review?.latestReplay?.outcome === "failed" ||
-                review?.latestReplay?.outcome === "cancelled")) ? (
-              <p
-                className={`flex items-center gap-1.5 text-xs ${canApprove && !transition.isPending ? "text-success" : "text-muted-foreground"}`}
-                role="status"
-                aria-label="Recording status"
-                title={
-                  canApprove
-                    ? `${review?.latestReplay?.source === "recording" ? "Recording" : "Replay"} verified on ${replayDeviceName}. Ready to save.`
-                    : review?.latestReplay
-                      ? replayDetail(
-                          review.latestReplay.outcome,
-                          canApprove,
-                          review.latestReplay.source,
-                        )
-                      : `Replay on ${replayDeviceName} before saving.`
-                }
-              >
-                {canApprove && !transition.isPending ? (
-                  <CheckCircle2 className="size-3.5" aria-hidden="true" />
-                ) : null}
-                {transition.isPending
-                  ? transition.variables?.action === "replay"
-                    ? `Replaying on ${replayDeviceName}…`
-                    : transition.variables?.action === "edit"
-                      ? "Saving step changes…"
-                      : savePhase === "checking"
-                        ? `Checking on ${replayDeviceName}…`
-                        : "Saving test…"
-                  : canApprove
-                    ? "Verified"
-                    : review?.latestReplay?.outcome === "failed"
-                      ? "Replay failed. Open the failed step, then replay again."
-                      : review?.latestReplay?.outcome === "cancelled"
-                        ? "Replay cancelled"
-                        : null}
-              </p>
-            ) : null}
+            {reviewStatus}
           </div>
         ) : null}
       </AuthoringHeader>
@@ -659,6 +642,13 @@ function RecordingReviewDocument({ recordingId }: { recordingId: string }) {
                   canEdit={canEdit}
                   selectionIsContiguous={selectionIsContiguous}
                   onEdit={edit}
+                  onSaveWait={async (edit) => {
+                    const result = await transition.mutateAsync(
+                      reviewEditIntent(edit, currentRevision),
+                    );
+                    if (blocksReview(result))
+                      throw new Error("Could not save wait conditions. Try again.");
+                  }}
                   onMoveSelected={moveSelected}
                   state={state}
                   productService={productService}

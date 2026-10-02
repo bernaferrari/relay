@@ -13,13 +13,22 @@ import { chromium, firefox, webkit } from "playwright-core";
 import type { BrowserType } from "playwright-core";
 import { unsupportedBrowserCaseProfileFields } from "./browser-profile-support.js";
 import { findWorkspaceRoot } from "./workspace-root.js";
-
-const DEFAULT_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+import { MACOS_CHROME, resolveBrowserExecutable } from "./browser-executable.js";
 
 export function browserExecutable(target?: TargetDefinition): string {
   const configured = process.env.RELAY_BROWSER_EXECUTABLE?.trim();
-  const allowed = new Set([DEFAULT_CHROME, ...(configured ? [configured] : [])]);
-  const requested = target?.browser?.executablePath || configured || DEFAULT_CHROME;
+  const resolved = resolveBrowserExecutable();
+  const allowed = new Set([
+    MACOS_CHROME,
+    ...resolved.candidates,
+    ...(configured ? [configured] : []),
+  ]);
+  const requested = target?.browser?.executablePath || configured || resolved.path;
+  if (!requested) {
+    throw new Error(
+      "No supported Chromium browser found. Install Chrome or Chromium, or set RELAY_BROWSER_EXECUTABLE to an absolute executable path before starting Relay.",
+    );
+  }
   if (!allowed.has(requested)) {
     throw new Error("Browser target references an executable outside the server allowlist");
   }
@@ -163,6 +172,8 @@ export async function saveBrowserTarget(input: {
   const existing = requestedId ? targets.find((target) => target.id === requestedId) : undefined;
   const environment =
     input.environment === undefined ? undefined : compileBrowserEnvironment(input.environment);
+  const executablePath =
+    process.env.RELAY_BROWSER_EXECUTABLE?.trim() || resolveBrowserExecutable().path;
   const now = Date.now();
   const target: TargetDefinition = {
     id: requestedId ?? existing?.id ?? `browser-${randomUUID()}`,
@@ -172,7 +183,7 @@ export async function saveBrowserTarget(input: {
     updatedAt: now,
     browser: {
       startUrl: url.toString(),
-      executablePath: process.env.RELAY_BROWSER_EXECUTABLE?.trim() || DEFAULT_CHROME,
+      ...(executablePath ? { executablePath } : {}),
       // Visible by default: browser targets are black-box environments where
       // people often need to complete login or MFA before recording a test.
       headless: input.headless ?? false,

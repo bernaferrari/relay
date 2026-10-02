@@ -7,6 +7,7 @@ import {
 import type {
   AuthorTestSnapshot,
   AuthoringReviewActionKind,
+  AuthoringReviewWaitCondition,
   FrozenAuthorTestIdentity,
   DurableWorkflowHandle,
   WorkflowProblem,
@@ -95,6 +96,38 @@ function reviewActionKind(
   if (kinds.length === 0) return "observe";
   if (kinds.length === 1) return kinds[0]!;
   return "mixed";
+}
+
+function reviewWaitConditions(
+  action: AuthoringRevision["actions"][number],
+): AuthoringReviewWaitCondition[] | undefined {
+  if (!action.steps.length || action.steps.length > 16) return undefined;
+  const conditions: AuthoringReviewWaitCondition[] = [];
+  for (const step of action.steps) {
+    if (step.kind !== "wait-for" && step.kind !== "expect") return undefined;
+    // Replacement through this small editor must not discard execution policy
+    // or recorded provenance that it cannot round-trip.
+    if (
+      Object.keys(step).some((key) => !["kind", "target", "condition", "timeoutMs"].includes(key))
+    )
+      return undefined;
+    const keys = Object.keys(step.target);
+    if (keys.length !== 1 || (keys[0] !== "label" && keys[0] !== "identifier")) return undefined;
+    const name = step.target.label ?? step.target.identifier;
+    if (!name?.trim() || name.length > 500) return undefined;
+    if (
+      step.timeoutMs !== undefined &&
+      (!Number.isFinite(step.timeoutMs) || step.timeoutMs < 0 || step.timeoutMs > 900_000)
+    )
+      return undefined;
+    conditions.push({
+      kind: step.kind,
+      condition: step.kind === "wait-for" ? "visible" : step.condition,
+      target: { ...step.target },
+      ...(step.timeoutMs !== undefined ? { timeoutMs: step.timeoutMs } : {}),
+    });
+  }
+  return conditions;
 }
 
 function reviewEvidenceForAction(
@@ -234,12 +267,14 @@ function reviewForSession(session: AuthoringSession): AuthorTestSnapshot["review
     ...(revision.videoClip ? { videoClip: { ...revision.videoClip } } : {}),
     actions: revision.actions.map((action) => {
       const linkedEvidence = reviewEvidenceForAction(action, revision);
+      const waitConditions = reviewWaitConditions(action);
       return {
         id: action.id,
         intent: semanticIntent(action),
         ...(action.label ? { label: action.label } : {}),
         stepCount: action.steps.length,
         kind: reviewActionKind(action),
+        ...(waitConditions ? { waitConditions } : {}),
         startedAt: action.startedAt,
         finishedAt: action.finishedAt,
         durationMs: Math.max(0, action.finishedAt - action.startedAt),

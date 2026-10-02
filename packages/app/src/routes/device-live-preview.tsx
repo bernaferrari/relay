@@ -69,7 +69,8 @@ export function DeviceLivePreview({
     >
       <div className="flex shrink-0 items-center justify-between gap-4 px-3 py-2">
         <h2 className="text-sm font-medium" id="device-live-title">
-          Live preview
+          Live {platform === "browser" ? "browser" : "device"}
+          <span className="ml-2 text-xs font-normal text-muted-foreground">Not recording</span>
         </h2>
         {status === "streaming" || (status === "idle" && !pending) ? (
           <Button size="sm" variant="ghost" onClick={reconnect} disabled={reconnecting}>

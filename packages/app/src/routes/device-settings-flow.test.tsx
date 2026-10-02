@@ -263,7 +263,7 @@ describe("Devices", () => {
         },
       } as BrowserSpacesProductService,
     });
-    expect(document.body.textContent).toContain("Live preview");
+    expect(document.body.textContent).toContain("Live browser");
     await click(button("Reconnect"));
     expect(opened).toEqual(["browser"]);
     expect(devices.recoveryCalls).toEqual([]);

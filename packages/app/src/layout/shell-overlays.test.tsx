@@ -5,7 +5,7 @@ import type { ProductTestSummary as RunTestSummary } from "../data/run-product-s
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RelayApp } from "../app";
 import type { CatalogProductService } from "../data/catalog-product-service";
 import type { ChangeProductService } from "../data/change-product-service";
@@ -18,11 +18,18 @@ import type { Platform } from "../platform/types";
 
 const roots: Root[] = [];
 
+beforeEach(() => {
+  // Shell services are fake. Reject unowned network requests before happy-dom
+  // creates a real fetch whose teardown could abort the developer server read.
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Offline test fixture")));
+});
+
 afterEach(async () => {
   await act(async () => {
     for (const root of roots.splice(0)) root.unmount();
   });
   document.body.replaceChildren();
+  vi.unstubAllGlobals();
 });
 
 function platform(): Platform {

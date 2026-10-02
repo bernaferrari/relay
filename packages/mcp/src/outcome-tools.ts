@@ -559,8 +559,9 @@ export const relayOutcomeTools = Object.freeze([
   },
   {
     name: "relay_approve_recording",
-    title: "Approve a recorded Test",
-    description: "After a passing replay, explicitly approve the recording as the named Test.",
+    title: "Save a recorded Test",
+    description:
+      "Save the exact reviewed recording as the named Test when the canonical workflow allows approval. An unchanged recording may already qualify; edited actions require a passing replay of that revision.",
     requiresConfirmation: true,
     inputSchema: z.object(workflowDecision).strict(),
     annotations: {

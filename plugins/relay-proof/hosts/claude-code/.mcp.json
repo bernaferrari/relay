@@ -2,9 +2,9 @@
   "mcpServers": {
     "relay": {
       "command": "relay-mcp",
-      "args": ["--profile", "proof"],
+      "args": ["--profile", "qa"],
       "env": {
-        "RELAY_MCP_PROFILE": "proof"
+        "RELAY_MCP_PROFILE": "qa"
       }
     }
   }

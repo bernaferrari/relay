@@ -378,6 +378,39 @@ test("Save includes an unsaved instruction and checks its resulting revision", a
   assert.equal(decisions[2]?.expectedVersion, 12);
 });
 
+test("Save draft persists an edited revision without any replay or approval", async () => {
+  const { journey, decisions } = saveFixture({ alreadyVerified: true });
+  await journey.begin({ title: "Settings" });
+  const rename = { actionId: "step-1", intent: "Open settings" };
+  const result = await journey.saveDraft({ reviewRevision: 1, rename });
+  assert.equal(result.snapshot?.stage, "reviewing");
+  assert.equal(result.snapshot?.review?.currentRevision, 2);
+  assert.equal(result.snapshot?.review?.replayRequired, true);
+  assert.deepEqual(
+    decisions.map((decision) => decision.action),
+    ["edit"],
+  );
+  assert.deepEqual(decisions[0]?.edit, { kind: "rename", ...rename });
+});
+
+test("Save draft refuses stale edits and leaves verification unchanged on a read-only save", async () => {
+  const { journey, decisions } = saveFixture({ alreadyVerified: true });
+  await journey.begin({ title: "Settings" });
+  const initial = await journey.saveDraft({ reviewRevision: 1 });
+  assert.equal(initial.snapshot?.stage, "reviewing");
+  assert.ok(initial.snapshot?.allowedNextActions.includes("approve"));
+  assert.equal(
+    (
+      await journey.saveDraft({
+        reviewRevision: 0,
+        rename: { actionId: "step-1", intent: "Stale" },
+      })
+    ).recovery?.code,
+    "unexpected-authoring-state",
+  );
+  assert.equal(decisions.length, 0);
+});
+
 for (const [name, options] of [
   ["failed check", { replayOutcome: "failed" as const }],
   ["uncertain check", { uncertainReplay: true }],

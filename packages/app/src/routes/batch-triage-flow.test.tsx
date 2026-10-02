@@ -2,7 +2,7 @@
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RelayApp } from "../app";
 import type { RunAcrossProductService } from "../data/run-across-product-service";
 import type { RecordingProductService } from "../data/recording-product-service";
@@ -10,6 +10,12 @@ import type { Platform } from "../platform/types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const roots: Root[] = [];
+
+beforeEach(() => {
+  // Product services own this fixture's reads. Unowned shell requests must
+  // never reach the developer server or outlive the test DOM.
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Offline test fixture")));
+});
 
 const report = {
   id: "batch-1",
@@ -115,14 +121,20 @@ afterEach(async () => {
     for (const root of roots.splice(0)) root.unmount();
   });
   document.body.replaceChildren();
+  vi.unstubAllGlobals();
 });
 
 describe("Batch review controls", () => {
   it("does not attach an old Plan download to the next Plan", async () => {
     let finish!: (blob: Blob) => void;
     const createUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:old-plan");
+    const getReport = vi.fn(async (id: string) => ({
+      ...report,
+      id,
+      export: { jobIds: ["run-1"] },
+    }));
     const history = await render({
-      getReport: async (id: string) => ({ ...report, id, export: { jobIds: ["run-1"] } }),
+      getReport,
       getFailureClusters: async () => ({ campaignId: "batch-1", clusters: [] }),
       getFindings: async () => undefined,
       downloadExport: () =>
@@ -136,8 +148,12 @@ describe("Batch review controls", () => {
     expect(download).toBeDefined();
     await act(async () => download!.click());
     await act(async () => history.push("/batches/batch-2"));
-    for (let i = 0; i < 4; i++)
+    // Memory history changes before the new document has mounted. Resolve the
+    // old download only once this fixture observes the next Plan's own read.
+    await vi.waitFor(async () => {
       await act(async () => void (await new Promise((resolve) => setTimeout(resolve, 0))));
+      expect(getReport).toHaveBeenCalledWith("batch-2");
+    });
     await act(async () => finish(new Blob(["old-plan"])));
     expect(createUrl).not.toHaveBeenCalled();
     expect(document.querySelector('a[href="blob:old-plan"]')).toBeNull();

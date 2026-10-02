@@ -18,6 +18,7 @@ import {
   relayMcpToolsForProfile,
   type RelayMcpProfile,
 } from "./tools.js";
+import { relayQaOutcomeTools, relayQaOperatorTools } from "./qa-tools.js";
 import { relayOutcomeTools } from "./outcome-tools.js";
 
 type RpcResponse = {
@@ -2473,5 +2474,61 @@ test("profile instructions distinguish saved Test execution from manual explorat
     assert.doesNotMatch(instructions, /Do not start with test run/);
     if (profile === "outcome") assert.match(instructions, /Omit appMapId and targetId/);
     else assert.doesNotMatch(instructions, /Omit.*appMapId/);
+  }
+});
+
+test("QA preset exposes one existing recording/run path and accurate discovery", async () => {
+  const invoked: string[] = [];
+  const session = await connectMcp(
+    {
+      async invoke(operationId) {
+        invoked.push(operationId);
+        if (operationId === "system.health.get") return { ok: true };
+        throw new Error(`unexpected ${operationId}`);
+      },
+    },
+    "qa",
+  );
+  try {
+    const listed = await session.request("tools/list", {});
+    const tools = listed.result?.tools as ListedTool[];
+    const names = tools.map(({ name }) => name);
+    assert.deepEqual(
+      names,
+      [...relayQaOutcomeTools, ...relayQaOperatorTools, ...relayMcpToolsForProfile("qa")].map(
+        ({ name }) => name,
+      ),
+    );
+    assert.equal(new Set(names).size, names.length);
+    for (const absent of [
+      "relay_goal",
+      "relay_advanced",
+      "relay_prove_change",
+      "relay_project_save",
+      "relay_proof_plan_approve",
+    ]) {
+      assert.equal(new Set<string>(names).has(absent), false, absent);
+    }
+    assert.ok(names.includes("relay_record_test"));
+    assert.ok(names.includes("relay_inspect_workflow"));
+    const record = tools.find(({ name }) => name === "relay_record_test")!;
+    assert.ok(record.inputSchema.required?.includes("confirm"));
+    const health = callResult(
+      await session.request("tools/call", { name: "relay_health", arguments: {} }),
+    );
+    assert.notEqual(health.isError, true);
+    assert.deepEqual(invoked, ["system.health.get"]);
+    const discovery = callResult(
+      await session.request("resources/read", { uri: "relay://operations" }),
+    );
+    const data = JSON.parse(
+      (discovery as unknown as { contents: { text: string }[] }).contents[0]!.text,
+    ).data;
+    assert.equal(data.activeToolCount, names.length);
+    assert.deepEqual(data.activeOperations, names);
+    assert.match(relayMcpInstructionsForProfile("qa"), /model-free/u);
+    assert.doesNotMatch(relayMcpInstructionsForProfile("qa"), /use relay_prove_change/u);
+  } finally {
+    await session.close();
   }
 });
