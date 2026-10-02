@@ -64,6 +64,14 @@ export type ProductRecordingBeginInput = RecordingPathContext & {
   liveSessionId?: string;
 };
 
+export type ProductRecordingSaveInput = {
+  testName: string;
+  reviewRevision: number;
+  /** Include the currently edited step label in this save. */
+  rename?: { actionId: string; intent: string };
+  onProgress?: (phase: "checking" | "saving") => void;
+};
+
 export type ProductRecordingJourney = {
   state(): ProductRecordingState;
   connect(input?: { targetId?: string }): Promise<ProductRecordingState>;
@@ -78,6 +86,8 @@ export type ProductRecordingJourney = {
   /** Public journey name for the server's authoring-stop transition. */
   compileReview(): Promise<ProductRecordingState>;
   replay(): Promise<ProductRecordingState>;
+  /** Verify this reviewed revision when needed, then commit it. */
+  save(input: ProductRecordingSaveInput): Promise<ProductRecordingState>;
   approve(
     testName?: string,
     destination?: AuthoringCommitDestination,
@@ -328,7 +338,10 @@ export function createProductRecordingJourney(input: {
     }
   }
 
-  async function transition(action: ProductRecordingAction): Promise<ProductRecordingState> {
+  async function transition(
+    action: ProductRecordingAction,
+    fence?: { workflowId: string; reviewRevision: number },
+  ): Promise<ProductRecordingState> {
     const workflowId = current.snapshot?.workflow?.workflowId;
     if (!workflowId) {
       return publish({
@@ -346,6 +359,14 @@ export function createProductRecordingJourney(input: {
     }
     if (snapshot.version === "unavailable") return publishSnapshot(snapshot, action.action);
     publishSnapshot(snapshot, action.action);
+    if (
+      fence &&
+      (workflowId !== fence.workflowId ||
+        snapshot.workflow?.workflowId !== fence.workflowId ||
+        snapshot.review?.currentRevision !== fence.reviewRevision)
+    ) {
+      return changedReview();
+    }
     if (!snapshot.allowedNextActions.includes(action.action)) {
       return publish({ recovery: unexpectedAction(snapshot, action.action) });
     }
@@ -357,6 +378,64 @@ export function createProductRecordingJourney(input: {
     } catch (error) {
       return publish({ recovery: recoveryFromError(error, action.action) });
     }
+  }
+
+  function changedReview(): ProductRecordingState {
+    return publish({
+      recovery: {
+        code: "unexpected-authoring-state",
+        title: "The steps changed",
+        detail: "The reviewed steps changed before this Test could be saved.",
+        recovery: "Review the updated steps and save again.",
+        retryable: true,
+      },
+    });
+  }
+
+  async function save(input: ProductRecordingSaveInput): Promise<ProductRecordingState> {
+    const workflowId = current.snapshot?.workflow?.workflowId;
+    if (!workflowId || current.snapshot?.review?.currentRevision !== input.reviewRevision)
+      return changedReview();
+    const fence = { workflowId, reviewRevision: input.reviewRevision };
+    let result = await inspect(workflowId);
+    let fresh = result.snapshot;
+    if (
+      (result.recovery &&
+        !(
+          result.recovery.code === "operation-unavailable" &&
+          fresh?.stage === "reviewing" &&
+          fresh.phase !== "needs-attention" &&
+          fresh.allowedNextActions.includes("replay")
+        )) ||
+      fresh?.version === "unavailable" ||
+      fresh?.phase === "needs-attention" ||
+      !fresh?.review
+    )
+      return result;
+    if (fresh.review.currentRevision !== input.reviewRevision) return changedReview();
+    if (input.rename) {
+      result = await transition(
+        { action: "edit", edit: { kind: "rename", ...input.rename } },
+        fence,
+      );
+      fresh = result.snapshot;
+      if (result.recovery || !fresh?.review) return result;
+      if (fresh.review.currentRevision !== fence.reviewRevision + 1) return changedReview();
+      fence.reviewRevision = fresh.review.currentRevision;
+    }
+    if (!fresh.allowedNextActions.includes("approve")) {
+      input.onProgress?.("checking");
+      result = await transition({ action: "replay" }, fence);
+      const replay = result.snapshot?.review?.latestReplay;
+      if (
+        result.recovery ||
+        replay?.outcome !== "passed" ||
+        replay.takeRevision !== fence.reviewRevision
+      )
+        return result;
+    }
+    input.onProgress?.("saving");
+    return transition({ action: "approve", testName: input.testName.trim() }, fence);
   }
 
   return {
@@ -371,6 +450,7 @@ export function createProductRecordingJourney(input: {
     edit: (edit) => transition({ action: "edit", edit }),
     compileReview: () => transition({ action: "stop" }),
     replay: () => transition({ action: "replay" }),
+    save,
     approve: (testName, destination) =>
       transition({
         action: "approve",

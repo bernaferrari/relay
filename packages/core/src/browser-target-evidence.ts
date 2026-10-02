@@ -53,6 +53,32 @@ export function isBrowserExecutionContextDestroyed(error: unknown): boolean {
   );
 }
 
+/** An immediate after-click frame can straddle document replacement and stall
+ * Chromium's capture. Bound that read, then reacquire the current owned page
+ * once. This never re-dispatches the action or manufactures missing evidence. */
+export async function captureBrowserViewportScreenshot(
+  currentPage: () => Promise<Page>,
+  path?: string,
+): Promise<Buffer> {
+  const options = { ...(path ? { path } : {}), fullPage: false, timeout: 3_000 };
+  try {
+    return await (await currentPage()).screenshot(options);
+  } catch (error) {
+    if (
+      !isBrowserExecutionContextDestroyed(error) &&
+      !(
+        error instanceof Error &&
+        error.name === "TimeoutError" &&
+        error.message.includes("page.screenshot")
+      )
+    )
+      throw error;
+    const page = await currentPage();
+    await page.waitForLoadState("domcontentloaded", { timeout: 3_000 });
+    return await page.screenshot(options);
+  }
+}
+
 export function attachBrowserEvidence(session: BrowserEvidenceSession, page: Page): void {
   void installBrowserConsentOverlayHandler(page);
   page.on("console", (message) => {

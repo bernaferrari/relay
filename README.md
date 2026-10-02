@@ -33,6 +33,8 @@ pnpm dev:desktop
 
 In the app, choose **New Test** and enter a website or select a connected device. Record a short flow, review the steps, and save it. You can then run it again and open the result to see the captured screens.
 
+Choose **Save test** when the steps look right. Relay checks edited steps on the recorded target before saving; a failed or interrupted check keeps the review open. To check the recording separately, choose **Run without saving** from the review’s **More** menu.
+
 Run `pnpm doctor` if you have trouble with setup. Android requires `adb`, and physical iOS devices require Apple developer tooling. To use Relay in a browser, run `pnpm dev:web` instead.
 
 ## Agents and development

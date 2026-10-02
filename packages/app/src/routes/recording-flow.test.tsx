@@ -408,7 +408,7 @@ describe("record, review, replay, and save", () => {
     ).toContain("Recording verified on Pixel 9 Pro");
     expect(document.body.textContent).not.toContain("Verified on the selected configuration");
     expect(document.body.textContent).not.toContain("Replay passed.");
-    expect(button("Save Test").disabled).toBe(false);
+    expect(button("Save test").disabled).toBe(false);
   });
   it("keeps an input failure visible when healthy preview frames arrive", async () => {
     const fake = fakeService();
@@ -676,7 +676,7 @@ describe("record, review, replay, and save", () => {
       platformWithStorage().platform,
     );
     expect(document.body.textContent).not.toContain("Replay on Pixel");
-    expect(document.body.textContent).not.toContain("Save Test");
+    expect(document.body.textContent).not.toContain("Save test");
     await click(button("Start new recording"));
     expect(fake.calls).toContain("cancel-empty");
     expect(history.location.pathname).toBe("/tests/new");
@@ -1190,6 +1190,96 @@ describe("record, review, replay, and save", () => {
     },
   );
 
+  it("offers one Save action that checks edited steps and includes the current instruction", async () => {
+    const initial = state("reviewing", ["inspect", "edit", "replay"]);
+    initial.snapshot!.review!.currentRevision = 7;
+    const fake = fakeService(initial);
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fake.service.save = vi.fn(async (input) => {
+      input.onProgress?.("checking");
+      await waiting;
+      input.onProgress?.("saving");
+      return fake.service.approve(input.testName);
+    });
+    const storage = platformWithStorage({ activeRecordingWorkflowId: "workflow-1" });
+    const { history } = await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      storage.platform,
+    );
+    expect(button("Save test").disabled).toBe(false);
+    expect(document.body.textContent).not.toContain("Run test");
+    await click(button("Edit steps"));
+    await fill(
+      document.querySelector<HTMLInputElement>("#review-action-intent")!,
+      "Open app settings",
+    );
+    await click(button("Save test"));
+    expect(button("Checking test…").disabled).toBe(true);
+    expect(fake.service.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reviewRevision: 7,
+        rename: { actionId: "step-1", intent: "Open app settings" },
+      }),
+    );
+    await act(async () => release());
+    await settle();
+    expect(history.location.pathname).toBe("/tests/test-1");
+    expect(fake.calls).not.toContain("replay");
+    expect(fake.calls).toContain("approve");
+  });
+
+  it("keeps explicit replay available in More review actions", async () => {
+    const initial = state("reviewing", ["inspect", "replay"]);
+    initial.snapshot!.review!.currentRevision = 7;
+    const fake = fakeService(initial);
+    fake.service.save = vi.fn();
+    await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await click(button("More review actions"));
+    const run = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent?.trim() === "Run without saving",
+    );
+    expect(run).toBeDefined();
+    await click(run!);
+    expect(fake.calls).toContain("replay");
+    expect(fake.service.save).not.toHaveBeenCalled();
+  });
+
+  it("keeps a failed Save visible when a subsequent inspection is healthy", async () => {
+    const initial = state("reviewing", ["inspect", "edit", "replay"]);
+    initial.snapshot!.review!.currentRevision = 7;
+    const fake = fakeService(initial);
+    fake.service.save = async () => ({
+      ...initial,
+      recovery: {
+        code: "unexpected-authoring-state",
+        title: "The steps changed",
+        detail: "The reviewed steps changed before this Test could be saved.",
+        recovery: "Review the updated steps and save again.",
+        retryable: true,
+      },
+    });
+    const { history } = await renderJourney(
+      "/recordings/workflow-1/review",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await click(button("Save test"));
+    expect(history.location.pathname).toBe("/recordings/workflow-1/review");
+    expect(document.body.textContent).toContain("The steps changed");
+    expect(fake.calls).not.toContain("approve");
+    await click(button("Try again"));
+    expect(document.body.textContent).not.toContain("The steps changed");
+    expect(button("Save test").disabled).toBe(false);
+  });
+
   it("follows the full server-owned progression with one dominant review action", async () => {
     const fake = fakeService();
     const storage = platformWithStorage();
@@ -1224,7 +1314,7 @@ describe("record, review, replay, and save", () => {
       "2 steps",
     );
     expect(button("Run test").disabled).toBe(false);
-    expect(document.body.textContent).not.toContain("Save Test");
+    expect(document.body.textContent).not.toContain("Save test");
 
     await click(button("Run test"));
     expect(document.body.textContent).toContain("Verified");
@@ -1234,11 +1324,11 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).not.toContain("Replay recording");
     expect(document.body.textContent).not.toContain("Replay again");
     expect(document.body.textContent).not.toContain("Save draft");
-    expect(button("Save Test").disabled).toBe(false);
+    expect(button("Save test").disabled).toBe(false);
 
     await fill(document.querySelector<HTMLInputElement>("#review-test-name")!, "Language tour");
     expect(document.querySelector('[aria-label="Recording status"]')?.textContent).toBe("Verified");
-    await click(button("Save Test"));
+    await click(button("Save test"));
     expect(history.location.pathname).toBe("/tests/test-1");
     expect(document.body.textContent).not.toContain("Open Test");
     expect(storage.values.has("activeRecordingWorkflowId")).toBe(false);
@@ -1706,7 +1796,7 @@ describe("record, review, replay, and save", () => {
     expect(document.body.textContent).toContain("Relay could not inspect this recording");
     expect(document.body.textContent).toContain("Steps");
     expect(document.body.textContent).not.toContain("Run test");
-    expect(document.body.textContent).not.toContain("Save Test");
+    expect(document.body.textContent).not.toContain("Save test");
   });
 
   it("recovers interrupted replay by observing once, then offers an explicit run", async () => {
@@ -1734,12 +1824,12 @@ describe("record, review, replay, and save", () => {
       platformWithStorage().platform,
     );
     expect(document.body.textContent).toContain("Your saved steps are safe");
-    expect(document.body.textContent).not.toContain("Save Test");
+    expect(document.body.textContent).not.toContain("Save test");
     await act(async () => button("Review saved steps").click());
     await settle();
     expect(fake.service.recoverForReview).toHaveBeenCalledWith("recording-1");
     expect(button("Run test").disabled).toBe(false);
-    expect(document.body.textContent).not.toContain("Save Test");
+    expect(document.body.textContent).not.toContain("Save test");
   });
 
   it("clears a capture warning once canonical inspection confirms the saved step", async () => {

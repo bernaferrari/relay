@@ -253,3 +253,165 @@ test("an unavailable read preserves the review while blocking mutations until fr
   assert.equal(restored.recovery, undefined);
   assert.deepEqual(restored.snapshot?.allowedNextActions, ["inspect", "approve"]);
 });
+
+function saveFixture(
+  options: {
+    alreadyVerified?: boolean;
+    priorFailure?: boolean;
+    replayOutcome?: "passed" | "failed";
+    inspectFailure?: boolean;
+    uncertainReplay?: boolean;
+    changeAfterReplay?: boolean;
+  } = {},
+) {
+  let canonical = snapshot(
+    "reviewing",
+    ["inspect", "edit", "replay", ...(options.alreadyVerified ? ["approve" as const] : [])],
+    10,
+    {
+      review: {
+        currentRevision: 1,
+        actionCount: 1,
+        actions: [
+          {
+            id: "step-1",
+            intent: "Open settings",
+            stepCount: 1,
+            captureProof: "relay-controlled" as const,
+          },
+        ],
+        replayRequired: !options.alreadyVerified,
+      },
+    },
+  );
+  if (options.priorFailure)
+    canonical.problems = [
+      {
+        code: "operation-unavailable",
+        title: "Check failed",
+        detail: "Expected screen missing",
+        recovery: "Fix the step",
+        retryable: true,
+      },
+    ];
+  const decisions: Record<string, unknown>[] = [];
+  const jobs = jobsFor({ recorded: canonical });
+  jobs.inspect = async () => {
+    if (options.inspectFailure) throw new Error("Connection interrupted");
+    if (options.changeAfterReplay && decisions.some((item) => item.action === "replay")) {
+      canonical = { ...canonical, review: { ...canonical.review!, currentRevision: 99 } };
+    }
+    return canonical;
+  };
+  jobs.advanceRecording = async (input) => {
+    const decision = input as Record<string, unknown>;
+    decisions.push(decision);
+    if (decision.action === "replay" && options.uncertainReplay) throw new Error("Response lost");
+    const revision = canonical.review!.currentRevision!;
+    const version = canonical.workflow!.expectedVersion + 1;
+    if (decision.action === "edit") {
+      canonical = snapshot("reviewing", ["inspect", "edit", "replay"], version, {
+        review: { ...canonical.review!, currentRevision: revision + 1, replayRequired: true },
+      });
+    } else if (decision.action === "replay") {
+      const outcome = options.replayOutcome ?? "passed";
+      canonical = snapshot(
+        "reviewing",
+        ["inspect", "edit", "replay", ...(outcome === "passed" ? ["approve" as const] : [])],
+        version,
+        {
+          review: {
+            ...canonical.review!,
+            latestReplay: { id: "replay-1", takeRevision: revision, outcome },
+            replayRequired: outcome !== "passed",
+          },
+        },
+      );
+    } else {
+      canonical = snapshot("committed", ["inspect"], version);
+    }
+    return canonical;
+  };
+  return { journey: createProductRecordingJourney({ jobs }), decisions };
+}
+
+test("Save checks edited steps and approves with fresh canonical versions", async () => {
+  const { journey, decisions } = saveFixture();
+  await journey.begin({ title: "Settings" });
+  const progress: string[] = [];
+  const result = await journey.save({
+    testName: " Settings ",
+    reviewRevision: 1,
+    onProgress: (phase) => progress.push(phase),
+  });
+  assert.equal(result.status, "saved");
+  assert.deepEqual(progress, ["checking", "saving"]);
+  assert.deepEqual(decisions, [
+    { workflowId: "workflow-1", expectedVersion: 10, action: "replay" },
+    { workflowId: "workflow-1", expectedVersion: 11, action: "approve", testName: "Settings" },
+  ]);
+});
+
+test("Save preserves the canonical permission to save an unedited recording immediately", async () => {
+  const { journey, decisions } = saveFixture({ alreadyVerified: true });
+  await journey.begin({ title: "Settings" });
+  assert.equal((await journey.save({ testName: "Settings", reviewRevision: 1 })).status, "saved");
+  assert.deepEqual(
+    decisions.map((decision) => decision.action),
+    ["approve"],
+  );
+});
+
+test("Save includes an unsaved instruction and checks its resulting revision", async () => {
+  const { journey, decisions } = saveFixture({ alreadyVerified: true });
+  await journey.begin({ title: "Settings" });
+  const rename = { actionId: "step-1", intent: "Open app settings" };
+  assert.equal(
+    (await journey.save({ testName: "Settings", reviewRevision: 1, rename })).status,
+    "saved",
+  );
+  assert.deepEqual(
+    decisions.map((decision) => decision.action),
+    ["edit", "replay", "approve"],
+  );
+  assert.deepEqual(decisions[0]?.edit, { kind: "rename", ...rename });
+  assert.equal(decisions[2]?.expectedVersion, 12);
+});
+
+for (const [name, options] of [
+  ["failed check", { replayOutcome: "failed" as const }],
+  ["uncertain check", { uncertainReplay: true }],
+  ["unavailable inspection", { inspectFailure: true }],
+  ["steps changed after checking", { changeAfterReplay: true }],
+] as const) {
+  test(`Save stops on ${name} without approving or retrying`, async () => {
+    const { journey, decisions } = saveFixture(options);
+    await journey.begin({ title: "Settings" });
+    const result = await journey.save({ testName: "Settings", reviewRevision: 1 });
+    assert.notEqual(result.status, "saved");
+    assert.equal(
+      decisions.some((decision) => decision.action === "approve"),
+      false,
+    );
+    assert.ok(decisions.length <= 1);
+    if (name !== "failed check") assert.ok(result.recovery);
+  });
+}
+
+test("Save refuses a stale reviewed revision before sending any mutation", async () => {
+  const { journey, decisions } = saveFixture();
+  await journey.begin({ title: "Settings" });
+  const result = await journey.save({ testName: "Settings", reviewRevision: 0 });
+  assert.equal(result.recovery?.title, "The steps changed");
+  assert.deepEqual(decisions, []);
+});
+
+test("Save can explicitly check again after a known failed replay", async () => {
+  const { journey, decisions } = saveFixture({ priorFailure: true });
+  await journey.begin({ title: "Settings" });
+  assert.equal((await journey.save({ testName: "Settings", reviewRevision: 1 })).status, "saved");
+  assert.deepEqual(
+    decisions.map((decision) => decision.action),
+    ["replay", "approve"],
+  );
+});
