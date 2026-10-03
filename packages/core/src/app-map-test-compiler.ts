@@ -56,6 +56,7 @@ import {
   type AppMapTestCompileOptions,
 } from "./app-map-test-compile-support.js";
 import { compileAppMapTestPlan } from "./app-map-test-plan.js";
+import { testInstructionDisplayTitle } from "./recorded-control-label.js";
 
 export { appMapTestReturnRepairEndpoints } from "./app-map-test-return-repair.js";
 export { proposeAppMapTestExecutionSchedule } from "./app-map-test-schedule.js";
@@ -601,7 +602,7 @@ export function compileAppMapScenarioTest(
             recipeId: plan.rootRecipeId,
             check: {
               id: step.id,
-              title: step.intent,
+              title: testInstructionDisplayTitle(map, step),
               ...(warmSourceScreenId ? { warmSourceScreenId } : {}),
               transitionDependencies,
               ...(recoveryRecipeId

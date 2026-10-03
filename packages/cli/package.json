@@ -19,6 +19,7 @@
   "dependencies": {
     "@relay/client": "workspace:*",
     "@relay/core": "workspace:*",
+    "@relay/product": "workspace:*",
     "@relay/protocol": "workspace:*",
     "@relay/workflows": "workspace:*"
   },

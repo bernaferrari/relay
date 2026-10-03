@@ -54,6 +54,7 @@
     "./android-sdk-tools": "./src/android-sdk-tools.ts",
     "./screen-identity": "./src/screen-identity.ts",
     "./authoring-evidence": "./src/authoring-evidence.ts",
+    "./recorded-control-label": "./src/recorded-control-label.ts",
     "./authoring-sessions": "./src/authoring-sessions.ts",
     "./app-map-compiler": "./src/app-map-compiler.ts"
   },

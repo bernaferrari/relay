@@ -2,7 +2,7 @@
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RelayApp } from "../app";
 import type { RecordingProductService } from "../data/recording-product-service";
 import type { PlayerManifestProjection, RunProductService } from "../data/run-product-service";
@@ -13,11 +13,16 @@ import type { Platform } from "../platform/types";
 const roots: Root[] = [];
 const recordingService = {} as RecordingProductService;
 
+beforeEach(() => {
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Offline test fixture")));
+});
+
 afterEach(async () => {
   await act(async () => {
     for (const root of roots.splice(0)) root.unmount();
   });
   document.body.replaceChildren();
+  vi.unstubAllGlobals();
 });
 
 const PNG_1PX =

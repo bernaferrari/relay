@@ -12,6 +12,8 @@ import type { ProductTargetOption } from "../data/target-presentation";
 import type { ProductRunBuildOption, ProductRunProfileOption } from "@relay/product/run-journey";
 import type { RunConfigurationBlocker } from "../data/run-configuration";
 import type { usePersistedRunConfiguration } from "../data/use-persisted-run-configuration";
+import type { PlanPlatform } from "@relay/product/test-route-platforms";
+import { testRunDestinationCopy } from "../data/test-run-targets";
 
 type Configuration = ReturnType<typeof usePersistedRunConfiguration>;
 
@@ -19,6 +21,7 @@ export function TestRunSettings({
   testId,
   activeRun,
   targets,
+  recordedPlatforms,
   profiles,
   builds,
   configuration,
@@ -36,6 +39,7 @@ export function TestRunSettings({
   testId: string;
   activeRun: boolean;
   targets: { data?: readonly ProductTargetOption[]; isPending: boolean; isError: boolean };
+  recordedPlatforms?: readonly PlanPlatform[];
   profiles: { data?: readonly ProductRunProfileOption[] };
   builds: { data?: readonly ProductRunBuildOption[] };
   configuration: Configuration;
@@ -53,6 +57,33 @@ export function TestRunSettings({
   const selectedProfile = profiles.data?.find(
     (profile) => profile.id === configuration.selection.savedProfileId,
   );
+  const destination = testRunDestinationCopy(recordedPlatforms);
+  const availableProfiles = profiles.data?.filter(
+    (profile) => !recordedPlatforms || recordedPlatforms.includes(profile.platform),
+  );
+  const browserSetup = !recordedPlatforms || recordedPlatforms.includes("browser");
+  const hasTargets = Boolean(targets.data?.length);
+  const hasSavedLogins = browserSetup && availableProfiles?.some((profile) => profile.account);
+  const profilePicker =
+    hasTargets && availableProfiles?.length ? (
+      <SelectField
+        label={hasSavedLogins ? "Sign in as" : "Saved setup"}
+        value={configuration.selection.savedProfileId ?? "automatic"}
+        options={[
+          { value: "automatic", label: hasSavedLogins ? "Current browser" : "Automatic" },
+          ...availableProfiles.map((profile) => ({
+            value: profile.id,
+            label: `${profile.account?.name ?? profile.name}${profile.targetId && profile.targetId !== targetId ? " · other device" : ""}`,
+          })),
+        ]}
+        onValueChange={(value) =>
+          configuration.setSelection({
+            ...configuration.selection,
+            savedProfileId: value === "automatic" ? undefined : value,
+          })
+        }
+      />
+    ) : null;
   return !activeRun && !targets.isError ? (
     <section
       id="test-run-setup"
@@ -65,8 +96,13 @@ export function TestRunSettings({
       </h2>
       <RunConfigurationComposer
         variant="plain"
+        title={null}
+        targetLabel={destination.label}
+        targetPlaceholder={destination.placeholder}
         pairedWorkspaceLabel={
-          pairedCount ? `Use saved workspace · ${pairedCount} paired configurations` : undefined
+          pairedCount && (browserSetup || configuration.selection.usePairedWorkspace)
+            ? `Use saved workspace · ${pairedCount} paired configurations`
+            : undefined
         }
         configuration={{
           values: {
@@ -74,6 +110,15 @@ export function TestRunSettings({
           },
           validated: canStart,
           blockers: [
+            ...(!browserSetup && configuration.selection.usePairedWorkspace
+              ? [
+                  {
+                    id: "paired-platform",
+                    label: "This saved workspace uses browsers",
+                    detail: `Turn off the saved workspace, then ${destination.placeholder.toLowerCase()}.`,
+                  },
+                ]
+              : []),
             ...(editorState !== "saved"
               ? [
                   {
@@ -86,25 +131,33 @@ export function TestRunSettings({
                   },
                 ]
               : []),
-            ...(configuration.targetUnavailable
+            ...(configuration.targetUnavailable && hasTargets
               ? [
                   {
                     id: "target",
                     label: "Saved target is unavailable",
-                    detail: "Choose a ready device or browser to continue.",
+                    detail: `${destination.placeholder} to continue.`,
                   },
                 ]
               : []),
             ...(profileBlocker ? [profileBlocker] : []),
           ],
         }}
-        targetOptions={targets.data?.map((target) => ({
-          id: target.targetId,
-          label: `${targetLabel(target).title} · ${
-            target.kind === "browser" ? "Browser" : target.platform === "ios" ? "iOS" : "Android"
-          }${target.targetId === lastRunTargetId ? " · last used" : ""}`,
-          detail: targetLabel(target).detail,
-        }))}
+        targetOptions={
+          hasTargets
+            ? targets.data?.map((target) => ({
+                id: target.targetId,
+                label: `${targetLabel(target).title} · ${
+                  target.kind === "browser"
+                    ? "Browser"
+                    : target.platform === "ios"
+                      ? "iOS"
+                      : "Android"
+                }${target.targetId === lastRunTargetId ? " · last used" : ""}`,
+                detail: targetLabel(target).detail,
+              }))
+            : undefined
+        }
         selection={{
           ...configuration.selection,
           targetProfileId: targetId,
@@ -120,28 +173,8 @@ export function TestRunSettings({
         error={scopeError ?? configuration.error}
         onRetry={scopeError ? onRetryScope : configuration.retry}
       >
-        {profiles.data?.length ? (
-          <SelectField
-            label="Sign in as"
-            value={configuration.selection.savedProfileId ?? "automatic"}
-            options={[
-              { value: "automatic", label: "No saved login (browser as it is)" },
-              ...profiles.data.map((profile) => ({
-                value: profile.id,
-                // Name the login people recognize; the setup name only
-                // when there is no login to show.
-                label: `${profile.account?.name ?? profile.name}${profile.targetId && profile.targetId !== targetId ? " · other device" : ""}`,
-              })),
-            ]}
-            onValueChange={(value) =>
-              configuration.setSelection({
-                ...configuration.selection,
-                savedProfileId: value === "automatic" ? undefined : value,
-              })
-            }
-          />
-        ) : null}
-        {selectedProfile?.account ? (
+        {hasSavedLogins ? profilePicker : null}
+        {hasTargets && browserSetup && selectedProfile?.account ? (
           <p className="grid gap-1 text-xs leading-4 text-muted-foreground">
             Runs as {selectedProfile.account.name} using its saved browser sign-in.
             <Link
@@ -153,59 +186,62 @@ export function TestRunSettings({
             </Link>
           </p>
         ) : null}
-        <details
-          className="group border-t border-border/60 pt-3"
-          open={
-            configuration.selection.buildId || configuration.selection.startupMode === "cold"
-              ? true
-              : undefined
-          }
-        >
-          <summary className="min-h-10 cursor-pointer text-sm font-medium">
-            Advanced run options
-          </summary>
-          <div className="grid gap-3 pt-2">
-            {builds.data?.length ? (
-              <SelectField
-                label="Build"
-                value={configuration.selection.buildId ?? "current"}
-                options={[
-                  { value: "current", label: "Current build" },
-                  ...builds.data
-                    .filter((build) => build.status === "ready" && build.sourceSha)
-                    .map((build) => ({
-                      value: build.id,
-                      label: `${build.name} · ${build.sourceSha?.slice(0, 12)}`,
-                    })),
-                ]}
-                onValueChange={(value) =>
-                  configuration.setSelection({
-                    ...configuration.selection,
-                    buildId: value === "current" ? undefined : value,
-                  })
-                }
-              />
-            ) : null}
-            <label className="flex min-h-11 items-center gap-2 text-sm">
-              <Checkbox
-                checked={configuration.selection.startupMode === "cold"}
-                onCheckedChange={(checked) =>
-                  configuration.setSelection({
-                    ...configuration.selection,
-                    startupMode: checked ? "cold" : undefined,
-                  })
-                }
-              />
-              Restart app before running
-            </label>
-          </div>
-        </details>
+        {hasTargets ? (
+          <details
+            className="group border-t border-border/60 pt-3"
+            open={
+              configuration.selection.buildId || configuration.selection.startupMode === "cold"
+                ? true
+                : undefined
+            }
+          >
+            <summary className="min-h-10 cursor-pointer text-sm font-medium">
+              Advanced run options
+            </summary>
+            <div className="grid gap-3 pt-2">
+              {!hasSavedLogins ? profilePicker : null}
+              {builds.data?.length ? (
+                <SelectField
+                  label="Build"
+                  value={configuration.selection.buildId ?? "current"}
+                  options={[
+                    { value: "current", label: "Current build" },
+                    ...builds.data
+                      .filter((build) => build.status === "ready" && build.sourceSha)
+                      .map((build) => ({
+                        value: build.id,
+                        label: `${build.name} · ${build.sourceSha?.slice(0, 12)}`,
+                      })),
+                  ]}
+                  onValueChange={(value) =>
+                    configuration.setSelection({
+                      ...configuration.selection,
+                      buildId: value === "current" ? undefined : value,
+                    })
+                  }
+                />
+              ) : null}
+              <label className="flex min-h-11 items-center gap-2 text-sm">
+                <Checkbox
+                  checked={configuration.selection.startupMode === "cold"}
+                  onCheckedChange={(checked) =>
+                    configuration.setSelection({
+                      ...configuration.selection,
+                      startupMode: checked ? "cold" : undefined,
+                    })
+                  }
+                />
+                Restart app before running
+              </label>
+            </div>
+          </details>
+        ) : null}
         {targets.isPending ? (
           <PageLoading label="Finding devices…" />
         ) : !targets.data?.length ? (
           <EmptyState
-            title="No device or browser is ready"
-            detail="Connect a target to continue with this Test."
+            title={destination.emptyTitle}
+            detail={destination.emptyDetail}
             action={
               <Link className={productLinkClassName} to="/devices">
                 View devices

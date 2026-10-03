@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { graphTestCommandDescriptors, graphTestListPath } from "./test-commands.js";
+import { renderHelp } from "./help.js";
+
+test("first-read help leads from discovery to explicit offline compilation", () => {
+  const root = renderHelp();
+  assert.ok(root.indexOf("relay test list <appId>") < root.indexOf("Run a saved Test"));
+  assert.match(root, /discovery\.status/);
+  assert.match(root, /preflight\.summary\.blockers/);
+  assert.match(root, /map export <appId> --json/);
+  const family = renderHelp("test");
+  assert.match(family, /recorded platforms/);
+  assert.match(family, /not live execution readiness/);
+});
 
 test("graph Test commands expose one canonical scenario-only workflow", () => {
   assert.equal(graphTestListPath.command, "test list");

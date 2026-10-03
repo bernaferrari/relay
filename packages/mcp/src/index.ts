@@ -7,6 +7,7 @@ import { runRelayMcpDoctorCommand } from "./doctor.js";
 import { createMcpServer, createRelayOperationInvoker } from "./server.js";
 import { runRelayMcpGuide } from "./task-guide-cli.js";
 import { prepareMcpRuntime } from "./runtime-startup.js";
+import { relayMcpHelp } from "./cli-help.js";
 
 function diagnostic(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
@@ -20,6 +21,10 @@ export async function runMcp(
   if (argv[0] === "guide") {
     runRelayMcpGuide(argv.slice(1), process.stdout);
     return Promise.resolve();
+  }
+  if (argv.includes("--help") || argv.includes("-h") || argv[0] === "help") {
+    process.stdout.write(relayMcpHelp());
+    return;
   }
   if (argv[0] === "doctor") {
     return runRelayMcpDoctorCommand(argv.slice(1), env).then((exitCode) => {

@@ -1,7 +1,7 @@
 # Relay MCP
 
 `@relay/mcp` gives MCP clients a project-scoped view of Relay through the same server operations used
-by the app and CLI. The published package contains a bundled host-neutral executable, so an agent
+by the app and CLI. The distribution contains a bundled host-neutral executable, so an agent
 host can install it with npm without pnpm or a Relay workspace. Its default MCP v2 transport is
 stdio; the reviewed `relay-mcp-bridge` command adapts that same process to Streamable HTTP for
 hosts that accept only a remote MCP URL. Stdout is reserved for MCP protocol messages and
@@ -10,6 +10,7 @@ diagnostics go to stderr.
 ## Read task guidance offline
 
 ```bash
+relay-mcp --help
 relay-mcp guide
 relay-mcp guide record
 relay-mcp guide waits --json
@@ -20,6 +21,23 @@ selection, waits, debugging, review, maps, and agents. These commands do not
 connect to Relay or require credentials. Every MCP profile also exposes
 `relay://guides` and the topic URIs it lists. The CLI's `relay guide` reads the
 same catalog, so instructions match the shipped code.
+
+## Find a saved Test with QA tools
+
+The Relay plugin configures `--profile qa` for recording and saved Test work.
+Use the same option in a manually configured MCP connection. After
+`relay_health`, call `relay_panel` to choose an App, then call it with that
+`appMapId` to list its Tests and recent Runs. The tool also returns text when
+the host cannot display MCP Apps.
+
+For detailed steps, read `relay://app-maps/<appMapId>/tests/<testId>` using the
+returned IDs. Choose the intended target through `relay_connect_target`, then
+call `relay_run_test` with those exact IDs. Inspect its returned workflow with
+`relay_inspect_workflow`; queued work is not a completed Run. For recording,
+read `relay://guides/record` before sending actions.
+
+Use `relay://app-maps` and `relay://app-maps/<appMapId>/tests` for resource-only
+discovery; follow returned next-page URIs when a collection is paginated.
 
 ## Install and configure a client
 

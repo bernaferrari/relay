@@ -19,8 +19,18 @@ service. Use `--runtime-port 8788` if the default port belongs to another
 workspace. The workspace stores accounts, Tests and evidence outside plugin
 caches. Desktop and native helpers require separate qualification.
 
-See [the runtime candidate](../../packages/runtime/README.md) for local artifact
-installation and a source-independent browser Record → Run → Review demo.
+If you were given matching local artifacts, install both into your chosen
+installation directory. This path also works without a contributor checkout:
+
+```bash
+npm install --prefix /absolute/installation /absolute/path/relay-mcp-0.1.0.tgz /absolute/path/relay-runtime-0.1.0.tgz
+node /absolute/installation/node_modules/@relay/mcp/dist/relay-mcp.js --profile qa --workspace /absolute/path/my-project
+```
+
+Use that installed executable and those arguments in your host's supported
+MCP configuration. For the source-independent Record → Run → Review demo,
+read the installed `@relay/runtime/README.md`. These candidates have not been
+published to npm.
 
 Before publication, build the MCP artifact from this repository:
 
@@ -55,10 +65,21 @@ outside its immutable plugin cache.
 
 ## First useful task
 
-1. Ask Relay to connect and show the app's current screen.
-2. Record a short journey with a named checkpoint.
-3. Review and save it, then run the saved Test once.
-4. Return its App/Test/Run IDs, result and retained evidence.
+1. Call `relay_health`, then `relay_panel` to choose an App. Pass its `appMapId`
+   to `relay_panel` to see that App's saved Tests and recent Runs. The tool
+   returns text when the host cannot display the panel.
+2. Call `relay_connect_target` and select the intended ready target. Keep its
+   returned identity for the task.
+3. Run an existing Test with `relay_run_test`, or observe the starting screen
+   and record a short journey when coverage is missing.
+4. Inspect the returned workflow through `relay_inspect_workflow`. Return the
+   App/Test/Run IDs, exact result and retained evidence.
+
+For detailed discovery without the panel, read `relay://app-maps`, then
+`relay://app-maps/<appMapId>/tests`, then the selected
+`relay://app-maps/<appMapId>/tests/<testId>`. Substitute returned IDs. These
+resources support pagination; follow the returned next-page URI when needed.
+Use `relay-mcp --help` for offline connection options.
 
 The bundled setup, recording and run/review skills load version-matched
 `relay://guides` resources. Guides remain available while Relay is offline.

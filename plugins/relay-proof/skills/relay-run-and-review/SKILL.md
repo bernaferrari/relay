@@ -6,8 +6,11 @@ description: Run a saved Relay Test, repeat selected data values, inspect a fail
 # Run and review
 
 1. Read `relay://guides/run`; for a failure read `relay://guides/debug`, and
-   for sharing read `relay://guides/review`. Find the exact App/Test in its
-   resources and select the intended target. A saved Test can run directly.
+   for sharing read `relay://guides/review`. Call `relay_panel` to choose an App,
+   then call it with that `appMapId` to find the exact saved Test. Read
+   `relay://app-maps/<appMapId>/tests/<testId>` for its steps. Use returned IDs
+   in `relay_run_test`; select the intended target through `relay_connect_target`.
+   A saved Test can run directly. The panel also returns text for tools-only hosts.
 2. Call `relay_run_test`. Keep the returned workflow ID and version. Inspect
    through `relay_inspect_workflow` until the server reports completion or a
    concrete blocker. A queued request is not a completed Run.

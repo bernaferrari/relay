@@ -34,6 +34,8 @@ export function RunConfigurationComposer({
   title,
   pairedWorkspaceLabel,
   pairedWorkspaceAction,
+  targetLabel = "Device or browser",
+  targetPlaceholder = "Choose a device or browser",
 }: {
   configuration: RunConfigurationState;
   onResolveBlocker?: (blocker: RunConfigurationBlocker) => void;
@@ -51,6 +53,8 @@ export function RunConfigurationComposer({
   title?: ReactNode;
   pairedWorkspaceLabel?: string;
   pairedWorkspaceAction?: ReactNode;
+  targetLabel?: string;
+  targetPlaceholder?: string;
 }) {
   const titleId = useId();
   const languageChoices = Boolean(
@@ -145,13 +149,11 @@ export function RunConfigurationComposer({
           ) : (
             <div className="grid gap-2">
               <SelectField
-                label="Device or browser"
+                label={targetLabel}
                 value={selection?.targetProfileId ?? ""}
                 options={targetOptions.map((option) => ({ value: option.id, label: option.label }))}
                 placeholder={
-                  targetOptions.length
-                    ? "Choose a device or browser"
-                    : "No devices or browsers available"
+                  targetOptions.length ? targetPlaceholder : "No devices or browsers available"
                 }
                 onValueChange={(targetProfileId) =>
                   onSelectionChange({ ...selection, targetProfileId, targetProfileIds: undefined })

@@ -361,6 +361,103 @@ function fakeEditorService(): TestEditorProductService {
   } as TestEditorProductService;
 }
 
+describe("recorded Test destinations", () => {
+  it("offers an Android reconnect path instead of browsers for a disconnected Android Test", async () => {
+    const fake = fakeRunService();
+    fake.service.listTargets = async () => [
+      {
+        kind: "browser",
+        platform: "browser",
+        targetId: "browser-golden",
+        name: "Checkout browser",
+        detail: "Managed browser · Ready",
+      },
+    ];
+    fake.service.listProfiles = async () => [
+      {
+        id: "profile-browser",
+        name: "Member browser",
+        platform: "browser",
+        targetId: "browser-golden",
+        account: { id: "member", name: "Member" },
+      },
+    ];
+    const editor = fakeEditorService();
+    const get = editor.get;
+    editor.get = async (...args) => ({ ...(await get(...args))!, recordedPlatforms: ["android"] });
+    await renderRun(
+      "/tests/test-1?target=disconnected-samsung",
+      fake.service,
+      platformWithStorage().platform,
+      undefined,
+      editor,
+    );
+    await openRunSettings();
+    expect(document.body.textContent).toContain("Connect an Android device");
+    expect(document.querySelector('button[aria-label="Sign in as"]')).toBeNull();
+    expect(document.querySelector('button[aria-label="Android device"]')).toBeNull();
+    expect(button("Run now").disabled).toBe(true);
+    expect(document.querySelector('#test-run-setup a[href="/devices"]')?.textContent).toContain(
+      "View devices",
+    );
+    expect(fake.startInputs).toHaveLength(0);
+  });
+
+  it("does not start a recorded Android Test on a ready browser selected in its URL", async () => {
+    const fake = fakeRunService();
+    const editor = fakeEditorService();
+    const get = editor.get;
+    editor.get = async (...args) => ({ ...(await get(...args))!, recordedPlatforms: ["android"] });
+    await renderRun(
+      "/tests/test-1?target=browser-golden",
+      fake.service,
+      platformWithStorage().platform,
+      undefined,
+      editor,
+    );
+    await openRunSettings();
+    expect(button("Run now").disabled).toBe(true);
+    await selectOption("Android device", "Pixel 9 Pro");
+    await click(button("Run now"));
+    expect(fake.startInputs).toHaveLength(1);
+    expect(fake.startInputs[0]).toMatchObject({ targetId: "emulator-5554" });
+  });
+
+  it("blocks a restored browser workspace for a recorded Android Test", async () => {
+    const fake = fakeRunService();
+    const editor = fakeEditorService();
+    const get = editor.get;
+    editor.get = async (...args) => ({ ...(await get(...args))!, recordedPlatforms: ["android"] });
+    const key = runConfigurationStorageKey({
+      server: "http://127.0.0.1:8787",
+      appId: "settings-language-proof",
+      entity: "test-run:test-1",
+    });
+    const storage = platformWithStorage({
+      [key]: JSON.stringify({ usePairedWorkspace: true, targetId: "browser-golden" }),
+      [PAIRED_CONFIGURATION_STORAGE_KEY]: JSON.stringify({
+        schemaVersion: 1,
+        updatedAt: 1,
+        rows: [
+          {
+            id: "guest",
+            name: "Guest",
+            browserId: "browser-golden",
+            browserName: "Checkout browser",
+            engine: "chromium",
+            signedOutAttested: true,
+          },
+        ],
+      }),
+    });
+    await renderRun("/tests/test-1", fake.service, storage.platform, undefined, editor);
+    await openRunSettings();
+    expect(document.body.textContent).toContain("This saved workspace uses browsers");
+    expect(button("Run now").disabled).toBe(true);
+    expect(fake.startInputs).toHaveLength(0);
+  });
+});
+
 function platformWithStorage(initial: Record<string, string> = {}) {
   const values = new Map(Object.entries(initial));
   const platform: Platform = {
@@ -521,7 +618,9 @@ describe("Run and Report", () => {
     await click(button("Review run setup"));
     expect(document.body.textContent).not.toContain("Choose another setup");
     expect(start).toHaveBeenCalledTimes(1);
-    expect(document.body.textContent).toContain("Run on");
+    expect(
+      document.querySelector('#test-run-setup section[aria-label="Run configuration"]'),
+    ).not.toBeNull();
   });
 
   it("directs unknown start outcomes to status without repeating the start", async () => {
@@ -1207,7 +1306,7 @@ describe("Run and Report", () => {
     await openRunSettings();
 
     await selectOption("Device or browser", "Pixel 9 Pro");
-    await selectOption("Sign in as", "Pixel 9 reviewed");
+    await selectOption("Saved setup", "Pixel 9 reviewed");
     await selectOption("Device or browser", "Checkout browser");
     expect(document.body.textContent).toContain("saved for another destination");
     await click(button("Fix setup"));

@@ -64,6 +64,40 @@ const frozen: FrozenAuthorTestIdentity = {
   target: session.target,
 };
 
+test("recording review projects a captured Grok identifier without renaming custom intent", () => {
+  const recorded = structuredClone(session);
+  const revision = recorded.take!.revisions[0]!;
+  const action = revision.actions[0]!;
+  action.label = "Tap “input_send_button”";
+  action.steps = [{ kind: "tap", target: { identifier: "input_send_button" } }];
+  action.entranceObservationId = "send-source";
+  revision.before = {
+    id: "send-source",
+    capturedAt: 1,
+    evidenceIds: [],
+    screen: { id: "composer", fingerprint: "composer", capturedAt: 1, source: "recording" },
+    nodes: [{ identifier: "input_send_button", bundleId: "ai.x.grok", hittable: true }],
+  };
+  const projected = snapshotFromAuthoringSession({ frozen, session: recorded }).review!.actions[0]!;
+  assert.equal(projected.intent, "Tap “Send message”");
+  assert.equal(projected.label, "Tap “Send message”");
+  assert.equal(action.label, "Tap “input_send_button”");
+  const executable = action.steps[0]!;
+  assert.equal(executable.kind, "tap");
+  if (executable.kind === "tap") assert.equal(executable.target?.identifier, "input_send_button");
+  action.label = "Submit the expert request";
+  assert.equal(
+    snapshotFromAuthoringSession({ frozen, session: recorded }).review!.actions[0]!.intent,
+    "Submit the expert request",
+  );
+  action.label = "Tap “input_send_button”";
+  revision.before.nodes![0]!.bundleId = "example.app";
+  assert.equal(
+    snapshotFromAuthoringSession({ frozen, session: recorded }).review!.actions[0]!.intent,
+    "Tap “input_send_button”",
+  );
+});
+
 test("inferred recording projections are visibly unproved and cannot be approved", () => {
   const snapshot = snapshotFromAuthoringSession({
     ref: "opaque" as WorkflowRef,

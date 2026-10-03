@@ -2,7 +2,7 @@
 import { createMemoryHistory } from "@tanstack/react-router";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RelayApp } from "../app";
 import type { ProductTestSummary } from "@relay/product/catalog";
 import type { AppResourcesProductService } from "../data/app-resources-product-service";
@@ -25,6 +25,10 @@ import type { Platform } from "../platform/types";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const roots: Root[] = [];
+
+beforeEach(() => {
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Offline test fixture")));
+});
 
 const platform: Platform = {
   platform: "web",
@@ -268,6 +272,8 @@ afterEach(async () => {
     for (const root of roots.splice(0)) root.unmount();
   });
   document.body.replaceChildren();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("Suite and Environment routes", () => {
@@ -325,8 +331,12 @@ describe("Suite and Environment routes", () => {
   });
 
   it("creates a plan from the New plan dialog on Tests and opens it", async () => {
+    let resolveSave!: (value: ProductSuite) => void;
+    const saveReply = new Promise<ProductSuite>((resolve) => {
+      resolveSave = resolve;
+    });
     const saveSuite = vi.fn(
-      async (_input: Parameters<SuiteProfileProductService["saveSuite"]>[0]) => suite,
+      (_input: Parameters<SuiteProfileProductService["saveSuite"]>[0]) => saveReply,
     );
     const getSuiteEditor = vi.fn(async () => editor);
     const { history } = await render("/tests?app=app-1", {
@@ -369,8 +379,17 @@ describe("Suite and Environment routes", () => {
       referenceReviewMode: "human",
     });
     expect(saveSuite.mock.calls[0]?.[0].suiteId).toMatch(/^suite-nightly-checkout-/u);
-    expect(history.location.pathname).toBe("/apps/app-1/suites/suite-1");
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(save.disabled).toBe(true);
+    expect(dialog?.hasAttribute("data-open")).toBe(true);
+    expect(history.location.pathname).toBe("/tests");
+    await act(async () => resolveSave(suite));
+    await vi.waitFor(async () => {
+      await act(async () => {
+        expect(history.location.pathname).toBe("/apps/app-1/suites/suite-1");
+        // Closed exit markup may remain mounted; the modal must no longer be open.
+        expect(document.querySelector('[role="dialog"]:not([data-closed])')).toBeNull();
+      });
+    });
   });
 
   it("keeps a blocked Suite pilot disabled and sends reviewed edits/removal through services", async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AppMap, AppMapScenarioTest } from "@relay/protocol";
-import { createTestEditorProductService } from "./test-editor-product-service";
+import { createTestEditorProductService, documentFromMap } from "./test-editor-product-service";
 
 const clientRef = vi.hoisted(() => ({ current: { invoke: vi.fn() } }));
 
@@ -40,6 +40,73 @@ function map(revision: number, name = test.name): AppMap {
 }
 
 describe("Test editor product history transport", () => {
+  it("projects a captured native send step into a display title while keeping editable intent and selectors", () => {
+    const current = map(3);
+    const step = {
+      id: "send",
+      kind: "instruction" as const,
+      intent: "Tap “input_send_button”",
+      binding: {
+        status: "resolved" as const,
+        kind: "connections" as const,
+        connectionIds: ["send"],
+      },
+    };
+    current.tests.checkout = { ...test, steps: [step] };
+    const scope = {
+      organizationId: test.organizationId,
+      projectId: test.projectId,
+      appMapId: current.id,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    current.screens.composer = {
+      ...scope,
+      id: "composer",
+      title: "Grok home",
+      variantIds: ["composer-android"],
+      identity: { schemaVersion: 1, fingerprint: "a".repeat(64) },
+    };
+    current.screenVariants["composer-android"] = {
+      ...scope,
+      id: "composer-android",
+      screenId: "composer",
+      evidenceIds: [],
+      targetProfile: {
+        id: "phone",
+        name: "Phone",
+        targetId: "phone",
+        source: "device",
+        platform: "android",
+        capabilities: [],
+        observedAt: 1,
+      },
+      observation: {
+        fingerprint: "a".repeat(64),
+        volatileSignals: [],
+        nodes: [
+          { role: "android.widget.linearlayout", identifier: "ai.x.grok:id/action_bar_root" },
+          { role: "android.view.view", identifier: "input_send_button", hittable: true },
+        ],
+      },
+    };
+    current.connections.send = {
+      ...scope,
+      id: "send",
+      fromScreenId: "composer",
+      destination: { kind: "screen", screenId: "composer" },
+      state: "ready",
+      label: step.intent,
+      actions: [{ id: "send-action", kind: "tap", target: { identifier: "input_send_button" } }],
+    };
+    const before = structuredClone(current);
+    const document = documentFromMap(current, "checkout")!;
+    expect(document.displayTitles).toEqual({ send: "Tap “Send message”" });
+    expect(document.test.steps[0]!.intent).toBe("Tap “input_send_button”");
+    expect(current).toEqual(before);
+    step.intent = "Submit the expert request";
+    expect(documentFromMap(current, "checkout")!.displayTitles).toEqual({});
+  });
   it("opens the selected App's Test when another App uses the same ID", async () => {
     const service = createTestEditorProductService(platform);
     const other = {

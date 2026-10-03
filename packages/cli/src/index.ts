@@ -24,6 +24,7 @@ import {
 import { classifyError, CliError, ExitCode, UsageError } from "./errors.js";
 import { planFindingsReportFromError } from "./plan-findings-cli.js";
 import { renderHelp } from "./help.js";
+import { summarizeTestDiscovery } from "./test-discovery.js";
 import {
   createClient,
   invokeOperation,
@@ -187,7 +188,10 @@ function summarizeResult(
     ),
   );
   if (operationId === "target.snapshot.capture" && wantsFullSnapshotTree(input)) return inner;
-  return summarizeTargetOperationResult(operationId, inner);
+  return summarizeTargetOperationResult(
+    operationId,
+    summarizeTestDiscovery(operationId, result, inner, commandPath),
+  );
 }
 
 function cliResourceSummaryOperationId(resourceId: string): string | undefined {
