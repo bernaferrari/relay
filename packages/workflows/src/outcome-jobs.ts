@@ -316,7 +316,7 @@ class CanonicalRelayOutcomeJobs implements RelayOutcomeJobs {
   private readonly eventSource?: WorkflowEventSource;
 
   async connect(intent: ConnectTargetIntent = { kind: "connect-target" }) {
-    const catalog = await targetCatalog(this.operations);
+    const catalog = await targetCatalog(this.operations, { targetKind: intent.targetKind });
     const available = catalog.flatMap(({ target }) => (target ? [target] : []));
     const current = intent.targetId
       ? available.find((target) => target.targetId === intent.targetId)

@@ -37,9 +37,19 @@ function browserPreflightProblem(
     : "Managed browser target is not ready. Run target preflight again before recording.";
 }
 
-export async function targetCatalog(operations: RelayOperationPort): Promise<TargetCatalogEntry[]> {
+export async function targetCatalog(
+  operations: RelayOperationPort,
+  scope: { targetKind?: AuthoringTarget["kind"]; targetId?: string } = {},
+): Promise<TargetCatalogEntry[]> {
   const output = await operations.invoke("target.devices.list", {});
-  const catalog: TargetCatalogEntry[] = output.devices.map((device) => ({
+  const devices = output.devices.filter((device) => {
+    if (scope.targetId && (device.serial || device.id) !== scope.targetId) return false;
+    if (!scope.targetKind) return true;
+    return scope.targetKind === "browser"
+      ? device.platform === "browser"
+      : device.platform === "android" || device.platform === "ios";
+  });
+  const catalog: TargetCatalogEntry[] = devices.map((device) => ({
     identity: device.serial || device.id,
     device,
     target: runnableTarget(device),
@@ -94,7 +104,7 @@ export async function selectTarget(
   operations: RelayOperationPort,
   targetId?: string,
 ): Promise<AuthoringTarget> {
-  const catalog = await targetCatalog(operations);
+  const catalog = await targetCatalog(operations, { targetId });
   const available = catalog.flatMap(({ target }) => (target ? [target] : []));
   if (targetId) {
     const selected = available.find((target) => target.targetId === targetId);

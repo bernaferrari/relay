@@ -1,18 +1,21 @@
 /** @jsxImportSource react */
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { everydayDestinations } from "./primary-destinations";
 import { useSidebar } from "@relay/ui-react/components/sidebar";
 import { Ellipsis } from "lucide-react";
 import { isSidebarItemActive } from "./sidebar";
+import { useCurrentAppScope } from "./use-current-app-scope";
 
 /** The same destinations as the sidebar, always reachable on narrow screens. */
 export function MobileNavigation() {
-  const { pathname, search } = useLocation();
+  const {
+    location: { pathname },
+    selectedAppId: app,
+  } = useCurrentAppScope();
   const { openMobile, setOpenMobile } = useSidebar();
   const utilityActive = !everydayDestinations.some((item) =>
     isSidebarItemActive(pathname, item.to),
   );
-  const app = (search as Record<string, unknown>).app;
   return (
     <nav
       aria-label="Main navigation"

@@ -70,11 +70,11 @@ describe("status marks", () => {
     expect(host.textContent).not.toContain("Needs setup");
   });
 
-  it("does not show Ready when the Test name is Imagine Speed even if status is ready", async () => {
+  it("shows the recorded readiness of Imagine Speed rather than overriding it from its name", async () => {
     const host = await render(
       <ReadinessMark status="ready" name="Imagine Speed image generation signed-in" />,
     );
-    expect(host.textContent).toContain("Unrecorded");
-    expect(host.textContent).not.toContain("Ready");
+    expect(host.textContent).toContain("Ready");
+    expect(host.textContent).not.toContain("Unrecorded");
   });
 });

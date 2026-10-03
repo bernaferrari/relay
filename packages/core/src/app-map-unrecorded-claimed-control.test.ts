@@ -168,19 +168,48 @@ test("Start Thread in the title without a recorded node is unrecorded, not Ready
   assert.equal(compiledTestClaimedAbsentControl(headerMore, compiled.graph), undefined);
 });
 
-test("Imagine Speed generation is unrecorded, not Ready, even when the prompt path is bound", () => {
-  const work = boundTest(
-    "test-imagine-speed",
+test("recorded generation actions compile under their actual feature names", () => {
+  for (const name of [
     "Imagine Speed image generation signed-in",
-    "more-header",
-    "Prompt hourly relay red cube then wait for Speed",
-  );
+    "Chat Heavy",
+    "Video generation 1080p",
+  ]) {
+    const appMap = map();
+    appMap.connections["more-header"]!.actions = [
+      {
+        id: "recorded-generation",
+        kind: "steps",
+        steps: [
+          { kind: "tap", target: { label: "Imagine" } },
+          { kind: "tap", target: { label: "Speed" } },
+          { kind: "type", text: "A red cube" },
+          { kind: "tap", target: { label: "Make image" } },
+          { kind: "wait-for", target: { label: "Download" }, timeoutMs: 300_000 },
+        ],
+      },
+    ];
+    const work = boundTest("test-generation", name, "more-header", name);
+    const compiled = compileAppMapTest(appMap, work);
+    assert.equal(compiledTestClaimedAbsentControl(work, compiled.graph), undefined);
+    assert.ok(
+      Object.values(compiled.graph)
+        .flatMap((recipe) => recipe.steps)
+        .some((step) => step.kind === "wait-for" && step.target.label === "Download"),
+    );
+    assert.equal(work.name, name);
+  }
+});
+
+test("generation titles do not bypass an actually unresolved recording binding", () => {
+  const work = boundTest("test-generation", "Imagine Speed", "more-header", "Make image");
+  work.steps[0]!.binding = { status: "unresolved", reason: "No recorded Make image action" };
   assert.throws(
     () => compileAppMapTest(map(), work),
     (error: unknown) =>
       error instanceof AppMapTestCompileError &&
       error.code === "unresolved-step" &&
-      /do not burn the QA lab fixture on Imagine\/video\/Heavy/u.test(error.message),
+      error.stepId === "step-action" &&
+      /No recorded Make image action/u.test(error.message),
   );
 });
 

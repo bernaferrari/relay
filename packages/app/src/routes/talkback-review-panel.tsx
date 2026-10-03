@@ -136,15 +136,17 @@ export function TalkBackOverlay({
     const move = (event: PointerEvent) => {
       const frame = parent.getBoundingClientRect();
       const hit = talkBackItemAtPoint(boxes, {
-        x: event.clientX - frame.left,
-        y: event.clientY - frame.top,
+        x: event.clientX - frame.left + parent.scrollLeft,
+        y: event.clientY - frame.top + parent.scrollTop,
       });
       setHoveredId(hit?.item.id);
     };
     const leave = () => setHoveredId(undefined);
+    parent.addEventListener("scroll", leave);
     canvas.addEventListener("pointermove", move);
     canvas.addEventListener("pointerleave", leave);
     return () => {
+      parent.removeEventListener("scroll", leave);
       canvas.removeEventListener("pointermove", move);
       canvas.removeEventListener("pointerleave", leave);
     };

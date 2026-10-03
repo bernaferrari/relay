@@ -18,6 +18,7 @@ afterEach(async () => {
     for (const root of roots.splice(0)) root.unmount();
   });
   document.body.replaceChildren();
+  vi.useRealTimers();
 });
 
 function mountCanvas(
@@ -65,6 +66,56 @@ function mountCanvas(
 }
 
 describe("LiveTargetCanvas", () => {
+  it("enlarges the phone without sending input, and pans rather than scrolling the app", async () => {
+    const send = vi.fn(async () => true);
+    const host = mountCanvas([
+      { title: "Phone", detail: "Android", targetPlatform: "android", send },
+    ]);
+    const canvas = host.querySelector("canvas")!;
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[aria-label="Enlarge live view"]')!.click();
+    });
+    await act(async () => {
+      canvas.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 200 }));
+      await new Promise((resolve) => setTimeout(resolve, 170));
+    });
+    expect(send).not.toHaveBeenCalled();
+    expect(canvas.className).toContain("h-[200%]");
+    expect(host.querySelector('[aria-label="Fit live view"]')?.getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[aria-label="Fit live view"]')!.click();
+    });
+    expect(canvas.className).not.toContain("h-[200%]");
+  });
+
+  it("cancels a queued device scroll when switching to enlarged pan mode", async () => {
+    vi.useFakeTimers();
+    const send = vi.fn(async () => true);
+    const host = mountCanvas([
+      { title: "Phone", detail: "Android", targetPlatform: "android", send },
+    ]);
+    const canvas = host.querySelector("canvas")!;
+    canvas.width = 500;
+    canvas.height = 1000;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 500, height: 1000 }) as DOMRect;
+    await act(async () => {
+      canvas.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 200 }));
+      host.querySelector<HTMLButtonElement>('[aria-label="Enlarge live view"]')!.click();
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(send).not.toHaveBeenCalled();
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[aria-label="Fit live view"]')!.click();
+    });
+    await act(async () => {
+      canvas.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -200 }));
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it("uses direct keyboard input for browsers and retains mobile text entry", () => {
     const send = vi.fn().mockResolvedValue(true);
     const host = mountCanvas([

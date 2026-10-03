@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useRef, useState } from "react";
 import { reviewAndroidTalkBack } from "@relay/protocol";
 import type { Platform } from "../platform/types";
@@ -21,6 +21,7 @@ afterEach(async () => {
     for (const root of roots.splice(0)) root.unmount();
   });
   document.body.replaceChildren();
+  vi.unstubAllGlobals();
 });
 
 describe("TalkBack review panel", () => {
@@ -112,6 +113,75 @@ describe("TalkBack review panel", () => {
       root.render(<Harness />);
     });
     expect(host.textContent).toContain("Preferred Language");
+  });
+
+  it("hits the same accessibility control after panning and recalculating enlarged geometry", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    roots.push(root);
+    let resize!: () => void;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          resize = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    let pane!: HTMLDivElement;
+    const review = reviewAndroidTalkBack([
+      { label: "Download", rect: { x: 40, y: 220, width: 60, height: 30 }, index: 0 },
+    ]);
+    function geometry(left: number, top: number, width: number, height: number): DOMRect {
+      return { left, top, width, height } as DOMRect;
+    }
+    function Harness() {
+      const canvasRef = useRef<HTMLCanvasElement>(null);
+      return (
+        <div>
+          <canvas
+            ref={(node) => {
+              canvasRef.current = node;
+              if (!node) return;
+              pane = node.parentElement as HTMLDivElement;
+              pane.getBoundingClientRect = () => geometry(100, 100, 200, 200);
+              node.width = 200;
+              node.height = 400;
+              node.getBoundingClientRect = () =>
+                geometry(100 - pane.scrollLeft, 100 - pane.scrollTop, 200, 400);
+            }}
+          />
+          <TalkBackOverlay canvasRef={canvasRef} items={review.items} mode="hover" />
+        </div>
+      );
+    }
+    await act(async () => root.render(<Harness />));
+    const canvas = host.querySelector("canvas")!;
+    await act(async () => {
+      canvas.dispatchEvent(new PointerEvent("pointermove", { clientX: 150, clientY: 325 }));
+    });
+    expect(host.textContent).toContain("Download");
+    await act(async () => {
+      pane.scrollTop = 200;
+      pane.scrollLeft = 20;
+      pane.dispatchEvent(new Event("scroll"));
+    });
+    expect(host.textContent).not.toContain("Download");
+    await act(async () => {
+      canvas.dispatchEvent(new PointerEvent("pointermove", { clientX: 130, clientY: 125 }));
+    });
+    expect(host.textContent).toContain("Download");
+    await act(async () => resize());
+    const box = host.querySelector<HTMLElement>('div[aria-hidden="true"] > div')!;
+    expect(box.style.getPropertyValue("--box-left")).toBe("40px");
+    expect(box.style.getPropertyValue("--box-top")).toBe("220px");
+    await act(async () => {
+      canvas.dispatchEvent(new PointerEvent("pointermove", { clientX: 130, clientY: 125 }));
+    });
+    expect(host.textContent).toContain("Download");
   });
 
   it("hides overlay names and issue counts when the observation epoch advances", async () => {

@@ -40,6 +40,7 @@ import {
   targetLabel,
 } from "./recording-shared";
 import { TalkBackModeSelect, TalkBackOverlay, useTalkBackReview } from "./talkback-review-panel";
+import { conditionTextSuggestions } from "../data/recording-condition-suggestions";
 
 const testRouteApi = getRouteApi("/tests/$testId/record");
 const recordingRouteApi = getRouteApi("/recordings/$recordingId");
@@ -129,7 +130,12 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
         await clearWorkflowPointerIfCurrent(platform, workflowId);
         queryClient.setQueryData(recordingQueryKeys.pointer, null);
         queryClient.setQueryData(recordingQueryKeys.reconciledPointer, null);
-        await navigate({ to: "/tests" });
+        await navigate({
+          to: "/tests",
+          search: canonical.snapshot.frozen?.appMapId
+            ? { app: canonical.snapshot.frozen.appMapId }
+            : {},
+        });
         return;
       }
       if (intent.action === "checkpoint") {
@@ -196,9 +202,12 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
         queryClient.setQueryData<string | null>(recordingQueryKeys.pointer, null);
         queryClient.setQueryData<string | null>(recordingQueryKeys.reconciledPointer, null);
       }
-      void navigate({ to: "/tests" });
+      void navigate({
+        to: "/tests",
+        search: snapshot.frozen?.appMapId ? { app: snapshot.frozen.appMapId } : {},
+      });
     });
-  }, [navigate, platform, queryClient, snapshot?.stage, workflowId]);
+  }, [navigate, platform, queryClient, snapshot?.stage, snapshot?.frozen?.appMapId, workflowId]);
 
   function saveCheckpoint(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -280,14 +289,9 @@ function RecordingWorkspace({ workflowId }: { workflowId: string }) {
   // Physical devices expose inspection through reviewTalkBack rather than the
   // browser live transport. Refresh when opening the picker and use that same
   // current inspection for both hover labels and condition suggestions.
-  const screenText = [
-    ...new Set(
-      talkBack.inspection.overlayItems.flatMap((item) => {
-        const value = (item.text ?? item.name ?? "").trim();
-        return value.length >= 2 && value.length <= 40 ? [value] : [];
-      }),
-    ),
-  ].slice(0, 16);
+  const screenText =
+    talkBack.inspection.conditionSuggestions ??
+    conditionTextSuggestions(talkBack.inspection.overlayItems);
 
   function sendLiveInput(input: Parameters<LiveTargetSession["input"]>[0]): Promise<boolean> {
     const queued = liveInputOutcome.current

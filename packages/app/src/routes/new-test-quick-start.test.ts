@@ -7,9 +7,15 @@ describe("websiteAddress", () => {
     expect(websiteAddress(" https://staging.example.com/login ")).toBe(
       "https://staging.example.com/login",
     );
-    expect(websiteAddress("localhost:3000")).toBe("https://localhost:3000/");
+    expect(websiteAddress("localhost:3000")).toBe("http://localhost:3000/");
+    expect(websiteAddress("127.0.0.1:8793")).toBe("http://127.0.0.1:8793/");
+    expect(websiteAddress("[::1]:8793")).toBe("http://[::1]:8793/");
+    expect(websiteAddress("https://localhost:3000")).toBe("https://localhost:3000/");
+    expect(websiteAddress("127.example.com")).toBe("https://127.example.com/");
     expect(websiteAddress("hello")).toBe("");
     expect(websiteAddress("ftp://example.com")).toBe("");
+    expect(websiteAddress("ftp://localhost:3000")).toBe("");
+    expect(websiteAddress("file://localhost/private.txt")).toBe("");
   });
 });
 

@@ -46,6 +46,7 @@ export function talkBackItemAtPoint<T extends { box: OverlayBox }>(
 }
 
 export type TalkBackCaptureResult = {
+  conditionSuggestions?: readonly string[];
   bounds?: { width: number; height: number };
   inspectable: boolean;
   review: TalkBackReview;
@@ -64,6 +65,7 @@ export function accessibilityObservationId(input: {
 }
 
 export type AccessibilityInspection = {
+  conditionSuggestions?: readonly string[];
   bounds?: { width: number; height: number };
   overlayItems: readonly TalkBackReviewItem[];
   review?: TalkBackReview;
@@ -93,6 +95,7 @@ export function currentAccessibilityInspection(
     }
   }
   return {
+    ...(result.conditionSuggestions ? { conditionSuggestions: result.conditionSuggestions } : {}),
     overlayItems: result.review.items,
     bounds: result.bounds,
     review: result.review,
@@ -128,10 +131,10 @@ export function retainAccessibilityObservation(input: {
   };
 }
 
-/** Map a device-pixel accessibility rect onto the letterboxed live canvas. */
+/** Map device pixels into the scroll content holding the letterboxed canvas. */
 export function talkBackOverlayBox(
   canvas: { width: number; height: number; getBoundingClientRect(): DOMRect },
-  parent: { getBoundingClientRect(): DOMRect },
+  parent: { getBoundingClientRect(): DOMRect; scrollLeft?: number; scrollTop?: number },
   rect: { x: number; y: number; width: number; height: number },
   bounds?: { width: number; height: number },
 ): OverlayBox | undefined {
@@ -148,8 +151,8 @@ export function talkBackOverlayBox(
   const padX = (box.width - drawnWidth) / 2;
   const padY = (box.height - drawnHeight) / 2;
   return {
-    left: box.left - frame.left + padX + rect.x * scale,
-    top: box.top - frame.top + padY + rect.y * scale,
+    left: box.left - frame.left + (parent.scrollLeft ?? 0) + padX + rect.x * scale,
+    top: box.top - frame.top + (parent.scrollTop ?? 0) + padY + rect.y * scale,
     width: rect.width * scale,
     height: rect.height * scale,
   };

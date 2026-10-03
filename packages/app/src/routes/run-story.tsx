@@ -36,6 +36,7 @@ import {
   type StoryState,
   type StoryStep,
 } from "../data/run-story";
+import { EvidenceImageViewer } from "../components/evidence-image-viewer";
 import { ReferenceCompareLine } from "./reference-compare-dialog";
 import { StatusPill, type RunState } from "../components/run-status";
 
@@ -156,7 +157,7 @@ export function RunStoryView({
   }, [allActions.length, status, pinned]);
 
   return (
-    <section className="flex h-full min-h-0 min-w-0 flex-col overflow-auto" aria-label="Run">
+    <section className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden" aria-label="Run">
       {header ?? (
         <TestWorkspaceHeader title={title} actions={actions}>
           {crumbs ? (
@@ -225,10 +226,18 @@ export function RunStoryView({
           </>
         }
         preview={
-          <div className="flex min-h-80 min-w-0 flex-col items-center justify-start gap-4 bg-stage p-6">
+          <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col items-center gap-4 overflow-hidden bg-stage p-4">
             <WorkspaceScreenshot>
               {url ? (
-                <img src={url} alt="Screen at this step" draggable={false} />
+                <EvidenceImageViewer
+                  key={framePath}
+                  frame={{
+                    id: framePath ?? "current",
+                    title: "Screen at this step",
+                    media: { kind: "image", src: url },
+                  }}
+                  onError={() => {}}
+                />
               ) : (
                 <p className="px-6 py-16 text-center text-sm text-muted-foreground">
                   {status === "running" ? "Starting…" : "No screen yet"}

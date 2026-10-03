@@ -10,7 +10,7 @@ import { Button } from "@relay/ui-react/components/button";
 import { initialRunStep } from "../data/run-timeline-selection";
 import { framePathsForTraceStep } from "../data/run-report-model";
 import { formatDuration } from "./run-report-formatters";
-import { ReportImage } from "./report-image";
+import { EvidenceImageViewer } from "./evidence-image-viewer";
 import { CheckCircle2, CircleAlert, ImageOff } from "lucide-react";
 import type { ProductRunReportOverview, ReportEvidenceItem } from "../data/run-report-model";
 
@@ -184,14 +184,10 @@ export function EmbeddedRunResult({
           </div>
         }
         preview={
-          <div className="flex min-h-80 flex-1 flex-col p-6">
+          <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden p-4">
             {frame?.media ? (
               <WorkspaceScreenshot>
-                <ReportImage
-                  media={frame.media}
-                  alt="Screen captured during this run"
-                  className="object-contain object-top"
-                />
+                <EvidenceImageViewer key={frame.id} frame={frame} onError={() => {}} />
               </WorkspaceScreenshot>
             ) : (
               <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">

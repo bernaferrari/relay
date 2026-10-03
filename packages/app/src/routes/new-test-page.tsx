@@ -1,3 +1,5 @@
+import { useNewTestPreviewSession } from "./use-new-test-preview-session";
+import { useNewTestPreviewInput } from "./use-new-test-preview-input";
 import { useNewTestSetup } from "./use-new-test-setup";
 import { NewTestDraftDialog } from "./new-test-draft-dialog";
 import { NewTestDetailedSetup } from "./new-test-detailed-setup";
@@ -75,7 +77,6 @@ export function NewTestPage() {
   const [previewStatus, setPreviewStatus] = useState<LiveTargetStatus>("idle");
   const [browserContext, setBrowserContext] = useState<LiveTargetBrowserContext>();
   const [previewIssue, setPreviewIssue] = useState<string>();
-  const [previewBusy, setPreviewBusy] = useState(false);
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const [newBrowserOpen, setNewBrowserOpen] = useState(false);
   const [creatingApp, setCreatingApp] = useState(false);
@@ -100,18 +101,6 @@ export function NewTestPage() {
     queryFn: () => readNewTestDraft(platform),
     staleTime: Infinity,
   });
-  const targets = useQuery({
-    queryKey: recordingQueryKeys.targets,
-    queryFn: async () => {
-      const state = await productService.connect();
-      return { ...state, targetOptions: await productService.presentTargets(state.targets) };
-    },
-    staleTime: 5_000,
-    refetchInterval: (query) =>
-      targetId && !query.state.data?.targetOptions.some((target) => target.targetId === targetId)
-        ? 5_000
-        : false,
-  });
   const savedBrowsers = useQuery({
     queryKey: ["browser-spaces"],
     queryFn: () => browserSpacesService.listSpaces(),
@@ -131,6 +120,24 @@ export function NewTestPage() {
     (setupMode === "detailed" &&
       !requestedTargetId &&
       (app?.platform === "ios" || app?.platform === "android"));
+  const targetKind =
+    deviceOnly || app?.platform === "ios" || app?.platform === "android"
+      ? "device"
+      : !requestedTargetId || app?.platform === "web"
+        ? "browser"
+        : undefined;
+  const targets = useQuery({
+    queryKey: [...recordingQueryKeys.targets, targetKind],
+    queryFn: async () => {
+      const state = await productService.connect({ targetKind });
+      return { ...state, targetOptions: await productService.presentTargets(state.targets) };
+    },
+    staleTime: 5_000,
+    refetchInterval: (query) =>
+      targetId && !query.state.data?.targetOptions.some((target) => target.targetId === targetId)
+        ? 5_000
+        : false,
+  });
   async function adoptBrowser(targetId: string) {
     chooseTarget(targetId);
     setNewBrowserOpen(false);
@@ -251,68 +258,42 @@ export function NewTestPage() {
         setPreviewIssue("Could not connect to this device. Keep it running, then try again.");
     },
   });
-  useEffect(() => {
-    if (search.view === "review") return;
-    if (!selectedTarget || !previewCanvas.current || !productService.previewTarget) {
-      setPreviewStatus("idle");
-      setPreviewIssue(undefined);
-      return;
-    }
-    let disposed = false;
-    let unmount: (() => void) | undefined;
-    let unsubscribe: (() => void) | undefined;
-    let session: LiveTargetSession | undefined;
-    setPreviewIssue(undefined);
-    setPreviewStatus("connecting");
-    setBrowserContext(undefined);
-    void productService
-      .previewTarget(selectedTarget)
-      .then((next) => {
-        if (disposed || !previewCanvas.current) return next.close();
-        session = next;
-        previewSession.current = next;
-        unsubscribe = next.subscribe((state) => {
-          setPreviewStatus(state.status);
-          setPreviewIssue(state.issue ? friendlyPreviewIssue(state.issue) : undefined);
-          setBrowserContext(state.browserContext);
-        });
-        unmount = next.mount(previewCanvas.current);
-      })
-      .catch(() => {
-        if (!disposed) {
-          setPreviewStatus("degraded");
-          setPreviewIssue("The device preview could not connect. Try again to reopen it.");
-        }
-      });
-    return () => {
-      disposed = true;
-      unmount?.();
-      unsubscribe?.();
-      if (previewSession.current === session) previewSession.current = undefined;
-      session?.close();
-    };
-  }, [previewAttempt, productService, search.view, selectedTarget?.targetId, setupMode]);
-
-  async function sendPreview(input: Parameters<LiveTargetSession["input"]>[0]) {
-    const session = previewSession.current;
-    if (!session) {
-      setPreviewIssue("The live view is still connecting.");
-      return false;
-    }
-    setPreviewBusy(true);
-    setPreviewIssue(undefined);
-    try {
-      await session.input(input);
-      return true;
-    } catch {
+  useNewTestPreviewSession({
+    target: selectedTarget,
+    canvas: previewCanvas,
+    sessionRef: previewSession,
+    service: productService,
+    attempt: previewAttempt,
+    mode: setupMode,
+    enabled: search.view !== "review",
+    onSnapshot: (state) => {
+      setPreviewStatus(state.status);
       setPreviewIssue(
-        "The device did not accept that interaction. Try again to reopen the connection.",
+        state.issue
+          ? friendlyPreviewIssue(state.issue)
+          : state.status === "offline" || state.status === "closed" || state.status === "degraded"
+            ? "The live preview stopped. Reopen it to continue."
+            : undefined,
       );
-      return false;
-    } finally {
-      setPreviewBusy(false);
-    }
+      setBrowserContext(state.browserContext);
+    },
+  });
+  function openedApp(application: string) {
+    setOpenedApplication(application);
+    if (!application) return;
+    // Launch succeeded; retain input uncertainty while reopening observation only.
+    setPreviewStatus("connecting");
+    setPreviewIssue(undefined);
+    setPreviewAttempt((value) => value + 1);
   }
+
+  const previewInput = useNewTestPreviewInput({
+    target: selectedTarget,
+    session: previewSession,
+    storage: platform.storage,
+    service: productService,
+    attempt: previewAttempt,
+  });
 
   const begin = useMutation({
     mutationFn: async (chosen?: {
@@ -432,7 +413,7 @@ export function NewTestPage() {
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!appId || !selectedTarget || creatingApp || begin.isPending) return;
+    if (!formReady) return;
     begin.mutate();
   }
 
@@ -445,7 +426,10 @@ export function NewTestPage() {
     selectedTarget &&
     !begin.isPending &&
     !creatingApp &&
+    (previewStatus === "streaming" || !productService.previewTarget) &&
     !previewIssue &&
+    !previewInput.busy &&
+    !previewInput.issue &&
     !reconnectPreview.isPending &&
     (!originApplication || openedApplication === originApplication),
   );
@@ -458,17 +442,21 @@ export function NewTestPage() {
     ? "Choose an app"
     : creatingApp
       ? "Finish creating your app"
-      : previewIssue
-        ? "Reconnect the preview before recording"
-        : reconnectPreview.isPending
-          ? "Reconnecting preview…"
-          : !selectedTarget
-            ? "Choose a Device or Browser"
-            : begin.isPending
-              ? "Starting…"
-              : originApplication && openedApplication !== originApplication
-                ? "Open the selected app first"
-                : "Start recording";
+      : previewInput.failure
+        ? "Check the last interaction before recording"
+        : previewInput.busy
+          ? "Checking the last interaction…"
+          : previewIssue || previewInput.issue
+            ? "Reconnect the preview before recording"
+            : reconnectPreview.isPending
+              ? "Reconnecting preview…"
+              : !selectedTarget
+                ? "Choose a Device or Browser"
+                : begin.isPending
+                  ? "Starting…"
+                  : originApplication && openedApplication !== originApplication
+                    ? "Open the selected app first"
+                    : "Start recording";
 
   function chooseTarget(nextTargetId: string) {
     setTargetId(nextTargetId);
@@ -620,7 +608,7 @@ export function NewTestPage() {
             rememberedAccount={(url) => rememberedAccounts.data?.[websiteHost(url)]}
             address={browserUrl}
             onAddressChange={setBrowserUrl}
-            {...(requestedAccount
+            {...(requestedAccount !== undefined
               ? {
                   initialAccount:
                     (accounts.data ?? []).find(
@@ -659,20 +647,23 @@ export function NewTestPage() {
             selectedTarget={selectedTarget}
             originApplication={originApplication}
             onOriginChange={setOriginApplication}
-            onOpened={setOpenedApplication}
+            onOpened={openedApp}
             formReady={formReady}
             startHint={startHint}
             beginPending={begin.isPending}
             submit={submit}
             browserContext={browserContext}
-            previewIssue={previewIssue}
+            previewIssue={previewInput.issue ?? previewIssue}
             reconnecting={reconnectPreview.isPending}
             onReconnect={(id) => reconnectPreview.mutate(id)}
             onRetryPreview={() => setPreviewAttempt((value) => value + 1)}
             previewCanvas={previewCanvas}
             previewStatus={previewStatus}
-            previewBusy={previewBusy}
-            sendPreview={sendPreview}
+            previewBusy={previewInput.busy}
+            sendPreview={previewInput.send}
+            inputFailure={previewInput.failure}
+            inputRecoveryBusy={previewInput.recoveryBusy}
+            onObserveInput={previewInput.observe}
             onExploreUrl={(url) => void navigate({ to: "/goals", search: { url } })}
             targetFetching={targets.isFetching}
             browsersUnavailable={savedBrowsers.isError}

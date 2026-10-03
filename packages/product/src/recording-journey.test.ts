@@ -61,6 +61,18 @@ function jobsFor(input: {
   };
 }
 
+test("recording connection forwards the selected surface scope", async () => {
+  let received: unknown;
+  const jobs = jobsFor({});
+  jobs.connect = async (intent?: unknown) => {
+    received = intent;
+    return { targets: [target], current: target };
+  };
+  const journey = createProductRecordingJourney({ jobs });
+  await journey.connect({ targetKind: "device" });
+  assert.deepEqual(received, { kind: "connect-target", targetKind: "device" });
+});
+
 test("recording preserves selected Map path identity", async () => {
   let recordedIntent: unknown;
   const journey = createProductRecordingJourney({

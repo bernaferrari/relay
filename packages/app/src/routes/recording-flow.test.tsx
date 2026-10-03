@@ -12,6 +12,7 @@ import type {
 } from "../data/recording-product-service";
 import type { LiveTargetSession } from "../data/live-target-session";
 import { RecordingInputNotSentError } from "../data/recording-input-outcome";
+import type { DeviceProductService } from "../data/device-product-service";
 import type { MapProductService } from "../data/map-product-service";
 import type { Platform } from "../platform/types";
 import type { BrowserSpacesProductService } from "../data/browser-spaces-product-service";
@@ -289,6 +290,7 @@ async function renderJourney(
   browserSpacesService?: BrowserSpacesProductService,
   appResourcesService?: AppResourcesProductService,
   quickStart = false,
+  deviceService?: DeviceProductService,
 ) {
   const history = createMemoryHistory({ initialEntries: [path] });
   const host = document.createElement("div");
@@ -301,6 +303,7 @@ async function renderJourney(
         platform={platform}
         history={history}
         productService={productService}
+        deviceService={deviceService}
         mapService={mapService}
         browserSpacesService={browserSpacesService ?? emptyBrowserSpaces}
         appResourcesService={appResourcesService ?? emptyAppResources}
@@ -988,6 +991,94 @@ describe("record, review, replay, and save", () => {
     );
   });
 
+  it("refreshes the native preview after Open app and waits for its first new frame", async () => {
+    const fake = fakeService();
+    let sessions = 0;
+    let deliverFrame!: () => void;
+    const closed = vi.fn();
+    fake.service.previewTarget = async (selected) => {
+      const index = ++sessions;
+      let current: ReturnType<LiveTargetSession["snapshot"]> = {
+        status: "connecting",
+        target: selected,
+      };
+      let listener: Parameters<LiveTargetSession["subscribe"]>[0] | undefined;
+      const publish = () => {
+        current = {
+          status: "streaming",
+          target: selected,
+          frameSequence: 1,
+          lastFrameAt: Date.now(),
+        };
+        listener?.(current);
+      };
+      return {
+        snapshot: () => current,
+        subscribe(next) {
+          listener = next;
+          next(current);
+          return () => {
+            listener = undefined;
+          };
+        },
+        mount() {
+          if (index === 1) publish();
+          else deliverFrame = publish;
+          return () => {};
+        },
+        input: vi.fn(),
+        close: closed,
+      };
+    };
+    const launchApp = vi.fn(async () => ({}));
+    const deviceService = {
+      list: async () => [],
+      get: async () => undefined,
+      actions: async () => [],
+      listInstalledApps: async () => [{ name: "Grok", package: "ai.x.grok" }],
+      launchApp,
+    } as unknown as DeviceProductService;
+    await renderJourney(
+      "/tests/new?app=app-1&target=emulator-5554&originApplication=ai.x.grok",
+      fake.service,
+      platformWithStorage().platform,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      deviceService,
+    );
+    await click(button("Open app"));
+    expect(launchApp).toHaveBeenCalledWith("emulator-5554", "ai.x.grok", true);
+    expect(sessions).toBe(2);
+    expect(closed).toHaveBeenCalledOnce();
+    expect(button("Start recording").disabled).toBe(true);
+    await act(async () => deliverFrame());
+    await settle();
+    expect(button("Start recording").disabled).toBe(false);
+    expect(fake.calls.some((call) => call.startsWith("begin:"))).toBe(false);
+  });
+
+  it("cannot start recording from a stopped native preview even without an error message", async () => {
+    const fake = fakeService();
+    fake.service.previewTarget = async (selected) => ({
+      snapshot: () => ({ status: "offline", target: selected }),
+      subscribe(listener) {
+        listener({ status: "offline", target: selected });
+        return () => {};
+      },
+      mount: () => () => {},
+      input: vi.fn(),
+      close() {},
+    });
+    await renderJourney(
+      "/tests/new?app=app-1&target=emulator-5554",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    expect(button("Start recording").disabled).toBe(true);
+  });
+
   it("opens setup with a starting app carried from the device", async () => {
     const fake = fakeService();
     await renderJourney(
@@ -1091,6 +1182,30 @@ describe("record, review, replay, and save", () => {
     expect(document.querySelector('form[aria-label="Start a test"]')).toBeNull();
     await click(button("Website"));
     expect(document.querySelector<HTMLInputElement>("#new-test-website")?.value).toBe("");
+  });
+
+  it("Phone setup bypasses a pending website connection request", async () => {
+    const fake = fakeService();
+    const scopes: unknown[] = [];
+    fake.service.connect = async (input) => {
+      scopes.push(input);
+      if (input?.targetKind !== "device") return new Promise(() => {});
+      return { status: "target-selection", targets: [target], selectedTarget: target };
+    };
+    await renderJourney(
+      "/tests/new",
+      fake.service,
+      platformWithStorage().platform,
+      undefined,
+      undefined,
+      undefined,
+      true,
+    );
+    await click(button("Phone or tablet"));
+    await settle();
+    expect(scopes).toEqual([{ targetKind: "browser" }, { targetKind: "device" }]);
+    expect(document.body.textContent).toContain("Pixel 9 Pro");
+    expect(document.body.textContent).not.toContain("Checking…");
   });
 
   it("preserves the website address across mode switches and filters browsers out of phone setup", async () => {
@@ -1967,6 +2082,34 @@ describe("record, review, replay, and save", () => {
     expect(fake.calls).not.toContain("approve");
   });
 
+  it("Cancel recording returns to the recording's App", async () => {
+    let current = state("recording", ["inspect", "record", "stop"]);
+    const fake = fakeService(current);
+    fake.service.inspect = async () => current;
+    fake.service.cancel = async () => (current = state("cancelled", []));
+    const { history } = await renderJourney(
+      "/recordings/workflow-1",
+      fake.service,
+      platformWithStorage().platform,
+    );
+    await click(button("Cancel"));
+    await click(button("Cancel recording"));
+    expect(history.location.pathname).toBe("/tests");
+    expect(new URLSearchParams(history.location.search).get("app")).toBe("app-1");
+  });
+
+  it("cancelled recording falls back to All Apps when canonical App identity is absent", async () => {
+    const cancelled = state("cancelled", []);
+    cancelled.snapshot!.frozen = undefined;
+    const { history } = await renderJourney(
+      "/recordings/workflow-1",
+      fakeService(cancelled).service,
+      platformWithStorage().platform,
+    );
+    expect(history.location.pathname).toBe("/tests");
+    expect(new URLSearchParams(history.location.search).has("app")).toBe(false);
+  });
+
   it("clears a matching recovery pointer after refreshing a committed workflow", async () => {
     const fake = fakeService(state("committed", [], { committed: true }));
     const storage = platformWithStorage({ activeRecordingWorkflowId: "workflow-1" });
@@ -1983,9 +2126,15 @@ describe("record, review, replay, and save", () => {
   it("clears a matching recovery pointer after a recording is cancelled", async () => {
     const fake = fakeService(state("cancelled", []));
     const storage = platformWithStorage({ activeRecordingWorkflowId: "workflow-1" });
-    await renderJourney("/recordings/workflow-1", fake.service, storage.platform);
+    const { history } = await renderJourney(
+      "/recordings/workflow-1",
+      fake.service,
+      storage.platform,
+    );
 
     expect(storage.values.has("activeRecordingWorkflowId")).toBe(false);
+    expect(history.location.pathname).toBe("/tests");
+    expect(new URLSearchParams(history.location.search).get("app")).toBe("app-1");
   });
 
   it("reconciles and removes a terminal pointer before blocking a new recording", async () => {

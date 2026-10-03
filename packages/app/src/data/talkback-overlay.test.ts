@@ -37,6 +37,26 @@ describe("talkBackOverlayBox", () => {
     expect(box).toEqual({ left: 27, top: 60, width: 54, height: 30 });
   });
 
+  it("keeps overlay content coordinates stable when the enlarged canvas is panned", () => {
+    const parent = {
+      scrollLeft: 30,
+      scrollTop: 120,
+      getBoundingClientRect: () => rect(100, 50, 200, 300),
+    };
+    const canvas = {
+      width: 400,
+      height: 800,
+      getBoundingClientRect: () => rect(70, -70, 400, 800),
+    };
+    const box = talkBackOverlayBox(canvas, parent, { x: 80, y: 240, width: 100, height: 40 });
+    expect(box).toEqual({ left: 80, top: 240, width: 100, height: 40 });
+    parent.scrollTop = 180;
+    canvas.getBoundingClientRect = () => rect(70, -130, 400, 800);
+    expect(talkBackOverlayBox(canvas, parent, { x: 80, y: 240, width: 100, height: 40 })).toEqual(
+      box,
+    );
+  });
+
   it("scales full-resolution accessibility bounds independently of reduced video", () => {
     const canvas = {
       width: 496,
