@@ -2493,12 +2493,12 @@ test("QA preset exposes one existing recording/run path and accurate discovery",
     const listed = await session.request("tools/list", {});
     const tools = listed.result?.tools as ListedTool[];
     const names = tools.map(({ name }) => name);
-    assert.deepEqual(
-      names,
-      [...relayQaOutcomeTools, ...relayQaOperatorTools, ...relayMcpToolsForProfile("qa")].map(
+    assert.deepEqual(names, [
+      "relay_panel",
+      ...[...relayQaOutcomeTools, ...relayQaOperatorTools, ...relayMcpToolsForProfile("qa")].map(
         ({ name }) => name,
       ),
-    );
+    ]);
     assert.equal(new Set(names).size, names.length);
     for (const absent of [
       "relay_goal",

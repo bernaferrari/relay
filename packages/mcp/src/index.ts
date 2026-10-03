@@ -6,13 +6,14 @@ import { parseMcpConfig } from "./config.js";
 import { runRelayMcpDoctorCommand } from "./doctor.js";
 import { createMcpServer, createRelayOperationInvoker } from "./server.js";
 import { runRelayMcpGuide } from "./task-guide-cli.js";
+import { prepareMcpRuntime } from "./runtime-startup.js";
 
 function diagnostic(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
   process.stderr.write(`relay-mcp: ${message}\n`);
 }
 
-export function runMcp(
+export async function runMcp(
   argv: readonly string[] = process.argv.slice(2),
   env: Record<string, string | undefined> = process.env,
 ) {
@@ -25,7 +26,7 @@ export function runMcp(
       process.exitCode = exitCode;
     });
   }
-  const config = parseMcpConfig(argv, env);
+  const config = await prepareMcpRuntime(parseMcpConfig(argv, env));
   const invoker = createRelayOperationInvoker(config);
   return serveStdio(
     () =>

@@ -39,6 +39,21 @@ relay-mcp doctor
 The plugin descriptor invokes the installed `relay-mcp` binary. A clean host does not need pnpm or
 the Relay Workspace after the package is installed.
 
+### Optional local runtime startup
+
+Install the matching `@relay/runtime` local candidate beside this connector,
+then configure `--workspace /absolute/path/my-project` (or
+`RELAY_WORKSPACE_ROOT`) to attach or launch its canonical service. Mutable
+accounts, Tests and evidence belong outside plugin caches. `--runtime-port`
+(or `RELAY_RUNTIME_PORT`) selects a free local port; startup never kills an
+unknown listener or replaces a live workspace owner. Explicit `--server` or
+`RELAY_URL` retains attachment to that endpoint. Local startup uses
+`local/default` scope and preserves the configured actor and credentials.
+
+Offline `guide` and read-only `doctor` never launch a runtime. The runtime
+candidate's [installation and browser demo](../runtime/README.md) is verified
+without repository sources; physical device support requires qualification.
+
 The default configuration needs no profile flag: the local defaults use the loopback Relay service,
 the local project, actor `agent:cursor`, and the `operator` profile (~19 hand-named verbs plus
 `relay_advanced`). That default is a complete ordinary task surface — resolve a target, observe,
@@ -295,4 +310,25 @@ App/Test resources remain discoverable. It excludes assisted goals, raw admin
 operations and Change Proof. The `relay-proof` plugin now selects this preset;
 `proof`, `operator` and `outcome` remain explicit compatibility profiles.
 Run `relay-mcp doctor --profile qa` against the same configured service first.
-The connector still requires an existing Relay runtime and target prerequisites.
+The connector requires a compatible Relay runtime and target prerequisites;
+the optional local startup described above can attach or launch the runtime.
+
+### Read-only Tests and results panel
+
+The QA preset adds `relay_panel` to inspect existing Apps, saved Tests, recent
+Runs and one retained PNG per request. It calls canonical read operations;
+it cannot start Runs, capture a live device or accept visual evidence.
+Screenshot bytes are retained artifact data, bounded and checked against their
+recorded SHA-256 before inclusion in result metadata.
+
+On initialization, hosts that advertise the MCP Apps HTML MIME type receive
+the `ui://relay/review` resource and opener metadata. Other hosts receive the
+same bounded state as text with no view metadata or UI resource. The bundled
+HTML has no external dependencies or network access requirements.
+
+MCP server SDK 2.1.0 and MCP Apps SDK 2.0.3 are pinned together. OpenAI
+Extensions 0.1.0 currently peers with the v1 SDK, so its documented thread
+entrypoint/fullscreen metadata is supplied directly without importing an
+incompatible runtime. Capability and copied-artifact tests pass; actual
+Codex/ChatGPT rendering remains unverified. See the plugin's
+[host qualification guide](../../plugins/relay-proof/hosts/panel.md).

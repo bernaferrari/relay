@@ -52,7 +52,20 @@ The demo deliberately includes a layout defect: **Save** overlaps the team seats
 
 The demo website stays available for repeat runs until you press Ctrl+C. Starting `pnpm demo` again reuses the saved Test and runs it again. `pnpm demo -- --once` completes one run and closes the demo website.
 
-This is a contributor workflow using the existing Relay server. A standalone end-user runtime installer is still pending; the installed agent plugin connects to a running Relay workspace.
+This is the contributor workflow. The [packaged runtime candidate](./packages/runtime/README.md)
+also runs this browser demo from a local tarball without repository sources:
+
+```bash
+npm install /absolute/path/relay-runtime-0.1.0.tgz
+npx --no-install relay-runtime demo --workspace /absolute/path/my-project
+```
+
+It prints a local read-only evidence gallery and an installed repeat command.
+Installing the matching MCP candidate alongside it lets the agent connector
+attach or launch the canonical service for an explicitly chosen workspace.
+The browser flow and authenticated startup/panel have separate qualification;
+physical devices and a standalone desktop installer still need qualification.
+These are local release artifacts, not published npm packages.
 
 ### Explore your app as tests grow
 

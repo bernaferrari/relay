@@ -10,7 +10,6 @@ import { listenSeededMemberApp } from "../packages/core/src/seeded-member-app.ts
 import { buildWorkspaceDoctorReport } from "./workspace-doctor.mjs";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const manifestPath = resolve(root, ".relay/first-run-demo.json");
 const appMapId = "relay-first-run";
 const targetId = "browser-relay-first-run";
 const title = "Demo · Member settings";
@@ -28,7 +27,14 @@ export async function runFirstDemo({
   serverUrl = process.env.RELAY_URL ?? "http://127.0.0.1:8787",
   port = 8792,
   once = false,
+  workspaceRoot = root,
+  prerequisiteReport,
+  createLocalReport = false,
+  repeatCommand,
+  authToken = process.env.RELAY_AUTH_TOKEN,
+  actorId = process.env.RELAY_ACTOR_ID ?? "agent:first-run-demo",
 } = {}) {
+  const manifestPath = resolve(workspaceRoot, ".relay/first-run-demo.json");
   // This command stays local: no credentials or account cookies are needed.
   const serverAddress = new URL(serverUrl);
   if (
@@ -37,11 +43,12 @@ export async function runFirstDemo({
   ) {
     throw new Error("The first-run demo requires a local Relay server (http://127.0.0.1:8787).");
   }
-  const doctor = buildWorkspaceDoctorReport({ requireBrowser: true });
+  const doctor = prerequisiteReport ?? buildWorkspaceDoctorReport({ requireBrowser: true });
   if (!doctor.ready) throw new Error(`${doctor.failures.join("\n")}\nRun: pnpm doctor -- --web`);
-  const response = await fetch(`${serverUrl}/health`, { signal: AbortSignal.timeout(5_000) }).catch(
-    () => null,
-  );
+  const response = await fetch(`${serverUrl}/health`, {
+    headers: authToken ? { Authorization: `Bearer ${authToken}` } : {},
+    signal: AbortSignal.timeout(5_000),
+  }).catch(() => null);
   const health = response?.ok ? await response.json() : undefined;
   if (health?.product !== "relay") {
     throw new Error(`Relay is unavailable at ${serverUrl}. Start it with: pnpm ensure:serve`);
@@ -67,10 +74,9 @@ export async function runFirstDemo({
     });
   let successful = false;
   try {
-    const actorId = "agent:first-run-demo";
     const client = new RelayClient({
       url: serverUrl,
-      auth: { type: "none" },
+      auth: authToken ? { type: "bearer", token: authToken } : { type: "none" },
       organizationId: "local",
       projectId: "default",
       actorId,
@@ -125,7 +131,7 @@ export async function runFirstDemo({
       testId = result.snapshot.authoring.committedTestId;
       if (!testId)
         throw new Error("Relay saved no reusable Test ID; inspect the retained recording.");
-      await mkdir(resolve(root, ".relay"), { recursive: true });
+      await mkdir(resolve(workspaceRoot, ".relay"), { recursive: true });
       await writeFile(manifestPath, JSON.stringify({ appMapId, targetId, testId }, null, 2));
     }
     console.log(`Run: ${title} (fresh signed-out browser)`);
@@ -157,6 +163,7 @@ export async function runFirstDemo({
       `${serverUrl}/runs/${runId}/frames/${encodeURIComponent(frameName)}`,
       {
         headers: {
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
           "X-Organization-Id": "local",
           "X-Project-Id": "default",
           "X-Relay-Actor-Id": actorId,
@@ -173,18 +180,29 @@ export async function runFirstDemo({
         "Screenshot export differs from the retained capture. Review remains pending.",
       );
     }
-    const exportDir = resolve(root, ".relay/first-run-demo", runId);
+    const exportDir = resolve(workspaceRoot, ".relay/first-run-demo", runId);
     await mkdir(exportDir, { recursive: true });
     const screenshotPath = resolve(exportDir, "Member settings.png");
     await writeFile(screenshotPath, bytes);
-    console.log(
-      `Review: http://localhost:3000/#/tests/${testId}?target=${targetId}&run=${runId}&view=run`,
-    );
+    if (createLocalReport) {
+      const report = await client.invoke("run.share.create", {
+        runId,
+        expiresInHours: 24,
+        includeBatch: false,
+      });
+      console.log(`Review: ${new URL(report.path, serverUrl).href}`);
+    } else {
+      console.log(
+        `Review: http://localhost:3000/#/tests/${testId}?target=${targetId}&run=${runId}&view=run`,
+      );
+    }
     console.log(`Screenshot: ${screenshotPath}`);
     console.log(
       "Look for the seeded layout defect: Save overlaps the team seats. Report it in Review.",
     );
-    console.log(`Repeat: ./bin/relay run ${testId} --map ${appMapId} --device ${targetId} --json`);
+    console.log(
+      `Repeat: ${repeatCommand ?? `./bin/relay run ${testId} --map ${appMapId} --device ${targetId} --json`}`,
+    );
     console.log(
       "Collection passed. Screenshot review is pending; the demo makes no human decision.",
     );
@@ -200,11 +218,14 @@ export async function runFirstDemo({
   } finally {
     await close();
     if (!successful)
-      console.error("The saved draft/evidence remains in Relay. No input is retried.");
+      console.error("Any saved draft/evidence remains in Relay. No input is retried.");
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (
+  process.argv[1]?.endsWith("first-run-demo.mjs") &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
   const options = process.argv.slice(2).filter((argument) => argument !== "--");
   if (options.some((argument) => argument !== "--once")) {
     console.error("Usage: pnpm demo [-- --once]");

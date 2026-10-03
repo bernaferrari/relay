@@ -1,6 +1,6 @@
 {
   "name": "relay-proof",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Record, run, and review app tests through an existing local Relay service.",
   "author": {
     "name": "Relay",

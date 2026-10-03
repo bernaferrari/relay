@@ -103,5 +103,8 @@ function main(argv) {
   if (report.failures.length) process.exitCode = 1;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+if (
+  process.argv[1]?.endsWith("workspace-doctor.mjs") &&
+  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+)
   main(process.argv.slice(2));

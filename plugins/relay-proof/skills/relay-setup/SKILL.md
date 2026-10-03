@@ -9,8 +9,12 @@ description: Connect Relay for app testing, diagnose an unreachable service or i
    with the MCP connector and remain readable while the service is offline.
 2. Call `relay_health`. If unavailable, run `relay-mcp doctor --profile qa`
    in the host's configured environment and follow its failed check's next
-   action. The connector attaches to an existing Relay service; it does not
-   install or launch the service, desktop, browser engines, or native tools.
+   action. With the matching `@relay/runtime` candidate installed, configure
+   an explicitly chosen absolute `--workspace` directory to attach or launch
+   its canonical local service. Use `--runtime-port` when the default is occupied.
+   An explicit `--server` or `RELAY_URL` keeps attachment to that endpoint.
+   Store the workspace outside plugin caches; browser engines and native
+   tools remain target prerequisites. Doctor is read-only and never launches.
 3. Call `relay_connect_target`. Select a returned ready target explicitly when
    several exist. Keep its identity throughout the task. Resolve unavailable
    pairing, unlock, or control prerequisites before recording.

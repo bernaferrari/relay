@@ -1,4 +1,5 @@
 import type { ServerConnection } from "@relay/protocol";
+import { isAbsolute } from "node:path";
 import { defaultRelayMcpProfile, relayMcpProfiles, type RelayMcpProfile } from "./tools.js";
 
 export type CredentialSource = { type: "none" } | { type: "env"; name: string };
@@ -8,6 +9,7 @@ export type McpConfig = {
   credentialSource: CredentialSource;
   timeoutMs: number;
   profile: RelayMcpProfile;
+  runtime?: { workspaceRoot: string; port?: number };
 };
 
 type Environment = Record<string, string | undefined>;
@@ -29,6 +31,8 @@ const valueFlags = new Set([
   "--actor",
   "--timeout",
   "--profile",
+  "--workspace",
+  "--runtime-port",
 ]);
 
 function parseArguments(argv: readonly string[]): Map<string, string> {
@@ -101,7 +105,26 @@ export function parseMcpConfig(
     auth: credential ? { type: "bearer", token: credential } : { type: "none" },
   };
 
-  return { connection, credentialSource, timeoutMs, profile };
+  const workspaceRoot = values.get("--workspace") ?? env.RELAY_WORKSPACE_ROOT?.trim();
+  if (workspaceRoot && !isAbsolute(workspaceRoot)) {
+    throw new TypeError(
+      "--workspace must be an absolute directory outside the plugin installation",
+    );
+  }
+  // Explicit endpoints retain attach-only semantics, including remote and scoped services.
+  const runtimePortRaw = values.get("--runtime-port") ?? env.RELAY_RUNTIME_PORT?.trim();
+  const runtimePort = runtimePortRaw ? Number(runtimePortRaw) : undefined;
+  if (
+    runtimePort !== undefined &&
+    (!Number.isInteger(runtimePort) || runtimePort < 0 || runtimePort > 65535)
+  ) {
+    throw new TypeError("--runtime-port must be an integer from 0 to 65535");
+  }
+  const runtime =
+    workspaceRoot && !values.has("--server") && !env.RELAY_URL?.trim()
+      ? { workspaceRoot, ...(runtimePort === undefined ? {} : { port: runtimePort }) }
+      : undefined;
+  return { connection, credentialSource, timeoutMs, profile, ...(runtime ? { runtime } : {}) };
 }
 
 export function redactedMcpConfig(config: McpConfig): Record<string, unknown> {
@@ -116,5 +139,6 @@ export function redactedMcpConfig(config: McpConfig): Record<string, unknown> {
     credential: config.connection.auth.type === "none" ? "none" : "configured",
     timeoutMs: config.timeoutMs,
     profile: config.profile,
+    ...(config.runtime ? { workspace: config.runtime.workspaceRoot } : {}),
   };
 }

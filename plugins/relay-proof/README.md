@@ -11,10 +11,16 @@ Proof remains a separate explicit `proof` session.
 
 ## Connect to your existing Relay service
 
-This package is a connector. It requires Node 24+, an existing compatible
-Relay service, and the browser/native prerequisites for your selected target.
-It does not install Relay desktop, start a service, or provide a custom host
-panel. Runtime packaging and rendered host integration remain future work.
+This package requires Node 24+ and the browser/native prerequisites for your
+selected target. It attaches to an existing compatible Relay service. With
+the matching local `@relay/runtime` artifact installed alongside the connector,
+an explicit `--workspace /absolute/path` can attach or launch the canonical
+service. Use `--runtime-port 8788` if the default port belongs to another
+workspace. The workspace stores accounts, Tests and evidence outside plugin
+caches. Desktop and native helpers require separate qualification.
+
+See [the runtime candidate](../../packages/runtime/README.md) for local artifact
+installation and a source-independent browser Record → Run → Review demo.
 
 Before publication, build the MCP artifact from this repository:
 
@@ -62,6 +68,9 @@ functional pass and a human screenshot decision remain separate outcomes.
 
 ## Host and specialist compatibility
 
+- `relay_panel` presents saved Tests, recent Runs and retained screenshots in
+  hosts that negotiate MCP Apps. In other hosts it returns the same read-only
+  state in chat. See [panel compatibility and qualification](./hosts/panel.md).
 - [Claude Code](./hosts/claude-code/README.md): the same installed command and
   QA configuration; no separate tool schemas.
 - [ChatGPT-compatible MCP transports](./hosts/chatgpt/README.md): use local
@@ -82,4 +91,5 @@ The first command also works from a copied plugin directory without a checkout
 or dependencies. The MCP clean-host test packs and installs the actual
 connector in a temporary directory, then checks stdio discovery, offline
 guides and read-only calls. These checks do not qualify native hardware or
-rendered ChatGPT/Codex panels.
+rendered ChatGPT/Codex panels. The installed artifact test also checks the
+negotiated HTML resource and the tools-only fallback.

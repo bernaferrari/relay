@@ -38,6 +38,7 @@ export type McpServerDependencies = {
   profile?:
     | "operator"
     | "outcome"
+    | "qa"
     | "control"
     | "map"
     | "observe"
